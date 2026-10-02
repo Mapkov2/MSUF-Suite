@@ -92,7 +92,10 @@ local function ResolveGroup(items, spec)
     if spec.fallback and FindTitle(items, spec.fallback) then return spec.fallback end
     local at = #items + 1
     for i = #items, 1, -1 do
-        if items[i].title then at = i; break end
+        if items[i].title then
+            at = i
+            break
+        end
     end
     table.insert(items, at, { title = spec.title, id = spec.id })
     return spec.id
@@ -205,7 +208,12 @@ local function InstallPageResets()
     function M.BuildPageResetWarning(key)
         if not IsSuitePage(key) then return oldWarning and oldWarning(key) end
         local title = key
-        for _, page in ipairs(P.pages) do if page.key == key then title = P.Tr(page.title); break end end
+        for _, page in ipairs(P.pages) do
+            if page.key == key then
+                title = P.Tr(page.title)
+                break
+            end
+        end
         return string.format(P.Tr("Reset %s to defaults?\n\nThis resets all settings on this Suite page for the active profile."), title)
     end
     function M.ResetPageToDefaults(key)

@@ -372,7 +372,10 @@ function P.AttachRowsSummary(ctx, body, rows)
                 if row.kind == "dropdown" then
                     local values = type(row.values) == "function" and row.values() or row.values
                     for _, item in ipairs(values or {}) do
-                        if item.value == value then shown = item.text; break end
+                        if item.value == value then
+                            shown = item.text
+                            break
+                        end
                     end
                 elseif row.kind == "toggle" then shown = Tr(value and "On" or "Off")
                 elseif not row.format and type(value) == "number" then shown = DecimalFormat(value) end
@@ -380,7 +383,10 @@ function P.AttachRowsSummary(ctx, body, rows)
             end
         end
         local text = table.concat(parts, " \194\183 ")
-        if previous ~= text then W.SetCollapsibleSummary(body, text); previous = text end
+        if previous ~= text then
+            W.SetCollapsibleSummary(body, text)
+            previous = text
+        end
     end)
 end
 
@@ -570,8 +576,10 @@ local function BuildSkinColors(ctx, b)
     local grid = W.SettingsRows(ctx, section, { x = 16, y = -18, width = width, columns = 2, rows = rows })
     P.AttachSectionReset(ctx, section, "Suite skin", function()
         if P.Combat() or not skin.Theme.ResetColors then return false end
-        local ok = P.WithHistory("Reset Suite skin colors", "suite:skin.colors.reset",
-            function() skin.Theme.ResetColors(); return true end)
+        local ok = P.WithHistory("Reset Suite skin colors", "suite:skin.colors.reset", function()
+            skin.Theme.ResetColors()
+            return true
+        end)
         if ok then P.Refresh() end
         return ok
     end)

@@ -124,7 +124,10 @@ local function BuildSectionPopup(state, spec)
     state.entry.outer:HookScript("OnHide", function() ClosePopup(state) end)
     Controller.AttachControllerWindow(popup)
     if Controller.isForever then
-        popup.SmartNavigationCloseHandler = function() ClosePopup(state); return true end
+        popup.SmartNavigationCloseHandler = function()
+            ClosePopup(state)
+            return true
+        end
     end
 end
 

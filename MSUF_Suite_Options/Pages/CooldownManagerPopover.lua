@@ -302,7 +302,10 @@ end
 local function SpellCommit(self)
     local text = (self:GetText() or ""):match("^%s*(.-)%s*$")
     self:ClearFocus()
-    if text == "" then SetField(self.row.field, nil); return end
+    if text == "" then
+        SetField(self.row.field, nil)
+        return
+    end
     local id = C_Spell.GetSpellIDForSpellIdentifier(text)
     if Public(id) and type(id) == "number" and id > 0 and id < 2147483648 then
         SetField(self.row.field, id)

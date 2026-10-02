@@ -62,7 +62,10 @@ function S.SetNativeSpellRange(owner, spellID, enabled)
     local spells = owners[owner]
     if enabled then
         EnsureHook()
-        if not spells then spells = {}; owners[owner] = spells end
+        if not spells then
+            spells = {}
+            owners[owner] = spells
+        end
         if spells[spellID] then return end
         spells[spellID] = true
         local count = (counts[spellID] or 0) + 1

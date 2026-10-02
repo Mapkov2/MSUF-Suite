@@ -106,7 +106,8 @@ local GROUPS = {
     { id = "collectionNewMarkers", title = "Collection new markers (Retail)", switch = "enabled", sections = { "collection_markers" } },
     { id = "combatLog", title = "Combat logging", switch = "enabled",
         sections = { "log_dungeons", "log_raids", "log_other", "log_exit" } },
-    { id = "cursorEffects", title = "Cursor highlight (Retail)", switch = "enabled", sections = { "cursor_effects", "cursor_progress", "cursor_gcd", "cursor_when" } },
+    { id = "cursorEffects", title = "Cursor highlight (Retail)", switch = "enabled",
+        sections = { "cursor_effects", "cursor_progress", "cursor_gcd", "cursor_when" } },
     { id = "dailyComfort", title = "Daily UI comforts", switch = "enabled", sections = { "daily_comfort", "daily_cvars" } },
     { id = "delveSolePower", title = "Delve single power (Retail)", switch = "enabled",
         sections = { "delve_sole_power" } },
@@ -203,7 +204,8 @@ local CATEGORIES = {
     } },
     { id = "characterGear", title = "Character & Gear", tabs = {
         { id = "character", title = "Character", keys = {
-            "chatProfileLinks.enabled", "xpBar.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled", "targetDistance.enabled", "characterExtras.enabled",
+            "chatProfileLinks.enabled", "xpBar.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled",
+            "targetDistance.enabled", "characterExtras.enabled",
         } },
         { id = "gear", title = "Gear", keys = {
             "characterUpgradeWindow.enabled", "socketGemSuggestions.enabled", "durabilityAlert.enabled",
@@ -533,8 +535,14 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
     row._msufSuiteShade, row._msufSuiteStripe = shade, stripe
     row._msufSuiteEven = index % 2 == 0
     PaintFeatureRow(row)
-    row:SetScript("OnEnter", function(self) self._msufSuiteHovered = true; PaintFeatureRow(self) end)
-    row:SetScript("OnLeave", function(self) self._msufSuiteHovered = false; PaintFeatureRow(self) end)
+    row:SetScript("OnEnter", function(self)
+        self._msufSuiteHovered = true
+        PaintFeatureRow(self)
+    end)
+    row:SetScript("OnLeave", function(self)
+        self._msufSuiteHovered = false
+        PaintFeatureRow(self)
+    end)
     local textWidth = width - (hasDetails and 164 or 78)
     local label = P.T.Font(row, "GameFontHighlightSmall", Tr(group.title), P.T.colors.text, "control")
     label:SetPoint("LEFT", row, "LEFT", 12, 0)
@@ -709,4 +717,7 @@ end
 
 P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, icon = { 7, 1 },
     nav = "general", navOrder = 1,
-    aliases = { "qol", "qualityoflife", "quality_of_life", "actiontracker", "actions", "casts", "merchant", "itemlevel", "vault", "lootspec", "tooltipids", "loot", "quests", "combatlog", "logging", "comfort", "experience", "xpbar", "xp", "innervate", "whisper", "durability", "repairwarning", "battleres", "brez", "combatres", "skyriding", "vigor", "secondwind", "groupfinder", "keys", "keystone", "bloodlust" } })
+    aliases = { "qol", "qualityoflife", "quality_of_life", "actiontracker", "actions", "casts", "merchant",
+        "itemlevel", "vault", "lootspec", "tooltipids", "loot", "quests", "combatlog", "logging", "comfort",
+        "experience", "xpbar", "xp", "innervate", "whisper", "durability", "repairwarning", "battleres", "brez",
+        "combatres", "skyriding", "vigor", "secondwind", "groupfinder", "keys", "keystone", "bloodlust" } })

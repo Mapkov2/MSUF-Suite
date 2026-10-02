@@ -245,7 +245,10 @@ end
 Layers.Focus = FocusLayer
 
 local function ToggleSkinLayer(ui, key)
-    if P.Get(ID, "look") == 2 then OpenSetting("look", "Look"); return end
+    if P.Get(ID, "look") == 2 then
+        OpenSetting("look", "Look")
+        return
+    end
     if key == "roleFill" then
         P.Set(ID, "enemyRoleColors", not P.Get(ID, "enemyRoleColors"))
     else
@@ -262,22 +265,97 @@ local function ToggleSkinLayer(ui, key)
     ui:Paint()
 end
 
-local function ToggleLayer(ui, key)
-    if key == "level" then
-        local classic = P.Suite.NameplateStyle.ClassicNativePlate(P.Get(ID, "nativeStyle"))
-        if P.Get(ID, "look") == 2 or classic and not P.Suite.Client.isForever then
-            FocusLayer(ui, "elements", key)
-        else
-            P.Set(ID, ui.sampleKind .. "LevelEnabled", not P.Get(ID, ui.sampleKind .. "LevelEnabled"))
-            ui.layers.level = true
-            ui:Paint()
-        end
+local function ToggleLevel(ui, key)
+    local classic = P.Suite.NameplateStyle.ClassicNativePlate(P.Get(ID, "nativeStyle"))
+    if P.Get(ID, "look") == 2 or classic and not P.Suite.Client.isForever then
+        FocusLayer(ui, "elements", key)
+    else
+        P.Set(ID, ui.sampleKind .. "LevelEnabled", not P.Get(ID, ui.sampleKind .. "LevelEnabled"))
+        ui.layers.level = true
+        ui:Paint()
+    end
+end
+
+local function ToggleThreat(ui, key)
+    local active = ThreatOn(key)
+    if ui.aggroSample or not active then
+        local other = key == "threatFlash" and "threatHighlight" or "threatFlash"
+        P.SetMany(ID, { threatSignalMode = 2, [key] = not active,
+            [other] = ThreatOn(other) })
+    end
+    ui.aggroSample, ui.layers[key] = true, true
+end
+
+local function ToggleSoftTarget(ui, key)
+    local name = ui.sampleKind == "enemy" and (ui.softInteract and "Interact" or "Enemy") or "Friend"
+    local setting = "softTarget" .. name
+    if ui.softTargetSample or not SoftOn(ui) then
+        local show = not SoftOn(ui)
+        local values = { [setting] = show and 2 or 3 }
+        if show then values.softTargetIconGate = 2 end
+        P.SetMany(ID, values)
+    end
+    ui.softTargetSample, ui.layers[key] = true, true
+end
+
+-- The layers that change a live setting: auras, threat, soft target and personal power.
+local function ToggleLive(ui, key)
+    if P.Get(ID, "look") == 2 then
+        OpenSetting("look", "Look")
         return
     end
-    if key == "target" then Markers.ToggleTarget(ui, OpenSetting); return end
+    if AURA_KIND[key] then
+        ToggleAura(ui, key)
+    elseif key == "threatFlash" or key == "threatHighlight" then
+        ToggleThreat(ui, key)
+    elseif key == "softTarget" then
+        ToggleSoftTarget(ui, key)
+    else
+        P.Set(ID, "personalPowerSkin", not P.Get(ID, "personalPowerSkin"))
+        ui.layers[key] = true
+    end
+    ui:Paint()
+end
+
+local function ToggleClassification(ui, key)
+    if ui.sampleKind == "friendly" then
+        if not ui.friendlyElite then
+            ui.friendlyElite, ui.layers[key] = true, true
+        else
+            ui.layers[key] = not ui:LayerOn(key)
+        end
+        ui:Paint()
+        return
+    end
+    local wasFriendly = ui.sampleKind ~= "enemy"
+    ui.sampleKind = "enemy"
+    local role = ui.previewRole or P.Get(ID, "enemyPreviewRole")
+    if wasFriendly or role ~= 3 and role ~= 4 or ui.raidMarked then
+        ui.previewRole, ui.previewRoleSource, ui.raidMarked = 4, P.Get(ID, "enemyPreviewRole"), false
+        ui.layers[key] = true
+    else
+        ui.layers[key] = not ui:LayerOn(key)
+    end
+    ui:Paint()
+end
+
+local function ToggleLayer(ui, key)
+    if key == "level" then
+        ToggleLevel(ui, key)
+        return
+    end
+    if key == "target" then
+        Markers.ToggleTarget(ui, OpenSetting)
+        return
+    end
     if not ui:LayerAvailable(key) then
         local section = "elements"
-        for _, layer in ipairs(LAYERS) do if layer[1] == key then section = layer[3]; break end end
+        for _, layer in ipairs(LAYERS) do
+            if layer[1] == key then
+                section = layer[3]
+                break
+            end
+        end
         FocusLayer(ui, section, key)
         return
     end
@@ -287,59 +365,37 @@ local function ToggleLayer(ui, key)
     end
     if AURA_KIND[key] or key == "threatFlash" or key == "threatHighlight"
         or key == "softTarget" or key == "power" then
-        if P.Get(ID, "look") == 2 then OpenSetting("look", "Look"); return end
-        if AURA_KIND[key] then ToggleAura(ui, key)
-        elseif key == "threatFlash" or key == "threatHighlight" then
-            local active = ThreatOn(key)
-            if ui.aggroSample or not active then
-                local other = key == "threatFlash" and "threatHighlight" or "threatFlash"
-                P.SetMany(ID, { threatSignalMode = 2, [key] = not active,
-                    [other] = ThreatOn(other) })
-            end
-            ui.aggroSample, ui.layers[key] = true, true
-        elseif key == "softTarget" then
-            local name = ui.sampleKind == "enemy" and (ui.softInteract and "Interact" or "Enemy") or "Friend"
-            local setting = "softTarget" .. name
-            if ui.softTargetSample or not SoftOn(ui) then
-                local show = not SoftOn(ui)
-                local values = { [setting] = show and 2 or 3 }
-                if show then values.softTargetIconGate = 2 end
-                P.SetMany(ID, values)
-            end
-            ui.softTargetSample, ui.layers[key] = true, true
-        else
-            P.Set(ID, "personalPowerSkin", not P.Get(ID, "personalPowerSkin"))
-            ui.layers[key] = true
-        end
-        ui:Paint()
+        ToggleLive(ui, key)
         return
     end
     if key == "classification" then
-        if ui.sampleKind == "friendly" then
-            if not ui.friendlyElite then ui.friendlyElite, ui.layers[key] = true, true
-            else ui.layers[key] = not ui:LayerOn(key) end
-            ui:Paint()
-            return
-        end
-        local wasFriendly = ui.sampleKind ~= "enemy"
-        ui.sampleKind = "enemy"
-        local role = ui.previewRole or P.Get(ID, "enemyPreviewRole")
-        if wasFriendly or role ~= 3 and role ~= 4 or ui.raidMarked then
-            ui.previewRole, ui.previewRoleSource, ui.raidMarked = 4, P.Get(ID, "enemyPreviewRole"), false
-            ui.layers[key] = true
-        else ui.layers[key] = not ui:LayerOn(key) end
-    elseif key == "raidIcon" then
+        ToggleClassification(ui, key)
+        return
+    end
+    if key == "raidIcon" then
         ui.raidMarked, ui.layers[key] = not ui.raidMarked, true
         ui.raidIndex = ui.raidMarked and 8 or 0
     elseif key == "castShield" then
         ui.uninterruptible, ui.layers[key] = not ui.uninterruptible, true
     elseif key == "eliteMarker" or key == "questMarker" then
         Markers.ToggleMarker(ui, key)
-    else ui.layers[key] = not ui:LayerOn(key) end
+    else
+        ui.layers[key] = not ui:LayerOn(key)
+    end
     ui:Paint()
     if key == "questMarker" and ui.sampleKind == "enemy" and ui:LayerActive(key) and ui.questMarkerHandle then
         ui:Select(ui.questMarkerHandle)
     end
+end
+
+-- The hint a layer button shows: live layers change a real setting, the others only the preview.
+local function LayerHelp(key)
+    local live = AURA_KIND[key] or key == "target" or key == "threatFlash" or key == "threatHighlight"
+        or key == "softTarget" or key == "power" or key == "eliteMarker" or key == "questMarker"
+        or key == "backdrop" or key == "border" or key == "roleFill"
+    return live and "Click: change live setting; right-click: settings"
+        or key == "guides" and "Click: show or hide preview guides"
+        or "Click: show or hide preview; right-click: settings"
 end
 
 function Layers.Build(ui)
@@ -367,11 +423,17 @@ function Layers.Build(ui)
                 { Tr = Tr, layout = "chip", height = 20, showOffText = false, quiet = true,
                     IsAvailable = function(owner, layer) return owner:LayerAvailable(layer) end,
                     IsOn = function(owner, layer) return owner:LayerActive(layer) end })
-        else button = T.Button(rail, Tr(label), 95, 20); button:SetSize(95, 20) end
+        else
+            button = T.Button(rail, Tr(label), 95, 20)
+            button:SetSize(95, 20)
+        end
         button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         button.layerKey = key
         button:SetScript("OnClick", function(_, mouseButton)
-            if mouseButton == "RightButton" then FocusLayer(ui, section, key); return end
+            if mouseButton == "RightButton" then
+                FocusLayer(ui, section, key)
+                return
+            end
             ToggleLayer(ui, key)
         end)
         button._msuf2CommandAction = { kind = "toggle", historyMode = "none",
@@ -382,13 +444,7 @@ function Layers.Build(ui)
                 return ui:LayerActive(key) == desired
             end }
         button:SetScript("OnEnter", function()
-            local live = AURA_KIND[key] or key == "target" or key == "threatFlash" or key == "threatHighlight"
-                or key == "softTarget" or key == "power" or key == "eliteMarker" or key == "questMarker"
-                or key == "backdrop" or key == "border" or key == "roleFill"
-            local help = live and "Click: change live setting; right-click: settings"
-                or key == "guides" and "Click: show or hide preview guides"
-                or "Click: show or hide preview; right-click: settings"
-            ui.hint:SetText(Tr(label) .. " · " .. Tr(help))
+            ui.hint:SetText(Tr(label) .. " · " .. Tr(LayerHelp(key)))
         end)
         button:SetScript("OnLeave", function() ui.hint:SetText(Tr(ui.help)) end)
         Register(button, "layer." .. key, Tr("%s preview layer"):format(Tr(label)))

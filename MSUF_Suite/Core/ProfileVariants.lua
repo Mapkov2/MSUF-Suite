@@ -148,7 +148,10 @@ local function Restore(target, source)
     if not valid then return false, "invalid setting value" end
     for id, values in pairs(prepared) do
         local config = target[id]
-        if type(config) ~= "table" then config = {}; target[id] = config end
+        if type(config) ~= "table" then
+            config = {}
+            target[id] = config
+        end
         for key in pairs(config) do
             if VariantRule(id, key) and values[key] == nil then config[key] = nil end
         end

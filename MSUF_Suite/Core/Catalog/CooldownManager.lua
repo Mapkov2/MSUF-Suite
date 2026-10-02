@@ -304,11 +304,16 @@ for _, key in ipairs({ "listsData", "spellsData", "captured", "defaultsVersion",
 for _, slot in ipairs(CDM.SLOTS) do
     local k = CDM.KEYS[slot.key]
     local function Set(suffix, field, value) if k[suffix] then rules[k[suffix]][field] = value end end
-    if slot.builtin then Set("name", "hidden", true); Set("kind", "hidden", true) end
-    Set("x", "category", "advanced"); Set("y", "category", "advanced")
+    if slot.builtin then
+        Set("name", "hidden", true)
+        Set("kind", "hidden", true)
+    end
+    Set("x", "category", "advanced")
+    Set("y", "category", "advanced")
     Set("cdSize", "enableKey", k.cdText)
     Set("rangeColor", "enableKey", k.range)
-    Set("keybindSize", "enableKey", k.keybind); Set("keybindPos", "enableKey", k.keybind)
+    Set("keybindSize", "enableKey", k.keybind)
+    Set("keybindPos", "enableKey", k.keybind)
     Set("glowColor", "enableKey", k.glowTint)
     Set("borderColor", "disabledBy", k.borderClass)
     Set("barColor", "disabledBy", k.barClass)

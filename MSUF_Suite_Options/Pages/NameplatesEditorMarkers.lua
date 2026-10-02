@@ -9,7 +9,10 @@ function Markers.TargetActive(ui)
 end
 
 function Markers.ToggleTarget(ui, openSetting)
-    if P.Get(ID, "look") == 2 then openSetting("look", "Look"); return end
+    if P.Get(ID, "look") == 2 then
+        openSetting("look", "Look")
+        return
+    end
     local visible = Markers.TargetActive(ui)
     if ui.sampleKind == "enemy" then
         P.Set(ID, "enemyTargetMarker", not visible)

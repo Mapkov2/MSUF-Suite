@@ -5,12 +5,16 @@ local L = NS.L
 local ROW_HEIGHT = 56
 
 local GROUPS = {
-    { key = "surfaces", label = L["Surfaces"], keys = { "background", "ink", "surface", "raised", "card", "popup", "input", "microBarFill", "microBarFillAlt", "microButtonFill", "microButtonFillAlt" } },
+    { key = "surfaces", label = L["Surfaces"], keys = { "background", "ink", "surface", "raised", "card", "popup",
+        "input", "microBarFill", "microBarFillAlt", "microButtonFill", "microButtonFillAlt" } },
     { key = "text", label = L["Text"], keys = { "text", "title", "muted", "dim", "disabled", "blizzardYellow" } },
     { key = "accents", label = L["Accents"], keys = { "blue", "accent", "accentBright", "success", "warning", "danger", "accentAlt" } },
     { key = "borders", label = L["Borders"], keys = { "rim", "border", "borderSoft", "buttonBorder", "iconBorder", "microBarBorder", "microButtonBorder" } },
-    { key = "controls", label = L["Controls"], keys = { "buttonFill", "buttonFillAlt", "hover", "pressed", "active", "checkmark", "microIcon", "microIconHover", "microIconPressed", "microIconDisabled" } },
-    { key = "blizzard", label = L["Blizzard"], keys = { "blizzardArrow", "blizzardExpand", "blizzardExpandPressed", "blizzardExpandHover", "blizzardClose", "blizzardClosePressed", "blizzardCloseHover", "blizzardCloseDisabled" } },
+    { key = "controls", label = L["Controls"], keys = { "buttonFill", "buttonFillAlt", "hover", "pressed", "active",
+        "checkmark", "microIcon", "microIconHover", "microIconPressed", "microIconDisabled" } },
+    { key = "blizzard", label = L["Blizzard"], keys = { "blizzardArrow", "blizzardExpand", "blizzardExpandPressed",
+        "blizzardExpandHover", "blizzardClose", "blizzardClosePressed", "blizzardCloseHover",
+        "blizzardCloseDisabled" } },
 }
 local GROUP_BY_KEY = {}
 for index = 1, #GROUPS do

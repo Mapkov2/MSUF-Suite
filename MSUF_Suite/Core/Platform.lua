@@ -26,7 +26,10 @@ function Suite.ApplyOwnedChildLayer(frame, parent, layer, detail, parentRestored
     else
         return false
     end
-    if frame:GetFrameLevel() ~= wanted then frame:SetFrameLevel(wanted); return true end
+    if frame:GetFrameLevel() ~= wanted then
+        frame:SetFrameLevel(wanted)
+        return true
+    end
     return false
 end
 

@@ -106,8 +106,15 @@ end
 
 function Editor:CancelDrag()
     local handle = self.dragging
-    if handle then handle:StopMovingOrSizing(); handle._npDrag = nil; self.dragging = nil end
-    if self.panning then self.stage:StopMovingOrSizing(); self.panning = nil end
+    if handle then
+        handle:StopMovingOrSizing()
+        handle._npDrag = nil
+        self.dragging = nil
+    end
+    if self.panning then
+        self.stage:StopMovingOrSizing()
+        self.panning = nil
+    end
     self:Paint()
 end
 
@@ -142,9 +149,8 @@ local function Stop(self, button)
     end
 end
 
-function Editor:Bind(handle, id, label, keyX, keyY, section)
-    handle.previewUI, handle._key, handle._label = self, id, label
-    handle._color, handle.keyX, handle.keyY, handle.section = { 0.3, 0.74, 1 }, keyX, keyY, section
+-- Which Blizzard setting a preview element opens when it is clicked.
+local function BindSetting(handle, id)
     local enemyElement = id:match("^enemy%.(.+)$")
     if enemyElement and ENEMY_ELEMENT_SETTINGS[enemyElement] then
         handle._npSettingsTab = "elements"
@@ -173,6 +179,12 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     elseif AURA_KIND[id:match("%.([%a]+)$")] then
         handle._npSettingKey = "enemyNpcAuraMode"
     end
+end
+
+function Editor:Bind(handle, id, label, keyX, keyY, section)
+    handle.previewUI, handle._key, handle._label = self, id, label
+    handle._color, handle.keyX, handle.keyY, handle.section = { 0.3, 0.74, 1 }, keyX, keyY, section
+    BindSetting(handle, id)
     local border = P.Suite.NameplateStyle.CreateBorder(handle)
     handle.outline = function(size, color) P.Suite.NameplateStyle.PaintBorder(border, handle, size, color) end
     handle:EnableMouse(true)
@@ -200,10 +212,17 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
         self.hint:SetText(Tr(label) .. " · " .. Tr(handle._npSettingsTab
             and "Drag to move; click for Blizzard settings" or "Drag to move; right-click for settings"))
     end)
-    handle:SetScript("OnLeave", function() self:RefreshSelection(); self.hint:SetText(Tr(self.help)) end)
+    handle:SetScript("OnLeave", function()
+        self:RefreshSelection()
+        self.hint:SetText(Tr(self.help))
+    end)
     handle:SetScript("OnKeyDown", Key)
     handle:SetScript("OnHide", function()
-        if handle._npDrag then handle:StopMovingOrSizing(); handle._npDrag = nil; self.dragging = nil end
+        if handle._npDrag then
+            handle:StopMovingOrSizing()
+            handle._npDrag = nil
+            self.dragging = nil
+        end
         if self.body._selectedHandle == handle then self:Select(nil) end
     end)
     self.handles[#self.handles + 1] = handle
@@ -254,7 +273,7 @@ local function Button(ui, parent, key, label, width, x, action)
     return button
 end
 
-local function BuildTools(ui)
+local function BuildZoomTools(ui)
     local body, canvas = ui.body, ui.canvas
     local tools = CreateFrame("Frame", nil, body)
     tools:SetPoint("TOPLEFT", canvas, "BOTTOMLEFT", 0, -4)
@@ -265,13 +284,30 @@ local function BuildTools(ui)
         ui.zoom = Clamp((canvas:GetWidth() - 40) / 600, 0.5, 1)
         ui:Paint()
     end)
-    Button(ui, tools, "actual", "1:1", 36, 40, function() ui.zoom = 1; ui:Paint() end)
-    Button(ui, tools, "zoomOut", "-", 24, 80, function() ui.zoom = Clamp(ui.zoom - 0.1, 0.5, 2); ui:Paint() end)
+    Button(ui, tools, "actual", "1:1", 36, 40, function()
+        ui.zoom = 1
+        ui:Paint()
+    end)
+    Button(ui, tools, "zoomOut", "-", 24, 80, function()
+        ui.zoom = Clamp(ui.zoom - 0.1, 0.5, 2)
+        ui:Paint()
+    end)
     ui.zoomLabel = T.Font(tools, "GameFontDisableSmall", "100%", T.colors.text)
     ui.zoomLabel:SetPoint("LEFT", tools, "LEFT", 112, 0)
-    Button(ui, tools, "zoomIn", "+", 24, 156, function() ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2); ui:Paint() end)
-    ui.contextButton = Button(ui, tools, "context", "Outdoor", 128, 188,
-        function() ui.inDungeon = not ui.inDungeon; ui:Paint() end)
+    Button(ui, tools, "zoomIn", "+", 24, 156, function()
+        ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2)
+        ui:Paint()
+    end)
+    ui.contextButton = Button(ui, tools, "context", "Outdoor", 128, 188, function()
+        ui.inDungeon = not ui.inDungeon
+        ui:Paint()
+    end)
+    return tools
+end
+
+-- The row of sample switches in the preview canvas: plate kind, enemy type, quest and friendly options.
+local function BuildSampleButtons(ui)
+    local body, canvas = ui.body, ui.canvas
     local samples = CreateFrame("Frame", nil, body)
     ui.samples = samples
     samples:SetPoint("TOPLEFT", canvas, "TOPLEFT", 8, -8)
@@ -303,7 +339,10 @@ local function BuildTools(ui)
         ui:Paint()
     end)
     ui.questButton = Button(ui, samples, "questSample", "Quest", 58, 472, function()
-        if P.Get(ID, "look") == 2 then OpenSetting("look", "Look"); return end
+        if P.Get(ID, "look") == 2 then
+            OpenSetting("look", "Look")
+            return
+        end
         ui.enemyPlayer = false
         ui.previewRole, ui.previewRoleSource = 5, P.Get(ID, "enemyPreviewRole")
         ui.raidMarked, ui.layers.questMarker = false, true
@@ -326,8 +365,16 @@ local function BuildTools(ui)
     end)
     if H.EnsurePreviewBackgroundButton then
         local background = H.EnsurePreviewBackgroundButton(body, samples)
-        if background then background:ClearAllPoints(); background:SetPoint("RIGHT", canvas, "TOPRIGHT", -8, -18) end
+        if background then
+            background:ClearAllPoints()
+            background:SetPoint("RIGHT", canvas, "TOPRIGHT", -8, -18)
+        end
     end
+end
+
+local function BuildTools(ui)
+    local tools = BuildZoomTools(ui)
+    BuildSampleButtons(ui)
     ui.tools = tools
 end
 
@@ -381,7 +428,10 @@ local function BuildSelection(ui)
             IsPlaced = function(handle) return handle:IsShown() end,
             ReadOffsets = function(_, handle) return Read(handle) end,
             WriteOffsets = function(_, handle, x, y) return Write(ui, handle, x, y) end,
-            SelectHandle = function(_, handle) ui:Select(handle); return true end,
+            SelectHandle = function(_, handle)
+                ui:Select(handle)
+                return true
+            end,
             ResetOffsets = function(_, handle)
                 local rules = P.catalog[ID].rules
                 local values = {
@@ -420,7 +470,10 @@ local function BuildInput(ui)
     body:EnableKeyboard(true)
     body:SetPropagateKeyboardInput(true)
     body:SetScript("OnKeyDown", Key)
-    canvas:SetScript("OnMouseWheel", function(_, delta) ui.zoom = Clamp(ui.zoom + delta * 0.1, 0.5, 2); ui:Paint() end)
+    canvas:SetScript("OnMouseWheel", function(_, delta)
+        ui.zoom = Clamp(ui.zoom + delta * 0.1, 0.5, 2)
+        ui:Paint()
+    end)
     canvas:SetScript("OnMouseDown", function(_, button)
         if button ~= "LeftButton" or ui.panning then return end
         local x, y = GetCursorPosition()
@@ -437,9 +490,13 @@ local function BuildInput(ui)
         ui.panX, ui.panY = ui.panX + (x - pan.x) / scale, ui.panY + (y - pan.y) / scale
         ui:Paint()
     end)
-    body:SetScript("OnHide", function() ui:CancelDrag(); ui:Select(nil) end)
+    local function Release()
+        ui:CancelDrag()
+        ui:Select(nil)
+    end
+    body:SetScript("OnHide", Release)
     body:RegisterEvent("PLAYER_REGEN_DISABLED")
-    body:SetScript("OnEvent", function() ui:CancelDrag(); ui:Select(nil) end)
+    body:SetScript("OnEvent", Release)
 end
 
 function Editor.Create(ctx, builder, sections)
@@ -452,7 +509,9 @@ function Editor.Create(ctx, builder, sections)
         sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true,
         softTargetSample = true, aggroSample = true,
         layoutWidth = math.max(640, (section._msuf2Width or builder.width or 720) - 28),
-        inDungeon = inDungeon, help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom" }, { __index = Editor })
+        inDungeon = inDungeon,
+        help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
+    }, { __index = Editor })
     ui.previewRole, ui.previewRoleSource = nil, P.Get(ID, "enemyPreviewRole")
     P.ShowNameplatesElementsSample = function()
         ui.sampleKind = "enemy"

@@ -223,7 +223,10 @@ function P.EnsureRetailForeverCooldownLayout()
     if type(config) ~= "table" or config.enabled == false then return false end
     local anchor
     for index, unit in pairs(Suite.CDM.FRAME_ANCHORS) do
-        if unit == "player" then anchor = index; break end
+        if unit == "player" then
+            anchor = index
+            break
+        end
     end
     if not anchor then return false end
     installation.foreverAnchorRevision = 1

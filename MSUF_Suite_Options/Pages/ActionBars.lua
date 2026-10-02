@@ -18,10 +18,16 @@ local HELP = {
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
     { id = "visibility", title = "When the selected bar appears", suffixes = { "Visibility", "HideGamepad", "Alpha", "FadeAlpha", "ClickThrough" } },
-    { id = "layout", title = "Layout for the selected bar", suffixes = { "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty", "Layer", "Point", "X", "Y" } },
-    { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY" } },
-    { id = "ornaments", title = "Endcaps for the selected bar", suffixes = { "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY" } },
-    { id = "background", title = "Background for the selected bar", suffixes = { "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX", "BackgroundY", "BackgroundBorder" } },
+    { id = "layout", title = "Layout for the selected bar",
+        suffixes = { "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty", "Layer", "Point", "X", "Y" } },
+    { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize",
+        "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint",
+        "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY" } },
+    { id = "ornaments", title = "Endcaps for the selected bar", suffixes = { "LeftEndcap", "LeftEndcapSize",
+        "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY" } },
+    { id = "background", title = "Background for the selected bar", suffixes = { "Background", "BackgroundColor",
+        "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY", "BackgroundX",
+        "BackgroundY", "BackgroundBorder" } },
 }
 local POSITION = { Point = true, X = true, Y = true }
 P.ActionBarSearchGroups = GROUPS

@@ -12,7 +12,8 @@ local function CrestCurrencyMenu(anchor)
     for value in (P.Get(ID,'crestCurrencyIDs') or ''):sub(1,4096):gmatch('%d+') do
         local id=tonumber(value)
         if suite.Finite(id) and id>0 and id<2147483647 and not selected[id] and #order<32 then
-            selected[id]=true;order[#order+1]=id
+            selected[id]=true
+            order[#order+1]=id
         end
     end
     local function Add(menu,id,info)
@@ -43,7 +44,8 @@ local function CrestCurrencyMenu(anchor)
                     local row=index
                     local expanded=suite.Public(info.isHeaderExpanded) and info.isHeaderExpanded==true
                     local header=menu:CreateButton(info.name..(expanded and ' -' or ' +'),function()
-                        C_CurrencyInfo.ExpandCurrencyList(row,not expanded);CrestCurrencyMenu(anchor)
+                        C_CurrencyInfo.ExpandCurrencyList(row,not expanded)
+                        CrestCurrencyMenu(anchor)
                     end)
                     header:SetResponse(MenuResponse.Open)
                 else
@@ -455,7 +457,10 @@ local function Build(ctx)
     for _,rule in ipairs(P.catalog[ID].getControls(S.Config(ID))) do
         if rule.section and rule.key~="enabled" and not rule.previewOnly then
             local group=sections[rule.section]
-            if not group then group={};sections[rule.section]=group end
+            if not group then
+                group={}
+                sections[rule.section]=group
+            end
             group[#group+1]=rule
         end
     end

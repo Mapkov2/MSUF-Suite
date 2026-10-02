@@ -246,7 +246,10 @@ local templates,templateOrder,dynamic,dynamicOrder={},{},{},{}
 local dynamicCursor=1
 for _,rule in ipairs(spec.controls) do
     local suffix=rule.key:match("^bar12(.+)$")
-    if suffix then templates[suffix]=rule;templateOrder[#templateOrder+1]=suffix end
+    if suffix then
+        templates[suffix]=rule
+        templateOrder[#templateOrder+1]=suffix
+    end
 end
 local function ValidID(value)
     local id=tonumber(value)
@@ -257,8 +260,10 @@ local function DynamicRule(id,suffix)
     if not rules then
         local retired=dynamicOrder[dynamicCursor]
         if retired then dynamic[retired]=nil end
-        dynamicOrder[dynamicCursor]=id;dynamicCursor=dynamicCursor%NS.DataTextBarLimit+1
-        rules={};dynamic[id]=rules
+        dynamicOrder[dynamicCursor]=id
+        dynamicCursor=dynamicCursor%NS.DataTextBarLimit+1
+        rules={}
+        dynamic[id]=rules
     end
     local prefix="bar"..id
     local key=prefix..suffix
@@ -288,17 +293,25 @@ function NS.DataTextBarIDs(config)
     local ids,seen={},{}
     local function Add(raw)
         local id=ValidID(raw)
-        if id and not seen[id] and #ids<NS.DataTextBarLimit then seen[id]=true;ids[#ids+1]=id end
+        if id and not seen[id] and #ids<NS.DataTextBarLimit then
+            seen[id]=true
+            ids[#ids+1]=id
+        end
     end
     if type(config.barIds)=="string" and config.barIds~="" then
         for raw in config.barIds:gmatch("%d+") do Add(raw) end
     else
-        Add(1);Add(2);Add(3)
+        Add(1)
+        Add(2)
+        Add(3)
         for id=4,12 do
             local prefix="bar"..id
             for suffix in pairs(templates) do
                 local key=prefix..suffix
-                if config[key]~=nil and config[key]~=spec.rules[key].default then Add(id);break end
+                if config[key]~=nil and config[key]~=spec.rules[key].default then
+                    Add(id)
+                    break
+                end
             end
         end
     end
@@ -346,7 +359,9 @@ spec.getControls=function(config)
     for _,rule in ipairs(spec.controls) do
         if not rule.key:match("^bar%d+") then out[#out+1]=rule end
     end
-    local ids={};for id in pairs(present) do ids[#ids+1]=id end;table.sort(ids)
+    local ids={}
+    for id in pairs(present) do ids[#ids+1]=id end
+    table.sort(ids)
     for _,id in ipairs(ids) do
         for _,suffix in ipairs(templateOrder) do out[#out+1]=spec.rules["bar"..id..suffix] end
     end
@@ -355,11 +370,14 @@ end
 function NS.DataTextNextBarID(config)
     local ids=NS.DataTextBarIDs(config)
     if #ids>=NS.DataTextBarLimit then return end
-    local seen={};for _,id in ipairs(ids) do seen[id]=true end
+    local seen={}
+    for _,id in ipairs(ids) do seen[id]=true end
     for id=1,#ids+1 do if not seen[id] then return id end end
 end
 function NS.DataTextBarCreationValues(config,id)
-    local ids=NS.DataTextBarIDs(config);ids[#ids+1]=id;table.sort(ids)
+    local ids=NS.DataTextBarIDs(config)
+    ids[#ids+1]=id
+    table.sort(ids)
     local values={barIds=table.concat(ids,",")}
     for suffix in pairs(templates) do
         local key="bar"..id..suffix
@@ -376,7 +394,8 @@ end
 spec.prepareConfig=function(config)
     local check=NS.Suite.CheckProfileValue
     local function Repaired(rule,value)
-        local checked=check(rule,value);if checked~=nil then return checked end
+        local checked=check(rule,value)
+        if checked~=nil then return checked end
         return rule.default
     end
     -- Physical rules stay legacy-only; lazy rules never seed another profile.

@@ -90,7 +90,8 @@ local MIGRATIONS = {
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {
-    Steps.AnnouncementsAnchor, Steps.AnnouncementsFactory, Steps.DataTextsBagButtons, Steps.SkyridingColors, Steps.ObjectivesCollapseState, NS.NameplateStyle.RepairGeometry,
+    Steps.AnnouncementsAnchor, Steps.AnnouncementsFactory, Steps.DataTextsBagButtons, Steps.SkyridingColors,
+    Steps.ObjectivesCollapseState, NS.NameplateStyle.RepairGeometry,
 }
 -- The migration revision a copy of this suite table must keep. A table from
 -- before suite.revision returns nil and its legacy flags instead.
@@ -470,7 +471,10 @@ local function StoreValues(spec, id, values)
     for key, value in pairs(clean) do config[key] = value end
     if spec.rules.classStyle and clean.classStyle == nil then
         for key in pairs(clean) do
-            if spec.rules[key].color then config.classStyle = false; break end
+            if spec.rules[key].color then
+                config.classStyle = false
+                break
+            end
         end
     end
     return config, clean

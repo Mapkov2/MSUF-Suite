@@ -125,7 +125,10 @@ local function GroupTitle(pageKey)
     local items, groupId = M.navItems, nil
     if type(items) ~= "table" then return nil end
     for _, item in ipairs(items) do
-        if item.key == pageKey then groupId = item.group; break end
+        if item.key == pageKey then
+            groupId = item.group
+            break
+        end
     end
     for _, item in ipairs(items) do
         if groupId and item.title and item.id == groupId then return Tr(item.title) end
@@ -362,7 +365,10 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
     for _, category in ipairs(categories) do
         local enabled = false
         for _, feature in ipairs(features) do
-            if feature.category == category.id and installed[feature.id] then enabled = true; break end
+            if feature.category == category.id and installed[feature.id] then
+                enabled = true
+                break
+            end
         end
         if enabled then
             AddWords(pageRow.keywords, category.title)
@@ -463,7 +469,10 @@ local function CollectBase()
         local group = bar and ordinal[bar]
         if group then
             local rows = barGroups[group]
-            if not rows then rows = {}; barGroups[group] = rows end
+            if not rows then
+                rows = {}
+                barGroups[group] = rows
+            end
             rows[#rows + 1] = row
         elseif not bar then
             base[#base + 1] = row
@@ -568,7 +577,10 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
                 if key == feature.switch then return true end
                 local sectionId = row.sectionId or record.sectionId
                 for _, section in ipairs(feature.sections) do
-                    if sectionId == pageKey .. "_" .. id .. "_" .. section then featureSwitch = feature.switch; break end
+                    if sectionId == pageKey .. "_" .. id .. "_" .. section then
+                        featureSwitch = feature.switch
+                        break
+                    end
                 end
                 if featureSwitch then break end
             end

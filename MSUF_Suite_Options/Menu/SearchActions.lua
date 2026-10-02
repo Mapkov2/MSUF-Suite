@@ -56,6 +56,16 @@ local QOL_ACTIONS = {
     loadoutReminder = { { "saveCurrent", "Save current build and loot spec" }, { "clearSaved", "Clear saved selection" } },
 }
 
+-- True when a Quality of Life feature has a color rule besides its own switch.
+local function FeatureHasColors(feature)
+    for _, section in ipairs(feature.sections) do
+        for _, rule in ipairs(P.SectionRules(feature.id, section)) do
+            if rule.color and not rule.hidden and rule.key ~= feature.switch then return true end
+        end
+    end
+    return false
+end
+
 function P.AppendSearchActionRows(rows, pagesByKey)
     local function Add(id, key, label, sectionId, classification, kind, feature)
         local spec = P.catalog[id]
@@ -118,14 +128,7 @@ function P.AppendSearchActionRows(rows, pagesByKey)
         for _, action in ipairs(QOL_ACTIONS[feature.id] or {}) do
             Add(feature.id, "action." .. action[1], action[2], sectionId, nil, nil, feature)
         end
-        local hasColors = false
-        for _, section in ipairs(feature.sections) do
-            for _, rule in ipairs(P.SectionRules(feature.id, section)) do
-                if rule.color and not rule.hidden and rule.key ~= feature.switch then hasColors = true; break end
-            end
-            if hasColors then break end
-        end
-        if hasColors then
+        if FeatureHasColors(feature) then
             local label = Tr(feature.title) .. " " .. Tr("Colors")
             Add(feature.id, "action.colors." .. feature.switch, label, sectionId, nil, nil, feature)
         end
