@@ -84,6 +84,12 @@ local function ShowToast(self, itemLink, quantity)
     local frame = self.toasts[self.nextIndex]
     if not frame then
         frame = MakeToast(self.nextIndex)
+        -- Each toast slot hides on its own deadline, restarted when it is
+        -- reused; one callback per slot, made with the slot.
+        frame.expire = function()
+            frame:Hide()
+            frame.link = nil
+        end
         self.toasts[self.nextIndex] = frame
     end
     local style = S.QoLStyle(self.config)
@@ -91,24 +97,17 @@ local function ShowToast(self, itemLink, quantity)
     S.QoLColor(frame.accent, style.accent)
     frame.name:SetTextColor(S.RGB(style.text))
     frame.count:SetTextColor(S.RGB(style.muted))
-    frame.token = (frame.token or 0) + 1
     frame.link = itemLink
     frame.icon:SetTexture(icon)
     frame.name:SetText(name)
     frame.count:SetText(quantity > 1 and "x" .. quantity or "")
     frame:Show()
-    local token, generation = frame.token, self.generation
-    C_Timer.After(POPUP_SECONDS, function()
-        if self.active and self.generation == generation and frame.token == token then
-            frame:Hide()
-            frame.link = nil
-        end
-    end)
+    self.context:After(POPUP_SECONDS, frame.expire)
 end
 
 local function HideAll(self)
     for _, frame in ipairs(self.toasts) do
-        frame.token = (frame.token or 0) + 1
+        self.context:Cancel(frame.expire)
         frame.link = nil
         frame:Hide()
     end
@@ -123,7 +122,6 @@ local function LootToast(self, _, kind, itemLink, quantity, _, _, personal)
 end
 
 function M:Enable()
-    self.generation = (self.generation or 0) + 1
     self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
     self.context:Event("SHOW_LOOT_TOAST", LootToast)
 end
@@ -141,7 +139,6 @@ function M:Refresh()
 end
 
 function M:Disable()
-    self.generation = (self.generation or 0) + 1
     self.context:RemoveEvent("SHOW_LOOT_TOAST")
     HideAll(self)
     self.ids = {}

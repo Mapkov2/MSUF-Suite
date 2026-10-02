@@ -1,5 +1,6 @@
 local root = assert(arg[1], "repository root required")
-local module, timers, frames = nil, {}, {}
+local module, frames, shows = nil, {}, 0
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local combat = false
 
 local function Widget(parent)
@@ -9,7 +10,7 @@ local function Widget(parent)
     widget.SetColorTexture, widget.SetWidth, widget.SetJustifyH = noOp, noOp, noOp
     widget.SetWordWrap, widget.EnableMouse, widget.SetTexture = noOp, noOp, noOp
     widget.SetTextColor = noOp
-    function widget:Show() self.shown = true end
+    function widget:Show() self.shown = true; shows = shows + 1 end
     function widget:Hide() self.shown = false end
     function widget:IsShown() return self.shown end
     function widget:SetScript(name, fn) self[name] = fn end
@@ -40,10 +41,7 @@ GameTooltip = {
     Show = function(self) self.shown = true end,
     Hide = function(self) self.shown = false end,
 }
-C_Timer = { After = function(seconds, callback)
-    assert(seconds == 5)
-    timers[#timers + 1] = callback
-end }
+local clock = Support.Clock()
 local items = {
     [100] = { "Epic item", 4, 1000 },
     [101] = { "Rare item", 3, 1001 },
@@ -77,8 +75,9 @@ local S = {
 local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
+    Dispatch = function(callback, ...) return callback(...) end,
 }
-local context = { events = {} }
+local context = Support.ModuleTimers(root, S, NS)("lootToastFilter", nil, { events = {} })
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
 
@@ -90,6 +89,7 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SharedItems.lua"))(
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootToastFilter.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.context, module.active = context, true
+S.instances.lootToastFilter = module
 module.config = { minQuality = 4, itemIDs = "" }
 module:Enable()
 local function Toast(kind, link, quantity, personal)
@@ -116,13 +116,15 @@ assert(GameTooltip.shown, "leaving the toast hid a tooltip another frame owns")
 GameTooltip.owner = frames[1]
 frames[1].OnLeave(frames[1])
 assert(not GameTooltip.shown, "leaving the toast kept its tooltip")
-local oldTimer = timers[#timers]
+clock.Advance(3)
 Toast("item", "item:100", 1, true)
 Toast("item", "item:100", 1, true)
 Toast("item", "item:100", 1, true)
 assert(#frames == 3, "toast pool exceeded three frames")
-oldTimer()
-assert(frames[1]:IsShown(), "stale timer hid a reused toast")
+clock.Advance(2.5)
+assert(frames[1]:IsShown() and frames[2].link ~= nil, "stale timer hid a reused toast")
+clock.Advance(2.6)
+assert(not frames[1]:IsShown() and not frames[1].link, "a toast outlived its five seconds")
 
 module.config.itemIDs = "101"
 module.config.minQuality = 3
@@ -135,30 +137,32 @@ assert(frames[2].name.text == "Rare item", "allowed item ID was hidden")
 module.config.itemIDs, module.config.minQuality = "", 4
 module.config.kindFilter = 2
 module:Refresh()
-local before = #timers
+local before = shows
 Toast("item", "item:100", 1, true)
-assert(#timers == before, "mount-only filter showed a normal item")
+assert(shows == before, "mount-only filter showed a normal item")
 Toast("item", "item:102", 1, true)
-assert(#timers == before + 1, "mount-only filter missed a mount item")
+assert(shows == before + 1, "mount-only filter missed a mount item")
 module.config.kindFilter = 3
 module:Refresh()
-before = #timers
+before = shows
 Toast("item", "item:102", 1, true)
-assert(#timers == before, "pet-only filter showed a mount item")
+assert(shows == before, "pet-only filter showed a mount item")
 Toast("item", "item:103", 1, true)
-assert(#timers == before + 1, "pet-only filter missed a pet item")
+assert(shows == before + 1, "pet-only filter missed a pet item")
 module.config.kindFilter = 4
 module:Refresh()
-before = #timers
+before = shows
 Toast("item", "item:100", 1, true)
 Toast("item", "item:103", 1, true)
-assert(#timers == before + 1, "mount-or-pet filter did not restrict ordinary items")
+assert(shows == before + 1, "mount-or-pet filter did not restrict ordinary items")
 
 module:Disable()
 module.active = false
 assert(not context.events.SHOW_LOOT_TOAST and not frames[1]:IsShown()
     and not frames[2]:IsShown() and not frames[3]:IsShown(),
     "disable left toasts or events active")
-timers[#timers]()
-assert(not frames[2]:IsShown(), "timer revived disabled UI")
+frames[2].shown = true
+clock.Advance(6)
+assert(frames[2]:IsShown(), "a cancelled toast timeout still ran after disable")
+frames[2].shown = false
 print("suite_loot_toast_filter_contract: ok")
