@@ -94,6 +94,7 @@ M.context = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().Mo
 end })
 
 M:Enable()
+M:RegisterMovers() -- the controller registers movers after Enable
 assert(not M.host.shown and M.host.mouse == false, "healthy gear showed or captured input")
 Drain()
 assert(registered.spec and registered.spec.getFrame() == M.host

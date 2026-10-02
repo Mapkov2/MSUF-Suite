@@ -421,6 +421,7 @@ local function NativeTrackerSuppressed()
     return true
 end
 tracker:Enable()
+tracker:RegisterMovers() -- the controller registers movers after Enable
 assert(NativeTrackerSuppressed(),
     "native objective tracker must lose alpha, mouse and hit area without a parent or scale change")
 -- Modules join the tracker after the Suite's first suppression.
@@ -750,6 +751,7 @@ ScenarioAlertSystem = { alertFramePool = {
 } }
 function ScenarioAlertSystem:ShowAlert() scenarioAlert:SetParent(UIParent) end
 banner:Enable()
+banner:RegisterMovers() -- the controller registers movers after Enable
 assert(movers.announcements.element == "banner" and ZoneTextFrame:GetParent() == MutedHost)
 setmetatable(_G, nil)
 assert(movers.announcements.spec.extraControls[1].id == "scale"

@@ -114,6 +114,7 @@ end
 
 charges = { currentCharges = 1, maxCharges = 1, isActive = false, display = "1" }
 M:Enable()
+M:RegisterMovers() -- the controller registers movers after Enable
 assert(not M.host.shown and not callbacks.SPELL_UPDATE_CHARGES and chargeReads == 0,
     "idle tracker read personal charges or listened to charge changes")
 assert(M.host.mouse == false and M.cooldown.hideNumbers == false and M.cooldown.minimumCountdown == 0,

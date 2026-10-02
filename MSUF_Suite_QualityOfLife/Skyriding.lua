@@ -552,7 +552,6 @@ function M:Enable()
     context:Event("PLAYER_IS_GLIDING_CHANGED", GlideChanged, IN_COMBAT)
     context:Event("PLAYER_MOUNT_DISPLAY_CHANGED", GlideChanged, IN_COMBAT)
     GlideChanged()
-    self:RegisterMovers()
 end
 
 function M:Refresh()

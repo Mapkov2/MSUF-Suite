@@ -122,7 +122,6 @@ function M:Enable()
     self.ids = ParseIDs(self.config.spellIDs)
     Place(self)
     SyncEvent(self)
-    self:RegisterMovers()
     self:Refresh()
 end
 

@@ -111,6 +111,7 @@ local function Event(name, ...)
 end
 
 M:Enable()
+M:RegisterMovers() -- the controller registers movers after Enable
 assert(installed.mover and installed.mover.getFrame() == M.host
     and installed.mover.xKey == "x" and not installed.mover.extraControls
     and table.concat(installed.mover.sizeKeys, ",") == "width,height,scale")

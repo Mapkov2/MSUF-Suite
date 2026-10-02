@@ -284,6 +284,7 @@ hud.config = { point = 5, x = 0, y = 0, width = 300, scale = 100,
     avoidanceColor = "c9b3f2", speedColor = "8cc4e8", valueFormat = 1, labelStyle = 1,
     fps = 1, fpsX = 0, fpsY = -55, combatOnly = false }
 hud:Enable()
+hud:RegisterMovers() -- the controller registers movers after Enable
 assert(hud.moverRegistered and hud.fields[1].value.text == "11.1%"
     and hud.fields[4].value.text == "44.4%", "stats HUD did not show native secondary stats")
 hasteValue = "secret"

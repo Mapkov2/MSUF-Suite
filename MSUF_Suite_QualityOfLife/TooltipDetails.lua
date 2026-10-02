@@ -438,7 +438,6 @@ function M:Enable()
     self.context:Event("INSPECT_READY", InspectReady)
     Install(self)
     LayoutPreview(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

@@ -96,7 +96,6 @@ function M:Enable()
     context:Event("PLAYER_REGEN_ENABLED", OnEvent, IN_COMBAT)
     Update(self)
     ScheduleUpdate(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

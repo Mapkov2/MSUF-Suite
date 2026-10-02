@@ -94,6 +94,7 @@ function context:RemoveEvent(event) self.events[event] = nil end
 function context:Skin() return nil end
 summary.context = context
 summary:Enable()
+summary:RegisterMovers() -- the controller registers movers after Enable
 -- Counts the cards shown: a refresh repaints, it does not show a second card.
 local cards, showHost = 0, summary.host.Show
 summary.host.Show = function(self, ...)

@@ -391,17 +391,13 @@ function M:Enable()
     self:SuppressNative()
     MarkAllDirty(self)
     self.contentSignature = ContentSignature(self.config)
-    if UpdateRaidCombatPause(self) then
-        self:RegisterMovers()
-        return
-    end
+    if UpdateRaidCombatPause(self) then return end
     local mapID = MythicPlus and MythicPlus.Detect(self)
     if mapID then
         StartMythicPlus(self, mapID)
     elseif not ShowRaid(self) then
         Flush(self)
     end
-    self:RegisterMovers()
 end
 
 function M:Refresh()

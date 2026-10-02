@@ -426,7 +426,6 @@ function M:Refresh()
     end
     self.styling = false
     self:UpdateVisibility()
-    self:RegisterMovers()
     Extra.PrepareHearths()
     NativeBagBar.Sync()
 end
@@ -436,6 +435,7 @@ local function ScaleChanged(module)
         S.Queue(ID)
     else
         module:Refresh()
+        module:RegisterMovers()
     end
 end
 

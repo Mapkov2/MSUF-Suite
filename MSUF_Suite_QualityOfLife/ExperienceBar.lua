@@ -515,7 +515,6 @@ function M:Enable()
         end
     end
     Render(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

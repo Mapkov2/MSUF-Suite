@@ -309,7 +309,6 @@ function M:Enable()
     SyncListeners(self)
     Update(self)
     UpdateFPS(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

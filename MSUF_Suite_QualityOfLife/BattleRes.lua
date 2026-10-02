@@ -178,7 +178,6 @@ function M:Enable()
         context:Event(event, ContextChanged, IN_COMBAT)
     end
     Update(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()

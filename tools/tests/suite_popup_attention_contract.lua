@@ -183,6 +183,7 @@ popup.config = { skin = false, dialogFont = false, fontSize = 16, minHeight = 0,
     reviveCue = 2, reviveButton = true, lootQualityName = true, moneyToastFrame = true }
 popup:Enable()
 popup:Enable()
+popup:RegisterMovers() -- the controller registers movers after Enable
 
 -- Loot toasts.
 local toast = LootAlertSystem:ShowAlert("epic", 1)

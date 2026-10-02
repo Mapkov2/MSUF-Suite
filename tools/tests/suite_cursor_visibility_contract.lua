@@ -80,6 +80,7 @@ local function Shown()
     return count
 end
 cursor:Enable()
+cursor:RegisterMovers() -- the controller registers movers after Enable
 assert(cursor.host.shown and cursor.host.scripts.OnUpdate, "ring did not follow")
 assert(cursor.host.point[4] == 50 and cursor.host.point[5] == 70, "UI scale was not applied")
 assert(Shown() == 20 and not cursor.gcd.shown, "inactive GCD must stay hidden despite a duration object")

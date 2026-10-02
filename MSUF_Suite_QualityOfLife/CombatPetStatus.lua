@@ -125,7 +125,6 @@ function M:Enable()
     self.context:Event("PLAYER_ENTERING_WORLD", OnEvent, IN_COMBAT)
     SyncEvents(self)
     Update(self)
-    self:RegisterMovers()
 end
 
 -- The spellbook is read again: SPELLS_CHANGED is heard only while the missing

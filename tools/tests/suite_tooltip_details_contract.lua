@@ -160,6 +160,7 @@ m.context = Support.ModuleTimers(root, S, NS)("tooltipDetails", m, {
     RemoveEvent = function(_, event) m.events[event] = nil end })
 m:Enable()
 m:Enable()
+m:RegisterMovers() -- the controller registers movers after Enable
 Check(#tooltips.post[Enum.TooltipDataType.Unit] == 1 and #tooltips.post[Enum.TooltipDataType.Item] == 1
     and not next(tooltips.pre), "tooltip details registered twice or used a line pre-call")
 

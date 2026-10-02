@@ -131,6 +131,7 @@ local function Load(kind)
         callbacks[name] = callback
     end })
     module:Enable()
+    module:RegisterMovers() -- the controller registers movers after Enable
     return module, runtime, callbacks, movers, suite
 end
 

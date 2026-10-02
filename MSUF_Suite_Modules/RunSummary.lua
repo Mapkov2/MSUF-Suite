@@ -678,7 +678,6 @@ function M:Enable()
     self.visible = false
     SyncEvents(self)
     self:Refresh()
-    self:RegisterMovers()
 end
 
 function M:Refresh()

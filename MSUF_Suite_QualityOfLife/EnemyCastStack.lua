@@ -684,7 +684,6 @@ function M:Enable()
     self.context:Event("PLAYER_ENTERING_WORLD", OnZone, IN_COMBAT)
     self.context:Event("ZONE_CHANGED_NEW_AREA", OnZone, IN_COMBAT)
     self:Refresh()
-    self:RegisterMovers()
 end
 
 function M:Refresh()

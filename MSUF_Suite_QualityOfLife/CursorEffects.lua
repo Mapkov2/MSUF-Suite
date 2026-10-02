@@ -357,7 +357,6 @@ function M:Enable()
     self.gcdFree:SetScript("OnCooldownDone", CooldownDone)
     ContextChanged(self)
     EditSample(self)
-    self:RegisterMovers()
 end
 
 function M:Refresh()
