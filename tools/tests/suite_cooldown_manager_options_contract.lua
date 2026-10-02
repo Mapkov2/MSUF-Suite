@@ -574,7 +574,7 @@ for key in pairs(_G) do globalsBefore[key] = true end
 local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
 for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/SectionActions.lua",
-    "Pages/CooldownManagerData.lua",
+    "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua",
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua", "Pages/CooldownManagerPopover.lua",
     "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManager.lua",
     "Pages/AppearanceKit.lua", "Pages/Appearance.lua", "Menu/Register.lua" }) do

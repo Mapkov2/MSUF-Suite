@@ -101,10 +101,11 @@ ordered("MSUF_Suite", ["Core/Platform.lua", "Core/Database.lua", "Core/SessionGo
                        "Core/Catalog/ActionBars.lua", "Core/MinimapStyle.lua", "Core/Suite.lua", "Core/Startup.lua"])
 ordered("MSUF_Suite_Options", ["Pages/MinimapPreviewArt.lua", "Pages/MinimapPreviewPaint.lua",
                                "Pages/MinimapPreview.lua", "Pages/Minimap.lua"])
-ordered("MSUF_Suite_Options", ["Pages/CooldownManagerData.lua", "Pages/CooldownManagerBars.lua",
-                               "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
-                               "Pages/CooldownManagerPopover.lua", "Pages/CooldownManagerPreviewIcons.lua",
-                               "Pages/CooldownManagerPreview.lua", "Pages/CooldownManager.lua"])
+ordered("MSUF_Suite_Options", ["Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua",
+                               "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua",
+                               "Pages/CooldownManagerPicker.lua", "Pages/CooldownManagerPopover.lua",
+                               "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua",
+                               "Pages/CooldownManager.lua"])
 
 # Shared helpers exist once across the Suite addons (the skin is separate).
 suite_sources = {}

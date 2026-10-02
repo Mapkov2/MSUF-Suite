@@ -1,8 +1,8 @@
 local _, P = ...
 -- Cooldown manager page, bar edits: the note line with its Undo, adding,
 -- reusing, deleting, copying and resetting bars, and the add-bar and
--- bar-action menus. Builds on the page state and list edits of
--- CooldownManagerData.lua, which loads first.
+-- bar-action menus. Builds on the page state of CooldownManagerData.lua and
+-- the list edits of CooldownManagerLists.lua, which load first.
 local Page = P.CDMPage
 local S, M, W, Tr = P.S, P.M, P.W, P.Tr
 local CDM = P.Suite.CDM
