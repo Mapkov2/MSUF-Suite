@@ -229,10 +229,22 @@ function eventFrame.OnEvent(_, event, ...)
     local callback = callbacks[event]
     if callback and module.active then callback(module, event, ...) end
 end
--- Memory allocated by repeating one event while garbage collection is paused.
-local function EventAllocation(event, times)
+-- Runs fn with the collector stopped until one run allocates nothing (at
+-- most five runs). A full collection frees the strings an evaluation reuses
+-- and turns the cleared string keys of reused records into dead keys;
+-- interning and rehashing them again is not the event's own allocation.
+local function Settle(fn)
     collectgarbage("collect")
     collectgarbage("stop")
+    for _ = 1, 5 do
+        local before = collectgarbage("count")
+        fn()
+        if collectgarbage("count") == before then return end
+    end
+end
+-- Memory allocated by repeating one event while garbage collection is paused.
+local function EventAllocation(event, times)
+    Settle(function() eventFrame.OnEvent(eventFrame, event) end)
     local before = collectgarbage("count")
     for _ = 1, times do eventFrame.OnEvent(eventFrame, event) end
     local grown = collectgarbage("count") - before
@@ -1357,6 +1369,89 @@ do
     assert(button.count.text == "1", "the item count stayed stale after combat: " .. tostring(button.count.text))
     module:Disable()
     inventory = nil
+end
+
+-- Budgets: Lua VM instructions of one event (debug hook per instruction,
+-- deterministic on Lua 5.1, this harness included) and the KB of 100 events
+-- with the GC stopped. A party of four with the group buff, a configured
+-- item and the automatic flask, food and rune: the player's unrelated aura
+-- delta, one coalesced member pass, an unchanged compile and an unchanged
+-- bag update. 2026-10-02 (W-S3b baseline): 1497, 748, 6466 and 3288
+-- instructions; each budget is the baseline +2 %.
+do
+    local AURA_BUDGET, MEMBER_BUDGET, COMPILE_BUDGET, BAG_BUDGET = 1526, 762, 6595, 3353
+    local roster = { player = "MAGE", party1 = "PRIEST", party2 = "WARRIOR", party3 = "DRUID", party4 = "ROGUE" }
+    UnitClass = function(unit) return roster[unit], roster[unit] end
+    knownSpell = function(id) return id == 1459 end
+    IsInRaid = function() return false end
+    GetNumSubgroupMembers = function() return 4 end
+    UnitIsUnit = function(unit, other) return unit == other end
+    UnitExists = function(unit) return roster[unit] ~= nil end
+    UnitIsConnected = function() return true end
+    UnitIsVisible = function() return true end
+    UnitIsDeadOrGhost = function() return false end
+    C_Secrets.ShouldAurasBeSecret = function() return false end
+    local memberBuff = {}
+    C_UnitAuras.GetUnitAuraBySpellID = function(unit) return unit ~= "party2" and memberBuff or nil end
+    C_UnitAuras.GetAuraDataBySpellName = function() return nil end
+    -- One pending pass at a time, kept without allocating.
+    local pendingPass
+    C_Timer.After = function(_, callback)
+        assert(pendingPass == nil, "a second group pass was queued")
+        pendingPass = callback
+    end
+    local function RunPass()
+        local callback = pendingPass
+        pendingPass = nil
+        if callback then callback() end
+    end
+    NS.Client.isForever, NS.Client.modernEquipment = false, true
+    inventory = { [123] = 4, [241324] = 2, [259085] = 3 }
+    auras = { [1459] = { spellId = 1459, auraInstanceID = 990, expirationTime = now + 3000, duration = 3600 } }
+    module.config = { classBuff=true, groupBuff=true, spellIDs="", items="123:888", mainHandItem="", offHandItem="",
+        autoFlask=true, autoFood=true, autoRune=true, instancesOnly=false, hideMounted=true, size=38, spacing=5,
+        columns=6, borderColor="e8b855", point=1, x=0, y=0, remindBeforeMinutes=5 }
+    module.active = true
+    module:Enable()
+    RunPass()
+    assert(#module.entries == 5 and module.entries[1].group and module.entries[1].missingCount == 1,
+        "the budget scenario did not build its five reminders with one member missing the buff")
+    local count = 0
+    local function Instructions(fn)
+        count = 0
+        debug.sethook(function() count = count + 1 end, "", 1)
+        fn()
+        debug.sethook()
+        return count
+    end
+    local function Kilobytes(fn)
+        Settle(fn)
+        local before = collectgarbage("count")
+        for _ = 1, 100 do fn() end
+        local grown = collectgarbage("count") - before
+        collectgarbage("restart")
+        return grown
+    end
+    local unrelated = { addedAuras = { { spellId = 7, icon = 7, auraInstanceID = 71 } } }
+    local function Aura() eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", unrelated) end
+    local function Member()
+        eventFrame.OnEvent(eventFrame, "UNIT_AURA", "party1")
+        RunPass()
+    end
+    local function Compile() eventFrame.OnEvent(eventFrame, "SPELLS_CHANGED") end
+    local function Bag() eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED") end
+    local results = {
+        { "player aura delta", Aura, AURA_BUDGET }, { "member pass", Member, MEMBER_BUDGET },
+        { "unchanged compile", Compile, COMPILE_BUDGET }, { "unchanged bag update", Bag, BAG_BUDGET },
+    }
+    for _, row in ipairs(results) do
+        local used, grown = Instructions(row[2]), Kilobytes(row[2])
+        print(("buff reminders %s: %d instructions, %.2f KB per 100"):format(row[1], used, grown))
+        assert(used <= row[3], "a " .. row[1] .. " cost " .. used .. " instructions (budget " .. row[3] .. ")")
+        assert(grown < 1, "100 of the " .. row[1] .. " allocated " .. grown .. " KB")
+    end
+    module:Disable()
+    inventory, auras = nil, {}
 end
 
 -- Retail and WoW Forever always have the APIs the module calls (GameTooltip

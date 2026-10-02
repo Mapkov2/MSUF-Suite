@@ -629,14 +629,37 @@ assert(scans == 2 and name.points[1][1] == "CENTER", "event performed a scan or 
 -- (deterministic on Lua 5.1, this harness included). 2026-10-01: 1800
 -- before existing unit frames were covered by the plate hooks, 1817 after;
 -- the budget is the old baseline +2 %.
+-- The threat budget (2026-10-02: 114, +2 %) counts one
+-- UNIT_THREAT_SITUATION_UPDATE of that plate the same way; 100 of them must
+-- not allocate with the GC stopped.
 do
-    local PLATE_ADDED_BUDGET = 1836
+    local PLATE_ADDED_BUDGET, THREAT_BUDGET = 1836, 116
     local count = 0
-    debug.sethook(function() count = count + 1 end, "", 1)
-    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
-    debug.sethook()
-    print("nameplate added: " .. count .. " instructions")
-    assert(count <= PLATE_ADDED_BUDGET, "a plate add cost " .. count .. " instructions (budget " .. PLATE_ADDED_BUDGET .. ")")
+    local function Instructions(fn)
+        count = 0
+        debug.sethook(function() count = count + 1 end, "", 1)
+        fn()
+        debug.sethook()
+        return count
+    end
+    local function Kilobytes(fn)
+        collectgarbage("collect")
+        collectgarbage("stop")
+        fn()
+        local before = collectgarbage("count")
+        for _ = 1, 100 do fn() end
+        local grown = collectgarbage("count") - before
+        collectgarbage("restart")
+        return grown
+    end
+    local added = Instructions(function() events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1") end)
+    local function Threat() events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1") end
+    local threat, threatKB = Instructions(Threat), Kilobytes(Threat)
+    print(("nameplate added: %d instructions, threat update: %d instructions, %.2f KB per 100"):format(
+        added, threat, threatKB))
+    assert(added <= PLATE_ADDED_BUDGET, "a plate add cost " .. added .. " instructions (budget " .. PLATE_ADDED_BUDGET .. ")")
+    assert(threat <= THREAT_BUDGET, "a threat update cost " .. threat .. " instructions (budget " .. THREAT_BUDGET .. ")")
+    assert(threatKB < 1, "100 threat updates allocated " .. threatKB .. " KB")
 end
 hasMana = true
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
