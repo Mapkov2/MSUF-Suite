@@ -96,10 +96,9 @@ local function SpinBars(self)
 end
 
 ------------------------------------------------------------------ banner
+-- Also the end of the banner's duration (ctx:After in Play).
 local function Stop(self)
-    local timer = self.stopTimer
-    self.stopTimer = nil
-    if timer then timer:Cancel() end
+    self.context:Cancel(Stop)
     StopBars(self)
     if not self.host then return end
     self.host:Hide()
@@ -124,36 +123,27 @@ function M:Play(text)
     self.host:Show()
     for _, group in ipairs(self.animations) do group:Play() end
     SpinBars(self)
-    local timer
-    timer = C_Timer.NewTimer(self.config.duration, function()
-        if self.stopTimer ~= timer then return end
-        self.stopTimer = nil
-        Stop(self)
-    end)
-    self.stopTimer = timer
+    self.context:After(self.config.duration, Stop)
 end
 
 ------------------------------------------------------------------ triggers
 local Schedule
 
+local function Surprise(self)
+    self:Play()
+    Schedule(self)
+end
+
 -- Random surprises: the next one comes after 80-120 percent of the chosen
--- interval; one timer at a time, none in Edit Mode.
+-- interval; one deadline at a time, none in Edit Mode.
 Schedule = function(self)
-    local timer = self.randomTimer
-    self.randomTimer = nil
-    if timer then timer:Cancel() end
     local c = self.config
-    if not self.active or not c.random or S.editMode then return end
+    if not self.active or not c.random or S.editMode then
+        self.context:Cancel(Surprise)
+        return
+    end
     local delay = math.random(math.floor(c.interval * .8), math.ceil(c.interval * 1.2))
-    local nextTimer
-    nextTimer = C_Timer.NewTimer(delay, function()
-        if self.randomTimer ~= nextTimer then return end
-        self.randomTimer = nil
-        if not self.active then return end
-        self:Play()
-        Schedule(self)
-    end)
-    self.randomTimer = nextTimer
+    self.context:After(delay, Surprise)
 end
 
 local function OnLevel(self, _, level)
@@ -227,10 +217,8 @@ function M:Enable()
     self:RegisterMovers()
 end
 
+-- The context's Release drops the next surprise.
 function M:Disable()
-    local timer = self.randomTimer
-    self.randomTimer = nil
-    if timer then timer:Cancel() end
     Stop(self)
 end
 

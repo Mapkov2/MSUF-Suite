@@ -103,6 +103,9 @@ local S={}
 local movers={}
 S.RegisterOwnedMover=function(id,element,spec) movers[id]={element=element,spec=spec};return true end
 local NS={Client={isForever=arg[2]=="Forever"},Safety={IsForbidden=function(frame) return frame.forbidden == true end},IsCombatLocked=function() return combat end}
+NS.Dispatch=function(callback,...) return callback(...) end
+local Support=dofile(root.."/tools/tests/suite_test_support.lua")
+local TimerContext=Support.ModuleTimers(root,S,NS)
 S.Public=function(value) return value~="secret" end
 S.PublicText=function(value) return S.Public(value) and type(value)=="string" and value or nil end
 S.Finite=function(value) return S.Public(value) and type(value)=="number" and value==value end
@@ -124,16 +127,23 @@ local function Load(name,id,config)
     assert(loadfile(root.."/MSUF_Suite_QualityOfLife/"..name..".lua"))("test",{NS=NS,Suite=S})
     local m=modules[id];m.active=true;m.config=config;m.events={}
     m.eventUnits={}
-    m.context={Event=function(_,event,callback,_,unit) m.events[event]=callback;m.eventUnits[event]=unit end,RemoveEvent=function(_,event) m.events[event]=nil;m.eventUnits[event]=nil end}
+    m.context=TimerContext(id,m,{Event=function(_,event,callback,_,unit) m.events[event]=callback;m.eventUnits[event]=unit end,
+        RemoveEvent=function(_,event) m.events[event]=nil;m.eventUnits[event]=nil end})
     m:Enable();return m
 end
 -- The merchant list has its own contract: suite_merchant_list_contract.lua.
-local timers={};C_Timer={NewTimer=function(delay,callback) local t={delay=delay,callback=callback};function t:Cancel() self.cancelled=true end;timers[#timers+1]=t;return t end}
+local clock=Support.Clock()
 local party=Load("PartyEffects","partyEffects",{onLevelUp=true,onAchievement=false,onLust=true,duration=6,fontSize=24,scale=100,x=0,y=0})
 local castUnits=party.eventUnits.UNIT_SPELLCAST_SUCCEEDED
 Check(castUnits and castUnits[1]=="player" and castUnits[2]=="pet" and #castUnits==2,"Bloodlust trigger listened beyond the player and pet")
 party.events.PLAYER_LEVEL_UP(party,"PLAYER_LEVEL_UP",70);Check(party.host.shown and party.animations[1].playing,"level-up did not start native animations")
-party.stopTimer.callback();Check(not party.host.shown,"effect duration did not end native animations")
-party.events.PLAYER_LEVEL_UP(party,"PLAYER_LEVEL_UP",71);local pending=party.stopTimer;party.active=false;party:Disable()
-Check(pending.cancelled and not party.host.shown and not party.stopTimer,"disable left an effect timer active")
+clock.Advance(6.1)
+Check(not party.host.shown,"effect duration did not end native animations")
+party.events.PLAYER_LEVEL_UP(party,"PLAYER_LEVEL_UP",71)
+party.active=false
+party:Disable()
+Check(not party.host.shown,"disable left the effect shown")
+party.host.shown=true
+clock.Advance(7)
+Check(party.host.shown,"disable left an effect timer active")
 print("Party effects: "..checks.." checks passed")
