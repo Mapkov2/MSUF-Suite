@@ -1,0 +1,116 @@
+{
+  "removed": [
+    {
+      "category": "labels",
+      "item": "[\"forever:minimap.infoClockDate\",\"Show date (day-month-year)\"]",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the old label; MSUF_Suite/Core/Catalog/Minimap.lua retains infoClockDate with label Show date.",
+      "reason": "Same option; date format now follows Blizzard FormatShortDate.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:minimap.infoClockDate\",\"Show date (day-month-year)\"]",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the old label; MSUF_Suite/Core/Catalog/Minimap.lua retains infoClockDate with label Show date.",
+      "reason": "Same option; date format now follows Blizzard FormatShortDate.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Current spec: ",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Specialization.lua: 'Current spec: ' becomes 'Current spec: %s'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Extended",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Tooltips.lua: 'Extended' becomes '%s (Extended)'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Keystone level",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Tooltips.lua: 'Keystone level' becomes 'Keystone level %d'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Loot: ",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Specialization.lua: 'Loot: ' becomes 'Loot: %s'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Show date (day-month-year)",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite/Core/Catalog/Minimap.lua: 'Show date (day-month-year)' becomes 'Show date'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Tier",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Tooltips.lua: 'Tier' becomes 'Tier %d'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "World boss",
+      "basis": "moved",
+      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Tooltips.lua: 'World boss' becomes '%s (World boss)'.",
+      "reason": "Existing text retained through its replacement English key.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "Equipment slot",
+      "basis": "moved",
+      "evidence": "652cc709bac31e6a262232a98faf802d5186ec2e; git log -S on the quoted old literal; MSUF_Suite_CooldownManager/Catalog.lua: 'Equipment slot' becomes 'Equipment slot %d'.",
+      "reason": "Existing text retained as one translatable format string.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "enabled",
+      "basis": "moved",
+      "evidence": "7f9330b502c2a98a680f0a7d0ce5c1f8c97ebb34; git log -S on the quoted old literal; MSUF_Suite/Core/Installer.lua: 'enabled' becomes '%d / %d enabled'.",
+      "reason": "Existing text retained as one translatable format string.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "locale",
+      "item": "restores",
+      "basis": "moved",
+      "evidence": "f34d0d485c20a614e0eb1715c78ab45a58d8bfcc; git log -S on the quoted old literal; MSUF_Suite_Options/Pages/ActionBars.lua: 'restores' becomes 'Off - restores %s'.",
+      "reason": "Existing text retained as one translatable format string.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "exports",
+      "item": "S.ActionBarPreviewInfo",
+      "basis": "dead",
+      "evidence": "d43207262433cac3fb3924950c5fff815b5c4180; git log -S S.ActionBarPreviewInfo; git grep ActionBarPreviewInfo d432072^ -- product paths finds only its definition in MSUF_Suite_ActionBars/Bars.lua. Commit records the cross-addon and string-dispatch audit.",
+      "reason": "Unused preview description; active options preview uses P.ActionBarGrid in MSUF_Suite_Options/Pages/ActionBars.lua.",
+      "date": "2026-10-02"
+    },
+    {
+      "category": "exports",
+      "item": "S.AddSpellFromCursor",
+      "basis": "dead",
+      "evidence": "996ebf4d3b8da74cdce92d69a2a6886f8cebb543; git log -S S.AddSpellFromCursor; git grep AddSpellFromCursor 996ebf4^ -- product paths finds only its definition in MSUF_Suite/Core/Suite.lua. Commit records the cross-addon and string-dispatch audit.",
+      "reason": "Unused cursor helper; no product caller at removal or at the current package base.",
+      "date": "2026-10-02"
+    }
+  ]
+}
