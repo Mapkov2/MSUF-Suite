@@ -3452,6 +3452,39 @@ do
     assert(next(_G.StaticPopupDialogs) == nil, "Reset page wrote into Blizzard's StaticPopupDialogs")
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs = previousGeneric, previousDialogs
 end
+-- One question per key: a repeated question closes the earlier one (the
+-- generic dialog allows several, and an earlier destructive Yes would stay
+-- live), also when the Modules runtime loads between two questions.
+do
+    local shown = {}
+    local previousGeneric, previousHide, previousConfirm =
+        _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Hide, S.Confirm
+    S.Confirm = nil
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) shown[#shown + 1] = data end
+    _G.StaticPopup_Hide = function(which, data)
+        assert(which == "GENERIC_CONFIRMATION", "closed another dialog type")
+        for i = #shown, 1, -1 do if shown[i] == data then table.remove(shown, i) end end
+    end
+    local resets = 0
+    local reset = M.ResetPageToDefaults
+    M.ResetPageToDefaults = function() resets = resets + 1; return true end
+    assert(M.ShowPageResetConfirm("suite_dataTexts") and M.ShowPageResetConfirm("suite_dataTexts"))
+    assert(#shown == 1, "a repeated Reset page question left the earlier one open")
+    table.remove(shown) -- the player cancels the question on screen
+    assert(#shown == 0 and resets == 0, "a cancelled Reset page question left a live Yes")
+    optionsNS.Confirm("contract-a", "A", function() end)
+    optionsNS.Confirm("contract-b", "B", function() end)
+    assert(#shown == 2, "questions under different keys replaced each other")
+    local runtimeKey
+    S.Confirm = function(key) runtimeKey = key end
+    optionsNS.Confirm("contract-a", "A again", function() end)
+    assert(runtimeKey == "options:contract-a" and #shown == 1 and shown[1].text_arg1 == "B",
+        "the runtime's question left the page's earlier one open")
+    M.ResetPageToDefaults = reset
+    -- Blizzard's StaticPopup_Hide exists on every client.
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Hide, S.Confirm =
+        previousGeneric, previousHide or function() end, previousConfirm
+end
 -- The cooldown manager page resets like every Suite page: the standard
 -- confirmation, then every cooldown manager setting back to its catalog
 -- default; other modules keep theirs.
