@@ -10,6 +10,7 @@
 
 Menu\Bridge.lua
 Menu\Controls.lua
+Menu\SectionActions.lua
 Pages\ActionBars.lua
 Pages\MinimapPreviewArt.lua
 Pages\MinimapPreviewPaint.lua

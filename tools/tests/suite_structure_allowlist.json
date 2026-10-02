@@ -723,7 +723,7 @@
    "symbol": "skin.Theme.ApplyLook"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
    "symbol": "W.StyleSectionActionButton"
@@ -735,7 +735,7 @@
    "symbol": "input.SetMaxLetters"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "state",
    "reason": "page UI built lazily: the preview or popup part exists only after its section was opened",
    "symbol": "popup.RefreshTargets"
@@ -2289,19 +2289,19 @@
    "symbol": "M.frame.Hide (= MSUF2)"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
    "symbol": "M.AddTooltip"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
    "symbol": "M.ApplyPopupFramePriority"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
    "symbol": "M.ShowStatusFeedback"
@@ -2313,7 +2313,7 @@
    "symbol": "M.StatusBarTextureItems"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
    "symbol": "M.TrackRefresh"
