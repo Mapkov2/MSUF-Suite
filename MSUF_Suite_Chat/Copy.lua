@@ -7,10 +7,11 @@ local C = P.Chat
 -- until the button is clicked.
 local M = C.M
 local ROWS = 10
+-- The shared copy dialog (MSUF_Suite_Modules/Dialogs.lua) with a chooser.
+local CHOOSER = { rows = ROWS, height = 345 }
 local TEXT = {
     copy = S.Text("Copy"),
     copyTooltip = S.Text("Copy a recent chat message"),
-    copyTitle = S.Text("Copy chat message (drag to move)"),
     copyHint = S.Text("Choose a line, then press Ctrl+C"),
     copyEmpty = S.Text("No recent messages to copy"),
     copyURL = S.Text("Copy this URL with Ctrl+C"),
@@ -28,95 +29,14 @@ end
 
 -- Also clears the chosen text, so a closed dialog keeps no chat content.
 local function HideCopyDialog(panel)
-    if not panel then return end
-    panel:Hide()
-    panel.edit:ClearFocus()
-    panel.edit:SetText("")
-    for _, row in ipairs(panel.rows) do
-        row.message = nil
-        row.label:SetText("")
-        row:Hide()
-    end
+    if panel then S.QoLClearCopy(panel) end
 end
 C.HideCopyDialog = HideCopyDialog
 
--- A dedicated title drag area leaves message rows and the copy edit box
+-- The drag strip of the title leaves the message rows and the copy edit box
 -- free for clicks, selection and Ctrl+C.
-local function CreateCopyHeader(panel)
-    local dragHandle = S.CreateFrame("Button", nil, panel)
-    dragHandle:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    dragHandle:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -34, 0)
-    dragHandle:SetHeight(56)
-    dragHandle:RegisterForDrag("LeftButton")
-    dragHandle:SetScript("OnDragStart", function() panel:StartMoving() end)
-    dragHandle:SetScript("OnDragStop", function() panel:StopMovingOrSizing() end)
-    panel.dragHandle = dragHandle
-    local title = S.CreateFontString(dragHandle, nil, "ARTWORK", "GameFontNormal")
-    title:SetPoint("TOPLEFT", dragHandle, "TOPLEFT", 15, -13)
-    title:SetText(TEXT.copyTitle)
-    local hint = S.CreateFontString(dragHandle, nil, "ARTWORK", "GameFontHighlightSmall")
-    hint:SetPoint("TOPLEFT", dragHandle, "TOPLEFT", 15, -36)
-    hint:SetText(TEXT.copyHint)
-    panel.hint = hint
-    local close = S.CreateFrame("Button", nil, panel)
-    close:SetSize(24, 22)
-    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -8)
-    local closeLabel = S.CreateFontString(close, nil, "ARTWORK", "GameFontNormal")
-    closeLabel:SetPoint("CENTER", close, "CENTER")
-    closeLabel:SetText("X")
-    close:SetScript("OnClick", function() HideCopyDialog(panel) end)
-end
-
-local function CopyRowClick(row)
-    if not row.message then return end
-    local edit = row.panel.edit
-    edit:SetText(row.message)
-    edit:SetFocus()
-    edit:HighlightText()
-end
-
-local function CreateCopyRows(panel)
-    panel.rows = {}
-    for i = 1, ROWS do
-        local row = S.CreateFrame("Button", nil, panel)
-        row.panel = panel
-        row:SetSize(410, 23)
-        row:SetPoint("TOPLEFT", panel, "TOPLEFT", 15, -61 - (i - 1) * 25)
-        local shade = Fill(row, "BACKGROUND")
-        shade:SetAllPoints(row)
-        Tint(shade, i % 2 == 0 and "252a2d" or "1d2225", 100)
-        local label = S.CreateFontString(row, nil, "ARTWORK", "GameFontHighlightSmall")
-        label:SetPoint("LEFT", row, "LEFT", 7, 0)
-        label:SetWidth(394)
-        label:SetJustifyH("LEFT")
-        label:SetMaxLines(1)
-        row.label = label
-        row:SetScript("OnClick", CopyRowClick)
-        panel.rows[i] = row
-    end
-end
-
 local function CreateCopyDialog()
-    local panel = S.CreateFrame("Frame", nil, UIParent)
-    panel:SetSize(440, 345)
-    panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    panel:SetFrameStrata("DIALOG")
-    panel:EnableMouse(true)
-    panel:SetMovable(true)
-    panel:SetClampedToScreen(true)
-    local background = Fill(panel, "BACKGROUND")
-    background:SetAllPoints(panel)
-    Tint(background, "151719", 97)
-    CreateCopyHeader(panel)
-    local edit = S.CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    edit:SetSize(400, 25)
-    edit:SetPoint("BOTTOM", panel, "BOTTOM", 0, 12)
-    edit:SetAutoFocus(false)
-    edit:SetScript("OnEscapePressed", function() HideCopyDialog(panel) end)
-    panel.edit = edit
-    CreateCopyRows(panel)
-    panel:Hide()
-    return panel
+    return S.QoLCopyDialog("Copy chat message (drag to move)", "Choose a line, then press Ctrl+C", 440, CHOOSER)
 end
 
 -- Newest first: the last ROWS public lines among the window's newest 100.
@@ -159,10 +79,7 @@ function C.ShowURL(url)
         row:Hide()
     end
     panel.hint:SetText(TEXT.copyURL)
-    panel.edit:SetText(url)
-    panel:Show()
-    panel.edit:SetFocus()
-    panel.edit:HighlightText()
+    S.QoLShowCopy(panel, url)
 end
 local function CopyButtonEnter(button) ShowTooltip(button, TEXT.copyTooltip) end
 

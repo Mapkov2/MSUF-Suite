@@ -21,9 +21,11 @@ if not strsplit then
 end
 
 -- Isolated QoL module tests load one file without the addon's Bootstrap.lua.
--- Install the real palette bridge with a minimal core namespace. palettes
+-- Install the real palette bridge with a minimal core namespace, and the
+-- shared windows and copy dialog (MSUF_Suite_Modules/Dialogs.lua). palettes
 -- (optional) replaces the single default palette.
 function Support.QoLStyleFixture(root, suite, palettes)
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = suite })
     suite.RGB = suite.RGB or function() return 1, 1, 1 end
     local previous = _G.MSUFSuite
     _G.MSUFSuite = { Suite = suite, QoLVisualStyles = palettes or {

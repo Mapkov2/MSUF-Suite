@@ -222,6 +222,12 @@ assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " f
 for i = 1, #CHAT_FILES do
     assert(tocFiles[i] == CHAT_FILES[i], "Chat TOC order: expected " .. CHAT_FILES[i] .. " at " .. i)
 end
+-- The shared windows and copy dialog (MSUF_Suite_Modules/Dialogs.lua).
+S.SetFont = S.SetFont or function(fontString, path, size, flags)
+    fontString:SetFont(path or globalFont, size, flags or "")
+    return flags
+end
+assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = S })
 Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")

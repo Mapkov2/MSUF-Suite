@@ -11,6 +11,7 @@
 Surfaces.lua
 Runtime.lua
 Timers.lua
+Dialogs.lua
 DataSources.lua
 EditMode.lua
 MythicPlusPull.lua
