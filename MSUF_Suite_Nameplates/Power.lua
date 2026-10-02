@@ -31,18 +31,27 @@ local function Paint(bar, force, targetX, targetY)
         visuals[bar] = visual
     end
     if active and config.personalPowerSkin and visual and not visual.edges then
-        if NS.IsCombatLocked() then owner.needsRefresh = true; return end
+        if NS.IsCombatLocked() then
+            owner.needsRefresh = true
+            return
+        end
         visual.edges = Style.CreateBorder(bar).edges
     end
     if visual and visual.edges then
-        if NS.IsCombatLocked() then owner.needsRefresh = true; return end
+        if NS.IsCombatLocked() then
+            owner.needsRefresh = true
+            return
+        end
         Style.PaintBorder(visual, bar,
             active and config.personalPowerSkin and config.personalPowerBorderSize or 0,
             config.personalPowerBorderColor)
     end
     if visual and (force or (visual.offsetX or 0) ~= x or (visual.offsetY or 0) ~= y) then
         if x ~= 0 or y ~= 0 or (visual.offsetX or 0) ~= 0 or (visual.offsetY or 0) ~= 0 then
-            if NS.IsCombatLocked() then owner.needsRefresh = true; return end
+            if NS.IsCombatLocked() then
+                owner.needsRefresh = true
+                return
+            end
             bar:SetPointsOffset(x, y)
         end
         visual.offsetX, visual.offsetY = x, y

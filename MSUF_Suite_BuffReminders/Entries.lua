@@ -471,7 +471,10 @@ function R.BuildEntries(self)
             local buff = R.ClassBuff(other)
             if buff and other ~= class and self.group.classes[other] then
                 local entry = AddSpell(buff.cast, buff.auras[1], buff.auras)
-                if entry then entry.notice = true; entry.ranked = NS.Client.isForever == true end
+                if entry then
+                    entry.notice = true
+                    entry.ranked = NS.Client.isForever == true
+                end
             end
         end
     end

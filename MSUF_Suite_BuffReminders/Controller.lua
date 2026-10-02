@@ -446,7 +446,10 @@ end
 
 function M:Update(mode, updateCounts, updateInfo, foodDirty)
     if NS.IsCombatLocked() then return end
-    if S.editMode then Preview(self); return end
+    if S.editMode then
+        Preview(self)
+        return
+    end
     local list, view = self.list, self.view
     local wasPreview = view.previewing
     if wasPreview then view.mask = nil end
@@ -544,7 +547,10 @@ OnEvent = function(self, event, unit, updateInfo)
     if event == "PLAYER_REGEN_ENABLED" and listen.suspended then Resume(self) end
     if NS.IsCombatLocked() then return end
     if event == "PET_BAR_UPDATE" or event == "PET_UI_UPDATE" or event == "UNIT_PET" then
-        if event ~= "UNIT_PET" or unit == "player" then R.ReadPet(self); self:Update("visual") end
+        if event ~= "UNIT_PET" or unit == "player" then
+            R.ReadPet(self)
+            self:Update("visual")
+        end
         return
     end
     if event == "GROUP_ROSTER_UPDATE" then

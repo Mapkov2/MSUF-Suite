@@ -49,7 +49,10 @@ end
 local NATIVE_FIXED = true
 local function AuraAnchor(state, region, point, owner, relative, x, y, dx, dy, nativeFixed)
     if dx == 0 and dy == 0 then return end
-    if not Accessible(region) or not owner then module.needsRefresh = true; return end
+    if not Accessible(region) or not owner then
+        module.needsRefresh = true
+        return
+    end
     local link = { region, point, owner, relative, x, y }
     link.nativeFixed = nativeFixed
     state.links[#state.links + 1] = link
@@ -106,7 +109,10 @@ end
 function Layout.Restore(uf)
     local state = states[uf]
     if not state then return end
-    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then module.needsRefresh = true; return end
+    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
+        module.needsRefresh = true
+        return
+    end
     RestoreLinks(state)
     RestoreHealthSize(state, uf)
     if not Geometry.Restore(state, uf, NamePlateSetupOptions) then module.needsRefresh = true end
@@ -140,8 +146,14 @@ local function OnAnchors(uf)
         state.generation = nil
         state.nativeReset = true
     end
-    if locked then module.needsRefresh = true; return end
-    if not module.active then Layout.Restore(uf); return end
+    if locked then
+        module.needsRefresh = true
+        return
+    end
+    if not module.active then
+        Layout.Restore(uf)
+        return
+    end
     if not NS.Public(uf.isFriend) then return end
     Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
 end
@@ -282,8 +294,14 @@ end
 local function Apply(uf, prefix, config, force)
     local plan, state = plans[prefix], states[uf]
     local enabled = plan and plan.active and config.look ~= 2 and config[prefix]
-    if not enabled then if state then Layout.Restore(uf) end; return end
-    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then module.needsRefresh = true; return end
+    if not enabled then
+        if state then Layout.Restore(uf) end
+        return
+    end
+    if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
+        module.needsRefresh = true
+        return
+    end
     if state and state.generation == generation and state.prefix == prefix and not force then return end
     local setup = NamePlateSetupOptions
     if not NS.Public(setup.useClassicCastBar) or not NS.Public(setup.spellNameInsideCastBar)
@@ -294,7 +312,10 @@ local function Apply(uf, prefix, config, force)
     RestoreLinks(state)
     local geometryChanged = (config.barGeometry == 2) ~= (state.geometry ~= nil)
     local baseHeight = Geometry.Apply(state, uf, setup, config, force)
-    if not baseHeight then module.needsRefresh = true; return end
+    if not baseHeight then
+        module.needsRefresh = true
+        return
+    end
     HealthSize(state, uf, setup, config[prefix .. "HealthWidthDelta"] or 0,
         config[prefix .. "HealthHeightDelta"] or 0, force or geometryChanged, baseHeight)
     ElementOffsets(state, uf, plan, setup, force)

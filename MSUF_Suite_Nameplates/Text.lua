@@ -31,7 +31,10 @@ end
 
 function Text.Apply(region, style, size)
     if not region or NS.Safety.IsForbidden(region) then return end
-    if not style.enabled then Text.Restore(region); return end
+    if not style.enabled then
+        Text.Restore(region)
+        return
+    end
     local path, nativeSize, flags = region:GetFont()
     if not S.Public(path) or type(path) ~= "string" or path == ""
         or not S.Finite(nativeSize) or not S.Public(flags) then return end

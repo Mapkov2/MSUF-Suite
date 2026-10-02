@@ -116,10 +116,16 @@ function Roles.Quest(unit)
     if Read(C_Secrets.ShouldUnitIdentityBeSecret, unit) ~= false then return PendingQuest(unit) end
     -- Direct API is a cheap negative gate.
     local related = Read(C_QuestLog.UnitIsRelatedToActiveQuest, unit)
-    if related == false then Roles.quests[unit] = false; return false end
+    if related == false then
+        Roles.quests[unit] = false
+        return false
+    end
     local info = Read(C_TooltipInfo.GetUnit, unit)
     if type(info) ~= "table" or not S.Public(info.lines) or type(info.lines) ~= "table" then
-        if type(related) == "boolean" then Roles.quests[unit] = related; return related end
+        if type(related) == "boolean" then
+            Roles.quests[unit] = related
+            return related
+        end
         return PendingQuest(unit) -- not a cached absent objective
     end
     local found = TooltipQuest(unit, info)

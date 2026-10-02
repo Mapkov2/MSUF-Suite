@@ -68,7 +68,10 @@ function R.GroupRoster(self)
     group.settings = settings
     for _, key in ipairs(GROUP_OPTIONS) do
         local enabled = self.config[key] == true
-        if settings[key] ~= enabled then self.list.needsFullRefresh = true; settings[key] = enabled end
+        if settings[key] ~= enabled then
+            self.list.needsFullRefresh = true
+            settings[key] = enabled
+        end
     end
     local buffers = group.buffers or { NewRoster(), NewRoster() }
     group.buffers = buffers

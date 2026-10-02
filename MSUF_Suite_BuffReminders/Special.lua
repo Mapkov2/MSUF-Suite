@@ -100,7 +100,10 @@ local function ReadDemon(self)
     for _, demon in ipairs(NS.BuffReminderDemons) do
         if self.config[demon.key] ~= false then
             for _, spell in ipairs(demon.spells) do
-                if R.Known(spell) then chosen = true; break end
+                if R.Known(spell) then
+                    chosen = true
+                    break
+                end
             end
         end
         if chosen then break end
@@ -122,7 +125,10 @@ function R.ReadPet(self)
     for i = 1, NUM_PET_ACTION_SLOTS do
         local name, _, token, active = GetPetActionInfo(i)
         if Public(name) and name == "PET_MODE_PASSIVE" and Public(token) and token == true
-            and Public(active) then notices.petPassive = active == true; return end
+            and Public(active) then
+            notices.petPassive = active == true
+            return
+        end
     end
 end
 
@@ -134,7 +140,10 @@ function R.ReadHealthstone(self)
     local unknown = false
     for _, id in ipairs(stones) do
         local count = R.ItemCount(id)
-        if count and count > 0 then notices.healthstoneMissing = false; return end
+        if count and count > 0 then
+            notices.healthstoneMissing = false
+            return
+        end
         if count == nil then unknown = true end
     end
     if not unknown then notices.healthstoneMissing = true end
@@ -176,7 +185,10 @@ function R.SpecialText(self, allowed)
         label:SetPoint("TOP", host, "BOTTOM", 0, -6)
         notices.label = label
     end
-    if label then label:SetText(text); label:SetShown(text ~= "") end
+    if label then
+        label:SetText(text)
+        label:SetShown(text ~= "")
+    end
 end
 
 -- No notice line (Edit Mode preview, disable).

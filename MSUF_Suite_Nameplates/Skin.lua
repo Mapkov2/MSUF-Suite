@@ -129,7 +129,10 @@ local function SetRole(uf, unit)
 end
 
 local function PaintMarker(texture, health, kind, enabled, size, x, y, color, anchor, variant)
-    if not enabled then texture:Hide(); return end
+    if not enabled then
+        texture:Hide()
+        return
+    end
     Style.PaintMarker(texture, kind, size, color, variant)
     if texture._msufX ~= x or texture._msufY ~= y or texture._msufAnchor ~= anchor then
         Style.PlaceMarker(texture, health, kind, x, y, anchor)
@@ -220,14 +223,24 @@ local function FilterFriendlyName(uf, prefix)
     if not Safe(name) then return end
     if M.config.friendlyNamesOnly ~= 3
         or prefix ~= "friendly" or not S.Public(uf.isPlayer) or uf.isPlayer ~= true then
-        RestoreFriendlyName(name); return
+        RestoreFriendlyName(name)
+        return
     end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     local unit = health and M.units[health]
-    if not unit then RestoreFriendlyName(name); return end
+    if not unit then
+        RestoreFriendlyName(name)
+        return
+    end
     local party, raid = UnitInParty(unit), UnitInRaid(unit)
-    if not S.Public(party) or not S.Public(raid) then RestoreFriendlyName(name); return end
-    if party or raid then RestoreFriendlyName(name); return end
+    if not S.Public(party) or not S.Public(raid) then
+        RestoreFriendlyName(name)
+        return
+    end
+    if party or raid then
+        RestoreFriendlyName(name)
+        return
+    end
     if M.friendlyNames[name] == nil then
         local alpha = name:GetAlpha()
         if not NS.Finite(alpha) then return end
@@ -346,7 +359,10 @@ local function ApplyPlate(plate)
     if not Safe(plate) or not Safe(plate.UnitFrame) then return end
     local uf, unit = plate.UnitFrame, plate.unitToken
     CoverPlate(uf)
-    if not M.active then RestorePlate(uf); return end
+    if not M.active then
+        RestorePlate(uf)
+        return
+    end
     if S.Public(unit) and type(unit) == "string" then
         M.activeUnits[unit] = uf
         SetRole(uf, unit)
@@ -544,7 +560,10 @@ local function OnFocusChanged(module)
         if not Safe(uf) then return end
         local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
         local unit = health and module.units[health]
-        if unit then SetRole(uf, unit); Paint(uf) end
+        if unit then
+            SetRole(uf, unit)
+            Paint(uf)
+        end
     end
     Refresh(previous)
     if current ~= previous then Refresh(current) end
@@ -571,7 +590,10 @@ end
 local function OnCombatEnded(module)
     local retryQuests = Roles.RetryQuests()
     if not module.needsRefresh then
-        if retryQuests then CancelQuestRefresh(module); RefreshActive(module) end
+        if retryQuests then
+            CancelQuestRefresh(module)
+            RefreshActive(module)
+        end
         return
     end
     module.needsRefresh = false
