@@ -188,17 +188,16 @@ local function Sync(self)
     Paint(self)
 end
 
+local function DiscoverAgain(self)
+    -- New probe sets replace the old subscriptions even for the same kind.
+    Release(self)
+    Discover(self)
+    Sync(self)
+end
+
+-- A burst of spellbook events finds the probes once, on the next frame.
 local function QueueDiscovery(self)
-    if self.discoveryPending then return end
-    self.discoveryPending = true
-    local token = self.discoveryToken
-    C_Timer.After(0, function()
-        if not self.active or self.discoveryToken ~= token then return end
-        self.discoveryPending = nil
-        -- New probe sets replace the old subscriptions even for the same kind.
-        Release(self)
-        Discover(self); Sync(self)
-    end)
+    self.discoveryJob:Request()
 end
 
 -- SPELLS_CHANGED also fires for spell overrides and procs, which leave the
@@ -229,6 +228,7 @@ local function Rediscover(self)
 end
 
 function M:Enable()
+    self.discoveryJob = self.context:Coalesce(0, DiscoverAgain)
     if not self.host then
         self.host = S.CreateFrame("Frame", "MSUFSuiteTargetDistance", UIParent)
         self.host:EnableMouse(false)
@@ -267,9 +267,8 @@ function M:Refresh()
     Sync(self)
 end
 
+-- The context's Release drops a discovery still due.
 function M:Disable()
-    self.discoveryToken = (self.discoveryToken or 0) + 1
-    self.discoveryPending = nil
     Release(self)
     if self.host then self.host:Hide() end
 end
