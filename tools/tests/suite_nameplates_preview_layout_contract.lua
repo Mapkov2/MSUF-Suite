@@ -75,8 +75,15 @@ Frame = function(parent)
 end
 
 local function LoadFixedHeaderAPI(host, M, W, T)
-    local path = root .. "/../" .. host .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_Widgets.lua"
-    local file = assert(io.open(path, "rb"))
+    -- Classic moved the docked-preview widgets into their own file; Retail
+    -- still keeps them in MSUF_Menu2_Widgets.lua.
+    local dir = root .. "/../" .. host .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/"
+    local path = dir .. "MSUF_Menu2_Widgets_PreviewDock.lua"
+    local file = io.open(path, "rb")
+    if not file then
+        path = dir .. "MSUF_Menu2_Widgets.lua"
+        file = assert(io.open(path, "rb"))
+    end
     local source = file:read("*a"); file:close()
     local first = assert(source:find("function W.AttachStickyPageHeader(", 1, true))
     local last = assert(source:find("function M.CloseFixedPreviewExpander(", first, true))
