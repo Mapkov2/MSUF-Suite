@@ -93,14 +93,12 @@ local REPAIRS = {
     Steps.AnnouncementsAnchor, Steps.AnnouncementsFactory, Steps.DataTextsBagButtons, Steps.SkyridingColors,
     Steps.ObjectivesCollapseState, NS.NameplateStyle.RepairGeometry,
 }
--- The migration revision a copy of this suite table must keep. A table from
--- before suite.revision returns nil and its legacy flags instead.
+-- The migration revision a copy of this suite table must keep (nil for a
+-- table from before suite.revision) and the legacy flags it still carries:
+-- all of them before suite.revision, those of the steps after its revision
+-- when a legacy migration stopped at a step.
 function S.MigrationState(db)
     if type(db) ~= "table" then return nil end
-    local revision = db.revision
-    if type(revision) == "number" and revision == revision and revision >= 0 then
-        return math.floor(revision)
-    end
     local flags
     for _, step in ipairs(MIGRATIONS) do
         local value = step.legacy and db[step.legacy]
@@ -109,18 +107,28 @@ function S.MigrationState(db)
             flags[step.legacy] = value
         end
     end
+    local revision = db.revision
+    if type(revision) == "number" and revision == revision and revision >= 0 then
+        return math.floor(revision), flags
+    end
     return nil, flags
+end
+
+-- True when the step's legacy flag marks it as applied.
+local function LegacyDone(db, step)
+    return step.legacy ~= nil and (tonumber(db[step.legacy]) or 0) >= (step.done or 1)
 end
 
 local function StepPending(db, revision, index, step)
     if step.forever and not NS.Client.isForever then return false end
-    if revision then return index > revision end
-    return not step.legacy or (tonumber(db[step.legacy]) or 0) < (step.done or 1)
+    if revision and index <= revision then return false end
+    return not LegacyDone(db, step)
 end
 
 -- A step that raises (reported), or returns false because it cannot finish
 -- yet, holds the revision before it: that step and the ones after it run
--- again at the next normalization.
+-- again at the next normalization. The revision covers the legacy flags up
+-- to it; the flags after it stay, so a step they mark is not run again.
 local function RunMigrations(db)
     local revision = S.MigrationState(db)
     local reached = #MIGRATIONS
@@ -134,8 +142,8 @@ local function RunMigrations(db)
         end
     end
     db.revision = math.max(revision or 0, reached)
-    for _, step in ipairs(MIGRATIONS) do
-        if step.legacy then db[step.legacy] = nil end
+    for index, step in ipairs(MIGRATIONS) do
+        if step.legacy and index <= db.revision then db[step.legacy] = nil end
     end
 end
 -- The pending migrations of a suite table (profile.suite) alone: imports run
