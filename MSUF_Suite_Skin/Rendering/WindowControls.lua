@@ -185,6 +185,8 @@ local function RestoreNativePosition(state)
     end
 end
 
+local InstallPanelPositionHook
+
 local function ApplyStoredPosition(state)
     if not CanChangeGeometry(state) or not Enabled() or state.moving then return end
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
@@ -209,6 +211,9 @@ local function ApplyStoredPosition(state)
     state.customPosition = true
     state.defaultPosition = defaultPosition == true
     positionedStates[state.frame] = state
+    -- Whichever path placed it (attach, profile switch, reopen, save), the
+    -- panel layout hook keeps it there.
+    InstallPanelPositionHook()
 end
 
 local positionHooked = false
@@ -224,7 +229,7 @@ local function OnPanelPositionsUpdated()
     end
 end
 
-local function InstallPanelPositionHook()
+InstallPanelPositionHook = function()
     if positionHooked then return end
     positionHooked = true
     hooksecurefunc("UpdateUIPanelPositions", OnPanelPositionsUpdated)
@@ -260,7 +265,6 @@ local function SavePosition(state)
         return true
     end)
     state.customPosition = true
-    InstallPanelPositionHook()
     ApplyStoredPosition(state)
     return true
 end
@@ -663,8 +667,6 @@ function WindowControls.Attach(frame, owner)
     end
     state.titleDrag = CreateTitleDrag(state)
     state.titleDrag:Show()
-    if NS.DB.windowControls.positions[name] or (name == "CharacterFrame"
-        and NS.Client.isForever) then InstallPanelPositionHook() end
     ApplyStoredPosition(state)
     frame:HookScript("OnShow", OnPanelShow)
     frame:HookScript("OnHide", OnPanelHide)
