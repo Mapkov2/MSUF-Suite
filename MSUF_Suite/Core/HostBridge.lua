@@ -65,6 +65,53 @@ local function LegacyApplyScale(spec)
     return true
 end
 
+-- MSUF's scale settings before a legacy apply. Should one of MSUF's
+-- appliers raise partway, the settings go back together with the scale they
+-- describe, so a refused install leaves MSUF as it was (the Modern install
+-- keeps MSUF's own profile, nothing deletes these writes there).
+local SCALE_KEYS = { "msufUiScale", "uiScale", "globalUiScalePreset", "globalUiScaleValue" }
+
+local function SaveScale(general)
+    local saved = {}
+    for index = 1, #SCALE_KEYS do saved[SCALE_KEYS[index]] = general[SCALE_KEYS[index]] end
+    if type(general.UIScale) == "table" then
+        local copy = {}
+        for key, value in pairs(general.UIScale) do copy[key] = value end
+        saved.UIScale = copy
+    end
+    return saved
+end
+
+local function PutScaleBack(general, saved)
+    for index = 1, #SCALE_KEYS do general[SCALE_KEYS[index]] = saved[SCALE_KEYS[index]] end
+    general.UIScale = saved.UIScale
+end
+
+-- The saved settings, the scale they describe through MSUF's appliers (its
+-- profile re-applier where MSUF has it), then the settings once more, as an
+-- applier may normalise them.
+local function RestoreLegacyScale(general, saved)
+    PutScaleBack(general, saved)
+    _G.MSUF_ApplyMsufScale(tonumber(saved.msufUiScale) or tonumber(saved.uiScale) or 1)
+    local ui = saved.UIScale
+    if type(_G.MSUF_ApplyCurrentProfileGlobalUiScale) == "function" then
+        _G.MSUF_ApplyCurrentProfileGlobalUiScale()
+    elseif ui and ui.Enabled == true and Suite.Finite(ui.Scale) and type(_G.MSUF_SetGlobalUiScale) == "function" then
+        _G.MSUF_SetGlobalUiScale(ui.Scale, true)
+    else
+        _G.MSUF_ResetGlobalUiScale(true)
+    end
+    PutScaleBack(general, saved)
+end
+
+local function LegacyApplyAtomic(spec)
+    local general = _G.MSUF_DB.general
+    local saved = SaveScale(general)
+    if Suite.Dispatch(Suite.Finish, LegacyApplyScale, spec) then return true end
+    Suite.Dispatch(Suite.Finish, RestoreLegacyScale, general, saved)
+    return false
+end
+
 -- The scale ranges MSUF accepts, both bounds inclusive: host API v1
 -- ApplyUIScaleProfile refuses anything outside them as "invalid" (the clamps
 -- of MSUF's ApplyMsufScale and SetGlobalUiScale). Checked here for both
@@ -106,12 +153,17 @@ function HostBridge.ScaleReady(spec)
 end
 
 -- spec = { msufScale = number (default 1), global = nil | { preset = "pixel"|"custom", scale = number } }
--- Returns ok, reason (the installer's English status text).
+-- Returns ok, reason (the installer's English status text). The legacy
+-- path puts MSUF's settings back when an applier raises; with v1 the host's
+-- setter owns its writes and their rollback.
 function HostBridge.ApplyScale(spec)
     local ready, why = HostBridge.ScaleReady(spec)
     if not ready then return false, why end
     local api = CoreAPI()
-    if not api then return LegacyApplyScale(spec) end
+    if not api then
+        if LegacyApplyAtomic(spec) then return true end
+        return false, HOST_REFUSALS.invalid
+    end
     local ok, reason = api.ApplyUIScaleProfile(spec)
     if ok then return true end
     return false, HOST_REFUSALS[reason] or HOST_REFUSALS.invalid
@@ -217,6 +269,10 @@ local function WrapLegacy(M, handlers)
     function M.ResetPageToDefaults(key)
         if not pages[key] then return oldReset and oldReset(key) or false end
         if not handlers.canReset(key) or handlers.combat() or not handlers.prepare(key) then return false end
+        -- An open menu history session retakes its snapshot, so its Undo
+        -- also restores what prepare loaded (the dormant Skinning engine);
+        -- a host with that history has the function (HOST_API_SPEC E).
+        if M.SyncExternalHistoryState then M.SyncExternalHistoryState() end
         local ok = handlers.withHistory(handlers.label(key), "page:reset:" .. tostring(key), function()
             return handlers.run(key) == true
         end)

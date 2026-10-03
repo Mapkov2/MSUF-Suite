@@ -28,7 +28,7 @@ local function Same(a, b)
     return true
 end
 
-local calls = {}
+local calls, raised = {}, {}
 local function Legacy()
     calls = {}
     _G.MSUF_ApplyMsufScale = function(value) calls[#calls + 1] = "frame:" .. value end
@@ -38,11 +38,12 @@ local function Legacy()
     _G.MSUF_ApplyPowerBarEmbedLayout_ForUnitKey = function(unit) calls[#calls + 1] = "embed:" .. unit end
     _G.MSUF_ClassPower_Apply = function() calls[#calls + 1] = "classpower" end
     _G.MSUF_UFCore_NotifyConfigChanged = function(unit) calls[#calls + 1] = "notify:" .. unit end
+    _G.MSUF_ApplyCurrentProfileGlobalUiScale = function() calls[#calls + 1] = "reapply" end
 end
 local function NoLegacy()
     for _, name in ipairs({ "MSUF_ApplyMsufScale", "MSUF_ResetGlobalUiScale", "MSUF_SetGlobalUiScale",
         "MSUF_EnsureCooldownWidthObservers", "MSUF_ApplyPowerBarEmbedLayout_ForUnitKey", "MSUF_ClassPower_Apply",
-        "MSUF_UFCore_NotifyConfigChanged" }) do _G[name] = nil end
+        "MSUF_UFCore_NotifyConfigChanged", "MSUF_ApplyCurrentProfileGlobalUiScale" }) do _G[name] = nil end
 end
 local function FreshDB()
     return { general = { UIScale = { Enabled = false, Scale = 0.53 }, msufUiScale = 0.9, uiScale = 0.8 },
@@ -104,6 +105,14 @@ local function Bridge(withHost)
     local Suite = { Finite = function(value)
         return type(value) == "number" and value == value and value > -math.huge and value < math.huge
     end }
+    -- Platform.lua's error boundary: securecallfunction reports an error and
+    -- returns nothing.
+    Suite.Dispatch = function(callback, ...)
+        local results = { pcall(callback, ...) }
+        if results[1] then return unpack(results, 2, table.maxn(results)) end
+        raised[#raised + 1] = tostring(results[2])
+    end
+    Suite.Finish = function(callback, ...) return true, callback(...) end
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
     return Suite.HostBridge
 end
@@ -183,6 +192,34 @@ for _, withHost in ipairs({ true, false }) do
                 ready and "accepted" or "refused"))
     end
 end
+-- An applier that raises partway through the legacy apply: MSUF's scale
+-- settings go back, with the scale they describe, through MSUF's own
+-- appliers (the Modern install keeps MSUF's profile, so nothing else would
+-- undo them).
+for _, failing in ipairs({ "MSUF_ResetGlobalUiScale", "MSUF_SetGlobalUiScale" }) do
+    Legacy()
+    MSUF_DB = FreshDB()
+    local before = DeepCopy(MSUF_DB)
+    bridge = Bridge(false)
+    local real = _G[failing]
+    local first = true
+    _G[failing] = function(...)
+        if first then
+            first = false
+            error("injected " .. failing .. " failure")
+        end
+        return real(...)
+    end
+    raised = {}
+    local ok, why = bridge.ApplyScale(SPEC)
+    Check(not ok and why == "MSUF refused this UI scale" and #raised == 1,
+        failing .. ": a raising applier was not reported as a refusal")
+    Check(Same(MSUF_DB, before), failing .. ": a raising applier left MSUF's scale settings changed: msufUiScale "
+        .. tostring(MSUF_DB.general.msufUiScale) .. ", uiScale " .. tostring(MSUF_DB.general.uiScale))
+    Check(calls[#calls] == "reapply" and calls[#calls - 1] == "frame:0.9",
+        failing .. ": the saved scale was not applied again: " .. table.concat(calls, ","))
+end
+
 -- A refusal MSUF gives only when it applies reaches the caller in the
 -- installer's words.
 Legacy()
@@ -337,6 +374,22 @@ Check(M.ResetPageToDefaults("host_page") and M.ShowPageResetConfirm("host_page")
     and M.log[2] == "host confirm host_page", "the wrap did not pass the host's pages through")
 handlers.combatLocked = true
 Check(not M.ResetPageToDefaults("suite_bags") and not M.ShowPageResetConfirm("suite_bags"), "the wrapped reset ran in combat")
+-- An older menu with a history session (HOST_API_SPEC E): after a
+-- successful prepare the wrap retakes the open session's snapshot, before
+-- the history entry, so Undo restores what prepare loaded; a refused
+-- prepare retakes nothing.
+log = {}
+handlers = Handlers(log)
+M = Host(false, log, handlers)
+function M.SyncExternalHistoryState() log[#log + 1] = "sync" end
+bridge.RegisterPageResets(M, handlers)
+Check(M.ResetPageToDefaults("suite_skin") and table.concat(log, ",")
+    == "prepare:suite_skin,sync,history:Reset suite_skin:page:reset:suite_skin,run:suite_skin,finish",
+    "the legacy wrap did not retake the session snapshot after prepare: " .. table.concat(log, ","))
+log[#log + 1] = "--"
+handlers.prepare = function(key) log[#log + 1] = "prepare:" .. key;return false end
+Check(not M.ResetPageToDefaults("suite_bags") and log[#log] == "prepare:suite_bags",
+    "a refused prepare retook the session snapshot")
 
 -- One owner: the installer, the profiles and the page registration reach
 -- MSUF's settings only through the bridge.

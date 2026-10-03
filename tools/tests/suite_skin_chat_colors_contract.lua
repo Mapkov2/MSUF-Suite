@@ -39,17 +39,20 @@ local function Reset(colors)
     end
     writes = {}
 end
--- Blizzard's own function: it stores the colour (UPDATE_CHAT_COLOR runs
--- synchronously and fills ChatTypeInfo before ChangeChatColor returns).
+-- The chat cache stores one byte per channel.
+local function Byte(value) return math.floor(value * 255 + 0.5) end
+-- Blizzard's own function: it stores the colour, one byte per channel
+-- (UPDATE_CHAT_COLOR runs synchronously and fills ChatTypeInfo before
+-- ChangeChatColor returns).
 local function NativeChangeChatColor(chatType, r, g, b)
     writes[#writes + 1] = chatType
     local info = ChatTypeInfo[chatType]
-    info.r, info.g, info.b = r, g, b
+    info.r, info.g, info.b = Byte(r) / 255, Byte(g) / 255, Byte(b) / 255
 end
+-- The category stores this colour: the same bytes.
 local function Is(chatType, color)
     local info = ChatTypeInfo[chatType]
-    return math.abs(info.r - color[1]) < 1e-6 and math.abs(info.g - color[2]) < 1e-6
-        and math.abs(info.b - color[3]) < 1e-6
+    return Byte(info.r) == Byte(color[1]) and Byte(info.g) == Byte(color[2]) and Byte(info.b) == Byte(color[3])
 end
 local function Writes(chatType)
     local count = 0

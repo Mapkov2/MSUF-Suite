@@ -23,6 +23,15 @@ for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id }
 local factoryCalls, activations, scaleChanges, decodes = 0, 0, {}, 0
 
 Suite.IsCombatLocked = function() return false end
+-- Platform.lua's error boundary: securecallfunction reports an error and
+-- returns nothing.
+local raisedErrors = {}
+Suite.Dispatch = function(callback, ...)
+    local results = { pcall(callback, ...) }
+    if results[1] then return unpack(results, 2, table.maxn(results)) end
+    raisedErrors[#raisedErrors + 1] = tostring(results[2])
+end
+Suite.Finish = function(callback, ...) return true, callback(...) end
 Suite.Suite = { StyleProfile = function(profile, look)
     profile.suite.globalLook = look
     return true
@@ -101,8 +110,9 @@ Suite.ProfileIO = {
 -- the real helpers do (suite_profiles_contract checks those).
 local function FinishInstall(finish, undo, name)
     if finish then
-        local ok, why = finish()
-        if not ok then
+        -- Through the error boundary, as Profiles.lua runs it.
+        local done, ok, why = Suite.Dispatch(Suite.Finish, finish)
+        if not (done and ok == true) then
             undo()
             return false, why
         end
@@ -298,6 +308,26 @@ hostRefusal = nil
 assert(Suite.Installer.Apply() and hostScales == 1 and Suite.RootDB.installation.status == "complete"
     and MSUF_DB.general.msufUiScale == 1, "the v1 scale path did not install")
 UseHost(nil)
+-- An MSUF applier that raises partway through the legacy scale: the Modern
+-- install is rolled back and MSUF keeps its own scale settings (it keeps its
+-- profile on this path, so nothing else would undo them).
+do
+    local general = MSUF_DB.general
+    general.msufUiScale, general.uiScale = 0.9, 0.8
+    local before = { general.msufUiScale, general.uiScale, general.UIScale.Enabled, general.UIScale.Scale }
+    local defaultBefore, installed = Suite.RootDB.profiles.Default, Suite.RootDB.installation
+    MSUF_ResetGlobalUiScale = function() error("injected scale applier failure") end
+    raisedErrors = {}
+    local raisedApply, raisedWhy = Suite.Installer.Apply()
+    MSUF_ResetGlobalUiScale = resetScale
+    assert(raisedApply == false and raisedWhy == "MSUF refused this UI scale" and #raisedErrors >= 1
+        and Suite.RootDB.profiles.Default == defaultBefore and Suite.RootDB.installation == installed,
+        "a raising scale applier did not roll the Modern install back")
+    assert(general.msufUiScale == before[1] and general.uiScale == before[2]
+        and general.UIScale.Enabled == before[3] and general.UIScale.Scale == before[4],
+        "a raising scale applier left MSUF's scale settings changed: msufUiScale " .. tostring(general.msufUiScale)
+            .. ", uiScale " .. tostring(general.uiScale))
+end
 
 Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
