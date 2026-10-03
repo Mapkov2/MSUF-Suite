@@ -2629,6 +2629,12 @@
    "kind": "state",
    "reason": "the addon's own SavedVariables table of learned demon looks: nil until the first look is learned (saved variables arrive after the files ran); suite_buff_reminders_restored_contract covers the empty start",
    "symbol": "looks (= MSUFSuiteDemonLooks)"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Adapters/ChatFrames.lua",
+   "kind": "addon",
+   "reason": "Blizzard UI addon Blizzard_ColorPickerFrame (live 78282522 and forever 9a789c07 both define the frame); probed so a missing picker only loses the colour picker session rule",
+   "symbol": "frame (= ColorPickerFrame)"
   }
  ]
 }
