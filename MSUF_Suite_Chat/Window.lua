@@ -194,6 +194,24 @@ local function ApplyTabFont(self, label, chosenFont)
     end
 end
 
+-- tabPadding > 0: the tab is as wide as its title plus the padding on both
+-- sides. Blizzard sizes docked tabs again whenever it lays the dock out
+-- (FCFDock_UpdateTabs -> PanelTemplates_TabResize -> tab:SetWidth, also on
+-- a tab click), so C.DockGeometry puts the padded width back after it.
+local function ApplyTabWidth(self, visual, tab)
+    local c, context = self.config, self.context
+    if c.tabPadding and c.tabPadding > 0 then
+        local width = visual.tabLabel:GetUnboundedStringWidth()
+        if Finite(width) then
+            context:Property(tab, "GetWidth", "SetWidth", width + 2 * c.tabPadding)
+            visual.tabWidthOwned = true
+        end
+    elseif visual.tabWidthOwned then
+        context:RestoreProperty(tab, "SetWidth")
+        visual.tabWidthOwned = nil
+    end
+end
+
 -- Underline the native tab without copying its FontString. Its text and
 -- clipping stay with Blizzard even when another addon repaints the title.
 local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
@@ -223,16 +241,7 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
         context:RestoreProperty(tab, "SetHeight")
         visual.tabHeightOwned = nil
     end
-    if c.tabPadding and c.tabPadding > 0 then
-        local width = visual.tabLabel:GetUnboundedStringWidth()
-        if Finite(width) then
-            context:Property(tab, "GetWidth", "SetWidth", width + 2 * c.tabPadding)
-            visual.tabWidthOwned = true
-        end
-    elseif visual.tabWidthOwned then
-        context:RestoreProperty(tab, "SetWidth")
-        visual.tabWidthOwned = nil
-    end
+    ApplyTabWidth(self, visual, tab)
     M.tabs[tab] = visual
     ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
@@ -448,10 +457,20 @@ end
 
 -- tabGap > 0: docked tabs keep that much room between them. Blizzard's
 -- FCFDock_UpdateTabs lays the dock out again; after it, each tab moves right
--- of the previous tab of its row (static tabs, then dynamic ones).
+-- of the previous tab of its row (static tabs, then dynamic ones), and every
+-- styled tab gets its padded width back (ApplyTabWidth). In combat the dock
+-- waits: with padding on, the module applies again once combat ends.
 local spacedTabs = setmetatable({}, { __mode = "k" })
 function C.DockGeometry()
-    if not M.active or NS.IsCombatLocked() then return end
+    if not M.active then return end
+    local padded = M.config.tabPadding and M.config.tabPadding > 0
+    if NS.IsCombatLocked() then
+        if padded then S.Queue("chat") end
+        return
+    end
+    if padded then
+        for tab, visual in pairs(M.tabs) do ApplyTabWidth(M, visual, tab) end
+    end
     local context, gap = M.context, M.config.tabGap
     if gap <= 0 then
         for tab in pairs(spacedTabs) do

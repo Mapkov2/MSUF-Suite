@@ -69,6 +69,7 @@ local function Frame(name)
     function frame:CreateFontString()
         return { SetPoint = function() end, SetText = function(label, value) label.value = value end,
             GetText = function(label) return label.value end,
+            GetUnboundedStringWidth = function(label) return #(label.value or "") * 6 end,
             SetTextColor = function(label, ...) label.color = { ... } end,
             GetTextColor = function(label) return unpack(label.color or { 1, 1, 1, 1 }) end,
             SetJustifyH = function() end, SetWidth = function(label, width) label.width = width end,
@@ -235,7 +236,7 @@ GameTooltip = Frame("GameTooltip")
 GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
 function GameTooltip:IsOwned(frame) return self.owner == frame end
-local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook
+local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook, dockTabsHook
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
 FCFDock_SelectWindow = function() end
@@ -269,7 +270,8 @@ hooksecurefunc = function(name, callback)
     elseif name == "FCF_OpenNewWindow" then newWindowHook = callback
     elseif name == "FCFTab_UpdateAlpha" then tabAlphaHook = callback
     elseif name == "FCFTab_UpdateColors" then tabColorsHook = callback
-    elseif name == "FCFDock_SelectWindow" then selectHook = callback end
+    elseif name == "FCFDock_SelectWindow" then selectHook = callback
+    elseif name == "FCFDock_UpdateTabs" then dockTabsHook = callback end
 end
 
 function S.Install(id, module)
@@ -899,6 +901,34 @@ assert(gapPoint and gapPoint[1] == "LEFT" and gapPoint[2] == ChatFrame1Tab and g
 module.config.tabGap = 0
 module:Refresh()
 assert(not ctx.anchors[ChatFrame2Tab], "turning the tab gap off kept the moved tab")
+-- tabPadding widens each tab to its title plus the padding on both sides.
+-- Blizzard's FCFDock_UpdateTabs sizes the docked tabs again on every dock
+-- layout, a tab click included (PanelTemplates_TabResize: tab:SetWidth); the
+-- padded width must come back after it, and in combat once combat ends.
+local nativeTabWidth = ChatFrame1Tab:GetWidth()
+module.config.tabPadding = 6
+module:Refresh()
+local function Padded(tab) return tab.Text:GetUnboundedStringWidth() + 12 end
+assert(ChatFrame1Tab:GetWidth() == Padded(ChatFrame1Tab) and ChatFrame3Tab:GetWidth() == Padded(ChatFrame3Tab),
+    "tab text padding did not widen the tabs")
+ChatFrame1Tab:SetWidth(40)
+ChatFrame3Tab:SetWidth(40)
+dockTabsHook(GENERAL_CHAT_DOCK)
+assert(ChatFrame1Tab:GetWidth() == Padded(ChatFrame1Tab) and ChatFrame3Tab:GetWidth() == Padded(ChatFrame3Tab),
+    "Blizzard's dock layout (a tab click) dropped the tab text padding")
+local queued, queue = {}, S.Queue
+S.Queue = function(id) queued[#queued + 1] = id end
+lockdown = true
+ChatFrame1Tab:SetWidth(40)
+dockTabsHook(GENERAL_CHAT_DOCK)
+lockdown = false
+S.Queue = queue
+assert(queued[1] == "chat" and #queued == 1, "a dock layout in combat did not bring the tab text padding back after combat")
+module.config.tabPadding = 0
+module:Refresh()
+assert(ChatFrame1Tab:GetWidth() == nativeTabWidth, "turning tab text padding off kept the padded width")
+dockTabsHook(GENERAL_CHAT_DOCK)
+assert(ChatFrame1Tab:GetWidth() == nativeTabWidth, "Blizzard's dock layout padded a tab with padding off")
 -- A chat window that fails to style is reported; the later windows are styled.
 assert(#reports == 0, "chat styling raised: " .. tostring(reports[1]))
 ChatFrame4 = Frame("ChatFrame4")
