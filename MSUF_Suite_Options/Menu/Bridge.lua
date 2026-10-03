@@ -316,11 +316,19 @@ function P.InvalidateSearch() end
 
 -- Repaints the visible suite page; controller changes queued in combat reach
 -- the menu through Suite.Options.RefreshAll (set in Register.lua).
+local trackerEnabled
 function P.Refresh()
     P.ForgetAvailability()
     P.InvalidateSearch()
     P.RefreshSkinPageShape()
     if M.RequestRefresh then M.RequestRefresh(nil, "suite") end
+    local enabled = P.Get("objectives", "enabled") == true
+    local changed = trackerEnabled ~= nil and trackerEnabled ~= enabled
+    trackerEnabled = enabled
+    if changed then
+        P.Confirm("quest-tracker-reload", Tr("Reload the UI now to finish switching quest trackers?"),
+            function() if not P.Combat() then ReloadUI() end end)
+    end
 end
 
 -- Combat refuses from PLAYER_REGEN_DISABLED on, while InCombatLockdown() is

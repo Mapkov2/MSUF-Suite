@@ -8,6 +8,8 @@ local root = assert(arg[1], "repository root required")
 securecallfunction = function(callback, ...) return callback(...) end
 local flavor = arg[2] or "Mainline"
 C_PetBattles = { GetAbilityInfoByID = function() return nil end }
+StaticPopup_ShowCustomGenericConfirmation = function() end
+StaticPopup_Hide = function() end
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }
@@ -372,7 +374,7 @@ W.PageBuilder = function(ctx)
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
     function b:CollapsibleSection(id, title, _, defaultOpen)
         local body = Widget("Section")
-        body.sectionId, body.title = id, title
+        body.sectionId, body.title, body.defaultOpen = id, title, defaultOpen
         body._msuf2Width = ctx.width
         body._msuf2CollapsibleEntry = { label = Widget("FontString") }
         if ctx.key == "suite_dataTexts" and id:match("^suite_dataTexts_bar%d+$") then
@@ -433,6 +435,16 @@ assert(Suite.Menu.Attach(), "suite menu did not attach")
 assert(Suite.Menu.attached == true)
 assert(historyProvider and Suite.Options.BuildColorsCategory, "Suite did not register MSUF history and colors")
 for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .. tostring(k)) end
+-- The first action after a cold options attach must also offer the reload.
+do
+    local previousConfirm, previous = S.Confirm, S.Config("objectives").enabled
+    local asked = 0
+    S.Confirm = function() asked = asked + 1 end
+    assert(optionsNS.Set("objectives", "enabled", not previous) and asked == 1,
+        "the first tracker switch after a cold menu attach missed its reload prompt")
+    assert(S.Set("objectives", "enabled", previous))
+    S.Confirm = previousConfirm
+end
 -- Exercise the actual Edit Mode callback through the core menu bridge, including
 -- a cold page and repeated jumps across the refactored categories and tabs.
 do (function()
@@ -631,6 +643,92 @@ do
 end
 
 
+-- Each HUD switch changes only its feature; changing trackers offers an
+-- optional reload after saving, including refusal and repeated-click paths.
+do (function()
+    local previousCurrent = current
+    local hudCtx = { key = "suite_hud", width = 1000, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+    current = hudCtx
+    M.pages.suite_hud.build(hudCtx)
+    for _, refresh in ipairs(hudCtx.refreshers) do refresh() end
+    assert(#hudCtx.sections == 4, "HUD must have one accordion per independent feature")
+    for _, body in ipairs(hudCtx.sections) do
+        assert(body.defaultOpen == false, "HUD must start with compact feature headers")
+    end
+    local previousTabs = W.SegmentTabs
+    W.SegmentTabs = nil
+    local legacy = { key = "suite_hud", width = 1000, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+    M.pages.suite_hud.build(legacy)
+    W.SegmentTabs = previousTabs
+    assert(#legacy.sections == 4 and not legacy.tabControls,
+        "older hosts must keep compact HUD features through the settings selector")
+    for i = 1, 3 do
+        local tabs = assert(legacy.sections[i]._msufSuiteHUDTabs)
+        local id = legacy.sections[i].sectionId:match("suite_hud_(.+)_module")
+        local prefix = id == "runSummary" and "summary" or id
+        tabs.select("suite_hud_" .. prefix .. "_layout")
+        assert(tabs.panels["suite_hud_" .. prefix .. "_layout"].shown,
+            "older host settings selector cannot open layout")
+        assert(tabs.selector.value == "suite_hud_" .. prefix .. "_layout",
+            "older host settings selector displays a different panel")
+        assert(tabs.selector.meta.classification == "ephemeral",
+            "HUD view selector must not act like a saved setting")
+    end
+    local ids = { "objectives", "runSummary", "announcements", "afkScreen" }
+    local saved, questions, reloads = {}, {}, 0
+    local oldConfirm, oldReload, oldCombat = S.Confirm, ReloadUI, InCombatLockdown
+    S.Confirm = function(key, data) questions[#questions + 1] = { key = key, data = data } end
+    ReloadUI = function() reloads = reloads + 1 end
+    for _, id in ipairs(ids) do saved[id] = S.Config(id).enabled; assert(S.Set(id, "enabled", true)) end
+    local function Switch(id)
+        for _, widget in ipairs(hudCtx.widgets) do
+            if widget.meta and widget.meta.controlId == "menu2.suite_hud." .. id .. ".enabled" then return widget end
+        end
+        error("HUD switch missing: " .. id)
+    end
+    local tracker = Switch("objectives")
+    tracker.set(false)
+    assert(not S.Config("objectives").enabled, "tracker value=" .. tostring(tracker.get()) .. " feedback=" .. tostring(optionsNS.feedback.objectives))
+    for i = 2, #ids do assert(S.Config(ids[i]).enabled, "tracker switch disabled " .. ids[i]) end
+    assert(#questions == 1 and questions[1].key == "options:quest-tracker-reload",
+        "changing the quest tracker must offer a reload")
+    assert(reloads == 0, "tracker switch reloaded before the user accepted")
+    tracker.set(false)
+    assert(#questions == 1, "unchanged tracker switch reopened the reload prompt")
+    questions[1].data.callback()
+    assert(reloads == 1, "accepting the tracker prompt did not reload")
+    tracker.set(true)
+    assert(#questions == 2 and S.Config("objectives").enabled)
+    InCombatLockdown = function() return true end
+    questions[2].data.callback()
+    assert(reloads == 1, "reload prompt bypassed combat refusal")
+    tracker.set(false)
+    assert(S.Config("objectives").enabled)
+    assert(#questions == 2, "refused edit opened a reload prompt")
+    InCombatLockdown = oldCombat
+    for i = 2, #ids do
+        local switch = Switch(ids[i])
+        switch.set(false)
+        assert(not S.Config(ids[i]).enabled)
+        assert(S.Config("objectives").enabled, ids[i] .. " disabled the tracker")
+    end
+    assert(#questions == 2, "another HUD switch prompted a tracker reload")
+    local beforeDisable = optionsNS.CaptureHistoryState()
+    tracker.set(false)
+    assert(#questions == 3)
+    assert(optionsNS.ResetRules("objectives", {}, nil, { "enabled" }))
+    assert(S.Config("objectives").enabled and #questions == 4,
+        "resetting the tracker switch bypassed the reload prompt")
+    tracker.set(false)
+    assert(#questions == 5)
+    assert(optionsNS.RestoreHistoryState(beforeDisable))
+    assert(S.Config("objectives").enabled and #questions == 6,
+        "undoing a tracker change bypassed the reload prompt")
+    for _, id in ipairs(ids) do assert(S.Set(id, "enabled", saved[id])) end
+    S.Confirm, ReloadUI, InCombatLockdown = oldConfirm, oldReload, oldCombat
+    current = previousCurrent
+    optionsNS.Refresh()
+end)() end
 if flavor == "Forever" then
     local plates = S.Config("nameplates")
     assert(plates.look == 4 and plates.barGeometry == 2 and plates.enemyLevelEnabled == false,
@@ -1414,20 +1512,15 @@ end
 assert(shortcutColorCount > 0, "suite color shortcut audit did not cover the catalog")
 local hudSections = {}
 for _, section in ipairs(contexts.suite_hud.sections) do
-    hudSections[section.sectionId] = true
-    local appearance = section.sectionId == "suite_hud_objectives_type"
-        or section.sectionId == "suite_hud_summary_type"
-        or section.sectionId == "suite_hud_announcements_type"
+    hudSections[section.sectionId] = section
+    local appearance = section.sectionId ~= "suite_hud_afkScreen_module"
     assert((type(section.colorShortcut) == "table") == appearance,
-        "HUD appearance accordion is missing its three-dot colors")
+        "HUD feature header lost its three-dot colors")
 end
-assert(hudSections.suite_hud_objectives_type and hudSections.suite_hud_summary_type
-    and hudSections.suite_hud_announcements_type
-    and not hudSections.suite_hud_objectives_quest_groups
-    and not hudSections.suite_hud_announcements_event_colors,
-    "HUD appearance was not condensed")
-assert(hudSections.suite_hud_objectives_raid == (flavor == "Mainline"),
-    "raid encounter accordion must exist only on Retail")
+assert(#contexts.suite_hud.sections == 4, "HUD still mixes settings from different features")
+local trackerTabs = assert(hudSections.suite_hud_objectives_module._msufSuiteHUDTabs)
+assert((trackerTabs.panels.suite_hud_objectives_raid ~= nil) == (flavor == "Mainline"),
+    "raid encounter tab must exist only on Retail")
 local raidPause
 for _, widget in ipairs(contexts.suite_hud.widgets) do
     if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.showRaid" then
@@ -1438,9 +1531,41 @@ for _, widget in ipairs(contexts.suite_hud.widgets) do
     end
 end
 assert(raidPause and raidPause.row and raidPause.row.kind == "toggle"
-    and raidPause.meta.sectionId == "suite_hud_objectives_content"
+    and raidPause.meta.sectionId == "suite_hud_objectives_module"
     and Suite.SuiteCatalog.objectives.rules.pauseInRaidCombat.default == false,
     "raid combat tracker pause must be an optional HUD toggle")
+do (function()
+    local tabs = {
+        objectives = { "content", "layout", "type" },
+        runSummary = { "content", "layout", "type" },
+        announcements = { "content", "layout", "type" },
+    }
+    for id, kinds in pairs(tabs) do
+        local record = assert(hudSections["suite_hud_" .. id .. "_module"]._msufSuiteHUDTabs)
+        local prefix = id == "runSummary" and "summary" or id
+        for _, kind in ipairs(kinds) do
+            local panelId = "suite_hud_" .. prefix .. "_" .. kind
+            local panel = assert(record.panels[panelId])
+            record.select(panelId)
+            assert(panel.shown, "HUD settings tab did not open")
+            for otherId, other in pairs(record.panels) do
+                assert(other.shown == (otherId == panelId), "HUD shows more than one settings tab")
+            end
+        end
+        local exact
+        for _, widget in ipairs(contexts.suite_hud.widgets) do
+            if widget.meta and widget.meta.controlId == "menu2.suite_hud." .. id .. ".x" then exact = widget end
+        end
+        assert(exact and exact._msuf2PrepareExactSearchTarget, "HUD lost exact-search tab preparation")
+        exact:_msuf2PrepareExactSearchTarget()
+        assert(record.panels["suite_hud_" .. prefix .. "_layout"].shown,
+            "exact search did not select the HUD layout tab")
+        if record.selector then
+            assert(record.selector.value == "suite_hud_" .. prefix .. "_layout",
+                "exact search left the HUD selector on its old label")
+        end
+    end
+end)() end
 local focusedColor, category
 M.ColorsSetPainterCategory = function(key) category = key end
 M.cache = { opt_colors = { sections = {
@@ -1463,7 +1588,7 @@ for _, section in ipairs(contexts.suite_nameplates.sections) do
 end
 assert((hudSections.raidControl ~= nil) == (flavor == "Mainline")
     and (not hudSections.raidControl
-        or hudSections.raidControl.meta.sectionId == "suite_hud_objectives_raid"),
+        or hudSections.raidControl.meta.sectionId == "suite_hud_objectives_module"),
     "raid encounter option must resolve to its own exact accordion")
 do
     local plateControls = {}

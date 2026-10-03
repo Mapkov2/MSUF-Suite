@@ -629,7 +629,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
     local spec = P.catalog[id]
     local sectionId = pageKey .. "_" .. id .. "_module"
     local title = opts.title or "Basics"
-    local body = b:CollapsibleSection(sectionId, Tr(title), 120, true)
+    local body = b:CollapsibleSection(sectionId, Tr(title), 120, opts.open ~= false)
     local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
     local toggle = W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
     M.BindBoolWidget(ctx, toggle,
@@ -673,6 +673,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
     P.AttachSectionReset(ctx, body, title, function()
         return P.ResetRules(id, opts.rules or {}, nil, { "enabled" })
     end)
+    if opts.buildBody then y = opts.buildBody(body, y, width) end
     P.FinishBody(b, body, y)
     return body
 end

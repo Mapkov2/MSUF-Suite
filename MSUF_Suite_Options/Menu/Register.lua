@@ -312,3 +312,5 @@ Suite.Options = {
     ApplyForeverStyle = function() return P.ApplyForeverStyle() end,
 }
 Suite.Menu.attached = true
+-- Seed transition tracking after the initialized Suite has attached its menu.
+P.Refresh()

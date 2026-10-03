@@ -297,9 +297,9 @@ for _, query in ipairs({ "mythic plus", "mythic+", "m+", "m+ mythic plus" }) do
         if rec.key == "suite_hud" and rec.label == "Mythic+ run summaries" then summary = rec end
     end
     if flavor == "Mainline" then
-        Check(timer and timer.route and timer.route.accordion["suite_hud:suite_hud_objectives_content"],
+        Check(timer and timer.route and timer.route.accordion["suite_hud:suite_hud_objectives_module"],
             "'" .. query .. "' did not put the timer section in the search palette")
-        Check(summary and summary.route and summary.route.accordion["suite_hud:suite_hud_summary_content"],
+        Check(summary and summary.route and summary.route.accordion["suite_hud:suite_hud_runSummary_module"],
             "'" .. query .. "' did not put run summaries in the search palette")
         Check(timer.hint:find("^MSUF Suite > ") and summary.hint:find("^MSUF Suite > "),
             "'" .. query .. "' did not identify the Suite in its result breadcrumbs")
@@ -696,8 +696,8 @@ do
     if searchHost == classic then
         if flavor == "Mainline" then
             for _, case in ipairs({
-                { label = "Mythic+ settings", sectionId = "suite_hud_objectives_content" },
-                { label = "Mythic+ run summaries", sectionId = "suite_hud_summary_content" },
+                { label = "Mythic+ settings", sectionId = "suite_hud_objectives_module", prefix = "objectives" },
+                { label = "Mythic+ run summaries", sectionId = "suite_hud_runSummary_module", prefix = "summary" },
             }) do
                 local target
                 for i, record in ipairs(Search("mythic plus")) do
@@ -715,6 +715,15 @@ do
                 Check(selected and anchored and M.activeKey == "suite_hud"
                     and section and section._msuf2CollapsibleEntry.open == true,
                     "Mythic+ search did not open the HUD section: " .. case.sectionId)
+                local tabs = assert(section._msufSuiteHUDTabs)
+                tabs.select("suite_hud_" .. case.prefix .. "_type")
+                Check(tabs.panels["suite_hud_" .. case.prefix .. "_type"]:IsShown(),
+                    "HUD warm-routing setup did not select Appearance")
+                api.OpenSearchTarget(target.key, target.label,
+                    target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+                world.widgets:RunTimers(80)
+                Check(tabs.panels["suite_hud_" .. case.prefix .. "_content"]:IsShown(),
+                    "Mythic+ shortcut kept the previously selected HUD tab")
             end
         end
 
