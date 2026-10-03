@@ -2074,6 +2074,22 @@ assert(Button(2,1).button.cooldown.hideNumbers==false and Button(2,1).button.cha
 assert(S.Set("actionbars","cooldownNumbers",false))
 assert(Button(2,1).button.cooldown.hideNumbers==true and Button(2,1).button.chargeCooldown.hideNumbers==true)
 
+-- The manual size chosen in Menu2 paints both countdowns immediately;
+-- explicitly re-enabling fit restores the button-size cap.
+do
+    local before={bar1Size=c.bar1Size,bar1CooldownSize=c.bar1CooldownSize,bar1CooldownAutoSize=c.bar1CooldownAutoSize}
+    assert(S.SetMany("actionbars",{bar1Size=40,bar1CooldownSize=18,bar1CooldownAutoSize=false}))
+    local button=Button(1,1).button
+    assert(button.cooldown:GetCountdownFontString().font[2]==18
+        and button.chargeCooldown:GetCountdownFontString().font[2]==18,
+        "manual main-bar cooldown size did not reach main and charge countdowns")
+    assert(S.Set("actionbars","bar1CooldownAutoSize",true))
+    assert(button.cooldown:GetCountdownFontString().font[2]==16
+        and button.chargeCooldown:GetCountdownFontString().font[2]==16,
+        "explicit auto fit did not restore the button-size cap")
+    assert(S.SetMany("actionbars",before))
+end
+
 -- Explicit anchors and independent offsets affect text only; the cooldown
 -- clamp responds to actual button size, including charge countdowns.
 do

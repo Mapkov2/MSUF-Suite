@@ -240,6 +240,14 @@ local function LookEdit(id, key, value)
 end
 
 function P.Set(id, key, value)
+    -- A manual countdown size takes precedence over the automatic fit cap.
+    -- Keep both settings in one batch so undo and combat refusal stay atomic.
+    if id == "actionbars" then
+        local bar = key:match("^(bar%d+)CooldownSize$")
+        if bar and P.Get(id, key) ~= value then
+            return P.SetMany(id, { [key] = value, [bar .. "CooldownAutoSize"] = false })
+        end
+    end
     -- Both Colors and the section's three-dot picker use this path. Editing
     -- an active minimap text box chooses its own color in one undoable write.
     if id == "minimap" then

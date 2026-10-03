@@ -577,6 +577,60 @@ do
     current = previous
 end
 
+-- Healclassic: moving the manual countdown-size slider must not remain
+-- masked by the selected bar's automatic fit cap (18 vs 16 on a 40px button).
+do
+    local previous=current
+    local bars={key="suite_actionbars",width=720,refreshers={},widgets={},sections={},pageItems={},entry={sections={}}}
+    current=bars
+    M.pages.suite_actionbars.build(bars)
+    local function Find(ctx,predicate)
+        for _,widget in ipairs(ctx.widgets) do if predicate(widget) then return widget end end
+    end
+    local picker=assert(Find(bars,function(w) return w.meta and tostring(w.meta.controlId):find("editor%.selected") end))
+    local original=historyProvider.capture()
+    assert(S.SetMany("actionbars", {bar1CooldownSize=16,bar1CooldownAutoSize=true,
+        bar12CooldownSize=16,bar12CooldownAutoSize=true}))
+    local countdown=assert(Find(bars, function(w)
+        return w.meta and w.meta.settingKey == "msufsuite.actionbars.bar1CooldownSize"
+    end))
+    local autoFit=assert(Find(bars, function(w)
+        return w.meta and w.meta.settingKey == "msufsuite.actionbars.bar1CooldownAutoSize"
+    end))
+    for _, index in ipairs({1,12}) do
+        picker.set(index)
+        assert(S.SetMany("actionbars", { ["bar"..index.."CooldownSize"]=16,
+            ["bar"..index.."CooldownAutoSize"]=true }))
+        local snapshot=historyProvider.capture()
+        local before=historyWrites
+        countdown.set(18)
+        local config=S.Config("actionbars")
+        assert(config["bar"..index.."CooldownSize"]==18 and not autoFit.get(),
+            "manual cooldown size remained capped by auto fit on bar "..index)
+        assert(historyWrites==before+1,"manual countdown size and fit must form one undo step")
+        local other=index==1 and 12 or 1
+        assert(config["bar"..other.."CooldownSize"]==16 and config["bar"..other.."CooldownAutoSize"],
+            "manual countdown size changed another bar")
+        assert(historyProvider.restore(snapshot))
+        assert(countdown.get()==16 and autoFit.get(),"undo did not restore both countdown settings")
+        countdown.set(16)
+        assert(autoFit.get(),"an unchanged size disabled automatic fitting")
+        autoFit.set(true)
+        InCombatLockdown=function() return true end
+        countdown.set(20)
+        InCombatLockdown=function() return false end
+        assert(countdown.get()==16 and autoFit.get(),"combat refusal partially changed countdown settings")
+        countdown.set(18)
+        autoFit.set(true)
+        assert(countdown.get()==18 and autoFit.get(),"explicit automatic fitting could not be restored")
+        assert(historyProvider.restore(snapshot))
+    end
+    picker.set(1)
+    assert(historyProvider.restore(original))
+    current=previous
+end
+
+
 if flavor == "Forever" then
     local plates = S.Config("nameplates")
     assert(plates.look == 4 and plates.barGeometry == 2 and plates.enemyLevelEnabled == false,
