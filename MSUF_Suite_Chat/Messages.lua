@@ -22,6 +22,15 @@ local URL = "https?://[^%s|<>]+"
 local NAME = "[%a\128-\255][%w\128-\255]*"
 local DATE_SPEC = "%%[aAbBcdHIjmMpSUwWxXyYzZ%%]"
 local DEFAULT_STAMP = "[%H:%M]"
+-- What date() writes for a specifier of DATE_SPEC, as a pattern: numbers by
+-- default, the C library's names, %c, %x and %X as the Windows and macOS
+-- runtimes write them, the zone (an offset or the system's zone name) and a
+-- literal %. A stamp the pattern misses is stamped as before.
+local SPEC_PATTERNS = {
+    a = "%a+", A = "%a+", b = "%a+", B = "%a+", p = "%a+",
+    c = "[%w/ ]-%d+:%d+:%d+[%w ]-", x = "%d+[/%.%-]%d+[/%.%-]%d+", X = "%d+:%d+:%d+",
+    z = ".-", Z = ".-", ["%"] = "%%",
+}
 -- Group chat prefixes, shortened in this order.
 local CHANNELS = {
     "GUILD", "G", "PARTY", "P", "RAID", "R", "RAID_WARNING", "RW", "INSTANCE_CHAT", "I", "OFFICER", "O",
@@ -34,6 +43,7 @@ local members, shortcuts, channelRules = {}, {}, {}
 local runs, pieces = {}, {}
 local tools = {}
 local stampFormat, stampSecond, stampText = DEFAULT_STAMP, nil, ""
+local stampPattern = "^%[%d+:%d+%] "
 local nativeSetting, nativeFormat, nativePrefix
 
 ------------------------------------------------------------------ formatting
@@ -107,6 +117,22 @@ local function ValidFormat(format)
     return type(format) == "string" and #format <= 64 and not format:gsub(DATE_SPEC, ""):find("%", 1, true)
 end
 
+-- The anchored pattern of a line that starts with a Suite stamp in format.
+local function StampPattern(format)
+    local pattern, index = "^", 1
+    while index <= #format do
+        local char = format:sub(index, index)
+        if char == "%" then
+            pattern = pattern .. (SPEC_PATTERNS[format:sub(index + 1, index + 1)] or "%d+")
+            index = index + 2
+        else
+            pattern = pattern .. (char:find("[%^%$%(%)%%%.%[%]%*%+%-%?]") and "%" .. char or char)
+            index = index + 1
+        end
+    end
+    return pattern .. " "
+end
+
 -- Once per second at most: the Suite stamp and the prefix Blizzard writes
 -- itself (ChatFrameUtil.GetTimestampFormat, TimeUtil.BetterDate) while its
 -- showTimestamps setting is on. Its own stamp is replaced, not repeated.
@@ -121,7 +147,12 @@ local function RefreshStamps(now)
     nativePrefix = nativeFormat and TimeUtil.BetterDate(nativeFormat, now) or nil
 end
 
+-- A line that already starts with a Suite stamp keeps it: Blizzard copies
+-- a window's rendered lines into a temporary whisper window through
+-- AddMessage (FCF_OpenTemporaryWindow, live and forever), and a reused
+-- window still has its message hook.
 local function Stamp(text)
+    if text:find(stampPattern) then return text end
     local now = time()
     if now ~= stampSecond then RefreshStamps(now) end
     if nativePrefix and text:find(nativePrefix, 1, true) == 1 then text = text:sub(#nativePrefix + 1) end
@@ -163,6 +194,7 @@ function C.CompileMessages(config)
     tools.any = tools.format or tools.history or tools.fade
     CompileChannels(config)
     stampFormat = ValidFormat(config.timestampFormat) and config.timestampFormat or DEFAULT_STAMP
+    stampPattern = StampPattern(stampFormat)
     stampSecond = nil
 end
 

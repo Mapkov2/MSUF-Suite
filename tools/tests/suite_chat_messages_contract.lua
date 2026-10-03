@@ -234,6 +234,43 @@ config.timestampFormat = "[%H:%M]"
 nativeStamp = "%H:%M "
 C.CompileMessages(config)
 eq(Rendered("12:34 hello"), "[12:34] hello", "Blizzard's own timestamp was kept next to the Suite stamp")
+-- Blizzard reuses a closed temporary whisper window and copies the source
+-- window's rendered lines into it through AddMessage
+-- (FCF_OpenTemporaryWindow): a line that already starts with a Suite stamp,
+-- also one from an earlier minute, is not stamped again.
+nativeStamp = "none"
+C.CompileMessages(config)
+local whisper = "|Hplayer:Bob|h[Bob]|h whispers: hello"
+local stamped = Rendered(whisper)
+eq(stamped, "[12:34] " .. whisper, "a whisper line was not stamped")
+eq(Rendered(stamped), stamped, "a copied whisper line got a second timestamp")
+eq(Rendered("[09:05] " .. whisper), "[09:05] " .. whisper, "a copied line from an earlier minute got a second timestamp")
+eq(Rendered("[Raid Warning] Bob: pull"), "[12:34] [Raid Warning] Bob: pull", "a bracketed prefix was taken for a stamp")
+do
+    -- Every format the setting accepts, with the client's own date():
+    -- this runtime's %c, %x and %X, and macOS's %c.
+    local stubDate = date
+    date = function(format, when) return os.date(format, when) end
+    for _, format in ipairs({ "[%H:%M]", "%H:%M:%S", "[%I:%M %p]", "<%a %d.%m.>", "[%c]", "%x %X",
+        "(%Y-%m-%d)", "%B %j %%", "[%H:%M %z]" }) do
+        config.timestampFormat = format
+        C.CompileMessages(config)
+        local line = Rendered(whisper)
+        assert(line ~= whisper and line:sub(-#whisper) == whisper, "the format " .. format .. " did not stamp")
+        eq(Rendered(line), line, "a copied line got a second timestamp in the format " .. format)
+        assert(Rendered("[Raid Warning] Bob: pull") ~= "[Raid Warning] Bob: pull",
+            "the format " .. format .. " took a bracketed prefix for a stamp")
+    end
+    date = function() return "[Thu Jan  1 01:16:40 1970]" end
+    config.timestampFormat = "[%c]"
+    C.CompileMessages(config)
+    eq(Rendered("[Thu Jan  1 01:16:40 1970] " .. whisper), "[Thu Jan  1 01:16:40 1970] " .. whisper,
+        "a copied line stamped with macOS's %c got a second timestamp")
+    date = stubDate
+    config.timestampFormat = "[%H:%M]"
+    nativeStamp = "%H:%M "
+    C.CompileMessages(config)
+end
 -- Per line, settings were compiled: no global string, and the native
 -- setting at most once per second.
 config.shortenChannels, config.channelShortcuts = true, "General=Gen"
@@ -535,7 +572,8 @@ do
     -- Budget: Lua VM instructions of one stamped line in a full window,
     -- this window model included (GC and hooks aside, deterministic on Lua
     -- 5.1). 2026-10-01: 4534 when every visit read the raw text, 3548 with
-    -- the newest-slot predicate; +2 % headroom.
+    -- the newest-slot predicate; +2 % headroom. 2026-10-03: 3552 with the
+    -- copied-line stamp check (one anchored string.find, no native call).
     local CHAT_LINE_BUDGET = 3620
     local count = 0
     local function Instructions(fn)
