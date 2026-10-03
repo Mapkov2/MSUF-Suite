@@ -639,6 +639,12 @@
    "symbol": "ToggleEncounterJournal"
   },
   {
+   "file": "MSUF_Suite_Modules/ObjectivesActions.lua",
+   "kind": "state",
+   "reason": "Blizzard's scenario stage block creates its find-group button on first use",
+   "symbol": "stageButton (= ScenarioObjectiveTracker.StageBlock.findGroupButton)"
+  },
+  {
    "file": "MSUF_Suite_Modules/Surfaces.lua",
    "kind": "addon",
    "reason": "class color addons (for example !ClassColors) define CUSTOM_CLASS_COLORS",

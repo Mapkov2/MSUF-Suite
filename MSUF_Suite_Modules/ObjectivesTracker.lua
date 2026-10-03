@@ -135,7 +135,8 @@ end
 local function OnFindGroupEnter(button)
     local row = button.ownerRow
     GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    GameTooltip:SetText(row.questGroupSearch and TOOLTIP_TRACKER_FIND_GROUP_BUTTON or Tr("Open group finder"))
+    local search = row.questGroupSearch or row.group == "scenario"
+    GameTooltip:SetText(search and TOOLTIP_TRACKER_FIND_GROUP_BUTTON or Tr("Open group finder"))
     GameTooltip:Show()
 end
 local function OnCollapseClick(button, mouseButton)

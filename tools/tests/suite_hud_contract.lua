@@ -162,7 +162,11 @@ IsInGroup = function() return true end
 QuestMapQuestOptions_AbandonQuest = function(id) abandoned = id end
 ShowAchievementFrameForAchievement = function(id) openedAchievement = id end
 ToggleEncounterJournal = function() openedJournal = true end
-LFGListUtil_FindScenarioGroup = function(id) foundScenario = id end
+-- Called from addon code, this writes the LFG list state that
+-- C_LFGList.Search (restricted) reads (ObjectivesActions.lua).
+LFGListUtil_FindScenarioGroup = function()
+    error("the Suite ran Blizzard's scenario group search from addon code")
+end
 local questActivity, openedFinder, foundQuest
 C_LFGList = { CanCreateScenarioGroup = function() return true end,
     GetActivityIDForQuestID = function(id) return id == 77 and questActivity or nil end }
@@ -174,6 +178,8 @@ PVEFrame:Hide()
 local shownPanel
 ShowUIPanel = function(frame) shownPanel = frame end
 QuestObjectiveFindGroupButtonMixin = { SetUp = function(self, id) self:SetAttribute("questID", id) end }
+-- The scenario stage block creates its find-group button on first use.
+ScenarioObjectiveTracker = { StageBlock = {} }
 C_Timer = { After = function(_, callback) scheduled[#scheduled + 1] = callback end }
 local function Drain()
     local pending = scheduled
@@ -544,9 +550,16 @@ assert(stoppedAchievement == 99 and openedLog == 3,
     "Shift-left-click must untrack an achievement")
 shiftDown = false
 questRow.OnClick({ group = "scenario", scenarioID = 123, menuTitle = "Delve" }, "RightButton")
-assert(lastMenu.buttons["Adventure Guide"] and lastMenu.buttons["Find group"])
-lastMenu.buttons["Find group"]()
-assert(foundScenario == 123, "scenario menu did not use its scenario ID")
+assert(lastMenu.buttons["Adventure Guide"] and not lastMenu.buttons["Find group"],
+    "the scenario menu must leave the group search to the row's secure group button")
+if flavor == "Mainline" then
+    lastMenu.buttons["Open group finder"]()
+    assert(shownPanel == PVEFrame and not openedFinder,
+        "the scenario menu must open the group finder through the secure panel delegate")
+    shownPanel = nil
+else
+    assert(not lastMenu.buttons["Open group finder"], "Forever has no group finder menu action")
+end
 local before = setPoints
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 tracker.context.events.QUEST_WATCH_UPDATE(tracker, "QUEST_WATCH_UPDATE")
@@ -699,7 +712,8 @@ assert(delveHeader.widgetSetID == nil and not delveHeader.shown and delveRow.tex
 achievementRow.OnClick(achievementRow, "RightButton")
 assert(lastMenu.buttons["View achievement"], "achievement row did not expose its menu")
 scenarioRow.OnClick(scenarioRow, "RightButton")
-assert(lastMenu.buttons["Find group"], "scenario row did not expose its menu")
+assert(lastMenu.buttons["Adventure Guide"]
+    and (flavor ~= "Mainline" or lastMenu.buttons["Open group finder"]), "scenario row did not expose its menu")
 assert(movers.objectives.spec.xKey == "x" and movers.objectives.spec.yKey == "y")
 assert(#movers.objectives.spec.extraControls == 3
     and movers.objectives.spec.extraControls[1].id == "width"
@@ -1060,6 +1074,35 @@ if flavor == "Mainline" then
     assert(shownPanel == PVEFrame and not foundQuest and not openedFinder,
         "the menu must open the group finder through the secure panel delegate")
     WorldQuestObjectiveTracker = nil
+end
+do
+    -- A groupable scenario row gets the same secure group button: it clicks
+    -- the find-group button of the hidden native tracker's stage block.
+    local function Click(button)
+        if button.PreClick then button.PreClick(button, "LeftButton") end
+        button.OnClick(button, "LeftButton")
+    end
+    local scenarioButton = tracker.rows["entry:scenario:0"].findGroupButton
+    assert(scenarioButton and scenarioButton.shown and scenarioButton.template == "InsecureActionButtonTemplate",
+        "a groupable scenario needs the row's secure group finder button")
+    Click(scenarioButton)
+    assert(scenarioButton.secureMacro == "/click LFDMicroButton\n/click PVEFrameTab1\n/click GroupFinderFrameGroupButton3"
+        and not openedFinder, "without Blizzard's stage button the scenario row must open Premade Groups")
+    local stageEye = Widget(UIParent)
+    stageEye.scenarioID = 123
+    function stageEye:Click() self.clicks = (self.clicks or 0) + 1 end
+    ScenarioObjectiveTracker.StageBlock.findGroupButton = stageEye
+    Click(scenarioButton)
+    assert(stageEye.clicks == 1 and not openedFinder,
+        "a groupable scenario must run Blizzard's own scenario search")
+    stageEye.scenarioID = 456
+    Click(scenarioButton)
+    assert(stageEye.clicks == 1, "a stage button set up for another scenario must not be clicked")
+    stageEye.scenarioID = 123
+    stageEye:Hide()
+    Click(scenarioButton)
+    assert(stageEye.clicks == 1, "a hidden stage button must not be clicked")
+    ScenarioObjectiveTracker.StageBlock.findGroupButton = nil
 end
 widgetTime = 90
 C_ScenarioInfo.GetCriteriaInfo = function() return { description = "Defend", completed = false } end
