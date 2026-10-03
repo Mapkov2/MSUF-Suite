@@ -76,17 +76,18 @@ end
 -- Decoding a factory string is costly, so each one is decoded once. The
 -- cached profile stays pristine: previews read it and installs copy it.
 local decodedFactories = {}
-local function FactoryProfile()
-    local compact = selected == "classic" and Suite.RetailProfileModuleCompact
-        or (Suite.Client.isForever or selected == "forever")
+local function FactoryProfile(layout, authored)
+    layout = layout or selected
+    local look = not authored and (layout == "suite" and (chosenLook or "cleanModern") or chosenLook) or nil
+    local compact = layout == "classic" and Suite.RetailProfileModuleCompact
+        or (Suite.Client.isForever or layout == "forever")
             and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
-    local cacheKey = selected .. (chosenLook or "authored") .. compact
+    local cacheKey = layout .. (look or "authored") .. compact
     local profile = decodedFactories[cacheKey]
     if profile then return profile end
     local reason
     profile, reason = Suite.ProfileIO.PrepareProfile(compact, false)
     if not profile then return nil, reason end
-    local look = AppliedLook()
     if look then Suite.Suite.StyleProfile(profile, look) end
     decodedFactories[cacheKey] = profile
     return profile
@@ -446,7 +447,7 @@ local function BuildProfileSteps(window)
         function(look)
             chosenLook = look
             Installer.Refresh()
-        end)
+        end, function(layout) return FactoryProfile(layout, true) end)
     local cooldowns = Panel(window, 36, 50, 508, 42, true)
     cooldowns.title = Label(cooldowns, "GameFontNormal", 14, -7, 360, 17)
     cooldowns.detail = Label(cooldowns, "GameFontHighlightSmall", 14, -24, 460, 15)

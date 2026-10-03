@@ -45,6 +45,12 @@ Suite.Dispatch = function(callback, ...)
     raisedErrors[#raisedErrors + 1] = tostring(results[2])
 end
 Suite.Finish = function(callback, ...) return true, callback(...) end
+Suite.SuiteLooks = { ApplyToConfig = function(id, config, look)
+    assert(id == "damageMeter")
+    local colors = { midnight = "57c7df", midnightDark = "b9ab86", foreverGlass = "d8b66a",
+        cleanModern = "e6ecf2", classColor = "9482c9" }
+    config.barColor = colors[look] or config.barColor
+end }
 Suite.Suite = { StyleProfile = function(profile, look)
     profile.suite.globalLook = look
     return true
@@ -99,6 +105,9 @@ Suite.ProfileIO = {
         assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact or text == Suite.RetailProfileModuleCompact)
         local modules = {}
         for _, id in ipairs(Suite.SuiteOrder) do modules[id] = { enabled = true } end
+        modules.damageMeter = { enabled = true, bgColor = "101010", bgAlpha = 82,
+            borderColor = "333333", leftColor = "f5f5f5", barColor = text == Suite.ForeverFactoryModuleCompact
+                and "d8b66a" or "e6ecf2" }
         modules.nameplates = { enabled = true, look = 4, nativeStyle = 2, barGeometry = 2 }
         modules.bags.enabled = text == Suite.RetailFactoryModuleCompact
         modules.actionbars.enabled = true
@@ -501,8 +510,9 @@ assert(window.review[1].shown and window.next.caption.text == "Install")
 CheckLayout()
 window.next.scripts.OnClick() -- install
 assert(factoryCalls == 1 and Suite.RootDB.installation.profile == "forever")
--- Each factory string is decoded once, not on every module click and repaint.
-assert(decodes == 2, "the installer decoded a factory profile " .. decodes .. " times")
+-- The legacy initial profile plus two authored card profiles decode once each.
+-- Module clicks, palette swatches and repeated page paints reuse the cache.
+assert(decodes == 3, "the installer decoded a factory profile " .. decodes .. " times")
 -- The install copies the cached factory; nameplates are already bundled.
 assert(copies == 1, "the installer copied the factory profile " .. copies .. " times")
 assert(Suite.RootDB.installation.raidEssentials == true
