@@ -317,6 +317,16 @@ end
 
 function Lifecycle.rename(source, target, skin)
     local original = DB.GetProfile(source)
+    -- MSUF asks before it renames its own profile, so a Suite or skin profile
+    -- that already has the new name is refused before anything moves: no
+    -- store keeps the old settings behind or activates another profile's.
+    -- Older MSUF builds rename first and ignore the answer; they keep the
+    -- previous best-effort move.
+    local frames = MSUF_GlobalDB and MSUF_GlobalDB.profiles
+    if frames and frames[source] and (original and DB.GetProfile(target)
+        or skin and skin.Database.GetProfile(source) and skin.Database.GetProfile(target)) then
+        return false, "profile-exists"
+    end
     if original and not DB.GetProfile(target) then
         Suite.RootDB.profiles[target] = original
         Suite.RootDB.profiles[source] = nil
