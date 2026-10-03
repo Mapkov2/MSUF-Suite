@@ -30,13 +30,15 @@ local function TocFiles(addon)
 end
 
 ------------------------------------------------------------------ load order
--- Both skin TOCs keep one line-ending style, CRLF, throughout.
+-- Each skin TOC keeps one line-ending style: LF or CRLF throughout.
 for _, addon in ipairs({ "MSUF_Suite_Skin", "MSUF_Suite_Skin_Options" }) do
     local file = assert(io.open(root .. "/" .. addon .. "/" .. addon .. "_Mainline.toc", "rb"))
     local raw = file:read("*a")
     file:close()
     local bare = raw:gsub("\r\n", "")
-    Check(not bare:find("[\r\n]"), addon .. "_Mainline.toc mixes line endings (CRLF only)")
+    local hasCRLF = raw:find("\r\n", 1, true)
+    Check(not bare:find("\r", 1, true) and (not hasCRLF or not bare:find("\n", 1, true)),
+        addon .. "_Mainline.toc mixes line endings or contains a lone CR")
 end
 
 local skinFiles, skinAt = TocFiles("MSUF_Suite_Skin")

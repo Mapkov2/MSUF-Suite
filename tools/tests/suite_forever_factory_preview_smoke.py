@@ -1,6 +1,7 @@
 """The Forever factory and the three-part preview carry the same compact UI."""
 
 import base64
+import os
 import re
 import sys
 import zlib
@@ -27,9 +28,14 @@ modules_text = literal(factory, "ForeverFactoryModuleCompact")
 skin_text = literal(factory, "ForeverFactorySkinCompact")
 frames_text = literal(root / "MSUF_Suite" / "Core" / "ForeverFrames.lua",
                       "ForeverFactoryFramesCompact")
-classic_frames = (root.parent / "MidnightSimpleUnitFrames-Classic" /
-                  "MidnightSimpleUnitFrames" / "State" / "Defaults" /
+reference = os.environ.get("MSUF_CLASSIC_REFERENCE_ROOT")
+classic_root = Path(reference) if reference is not None else root.parent / "MidnightSimpleUnitFrames-Classic"
+if reference is not None:
+    assert reference and classic_root.is_dir(), "MSUF_CLASSIC_REFERENCE_ROOT must name an existing directory"
+classic_frames = (classic_root / "MidnightSimpleUnitFrames" / "State" / "Defaults" /
                   "MSUF_Defaults_ForeverFactory.lua")
+if reference is not None:
+    assert classic_frames.is_file(), "MSUF_CLASSIC_REFERENCE_ROOT is missing the Forever factory profile"
 if classic_frames.exists():
     current = re.search(r"MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT = \[\[(.*?)\]\]",
                         classic_frames.read_text(encoding="utf-8"), re.S).group(1)
