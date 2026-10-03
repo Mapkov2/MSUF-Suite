@@ -1197,6 +1197,14 @@ Section("player spells tab colors", function()
     spellBook.SearchBox = Frame(nil)
     spells.SpellBookFrame = spellBook
     local searchBoxes = {}
+    local attached = {}
+    local attachControls = NS.WindowControls.Attach
+    local releaseControls = NS.WindowControls.DisableOwner
+    local releasedOwner
+    NS.WindowControls.Attach = function(frame, owner)
+        attached[#attached + 1] = { frame = frame, owner = owner }
+    end
+    NS.WindowControls.DisableOwner = function(owner) releasedOwner = owner end
     local applySearchBox = NS.ControlSkin.ApplySearchBox
     NS.ControlSkin.ApplySearchBox = function(box)
         searchBoxes[box] = true
@@ -1207,9 +1215,16 @@ Section("player spells tab colors", function()
     NS.PlayerSpellsSkin.Apply(spells, "spells")
     NS.ControlSkin.ApplySearchBox = applySearchBox
     Expect(searchBoxes[spellBook.SearchBox], "the spell book search box was not skinned")
+    Expect(#attached == 1 and attached[1].frame == spells and attached[1].owner == "spells",
+        "the dedicated spellbook adapter did not attach window controls to its root")
     NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+    Expect(#attached == 2 and attached[2].frame == spells and attached[2].owner == "spells",
+        "native spellbook tab changes did not reapply its stored window controls")
     Expect(Near(label.color[1], 0.71), "the selected tab label was not themed")
     NS.PlayerSpellsSkin.Disable(spells, "spells")
+    Expect(releasedOwner == "spells", "disabling the dedicated spellbook skin did not release its window controls")
+    NS.WindowControls.Attach = attachControls
+    NS.WindowControls.DisableOwner = releaseControls
     NS.Theme.GetColor = getColor
     Expect(Near(label.color[1], 1) and Near(label.color[2], 0.82),
         "a tab refresh recaptured our own color as the native one")

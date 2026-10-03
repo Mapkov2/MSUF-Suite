@@ -2,7 +2,7 @@ local _, NS = ...
 
 -- Window geometry is deliberately separate from cosmetic skinning.  Only
 -- reviewed, top-level Blizzard panels are candidates; native controls win.
--- No global frame scans, permanent OnUpdate, or protected frame mutations.
+-- No global frame scans or permanent OnUpdate; geometry is gated below.
 local WindowControls = { states = setmetatable({}, { __mode = "k" }) }
 NS.WindowControls = WindowControls
 
@@ -23,6 +23,9 @@ local GRIP_LEVEL_OFFSET = 20
 local specialPanels = {
     SettingsPanel = true, AddonList = true, PlayerSpellsFrame = true,
     GameMenuFrame = true, ProfessionsFrame = true,
+    -- Forever's dedicated skin applies this outer container; its three
+    -- PortraitFrame panes follow it and are not generic catalog roots.
+    LFGParentFrame = true,
 }
 local nativeMinimize = {
     WorldMapFrame = true, PlayerSpellsFrame = true,
@@ -34,6 +37,7 @@ local minimizablePanels = {
     PVPUIFrame = true, ProfessionsBookFrame = true,
     CollectionsJournal = true, EncounterJournal = true,
     SettingsPanel = true, AddonList = true,
+    LFGParentFrame = true,
 }
 local excludedCategories = {
     hud = true, inventory = true, tutorial = true, utility = true,
@@ -67,13 +71,22 @@ local function IsBag(name)
         or name:find("^Bag") or name:find("^Bags")
 end
 
+local function CanChangeFrameGeometry(frame)
+    if IsCombat() or Safety.IsForbidden(frame) then return false end
+    local protected, explicit = Safety.GetProtection(frame)
+    if explicit then return false end
+    -- Forever's plain spellbook root contains the native secure assisted-
+    -- combat button. Only this exact container may use public geometry APIs
+    -- out of combat; the secure button and all other protected roots stay out.
+    return not protected or (NS.Client.isForever and frame == Safety.Field(_G, "PlayerSpellsFrame"))
+end
+
 local function Eligible(frame)
     if not frame or Safety.IsForbidden(frame) then return nil end
-    -- An ancestor with secure descendants is also excluded for geometry.
-    local protected = Safety.GetProtection(frame)
-    if protected or IsCombat() then return nil end
+    if not CanChangeFrameGeometry(frame) then return nil end
     local name = Safety.Read(frame, "GetName")
     if type(name) ~= "string" or name == "" or IsBag(name) then return nil end
+    if name == "LFGParentFrame" and not NS.Client.isForever then return nil end
     local entry = NS.BlizzardCatalog.FindByFrame(name)
     local standalone = specialPanels[name]
     local panel = UIPanelWindows[name]
@@ -107,17 +120,14 @@ local function ClampScale(value)
     return math.max(limits.minScale, math.min(limits.maxScale, value))
 end
 
--- A panel is moved or scaled only out of combat and while it is not
--- protected: a panel that gained a secure descendant keeps Blizzard's
--- geometry.
 local function CanChangeGeometry(state)
-    return not IsCombat() and not Safety.GetProtection(state.frame)
+    return CanChangeFrameGeometry(state.frame)
 end
 
 -- The controls are on for this panel: Window controls are enabled, an
 -- owner still skins it and it can be controlled.
 local function Controlled(state)
-    return Enabled() and next(state.owners) ~= nil and not Safety.GetProtection(state.frame)
+    return Enabled() and next(state.owners) ~= nil and CanChangeGeometry(state)
 end
 
 local function ApplyStoredScale(state)
@@ -157,6 +167,7 @@ local function CaptureNativePoints(frame)
 end
 
 local function RestoreNativePosition(state)
+    if not CanChangeGeometry(state) then return end
     state.customPosition = false
     state.defaultPosition = false
     positionedStates[state.frame] = nil
@@ -175,7 +186,7 @@ local function RestoreNativePosition(state)
 end
 
 local function ApplyStoredPosition(state)
-    if IsCombat() or not Enabled() or state.moving then return end
+    if not CanChangeGeometry(state) or not Enabled() or state.moving then return end
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
     local point = positions and positions[state.name]
     local defaultPosition = not point and state.name == "CharacterFrame"
@@ -225,6 +236,9 @@ local function WindowTitle(state)
     local title = Safety.Call(frame, "GetTitleText")
         or Safety.Field(Safety.Field(frame, "TitleContainer"), "TitleText")
     local text = Safety.Read(title, "GetText")
+    -- Forever's outer container has no title region; all three child panes
+    -- use this same localized native caption.
+    if state.name == "LFGParentFrame" then text = Safety.Field(_G, "LFG_TITLE") end
     if type(text) == "string" and text ~= "" then return text end
     return (state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2"))
 end
@@ -381,7 +395,7 @@ local function UpdateDrag(state)
         EndDrag(state)
         return
     end
-    if IsCombat() or not state.frame:IsShown() then
+    if not CanChangeGeometry(state) or not state.frame:IsShown() then
         EndDrag(state)
         return
     end
@@ -403,7 +417,7 @@ local function OnGripUpdate(grip)
 end
 
 local function BeginDrag(state)
-    if IsCombat() or not Enabled() then return end
+    if not CanChangeGeometry(state) or not Enabled() then return end
     local x, y = GetCursorPosition()
     local frame = state.frame
     local width, height = frame:GetWidth(), frame:GetHeight()
@@ -437,12 +451,29 @@ local function OnGripLeave()
     GameTooltip:Hide()
 end
 
+local function ControlBaseLevel(state)
+    local level = state.frame:GetFrameLevel()
+    -- Forever's spellbook/professions pages sit above the root. Their native
+    -- portrait border is above those pages, so keep our small controls above
+    -- that border too; only our own frames change level.
+    if NS.Client.isForever and (state.name == "PlayerSpellsFrame" or state.name == "ProfessionsFrame") then
+        local borderLevel = Safety.Read(Safety.Field(state.frame, "NineSlice"), "GetFrameLevel")
+        if type(borderLevel) == "number" then level = math.max(level, borderLevel) end
+    end
+    return level
+end
+
 local function CreateGrip(state)
     local grip = CreateFrame("Button", nil, state.frame)
     controlStates[grip] = state
     grip:SetSize(20, 20)
-    grip:SetFrameLevel(state.frame:GetFrameLevel() + GRIP_LEVEL_OFFSET)
-    grip:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -3, 3)
+    grip:SetFrameLevel(ControlBaseLevel(state) + GRIP_LEVEL_OFFSET)
+    if NS.Client.isForever and state.name == "ProfessionsFrame" then
+        -- Leave the Create button, right tab column and lower footer clear.
+        grip:SetPoint("TOPLEFT", state.frame, "BOTTOMRIGHT", 1, -1)
+    else
+        grip:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -3, 3)
+    end
     grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
     grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
@@ -459,6 +490,12 @@ end
 
 local function EndMove(state)
     if not state.moving then return end
+    if not CanChangeGeometry(state) then
+        if IsCombat() then
+            NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() EndMove(state) end)
+        end
+        return
+    end
     state.moving = false
     local frame = state.frame
     frame:StopMovingOrSizing()
@@ -468,7 +505,7 @@ local function EndMove(state)
 end
 
 local function BeginMove(state)
-    if IsCombat() or not Enabled() then return end
+    if not CanChangeGeometry(state) or not Enabled() then return end
     local frame = state.frame
     local movable = Safety.Read(frame, "IsMovable")
     state.nativeMovable = movable
@@ -500,7 +537,7 @@ local function CreateTitleDrag(state)
     strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 50, -1)
     strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -110, -1)
     strip:SetHeight(24)
-    strip:SetFrameLevel(state.frame:GetFrameLevel() + CONTROL_LEVEL_OFFSET)
+    strip:SetFrameLevel(ControlBaseLevel(state) + CONTROL_LEVEL_OFFSET)
     strip:EnableMouse(true)
     strip:RegisterForDrag("LeftButton")
     strip:SetScript("OnDragStart", OnTitleDragStart)
@@ -511,7 +548,9 @@ local function CreateTitleDrag(state)
 end
 
 local function ShowControls(state)
-    state.titleDrag:SetFrameLevel(state.frame:GetFrameLevel() + CONTROL_LEVEL_OFFSET)
+    local level = ControlBaseLevel(state)
+    state.titleDrag:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
+    state.grip:SetFrameLevel(level + GRIP_LEVEL_OFFSET)
     state.titleDrag:Show()
     state.grip:Show()
     if state.minimize then state.minimize:Show() end
@@ -569,9 +608,9 @@ local function OnPanelShow(frame)
         state.minimized = false
         state.restore:Hide()
     end
+    if IsCombat() then return end
     if Controlled(state) then
-        state.titleDrag:SetFrameLevel(frame:GetFrameLevel() + CONTROL_LEVEL_OFFSET)
-        state.titleDrag:Show()
+        ShowControls(state)
         -- Blizzard fits checkFit panels (PlayerSpellsFrame, ProfessionsFrame,
         -- Settings) to the screen with SetScale(1) as they open: the stored
         -- scale comes back first, then the position, which depends on it.

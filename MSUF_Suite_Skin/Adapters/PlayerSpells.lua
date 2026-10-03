@@ -343,6 +343,7 @@ local function SkinRootStatic(state)
     end
 
     SkinSpellBookStatic(state, frame.SpellBookFrame)
+    NS.WindowControls.Attach(frame, state.owner)
     return true
 end
 
@@ -362,6 +363,7 @@ local function RefreshVisualState(state, refreshPages)
     SkinDisplayedSpellFrames(state)
     if refreshPages then
         SkinSpecializationAndTalentPages(state)
+        NS.WindowControls.Attach(state.frame, state.owner)
     end
     RefreshThemeColors(state)
 end

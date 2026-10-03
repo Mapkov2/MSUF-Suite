@@ -22,6 +22,12 @@ local function Reported(text)
     return false
 end
 
+local function GeometryWrite(frame)
+    assert(not frame.explicitProtected and not (frame.protected and (_G.combat or _G.combatEdge)),
+        "contract: protected geometry write on " .. tostring(frame.name))
+    frame.geometryWrites = (frame.geometryWrites or 0) + 1
+end
+
 local function Frame(name, parent, kind)
     local frame = {
         name = name, parent = parent, kind = kind or "Frame", shown = true,
@@ -35,13 +41,13 @@ local function Frame(name, parent, kind)
     function frame:GetHeight() return self.height end
     function frame:GetScale() return self.scale end
     function frame:GetEffectiveScale() return self.scale end
-    function frame:SetScale(value) self.scale = value end
+    function frame:SetScale(value) GeometryWrite(self); self.scale = value end
     function frame:IsResizable() return self.resizable end
-    function frame:IsProtected() return self.protected or false, false end
+    function frame:IsProtected() return self.protected or false, self.explicitProtected or false end
     function frame:IsForbidden() return false end
     function frame:IsShown() return self.shown end
     function frame:IsMouseOver() return false end
-    function frame:GetFrameLevel() return 1 end
+    function frame:GetFrameLevel() return self.frameLevel or 1 end
     function frame:GetLeft() return self.left end
     function frame:GetTop() return self.top end
     function frame:GetNumPoints() return 1 end
@@ -49,17 +55,17 @@ local function Frame(name, parent, kind)
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:SetWidth(width) self.width = width end
     function frame:SetHeight(height) self.height = height end
-    function frame:SetPoint(...) self.point = { ... } end
-    function frame:ClearAllPoints() self.point = nil end
-    function frame:SetFrameLevel() end
+    function frame:SetPoint(...) GeometryWrite(self); self.point = { ... } end
+    function frame:ClearAllPoints() GeometryWrite(self); self.point = nil end
+    function frame:SetFrameLevel(value) self.frameLevel = value end
     function frame:SetFrameStrata() end
     function frame:SetClampedToScreen() end
-    function frame:SetMovable(value) self.movable = value end
+    function frame:SetMovable(value) GeometryWrite(self); self.movable = value end
     function frame:IsMovable() return self.movable end
     function frame:RegisterForDrag() end
     function frame:EnableMouse(value) self.mouseEnabled = value end
-    function frame:StartMoving() self.moving = true end
-    function frame:StopMovingOrSizing() self.moving = false end
+    function frame:StartMoving() GeometryWrite(self); self.moving = true end
+    function frame:StopMovingOrSizing() GeometryWrite(self); self.moving = false end
     function frame:RegisterForClicks() end
     function frame:SetButtonState() end
     function frame:SetNormalTexture() end
@@ -87,7 +93,7 @@ local function Frame(name, parent, kind)
     function frame:CreateFontString()
         return {
             SetPoint = function() end, SetJustifyH = function() end,
-            SetText = function() end, SetTextColor = function() end,
+            SetText = function(self, text) self.text = text end, SetTextColor = function() end,
         }
     end
     return frame
@@ -121,6 +127,7 @@ MSUF2 = { RunWithHistory = function(_, _, fn)
 end }
 
 local adapterPasses = 0
+local combatJobs = {}
 -- Registry.QueueJob runs a job once on the next frame (Core/Registry.lua).
 local queuedJobs = {}
 local function QueueJob(job)
@@ -145,7 +152,12 @@ local NS = {
         if name == "MerchantFrame" then return { category = "npc" } end
         if name == "ContainerFrameCombinedBags" then return { category = "inventory" } end
     end },
-    IsCombatLocked = function() return InCombatLockdown() end,
+    IsCombatLocked = function() return InCombatLockdown() or _G.combatEdge == true end,
+    CombatGate = { RunOrDefer = function(key, callback)
+        if _G.combat or _G.combatEdge then combatJobs[key] = callback; return false end
+        callback()
+        return true
+    end },
     -- Retail until the Forever check below; Client.lua loads before Defaults.
     Client = { isForever = false },
     -- Blizzard.lua's adapter registry, which always loads with this file.
@@ -155,7 +167,7 @@ local NS = {
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
-assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
 
 -- Safety helpers always return a value, even when they refuse to read.
 local Safety = NS.Safety
@@ -418,7 +430,14 @@ character.protected = false
 -- controls off gives the panel Blizzard's scale back; turning them on, the
 -- stored one.
 local spells = Frame("PlayerSpellsFrame", UIParent)
+local previousSpellsFlavor = NS.Client.isForever
+NS.Client.isForever = false
+spells.NineSlice = Frame(nil, spells)
+spells.NineSlice:SetFrameLevel(5500)
 Check(NS.WindowControls.Attach(spells, "blizzardWindows"), "the spellbook panel was not attached")
+Check(NS.WindowControls.states[spells].grip:GetFrameLevel() == spells:GetFrameLevel() + 20,
+    "Forever layering changed the Retail spellbook controls")
+NS.Client.isForever = previousSpellsFlavor
 NS.DB.windowControls.scales.PlayerSpellsFrame = 0.8
 NS.DB.windowControls.positions.PlayerSpellsFrame = { x = 400, y = -100 }
 Check(NS.WindowControls.Refresh() and spells.scale == 0.8, "the stored spellbook scale was not applied")
@@ -438,6 +457,203 @@ Check(NS.WindowControls.Attach(spells, "blizzardWindows") and spells.scale == 0.
     "attaching the panel again lost the stored scale")
 NS.DB.windowControls.scales.PlayerSpellsFrame, NS.DB.windowControls.positions.PlayerSpellsFrame = nil, nil
 NS.WindowControls.Refresh()
+
+-- Forever's portrait chrome is above its content pages: PlayerSpells sets
+-- NineSlice to 5500; professions inherits the portrait level 500, above its
+-- CraftingPage/BookPage at 100. Our grip must render above that chrome and
+-- follow subsequent native frame-level changes without touching the pages.
+do
+    local previousSpellbook = _G.PlayerSpellsFrame
+    NS.Client.isForever = true
+    for _, name in ipairs({ "PlayerSpellsFrame", "ProfessionsFrame" }) do
+        local panel = Frame(name, UIParent)
+        panel.NineSlice = Frame(nil, panel)
+        panel.NineSlice:SetFrameLevel(name == "PlayerSpellsFrame" and 5500 or 500)
+        local page = Frame(nil, panel)
+        page:SetFrameLevel(100)
+        if name == "PlayerSpellsFrame" then
+            panel.SpellBookFrame = page
+            -- Shared spellbook XML creates this explicitly secure button even
+            -- in Camelot. Its outer portrait container is only implicitly secure.
+            local secureButton = Frame(nil, page, "Button")
+            secureButton.protected, secureButton.explicitProtected = true, true
+            page.AssistedCombatRotationSpellFrame = { Button = secureButton }
+            panel.protected, _G.PlayerSpellsFrame = true, panel
+            local impostor = Frame(name, UIParent)
+            impostor.protected = true
+            Check(not NS.WindowControls.Attach(impostor, "foreverBooks"), "a named impostor bypassed protection")
+            NS.Client.isForever = false
+            Check(not NS.WindowControls.Attach(panel, "foreverBooks"), "Retail gained the protected spellbook exception")
+            NS.Client.isForever = true
+        else
+            panel.CraftingPage = page
+        end
+        Check(NS.WindowControls.Attach(panel, "foreverBooks"), name .. " did not attach")
+        local controls = NS.WindowControls.states[panel]
+        Check(controls.grip:GetFrameLevel() > panel.NineSlice:GetFrameLevel()
+            and controls.titleDrag:GetFrameLevel() > panel.NineSlice:GetFrameLevel(),
+            name .. " controls stayed beneath native portrait chrome/content")
+        Check(not controls.minimize, name .. " gained a custom minimize that can end native interactions")
+        if name == "ProfessionsFrame" then
+            -- Native Create button: width80, height28, BOTTOMRIGHT(-9,+7)
+            -- or y13 when minimized. Calculate the grip's actual rectangle.
+            local anchor = controls.grip.point
+            Check(anchor[2] == panel and anchor[3] == "BOTTOMRIGHT", "profession grip uses an unexpected anchor")
+            local left = anchor[4] - (anchor[1] == "BOTTOMRIGHT" and controls.grip.width or 0)
+            local top = anchor[5] + (anchor[1] == "TOPLEFT" and 0 or controls.grip.height)
+            local right, bottom = left + controls.grip.width, top - controls.grip.height
+            Check(left >= 0 and top <= 0, "profession grip overlaps the right tab column or lower footer")
+            for _, createBottom in ipairs({ 7, 13 }) do
+                Check(right <= -89 or left >= -9 or top <= createBottom or bottom >= createBottom + 28,
+                    "profession grip intercepts the native Create button")
+            end
+        end
+        panel.NineSlice:SetFrameLevel(panel.NineSlice:GetFrameLevel() + 50)
+        panel:Hide()
+        panel:Show()
+        Check(controls.grip:GetFrameLevel() > panel.NineSlice:GetFrameLevel(),
+            name .. " reopening did not refresh the grip level")
+        Check(page:GetFrameLevel() == 100, name .. " controls changed the native content level")
+        panel.left, panel.top = 100, 800
+        cursorX, cursorY = 650, 350
+        controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
+        cursorX, cursorY = 760, 260
+        controls.grip.scripts.OnUpdate(controls.grip)
+        controls.grip.scripts.OnMouseUp(controls.grip)
+        Check(panel.scale > 1 and math.abs(NS.DB.windowControls.scales[name] - panel.scale) < 0.001,
+            name .. " grip did not save its scale")
+        Check(panel.width == 600 and panel.height == 500 and not controls.grip.scripts.OnUpdate,
+            name .. " scale changed native layout or left a running drag")
+        local savedScale = panel.scale
+        panel:Hide()
+        panel:SetScale(1)
+        panel:Show()
+        Check(panel.scale == savedScale, name .. " native reopening lost the saved scale")
+        if name == "PlayerSpellsFrame" then
+            controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
+            local beforeCombatScale, beforeCombatWrites = panel.scale, panel.geometryWrites
+            combat = true
+            cursorX, cursorY = 900, 100
+            controls.grip.scripts.OnUpdate(controls.grip)
+            Check(panel.scale == beforeCombatScale and panel.geometryWrites == beforeCombatWrites
+                and not controls.grip.scripts.OnUpdate, "combat did not stop the protected spellbook scale drag")
+            combat = false
+            panel:SetMovable(false)
+            controls.titleDrag.scripts.OnDragStart(controls.titleDrag)
+            Check(panel.moving and panel.movable, "implicit spellbook root could not move outside combat")
+            local writes = panel.geometryWrites
+            combatEdge = true -- Suite refuses before InCombatLockdown changes.
+            controls.titleDrag.scripts.OnDragStop(controls.titleDrag)
+            combatEdge, combat = false, true
+            panel:Hide()
+            panel:Show()
+            NS.WindowControls.Attach(panel, "foreverBooks")
+            NS.WindowControls.Refresh()
+            Check(panel.geometryWrites == writes and panel.moving
+                and combatJobs["windowControls:move:PlayerSpellsFrame"],
+                "ending spellbook movement during combat wrote protected geometry instead of deferring")
+            combat = false
+            local pending = combatJobs["windowControls:move:PlayerSpellsFrame"]
+            combatJobs["windowControls:move:PlayerSpellsFrame"] = nil
+            pending()
+            Check(not panel.moving and not panel.movable
+                and NS.DB.windowControls.positions[name], "deferred move did not restore native movability/save position")
+            Check(page.AssistedCombatRotationSpellFrame.Button.geometryWrites == nil,
+                "spellbook controls mutated the native secure button")
+        end
+        NS.WindowControls.DisableOwner("foreverBooks")
+        Check(panel.scale == 1 and not controls.grip.shown, name .. " owner release kept its controls")
+        Check(NS.WindowControls.Attach(panel, "foreverBooks") and panel.scale == savedScale,
+            name .. " reattachment lost its saved scale")
+        panel.protected, panel.explicitProtected = true, true
+        Check(not NS.WindowControls.Attach(panel, "foreverBooks") and not controls.grip.shown,
+            name .. " retained controls after becoming protected")
+        local protectedWrites = panel.geometryWrites
+        UpdateUIPanelPositions()
+        Check(panel.geometryWrites == protectedWrites, name .. " position replay moved an explicitly protected panel")
+        panel.protected, panel.explicitProtected = false, false
+        NS.DB.windowControls.scales[name] = nil
+        NS.DB.windowControls.positions[name] = nil
+    end
+    NS.WindowControls.DisableOwner("foreverBooks")
+    _G.PlayerSpellsFrame = previousSpellbook
+    NS.Client.isForever = false
+end
+
+-- Forever's dedicated skin reaches WindowControls through GenericWindows,
+-- but its outer LFG container has no catalog entry. The three PortraitFrame
+-- panes remain anchored to it and must never gain separate geometry controls.
+do
+    local previousForever = NS.Client.isForever
+    NS.Client.isForever = false
+    LFG_TITLE = "Native localized group finder"
+    local owner = "blizzardWindows:forever-group-finder"
+    local lfg = Frame("LFGParentFrame", UIParent)
+    lfg.width, lfg.height, lfg.movable = 458, 535, false
+    UIPanelWindows.LFGParentFrame = { area = "left", pushable = 7, whileDead = 1 }
+    LFGParentFrameCloseButton = Frame("LFGParentFrameCloseButton", lfg, "Button")
+    LFGParentFrameCloseButton.anchorName = "TOPRIGHT"
+    Check(not NS.WindowControls.Attach(lfg, owner), "Forever LFG geometry was enabled on Retail")
+    NS.Client.isForever = true
+    Check(NS.WindowControls.Attach(lfg, owner), "Forever LFG container was excluded from window controls")
+    local lfgState = NS.WindowControls.states[lfg]
+    Check(lfgState.titleDrag and lfgState.grip and lfgState.minimize and lfgState.restore,
+        "Forever group finder lacks move, scale or minimize/restore controls")
+    Check(lfgState.minimize.point[2] == LFGParentFrameCloseButton,
+        "Forever minimize did not use the native global close button")
+    for _, name in ipairs({ "LFGListingFrame", "LFGBrowseFrame", "LFGWhoListFrame" }) do
+        Check(not NS.WindowControls.Attach(Frame(name, lfg), owner), "LFG child pane gained independent controls")
+    end
+    lfgState.titleDrag.scripts.OnDragStart(lfgState.titleDrag)
+    Check(lfg.moving and lfg.movable, "Forever title drag did not temporarily make the container movable")
+    lfg.left, lfg.top = 350, 820
+    lfgState.titleDrag.scripts.OnDragStop(lfgState.titleDrag)
+    Check(not lfg.moving and not lfg.movable and NS.DB.windowControls.positions.LFGParentFrame.x == 350,
+        "Forever drag lost position or did not restore native movability")
+    UpdateUIPanelPositions(lfg)
+    Check(lfg.point[4] == 350, "native panel layout displaced the moved LFG container")
+    cursorX, cursorY = 500, 500
+    lfgState.grip.scripts.OnMouseDown(lfgState.grip, "LeftButton")
+    cursorX, cursorY = 650, 400
+    lfgState.grip.scripts.OnUpdate(lfgState.grip)
+    lfgState.grip.scripts.OnMouseUp(lfgState.grip)
+    local scale = lfg.scale
+    Check(scale > 1 and NS.DB.windowControls.scales.LFGParentFrame == scale
+        and lfg.width == 458 and lfg.height == 535 and not lfgState.grip.scripts.OnUpdate,
+        "Forever grip did not persist scale while retaining the native pane layout")
+    lfgState.minimize.scripts.OnClick(lfgState.minimize)
+    Check(not lfg.shown and lfgState.restore.shown, "Forever LFG window did not minimize")
+    Check(lfgState.restoreLabel.text == LFG_TITLE .. "  +", "Forever restore bar exposed the internal parent name")
+    lfgState.restore.scripts.OnClick(lfgState.restore, "LeftButton")
+    Check(lfg.shown and not lfgState.restore.shown and lfg.scale == scale,
+        "Forever LFG window did not restore with its saved scale")
+    combat = true
+    lfgState.titleDrag.scripts.OnDragStart(lfgState.titleDrag)
+    lfgState.grip.scripts.OnMouseDown(lfgState.grip, "LeftButton")
+    Check(not lfg.moving and not lfgState.grip.scripts.OnUpdate and lfg.scale == scale,
+        "Forever geometry changed during combat")
+    combat = false
+    lfgState.minimize.scripts.OnClick(lfgState.minimize)
+    combat = true
+    lfg:Show() -- Native secure code can reopen a panel during combat.
+    Check(not lfgState.minimized and not lfgState.restore.shown,
+        "native combat reopen left both the LFG window and its restore tab visible")
+    combat = false
+    NS.WindowControls.DisableOwner(owner)
+    lfg:Hide()
+    lfg:Show()
+    Check(not lfgState.titleDrag.shown and not lfgState.grip.shown and not lfgState.minimize.shown
+        and lfg.scale == 1, "disabled Forever owner left controls or custom scale active")
+    Check(NS.WindowControls.Attach(lfg, owner) and lfg.scale == scale
+        and NS.WindowControls.states[lfg] == lfgState, "Forever re-enable lost stored scale or duplicated controls")
+    lfg.protected = true
+    NS.WindowControls.Refresh()
+    Check(not lfgState.titleDrag.shown and not lfgState.grip.shown,
+        "protected LFG container kept geometry controls")
+    lfg.protected = false
+    NS.WindowControls.DisableOwner(owner)
+    NS.Client.isForever = previousForever
+end
 
 -- Inspect skips the generic window adapter. Its dedicated, load-on-demand
 -- adapter must still reach the real window controls after Blizzard loads it.
