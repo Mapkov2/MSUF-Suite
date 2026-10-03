@@ -1968,6 +1968,7 @@ local qolFeaturesByCategory = {
         "enemyCastStack_dungeon_casts", "dungeonPortals_dungeon_portals",
     },
     combatAlerts = {
+        "selfCombatText_self_combat_text",
         "actionTracker_action_tracker", "burningRushCue_burning_rush_cue",
         "combatLog_log_dungeons", "macroBuilder_macro_builder",
         "combatMovementCue_movement_cue", "combatPetStatus_pet_status", "threatMeter_threat_meter",
@@ -2054,7 +2055,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 62 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 63 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated")
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")

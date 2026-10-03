@@ -3,6 +3,7 @@ local S, Tr = P.S, P.Tr
 local PAGE = "suite_qualityOfLife"
 
 local HELP = {
+    self_combat_text = "Shows incoming damage and healing for you or your vehicle. Blizzard's own combat text is hidden while enabled and restored when disabled. Move the display in MSUF Edit Mode. During heavy bursts the oldest of the visible messages is replaced. The game may keep amounts private, so messages are never combined or filtered by their value.",
     character_extras = "A small summary sits beside the Character tab of your character sheet and leaves with it. It lists your gear with gem sockets and how many are filled, open ones in amber (click a line to open socketing), the total durability of your gear and, if you like, your PvP item level. Its buttons open the Great Vault and the current expansion page. It updates while the sheet is open, at most once per frame.",
     character_model = "Shows the total durability of your gear on the character model, moved by the two offsets, and crops the edges of the gear slot icons on your character sheet and in the Inspect window.",
     character_flyouts = "Equipment choices (the list that opens from a gear slot) show the item level on each item, so you can compare without hovering. The arrows beside the gear slots can be hidden; hold Alt over a slot to open its choices.",
@@ -87,6 +88,8 @@ local HELP = {
 }
 
 local GROUPS = {
+    { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
+        keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
     { id = "actionTracker", title = "Action tracker", switch = "enabled",
         sections = { "action_tracker", "action_tracker_visibility", "action_tracker_colors" } },
@@ -226,7 +229,7 @@ local CATEGORIES = {
     { id = "combatAlerts", title = "Combat & Alerts", keys = {
         "actionTracker.enabled", "burningRushCue.enabled", "combatLog.enabled", "macroBuilder.enabled",
         "combatMovementCue.enabled", "combatPetStatus.enabled",
-        "threatMeter.enabled",
+        "threatMeter.enabled", "selfCombatText.enabled",
     } },
     { id = "mapTravel", title = "Map & Travel", keys = {
         "mapLandingShortcuts.enabled", "skyriding.enabled", "waypoints.enabled",

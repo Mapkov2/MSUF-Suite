@@ -40,6 +40,7 @@ Core\Catalog\QualityOfLife.lua
 Core\Catalog\QualityOfLifeIndicators.lua
 Core\Catalog\QualityOfLifeDetails.lua
 Core\Catalog\QualityOfLifeHUD.lua
+Core\Catalog\QualityOfLifeCombatText.lua
 Core\Catalog\QualityOfLifeDistance.lua
 Core\Catalog\QualityOfLifeGroup.lua
 Core\Catalog\HUD.lua

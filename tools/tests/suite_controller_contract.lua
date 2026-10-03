@@ -176,7 +176,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
         and id ~= "cursorEffects"
-        and id ~= "combatStatsHUD" and id ~= "delveSolePower"
+        and id ~= "combatStatsHUD" and id ~= "delveSolePower" and id ~= "selfCombatText"
         and id ~= "enemyCastStack" and id ~= "dungeonPortals" and id ~= "targetDistance"
         and id ~= "mythicResetReminder" and id ~= "combatPetStatus"
         and id ~= "lootVendorRules" and id ~= "mapLandingShortcuts"

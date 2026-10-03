@@ -15,6 +15,30 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite/Core/Catalog/QualityOfLifeCombatText.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.0/12.1.5 and Forever call these C_CombatText methods in Blizzard_CombatText/Shared/CombatText.lua. This availability probe disables the optional module when the namespace, reader, unit selector or event is absent; suite_self_combat_text_contract checks the unavailable path.",
+   "symbol": "api (= C_CombatText)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/QualityOfLifeCombatText.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.0/12.1.5 and Forever call these C_CombatText methods in Blizzard_CombatText/Shared/CombatText.lua. This availability probe disables the optional module when the namespace, reader, unit selector or event is absent; suite_self_combat_text_contract checks the unavailable path.",
+   "symbol": "api.GetActiveUnit (= C_CombatText)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/QualityOfLifeCombatText.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.0/12.1.5 and Forever call these C_CombatText methods in Blizzard_CombatText/Shared/CombatText.lua. This availability probe disables the optional module when the namespace, reader, unit selector or event is absent; suite_self_combat_text_contract checks the unavailable path.",
+   "symbol": "api.GetCurrentEventInfo (= C_CombatText)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/QualityOfLifeCombatText.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.0/12.1.5 and Forever call these C_CombatText methods in Blizzard_CombatText/Shared/CombatText.lua. This availability probe disables the optional module when the namespace, reader, unit selector or event is absent; suite_self_combat_text_contract checks the unavailable path.",
+   "symbol": "api.SetActiveUnit (= C_CombatText)"
+  },
+  {
    "file": "MSUF_Suite_CooldownManager/Time.lua",
    "kind": "client",
    "reason": "Forever 1.60.1.70170 prefers C_Spell.GetItemCooldown for the last category item. Older Forever, Mainline and Classic builds may lack this reader; the guarded path retains the cover-spell fallback.",

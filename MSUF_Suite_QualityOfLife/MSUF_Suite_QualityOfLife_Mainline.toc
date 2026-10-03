@@ -50,6 +50,7 @@ GroupBloodlust.lua
 CursorEffects.lua
 MapLandingShortcuts.lua
 CombatStatsHUD.lua
+SelfCombatText.lua
 EnemyCastStack.lua
 TargetDistance.lua
 DungeonPortals.lua
