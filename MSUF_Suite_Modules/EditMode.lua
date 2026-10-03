@@ -222,7 +222,8 @@ local function MovePosition(id, spec, request)
         [spec.yKey] = math.floor(y * 10 + 0.5) / 10,
     }
     for key, value in pairs(spec.moveValues or EMPTY) do values[key] = value end
-    return S.SetMany(id, values)
+    -- MSUF Edit Mode also commits a drag still held when combat starts.
+    return S.CommitEditPosition(id, values)
 end
 
 local function Element(id, elementID, spec)
@@ -242,7 +243,7 @@ local function Element(id, elementID, spec)
         captureState = function() return CaptureState(id, spec, captureKeys) end,
         restoreState = function(state)
             if not ValidState(state) then return false end
-            return S.SetMany(id, state.values)
+            return S.CommitEditPosition(id, state.values)
         end,
         movePosition = function(request) return MovePosition(id, spec, request) end,
         resetPosition = function() return ResetPosition(id, spec) end,

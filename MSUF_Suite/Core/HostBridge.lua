@@ -157,6 +157,9 @@ end
 -- path puts MSUF's settings back when an applier raises; with v1 the host's
 -- setter owns its writes and their rollback.
 function HostBridge.ApplyScale(spec)
+    -- Combat refuses from PLAYER_REGEN_DISABLED on, before InCombatLockdown()
+    -- turns true: the v1 host's own answer, kept for the legacy path too.
+    if Suite.InCombat() then return false, HOST_REFUSALS.combat end
     local ready, why = HostBridge.ScaleReady(spec)
     if not ready then return false, why end
     local api = CoreAPI()

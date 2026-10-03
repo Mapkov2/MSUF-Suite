@@ -113,6 +113,8 @@ local function Bridge(withHost)
         raised[#raised + 1] = tostring(results[2])
     end
     Suite.Finish = function(callback, ...) return true, callback(...) end
+    -- Out of combat here; suite_combat_start_contract covers the combat start.
+    Suite.InCombat = function() return false end
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
     return Suite.HostBridge
 end

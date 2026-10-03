@@ -315,7 +315,9 @@ function P.Refresh()
     if M.RequestRefresh then M.RequestRefresh(nil, "suite") end
 end
 
-function P.Combat() return Suite.IsCombatLocked() end
+-- Combat refuses from PLAYER_REGEN_DISABLED on, while InCombatLockdown() is
+-- still false (Suite.InCombat); the page resets of older menus ask this too.
+function P.Combat() return Suite.InCombat() end
 
 -- A yes/no question in Blizzard's generic confirmation dialog: the pages add
 -- no entry to Blizzard's StaticPopupDialogs. text is translated text, shown

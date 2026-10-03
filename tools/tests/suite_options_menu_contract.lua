@@ -97,6 +97,8 @@ TimeUtil = { BetterDate = function(format) return format end }
 SlashCmdList = {}
 IsLoggedIn = function() return false end
 InCombatLockdown = function() return false end
+-- The player's combat flag follows the lockdown here (no combat start).
+UnitAffectingCombat = function(unit) return unit == "player" and InCombatLockdown() == true end
 LoggingCombat = function() return false end
 GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "deDE" end
@@ -3555,6 +3557,32 @@ do
     assert(rc.buttons == 2, "Restore chat colors is missing from Maintenance or the engine-unavailable page")
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs, Suite.Skin.RestoreChatColors,
         S.Confirm, M.ShowStatusFeedback, InCombatLockdown = unpack(rc.previous, 1, 6)
+end
+-- The combat start: inside PLAYER_REGEN_DISABLED, before the lockdown, the
+-- pages refuse like in combat (P.Combat is Suite.InCombat), and so do an
+-- older menu's wrapped page reset and its confirmation.
+do
+    local edge = { flag = UnitAffectingCombat, previousGeneric = _G.StaticPopup_ShowCustomGenericConfirmation,
+        previousShow = _G.StaticPopup_Show }
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) edge.asked = data end
+    _G.StaticPopup_Show = function(_, _, _, data) edge.asked = data; return {} end
+    assert(S.SetMany("dataTexts", { bar2X = 58 }))
+    UnitAffectingCombat = function(unit) return unit == "player" end
+    local watcher = { events = { PLAYER_REGEN_DISABLED = true } }
+    local function OnEvent(_, event)
+        assert(event == "PLAYER_REGEN_DISABLED" and not InCombatLockdown())
+        edge.combat = optionsNS.Combat()
+        edge.reset = M.ResetPageToDefaults("suite_dataTexts")
+        edge.confirm = M.ShowPageResetConfirm("suite_dataTexts")
+        edge.saveSetup = optionsNS.SaveSetupAs()
+        edge.restore = optionsNS.RestoreChatColors()
+    end
+    OnEvent(watcher, "PLAYER_REGEN_DISABLED")
+    UnitAffectingCombat = edge.flag
+    assert(edge.combat == true and edge.reset == false and edge.confirm == false and not edge.saveSetup
+        and not edge.restore and edge.asked == nil and S.Config("dataTexts").bar2X == 58,
+        "a Suite page action went through at the combat start")
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Show = edge.previousGeneric, edge.previousShow
 end
 -- Register.lua's real canReset handler (here through the legacy wrap, the
 -- same handler a v1 provider gets) allocates nothing per call.

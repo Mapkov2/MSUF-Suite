@@ -212,7 +212,7 @@ end
 -- refusal. A failed attempt changes nothing, and a retry never installs a
 -- second Forever profile.
 function Installer.Apply()
-    if Suite.IsCombatLocked() then return false, "Finish combat first." end
+    if Suite.InCombat() then return false, "Finish combat first." end
     if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
     local spec = ScaleSpec()
     local ready, why = Suite.HostBridge.ScaleReady(spec)

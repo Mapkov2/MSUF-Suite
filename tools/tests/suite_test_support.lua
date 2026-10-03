@@ -5,6 +5,15 @@ local Support = {}
 -- care about character color; tests that do supply their own fixture.
 if not UnitClass then UnitClass = function() return nil end end
 if not C_ClassColor then C_ClassColor = { GetClassColor = function() return nil end } end
+-- The player's combat flag exists on both clients too. Without a fixture of
+-- its own, a test's flag follows its lockdown; a test of the combat start
+-- (PLAYER_REGEN_DISABLED, the flag already true, the lockdown still false)
+-- supplies one.
+if not UnitAffectingCombat then
+    UnitAffectingCombat = function(unit)
+        return unit == "player" and type(InCombatLockdown) == "function" and InCombatLockdown() == true
+    end
+end
 -- The client's strsplit(delimiter, text): every piece, empty ones included.
 if not strsplit then
     strsplit = function(delimiter, text)
@@ -210,6 +219,18 @@ end
 -- then.
 function Support.InCombat(root, isLocked, isFighting)
     return Support.Platform(root, { InCombatLockdown = isLocked, UnitAffectingCombat = isFighting }).InCombat
+end
+
+-- The client's combat start: PLAYER_REGEN_DISABLED arrives while
+-- InCombatLockdown() is still false and the player's combat flag is already
+-- true. Runs handler(frame, event) as a handler of that dispatch;
+-- setFlag(true) and setFlag(false) switch the test's combat flag around it,
+-- and the test's lockdown stays as it is. Returns the handler's results.
+function Support.CombatStart(setFlag, handler)
+    setFlag(true)
+    local results = { handler({}, "PLAYER_REGEN_DISABLED") }
+    setFlag(false)
+    return unpack(results, 1, table.maxn(results))
 end
 
 -- The client's slash command registry (Blizzard_ChatFrameBase/Shared:

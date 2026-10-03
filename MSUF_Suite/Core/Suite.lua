@@ -430,9 +430,14 @@ function S.ApplyAll()
     for i = 1, #S.order do S.Apply(S.order[i]) end
 end
 
+-- The public setters refuse from the start of combat: the client sends
+-- PLAYER_REGEN_DISABLED while InCombatLockdown() is still false, and
+-- NS.InCombat counts that dispatch as combat. S.Apply keeps its own
+-- protected-write guard (lockdown), and S.CommitEditPosition is the one write
+-- the combat start still accepts.
 function S.ApplyGlobalLook(lookName)
     local db = ActiveSuite()
-    if NS.IsCombatLocked() or not Looks.indexes[lookName] or not db then return false end
+    if NS.InCombat() or not Looks.indexes[lookName] or not db then return false end
     db.globalLook = lookName
     for i = 1, #S.order do
         local id = S.order[i]
@@ -448,7 +453,7 @@ end
 
 ------------------------------------------------------------------ settings
 function S.Set(id, key, value)
-    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+    if NS.InCombat() then return false, "Finish combat before editing the suite" end
     local db = ActiveSuite()
     if not db then return false, "Unsupported suite profile" end
     local reason
@@ -488,8 +493,7 @@ local function StoreValues(spec, id, values)
     return config, clean
 end
 
-function S.SetMany(id, values)
-    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+local function SetMany(id, values)
     local db = ActiveSuite()
     if not db or type(values) ~= "table" then return false, "Invalid settings" end
     local spec = S.catalog[id]
@@ -519,11 +523,26 @@ function S.SetMany(id, values)
     return true
 end
 
+function S.SetMany(id, values)
+    if NS.InCombat() then return false, "Finish combat before editing the suite" end
+    return SetMany(id, values)
+end
+
+-- MSUF Edit Mode commits a drag the player still holds when Edit Mode closes
+-- for combat, inside PLAYER_REGEN_DISABLED and before lockdown, and gives a
+-- refused commit its start state back (MSUF_Suite_Modules/EditMode.lua:
+-- movePosition's commit and restoreState). Only lockdown refuses these
+-- writes; the public setters refuse from the combat start.
+function S.CommitEditPosition(id, values)
+    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+    return SetMany(id, values)
+end
+
 -- Section resets restore only their owned keys. Enabling a module through the
 -- normal setter applies the active look to unrelated appearance settings;
 -- that behavior is intentionally skipped for a scoped reset.
 function S.ResetKeys(id, values)
-    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+    if NS.InCombat() then return false, "Finish combat before editing the suite" end
     local db = ActiveSuite()
     local spec = S.catalog[id]
     if not db or not spec or type(values) ~= "table" then return false, "Invalid settings" end
@@ -537,7 +556,7 @@ end
 
 function S.Reset(id)
     local db = ActiveSuite()
-    if NS.IsCombatLocked() or not S.catalog[id] or not db then return false end
+    if NS.InCombat() or not S.catalog[id] or not db then return false end
     db.modules[id] = NS.CopyValue(NS.Defaults.suite.modules[id])
     local config = S.Config(id)
     if config.enabled then ApplyLookToConfig(id, config, db.globalLook) end
@@ -551,7 +570,7 @@ end
 -- never enables spending or automation: opt-in modules keep their own choice.
 function S.Preset(kind)
     local db = ActiveSuite()
-    if NS.IsCombatLocked() or not db then return false end
+    if NS.InCombat() or not db then return false end
     if kind ~= "core" and kind ~= "off" then return false end
     for i = 1, #S.order do
         local id = S.order[i]

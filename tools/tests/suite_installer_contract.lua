@@ -1,4 +1,5 @@
 local root = assert(arg[1], "repository root required")
+local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local Suite = {
     Client = { isForever = false, isMainline = true },
     Host = { build = "Classic" },
@@ -23,6 +24,12 @@ for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id }
 local factoryCalls, activations, scaleChanges, decodes = 0, 0, {}, 0
 
 Suite.IsCombatLocked = function() return false end
+-- Platform.lua's combat rule: the lockdown, or the player's combat flag,
+-- which is already true at the combat start (Support.CombatStart).
+local combatFlag = false
+Suite.InCombat = Support.InCombat(root, function() return Suite.IsCombatLocked() end,
+    function() return combatFlag or Suite.IsCombatLocked() end)
+local function SetCombatFlag(value) combatFlag = value end
 -- Platform.lua's error boundary: securecallfunction reports an error and
 -- returns nothing.
 local raisedErrors = {}
@@ -556,6 +563,9 @@ for _ = 1, 5 do window.next.scripts.OnClick() end
 assert(window.status.text == "|cffff6666" .. combat .. "|r",
     "the installer status line did not translate the refusal")
 Suite.IsCombatLocked = function() return false end
+-- The combat start, before the lockdown: Apply refuses there too.
+local started, startRefusal = Support.CombatStart(SetCombatFlag, function() return Suite.Installer.Apply() end)
+assert(not started and startRefusal == "Finish combat first.", "the installer applied at the combat start")
 local fr = PackTable("frFR", { Continue = "Continuer" })
 window = OpenLocalized("frFR", fr)
 assert(window.next.caption.text == "Continuer" and rawget(fr, "Welcome to MSUF Suite")

@@ -999,6 +999,10 @@ do
             for key, value in pairs(changes) do values[key] = value end
             return true
         end,
+        CommitEditPosition = function(_, changes)
+            for key, value in pairs(changes) do values[key] = value end
+            return true
+        end,
         Set = function(_, key, value) values[key] = value; return true end,
     }
     -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
