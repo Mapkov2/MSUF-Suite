@@ -2302,12 +2302,6 @@
   },
   {
    "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "general.UIScale (= MSUF_DB.general)"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "MSUF_ApplyMsufScale"
@@ -2371,6 +2365,18 @@
    "kind": "addon",
    "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
    "symbol": "api.SetResourceStack"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 history export (HOST_API_SPEC section E); menus without a history session lack it, so the legacy wrap checks it before use",
+   "symbol": "M.SyncExternalHistoryState"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF core export (Runtime/MSUF_UIScaleRuntime.lua) that re-applies the profile's global UI scale; the legacy rollback falls back to MSUF's scale setters on hosts without it",
+   "symbol": "MSUF_ApplyCurrentProfileGlobalUiScale"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Register.lua",
