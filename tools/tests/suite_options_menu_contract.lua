@@ -3538,6 +3538,13 @@ do
     rc.asked.callback()
     assert(rc.feedback.kind == "warning" and rc.feedback.text == M.Tr("Some chat colors could not be restored"),
         "a partly failed restore was not reported")
+    -- Combat began between the question and Yes: the core refuses before
+    -- any write (false, "combat"), which is not a partial restore.
+    rc.result = { false, "combat" }
+    optionsNS.RestoreChatColors()
+    rc.asked.callback()
+    assert(rc.feedback.kind == "warning" and rc.feedback.text == M.Tr("Finish combat first."),
+        "a restore refused in combat was reported as a partial restore")
     InCombatLockdown = function() return true end
     rc.asked = nil
     assert(not optionsNS.RestoreChatColors() and not rc.asked, "Restore chat colors asked in combat")
