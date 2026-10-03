@@ -85,7 +85,9 @@ local function MouseUp(_, button)
     elseif action == MIDDLE.CALENDAR then
         ToggleCalendar()
     elseif action == MIDDLE.WORLD_MAP then
-        ToggleWorldMap()
+        -- No secure click reaches the map's own mouse handler: the world map
+        -- opens through Blizzard's panel manager (MicroMenu.lua).
+        S.TogglePanel("worldMap")
     elseif action == MIDDLE.MICRO_MENU then
         -- A secure flyout clicks Blizzard's own micro buttons (MicroMenu.lua).
         MM.OpenMicroMenu()

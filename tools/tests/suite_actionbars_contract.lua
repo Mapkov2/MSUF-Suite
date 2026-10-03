@@ -1703,6 +1703,40 @@ do
     reads=calls.duration
     now=now+1;SpellCooldown(1001);RunTimers()
     assert(calls.duration-reads==1,"the restored spell lost its route")
+    -- Bar 1 on an override page (above slot 120, with the skyriding, vehicle,
+    -- possess and temporary shapeshift pages) still shows: Blizzard's own
+    -- buttons take those cooldowns from ACTIONBAR_UPDATE_COOLDOWN, and no spell
+    -- event may name them, so its buttons stay off the spell routes there.
+    actions[205]={kind="spell",id=4205,texture=405}
+    conditions.overridebar=true;special.override=true;Drivers();now=now+1;RunTimers()
+    local override=Button(1,1)
+    assert(Bar(1).header.attrs.actionpage==18 and override.slot==205 and Bar(1).header.shown
+        and override.button.icon.texture==405,"bar 1 did not show the override page")
+    assert(override.cdSpell==nil,"an override page spell joined the spell cooldown routes")
+    actions[205].cooldown={isActive=true,isEnabled=true,startTime=now,duration=20,modRate=1}
+    now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    assert(override.button.cooldown.object and override.button.cooldown.object.slot==205
+        and not override.button.cooldown.object.zero,"an override page spell missed its ACTIONBAR_UPDATE_COOLDOWN swipe")
+    actions[205].cooldown=nil
+    now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
+    assert(not override.button.cooldown.object,"an override page spell kept its ended swipe")
+    conditions.overridebar=nil;special.override=nil;Drivers();now=now+1;RunTimers()
+    actions[205]=nil
+    assert(override.slot==1 and override.cdSpell==1001,"bar 1 back on its own page lost the spell route")
+    -- Bars 6-8 hold fixed player slots above 120 (145-180): their spells keep
+    -- the route, so ACTIONBAR_UPDATE_COOLDOWN reads them no more.
+    actions[145]={kind="spell",id=4145,texture=445}
+    assert(S.Set("actionbars","bar6Visibility",1));Event("ACTIONBAR_SLOT_CHANGED",145);now=now+1;RunTimers()
+    local sixth=Button(6,1)
+    assert(sixth.slot==145 and sixth.filled and sixth.cdSpell==4145,"a bar 6 spell lost its spell cooldown route")
+    now=now+1
+    local fixedReads=SlotReads(145,function() Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers() end)
+    assert(fixedReads==0,"ACTIONBAR_UPDATE_COOLDOWN read a routed bar 6 spell")
+    now=now+1
+    fixedReads=SlotReads(145,function() SpellCooldown(4145);RunTimers() end)
+    assert(fixedReads==1,"a bar 6 spell's cooldown event missed its button")
+    actions[145]=nil
+    assert(S.Set("actionbars","bar6Visibility",6));Event("ACTIONBAR_SLOT_CHANGED",145);now=now+1;RunTimers()
 end
 -- The cap's trailing flush has its own flag: a page change while it waits
 -- (a form swap in combat) still repaints bar 1 on the next frame.

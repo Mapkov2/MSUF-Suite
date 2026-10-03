@@ -643,6 +643,30 @@ function H.New(root, client, options)
         container.PlayerCoords = New("Frame", nil, container)
     end
     W.map, W.cluster, W.container, W.backdrop = map, cluster, container, backdrop
+    -- Blizzard's world map and character window (both load at startup) are
+    -- panels of its panel manager: ShowUIPanel and HideUIPanel hand them to
+    -- the secure FramePositionDelegate, which refuses addon calls in combat.
+    -- W.panelCalls records each call with the security of its caller.
+    New("Frame", "WorldMapFrame", ui).shown = false
+    local character = New("Frame", "CharacterFrame", ui)
+    character.shown = false
+    -- TokenFrameMixin:Update shows the currency tab while the player has
+    -- currencies; it stays shown inside the closed window.
+    Button("CharacterFrameTab3", character, 60, 32)
+    -- The three register no events: W.Event's walk (and the paint budgets
+    -- measured through it) stays as it was.
+    for _ = 1, 3 do table.remove(W.frames) end
+    W.panelCalls = {}
+    local function Panel(shown)
+        return function(frame)
+            W.panelCalls[#W.panelCalls + 1] = { frame = frame, shown = shown, secure = W.secure }
+            if not W.combat then W.Blizzard(function() frame:SetShown(shown) end) end
+        end
+    end
+    G.ShowUIPanel, G.HideUIPanel = Panel(true), Panel(false)
+    W.gameRules = {}
+    G.C_GameRules = { IsGameRuleActive = function(rule) return W.gameRules[rule] == true end }
+    G.Enum = { GameRule = { WorldMapDisabled = 1, CharacterPanelDisabled = 2 } }
 
     local function Load(path, addon, namespace)
         local chunk = assert(loadfile(root .. "/" .. path))

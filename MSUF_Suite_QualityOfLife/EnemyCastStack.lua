@@ -21,12 +21,9 @@ local READY_WHOLE_BAR, GROW_UP = 2, 2
 local M = { entries = {}, ordered = {}, rows = {}, free = {}, previews = {}, wakes = {}, candidates = {},
     castRGB = {}, priorityRGB = {}, lockedRGB = {}, stripeRGB = {}, visible = 0 }
 
--- 12.1 nameplate tokens run from nameplate1 to nameplate150 (UnitSharedDocumentation).
-local PLATES, PLATE_TOKENS = {}, {}
-for i = 1, 150 do
-    PLATE_TOKENS[i] = "nameplate" .. i
-    PLATES[PLATE_TOKENS[i]] = true
-end
+-- 12.1 nameplate tokens run from nameplate1 to nameplate150 (UnitSharedDocumentation);
+-- the Suite's one list of them (MSUF_Suite_Modules/Runtime.lua).
+local PLATES, PLATE_TOKENS = S.NameplateUnit, S.NameplateUnits
 local START = { UNIT_SPELLCAST_START = CAST, UNIT_SPELLCAST_CHANNEL_START = CHANNEL,
     UNIT_SPELLCAST_EMPOWER_START = CHANNEL }
 local STOP = { NAME_PLATE_UNIT_REMOVED = true, UNIT_SPELLCAST_STOP = true, UNIT_SPELLCAST_CHANNEL_STOP = true,

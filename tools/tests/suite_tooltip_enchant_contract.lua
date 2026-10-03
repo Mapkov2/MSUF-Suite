@@ -73,6 +73,38 @@ assert(heard == 2 and context.events.ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED,
 tooltips.Run(Currency, tooltip, { id = 222 })
 assert(#tooltip.lines == 4 and tooltip.lines[2][1] == "Known across characters"
     and tooltip.lines[2][2] == "10", "native account currency data was not shown safely")
+-- The client loads the account data only on request: the first currency
+-- tooltip with Alt held that finds it missing asks once, and the data's
+-- arrival adds the lines to the open tooltip.
+local ready, requests, fetch = false, 0, C_CurrencyInfo.FetchCurrencyDataFromAccountCharacters
+C_CurrencyInfo.IsAccountCharacterCurrencyDataReady = function() return ready end
+C_CurrencyInfo.RequestCurrencyDataForAccountCharacters = function() requests = requests + 1 end
+C_CurrencyInfo.FetchCurrencyDataFromAccountCharacters = function(id)
+    assert(ready, "account currency data was read before it was ready")
+    return fetch(id)
+end
+alt = false
+tooltip.lines = {}
+tooltips.Run(Currency, tooltip, { id = 222 })
+assert(requests == 0, "a currency tooltip without Alt requested account data")
+alt = true
+local open = { type = Currency, id = 222 }
+tooltip.lines = {}
+tooltips.Run(Currency, tooltip, open)
+tooltips.Run(Currency, tooltip, open)
+assert(requests == 1 and #tooltip.lines == 2, "missing account currency data was not requested exactly once")
+function tooltip:GetPrimaryTooltipData() return open end
+function tooltip:Show() self.grown = true end
+ready = true
+context.events.ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED()
+assert(#tooltip.lines == 5 and tooltip.lines[3][1] == "Known across characters" and tooltip.grown,
+    "arriving account currency data did not reach the open tooltip")
+ready = false
+tooltip.lines = {}
+tooltips.Run(Currency, tooltip, { id = 222 })
+assert(requests == 2, "data that went missing again after it arrived was not requested again")
+ready = true
+tooltip.GetPrimaryTooltipData, tooltip.Show = nil, nil
 tooltip.lines = {}
 tooltips.Run(Enum.TooltipDataType.Spell, tooltip, { id = 10 })
 assert(#tooltip.lines == 2 and tooltip.lines[2][2] == "4321", "spell icon ID missing")

@@ -11,6 +11,8 @@ local Line = S.TooltipLines.Line
 local handlers = {}
 -- The tooltip data that already carries the IDs, and the account lines.
 local idsFor, accountFor
+-- An account currency request is on its way (until the data arrives).
+local requested
 
 local function AddID(tooltip, label, id)
     if not S.Finite(id) or id < 1 then return end
@@ -60,9 +62,19 @@ local function SortByAmount(a, b)
 end
 
 -- Blizzard's account character currency data, when the client has it ready.
+-- The client loads it only on request, as Blizzard's currency transfer
+-- button asks when it shows (Blizzard_CurrencyTransfer.lua): the first
+-- currency tooltip with Alt held that finds it missing asks once, and
+-- ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED adds the lines (AccountArrived).
 local function AccountCurrency(tooltip, id)
     local ready = C_CurrencyInfo.IsAccountCharacterCurrencyDataReady()
-    if not S.Public(ready) or ready ~= true then return end
+    if not S.Public(ready) or ready ~= true then
+        if not requested then
+            requested = true
+            C_CurrencyInfo.RequestCurrencyDataForAccountCharacters()
+        end
+        return
+    end
     local entries = C_CurrencyInfo.FetchCurrencyDataFromAccountCharacters(id)
     if not S.Public(entries) or type(entries) ~= "table" then return end
     local rows, total = {}, 0
@@ -122,6 +134,7 @@ end
 -- Account character currency data that arrives while a currency tooltip is
 -- open with Alt held adds the lines it waited for.
 local function AccountArrived()
+    requested = nil
     local tooltip, data = S.TooltipLines.Open()
     if not data or data.type ~= Enum.TooltipDataType.Currency or data ~= idsFor or data == accountFor then return end
     AccountLines(tooltip, data)
@@ -152,7 +165,7 @@ end
 function M:Refresh() Listen(self) end
 
 function M:Disable()
-    idsFor, accountFor = nil, nil
+    idsFor, accountFor, requested = nil, nil, nil
 end
 
 S.Install("tooltipIDs", M)

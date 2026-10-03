@@ -339,16 +339,21 @@ local function Corner(config, x, y)
 end
 
 -- ANCHOR_CURSOR ignores offsets; ANCHOR_CURSOR_RIGHT applies them from the
--- cursor (Blizzard_AuraButton.lua lists both).
-local function Anchor(t, owner)
+-- cursor (Blizzard_AuraButton.lua lists both). GameTooltip_SetDefaultAnchor
+-- has just called SetOwner(parent, "ANCHOR_NONE") and set its own point
+-- (SharedTooltipTemplates.lua). A second SetOwner from this post-hook would
+-- clear the tooltip again (OnTooltipCleared) inside the addon's call, in the
+-- middle of the caller's build. So the cursor mode changes only the anchor
+-- type (SetAnchorType with offsets, as ContainerFrame.lua does) and the fixed
+-- corner only the point.
+local function Anchor(t)
     if not M.active or t ~= GameTooltip or t._msufUnitTooltipOwner ~= nil or M.config.anchor == 1 then return end
+    t:ClearAllPoints()
     if M.config.anchor == 2 then
-        t:SetOwner(owner, "ANCHOR_CURSOR_RIGHT", M.config.cursorX, M.config.cursorY)
+        t:SetAnchorType("ANCHOR_CURSOR_RIGHT", M.config.cursorX, M.config.cursorY)
         return
     end
     local point, x, y = Corner(M.config, M.config.fixedX, M.config.fixedY)
-    t:SetOwner(owner, "ANCHOR_NONE")
-    t:ClearAllPoints()
     t:SetPoint(point, UIParent, point, x, y)
 end
 

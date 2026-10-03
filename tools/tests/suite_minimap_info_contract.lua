@@ -154,8 +154,16 @@ do
     end })
     W.editModeReady = true
     local G, S = W.G, W.S
-    local opened = 0
-    G.ToggleWorldMap = function() opened = opened + 1 end
+    -- The world map opens through Blizzard's panel manager (S.TogglePanel):
+    -- ToggleWorldMap would run its display-state code inside the addon's call.
+    G.ToggleWorldMap = function() error("ToggleWorldMap ran from the addon's code") end
+    local function Opened()
+        local count = 0
+        for _, call in ipairs(W.panelCalls) do
+            if call.frame == G.WorldMapFrame then count = count + 1 end
+        end
+        return count
+    end
     H.Enable(W, { captured = true, infoLocation = false })
     W.Step()
     local M, MM, c = W.M, W.MM, W.config
@@ -263,9 +271,9 @@ do
     -- Clicks never run in combat; the location click is optional.
     G.ToggleCharacter = function() end
     W.SetCombat(true); entries.Coordinates.button:Click(); W.SetCombat(false)
-    check(opened == 0, "click in combat")
+    check(Opened() == 0, "click in combat")
     entries.Coordinates.button:Click()
-    check(opened == 1, "coordinates click")
+    check(Opened() == 1 and W.panelCalls[1].shown and G.WorldMapFrame.shown, "coordinates click")
     -- Hide in instances: entering one removes the coordinates text until leaving.
     assert(S.Set("minimap", "infoCoordinatesHideInstance", true))
     inside = true
@@ -343,13 +351,20 @@ do
     assert(S.Set("minimap", "infoLocationClassColor", true))
     check(location.label.textColor[1] == .2, "class colour")
     -- Location click opens the world map only when allowed.
-    local opened = 0
-    G.ToggleWorldMap = function() opened = opened + 1 end
+    G.ToggleWorldMap = function() error("ToggleWorldMap ran from the addon's code") end
+    local function Opened()
+        local count = 0
+        for _, call in ipairs(W.panelCalls) do
+            if call.frame == G.WorldMapFrame then count = count + 1 end
+        end
+        return count
+    end
+    local opened = Opened()
     location.button:Click()
-    check(opened == 1, "location click")
+    check(Opened() == opened + 1, "location click")
     assert(S.Set("minimap", "infoLocationClick", false))
     location.button:Click()
-    check(opened == 1, "location click must be optional")
+    check(Opened() == opened + 1, "location click must be optional")
     zone, subzone, pvp, current = W.secret, W.secret, W.secret, W.secret
     W.Event("PLAYER_ENTERING_WORLD")
     check(location.text == "--" and durability.text == "--", "secret zone/durability")
@@ -586,14 +601,27 @@ do
     Hover(entries.Location)
     check(not overlay.shown, "Location offered a window click with its click option off")
     W.Fire(entries.Location.button, "OnLeave")
-    -- Without a visible Blizzard button the text opens the window itself.
+    -- Without a visible Blizzard button the text opens the window through
+    -- Blizzard's panel manager (the secure FramePositionDelegate), never
+    -- through ToggleWorldMap or ToggleCharacter from the addon's call.
     W.cluster.ZoneTextButton.shown = false
     Hover(entries.Coordinates)
     check(not overlay.shown, "the overlay offered a click on a hidden Blizzard button")
     W.Click(entries.Coordinates.button)
-    check(opened[#opened] and opened[#opened].name == "ToggleWorldMap", "Coordinates did not fall back to the world map")
+    local call = W.panelCalls[#W.panelCalls]
+    check(#opened == 0 and call and call.frame == G.WorldMapFrame and call.shown and G.WorldMapFrame.shown,
+        "Coordinates did not fall back to the world map")
     W.Fire(entries.Coordinates.button, "OnLeave")
     W.cluster.ZoneTextButton.shown = true
+    G.CharacterMicroButton.shown = false
+    Hover(entries.Durability)
+    check(not overlay.shown, "the overlay offered a click on a hidden character button")
+    W.Click(entries.Durability.button)
+    call = W.panelCalls[#W.panelCalls]
+    check(#opened == 0 and call.frame == G.CharacterFrame and call.shown and G.CharacterFrame.shown,
+        "Durability did not fall back to the character window")
+    W.Fire(entries.Durability.button, "OnLeave")
+    G.CharacterMicroButton.shown = true
     Hover(entries.Coordinates)
     check(overlay.shown, "the overlay did not return with the Blizzard button")
     assert(S.Set("minimap", "enabled", false))

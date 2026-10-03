@@ -84,6 +84,9 @@ module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTim
 local function Fire(event, ...) assert(module.context.events[event], event)(module, event, ...) end
 module:Enable()
 assert(not module.host.shown and not next(subscriptions) and reads == 0)
+assert(not next(movers), "Enable registered movers; the controller does it through RegisterMovers")
+-- The controller registers the movers right after Enable (S.RefreshEditMover).
+module:RegisterMovers()
 assert(movers.distance.visible() and not movers.attached.visible(), "free placement mover missing")
 values[1], values[2], target = false, true, true
 Fire("PLAYER_TARGET_CHANGED")

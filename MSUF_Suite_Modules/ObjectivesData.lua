@@ -316,6 +316,9 @@ local function CollectScenario(list, c)
     if not Text(name) or not Finite(stage) or not Finite(total) or total < 1 or stage > total then return end
     local entry = NextEntry(list, 0, name, "scenario")
     entry.scenarioID = Finite(scenarioID) and scenarioID or nil
+    -- Blizzard's stage block shows its find-group button on the same check.
+    local groupable = entry.scenarioID and Read(C_LFGList.CanCreateScenarioGroup, entry.scenarioID)
+    entry.findGroup = groupable == true or nil
     local stepName, description, criteriaCount, _, _, _, _, _, _, weightedProgress, _, widgetSetID = scenario.GetStepInfo()
     O.M.scenarioWidgetSetID = Finite(widgetSetID) and widgetSetID > 0 and widgetSetID or nil
     local stageFormat = Text(_G.SCENARIO_STAGE_STATUS)

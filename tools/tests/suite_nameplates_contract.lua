@@ -227,9 +227,11 @@ cast.Text:SetFont("native-cast-font", 10, "")
 function cast:SetCastTimeTextShown() error("do not activate Blizzard's secret-unsafe cast time path") end
 function cast:UpdateCastTimeText() error("do not run Blizzard's secret-unsafe cast time formatter") end
 function cast:GetMinMaxValues() error("do not read secret cast progress") end
-local castDuration, channelDuration
+local castDuration, channelDuration, empoweredDuration
 UnitCastingDuration = function(unit) assert(unit == "nameplate1"); return castDuration end
 UnitChannelDuration = function(unit) assert(unit == "nameplate1"); return channelDuration end
+-- An empowered cast's own duration, with the hold at its top stage.
+UnitEmpoweredChannelDuration = function(unit) assert(unit == "nameplate1"); return empoweredDuration end
 C_StringUtil = { CreateSecondsFormatter = function()
     return { SetMillisecondsThreshold = function(self, threshold) self.threshold = threshold end,
         SetMaxInterval = function(self, interval) self.interval = interval end,
@@ -1931,6 +1933,19 @@ do
     events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
     assert(state.binding.duration == channelDuration and state.binding.enabled and label:IsShown(),
         "a non-interruptible channel lost its duration text")
+    events.UNIT_SPELLCAST_CHANNEL_STOP(module, "UNIT_SPELLCAST_CHANNEL_STOP", "nameplate1")
+    empoweredDuration = setmetatable({}, { __sub = function() error("secret empower arithmetic") end })
+    for _, event in ipairs({ "UNIT_SPELLCAST_EMPOWER_START", "UNIT_SPELLCAST_EMPOWER_UPDATE" }) do
+        state.binding.duration = nil
+        events[event](module, event, "nameplate1")
+        assert(state.binding.duration == empoweredDuration and state.binding.enabled and label:IsShown(),
+            event .. " did not bind the empowered channel's own duration")
+    end
+    empoweredDuration = nil
+    events.UNIT_SPELLCAST_EMPOWER_UPDATE(module, "UNIT_SPELLCAST_EMPOWER_UPDATE", "nameplate1")
+    assert(not state.binding.enabled and not label:IsShown(), "an empower without its duration kept a time")
+    events.UNIT_SPELLCAST_EMPOWER_STOP(module, "UNIT_SPELLCAST_EMPOWER_STOP", "nameplate1")
+    events.UNIT_SPELLCAST_CHANNEL_START(module, "UNIT_SPELLCAST_CHANNEL_START", "nameplate1")
     module.config.enemyCastTimeEnabled = false
     module:Refresh()
     assert(cast.CastTimeText == nil and not label:IsShown() and not state.binding.enabled,

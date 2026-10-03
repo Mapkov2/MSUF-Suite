@@ -60,16 +60,30 @@ assert(callbacks.MENU_UNIT_CHAT_ROSTER and callbacks.MENU_UNIT_PLAYER
 module:Refresh()
 module:Enable()
 
-local function Popup(contextData)
+local function Popup(contextData, tag)
     local entries = {}
     local rootDescription = {
         CreateDivider = function() entries.divider = true end,
         CreateTitle = function(_, value) entries.title = value end,
         CreateButton = function(_, label, callback) entries[label] = callback end,
     }
-    callbacks.MENU_UNIT_CHAT_ROSTER(nil, rootDescription, contextData)
+    callbacks[tag or "MENU_UNIT_CHAT_ROSTER"](nil, rootDescription, contextData)
     return entries
 end
+-- TARGET is also the menu of a non-player target, FOCUS covers every focus
+-- unit: a unit menu offers profiles only while UnitIsPlayer publicly says so.
+local players = { target = true }
+UnitIsPlayer = function(unit) return players[unit] end
+assert(Popup({ name = "Pmi", server = "Tarren Mill", unit = "target" }, "MENU_UNIT_TARGET").divider,
+    "a player target lost its profile links")
+players.target, players.focus = false, "secret"
+assert(not Popup({ name = "Hogger", unit = "target" }, "MENU_UNIT_TARGET").divider,
+    "an NPC target offered character profile links")
+assert(not Popup({ name = "Hogger", unit = "focus" }, "MENU_UNIT_FOCUS").divider,
+    "a focus unit with a secret player answer offered character profile links")
+assert(not Popup({ name = "Hogger", unit = "secret" }, "MENU_UNIT_FOCUS").divider,
+    "a secret unit token offered character profile links")
+UnitIsPlayer = function() error("a menu without a unit asked UnitIsPlayer") end
 local entries = Popup({ name = "Pmi-TarrenMill" })
 assert(entries.title == "Character profiles" and entries["Copy Raider.IO URL"]
     and entries["Copy Warcraft Logs URL"] and not module.dialog,

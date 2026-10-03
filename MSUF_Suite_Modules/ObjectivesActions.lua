@@ -74,6 +74,9 @@ end
 -- click handler:
 --   * the green-eye button the hidden native tracker keeps for the quest
 --     (QuestObjectiveFindGroupButtonMixin:OnClick runs the quest search);
+--   * for a scenario, the find-group button of the native stage block
+--     (ScenarioObjectiveTrackerFindGroupButtonMixin:OnClick runs
+--     LFGListUtil_FindScenarioGroup, which reaches the same search);
 --   * else the group finder micro button, its first tab and Premade Groups.
 local NATIVE_QUEST_MODULES = { "QuestObjectiveTracker", "CampaignQuestObjectiveTracker",
     "WorldQuestObjectiveTracker", "BonusObjectiveTracker" }
@@ -94,11 +97,25 @@ local function NativeGroupButton(questID)
     end
 end
 
+-- The stage block (Blizzard_ObjectiveTracker loads at startup on every
+-- supported client) creates its button on first use, shows it while
+-- C_LFGList.CanCreateScenarioGroup allows it and keeps the scenario it was
+-- set up for.
+local function NativeScenarioGroupButton(scenarioID)
+    local stageButton = ScenarioObjectiveTracker.StageBlock.findGroupButton
+    if stageButton and stageButton:IsShown() and stageButton.scenarioID == scenarioID then return stageButton end
+end
+
 -- PreClick of the row's group button. It runs before Blizzard's click
 -- handler and writes only the button's own attributes.
 function O.FindGroupPreClick(button)
     local row = button.ownerRow
-    local native = row.questGroupSearch and Finite(row.questID) and NativeGroupButton(row.questID)
+    local native
+    if row.group == "scenario" then
+        native = Finite(row.scenarioID) and NativeScenarioGroupButton(row.scenarioID)
+    else
+        native = row.questGroupSearch and Finite(row.questID) and NativeGroupButton(row.questID)
+    end
     if native then
         button:SetAttribute("type", "click")
         button:SetAttribute("clickbutton", native)
@@ -131,14 +148,16 @@ local function BuildAchievementMenu(root, button)
     end
 end
 
+-- LFGListUtil_FindScenarioGroup would write the LFG list state inside this
+-- menu call (see "group finder" above): the menu opens the window only and
+-- the row's group button runs the scenario search.
 local function BuildScenarioMenu(root, scenarioID)
     if type(_G.ToggleEncounterJournal) == "function" then
         root:CreateButton(ENCOUNTER_JOURNAL, OpenJournal)
     end
-    if Finite(scenarioID) and Read(C_LFGList.CanCreateScenarioGroup, scenarioID) == true then
-        root:CreateButton(FIND_A_GROUP, function()
-            LFGListUtil_FindScenarioGroup(scenarioID, true)
-        end)
+    if not NS.Client.isForever and Finite(scenarioID)
+        and Read(C_LFGList.CanCreateScenarioGroup, scenarioID) == true then
+        root:CreateButton(Tr("Open group finder"), OpenGroupFinder)
     end
 end
 

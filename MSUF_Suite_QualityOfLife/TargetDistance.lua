@@ -257,7 +257,12 @@ function M:Enable()
     self.context:Event("UNIT_FACTION", Sync, nil, "target")
     Discover(self)
     self:Refresh()
-    -- One mover per placement: the free position, or offsets below the target frame.
+end
+
+-- One mover per placement: the free position, or offsets below the target
+-- frame. The controller registers them after Enable and Refresh
+-- (S.RefreshEditMover).
+function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "distance", { label = "Target spell-range estimate", order = 648,
         getFrame = function() return self.host end, xKey = "x", yKey = "y", sizeKeys = { "width" },
         point = function() return "CENTER" end, quickPosition = true,

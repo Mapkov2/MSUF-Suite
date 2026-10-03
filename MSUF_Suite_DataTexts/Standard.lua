@@ -34,9 +34,10 @@ Standard.EVENT_SOURCES = {
     UPDATE_EXHAUSTION = { "xp" },
 }
 local CLICK = {
-    gold = "OpenAllBags", sessionGold = "OpenAllBags", bags = "OpenAllBags",
-    coordinates = "ToggleWorldMap", location = "ToggleWorldMap", date = "ToggleCalendar",
+    gold = "OpenAllBags", sessionGold = "OpenAllBags", bags = "OpenAllBags", date = "ToggleCalendar",
 }
+-- Windows S.TogglePanel opens through Blizzard's panel manager.
+local PANELS = { durability = "character", coordinates = "worldMap", location = "worldMap" }
 local LABELS = {
     gold = S.Text("Gold"), sessionGold = S.Text("Session"), bags = S.Text("Bags"),
     durability = S.Text("Durability"), clock = S.Text("Time"), fps = S.Text("FPS"),
@@ -163,7 +164,8 @@ end
 -- The Blizzard window of a built-in source. Callers run it out of combat.
 -- Durability, Coordinates and Zone places normally carry the secure overlay
 -- (Actions.lua), which clicks Blizzard's own button; this runs only when that
--- button is missing. ToggleCalendar loads Blizzard_Calendar and shows the
+-- button is missing, and opens the window through Blizzard's panel manager
+-- (S.TogglePanel). ToggleCalendar loads Blizzard_Calendar and shows the
 -- calendar through ShowUIPanel (Calendar_Toggle). OpenAllBags has no Blizzard
 -- button with the same effect: the backpack button puts a held item into the
 -- bag or toggles the backpack alone (BaseBagSlotButtonMixin:BagSlotOnClick).
@@ -171,8 +173,8 @@ function Standard.Click(button)
     local name = CLICK[button.source]
     if name then
         _G[name]()
-    elseif button.source == "durability" then
-        ToggleCharacter("PaperDollFrame")
+    elseif PANELS[button.source] then
+        S.TogglePanel(PANELS[button.source])
     elseif button.source == "clock" then
         ToggleCalendar()
     end

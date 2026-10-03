@@ -254,7 +254,16 @@ do
     W.editModeReady = true
     local calendar, worldMap = 0, 0
     W.G.ToggleCalendar = function() calendar = calendar + 1 end
-    W.G.ToggleWorldMap = function() worldMap = worldMap + 1 end
+    -- No secure click reaches the map's mouse handler: the world map opens
+    -- through Blizzard's panel manager, never through ToggleWorldMap.
+    W.G.ToggleWorldMap = function() error("ToggleWorldMap ran from the addon's code") end
+    local function MapCalls()
+        worldMap = 0
+        for _, call in ipairs(W.panelCalls) do
+            if call.frame == W.G.WorldMapFrame then worldMap = worldMap + 1 end
+        end
+        return worldMap
+    end
     local nativeClicks = {}
     local nativeMouseUp = function(_, button)
         nativeClicks[button] = (nativeClicks[button] or 0) + 1
@@ -330,11 +339,19 @@ do
     check(nativeClicks.MiddleButton == nil, "middle action also pinged the map")
     assert(S.Set("minimap", "middleClick", 3)); mouseUp(map, "MiddleButton")
     assert(S.Set("minimap", "middleClick", 4)); mouseUp(map, "MiddleButton")
-    check(calendar == 1 and worldMap == 1, "calendar/world map actions")
+    check(calendar == 1 and MapCalls() == 1 and W.panelCalls[1].shown and W.G.WorldMapFrame.shown,
+        "calendar/world map actions")
+    mouseUp(map, "MiddleButton")
+    check(MapCalls() == 2 and not W.panelCalls[2].shown and not W.G.WorldMapFrame.shown,
+        "a second middle click did not close the world map")
+    W.gameRules[W.G.Enum.GameRule.WorldMapDisabled] = true
+    mouseUp(map, "MiddleButton")
+    W.gameRules[W.G.Enum.GameRule.WorldMapDisabled] = nil
+    check(MapCalls() == 2, "middle click opened a world map the game rules disable")
     W.SetCombat(true); mouseUp(map, "MiddleButton"); W.SetCombat(false)
-    check(worldMap == 1, "middle click acted in combat")
+    check(MapCalls() == 2, "middle click acted in combat")
     assert(S.Set("minimap", "middleClick", 1)); mouseUp(map, "MiddleButton")
-    check(worldMap == 1, "middle click nothing")
+    check(MapCalls() == 2, "middle click nothing")
     -- Rotation: 1 leaves Blizzard's CVar alone and returns a suite write.
     assert(S.Set("minimap", "rotate", 2))
     check(W.cvars.rotateMinimap == "1", "rotate with player")

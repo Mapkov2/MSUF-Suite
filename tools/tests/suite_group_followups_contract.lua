@@ -307,4 +307,21 @@ assert(readyChecks == 1 and blockedCalls == 0 and notices[#notices] == blockedTe
 restriction = nil
 raidTools.config.showPanel = false; raidTools:Refresh()
 assert(not raidTools.panel.driver and not raidTools.panel.shown)
+-- The controller registers the mover after Enable and Refresh
+-- (S.RefreshEditMover); the registration stays, so the mover follows the
+-- panel option.
+local toolMovers = {}
+suite.RegisterOwnedMover = function(id, element, spec)
+    assert(id == "groupRaidShortcuts")
+    toolMovers[element] = spec
+end
+raidTools:Refresh()
+assert(not next(toolMovers), "Refresh registered the mover; the controller does it through RegisterMovers")
+raidTools:RegisterMovers()
+local tools = assert(toolMovers.tools, "the raid tools mover is missing")
+assert(tools.getFrame() == raidTools.panel and not tools.isEnabled(), "a hidden raid tools panel offered its mover")
+raidTools.config.showPanel = true; raidTools:Refresh()
+assert(tools.isEnabled(), "the shown raid tools panel lost its mover")
+raidTools.config.showPanel = false; raidTools:Refresh()
+assert(not tools.isEnabled(), "turning the panel off kept its mover")
 print("Raid tools panel and authored worldmark sequence/undo/clear snippets passed")

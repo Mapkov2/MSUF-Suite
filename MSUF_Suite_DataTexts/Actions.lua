@@ -13,10 +13,12 @@ local CREST = NS.DataTextCrestMode
 --     place, never inside a bar, and runs its SecureActionButtonTemplate click
 --     (item, toy or a click on Blizzard's talent micro button); the Suite only
 --     adds PostClick.
---   * The built-in Durability, Coordinates and Zone places borrow it too: it
---     clicks the Blizzard button that opens their window (S.PanelButton), so
---     the character window and the world map open from secure code. Without
---     that button the place opens the window itself (Standard.Click).
+--   * The built-in Durability, Coordinates and Zone places and the Currency
+--     and Crests places borrow it too: it clicks the Blizzard button that
+--     opens their window (S.PanelButton), so the character window, its
+--     currency tab and the world map open from secure code. Without that
+--     button the place opens the window through Blizzard's panel manager
+--     (S.TogglePanel; Standard.Click for the built-in places).
 --   * Dungeon portals and the micro menu open a popup of secure rows.
 -- PLAYER_REGEN_DISABLED runs before lockdown starts: DataTexts.lua releases
 -- both there, so no protected frame depends on a bar during combat. A
@@ -24,9 +26,11 @@ local CREST = NS.DataTextCrestMode
 local Actions = {}
 P.DataTextActions = Actions
 
-local OVERLAY_KINDS = { hearth = true, specialization = true }
--- Built-in places whose window a Blizzard button opens (S.PanelButton).
+local OVERLAY_KINDS = { hearth = true, specialization = true, currency = true, crests = true }
+-- Places whose window a Blizzard button opens (S.PanelButton): built-in
+-- sources by source, additional ones by kind.
 local PANEL_SOURCES = { durability = "character", coordinates = "worldMap", location = "worldMap" }
+local PANEL_KINDS = { currency = "currency", crests = "currency" }
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100
 local overlay, popup
@@ -49,6 +53,12 @@ local function SecureAction(button)
         if not item then return nil end
         if item.toy then return "toy", nil, item.id end
         return "item", "item:" .. item.id
+    end
+    local panel = PANEL_KINDS[binding.kind]
+    if panel then
+        local target = S.PanelButton(panel)
+        if target then return "click", nil, nil, target end
+        return nil
     end
     local native = _G[SPEC_BUTTON]
     if native then return "click", nil, nil, native end
@@ -103,9 +113,10 @@ function Actions.Attach(button, force)
     frame:SetAttribute("item1", item)
     frame:SetAttribute("toy1", toy)
     frame:SetAttribute("clickbutton1", target)
-    -- Every mouse button of a Specialization or window place opens its
-    -- window, as the place did and Blizzard's buttons do (their OnClick
-    -- ignores the button); the unsuffixed attributes cover the others.
+    -- Every mouse button of a Specialization, Currency, Crests or window
+    -- place opens its window, as the place did and Blizzard's buttons do
+    -- (their OnClick ignores the button); the unsuffixed attributes cover
+    -- the others.
     local any = kind == "click" and target or nil
     frame:SetAttribute("type", any and kind)
     frame:SetAttribute("clickbutton", any)
@@ -325,13 +336,12 @@ function Actions.Click(button, mouse)
         return
     elseif OVERLAY_KINDS[kind] then
         -- The overlay performs this click; a click that reaches the place
-        -- found it detached, so attach it for the next one.
-        Actions.Attach(button)
+        -- found it detached, so attach it for the next one. A window place
+        -- without Blizzard's button opens its window right away.
+        if not Actions.Attach(button) and PANEL_KINDS[kind] then S.TogglePanel(PANEL_KINDS[kind]) end
     elseif kind == "professions" then
         C_AddOns.LoadAddOn("Blizzard_ProfessionsBook")
         if _G.ProfessionsBookFrame then ToggleFrame(ProfessionsBookFrame) end
-    elseif kind == "currency" or kind == "crests" then
-        ToggleCharacter("TokenFrame")
     elseif kind == "portals" then
         Actions.PortalMenu(button)
     elseif kind == "microMenu" then

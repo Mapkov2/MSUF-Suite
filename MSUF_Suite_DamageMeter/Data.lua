@@ -74,19 +74,13 @@ function D.Short(name)
     return name:sub(1, index - 1) .. (config.nameEllipsis and "..." or "")
 end
 
--- Plain amounts: three significant digits with K/M/B units. Called only when
--- a row's plain value changed.
-function D.Compact(value)
-    local sign = ""
-    if value < 0 then sign, value = "-", -value end
-    if value < 999.5 then return sign .. floor(value + .5) end
-    local unit, divisor = "K", 1e3
-    if value >= 999.5e6 then unit, divisor = "B", 1e9 elseif value >= 999.5e3 then unit, divisor = "M", 1e6 end
-    value = value / divisor
-    return format(value < 9.995 and "%s%.2f%s" or value < 99.95 and "%s%.1f%s" or "%s%.0f%s", sign, value, unit)
-end
-
--- Native formatting accepts secret values. Constant raw suffixes avoid
+-- Every amount, plain or secret, goes through the one native formatter, as
+-- Blizzard's own meter formats all its values with one native call
+-- (DamageMeterEntry.lua, GetEntryValueText): a plain value formatted in Lua
+-- would change its look at every combat edge, when the values turn secret.
+-- The client's own abbreviations by default; "Use English K/M/B" picks the
+-- English config for both. Rows call it only when a plain value changed (the
+-- mA/mB memo) or for a secret value. Constant raw suffixes avoid
 -- client-localized global strings; the config is created once on opt-in.
 local englishAbbreviation
 function D.ConfigureAbbreviation()

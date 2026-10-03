@@ -125,9 +125,18 @@ Ambiguate=function(name,context)
     if IsSecret(name) then return Secret("short:"..Label(name)) end
     return (name:gsub("%-.*$",""))
 end
+-- AbbreviateNumbers after its documented breakpoint rule
+-- (LocalizationSharedDocumentation.lua) with English abbreviations: 1234 is
+-- "1.2K", 12345 "12K". The meter formats every amount, plain or secret,
+-- through it (Data.lua); a secret number gives a secret string.
+local ENGLISH_POINTS={{1e10,"B",1e9,1},{1e9,"B",1e8,10},{1e7,"M",1e6,1},{1e6,"M",1e5,10},{1e4,"K",1e3,1},{1e3,"K",1e2,10}}
 AbbreviateNumbers=function(value)
     if IsSecret(value) then return Secret("abbr:"..secretLabel[value]) end
-    return "ab"..tostring(value)
+    assert(type(value)=="number","AbbreviateNumbers takes a number")
+    for _,point in ipairs(ENGLISH_POINTS) do
+        if value>=point[1] then return tostring(math.floor(value/point[3])/point[4])..point[2] end
+    end
+    return tostring(value)
 end
 RAID_CLASS_COLORS={WARRIOR={r=.78,g=.61,b=.43},MAGE={r=.25,g=.78,b=.92},PRIEST={r=1,g=1,b=1}}
 CLASS_ICON_TCOORDS={WARRIOR={0,.25,0,.25},MAGE={.25,.5,0,.25},PRIEST={.5,.75,.25,.5}}
@@ -405,7 +414,7 @@ assert(Label(D.Short(protectedName))=="short:crossRealmName","protected server n
 c.showRealm=true
 assert(rawequal(D.Short(protectedName),protectedName),"show-server setting must preserve protected full names")
 c.showRealm=false
-assert(Row(win,1).valueText.text=="1.50M (15.0K)","value format 3 wrong: "..tostring(Row(win,1).valueText.text))
+assert(Row(win,1).valueText.text=="1.5M (15K)","value format 3 wrong: "..tostring(Row(win,1).valueText.text))
 assert(Row(win,1).bar.max==1500000 and Row(win,1).bar.value==1500000 and Row(win,3).bar.value==300000)
 assert(Row(win,2).icon.texture==135932,"spec icon missing")
 assert(Row(win,1).icon.texture:find("CharacterCreate%-Classes"),"class sprite fallback missing")
@@ -586,7 +595,7 @@ assert(type(value)=="table" and value.format=="%s [%s]" and Label(value.args[1])
 D.SetValueText(Row(win,1),0,1000,Secret("mixedrate"),2000,true)
 value=Row(win,1).valueText.text
 assert(type(value)=="table" and value.format=="%s [%s] [%s]" and value.args[1]=="50%"
-    and value.args[2]=="1.00K" and Label(value.args[3])=="abbr:mixedrate",
+    and value.args[2]=="1K" and Label(value.args[3])=="abbr:mixedrate",
     "custom layout must place a plain share before a secret rate")
 M.style.valueSeparator=6
 D.SetValueText(Row(win,1),0,Secret("hyphentotal"),Secret("hyphenrate"),Secret("hyphendenominator"),true)
@@ -597,7 +606,7 @@ M.style.numberFormat,M.style.valueOrder,M.style.valueSeparator=3,1,2
 assert(OtherCalls()==0 and not PaintRequest(),"combat start left a deferred paint")
 -- Mixed readability: plain row values with a secret total never compute a share.
 D.SetValueText(Row(win,1),0,1000,10,Secret("sessiontotal"),true)
-assert(Row(win,1).valueText.text=="1.00K (10)","secret denominator produced a share")
+assert(Row(win,1).valueText.text=="1K (10)","secret denominator produced a share")
 fetches=api.fetch
 Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
 assert(PaintRequest() and PaintRequest().delay==1.5 and api.fetch==fetches,
@@ -799,7 +808,7 @@ S.SetMany("damageMeter",{w1Session=1,w1Type=11})
 Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
 assert(win.bd.open and api.lastCreature==99 and api.lastGUID=="Creature-0-99")
 assert(win.bdRows[1].nameText.text=="Tank" and win.bdRows[2].nameText.text=="Me" and not win.bdRows[3],"enemy damage not grouped per attacker")
-assert(win.bdRows[1].valueText.text=="1.60K (16) 70%","grouped value wrong: "..tostring(win.bdRows[1].valueText.text))
+assert(win.bdRows[1].valueText.text=="1.6K (16) 70%","grouped value wrong: "..tostring(win.bdRows[1].valueText.text))
 win.panel.scripts.OnClick(win.panel,"LeftButton")
 S.Set("damageMeter","w1Type",1)
 
@@ -920,40 +929,40 @@ roster={
 }
 api.roster=roster
 assert(S.Set("damageMeter","percent",true))
-assert(Row(win,1).valueText.text=="1.50M (15.0K) 56%","plain-value percent missing: "..tostring(Row(win,1).valueText.text))
+assert(Row(win,1).valueText.text=="1.5M (15K) 56%","plain-value percent missing: "..tostring(Row(win,1).valueText.text))
 S.Set("damageMeter","numberFormat",4)
-assert(Row(win,1).valueText.text=="1.50M | 15.0K 56%")
+assert(Row(win,1).valueText.text=="1.5M | 15K 56%")
 S.Set("damageMeter","numberFormat",1)
-assert(Row(win,1).valueText.text=="15.0K 56%")
+assert(Row(win,1).valueText.text=="15K 56%")
 S.SetMany("damageMeter",{numberFormat=3,w1Type=2})
-assert(Row(win,1).valueText.text=="15.0K (1.50M) 56%","rate types lead with the rate")
+assert(Row(win,1).valueText.text=="15K (1.5M) 56%","rate types lead with the rate")
 S.SetMany("damageMeter",{w1Type=6})
-assert(Row(win,1).valueText.text=="1.50M 56%","interrupts are counts only")
+assert(Row(win,1).valueText.text=="1.5M 56%","interrupts are counts only")
 S.SetMany("damageMeter",{numberFormat=5,w1Type=2,valueOrder=1,valueSeparator=2})
 local ordered={
-    "1.50M (15.0K) (56%)", "1.50M (56%) (15.0K)",
-    "15.0K (1.50M) (56%)", "15.0K (56%) (1.50M)",
-    "56% (1.50M) (15.0K)", "56% (15.0K) (1.50M)",
+    "1.5M (15K) (56%)", "1.5M (56%) (15K)",
+    "15K (1.5M) (56%)", "15K (56%) (1.5M)",
+    "56% (1.5M) (15K)", "56% (15K) (1.5M)",
 }
 for order,expected in ipairs(ordered) do
     S.Set("damageMeter","valueOrder",order)
     assert(Row(win,1).valueText.text==expected,"custom value order "..order)
 end
 for separator,expected in ipairs({
-    "56% 15.0K 1.50M", "56% (15.0K) (1.50M)", "56% [15.0K] [1.50M]",
-    "56% | 15.0K | 1.50M", "56% / 15.0K / 1.50M", "56% - 15.0K - 1.50M",
+    "56% 15K 1.5M", "56% (15K) (1.5M)", "56% [15K] [1.5M]",
+    "56% | 15K | 1.5M", "56% / 15K / 1.5M", "56% - 15K - 1.5M",
 }) do
     S.Set("damageMeter","valueSeparator",separator)
     assert(Row(win,1).valueText.text==expected,"custom value separator "..separator)
 end
 S.SetMany("damageMeter",{valueOrder=5,valueSeparator=3,percent=false})
-assert(Row(win,1).valueText.text=="1.50M [15.0K]","disabled percent must collapse the custom layout")
+assert(Row(win,1).valueText.text=="1.5M [15K]","disabled percent must collapse the custom layout")
 S.SetMany("damageMeter",{w1Type=6,percent=true})
-assert(Row(win,1).valueText.text=="56% [1.50M]","count-only meter must omit the rate")
+assert(Row(win,1).valueText.text=="56% [1.5M]","count-only meter must omit the rate")
 S.SetMany("damageMeter",{w1Type=2,valueSeparator=6,percent=false})
-assert(Row(win,1).valueText.text=="1.50M - 15.0K","hyphen layout must collapse an unavailable share")
+assert(Row(win,1).valueText.text=="1.5M - 15K","hyphen layout must collapse an unavailable share")
 S.SetMany("damageMeter",{w1Type=6,percent=true})
-assert(Row(win,1).valueText.text=="56% - 1.50M","hyphen layout must collapse a count-only rate")
+assert(Row(win,1).valueText.text=="56% - 1.5M","hyphen layout must collapse a count-only rate")
 S.SetMany("damageMeter",{numberFormat=3,w1Type=2})
 S.Set("damageMeter","w1Type",1)
 -- Hovering a damage row shows damage by enemy, aggregated from Blizzard's
@@ -965,7 +974,7 @@ local targetSources,targetFetches=api.source,api.fetch
 Row(win,1).scripts.OnEnter(Row(win,1))
 assert(M.tip.title.text=="Tank - Damage Done" and M.tip.rows[1].nameText.text=="Spell133"
     and M.tip.rows[2].nameText.text=="Spell2136 (Pet)" and M.tip.section.shown
-    and M.tip.rows[3].nameText.text=="Boss" and M.tip.rows[3].valueText.text:find("1.60K",1,true)
+    and M.tip.rows[3].nameText.text=="Boss" and M.tip.rows[3].valueText.text:find("1.6K",1,true)
     and M.tip.rows[4].nameText.text=="Add" and M.tip.rows[4].valueText.text:find("400",1,true),
     "hover did not keep abilities above the target breakdown")
 assert(api.source==targetSources+3 and api.fetch==targetFetches+1,
@@ -978,7 +987,7 @@ assert(win.bd.open and win.bdRows[1].nameText.text=="Spell133"
     "clicked damage breakdown hid abilities or its target tab")
 win.panel.targetsTab.scripts.OnClick(win.panel.targetsTab)
 assert(win.bd.open and win.panel.title.text=="Tank"
-    and win.bdRows[1].nameText.text=="Boss" and win.bdRows[1].valueText.text=="1.60K 80%"
+    and win.bdRows[1].nameText.text=="Boss" and win.bdRows[1].valueText.text=="1.6K 80%"
     and win.bdRows[2].nameText.text=="Add" and win.bdRows[2].valueText.text=="400 20%",
     "target tab did not show target percentages")
 win.panel.spellsTab.scripts.OnClick(win.panel.spellsTab)
@@ -1000,7 +1009,7 @@ assert(api.source==targetSources+4 and api.fetch==targetFetches+1,
 Row(win,1).scripts.OnLeave(Row(win,1))
 S.Set("damageMeter","numberFormat",1)
 Row(win,1).scripts.OnEnter(Row(win,1))
-assert(M.tip.rows[3].valueText.text:find("1.60K",1,true),
+assert(M.tip.rows[3].valueText.text:find("1.6K",1,true),
     "DPS-only number format hid the target damage amount")
 Row(win,1).scripts.OnLeave(Row(win,1))
 S.Set("damageMeter","numberFormat",3)
@@ -1029,7 +1038,7 @@ assert(win.bdRows[1].nameText.text=="Spell133","abilities were not available aft
 api.empty=false
 now=now+2
 win.panel.targetsTab.scripts.OnClick(win.panel.targetsTab)
-assert(win.bdRows[1].nameText.text=="Boss" and win.bdRows[1].valueText.text=="1.60K 100%",
+assert(win.bdRows[1].nameText.text=="Boss" and win.bdRows[1].valueText.text=="1.6K 100%",
     "a temporarily empty enemy view remained cached after native data arrived")
 win.panel.scripts.OnClick(win.panel,"LeftButton")
 -- A source panel opened from a restricted snapshot must refresh its session
@@ -1052,7 +1061,7 @@ S.Set("damageMeter","w1Type",3)
 targetSources=api.source
 Row(win,1).scripts.OnEnter(Row(win,1))
 assert(M.tip.title.text=="Tank - "..D.TypeName(2) and M.tip.rows[1].nameText.text=="Spell2061 - Me"
-    and M.tip.rows[4].nameText.text=="Me" and M.tip.rows[4].valueText.text:find("1.00K",1,true)
+    and M.tip.rows[4].nameText.text=="Me" and M.tip.rows[4].valueText.text:find("1K",1,true)
     and M.tip.rows[5].nameText.text=="Healer" and api.source==targetSources+1,
     "healing recipients were not aggregated from one native source read")
 Row(win,1).scripts.OnLeave(Row(win,1))
@@ -1069,7 +1078,7 @@ Row(win,1).scripts.OnLeave(Row(win,1))
 Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
 assert(win.bd.open and api.lastGUID=="Player-Tank" and win.bdRows[1].nameText.text=="Spell133" and win.bdRows[1].icon.shown,
     "plain data must allow any breakdown in combat")
-assert(win.bdRows[1].valueText.text=="600K (6.00K) 67%","breakdown value wrong: "..tostring(win.bdRows[1].valueText.text))
+assert(win.bdRows[1].valueText.text=="600K (6K) 67%","breakdown value wrong: "..tostring(win.bdRows[1].valueText.text))
 assert(win.bdRows[2].nameText.text=="Spell2136 (Pet)","pet suffix missing")
 win.bdRows[1].scripts.OnEnter(win.bdRows[1])
 assert(GameTooltip.owner==win.bdRows[1] and GameTooltip.spell==133,"spell tooltip missing")
@@ -1128,12 +1137,16 @@ do
             and points[6].abbreviationIsGlobal==false)
         return points
     end
-    local formatter=AbbreviateNumbers
+    local formatter,plainEnglish=AbbreviateNumbers,0
     AbbreviateNumbers=function(value,options)
-        assert(IsSecret(value) and options.locale=="enUS" and options.config)
+        -- The English option decides plain and secret amounts alike.
+        assert(options.locale=="enUS" and options.config)
+        if not IsSecret(value) then plainEnglish=plainEnglish+1;return "english" end
         return Secret("english")
     end
     assert(S.Set("damageMeter","englishNumbers",true))
+    assert(plainEnglish>0 and Row(win,1).valueText.text:find("english",1,true),
+        "plain amounts ignored the English K/M/B option")
     assert(IsSecret(D.Abbreviate(Secret("amount"))))
     D.ConfigureAbbreviation();assert(configs==1,"native abbreviation config was rebuilt")
     AbbreviateNumbers=formatter
@@ -1314,14 +1327,22 @@ do
     Second()
     -- A raid second: both shown meters change, one meter nobody shows too.
     local sentBefore=delivered
+    -- Native AbbreviateNumbers calls of that second: every amount is secret
+    -- in combat, so each painted value makes one (there is no memo).
+    local formatter,abbreviated=AbbreviateNumbers,0
+    AbbreviateNumbers=function(...) abbreviated=abbreviated+1;return formatter(...) end
     local fetched,instructions=Measure(function() Storm({0,2,5});Second() end)
+    AbbreviateNumbers=formatter
     local raidDelivered=delivered-sentBefore
     assert(fetched==2 and not damage.dirty and not healing.dirty,
         "a combat second fetched "..fetched.." sessions for two windows")
+    assert(abbreviated==12,"a combat second made "..abbreviated.." AbbreviateNumbers calls, not 12")
     -- Measured 2026-10-02 (wave 4): 2 fetches and 3293 VM instructions at base
     -- a7aee25, 2 fetches and 2864 with the direct secret tests, for 600 sent
-    -- events (most muted behind the pending paint).
-    assert(instructions<=math.floor(2864*1.02),"a combat second cost "..instructions.." instructions")
+    -- events (most muted behind the pending paint). 2026-10-03: 2804 and 12
+    -- AbbreviateNumbers calls at both de9835f and since every amount goes
+    -- through the native formatter (no Lua secret test before it).
+    assert(instructions<=math.floor(2804*1.02),"a combat second cost "..instructions.." instructions")
     -- Only the meter nobody shows changed: no fetch, no paint.
     fetched=Measure(function() Storm({5});Second() end)
     assert(fetched==0 and not PaintRequest(),"an unshown meter's update fetched "..fetched.." sessions")
@@ -1350,9 +1371,9 @@ do
     combat=false;Event("PLAYER_REGEN_ENABLED");RunPaint();RunClock()
     assert(S.Set("damageMeter","visibility",Suite.DamageMeterVisibility.ALWAYS))
     api.secret=false
-    print(("damage meter raid budget: 2 fetches, %d instructions, %d of 600 events delivered;"
-        .. " 3 s of combat: %d fetches at the 1.5 s default, %d at a stored 1 s"):format(
-        instructions,raidDelivered,window,storedOne))
+    print(("damage meter raid budget: 2 fetches, %d instructions, %d AbbreviateNumbers calls, %d of 600 events"
+        .. " delivered; 3 s of combat: %d fetches at the 1.5 s default, %d at a stored 1 s"):format(
+        instructions,abbreviated,raidDelivered,window,storedOne))
 end
 -- No migration: a profile that stored the old default keeps it; a profile
 -- without the setting gets the new default.

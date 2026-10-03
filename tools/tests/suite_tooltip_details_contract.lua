@@ -72,7 +72,13 @@ function tooltip:HookScript(name, callback)
     self.scripts[name] = function(...) if old then old(...) end; callback(...) end
 end
 function tooltip:IsTooltipType(kind) return self.tooltipType == kind end
-function tooltip:SetOwner(owner, anchor, x, y) self.owner, self.anchor, self.anchorX, self.anchorY = owner, anchor, x, y end
+-- SetOwner clears the tooltip (OnTooltipCleared); SetAnchorType only moves
+-- the current owner's anchor (ContainerFrame.lua, TooltipComparisonManager.lua).
+function tooltip:SetOwner(owner, anchor, x, y)
+    self.ownerCalls = (self.ownerCalls or 0) + 1
+    self.owner, self.anchor, self.anchorX, self.anchorY = owner, anchor, x, y
+end
+function tooltip:SetAnchorType(anchor, x, y) self.anchor, self.anchorX, self.anchorY = anchor, x, y end
 function tooltip:ClearAllPoints() self.points = {} end
 function tooltip:SetPoint(...) self.points[#self.points + 1] = { ... } end
 function tooltip:RefreshDataNextUpdate() error("addon code wrote GameTooltip's update fields") end
@@ -485,13 +491,21 @@ tooltip:SetMountBySpellID(99)
 Check(LineValue("Mount collection") and tooltip.shows == shows + 1,
     "the mount journal marker was added without sizing the tooltip again")
 
--- Anchors: cursor offsets need ANCHOR_CURSOR_RIGHT; corners keep inward offsets.
+-- Anchors: cursor offsets need ANCHOR_CURSOR_RIGHT; corners keep inward
+-- offsets. Blizzard's GameTooltip_SetDefaultAnchor makes the one SetOwner
+-- call: a second one from the post-hook would clear the tooltip in the middle
+-- of the caller's build.
+tooltip.ownerCalls = 0
 GameTooltip_SetDefaultAnchor(tooltip, UIParent)
-Check(tooltip.anchor == "ANCHOR_CURSOR_RIGHT" and tooltip.anchorX == 19 and tooltip.anchorY == 23,
-    "cursor anchor offsets missing")
+Check(tooltip.ownerCalls == 1 and tooltip.owner == UIParent and tooltip.anchor == "ANCHOR_CURSOR_RIGHT"
+    and tooltip.anchorX == 19 and tooltip.anchorY == 23 and not tooltip.points[1],
+    "cursor anchor offsets missing, or the anchor hook set the owner again")
 m.config.anchor = 3
+tooltip.ownerCalls = 0
 GameTooltip_SetDefaultAnchor(tooltip, UIParent)
 local point = tooltip.points[1]
+Check(tooltip.ownerCalls == 1 and tooltip.anchor == "ANCHOR_NONE" and #tooltip.points == 1,
+    "the fixed corner set the owner again")
 Check(point[1] == "TOPRIGHT" and point[4] == -24 and point[5] == -24, "a top corner placed the tooltip off screen")
 m.config.growth = 2
 GameTooltip_SetDefaultAnchor(tooltip, UIParent)

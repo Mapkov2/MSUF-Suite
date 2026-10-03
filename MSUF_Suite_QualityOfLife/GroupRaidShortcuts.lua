@@ -284,9 +284,16 @@ local function RefreshPanel(self)
         button:SetPoint("TOPLEFT", (i - 1) % columns * 110 + 2, -math.floor((i - 1) / columns) * 29 - 2)
     end
     RegisterStateDriver(self.panel, "visibility", S.editMode and "show" or "[group] show; hide")
+end
+
+-- The controller registers the mover after Enable and Refresh
+-- (S.RefreshEditMover). A registration stays, so the mover follows the
+-- panel option: a hidden panel offers no mover.
+function M:RegisterMovers()
     S.RegisterOwnedMover("groupRaidShortcuts", "tools", {
         label = "Raid tools", order = 650, getFrame = function() return self.panel end,
         xKey = "panelX", yKey = "panelY", point = function() return "CENTER" end, quickPosition = true,
+        isEnabled = function() return self.config.showPanel == true end,
     })
 end
 

@@ -504,8 +504,17 @@ local function UnrouteSpell(rec)
     rec.cdSlot = nil
 end
 
+-- Bar 1's own and form pages hold slots 1-120. Above them it pages to the
+-- skyriding (Forever: possess), vehicle, possess, temporary shapeshift and
+-- override pages, whose spells may get their cooldowns only through
+-- ACTIONBAR_UPDATE_COOLDOWN, which Blizzard's own buttons follow: bar 1
+-- stays off the routes there. The other bars hold fixed player slots (bars
+-- 6-8 at 145-180).
+local LAST_PAGE_SLOT, MAIN_BAR = 120, ENUM.BAR.MAIN
+
 local function RouteSpell(rec)
     local spell = rec.glowKind == GLOW_SPELL and rec.glowID or nil
+    if spell and rec.slot > LAST_PAGE_SLOT and rec.bar.index == MAIN_BAR then spell = nil end
     if not spell then
         UnrouteSpell(rec)
         return

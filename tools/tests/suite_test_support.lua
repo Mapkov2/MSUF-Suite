@@ -592,4 +592,18 @@ function Support.SkinLocale(root, locale)
     return ns.L, ns.SourceText, pack
 end
 
+-- The nameplate token lists exactly as MSUF_Suite_Modules/Runtime.lua builds
+-- them (S.NameplateUnits, S.NameplateUnit), for contracts that load a module
+-- on a stub Suite table without the shared runtime.
+function Support.NameplateUnits(root)
+    local suite = {}
+    local ns = setmetatable({ Suite = suite }, { __index = function() return function() end end })
+    local chunk = assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))
+    local env = setmetatable({ MSUFSuite = ns }, { __index = _G })
+    env._G = env
+    setfenv(chunk, env)
+    chunk("MSUF_Suite_Modules", {})
+    return suite.NameplateUnits, suite.NameplateUnit
+end
+
 return Support

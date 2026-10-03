@@ -52,13 +52,19 @@ S.Finite=function(v) return S.Public(v) and type(v)=="number" and v==v end
 S.CreateFrame=Widget;S.CreateTexture=Widget;S.CreateFontString=Widget
 S.SetStyledFont=function() end;S.GlobalFontPath=function() return "font" end
 S.Text=function(v) return v end
-S.RegisterOwnedMover=function() end
+local movers={}
+S.RegisterOwnedMover=function(id,element,spec) assert(id=="flightTimer");movers[element]=spec end
 S.Install=function(id,m) assert(id=="flightTimer");S.module=m end
 assert(loadfile(root.."/MSUF_Suite_QualityOfLife/FlightTimer.lua"))("test",{NS={},Suite=S})
 local m=S.module
 m.active=true;m.config={width=340,scale=100,x=0,y=0,fontSize=12,showStops=true,routePreview=true,classColor=true,hideDisplay=false}
 m.context={Event=function(_,name,callback) events[name]=callback end}
-m:Enable();events.TAXIMAP_OPENED(m)
+m:Enable()
+assert(not next(movers),"Enable registered the mover; the controller does it through RegisterMovers")
+-- The controller registers the movers right after Enable (S.RefreshEditMover).
+m:RegisterMovers()
+assert(movers.flight and movers.flight.getFrame()==m.host and movers.flight.xKey=="x","flight timer mover missing")
+events.TAXIMAP_OPENED(m)
 assert(formatters==1 and m.binding.formatter,"the remaining time is not formatted by the client's seconds formatter")
 assert(m.routes[3].key=="A > B > C","native route stops were not reconstructed")
 hooks.TaxiNodeOnButtonEnter(Widget())

@@ -161,6 +161,8 @@ local S = { Install = function(_, m) module = m end, Public = function(v) return
     RegisterOwnedMover = function(_, element, spec) module.mover = { element = element, spec = spec } end,
     RGB = function(hex) return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255,
         tonumber(hex:sub(5, 6), 16) / 255 end }
+-- The Suite's one nameplate token list (MSUF_Suite_Modules/Runtime.lua).
+S.NameplateUnits, S.NameplateUnit = dofile(root .. "/tools/tests/suite_test_support.lua").NameplateUnits(root)
 local NS = { Client = {}, Dispatch = function(callback, ...) return callback(...) end }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/EnemyCastStack.lua"))("test", { NS = NS, Suite = S })
 module.active = true
