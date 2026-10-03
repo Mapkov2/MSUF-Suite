@@ -196,9 +196,12 @@ function Gear.RestoreLayout(v)
     if v.root:IsVisible() then RepositionPanels(v.root, oldWidth, oldHeight) end
 end
 
+-- "Wide layout" off keeps the modern view at Blizzard's size, with the
+-- compact gear info beside the native slots.
 local function LayoutEnabled(v, config, mode)
     return v.active and NS.DB.enabled and mode ~= "classic"
-        and (config.view ~= nil or (config.enabled and config.inlineGear and config.wideLayout ~= false))
+        and (config.view ~= nil or (config.enabled and config.inlineGear))
+        and (mode == "list" or config.wideLayout ~= false)
         and NS.DB.skins.blizzardWindows ~= false and NS.GenericWindows.IsCategoryEnabled("character")
         and v.host:IsVisible() and v.root.activeSubframe == "PaperDollFrame"
         and type(v.root.UpdateSize) == "function" and v.root.InsetRight and _G.CharacterModelScene
