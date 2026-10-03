@@ -742,6 +742,31 @@ for _, key in ipairs(expected) do
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
 end
+-- The "Shared bar style" preview paints the shared style, also while bar 1
+-- uses its own; a bar's preview paints that bar's effective style.
+do
+    local ctx, real, painted = contexts.suite_dataTexts, Suite.DataTextEffectiveStyle, {}
+    local config = S.Config("dataTexts")
+    local saved = { config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor, config.customColors,
+        config.accentColor }
+    config.customColors, config.accentColor = true, "123456"
+    config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor = true, true, "abcdef"
+    Suite.DataTextEffectiveStyle = function(settings, bar)
+        local style = real(settings, bar)
+        painted[#painted + 1] = { bar = bar, accent = style.accentColor }
+        return style
+    end
+    for _, fn in ipairs(ctx.refreshers) do fn() end
+    Suite.DataTextEffectiveStyle = real
+    local shared
+    for _, paint in ipairs(painted) do
+        if paint.bar == nil then shared = paint end
+    end
+    assert(shared and shared.accent == "123456", "the Shared bar style preview painted bar 1's own style")
+    assert(real(config, 1).accentColor == "abcdef", "bar 1's own style did not resolve")
+    config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor, config.customColors,
+        config.accentColor = unpack(saved, 1, 5)
+end
 -- A cold DataTexts page does not allocate the hidden bars' slider/button
 -- skins. Restored open bars build one body per dispatch; exact search can
 -- materialize a closed body before resolving its declared control ID.

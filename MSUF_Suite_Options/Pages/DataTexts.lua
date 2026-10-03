@@ -206,7 +206,7 @@ local function Preview(ctx, body, y, width, bar)
         view.labels[i] = label
     end
     M.TrackRefresh(ctx, function()
-        PaintPreview(view, P.Suite.DataTextEffectiveStyle(S.Config(ID), bar or 1))
+        PaintPreview(view, P.Suite.DataTextEffectiveStyle(S.Config(ID), bar))
     end)
     return y - 72
 end
