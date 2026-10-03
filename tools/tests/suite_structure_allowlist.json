@@ -363,12 +363,6 @@
    "symbol": "MapkoSkin"
   },
   {
-   "file": "MSUF_Suite/Core/Startup.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MapkoSkinDB"
-  },
-  {
    "file": "MSUF_Suite/Core/Suite.lua",
    "kind": "lod",
    "reason": "export of the load-on-demand runtime MSUF_Suite_Modules",
@@ -2659,6 +2653,12 @@
    "kind": "addon",
    "reason": "P.W is the external MSUF2 widget API. SegmentTabs comes from both Menu2 hosts; older hosts without it and narrow pages use BindDropdownAt. suite_options_menu_contract exercises the absent API and the wide tab path.",
    "symbol": "P.W.SegmentTabs"
+  },
+  {
+   "file": "MSUF_Suite/Core/Installer.lua",
+   "kind": "client",
+   "reason": "Retail and Forever: FrameXML EventRegistry broadcasts completion after setup. Standalone host fixtures may omit the registry.",
+   "symbol": "registry (= EventRegistry)"
   }
  ]
 }

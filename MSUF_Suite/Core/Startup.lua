@@ -4,6 +4,15 @@ _G.MSUFSuite = Suite
 local initialized = false
 local events = CreateFrame("Frame")
 
+local function ShowInstaller()
+    if Suite.startupError or not Suite.Installer.IsFirstRunPending() then return end
+    if Suite.InCombat() then
+        events:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return
+    end
+    Suite.Dispatch(Suite.Installer.MaybeShow, "login")
+end
+
 -- PLAYER_ENTERING_WORLD distinguishes a real login from /reload. Optional
 -- modules loaded later can use this without keeping their own startup frame.
 local loginEvent = CreateFrame("Frame")
@@ -15,13 +24,14 @@ loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
     Suite.CaptureSessionGold(isReloadingUi)
     -- After the skin's PLAYER_LOGIN pass: chat colours an off skin left.
     Suite.Dispatch(Suite.Skin.SettleChatColors)
-    -- "login": the installer waits while MSUF's own first run is pending (Installer.lua).
-    if Suite.Suite.started then Suite.Installer.MaybeShow("login") end
+    -- The next frame follows client login readiness and all startup listeners.
+    -- One attempt only; unfinished setup remains pending for the next login.
+    C_Timer.After(0, ShowInstaller)
 end)
 
 local function Initialize()
     if initialized then return true end
-    Suite.freshInstall = _G.MSUFSuiteDB == nil and _G.MapkoSkinDB == nil
+    Suite.freshInstall = _G.MSUFSuiteDB == nil
     -- Older Suite profiles may live inside MapkoSkinDB. Load the legacy addon
     -- as data only before choosing the Suite profile, then hand skinning to the
     -- Suite-owned engine below.
@@ -36,6 +46,11 @@ local function Initialize()
     if quarantined > 0 then
         Suite.Print(Suite.Text("Unreadable Suite profiles were set aside, their data is kept: %d"):format(quarantined))
     end
+    -- No standalone SavedVariables always opens setup, including a migration.
+    -- Migrated settings stay intact until the player chooses Install.
+    if Suite.freshInstall then
+        Suite.RootDB.installation = { revision = 3, status = "pending" }
+    end
     _G.MSUFSuiteDB = Suite.RootDB
     initialized = true
     return true
@@ -49,7 +64,7 @@ end
 
 local function Start()
     if not Initialize() then return end
-    if Suite.IsCombatLocked() then
+    if Suite.InCombat() then
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
@@ -91,7 +106,7 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
         end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then
         self:UnregisterAllEvents()
-        Start()
+        if event == "PLAYER_REGEN_ENABLED" and Suite.Suite.started then ShowInstaller() else Start() end
     end
 end)
 events:RegisterEvent("ADDON_LOADED")

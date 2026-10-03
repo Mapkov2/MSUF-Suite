@@ -14,6 +14,21 @@ local moduleOverrides = { suite = {}, classic = {}, forever = {} }
 -- Above MSUF menu popups (DIALOG level 400); see CreateWindow.
 local INSTALLER_FRAME_LEVEL = 500
 
+function Installer.IsFirstRunPending()
+    local installation = Suite.RootDB and Suite.RootDB.installation
+    return type(installation) == "table" and installation.status == "pending"
+        or (Suite.RootDB ~= nil or Suite.freshInstall) and not installation or false
+end
+
+function Installer.IsOpen()
+    return frame ~= nil and frame:IsShown() or false
+end
+
+local function NotifyInstallerFinished()
+    local registry = EventRegistry
+    if registry then registry:TriggerEvent("MSUFSuite.Installer.Finished") end
+end
+
 -- Installer texts follow the Suite localization: English source strings
 -- looked up in MSUF's locale table, which MSUF_Suite/Locales fills for
 -- every supported language (MSUF's own wording wins where it has one).
@@ -87,13 +102,15 @@ local function PreparedProfile()
     local profile = Suite.CopyValue(factory)
     local modules = profile.suite.modules
     local minimap = modules.minimap
-    if minimap then minimap.point, minimap.x, minimap.y = 3, -20, -20 end
+    if minimap and minimap.stylePreset ~= 10 then
+        minimap.point, minimap.x, minimap.y = 3, -20, -20
+    end
     local xp = modules.xpBar
     if xp then xp.point, xp.x, xp.y = 2, 0, -24 end
     local bars = modules.actionbars
     if bars and selected ~= "forever" then
-        bars.bar1Point, bars.bar1X, bars.bar1Y = 8, 10, 48
-        bars.bar2Point, bars.bar2X, bars.bar2Y = 8, 10, 92
+        bars.bar1Point, bars.bar1X, bars.bar1Y = 8, 0, 48
+        bars.bar2Point, bars.bar2X, bars.bar2Y = 8, 0, 92
         bars.bar3Point, bars.bar3X, bars.bar3Y = 7, 24, 210
         bars.bar5Point, bars.bar5X, bars.bar5Y = 7, 72, 210
     end
@@ -249,6 +266,7 @@ function Installer.Apply()
     end
     Suite.SuiteProfiles.EnsureNewCharacterProfile()
     Suite.SuiteProfiles.EnsureRetailResourceStack(true)
+    NotifyInstallerFinished()
     return true
 end
 
@@ -330,38 +348,12 @@ local function ProfileCard(parent, x, y, callback, colors)
     return card
 end
 
-local function ModuleRow(parent, id, index, count)
-    local perColumn = math.ceil(count / 2)
-    local column = index > perColumn and 1 or 0
-    local row = column == 0 and index - 1 or index - perColumn - 1
-    local card = Panel(parent, 36 + column * 258, 272 - row * 25, 250, 22, true)
-    card.id = id
-    card.label = Label(card, "GameFontHighlightSmall", 10, -4, 188, 16)
-    card.label:SetText(Text((Suite.SuiteCatalog[id] and Suite.SuiteCatalog[id].title) or id))
-    card.state = Label(card, "GameFontNormalSmall", 198, -4, 42, 16)
-    card.state:SetJustifyH("RIGHT")
-    card:SetScript("OnClick", function()
-        local profile = FactoryProfile()
-        local enabled = profile and ModuleEnabled(profile, id)
-        if enabled == nil then return end
-        moduleOverrides[selected][id] = not enabled
-        Installer.Refresh()
-    end)
-    card:SetScript("OnEnter", function(self)
-        local spec = Suite.SuiteCatalog[id]
-        if not spec then return end
-        local tooltip = GameTooltip
-        tooltip:SetOwner(self, "ANCHOR_RIGHT")
-        tooltip:SetText(Text(spec.title or id))
-        if type(spec.description) == "string" and spec.description ~= "" then
-            tooltip:AddLine(Text(spec.description), 0.78, 0.84, 0.89, true)
-        end
-        local available, reason = Suite.Suite.Availability(id)
-        if not available and reason then tooltip:AddLine(ReasonText(reason), 1, 0.45, 0.4, true) end
-        tooltip:Show()
-    end)
-    card:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    return card
+local function ToggleModule(id)
+    local profile = FactoryProfile()
+    local enabled = profile and ModuleEnabled(profile, id)
+    if enabled == nil then return end
+    moduleOverrides[selected][id] = not enabled
+    Installer.Refresh()
 end
 
 ------------------------------------------------------------------ window
@@ -388,6 +380,9 @@ local function CreateWindow()
     window:SetScript("OnDragStart", function(self) self:StartMoving() end)
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     window:Hide()
+    window:SetScript("OnHide", function()
+        if not Installer.IsFirstRunPending() then NotifyInstallerFinished() end
+    end)
     Suite.Client.AttachControllerWindow(window)
     if Suite.Client.isForever then UISpecialFrames[#UISpecialFrames + 1] = "MSUFSuiteInstallFrame" end
     return window
@@ -411,8 +406,7 @@ local function BuildHeader(window)
     end
 end
 
--- Pages 1 to 3: welcome cards, profile choice with the cooldown switch, and
--- one row per Suite module.
+-- Welcome cards and profile choice with the cooldown switch.
 local function BuildProfileSteps(window)
     window.intro = {
         InfoCard(window, 36, 231, Text("1. Choose a profile"),
@@ -444,10 +438,7 @@ local function BuildProfileSteps(window)
         Installer.Refresh()
     end)
     window.cooldowns = cooldowns
-    window.moduleRows = {}
-    for index, id in ipairs(Suite.SuiteOrder) do
-        window.moduleRows[index] = ModuleRow(window, id, index, #Suite.SuiteOrder)
-    end
+    Suite.InstallerModules.Build(window, Panel, Label, NavButton, Style, ToggleModule)
 end
 
 local SCALE_PRESETS = {
@@ -585,7 +576,7 @@ local function ShowPage(f)
     f.classic:SetShown(page == 2)
     f.forever:SetShown(page == 2)
     f.cooldowns:SetShown(page == 2 and RetailCooldowns())
-    SetShownAll(f.moduleRows, page == 3)
+    Suite.InstallerModules.Show(f, page == 3)
     f.scaleToggle:SetShown(scaling)
     f.scaleHint:SetShown(scaling)
     f.scaleSlider:SetShown(scaling and useScale)
@@ -625,6 +616,12 @@ local function PaintWelcome(f)
 end
 
 local function PaintProfiles(f)
+    local cards = Suite.Client.isForever and { f.forever, f.classic, f.suite }
+        or { f.classic, f.suite, f.forever }
+    for index, card in ipairs(cards) do
+        card:ClearAllPoints()
+        card:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 36, 241 - (index - 1) * 72)
+    end
     SetPageText(f, "Choose your profile",
         "Preview the palette swatches, then choose Clean Modern, Classic MSUF or Forever.")
     f.suite.title:SetText(Text("Clean Modern  ·  Suite default"))
@@ -716,27 +713,24 @@ function Installer.Refresh()
 end
 
 function Installer.Open()
-    if Suite.IsCombatLocked() then return false, "combat" end
-    selected = "suite"
+    if Suite.InCombat() then return false, "combat" end
+    selected = Suite.Client.isForever and "forever" or "classic"
     local active = DB.GetProfile(DB.GetActiveProfileName())
     local current = active and active.suite and active.suite.modules
         and active.suite.modules.cooldownManager
     useScale, scale, scalePreset, page = false, 1, "custom", 1
     useRaidEssentials = not (current and current.raidEssentials == false)
     moduleOverrides = { suite = {}, classic = {}, forever = {} }
+    Build().moduleTab = "modules"
     Installer.Refresh()
+    frame.moduleScroll:SetVerticalScroll(0)
     frame:Show()
     Suite.Client.ResumeControllerWindow(frame)
     Suite.Client.RaiseControllerCursor()
     return true
 end
--- MSUF's own first run comes first. Classic MSUF reports it pending
--- (FirstLoad6:IsFirstRunPending, a pure read) while its welcome, Quick Setup
--- or import route is open; Main MSUF and older builds have no such state and
--- keep today's order. Opens the installer on a fresh Suite install. Startup
--- passes "login": then the installer waits while the host's first run is
--- pending, and the host calls MaybeShow() once it resolves. /msufsuite and
--- /msufsuite opens the installer at any time.
+-- At login, wait for Classic MSUF's welcome/Quick Setup/import to resolve.
+-- The host hands off with MaybeShow(); /msufsuite opens setup at any time.
 local function HostFirstRunPending()
     if Suite.Host.build ~= "Classic" then return false end
     local firstLoad = _G.MSUF_NS.FirstLoad6
@@ -747,8 +741,7 @@ end
 function Installer.MaybeShow(reason)
     if not IsLoggedIn() then return false end
     if frame and frame:IsShown() then return false end
-    if Suite.freshInstall and Suite.RootDB and not Suite.RootDB.installation
-        and not (reason == "login" and HostFirstRunPending()) then
+    if Installer.IsFirstRunPending() and not (reason == "login" and HostFirstRunPending()) then
         return Installer.Open()
     end
     return false

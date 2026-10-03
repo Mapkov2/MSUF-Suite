@@ -32,6 +32,11 @@ CreateFrame = function()
     return frame
 end
 IsLoggedIn = function() return false end
+local deferred = {}
+C_Timer = { After = function(delay, callback)
+    assert(delay == 0)
+    deferred[#deferred + 1] = callback
+end }
 InCombatLockdown = function() return false end
 C_EventUtils = { IsEventValid = function() return true end }
 UnitGUID = function() return "Player-Test" end
@@ -146,6 +151,8 @@ do
 end
 frames[1]:callback("PLAYER_LOGIN")
 frames[2]:callback("PLAYER_ENTERING_WORLD", true, false)
+assert(#deferred == 1)
+for _, callback in ipairs(deferred) do callback() end
 assert(owner.Suite.started and owner.RootDB == MSUFSuiteDB and owner.Skin.enabled)
 assert(owner.Suite.Config("combatLog").enabled == true
     and owner.Suite.Config("combatLog").dungeonMythicPlus == true

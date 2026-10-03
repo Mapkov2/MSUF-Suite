@@ -29,8 +29,13 @@ local lastMessage
 -- PLAYER_ENTERING_WORLD settles the chat colours an off skin left behind.
 local settled = 0
 local function Settle() settled = settled + 1 end
-local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing)
+local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing, combatBeforeDeferred)
     local frame, loginFrame, starts, messages = nil, nil, 0, 0
+    local afterWorldEntry, opened, fighting = {}, 0, false
+    C_Timer = { After = function(delay, callback)
+        assert(delay == 0, "first login must defer once to the next frame")
+        afterWorldEntry[#afterWorldEntry + 1] = callback
+    end }
     CreateFrame = function()
         local created = { events = {} }
         function created:SetScript(_, callback) self.callback = callback end
@@ -45,7 +50,9 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     MapkoSkin = oldRunning and { Suite = { started = true } } or nil
     local owner = {
         Client = { isForever = false },
+        Host = { build = "Main" },
         IsCombatLocked = function() return combat == true end,
+        InCombat = function() return combat == true or fighting end,
         Suite = { Start = function() starts = starts + 1 end,
             Normalize = Noop, StyleProfile = Noop },
         Print = function(message)
@@ -65,6 +72,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         Menu = { Watch = Noop },
         Installer = { MaybeShow = Noop },
     }
+    owner.Suite.Start = function() starts = starts + 1; owner.Suite.started = true end
     if failing then
         owner.Skin = {
             LoadLegacyDatabase = function() return false end,
@@ -88,6 +96,19 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", owner)
+    SlashCmdList = {}
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", owner)
+    local maybeShow = owner.Installer.MaybeShow
+    owner.Installer.MaybeShow = function(reason)
+        if opened > 0 then return false end
+        return maybeShow(reason)
+    end
+    owner.Installer.Open = function()
+        if owner.InCombat() then return false, "combat" end
+        opened = opened + 1
+        return true
+    end
     assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", owner)
     assert(MSUFSuite == owner)
     frame:callback("ADDON_LOADED", "Unrelated")
@@ -106,15 +127,41 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     assert(settled == settledBefore + 1, "the first world entry did not settle the skin's chat colours")
     assert(owner.loginKind == (reloading and "reload" or "login") and not next(loginFrame.events),
         "login kind was not captured and released")
+    -- Forever can still report not logged in during the entry event. UI work
+    -- resumes on the next frame, after readiness changes; no recurring retry.
+    loggedIn = true
+    if combatBeforeDeferred then fighting = true end
+    for _, callback in ipairs(afterWorldEntry) do callback() end
+    if combatBeforeDeferred then
+        assert(opened == 0 and frame.events.PLAYER_REGEN_ENABLED,
+            "combat after world entry lost the automatic setup retry")
+        fighting = false
+        frame:callback("PLAYER_REGEN_ENABLED")
+        assert(opened == 1 and starts == 1, "combat retry failed or restarted the Suite modules")
+    end
+    assert(#afterWorldEntry <= 1, "startup queued repeated automatic setup attempts")
+    owner.autoOpened = opened
     assert(not next(frame.events), "startup left idle events registered")
     return owner, starts, messages
 end
+local deferredCombat = Scenario(nil, nil, false, false, false, nil, false, false, true)
+assert(deferredCombat.autoOpened == 1, "auto setup never resumed after combat")
+local freshSkin = Scenario(nil, { profiles = { Default = { icons = {} } } }, true, false)
+assert(freshSkin.freshInstall == true and freshSkin.RootDB.installation.status == "pending",
+    "a skin-only database prevented the automatic Suite setup")
+local pendingRoot = freshSkin.RootDB
+local pendingReload = Scenario(pendingRoot, nil, true, false, false, nil, true)
+assert(pendingReload.RootDB.installation.status == "pending",
+    "a reload before completing setup lost the pending installer")
 local legacy = { activeProfile = "Raid", profiles = {
     Raid = { suite = { schema = 1, modules = { minimap = { enabled = true } } } },
 } }
 local owner, starts, messages = Scenario(nil, legacy, false, false)
 assert(starts == 1 and messages == 0 and MSUFSuiteDB == owner.RootDB)
 assert(owner.DB.suite.modules.minimap.enabled and owner.DB ~= legacy.profiles.Raid)
+assert(owner.autoOpened == 1, "first login did not open setup when login readiness settled after world entry")
+assert(owner.freshInstall and owner.RootDB.installation.status == "pending",
+    "legacy migration without standalone saved variables suppressed the automatic setup")
 owner, starts = Scenario(nil, nil, true, false, false, legacy)
 assert(starts == 1 and owner.DB.suite.modules.minimap.enabled,
     "load-on-demand legacy Suite profile migrates before a fresh Suite database is created")

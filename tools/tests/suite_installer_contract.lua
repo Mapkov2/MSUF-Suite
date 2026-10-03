@@ -20,7 +20,9 @@ local Suite = {
         "afkScreen", "actionbars" },
     SuiteCatalog = {},
 }
-for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id } end
+-- Exercise a catalog larger than the installer viewport, including future modules.
+for index = 18, 86 do Suite.SuiteOrder[index] = "contractModule" .. index end
+for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id, addon = id:find("contractModule") and "MSUF_Suite_QualityOfLife" or "MSUF_Suite_Modules" } end
 local factoryCalls, activations, scaleChanges, decodes = 0, 0, {}, 0
 
 Suite.IsCombatLocked = function() return false end
@@ -136,6 +138,8 @@ Suite.SuiteProfiles = {
         assert(look == (profile.suite.globalLook == "midnight" and "midnight" or "cleanModern"))
         assert(profile.suite.modules.dataTexts.bar1Point == 8
             and profile.suite.modules.dataTexts.bar1X == 0
+            and profile.suite.modules.actionbars.bar1X == 0
+            and profile.suite.modules.actionbars.bar2X == 0
             and profile.suite.modules.actionbars.bar1Point == 8
             and profile.suite.modules.actionbars.bar3Point == 7
             and profile.suite.modules.minimap.x == -20,
@@ -231,6 +235,14 @@ local function FakeFrame()
             self.value = value
             if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, value) end
         end,
+        GetWidth = function(self) return self.width end,
+        GetHeight = function(self) return self.height end,
+        SetClipsChildren = function(self, value) self.clipped = value end,
+        SetScrollChild = function(self, child) self.child = child end,
+        GetScrollChild = function(self) return self.child end,
+        GetVerticalScrollRange = function(self) return math.max(0, self.child.height - self.height) end,
+        GetVerticalScroll = function(self) return self.offset or 0 end,
+        SetVerticalScroll = function(self, offset) self.offset = offset end,
         SetText = function(self, value) self.text = value end,
         Show = function(self) self.shown = true end,
         Hide = function(self) self.shown = false end,
@@ -238,10 +250,21 @@ local function FakeFrame()
     }
     return setmetatable(frame, { __index = function(_, key) return methods[key] or function() end end })
 end
-CreateFrame = function(_, name, _, template)
+CreateFrame = function(kind, name, parent, template)
     local frame = FakeFrame()
+    frame.kind, frame.parent, frame.template = kind, parent, template
     if name then _G[name] = frame end
     if template == "OptionsSliderTemplate" then frame.Low, frame.High, frame.Text = FakeFrame(), FakeFrame(), FakeFrame() end
+    if template == "ScrollFrameTemplate" then
+        -- Native ScrollUtil owns wheel input and draggable scrollbar percentages.
+        frame.ScrollBar = FakeFrame()
+        frame.ScrollBar.SetScrollPercentage = function(_, value)
+            frame:SetVerticalScroll(math.max(0, math.min(1, value)) * frame:GetVerticalScrollRange())
+        end
+        frame.scripts.OnMouseWheel = function(self, value)
+            self:SetVerticalScroll(math.max(0, math.min(self:GetVerticalScrollRange(), self:GetVerticalScroll() - value * 30)))
+        end
+    end
     return frame
 end
 GameTooltip = FakeFrame()
@@ -252,8 +275,20 @@ UISpecialFrames = {}
 
 -- The scale goes through the Suite's host bridge; this MSUF has no host API v1.
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
+local installerFinished = 0
+EventRegistry = { TriggerEvent = function(_, event)
+    assert(event == "MSUFSuite.Installer.Finished", "unexpected installer signal")
+    assert(not Suite.Installer.IsFirstRunPending(), "setup signalled before it finished")
+    installerFinished = installerFinished + 1
+end }
+Suite.freshInstall = false
+assert(Suite.Installer.IsFirstRunPending(), "a saved root without an installation receipt must recover setup")
+Suite.RootDB.installation = { revision = 3, status = "pending" }
+assert(Suite.Installer.IsFirstRunPending(), "new setup does not report pending")
 assert(Suite.Installer.Apply())
+assert(installerFinished == 1, "completed setup did not release CDM consent")
 assert(factoryCalls == 0 and activations == 1)
 assert(Suite.RootDB.profiles.Default.suite.modules.chat.enabled)
 assert(Suite.RootDB.profiles.Default.suite.modules.bags.enabled)
@@ -336,13 +371,20 @@ do
             .. ", uiScale " .. tostring(general.uiScale))
 end
 
+local openedInCombat, openReason = Support.CombatStart(SetCombatFlag, function() return Suite.Installer.Open() end)
+assert(not openedInCombat and openReason == "combat", "setup opened at the combat edge before native lockdown")
 Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 copies = 0
 local function CheckLayout()
     local panels = { window.suite, window.classic, window.forever, window.cooldowns, window.scaleToggle,
         window.back, window.close, window.next, window.scaleSlider }
-    for _, group in ipairs({ window.intro, window.moduleRows, window.presets, window.review, window.done }) do
+    if rawget(window, "moduleScroll") then
+        panels[#panels + 1] = window.moduleScroll
+        for _, tab in pairs(window.moduleTabs) do panels[#panels + 1] = tab end
+    end
+    local rows = rawget(window, "moduleScroll") and {} or window.moduleRows
+    for _, group in ipairs({ window.intro, rows, window.presets, window.review, window.done }) do
         for _, panel in ipairs(group) do panels[#panels + 1] = panel end
     end
     for i, a in ipairs(panels) do
@@ -367,6 +409,9 @@ assert(window.close.x + window.close.width < window.next.x)
 window.next.scripts.OnClick() -- welcome -> profile
 assert(window.suite.shown and window.classic.shown and window.forever.shown and window.cooldowns.shown
     and window.cooldowns.mark.text == "ON")
+assert(window.classic.mark.text == "SELECTED" and window.suite.mark.text == "CHOOSE"
+    and window.forever.mark.text == "CHOOSE", "Retail must default to the standard Midnight profile")
+assert(window.classic.y > window.suite.y and window.suite.y > window.forever.y, "Retail default must be the first profile card")
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.forever.scripts.OnClick() -- Retail can choose the full Forever factory
@@ -375,9 +420,36 @@ assert(window.cooldowns.shown and window.cooldowns.mark.text == "ON",
 window.next.scripts.OnClick() -- profile -> modules
 assert(window.moduleRows[2].shown)
 CheckLayout()
+local viewport = assert(rawget(window, "moduleScroll"), "large module catalogs need a bounded scroll viewport")
+assert(viewport.kind == "ScrollFrame" and viewport.template == "ScrollFrameTemplate" and rawget(viewport, "clipped") ~= true
+    and viewport.parent == window and viewport.child, "native scroll content must clip without hiding its external scrollbar")
+for _, row in ipairs(window.moduleRows) do
+    if row.shown then assert(row.parent == viewport.child and row.x >= 0 and row.y >= 0
+        and row.x + row.width <= viewport.child.width and row.y + row.height <= viewport.child.height,
+        "a module row is outside the scroll content") end
+end
+assert(window.moduleTab == "modules" and window.moduleRows[2].shown
+    and not window.moduleRows[#window.moduleRows].shown, "optional QoL helpers clutter the main module choice")
+window.moduleTabs.qol.scripts.OnClick()
+assert(not window.moduleRows[2].shown and window.moduleRows[#window.moduleRows].shown,
+    "QoL helpers are not reachable in their own group")
+CheckLayout()
+assert(viewport:GetVerticalScrollRange() > 0 and viewport:GetVerticalScroll() == 0)
+viewport.scripts.OnMouseWheel(viewport, -1)
+assert(viewport:GetVerticalScroll() > 0, "mouse wheel cannot reach more modules")
+viewport.ScrollBar:SetScrollPercentage(1)
+local last = window.moduleRows[#window.moduleRows]
+local lastTop = viewport.child.height - last.y - last.height - viewport:GetVerticalScroll()
+assert(lastTop >= 0 and lastTop + last.height <= viewport.height, "the scrollbar cannot reach the last module")
+last.scripts.OnClick()
+assert(last.state.text == "OFF" and viewport:GetVerticalScroll() == viewport:GetVerticalScrollRange(),
+    "the last module cannot be toggled without losing scroll position")
+window.moduleTabs.modules.scripts.OnClick()
+assert(viewport:GetVerticalScroll() == 0 and window.moduleRows[2].shown and not last.shown,
+    "switching back to the primary modules did not reset the viewport")
 window.moduleRows[2].scripts.OnClick() -- enable Bags in the Forever module profile
 window.next.scripts.OnClick() -- modules -> scaling
-assert(window.scaleToggle.shown and not window.scaleSlider.shown)
+assert(window.scaleToggle.shown and not window.scaleSlider.shown and not viewport.shown and not window.moduleTabs.qol.shown)
 CheckLayout()
 window.scaleToggle.scripts.OnClick()
 CheckLayout()
@@ -406,12 +478,17 @@ CheckLayout()
 Suite.Client.isForever = true
 Suite.Installer.Open()
 window.next.scripts.OnClick()
-assert(window.suite.mark.text == "SELECTED", "Clean Modern is not the Suite setup default on Forever")
+assert(window.forever.mark.text == "SELECTED" and window.suite.mark.text == "CHOOSE"
+    and window.classic.mark.text == "CHOOSE" and not window.cooldowns.shown,
+    "Forever must default to its complete Forever factory")
+assert(window.forever.y > window.classic.y and window.classic.y > window.suite.y, "Forever default must be the first profile card")
+assert(viewport:GetVerticalScroll() == 0, "reopening setup must reset the module scroll position")
 CheckLayout()
 Suite.Client.isForever = false
 MSUF_GetPixelPerfectScale = function() return 768 / 2160 end
 Suite.Installer.Open()
 window.next.scripts.OnClick() -- profile
+window.suite.scripts.OnClick() -- isolate the successful pixel-scale transaction
 window.next.scripts.OnClick() -- modules
 window.next.scripts.OnClick() -- scaling
 window.scaleToggle.scripts.OnClick()
@@ -464,7 +541,8 @@ MSUF_GetPixelPerfectScale = function() return 768 / 2160 end
 Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData = "MSUF3:rogue"
 Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData = "MSUF3:spells"
 Suite.Installer.Open()
-window.next.scripts.OnClick() -- profile: Modern is selected
+window.next.scripts.OnClick() -- profile
+window.suite.scripts.OnClick() -- explicitly exercise Modern profile retention
 window.cooldowns.scripts.OnClick()
 assert(window.cooldowns.mark.text == "OFF", "Retail onboarding must allow Blizzard CDM")
 window.next.scripts.OnClick() -- modules
@@ -544,7 +622,8 @@ local function OpenLocalized(locale, L)
     GetLocale = function() return "enUS" end
     Suite.L = L
     MSUFSuiteInstallFrame = nil
-    assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
     Suite.Installer.Open()
     return assert(MSUFSuiteInstallFrame)
 end

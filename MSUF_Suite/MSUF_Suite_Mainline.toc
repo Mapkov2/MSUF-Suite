@@ -59,6 +59,7 @@ Core\HostBridge.lua
 Core\ProfileIO.lua
 Core\Profiles.lua
 Core\ProfileVariants.lua
+Core\InstallerModules.lua
 Core\Installer.lua
 Core\Menu.lua
 Core\Startup.lua

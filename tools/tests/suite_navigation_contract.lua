@@ -15,7 +15,11 @@ local function Widget(kind)
     local w = Frame(kind)
     function w:SetShown(v) self.shown = v and true or false end
     function w:Show() self.shown = true end
-    function w:Hide() self.shown = false end
+    function w:Hide()
+        local shown = self.shown
+        self.shown = false
+        if shown and self.scripts.OnHide then self.scripts.OnHide(self) end
+    end
     function w:IsShown() return self.shown end
     function w:SetText(t) self.text = t end
     function w:GetText() return self.text end
@@ -23,6 +27,8 @@ local function Widget(kind)
     function w:GetWidth() return self.width end
     function w:SetHeight(v) self.height = v end
     function w:GetHeight() return self.height end
+    function w:SetScrollChild(child) self.child = child end
+    function w:GetScrollChild() return self.child end
     function w:SetSize(a, b) self.width, self.height = a, b end
     function w:ClearAllPoints() self.points = {} end
     function w:SetPoint(...) self.points[#self.points + 1] = { ... } end
@@ -72,6 +78,7 @@ SlashCmdList = {}
 local loggedIn, combat = false, false
 IsLoggedIn = function() return loggedIn end
 InCombatLockdown = function() return combat end
+UnitAffectingCombat = function() return combat end
 LoggingCombat = function() return false end
 GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "enUS" end
@@ -365,10 +372,10 @@ assert(opened[1] == "home" and opened[2] == "suite_bags" and opened[3] == "home"
 ------------------------------------------------------------------ first-run order
 do
     local startup = assert(io.open(root .. "/MSUF_Suite/Core/Startup.lua", "rb")):read("*a")
-    local _, direct = startup:gsub('Installer%.MaybeShow%("login"%)', "")
+    local _, deferred = startup:gsub('C_Timer%.After%(0, ShowInstaller%)', "")
     local _, stepped = startup:gsub('Step%(Suite%.Installer, "MaybeShow", "login"%)', "")
     local _, bare = startup:gsub("MaybeShow%(%)", "")
-    assert(direct == 1 and stepped == 1 and bare == 0, "startup must ask the installer as a login")
+    assert(deferred == 1 and stepped == 1 and bare == 0, "startup must ask once after world entry and keep host login ordering")
     loggedIn = true
     Suite.freshInstall, Suite.RootDB.installation = true, nil
     Suite.Host.build = "Classic"
@@ -402,6 +409,39 @@ do
     window:Hide()
     Suite.RootDB.installation = { revision = 2, status = "skipped" }
     assert(Suite.Installer.MaybeShow() == false, "a recorded setup must not reopen the installer")
+    Suite.freshInstall = false
+    Suite.RootDB.installation = { revision = 3, status = "pending" }
+    assert(Suite.Installer.MaybeShow("login") == true,
+        "a pending setup did not resume after SavedVariables were written")
+    window:Hide()
+    Suite.RootDB.installation = nil
+    assert(Suite.Installer.MaybeShow("login") == true,
+        "an earlier first login without an installation receipt never recovered its automatic setup")
+    window:Hide()
+    Suite.RootDB.installation = { revision = 3, status = "complete" }
+    assert(Suite.Installer.MaybeShow("login") == false, "completed installations must stay closed")
+end
+
+-- Native UISpecialFrame closure follows OnHide, including Escape on Forever.
+do
+    local oldRegistry, finished = EventRegistry, 0
+    EventRegistry = { TriggerEvent = function(_, event)
+        assert(event == "MSUFSuite.Installer.Finished" and not Suite.Installer.IsOpen())
+        finished = finished + 1
+    end }
+    Suite.RootDB.installation = { revision = 3, status = "complete" }
+    assert(Suite.Installer.Open())
+    MSUFSuiteInstallFrame:Hide()
+    assert(finished == 1, "native setup closure did not release the deferred CDM choice")
+    Suite.RootDB.installation = { revision = 3, status = "pending" }
+    assert(Suite.Installer.Open())
+    MSUFSuiteInstallFrame:Hide()
+    assert(finished == 1, "unfinished setup released CDM consent")
+    assert(Suite.Installer.Open())
+    MSUFSuiteInstallFrame.close.scripts.OnClick()
+    assert(finished == 2 and Suite.RootDB.installation.status == "skipped",
+        "Not now did not release consent exactly once")
+    EventRegistry = oldRegistry
 end
 
 print("Suite navigation, overview, first-run and dashboard routing passed")
