@@ -291,6 +291,8 @@ S.PublicText = function(value)
 end
 -- The translation lookup (MSUF_Suite_Modules/Runtime.lua); English here.
 S.Text = function(value) return value end
+-- The Suite's one nameplate token list (MSUF_Suite_Modules/Runtime.lua).
+S.NameplateUnits, S.NameplateUnit = dofile(root .. "/tools/tests/suite_test_support.lua").NameplateUnits(root)
 S.ReadText = function(fn, ...)
     if type(fn) ~= "function" then return nil end
     return S.PublicText((fn(...)))

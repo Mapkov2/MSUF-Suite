@@ -19,6 +19,18 @@ S.PublicText, S.ReadText, S.Text = NS.PublicText, NS.ReadText, NS.Text
 S.Dispatch, S.Print = NS.Dispatch, NS.Print
 -- Records a character collects (MSUF_Suite/Core/CharacterData.lua).
 S.CharacterData = NS.CharacterData
+-- The nameplate unit tokens, nameplate1 to nameplate150 on Retail and WoW
+-- Forever (UnitSharedDocumentation: NamePlate1 to NamePlate150), built once
+-- for every module: S.NameplateUnits[i] is a token, S.NameplateUnit[token]
+-- is true.
+do
+    local units, isUnit = {}, {}
+    for i = 1, 150 do
+        units[i] = "nameplate" .. i
+        isUnit[units[i]] = true
+    end
+    S.NameplateUnits, S.NameplateUnit = units, isUnit
+end
 local Public, Dispatch = S.Public, S.Dispatch
 
 local function Accessible(frame)

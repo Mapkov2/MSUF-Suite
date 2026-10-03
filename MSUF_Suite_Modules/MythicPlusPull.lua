@@ -16,12 +16,10 @@ local Public, Finite, Text = S.Public, S.Finite, S.PublicText
 local PAINT_DELAY = .25
 local EVENTS = { "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "PLAYER_TARGET_CHANGED",
     "UNIT_THREAT_LIST_UPDATE", "UNIT_FLAGS", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED" }
-local NAMEPLATES = {}
+-- Every nameplate token (Runtime.lua) and the target.
+local NAMEPLATES = S.NameplateUnits
 local TOKENS = { target = true }
-for i = 1, 60 do
-    NAMEPLATES[i] = "nameplate" .. i
-    TOKENS[NAMEPLATES[i]] = true
-end
+for i = 1, #NAMEPLATES do TOKENS[NAMEPLATES[i]] = true end
 local LABEL_TOTAL = S.Text("Observed enemies  +%.1f%%  (total %.1f%%)")
 local LABEL_SUM = S.Text("Observed enemies  +%.1f%%")
 local LABEL_UNKNOWN = S.Text("Observed enemies  --")

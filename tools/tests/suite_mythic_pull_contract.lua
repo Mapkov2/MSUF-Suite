@@ -29,6 +29,10 @@ C_Timer = { After = function(delay, callback)
     timerCallbacks[callback] = true
     queue[#queue + 1] = callback
 end }
+-- The Suite's one nameplate token list (MSUF_Suite_Modules/Runtime.lua).
+S.NameplateUnits, S.NameplateUnit = dofile(root .. "/tools/tests/suite_test_support.lua").NameplateUnits(root)
+assert(#S.NameplateUnits == 150 and S.NameplateUnits[150] == "nameplate150" and S.NameplateUnit.nameplate150
+    and not S.NameplateUnit.nameplate151, "the shared nameplate tokens must run from nameplate1 to nameplate150")
 local NS = { Client = {}, Dispatch = function(callback, ...) return callback(...) end }
 assert(loadfile(root .. "/MSUF_Suite_Modules/MythicPlusPull.lua"))("test", { NS = NS, Suite = S })
 local owner = { active = true, config = {}, mplusActive = true, mplus = { forcesPercent = 25,
@@ -134,5 +138,16 @@ H.Stop(owner)
 local before = reads
 H.Sync(owner)
 assert(owner.observedPull.sum == 4 and reads == before + 1, "a new run must not reuse the previous run's values")
+-- Every nameplate token counts, up to nameplate150: the run's start snapshot
+-- and the plate events of a large pull past nameplate60.
+H.Stop(owner)
+units.nameplate150 = Mob("Creature-F", 2)
+H.Sync(owner)
+assert(owner.observedPull.sum == 6, "the snapshot missed a nameplate token up to 150")
+units.nameplate97 = Mob("Creature-G", .5)
+Fire("NAME_PLATE_UNIT_ADDED", "nameplate97"); Flush()
+assert(owner.observedPull.sum == 6.5, "a nameplate event past nameplate60 was ignored")
+units.nameplate97, units.nameplate150 = nil, nil
+Fire("NAME_PLATE_UNIT_REMOVED", "nameplate97"); Flush()
 owner.mplus.completed = true; H.Sync(owner); assert(not owner.observedPull.active)
 print("Observed Mythic+ pull: throttled paints, per-GUID values, zero for no progress, secrets unknown, dedupe, deaths, remove/reentry and cleanup passed")
