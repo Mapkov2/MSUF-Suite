@@ -159,6 +159,11 @@ for _, locale in ipairs(LOCALES) do
         Check(asked == locale, locale .. ": the pack did not ask MSUF.RegisterLocale for its own locale")
         local keys = Sorted(entries)
         Check(#keys > 0, locale .. ": the pack wrote nothing for its own locale")
+        -- The undo label of every Suite page reset (Menu/Register.lua): MSUF
+        -- hosts before host API v1 have no translation of it, so the pack
+        -- brings MSUF's own (copied from the Classic packs).
+        Check(rawget(entries, "Reset %s") ~= nil and rawget(entries, "Reset %s") ~= "Reset %s",
+            locale .. ": the pack lacks the page reset's undo label \"Reset %s\"")
         -- MSUF's own wording of a string always wins.
         if keys[1] then
             local owned = LocaleTable({ [keys[1]] = "MSUF WINS" })

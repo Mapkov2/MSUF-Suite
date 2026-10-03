@@ -38,7 +38,7 @@ end
 -- Keep unavailable destinations visible and clickable so they can explain how
 -- to turn the AddOn on. A saved module switch and Blizzard's AddOn switch are
 -- separate: dormant load-on-demand modules still need their settings page.
-local ADDON_NOTICE = "You need to turn on the module in Blizzards Addon list"
+local ADDON_NOTICE = "You need to turn on the module in Blizzard's AddOn list"
 -- Every catalog module per page; the page reset and the AddOn checks use it.
 local PAGE_MODULES = {}
 for _, id in ipairs(Suite.SuiteOrder) do

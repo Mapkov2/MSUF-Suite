@@ -239,7 +239,7 @@ assert(M.PageHasReset("suite_bags") == true and M.PageHasReset("suite_skin") == 
 
 ------------------------------------------------------------------ availability and unavailable pages
 do
-    local notice = "You need to turn on the module in Blizzards Addon list"
+    local notice = "You need to turn on the module in Blizzard's AddOn list"
     local addonForPage = {
         suite_bags = "MSUF_Suite_Bags", suite_qualityOfLife = "MSUF_Suite_QualityOfLife",
         suite_hud = "MSUF_Suite_Modules", suite_skin = "MSUF_Suite_Skin",

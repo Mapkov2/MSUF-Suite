@@ -183,6 +183,14 @@
       "evidence": "7f5152f; MSUF_Suite/Core/Catalog/DamageMeter.lua:80 default 1 -> 1.5; suite_damage_meter_contract pins the new default and that a stored 1 survives S.Normalize.",
       "reason": "Owner decision 2026-10-03: combat update every 1.5 s by default; default only, stored values are not migrated.",
       "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "You need to turn on the module in Blizzards Addon list",
+      "basis": "moved",
+      "evidence": "q13/sfa locale P3 commit; MSUF_Suite_Options/Menu/Register.lua ADDON_NOTICE becomes \"You need to turn on the module in Blizzard's AddOn list\"; all ten packs carry the same translation under the new key.",
+      "reason": "Typo fix of the AddOn notice; the text and its translations are retained under the corrected English key.",
+      "date": "2026-10-03"
     }
   ]
 }

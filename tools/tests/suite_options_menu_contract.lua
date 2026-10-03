@@ -666,7 +666,7 @@ C_AddOns.GetAddOnEnableState = function(name, guid)
     return name == "MSUF_Suite_ActionBars" and 0 or 1
 end
 assert(rows.suite_actionbars.availability() == false
-    and select(2, rows.suite_actionbars.availability()) == "You need to turn on the module in Blizzards Addon list"
+    and select(2, rows.suite_actionbars.availability()) == "You need to turn on the module in Blizzard's AddOn list"
     and not select(3, rows.suite_actionbars.availability()),
     "Suite navigation must keep Blizzard-disabled AddOns grey and visible")
 assert(Suite.Client.AddOnEnabled("MSUF_Suite_Minimap")
