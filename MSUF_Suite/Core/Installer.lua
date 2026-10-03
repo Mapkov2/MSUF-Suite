@@ -559,7 +559,9 @@ local function BuildNavigation(window)
         Installer.Refresh()
     end)
     window.close = NavButton(window, 150, 15, 104, Text("Not now"), function()
-        if Suite.RootDB and page ~= 6 then
+        -- Only a pending first run is skipped: setup reopened later through
+        -- /msufsuite keeps its completed receipt.
+        if Suite.RootDB and page ~= 6 and Installer.IsFirstRunPending() then
             Suite.RootDB.installation = { revision = 2, status = "skipped" }
         end
         window:Hide()

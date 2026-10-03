@@ -771,4 +771,25 @@ do
     chat.title, chat.description = "chat", nil
 end
 GetLocale, Suite.L = function() return "enUS" end, nil
+-- "Not now" skips a pending first run only. Setup reopened through
+-- /msufsuite after a completed install keeps that receipt: its frame profile,
+-- the new-character ownership and the completion-gated repairs stay.
+do
+    local receipt = { revision = 4, status = "complete", profile = "suite", frameProfileName = "Modern MSUF Suite",
+        newCharacterProfileRevision = 1, newCharacterProfileOwned = true, resourceStackRevision = 1 }
+    Suite.RootDB.installation = receipt
+    SlashCmdList.MSUFSUITEINSTALL("")
+    window = assert(MSUFSuiteInstallFrame)
+    window.close.scripts.OnClick()
+    assert(Suite.RootDB.installation == receipt and receipt.status == "complete"
+        and receipt.frameProfileName == "Modern MSUF Suite" and receipt.newCharacterProfileOwned == true,
+        "Not now on a reopened setup replaced the completed installation receipt")
+    for _, pending in ipairs({ { status = "pending" }, false }) do
+        Suite.RootDB.installation = pending or nil
+        Suite.Installer.Open()
+        window.close.scripts.OnClick()
+        assert(Suite.RootDB.installation and Suite.RootDB.installation.status == "skipped",
+            "Not now did not skip a pending first run")
+    end
+end
 print("Suite installer: profiles, module selection, optional scaling, layout, localization and completion passed")
