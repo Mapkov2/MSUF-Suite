@@ -291,16 +291,97 @@ function Looks.RefreshConfig(id, config)
     end
 end
 
+-- The look each module's appearance last answered, in a profile's suite
+-- table (db.moduleLooks = { [module id] = look name }): the global look it
+-- adopted, or the one active when the player set its appearance. Enabling a
+-- module adopts the global look only while its record differs (Suite.lua),
+-- so a module the player styled keeps its look through off and on, and one
+-- that was off when the global look changed adopts the new one.
+local LOOK_ORDER = { "midnight", "midnightDark", "foreverGlass", "cleanModern", "classColor" }
+function Looks.Supports(id)
+    local look = catalog[id] and catalog[id].look
+    return look ~= nil and (look.global or look.extra) ~= nil
+end
+
+function Looks.Records(db)
+    local records = db.moduleLooks
+    if type(records) ~= "table" then
+        records = {}
+        db.moduleLooks = records
+    end
+    return records
+end
+
+-- Only known modules the global look styles, with a known look name.
+function Looks.CleanRecords(records)
+    if type(records) ~= "table" then return nil end
+    local clean
+    for id, lookName in pairs(records) do
+        if type(id) == "string" and Looks.Supports(id) and type(lookName) == "string" and lookIndexes[lookName] then
+            clean = clean or {}
+            clean[id] = lookName
+        end
+    end
+    return clean
+end
+
+-- A setting a saved module lacks holds its default once normalized.
+local function Effective(rule, config, key)
+    local value = config[key]
+    if value == nil then return rule.default end
+    return value
+end
+
+local function Follows(id, config, lookName)
+    if lookName == "classColor" then Looks.RefreshClassColor() end
+    local values = lookIndexes[lookName] and LookValues(id, lookIndexes[lookName], config)
+    if not values then return false end
+    local rules = catalog[id].rules
+    for key, value in pairs(values) do
+        local rule = rules[key]
+        if rule and type(value) == type(rule.default) and Effective(rule, config, key) ~= value then return false end
+    end
+    return true
+end
+
+-- The record of a module in a profile saved before db.moduleLooks, judged
+-- from its settings alone; nothing is restyled. A running module adopted
+-- the global look when it was enabled, or the player styled it since: it
+-- keeps its look. A module that is off keeps the look its colors follow
+-- (it adopts the global look when enabled, as before), has none while its
+-- appearance is the catalog's, and otherwise was styled by the player.
+function Looks.RecordFor(id, config, globalLook)
+    if not Looks.Supports(id) then return nil end
+    if not lookIndexes[globalLook] then globalLook = nil end
+    if config.enabled == true then return globalLook end
+    if globalLook and Follows(id, config, globalLook) then return globalLook end
+    for _, lookName in ipairs(LOOK_ORDER) do
+        if lookName ~= globalLook and Follows(id, config, lookName) then return lookName end
+    end
+    local rules = catalog[id].rules
+    for _, lookName in ipairs(LOOK_ORDER) do
+        for key in pairs(LookValues(id, lookIndexes[lookName], config) or {}) do
+            local rule = rules[key]
+            if rule and Effective(rule, config, key) ~= rule.default then return globalLook end
+        end
+    end
+    return nil
+end
+
 -- Factory/setup profiles are staged without touching live frames. Layout,
 -- module enable switches and native resource/status colors stay intact.
 function Looks.StyleProfile(profile, lookName)
     local db = type(profile) == "table" and profile.suite
     if not db or type(db.modules) ~= "table" or not lookIndexes[lookName] then return false end
     db.globalLook = lookName
+    local records = Looks.Records(db)
     for i = 1, #order do
         local id = order[i]
         local config = db.modules[id]
-        if type(config) == "table" then Looks.ApplyToConfig(id, config, lookName) end
+        if type(config) == "table" then
+            Looks.ApplyToConfig(id, config, lookName)
+            if Looks.Supports(id) then records[id] = lookName end
+        end
     end
     return true
 end

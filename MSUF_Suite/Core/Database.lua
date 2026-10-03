@@ -12,7 +12,7 @@ local historyKeys = { "suiteChat", "suiteRuns", "suiteRecovery" }
 -- CVars, the per-profile moduleState), which undo history never copies or
 -- restores (MSUF_Suite_Options/Menu/Bridge.lua).
 Database.ROOT_SETTINGS = { "activeProfile", "skinEnabled" }
-Database.PROFILE_SETTINGS = { "schema", "revision", "globalLook", "modules" }
+Database.PROFILE_SETTINGS = { "schema", "revision", "globalLook", "moduleLooks", "modules" }
 -- Module state that is layout the player arranges in MSUF Edit Mode (the
 -- detached minimap addon buttons): undo and Edit Mode Cancel restore it
 -- with the settings. Other module state is runtime data and never rides.
