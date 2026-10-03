@@ -37,7 +37,9 @@ local CHANNELS = {
 }
 -- frame -> { live, ring, key, replayed, source, rendered, matches, transform }
 local hooks = setmetatable({}, { __mode = "k" })
-local members, shortcuts, channelRules = {}, {}, {}
+-- Short group labels: linkLabels by the label of Blizzard's channel link,
+-- plainLabels (label, short, ...) for a label without one (the raid warning).
+local members, shortcuts, linkLabels, plainLabels = {}, {}, {}, {}
 -- Reused buffers of the formatting passes (the outer one splits around
 -- native links, the inner one around URLs).
 local runs, pieces = {}, {}
@@ -98,18 +100,36 @@ local function FormatPlainRuns(text)
     return table.concat(runs, "", 1, count)
 end
 
-local function WorldChannel(number, name)
-    return "[" .. (shortcuts[name] or number) .. "]"
+-- A world channel's "[2. Trade - City]" as its shortcut or "[2]".
+local function ShortLabel(label)
+    local short = linkLabels[label]
+    if short then return short end
+    local number, name = label:match("^%[(%d+)%. (.+)%]$")
+    if number then return "[" .. (shortcuts[name] or number) .. "]" end
 end
 
--- Prefix labels differ by client language; only the bracketed label of the
--- public prefix changes, the native sender link stays untouched.
+-- Prefix labels differ by client language. Only the line's own prefix
+-- changes, never its text or the native sender link: Blizzard builds a
+-- channel line as [timestamp]|Hchannel:...|h[label]|h sender: text
+-- (ChatFrameOverrides.lua, live and forever), so the prefix is the label of
+-- the line's first hyperlink when that is the channel link. A label without
+-- a link (the raid warning) stands before the sender's link.
 local function ShortChannels(text)
-    for i = 1, #channelRules, 2 do
-        local start, finish = text:find(channelRules[i], 1, true)
-        if start then text = text:sub(1, start - 1) .. channelRules[i + 1] .. text:sub(finish + 1) end
+    local first = text:find("|H", 1, true)
+    if not first then return text end
+    local _, _, open, label, close = text:find("^|Hchannel:[^|]*|h()(%b[])()|h", first)
+    if label then
+        local short = ShortLabel(label)
+        if not short then return text end
+        return text:sub(1, open - 1) .. short .. text:sub(close)
     end
-    return (text:gsub("%[(%d+)%. ([^%]]+)%]", WorldChannel))
+    for i = 1, #plainLabels, 2 do
+        local start, finish = text:find(plainLabels[i], 1, true)
+        if start and finish < first then
+            return text:sub(1, start - 1) .. plainLabels[i + 1] .. text:sub(finish + 1)
+        end
+    end
+    return text
 end
 
 -- A user format must never interrupt Blizzard's message delivery.
@@ -167,14 +187,18 @@ local function Format(text)
 end
 
 local function CompileChannels(config)
-    for i = #channelRules, 1, -1 do channelRules[i] = nil end
+    for i = #plainLabels, 1, -1 do plainLabels[i] = nil end
+    for label in pairs(linkLabels) do linkLabels[label] = nil end
     for name in pairs(shortcuts) do shortcuts[name] = nil end
     if not config.shortenChannels then return end
     for i = 1, #CHANNELS, 2 do
-        local bracket = _G["CHAT_" .. CHANNELS[i] .. "_GET"]:match("(%[.-%])")
-        if bracket then
-            channelRules[#channelRules + 1] = bracket
-            channelRules[#channelRules + 1] = "[" .. CHANNELS[i + 1] .. "]"
+        local template = _G["CHAT_" .. CHANNELS[i] .. "_GET"]
+        local bracket, short = template:match("(%[.-%])"), "[" .. CHANNELS[i + 1] .. "]"
+        if bracket and template:find("|h" .. bracket .. "|h", 1, true) then
+            linkLabels[bracket] = short
+        elseif bracket then
+            plainLabels[#plainLabels + 1] = bracket
+            plainLabels[#plainLabels + 1] = short
         end
     end
     for pair in config.channelShortcuts:gmatch("[^;]+") do

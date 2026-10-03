@@ -279,9 +279,28 @@ stringReads, cvarReads = 0, 0
 for _ = 1, 20 do Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General] and [Guild]") end
 eq(stringReads, 0, "a line read Blizzard's channel labels")
 assert(cvarReads <= 1, "a line read the native timestamp setting")
-local shortened = Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General]")
-assert(shortened:find("|Hchannel:GUILD|h[G]|h", 1, true) and shortened:find("[Gen]", 1, true),
-    "channel prefixes or shortcuts were not shortened")
+local shortened = Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi")
+assert(shortened:find("|Hchannel:GUILD|h[G]|h ", 1, true), "a group channel prefix was not shortened")
+shortened = Rendered("|Hchannel:channel:2|h[2. General]|h |Hplayer:Mapko|h[Mapko]|h: hi")
+assert(shortened:find("|Hchannel:channel:2|h[Gen]|h |Hplayer:Mapko|h[Mapko]|h: hi", 1, true),
+    "a world channel shortcut was not applied")
+shortened = Rendered("|Hchannel:channel:5|h[5. Newcomers]|h |Hplayer:Mapko|h[Mapko]|h: hi")
+assert(shortened:find("|Hchannel:channel:5|h[5]|h", 1, true), "a world channel without a shortcut kept its name")
+-- Only the line's own prefix is shortened, never its text (ChatFrameOverrides:
+-- [timestamp]|Hchannel:...|h[label]|h sender: text; the raid warning's label
+-- has no link and stands before the sender's).
+shortened = Rendered("|Hchannel:GUILD|h[Guild]|h |Hplayer:Mapko|h[Mapko]|h: meet at [Party], [Guild] or [2. General]")
+assert(shortened:find("|Hchannel:GUILD|h[G]|h |Hplayer:Mapko|h[Mapko]|h: meet at [Party], [Guild] or [2. General]", 1, true),
+    "shortening the guild prefix also rewrote the message text: " .. shortened)
+shortened = Rendered("|Hchannel:channel:2|h[2. General]|h |Hplayer:Bob|h[Bob]|h: selling [1. General] stuff")
+assert(shortened:find("|Hchannel:channel:2|h[Gen]|h |Hplayer:Bob|h[Bob]|h: selling [1. General] stuff", 1, true),
+    "shortening a world channel prefix also rewrote the message text: " .. shortened)
+shortened = Rendered("12:34 [Raid Warning] |Hplayer:Bob|h[Bob]|h: pull at [Raid Warning] and [Raid]")
+eq(shortened, "[12:34] [RW] |Hplayer:Bob|h[Bob]|h: pull at [Raid Warning] and [Raid]",
+    "the raid warning prefix was not shortened alone")
+eq(Rendered("12:34 [Party] is no prefix here"), "[12:34] [Party] is no prefix here", "a line without links was shortened")
+eq(Rendered("|Hplayer:Bob|h[Bob]|h: join |Hchannel:GUILD|h[Guild]|h"), "[12:34] |Hplayer:Bob|h[Bob]|h: join |Hchannel:GUILD|h[Guild]|h",
+    "a channel link after the sender's was shortened")
 config.allTimestamps, config.shortenChannels, nativeStamp = false, false, "none"
 C.MessagesRefresh(M)
 
