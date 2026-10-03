@@ -62,6 +62,11 @@ local W = H.New(root, flavor, { clientSecurity = true, beforeModules = function(
     G.MinimapCluster.ZoneTextButton.scripts.OnClick = function()
         microClicks[#microClicks + 1] = { name = "ZoneTextButton", secure = world.secure }
     end
+    -- The character window's currency tab runs CharacterFrame:ToggleTokenFrame()
+    -- (CharacterFrameTabButtonMixin:OnClick).
+    G.CharacterFrameTab3.scripts.OnClick = function()
+        microClicks[#microClicks + 1] = { name = "CharacterFrameTab3", secure = world.secure }
+    end
     world.opened = {}
     for _, name in ipairs({ "ToggleCharacter", "ToggleWorldMap" }) do
         G[name] = function(tab)
@@ -95,7 +100,7 @@ assert(S.SetMany("dataTexts", { enabled = true, bar1Enabled = true, bar1Layout =
     bar2Enabled = true, bar2Visibility = 2, bar2Slot1 = Choice("fps"), bar2Slot2 = 1, bar2Slot3 = 1,
     bar3Enabled = true, bar3Visibility = 3, bar3Slot1 = Choice("gold"), bar3Slot2 = 1, bar3Slot3 = 1,
     bar4Enabled = true, bar4Slot1 = Choice("durability"), bar4Slot2 = Choice("coordinates"),
-    bar4Slot3 = Choice("location") }))
+    bar4Slot3 = Choice("location"), bar4Slot4 = Choice("currency") }))
 local bar = assert(M.bars[1])
 local slots = bar.slots
 local clock, hearth, spec, audio, portals, micro = slots[1], slots[2], slots[3], slots[4], slots[5], slots[6]
@@ -230,15 +235,53 @@ for _, case in ipairs({ { durability, G.CharacterMicroButton, "CharacterMicroBut
     W.Fire(overlay, "OnLeave")
 end
 assert(#W.opened == 0, "a window place opened its window from the addon's code")
--- Without a visible Blizzard button the place opens the window itself, as before.
+-- Without a visible Blizzard button the place opens the window through
+-- Blizzard's panel manager (ShowUIPanel hands it to the secure
+-- FramePositionDelegate); ToggleWorldMap would run the map's display-state
+-- code inside the addon's call.
 G.MinimapCluster.ZoneTextButton.shown = false
 W.Fire(zone, "OnEnter")
 assert(not (overlay.shown and overlay.points[1][2] == zone), "the overlay offered a click on a hidden button")
+local panelCount = #W.panelCalls
 W.Click(zone)
-assert(W.opened[#W.opened] and W.opened[#W.opened].name == "ToggleWorldMap",
-    "the Zone place did not fall back to opening the world map")
+assert(#W.opened == 0 and #W.panelCalls == panelCount + 1 and W.panelCalls[#W.panelCalls].frame == G.WorldMapFrame
+    and W.panelCalls[#W.panelCalls].shown and G.WorldMapFrame.shown,
+    "the Zone place did not fall back to opening the world map through the panel manager")
+W.Click(zone)
+assert(#W.opened == 0 and not W.panelCalls[#W.panelCalls].shown and not G.WorldMapFrame.shown,
+    "a second Zone click did not close the world map through the panel manager")
 W.Fire(zone, "OnLeave")
 G.MinimapCluster.ZoneTextButton.shown = true
+
+-- The Currency place clicks the character window's currency tab from secure
+-- code, even with the window closed: ToggleCharacter("TokenFrame") from the
+-- place's own click ran CharacterFrame's tab and sub-frame code tainted.
+local currency = windows[4]
+W.Fire(currency, "OnEnter")
+assert(overlay.shown and overlay.points[1][2] == currency and overlay:GetAttribute("type1") == "click"
+    and overlay:GetAttribute("clickbutton1") == G.CharacterFrameTab3
+    and overlay:GetAttribute("clickbutton") == G.CharacterFrameTab3,
+    "the currency place lacks the secure click on the currency tab")
+for _, mouse in ipairs({ "LeftButton", "RightButton" }) do
+    local clicks = #microClicks
+    W.Click(overlay, mouse)
+    assert(#microClicks == clicks + 1 and microClicks[#microClicks].name == "CharacterFrameTab3"
+        and microClicks[#microClicks].secure, "a " .. mouse .. " on the currency place did not click the tab securely")
+end
+W.Fire(overlay, "OnLeave")
+-- A player without currencies has no currency tab: the place opens the
+-- character window through the panel manager.
+G.CharacterFrameTab3.shown = false
+W.Fire(currency, "OnEnter")
+assert(not (overlay.shown and overlay.points[1][2] == currency), "the overlay offered a click on a hidden currency tab")
+panelCount = #W.panelCalls
+W.Click(currency)
+assert(#W.opened == 0 and #W.panelCalls == panelCount + 1 and W.panelCalls[#W.panelCalls].frame == G.CharacterFrame
+    and W.panelCalls[#W.panelCalls].shown, "the currency place did not fall back to the character window")
+W.Click(currency)
+W.Fire(currency, "OnLeave")
+G.CharacterFrameTab3.shown = true
+assert(#W.opened == 0, "a currency place opened its window from the addon's code")
 
 -- P2-1: the portal popup stays open while the pointer moves onto and between
 -- its rows, and closes once the pointer rests outside.

@@ -11,7 +11,8 @@ local CLOCK_CLICK = NS.MinimapClockClick
 -- Blizzard's own opener button (S.PanelButton), so the window opens from
 -- secure code. PLAYER_REGEN_DISABLED, before the lockdown, releases the
 -- overlay and a "[combat] hide" state driver backs that up. Without a usable
--- Blizzard button the text's own click opens the window, as before.
+-- Blizzard button the text's own click opens the window through Blizzard's
+-- panel manager (S.TogglePanel).
 -- ToggleCalendar and ToggleTimeManager are the bootstrap entry points of
 -- Blizzard's load-on-demand calendar and clock (they load the addon first):
 -- the calendar opens through ShowUIPanel (Calendar_Toggle), the clock window
@@ -41,7 +42,7 @@ local function Click(button, mouseButton)
         if mouseButton == "RightButton" then calendar = not calendar end
         if calendar then ToggleCalendar() else ToggleTimeManager() end
     elseif OpensWindow(button) then
-        if PANELS[button.infoKey] == "worldMap" then ToggleWorldMap() else ToggleCharacter("PaperDollFrame") end
+        S.TogglePanel(PANELS[button.infoKey])
     end
 end
 

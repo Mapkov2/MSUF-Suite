@@ -314,17 +314,29 @@ assert(ledger and ledger["Player-1"] and ledger["Player-1"].money == 112345 and 
     and W.Suite.RootDB.goldLedger == nil, "gold ledger did not capture the current character when enabled")
 -- A slot opens Blizzard's matching window out of combat (bags for gold, the
 -- character sheet for durability; FPS has none) and explains its value.
+-- Without Blizzard's character micro button the durability place opens the
+-- window through the panel manager: ToggleCharacter would run
+-- CharacterFrame's tab code inside the addon's call.
 do
     local opened, slots = {}, M.bars[1].slots
     W.G.OpenAllBags = function() opened[#opened + 1] = "bags" end
-    W.G.ToggleCharacter = function(tab) opened[#opened + 1] = tab end
+    W.G.ToggleCharacter = function() error("ToggleCharacter ran from the addon's code") end
     for i = 1, 3 do W.Fire(slots[i], "OnClick", "LeftButton") end
-    assert(#opened == 2 and opened[1] == "bags" and opened[2] == "PaperDollFrame",
-        "DataText clicks did not open the gold and durability windows")
+    local panel = W.panelCalls[#W.panelCalls]
+    assert(#opened == 1 and opened[1] == "bags" and #W.panelCalls == 1 and panel.frame == W.G.CharacterFrame
+        and panel.shown and W.G.CharacterFrame.shown, "DataText clicks did not open the gold and durability windows")
+    W.Fire(slots[2], "OnClick", "LeftButton")
+    assert(#W.panelCalls == 2 and not W.panelCalls[2].shown and not W.G.CharacterFrame.shown,
+        "a second durability click did not close the character window")
+    W.gameRules[W.G.Enum.GameRule.CharacterPanelDisabled] = true
+    W.Fire(slots[2], "OnClick", "LeftButton")
+    W.gameRules[W.G.Enum.GameRule.CharacterPanelDisabled] = nil
+    assert(#W.panelCalls == 2, "the durability place opened a character window the game rules disable")
     W.combat = true
     W.Fire(slots[1], "OnClick", "LeftButton")
+    W.Fire(slots[2], "OnClick", "LeftButton")
     W.combat = false
-    assert(#opened == 2, "a DataText click opened a window in combat")
+    assert(#opened == 1 and #W.panelCalls == 2, "a DataText click opened a window in combat")
     local tip = W.G.GameTooltip
     W.Fire(slots[1], "OnEnter")
     assert(tip.shown and tip.owner == slots[1] and tip.lines[1] == W.Suite.DataTextSources[slots[1].sourceIndex]

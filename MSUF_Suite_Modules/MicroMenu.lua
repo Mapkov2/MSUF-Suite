@@ -44,29 +44,58 @@ end
 -- Blizzard buttons whose own OnClick opens a Blizzard window the way the
 -- player's click or key binding does; a secure "click" on one runs that
 -- opener from secure code. CharacterMicroButton runs
--- ToggleCharacter("PaperDollFrame") (CharacterMicroButtonMixin:OnClick) and
+-- ToggleCharacter("PaperDollFrame") (CharacterMicroButtonMixin:OnClick),
 -- the minimap's zone text button runs ToggleWorldMap()
--- (MinimapZoneTextButtonMixin:OnClick, Blizzard_Minimap/Mainline), on Retail
--- and WoW Forever. The Suite's minimap leaves the zone text button shown at
--- alpha 0 (Context:HideControl), so it stays clickable.
+-- (MinimapZoneTextButtonMixin:OnClick, Blizzard_Minimap/Mainline) and the
+-- character window's currency tab runs CharacterFrame:ToggleTokenFrame()
+-- (CharacterFrameTabButtonMixin:OnClick), as the TOGGLECURRENCY binding
+-- does, on Retail and WoW Forever. The Suite's minimap leaves the zone text
+-- button shown at alpha 0 (Context:HideControl), so it stays clickable.
 local PANEL_BUTTONS = {
     character = function() return _G.CharacterMicroButton end,
     worldMap = function()
         local cluster = _G.MinimapCluster
         return Usable(cluster) and cluster.ZoneTextButton or nil
     end,
+    -- Blizzard_UIPanels_Game creates the character window at startup.
+    currency = function() return CharacterFrameTab3 end,
 }
+-- A tab of a closed window is shown but not visible: TokenFrameMixin:Update
+-- shows the currency tab while the player has currencies.
+local WINDOW_TABS = { currency = true }
 
--- The Blizzard button that opens panel ("character" or "worldMap"), or nil
--- while it is missing, forbidden, hidden or disabled: the caller then opens
--- the window from its own click, as before. Out of combat, when a place
--- offers its secure click.
+-- The Blizzard button that opens panel ("character", "worldMap" or
+-- "currency"), or nil while it is missing, forbidden, hidden or disabled: the
+-- caller then opens the window through S.TogglePanel. Out of combat, when a
+-- place offers its secure click.
 function S.PanelButton(panel)
     local find = PANEL_BUTTONS[panel]
     local button = find and find()
     if not Usable(button) then return nil end
-    local visible, enabled = button:IsVisible(), button:IsEnabled()
+    local visible
+    if WINDOW_TABS[panel] then visible = button:IsShown() else visible = button:IsVisible() end
+    local enabled = button:IsEnabled()
     if S.Public(visible) and visible == true and S.Public(enabled) and enabled == true then return button end
+end
+
+-- Opens or closes the window of panel without Blizzard's button: a place
+-- whose S.PanelButton is missing, or a click that cannot be secure (the
+-- minimap's middle-click). ToggleWorldMap and ToggleCharacter would run the
+-- world map's display-state code (QuestLogOwnerMixin:HandleUserActionToggleSelf)
+-- and CharacterFrame's tab and sub-frame code inside the addon's call.
+-- ShowUIPanel and HideUIPanel hand both windows, panels of Blizzard's panel
+-- manager (RegisterUIPanel, UIPanelWindows), to the secure
+-- FramePositionDelegate: the map opens as OpenWorldMap opens it
+-- (HandleUserActionOpenSelf), the character window on the tab the player
+-- used last. The game rules that disable a window are honoured, and the
+-- panel manager refuses addon calls in combat. Blizzard_WorldMap and
+-- Blizzard_UIPanels_Game load at startup on Retail and WoW Forever.
+function S.TogglePanel(panel)
+    if NS.IsCombatLocked() then return end
+    local window, rule = CharacterFrame, Enum.GameRule.CharacterPanelDisabled
+    if panel == "worldMap" then window, rule = WorldMapFrame, Enum.GameRule.WorldMapDisabled end
+    if C_GameRules.IsGameRuleActive(rule) then return end
+    S.Dispatch(NS.Finish, window:IsShown() and HideUIPanel or ShowUIPanel, window)
 end
 
 -- Opens or closes the game menu out of combat, as GameMenuFrame_Show and
