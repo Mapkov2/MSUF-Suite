@@ -708,7 +708,7 @@
    "file": "MSUF_Suite_Options/Menu/Controls.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export (widgets, preview helpers, menu timer); the Retail (Main) and Classic MSUF menus do not provide the same ones",
-   "symbol": "input.SetMaxLetters"
+   "symbol": "input.SetMaxBytes"
   },
   {
    "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
@@ -822,7 +822,7 @@
    "file": "MSUF_Suite_Options/Pages/CooldownManager.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export (widgets, preview helpers, menu timer); the Retail (Main) and Classic MSUF menus do not provide the same ones",
-   "symbol": "input.SetMaxLetters"
+   "symbol": "input.SetMaxBytes"
   },
   {
    "file": "MSUF_Suite_Options/Pages/CooldownManager.lua",
@@ -2239,12 +2239,6 @@
    "kind": "lod",
    "reason": "export of MSUF_Suite_Modules, which loads on demand: the pages ask in Blizzard's generic dialog themselves until it is loaded",
    "symbol": "S.Confirm"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "lod",
-   "reason": "export of MSUF_Suite_Modules, which loads on demand: the pages ask in Blizzard's generic input box themselves until it is loaded",
-   "symbol": "S.AskText"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",

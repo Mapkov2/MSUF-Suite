@@ -347,12 +347,35 @@ end
 -- A name or other short text in Blizzard's generic input box, one per key
 -- like P.Confirm (S.AskText once the Modules runtime is loaded). onAccept
 -- gets the text; maxLetters bounds the edit box (Blizzard's default is 24).
-function P.AskText(key, text, onAccept, maxLetters)
+-- maxBytes also bounds it in bytes, as the name rules count them, so a CJK
+-- or Cyrillic name the box takes is one they take. The box belongs to
+-- Blizzard's shared dialog frame, whose own code never sets a byte limit:
+-- the limit is set after it shows and the previous one comes back when it
+-- hides, however it closes (as MSUF_Suite_QualityOfLife/MerchantList.lua
+-- does with SetNumeric).
+function P.AskText(key, text, onAccept, maxLetters, maxBytes)
     CloseQuestion(key)
     local data = { text = "%s", text_arg1 = text, callback = onAccept, maxLetters = maxLetters }
-    if S.AskText then return S.AskText("options:" .. key, data) end
-    questions[key] = { which = GENERIC_INPUT_BOX, data = data }
-    return StaticPopup_Show(GENERIC_INPUT_BOX, nil, nil, data)
+    local previousBytes
+    local function Hidden(dialog)
+        if previousBytes then dialog:GetEditBox():SetMaxBytes(previousBytes) end
+        previousBytes = nil
+    end
+    local onHide = maxBytes and Hidden or nil
+    local dialog
+    if S.AskText then
+        dialog = S.AskText("options:" .. key, data, onHide)
+    else
+        questions[key] = { which = GENERIC_INPUT_BOX, data = data }
+        dialog = StaticPopup_Show(GENERIC_INPUT_BOX, nil, nil, data, nil, onHide)
+    end
+    if dialog and maxBytes then
+        local edit = dialog:GetEditBox()
+        previousBytes = edit:GetMaxBytes()
+        -- The limit counts the terminating zero byte too.
+        edit:SetMaxBytes(maxBytes + 1)
+    end
+    return dialog
 end
 
 -- "Save setup as…": the MSUF frames, the Suite and the skin of the active
@@ -367,7 +390,7 @@ function P.SaveSetupAs()
             M.ShowStatusFeedback(ok and Tr("Setup saved as a new profile")
                 or Suite.StatusText(reason or "That did not work.", Tr), ok and "ok" or "warning", 2)
         end
-    end, Suite.Database.MAX_PROFILE_NAME_BYTES)
+    end, Suite.Database.MAX_PROFILE_NAME_BYTES, Suite.Database.MAX_PROFILE_NAME_BYTES)
     return true
 end
 

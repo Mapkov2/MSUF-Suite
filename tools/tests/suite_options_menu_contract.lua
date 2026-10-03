@@ -313,7 +313,12 @@ end
 M.BindSwitchAt = function(ctx, parent, label, x, y, w, get, set, meta) return Bind(ctx, Widget("Switch"), get, set, meta, label) end
 M.BindBoolWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
 M.BindDropdownAt = function(ctx, parent, label, x, y, values, w, get, set, meta) return Bind(ctx, Widget("Dropdown"), get, set, meta, label) end
-M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta) return Bind(ctx, Widget("EditBox"), get, set, meta, label) end
+M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta)
+    local box = Widget("EditBox")
+    function box:SetMaxBytes(value) self.maxBytes = value end
+    function box:SetMaxLetters(value) self.maxLetters = value end
+    return Bind(ctx, box, get, set, meta, label)
+end
 M.BindDropdownWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
 W.Dropdown = function(parent, label) local d = Widget("Dropdown"); d.label = label; return d end
 W.SwitchAt = function() return Widget("Switch") end
@@ -3531,15 +3536,51 @@ do
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Hide, S.Confirm =
         previousGeneric, previousHide or function() end, previousConfirm
 end
+-- Text settings count bytes (Suite.lua ValidText): every bound text input of
+-- a rule with a length limit takes as many bytes as the setter accepts, so a
+-- CJK or Cyrillic text it takes is never refused afterwards.
+;(function()
+    local inputs = 0
+    for _, ctx in pairs(contexts) do
+        for _, widget in ipairs(ctx.widgets) do
+            local meta = rawget(widget, "meta")
+            local key = type(meta) == "table" and meta.settingKey
+            local id, ruleKey
+            if type(key) == "string" then id, ruleKey = key:match("^msufsuite%.([^.]+)%.(.+)$") end
+            local spec = id and S.catalog[id]
+            local rule = spec and spec.rules[ruleKey]
+            if rawget(widget, "kind") == "EditBox" and rule and type(rule.default) == "string" and rule.maxLength then
+                inputs = inputs + 1
+                assert(rawget(widget, "maxBytes") == rule.maxLength + 1 and rawget(widget, "maxLetters") == nil,
+                    key .. ": the text input is limited in letters, not in the bytes the setter counts")
+            end
+        end
+    end
+    assert(inputs > 0, "no rule text input was checked")
+end)()
 -- "Save setup as..." asks for a name in Blizzard's generic input box and
 -- saves the MSUF frames, the Suite and the skin under it; refused in combat.
 do
     local previousShow, previousSaveAs = _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs
     local asked, saved
-    _G.StaticPopup_Show = function(which, _, _, data) asked = { which = which, data = data }; return {} end
+    -- Blizzard's shared dialog edit box: its own code sets no byte limit.
+    local edit = { maxBytes = 0 }
+    function edit:SetMaxBytes(value) self.maxBytes = value end
+    function edit:GetMaxBytes() return self.maxBytes end
+    local dialog = { GetEditBox = function() return edit end }
+    _G.StaticPopup_Show = function(which, _, _, data, _, onHide)
+        asked = { which = which, data = data, onHide = onHide }
+        return dialog
+    end
     Suite.SuiteProfiles.SaveAs = function(name) saved = name; return true end
     assert(optionsNS.SaveSetupAs() and asked and asked.which == "GENERIC_INPUT_BOX"
         and asked.data.maxLetters == Suite.Database.MAX_PROFILE_NAME_BYTES, "Save setup as did not ask for a name")
+    -- The name rule counts bytes: the box takes no more (the limit counts the
+    -- terminating zero byte), and gives the shared box its own limit back.
+    assert(edit.maxBytes == Suite.Database.MAX_PROFILE_NAME_BYTES + 1 and asked.onHide,
+        "the name box takes a name in bytes the profile name rule refuses")
+    asked.onHide(dialog)
+    assert(edit.maxBytes == 0, "the shared dialog edit box kept the Suite's byte limit")
     asked.data.callback("Raid setup")
     assert(saved == "Raid setup", "Save setup as did not save the setup under the name")
     local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))

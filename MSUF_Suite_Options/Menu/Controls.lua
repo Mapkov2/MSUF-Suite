@@ -340,7 +340,10 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
         local input = M.BindTextInputAt(ctx, parent, Tr(rule.label), 16, y, width,
             function() return P.Get(id, Key()) end, function(value) P.Set(id, Key(), value or "") end, true,
             P.Meta(pageKey, id, rule.key, "setting", sectionId))
-        if input.SetMaxLetters and rule.maxLength then input:SetMaxLetters(rule.maxLength) end
+        -- The setters count bytes (Suite.lua ValidText): a CJK or Cyrillic
+        -- text the box takes is one they take. The limit counts the
+        -- terminating zero byte too.
+        if input.SetMaxBytes and rule.maxLength then input:SetMaxBytes(rule.maxLength + 1) end
         entries[#entries + 1] = { rule = rule, widget = input }
         y = y - 58
     end
