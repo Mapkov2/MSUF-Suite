@@ -68,32 +68,42 @@ end
 -- MSUF's scale settings before a legacy apply. Should one of MSUF's
 -- appliers raise partway, the settings go back together with the scale they
 -- describe, so a refused install leaves MSUF as it was (the Modern install
--- keeps MSUF's own profile, nothing deletes these writes there).
-local SCALE_KEYS = { "msufUiScale", "uiScale", "globalUiScalePreset", "globalUiScaleValue" }
+-- keeps MSUF's own profile, nothing deletes these writes there). These are
+-- the fields host API v1 saves for the same rollback (HOST_API_SPEC F): the
+-- Suite's own writes plus disableScaling, which MSUF's scale owner writes
+-- itself, and the UIScale table, which keeps its identity (MSUF may hold
+-- it) and gets its saved contents back.
+local SCALE_KEYS = { "msufUiScale", "uiScale", "globalUiScalePreset", "globalUiScaleValue", "disableScaling" }
 
 local function SaveScale(general)
-    local saved = {}
-    for index = 1, #SCALE_KEYS do saved[SCALE_KEYS[index]] = general[SCALE_KEYS[index]] end
-    if type(general.UIScale) == "table" then
-        local copy = {}
-        for key, value in pairs(general.UIScale) do copy[key] = value end
-        saved.UIScale = copy
+    local saved = { fields = {}, uiScale = general.UIScale }
+    for index = 1, #SCALE_KEYS do saved.fields[SCALE_KEYS[index]] = general[SCALE_KEYS[index]] end
+    if type(saved.uiScale) == "table" then
+        local contents = {}
+        for key, value in pairs(saved.uiScale) do contents[key] = value end
+        saved.contents = contents
     end
     return saved
 end
 
 local function PutScaleBack(general, saved)
-    for index = 1, #SCALE_KEYS do general[SCALE_KEYS[index]] = saved[SCALE_KEYS[index]] end
-    general.UIScale = saved.UIScale
+    for index = 1, #SCALE_KEYS do general[SCALE_KEYS[index]] = saved.fields[SCALE_KEYS[index]] end
+    local ui = saved.uiScale
+    general.UIScale = ui
+    if type(ui) ~= "table" then return end
+    local contents = saved.contents
+    for key in pairs(ui) do
+        if contents[key] == nil then ui[key] = nil end
+    end
+    for key, value in pairs(contents) do ui[key] = value end
 end
 
--- The saved settings, the scale they describe through MSUF's appliers (its
--- profile re-applier where MSUF has it), then the settings once more, as an
--- applier may normalise them.
-local function RestoreLegacyScale(general, saved)
-    PutScaleBack(general, saved)
-    _G.MSUF_ApplyMsufScale(tonumber(saved.msufUiScale) or tonumber(saved.uiScale) or 1)
-    local ui = saved.UIScale
+local function ReapplyFrameScale(saved)
+    _G.MSUF_ApplyMsufScale(tonumber(saved.fields.msufUiScale) or tonumber(saved.fields.uiScale) or 1)
+end
+
+local function ReapplyGlobalScale(saved)
+    local ui = saved.contents
     if type(_G.MSUF_ApplyCurrentProfileGlobalUiScale) == "function" then
         _G.MSUF_ApplyCurrentProfileGlobalUiScale()
     elseif ui and ui.Enabled == true and Suite.Finite(ui.Scale) and type(_G.MSUF_SetGlobalUiScale) == "function" then
@@ -101,14 +111,24 @@ local function RestoreLegacyScale(general, saved)
     else
         _G.MSUF_ResetGlobalUiScale(true)
     end
-    PutScaleBack(general, saved)
+end
+
+-- The saved settings, the scale they describe through MSUF's appliers (its
+-- profile re-applier where MSUF has it), then the settings once more, as an
+-- applier writes them itself. Each step runs on its own: one that raises is
+-- reported and the next still runs, so the settings always end as saved.
+local function RestoreLegacyScale(general, saved)
+    Suite.Dispatch(PutScaleBack, general, saved)
+    Suite.Dispatch(ReapplyFrameScale, saved)
+    Suite.Dispatch(ReapplyGlobalScale, saved)
+    Suite.Dispatch(PutScaleBack, general, saved)
 end
 
 local function LegacyApplyAtomic(spec)
     local general = _G.MSUF_DB.general
     local saved = SaveScale(general)
     if Suite.Dispatch(Suite.Finish, LegacyApplyScale, spec) then return true end
-    Suite.Dispatch(Suite.Finish, RestoreLegacyScale, general, saved)
+    RestoreLegacyScale(general, saved)
     return false
 end
 
