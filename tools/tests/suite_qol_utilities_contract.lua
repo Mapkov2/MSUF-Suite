@@ -253,9 +253,11 @@ assert(#GameTooltip.lines == 1 and GameTooltip.lines[1][2] == "77" and GameToolt
     and GameTooltip.refreshes == 0, "pressing Alt over an open tooltip did not add its ID once without a rebuild")
 -- Account character currency data arriving while a currency tooltip with
 -- its IDs is open adds the lines that waited for it, once.
-local ready = false
+local ready, requests = false, 0
 C_CurrencyInfo = {
     IsAccountCharacterCurrencyDataReady = function() return ready end,
+    -- The client loads the account data only on request.
+    RequestCurrencyDataForAccountCharacters = function() requests = requests + 1 end,
     FetchCurrencyDataFromAccountCharacters = function() return { { characterName = "Alt", quantity = 40 } } end,
 }
 tooltip.config.showAccountCurrency = true
@@ -263,7 +265,8 @@ tooltip:Refresh()
 GameTooltip.lines, GameTooltip.shows = {}, 0
 GameTooltip.data = { id = 3008, type = Enum.TooltipDataType.Currency }
 callbacks[Enum.TooltipDataType.Currency](GameTooltip, GameTooltip.data)
-assert(#GameTooltip.lines == 1 and GameTooltip.lines[1][2] == "3008", "the currency ID is missing")
+assert(#GameTooltip.lines == 1 and GameTooltip.lines[1][2] == "3008" and requests == 1,
+    "the currency ID is missing, or the missing account data was not requested")
 ready = true
 Fire(tooltip, "ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED")
 Fire(tooltip, "ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED")
