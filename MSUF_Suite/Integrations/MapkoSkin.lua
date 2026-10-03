@@ -119,15 +119,29 @@ end
 -- colour equality. Per category:
 --
 --   Session (the skin's chat adapter, MSUF_Suite_Skin/Adapters/ChatFrames.lua)
+--     A change is measured against the colour the category showed before
+--     the edit began, and an edit that ends where it started is no change:
+--     - a ChangeChatColor the skin did not make that leaves the colour as
+--       it was (as stored, one 8-bit step) is a no-op: the state stays;
+--     - while ColorPickerFrame is shown (one picker session: Blizzard's
+--       live preview, Cancel, OK) such writes are tentative, neither painted
+--       over nor judged; when it hides, the final colour is compared with
+--       the colour before the session's first write: equal (Cancel, or the
+--       same colour picked again) and the state stays, different and it is
+--       a change;
+--     - a session still open at logout or disable is unfinished: the
+--       category keeps the state it started with, so an owned one is
+--       restored.
 --     unowned   -> owned     first apply, the category shows Blizzard's
 --                            default and nobody changed it this session;
 --                            the skin's own ChangeChatColor writes the theme
---     unowned   -> released  first apply with any other colour, or an
---                            external change earlier this session
+--     unowned   -> released  first apply with any other colour, or a
+--                            change earlier this session
 --     owned     -> released  any change the skin did not make (another
---                            ChangeChatColor, or a colour that is not the
---                            skin's at a refresh); permanent this session,
---                            no colour equality brings it back
+--                            colour by ChangeChatColor or a picker session,
+--                            or a colour that is not the skin's at a
+--                            refresh); permanent this session, no colour
+--                            equality brings it back
 --     owned     -> (gone)    logout or disable writes the original back
 --     owned     -> recorded  that write failed: a leftover for the ledger
 --     released  -            never written by the skin, never recorded
@@ -138,7 +152,7 @@ end
 --     recorded/ambiguous -> (gone)  "Restore chat colors" wrote it back
 --   "Restore chat colors" (Skinning page, Maintenance): each of the three
 --   categories gets its recorded original, else Blizzard's default. Its
---   writes are external to the adapter, so a category it restored is
+--   writes are external to the adapter, so a category it changed is
 --   released for the session and its pending leftover dropped; an entry
 --   whose write failed stays.
 --

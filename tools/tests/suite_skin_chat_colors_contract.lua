@@ -135,9 +135,8 @@ chat.Disable(chatFrame, "chat")
 Check(Is("SYSTEM", { 0.5, 0.4, 0.3 }) and Is("MONSTER_SAY", DEFAULTS.MONSTER_SAY),
     "disable reset the player's color or kept the skin's own")
 
--- The player picks another colour, then the theme colour again (or the
--- colour picker's Cancel puts the colour it opened with back): a change the
--- skin did not make, so the category stays the player's for the session.
+-- The player picks another colour, then the theme colour again: a change
+-- the skin did not make, so the category stays the player's for the session.
 -- Equality with the theme brings no ownership back: a theme change does not
 -- repaint it and logout writes nothing ("Restore chat colors" recovers it).
 chat, chatFrame = Session(DEFAULTS)

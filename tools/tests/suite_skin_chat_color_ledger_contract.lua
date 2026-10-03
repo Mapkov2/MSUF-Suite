@@ -1,6 +1,10 @@
 -- The skin's chat message colours are a persistent client setting. These
 -- scenarios drive the per-category state machine documented in
 -- MSUF_Suite/Integrations/MapkoSkin.lua:
+--   a change is measured against the colour the category showed before the
+--   edit began: a write that leaves it as it was is a no-op, a colour picker
+--   session is tentative until the picker hides and is no change when it
+--   ends where it started, and a session open at logout is unfinished
 --   session: unowned -> owned (shows Blizzard's default, our own write)
 --            unowned -> released (any other colour, or an external change)
 --            owned   -> released (any change the skin did not make; no
@@ -12,7 +16,10 @@
 -- explicit restore; 5 a crash before the first save; 6 disable; 7 an
 -- in-session pick of the theme colour; 8 an ambiguous original through a
 -- normal and a failed logout; 9 the restore reconciles a pending leftover;
--- 10 restore failures reported and kept. Real MSUF_Suite/Core/
+-- 10 restore failures reported and kept; 11 picker Cancel (and the same
+-- colour picked again); 12 picker OK on another colour; 13 the CX-R8 P0
+-- two-step through the picker; 14 a no-op write; 15 the picker open at
+-- logout. Real MSUF_Suite/Core/
 -- CharacterData.lua, MSUF_Suite/Integrations/MapkoSkin.lua and the skin's
 -- Safety.lua, AdapterKit.lua and ChatFrames.lua.
 --
@@ -80,6 +87,49 @@ local function NativeChangeChatColor(chatType, r, g, b)
     disk.chat[chatType] = { r, g, b }
 end
 
+-- Blizzard's colour picker as the chat settings use it (Blizzard_ColorPickerFrame
+-- Mainline SetupColorPickerAndShow and its OK and Cancel buttons;
+-- ChatConfigFrame.lua MessageTypeColor_OpenColorPicker and
+-- messageTypeColorSwatch/Cancel). Opening sets the picker to the category's
+-- colour, which already runs the swatch function once, before Show. Every
+-- move previews live through ChangeChatColor. Cancel writes the opening
+-- colour back and OK the last one, then both hide. OnShow and OnHide run
+-- the scripts added with HookScript.
+local function NewColorPicker()
+    local frame, scripts = { shown = false }, { OnShow = {}, OnHide = {} }
+    local function Run(script)
+        for _, callback in ipairs(scripts[script]) do callback(frame) end
+    end
+    function frame:HookScript(script, callback) table.insert(scripts[script], callback) end
+    function frame:IsForbidden() return false end
+    function frame:IsShown() return self.shown end
+    function frame:Show() if not self.shown then self.shown = true;Run("OnShow") end end
+    function frame:Hide() if self.shown then self.shown = false;Run("OnHide") end end
+    return frame
+end
+local Picker = {}
+function Picker.Open(chatType)
+    local info = ChatTypeInfo[chatType]
+    Picker.chatType = chatType
+    Picker.previous, Picker.color = { info.r, info.g, info.b }, { info.r, info.g, info.b }
+    ChangeChatColor(chatType, info.r, info.g, info.b)
+    ColorPickerFrame:Show()
+end
+function Picker.Drag(r, g, b)
+    Picker.color = { r, g, b }
+    ChangeChatColor(Picker.chatType, r, g, b)
+end
+function Picker.Cancel()
+    local previous = Picker.previous
+    ChangeChatColor(Picker.chatType, previous[1], previous[2], previous[3])
+    ColorPickerFrame:Hide()
+end
+function Picker.Okay()
+    local color = Picker.color
+    ChangeChatColor(Picker.chatType, color[1], color[2], color[3])
+    ColorPickerFrame:Hide()
+end
+
 local function LoadChatCache()
     ChatTypeInfo = {}
     for chatType, color in pairs(disk.chat) do
@@ -94,6 +144,7 @@ end
 local function Session(skinOn)
     LoadChatCache()
     CHAT_FRAMES = {}
+    ColorPickerFrame = NewColorPicker()
     writes = 0
     local Suite = {
         RootDB = DeepCopy(disk.saved) or {},
@@ -321,6 +372,82 @@ session = Session(false)
 Check(session.Suite.Skin.RestoreChatColors(), "the retry did not restore")
 Logout(session)
 Check(Ledger() == nil, "the retried entry stayed")
+disk.chat = DeepCopy(DEFAULTS)
+
+-- 11. A picker session that ends where it started is no change: open,
+-- drag, Cancel. SYSTEM stays owned. A theme change during the session does
+-- not paint over the preview, the next one repaints SYSTEM, and logout puts
+-- the original back. The same for picking the opening colour again and OK.
+local GREEN = { 0.2, 0.9, 0.3 }
+local STORED_GREEN = { Stored(GREEN[1]), Stored(GREEN[2]), Stored(GREEN[3]) }
+local function SetTheme(r, g, b) THEME[1], THEME[2], THEME[3] = r, g, b end
+session = Session(true)
+Picker.Open("SYSTEM")
+Picker.Drag(GREEN[1], GREEN[2], GREEN[3])
+SetTheme(0.5, 0.6, 0.7)
+session.chat:OnThemeChanged("color", "blizzardYellow")
+Check(CacheIs("SYSTEM", STORED_GREEN) and CacheIs("MONSTER_SAY", { Stored(0.5), Stored(0.6), Stored(0.7) }),
+    "a theme change painted over the picker's live preview")
+Picker.Cancel()
+Check(CacheIs("SYSTEM", THEMED), "Cancel did not write the opening colour back")
+session.chat:OnThemeChanged("color", "blizzardYellow")
+Check(CacheIs("SYSTEM", { Stored(0.5), Stored(0.6), Stored(0.7) }),
+    "a cancelled picker session released the category")
+Picker.Open("SYSTEM")
+Picker.Drag(GREEN[1], GREEN[2], GREEN[3])
+Picker.Drag(Stored(0.5), Stored(0.6), Stored(0.7))
+Picker.Okay()
+SetTheme(0.84, 0.68, 0.44)
+Logout(session)
+Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY) and Ledger() == nil,
+    "logout did not put the original back after picker sessions that ended where they started")
+
+-- 12. A picker session that ends on another colour (OK) releases the
+-- category: no repaint, logout keeps the player's colour, no ledger.
+session = Session(true)
+Picker.Open("SYSTEM")
+Picker.Drag(0.4, 0.4, 0.4)
+Picker.Drag(GREEN[1], GREEN[2], GREEN[3])
+Picker.Okay()
+session.chat:OnThemeChanged("color", "blizzardYellow")
+Check(CacheIs("SYSTEM", STORED_GREEN), "a theme change repainted the colour the player picked")
+Logout(session)
+Check(CacheIs("SYSTEM", STORED_GREEN) and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY) and Ledger() == nil,
+    "logout replaced the colour the player picked with OK")
+disk.chat = DeepCopy(DEFAULTS)
+
+-- 13. The CX-R8 P0 two-step through the picker: another colour (OK), then
+-- the theme colour again (OK). Released by the first session; the second
+-- brings no ownership back, and logout writes nothing.
+session = Session(true)
+Picker.Open("SYSTEM")
+Picker.Drag(GREEN[1], GREEN[2], GREEN[3])
+Picker.Okay()
+Picker.Open("SYSTEM")
+Picker.Drag(THEME[1], THEME[2], THEME[3])
+Picker.Okay()
+Logout(session)
+Check(CacheIs("SYSTEM", THEMED) and Ledger() == nil,
+    "logout overwrote the player's re-pick of the theme colour")
+disk.chat = DeepCopy(DEFAULTS)
+
+-- 14. A write the skin did not make that leaves the colour as it was is a
+-- no-op: both categories stay owned and logout restores them.
+session = Session(true)
+ChangeChatColor("SYSTEM", THEMED[1], THEMED[2], THEMED[3])
+ChangeChatColor("MONSTER_SAY", THEME[1], THEME[2], THEME[3])
+Logout(session)
+Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY) and Ledger() == nil,
+    "a write that changed nothing released the category")
+
+-- 15. The picker still open at logout: an unfinished session, so SYSTEM
+-- keeps its start state (owned) and logout puts the original back.
+session = Session(true)
+Picker.Open("SYSTEM")
+Picker.Drag(GREEN[1], GREEN[2], GREEN[3])
+Logout(session)
+Check(CacheIs("SYSTEM", DEFAULTS.SYSTEM) and Ledger() == nil,
+    "logout with the picker open left the preview colour instead of the original")
 disk.chat = DeepCopy(DEFAULTS)
 
 Check(#reported == 7, "the chat colour ledger raised other than the 7 injected failures: "
