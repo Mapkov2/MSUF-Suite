@@ -464,7 +464,10 @@ local entries = {
     {
         id = "group-finder-dialogs",
         category = "group",
-        addon = "Blizzard_GroupFinder",
+        -- Forever never loads Blizzard_GroupFinder (ExcludeLoadGameType
+        -- camelot); there LFGInvitePopup, the only one of these roots, comes
+        -- from Blizzard_LFGUtil (upstream/forever Shared/LFGInvitePopup.xml).
+        addon = NS.Client.isForever and "Blizzard_LFGUtil" or "Blizzard_GroupFinder",
         frames = {
             "LFDRoleCheckPopup",
             "LFGDungeonReadyPopup",

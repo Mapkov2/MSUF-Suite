@@ -84,7 +84,8 @@ local function HasProblem(problems, prefix)
 end
 
 do
-    local NS = {}
+    -- Core/Client.lua loads before the catalog (TOC); the review is Retail's.
+    local NS = { Client = { isForever = false } }
     assert(loadfile(skin .. "Adapters/Catalog.lua"))("MSUF_Suite_Skin", NS)
     local data = NS.BlizzardCatalogData
     local byte, concat, hashed = string.byte, table.concat, 0
@@ -122,7 +123,7 @@ do
     local function LoadModified(pattern, replacement)
         local modified, count = source:gsub(pattern, replacement)
         assert(count == 1, "catalog fixture pattern missing: " .. pattern)
-        local copy = {}
+        local copy = { Client = NS.Client }
         assert(loadstring(modified, "modified catalog"))("MSUF_Suite_Skin", copy)
         local modifiedData = copy.BlizzardCatalogData
         assert(loadfile(skin .. "Adapters/CatalogGlass.lua"))("MSUF_Suite_Skin", copy)
