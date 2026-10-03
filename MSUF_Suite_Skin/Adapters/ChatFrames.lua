@@ -14,16 +14,16 @@ local Call = Safety.Call
 local HasMethod = Safety.HasMethod
 local Dispatch = Safety.Dispatch
 local ColorMatches = Safety.ColorMatches
-local SameColor = Safety.SameColor
 local COLOR_OWN = Safety.COLOR_OWN
-local COLOR_NATIVE = Safety.COLOR_NATIVE
 local Kit = NS.AdapterKit
 
 local REFRESH_KEY = "chat-frames:refresh"
 local BUILTIN_CHAT_WINDOWS = 10
 local MAX_CHAT_FRAMES = 64
-local RefreshAll
+local RefreshAll, RefreshThemeColors
 local changingChatColor = false
+-- Theme repaints of the chat message colours queued for the next frame.
+local messageColorsQueued = false
 
 -- These are the yellow message families visible in the default General chat:
 -- system notices (group joins, loot-specialization changes, etc.) and ordinary
@@ -42,13 +42,14 @@ local messageColorRoles = {
 -- ambiguous) is in MSUF_Suite/Integrations/MapkoSkin.lua. The skin themes a
 -- category only while it shows Blizzard's clean-profile default and nobody
 -- else changed it this session; any change the skin did not make releases it
--- for the rest of the session. A change is measured against the colour the
--- category showed before the edit began: a write that leaves it as it was,
--- or a colour picker session that ends where it started (Cancel), is no
--- change. Logout and disable put back the colour a category had before the
--- skin, while it still shows the skin's own; what they could not put back
--- goes to the Suite's ledger, which only the explicit "Restore chat colors"
--- applies. Keep this list limited to the categories we change.
+-- for the rest of the session. A change is measured in stored bytes against
+-- the colour the category showed before the edit began: a write that leaves
+-- those bytes as they were, or a colour picker session that ends where it
+-- started (Cancel), is no change. Logout and disable put back the colour a
+-- category had before the skin, while it still shows the skin's own; what
+-- they could not put back goes to the Suite's ledger, which only the
+-- explicit "Restore chat colors" applies. Keep this list limited to the
+-- categories we change.
 
 local frameBorderSuffixes = {
     "TopLeftTexture", "BottomLeftTexture", "TopRightTexture", "BottomRightTexture",
@@ -92,13 +93,37 @@ end
 
 -- Message colors ------------------------------------------------------------
 
-local function ReadMessageColor(chatType)
-    local info = Field(_G.ChatTypeInfo, chatType)
-    local r, g, b = Field(info, "r"), Field(info, "g"), Field(info, "b")
-    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+-- The chat cache stores each channel as one byte, so two chat colours are
+-- the same setting exactly when their stored bytes are. Every chat colour
+-- comparison here (edit detection, readback of the skin's own writes,
+-- Blizzard's defaults) compares those bytes; the tolerances of Safety.lua
+-- are for widget colours only. The skin writes exact byte values, so what
+-- it wrote reads back as the same bytes whatever the client's conversion.
+local floor = math.floor
+local Public = Safety.Public
+
+local function StoredByte(value)
+    return floor(value * 255 + 0.5)
+end
+
+local function SameStored(a, b)
+    return type(a) == "table" and type(b) == "table" and type(a[1]) == "number" and type(b[1]) == "number"
+        and StoredByte(a[1]) == StoredByte(b[1]) and StoredByte(a[2]) == StoredByte(b[2])
+        and StoredByte(a[3]) == StoredByte(b[3])
+end
+
+-- r, g, b as a colour table when they are readable numbers, else nil.
+local function Color(r, g, b)
+    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number"
+        or not Public(r) or not Public(g) or not Public(b) then
         return nil
     end
     return { r, g, b }
+end
+
+local function ReadMessageColor(chatType)
+    local info = Field(_G.ChatTypeInfo, chatType)
+    return Color(Field(info, "r"), Field(info, "g"), Field(info, "b"))
 end
 
 -- The colour each category shows as far as the skin knows: read at every
@@ -111,14 +136,16 @@ local shown = {}
 -- on OnShow and OnHide). Blizzard's chat settings preview every move live
 -- through ChangeChatColor, and Cancel writes the opening colour back
 -- (ChatConfigFrame.lua messageTypeColorSwatch/Cancel: live 78282522
--- :1498-1519, forever 9a789c07 :1503-1524). start[chatType]: the colour a
--- category showed before the session's first write to it (false when
--- unknown); a category with a start is tentative until the picker hides.
-local picker = { open = false, start = {} }
-
-local function Tentative(chatType)
-    return picker.open and picker.start[chatType] ~= nil
-end
+-- :1498-1519, forever 9a789c07 :1503-1524). Opening already writes the
+-- category's colour once, before OnShow.
+--   start[chatType]   the colour each category showed when the picker opened
+--   touched[chatType] a write the skin did not make came during the session
+--   owed[chatType]    the original a disable or logout put back during the
+--                     session: should the session end on the skin's colour
+--                     (Cancel), it is put back again, even with no owner left
+--   deferred          theme repaints held back until the session ends, so
+--                     the opening state stays the one Cancel returns to
+local picker = { open = false, start = {}, touched = {}, owed = {}, deferred = false }
 
 -- changingChatColor keeps our own ChangeChatColor post-hook quiet during the
 -- call. The call is its own error boundary, so the flag is cleared even when
@@ -127,12 +154,8 @@ local function ChangeMessageColor(chatType, r, g, b)
     changingChatColor = true
     local finished = Kit.Isolate(ChangeChatColor, chatType, r, g, b)
     changingChatColor = false
-    shown[chatType] = finished == true and { r, g, b } or nil
+    shown[chatType] = finished == true and Color(r, g, b) or nil
     return finished == true
-end
-
-local function Shows(color, current, tolerance)
-    return ColorMatches(color, current[1], current[2], current[3], nil, tolerance)
 end
 
 -- The Suite core's skin boundary (MSUF_Suite/Integrations/MapkoSkin.lua):
@@ -153,11 +176,36 @@ end
 -- changed this session (released for its rest).
 local leftovers, changedExternally = {}, {}
 
+-- Someone else changed this category's colour (the player, another addon,
+-- a colour picker session that ended elsewhere than it started, "Restore
+-- chat colors"): from now on, for the rest of the session, it is theirs,
+-- whatever colour it shows, and nothing is left to put back.
+local function Release(chatType)
+    changedExternally[chatType] = true
+    leftovers[chatType] = nil
+    picker.owed[chatType] = nil
+    for _, state in pairs(ChatFramesSkin.owners) do
+        local colorState = state.messageColors[chatType]
+        if colorState then colorState.released = true end
+    end
+end
+
+-- Writes the colour a category had before the skin; what fails is a
+-- leftover for the ledger, with the colour it shows.
+local function PutBack(chatType, original, left)
+    if ChangeMessageColor(chatType, original[1], original[2], original[3]) then
+        leftovers[chatType] = nil
+        return true
+    end
+    leftovers[chatType] = { original = original, left = left }
+    return false
+end
+
 -- The state of a category the skin meets for the first time: owned with the
 -- colour to restore while it shows Blizzard's default and nobody changed it
 -- this session, else released.
 local function CaptureMessageColor(chatType, current)
-    if not changedExternally[chatType] and Shows(DefaultColor(chatType), current, COLOR_NATIVE) then
+    if not changedExternally[chatType] and SameStored(DefaultColor(chatType), current) then
         return { original = current, applied = {} }
     end
     return { released = true }
@@ -165,24 +213,29 @@ end
 
 local function ApplyMessageColor(state, chatType)
     local role = messageColorRoles[chatType]
-    -- The player's live preview: neither painted over nor judged until the
-    -- picker hides.
-    if not role or Tentative(chatType) then return false end
+    if not role then return false end
+    -- A picker session is open: hold the repaint until it ends.
+    if picker.open then
+        picker.deferred = true
+        return false
+    end
     local current = ReadMessageColor(chatType)
     shown[chatType] = current
     if not current then return false end
     local r, g, b = NS.Theme.GetColor(role)
+    local theme = Color(r, g, b)
+    if not theme then return false end
+    r, g, b = StoredByte(r) / 255, StoredByte(g) / 255, StoredByte(b) / 255
     local colorState = state.messageColors[chatType]
     if not colorState then
         colorState = CaptureMessageColor(chatType, current)
         state.messageColors[chatType] = colorState
-    elseif not colorState.released and colorState.applied[1] and not Shows(colorState.applied, current, COLOR_OWN) then
+    elseif not colorState.released and colorState.applied[1] and not SameStored(colorState.applied, current) then
         -- Changed by a path the ChangeChatColor hook does not see: theirs.
         colorState.released = true
     end
     if colorState.released then return false end
-    if SameColor(current[1], current[2], current[3], nil, r, g, b, nil, COLOR_OWN)
-        or ChangeMessageColor(chatType, r, g, b) then
+    if SameStored(current, theme) or ChangeMessageColor(chatType, r, g, b) then
         local applied = colorState.applied
         applied[1], applied[2], applied[3] = r, g, b
         return true
@@ -198,24 +251,19 @@ end
 
 -- Puts back the colour each owned category had before the skin, while it
 -- still shows the skin's own; a released category keeps the player's. A
--- picker session still open (logout, disable) is unfinished: a category it
--- touched is judged by the colour it showed at the session's start. An
--- owned category the restore could not put back is a leftover for the
--- ledger, with the colour it shows.
+-- picker session still open (logout, disable) is unfinished: each category
+-- is judged by the colour it showed when the picker opened, and what is put
+-- back stays owed until the session ends.
 local function RestoreMessageColors(state)
     local restored = 0
     for chatType, colorState in pairs(state.messageColors) do
         local current = ReadMessageColor(chatType)
         local seen = current
-        if Tentative(chatType) then seen = picker.start[chatType] end
+        if picker.open then seen = picker.start[chatType] end
         local original = colorState.original
-        local owned = not colorState.released and seen and original
-            and Shows(colorState.applied, seen, COLOR_OWN)
-        if owned and ChangeMessageColor(chatType, original[1], original[2], original[3]) then
-            restored = restored + 1
-            leftovers[chatType] = nil
-        elseif owned then
-            leftovers[chatType] = { original = original, left = current or seen }
+        if not colorState.released and original and SameStored(colorState.applied, seen) then
+            if picker.open then picker.owed[chatType] = original end
+            if PutBack(chatType, original, current or seen) then restored = restored + 1 end
         end
     end
     state.messageColors = {}
@@ -515,51 +563,50 @@ local function OnTemporaryWindow()
     RefreshAll()
 end
 
--- Someone else changed this category's colour (the player, another addon,
--- a colour picker session that ended elsewhere than it started, "Restore
--- chat colors"): from now on, for the rest of the session, it is theirs,
--- whatever colour it shows, and nothing is left to put back.
-local function Release(chatType)
-    changedExternally[chatType] = true
-    leftovers[chatType] = nil
-    for _, state in pairs(ChatFramesSkin.owners) do
-        local colorState = state.messageColors[chatType]
-        if colorState then colorState.released = true end
-    end
-end
-
--- A ChangeChatColor the skin did not make. One that leaves the colour as it
--- was (as stored: one 8-bit step) is no change; inside a picker session it
--- is tentative. Only bookkeeping, so it also runs in combat.
+-- A ChangeChatColor the skin did not make. One that leaves the stored bytes
+-- as they were is no change; inside a picker session it is tentative. Only
+-- bookkeeping, so it also runs in combat.
 local function OnMessageColorChanged(chatType, r, g, b)
     if changingChatColor or not messageColorRoles[chatType] then return end
-    local before = shown[chatType]
-    -- Readable numbers only (SameColor rejects anything else).
-    shown[chatType] = SameColor(r, g, b, nil, r, g, b, nil, 0) and { r, g, b } or nil
+    local before, after = shown[chatType], Color(r, g, b)
+    shown[chatType] = after
     if picker.open then
-        if picker.start[chatType] == nil then picker.start[chatType] = before or false end
-    elseif not (before and ColorMatches(before, r, g, b, nil, COLOR_OWN)) then
+        picker.touched[chatType] = true
+    elseif not SameStored(before, after) then
         Release(chatType)
     end
 end
 
 local function OnPickerShown()
-    picker.open = true
-    picker.start = {}
+    picker.open, picker.start, picker.touched, picker.owed = true, {}, {}, {}
+    for chatType in pairs(messageColorRoles) do
+        picker.start[chatType] = shown[chatType] or ReadMessageColor(chatType) or false
+    end
 end
 
--- The session's end: a category that ends where it started keeps its state
--- (Cancel, or the same colour picked again); any other end is a change.
+-- The session's end. A category that ends where it started keeps its state
+-- (Cancel, or the same colour picked again): when a disable or logout put
+-- its original back meanwhile, Cancel brought the skin's colour back, so the
+-- original goes back again. Any other end is a change. Theme repaints held
+-- back during the session follow on the next frame.
 local function OnPickerHidden()
     if not picker.open then return end
     picker.open = false
-    for chatType, start in pairs(picker.start) do
-        local final = shown[chatType]
-        if not (start and final and Shows(start, final, COLOR_OWN)) then Release(chatType) end
+    local start, owed = picker.start, picker.owed
+    for chatType in pairs(picker.touched) do
+        if not SameStored(start[chatType], shown[chatType]) then
+            Release(chatType)
+        elseif owed[chatType] then
+            PutBack(chatType, owed[chatType], shown[chatType])
+        end
     end
-    picker.start = {}
+    picker.start, picker.touched, picker.owed = {}, {}, {}
+    if picker.deferred then
+        picker.deferred = false
+        messageColorsQueued = true
+        NS.Registry.QueueJob(RefreshThemeColors)
+    end
 end
-
 -- These Blizzard functions are called through their globals, so a global
 -- post-hook reaches every chat window, including ones created earlier.
 local globalHooks = {
@@ -581,7 +628,7 @@ local function HookColorPicker()
     frame:HookScript("OnShow", PickerShown)
     frame:HookScript("OnHide", PickerHidden)
     ChatFramesSkin.hooks.ColorPickerFrame = true
-    if Call(frame, "IsShown") == true then OnPickerShown() end
+    if Safety.Read(frame, "IsShown") == true then OnPickerShown() end
 end
 
 local function RegisterHooks()
@@ -607,9 +654,7 @@ end
 -- Theme writes arrive once per slider tick or colour-picker move: they
 -- repaint once on the next frame (after combat when it started meanwhile),
 -- so a colour drag writes each chat category's persistent colour once.
-local messageColorsQueued = false
-
-local function RefreshThemeColors()
+RefreshThemeColors = function()
     local messages = messageColorsQueued
     messageColorsQueued = false
     for _, state in pairs(ChatFramesSkin.owners) do
@@ -658,8 +703,18 @@ end
 -- colors persist. Clean only categories currently owned by an active adapter so
 -- disabling MapkoSkin before the next login cannot leave its preset behind.
 -- PLAYER_LOGOUT: the ledger learns what went back and what could not.
+-- A picker still open is an unfinished session: what an earlier disable
+-- put back stays put back, even after a preview since.
 function ChatFramesSkin.RestoreBlizzardMessageColors()
     local restored = 0
+    if picker.open then
+        for chatType, original in pairs(picker.owed) do
+            if not SameStored(shown[chatType], original)
+                and PutBack(chatType, original, shown[chatType] or original) then
+                restored = restored + 1
+            end
+        end
+    end
     for _, state in pairs(ChatFramesSkin.owners) do
         if state.active then restored = restored + RestoreMessageColors(state) end
     end

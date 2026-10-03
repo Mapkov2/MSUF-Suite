@@ -375,9 +375,10 @@ Check(Ledger() == nil, "the retried entry stayed")
 disk.chat = DeepCopy(DEFAULTS)
 
 -- 11. A picker session that ends where it started is no change: open,
--- drag, Cancel. SYSTEM stays owned. A theme change during the session does
--- not paint over the preview, the next one repaints SYSTEM, and logout puts
--- the original back. The same for picking the opening colour again and OK.
+-- drag, Cancel. SYSTEM stays owned. A theme change during the session waits
+-- for its end (it neither paints over the preview nor moves the colour
+-- Cancel returns to), then repaints SYSTEM, and logout puts the original
+-- back. The same for picking the opening colour again and OK.
 local GREEN = { 0.2, 0.9, 0.3 }
 local STORED_GREEN = { Stored(GREEN[1]), Stored(GREEN[2]), Stored(GREEN[3]) }
 local function SetTheme(r, g, b) THEME[1], THEME[2], THEME[3] = r, g, b end
@@ -386,13 +387,12 @@ Picker.Open("SYSTEM")
 Picker.Drag(GREEN[1], GREEN[2], GREEN[3])
 SetTheme(0.5, 0.6, 0.7)
 session.chat:OnThemeChanged("color", "blizzardYellow")
-Check(CacheIs("SYSTEM", STORED_GREEN) and CacheIs("MONSTER_SAY", { Stored(0.5), Stored(0.6), Stored(0.7) }),
-    "a theme change painted over the picker's live preview")
+Check(CacheIs("SYSTEM", STORED_GREEN) and CacheIs("MONSTER_SAY", THEMED),
+    "a theme change during a picker session did not wait for its end")
 Picker.Cancel()
-Check(CacheIs("SYSTEM", THEMED), "Cancel did not write the opening colour back")
-session.chat:OnThemeChanged("color", "blizzardYellow")
-Check(CacheIs("SYSTEM", { Stored(0.5), Stored(0.6), Stored(0.7) }),
-    "a cancelled picker session released the category")
+Check(CacheIs("SYSTEM", { Stored(0.5), Stored(0.6), Stored(0.7) })
+    and CacheIs("MONSTER_SAY", { Stored(0.5), Stored(0.6), Stored(0.7) }),
+    "a cancelled picker session released the category, or the held-back theme change did not follow")
 Picker.Open("SYSTEM")
 Picker.Drag(GREEN[1], GREEN[2], GREEN[3])
 Picker.Drag(Stored(0.5), Stored(0.6), Stored(0.7))

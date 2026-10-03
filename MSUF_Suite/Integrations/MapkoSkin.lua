@@ -120,18 +120,27 @@ end
 --
 --   Session (the skin's chat adapter, MSUF_Suite_Skin/Adapters/ChatFrames.lua)
 --     A change is measured against the colour the category showed before
---     the edit began, and an edit that ends where it started is no change:
---     - a ChangeChatColor the skin did not make that leaves the colour as
---       it was (as stored, one 8-bit step) is a no-op: the state stays;
+--     the edit began, and an edit that ends where it started is no change.
+--     Colours compare as the chat cache stores them, one byte per channel:
+--     different stored bytes are a change, however close.
+--     - a ChangeChatColor the skin did not make that leaves the stored
+--       bytes as they were is a no-op: the state stays;
 --     - while ColorPickerFrame is shown (one picker session: Blizzard's
---       live preview, Cancel, OK) such writes are tentative, neither painted
---       over nor judged; when it hides, the final colour is compared with
---       the colour before the session's first write: equal (Cancel, or the
---       same colour picked again) and the state stays, different and it is
---       a change;
---     - a session still open at logout or disable is unfinished: the
---       category keeps the state it started with, so an owned one is
---       restored.
+--       live preview, Cancel, OK) such writes are tentative and judged only
+--       when it hides, against the colour each category showed when it
+--       opened: equal (Cancel, or the same colour picked again) and the
+--       state stays, different and it is a change. Theme repaints wait for
+--       the session's end, so the colour Cancel returns to stays the
+--       skin's;
+--     - a session still open at logout or disable is unfinished: each
+--       category keeps the state it had when the picker opened, so an owned
+--       one is restored. What a disable put back stays owed until the
+--       picker closes: if Cancel brings the skin's colour back, the
+--       original goes back again, with no owner left.
+--     Blizzard's default is the clean profile whenever the skin starts (a
+--     login, or enabling it in a session that had not loaded it): it cannot
+--     tell a player who picked exactly that colour from one who never
+--     changed it, as it does not watch sessions it is not loaded in.
 --     unowned   -> owned     first apply, the category shows Blizzard's
 --                            default and nobody changed it this session;
 --                            the skin's own ChangeChatColor writes the theme
