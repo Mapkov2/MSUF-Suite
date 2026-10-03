@@ -83,6 +83,20 @@ local function Check(profile, how)
         .. tostring(m.bags.inventoryView) .. ", the catalog's is " .. tostring(defaults.bags.inventoryView))
     assert(m.damageMeter.refreshRate == 1.5 and defaults.damageMeter.refreshRate == 1.5,
         how .. ": the Damage Meter refreshes every " .. tostring(m.damageMeter.refreshRate) .. " s")
+    assert(m.actionbars.bar1X == 0 and m.actionbars.bar2X == 0,
+        how .. ": the main action bars are off center")
+    if factory == "ForeverFactory.lua" then
+        local map, text, tracker, meter = m.minimap, m.dataTexts, m.objectives, m.damageMeter
+        assert(map.stylePreset == 10 and map.styleTexture == 7 and map.styleScale == 130,
+            how .. ": the Antique Map factory was overwritten by the global look")
+        assert(text.bar1Width == meter.w1Width and tracker.width == meter.w1Width
+            and text.bar1X == meter.w1X and tracker.x == meter.w1X,
+            how .. ": the right-hand information column is not aligned")
+        for slot = 1, 6 do
+            assert(text["bar1Slot" .. slot] ~= 5, how .. ": the DataText duplicates the Minimap clock")
+        end
+        assert(map.infoClock == true, how .. ": the remaining Minimap clock disappeared")
+    end
     -- What the steps for older profiles supplied is part of the data.
     local o = m.objectives
     assert(o.titleSize == 18 and o.sectionSize == 14 and o.entrySize == 15 and o.objectiveSize == 13,

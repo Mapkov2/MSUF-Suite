@@ -385,7 +385,10 @@ function Looks.StyleProfile(profile, lookName)
         local id = order[i]
         local config = db.modules[id]
         if type(config) == "table" then
-            Looks.ApplyToConfig(id, config, lookName)
+            -- The authored Antique Map is independent of the factory palette.
+            if id ~= "minimap" or config.stylePreset ~= 10 then
+                Looks.ApplyToConfig(id, config, lookName)
+            end
             if Looks.Supports(id) then records[id] = lookName end
         end
     end

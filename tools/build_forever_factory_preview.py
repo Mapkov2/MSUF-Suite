@@ -57,7 +57,7 @@ def main():
     entries = modules[b"profile"][b"suite"][b"modules"]
     minimap = entries[b"minimap"]
     set_values(minimap, {
-        "stylePreset": 10, "shape": 1, "borderSize": 0, "shadowSize": 0,
+        "stylePreset": 10, "x": -50, "y": -50, "shape": 1, "borderSize": 0, "shadowSize": 0,
         "styleTexture": 7, "styleTexturePath": "", "styleColor": "ffffff",
         "styleAlpha": 100, "styleScale": 130, "styleX": 0, "styleY": 0,
         "stylePlacement": 1, "styleBlend": 1, "styleRotation": 0,
@@ -66,9 +66,9 @@ def main():
 
     texts = entries[b"dataTexts"]
     set_values(texts, {
-        "bar1Enabled": True, "bar1Width": 380, "bar1Height": 36,
-        "bar1Layout": 1, "bar1Point": 3, "bar1X": -20, "bar1Y": -260,
-        "bar1Slot1": 3, "bar1Slot2": 4, "bar1Slot3": 5,
+        "bar1Enabled": True, "bar1Width": 340, "bar1Height": 36,
+        "bar1Layout": 1, "bar1Point": 3, "bar1X": -20, "bar1Y": -300,
+        "bar1Slot1": 3, "bar1Slot2": 4, "bar1Slot3": 1,
         "bar1Slot4": 1, "bar1Slot5": 1, "bar1Slot6": 1,
         "bar1StyleOverride": True, "bar1BackgroundEnabled": True,
         "bar1BackgroundTexture": "", "bar1BackgroundOpacity": 100,
@@ -87,7 +87,7 @@ def main():
         "bar1ValueClassColor": False,
     })
     # The tracker starts below the map and compact information strip.
-    set_values(entries[b"objectives"], {"y": -340})
+    set_values(entries[b"objectives"], {"x": -20, "y": -380, "width": 340})
 
     micro = skin[b"payload"][b"icons"][b"microMenu"]
     set_values(micro, {

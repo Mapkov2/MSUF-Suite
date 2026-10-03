@@ -21,6 +21,7 @@ MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
 local starts, initializations, notifications = 0, 0, 0
 local Suite = {
     IsCombatLocked = function() return false end,
+    InCombat = function() return false end,
     -- Platform.lua's offline boundary helpers (no securecallfunction here).
     Dispatch = function(callback, ...) return callback(...) end,
     Finish = function(callback, ...) return true, callback(...) end,

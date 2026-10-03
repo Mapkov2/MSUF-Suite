@@ -54,9 +54,9 @@ menu = skin[b"icons"][b"microMenu"]
 assert (minimap[b"stylePreset"], minimap[b"styleTexture"], minimap[b"styleScale"]) == (10, 7, 130)
 assert (minimap[b"shape"], minimap[b"borderSize"], minimap[b"shadowSize"]) == (1, 0, 0)
 assert (texts[b"bar1Width"], texts[b"bar1Height"], texts[b"bar1FontSize"],
-        texts[b"bar1BagBadgeSize"]) == (380, 36, 11, 38)
+        texts[b"bar1BagBadgeSize"]) == (340, 36, 11, 38)
 assert texts[b"bar1StyleOverride"] and texts[b"bar1BagBadge"]
-assert (texts[b"bar1Point"], texts[b"bar1X"], texts[b"bar1Y"]) == (3, -20, -260)
+assert (texts[b"bar1Point"], texts[b"bar1X"], texts[b"bar1Y"]) == (3, -20, -300)
 assert tracker[b"y"] <= texts[b"bar1Y"] - texts[b"bar1Height"] - 40
 assert (menu[b"layoutPoint"], menu[b"layoutRelativePoint"], menu[b"layoutX"],
         menu[b"layoutY"]) == (b"BOTTOMRIGHT", b"BOTTOMRIGHT", -400, 20)
