@@ -101,12 +101,18 @@ function Skin.SetEnabled(enabled, deferApply)
     return true
 end
 
+-- The Suite's own skin engine while it is loaded, else nil.
+local function LoadedEngine()
+    local provider = _G.MapkoSkin
+    if type(provider) == "table" and provider.addonName == "MSUF_Suite_Skin" then return provider end
+end
+
 -- A module that replaces a Blizzard surface starts ("before") or stopped
 -- ("after"); see S.OwnsBlizzardSurface. The engine rebuilds only surfaces that
 -- changed hands.
 function Skin.SurfacesChanged(phase)
-    local provider = _G.MapkoSkin
-    if type(provider) ~= "table" or provider.addonName ~= "MSUF_Suite_Skin" then return end
+    local provider = LoadedEngine()
+    if not provider then return end
     local ownership = provider.SuiteOwnership
     if type(ownership) == "table" and type(ownership.Refresh) == "function" then ownership.Refresh(phase) end
 end
@@ -159,11 +165,15 @@ end
 --     ambiguous -            kept; never applied on its own; a later
 --                            logout neither removes nor replaces it
 --     recorded/ambiguous -> (gone)  "Restore chat colors" wrote it back
---   "Restore chat colors" (Skinning page, Maintenance): each of the three
---   categories gets its recorded original, else Blizzard's default. Its
---   writes are external to the adapter, so a category it changed is
---   released for the session and its pending leftover dropped; an entry
---   whose write failed stays.
+--   "Restore chat colors" (Skinning page, Maintenance): a category the
+--   ledger records gets its recorded original back; one that shows the
+--   skin's theme colour now gets Blizzard's default (the theme colour is
+--   known while the skin engine is loaded); every other category keeps the
+--   player's colour. This explicit action is the one place where a colour
+--   equal to the skin's counts as the skin's, and the question before it
+--   names every category it changes. Its writes are external to the
+--   adapter, so a category it changed is released for the session and its
+--   pending leftover dropped; an entry whose write failed stays.
 --
 --   suiteCharacters[guid].skinChatColors = { colors = { [chatType] =
 --       { original = rgb, left = rgb, ambiguous = true|nil } } }
@@ -250,22 +260,71 @@ function Skin.PendingChatColors()
     return count
 end
 
--- "Restore chat colors": each themed category gets its recorded original
--- back, else Blizzard's default. A written entry goes; an entry whose write
--- failed stays. Refused in combat. Returns ok (every write went through),
--- the number written and the number that failed; or false, "combat".
-function Skin.RestoreChatColors()
+-- The colour the skin themes a category with now, one byte per channel, as
+-- the chat cache stores it. Only the loaded skin engine knows it (its theme
+-- decides it); nil without it. The engine ships with this Suite.
+local function SkinThemeColor(chatType)
+    local provider = LoadedEngine()
+    local chat = provider and provider.ChatFramesSkin
+    return chat and chat.ThemeMessageColor(chatType) or nil
+end
+
+local function StoredByte(value) return math.floor(value * 255 + 0.5) end
+
+-- True when the category's colour now is the skin's theme colour.
+local function ShowsSkinColor(chatType)
+    local theme = SkinThemeColor(chatType)
+    local info = ChatTypeInfo[chatType]
+    if not ReadableColor(theme) or type(info) ~= "table" then return false end
+    -- Suite.Finite (ReadableColor) tests the secret flag before it compares.
+    local current = { info.r, info.g, info.b }
+    if not ReadableColor(current) then return false end
+    for channel = 1, 3 do
+        if StoredByte(current[channel]) ~= StoredByte(theme[channel]) then return false end
+    end
+    return true
+end
+
+-- What "Restore chat colors" writes, in a fixed order: a category the
+-- ledger records gets its recorded original; one that shows the skin's
+-- theme colour now gets Blizzard's default. Every other category keeps the
+-- player's colour. This explicit action is the one place where a colour
+-- equal to the skin's counts as the skin's. Returns a list of
+-- { chatType = , color = rgb, recorded = true|nil }.
+local CHAT_TYPES = { "SYSTEM", "MONSTER_SAY", "MONSTER_PARTY" }
+function Skin.ChatColorRestorePlan()
+    local colors = ChatLedger()
+    local plan = {}
+    for _, chatType in ipairs(CHAT_TYPES) do
+        local entry = colors and colors[chatType]
+        if type(entry) == "table" and ReadableColor(entry.original) then
+            plan[#plan + 1] = { chatType = chatType, color = entry.original, recorded = true }
+        elseif ShowsSkinColor(chatType) then
+            plan[#plan + 1] = { chatType = chatType, color = Skin.CHAT_COLOR_DEFAULTS[chatType] }
+        end
+    end
+    return plan
+end
+
+-- "Restore chat colors": the categories of the plan above get their colour.
+-- asked (optional { [chatType] = true }): the categories the player was
+-- shown; a category outside it is left alone, so Yes never changes more than
+-- the question said. A written entry goes; an entry whose write failed
+-- stays. Refused in combat. Returns ok (every write went through), the
+-- number written and the number that failed; or false, "combat".
+function Skin.RestoreChatColors(asked)
     if Suite.IsCombatLocked() then return false, "combat" end
     local colors, own = ChatLedger()
     local written, failed = 0, 0
-    for chatType, default in pairs(Skin.CHAT_COLOR_DEFAULTS) do
-        local entry = colors and colors[chatType]
-        local color = type(entry) == "table" and ReadableColor(entry.original) and entry.original or default
-        if Suite.Dispatch(Suite.Finish, ChangeChatColor, chatType, color[1], color[2], color[3]) then
-            written = written + 1
-            if colors then colors[chatType] = nil end
-        else
-            failed = failed + 1
+    for _, step in ipairs(Skin.ChatColorRestorePlan()) do
+        local chatType, color = step.chatType, step.color
+        if not asked or asked[chatType] then
+            if Suite.Dispatch(Suite.Finish, ChangeChatColor, chatType, color[1], color[2], color[3]) then
+                written = written + 1
+                if colors then colors[chatType] = nil end
+            else
+                failed = failed + 1
+            end
         end
     end
     if colors then DropEmpty(colors, own) end

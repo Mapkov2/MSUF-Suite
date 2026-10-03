@@ -146,6 +146,8 @@ local function Session(skinOn)
     CHAT_FRAMES = {}
     ColorPickerFrame = NewColorPicker()
     writes = 0
+    -- The skin engine is loaded only in a session that loads it.
+    _G.MapkoSkin = nil
     local Suite = {
         RootDB = DeepCopy(disk.saved) or {},
         IsCombatLocked = function() return locked end,
@@ -180,6 +182,9 @@ local function Session(skinOn)
         function chatFrame:GetName() return "ChatFrame1" end
         assert(NS.ChatFramesSkin.Apply(chatFrame, "chat"), "the chat skin did not apply")
         session.chat, session.frame = NS.ChatFramesSkin, chatFrame
+        -- The loaded engine is the skin's public provider (Core/Bootstrap.lua).
+        NS.addonName = "MSUF_Suite_Skin"
+        _G.MapkoSkin = NS
     end
     session.settled = Suite.Skin.SettleChatColors()
     return session
@@ -255,19 +260,25 @@ Check(CacheIs("SYSTEM", THEMED) and writes == 2, "the skin wrote over an ambiguo
 Logout(session)
 Check(CacheIs("SYSTEM", THEMED) and Ledger() and Ledger().colors.SYSTEM, "the ambiguous entry was lost")
 
--- 4. "Restore chat colors": the recorded original where there is one,
--- else Blizzard's default; the ledger goes. Refused in combat.
+-- 4. "Restore chat colors": a recorded category gets its original back and
+-- the ledger goes; a colour the player chose (no entry, not the skin's)
+-- stays, MONSTER_PARTY's grey here. Refused in combat.
 session = Session(false)
 locked = true
 Check(not session.Suite.Skin.RestoreChatColors() and writes == 0, "Restore chat colors ran in combat")
 locked = false
 disk.chat.MONSTER_PARTY = { Stored(0.5), Stored(0.5), Stored(0.5) }
 LoadChatCache()
+local plan = session.Suite.Skin.ChatColorRestorePlan()
+Check(#plan == 1 and plan[1].chatType == "SYSTEM" and plan[1].recorded, "the restore plan is not the recorded category")
 local ok, written = session.Suite.Skin.RestoreChatColors()
-Check(ok and written == 3 and CacheIs("SYSTEM", DEFAULTS.SYSTEM) and CacheIs("MONSTER_PARTY", DEFAULTS.MONSTER_PARTY),
-    "Restore chat colors did not put the originals and defaults back")
+Check(ok and written == 1 and writes == 1 and CacheIs("SYSTEM", DEFAULTS.SYSTEM),
+    "Restore chat colors did not put the recorded original back")
+Check(CacheIs("MONSTER_PARTY", { Stored(0.5), Stored(0.5), Stored(0.5) }) and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY),
+    "Restore chat colors overwrote a colour the player chose")
 Logout(session)
 Check(Ledger() == nil, "Restore chat colors left the ledger")
+disk.chat = DeepCopy(DEFAULTS)
 -- With a recorded original that is not Blizzard's default.
 disk.saved.suiteCharacters = { ["Player-1"] = { skinChatColors = { colors = {
     MONSTER_SAY = { original = { 0.6, 0.6, 0.6 }, left = THEMED, ambiguous = true } } } } }
@@ -281,7 +292,8 @@ disk.chat = DeepCopy(DEFAULTS)
 
 -- 5. A crash before the first save leaves the theme colour with no ledger
 -- (documented limit): no session infers anything, skin off or on; only the
--- explicit restore puts Blizzard's default back.
+-- explicit restore puts Blizzard's default back, once the skin engine (which
+-- knows its theme colour) is loaded; without it nothing shows as the skin's.
 session = Session(true)
 -- crash: no logout, nothing saved
 session = Session(false)
@@ -291,8 +303,12 @@ session = Session(true)
 Logout(session)
 Check(CacheIs("SYSTEM", THEMED) and Ledger() == nil, "the skin inferred a crash leftover")
 session = Session(false)
-Check(session.Suite.Skin.RestoreChatColors() and CacheIs("SYSTEM", DEFAULTS.SYSTEM),
-    "Restore chat colors did not clear a crash leftover")
+Check(#session.Suite.Skin.ChatColorRestorePlan() == 0 and session.Suite.Skin.RestoreChatColors() and writes == 0
+    and CacheIs("SYSTEM", THEMED), "Restore chat colors judged a colour without the skin engine")
+Logout(session)
+session = Session(true)
+Check(session.Suite.Skin.RestoreChatColors() and CacheIs("SYSTEM", DEFAULTS.SYSTEM)
+    and CacheIs("MONSTER_SAY", DEFAULTS.MONSTER_SAY), "Restore chat colors did not clear a crash leftover")
 Logout(session)
 
 -- 6. Disable puts the colours back; the next clean logout leaves no ledger.
@@ -342,8 +358,8 @@ Check(Ledger() == nil, "the consumed entry stayed")
 disk.chat = DeepCopy(DEFAULTS)
 
 -- 9. A successful explicit restore reconciles the skin's pending leftover:
--- the disable cannot put SYSTEM back, "Restore chat colors" then writes all
--- three, and logout records nothing.
+-- the disable cannot put SYSTEM back, "Restore chat colors" then writes it
+-- (it shows the skin's colour), and logout records nothing.
 session = Session(true)
 raising.SYSTEM = true
 session.chat.Disable(session.frame, "chat")
@@ -356,7 +372,10 @@ Check(Ledger() == nil, "logout recorded a leftover the explicit restore had alre
 -- 10. Restore reports what failed and keeps those entries: every write
 -- raises; then one of three.
 disk.saved.suiteCharacters = { ["Player-1"] = { skinChatColors = { colors = {
-    SYSTEM = { original = DeepCopy(GREY), left = DeepCopy(THEMED), ambiguous = true } } } } }
+    SYSTEM = { original = DeepCopy(GREY), left = DeepCopy(THEMED), ambiguous = true },
+    MONSTER_SAY = { original = DeepCopy(DEFAULTS.MONSTER_SAY), left = DeepCopy(THEMED), ambiguous = true },
+    MONSTER_PARTY = { original = DeepCopy(DEFAULTS.MONSTER_PARTY), left = DeepCopy(THEMED), ambiguous = true },
+} } } }
 session = Session(false)
 raising.SYSTEM, raising.MONSTER_SAY, raising.MONSTER_PARTY = true, true, true
 local okAll, writtenAll, failedAll = session.Suite.Skin.RestoreChatColors()
@@ -373,6 +392,20 @@ Check(session.Suite.Skin.RestoreChatColors(), "the retry did not restore")
 Logout(session)
 Check(Ledger() == nil, "the retried entry stayed")
 disk.chat = DeepCopy(DEFAULTS)
+-- Yes restores only what the question named: the categories it was asked.
+disk.saved.suiteCharacters = { ["Player-1"] = { skinChatColors = { colors = {
+    SYSTEM = { original = DeepCopy(GREY), left = DeepCopy(THEMED), ambiguous = true },
+    MONSTER_SAY = { original = DeepCopy(GREY), left = DeepCopy(THEMED), ambiguous = true },
+} } } }
+session = Session(false)
+local okAsked, writtenAsked = session.Suite.Skin.RestoreChatColors({ MONSTER_SAY = true })
+Check(okAsked and writtenAsked == 1 and writes == 1 and CacheIs("SYSTEM", DEFAULTS.SYSTEM)
+    and CacheIs("MONSTER_SAY", { Stored(GREY[1]), Stored(GREY[2]), Stored(GREY[3]) }),
+    "Restore chat colors changed a category the question did not name")
+Logout(session)
+Check(Ledger() and Ledger().colors.SYSTEM and not Ledger().colors.MONSTER_SAY,
+    "the entry of a category outside the question was consumed")
+disk.saved.suiteCharacters, disk.chat = nil, DeepCopy(DEFAULTS)
 
 -- 11. A picker session that ends where it started is no change: open,
 -- drag, Cancel. SYSTEM stays owned. A theme change during the session waits

@@ -15,13 +15,14 @@ function P.SkinSearchRow(ctx, row, section, title, help)
         controlId = row.kind ~= "color" and row.controlId or nil,
         sectionId = section or row.sectionId,
         anchorText = row.kind == "color" and title or nil,
+        suiteAlways = row.suiteAlways,
     }
 end
 
 function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, meta)
     if not ctx.searchRows then return P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta) end
     local row = { label = Tr(label), searchLabel = label, kind = "button",
-        controlId = meta and meta.controlId, sectionId = meta and meta.sectionId }
+        controlId = meta and meta.controlId, sectionId = meta and meta.sectionId, suiteAlways = meta and meta.suiteAlways }
     P.SkinSearchRow(ctx, row)
 end
 

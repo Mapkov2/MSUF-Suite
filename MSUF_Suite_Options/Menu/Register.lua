@@ -175,7 +175,11 @@ local function PageBuilder(page)
         M.TrackRefresh(ctx, P.ForgetAvailability)
         if not PageAddOnEnabled(page.key) then
             local notice = P.Text(ctx.wrapper, ADDON_NOTICE, 16, -20, math.max(240, (ctx.width or 720) - 32))
-            ctx:SetContentHeight(notice:GetStringHeight() + 48)
+            local height = notice:GetStringHeight() + 48
+            -- A page may keep actions below it that need no module of its
+            -- own (Skinning: Pages/Appearance.lua).
+            if page.notice then height = 12 - page.notice(ctx, 20 - height) end
+            ctx:SetContentHeight(height)
             return
         end
         return page.build(ctx, ...)

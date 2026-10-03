@@ -447,9 +447,9 @@ function P.SearchRows()
     for _, entry in ipairs(FAQ) do
         if pagesByKey[entry.page] then rows[#rows + 1] = FaqRow(entry) end
     end
-    if pagesByKey.suite_skin then
-        for _, row in ipairs(P.SkinSearchRows()) do rows[#rows + 1] = row end
-    end
+    -- Skinning rows are gated per row below; its maintenance actions are
+    -- found also while the Skin addon is off.
+    for _, row in ipairs(P.SkinSearchRows()) do rows[#rows + 1] = row end
     P.AppendSearchActionRows(rows, pagesByKey)
     local visible = {}
     for _, row in ipairs(rows) do
@@ -557,6 +557,8 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     if record.kind == "page" or row.kind == "page" or record.kind == "faq" or row.kind == "faq" then
         return PageAvailable(pageKey)
     end
+    -- Actions built in every state of their page (Pages/Appearance.lua).
+    if row.suiteAlways or record.suiteAlways then return true end
     if pageKey == "suite_skin" then
         if not SkinAvailable() then return false end
         if settingKey == "msufsuite.skin.enabled" then return true end

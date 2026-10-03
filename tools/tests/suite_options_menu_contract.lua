@@ -3510,24 +3510,38 @@ do
     _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs = previousShow, previousSaveAs
 end
 -- "Restore chat colors" asks in Blizzard's generic confirmation (no
--- StaticPopupDialogs entry), then puts the skin's chat colours back through
--- the Suite core, reports what failed; refused in combat. (One state table:
--- this chunk is near Lua's 200-local limit.)
+-- StaticPopupDialogs entry), naming every chat category it changes and
+-- how, then puts exactly those back through the Suite core and reports what
+-- failed; with nothing to restore it only says so; refused in combat. (One
+-- state table: this chunk is near Lua's 200-local limit.)
 do
     local rc = { previous = { _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs,
-        Suite.Skin.RestoreChatColors, S.Confirm, M.ShowStatusFeedback, InCombatLockdown },
+        Suite.Skin.RestoreChatColors, S.Confirm, M.ShowStatusFeedback, InCombatLockdown,
+        Suite.Skin.ChatColorRestorePlan },
         restores = 0, result = { true, 3, 0 } }
     M.ShowStatusFeedback = function(text, kind) rc.feedback = { text = text, kind = kind } end
     S.Confirm = nil
     _G.StaticPopupDialogs = {}
     _G.StaticPopup_ShowCustomGenericConfirmation = function(data) rc.asked = data end
-    Suite.Skin.RestoreChatColors = function()
-        rc.restores = rc.restores + 1
+    rc.plan = { { chatType = "SYSTEM", color = { 1, 1, 0 }, recorded = true },
+        { chatType = "MONSTER_PARTY", color = { 0.6, 0.6, 1 } } }
+    Suite.Skin.ChatColorRestorePlan = function() return rc.plan end
+    Suite.Skin.RestoreChatColors = function(asked)
+        rc.restores, rc.restoredTypes = rc.restores + 1, asked
         return rc.result[1], rc.result[2], rc.result[3]
     end
     assert(optionsNS.RestoreChatColors() and rc.asked and rc.restores == 0, "Restore chat colors did not ask first")
+    rc.text = rc.asked.text_arg1
+    assert(rc.text:find(M.Tr("Restore these chat colors?"), 1, true)
+        and rc.text:find(M.Tr("%s: back to the color it had before the skin"):format(M.Tr("System messages")), 1, true)
+        and rc.text:find(M.Tr("%s: back to Blizzard's default color"):format(M.Tr("NPC party chat")), 1, true)
+        and not rc.text:find(M.Tr("NPC speech"), 1, true)
+        and rc.text:find(M.Tr("Your other chat colors stay as they are."), 1, true),
+        "the question does not say exactly what Restore chat colors changes: " .. rc.text)
     rc.asked.callback()
     assert(rc.restores == 1 and next(_G.StaticPopupDialogs) == nil, "Restore chat colors did not restore through the core")
+    assert(rc.restoredTypes and rc.restoredTypes.SYSTEM and rc.restoredTypes.MONSTER_PARTY
+        and not rc.restoredTypes.MONSTER_SAY, "Yes may change a category the question did not name")
     assert(rc.feedback and rc.feedback.kind == "ok", "a full restore did not report success")
     -- Every write failed, then some: the feedback says so.
     rc.result = { false, 0, 3 }
@@ -3547,16 +3561,27 @@ do
     rc.asked.callback()
     assert(rc.feedback.kind == "warning" and rc.feedback.text == M.Tr("Finish combat first."),
         "a restore refused in combat was reported as a partial restore")
+    -- Nothing shows the skin's colour and nothing was recorded: no question.
+    rc.plan, rc.asked, rc.restores = {}, nil, 0
+    assert(optionsNS.RestoreChatColors() and not rc.asked and rc.restores == 0 and rc.feedback.text
+        == M.Tr("No chat color needs restoring: none shows the skin's color, and none was recorded."),
+        "Restore chat colors asked although nothing would change")
+    rc.plan = { { chatType = "SYSTEM", color = { 1, 1, 0 } } }
     InCombatLockdown = function() return true end
     rc.asked = nil
     assert(not optionsNS.RestoreChatColors() and not rc.asked, "Restore chat colors asked in combat")
+    -- Both actions are built in every state of the Skinning page: its
+    -- Maintenance, the engine-unavailable Basics and the Skin addon's notice.
     local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
-    rc.source = appearance:read("*a")
+    rc.source = appearance:read("*a"):gsub("\r\n", "\n")
     appearance:close()
-    rc.buttons = select(2, rc.source:gsub("%s%s+RestoreChatColorsButton%(ctx, body", ""))
-    assert(rc.buttons == 2, "Restore chat colors is missing from Maintenance or the engine-unavailable page")
+    rc.buttons = select(2, rc.source:gsub("\n%s+[%w%s=]-MaintenanceButtons%(ctx, ", ""))
+    assert(rc.buttons == 4 and rc.source:find("run = function() return P.RestoreChatColors() end", 1, true)
+        and rc.source:find("run = function() return P.SaveSetupAs() end", 1, true)
+        and rc.source:find("notice = BuildNotice", 1, true),
+        "Restore chat colors or Save setup as is missing from a state of the Skinning page")
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs, Suite.Skin.RestoreChatColors,
-        S.Confirm, M.ShowStatusFeedback, InCombatLockdown = unpack(rc.previous, 1, 6)
+        S.Confirm, M.ShowStatusFeedback, InCombatLockdown, Suite.Skin.ChatColorRestorePlan = unpack(rc.previous, 1, 7)
 end
 -- The combat start: inside PLAYER_REGEN_DISABLED, before the lockdown, the
 -- pages refuse like in combat (P.Combat is Suite.InCombat), and so do an
