@@ -22,9 +22,11 @@ local VIEWERS = { "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconC
 -- MSUF resolves only these three names.
 local EXPORTED = { EssentialCooldownViewer = "ess", UtilityCooldownViewer = "uti", BuffIconCooldownViewer = "buf" }
 local PROMOTED = "MSUF frames are attached to Blizzard's cooldown bars, so they keep running invisibly."
+local APEX_PROMOTED = "Rogue Apex Now needs Blizzard's cooldown bars, so they keep running invisibly."
 
 local hooked = {}
 local active, guard, applied = false, false, nil
+local hookedApex, apexRequired, apexCVar = nil, false, false
 
 local function ID() return M.id or "cooldownManager" end
 
@@ -33,16 +35,56 @@ local function Viewer(name)
     if type(frame) == "table" and not NS.Safety.IsForbidden(frame) then return frame end
 end
 
+-- Apex Now 0.3.2 observes Blizzard's buff/cooldown item frames. Keeping
+-- these sources alive also preserves its independent yellow action text.
+local function ApexNeedsViewers()
+    local addon = _G.RogueApexNow
+    if not Public(addon) or type(addon) ~= "table" then return false end
+    local apexDB = addon.db
+    if not Public(apexDB) or type(apexDB) ~= "table" then return false end
+    return Public(apexDB.enabled) and apexDB.enabled == true
+        or Public(apexDB.shadowTechniquesGlow) and apexDB.shadowTechniquesGlow == true
+end
+
 -- An MSUF that knows these bars (Layout.MSUFAnchor) follows our Essential
 -- bar itself, so Blizzard's bars can stay off.
 function Native.Mode()
     local config = M.config
     local mode = type(config) == "table" and config.blizzard == INVISIBLE and INVISIBLE or OFF
+    if mode == OFF and ApexNeedsViewers() then return INVISIBLE, S.Text(APEX_PROMOTED) end
     if mode == OFF then
         local wants, follows = C.Layout.MSUFAnchor()
         if wants and not follows then return INVISIBLE, S.Text(PROMOTED) end
     end
     return mode
+end
+
+local function ApexChanged()
+    local required = ApexNeedsViewers()
+    if required == apexRequired then return end
+    apexRequired = required
+    if M.active then S.Dispatch(S.Apply, ID()) end
+end
+
+local function HookApex()
+    local addon = _G.RogueApexNow
+    if not Public(addon) or type(addon) ~= "table" or addon == hookedApex then return end
+    local apply = addon.ApplySettings
+    if not Public(apply) or type(apply) ~= "function" then return end
+    hookedApex = addon
+    hooksecurefunc(addon, "ApplySettings", ApexChanged)
+end
+
+local function ApexLoaded(_, _, name)
+    if not Public(name) or name ~= "RogueApexNow" then return end
+    HookApex()
+    ApexChanged()
+end
+
+function Native.WatchApex(ctx)
+    apexRequired = ApexNeedsViewers()
+    HookApex()
+    ctx:Event("ADDON_LOADED", ApexLoaded)
 end
 
 ------------------------------------------------------------------ hooks (invisible)
@@ -113,8 +155,7 @@ function Native.Apply()
     local ctx = M.context
     if not ctx then return end
     local mode = Native.Mode()
-    if mode == applied then return end
-    if mode == INVISIBLE then
+    if mode ~= applied and mode == INVISIBLE then
         active = true
         for i = 1, #VIEWERS do
             local viewer = Viewer(VIEWERS[i])
@@ -129,18 +170,29 @@ function Native.Apply()
             local viewer = Viewer(VIEWERS[i])
             if viewer then Silence(viewer, viewer:GetChildren()) end
         end
-    else
+    elseif mode ~= applied then
         if applied == INVISIBLE then RestoreAlpha(ctx) end
         ctx:CVar(CVAR, "0")
     end
     applied = mode
+    -- The saved CVar may already be off when Suite starts. Apex needs it on;
+    -- use the same reversible owner as mode 1, after the alpha hooks exist.
+    local required = mode == INVISIBLE and ApexNeedsViewers()
+    if mode == OFF then
+        apexCVar = false
+    elseif required ~= apexCVar then
+        if required then ctx:CVar(CVAR, "1") else S.RestoreCVar(ID(), CVAR) end
+        apexCVar = required
+    end
 end
 
 function Native.Release()
     local ctx = M.context
+    if ctx then ctx:RemoveEvent("ADDON_LOADED") end
     if applied == INVISIBLE and ctx then RestoreAlpha(ctx) end
     active = false
-    if applied == OFF then S.RestoreCVar(ID(), CVAR) end
+    if applied == OFF or apexCVar then S.RestoreCVar(ID(), CVAR) end
+    apexCVar = false
     applied = nil
 end
 

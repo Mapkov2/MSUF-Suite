@@ -50,6 +50,7 @@ function M:Enable()
     C.Resolve.SpellsChanged()
     first = true
     Settings.BeginCapture(self.config)
+    C.Native.WatchApex(self.context)
     self.context:Callback("CooldownViewerSettings.OnPendingChanges", Events.OnLayoutChanged)
     self.context:Callback("CooldownViewerSettings.OnHide", Events.OnLayoutChanged)
     -- The suite action bars started, stopped or changed their form pages:

@@ -279,9 +279,9 @@ for _,name in ipairs(FILES) do
     local count=0
     for hooked in code:gmatch('hooksecurefunc%(%s*[%w_]+%s*,%s*"([%w_]+)"') do
         count=count+1
-        assert(name=="Native" and (hooked=="SetAlpha" or hooked=="OnAcquireItemFrame"),"hook not allowed: "..hooked)
+        assert(name=="Native" and (hooked=="SetAlpha" or hooked=="OnAcquireItemFrame" or hooked=="ApplySettings"),"hook not allowed: "..hooked)
     end
-    assert(count==(name=="Native" and 2 or 0),"unexpected hook count in "..name)
+    assert(count==(name=="Native" and 3 or 0),"unexpected hook count in "..name)
 end
 
 ------------------------------------------------------------------ views and plans
@@ -1907,6 +1907,7 @@ end
 ------------------------------------------------------------------ native: mode and takeover
 local ctxLog={}
 local ctx={properties={},cvars={}}
+function ctx:RemoveEvent(event) assert(event=="ADDON_LOADED") end
 function ctx:Alpha(frame,value)
     ctxLog[#ctxLog+1]="alpha"
     if not self.properties[frame] then self.properties[frame]={before=frame:GetAlpha()} end
