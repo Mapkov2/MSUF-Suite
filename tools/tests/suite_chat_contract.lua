@@ -1,9 +1,16 @@
 local root = assert(arg[1])
+-- Combat as the Suite core reports it (MSUF_Suite/Core/Platform.lua):
+-- PLAYER_REGEN_DISABLED marks combat before InCombatLockdown() turns true.
+local inCombat, lockdown = false, false
 local NS = {
     Safety = { IsForbidden = function() return false end },
-    IsCombatLocked = function() return false end,
+    IsCombatLocked = function() return lockdown end,
+    InCombat = function() return inCombat or lockdown end,
+    RestrictedNotice = function() return "Blizzard blocks this right now." end,
 }
 local S = {}
+local printed = {}
+S.Print = function(message) printed[#printed + 1] = message end
 S.Public = function(value) return value ~= "secret" end
 -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
@@ -84,7 +91,7 @@ local function Frame(name)
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:GetWidth() return self.width or 64 end
     function frame:GetHeight() return self.height or 32 end
-    function frame:SetAllPoints() end
+    function frame:SetAllPoints(owner) self.points = { { "TOPLEFT", owner, "TOPLEFT" }, { "BOTTOMRIGHT", owner, "BOTTOMRIGHT" } } end
     function frame:SetWidth(width) self.width = width end
     function frame:SetHeight(height) self.height = height end
     function frame:ClearAllPoints() self.points = {} end
@@ -116,6 +123,9 @@ local function Frame(name)
     function frame:GetNumMessages() return #(self.messages or {}) end
     function frame:GetMessageInfo(index) return self.messages and self.messages[index] end
     function frame:SetScript(script, callback) self.scripts = self.scripts or {}; self.scripts[script] = callback end
+    function frame:SetAttribute(key, value) self.attributes = self.attributes or {}; self.attributes[key] = value end
+    function frame:GetAttribute(key) return self.attributes and self.attributes[key] end
+    function frame:IsMouseOver() return self.mouseOver == true end
     function frame:Click(mouseButton)
         self.clicks = (self.clicks or 0) + 1
         if self.scripts and self.scripts.OnClick then self.scripts.OnClick(self, mouseButton) end
@@ -123,11 +133,27 @@ local function Frame(name)
     function frame:ScrollToBottom() self.scrolled = (self.scrolled or 0) + 1 end
     return frame
 end
-CreateFrame = function(_, _, parent)
+CreateFrame = function(_, _, parent, template)
     local frame = Frame(nil)
-    frame.parent = parent
+    frame.parent, frame.template = parent, template
     return frame
 end
+local stateDrivers = {}
+RegisterStateDriver = function(frame, state, values) stateDrivers[frame] = { state = state, values = values } end
+-- SecureActionButton_OnClick of a "click" action (SecureTemplates.lua, live
+-- and forever) clicks its clickbutton from secure code.
+local secureClick = false
+local function SecureClick(frame, mouseButton)
+    assert(frame.template == "SecureActionButtonTemplate" and frame:GetAttribute("type") == "click",
+        "the frame is no secure click button")
+    secureClick = true
+    frame:GetAttribute("clickbutton"):Click(mouseButton)
+    secureClick = false
+end
+-- Blizzard's panel buttons (QuickJoinToastButton, ChatFrameChannelButton,
+-- TextToSpeechButton) open their panel through ShowUIPanel from OnClick.
+local panelOpens = {}
+local function PanelOnClick(button) panelOpens[#panelOpens + 1] = { button = button, secure = secureClick } end
 UIParent = Frame("UIParent")
 ChatFrame1 = Frame("ChatFrame1")
 ChatFrame1.isDocked = true
@@ -149,6 +175,9 @@ ChatFrame1.editBox = ChatFrame1EditBox
 QuickJoinToastButton = Frame("QuickJoinToastButton")
 ChatFrameChannelButton = Frame("ChatFrameChannelButton")
 TextToSpeechButton = Frame("TextToSpeechButton")
+for _, button in ipairs({ QuickJoinToastButton, ChatFrameChannelButton, TextToSpeechButton }) do
+    button:SetScript("OnClick", PanelOnClick)
+end
 -- Blizzard's chat menu button is a DropdownButton (Blizzard_Menu/DropdownButton.xml
 -- and .lua, live and forever): the press opens and closes its menu
 -- (OnMouseDown_Intrinsic -> SetMenuOpen, ignored with Shift), its own OnClick
@@ -593,6 +622,70 @@ assert(GameTooltip.owner == channels.button and GameTooltip.text == "Channels an
 channels.button.scripts.OnLeave(channels.button)
 assert(not GameTooltip.shown and channels.glyph.color[4] == 0.94 and channels.highlight.color[4] == 0,
     "leaving a sidebar button kept its tooltip or highlight")
+-- The panel icons (Friends, Channels, Text to speech) open Blizzard panels
+-- through ShowUIPanel. Out of combat the icon under the pointer borrows one
+-- secure delegate that clicks Blizzard's button from secure code; it keeps
+-- the icon's hover look and tooltip and passes Shift-drags on.
+local friendsIcon = sidebar.buttons[1].button
+friendsIcon.scripts.OnEnter(friendsIcon)
+local delegate = module.panelDelegate
+assert(delegate and delegate.template == "SecureActionButtonTemplate" and delegate.shown
+    and delegate.owner == friendsIcon and delegate:GetAttribute("clickbutton") == QuickJoinToastButton
+    and delegate:GetAttribute("useOnKeyDown") == false and delegate.parent == UIParent
+    and delegate.level > friendsIcon:GetFrameLevel() and delegate.points[1][2] == friendsIcon,
+    "hovering the Friends icon out of combat did not borrow the secure delegate")
+assert(stateDrivers[delegate] and stateDrivers[delegate].values == "[combat] hide",
+    "the secure delegate has no combat state driver")
+assert(ctx.callbacks.PLAYER_REGEN_DISABLED and ctx.combat.PLAYER_REGEN_DISABLED == true,
+    "the secure delegate is not let go at the start of combat")
+delegate.mouseOver = true
+friendsIcon.scripts.OnLeave(friendsIcon)
+assert(friendsIcon.hovered and GameTooltip.shown and GameTooltip.owner == friendsIcon,
+    "moving onto the secure delegate dropped the icon's hover look or tooltip")
+local opens = #panelOpens
+SecureClick(delegate, "LeftButton")
+assert(#panelOpens == opens + 1 and panelOpens[#panelOpens].button == QuickJoinToastButton
+    and panelOpens[#panelOpens].secure, "the Friends icon did not open Blizzard's panel from secure code")
+shiftDown = true
+delegate.scripts.OnDragStart(delegate)
+assert(friendsIcon.moving and friendsIcon.dragging, "a Shift-drag on the delegate did not move the icon")
+local saved = {}
+S.SetMany = function(_, values) for key, value in pairs(values) do saved[key] = value end end
+friendsIcon.GetCenter = function() return 10, 20 end
+sidebar.sidebarFrame.GetCenter = function() return 4, 6 end
+delegate.scripts.OnDragStop(delegate)
+shiftDown = false
+assert(not friendsIcon.moving and saved.sidebarButton1X == 6 and saved.sidebarButton1Y == 14,
+    "a Shift-drag through the delegate did not save the icon's place")
+delegate.mouseOver = false
+delegate.scripts.OnLeave(delegate)
+assert(not delegate.shown and #delegate.points == 0 and not delegate.owner and not ctx.callbacks.PLAYER_REGEN_DISABLED
+    and not friendsIcon.hovered and not GameTooltip.shown,
+    "leaving the delegate did not let it go and end the icon's hover")
+-- PLAYER_REGEN_DISABLED comes before the lockdown: the delegate lets go of
+-- the sidebar then, and a panel icon clicked in combat refuses with the
+-- restricted notice instead of calling ShowUIPanel from tainted code.
+local channelsIcon = sidebar.buttons[2].button
+channelsIcon.scripts.OnEnter(channelsIcon)
+assert(delegate.shown and delegate.owner == channelsIcon
+    and delegate:GetAttribute("clickbutton") == ChatFrameChannelButton, "the delegate did not move to Channels")
+inCombat = true
+ctx.callbacks.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+assert(not delegate.shown and #delegate.points == 0 and not delegate.owner,
+    "the start of combat left the secure delegate on the sidebar")
+lockdown = true
+channelsIcon.scripts.OnEnter(channelsIcon)
+assert(not delegate.shown and not delegate.owner, "the secure delegate was attached in combat")
+local nativeClicks, printedCount = ChatFrameChannelButton.clicks, #printed
+for _, index in ipairs({ 1, 2, 3 }) do
+    local icon = sidebar.buttons[index].button
+    icon.scripts.OnClick(icon, "LeftButton")
+end
+assert(ChatFrameChannelButton.clicks == nativeClicks and #panelOpens == opens + 1
+    and #printed == printedCount + 3 and printed[#printed] == NS.RestrictedNotice(),
+    "a panel icon clicked in combat called Blizzard's panel from tainted code")
+channelsIcon.scripts.OnLeave(channelsIcon)
+inCombat, lockdown = false, false
 -- Friend events update the count in combat too; it caps at 99+ and keeps
 -- the last public value when Blizzard's counts are unreadable.
 BNGetNumFriends = function() return 90, 60 end
@@ -883,7 +976,13 @@ assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001, "Blizzard's tab update 
 module.config.idleSeconds = 0
 module:Refresh()
 assert(ChatFrame4Tab:GetAlpha() == 0.8 and ChatFrame4:GetAlpha() == 1, "turning the fade off kept the window faded")
+local speechIcon = sidebar.buttons[3].button
+speechIcon.scripts.OnEnter(speechIcon)
+assert(module.panelDelegate.shown and module.panelDelegate:GetAttribute("clickbutton") == TextToSpeechButton,
+    "the Text to speech icon did not borrow the secure delegate")
 module:Disable()
+assert(not module.panelDelegate.shown and not module.panelDelegate.owner and not ctx.callbacks.PLAYER_REGEN_DISABLED,
+    "disabling Chat left the secure delegate on the sidebar")
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
     and ChatFrame4Tab:GetAlpha() == 0.2,
     "disabling Chat did not restore Blizzard's whisper-tab fading")

@@ -6,9 +6,9 @@ local C = P.Chat
 local M = C.M
 local GLYPHS = "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png"
 local SIDEBAR_BUTTONS = {
-    { native = "QuickJoinToastButton", title = S.Text("Friends"), glyph = 0 },
-    { native = "ChatFrameChannelButton", title = S.Text("Channels and voice"), glyph = 1 },
-    { native = "TextToSpeechButton", title = S.Text("Text to speech"), glyph = 2 },
+    { native = "QuickJoinToastButton", title = S.Text("Friends"), glyph = 0, panel = true },
+    { native = "ChatFrameChannelButton", title = S.Text("Channels and voice"), glyph = 1, panel = true },
+    { native = "TextToSpeechButton", title = S.Text("Text to speech"), glyph = 2, panel = true },
     { native = "ChatFrameMenuButton", title = S.Text("Chat menu"), glyph = 3, menu = true },
     { title = S.Text("Newest messages"), glyph = 4, scroll = true },
 }
@@ -65,24 +65,13 @@ local function OwnNativeControls(self)
     SyncNativeControls(self, true)
 end
 
--- Hands the native buttons and the button frame's chrome back.
+-- Hands the native buttons and the button frame's chrome back, and lets go
+-- of the panel delegate (below).
 local function ReleaseNativeControls(self)
     SyncNativeControls(self, false)
+    C.ReleasePanelDelegate()
 end
 C.ReleaseNativeControls = ReleaseNativeControls
-
--- Sidebar buttons share these scripts; button.entry holds their definition.
-local function SidebarEnter(button)
-    button.hovered = true
-    RefreshSidebarButton(M, button.entry)
-    ShowTooltip(button, button.entry.definition.title)
-end
-
-local function SidebarLeave(button)
-    button.hovered = nil
-    RefreshSidebarButton(M, button.entry)
-    HideTooltip(button)
-end
 
 -- Load-on-demand parts (Blizzard_QuickJoin) may not have built theirs yet.
 local function Native(definition)
@@ -97,6 +86,12 @@ local function SidebarClick(button, mouseButton)
         return
     end
     if definition.menu then return end
+    -- In combat a panel icon has no secure delegate (below), and Blizzard's
+    -- panel manager refuses the Suite's ShowUIPanel.
+    if definition.panel and P.NS.InCombat() then
+        S.Print(P.NS.RestrictedNotice())
+        return
+    end
     local native = Native(definition)
     if native then native:Click(mouseButton or "LeftButton") end
 end
@@ -142,6 +137,108 @@ local function SidebarDragStop(button)
             [prefix .. "X"] = x - sidebarX, [prefix .. "Y"] = y - sidebarY, [prefix .. "Moved"] = true,
         })
     end
+end
+
+------------------------------------------------------------------ panel delegate
+-- Friends, Channels and Text to speech open Blizzard panels through
+-- ShowUIPanel (ToggleFriendsFrame, ToggleChannelFrame,
+-- ToggleTextToSpeechFrame). From the icon's own click that runs tainted: the
+-- panel manager refuses it in combat and is left tainted out of combat. So,
+-- as the minimap's information texts do (MSUF_Suite_Minimap/InfoInput.lua),
+-- the icon under the pointer borrows one secure delegate in UIParent out of
+-- combat: its "click" action (SecureTemplates.lua, live and forever) clicks
+-- Blizzard's button from secure code. The sidebar follows the selected tab
+-- in combat, so no protected frame may depend on it then:
+-- PLAYER_REGEN_DISABLED, before the lockdown, lets the delegate go and a
+-- "[combat] hide" state driver backs that up. The delegate passes Shift-drags
+-- on to its icon and keeps the icon's hover look and tooltip.
+local delegate
+
+local function Unhover(button)
+    button.hovered = nil
+    RefreshSidebarButton(M, button.entry)
+    HideTooltip(button)
+end
+
+-- Out of lockdown the delegate also drops its points; in lockdown it is
+-- hidden already and only its owner is forgotten.
+local function ReleaseDelegate()
+    local owner = delegate and delegate.owner
+    if not owner then return end
+    delegate.owner = nil
+    if M.context then M.context:RemoveEvent("PLAYER_REGEN_DISABLED") end
+    if owner.dragging then SidebarDragStop(owner) end
+    if P.NS.IsCombatLocked() then return end
+    delegate:Hide()
+    delegate:ClearAllPoints()
+end
+C.ReleasePanelDelegate = ReleaseDelegate
+
+local function Covered(button)
+    return delegate ~= nil and delegate.owner == button and delegate:IsShown() and delegate:IsMouseOver() == true
+end
+
+local function DelegateLeave(self)
+    local owner = self.owner
+    if not owner or owner.dragging then return end
+    ReleaseDelegate()
+    Unhover(owner)
+end
+
+local function DelegateDragStart(self)
+    if self.owner then SidebarDragStart(self.owner) end
+end
+
+local function DelegateDragStop(self)
+    if self.owner then SidebarDragStop(self.owner) end
+end
+
+local function PanelDelegate()
+    if delegate then return delegate end
+    delegate = S.CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
+    -- Every mouse button, on the release, as the icon took them.
+    delegate:SetAttribute("type", "click")
+    delegate:SetAttribute("useOnKeyDown", false)
+    delegate:RegisterForClicks("AnyUp")
+    delegate:RegisterForDrag("LeftButton")
+    delegate:SetScript("OnDragStart", DelegateDragStart)
+    delegate:SetScript("OnDragStop", DelegateDragStop)
+    delegate:SetScript("OnLeave", DelegateLeave)
+    delegate:Hide()
+    RegisterStateDriver(delegate, "visibility", "[combat] hide")
+    M.panelDelegate = delegate
+    return delegate
+end
+
+local function AttachDelegate(button)
+    local definition = button.entry.definition
+    if not definition.panel or P.NS.InCombat() then return end
+    local native = Native(definition)
+    if not native then return end
+    local frame = PanelDelegate()
+    frame.owner = button
+    frame:SetAttribute("clickbutton", native)
+    frame:SetFrameStrata(button:GetFrameStrata())
+    frame:SetFrameLevel(button:GetFrameLevel() + 5)
+    frame:ClearAllPoints()
+    frame:SetAllPoints(button)
+    frame:Show()
+    C.ListenInCombat(M.context, "PLAYER_REGEN_DISABLED", ReleaseDelegate)
+end
+
+-- Sidebar buttons share these scripts; button.entry holds their definition.
+local function SidebarEnter(button)
+    button.hovered = true
+    RefreshSidebarButton(M, button.entry)
+    ShowTooltip(button, button.entry.definition.title)
+    AttachDelegate(button)
+end
+
+-- The pointer moving onto the icon's own delegate is no leave.
+local function SidebarLeave(button)
+    if Covered(button) then return end
+    if delegate and delegate.owner == button then ReleaseDelegate() end
+    Unhover(button)
 end
 
 local function CreateSidebarButton(sidebar, definition)
