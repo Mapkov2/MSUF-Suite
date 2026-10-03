@@ -9,6 +9,8 @@ local M = D.M
 local Public, Finite, Num = S.Public, S.Finite, D.Num
 -- The client's secret test (Platform.lua) for the row paint.
 local IsSecret = P.NS.IsSecret
+-- The one native formatter of every amount, plain or secret (Data.lua).
+local Abbreviate = D.Abbreviate
 local TYPE, ICON, ROW_BORDER, VALUE_FORMAT = D.TYPE, D.ICON, D.ROW_BORDER, D.VALUE_FORMAT
 local floor, format = math.floor, string.format
 local CLASS_SHEET = "Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes"
@@ -326,7 +328,7 @@ local function SetCustomValueText(row, meterType, total, perSecond, denominator,
         if kind == TOTAL or (kind == RATE and not countOnly) or (kind == PERCENT and percent ~= nil) then
             local value
             if kind == TOTAL then value = total elseif kind == RATE then value = rate else value = percentText end
-            value = kind == PERCENT and value or (not IsSecret(value) and D.Compact(value) or D.Abbreviate(value))
+            value = kind == PERCENT and value or Abbreviate(value)
             count = count + 1
             if count == 1 then first = value elseif count == 2 then second = value else third = value end
         end
@@ -374,16 +376,16 @@ function D.SetValueText(row, meterType, total, perSecond, denominator, alwaysPer
         local percent = Percent(total, denominator, alwaysPercent or style.percent)
         if a == row.mA and b == row.mB and percent == row.mP and fmt == row.mF then return end
         row.mA, row.mB, row.mP, row.mF = a, b, percent, fmt
-        local value = D.Compact(a)
-        if two then value = format(separators[fmt], value, D.Compact(b)) end
+        local value = Abbreviate(a)
+        if two then value = format(separators[fmt], value, Abbreviate(b)) end
         if percent then value = format("%s %d%%", value, percent) end
         text:SetText(value)
         return
     end
     row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
-    local first = not IsSecret(a) and D.Compact(a) or D.Abbreviate(a)
+    local first = Abbreviate(a)
     if two then
-        text:SetFormattedText(separators[fmt], first, not IsSecret(b) and D.Compact(b) or D.Abbreviate(b))
+        text:SetFormattedText(separators[fmt], first, Abbreviate(b))
     else
         text:SetText(first)
     end
@@ -508,7 +510,8 @@ function D.PaintGroup(row, entry, maxAmount, total, duration, meterType, targetA
     if targetAmount then
         -- Target hover always shows damage, even when the meter displays only DPS.
         local percent = Percent(entry.amount, total, true)
-        row.valueText:SetText(percent and format("%s %d%%", D.Compact(entry.amount), percent) or D.Compact(entry.amount))
+        local amount = Abbreviate(entry.amount)
+        row.valueText:SetText(percent and format("%s %d%%", amount, percent) or amount)
         row.mA, row.mB, row.mP, row.mF = nil, nil, nil, nil
         return
     end
