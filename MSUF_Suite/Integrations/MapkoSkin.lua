@@ -79,11 +79,11 @@ function Skin.Acquire(moduleID)
     return client
 end
 
+-- The client stays cached: ReleaseAll drops its targets but the skin keeps
+-- the name registered, so the module's next Acquire reuses this client.
 function Skin.Release(moduleID)
     local client = clients[moduleID]
-    if not client then return end
-    client:ReleaseAll()
-    clients[moduleID] = nil
+    if client then client:ReleaseAll() end
 end
 
 -- Re-applies the started modules so they pick up or drop the skin. A caller

@@ -11,12 +11,17 @@ local function Check(value, message) assert(value, message);checks = checks + 1 
 MapkoSkin = nil
 Check(Skin.SetEnabled(true) and Skin.Acquire("chat") == nil, "suite skin adapter tolerates an absent optional skin addon")
 local acquired, released = 0, 0
+-- Like the skin engine (PublicAPIMethods.lua RegisterAddon), a name stays
+-- registered after ReleaseAll and is refused a second registration.
+local registered = {}
 local skinDB = { suite = "legacy-data" }
 MapkoSkin = {
     DB = skinDB,
     GetAPI = function(major, minor)
         Check(major == 2 and minor == 0, "adapter requests the documented skin API")
         return { RegisterAddon = function(_, id)
+            if registered[id] then return nil, "already-registered" end
+            registered[id] = true
             acquired = acquired + 1
             return { id = id, ReleaseAll = function() released = released + 1 end }
         end }
@@ -31,9 +36,9 @@ Check(not Skin.SetEnabled(false) and released == 0, "skin release waits outside 
 locked = false
 Check(Skin.SetEnabled(false) and released == 1 and Skin.Acquire("chat") == nil, "skin can be disabled independently of suite modules")
 Skin.Release("chat")
-Check(released == 1, "repeated release is inert")
+Check(released == 2, "a repeated release only repeats the idempotent ReleaseAll")
 Skin.SetEnabled(true)
-Check(Skin.Acquire("chat") ~= client and acquired == 2, "reenabling obtains a fresh skin surface client")
+Check(Skin.Acquire("chat") == client and acquired == 1, "reenabling reuses the client the skin keeps registered")
 local mounted = false
 MapkoSkin.MountOptions = function(parent, width, height) mounted = parent == Suite and width == 600 and height == 800;return mounted end
 Check(Skin.OpenEditor(Suite, 600, 800) and mounted, "editor integration uses only the published embed function")
