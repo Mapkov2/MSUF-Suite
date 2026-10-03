@@ -39,8 +39,18 @@ local function RealmSlug(realm)
     return Encode(realm)
 end
 
+-- TARGET is also the menu of a non-player target and FOCUS covers every
+-- focus unit: a menu about a unit offers profiles only for a player, by a
+-- public answer. Chat, guild and friend menus name no unit.
+local function NotAPlayer(unit)
+    if unit == nil then return false end
+    if not S.Public(unit) then return true end
+    local player = UnitIsPlayer(unit)
+    return not S.Public(player) or player ~= true
+end
+
 local function Character(contextData)
-    if not S.Public(contextData) or type(contextData) ~= "table" then return end
+    if not S.Public(contextData) or type(contextData) ~= "table" or NotAPlayer(contextData.unit) then return end
     local name = S.PublicText(contextData.name)
     local realm = S.PublicText(contextData.server)
     if not name then return end
