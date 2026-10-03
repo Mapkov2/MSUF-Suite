@@ -371,6 +371,20 @@ function P.SaveSetupAs()
     return true
 end
 
+-- "Clear saved character gold" (Bags and DataTexts pages): the gold of every
+-- character and this account's gold history are runtime data, outside undo,
+-- so the clear asks first and cannot be taken back.
+function P.ClearCharacterGold()
+    P.Confirm("clear-character-gold",
+        Tr("Clear the saved gold balances of all your characters and their gold history? This cannot be undone."),
+        function()
+            if P.Combat() then return end
+            Suite.ClearCharacterGold()
+            P.Refresh()
+        end)
+    return true
+end
+
 -- Named capability checks used by catalog rules (rule.requires). Pages add
 -- entries; unknown names are treated as available.
 P.Requires = {}

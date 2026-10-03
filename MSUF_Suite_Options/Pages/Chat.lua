@@ -59,11 +59,17 @@ end
 
 -- Saved lines live in the Chat addon's per-character saved variables. A
 -- character whose Chat module is off loads the addon (load on demand) to
--- clear them; loading it enables nothing.
+-- clear them; loading it enables nothing. The clear cannot be taken back,
+-- so it asks first.
 local function ClearHistory()
+    if P.Combat() then return end
     if not P.S.instances.chat then C_AddOns.LoadAddOn("MSUF_Suite_Chat") end
     local chat = P.S.instances.chat
     if chat then chat:ClearHistory() end
+end
+local function AskClearHistory()
+    P.Confirm("clear-chat-history",
+        Tr("Clear the saved chat history of this character in every chat window? This cannot be undone."), ClearHistory)
 end
 
 local function Color(texture, hex, alpha)
@@ -235,7 +241,7 @@ local function Build(ctx)
                     x = 16, y = y, width = width, columns = 2,
                     rows = { row },
                 })
-                P.Button(ctx, body, "Clear saved chat history", 16, grid.bottomY, width, ClearHistory,
+                P.Button(ctx, body, "Clear saved chat history", 16, grid.bottomY, width, AskClearHistory,
                     function() return not P.Combat() end,
                     P.Meta(PAGE, ID, "clearHistory", "action", PAGE .. "_tools"))
                 return grid.bottomY - 40

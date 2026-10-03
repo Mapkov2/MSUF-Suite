@@ -546,10 +546,20 @@ do
     Suite.RootDB.goldLedger = { alt = { name = "Alt", money = 5 } }
     Suite.RootDB.suiteBagGold = { characters = { alt = { days = {} } } }
     assert(clear and clear.scripts.OnClick, "the Bags page has no Clear saved character gold action")
+    -- It cannot be undone: it asks first, and only Yes clears.
+    local previousGeneric, previousConfirm, asked = _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, nil
+    S.Confirm = nil
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
     clear.scripts.OnClick(clear)
+    assert(asked and asked.text_arg1 == optionsNS.Tr(
+        "Clear the saved gold balances of all your characters and their gold history? This cannot be undone.")
+        and Suite.RootDB.goldLedger ~= nil and Suite.RootDB.suiteBagGold ~= nil,
+        "Clear saved character gold cleared without asking")
+    asked.callback()
     assert(Suite.RootDB.goldLedger == nil and Suite.RootDB.suiteBagGold == nil,
         "Clear saved character gold must remove the balances and the gold history")
     Suite.RootDB.goldLedger, Suite.RootDB.suiteBagGold = savedLedger, savedHistory
+    _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm = previousGeneric, previousConfirm
     -- disabledCategories was read but never written; per-category switches cover it.
     assert(S.catalog.bags.rules.disabledCategories == nil, "the dead disabledCategories setting returned")
     -- The look help names every preset of the look choice.
@@ -1808,9 +1818,18 @@ do
         S.instances.chat = { ClearHistory = function() cleared = cleared + 1 end }
         return true
     end
+    -- It cannot be undone: it asks first, and only Yes clears.
+    local previousGeneric, previousConfirm, asked = _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, nil
+    S.Confirm = nil
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
     clearHistory.scripts.OnClick(clearHistory)
+    assert(asked and asked.text_arg1 == optionsNS.Tr(
+        "Clear the saved chat history of this character in every chat window? This cannot be undone.")
+        and not loadedChat and cleared == 0, "Clear saved chat history cleared without asking")
+    asked.callback()
     assert(loadedChat and cleared == 1, "clearing chat history needed the Chat module to be running")
     C_AddOns.LoadAddOn, S.instances.chat = loadAddOn, chatInstance
+    _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm = previousGeneric, previousConfirm
 end
 local timestampWidget
 local chatFontSizes = {}
@@ -3903,6 +3922,21 @@ end)()
 end)()
 
 ;(function()
+    -- The DataTexts page's gold clear asks first too, like the Bags page's.
+    local goldClear = assert(registeredControls["menu2.suite_dataTexts.dataTexts.action.clearGold"],
+        "the DataTexts page has no Clear saved character gold action")
+    local goldAsked
+    local previousGeneric, previousConfirm, previousClear =
+        _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, Suite.ClearCharacterGold
+    local goldCleared = 0
+    S.Confirm, Suite.ClearCharacterGold = nil, function() goldCleared = goldCleared + 1 end
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) goldAsked = data end
+    goldClear.scripts.OnClick(goldClear)
+    assert(goldAsked and goldCleared == 0, "the DataTexts gold clear did not ask first")
+    goldAsked.callback()
+    assert(goldCleared == 1, "the DataTexts gold clear did not clear after Yes")
+    _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, Suite.ClearCharacterGold =
+        previousGeneric, previousConfirm, previousClear
     local button = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2.antiqueFooter"],
         "Antique Footer action is missing from DataTexts bar 2")
     local c = S.Config("dataTexts")

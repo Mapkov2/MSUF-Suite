@@ -38,8 +38,7 @@ local function Build(ctx)
         P.SectionRules(ID, "finance"), {
             help = "Selected currencies appear above the bag footer. Click Gold history for recorded character balances and 30 days of this character's income and spending, by local date. Other characters show their last recorded balance. The history starts when enabled and does not reconstruct earlier transactions; Clear saved character gold removes the history and the balances.",
             extra = function(body, y, width)
-                P.Button(ctx, body, "Clear saved character gold", 16, y, width,
-                    function() P.Suite.ClearCharacterGold() end,
+                P.Button(ctx, body, "Clear saved character gold", 16, y, width, P.ClearCharacterGold,
                     function() return type(P.Suite.RootDB) == "table" end,
                     P.Meta(PAGE, ID, "action.clearGold", "action", PAGE .. "_finance"))
                 return y - 40

@@ -510,8 +510,7 @@ local function Build(ctx)
         P.SectionRules(ID, "gold"), {
             help = "While DataTexts and this choice are enabled, MSUF remembers this character's gold at login and after money changes. Hover a Gold or Session gold DataText to see the last known account total and up to eight other characters. No background scans are used.",
             extra = function(body, y, width)
-                P.Button(ctx, body, "Clear saved character gold", 16, y, width,
-                    function() P.Suite.ClearCharacterGold() end,
+                P.Button(ctx, body, "Clear saved character gold", 16, y, width, P.ClearCharacterGold,
                     function() return type(P.Suite.RootDB) == "table" end,
                     P.Meta(PAGE, ID, "action.clearGold", "action", PAGE .. "_gold"))
                 return y - 40

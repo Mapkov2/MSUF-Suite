@@ -779,6 +779,8 @@ T("Clear saved character gold", "Effacer les montants d'or enregistrés des pers
 T("Clear saved chat history", "Effacer l’historique de discussion enregistré")
 T("Clear saved selection", "Effacer la sélection enregistrée")
 T("Clear selection", "Effacer la sélection")
+T("Clear the saved chat history of this character in every chat window? This cannot be undone.", "Effacer l'historique de discussion enregistré de ce personnage dans toutes les fenêtres de discussion ? Cette action est irréversible.")
+T("Clear the saved gold balances of all your characters and their gold history? This cannot be undone.", "Effacer l'or enregistré de tous vos personnages et leur historique d'or ? Cette action est irréversible.")
 T("Clear worldmarks", "Effacer les marqueurs au sol")
 T("Click a bar to open the spell breakdown in the window; hover it for a short tooltip.", "Cliquez sur une barre pour ouvrir le détail des sorts dans la fenêtre ; survolez-la pour une infobulle courte.")
 T("Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear. The Antique Footer preset creates a bag, durability and clock strip on this bar only.", "Cliquez sur un emplacement pour choisir son texte. Déplacez la barre dans le mode Édition MSUF. Les emplacements vides disparaissent. Le préréglage Bas de page antique crée une bande sacs, durabilité et horloge sur cette barre uniquement.")
