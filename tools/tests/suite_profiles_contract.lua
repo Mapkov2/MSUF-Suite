@@ -781,4 +781,54 @@ do
     assert(Suite.DB.suite.modules.nameplates.enemyNameOffsetX == 44,
         "incoming protection flag incorrectly preserved the old profile")
 end
+-- Authored installer layouts keep their Skin positions. Retail explicitly
+-- disables the Forever screen reference; a palette override still applies.
+do
+    local referenceCalls = 0
+    MSUF_SetCurrentProfileScreenReferenceHeight = function(height)
+        referenceCalls = referenceCalls + 1
+        assert(height == 1440)
+        return true
+    end
+    Suite.ForeverFactoryScreenHeight = 1440
+    local authored = { screenHeight = false, preserveSkinLayout = true }
+    -- false must override the default even without a palette override.
+    assert(P.InstallFactory("AuthoredRetailDefault", "MSUF3:frames", DB.GetProfile("Raid"),
+        modernSkin, nil, nil, authored))
+    assert(referenceCalls == 0 and skinProfiles.AuthoredRetailDefault.look == "modern"
+        and skinProfiles.AuthoredRetailDefault.icons.microMenu.layoutX == 900
+        and skinProfiles.AuthoredRetailDefault.windowControls.positions.CharacterFrame and skinProfiles.AuthoredRetailDefault.windowControls.positions.CharacterFrame.x == 1000,
+        "default Retail inherited Forever scaling or lost its authored Skin")
+    assert(P.InstallFactory("AuthoredRetail", "MSUF3:frames", DB.GetProfile("Raid"),
+        modernSkin, "midnight", nil, authored))
+    local installedSkin = skinProfiles.AuthoredRetail
+    assert(referenceCalls == 0 and installedSkin.look == "midnight"
+        and installedSkin.icons.microMenu.layoutPoint == "BOTTOM"
+        and installedSkin.icons.microMenu.layoutX == 900
+        and installedSkin.windowControls.positions.CharacterFrame and installedSkin.windowControls.positions.CharacterFrame.x == 1000,
+        "authored Retail received the Forever screen reference or lost Skin positions")
+    assert(P.InstallFactory("AuthoredForever", "MSUF3:frames", DB.GetProfile("Raid"),
+        foreverSkin, "midnight", nil, { screenHeight = 1440, preserveSkinLayout = true }))
+    assert(referenceCalls == 1 and skinProfiles.AuthoredForever.icons.microMenu.layoutX == 1791
+        and skinProfiles.AuthoredForever.windowControls.positions.CharacterFrame and skinProfiles.AuthoredForever.windowControls.positions.CharacterFrame.x == 333,
+        "recoloring Forever lost its screen reference or authored Skin positions")
+    local enabled = Suite.Client.AddOnEnabled
+    Suite.Client.AddOnEnabled = function() return true end
+    local previousFrames, importsBefore = MSUF_ActiveProfile, frameImports
+    assert(P.InstallSuiteFactory("AuthoredRetail", DB.GetProfile("Raid"), modernSkin,
+        "midnight", nil, authored))
+    assert(frameImports == importsBefore and MSUF_ActiveProfile == previousFrames
+        and skinProfiles.AuthoredRetail.icons.microMenu.layoutX == 900
+        and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame.x == 1000,
+        "keeping current frames repositioned the authored Skin or imported frames")
+    local previous = DB.GetProfile("AuthoredRetail")
+    assert(not P.InstallSuiteFactory("AuthoredRetail", DB.GetProfile("Raid"), foreverSkin,
+        "midnight", function() return false, "refused" end, authored))
+    assert(DB.GetProfile("AuthoredRetail") == previous
+        and skinProfiles.AuthoredRetail.icons.microMenu.layoutX == 900
+        and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame.x == 1000,
+        "a refused authored install did not restore Suite and Skin")
+    Suite.Client.AddOnEnabled = enabled
+    MSUF_SetCurrentProfileScreenReferenceHeight = nil
+end
 print("Standalone profiles: unified profiles, nameplate import protection, lifecycle and sanitization passed")

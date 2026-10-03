@@ -5,6 +5,9 @@ local Suite = {
     Host = { build = "Classic" },
     RootDB = { profiles = { Default = {} } },
     RetailFactoryModuleCompact = "MSUFM1:MSUF3:retail",
+    RetailProfileModuleCompact = "MSUFM1:MSUF3:modern-retail",
+    RetailProfileSkinCompact = "MSKIN1:modern-retail",
+    ForeverFactoryScreenHeight = 1440,
     RetailFactorySkinCompact = "MSKIN1:modern",
     ForeverFactoryModuleCompact = "MSUFM1:MSUF3:forever",
     Defaults = { suite = { modules = { nameplates = {
@@ -24,6 +27,7 @@ local Suite = {
 for index = 18, 86 do Suite.SuiteOrder[index] = "contractModule" .. index end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id, addon = id:find("contractModule") and "MSUF_Suite_QualityOfLife" or "MSUF_Suite_Modules" } end
 local factoryCalls, activations, scaleChanges, decodes = 0, 0, {}, 0
+local resourceRepairs = 0
 
 Suite.IsCombatLocked = function() return false end
 -- Platform.lua's combat rule: the lockdown, or the player's combat flag,
@@ -92,7 +96,7 @@ Suite.ProfileIO = {
     PrepareProfile = function(text, shared)
         decodes = decodes + 1
         assert(shared == false, "installer factory was sanitized as an external import")
-        assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact)
+        assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact or text == Suite.RetailProfileModuleCompact)
         local modules = {}
         for _, id in ipairs(Suite.SuiteOrder) do modules[id] = { enabled = true } end
         modules.nameplates = { enabled = true, look = 4, nativeStyle = 2, barGeometry = 2 }
@@ -108,10 +112,23 @@ Suite.ProfileIO = {
             modules.cooldownManager.ext_y = -380
             modules.cooldownManager.listsData = ""
         end
+        if text == Suite.RetailProfileModuleCompact then
+            modules.actionbars.bar1Point, modules.actionbars.bar1X, modules.actionbars.bar1Y = 8, 10, 0
+            modules.actionbars.bar2Point, modules.actionbars.bar2X, modules.actionbars.bar2Y = 8, 9, 40
+            modules.actionbars.bar3Point, modules.actionbars.bar3X, modules.actionbars.bar3Y = 7, 2480, 236
+            modules.dataTexts.bar1Point, modules.dataTexts.bar1X, modules.dataTexts.bar1Y = 8, 1020, 170
+            modules.minimap.x, modules.minimap.y = 0, -10
+            modules.cooldownManager.listsData = "MSUF3:authoredRetail"
+        end
+        if text == Suite.ForeverFactoryModuleCompact then
+            modules.minimap.x = -20
+            modules.xpBar.point, modules.xpBar.y = 2, -24
+        end
         if text == Suite.RetailFactoryModuleCompact then
             modules.cooldownManager.listsData = "MSUF3:factoryRogue"
         end
-        return { suite = { schema = 1, modules = modules } }
+        return { suite = { schema = 1, globalLook = text == Suite.ForeverFactoryModuleCompact
+            and "foreverGlass" or "cleanModern", modules = modules } }
     end,
 }
 -- The installer's last step (finish: the UI scale) runs inside the profile
@@ -131,19 +148,27 @@ end
 Suite.SuiteProfiles = {
     -- The follow-up repairs belong to suite_profiles_contract.
     EnsureNewCharacterProfile = function() return false end,
-    EnsureRetailResourceStack = function() return false end,
-    InstallSuiteFactory = function(name, profile, skin, look, finish)
-        assert(name == "Default" and skin == (Suite.Client.isForever
-            and Suite.ForeverFactorySkinCompact or Suite.RetailFactorySkinCompact))
-        assert(look == (profile.suite.globalLook == "midnight" and "midnight" or "cleanModern"))
-        assert(profile.suite.modules.dataTexts.bar1Point == 8
-            and profile.suite.modules.dataTexts.bar1X == 0
-            and profile.suite.modules.actionbars.bar1X == 0
-            and profile.suite.modules.actionbars.bar2X == 0
-            and profile.suite.modules.actionbars.bar1Point == 8
-            and profile.suite.modules.actionbars.bar3Point == 7
-            and profile.suite.modules.minimap.x == -20,
-            "Modern factory positions did not use screen anchors")
+    EnsureRetailResourceStack = function() resourceRepairs = resourceRepairs + 1; return false end,
+    InstallSuiteFactory = function(name, profile, skin, look, finish, options)
+        assert(name == "Default")
+        if options and options.preserveSkinLayout then
+            assert(skin == Suite.RetailProfileSkinCompact and look == nil
+                and profile.suite.modules.dataTexts.bar1X == 1020
+                and profile.suite.modules.actionbars.bar1X == 10
+                and profile.suite.modules.minimap.x == 0,
+                "keeping current frames must preserve the authored Retail Suite layout")
+        else
+            assert(skin == (Suite.Client.isForever and Suite.ForeverFactorySkinCompact or Suite.RetailFactorySkinCompact))
+            assert(look == "cleanModern")
+            assert(profile.suite.modules.dataTexts.bar1Point == 8
+                and profile.suite.modules.dataTexts.bar1X == 0
+                and profile.suite.modules.actionbars.bar1X == 0
+                and profile.suite.modules.actionbars.bar2X == 0
+                and profile.suite.modules.actionbars.bar1Point == 8
+                and profile.suite.modules.actionbars.bar3Point == 7
+                and profile.suite.modules.minimap.x == -20,
+                "legacy Suite-only positions did not use screen anchors")
+        end
         local previous = Suite.RootDB.profiles[name]
         Suite.RootDB.profiles[name] = profile
         Suite.Database.Activate(name)
@@ -152,16 +177,22 @@ Suite.SuiteProfiles = {
             Suite.Database.Activate(name)
         end, name)
     end,
-    InstallFactory = function(name, frames, profile, skin, look, finish)
+    InstallFactory = function(name, frames, profile, skin, look, finish, options)
         factoryCalls = factoryCalls + 1
-        if look == "midnight" then
-            assert(name == (Suite.Client.isForever and "MSUF Suite Classic 2" or "MSUF Suite Classic")
+        assert(options and options.preserveSkinLayout, "authored Skin layout must be preserved")
+        if skin == Suite.RetailProfileSkinCompact then
+            assert(name == (Suite.Client.isForever and "Modern MSUF Suite 2" or "Modern MSUF Suite")
                 and frames == (Suite.Client.isForever and Suite.ClassicFactoryFramesCompact
                     or MSUF_NS.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT)
-                and skin == (Suite.Client.isForever and Suite.ForeverFactorySkinCompact
-                    or Suite.RetailFactorySkinCompact)
-                and profile.suite.globalLook == "midnight",
-                "Classic MSUF must install a complete frame, Suite and Skin factory")
+                and profile.suite.globalLook == (look or "cleanModern")
+                and options.screenHeight == false,
+                "Retail must use the original unitframe factory and the authored Suite/Skin profile")
+            assert(profile.suite.modules.actionbars.bar1X == 10
+                and profile.suite.modules.actionbars.bar2X == 9
+                and profile.suite.modules.actionbars.bar3X == 2480
+                and profile.suite.modules.dataTexts.bar1X == 1020
+                and profile.suite.modules.minimap.x == 0,
+                "Retail authored positions were replaced by installer defaults")
             local previousFrames = MSUF_ActiveProfile
             MSUF_GlobalDB.profiles[name] = {}
             Suite.RootDB.profiles[name] = profile
@@ -172,7 +203,7 @@ Suite.SuiteProfiles = {
                 MSUF_GlobalDB.profiles[name], Suite.RootDB.profiles[name] = nil, nil
             end, name)
         end
-        assert(name == "MSUF Suite Forever")
+        assert(name == "MSUF Suite Forever" and options.screenHeight == 1440)
         assert(frames == "MSUF3:frames")
         assert(skin == "MSKIN1:forever")
         assert(profile.suite.modules.chat.enabled)
@@ -275,8 +306,9 @@ UISpecialFrames = {}
 
 -- The scale goes through the Suite's host bridge; this MSUF has no host API v1.
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
-assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
 local installerFinished = 0
 EventRegistry = { TriggerEvent = function(_, event)
     assert(event == "MSUFSuite.Installer.Finished", "unexpected installer signal")
@@ -377,8 +409,9 @@ Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 copies = 0
 local function CheckLayout()
-    local panels = { window.suite, window.classic, window.forever, window.cooldowns, window.scaleToggle,
+    local panels = { window.classic, window.forever, window.cooldowns, window.scaleToggle, window.keepFrames,
         window.back, window.close, window.next, window.scaleSlider }
+    for _, color in ipairs(window.colors) do panels[#panels + 1] = color end
     if rawget(window, "moduleScroll") then
         panels[#panels + 1] = window.moduleScroll
         for _, tab in pairs(window.moduleTabs) do panels[#panels + 1] = tab end
@@ -402,16 +435,16 @@ local function CheckLayout()
         end
     end
 end
-assert(window.intro[1].shown and window.suite.shown == false and window.classic.shown == false
+assert(window.intro[1].shown and window.colors[1].shown == false and window.classic.shown == false
     and window.forever.shown == false)
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.next.scripts.OnClick() -- welcome -> profile
-assert(window.suite.shown and window.classic.shown and window.forever.shown and window.cooldowns.shown
+assert(window.colors[1].shown and window.classic.shown and window.forever.shown and window.cooldowns.shown
     and window.cooldowns.mark.text == "ON")
-assert(window.classic.mark.text == "SELECTED" and window.suite.mark.text == "CHOOSE"
-    and window.forever.mark.text == "CHOOSE", "Retail must default to the standard Midnight profile")
-assert(window.classic.y > window.suite.y and window.suite.y > window.forever.y, "Retail default must be the first profile card")
+assert(window.classic.mark.text == "SELECTED" and window.colorChoice == "cleanModern"
+    and window.forever.mark.text == "CHOOSE", "Retail must default to Modern MSUF Suite with its authored colors")
+assert(window.classic.y > window.forever.y, "Retail default must be the first profile card")
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.forever.scripts.OnClick() -- Retail can choose the full Forever factory
@@ -478,19 +511,19 @@ CheckLayout()
 Suite.Client.isForever = true
 Suite.Installer.Open()
 window.next.scripts.OnClick()
-assert(window.forever.mark.text == "SELECTED" and window.suite.mark.text == "CHOOSE"
+assert(window.forever.mark.text == "SELECTED" and window.colorChoice == "foreverGlass"
     and window.classic.mark.text == "CHOOSE" and not window.cooldowns.shown,
     "Forever must default to its complete Forever factory")
-assert(window.forever.y > window.classic.y and window.classic.y > window.suite.y, "Forever default must be the first profile card")
+assert(window.forever.y > window.classic.y, "Forever default must be the first profile card")
 assert(viewport:GetVerticalScroll() == 0, "reopening setup must reset the module scroll position")
 CheckLayout()
 Suite.Client.isForever = false
 MSUF_GetPixelPerfectScale = function() return 768 / 2160 end
 Suite.Installer.Open()
 window.next.scripts.OnClick() -- profile
-window.suite.scripts.OnClick() -- isolate the successful pixel-scale transaction
 window.next.scripts.OnClick() -- modules
 window.next.scripts.OnClick() -- scaling
+window.keepFrames.scripts.OnClick() -- isolate the successful pixel-scale transaction
 window.scaleToggle.scripts.OnClick()
 window.presets[1].scripts.OnClick()
 assert(window.scaleLabel.text == "35.56%", "4K pixel scale was clipped to slider minimum")
@@ -542,11 +575,11 @@ Suite.RootDB.profiles.Default.suite.modules.cooldownManager.listsData = "MSUF3:r
 Suite.RootDB.profiles.Default.suite.modules.cooldownManager.spellsData = "MSUF3:spells"
 Suite.Installer.Open()
 window.next.scripts.OnClick() -- profile
-window.suite.scripts.OnClick() -- explicitly exercise Modern profile retention
 window.cooldowns.scripts.OnClick()
 assert(window.cooldowns.mark.text == "OFF", "Retail onboarding must allow Blizzard CDM")
 window.next.scripts.OnClick() -- modules
 window.next.scripts.OnClick() -- scaling
+window.keepFrames.scripts.OnClick() -- explicitly retain current frames and personal CDM lists
 window.next.scripts.OnClick() -- review
 assert(window.review[2].detail.text:find("Blizzard cooldowns",1,true), "review names the CDM choice")
 window.next.scripts.OnClick() -- install
@@ -559,25 +592,60 @@ assert(Suite.RootDB.installation.raidEssentials == false
 Suite.Installer.Open()
 window.next.scripts.OnClick() -- welcome -> profile
 window.classic.scripts.OnClick()
+window.colors[1].scripts.OnClick() -- choose Midnight Blue independently from Retail layout
 assert(window.classic.mark.text == "SELECTED"
-    and window.suite.mark.text == "CHOOSE"
+    and window.colorChoice == "midnight"
     and window.review[1].shown == false,
     "Classic MSUF is not a separate setup choice")
+local repairsBeforeRetail = resourceRepairs
 assert(Suite.Installer.Apply()
     and Suite.RootDB.installation.profile == "classic"
-    and MSUF_ActiveProfile == "MSUF Suite Classic"
+    and MSUF_ActiveProfile == "Modern MSUF Suite"
     and Suite.RootDB.profiles[MSUF_ActiveProfile].suite.globalLook == "midnight"
-    and Suite.RootDB.profiles[MSUF_ActiveProfile].suite.modules.cooldownManager.listsData == "MSUF3:rogue",
+    and Suite.RootDB.profiles[MSUF_ActiveProfile].suite.modules.cooldownManager.listsData == "MSUF3:authoredRetail",
     "Classic MSUF did not install complete frames with its palette")
+assert(resourceRepairs == repairsBeforeRetail and Suite.RootDB.installation.resourceStackRevision == 1,
+    "Retail installer changed the unitframe factory resource layout")
 Suite.Client.isForever = true
 Suite.Installer.Open()
 window.next.scripts.OnClick() -- welcome -> profiles
 window.classic.scripts.OnClick()
-assert(Suite.Installer.Apply() and MSUF_ActiveProfile == "MSUF Suite Classic 2"
+assert(Suite.Installer.Apply() and MSUF_ActiveProfile == "Modern MSUF Suite 2"
     and Suite.RootDB.installation.profile == "classic",
     "Forever Classic selection did not import the bundled non-Forever MSUF frames")
 Suite.Client.isForever = false
 
+-- Changing colors does not select another layout. Explicit choices survive
+-- layout switches; reopening starts from the client default again.
+Suite.Installer.Open()
+window.next.scripts.OnClick()
+for _, choice in ipairs(window.colors) do
+    choice.scripts.OnClick()
+    assert(window.classic.mark.text == "SELECTED" and window.colorChoice == choice.look)
+    window.forever.scripts.OnClick()
+    assert(window.forever.mark.text == "SELECTED" and window.colorChoice == choice.look,
+        "switching layout reset the chosen colors")
+    window.classic.scripts.OnClick()
+    assert(window.colorChoice == choice.look)
+end
+-- Stage a Forever profile with Clean Modern colors, retaining its geometry
+-- and screen reference through the real installer's transaction arguments.
+local paletteFactory = Suite.SuiteProfiles.InstallFactory
+Suite.SuiteProfiles.InstallFactory = function(_, frames, profile, skin, look, finish, options)
+    assert(frames == Suite.ForeverFactoryFramesCompact and skin == Suite.ForeverFactorySkinCompact
+        and look == "cleanModern" and profile.suite.globalLook == "cleanModern"
+        and profile.suite.modules.actionbars.bar3X == 1039 and options.screenHeight == 1440,
+        "color and layout choices were not independent at installation")
+    return FinishInstall(finish, function() end, "Colors")
+end
+window.colors[4].scripts.OnClick()
+window.forever.scripts.OnClick()
+assert(Suite.Installer.Apply() and Suite.RootDB.installation.layout == "forever"
+    and Suite.RootDB.installation.look == "cleanModern")
+Suite.SuiteProfiles.InstallFactory = paletteFactory
+Suite.Installer.Open()
+window.next.scripts.OnClick()
+assert(window.classic.mark.text == "SELECTED" and window.colorChoice == "cleanModern")
 -- The scale is the profile transaction's last step: a scale MSUF refuses at
 -- apply rolls the Forever install back, so the retry installs "MSUF Suite
 -- Forever" again, never a "MSUF Suite Forever 2".
@@ -622,8 +690,9 @@ local function OpenLocalized(locale, L)
     GetLocale = function() return "enUS" end
     Suite.L = L
     MSUFSuiteInstallFrame = nil
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
-assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
     Suite.Installer.Open()
     return assert(MSUFSuiteInstallFrame)
 end

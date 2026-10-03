@@ -4,6 +4,8 @@ local Installer = {}
 Suite.Installer = Installer
 local DB = Suite.Database
 local selected = "suite"
+local chosenLook
+local keepFrames = true
 local useRaidEssentials = true
 local useScale = false
 local scale = 1
@@ -56,21 +58,36 @@ local function FrameProfileName()
         and _G.MSUF_ActiveProfile or DB.GetActiveProfileName()
 end
 
+local function DefaultLook()
+    return selected == "forever" and "foreverGlass" or "cleanModern"
+end
+
+local function AppliedLook()
+    if selected == "suite" then return chosenLook or "cleanModern" end
+    if chosenLook and chosenLook ~= DefaultLook() then return chosenLook end
+end
+
+local function SkinPreset()
+    if selected == "classic" then return Suite.RetailProfileSkinCompact end
+    return (selected == "forever" or Suite.Client.isForever)
+        and Suite.ForeverFactorySkinCompact or Suite.RetailFactorySkinCompact
+end
+
 -- Decoding a factory string is costly, so each one is decoded once. The
 -- cached profile stays pristine: previews read it and installs copy it.
 local decodedFactories = {}
 local function FactoryProfile()
-    local compact = (Suite.Client.isForever or selected == "forever")
-        and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
-    local cacheKey = selected .. compact
+    local compact = selected == "classic" and Suite.RetailProfileModuleCompact
+        or (Suite.Client.isForever or selected == "forever")
+            and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
+    local cacheKey = selected .. (chosenLook or "authored") .. compact
     local profile = decodedFactories[cacheKey]
     if profile then return profile end
     local reason
     profile, reason = Suite.ProfileIO.PrepareProfile(compact, false)
     if not profile then return nil, reason end
-    if selected ~= "forever" then
-        Suite.Suite.StyleProfile(profile, selected == "classic" and "midnight" or "cleanModern")
-    end
+    local look = AppliedLook()
+    if look then Suite.Suite.StyleProfile(profile, look) end
     decodedFactories[cacheKey] = profile
     return profile
 end
@@ -102,19 +119,19 @@ local function PreparedProfile()
     local profile = Suite.CopyValue(factory)
     local modules = profile.suite.modules
     local minimap = modules.minimap
-    if minimap and minimap.stylePreset ~= 10 then
+    if selected == "suite" and minimap and minimap.stylePreset ~= 10 then
         minimap.point, minimap.x, minimap.y = 3, -20, -20
     end
     local xp = modules.xpBar
-    if xp then xp.point, xp.x, xp.y = 2, 0, -24 end
+    if selected == "suite" and xp then xp.point, xp.x, xp.y = 2, 0, -24 end
     local bars = modules.actionbars
-    if bars and selected ~= "forever" then
+    if bars and selected == "suite" then
         bars.bar1Point, bars.bar1X, bars.bar1Y = 8, 0, 48
         bars.bar2Point, bars.bar2X, bars.bar2Y = 8, 0, 92
         bars.bar3Point, bars.bar3X, bars.bar3Y = 7, 24, 210
         bars.bar5Point, bars.bar5X, bars.bar5Y = 7, 72, 210
     end
-    if selected ~= "forever" then
+    if selected == "suite" then
         -- The supplied export was positioned around a 1440p screen centre.
         -- Keep its visual settings but use stable screen anchors, so changing
         -- resolution or UI scale cannot push the visible groups away.
@@ -129,11 +146,11 @@ local function PreparedProfile()
         local active = DB.GetProfile(DB.GetActiveProfileName())
         local old = active and active.suite and active.suite.modules
             and active.suite.modules.cooldownManager
-        if old and type(old.listsData) == "string"
+        if (selected ~= "classic" or keepFrames) and old and type(old.listsData) == "string"
             and (selected ~= "forever" or old.listsData ~= "") then
             cooldowns.listsData = old.listsData
         end
-        if old and type(old.spellsData) == "string"
+        if (selected ~= "classic" or keepFrames) and old and type(old.spellsData) == "string"
             and (selected ~= "forever" or old.spellsData ~= "") then
             cooldowns.spellsData = old.spellsData
         end
@@ -164,10 +181,8 @@ end
 local function ApplySuiteOnly(profile, finish)
     local name = FrameProfileName()
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
-    local skin = Suite.Client.isForever and Suite.ForeverFactorySkinCompact
-        or Suite.RetailFactorySkinCompact
     return Suite.SuiteProfiles.InstallSuiteFactory(name, profile,
-        skin, "cleanModern", finish)
+        SkinPreset(), AppliedLook(), finish, selected ~= "suite" and { preserveSkinLayout = true } or nil)
 end
 
 local function NextFactoryName(base)
@@ -190,10 +205,9 @@ local function ApplyClassic(profile, finish)
         return false, "Classic MSUF factory profile unavailable"
     end
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
-    local skin = Suite.Client.isForever and Suite.ForeverFactorySkinCompact
-        or Suite.RetailFactorySkinCompact
-    return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Classic"),
-        frames, profile, skinEnabled and skin or nil, "midnight", finish)
+    return Suite.SuiteProfiles.InstallFactory(NextFactoryName("Modern MSUF Suite"),
+        frames, profile, skinEnabled and SkinPreset() or nil, AppliedLook(), finish,
+        { screenHeight = false, preserveSkinLayout = true })
 end
 
 local function ApplyForever(profile, finish)
@@ -207,7 +221,8 @@ local function ApplyForever(profile, finish)
     end
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Forever"), frames, profile,
-        skinEnabled and skin or nil, nil, finish)
+        skinEnabled and skin or nil, AppliedLook(), finish,
+        { screenHeight = Suite.ForeverFactoryScreenHeight, preserveSkinLayout = true })
 end
 
 -- The scale the installer applies, decided once before anything commits:
@@ -238,7 +253,9 @@ function Installer.Apply()
     if not profile then return false, reason end
     local function ApplyScale() return Suite.HostBridge.ApplyScale(spec) end
     local ok
-    if selected == "forever" then
+    if keepFrames then
+        ok, reason = ApplySuiteOnly(profile, ApplyScale)
+    elseif selected == "forever" then
         ok, reason = ApplyForever(profile, ApplyScale)
     elseif selected == "classic" then
         ok, reason = ApplyClassic(profile, ApplyScale)
@@ -251,7 +268,11 @@ function Installer.Apply()
     local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
         and type(getDefault) == "function" and getDefault() == previous.frameProfileName
     Suite.RootDB.installation = {
-        revision = 3, status = "complete", profile = selected,
+        revision = 4, status = "complete", profile = keepFrames and "suite" or selected,
+        layout = selected == "forever" and "forever" or "retail",
+        look = chosenLook or DefaultLook(), keepFrames = keepFrames,
+        modernMeterMenuRevision = selected ~= "suite" and 2 or nil,
+        resourceStackRevision = selected == "classic" and 1 or nil,
         frameProfileName = FrameProfileName(),
         moduleOverrides = moduleOverrides[selected],
         raidEssentials = RetailCooldowns() and useRaidEssentials,
@@ -265,7 +286,7 @@ function Installer.Apply()
         Suite.RootDB.installation.newCharacterProfileOwned = true
     end
     Suite.SuiteProfiles.EnsureNewCharacterProfile()
-    Suite.SuiteProfiles.EnsureRetailResourceStack(true)
+    if selected ~= "classic" then Suite.SuiteProfiles.EnsureRetailResourceStack(true) end
     NotifyInstallerFinished()
     return true
 end
@@ -410,24 +431,21 @@ end
 local function BuildProfileSteps(window)
     window.intro = {
         InfoCard(window, 36, 231, Text("1. Choose a profile"),
-            Text("Choose Clean Modern, classic MSUF or the complete Forever factory.")),
+            Text("Choose Retail or Forever, then pick colors separately.")),
         InfoCard(window, 36, 157, Text("2. Select modules"),
             Text("Keep the profile defaults or switch individual Suite modules on or off.")),
         InfoCard(window, 36, 83, Text("3. Set UI scale"),
             Text("Scaling starts off and changes only if you enable it.")),
     }
-    window.suite = ProfileCard(window, 36, 241, function()
-        selected = "suite"
-        Installer.Refresh()
-    end, { "101010", "333333", "e6ecf2", "f5f5f5" })
-    window.classic = ProfileCard(window, 36, 169, function()
-        selected = "classic"
-        Installer.Refresh()
-    end, { "0a1220", "41627a", "57c7df", "f4f7fb" })
-    window.forever = ProfileCard(window, 36, 97, function()
-        selected = "forever"
-        Installer.Refresh()
-    end, { "14181b", "9f8960", "d8b66a", "f4f3eb" })
+    Suite.InstallerProfiles.Build(window, Label, ProfileCard, NavButton, Style,
+        function(layout)
+            selected = layout
+            Installer.Refresh()
+        end,
+        function(look)
+            chosenLook = look
+            Installer.Refresh()
+        end)
     local cooldowns = Panel(window, 36, 50, 508, 42, true)
     cooldowns.title = Label(cooldowns, "GameFontNormal", 14, -7, 360, 17)
     cooldowns.detail = Label(cooldowns, "GameFontHighlightSmall", 14, -24, 460, 15)
@@ -490,6 +508,10 @@ local function BuildScaleStep(window)
                 Installer.Refresh()
             end)
     end
+    window.keepFrames = NavButton(window, 36, 78, 508, "", function()
+        keepFrames = not keepFrames
+        Installer.Refresh()
+    end)
     BuildScaleSlider(window)
     window.scaleLabel = Label(window, "GameFontNormal", 448, -338, 88, 24)
     window.scaleLabel:SetJustifyH("RIGHT")
@@ -572,11 +594,10 @@ local function ShowPage(f)
         end
     end
     SetShownAll(f.intro, page == 1)
-    f.suite:SetShown(page == 2)
-    f.classic:SetShown(page == 2)
-    f.forever:SetShown(page == 2)
+    Suite.InstallerProfiles.Show(f, page == 2, selected, chosenLook or DefaultLook())
     f.cooldowns:SetShown(page == 2 and RetailCooldowns())
     Suite.InstallerModules.Show(f, page == 3)
+    f.keepFrames:SetShown(scaling)
     f.scaleToggle:SetShown(scaling)
     f.scaleHint:SetShown(scaling)
     f.scaleSlider:SetShown(scaling and useScale)
@@ -616,26 +637,7 @@ local function PaintWelcome(f)
 end
 
 local function PaintProfiles(f)
-    local cards = Suite.Client.isForever and { f.forever, f.classic, f.suite }
-        or { f.classic, f.suite, f.forever }
-    for index, card in ipairs(cards) do
-        card:ClearAllPoints()
-        card:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 36, 241 - (index - 1) * 72)
-    end
-    SetPageText(f, "Choose your profile",
-        "Preview the palette swatches, then choose Clean Modern, Classic MSUF or Forever.")
-    f.suite.title:SetText(Text("Clean Modern  ·  Suite default"))
-    f.suite.detail:SetText(Text("Matte studio surfaces, white accents and quiet outlines. Keeps your MSUF frames."))
-    f.classic.title:SetText(Text("Classic MSUF  ·  Midnight Blue"))
-    f.classic.detail:SetText(Text("Installs the classic MSUF frame factory with the blue Suite and Skin palette."))
-    f.forever.title:SetText(Text("MSUF Forever  ·  Complete profile"))
-    f.forever.detail:SetText(Text("Installs the Forever factory for MSUF frames, Suite and optional Skin."))
-    Style(f.suite, selected == "suite", false, { 0.90, 0.93, 0.95 })
-    Style(f.classic, selected == "classic", false, { 0.34, 0.78, 0.87 })
-    Style(f.forever, selected == "forever", false, { 0.85, 0.71, 0.42 })
-    f.suite.mark:SetText(selected == "suite" and Text("SELECTED") or Text("CHOOSE"))
-    f.classic.mark:SetText(selected == "classic" and Text("SELECTED") or Text("CHOOSE"))
-    f.forever.mark:SetText(selected == "forever" and Text("SELECTED") or Text("CHOOSE"))
+    SetPageText(f, "Choose your profile", "Choose Retail or Forever, then pick colors separately.")
     f.cooldowns.title:SetText(Text("MSUF spec cooldown profiles"))
     f.cooldowns.detail:SetText(Text("Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM."))
     f.cooldowns.mark:SetText(useRaidEssentials and Text("ON") or Text("OFF"))
@@ -654,7 +656,9 @@ local function PaintModules(f)
 end
 
 local function PaintScaling(f)
-    SetPageText(f, "Set UI scale",
+    f.keepFrames.caption:SetText(Text("Keep current MSUF frames: %s"):format(keepFrames and Text("ON") or Text("OFF")))
+    Style(f.keepFrames, keepFrames)
+    SetPageText(f, "Frames and UI scale",
         "Global UI scaling is off by default. Turn it on only if you want a different interface size.")
     f.scaleToggle.title:SetText(useScale and Text("UI scaling is on") or Text("UI scaling is off"))
     f.scaleToggle.detail:SetText(useScale and Text("Choose a preset below or fine-tune with the slider.")
@@ -685,10 +689,10 @@ local function PaintReview(f)
         "Check your choices. Install applies them together; you can return to any step first.")
     local profile = PreviewProfile(f)
     f.review[1].title:SetText(Text("Profile"))
-    f.review[1].detail:SetText(selected == "forever"
-        and Text("Forever · complete MSUF and Suite factory")
-        or selected == "classic" and Text("Classic MSUF · complete MSUF, Suite and Skin factory")
-        or Text("Clean Modern · Suite and Skin, MSUF frames retained"))
+    f.review[1].detail:SetText(Text("%s · Colors: %s · %s"):format(
+        selected == "forever" and Text("MSUF Forever") or Text("Modern MSUF Suite"),
+        Suite.InstallerProfiles.LookLabel(chosenLook or DefaultLook()),
+        keepFrames and Text("Current MSUF frames") or Text("Factory MSUF frames")))
     f.review[2].title:SetText(Text("Modules"))
     f.review[2].detail:SetText(ModuleSummary(profile))
     f.review[3].title:SetText(Text("UI scaling"))
@@ -715,6 +719,7 @@ end
 function Installer.Open()
     if Suite.InCombat() then return false, "combat" end
     selected = Suite.Client.isForever and "forever" or "classic"
+    chosenLook, keepFrames = nil, false
     local active = DB.GetProfile(DB.GetActiveProfileName())
     local current = active and active.suite and active.suite.modules
         and active.suite.modules.cooldownManager

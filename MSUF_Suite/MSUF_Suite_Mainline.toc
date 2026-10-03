@@ -26,6 +26,7 @@ Core\ForeverFrames.lua
 Core\ClassicFramesFactory.lua
 Core\RetailFactory.lua
 Core\RetailSkinFactory.lua
+Core\RetailProfile.lua
 Core\Database.lua
 Core\SessionGold.lua
 Core\CharacterData.lua
@@ -59,6 +60,7 @@ Core\HostBridge.lua
 Core\ProfileIO.lua
 Core\Profiles.lua
 Core\ProfileVariants.lua
+Core\InstallerProfiles.lua
 Core\InstallerModules.lua
 Core\Installer.lua
 Core\Menu.lua

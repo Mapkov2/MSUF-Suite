@@ -1487,6 +1487,86 @@
       "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
       "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
       "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Choose Clean Modern, classic MSUF or the complete Forever factory.",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Classic MSUF  ·  Midnight Blue",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Classic MSUF · complete MSUF, Suite and Skin factory",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Clean Modern  ·  Suite default",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Clean Modern · Suite and Skin, MSUF frames retained",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Forever · complete MSUF and Suite factory",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Installs the classic MSUF frame factory with the blue Suite and Skin palette.",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Matte studio surfaces, white accents and quiet outlines. Keeps your MSUF frames.",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Preview the palette swatches, then choose Clean Modern, Classic MSUF or Forever.",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Set UI scale",
+      "basis": "moved",
+      "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
+      "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
+      "date": "2026-10-03"
     }
   ]
 }

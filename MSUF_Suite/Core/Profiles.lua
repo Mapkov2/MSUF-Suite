@@ -545,7 +545,7 @@ end
 -- Installer-owned factory data is already bundled and validated by the same
 -- catalog as normal profiles. Keep its module values, including explicit
 -- enabled choices, while MSUF's frame import remains transactional.
-function P.InstallFactory(name, frames, modules, skinText, lookName, finish)
+function P.InstallFactory(name, frames, modules, skinText, lookName, finish, options)
     local clean, reason = NewName(name)
     if not clean then return false, reason end
     if type(frames) ~= "string" or not frames:match("^MSUF[234]:") then
@@ -566,18 +566,19 @@ function P.InstallFactory(name, frames, modules, skinText, lookName, finish)
             or not skin.Theme.StyleProfile(skinProfile, lookName)) then
             return false, "Skin look unavailable"
         end
-        if type(skinText) == "string" then
+        if type(skinText) == "string" and not (options and options.preserveSkinLayout) then
             AdaptFactorySkin(skinProfile, lookName and profile.suite.modules or nil)
         end
     end
     local screenHeight = not lookName and Suite.ForeverFactoryScreenHeight or nil
+    if options and options.screenHeight ~= nil then screenHeight = options.screenHeight end
     return Create(clean, frames, profile, skinProfile, screenHeight, finish)
 end
 
 -- Modern replaces only the active Suite and optional Skin settings. Prepare
 -- both payloads before changing either store; the MSUF frame profile is never
 -- imported or switched here. finish: as for Create.
-function P.InstallSuiteFactory(name, modules, skinText, lookName, finish)
+function P.InstallSuiteFactory(name, modules, skinText, lookName, finish, options)
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
     local profile, reason = IO.PrepareTable(modules, false)
     if not profile then return false, reason end
@@ -592,7 +593,7 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName, finish)
             or not skin.Theme.StyleProfile(skinProfile, lookName)) then
             return false, "Skin look unavailable"
         end
-        AdaptFactorySkin(skinProfile, profile.suite.modules)
+        if not (options and options.preserveSkinLayout) then AdaptFactorySkin(skinProfile, profile.suite.modules) end
     end
     local previousModules = DB.GetProfile(name)
     local previousActive = DB.GetActiveProfileName()
