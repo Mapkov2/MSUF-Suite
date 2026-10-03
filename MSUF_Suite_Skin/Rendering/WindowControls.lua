@@ -114,6 +114,12 @@ local function CanChangeGeometry(state)
     return not IsCombat() and not Safety.GetProtection(state.frame)
 end
 
+-- The controls are on for this panel: Window controls are enabled, an
+-- owner still skins it and it can be controlled.
+local function Controlled(state)
+    return Enabled() and next(state.owners) ~= nil and not Safety.GetProtection(state.frame)
+end
+
 local function ApplyStoredScale(state)
     if not CanChangeGeometry(state) then return end
     local limits = Limits()
@@ -511,6 +517,14 @@ local function ShowControls(state)
     if state.minimize then state.minimize:Show() end
 end
 
+-- Controls off: a panel the grip scaled gets Blizzard's scale back (the
+-- stored scale stays and returns with the controls).
+local function RestoreNativeScale(state)
+    if not state.customScale or not CanChangeGeometry(state) then return end
+    state.customScale = false
+    if type(state.originalScale) == "number" then state.frame:SetScale(state.originalScale) end
+end
+
 local function HideControls(state)
     if state.moving then EndMove(state) end
     if state.drag then EndDrag(state) end
@@ -518,6 +532,7 @@ local function HideControls(state)
     state.titleDrag:Hide()
     state.grip:Hide()
     if state.minimize then state.minimize:Hide() end
+    RestoreNativeScale(state)
     if state.defaultPosition and not IsCombat() then RestoreNativePosition(state) end
 end
 
@@ -554,9 +569,13 @@ local function OnPanelShow(frame)
         state.minimized = false
         state.restore:Hide()
     end
-    if Enabled() and next(state.owners) and not Safety.GetProtection(frame) then
+    if Controlled(state) then
         state.titleDrag:SetFrameLevel(frame:GetFrameLevel() + CONTROL_LEVEL_OFFSET)
         state.titleDrag:Show()
+        -- Blizzard fits checkFit panels (PlayerSpellsFrame, ProfessionsFrame,
+        -- Settings) to the screen with SetScale(1) as they open: the stored
+        -- scale comes back first, then the position, which depends on it.
+        ApplyStoredScale(state)
     else
         state.titleDrag:Hide()
     end
@@ -634,7 +653,7 @@ function WindowControls.Refresh()
     if IsCombat() then return false, "combat" end
     local enabled = Enabled()
     for _, state in pairs(WindowControls.states) do
-        if enabled and next(state.owners) and not Safety.GetProtection(state.frame) then
+        if enabled and Controlled(state) then
             if not state.drag then ApplyStoredScale(state) end
             if not state.moving then ApplyStoredPosition(state) end
             ShowControls(state)
