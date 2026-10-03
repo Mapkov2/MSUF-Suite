@@ -318,13 +318,13 @@ end
 function Lifecycle.rename(source, target, skin)
     local original = DB.GetProfile(source)
     -- MSUF asks before it renames its own profile, so a Suite or skin profile
-    -- that already has the new name is refused before anything moves: no
-    -- store keeps the old settings behind or activates another profile's.
-    -- Older MSUF builds rename first and ignore the answer; they keep the
-    -- previous best-effort move.
+    -- that already has the new name is refused before anything moves, also
+    -- when that store has no profile under the old name: no store keeps the
+    -- old settings behind, and the renamed profile never activates another
+    -- profile's. Older MSUF builds rename first and ignore the answer; they
+    -- keep the previous best-effort move.
     local frames = MSUF_GlobalDB and MSUF_GlobalDB.profiles
-    if frames and frames[source] and (original and DB.GetProfile(target)
-        or skin and skin.Database.GetProfile(source) and skin.Database.GetProfile(target)) then
+    if frames and frames[source] and (DB.GetProfile(target) or skin and skin.Database.GetProfile(target)) then
         return false, "profile-exists"
     end
     if original and not DB.GetProfile(target) then
@@ -358,12 +358,19 @@ end
 -- The kinds that name a second profile.
 local WITH_TARGET = { copy = true, rename = true }
 
+-- A refusal names its reason; MSUF reports it.
 function P.OnLifecycle(kind, source, target)
-    if Suite.suppressProfileSync or not Suite.RootDB or Suite.IsCombatLocked() then return false end
+    -- Without its store (or inside its own import) the Suite has nothing to
+    -- keep aligned: a rename goes ahead, the other kinds keep their answer.
+    if Suite.suppressProfileSync or not Suite.RootDB then return kind == "rename" end
+    if Suite.IsCombatLocked() then return false, "combat" end
     local skin = SkinEngine()
     local handler = Lifecycle[kind]
-    if not handler or not DB.IsProfileName(source) or WITH_TARGET[kind] and not DB.IsProfileName(target) then
-        return false
+    -- A rename names one new profile: an old name the Suite cannot store (an
+    -- over-long name from older MSUF builds) has nothing here to move.
+    if not handler or kind ~= "rename" and not DB.IsProfileName(source)
+        or WITH_TARGET[kind] and not DB.IsProfileName(target) then
+        return false, "invalid-profile-name"
     end
     return handler(source, target, skin)
 end

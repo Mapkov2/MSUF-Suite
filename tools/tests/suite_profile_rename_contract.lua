@@ -160,4 +160,43 @@ assert(suite.Database.GetProfile("B").suite.modules.chat.marker == "A" and not s
     and skin.Database.GetProfile("A").theme.colors.accent[1] == 1 and skin.Database.GetProfile("B").theme.colors.accent[3] == 1,
     "an older MSUF's rename lost the previous best-effort move")
 
+-- 6. An MSUF profile without a Suite or skin twin (made before the Suite was
+--    installed) is refused a name the Suite or the skin holds just the same:
+--    switching to it would activate that profile's settings.
+for _, taken in ipairs({ "Leftover", "B" }) do
+    Fixture()
+    MSUF_GlobalDB.profiles.Pre = { player = { width = 99 } }
+    renamed, why = MSUF_RenameProfile("Pre", taken)
+    assert(renamed == false and why == "profile-exists" and MSUF_GlobalDB.profiles.Pre and not MSUF_GlobalDB.profiles[taken]
+        and Said("Profile '" .. taken .. "' already exists."),
+        "a profile without a twin was renamed onto the occupied name " .. taken)
+    Unchanged("no twin, " .. taken)
+end
+
+-- 7. An over-long name from an older MSUF build (the Suite cannot store it)
+--    can still be renamed to a valid one: the Suite has nothing to move, and
+--    the switch gives the new name its Suite and skin profiles.
+Fixture()
+local long = string.rep("L", 81)
+MSUF_GlobalDB.profiles[long], MSUF_GlobalDB.profiles.A = MSUF_GlobalDB.profiles.A, nil
+MSUF_GlobalDB.char["Player-Realm"].activeProfile, MSUF_ActiveProfile = long, long
+assert(MSUF_RenameProfile(long, "Recovered") == true, "an over-long older profile could not be renamed")
+assert(MSUF_GlobalDB.profiles.Recovered == MSUF_DB and not MSUF_GlobalDB.profiles[long] and MSUF_ActiveProfile == "Recovered"
+    and suite.Database.GetActiveProfileName() == "Recovered" and skin.Database.GetActiveProfileName() == "Recovered",
+    "the recovered profile is not active in all three stores")
+
+-- 8. A new name the Suite cannot store is refused with MSUF's name rule.
+Fixture()
+renamed, why = MSUF_RenameProfile("A", "Bad\1Name")
+assert(renamed == false and why == "invalid-profile-name" and Said("Profile names can be at most 80 bytes long."),
+    "a name the Suite cannot store was not refused with a reason")
+Unchanged("invalid name")
+
+-- 9. Without its database the Suite has nothing to keep aligned: the rename
+--    goes ahead as it did before MSUF asked first.
+Fixture()
+suite.RootDB = nil
+assert(MSUF_RenameProfile("A", "C") == true and MSUF_GlobalDB.profiles.C and MSUF_ActiveProfile == "C",
+    "a rename was refused while the Suite had no database")
+
 write("suite_profile_rename_contract: ok\n")
