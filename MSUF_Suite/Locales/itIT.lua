@@ -3275,6 +3275,7 @@ T("Skin refresh is blocked during combat.", "L'aggiornamento della skin è blocc
 T("Skin the Blizzard Micro Bar", "Applica la skin alla barra micromenu Blizzard")
 T("Skinning", "Skin")
 T("Skip cinematic confirmation", "Salta la conferma delle scene")
+T("Skipping ends Blizzard's movie or cinematic from addon code, which can rarely cause an \"Interface action blocked\" message later.", "Saltare termina il filmato o la scena di Blizzard dal codice di un addon, e raramente può causare in seguito un messaggio \"Azione dell'interfaccia bloccata\".")
 T("Skull", "Teschio")
 T("Skurri", "Skurri")
 T("Skyriding HUD", "HUD Volo dinamico")

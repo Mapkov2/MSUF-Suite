@@ -332,7 +332,12 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
         local grid = W.SettingsRows(ctx, parent, {
             x = 16, y = y, width = width, columns = columns or (width >= 560 and 2 or 1), rows = rows,
         })
-        for _, rule in ipairs(pending) do entries[#entries + 1] = { rule = rule, widget = grid.controls[rule.key] } end
+        for _, rule in ipairs(pending) do
+            local widget = grid.controls[rule.key]
+            entries[#entries + 1] = { rule = rule, widget = widget }
+            -- A rule's note (rule.tooltip, SuiteCatalog.lua) shows on its control.
+            if rule.tooltip and widget then M.AddTooltip(widget, Tr(rule.label), Tr(rule.tooltip), { hook = true }) end
+        end
         y = grid.bottomY
     end
     for _, rule in ipairs(strings) do

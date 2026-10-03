@@ -76,6 +76,12 @@ function Build.Choice(key, label, value, labels)
     rule.choices = labels
     return rule
 end
+-- A short note a rule's control shows as its tooltip (English source text,
+-- translated where it shows: MSUF_Suite_Options/Menu/Controls.lua).
+function Build.Tooltip(rule, text)
+    rule.tooltip = text
+    return rule
+end
 function Build.String(key, label, value, maxLength)
     return { key=key, label=label, default=value, maxLength=maxLength }
 end

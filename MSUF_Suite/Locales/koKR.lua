@@ -3275,6 +3275,7 @@ T("Skin refresh is blocked during combat.", "전투 중에는 스킨을 새로 �
 T("Skin the Blizzard Micro Bar", "블리자드 마이크로 메뉴에 스킨 적용")
 T("Skinning", "스킨 적용")
 T("Skip cinematic confirmation", "시네마틱 확인 건너뛰기")
+T("Skipping ends Blizzard's movie or cinematic from addon code, which can rarely cause an \"Interface action blocked\" message later.", "건너뛰기는 애드온 코드에서 블리자드의 동영상이나 시네마틱을 끝내므로, 드물게 나중에 \"인터페이스 동작 차단\" 메시지가 나타날 수 있습니다.")
 T("Skull", "해골")
 T("Skurri", "Skurri 글꼴")
 T("Skyriding HUD", "하늘비행 HUD")

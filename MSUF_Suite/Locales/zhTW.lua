@@ -3276,6 +3276,7 @@ T("Skin refresh is blocked during combat.", "戰鬥中無法重新整理美化�
 T("Skin the Blizzard Micro Bar", "美化暴雪微型選單列")
 T("Skinning", "美化")
 T("Skip cinematic confirmation", "略過過場動畫確認")
+T("Skipping ends Blizzard's movie or cinematic from addon code, which can rarely cause an \"Interface action blocked\" message later.", "略過會透過插件程式碼結束暴雪的影片或過場動畫，少數情況下之後可能出現「介面動作被阻擋」的訊息。")
 T("Skull", "骷髏")
 T("Skurri", "Skurri字型")
 T("Skyriding HUD", "天空騎術HUD")

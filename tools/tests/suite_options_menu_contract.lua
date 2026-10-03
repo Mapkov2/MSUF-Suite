@@ -2023,6 +2023,30 @@ for category, features in pairs(qolFeaturesByCategory) do
             "Quality of Life feature lost its direct search entry or help: " .. name)
     end
 end
+-- Owner decision (2026-10-03): both cinematic skips stay, off by default,
+-- and their controls warn that skipping ends Blizzard's movie or cinematic
+-- from addon code.
+;(function()
+    local record = assert(qolRows["suite_qualityOfLife_dailyComfort_daily_comfort"], "Daily UI comforts has no row")
+    record.reveal(true)
+    local warning = optionsNS.Tr("Skipping ends Blizzard's movie or cinematic from addon code, which can rarely cause"
+        .. " an \"Interface action blocked\" message later.")
+    local found = {}
+    for _, widget in ipairs(qolPage.widgets) do
+        local meta = rawget(widget, "meta")
+        local key = type(meta) == "table" and meta.settingKey
+        if key == "msufsuite.dailyComfort.skipCinematicConfirm" or key == "msufsuite.dailyComfort.autoSkipCinematic" then
+            local tooltip = rawget(widget, "tooltip")
+            assert(tooltip and tooltip.body == warning, key .. " has no cinematic warning")
+            found[#found + 1] = key
+        end
+    end
+    assert(#found == 2, "the cinematic skip controls were not built")
+    local rules = S.catalog.dailyComfort.rules
+    assert(rules.skipCinematicConfirm.default == false and rules.autoSkipCinematic.default == false
+        and rules.autoSkipCinematic.automation and S.catalog.dailyComfort.defaultEnabled == false,
+        "a cinematic skip is on by default")
+end)()
 local actualQolFeatureCount = 0
 for name in pairs(qolRows) do
     actualQolFeatureCount = actualQolFeatureCount + 1

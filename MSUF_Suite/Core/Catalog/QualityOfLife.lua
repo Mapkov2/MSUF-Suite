@@ -291,9 +291,13 @@ B.Module("dailyComfort", {
         whisperMode = true,
     },
 })
+-- Both skips end Blizzard's movie or cinematic from addon code (owner
+-- decision, 2026-10-03: they stay; their controls carry this warning).
+local CINEMATIC_WARNING =
+    "Skipping ends Blizzard's movie or cinematic from addon code, which can rarely cause an \"Interface action blocked\" message later."
 B.Section("dailyComfort", "daily_comfort", "Daily UI comforts", {
-    Bool("skipCinematicConfirm", "Skip cinematic confirmation"),
-    B.Automation(Bool("autoSkipCinematic", "Automatically skip cinematics and movies")),
+    B.Tooltip(Bool("skipCinematicConfirm", "Skip cinematic confirmation"), CINEMATIC_WARNING),
+    B.Tooltip(B.Automation(Bool("autoSkipCinematic", "Automatically skip cinematics and movies")), CINEMATIC_WARNING),
     Bool("hideTutorials", "Hide tutorial prompts"),
     Bool("fillDelete", "Fill DELETE in item confirmations"),
     Bool("hideScreenshotSuccess", "Hide screenshot success notice"),
