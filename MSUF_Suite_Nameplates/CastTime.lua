@@ -35,8 +35,11 @@ function CastTime.Restore(cast)
     if Safe(state.label) then state.label:Hide() end
 end
 
--- UnitCastingDuration and UnitChannelDuration return an opaque duration
--- object, or nothing without that kind of cast. The cast duration rule
+-- UnitCastingDuration, UnitChannelDuration and UnitEmpoweredChannelDuration
+-- return an opaque duration object, or nothing without that kind of cast.
+-- An empowered cast's time comes from the empowered channel's own duration
+-- (UnitDocumentation, Retail and Forever), which includes the hold at its
+-- top stage by default. The cast duration rule
 -- (shared with QualityOfLife/EnemyCastStack.lua): the object may itself be
 -- secret (UnitCastingDuration: SecretReturns, UnitDocumentation), and
 -- DurationTextBinding:SetDuration takes secret arguments only from untainted
@@ -59,9 +62,10 @@ function CastTime.Refresh(state, unit, event)
     state.binding:Disable()
     state.label:Hide()
     if not unit then return end
-    if event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE"
-        or event == "UNIT_SPELLCAST_EMPOWER_START" or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" then
+    if event == "UNIT_SPELLCAST_CHANNEL_START" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
         ApplyDuration(state, unit, UnitChannelDuration)
+    elseif event == "UNIT_SPELLCAST_EMPOWER_START" or event == "UNIT_SPELLCAST_EMPOWER_UPDATE" then
+        ApplyDuration(state, unit, UnitEmpoweredChannelDuration)
     elseif event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_DELAYED" then
         ApplyDuration(state, unit, UnitCastingDuration)
     elseif event == nil or event == "UNIT_SPELLCAST_INTERRUPTIBLE"
