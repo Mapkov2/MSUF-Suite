@@ -183,8 +183,9 @@ function P.EnsureRetailResourceStack(force)
     installation.resourceStackRevision = 1
     if not migrate then return false end
     -- MSUF writes the stack (Suite.HostBridge: its host API, or the
-    -- Suite's previous writes on older hosts).
-    return Suite.HostBridge.SetResourceStack("cooldown")
+    -- Suite's previous writes on older hosts); force also re-applies a
+    -- complete one.
+    return Suite.HostBridge.SetResourceStack("cooldown", force == true)
 end
 
 -- Older Retail Forever imports had Potions attached to Utility at Y=-380.

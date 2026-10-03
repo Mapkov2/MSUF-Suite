@@ -152,11 +152,17 @@ local function LegacyCooldownStack()
 end
 
 -- mode "cooldown": class resource and power bar on the cooldown manager.
--- Returns whether anything changed; unknown modes change nothing.
-function HostBridge.SetResourceStack(mode)
+-- Returns whether MSUF's appliers ran: on v1 the host's applied (it writes
+-- an incomplete stack, and with force == true also re-applies a complete
+-- one); the legacy path always writes and applies, as before. Unknown modes
+-- change nothing.
+function HostBridge.SetResourceStack(mode, force)
     if mode ~= "cooldown" then return false end
     local api = CoreAPI()
-    if api then return api.SetResourceStack(mode) == true end
+    if api then
+        local _, applied = api.SetResourceStack(mode, force)
+        return applied == true
+    end
     local db = _G.MSUF_DB
     if type(db) ~= "table" or type(db.bars) ~= "table" or type(db.player) ~= "table" then return false end
     return LegacyCooldownStack()
@@ -173,22 +179,24 @@ end
 --   finish       fn(key): refresh and feedback after a reset
 --   withHistory  fn(label, source, fn) -> ok;  confirm fn(key, text, onAccept)
 --   combat       fn() -> whether combat refuses
--- A v1 Menu2 owns the confirmation, the combat refusal and the history
--- entry; older menus get the four wrapped functions as before.
+-- A v1 Menu2 owns the confirmation, the combat refusal, the canReset check
+-- and the history entry, and runs the provider's steps in the spec's order:
+-- prepare before its undo snapshot (so Undo also restores state prepare
+-- loaded, the dormant Skinning engine), reset inside the one history entry
+-- named by historyLabel (already translated), finish after the entry is
+-- committed. Older menus get the four wrapped functions as before.
 local PROVIDER_ID = "msuf-suite"
 
 local function RegisterProvider(M, handlers)
-    local function Reset(key)
-        if handlers.combat() or not handlers.canReset(key) or not handlers.prepare(key) then return false end
-        local ok = handlers.run(key) == true
-        if ok then handlers.finish(key) end
-        return ok
-    end
+    local run = handlers.run
     M.RegisterPageResetProvider(PROVIDER_ID, {
         pages = handlers.pages,
         canReset = handlers.canReset,
         warning = handlers.warning,
-        reset = Reset,
+        prepare = handlers.prepare,
+        reset = function(key) return run(key) == true end,
+        finish = handlers.finish,
+        historyLabel = handlers.label,
     })
 end
 
