@@ -46,11 +46,16 @@ end
 -- opener from secure code. CharacterMicroButton runs
 -- ToggleCharacter("PaperDollFrame") (CharacterMicroButtonMixin:OnClick),
 -- the minimap's zone text button runs ToggleWorldMap()
--- (MinimapZoneTextButtonMixin:OnClick, Blizzard_Minimap/Mainline) and the
--- character window's currency tab runs CharacterFrame:ToggleTokenFrame()
--- (CharacterFrameTabButtonMixin:OnClick), as the TOGGLECURRENCY binding
--- does, on Retail and WoW Forever. The Suite's minimap leaves the zone text
--- button shown at alpha 0 (Context:HideControl), so it stays clickable.
+-- (MinimapZoneTextButtonMixin:OnClick, Blizzard_Minimap/Mainline), on
+-- Retail and WoW Forever. On Retail the character window's currency tab runs
+-- CharacterFrame:ToggleTokenFrame() (CharacterFrameTabButtonMixin:OnClick),
+-- as the TOGGLECURRENCY binding does. WoW Forever has no such button: its
+-- character window (Camelot/CharacterFrame.xml) has no CharacterFrameTab3,
+-- and its currency side tab, CharacterFrameModeTab5, is a Frame that opens
+-- the tab from OnMouseUp and has no Click for a secure "click". There the
+-- currency places open the character window on its last tab
+-- (S.TogglePanel). The Suite's minimap leaves the zone text button shown at
+-- alpha 0 (Context:HideControl), so it stays clickable.
 local PANEL_BUTTONS = {
     character = function() return _G.CharacterMicroButton end,
     worldMap = function()
