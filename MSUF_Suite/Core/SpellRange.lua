@@ -83,4 +83,3 @@ function S.SetNativeSpellRange(owner, spellID, enabled)
         if not next(spells) then owners[owner] = nil end
     end
 end
-
