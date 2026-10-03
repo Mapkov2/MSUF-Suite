@@ -1978,7 +1978,7 @@ local qolFeaturesByCategory = {
     },
     interfaceChat = {
         "cursorEffects_cursor_effects", "guildChatPrivacy_guild_privacy",
-        "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter", "popupAttention_popup_attention", "partyEffects_party_effects",
+        "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter", "popupAttention_popup_attention",
     },
     tooltips = {
         "tooltipClassColors_class_colors", "tooltipSpellCopy_copy_spell_id",
@@ -1988,6 +1988,7 @@ local qolFeaturesByCategory = {
 local qolRows = assert(qolPage.qualityOfLifeFeatureRows
     or (qolPage.entry and qolPage.entry.qualityOfLifeFeatureRows),
     "Quality of Life feature rows were not exposed to direct navigation")
+assert(qolRows.suite_qualityOfLife_partyEffects_party_effects == nil, "Celebrations row is still visible")
 assert(#qolPage.sections == 9, "Quality of Life should have nine category accordions")
 local categoriesSeen = {}
 for i, section in ipairs(qolPage.sections) do
@@ -2053,7 +2054,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 63 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 62 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated")
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")
@@ -2095,7 +2096,7 @@ for i, category in ipairs(sourceCategories) do
         CheckFeatureList(category.features, category.id, nil, true)
     end
 end
-assert(tabbedCount == 3 and sourceCount == 63,
+assert(tabbedCount == 3 and sourceCount == expectedQolFeatureCount,
     "Quality of Life source tabs or rendered feature inventory changed")
 local renderedOrder = assert(qolPage.qualityOfLifeFeatureOrder,
     "Quality of Life page did not record the rendered feature order")
@@ -2745,6 +2746,7 @@ assert(macro.enabled == false, "hidden per-bar option stays editable on the pet 
 picker.set(1)
 M.RequestRefresh()
 assert(macro.enabled == true, "macro option locked on action bar 1")
+
 
 -- Windows of the damage meter follow the window picker.
 local dm = contexts.suite_damageMeter

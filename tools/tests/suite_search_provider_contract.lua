@@ -104,10 +104,6 @@ end
 LoadAddOn("MSUF_Suite", {})
 local Suite = env.MSUFSuite
 Check(Suite.Database.Initialize(nil), "Suite test profile did not initialize")
-Check(Suite.Suite.Config("partyEffects").enabled == false
-    and Suite.Suite.Config("partyEffects").onLust == false,
-    "party effects and the Bloodlust trigger must both default off")
-Check(Suite.SuiteCatalog.partyEffects.optIn == true, "party effects must remain opt-in")
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = true end
 Suite.Skin.enabled = true
 local P = {}
@@ -240,6 +236,13 @@ Check(P.searchRegistered == true, "the Suite provider did not register")
 Check(api.GetSearchProviderCache() == nil, "Suite rows were collected at load instead of on the first search")
 
 local function Search(query) return api.SearchPages(query) end
+Check(Suite.SuiteCatalog.partyEffects == nil, "retired Celebrations remains in the catalog")
+for _, query in ipairs({ "Celebrations", "When you or your pet cast Bloodlust", "Bloodlust" }) do
+    for _, record in ipairs(Search(query)) do
+        local key = record.exactTarget and record.exactTarget.settingKey
+        Check(not key or not key:find("msufsuite.partyEffects.", 1, true), "search exposed retired Celebrations")
+    end
+end
 local function CheckReleaseSearch(stage)
     for _, query in ipairs({ "release", "release protection", "freilassen", "releasen schutz", "geist freilassen", "release-schutz" }) do
         local found
@@ -746,21 +749,6 @@ do
         RouteExact("msufsuite.releaseProtection.enabled", "main")
         RouteExact("msufsuite.releaseProtection.modifier", "main", "suite_qualityOfLife_releaseProtection_release_protection")
         RouteExact("msufsuite.actionTracker.rows", "main")
-        do
-            local key="msufsuite.partyEffects.onLust"
-            local found
-            for _,record in ipairs(Search("When you or your pet cast Bloodlust")) do
-                if record.exactTarget and record.exactTarget.settingKey==key then found=record;break end
-            end
-            Check(found and found.kind=="toggle" and found.exactTarget.sectionId=="suite_qualityOfLife_partyEffects_party_effects",
-                "the Bloodlust trigger must have a searchable exact toggle in the existing party-effects section")
-            local set, writes=Suite.Suite.Set,0
-            Suite.Suite.Set=function(...) writes=writes+1;return set(...) end
-            RouteExact(key,"main","suite_qualityOfLife_partyEffects_party_effects")
-            Suite.Suite.Set=set
-            Check(writes==0 and Suite.Suite.Config("partyEffects").onLust==false,
-                "search navigation must focus the Bloodlust trigger without enabling it or invoking a setting action")
-        end
         RouteExact("msufsuite.qol.junkReport", "merchants")
         if flavor == "Mainline" then
             RouteExact("msufsuite.tooltipDetails.unitMount", "main", "suite_qualityOfLife_tooltipDetails_tooltip_details")

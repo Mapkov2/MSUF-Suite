@@ -19,16 +19,6 @@ AB.ENUM = NS.ActionBarEnum
 -- Read-only views of module state for the contract tests; nothing in the
 -- addon calls them.
 AB.Diagnostics = {}
--- Narrow visitor for finite QoL animation of real Suite-owned headers. Out
--- of combat only; combat start stops every header animation (Events.lua).
-function S.VisitPartyActionBars(visitor, owner)
-    if not AB.M.active or NS.IsCombatLocked() then return end
-    for index = 1, AB.ENUM.BAR.LAST_ACTION do
-        local bar = AB.bars[index]
-        if bar and bar.owned and bar.header and not NS.Safety.IsForbidden(bar.header)
-            and bar.header:IsShown() then visitor(owner, bar.header) end
-    end
-end
 local M = AB.M
 S.Install("actionbars", M)
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min

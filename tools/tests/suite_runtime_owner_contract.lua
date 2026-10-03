@@ -60,6 +60,10 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
 assert(Suite.Database.Initialize(nil))
+local retiredCelebrations = { enabled = true, onLust = true }
+Suite.DB.suite.modules.partyEffects = retiredCelebrations
+Suite.Suite.Normalize(Suite.DB)
+assert(Suite.DB.suite.modules.partyEffects == retiredCelebrations, "normalization changed legacy profile data")
 local private = {}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
@@ -73,12 +77,15 @@ for id in pairs(Suite.Suite.instances) do
 end
 assert(shared == 4 and Suite.Suite.MythicPlus == nil, "Forever loaded the Mythic+ view or lost a HUD module")
 Support.Load(root, "MSUF_Suite_QualityOfLife", {})
+assert(not Suite.SuiteCatalog.partyEffects and not Suite.Suite.instances.partyEffects,
+    "retired Celebrations still registered from an enabled legacy profile")
+assert(Suite.Suite.Set("partyEffects", "enabled", true) == false, "retired Celebrations accepts setting writes")
 local count = 0
 for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 62 and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
+assert(count == 61 and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
     and Suite.Suite.instances.itemCounts and Suite.Suite.instances.loadoutReminder
@@ -103,7 +110,7 @@ assert(count == 62 and Suite.Suite.instances.actionTracker and Suite.Suite.insta
     and Suite.Suite.instances.trustedPartyInvites and Suite.Suite.instances.burningRushCue
     and Suite.Suite.instances.threatMeter and Suite.Suite.instances.flightTimer and Suite.Suite.instances.characterExtras
     and Suite.Suite.instances.merchantList and Suite.Suite.instances.tooltipDetails
-    and Suite.Suite.instances.popupAttention and Suite.Suite.instances.partyEffects,
+    and Suite.Suite.instances.popupAttention,
     "shared HUD modules and Quality of Life helpers did not register together")
 local eventOnly = Suite.Suite.instances.groupFinderExitReminder
 assert(type(eventOnly.Refresh) == "function"

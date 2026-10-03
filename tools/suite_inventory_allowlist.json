@@ -191,6 +191,1302 @@
       "evidence": "q13/sfa locale P3 commit; MSUF_Suite_Options/Menu/Register.lua ADDON_NOTICE becomes \"You need to turn on the module in Blizzard's AddOn list\"; all ten packs carry the same translation under the new key.",
       "reason": "Typo fix of the AddOn notice; the text and its translations are retained under the corrected English key.",
       "date": "2026-10-03"
+    },
+    {
+      "category": "modules",
+      "item": "[\"forever:partyEffects\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "modules",
+      "item": "[\"retail:partyEffects\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:partyEffects\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:partyEffects\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:partyEffects\",\"conflicts\",[]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:partyEffects\",\"defaultEnabled\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:partyEffects\",\"description\",\"Animated color flashes that celebrate a level, an achievement or Bloodlust, at random times if you like, and can spin the Suite action bars once.\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:partyEffects\",\"optIn\",true]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:partyEffects\",\"conflicts\",[]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:partyEffects\",\"defaultEnabled\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:partyEffects\",\"description\",\"Animated color flashes that celebrate a level, an achievement or Bloodlust, at random times if you like, and can spin the Suite action bars once.\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:partyEffects\",\"optIn\",true]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.duration\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.enabled\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.fontSize\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.interval\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.onAchievement\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.onGroupLust\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.onLevelUp\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.onLust\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.random\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.rotateActionBars\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.scale\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.x\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:partyEffects.y\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.duration\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.enabled\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.fontSize\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.interval\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.onAchievement\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.onGroupLust\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.onLevelUp\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.onLust\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.random\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.rotateActionBars\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.scale\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.x\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:partyEffects.y\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.duration\",\"number\",6]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.enabled\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.fontSize\",\"number\",24]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.interval\",\"number\",300]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.onAchievement\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.onGroupLust\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.onLevelUp\",\"boolean\",true]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.onLust\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.random\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.rotateActionBars\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.scale\",\"number\",100]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.x\",\"number\",0]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:partyEffects.y\",\"number\",220]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.duration\",\"number\",6]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.enabled\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.fontSize\",\"number\",24]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.interval\",\"number\",300]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.onAchievement\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.onGroupLust\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.onLevelUp\",\"boolean\",true]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.onLust\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.random\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.rotateActionBars\",\"boolean\",false]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.scale\",\"number\",100]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.x\",\"number\",0]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:partyEffects.y\",\"number\",220]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.duration\",\"Effect duration in seconds\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.enabled\",\"Enable module\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.fontSize\",\"Banner text size\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.interval\",\"Average time between surprises (seconds)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.onAchievement\",\"When you earn an achievement\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.onGroupLust\",\"When a Bloodlust-type buff from anyone in your group reaches you\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.onLevelUp\",\"When you gain a level\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.onLust\",\"When you or your pet cast Bloodlust or a similar haste spell\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.random\",\"Surprise celebrations at random times\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.rotateActionBars\",\"Spin the Suite action bars once (outside combat)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.scale\",\"Effect scale (percent)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.x\",\"Effect X\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:partyEffects.y\",\"Effect Y\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.duration\",\"Effect duration in seconds\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.enabled\",\"Enable module\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.fontSize\",\"Banner text size\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.interval\",\"Average time between surprises (seconds)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.onAchievement\",\"When you earn an achievement\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.onGroupLust\",\"When a Bloodlust-type buff from anyone in your group reaches you\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.onLevelUp\",\"When you gain a level\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.onLust\",\"When you or your pet cast Bloodlust or a similar haste spell\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.random\",\"Surprise celebrations at random times\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.rotateActionBars\",\"Spin the Suite action bars once (outside combat)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.scale\",\"Effect scale (percent)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.x\",\"Effect X\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:partyEffects.y\",\"Effect Y\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.duration\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.fontSize\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.interval\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.onAchievement\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.onGroupLust\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.onLevelUp\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.onLust\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.random\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.rotateActionBars\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.scale\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.x\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:partyEffects.y\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.duration\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.fontSize\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.interval\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.onAchievement\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.onGroupLust\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.onLevelUp\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.onLust\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.random\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.rotateActionBars\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.scale\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.x\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:partyEffects.y\",\"party_effects\",\"Celebrations\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.duration\",\"number\",false,1,30,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.enabled\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.fontSize\",\"number\",false,12,48,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.interval\",\"number\",false,30,3600,10,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.onAchievement\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.onGroupLust\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.onLevelUp\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.onLust\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.random\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.rotateActionBars\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.scale\",\"number\",false,50,200,5,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.x\",\"number\",true,-4000,4000,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:partyEffects.y\",\"number\",true,-3000,3000,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.duration\",\"number\",false,1,30,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.enabled\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.fontSize\",\"number\",false,12,48,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.interval\",\"number\",false,30,3600,10,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.onAchievement\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.onGroupLust\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.onLevelUp\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.onLust\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.random\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.rotateActionBars\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.scale\",\"number\",false,50,200,5,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.x\",\"number\",true,-4000,4000,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:partyEffects.y\",\"number\",true,-3000,3000,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:partyEffects.interval\",\"enableKey\",\"random\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:partyEffects.interval\",\"enableKey\",\"random\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Animated color flashes that celebrate a level, an achievement or Bloodlust, at random times if you like, and can spin the Suite action bars once.",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Average time between surprises (seconds)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Banner text size",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Celebrate!",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Celebrations",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Color flashes with a banner that names the moment: the level you reached, the achievement you earned, or the Bloodlust-type haste spell that you or your pet cast or that reaches you from anyone in your group (read from your own buffs, which the game may keep hidden during restricted fights). Surprise celebrations can come at random times, around the interval you choose. Spinning turns the Suite action bars once around their centre, only outside combat; entering combat stops the turn at once. Achievements your account had already earned stay quiet. MSUF Edit Mode shows the banner for placing it.",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Effect X",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Effect Y",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Effect duration in seconds",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Effect scale (percent)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Spin the Suite action bars once (outside combat)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Surprise celebrations at random times",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "When a Bloodlust-type buff from anyone in your group reaches you",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "When you earn an achievement",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "When you gain a level",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "When you or your pet cast Bloodlust or a similar haste spell",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "movers",
+      "item": "MSUFSuite.partyEffects:effect",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "exports",
+      "item": "S.VisitPartyActionBars",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-03 to remove Celebrations; partyEffects retired from Core/Catalog/QualityOfLifeDetails.lua, options/search, QoL TOC/runtime and the ActionBars spin visitor. suite_runtime_owner_contract pins inert legacy data and rejects writes; menu/search contracts pin absence.",
+      "reason": "Explicitly requested removal of the Celebrations module and its exclusive surface; legacy profile data stays untouched.",
+      "date": "2026-10-03"
     }
   ]
 }

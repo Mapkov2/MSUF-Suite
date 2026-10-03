@@ -188,7 +188,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "groupRaidShortcuts" and id ~= "trainerLearnAll"
         and id ~= "characterUpgradeWindow" and id ~= "lootToastFilter"
         and id ~= "threatMeter" and id ~= "flightTimer" and id ~= "characterExtras"
-        and id ~= "merchantList" and id ~= "tooltipDetails" and id ~= "popupAttention" and id ~= "partyEffects"
+        and id ~= "merchantList" and id ~= "tooltipDetails" and id ~= "popupAttention"
         and id ~= "combatMovementCue" and id ~= "professionAppearance"
         and id ~= "trustedPartyInvites" and id ~= "burningRushCue"),
         id .. " factory enable state is wrong")

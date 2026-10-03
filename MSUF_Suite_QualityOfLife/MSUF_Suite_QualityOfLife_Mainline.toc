@@ -74,4 +74,3 @@ CharacterExtras.lua
 MerchantList.lua
 TooltipDetails.lua
 PopupAttention.lua
-PartyEffects.lua

@@ -147,20 +147,3 @@ do
     rules.x.hidden, rules.y.hidden = true, true
     rules.fontSize.enableKey = "dialogFont"
 end
-B.Module("partyEffects",{
-    title="Celebrations",description="Animated color flashes that celebrate a level, an achievement or Bloodlust, at random times if you like, and can spin the Suite action bars once.",
-    optIn=true,defaultEnabled=false,page="suite_qualityOfLife",
-})
-B.Section("partyEffects","party_effects","Celebrations",{
-    Bool("onLevelUp","When you gain a level",true),Bool("onAchievement","When you earn an achievement"),
-    Bool("onLust","When you or your pet cast Bloodlust or a similar haste spell"),
-    Bool("onGroupLust","When a Bloodlust-type buff from anyone in your group reaches you"),
-    Bool("random","Surprise celebrations at random times"),
-    Number("interval","Average time between surprises (seconds)",300,30,3600,10),
-    Bool("rotateActionBars","Spin the Suite action bars once (outside combat)"),
-    Number("duration","Effect duration in seconds",6,1,30),Number("fontSize","Banner text size",24,12,48),Number("scale","Effect scale (percent)",100,50,200,5),
-    Number("x","Effect X",0,-4000,4000),Number("y","Effect Y",220,-3000,3000),
-})
-NS.SuiteCatalog.partyEffects.rules.x.hidden,NS.SuiteCatalog.partyEffects.rules.y.hidden=true,true
-NS.SuiteCatalog.partyEffects.rules.interval.enableKey="random"
-

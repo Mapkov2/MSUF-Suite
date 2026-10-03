@@ -201,17 +201,6 @@ local function FormsChanged()
     end
 end
 
--- Combat starts: PLAYER_REGEN_DISABLED comes before the lockdown, the last
--- moment a protected header may stop an animation. Other features animate
--- the headers (QoL party effects through S.VisitPartyActionBars); a header
--- turning in combat would draw its buttons away from their click areas.
-local function RegenDisabled()
-    for index = 1, 10 do
-        local bar = AB.bars[index]
-        if bar and bar.owned then bar.header:StopAnimating() end
-    end
-end
-
 local function RegenEnabled()
     -- A spellbook or macro window closed (or opened) in combat.
     if AB.panelPending then AB.SyncPanelReveal() end
@@ -317,7 +306,6 @@ local EVENTS = {
         NewChargeEpoch()
         FormsChanged()
     end,
-    PLAYER_REGEN_DISABLED = RegenDisabled,
     PLAYER_REGEN_ENABLED = RegenEnabled,
     UI_SCALE_CHANGED = ScaleChanged,
     DISPLAY_SIZE_CHANGED = ScaleChanged,

@@ -11,7 +11,6 @@ local HELP = {
     popup_toasts = "Loot toasts write the item quality as a word in its color, such as Epic or Rare, next to Blizzard's colored item name; currency toasts stay as they are. Money toasts can get a thin gold frame.",
     tooltip_details = "Adds guild rank, the hovered unit's target, item levels, the unit's current mount and item or spell details to Blizzard's main tooltip, and can show player names without titles. Your own item level and the one of the unit open in the Inspect window need no request. Item levels of other hovered players are a separate choice that sends inspect requests: at most one per hover, never while the Inspect window or another inspect is busy. Mounts are read once when a unit tooltip opens, out of combat; a change appears on the next hover. Place the fixed corner in MSUF Edit Mode; the cursor offsets apply to the cursor anchor.",
     dungeon_casts = "Lists the casts of attackable enemy nameplates while you are in a five-player dungeon, oldest first; the game runs each bar and timer. The game keeps spell, target, marker and interrupt details hidden from addons, so casts are never sorted or filtered by them: fading or hiding uses the game's important-spell flag (a hidden cast keeps its place in the list), raid markers sit on the spell icon, and the ready mark, an edge stripe or the whole bar, shows on interruptible casts while your interrupt is off cooldown. Dimming checks four times a second whether your interrupt reaches each listed enemy; a cast it cannot check stays bright. The interrupt is found from your talents and pet unless you enter a spell ID. MSUF Edit Mode shows sample casts for placing the list.",
-    party_effects = "Color flashes with a banner that names the moment: the level you reached, the achievement you earned, or the Bloodlust-type haste spell that you or your pet cast or that reaches you from anyone in your group (read from your own buffs, which the game may keep hidden during restricted fights). Surprise celebrations can come at random times, around the interval you choose. Spinning turns the Suite action bars once around their centre, only outside combat; entering combat stops the turn at once. Achievements your account had already earned stay quiet. MSUF Edit Mode shows the banner for placing it.",
     target_distance = "Shows an approximate range to your current target from the game's range checks of spells you know; values include the target's hitbox, and dashes mean that no known spell can tell. Write the text with {range} and {unit}. The estimate can sit below the target frame, following it when the frame moves, or anywhere on screen; MSUF Edit Mode moves both placements.",
     action_tracker_visibility = "Choose where recent actions appear. Delves have their own switch; battlegrounds and arenas share one, and other scenarios follow Outside instances. Where the tracker is switched off, it does not listen to your casts.",
     cursor_gcd = "The global cooldown can leave the ring for a fixed circle of its own size and opacity, shown next to casts. Place it in MSUF Edit Mode; its button there works while this choice is on.",
@@ -101,7 +100,6 @@ local GROUPS = {
     { id = "battleRes", title = "Battle resurrection (Retail)", switch = "enabled",
         sections = { "battle_res" } },
     { id = "groupBloodlust", title = "Bloodlust lockout (Retail)", switch = "enabled", sections = { "bloodlust_lockout" } },
-    { id = "partyEffects", title = "Celebrations", switch = "enabled", sections = { "party_effects" } },
     { id = "loot", title = "Collecting loot", switch = "quickLoot", other = "manageHistory", sections = { "collection" } },
     { id = "collectionNewMarkers", title = "Collection new markers (Retail)", switch = "enabled", sections = { "collection_markers" } },
     { id = "combatLog", title = "Combat logging", switch = "enabled",
@@ -235,7 +233,7 @@ local CATEGORIES = {
         "flightTimer.enabled",
     } },
     { id = "interfaceChat", title = "Interface & Chat", keys = {
-        "cursorEffects.enabled", "guildChatPrivacy.enabled", "quietPopups.enabled", "uiErrorFilter.enabled", "popupAttention.enabled", "partyEffects.enabled",
+        "cursorEffects.enabled", "guildChatPrivacy.enabled", "quietPopups.enabled", "uiErrorFilter.enabled", "popupAttention.enabled",
     } },
     { id = "tooltips", title = "Tooltips", keys = {
         "tooltipClassColors.enabled", "tooltipSpellCopy.enabled", "itemCounts.enabled", "tooltipIDs.enabled",

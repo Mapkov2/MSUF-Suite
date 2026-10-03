@@ -1351,19 +1351,6 @@ assert(S.SetMany("actionbars",{pagingModifiers=false}))
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==1 and MainBar.attrs.actionpage==1 and not overrides["1"],"native routing restored")
 
------------------------------------------------------------------- combat start
--- QoL party effects may rotate the secure headers (S.VisitPartyActionBars).
--- PLAYER_REGEN_DISABLED arrives before the lockdown, the last moment to stop
--- them: no header turns while its buttons take clicks in combat.
-do
-    local before={}
-    for index=1,12 do before[index]=Bar(index).header.animationStops or 0 end
-    Event("PLAYER_REGEN_DISABLED")
-    for index=1,10 do
-        assert(Bar(index).header.animationStops==before[index]+1,"combat start left bar "..index.." animating")
-    end
-end
-
 ------------------------------------------------------------------ bindings in combat
 combat=true
 bindings.MSUFSUITE_BAR10_BUTTON3={"G"}

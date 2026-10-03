@@ -2607,12 +2607,6 @@
    "symbol": "T.SkinEditBox"
   },
   {
-   "file": "MSUF_Suite_QualityOfLife/PartyEffects.lua",
-   "kind": "lod",
-   "reason": "The ActionBars addon loads on its own and exports this visitor only once loaded; without it the celebration plays without spinning bars. suite_party_effects_contract covers both cases.",
-   "symbol": "S.VisitPartyActionBars"
-  },
-  {
    "file": "MSUF_Suite_QualityOfLife/CharacterExtras.lua",
    "kind": "addon",
    "reason": "Blizzard_InspectUI loads on demand, so InspectFrame and its gear slots exist only after the first inspect; slot icon cropping waits for its ADDON_LOADED and then crops on every InspectFrame show.",
