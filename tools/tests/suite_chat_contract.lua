@@ -117,6 +117,14 @@ local function Frame(name)
     function frame:SetAutoFocus(value) self.autoFocus = value end
     function frame:SetFocus() self.focused = true end
     function frame:ClearFocus() self.focused = false end
+    function frame:HasFocus() return self.focused == true end
+    -- Only the input line's focus is followed (Fade.lua), never another script.
+    function frame:HookScript(script, callback)
+        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost", "chat hooked the " .. script .. " script")
+        self.hooks = self.hooks or {}
+        assert(not self.hooks[script], "chat hooked " .. script .. " twice")
+        self.hooks[script] = callback
+    end
     function frame:HighlightText() self.highlighted = true end
     function frame:SetText(value) self.text = value end
     function frame:GetText() return self.text end
@@ -971,6 +979,10 @@ GetTime = function() return 10 end
 for _, callback in ipairs(fadeTimers) do callback() end
 assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001 and math.abs(ChatFrame4:GetAlpha() - 0.2) < 0.001,
     "the idle fade did not fade the window and its tab")
+-- The input line is a child of the window and fades with it, never twice.
+assert(ChatFrame4.editBox:GetAlpha() == 1, "the idle fade faded the input line on its own")
+assert(ChatFrame4.editBox.hooks.OnEditFocusGained and ChatFrame4.editBox.hooks.OnEditFocusLost,
+    "the idle fade does not follow the input line's focus")
 tabAlphaHook(ChatFrame4)
 assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001, "Blizzard's tab update undid the idle fade")
 module.config.idleSeconds = 0

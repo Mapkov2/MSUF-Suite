@@ -121,6 +121,26 @@ hooksecurefunc = function(frame, method, callback)
     securePostHooks[frame] = true
 end
 
+-- A window's input line: FloatingChatFrameTemplate's editBox, a child of
+-- the window (FloatingChatFrame.xml, live and forever), so the window's
+-- alpha multiplies its own. The idle fade only follows its focus scripts.
+local function EditBox(window)
+    local box = { alpha = 1, window = window, hooks = {} }
+    function box:GetAlpha() return self.alpha end
+    function box:SetAlpha(alpha) self.alpha = alpha end
+    function box:GetEffectiveAlpha() return self.alpha * self.window.alpha end
+    function box:HasFocus() return self.focused == true end
+    function box:HookScript(script, callback)
+        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost", "the idle fade hooked the input line's " .. script)
+        assert(not self.hooks[script], "the input line's " .. script .. " was hooked twice")
+        self.hooks[script] = callback
+    end
+    -- Blizzard's own focus change, then the post-hooks.
+    function box:SetFocus() self.focused = true; if self.hooks.OnEditFocusGained then self.hooks.OnEditFocusGained(self) end end
+    function box:ClearFocus() self.focused = false; if self.hooks.OnEditFocusLost then self.hooks.OnEditFocusLost(self) end end
+    return box
+end
+
 local function Frame(id, name)
     local frame = { lines = {}, payloads = {}, scripts = {}, alpha = 1, id = id, name = name or ("ChatFrame" .. id) }
     function frame:GetName() return self.name end
@@ -156,6 +176,7 @@ local function Frame(id, name)
     function frame:HookScript(script) error("chat message tools hooked the " .. script .. " script") end
     function frame:GetAlpha() return self.alpha end
     function frame:SetAlpha(alpha) self.alpha = alpha end
+    frame.editBox = EditBox(frame)
     return frame
 end
 ChatFrame2 = Frame(2)
@@ -336,7 +357,6 @@ C.ApplyMessages(M, restored)
 local tab = Frame(0, "ChatFrame1Tab")
 tab.alpha = 0.8
 _G.ChatFrame1Tab = tab
-restored.editBox = Frame(0, "ChatFrame1EditBox")
 restored.editBox.alpha = 0.35
 local visual = { frame = restored }
 M.visuals[restored] = visual
@@ -349,14 +369,34 @@ eq(#timers, 1, "every line started its own timer")
 RunTimers(now + 5)
 eq(restored.alpha, .2, "idle fade")
 eq(tab.alpha, .2, "the tab did not fade with its window")
-eq(restored.editBox.alpha, .2, "the input line did not fade with its window")
+-- The input line fades with its window, once: its own alpha stays.
+eq(restored.editBox.alpha, 0.35, "the input line was faded on its own")
+assert(math.abs(restored.editBox:GetEffectiveAlpha() - .2 * 0.35) < 1e-9, "the input line did not fade with its window")
 combat = true
 restored:AddMessage("party message in combat")
 eq(restored.alpha, 1, "a line in combat did not wake the faded window")
 eq(tab.alpha, 0.8, "waking did not give the tab its alpha back")
-eq(restored.editBox.alpha, 0.35, "waking did not give the input line its alpha back")
+eq(restored.editBox.alpha, 0.35, "waking changed the input line's own alpha")
 RunTimers(now + 5)
 eq(restored.alpha, .2, "the fade did not run in combat")
+-- Typing wakes the faded window and holds the fade, also in combat; the
+-- countdown starts again once the input line loses the focus.
+restored.editBox:SetFocus()
+eq(restored.alpha, 1, "starting to type did not wake the faded window")
+eq(tab.alpha, 0.8, "starting to type did not give the tab its alpha back")
+RunTimers(now + 30)
+eq(restored.alpha, 1, "the window faded while the player typed")
+restored:AddMessage("a line while typing")
+RunTimers(now + 30)
+eq(restored.alpha, 1, "the window faded while the player typed after a new line")
+restored.editBox:ClearFocus()
+RunTimers(now + 4)
+eq(restored.alpha, 1, "the window faded before its countdown after typing")
+RunTimers(now + 1)
+eq(restored.alpha, .2, "the countdown did not start again after typing")
+restored:AddMessage("wake after typing")
+eq(restored.alpha, 1, "a line did not wake the window after typing")
+RunTimers(now + 5)
 -- Blizzard's fade-in on mouse-over wakes the window and holds the fade.
 fcfHooks.FCF_FadeInChatFrame(restored)
 eq(restored.alpha, 1, "mouse-over did not wake the window")
@@ -368,7 +408,7 @@ tab.alpha = 0.8 -- Blizzard's fade-out animation reached noMouseAlpha
 fcfHooks.FCF_FadeOutChatFrame(restored)
 RunTimers(now + 5)
 eq(restored.alpha, .2, "the countdown did not start again after the pointer left")
--- Blizzard changed the input line meanwhile (chat opened): its value stays.
+-- Blizzard changes the input line's own alpha: the fade never touches it.
 restored.editBox.alpha = 1
 restored:AddMessage("wake")
 eq(restored.editBox.alpha, 1, "waking overwrote Blizzard's own input alpha")
