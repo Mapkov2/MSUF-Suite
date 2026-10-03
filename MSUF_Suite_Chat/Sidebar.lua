@@ -9,7 +9,7 @@ local SIDEBAR_BUTTONS = {
     { native = "QuickJoinToastButton", title = S.Text("Friends"), glyph = 0 },
     { native = "ChatFrameChannelButton", title = S.Text("Channels and voice"), glyph = 1 },
     { native = "TextToSpeechButton", title = S.Text("Text to speech"), glyph = 2 },
-    { native = "ChatFrameMenuButton", title = S.Text("Chat menu"), glyph = 3 },
+    { native = "ChatFrameMenuButton", title = S.Text("Chat menu"), glyph = 3, menu = true },
     { title = S.Text("Newest messages"), glyph = 4, scroll = true },
 }
 local NATIVE_BUTTONS = {
@@ -84,6 +84,11 @@ local function SidebarLeave(button)
     HideTooltip(button)
 end
 
+-- Load-on-demand parts (Blizzard_QuickJoin) may not have built theirs yet.
+local function Native(definition)
+    return definition.native and _G[definition.native]
+end
+
 local function SidebarClick(button, mouseButton)
     local definition = button.entry.definition
     if definition.scroll then
@@ -91,9 +96,31 @@ local function SidebarClick(button, mouseButton)
         selected:ScrollToBottom()
         return
     end
-    -- Load-on-demand parts (Blizzard_QuickJoin) may not have built theirs yet.
-    local native = _G[definition.native]
+    if definition.menu then return end
+    local native = Native(definition)
     if native then native:Click(mouseButton or "LeftButton") end
+end
+
+-- Blizzard's chat menu button is a DropdownButton: its menu opens and closes
+-- on the press (DropdownButtonMixin:OnMouseDown_Intrinsic), and its OnClick
+-- (ChatFrameMenuButtonMixin) only hides a help tip, so Click() never opens
+-- it. The sidebar icon presses it the way Blizzard's DropdownButtonProxyMixin
+-- does (Blizzard_Menu/DropdownButton.lua, live and forever): a left press
+-- without Shift (Shift drags the icon) toggles the menu, and the icon keeps
+-- Blizzard's menu manager from closing the open menu on that press. Blizzard
+-- closes the menu once its owner hides (another docked tab hides ChatFrame1
+-- and the button with it), so the menu only opens while the button shows.
+local function SidebarMenuPress(button, mouseButton)
+    if mouseButton ~= "LeftButton" or IsShiftKeyDown() then return end
+    local native = Native(button.entry.definition)
+    if not native then return end
+    local open = not native:IsMenuOpen()
+    if open and not native:IsVisible() then return end
+    native:SetMenuOpen(open)
+end
+
+local function MenuHandlesGlobalMouse(_, mouseButton, event)
+    return event == "GLOBAL_MOUSE_DOWN" and mouseButton == "LeftButton"
 end
 
 -- Shift-drag moves one icon; its offset from the sidebar center is saved.
@@ -133,6 +160,10 @@ local function CreateSidebarButton(sidebar, definition)
     button:SetScript("OnEnter", SidebarEnter)
     button:SetScript("OnLeave", SidebarLeave)
     button:SetScript("OnClick", SidebarClick)
+    if definition.menu then
+        button:SetScript("OnMouseDown", SidebarMenuPress)
+        button.HandlesGlobalMouseEvent = MenuHandlesGlobalMouse
+    end
     button:SetMovable(true)
     button:RegisterForDrag("LeftButton")
     button:SetScript("OnDragStart", SidebarDragStart)
@@ -191,8 +222,7 @@ local function LayoutButtons(self, sidebar, visual)
         else
             button:SetPoint("TOP", sidebar, "TOP", 0, -5 - (i - 1) * (24 + (c.sidebarGap or 2)))
         end
-        local native = entry.definition.native and _G[entry.definition.native]
-        button:SetShown(entry.definition.scroll or native ~= nil)
+        button:SetShown(entry.definition.scroll or Native(entry.definition) ~= nil)
         RefreshSidebarButton(self, entry)
     end
 end

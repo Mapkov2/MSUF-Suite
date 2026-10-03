@@ -149,7 +149,38 @@ ChatFrame1.editBox = ChatFrame1EditBox
 QuickJoinToastButton = Frame("QuickJoinToastButton")
 ChatFrameChannelButton = Frame("ChatFrameChannelButton")
 TextToSpeechButton = Frame("TextToSpeechButton")
+-- Blizzard's chat menu button is a DropdownButton (Blizzard_Menu/DropdownButton.xml
+-- and .lua, live and forever): the press opens and closes its menu
+-- (OnMouseDown_Intrinsic -> SetMenuOpen, ignored with Shift), its own OnClick
+-- (ChatFrameMenuButtonMixin:OnClick) only hides a help tip, and Blizzard's
+-- menu closes on its next frame once the button is not visible.
 ChatFrameMenuButton = Frame("ChatFrameMenuButton")
+ChatFrameMenuButton.parent = ChatFrame1.buttonFrame
+ChatFrameMenuButton:SetScript("OnClick", function() end)
+function ChatFrameMenuButton:IsMenuOpen() return self.menu ~= nil end
+function ChatFrameMenuButton:SetMenuOpen(open)
+    if open and not self.menu then
+        self.menu = {}
+        self.menuOpens = (self.menuOpens or 0) + 1
+    elseif not open then
+        self.menu = nil
+    end
+end
+function ChatFrameMenuButton:IsVisible() return self.shown and ChatFrame1.shown end
+local shiftDown = false
+IsShiftKeyDown = function() return shiftDown end
+-- A hardware click on a Suite button: the press first reaches Blizzard's menu
+-- manager (GLOBAL_MOUSE_DOWN closes an open menu unless the pressed frame's
+-- HandlesGlobalMouseEvent answers true, Blizzard_Menu/Menu.lua), then the
+-- button's OnMouseDown, OnMouseUp and OnClick.
+local function HardwareClick(button, mouseButton)
+    local handled = button.HandlesGlobalMouseEvent and button:HandlesGlobalMouseEvent(mouseButton, "GLOBAL_MOUSE_DOWN")
+    if not handled then ChatFrameMenuButton.menu = nil end
+    local scripts = button.scripts or {}
+    for _, script in ipairs({ "OnMouseDown", "OnMouseUp", "OnClick" }) do
+        if scripts[script] then scripts[script](button, mouseButton) end
+    end
+end
 ChatFrameToggleVoiceDeafenButton = Frame("ChatFrameToggleVoiceDeafenButton")
 ChatFrameToggleVoiceMuteButton = Frame("ChatFrameToggleVoiceMuteButton")
 BNGetNumFriends = function() return 5, 3 end
@@ -527,11 +558,32 @@ assert(sidebar.friendCount.value == "5", "friend count did not use the live Bliz
 sidebar.buttons[1].button:Click("LeftButton")
 sidebar.buttons[2].button:Click("LeftButton")
 sidebar.buttons[3].button:Click("LeftButton")
-sidebar.buttons[4].button:Click("LeftButton")
 sidebar.buttons[5].button:Click("LeftButton")
 assert(QuickJoinToastButton.clicks == 1 and ChatFrameChannelButton.clicks == 1
-    and TextToSpeechButton.clicks == 1 and ChatFrameMenuButton.clicks == 1
-    and ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
+    and TextToSpeechButton.clicks == 1 and ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
+-- The chat menu icon opens Blizzard's chat menu and a second click closes it;
+-- Shift (the icon's drag) and other mouse buttons leave it alone, as on
+-- Blizzard's own button.
+local menuIcon = sidebar.buttons[4].button
+HardwareClick(menuIcon, "LeftButton")
+assert(ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "the sidebar's chat menu icon did not open Blizzard's chat menu")
+HardwareClick(menuIcon, "LeftButton")
+assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "a second click on the chat menu icon did not close the menu")
+shiftDown = true
+HardwareClick(menuIcon, "LeftButton")
+shiftDown = false
+HardwareClick(menuIcon, "RightButton")
+assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "a Shift press or another mouse button opened the chat menu")
+-- Another docked tab hides ChatFrame1 and its menu button: Blizzard would
+-- close the menu at once, so the icon does not open it.
+ChatFrame1:Hide()
+HardwareClick(menuIcon, "LeftButton")
+ChatFrame1:Show()
+assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "the chat menu opened for a hidden Blizzard menu button")
 -- Hovering a sidebar button lights its glyph in the accent color and names it.
 local channels = sidebar.buttons[2]
 channels.button.scripts.OnEnter(channels.button)
