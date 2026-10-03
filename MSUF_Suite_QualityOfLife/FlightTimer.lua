@@ -219,6 +219,9 @@ function M:Enable()
     Create(self)
     Layout(self)
     Update(self, true)
+end
+-- The controller registers the movers after Enable and Refresh (S.RefreshEditMover).
+function M:RegisterMovers()
     S.RegisterOwnedMover(ID, "flight", { label = "Flight route timer", order = 651, getFrame = function() return self.host end,
         xKey = "x", yKey = "y", sizeKeys = { "width" }, point = function() return "CENTER" end })
 end
