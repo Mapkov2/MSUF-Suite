@@ -699,6 +699,18 @@ function ChatFramesSkin.Disable(_, owner)
     return true
 end
 
+-- The colour the skin gives a themed chat category now, as the chat cache
+-- stores it; nil for another category or while the theme colour is not
+-- readable. "Restore chat colors" (MSUF_Suite/Integrations/MapkoSkin.lua)
+-- asks it.
+function ChatFramesSkin.ThemeMessageColor(chatType)
+    local role = messageColorRoles[chatType]
+    if not role then return nil end
+    local r, g, b = NS.Theme.GetColor(role)
+    if not Color(r, g, b) then return nil end
+    return { StoredByte(r) / 255, StoredByte(g) / 255, StoredByte(b) / 255 }
+end
+
 -- Visual regions are rebuilt by Blizzard after logout/reload, but native chat
 -- colors persist. Clean only categories currently owned by an active adapter so
 -- disabling MapkoSkin before the next login cannot leave its preset behind.

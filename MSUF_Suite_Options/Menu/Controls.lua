@@ -15,13 +15,14 @@ function P.SkinSearchRow(ctx, row, section, title, help)
         controlId = row.kind ~= "color" and row.controlId or nil,
         sectionId = section or row.sectionId,
         anchorText = row.kind == "color" and title or nil,
+        suiteAlways = row.suiteAlways,
     }
 end
 
 function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, meta)
     if not ctx.searchRows then return P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta) end
     local row = { label = Tr(label), searchLabel = label, kind = "button",
-        controlId = meta and meta.controlId, sectionId = meta and meta.sectionId }
+        controlId = meta and meta.controlId, sectionId = meta and meta.sectionId, suiteAlways = meta and meta.suiteAlways }
     P.SkinSearchRow(ctx, row)
 end
 
@@ -331,7 +332,12 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
         local grid = W.SettingsRows(ctx, parent, {
             x = 16, y = y, width = width, columns = columns or (width >= 560 and 2 or 1), rows = rows,
         })
-        for _, rule in ipairs(pending) do entries[#entries + 1] = { rule = rule, widget = grid.controls[rule.key] } end
+        for _, rule in ipairs(pending) do
+            local widget = grid.controls[rule.key]
+            entries[#entries + 1] = { rule = rule, widget = widget }
+            -- A rule's note (rule.tooltip, SuiteCatalog.lua) shows on its control.
+            if rule.tooltip and widget then M.AddTooltip(widget, Tr(rule.label), Tr(rule.tooltip), { hook = true }) end
+        end
         y = grid.bottomY
     end
     for _, rule in ipairs(strings) do
@@ -339,7 +345,10 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
         local input = M.BindTextInputAt(ctx, parent, Tr(rule.label), 16, y, width,
             function() return P.Get(id, Key()) end, function(value) P.Set(id, Key(), value or "") end, true,
             P.Meta(pageKey, id, rule.key, "setting", sectionId))
-        if input.SetMaxLetters and rule.maxLength then input:SetMaxLetters(rule.maxLength) end
+        -- The setters count bytes (Suite.lua ValidText): a CJK or Cyrillic
+        -- text the box takes is one they take. The limit counts the
+        -- terminating zero byte too.
+        if input.SetMaxBytes and rule.maxLength then input:SetMaxBytes(rule.maxLength + 1) end
         entries[#entries + 1] = { rule = rule, widget = input }
         y = y - 58
     end

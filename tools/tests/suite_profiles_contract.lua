@@ -156,6 +156,17 @@ combat = true
 assert(not P.SaveAs("Combat") and not P.Activate("Default") and not P.Import("Combat", bundle))
 assert(frameImports == imports and P.Active() == "Shared")
 combat = false
+-- The combat start (PLAYER_REGEN_DISABLED, the lockdown still off) refuses too.
+do
+    local flag, fighting = UnitAffectingCombat, false
+    UnitAffectingCombat = function(unit) return unit == "player" and (fighting or combat) end
+    local saved, activated, imported = Support.CombatStart(function(value) fighting = value end, function()
+        return P.SaveAs("Combat"), P.Activate("Default"), P.Import("Combat", bundle)
+    end)
+    UnitAffectingCombat = flag
+    assert(not saved and not activated and not imported and frameImports == imports and P.Active() == "Shared"
+        and not DB.GetProfile("Combat"), "a profile change went through at the combat start")
+end
 local activate = DB.Activate
 DB.Activate = function(name) if name == "Rollback" then return false, "injected activation failure" end;return activate(name) end
 assert(not P.Import("Rollback", bundle))

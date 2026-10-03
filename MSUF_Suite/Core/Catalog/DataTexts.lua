@@ -476,9 +476,9 @@ for _, rule in ipairs(NS.SuiteCatalog.dataTexts.controls) do
 end
 
 -- Resolve only on settings/profile transitions. Timed data updates use the
--- prepared style attached to each bar.
+-- prepared style attached to each bar. bar nil: the shared bar style.
 function NS.DataTextEffectiveStyle(config, bar)
-    local prefix = config["bar" .. bar .. "StyleOverride"] and "bar" .. bar or nil
+    local prefix = bar and config["bar" .. bar .. "StyleOverride"] and "bar" .. bar or nil
     local function Value(key) return config[prefix and NS.DataTextBarStyleKey(bar, key) or key] end
     local palette = NS.DataTextLooks[Value("look")] or NS.DataTextLooks[initialLook]
     local custom = Value("customColors") == true

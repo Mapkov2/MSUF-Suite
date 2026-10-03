@@ -618,17 +618,40 @@ P.ResetSkinPage = function()
     return Suite.Skin.SetEnabled(true)
 end
 
--- "Restore chat colors": the system and NPC chat categories the skin
--- themes get their recorded originals back, else Blizzard's defaults
--- (MSUF_Suite/Integrations/MapkoSkin.lua). The only recovery of a chat
--- colour the skin may have left behind; asks first, refused in combat.
+-- "Restore chat colors": a chat category the skin themes gets its recorded
+-- original back, or Blizzard's default while it shows the skin's colour;
+-- every other category keeps the player's colour (MSUF_Suite/Integrations/
+-- MapkoSkin.lua). The only recovery of a chat colour the skin may have left
+-- behind. It asks first and names every category it changes, and Yes changes
+-- no other; refused in combat.
+local CHAT_CATEGORY_NAMES = { SYSTEM = "System messages", MONSTER_SAY = "NPC speech", MONSTER_PARTY = "NPC party chat" }
+local function RestoreQuestion(plan)
+    local lines, asked = { Tr("Restore these chat colors?"), "" }, {}
+    for _, step in ipairs(plan) do
+        asked[step.chatType] = true
+        local name = Tr(CHAT_CATEGORY_NAMES[step.chatType])
+        lines[#lines + 1] = format(Tr(step.recorded and "%s: back to the color it had before the skin"
+            or "%s: back to Blizzard's default color"), name)
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = Tr("Your other chat colors stay as they are.")
+    return table.concat(lines, "\n"), asked
+end
 function P.RestoreChatColors()
     if P.Combat() then return false end
-    P.Confirm("restore-chat-colors",
-        Tr("Put the system and NPC chat colors back to the colors they had before the skin, or to Blizzard's defaults?"),
+    local plan = Suite.Skin.ChatColorRestorePlan()
+    if #plan == 0 then
+        if M.ShowStatusFeedback then
+            M.ShowStatusFeedback(Tr("No chat color needs restoring: none shows the skin's color, and none was recorded."),
+                "ok", 2)
+        end
+        return true
+    end
+    local question, asked = RestoreQuestion(plan)
+    P.Confirm("restore-chat-colors", question,
         function()
             -- ok, written, failed; or false and a refusal reason ("combat").
-            local ok, written = Suite.Skin.RestoreChatColors()
+            local ok, written = Suite.Skin.RestoreChatColors(asked)
             if not M.ShowStatusFeedback then return end
             if ok then
                 M.ShowStatusFeedback(Tr("Chat colors restored"), "ok", 1.5)
@@ -645,10 +668,22 @@ function P.RestoreChatColors()
     return true
 end
 
-local function RestoreChatColorsButton(ctx, body, y, width, sectionId)
-    return Button(ctx, body, "Restore chat colors", 16, y, width, P.RestoreChatColors,
-        function() return not P.Combat() end,
-        P.Meta(PAGE, "skin", "maintenance.restoreChatColors", "action", sectionId))
+-- "Save setup as…" and "Restore chat colors" need neither the skin engine
+-- nor the Skin addon: this page builds them in every state (Maintenance,
+-- the engine-unavailable Basics, the notice while the Skin addon is off),
+-- and search always finds them (suiteAlways, Menu/Search.lua).
+local MAINTENANCE_ACTIONS = {
+    { label = "Save setup as…", key = "maintenance.saveSetup", run = function() return P.SaveSetupAs() end },
+    { label = "Restore chat colors", key = "maintenance.restoreChatColors", run = function() return P.RestoreChatColors() end },
+}
+local function MaintenanceButtons(ctx, body, y, width, sectionId)
+    for _, action in ipairs(MAINTENANCE_ACTIONS) do
+        local meta = P.Meta(PAGE, "skin", action.key, "action", sectionId)
+        meta.suiteAlways = true
+        Button(ctx, body, action.label, 16, y, width, action.run, function() return not P.Combat() end, meta)
+        y = y - 34
+    end
+    return y
 end
 
 local function BuildMaintenance(ctx, b, skin)
@@ -658,12 +693,15 @@ local function BuildMaintenance(ctx, b, skin)
             Button(ctx, body, "Refresh Blizzard skins", 16, y, width, function()
                 if skin.Adapters.ApplyAll then skin.Adapters.ApplyAll() end
             end, nil, P.Meta(PAGE, "skin", "maintenance.refresh", "action", "suite_skin_advanced"))
-            Button(ctx, body, "Save setup as…", 16, y - 34, width, P.SaveSetupAs,
-                function() return not P.Combat() end,
-                P.Meta(PAGE, "skin", "maintenance.saveSetup", "action", "suite_skin_advanced"))
-            RestoreChatColorsButton(ctx, body, y - 68, width, "suite_skin_advanced")
-            return y - 108
+            return MaintenanceButtons(ctx, body, y - 34, width, "suite_skin_advanced") - 6
         end)
+end
+
+-- Basics without the skin engine: its notice, then the maintenance actions.
+local function BuildBasicsWithoutEngine(ctx, b, notice)
+    Section(ctx, b, "frame_basic", "Basics", notice, {}, true, function(body, y, width)
+        return MaintenanceButtons(ctx, body, y, width, "suite_skin_frame_basic") - 6
+    end)
 end
 
 -- Keep visible controls and indexed metadata in the same section order.
@@ -685,6 +723,8 @@ local function BuildSections(ctx, b, skin)
     BuildMaintenance(ctx, b, skin)
 end
 
+-- Also while the Skin addon is off: its maintenance actions stay findable
+-- (on the notice, outside any section, then).
 function P.SkinSearchRows()
     local ctx, b = { searchRows = {} }, {}
     local skin = _G.MapkoSkin
@@ -692,6 +732,11 @@ function P.SkinSearchRows()
         -- The switch remains discoverable before the optional engine loads.
         SearchRow(ctx, Row("toggle", "Enable Skinning", "enabled", "frame_basic"),
             "suite_skin_frame_basic", Tr("Basics"))
+        if Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then
+            BuildBasicsWithoutEngine(ctx, b, nil)
+        else
+            MaintenanceButtons(ctx, nil, 0, 720, nil)
+        end
         return ctx.searchRows
     end
     BuildSections(ctx, b, skin)
@@ -702,13 +747,9 @@ local function Build(ctx)
     local b = W.PageBuilder(ctx)
     local skin = Engine()
     if not skin then
-        Section(ctx, b, "frame_basic", "Basics",
-            P.Combat() and "Open Skinning outside combat to load its settings." or "The Suite skin engine is unavailable.",
-            {}, true, function(body, y, width)
-                -- The chat colors the skin themes outlive the engine.
-                RestoreChatColorsButton(ctx, body, y, width, "suite_skin_frame_basic")
-                return y - 40
-            end)
+        -- The chat colors the skin themes outlive the engine.
+        BuildBasicsWithoutEngine(ctx, b,
+            P.Combat() and "Open Skinning outside combat to load its settings." or "The Suite skin engine is unavailable.")
         return
     end
     -- FixedPreviewSection must own the first builder slot so its reserved
@@ -717,6 +758,12 @@ local function Build(ctx)
     BuildSections(ctx, b, skin)
 end
 
-P.RegisterPage({ key = PAGE, label = "Skinning", title = "Skinning", build = Build, icon = { 4, 1 },
+-- The Skin addon is off in Blizzard's AddOn list: below the notice
+-- (Menu/Register.lua), from y down; returns the next free y.
+local function BuildNotice(ctx, y)
+    return MaintenanceButtons(ctx, ctx.wrapper, y, math.max(240, (ctx.width or 720) - 32), nil)
+end
+
+P.RegisterPage({ key = PAGE, label = "Skinning", title = "Skinning", build = Build, notice = BuildNotice, icon = { 4, 1 },
     nav = "style", navOrder = 1,
     aliases = { "suite_skin", "mapkoskin", "skinning" } })

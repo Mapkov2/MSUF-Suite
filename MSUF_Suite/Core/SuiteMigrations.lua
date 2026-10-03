@@ -319,3 +319,15 @@ function Steps.FriendlyPlayerDisplay(modules)
     end
     plates.friendlyGroupOnly = nil
 end
+
+function Steps.RecordModuleLooks(modules, db)
+    -- Profiles saved before db.moduleLooks: each module the global look
+    -- styles gets the record its settings show (SuiteCatalog.lua
+    -- Looks.RecordFor). No module is restyled by this step.
+    local records = {}
+    for _, id in ipairs(NS.SuiteOrder) do
+        local config = Module(modules, id)
+        if config and next(config) ~= nil then records[id] = NS.SuiteLooks.RecordFor(id, config, db.globalLook) end
+    end
+    db.moduleLooks = next(records) and records or nil
+end

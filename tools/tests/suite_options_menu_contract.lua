@@ -97,6 +97,8 @@ TimeUtil = { BetterDate = function(format) return format end }
 SlashCmdList = {}
 IsLoggedIn = function() return false end
 InCombatLockdown = function() return false end
+-- The player's combat flag follows the lockdown here (no combat start).
+UnitAffectingCombat = function(unit) return unit == "player" and InCombatLockdown() == true end
 LoggingCombat = function() return false end
 GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "deDE" end
@@ -311,7 +313,12 @@ end
 M.BindSwitchAt = function(ctx, parent, label, x, y, w, get, set, meta) return Bind(ctx, Widget("Switch"), get, set, meta, label) end
 M.BindBoolWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
 M.BindDropdownAt = function(ctx, parent, label, x, y, values, w, get, set, meta) return Bind(ctx, Widget("Dropdown"), get, set, meta, label) end
-M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta) return Bind(ctx, Widget("EditBox"), get, set, meta, label) end
+M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta)
+    local box = Widget("EditBox")
+    function box:SetMaxBytes(value) self.maxBytes = value end
+    function box:SetMaxLetters(value) self.maxLetters = value end
+    return Bind(ctx, box, get, set, meta, label)
+end
 M.BindDropdownWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
 W.Dropdown = function(parent, label) local d = Widget("Dropdown"); d.label = label; return d end
 W.SwitchAt = function() return Widget("Switch") end
@@ -544,10 +551,20 @@ do
     Suite.RootDB.goldLedger = { alt = { name = "Alt", money = 5 } }
     Suite.RootDB.suiteBagGold = { characters = { alt = { days = {} } } }
     assert(clear and clear.scripts.OnClick, "the Bags page has no Clear saved character gold action")
+    -- It cannot be undone: it asks first, and only Yes clears.
+    local previousGeneric, previousConfirm, asked = _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, nil
+    S.Confirm = nil
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
     clear.scripts.OnClick(clear)
+    assert(asked and asked.text_arg1 == optionsNS.Tr(
+        "Clear the saved gold balances of all your characters and their gold history? This cannot be undone.")
+        and Suite.RootDB.goldLedger ~= nil and Suite.RootDB.suiteBagGold ~= nil,
+        "Clear saved character gold cleared without asking")
+    asked.callback()
     assert(Suite.RootDB.goldLedger == nil and Suite.RootDB.suiteBagGold == nil,
         "Clear saved character gold must remove the balances and the gold history")
     Suite.RootDB.goldLedger, Suite.RootDB.suiteBagGold = savedLedger, savedHistory
+    _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm = previousGeneric, previousConfirm
     -- disabledCategories was read but never written; per-category switches cover it.
     assert(S.catalog.bags.rules.disabledCategories == nil, "the dead disabledCategories setting returned")
     -- The look help names every preset of the look choice.
@@ -649,7 +666,7 @@ C_AddOns.GetAddOnEnableState = function(name, guid)
     return name == "MSUF_Suite_ActionBars" and 0 or 1
 end
 assert(rows.suite_actionbars.availability() == false
-    and select(2, rows.suite_actionbars.availability()) == "You need to turn on the module in Blizzards Addon list"
+    and select(2, rows.suite_actionbars.availability()) == "You need to turn on the module in Blizzard's AddOn list"
     and not select(3, rows.suite_actionbars.availability()),
     "Suite navigation must keep Blizzard-disabled AddOns grey and visible")
 assert(Suite.Client.AddOnEnabled("MSUF_Suite_Minimap")
@@ -729,6 +746,31 @@ for _, key in ipairs(expected) do
     for _, section in ipairs(ctx.sections) do assert(section.finished, key .. " section not finished: " .. section.sectionId) end
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
+end
+-- The "Shared bar style" preview paints the shared style, also while bar 1
+-- uses its own; a bar's preview paints that bar's effective style.
+do
+    local ctx, real, painted = contexts.suite_dataTexts, Suite.DataTextEffectiveStyle, {}
+    local config = S.Config("dataTexts")
+    local saved = { config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor, config.customColors,
+        config.accentColor }
+    config.customColors, config.accentColor = true, "123456"
+    config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor = true, true, "abcdef"
+    Suite.DataTextEffectiveStyle = function(settings, bar)
+        local style = real(settings, bar)
+        painted[#painted + 1] = { bar = bar, accent = style.accentColor }
+        return style
+    end
+    for _, fn in ipairs(ctx.refreshers) do fn() end
+    Suite.DataTextEffectiveStyle = real
+    local shared
+    for _, paint in ipairs(painted) do
+        if paint.bar == nil then shared = paint end
+    end
+    assert(shared and shared.accent == "123456", "the Shared bar style preview painted bar 1's own style")
+    assert(real(config, 1).accentColor == "abcdef", "bar 1's own style did not resolve")
+    config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor, config.customColors,
+        config.accentColor = unpack(saved, 1, 5)
 end
 -- A cold DataTexts page does not allocate the hidden bars' slider/button
 -- skins. Restored open bars build one body per dispatch; exact search can
@@ -1806,9 +1848,18 @@ do
         S.instances.chat = { ClearHistory = function() cleared = cleared + 1 end }
         return true
     end
+    -- It cannot be undone: it asks first, and only Yes clears.
+    local previousGeneric, previousConfirm, asked = _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, nil
+    S.Confirm = nil
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) asked = data end
     clearHistory.scripts.OnClick(clearHistory)
+    assert(asked and asked.text_arg1 == optionsNS.Tr(
+        "Clear the saved chat history of this character in every chat window? This cannot be undone.")
+        and not loadedChat and cleared == 0, "Clear saved chat history cleared without asking")
+    asked.callback()
     assert(loadedChat and cleared == 1, "clearing chat history needed the Chat module to be running")
     C_AddOns.LoadAddOn, S.instances.chat = loadAddOn, chatInstance
+    _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm = previousGeneric, previousConfirm
 end
 local timestampWidget
 local chatFontSizes = {}
@@ -1972,6 +2023,30 @@ for category, features in pairs(qolFeaturesByCategory) do
             "Quality of Life feature lost its direct search entry or help: " .. name)
     end
 end
+-- Owner decision (2026-10-03): both cinematic skips stay, off by default,
+-- and their controls warn that skipping ends Blizzard's movie or cinematic
+-- from addon code.
+;(function()
+    local record = assert(qolRows["suite_qualityOfLife_dailyComfort_daily_comfort"], "Daily UI comforts has no row")
+    record.reveal(true)
+    local warning = optionsNS.Tr("Skipping ends Blizzard's movie or cinematic from addon code, which can rarely cause"
+        .. " an \"Interface action blocked\" message later.")
+    local found = {}
+    for _, widget in ipairs(qolPage.widgets) do
+        local meta = rawget(widget, "meta")
+        local key = type(meta) == "table" and meta.settingKey
+        if key == "msufsuite.dailyComfort.skipCinematicConfirm" or key == "msufsuite.dailyComfort.autoSkipCinematic" then
+            local tooltip = rawget(widget, "tooltip")
+            assert(tooltip and tooltip.body == warning, key .. " has no cinematic warning")
+            found[#found + 1] = key
+        end
+    end
+    assert(#found == 2, "the cinematic skip controls were not built")
+    local rules = S.catalog.dailyComfort.rules
+    assert(rules.skipCinematicConfirm.default == false and rules.autoSkipCinematic.default == false
+        and rules.autoSkipCinematic.automation and S.catalog.dailyComfort.defaultEnabled == false,
+        "a cinematic skip is on by default")
+end)()
 local actualQolFeatureCount = 0
 for name in pairs(qolRows) do
     actualQolFeatureCount = actualQolFeatureCount + 1
@@ -3485,15 +3560,51 @@ do
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Hide, S.Confirm =
         previousGeneric, previousHide or function() end, previousConfirm
 end
+-- Text settings count bytes (Suite.lua ValidText): every bound text input of
+-- a rule with a length limit takes as many bytes as the setter accepts, so a
+-- CJK or Cyrillic text it takes is never refused afterwards.
+;(function()
+    local inputs = 0
+    for _, ctx in pairs(contexts) do
+        for _, widget in ipairs(ctx.widgets) do
+            local meta = rawget(widget, "meta")
+            local key = type(meta) == "table" and meta.settingKey
+            local id, ruleKey
+            if type(key) == "string" then id, ruleKey = key:match("^msufsuite%.([^.]+)%.(.+)$") end
+            local spec = id and S.catalog[id]
+            local rule = spec and spec.rules[ruleKey]
+            if rawget(widget, "kind") == "EditBox" and rule and type(rule.default) == "string" and rule.maxLength then
+                inputs = inputs + 1
+                assert(rawget(widget, "maxBytes") == rule.maxLength + 1 and rawget(widget, "maxLetters") == nil,
+                    key .. ": the text input is limited in letters, not in the bytes the setter counts")
+            end
+        end
+    end
+    assert(inputs > 0, "no rule text input was checked")
+end)()
 -- "Save setup as..." asks for a name in Blizzard's generic input box and
 -- saves the MSUF frames, the Suite and the skin under it; refused in combat.
 do
     local previousShow, previousSaveAs = _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs
     local asked, saved
-    _G.StaticPopup_Show = function(which, _, _, data) asked = { which = which, data = data }; return {} end
+    -- Blizzard's shared dialog edit box: its own code sets no byte limit.
+    local edit = { maxBytes = 0 }
+    function edit:SetMaxBytes(value) self.maxBytes = value end
+    function edit:GetMaxBytes() return self.maxBytes end
+    local dialog = { GetEditBox = function() return edit end }
+    _G.StaticPopup_Show = function(which, _, _, data, _, onHide)
+        asked = { which = which, data = data, onHide = onHide }
+        return dialog
+    end
     Suite.SuiteProfiles.SaveAs = function(name) saved = name; return true end
     assert(optionsNS.SaveSetupAs() and asked and asked.which == "GENERIC_INPUT_BOX"
         and asked.data.maxLetters == Suite.Database.MAX_PROFILE_NAME_BYTES, "Save setup as did not ask for a name")
+    -- The name rule counts bytes: the box takes no more (the limit counts the
+    -- terminating zero byte), and gives the shared box its own limit back.
+    assert(edit.maxBytes == Suite.Database.MAX_PROFILE_NAME_BYTES + 1 and asked.onHide,
+        "the name box takes a name in bytes the profile name rule refuses")
+    asked.onHide(dialog)
+    assert(edit.maxBytes == 0, "the shared dialog edit box kept the Suite's byte limit")
     asked.data.callback("Raid setup")
     assert(saved == "Raid setup", "Save setup as did not save the setup under the name")
     local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
@@ -3508,24 +3619,38 @@ do
     _G.StaticPopup_Show, Suite.SuiteProfiles.SaveAs = previousShow, previousSaveAs
 end
 -- "Restore chat colors" asks in Blizzard's generic confirmation (no
--- StaticPopupDialogs entry), then puts the skin's chat colours back through
--- the Suite core, reports what failed; refused in combat. (One state table:
--- this chunk is near Lua's 200-local limit.)
+-- StaticPopupDialogs entry), naming every chat category it changes and
+-- how, then puts exactly those back through the Suite core and reports what
+-- failed; with nothing to restore it only says so; refused in combat. (One
+-- state table: this chunk is near Lua's 200-local limit.)
 do
     local rc = { previous = { _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs,
-        Suite.Skin.RestoreChatColors, S.Confirm, M.ShowStatusFeedback, InCombatLockdown },
+        Suite.Skin.RestoreChatColors, S.Confirm, M.ShowStatusFeedback, InCombatLockdown,
+        Suite.Skin.ChatColorRestorePlan },
         restores = 0, result = { true, 3, 0 } }
     M.ShowStatusFeedback = function(text, kind) rc.feedback = { text = text, kind = kind } end
     S.Confirm = nil
     _G.StaticPopupDialogs = {}
     _G.StaticPopup_ShowCustomGenericConfirmation = function(data) rc.asked = data end
-    Suite.Skin.RestoreChatColors = function()
-        rc.restores = rc.restores + 1
+    rc.plan = { { chatType = "SYSTEM", color = { 1, 1, 0 }, recorded = true },
+        { chatType = "MONSTER_PARTY", color = { 0.6, 0.6, 1 } } }
+    Suite.Skin.ChatColorRestorePlan = function() return rc.plan end
+    Suite.Skin.RestoreChatColors = function(asked)
+        rc.restores, rc.restoredTypes = rc.restores + 1, asked
         return rc.result[1], rc.result[2], rc.result[3]
     end
     assert(optionsNS.RestoreChatColors() and rc.asked and rc.restores == 0, "Restore chat colors did not ask first")
+    rc.text = rc.asked.text_arg1
+    assert(rc.text:find(M.Tr("Restore these chat colors?"), 1, true)
+        and rc.text:find(M.Tr("%s: back to the color it had before the skin"):format(M.Tr("System messages")), 1, true)
+        and rc.text:find(M.Tr("%s: back to Blizzard's default color"):format(M.Tr("NPC party chat")), 1, true)
+        and not rc.text:find(M.Tr("NPC speech"), 1, true)
+        and rc.text:find(M.Tr("Your other chat colors stay as they are."), 1, true),
+        "the question does not say exactly what Restore chat colors changes: " .. rc.text)
     rc.asked.callback()
     assert(rc.restores == 1 and next(_G.StaticPopupDialogs) == nil, "Restore chat colors did not restore through the core")
+    assert(rc.restoredTypes and rc.restoredTypes.SYSTEM and rc.restoredTypes.MONSTER_PARTY
+        and not rc.restoredTypes.MONSTER_SAY, "Yes may change a category the question did not name")
     assert(rc.feedback and rc.feedback.kind == "ok", "a full restore did not report success")
     -- Every write failed, then some: the feedback says so.
     rc.result = { false, 0, 3 }
@@ -3545,16 +3670,53 @@ do
     rc.asked.callback()
     assert(rc.feedback.kind == "warning" and rc.feedback.text == M.Tr("Finish combat first."),
         "a restore refused in combat was reported as a partial restore")
+    -- Nothing shows the skin's colour and nothing was recorded: no question.
+    rc.plan, rc.asked, rc.restores = {}, nil, 0
+    assert(optionsNS.RestoreChatColors() and not rc.asked and rc.restores == 0 and rc.feedback.text
+        == M.Tr("No chat color needs restoring: none shows the skin's color, and none was recorded."),
+        "Restore chat colors asked although nothing would change")
+    rc.plan = { { chatType = "SYSTEM", color = { 1, 1, 0 } } }
     InCombatLockdown = function() return true end
     rc.asked = nil
     assert(not optionsNS.RestoreChatColors() and not rc.asked, "Restore chat colors asked in combat")
+    -- Both actions are built in every state of the Skinning page: its
+    -- Maintenance, the engine-unavailable Basics and the Skin addon's notice.
     local appearance = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
-    rc.source = appearance:read("*a")
+    rc.source = appearance:read("*a"):gsub("\r\n", "\n")
     appearance:close()
-    rc.buttons = select(2, rc.source:gsub("%s%s+RestoreChatColorsButton%(ctx, body", ""))
-    assert(rc.buttons == 2, "Restore chat colors is missing from Maintenance or the engine-unavailable page")
+    rc.buttons = select(2, rc.source:gsub("\n%s+[%w%s=]-MaintenanceButtons%(ctx, ", ""))
+    assert(rc.buttons == 4 and rc.source:find("run = function() return P.RestoreChatColors() end", 1, true)
+        and rc.source:find("run = function() return P.SaveSetupAs() end", 1, true)
+        and rc.source:find("notice = BuildNotice", 1, true),
+        "Restore chat colors or Save setup as is missing from a state of the Skinning page")
     _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopupDialogs, Suite.Skin.RestoreChatColors,
-        S.Confirm, M.ShowStatusFeedback, InCombatLockdown = unpack(rc.previous, 1, 6)
+        S.Confirm, M.ShowStatusFeedback, InCombatLockdown, Suite.Skin.ChatColorRestorePlan = unpack(rc.previous, 1, 7)
+end
+-- The combat start: inside PLAYER_REGEN_DISABLED, before the lockdown, the
+-- pages refuse like in combat (P.Combat is Suite.InCombat), and so do an
+-- older menu's wrapped page reset and its confirmation.
+do
+    local edge = { flag = UnitAffectingCombat, previousGeneric = _G.StaticPopup_ShowCustomGenericConfirmation,
+        previousShow = _G.StaticPopup_Show }
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) edge.asked = data end
+    _G.StaticPopup_Show = function(_, _, _, data) edge.asked = data; return {} end
+    assert(S.SetMany("dataTexts", { bar2X = 58 }))
+    UnitAffectingCombat = function(unit) return unit == "player" end
+    local watcher = { events = { PLAYER_REGEN_DISABLED = true } }
+    local function OnEvent(_, event)
+        assert(event == "PLAYER_REGEN_DISABLED" and not InCombatLockdown())
+        edge.combat = optionsNS.Combat()
+        edge.reset = M.ResetPageToDefaults("suite_dataTexts")
+        edge.confirm = M.ShowPageResetConfirm("suite_dataTexts")
+        edge.saveSetup = optionsNS.SaveSetupAs()
+        edge.restore = optionsNS.RestoreChatColors()
+    end
+    OnEvent(watcher, "PLAYER_REGEN_DISABLED")
+    UnitAffectingCombat = edge.flag
+    assert(edge.combat == true and edge.reset == false and edge.confirm == false and not edge.saveSetup
+        and not edge.restore and edge.asked == nil and S.Config("dataTexts").bar2X == 58,
+        "a Suite page action went through at the combat start")
+    _G.StaticPopup_ShowCustomGenericConfirmation, _G.StaticPopup_Show = edge.previousGeneric, edge.previousShow
 end
 -- Register.lua's real canReset handler (here through the legacy wrap, the
 -- same handler a v1 provider gets) allocates nothing per call.
@@ -3850,6 +4012,21 @@ end)()
 end)()
 
 ;(function()
+    -- The DataTexts page's gold clear asks first too, like the Bags page's.
+    local goldClear = assert(registeredControls["menu2.suite_dataTexts.dataTexts.action.clearGold"],
+        "the DataTexts page has no Clear saved character gold action")
+    local goldAsked
+    local previousGeneric, previousConfirm, previousClear =
+        _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, Suite.ClearCharacterGold
+    local goldCleared = 0
+    S.Confirm, Suite.ClearCharacterGold = nil, function() goldCleared = goldCleared + 1 end
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) goldAsked = data end
+    goldClear.scripts.OnClick(goldClear)
+    assert(goldAsked and goldCleared == 0, "the DataTexts gold clear did not ask first")
+    goldAsked.callback()
+    assert(goldCleared == 1, "the DataTexts gold clear did not clear after Yes")
+    _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, Suite.ClearCharacterGold =
+        previousGeneric, previousConfirm, previousClear
     local button = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2.antiqueFooter"],
         "Antique Footer action is missing from DataTexts bar 2")
     local c = S.Config("dataTexts")

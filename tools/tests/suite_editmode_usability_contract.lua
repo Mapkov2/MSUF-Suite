@@ -14,6 +14,7 @@ S.Text=function(v) return "translated:"..v end
 S.Config=function(id) return configs[id] end
 S.SetMany=function(id,values) for k,v in pairs(values) do configs[id][k]=v end;return true end
 S.Set=function(id,k,v) return S.SetMany(id,{[k]=v}) end
+S.CommitEditPosition=function(id,values) if combat then return false end;return S.SetMany(id,values) end
 S.Apply=function() applies=applies+1 end
 S.Dispatch=function(fn,...) return pcall(fn,...) end
 S.instances.main={HideEditPreview=function() hides=hides+1 end}

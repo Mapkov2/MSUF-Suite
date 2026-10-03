@@ -128,6 +128,9 @@ function IO.PrepareTable(profile, shared, keep)
     if type(data.globalLook) == "string" and Suite.SuiteLooks.indexes[data.globalLook] then
         result.suite.globalLook = data.globalLook
     end
+    -- Which looks the modules' appearance already answered (SuiteCatalog.lua):
+    -- known modules and looks only.
+    result.suite.moduleLooks = Suite.SuiteLooks.CleanRecords(data.moduleLooks)
     CopyMigrationState(data, result.suite)
     -- Keep only the retired helper's documented settings until Normalize
     -- moves them to Minimap. Old full-profile exports must not lose them.

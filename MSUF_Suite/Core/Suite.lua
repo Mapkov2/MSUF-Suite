@@ -87,6 +87,7 @@ local MIGRATIONS = {
     { run = NS.MigrateLootContainersWarbound },
     { run = NS.MigrateBagsInventoryView },
     { run = NS.MoveRunRecordsToCharacter },
+    { run = Steps.RecordModuleLooks },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {
@@ -178,6 +179,7 @@ local function SuiteTable(profile)
     db.schema = 1
     if type(db.modules) ~= "table" then db.modules = {} end
     if db.moduleState ~= nil and type(db.moduleState) ~= "table" then db.moduleState = nil end
+    db.moduleLooks = NS.SuiteLooks.CleanRecords(db.moduleLooks)
     return db
 end
 
@@ -195,6 +197,35 @@ end
 -- Catalog entries describe their part in spec.look (see SuiteCatalog.lua).
 local Looks = NS.SuiteLooks
 local ApplyLookToConfig = Looks.ApplyToConfig
+
+-- Enabling a module adopts the global look only while the module's record
+-- (db.moduleLooks, see SuiteCatalog.lua) differs from it: the first enable,
+-- or one after the global look changed while the module was off. A module
+-- the player styled keeps its look through off and on.
+local function AdoptLook(db, id, config)
+    if not Looks.Supports(id) then return false end
+    local records = Looks.Records(db)
+    if records[id] == db.globalLook then return false end
+    records[id] = db.globalLook
+    return ApplyLookToConfig(id, config, db.globalLook)
+end
+
+-- An explicit appearance (a colour, the module's own look choice or one of
+-- its visual settings) settles the module under the active global look.
+local function AppearanceKey(spec, key)
+    local rule, look = spec.rules[key], spec.look
+    if key == "enabled" or not rule then return false end
+    return (rule.color or look and (key == look.key or look.visualKeys and look.visualKeys[key])) and true or false
+end
+local function ExplicitAppearance(spec, values)
+    for key in pairs(values) do
+        if AppearanceKey(spec, key) then return true end
+    end
+    return false
+end
+local function KeepLook(db, id)
+    if Looks.Supports(id) then Looks.Records(db)[id] = db.globalLook end
+end
 
 S.StyleProfile = Looks.StyleProfile
 
@@ -430,16 +461,24 @@ function S.ApplyAll()
     for i = 1, #S.order do S.Apply(S.order[i]) end
 end
 
+-- The public setters refuse from the start of combat: the client sends
+-- PLAYER_REGEN_DISABLED while InCombatLockdown() is still false, and
+-- NS.InCombat counts that dispatch as combat. S.Apply keeps its own
+-- protected-write guard (lockdown), and S.CommitEditPosition is the one write
+-- the combat start still accepts.
 function S.ApplyGlobalLook(lookName)
     local db = ActiveSuite()
-    if NS.IsCombatLocked() or not Looks.indexes[lookName] or not db then return false end
+    if NS.InCombat() or not Looks.indexes[lookName] or not db then return false end
     db.globalLook = lookName
     for i = 1, #S.order do
         local id = S.order[i]
         local config = S.Config(id)
-        if config.enabled and ApplyLookToConfig(id, config, lookName) then
-            S.states[id].error = nil
-            S.Apply(id)
+        if config.enabled then
+            if Looks.Supports(id) then Looks.Records(db)[id] = lookName end
+            if ApplyLookToConfig(id, config, lookName) then
+                S.states[id].error = nil
+                S.Apply(id)
+            end
         end
     end
     Changed()
@@ -448,7 +487,7 @@ end
 
 ------------------------------------------------------------------ settings
 function S.Set(id, key, value)
-    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+    if NS.InCombat() then return false, "Finish combat before editing the suite" end
     local db = ActiveSuite()
     if not db then return false, "Unsupported suite profile" end
     local reason
@@ -458,7 +497,11 @@ function S.Set(id, key, value)
     if config[key] == value and not state.error and not state.unavailable then return true end
     config[key] = value
     if S.catalog[id].rules.classStyle and S.catalog[id].rules[key].color then config.classStyle = false end
-    if key == "enabled" and value == true then ApplyLookToConfig(id, config, db.globalLook) end
+    if key == "enabled" and value == true then
+        AdoptLook(db, id, config)
+    elseif AppearanceKey(S.catalog[id], key) then
+        KeepLook(db, id)
+    end
     state.error = nil
     S.Apply(id)
     Changed()
@@ -488,28 +531,19 @@ local function StoreValues(spec, id, values)
     return config, clean
 end
 
-function S.SetMany(id, values)
-    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+local function SetMany(id, values)
     local db = ActiveSuite()
     if not db or type(values) ~= "table" then return false, "Invalid settings" end
     local spec = S.catalog[id]
     if not spec then return false, "Unknown module" end
     local config, clean = StoreValues(spec, id, values)
     if not config then return false, clean end
-    if clean.enabled == true then
-        -- A module import carries its own palette. The global look is only a
-        -- default for a newly enabled module without explicit appearance data.
-        local look = spec.look
-        local explicitAppearance = false
-        for key in pairs(clean) do
-            local rule = spec.rules[key]
-            if key ~= "enabled" and (rule.color or look and
-                (key == look.key or look.visualKeys and look.visualKeys[key])) then
-                explicitAppearance = true
-                break
-            end
-        end
-        if not explicitAppearance then ApplyLookToConfig(id, config, db.globalLook) end
+    -- A module import carries its own palette. The global look is only a
+    -- default for a newly enabled module without explicit appearance data.
+    if ExplicitAppearance(spec, clean) then
+        KeepLook(db, id)
+    elseif clean.enabled == true then
+        AdoptLook(db, id, config)
     end
     Looks.RefreshClassColor()
     Looks.RefreshConfig(id, config)
@@ -519,11 +553,26 @@ function S.SetMany(id, values)
     return true
 end
 
+function S.SetMany(id, values)
+    if NS.InCombat() then return false, "Finish combat before editing the suite" end
+    return SetMany(id, values)
+end
+
+-- MSUF Edit Mode commits a drag the player still holds when Edit Mode closes
+-- for combat, inside PLAYER_REGEN_DISABLED and before lockdown, and gives a
+-- refused commit its start state back (MSUF_Suite_Modules/EditMode.lua:
+-- movePosition's commit and restoreState). Only lockdown refuses these
+-- writes; the public setters refuse from the combat start.
+function S.CommitEditPosition(id, values)
+    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+    return SetMany(id, values)
+end
+
 -- Section resets restore only their owned keys. Enabling a module through the
 -- normal setter applies the active look to unrelated appearance settings;
 -- that behavior is intentionally skipped for a scoped reset.
 function S.ResetKeys(id, values)
-    if NS.IsCombatLocked() then return false, "Finish combat before editing the suite" end
+    if NS.InCombat() then return false, "Finish combat before editing the suite" end
     local db = ActiveSuite()
     local spec = S.catalog[id]
     if not db or not spec or type(values) ~= "table" then return false, "Invalid settings" end
@@ -537,10 +586,11 @@ end
 
 function S.Reset(id)
     local db = ActiveSuite()
-    if NS.IsCombatLocked() or not S.catalog[id] or not db then return false end
+    if NS.InCombat() or not S.catalog[id] or not db then return false end
     db.modules[id] = NS.CopyValue(NS.Defaults.suite.modules[id])
+    if type(db.moduleLooks) == "table" then db.moduleLooks[id] = nil end
     local config = S.Config(id)
-    if config.enabled then ApplyLookToConfig(id, config, db.globalLook) end
+    if config.enabled then AdoptLook(db, id, config) end
     S.states[id].error = nil
     S.Apply(id)
     Changed()
@@ -551,14 +601,14 @@ end
 -- never enables spending or automation: opt-in modules keep their own choice.
 function S.Preset(kind)
     local db = ActiveSuite()
-    if NS.IsCombatLocked() or not db then return false end
+    if NS.InCombat() or not db then return false end
     if kind ~= "core" and kind ~= "off" then return false end
     for i = 1, #S.order do
         local id = S.order[i]
         if S.catalog[id].core or kind == "off" then
             local config = S.Config(id)
             config.enabled = kind == "core" and S.Availability(id) == true
-            if config.enabled then ApplyLookToConfig(id, config, db.globalLook) end
+            if config.enabled then AdoptLook(db, id, config) end
             S.states[id].error = nil
         end
     end

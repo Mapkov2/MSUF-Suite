@@ -367,7 +367,7 @@ function P.Names()
 end
 
 local function Ready()
-    if Suite.IsCombatLocked() then return false, "Finish combat before changing profiles" end
+    if Suite.InCombat() then return false, "Finish combat before changing profiles" end
     if not P.Available() then return false, "MSUF profile system unavailable" end
     return true
 end

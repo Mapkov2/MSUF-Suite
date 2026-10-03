@@ -201,7 +201,8 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
             function(value) P.Set(ID, Page.InputKey(input, rule.key), value or "") end, true,
             P.Meta(PAGE, ID, rule.key, "setting", sectionId))
         Page.TrackInput(input)
-        if input.SetMaxLetters and rule.maxLength then input:SetMaxLetters(rule.maxLength) end
+        -- Bytes, as the setter counts them (Menu/Controls.lua).
+        if input.SetMaxBytes and rule.maxLength then input:SetMaxBytes(rule.maxLength + 1) end
         entries[#entries + 1] = { rule = rule, widget = input }
         y = y - 58
     end
@@ -372,7 +373,7 @@ local function BuildIdentity(ctx, ui, body, y, half)
             function(value) P.Set(ID, Page.InputKey(input, nameRule.key), value or "") end, true,
             P.Meta(PAGE, ID, nameRule.key, "setting", MODULE_SECTION))
         Page.TrackInput(input)
-        if input.SetMaxLetters and nameRule.maxLength then input:SetMaxLetters(nameRule.maxLength) end
+        if input.SetMaxBytes and nameRule.maxLength then input:SetMaxBytes(nameRule.maxLength + 1) end
         entries[#entries + 1] = { rule = nameRule, widget = input }
         ui.nameInput = input
     end

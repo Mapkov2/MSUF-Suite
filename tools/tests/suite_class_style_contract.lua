@@ -122,7 +122,9 @@ priest.DB = priest.CopyValue(mage.DB)
 priest.Registry.NotifyListeners("profile", "imported")
 p = priest.DB.suite.modules
 assert(p.bags.accentColor == "ffffff", "profile activation kept foreign class colors")
+-- The bags were off, still in Midnight Dark, when Class Style was chosen.
 p.bags.enabled, p.bags.look, p.bags.accentColor = false, 2, "b9ab86"
+priest.DB.suite.moduleLooks.bags = "midnightDark"
 assert(priest.Suite.Set("bags", "enabled", true))
 assert(p.bags.look == 6 and p.bags.accentColor == "ffffff", "later enabled module missed Class Style")
 assert(priest.Suite.ApplyGlobalLook("cleanModern"))

@@ -46,7 +46,8 @@ local function NoLegacy()
         "MSUF_UFCore_NotifyConfigChanged", "MSUF_ApplyCurrentProfileGlobalUiScale" }) do _G[name] = nil end
 end
 local function FreshDB()
-    return { general = { UIScale = { Enabled = false, Scale = 0.53 }, msufUiScale = 0.9, uiScale = 0.8 },
+    return { general = { UIScale = { Enabled = false, Scale = 0.53 }, msufUiScale = 0.9, uiScale = 0.8,
+        disableScaling = true },
         bars = { classPowerOffsetY = 12 }, player = { powerBarDetached = false } }
 end
 
@@ -113,6 +114,8 @@ local function Bridge(withHost)
         raised[#raised + 1] = tostring(results[2])
     end
     Suite.Finish = function(callback, ...) return true, callback(...) end
+    -- Out of combat here; suite_combat_start_contract covers the combat start.
+    Suite.InCombat = function() return false end
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
     return Suite.HostBridge
 end
@@ -218,6 +221,47 @@ for _, failing in ipairs({ "MSUF_ResetGlobalUiScale", "MSUF_SetGlobalUiScale" })
         .. tostring(MSUF_DB.general.msufUiScale) .. ", uiScale " .. tostring(MSUF_DB.general.uiScale))
     Check(calls[#calls] == "reapply" and calls[#calls - 1] == "frame:0.9",
         failing .. ": the saved scale was not applied again: " .. table.concat(calls, ","))
+end
+
+-- MSUF's scale owner writes the UIScale table and disableScaling itself
+-- (EnsureGlobalUiScaleTable, MSUF_UIScaleRuntime.lua) before it can raise.
+-- The rollback puts back every field the host's own rollback saves
+-- (HOST_API_SPEC F), the UIScale table in place (MSUF keeps references to
+-- it), and runs each restore step on its own: a restore step that raises
+-- too is reported, and the settings still end as they were.
+for _, restoreFails in ipairs({ false, true }) do
+    Legacy()
+    MSUF_DB = FreshDB()
+    local uiScale = MSUF_DB.general.UIScale
+    local before = DeepCopy(MSUF_DB)
+    bridge = Bridge(false)
+    _G.MSUF_SetGlobalUiScale = function(value)
+        local general = MSUF_DB.general
+        general.UIScale.Enabled, general.UIScale.Scale, general.UIScale.migrated = true, value, true
+        general.disableScaling = false
+        error("injected scale owner failure")
+    end
+    if restoreFails then
+        local frame = _G.MSUF_ApplyMsufScale
+        _G.MSUF_ApplyMsufScale = function(value)
+            frame(value)
+            if value ~= 1 then error("injected restore failure") end
+        end
+        _G.MSUF_ApplyCurrentProfileGlobalUiScale = function()
+            MSUF_DB.general.disableScaling = false
+            MSUF_DB.general.UIScale = { Enabled = true, Scale = 1 }
+            error("injected re-apply failure")
+        end
+    end
+    raised = {}
+    local label = restoreFails and "a raising restore step" or "a raising scale owner"
+    Check(not bridge.ApplyScale(SPEC) and #raised == (restoreFails and 3 or 1),
+        label .. ": the refusal or its reports are wrong: " .. table.concat(raised, " | "))
+    Check(MSUF_DB.general.UIScale == uiScale, label .. ": MSUF's UIScale table was replaced by a copy")
+    Check(uiScale.Enabled == false and uiScale.Scale == 0.53 and uiScale.migrated == nil,
+        label .. ": MSUF's UIScale table kept the applier's writes")
+    Check(Same(MSUF_DB, before), label .. ": MSUF's scale settings changed: disableScaling "
+        .. tostring(MSUF_DB.general.disableScaling))
 end
 
 -- A refusal MSUF gives only when it applies reaches the caller in the

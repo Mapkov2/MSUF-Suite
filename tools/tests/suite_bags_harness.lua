@@ -1122,6 +1122,7 @@ function H.New(root, options)
         return true
     end
     function S.ResetKeys(id, values) return S.SetMany(id, values) end
+    function S.CommitEditPosition(id, values) return S.SetMany(id, values) end
     function S.RegisterOwnedMover(id, element, spec) W.movers = W.movers or {}; W.movers[element] = spec end
     function S.RefreshOwnedMovers() end
     local runtime = {}

@@ -412,6 +412,33 @@ character:Show()
 Check(not state.titleDrag.shown, "reopening a protected panel showed its title strip")
 character.protected = false
 
+-- Blizzard fits a checkFit panel to the screen with SetScale(1) each time it
+-- opens (UIPanelUpdateScaleForFit, UIParentPanelManager.lua): the grip's
+-- scale comes back before the stored position is placed with it. Turning the
+-- controls off gives the panel Blizzard's scale back; turning them on, the
+-- stored one.
+local spells = Frame("PlayerSpellsFrame", UIParent)
+Check(NS.WindowControls.Attach(spells, "blizzardWindows"), "the spellbook panel was not attached")
+NS.DB.windowControls.scales.PlayerSpellsFrame = 0.8
+NS.DB.windowControls.positions.PlayerSpellsFrame = { x = 400, y = -100 }
+Check(NS.WindowControls.Refresh() and spells.scale == 0.8, "the stored spellbook scale was not applied")
+spells:Hide()
+spells:SetScale(1)
+spells:Show()
+Check(spells.scale == 0.8, "opening a checkFit panel undid the grip's scale")
+Check(spells.point and spells.point[4] == 400 / 0.8, "the stored position was placed before the stored scale")
+Check(NS.WindowControls.SetEnabled(false) and spells.scale == 1, "turning the controls off kept the grip's scale")
+spells:Hide()
+spells:Show()
+Check(spells.scale == 1, "a panel without controls got the grip's scale when it opened")
+Check(NS.WindowControls.SetEnabled(true) and spells.scale == 0.8, "turning the controls on lost the stored scale")
+NS.WindowControls.DisableOwner("blizzardWindows")
+Check(spells.scale == 1, "releasing the panel kept the grip's scale")
+Check(NS.WindowControls.Attach(spells, "blizzardWindows") and spells.scale == 0.8,
+    "attaching the panel again lost the stored scale")
+NS.DB.windowControls.scales.PlayerSpellsFrame, NS.DB.windowControls.positions.PlayerSpellsFrame = nil, nil
+NS.WindowControls.Refresh()
+
 -- Inspect skips the generic window adapter. Its dedicated, load-on-demand
 -- adapter must still reach the real window controls after Blizzard loads it.
 local inspectLoaded

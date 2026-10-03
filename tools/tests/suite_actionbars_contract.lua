@@ -34,6 +34,7 @@ end
 local combat,secure=false,0
 local now=100
 InCombatLockdown=function() return combat end
+UnitAffectingCombat=function(unit) return unit=="player" and combat end
 GetTime=function() return now end
 local timers={}
 C_Timer={After=function(delay,fn) timers[#timers+1]={at=now+(delay or 0),fn=fn} end}

@@ -75,7 +75,8 @@ do
     Check(Reported("migration step failed") and Reported("repair failed") and Reported("prepare failed"),
         "a raising normalization step was not reported")
     Check(modules.objectives.backgroundOpacity == 0, "the steps before a raising one did not run")
-    Check(profile.suite.revision == S.MigrationRevision - 1,
+    local raisingStep = Support.MigrationStep(root, "NS.MoveRunRecordsToCharacter")
+    Check(profile.suite.revision == raisingStep - 1,
         "a raising step did not hold the revision before it: " .. tostring(profile.suite.revision))
     Check(modules.minimap.enabled == S.catalog.minimap.rules.enabled.default
         and modules.dataTexts.enabled == S.catalog.dataTexts.rules.enabled.default,

@@ -30,6 +30,9 @@
 --      when the picker opened (or records it);
 --   I4 a successful Restore leaves no ledger entry, and the next clean
 --      logout creates none for the categories it restored;
+--   I5 Restore writes only a category the ledger records or one that shows
+--      the skin's theme colour while the skin engine is loaded (checked at
+--      the write itself), and it writes every such category;
 --   and nothing raises but the injected ChangeChatColor failures.
 -- arg[2] "--collect" runs everything and lists the failures instead of
 -- stopping at the first (for checks against older revisions).
@@ -105,6 +108,9 @@ local function NativeChangeChatColor(chatType, r, g, b)
     local who = actor or "suite"
     if who == "suite" and model.writer[chatType] == "player" then
         Fail("I1: the Suite overwrote the colour the player chose for " .. chatType)
+    end
+    if who == "restore" and not model.restoring[chatType] then
+        Fail("I5: Restore overwrote " .. chatType .. ", which neither the ledger records nor shows the skin's colour")
     end
     if who == "player" then
         model.writer[chatType] = model.session and "preview" or "player"
@@ -196,6 +202,9 @@ local function LoadSkin()
     CHUNKS["MSUF_Suite_Skin/Adapters/AdapterKit.lua"]("MSUF_Suite_Skin", NS)
     CHUNKS["MSUF_Suite_Skin/Adapters/ChatFrames.lua"]("MSUF_Suite_Skin", NS)
     S.chat = NS.ChatFramesSkin
+    -- The loaded engine is the skin's public provider (Core/Bootstrap.lua).
+    NS.addonName = "MSUF_Suite_Skin"
+    _G.MapkoSkin = NS
 end
 
 local chatFrame = {}
@@ -221,6 +230,8 @@ local function Login()
     _G.ChangeChatColor = NativeChangeChatColor
     CHAT_FRAMES = {}
     ColorPickerFrame = NewColorPicker()
+    -- A new session: the skin engine is loaded only if this one loads it.
+    _G.MapkoSkin = nil
     S = { locked = false, jobs = {} }
     local Suite = {
         RootDB = DeepCopy(world.saved) or {},
@@ -452,20 +463,38 @@ EVENTS.crash = function()
 end
 EVENTS.restore = function()
     if ColorPickerFrame.shown then Cancel() end
+    -- The categories Restore may write: recorded in the ledger, or showing the
+    -- skin's theme colour while its engine is loaded.
+    local ledger, theme = Ledger(S.Suite.RootDB), Key(Bytes(THEME[1], THEME[2], THEME[3]))
+    model.restoring = {}
+    for _, chatType in ipairs(CATEGORIES) do
+        model.restoring[chatType] = ledger[chatType] ~= nil
+            or (S.chat ~= nil and not S.locked and Key(world.chat[chatType]) == theme)
+    end
     actor = "restore"
-    local ok = S.Suite.Skin.RestoreChatColors()
+    local ok, written = S.Suite.Skin.RestoreChatColors()
     actor = nil
     if ok then
-        for _, chatType in ipairs(CATEGORIES) do model.writer[chatType] = "restore" end
+        local expected = 0
+        for _, chatType in ipairs(CATEGORIES) do
+            if model.restoring[chatType] then
+                expected = expected + 1
+                model.writer[chatType] = "restore"
+            end
+        end
+        if written ~= expected then
+            Fail("I5: Restore wrote " .. tostring(written) .. " of " .. expected .. " categories")
+        end
         if next(Ledger(S.Suite.RootDB)) ~= nil then Fail("I4: a successful Restore left a ledger entry") end
         model.restored = true
     end
+    model.restoring = {}
     return true
 end
 
 local function Start(skinOn)
     world = { chat = DeepCopy(DEFAULTS), saved = nil, skinOn = skinOn }
-    model = { writer = {}, residue = {} }
+    model = { writer = {}, residue = {}, restoring = {} }
     for _, chatType in ipairs(CATEGORIES) do model.writer[chatType] = "blizzard" end
     THEME[1], THEME[2], THEME[3] = THEMES[1][1], THEMES[1][2], THEMES[1][3]
     failure, actor, failingWrites, reported = nil, nil, false, {}

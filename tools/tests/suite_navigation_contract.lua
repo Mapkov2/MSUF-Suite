@@ -10,7 +10,7 @@ local function Frame(kind)
         return function() end
     end })
 end
-local fonts = {}
+local fonts, buttons = {}, {}
 local function Widget(kind)
     local w = Frame(kind)
     function w:SetShown(v) self.shown = v and true or false end
@@ -145,7 +145,12 @@ T.Font = function(parent, _, text)
     fonts[#fonts + 1] = fs
     return fs
 end
-T.Button = function(_, text) local b = Widget("Button"); b.text = text; return b end
+T.Button = function(parent, text)
+    local b = Widget("Button")
+    b.text, b.label, b.parent = text, text, parent
+    buttons[#buttons + 1] = b
+    return b
+end
 T.Panel = function() return Widget("Panel") end
 M.navItems = {
     { key = "home", label = "Dashboard" },
@@ -234,7 +239,7 @@ assert(M.PageHasReset("suite_bags") == true and M.PageHasReset("suite_skin") == 
 
 ------------------------------------------------------------------ availability and unavailable pages
 do
-    local notice = "You need to turn on the module in Blizzards Addon list"
+    local notice = "You need to turn on the module in Blizzard's AddOn list"
     local addonForPage = {
         suite_bags = "MSUF_Suite_Bags", suite_qualityOfLife = "MSUF_Suite_QualityOfLife",
         suite_hud = "MSUF_Suite_Modules", suite_skin = "MSUF_Suite_Skin",
@@ -248,13 +253,22 @@ do
             state[addon] = true
             local ok, reason, hide = rows[key].availability()
             assert(ok == false and reason == notice and not hide, key .. ": unavailable row must stay grey and clickable")
-            local before = #fonts
+            local before, buttonsBefore = #fonts, #buttons
             local ctx = { key = key, width = 720, wrapper = Widget("Page"), refreshers = {}, widgets = {}, sections = {} }
             function ctx:SetContentHeight(value) self.height = value end
             M.pages[key].build(ctx)
-            assert(ctx.height == 62, key .. ": notice has no content height")
-            assert(#fonts == before + 1 and fonts[#fonts].text == notice and fonts[#fonts].parent == ctx.wrapper,
-                key .. ": unavailable page must show only the AddOn notice")
+            -- Skinning keeps its two maintenance actions under the notice:
+            -- "Save setup as..." and "Restore chat colors" need no Skin addon.
+            local actions = key == "suite_skin" and 2 or 0
+            assert(ctx.height == (actions > 0 and 122 or 62), key .. ": notice has no content height: "
+                .. tostring(ctx.height))
+            assert(fonts[before + 1] and fonts[before + 1].text == notice and fonts[before + 1].parent == ctx.wrapper,
+                key .. ": unavailable page must show the AddOn notice first")
+            assert(#buttons - buttonsBefore == actions, key .. ": unavailable page shows the wrong actions")
+            for index = buttonsBefore + 1, #buttons do
+                assert(buttons[index].parent == ctx.wrapper and (buttons[index].label == "Save setup as\226\128\166"
+                    or buttons[index].label == "Restore chat colors"), key .. ": unavailable page shows another action")
+            end
             assert(#ctx.widgets == 0 and #ctx.sections == 0, key .. ": unavailable page built settings")
             assert(not M.PageHasReset(key) and not M.ResetPageToDefaults(key), key .. ": unavailable page can reset settings")
             state[addon] = nil

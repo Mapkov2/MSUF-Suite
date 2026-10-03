@@ -38,7 +38,7 @@ end
 -- Keep unavailable destinations visible and clickable so they can explain how
 -- to turn the AddOn on. A saved module switch and Blizzard's AddOn switch are
 -- separate: dormant load-on-demand modules still need their settings page.
-local ADDON_NOTICE = "You need to turn on the module in Blizzards Addon list"
+local ADDON_NOTICE = "You need to turn on the module in Blizzard's AddOn list"
 -- Every catalog module per page; the page reset and the AddOn checks use it.
 local PAGE_MODULES = {}
 for _, id in ipairs(Suite.SuiteOrder) do
@@ -175,7 +175,11 @@ local function PageBuilder(page)
         M.TrackRefresh(ctx, P.ForgetAvailability)
         if not PageAddOnEnabled(page.key) then
             local notice = P.Text(ctx.wrapper, ADDON_NOTICE, 16, -20, math.max(240, (ctx.width or 720) - 32))
-            ctx:SetContentHeight(notice:GetStringHeight() + 48)
+            local height = notice:GetStringHeight() + 48
+            -- A page may keep actions below it that need no module of its
+            -- own (Skinning: Pages/Appearance.lua).
+            if page.notice then height = 12 - page.notice(ctx, 20 - height) end
+            ctx:SetContentHeight(height)
             return
         end
         return page.build(ctx, ...)

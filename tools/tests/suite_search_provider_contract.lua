@@ -1049,10 +1049,23 @@ do
 end
 
 -- With every Suite module off, search keeps only what turns them back on:
--- pages, FAQ answers, enable switches and Quality of Life categories. With
--- their AddOns off it keeps nothing of the Suite. The Main host cannot filter
--- widgets of pages already visited (it has no availability hook), so the
--- visited-cache checks need that hook.
+-- pages, FAQ answers, enable switches and Quality of Life categories, and the
+-- Skinning page's two maintenance actions, which need no Skin addon. With
+-- their AddOns off it keeps nothing of the Suite but those two. The Main host
+-- cannot filter widgets of pages already visited (it has no availability
+-- hook), so the visited-cache checks need that hook.
+local MAINTENANCE_LABELS = { [M.Tr("Save setup as\226\128\166")] = true, [M.Tr("Restore chat colors")] = true }
+local function MaintenanceRows(rows)
+    local found = 0
+    for _, row in ipairs(rows) do
+        if row.suiteAlways then
+            Check(row.pageKey == "suite_skin" and row.kind == "button" and MAINTENANCE_LABELS[row.label],
+                "an always-found Suite row is not a Skinning maintenance action: " .. tostring(row.label))
+            found = found + 1
+        end
+    end
+    return found
+end
 do
     local savedEnabled, savedDisabled, skinEnabled = {}, {}, Suite.Skin.enabled
     for _, id in ipairs(Suite.SuiteOrder) do
@@ -1065,18 +1078,20 @@ do
     P.Refresh()
     local offRows = P.SearchRows()
     Check(#offRows > 0, "modules that are off lost their pages and switches")
+    Check(MaintenanceRows(offRows) == 2, "Save setup as or Restore chat colors is not found without the Skin addon")
     for _, row in ipairs(offRows) do
         local key = row.settingKey or ""
         local switch = key:match("%.enabled$") or row.suiteModuleSwitch
             or (row.sectionId or ""):match("^suite_qualityOfLife_category_")
-        Check(row.kind == "page" or row.kind == "faq" or switch,
+        Check(row.kind == "page" or row.kind == "faq" or switch or row.suiteAlways,
             "modules that are off kept a cold detail: " .. tostring(row.pageKey) .. " " .. tostring(row.label))
     end
     if M.RegisterSearchAvailability then
         for _, row in ipairs(api.GetSearchRecords()) do
             local key = row.exactTarget and row.exactTarget.settingKey or ""
+            local provider = row.providerRow or {}
             Check(not row.key:match("^suite_") or row.kind == "page" or row.kind == "faq" or row.kind == "section"
-                or key:match("%.enabled$") or (row.providerRow and row.providerRow.suiteModuleSwitch)
+                or key:match("%.enabled$") or provider.suiteModuleSwitch or provider.suiteAlways
                 or key:match("^msufsuite%.qol%.") or key:match("^msufsuite%.loot%."),
                 "Suite-off cache retained " .. row.kind .. " on " .. row.key)
         end
@@ -1092,12 +1107,17 @@ do
     -- Blizzard's current-character AddOn switch also gates loaded provider rows.
     for _, id in ipairs(Suite.SuiteOrder) do disabled[catalog[id].addon] = true end
     disabled.MSUF_Suite_Skin = true
-    Check(#P.SearchRows() == 0, "Suite AddOns that are off still provided rows")
+    local addonOffRows = P.SearchRows()
+    Check(#addonOffRows == 2 and MaintenanceRows(addonOffRows) == 2, "Suite AddOns that are off still provided rows")
     if M.RegisterSearchAvailability then
         Search("suite")
+        local maintenance = 0
         for _, row in ipairs(api.GetSearchRecords()) do
-            Check(not row.key:match("^suite_"), "AddOn-off cache retained " .. row.kind .. " on " .. row.key)
+            local always = row.providerRow and row.providerRow.suiteAlways
+            if always then maintenance = maintenance + 1 end
+            Check(not row.key:match("^suite_") or always, "AddOn-off cache retained " .. row.kind .. " on " .. row.key)
         end
+        Check(maintenance == 2, "search does not find Save setup as and Restore chat colors without the Skin addon")
     end
     for name in pairs(disabled) do disabled[name] = nil end
     for name, value in pairs(savedDisabled) do disabled[name] = value end
