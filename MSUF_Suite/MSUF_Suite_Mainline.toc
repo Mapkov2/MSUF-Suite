@@ -58,6 +58,7 @@ Core\FontBridge.lua
 Integrations\MapkoSkin.lua
 Core\HostBridge.lua
 Core\ProfileIO.lua
+Core\InstallerLayout.lua
 Core\Profiles.lua
 Core\ProfileVariants.lua
 Core\InstallerProfiles.lua

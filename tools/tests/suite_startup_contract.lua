@@ -68,7 +68,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         Skin = { LoadLegacyDatabase = function() return false end, EnsureEngine = Noop, SetEnabled = Noop,
             SettleChatColors = Settle },
         SuiteProfiles = { EnsureNewCharacterProfile = Noop, SyncActive = Noop,
-            EnsureRetailForeverCooldownLayout = Noop, EnsureRetailResourceStack = Noop },
+            EnsureRetailForeverCooldownLayout = Noop, EnsureModernPanelLayout = Noop, EnsureRetailResourceStack = Noop },
         Menu = { Watch = Noop },
         Installer = { MaybeShow = Noop },
     }

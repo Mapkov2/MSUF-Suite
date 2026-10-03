@@ -102,6 +102,11 @@ Suite.ProfileIO = {
         modules.nameplates = { enabled = true, look = 4, nativeStyle = 2, barGeometry = 2 }
         modules.bags.enabled = text == Suite.RetailFactoryModuleCompact
         modules.actionbars.enabled = true
+        for _, index in ipairs({ 3, 5 }) do
+            local prefix = "bar" .. index
+            modules.actionbars[prefix .. "Buttons"], modules.actionbars[prefix .. "Rows"] = 12, 12
+            modules.actionbars[prefix .. "Size"], modules.actionbars[prefix .. "Spacing"] = 40, 2
+        end
         if text == Suite.ForeverFactoryModuleCompact then
             modules.actionbars.bar1Point = 8
             modules.actionbars.bar3Point = 7
@@ -116,6 +121,7 @@ Suite.ProfileIO = {
             modules.actionbars.bar1Point, modules.actionbars.bar1X, modules.actionbars.bar1Y = 8, 10, 0
             modules.actionbars.bar2Point, modules.actionbars.bar2X, modules.actionbars.bar2Y = 8, 9, 40
             modules.actionbars.bar3Point, modules.actionbars.bar3X, modules.actionbars.bar3Y = 7, 2480, 236
+            modules.actionbars.bar5Point, modules.actionbars.bar5X, modules.actionbars.bar5Y = 7, 2520, 233
             modules.dataTexts.bar1Point, modules.dataTexts.bar1X, modules.dataTexts.bar1Y = 8, 1020, 170
             modules.minimap.x, modules.minimap.y = 0, -10
             modules.cooldownManager.listsData = "MSUF3:authoredRetail"
@@ -153,14 +159,14 @@ Suite.SuiteProfiles = {
         assert(name == "Default")
         if options and options.preserveSkinLayout then
             assert(skin == Suite.RetailProfileSkinCompact and look == nil
-                and profile.suite.modules.dataTexts.bar1X == 1020
+                and profile.suite.modules.dataTexts.bar1Point == 9 and profile.suite.modules.dataTexts.bar1X == 0
                 and profile.suite.modules.actionbars.bar1X == 10
                 and profile.suite.modules.minimap.x == 0,
                 "keeping current frames must preserve the authored Retail Suite layout")
         else
             assert(skin == (Suite.Client.isForever and Suite.ForeverFactorySkinCompact or Suite.RetailFactorySkinCompact))
             assert(look == "cleanModern")
-            assert(profile.suite.modules.dataTexts.bar1Point == 8
+            assert(profile.suite.modules.dataTexts.bar1Point == 9
                 and profile.suite.modules.dataTexts.bar1X == 0
                 and profile.suite.modules.actionbars.bar1X == 0
                 and profile.suite.modules.actionbars.bar2X == 0
@@ -189,8 +195,8 @@ Suite.SuiteProfiles = {
                 "Retail must use the original unitframe factory and the authored Suite/Skin profile")
             assert(profile.suite.modules.actionbars.bar1X == 10
                 and profile.suite.modules.actionbars.bar2X == 9
-                and profile.suite.modules.actionbars.bar3X == 2480
-                and profile.suite.modules.dataTexts.bar1X == 1020
+                and profile.suite.modules.actionbars.bar3Point == 9 and profile.suite.modules.actionbars.bar3X == -40
+                and profile.suite.modules.dataTexts.bar1Point == 9 and profile.suite.modules.dataTexts.bar1X == 0
                 and profile.suite.modules.minimap.x == 0,
                 "Retail authored positions were replaced by installer defaults")
             local previousFrames = MSUF_ActiveProfile
@@ -306,6 +312,7 @@ UISpecialFrames = {}
 
 -- The scale goes through the Suite's host bridge; this MSUF has no host API v1.
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/InstallerLayout.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
@@ -442,7 +449,7 @@ assert(window.close.x + window.close.width < window.next.x)
 window.next.scripts.OnClick() -- welcome -> profile
 assert(window.colors[1].shown and window.classic.shown and window.forever.shown and window.cooldowns.shown
     and window.cooldowns.mark.text == "ON")
-assert(window.classic.mark.text == "SELECTED" and window.colorChoice == "cleanModern"
+assert(window.classic.mark.text == "SELECTED" and window.colorChoice == "authored"
     and window.forever.mark.text == "CHOOSE", "Retail must default to Modern MSUF Suite with its authored colors")
 assert(window.classic.y > window.forever.y, "Retail default must be the first profile card")
 CheckLayout()
@@ -511,7 +518,7 @@ CheckLayout()
 Suite.Client.isForever = true
 Suite.Installer.Open()
 window.next.scripts.OnClick()
-assert(window.forever.mark.text == "SELECTED" and window.colorChoice == "foreverGlass"
+assert(window.forever.mark.text == "SELECTED" and window.colorChoice == "authored"
     and window.classic.mark.text == "CHOOSE" and not window.cooldowns.shown,
     "Forever must default to its complete Forever factory")
 assert(window.forever.y > window.classic.y, "Forever default must be the first profile card")
@@ -592,7 +599,7 @@ assert(Suite.RootDB.installation.raidEssentials == false
 Suite.Installer.Open()
 window.next.scripts.OnClick() -- welcome -> profile
 window.classic.scripts.OnClick()
-window.colors[1].scripts.OnClick() -- choose Midnight Blue independently from Retail layout
+window.colors[2].scripts.OnClick() -- choose Midnight Blue independently from Retail layout
 assert(window.classic.mark.text == "SELECTED"
     and window.colorChoice == "midnight"
     and window.review[1].shown == false,
@@ -638,14 +645,25 @@ Suite.SuiteProfiles.InstallFactory = function(_, frames, profile, skin, look, fi
         "color and layout choices were not independent at installation")
     return FinishInstall(finish, function() end, "Colors")
 end
-window.colors[4].scripts.OnClick()
+window.colors[5].scripts.OnClick()
 window.forever.scripts.OnClick()
 assert(Suite.Installer.Apply() and Suite.RootDB.installation.layout == "forever"
     and Suite.RootDB.installation.look == "cleanModern")
 Suite.SuiteProfiles.InstallFactory = paletteFactory
 Suite.Installer.Open()
 window.next.scripts.OnClick()
-assert(window.classic.mark.text == "SELECTED" and window.colorChoice == "cleanModern")
+assert(window.classic.mark.text == "SELECTED" and window.colorChoice == "authored")
+-- Choosing the default-named palette explicitly still recolors the
+-- authored layout; Profile colors is the only choice that preserves it.
+local explicitFactory = Suite.SuiteProfiles.InstallFactory
+Suite.SuiteProfiles.InstallFactory = function(_, _, profile, skin, look, finish)
+    assert(look == "cleanModern" and skin == Suite.RetailProfileSkinCompact
+        and profile.suite.globalLook == "cleanModern", "explicit Clean Modern was treated as authored colors")
+    return FinishInstall(finish, function() end, "ExplicitColors")
+end
+window.colors[5].scripts.OnClick()
+assert(Suite.Installer.Apply())
+Suite.SuiteProfiles.InstallFactory = explicitFactory
 -- The scale is the profile transaction's last step: a scale MSUF refuses at
 -- apply rolls the Forever install back, so the retry installs "MSUF Suite
 -- Forever" again, never a "MSUF Suite Forever 2".
@@ -690,7 +708,8 @@ local function OpenLocalized(locale, L)
     GetLocale = function() return "enUS" end
     Suite.L = L
     MSUFSuiteInstallFrame = nil
-    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerLayout.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
     Suite.Installer.Open()
@@ -725,7 +744,7 @@ do
     local chat = Suite.SuiteCatalog.chat
     chat.title, chat.description = "Chat", "Contract chat description"
     local L = setmetatable({ Chat = "Discussion", ["Contract chat description"] = "Description du chat",
-        ["%d / %d enabled"] = "%d sur %d activés" }, { __index = function(_, key) return key end })
+        ["%d / %d enabled"] = "%d sur %d activÃƒÆ’Ã‚Â©s" }, { __index = function(_, key) return key end })
     window = OpenLocalized("frFR", L)
     local row = window.moduleRows[1]
     assert(row.id == "chat" and row.label.text == "Discussion", "a module row shows its English catalog title")
@@ -737,7 +756,7 @@ do
     assert(GameTooltip.text == "Discussion" and lines[1] == "Description du chat",
         "a module tooltip shows its English catalog title or description")
     for _ = 1, 4 do window.next.scripts.OnClick() end
-    assert(window.review[2].detail.text:find("^%d+ sur %d+ activés"),
+    assert(window.review[2].detail.text:find("^%d+ sur %d+ activÃƒÆ’Ã‚Â©s"),
         "the module count is not one translated format: " .. tostring(window.review[2].detail.text))
     chat.title, chat.description = "chat", nil
 end

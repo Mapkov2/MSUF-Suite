@@ -72,6 +72,22 @@ local function AdaptFactorySkin(profile, modules)
     if modules then PlaceFactoryMenu(profile, modules) end
 end
 
+-- Palette changes preserve the authored Micro Bar grid in both clients.
+-- A look's artwork and colors still apply; its spacing is a layout choice.
+local function StyleFactorySkin(skin, profile, look, options)
+    local menu = profile.icons and profile.icons.microMenu
+    local preserve = menu and options and options.preserveSkinLayout
+    local spacing, padding, buttonSize, iconSize
+    if preserve then
+        spacing, padding, buttonSize, iconSize = menu.spacing, menu.padding, menu.buttonSize, menu.iconSize
+    end
+    local ok = skin.Theme.StyleProfile(profile, look)
+    if preserve then
+        menu.spacing, menu.padding, menu.buttonSize, menu.iconSize = spacing, padding, buttonSize, iconSize
+    end
+    return ok
+end
+
 -- MSUF owns the selected profile in the unified UI. A Suite profile with the
 -- same name is created from current settings on the first switch; older Suite
 -- profiles are retained, never renamed or discarded.
@@ -126,6 +142,32 @@ function P.SyncActive(name)
     return true
 end
 Suite.OnMSUFProfileChanged = P.SyncActive
+
+-- Recover the old centered information strip without moving edited profiles.
+-- This runs once at login, after module startup, through their normal setter.
+function P.EnsureModernPanelLayout()
+    if Suite.InCombat() then return false end
+    local installation = Suite.RootDB and Suite.RootDB.installation
+    local name = DB.GetActiveProfileName()
+    local _, frames = P.Active()
+    if not installation or installation.status ~= "complete" or installation.profile ~= "suite"
+        or type(installation.revision) ~= "number" or installation.revision > 3
+        or installation.modernPanelAnchorRevision == 1 or installation.frameProfileName ~= name
+        or frames ~= name then return false end
+    local skin = SkinEngine()
+    if not skin or skin.Database.GetActiveProfileName() ~= name then return false end
+    local profile, skinProfile = DB.GetProfile(name), skin.Database.GetProfile(name)
+    if not profile or not Suite.InstallerLayout.IsLegacyPanel(profile.suite.modules, skinProfile) then return false end
+    if not Suite.ProfileVariants.BeforeMutation(name) then return false end
+    profile, skinProfile = DB.GetProfile(name), skin.Database.GetProfile(name)
+    local ok = false
+    if profile and Suite.InstallerLayout.IsLegacyPanel(profile.suite.modules, skinProfile) then
+        ok = Suite.Suite.SetMany("dataTexts", { bar1Point = 9, bar1X = 0 }) == true
+    end
+    Suite.ProfileVariants.AfterMutation(name)
+    if ok then installation.modernPanelAnchorRevision = 1 end
+    return ok
+end
 
 -- MSUF resolves a new character's frame profile before Suite starts. Install
 -- the chosen Suite profile as MSUF's new-character default once, and repair
@@ -562,8 +604,7 @@ function P.InstallFactory(name, frames, modules, skinText, lookName, finish, opt
             skinProfile, why = SkinSnapshot(skin)
         end
         if not skinProfile then return false, why or "Skin profile unavailable" end
-        if lookName and (not skin.Theme or not skin.Theme.StyleProfile
-            or not skin.Theme.StyleProfile(skinProfile, lookName)) then
+        if lookName and not StyleFactorySkin(skin, skinProfile, lookName, options) then
             return false, "Skin look unavailable"
         end
         if type(skinText) == "string" and not (options and options.preserveSkinLayout) then
@@ -589,8 +630,7 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName, finish, option
         if not skin then return false, "Skin engine unavailable" end
         skinProfile, reason = skin.ProfileIO.PrepareProfile(skinText)
         if not skinProfile then return false, reason or "Modern Skin profile unavailable" end
-        if lookName and (not skin.Theme or not skin.Theme.StyleProfile
-            or not skin.Theme.StyleProfile(skinProfile, lookName)) then
+        if lookName and not StyleFactorySkin(skin, skinProfile, lookName, options) then
             return false, "Skin look unavailable"
         end
         if not (options and options.preserveSkinLayout) then AdaptFactorySkin(skinProfile, profile.suite.modules) end

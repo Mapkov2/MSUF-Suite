@@ -31,6 +31,7 @@ local function Check(profile)
     assert(m.objectives.x == 0 and m.objectives.y == -250 and m.objectives.width == 310
         and m.bags.inventoryView == 1, "authored tracker or Bags view changed")
 end
+assert(loadfile(root .. "/MSUF_Suite/Core/InstallerLayout.lua"))("MSUF_Suite", Suite)
 local compact = Suite.RetailProfileModuleCompact
 local profile = assert(Suite.ProfileIO.PrepareProfile(compact, false))
 assert(profile.suite.globalLook == "cleanModern" and profile.suite.modules.minimap.stylePreset == 11)
@@ -39,6 +40,13 @@ for _, look in ipairs({ "midnight", "midnightDark", "foreverGlass", "cleanModern
     local staged = Suite.CopyValue(profile)
     assert(Suite.Suite.StyleProfile(staged, look))
     Check(staged)
+    Suite.InstallerLayout.Prepare(staged.suite.modules)
+    Suite.Suite.Normalize(staged) -- saved profile preparation on the next login
+    local m = staged.suite.modules
+    assert(m.dataTexts.bar1Point == 9 and m.dataTexts.bar1X == 0 and m.dataTexts.bar1Y == 170
+        and m.actionbars.bar3Point == 9 and m.actionbars.bar3X == -40
+        and m.actionbars.bar5Point == 9 and m.actionbars.bar5X == 0,
+        "prepared Modern layout retained screen-width dependent positions")
     assert(staged.suite.globalLook == look and profile.suite.globalLook == "cleanModern",
         "restyling a staged profile changed its source")
 end

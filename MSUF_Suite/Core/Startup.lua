@@ -84,6 +84,7 @@ local function Start()
     Step(Suite.ProfileVariants,"Start")
     Step(profiles, "EnsureRetailForeverCooldownLayout")
     Step(Suite.Suite, "Start")
+    Step(profiles, "EnsureModernPanelLayout")
     Step(profiles, "EnsureRetailResourceStack", false)
     Step(Suite.Installer, "MaybeShow", "login")
 end

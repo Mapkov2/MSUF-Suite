@@ -64,7 +64,7 @@ end
 
 local function AppliedLook()
     if selected == "suite" then return chosenLook or "cleanModern" end
-    if chosenLook and chosenLook ~= DefaultLook() then return chosenLook end
+    return chosenLook
 end
 
 local function SkinPreset()
@@ -132,12 +132,12 @@ local function PreparedProfile()
         bars.bar5Point, bars.bar5X, bars.bar5Y = 7, 72, 210
     end
     if selected == "suite" then
-        -- The supplied export was positioned around a 1440p screen centre.
-        -- Keep its visual settings but use stable screen anchors, so changing
-        -- resolution or UI scale cannot push the visible groups away.
+        -- The information strip belongs directly above the paired meters.
+        -- Both groups follow the screen's right edge at every UI scale.
         local texts = modules.dataTexts
-        if texts then texts.bar1Point, texts.bar1X, texts.bar1Y = 8, 0, 170 end
+        if texts then texts.bar1Point, texts.bar1X, texts.bar1Y = 9, 0, 170 end
     end
+    if selected == "classic" then Suite.InstallerLayout.Prepare(modules) end
     local cooldowns = modules.cooldownManager
     if cooldowns and RetailCooldowns() then
         cooldowns.raidEssentials = useRaidEssentials
@@ -272,6 +272,7 @@ function Installer.Apply()
         layout = selected == "forever" and "forever" or "retail",
         look = chosenLook or DefaultLook(), keepFrames = keepFrames,
         modernMeterMenuRevision = selected ~= "suite" and 2 or nil,
+        modernPanelAnchorRevision = selected ~= "forever" and 1 or nil,
         resourceStackRevision = selected == "classic" and 1 or nil,
         frameProfileName = FrameProfileName(),
         moduleOverrides = moduleOverrides[selected],
@@ -430,8 +431,8 @@ end
 -- Welcome cards and profile choice with the cooldown switch.
 local function BuildProfileSteps(window)
     window.intro = {
-        InfoCard(window, 36, 231, Text("1. Choose a profile"),
-            Text("Choose Retail or Forever, then pick colors separately.")),
+        InfoCard(window, 36, 231, Text("1. Choose a Suite layout"),
+            Text("Both Suite layouts work in Retail and Forever. Choose the layout first, then its colors.")),
         InfoCard(window, 36, 157, Text("2. Select modules"),
             Text("Keep the profile defaults or switch individual Suite modules on or off.")),
         InfoCard(window, 36, 83, Text("3. Set UI scale"),
@@ -594,7 +595,7 @@ local function ShowPage(f)
         end
     end
     SetShownAll(f.intro, page == 1)
-    Suite.InstallerProfiles.Show(f, page == 2, selected, chosenLook or DefaultLook())
+    Suite.InstallerProfiles.Show(f, page == 2, selected, chosenLook or "authored")
     f.cooldowns:SetShown(page == 2 and RetailCooldowns())
     Suite.InstallerModules.Show(f, page == 3)
     f.keepFrames:SetShown(scaling)
@@ -637,7 +638,7 @@ local function PaintWelcome(f)
 end
 
 local function PaintProfiles(f)
-    SetPageText(f, "Choose your profile", "Choose Retail or Forever, then pick colors separately.")
+    SetPageText(f, "Choose a Suite layout", "Both Suite layouts work in Retail and Forever. Choose the layout first, then its colors.")
     f.cooldowns.title:SetText(Text("MSUF spec cooldown profiles"))
     f.cooldowns.detail:SetText(Text("Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM."))
     f.cooldowns.mark:SetText(useRaidEssentials and Text("ON") or Text("OFF"))
@@ -690,8 +691,8 @@ local function PaintReview(f)
     local profile = PreviewProfile(f)
     f.review[1].title:SetText(Text("Profile"))
     f.review[1].detail:SetText(Text("%s · Colors: %s · %s"):format(
-        selected == "forever" and Text("MSUF Forever") or Text("Modern MSUF Suite"),
-        Suite.InstallerProfiles.LookLabel(chosenLook or DefaultLook()),
+        selected == "forever" and Text("MSUF Suite Forever") or Text("Modern MSUF Suite"),
+        Suite.InstallerProfiles.LookLabel(chosenLook),
         keepFrames and Text("Current MSUF frames") or Text("Factory MSUF frames")))
     f.review[2].title:SetText(Text("Modules"))
     f.review[2].detail:SetText(ModuleSummary(profile))

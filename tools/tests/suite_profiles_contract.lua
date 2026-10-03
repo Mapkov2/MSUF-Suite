@@ -333,7 +333,8 @@ local addonEnabled = Suite.Client.AddOnEnabled
 Suite.Client.AddOnEnabled = function() return true end
 encodings[#encodings + 1] = {
     look = "modern",
-    icons = { microMenu = { layoutPoint = "BOTTOM", layoutX = 900, scale = 0.7 } },
+    icons = { microMenu = { layoutPoint = "BOTTOM", layoutX = 900, scale = 0.7,
+        spacing = 5, padding = 5, buttonSize = 30, iconSize = 22 } },
     windowControls = { positions = { CharacterFrame = { x = 1000 } } },
 }
 local modernSkin = "MSKIN1:" .. #encodings
@@ -678,6 +679,8 @@ assert(factoryMenu.layoutPoint == "BOTTOMLEFT" and factoryMenu.layoutRelativePoi
 skin.Theme = { StyleProfile = function(profile, look)
     if look ~= "midnight" then return false end
     profile.look = look
+    local menu = profile.icons and profile.icons.microMenu
+    if menu then menu.spacing, menu.padding, menu.buttonSize, menu.iconSize = 1, 6, 24, 20 end
     return true
 end }
 local beforeClassicFrames = frameImports
@@ -805,6 +808,8 @@ do
     assert(referenceCalls == 0 and installedSkin.look == "midnight"
         and installedSkin.icons.microMenu.layoutPoint == "BOTTOM"
         and installedSkin.icons.microMenu.layoutX == 900
+        and installedSkin.icons.microMenu.spacing == 5 and installedSkin.icons.microMenu.padding == 5
+        and installedSkin.icons.microMenu.buttonSize == 30 and installedSkin.icons.microMenu.iconSize == 22
         and installedSkin.windowControls.positions.CharacterFrame and installedSkin.windowControls.positions.CharacterFrame.x == 1000,
         "authored Retail received the Forever screen reference or lost Skin positions")
     assert(P.InstallFactory("AuthoredForever", "MSUF3:frames", DB.GetProfile("Raid"),
@@ -819,6 +824,10 @@ do
         "midnight", nil, authored))
     assert(frameImports == importsBefore and MSUF_ActiveProfile == previousFrames
         and skinProfiles.AuthoredRetail.icons.microMenu.layoutX == 900
+        and skinProfiles.AuthoredRetail.icons.microMenu.spacing == 5
+        and skinProfiles.AuthoredRetail.icons.microMenu.padding == 5
+        and skinProfiles.AuthoredRetail.icons.microMenu.buttonSize == 30
+        and skinProfiles.AuthoredRetail.icons.microMenu.iconSize == 22
         and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame.x == 1000,
         "keeping current frames repositioned the authored Skin or imported frames")
     local previous = DB.GetProfile("AuthoredRetail")
@@ -826,6 +835,10 @@ do
         "midnight", function() return false, "refused" end, authored))
     assert(DB.GetProfile("AuthoredRetail") == previous
         and skinProfiles.AuthoredRetail.icons.microMenu.layoutX == 900
+        and skinProfiles.AuthoredRetail.icons.microMenu.spacing == 5
+        and skinProfiles.AuthoredRetail.icons.microMenu.padding == 5
+        and skinProfiles.AuthoredRetail.icons.microMenu.buttonSize == 30
+        and skinProfiles.AuthoredRetail.icons.microMenu.iconSize == 22
         and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame and skinProfiles.AuthoredRetail.windowControls.positions.CharacterFrame.x == 1000,
         "a refused authored install did not restore Suite and Skin")
     Suite.Client.AddOnEnabled = enabled

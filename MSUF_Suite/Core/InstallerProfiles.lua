@@ -5,6 +5,7 @@ local Picker = {}
 Suite.InstallerProfiles = Picker
 local Text = Suite.Text
 local COLORS = {
+    { "authored", "Profile colors" },
     { "midnight", "Midnight Blue" },
     { "midnightDark", "Midnight Dark" },
     { "foreverGlass", "MSUF Forever" },
@@ -16,25 +17,25 @@ function Picker.LookLabel(look)
     for _, choice in ipairs(COLORS) do
         if choice[1] == look then return Text(choice[2]) end
     end
-    return Text("Clean Modern")
+    return Text("Profile colors")
 end
 
 function Picker.Build(window, label, card, button, style, chooseLayout, chooseLook)
     window.classic = card(window, 36, 241, function() chooseLayout("classic") end)
-    window.classic.title:SetText(Text("Modern MSUF Suite · Retail profile"))
-    window.classic.detail:SetText(Text("Original Retail unitframes with the Modern Suite layout."))
+    window.classic.title:SetText(Text("Modern MSUF Suite"))
+    window.classic.detail:SetText(Text("Modern Suite layout with DataTexts, damage meters and optional Skin."))
     window.forever = card(window, 36, 169, function() chooseLayout("forever") end)
-    window.forever.title:SetText(Text("MSUF Forever  ·  Complete profile"))
-    window.forever.detail:SetText(Text("Installs the Forever factory for MSUF frames, Suite and optional Skin."))
+    window.forever.title:SetText(Text("MSUF Suite Forever"))
+    window.forever.detail:SetText(Text("Forever Suite layout with Antique Map and optional parchment Skin."))
     window.colorLabel = label(window, "GameFontNormalSmall", 36, -306, 508, 16)
     window.colorLabel:SetText(Text("Colors"))
     window.colors, window.colorStyle = {}, style
     for index, choice in ipairs(COLORS) do
         local key = choice[1]
-        local control = button(window, 36 + (index - 1) * 103, 108, 96, Text(choice[2]),
-            function() chooseLook(key) end)
+        local control = button(window, 36 + (index - 1) * 85, 108, 80, Text(choice[2]),
+            function() chooseLook(key ~= "authored" and key or nil) end)
         control.look = key
-        control.caption:SetSize(90, 28)
+        control.caption:SetSize(74, 28)
         control.caption:SetFontObject("GameFontHighlightSmall")
         control.caption:SetJustifyH("CENTER")
         control:SetScript("OnLeave", function(self) style(self, window.colorChoice == key) end)

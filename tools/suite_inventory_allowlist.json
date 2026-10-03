@@ -1567,6 +1567,38 @@
       "evidence": "User requested Retail and Forever layout choices with separate colors on 2026-10-03; Core/InstallerProfiles.lua provides both layouts and all five palettes; Core/Installer.lua retains Suite-only installation through Keep current MSUF frames.",
       "reason": "Installer wording follows the independent layout and color choices; complete factories and the keep-current-frames behavior remain available.",
       "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "1. Choose a profile",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/InstallerProfiles.lua and Installer.lua retain both layouts on both clients; tools/tests/suite_installer_contract.lua verifies both choices, authored colors and five explicit palettes. New label: 1. Choose a Suite layout",
+      "reason": "Clarifies Suite layout selection and separates profile colors without removing a setup choice.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Choose your profile",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/InstallerProfiles.lua and Installer.lua retain both layouts on both clients; tools/tests/suite_installer_contract.lua verifies both choices, authored colors and five explicit palettes. New label: Choose a Suite layout",
+      "reason": "Clarifies Suite layout selection and separates profile colors without removing a setup choice.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Installs the Forever factory for MSUF frames, Suite and optional Skin.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/InstallerProfiles.lua and Installer.lua retain both layouts on both clients; tools/tests/suite_installer_contract.lua verifies both choices, authored colors and five explicit palettes. New label: Forever Suite layout with Antique Map and optional parchment Skin.",
+      "reason": "Clarifies Suite layout selection and separates profile colors without removing a setup choice.",
+      "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "MSUF Forever  ·  Complete profile",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/InstallerProfiles.lua and Installer.lua retain both layouts on both clients; tools/tests/suite_installer_contract.lua verifies both choices, authored colors and five explicit palettes. New label: MSUF Suite Forever",
+      "reason": "Clarifies Suite layout selection and separates profile colors without removing a setup choice.",
+      "date": "2026-10-03"
     }
   ]
 }
