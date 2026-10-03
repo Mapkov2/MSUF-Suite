@@ -2,10 +2,14 @@ local _, P = ...
 local S = P.Suite
 local C = P.Chat
 -- Idle fade (idleSeconds > 0): a chat window that got no new line and no
--- pointer for that long fades to idleAlpha together with its tab, its input
--- line and, for the primary window, the sidebar. A new line or Blizzard's
--- own mouse-over fade-in (FCF_FadeInChatFrame) wakes it; the countdown
--- starts again when Blizzard fades its chrome out (FCF_FadeOutChatFrame).
+-- pointer for that long fades to idleAlpha together with its tab and, for
+-- the primary window, the sidebar. Its input line is a child of the window
+-- (FloatingChatFrameTemplate's editBox, live and forever), so it fades with
+-- the window and is never faded on its own. A new line or Blizzard's own
+-- mouse-over fade-in (FCF_FadeInChatFrame) wakes it; the countdown starts
+-- again when Blizzard fades its chrome out (FCF_FadeOutChatFrame). While its
+-- input line has the focus the window stays awake: gaining the focus wakes
+-- it and losing it starts the countdown again.
 -- Chat frames, tabs and edit boxes are not protected, so this also runs in
 -- combat and never waits for the module to apply again. Each part's alpha
 -- before the fade is kept here and handed back on waking, unless Blizzard
@@ -13,8 +17,11 @@ local C = P.Chat
 -- the window's own callback): a line only moves its deadline.
 local M = C.M
 local Finite = S.Finite
-local TAB = 2
+-- fadeParts: 1 the window, TAB its tab, 3 the sidebar (primary window).
+local TAB, PARTS = 2, 3
 local delay = 0
+-- edit box -> its window's visual; each box takes its focus hooks once.
+local inputs = setmetatable({}, { __mode = "k" })
 
 -- The countdown never ends before Blizzard's own tab fade-out
 -- (CHAT_FRAME_FADE_OUT_TIME), which would otherwise paint over the tab.
@@ -25,7 +32,7 @@ end
 local function FadeOut(visual)
     local alpha = M.config.idleAlpha / 100
     local parts, before, applied = visual.fadeParts, visual.fadeBefore, visual.fadeApplied
-    for i = 1, 4 do
+    for i = 1, PARTS do
         local part = parts[i]
         if part then
             if before[i] == nil then
@@ -47,7 +54,7 @@ local function Wake(visual, skip)
     if not visual.faded then return end
     visual.faded = nil
     local parts, before, applied = visual.fadeParts, visual.fadeBefore, visual.fadeApplied
-    for i = 1, 4 do
+    for i = 1, PARTS do
         local part, value = parts[i], before[i]
         if part and value ~= nil and i ~= skip then
             local current = part:GetAlpha()
@@ -59,6 +66,7 @@ end
 
 local function Expired(visual)
     if not (M.active and visual.fadeArmed) or visual.hovered then return end
+    if visual.frame.editBox:HasFocus() == true then return end
     FadeOut(visual)
 end
 
@@ -84,6 +92,17 @@ local function HoverEnded(chatFrame)
     if not (visual and visual.fadeArmed) then return end
     visual.hovered = nil
     C.ChatActivity(chatFrame)
+end
+
+-- The player starts typing into the window's input line.
+local function InputFocused(editBox)
+    local visual = M.active and inputs[editBox]
+    if visual and visual.fadeArmed then Wake(visual) end
+end
+
+local function InputReleased(editBox)
+    local visual = M.active and inputs[editBox]
+    if visual then C.ChatActivity(visual.frame) end
 end
 
 function C.ReleaseFade(visual)
@@ -112,10 +131,17 @@ function C.ApplyInactivity(self, visual)
         visual.fadeParts, visual.fadeBefore, visual.fadeApplied = {}, {}, {}
         visual.fadeCallback = function() Expired(visual) end
     end
+    local input = frame.editBox
+    if not inputs[input] then
+        -- Post-hooks of the native edit box; they cannot be removed, so the
+        -- handlers check the module and the window's fade.
+        input:HookScript("OnEditFocusGained", InputFocused)
+        input:HookScript("OnEditFocusLost", InputReleased)
+    end
+    inputs[input] = visual
     Wake(visual)
     local parts = visual.fadeParts
-    parts[1], parts[TAB], parts[3], parts[4] =
-        frame, _G[frame:GetName() .. "Tab"], frame.editBox, visual.sidebarFrame
+    parts[1], parts[TAB], parts[3] = frame, _G[frame:GetName() .. "Tab"], visual.sidebarFrame
     M.context:Cancel(visual.fadeCallback)
     visual.fadeArmed = true
     C.ChatActivity(frame)

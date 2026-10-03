@@ -1,9 +1,16 @@
 local root = assert(arg[1])
+-- Combat as the Suite core reports it (MSUF_Suite/Core/Platform.lua):
+-- PLAYER_REGEN_DISABLED marks combat before InCombatLockdown() turns true.
+local inCombat, lockdown = false, false
 local NS = {
     Safety = { IsForbidden = function() return false end },
-    IsCombatLocked = function() return false end,
+    IsCombatLocked = function() return lockdown end,
+    InCombat = function() return inCombat or lockdown end,
+    RestrictedNotice = function() return "Blizzard blocks this right now." end,
 }
 local S = {}
+local printed = {}
+S.Print = function(message) printed[#printed + 1] = message end
 S.Public = function(value) return value ~= "secret" end
 -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
@@ -62,6 +69,7 @@ local function Frame(name)
     function frame:CreateFontString()
         return { SetPoint = function() end, SetText = function(label, value) label.value = value end,
             GetText = function(label) return label.value end,
+            GetUnboundedStringWidth = function(label) return #(label.value or "") * 6 end,
             SetTextColor = function(label, ...) label.color = { ... } end,
             GetTextColor = function(label) return unpack(label.color or { 1, 1, 1, 1 }) end,
             SetJustifyH = function() end, SetWidth = function(label, width) label.width = width end,
@@ -84,7 +92,7 @@ local function Frame(name)
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:GetWidth() return self.width or 64 end
     function frame:GetHeight() return self.height or 32 end
-    function frame:SetAllPoints() end
+    function frame:SetAllPoints(owner) self.points = { { "TOPLEFT", owner, "TOPLEFT" }, { "BOTTOMRIGHT", owner, "BOTTOMRIGHT" } } end
     function frame:SetWidth(width) self.width = width end
     function frame:SetHeight(height) self.height = height end
     function frame:ClearAllPoints() self.points = {} end
@@ -110,12 +118,23 @@ local function Frame(name)
     function frame:SetAutoFocus(value) self.autoFocus = value end
     function frame:SetFocus() self.focused = true end
     function frame:ClearFocus() self.focused = false end
+    function frame:HasFocus() return self.focused == true end
+    -- Only the input line's focus is followed (Fade.lua), never another script.
+    function frame:HookScript(script, callback)
+        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost", "chat hooked the " .. script .. " script")
+        self.hooks = self.hooks or {}
+        assert(not self.hooks[script], "chat hooked " .. script .. " twice")
+        self.hooks[script] = callback
+    end
     function frame:HighlightText() self.highlighted = true end
     function frame:SetText(value) self.text = value end
     function frame:GetText() return self.text end
     function frame:GetNumMessages() return #(self.messages or {}) end
     function frame:GetMessageInfo(index) return self.messages and self.messages[index] end
     function frame:SetScript(script, callback) self.scripts = self.scripts or {}; self.scripts[script] = callback end
+    function frame:SetAttribute(key, value) self.attributes = self.attributes or {}; self.attributes[key] = value end
+    function frame:GetAttribute(key) return self.attributes and self.attributes[key] end
+    function frame:IsMouseOver() return self.mouseOver == true end
     function frame:Click(mouseButton)
         self.clicks = (self.clicks or 0) + 1
         if self.scripts and self.scripts.OnClick then self.scripts.OnClick(self, mouseButton) end
@@ -123,11 +142,27 @@ local function Frame(name)
     function frame:ScrollToBottom() self.scrolled = (self.scrolled or 0) + 1 end
     return frame
 end
-CreateFrame = function(_, _, parent)
+CreateFrame = function(_, _, parent, template)
     local frame = Frame(nil)
-    frame.parent = parent
+    frame.parent, frame.template = parent, template
     return frame
 end
+local stateDrivers = {}
+RegisterStateDriver = function(frame, state, values) stateDrivers[frame] = { state = state, values = values } end
+-- SecureActionButton_OnClick of a "click" action (SecureTemplates.lua, live
+-- and forever) clicks its clickbutton from secure code.
+local secureClick = false
+local function SecureClick(frame, mouseButton)
+    assert(frame.template == "SecureActionButtonTemplate" and frame:GetAttribute("type") == "click",
+        "the frame is no secure click button")
+    secureClick = true
+    frame:GetAttribute("clickbutton"):Click(mouseButton)
+    secureClick = false
+end
+-- Blizzard's panel buttons (QuickJoinToastButton, ChatFrameChannelButton,
+-- TextToSpeechButton) open their panel through ShowUIPanel from OnClick.
+local panelOpens = {}
+local function PanelOnClick(button) panelOpens[#panelOpens + 1] = { button = button, secure = secureClick } end
 UIParent = Frame("UIParent")
 ChatFrame1 = Frame("ChatFrame1")
 ChatFrame1.isDocked = true
@@ -149,7 +184,41 @@ ChatFrame1.editBox = ChatFrame1EditBox
 QuickJoinToastButton = Frame("QuickJoinToastButton")
 ChatFrameChannelButton = Frame("ChatFrameChannelButton")
 TextToSpeechButton = Frame("TextToSpeechButton")
+for _, button in ipairs({ QuickJoinToastButton, ChatFrameChannelButton, TextToSpeechButton }) do
+    button:SetScript("OnClick", PanelOnClick)
+end
+-- Blizzard's chat menu button is a DropdownButton (Blizzard_Menu/DropdownButton.xml
+-- and .lua, live and forever): the press opens and closes its menu
+-- (OnMouseDown_Intrinsic -> SetMenuOpen, ignored with Shift), its own OnClick
+-- (ChatFrameMenuButtonMixin:OnClick) only hides a help tip, and Blizzard's
+-- menu closes on its next frame once the button is not visible.
 ChatFrameMenuButton = Frame("ChatFrameMenuButton")
+ChatFrameMenuButton.parent = ChatFrame1.buttonFrame
+ChatFrameMenuButton:SetScript("OnClick", function() end)
+function ChatFrameMenuButton:IsMenuOpen() return self.menu ~= nil end
+function ChatFrameMenuButton:SetMenuOpen(open)
+    if open and not self.menu then
+        self.menu = {}
+        self.menuOpens = (self.menuOpens or 0) + 1
+    elseif not open then
+        self.menu = nil
+    end
+end
+function ChatFrameMenuButton:IsVisible() return self.shown and ChatFrame1.shown end
+local shiftDown = false
+IsShiftKeyDown = function() return shiftDown end
+-- A hardware click on a Suite button: the press first reaches Blizzard's menu
+-- manager (GLOBAL_MOUSE_DOWN closes an open menu unless the pressed frame's
+-- HandlesGlobalMouseEvent answers true, Blizzard_Menu/Menu.lua), then the
+-- button's OnMouseDown, OnMouseUp and OnClick.
+local function HardwareClick(button, mouseButton)
+    local handled = button.HandlesGlobalMouseEvent and button:HandlesGlobalMouseEvent(mouseButton, "GLOBAL_MOUSE_DOWN")
+    if not handled then ChatFrameMenuButton.menu = nil end
+    local scripts = button.scripts or {}
+    for _, script in ipairs({ "OnMouseDown", "OnMouseUp", "OnClick" }) do
+        if scripts[script] then scripts[script](button, mouseButton) end
+    end
+end
 ChatFrameToggleVoiceDeafenButton = Frame("ChatFrameToggleVoiceDeafenButton")
 ChatFrameToggleVoiceMuteButton = Frame("ChatFrameToggleVoiceMuteButton")
 BNGetNumFriends = function() return 5, 3 end
@@ -167,7 +236,7 @@ GameTooltip = Frame("GameTooltip")
 GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
 function GameTooltip:IsOwned(frame) return self.owner == frame end
-local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook
+local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook, dockTabsHook
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
 FCFDock_SelectWindow = function() end
@@ -201,7 +270,8 @@ hooksecurefunc = function(name, callback)
     elseif name == "FCF_OpenNewWindow" then newWindowHook = callback
     elseif name == "FCFTab_UpdateAlpha" then tabAlphaHook = callback
     elseif name == "FCFTab_UpdateColors" then tabColorsHook = callback
-    elseif name == "FCFDock_SelectWindow" then selectHook = callback end
+    elseif name == "FCFDock_SelectWindow" then selectHook = callback
+    elseif name == "FCFDock_UpdateTabs" then dockTabsHook = callback end
 end
 
 function S.Install(id, module)
@@ -527,11 +597,32 @@ assert(sidebar.friendCount.value == "5", "friend count did not use the live Bliz
 sidebar.buttons[1].button:Click("LeftButton")
 sidebar.buttons[2].button:Click("LeftButton")
 sidebar.buttons[3].button:Click("LeftButton")
-sidebar.buttons[4].button:Click("LeftButton")
 sidebar.buttons[5].button:Click("LeftButton")
 assert(QuickJoinToastButton.clicks == 1 and ChatFrameChannelButton.clicks == 1
-    and TextToSpeechButton.clicks == 1 and ChatFrameMenuButton.clicks == 1
-    and ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
+    and TextToSpeechButton.clicks == 1 and ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
+-- The chat menu icon opens Blizzard's chat menu and a second click closes it;
+-- Shift (the icon's drag) and other mouse buttons leave it alone, as on
+-- Blizzard's own button.
+local menuIcon = sidebar.buttons[4].button
+HardwareClick(menuIcon, "LeftButton")
+assert(ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "the sidebar's chat menu icon did not open Blizzard's chat menu")
+HardwareClick(menuIcon, "LeftButton")
+assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "a second click on the chat menu icon did not close the menu")
+shiftDown = true
+HardwareClick(menuIcon, "LeftButton")
+shiftDown = false
+HardwareClick(menuIcon, "RightButton")
+assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "a Shift press or another mouse button opened the chat menu")
+-- Another docked tab hides ChatFrame1 and its menu button: Blizzard would
+-- close the menu at once, so the icon does not open it.
+ChatFrame1:Hide()
+HardwareClick(menuIcon, "LeftButton")
+ChatFrame1:Show()
+assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "the chat menu opened for a hidden Blizzard menu button")
 -- Hovering a sidebar button lights its glyph in the accent color and names it.
 local channels = sidebar.buttons[2]
 channels.button.scripts.OnEnter(channels.button)
@@ -541,6 +632,70 @@ assert(GameTooltip.owner == channels.button and GameTooltip.text == "Channels an
 channels.button.scripts.OnLeave(channels.button)
 assert(not GameTooltip.shown and channels.glyph.color[4] == 0.94 and channels.highlight.color[4] == 0,
     "leaving a sidebar button kept its tooltip or highlight")
+-- The panel icons (Friends, Channels, Text to speech) open Blizzard panels
+-- through ShowUIPanel. Out of combat the icon under the pointer borrows one
+-- secure delegate that clicks Blizzard's button from secure code; it keeps
+-- the icon's hover look and tooltip and passes Shift-drags on.
+local friendsIcon = sidebar.buttons[1].button
+friendsIcon.scripts.OnEnter(friendsIcon)
+local delegate = module.panelDelegate
+assert(delegate and delegate.template == "SecureActionButtonTemplate" and delegate.shown
+    and delegate.owner == friendsIcon and delegate:GetAttribute("clickbutton") == QuickJoinToastButton
+    and delegate:GetAttribute("useOnKeyDown") == false and delegate.parent == UIParent
+    and delegate.level > friendsIcon:GetFrameLevel() and delegate.points[1][2] == friendsIcon,
+    "hovering the Friends icon out of combat did not borrow the secure delegate")
+assert(stateDrivers[delegate] and stateDrivers[delegate].values == "[combat] hide",
+    "the secure delegate has no combat state driver")
+assert(ctx.callbacks.PLAYER_REGEN_DISABLED and ctx.combat.PLAYER_REGEN_DISABLED == true,
+    "the secure delegate is not let go at the start of combat")
+delegate.mouseOver = true
+friendsIcon.scripts.OnLeave(friendsIcon)
+assert(friendsIcon.hovered and GameTooltip.shown and GameTooltip.owner == friendsIcon,
+    "moving onto the secure delegate dropped the icon's hover look or tooltip")
+local opens = #panelOpens
+SecureClick(delegate, "LeftButton")
+assert(#panelOpens == opens + 1 and panelOpens[#panelOpens].button == QuickJoinToastButton
+    and panelOpens[#panelOpens].secure, "the Friends icon did not open Blizzard's panel from secure code")
+shiftDown = true
+delegate.scripts.OnDragStart(delegate)
+assert(friendsIcon.moving and friendsIcon.dragging, "a Shift-drag on the delegate did not move the icon")
+local saved = {}
+S.SetMany = function(_, values) for key, value in pairs(values) do saved[key] = value end end
+friendsIcon.GetCenter = function() return 10, 20 end
+sidebar.sidebarFrame.GetCenter = function() return 4, 6 end
+delegate.scripts.OnDragStop(delegate)
+shiftDown = false
+assert(not friendsIcon.moving and saved.sidebarButton1X == 6 and saved.sidebarButton1Y == 14,
+    "a Shift-drag through the delegate did not save the icon's place")
+delegate.mouseOver = false
+delegate.scripts.OnLeave(delegate)
+assert(not delegate.shown and #delegate.points == 0 and not delegate.owner and not ctx.callbacks.PLAYER_REGEN_DISABLED
+    and not friendsIcon.hovered and not GameTooltip.shown,
+    "leaving the delegate did not let it go and end the icon's hover")
+-- PLAYER_REGEN_DISABLED comes before the lockdown: the delegate lets go of
+-- the sidebar then, and a panel icon clicked in combat refuses with the
+-- restricted notice instead of calling ShowUIPanel from tainted code.
+local channelsIcon = sidebar.buttons[2].button
+channelsIcon.scripts.OnEnter(channelsIcon)
+assert(delegate.shown and delegate.owner == channelsIcon
+    and delegate:GetAttribute("clickbutton") == ChatFrameChannelButton, "the delegate did not move to Channels")
+inCombat = true
+ctx.callbacks.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+assert(not delegate.shown and #delegate.points == 0 and not delegate.owner,
+    "the start of combat left the secure delegate on the sidebar")
+lockdown = true
+channelsIcon.scripts.OnEnter(channelsIcon)
+assert(not delegate.shown and not delegate.owner, "the secure delegate was attached in combat")
+local nativeClicks, printedCount = ChatFrameChannelButton.clicks, #printed
+for _, index in ipairs({ 1, 2, 3 }) do
+    local icon = sidebar.buttons[index].button
+    icon.scripts.OnClick(icon, "LeftButton")
+end
+assert(ChatFrameChannelButton.clicks == nativeClicks and #panelOpens == opens + 1
+    and #printed == printedCount + 3 and printed[#printed] == NS.RestrictedNotice(),
+    "a panel icon clicked in combat called Blizzard's panel from tainted code")
+channelsIcon.scripts.OnLeave(channelsIcon)
+inCombat, lockdown = false, false
 -- Friend events update the count in combat too; it caps at 99+ and keeps
 -- the last public value when Blizzard's counts are unreadable.
 BNGetNumFriends = function() return 90, 60 end
@@ -746,6 +901,34 @@ assert(gapPoint and gapPoint[1] == "LEFT" and gapPoint[2] == ChatFrame1Tab and g
 module.config.tabGap = 0
 module:Refresh()
 assert(not ctx.anchors[ChatFrame2Tab], "turning the tab gap off kept the moved tab")
+-- tabPadding widens each tab to its title plus the padding on both sides.
+-- Blizzard's FCFDock_UpdateTabs sizes the docked tabs again on every dock
+-- layout, a tab click included (PanelTemplates_TabResize: tab:SetWidth); the
+-- padded width must come back after it, and in combat once combat ends.
+local nativeTabWidth = ChatFrame1Tab:GetWidth()
+module.config.tabPadding = 6
+module:Refresh()
+local function Padded(tab) return tab.Text:GetUnboundedStringWidth() + 12 end
+assert(ChatFrame1Tab:GetWidth() == Padded(ChatFrame1Tab) and ChatFrame3Tab:GetWidth() == Padded(ChatFrame3Tab),
+    "tab text padding did not widen the tabs")
+ChatFrame1Tab:SetWidth(40)
+ChatFrame3Tab:SetWidth(40)
+dockTabsHook(GENERAL_CHAT_DOCK)
+assert(ChatFrame1Tab:GetWidth() == Padded(ChatFrame1Tab) and ChatFrame3Tab:GetWidth() == Padded(ChatFrame3Tab),
+    "Blizzard's dock layout (a tab click) dropped the tab text padding")
+local queued, queue = {}, S.Queue
+S.Queue = function(id) queued[#queued + 1] = id end
+lockdown = true
+ChatFrame1Tab:SetWidth(40)
+dockTabsHook(GENERAL_CHAT_DOCK)
+lockdown = false
+S.Queue = queue
+assert(queued[1] == "chat" and #queued == 1, "a dock layout in combat did not bring the tab text padding back after combat")
+module.config.tabPadding = 0
+module:Refresh()
+assert(ChatFrame1Tab:GetWidth() == nativeTabWidth, "turning tab text padding off kept the padded width")
+dockTabsHook(GENERAL_CHAT_DOCK)
+assert(ChatFrame1Tab:GetWidth() == nativeTabWidth, "Blizzard's dock layout padded a tab with padding off")
 -- A chat window that fails to style is reported; the later windows are styled.
 assert(#reports == 0, "chat styling raised: " .. tostring(reports[1]))
 ChatFrame4 = Frame("ChatFrame4")
@@ -826,12 +1009,22 @@ GetTime = function() return 10 end
 for _, callback in ipairs(fadeTimers) do callback() end
 assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001 and math.abs(ChatFrame4:GetAlpha() - 0.2) < 0.001,
     "the idle fade did not fade the window and its tab")
+-- The input line is a child of the window and fades with it, never twice.
+assert(ChatFrame4.editBox:GetAlpha() == 1, "the idle fade faded the input line on its own")
+assert(ChatFrame4.editBox.hooks.OnEditFocusGained and ChatFrame4.editBox.hooks.OnEditFocusLost,
+    "the idle fade does not follow the input line's focus")
 tabAlphaHook(ChatFrame4)
 assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001, "Blizzard's tab update undid the idle fade")
 module.config.idleSeconds = 0
 module:Refresh()
 assert(ChatFrame4Tab:GetAlpha() == 0.8 and ChatFrame4:GetAlpha() == 1, "turning the fade off kept the window faded")
+local speechIcon = sidebar.buttons[3].button
+speechIcon.scripts.OnEnter(speechIcon)
+assert(module.panelDelegate.shown and module.panelDelegate:GetAttribute("clickbutton") == TextToSpeechButton,
+    "the Text to speech icon did not borrow the secure delegate")
 module:Disable()
+assert(not module.panelDelegate.shown and not module.panelDelegate.owner and not ctx.callbacks.PLAYER_REGEN_DISABLED,
+    "disabling Chat left the secure delegate on the sidebar")
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
     and ChatFrame4Tab:GetAlpha() == 0.2,
     "disabling Chat did not restore Blizzard's whisper-tab fading")

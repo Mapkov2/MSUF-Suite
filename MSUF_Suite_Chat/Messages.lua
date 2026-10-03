@@ -22,18 +22,30 @@ local URL = "https?://[^%s|<>]+"
 local NAME = "[%a\128-\255][%w\128-\255]*"
 local DATE_SPEC = "%%[aAbBcdHIjmMpSUwWxXyYzZ%%]"
 local DEFAULT_STAMP = "[%H:%M]"
+-- What date() writes for a specifier of DATE_SPEC, as a pattern: numbers by
+-- default, the C library's names, %c, %x and %X as the Windows and macOS
+-- runtimes write them, the zone (an offset or the system's zone name) and a
+-- literal %. A stamp the pattern misses is stamped as before.
+local SPEC_PATTERNS = {
+    a = "%a+", A = "%a+", b = "%a+", B = "%a+", p = "%a+",
+    c = "[%w/ ]-%d+:%d+:%d+[%w ]-", x = "%d+[/%.%-]%d+[/%.%-]%d+", X = "%d+:%d+:%d+",
+    z = ".-", Z = ".-", ["%"] = "%%",
+}
 -- Group chat prefixes, shortened in this order.
 local CHANNELS = {
     "GUILD", "G", "PARTY", "P", "RAID", "R", "RAID_WARNING", "RW", "INSTANCE_CHAT", "I", "OFFICER", "O",
 }
 -- frame -> { live, ring, key, replayed, source, rendered, matches, transform }
 local hooks = setmetatable({}, { __mode = "k" })
-local members, shortcuts, channelRules = {}, {}, {}
+-- Short group labels: linkLabels by the label of Blizzard's channel link,
+-- plainLabels (label, short, ...) for a label without one (the raid warning).
+local members, shortcuts, linkLabels, plainLabels = {}, {}, {}, {}
 -- Reused buffers of the formatting passes (the outer one splits around
 -- native links, the inner one around URLs).
 local runs, pieces = {}, {}
 local tools = {}
 local stampFormat, stampSecond, stampText = DEFAULT_STAMP, nil, ""
+local stampPattern = "^%[%d+:%d+%] "
 local nativeSetting, nativeFormat, nativePrefix
 
 ------------------------------------------------------------------ formatting
@@ -88,23 +100,57 @@ local function FormatPlainRuns(text)
     return table.concat(runs, "", 1, count)
 end
 
-local function WorldChannel(number, name)
-    return "[" .. (shortcuts[name] or number) .. "]"
+-- A world channel's "[2. Trade - City]" as its shortcut or "[2]".
+local function ShortLabel(label)
+    local short = linkLabels[label]
+    if short then return short end
+    local number, name = label:match("^%[(%d+)%. (.+)%]$")
+    if number then return "[" .. (shortcuts[name] or number) .. "]" end
 end
 
--- Prefix labels differ by client language; only the bracketed label of the
--- public prefix changes, the native sender link stays untouched.
+-- Prefix labels differ by client language. Only the line's own prefix
+-- changes, never its text or the native sender link: Blizzard builds a
+-- channel line as [timestamp]|Hchannel:...|h[label]|h sender: text
+-- (ChatFrameOverrides.lua, live and forever), so the prefix is the label of
+-- the line's first hyperlink when that is the channel link. A label without
+-- a link (the raid warning) stands before the sender's link.
 local function ShortChannels(text)
-    for i = 1, #channelRules, 2 do
-        local start, finish = text:find(channelRules[i], 1, true)
-        if start then text = text:sub(1, start - 1) .. channelRules[i + 1] .. text:sub(finish + 1) end
+    local first = text:find("|H", 1, true)
+    if not first then return text end
+    local _, _, open, label, close = text:find("^|Hchannel:[^|]*|h()(%b[])()|h", first)
+    if label then
+        local short = ShortLabel(label)
+        if not short then return text end
+        return text:sub(1, open - 1) .. short .. text:sub(close)
     end
-    return (text:gsub("%[(%d+)%. ([^%]]+)%]", WorldChannel))
+    for i = 1, #plainLabels, 2 do
+        local start, finish = text:find(plainLabels[i], 1, true)
+        if start and finish < first then
+            return text:sub(1, start - 1) .. plainLabels[i + 1] .. text:sub(finish + 1)
+        end
+    end
+    return text
 end
 
 -- A user format must never interrupt Blizzard's message delivery.
 local function ValidFormat(format)
     return type(format) == "string" and #format <= 64 and not format:gsub(DATE_SPEC, ""):find("%", 1, true)
+end
+
+-- The anchored pattern of a line that starts with a Suite stamp in format.
+local function StampPattern(format)
+    local pattern, index = "^", 1
+    while index <= #format do
+        local char = format:sub(index, index)
+        if char == "%" then
+            pattern = pattern .. (SPEC_PATTERNS[format:sub(index + 1, index + 1)] or "%d+")
+            index = index + 2
+        else
+            pattern = pattern .. (char:find("[%^%$%(%)%%%.%[%]%*%+%-%?]") and "%" .. char or char)
+            index = index + 1
+        end
+    end
+    return pattern .. " "
 end
 
 -- Once per second at most: the Suite stamp and the prefix Blizzard writes
@@ -121,7 +167,12 @@ local function RefreshStamps(now)
     nativePrefix = nativeFormat and TimeUtil.BetterDate(nativeFormat, now) or nil
 end
 
+-- A line that already starts with a Suite stamp keeps it: Blizzard copies
+-- a window's rendered lines into a temporary whisper window through
+-- AddMessage (FCF_OpenTemporaryWindow, live and forever), and a reused
+-- window still has its message hook.
 local function Stamp(text)
+    if text:find(stampPattern) then return text end
     local now = time()
     if now ~= stampSecond then RefreshStamps(now) end
     if nativePrefix and text:find(nativePrefix, 1, true) == 1 then text = text:sub(#nativePrefix + 1) end
@@ -136,14 +187,18 @@ local function Format(text)
 end
 
 local function CompileChannels(config)
-    for i = #channelRules, 1, -1 do channelRules[i] = nil end
+    for i = #plainLabels, 1, -1 do plainLabels[i] = nil end
+    for label in pairs(linkLabels) do linkLabels[label] = nil end
     for name in pairs(shortcuts) do shortcuts[name] = nil end
     if not config.shortenChannels then return end
     for i = 1, #CHANNELS, 2 do
-        local bracket = _G["CHAT_" .. CHANNELS[i] .. "_GET"]:match("(%[.-%])")
-        if bracket then
-            channelRules[#channelRules + 1] = bracket
-            channelRules[#channelRules + 1] = "[" .. CHANNELS[i + 1] .. "]"
+        local template = _G["CHAT_" .. CHANNELS[i] .. "_GET"]
+        local bracket, short = template:match("(%[.-%])"), "[" .. CHANNELS[i + 1] .. "]"
+        if bracket and template:find("|h" .. bracket .. "|h", 1, true) then
+            linkLabels[bracket] = short
+        elseif bracket then
+            plainLabels[#plainLabels + 1] = bracket
+            plainLabels[#plainLabels + 1] = short
         end
     end
     for pair in config.channelShortcuts:gmatch("[^;]+") do
@@ -163,6 +218,7 @@ function C.CompileMessages(config)
     tools.any = tools.format or tools.history or tools.fade
     CompileChannels(config)
     stampFormat = ValidFormat(config.timestampFormat) and config.timestampFormat or DEFAULT_STAMP
+    stampPattern = StampPattern(stampFormat)
     stampSecond = nil
 end
 

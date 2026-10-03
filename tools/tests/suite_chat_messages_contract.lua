@@ -121,6 +121,26 @@ hooksecurefunc = function(frame, method, callback)
     securePostHooks[frame] = true
 end
 
+-- A window's input line: FloatingChatFrameTemplate's editBox, a child of
+-- the window (FloatingChatFrame.xml, live and forever), so the window's
+-- alpha multiplies its own. The idle fade only follows its focus scripts.
+local function EditBox(window)
+    local box = { alpha = 1, window = window, hooks = {} }
+    function box:GetAlpha() return self.alpha end
+    function box:SetAlpha(alpha) self.alpha = alpha end
+    function box:GetEffectiveAlpha() return self.alpha * self.window.alpha end
+    function box:HasFocus() return self.focused == true end
+    function box:HookScript(script, callback)
+        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost", "the idle fade hooked the input line's " .. script)
+        assert(not self.hooks[script], "the input line's " .. script .. " was hooked twice")
+        self.hooks[script] = callback
+    end
+    -- Blizzard's own focus change, then the post-hooks.
+    function box:SetFocus() self.focused = true; if self.hooks.OnEditFocusGained then self.hooks.OnEditFocusGained(self) end end
+    function box:ClearFocus() self.focused = false; if self.hooks.OnEditFocusLost then self.hooks.OnEditFocusLost(self) end end
+    return box
+end
+
 local function Frame(id, name)
     local frame = { lines = {}, payloads = {}, scripts = {}, alpha = 1, id = id, name = name or ("ChatFrame" .. id) }
     function frame:GetName() return self.name end
@@ -156,6 +176,7 @@ local function Frame(id, name)
     function frame:HookScript(script) error("chat message tools hooked the " .. script .. " script") end
     function frame:GetAlpha() return self.alpha end
     function frame:SetAlpha(alpha) self.alpha = alpha end
+    frame.editBox = EditBox(frame)
     return frame
 end
 ChatFrame2 = Frame(2)
@@ -213,6 +234,43 @@ config.timestampFormat = "[%H:%M]"
 nativeStamp = "%H:%M "
 C.CompileMessages(config)
 eq(Rendered("12:34 hello"), "[12:34] hello", "Blizzard's own timestamp was kept next to the Suite stamp")
+-- Blizzard reuses a closed temporary whisper window and copies the source
+-- window's rendered lines into it through AddMessage
+-- (FCF_OpenTemporaryWindow): a line that already starts with a Suite stamp,
+-- also one from an earlier minute, is not stamped again.
+nativeStamp = "none"
+C.CompileMessages(config)
+local whisper = "|Hplayer:Bob|h[Bob]|h whispers: hello"
+local stamped = Rendered(whisper)
+eq(stamped, "[12:34] " .. whisper, "a whisper line was not stamped")
+eq(Rendered(stamped), stamped, "a copied whisper line got a second timestamp")
+eq(Rendered("[09:05] " .. whisper), "[09:05] " .. whisper, "a copied line from an earlier minute got a second timestamp")
+eq(Rendered("[Raid Warning] Bob: pull"), "[12:34] [Raid Warning] Bob: pull", "a bracketed prefix was taken for a stamp")
+do
+    -- Every format the setting accepts, with the client's own date():
+    -- this runtime's %c, %x and %X, and macOS's %c.
+    local stubDate = date
+    date = function(format, when) return os.date(format, when) end
+    for _, format in ipairs({ "[%H:%M]", "%H:%M:%S", "[%I:%M %p]", "<%a %d.%m.>", "[%c]", "%x %X",
+        "(%Y-%m-%d)", "%B %j %%", "[%H:%M %z]" }) do
+        config.timestampFormat = format
+        C.CompileMessages(config)
+        local line = Rendered(whisper)
+        assert(line ~= whisper and line:sub(-#whisper) == whisper, "the format " .. format .. " did not stamp")
+        eq(Rendered(line), line, "a copied line got a second timestamp in the format " .. format)
+        assert(Rendered("[Raid Warning] Bob: pull") ~= "[Raid Warning] Bob: pull",
+            "the format " .. format .. " took a bracketed prefix for a stamp")
+    end
+    date = function() return "[Thu Jan  1 01:16:40 1970]" end
+    config.timestampFormat = "[%c]"
+    C.CompileMessages(config)
+    eq(Rendered("[Thu Jan  1 01:16:40 1970] " .. whisper), "[Thu Jan  1 01:16:40 1970] " .. whisper,
+        "a copied line stamped with macOS's %c got a second timestamp")
+    date = stubDate
+    config.timestampFormat = "[%H:%M]"
+    nativeStamp = "%H:%M "
+    C.CompileMessages(config)
+end
 -- Per line, settings were compiled: no global string, and the native
 -- setting at most once per second.
 config.shortenChannels, config.channelShortcuts = true, "General=Gen"
@@ -221,9 +279,28 @@ stringReads, cvarReads = 0, 0
 for _ = 1, 20 do Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General] and [Guild]") end
 eq(stringReads, 0, "a line read Blizzard's channel labels")
 assert(cvarReads <= 1, "a line read the native timestamp setting")
-local shortened = Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi [2. General]")
-assert(shortened:find("|Hchannel:GUILD|h[G]|h", 1, true) and shortened:find("[Gen]", 1, true),
-    "channel prefixes or shortcuts were not shortened")
+local shortened = Rendered("|Hchannel:GUILD|h[Guild]|h Mapko: hi")
+assert(shortened:find("|Hchannel:GUILD|h[G]|h ", 1, true), "a group channel prefix was not shortened")
+shortened = Rendered("|Hchannel:channel:2|h[2. General]|h |Hplayer:Mapko|h[Mapko]|h: hi")
+assert(shortened:find("|Hchannel:channel:2|h[Gen]|h |Hplayer:Mapko|h[Mapko]|h: hi", 1, true),
+    "a world channel shortcut was not applied")
+shortened = Rendered("|Hchannel:channel:5|h[5. Newcomers]|h |Hplayer:Mapko|h[Mapko]|h: hi")
+assert(shortened:find("|Hchannel:channel:5|h[5]|h", 1, true), "a world channel without a shortcut kept its name")
+-- Only the line's own prefix is shortened, never its text (ChatFrameOverrides:
+-- [timestamp]|Hchannel:...|h[label]|h sender: text; the raid warning's label
+-- has no link and stands before the sender's).
+shortened = Rendered("|Hchannel:GUILD|h[Guild]|h |Hplayer:Mapko|h[Mapko]|h: meet at [Party], [Guild] or [2. General]")
+assert(shortened:find("|Hchannel:GUILD|h[G]|h |Hplayer:Mapko|h[Mapko]|h: meet at [Party], [Guild] or [2. General]", 1, true),
+    "shortening the guild prefix also rewrote the message text: " .. shortened)
+shortened = Rendered("|Hchannel:channel:2|h[2. General]|h |Hplayer:Bob|h[Bob]|h: selling [1. General] stuff")
+assert(shortened:find("|Hchannel:channel:2|h[Gen]|h |Hplayer:Bob|h[Bob]|h: selling [1. General] stuff", 1, true),
+    "shortening a world channel prefix also rewrote the message text: " .. shortened)
+shortened = Rendered("12:34 [Raid Warning] |Hplayer:Bob|h[Bob]|h: pull at [Raid Warning] and [Raid]")
+eq(shortened, "[12:34] [RW] |Hplayer:Bob|h[Bob]|h: pull at [Raid Warning] and [Raid]",
+    "the raid warning prefix was not shortened alone")
+eq(Rendered("12:34 [Party] is no prefix here"), "[12:34] [Party] is no prefix here", "a line without links was shortened")
+eq(Rendered("|Hplayer:Bob|h[Bob]|h: join |Hchannel:GUILD|h[Guild]|h"), "[12:34] |Hplayer:Bob|h[Bob]|h: join |Hchannel:GUILD|h[Guild]|h",
+    "a channel link after the sender's was shortened")
 config.allTimestamps, config.shortenChannels, nativeStamp = false, false, "none"
 C.MessagesRefresh(M)
 
@@ -336,7 +413,6 @@ C.ApplyMessages(M, restored)
 local tab = Frame(0, "ChatFrame1Tab")
 tab.alpha = 0.8
 _G.ChatFrame1Tab = tab
-restored.editBox = Frame(0, "ChatFrame1EditBox")
 restored.editBox.alpha = 0.35
 local visual = { frame = restored }
 M.visuals[restored] = visual
@@ -349,14 +425,34 @@ eq(#timers, 1, "every line started its own timer")
 RunTimers(now + 5)
 eq(restored.alpha, .2, "idle fade")
 eq(tab.alpha, .2, "the tab did not fade with its window")
-eq(restored.editBox.alpha, .2, "the input line did not fade with its window")
+-- The input line fades with its window, once: its own alpha stays.
+eq(restored.editBox.alpha, 0.35, "the input line was faded on its own")
+assert(math.abs(restored.editBox:GetEffectiveAlpha() - .2 * 0.35) < 1e-9, "the input line did not fade with its window")
 combat = true
 restored:AddMessage("party message in combat")
 eq(restored.alpha, 1, "a line in combat did not wake the faded window")
 eq(tab.alpha, 0.8, "waking did not give the tab its alpha back")
-eq(restored.editBox.alpha, 0.35, "waking did not give the input line its alpha back")
+eq(restored.editBox.alpha, 0.35, "waking changed the input line's own alpha")
 RunTimers(now + 5)
 eq(restored.alpha, .2, "the fade did not run in combat")
+-- Typing wakes the faded window and holds the fade, also in combat; the
+-- countdown starts again once the input line loses the focus.
+restored.editBox:SetFocus()
+eq(restored.alpha, 1, "starting to type did not wake the faded window")
+eq(tab.alpha, 0.8, "starting to type did not give the tab its alpha back")
+RunTimers(now + 30)
+eq(restored.alpha, 1, "the window faded while the player typed")
+restored:AddMessage("a line while typing")
+RunTimers(now + 30)
+eq(restored.alpha, 1, "the window faded while the player typed after a new line")
+restored.editBox:ClearFocus()
+RunTimers(now + 4)
+eq(restored.alpha, 1, "the window faded before its countdown after typing")
+RunTimers(now + 1)
+eq(restored.alpha, .2, "the countdown did not start again after typing")
+restored:AddMessage("wake after typing")
+eq(restored.alpha, 1, "a line did not wake the window after typing")
+RunTimers(now + 5)
 -- Blizzard's fade-in on mouse-over wakes the window and holds the fade.
 fcfHooks.FCF_FadeInChatFrame(restored)
 eq(restored.alpha, 1, "mouse-over did not wake the window")
@@ -368,7 +464,7 @@ tab.alpha = 0.8 -- Blizzard's fade-out animation reached noMouseAlpha
 fcfHooks.FCF_FadeOutChatFrame(restored)
 RunTimers(now + 5)
 eq(restored.alpha, .2, "the countdown did not start again after the pointer left")
--- Blizzard changed the input line meanwhile (chat opened): its value stays.
+-- Blizzard changes the input line's own alpha: the fade never touches it.
 restored.editBox.alpha = 1
 restored:AddMessage("wake")
 eq(restored.editBox.alpha, 1, "waking overwrote Blizzard's own input alpha")
@@ -495,7 +591,8 @@ do
     -- Budget: Lua VM instructions of one stamped line in a full window,
     -- this window model included (GC and hooks aside, deterministic on Lua
     -- 5.1). 2026-10-01: 4534 when every visit read the raw text, 3548 with
-    -- the newest-slot predicate; +2 % headroom.
+    -- the newest-slot predicate; +2 % headroom. 2026-10-03: 3552 with the
+    -- copied-line stamp check (one anchored string.find, no native call).
     local CHAT_LINE_BUDGET = 3620
     local count = 0
     local function Instructions(fn)
