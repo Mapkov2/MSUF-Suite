@@ -5,7 +5,7 @@ private.NS, private.Suite = suite, suite.Suite
 -- UTF-8 bytes so that no editor can store it in another encoding.
 private.NO_VALUE = "\226\128\148"
 -- The places of one DataTexts bar.
-private.SLOT_COUNT = 6
+private.SLOT_COUNT = suite.DataTextSlotLimit or 12
 -- The DataTexts module (DataTexts.lua installs it): its bars and source state.
 private.DataTexts = { bars = {}, pool = {}, barIDs = {}, presentIDs = {}, due = {}, values = {},
     events = {} }

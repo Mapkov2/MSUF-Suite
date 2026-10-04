@@ -462,6 +462,7 @@ W.SettingsRows = function(ctx, parent, spec)
     for _, row in ipairs(spec.rows) do
         local widget = Bind(ctx, Widget(row.kind), row.get, row.set, row, row.label)
         widget.rowKind, widget.row = row.kind, row
+        if ctx.key == "suite_dataTexts" then widget.parent = parent end
         controls[row.id] = widget
         y = y - 40
     end
@@ -496,12 +497,12 @@ W.PageBuilder = function(ctx)
         body._msuf2CollapsibleEntry = { label = Widget("FontString"), body = body, builder = self, open = defaultOpen == true }
         self.collapsibles[#self.collapsibles + 1] = body._msuf2CollapsibleEntry
         self.layoutEntries[#self.layoutEntries + 1] = body._msuf2CollapsibleEntry
-        if ctx.key == "suite_dataTexts" and id:match("^suite_dataTexts_bar%d+$") then
+        if ctx.key == "suite_dataTexts" then
             body._msuf2CollapsibleEntry.header = Widget("SectionHeader")
             body._msuf2CollapsibleEntry.outer = Widget("SectionOuter")
             body.shown = defaultOpen == true
             body._msuf2CollapsibleEntry.open = body.shown
-            function body:IsVisible() return ctx.pageVisible == true and self.shown end
+            function body:IsVisible() return self.shown ~= false and (not self.parent or self.parent:IsVisible()) end
             if ctx.entry then ctx.entry.sections[id] = body end
         end
         ctx.sections[#ctx.sections + 1] = body
@@ -1474,93 +1475,95 @@ for _, key in ipairs(expected) do
     assert(not ctx.headers, key .. " still has a redundant page header")
     contexts[key] = ctx
 end
--- The "Shared bar style" preview paints the shared style, also while bar 1
--- uses its own; a bar's preview paints that bar's effective style.
-do
-    local ctx, real, painted = contexts.suite_dataTexts, Suite.DataTextEffectiveStyle, {}
-    local config = S.Config("dataTexts")
-    local saved = { config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor, config.customColors,
-        config.accentColor }
-    config.customColors, config.accentColor = true, "123456"
-    config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor = true, true, "abcdef"
-    Suite.DataTextEffectiveStyle = function(settings, bar)
-        local style = real(settings, bar)
-        painted[#painted + 1] = { bar = bar, accent = style.accentColor }
-        return style
-    end
-    for _, fn in ipairs(ctx.refreshers) do fn() end
-    Suite.DataTextEffectiveStyle = real
-    local shared
-    for _, paint in ipairs(painted) do
-        if paint.bar == nil then shared = paint end
-    end
-    assert(shared and shared.accent == "123456", "the Shared bar style preview painted bar 1's own style")
-    assert(real(config, 1).accentColor == "abcdef", "bar 1's own style did not resolve")
-    config.bar1StyleOverride, config.bar1CustomColors, config.bar1AccentColor, config.customColors,
-        config.accentColor = unpack(saved, 1, 5)
-end
--- A cold DataTexts page does not allocate the hidden bars' slider/button
--- skins. Restored open bars build one body per dispatch; exact search can
--- materialize a closed body before resolving its declared control ID.
+-- Selected DataText views are constructed on demand. Navigation and preview
+-- selection never write settings and have no timer or runtime source queries.
 do
     local ctx = contexts.suite_dataTexts
-    local bars, timers = ctx.dataTextBarRows, {}
-    local previousTimer, previousCurrent = C_Timer, current
-    C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+    local previousCurrent, previousTimer = current, C_Timer
     current = ctx
-    local coldCount = #ctx.widgets
-    local previousRefreshes = 0
-    ctx.refreshers[#ctx.refreshers + 1] = function() previousRefreshes = previousRefreshes + 1 end
-    for _, record in pairs(bars) do assert(not record.built, "cold page eagerly built bar controls") end
-    assert(next(ctx.entry.sections) == nil, "unbuilt bars exposed a section without exact controls")
-    local one, two, three = bars.suite_dataTexts_bar1, bars.suite_dataTexts_bar2, bars.suite_dataTexts_bar3
-    assert(one and two and three and not registeredControls["menu2.suite_dataTexts.dataTexts.bar1Slot2.preview"],
-        "cold page registered slider/body controls for a hidden bar")
-    ctx.pageVisible = true
-    one.body.scripts.OnShow(one.body)
-    one.body.scripts.OnShow(one.body)
-    two.body:Show()
-    two.body.scripts.OnShow(two.body)
-    assert(#timers == 1 and not one.built and not two.built, "open bars did not coalesce their build queue")
-    table.remove(timers, 1)()
-    assert(one.built and ctx.entry.sections.suite_dataTexts_bar1 == one.body
-        and not two.built and #timers == 1, "one dispatch built more than one bar")
-    local oneCount = #ctx.widgets - coldCount
-    -- Closing a queued body skips it. Reopening builds it without polling.
-    two.body:Hide()
-    table.remove(timers, 1)()
-    assert(not two.built and #timers == 0, "hidden queued bar was built")
-    two.body:Show()
-    two.body.scripts.OnShow(two.body)
-    table.remove(timers, 1)()
-    assert(two.built and #timers == 0, "reopened bar did not build")
-    -- A restored open body's controls can still be pending when exact
-    -- search arrives. Its virtual section must force preparation first.
-    three.body:Show()
-    three.body.scripts.OnShow(three.body)
-    assert(#timers == 1 and not ctx.entry.sections.suite_dataTexts_bar3,
-        "queued open bar bypassed the exact section resolver")
-    assert(ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar3") == three.body and three.built,
-        "exact search did not build the requested pending bar")
-    table.remove(timers, 1)()
-    three.body:Hide()
-    assert(three.body._msuf2CollapsibleEntry._msuf2EnsureVisible() == three.body,
-        "exact focus could not reuse a closed bar")
-    assert(ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar999") == nil,
-        "exact search resolved an unconfigured bar")
-    local warmCount = #ctx.widgets
-    for _, record in pairs(bars) do
-        record.body.scripts.OnShow(record.body)
-        record.body._msuf2CollapsibleEntry._msuf2EnsureVisible()
+    C_Timer = { After = function() error("DataText navigation queued a timer") end }
+    local workspace = assert(ctx.dataTextWorkspace)
+    assert(workspace.deck.views[1] and not workspace.deck.views[2], "cold page eagerly built other bars")
+    local barView = workspace.deck.views[1]
+    for _, suffix in ipairs({ "slot1", "slot1_details", "appearance", "visibility" }) do
+        local body = assert(ctx.entry.sections["suite_dataTexts_bar1_" .. suffix], "bar accordion header is missing: " .. suffix)
+        assert(body.parent:IsVisible(), "bar accordion header is hidden behind another view: " .. suffix)
     end
-    assert(#timers == 0 and #ctx.widgets == warmCount, "cached bar reopening rebuilt controls or left an idle timer")
-    assert(oneCount > 0 and warmCount - coldCount == 3 * oneCount,
-        "bar control construction depends on unrelated configured bars")
-    assert(previousRefreshes == 0, "building a bar repainted the previously built page controls")
-    print("DataTexts lazy construction: cold=" .. coldCount .. " controls; one bar=" .. oneCount
-        .. "; all three=" .. warmCount .. "; no idle timer")
+    assert(not barView.sections.appearance.body:IsShown() and not barView.sections.visibility.body:IsShown(),
+        "secondary bar accordions must start collapsed")
+    for _, widget in ipairs(ctx.widgets) do
+        assert(not (widget.meta and widget.meta.settingKey == "msufsuite.dataTexts.bar1Width"),
+            "cold page eagerly built collapsed appearance controls")
+        assert(widget.text ~= "More settings", "bar settings are still hidden behind More settings")
+    end
+    local config, oldSource = S.Config("dataTexts"), S.Config("dataTexts").bar1Slot2
+    local preview = workspace.deck.views[1].preview
+    assert(#preview.entries == 3, "preview does not show configured DataTexts")
+    preview.slots[2].scripts.OnClick(preview.slots[2])
+    assert(config.bar1Slot2 == oldSource and workspace.deck.views[1].deck.selected == "slot2",
+        "preview click changed the source instead of selecting its inspector")
+    local coldCount = #ctx.widgets
+    local section = ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar2_slot12")
+    assert(section and workspace.deck.selected == 2 and workspace.deck.views[2].deck.selected == "slot12",
+        "cold exact search did not reveal the correct bar and slot")
+    local count = #ctx.widgets
+    ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar2_slot12")
+    assert(#ctx.widgets == count and count > coldCount, "warm navigation rebuilt controls")
+    for _, suffix in ipairs({ "slot12", "slot12_details", "appearance", "visibility" }) do
+        local body = assert(ctx.entry.sections["suite_dataTexts_bar2_" .. suffix], "selected bar lost an accordion: " .. suffix)
+        assert(body.parent:IsVisible(), "selecting a slot hid another accordion: " .. suffix)
+    end
+    local appearance = ctx.entry.sections.suite_dataTexts_bar2_appearance
+    appearance._msuf2CollapsibleEntry.open = true
+    appearance._msuf2CollapsibleEntry._msuf2RefreshState()
+    local extra = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2BackgroundOpacity"],
+        "opening Appearance did not expose the formerly hidden advanced settings")
+    assert(extra.parent == appearance, "advanced appearance is still hidden in a nested panel")
+    local expandedCount = #ctx.widgets
+    appearance._msuf2CollapsibleEntry._msuf2RefreshState()
+    assert(#ctx.widgets == expandedCount, "reopening an accordion rebuilt its controls")
+    assert(ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar999") == nil,
+        "unconfigured bar can be selected through search")
+    -- Materialize the cold index through its own targets, then the ordinary
+    -- all-page contract below proves each advertised exact control resolves.
+    for _, rule in ipairs(Suite.SuiteCatalog.dataTexts.getControls(config)) do
+        local target = optionsNS.DataTextSearchTarget(rule)
+        if target then ctx.entry._msuf2ResolveMissingSection(target) end
+    end
+    ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_presets")
+    local gallery = workspace.deck.views.add
+    assert(#gallery.cards == 6, "starter gallery lost an EUI purpose or the Antique preset")
+    local before, historyBefore = {}, historyWrites
+    for key, value in pairs(config) do before[key] = value end
+    local picker
+    for _, widget in ipairs(ctx.widgets) do
+        if widget.meta and widget.meta.controlId == "menu2.suite_dataTexts.dataTexts.presets.look" then picker = widget end
+    end
+    assert(picker, "preset style chooser missing")
+    picker.set(1)
+    for _, card in ipairs(gallery.cards) do
+        local preview = card.preview
+        assert(card.config ~= config and preview.options.interactive == false and preview.options.compact,
+            "preset card is not an isolated static preview")
+        local expectedLook = card.preset.id == "antique" and config.look or 1
+        assert(card.config["bar" .. card.bar .. "Look"] == expectedLook,
+            "preset thumbnail ignored chosen MSUF style or replaced Antique styling")
+    end
+    assert(historyWrites == historyBefore, "previewing a style created an undo checkpoint")
+    for key, value in pairs(config) do assert(before[key] == value, "preset preview mutated saved configuration: " .. key) end
+    workspace.choose(1, "content", 2)
+    local real = Suite.DataTextEffectiveStyle
+    local painted
+    Suite.DataTextEffectiveStyle = function(settings, bar)
+        painted = bar
+        return real(settings, bar)
+    end
+    preview:Refresh()
+    Suite.DataTextEffectiveStyle = real
+    assert(painted == 1, "preview did not resolve the selected bar's actual style")
     C_Timer, current = previousTimer, previousCurrent
 end
+
 do
     local qol = contexts.suite_qualityOfLife
     local rows = assert(qol.qualityOfLifeFeatureRows)
@@ -2431,7 +2434,6 @@ do
         { "suite_bags", "bags.action.move", "bags", "combined" },
         { "suite_buffReminders", "buffReminders.action.edit", "buffReminders", "buffs" },
         { "suite_dataTexts", "dataTexts.bar1.move", "dataTexts", "bar1" },
-        { "suite_dataTexts", "dataTexts.action.move", "dataTexts", "bar1" },
         { "suite_qualityOfLife", "xpBar.action.edit", "xpBar", "experience" },
         { "suite_qualityOfLife", "combatMovementCue.action.edit", "combatMovementCue", "combat" },
         { "suite_qualityOfLife", "burningRushCue.action.edit", "burningRushCue", "combat" },
@@ -2487,14 +2489,12 @@ do
     end
     Suite.Client.modernEquipment = original
 end
-assert(dataPage.sections[1].title == "Basics"
-    and dataPage.sections[2].title == "Shared bar style"
-    and dataPage.sections[3].title == "Shared text style",
-    "DataTexts styling lost its shared sections")
+assert(dataPage.sections[1].title == "DataTexts", "DataTexts lost its module switch")
 for index = 1, 3 do
-    assert(dataPage.sections[index + 3].headerSwitch,
-        "DataTexts bar " .. index .. " has no accordion enable switch")
+    local body = dataPage.entry._msuf2ResolveMissingSection("suite_dataTexts_bar" .. index)
+    assert(body and body.headerSwitch, "DataTexts bar has no visible enable switch")
 end
+
 local ownStyle
 for _, widget in ipairs(dataPage.widgets) do
     if widget.meta and widget.meta.settingKey == "msufsuite.dataTexts.bar1StyleOverride" then ownStyle = widget end
@@ -2508,26 +2508,13 @@ assert(Suite.Suite.Config("dataTexts").bar1StyleOverride
 ownStyle.set(false)
 assert(not Suite.Suite.Config("dataTexts").bar1StyleOverride,
     "own style did not return to shared settings")
--- A place tile opens Blizzard's context menu (Blizzard_Menu's MenuUtil exists
--- on every supported client) with one radio per data source.
+-- Source choices require a deliberate selection; opening an inspector does
+-- not silently populate a place with the first unused source.
 do
-    local tile = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar1Slot2.preview"],
-        "DataTexts place tile is missing")
-    local menuOwner, radios
-    MenuUtil = { CreateContextMenu = function(owner, generator)
-        menuOwner, radios = owner, {}
-        generator(owner, { CreateRadio = function(_, text, isSelected, select)
-            radios[#radios + 1] = { text = text, isSelected = isSelected, select = select }
-        end })
-    end }
+    local tile = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar1Slot2.preview"])
     local before = S.Config("dataTexts").bar1Slot2
     tile.scripts.OnClick(tile)
-    assert(menuOwner == tile and #radios == #Suite.DataTextSources, "a place tile did not open its source menu")
-    radios[3].select()
-    assert(S.Config("dataTexts").bar1Slot2 == 3 and radios[3].isSelected() and not radios[2].isSelected(),
-        "choosing a source in the place menu did not set the place")
-    assert(S.Set("dataTexts", "bar1Slot2", before))
-    MenuUtil = nil
+    assert(S.Config("dataTexts").bar1Slot2 == before, "preview selected an unsolicited source")
 end
 -- Shadow opacity and distance follow the shadow switch, in the shared text
 -- style and in a bar's own style, like every other module's text settings.
@@ -4774,11 +4761,21 @@ end)()
     assert(goldCleared == 1, "the DataTexts gold clear did not clear after Yes")
     _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm, Suite.ClearCharacterGold =
         previousGeneric, previousConfirm, previousClear
-    local button = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2.antiqueFooter"],
-        "Antique Footer action is missing from DataTexts bar 2")
+    local button = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2.manage"])
+    button._msuf2PrepareExactSearchTarget()
+    assert(button.text == optionsNS.Tr("Apply preset to this bar"), "preset action is hidden behind an unrelated menu")
+    for _, action in ipairs({ "duplicate", "shared" }) do
+        local control = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2." .. action],
+            "direct bar action missing: " .. action)
+        assert(control:IsVisible(), "bar action hidden: " .. action)
+    end
+    button.scripts.OnClick(button)
+    local preset = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar2.preset.antique"],
+        "Antique Footer preset preview is missing")
+    local apply = function() preset.scripts.OnClick(preset) end
     local c = S.Config("dataTexts")
     local untouchedWidth = c.bar1Width
-    button.scripts.OnClick()
+    apply()
     assert(c.bar2Enabled and c.bar2StyleOverride and c.bar2BagBadge
         and c.bar2BagsPercent and not c.bar2ClockLabel and c.bar2Width == 380
         and c.bar2Height == 36 and c.bar2BagBadgeSize == 38
@@ -4954,63 +4951,68 @@ end)()
     MSUF_SetFontChecked, S.SetStyledFont = previousOwner, previousStyled
 end)()
 
--- Imported profiles may contain the supported maximum of 256 bars. Their
--- initial menu cost is headers, not 256 copies of every slider skin.
+-- The maximum import remains bounded at one selected bar and one inspector.
 ;(function()
     local config = S.Config("dataTexts")
-    local savedIds, previousCurrent, previousTimer, previousCombat = config.barIds, current, C_Timer, optionsNS.Combat
-    local ids, timers = {}, {}
+    local savedIds, previousCurrent, previousTimer = config.barIds, current, C_Timer
+    local ids = {}
     for id = 1, Suite.DataTextBarLimit do ids[id] = tostring(id) end
     config.barIds = table.concat(ids, ",")
     local ctx = { key = "suite_dataTexts", width = 720, refreshers = {}, widgets = {},
         sections = {}, pageItems = {}, entry = { sections = {} } }
-    ctx.wrapper = { IsVisible = function() return ctx.pageVisible == true end }
     current = ctx
-    C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+    C_Timer = { After = function() error("maximum-bar menu scheduled a bulk build") end }
     M.pages.suite_dataTexts.build(ctx)
-    assert(#ctx.widgets <= Suite.DataTextBarLimit + 50 and #timers == 0,
-        "maximum-bar profile eagerly constructed hidden body controls")
-    for _, record in pairs(ctx.dataTextBarRows) do assert(not record.built) end
-    local coldCount = #ctx.widgets
-    ctx.pageVisible = true
-    for id = 1, 3 do
-        local record = ctx.dataTextBarRows["suite_dataTexts_bar" .. id]
-        record.body:Show()
-        record.body.scripts.OnShow(record.body)
+    local workspace = ctx.dataTextWorkspace
+    local count = 0
+    for _ in pairs(workspace.deck.views) do count = count + 1 end
+    assert(count == 1 and #ctx.widgets < 90 and ctx.dataTextBarSelector,
+        "maximum-bar profile eagerly built hidden views or lost its compact selector")
+    local last = "suite_dataTexts_bar" .. Suite.DataTextBarLimit .. "_slot12"
+    local body = ctx.entry._msuf2ResolveMissingSection(last)
+    assert(body and workspace.deck.selected == Suite.DataTextBarLimit,
+        "exact search cannot reach a dynamic bar past the old twelve templates")
+    local warm = #ctx.widgets
+    ctx.entry._msuf2ResolveMissingSection(last)
+    assert(#ctx.widgets == warm, "warm dynamic navigation rebuilt controls")
+    config.barIds, current, C_Timer = savedIds, previousCurrent, previousTimer
+end)()
+
+-- Both direct and section-menu deletion remain scoped; search opens the menu.
+;(function()
+    for _, useDirect in ipairs({ false, true }) do
+    local saved, previous = Suite.CopyValue(S.Config("dataTexts")), current
+    assert(S.SetMany("dataTexts", Suite.DataTextBarCreationValues(S.Config("dataTexts"), 42)))
+    local ctx = { key = "suite_dataTexts", width = 720, refreshers = {}, widgets = {},
+        sections = {}, pageItems = {}, entry = { sections = {} } }
+    current = ctx
+    M.pages.suite_dataTexts.build(ctx)
+    ctx.dataTextWorkspace.choose(42)
+    local more = assert(registeredControls["menu2.suite_dataTexts.dataTexts.bar42.remove"], "bar has no delete action")
+    local body = assert(ctx.entry.sections.suite_dataTexts_bar42)
+    local entry = body._msuf2CollapsibleEntry
+    local direct
+    for _, button in ipairs(body._testButtons) do
+        if button.text == optionsNS.Tr("Remove bar") then direct = button end
     end
-    assert(#timers == 1, "restored accordions scheduled parallel bulk builds")
-    optionsNS.Combat = function() return true end
-    table.remove(timers, 1)()
-    assert(#ctx.widgets == coldCount and #timers == 0,
-        "combat did not cancel the whole pending build queue")
-    optionsNS.Combat = previousCombat
-    M.RequestRefresh()
-    local controlsPerBar
-    for id = 1, 3 do
-        local before = #ctx.widgets
-        assert(#timers == 1)
-        table.remove(timers, 1)()
-        local added = #ctx.widgets - before
-        assert(ctx.dataTextBarRows["suite_dataTexts_bar" .. id].built and added > 0
-            and (not controlsPerBar or added == controlsPerBar),
-            "one dispatch did not bound body construction to one bar")
-        controlsPerBar = added
+    assert(direct and direct:IsVisible(), "additional direct delete button must remain visible")
+    assert(more == entry._msuf2SectionActions, "removal search must target the page-owned menu button")
+    local popup = more._msuf2GetSectionPopup()
+    local remove = assert(popup._testButtons[1], "section menu has no delete button")
+    assert(remove.text == optionsNS.Tr("Remove bar"), "section menu action has the wrong label")
+    assert(not remove:IsVisible(), "delete action must live inside the closed section menu")
+    more.scripts.OnClick(more)
+    assert(remove:IsVisible(), "section menu did not reveal delete action")
+    more.scripts.OnClick(more)
+    assert(not remove:IsVisible(), "section menu did not close")
+    more._msuf2PrepareExactSearchTarget()
+    assert(remove:IsVisible(), "exact search did not reveal delete action")
+    local action = useDirect and direct or remove
+    action.scripts.OnClick(action)
+    for _, id in ipairs(Suite.DataTextBarIDs(S.Config("dataTexts"))) do assert(id ~= 42, "deleted bar remained in navigation") end
+    assert(S.Config("dataTexts").bar1Width == saved.bar1Width, "deleting a bar changed another bar")
+    Suite.DB.suite.modules.dataTexts, current = saved, previous
     end
-    assert(#timers == 0)
-    local last = ctx.dataTextBarRows["suite_dataTexts_bar" .. Suite.DataTextBarLimit]
-    assert(ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_bar" .. Suite.DataTextBarLimit) == last.body,
-        "exact search could not build a dynamic bar beyond the legacy twelve templates")
-    local four = ctx.dataTextBarRows.suite_dataTexts_bar4
-    local five = ctx.dataTextBarRows.suite_dataTexts_bar5
-    four.body:Show()
-    four.body.scripts.OnShow(four.body)
-    five.body:Show()
-    five.body.scripts.OnShow(five.body)
-    ctx.pageVisible = false -- Page switched or its wrapper was invalidated.
-    table.remove(timers, 1)()
-    assert(not four.built and not five.built and #timers == 0,
-        "obsolete hidden page retained its pending build queue")
-    config.barIds, current, C_Timer, optionsNS.Combat = savedIds, previousCurrent, previousTimer, previousCombat
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

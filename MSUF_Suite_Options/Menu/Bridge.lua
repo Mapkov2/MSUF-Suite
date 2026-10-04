@@ -321,6 +321,7 @@ function P.Refresh()
     P.ForgetAvailability()
     P.InvalidateSearch()
     P.RefreshSkinPageShape()
+    P.RefreshDataTextPageShape()
     if M.RequestRefresh then M.RequestRefresh(nil, "suite") end
     local enabled = P.Get("objectives", "enabled") == true
     local changed = trackerEnabled ~= nil and trackerEnabled ~= enabled

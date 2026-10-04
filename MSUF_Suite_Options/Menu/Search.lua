@@ -219,7 +219,7 @@ local function RuleTarget(page, spec, rule)
     end
     if rule.window then return page.key .. "_windows", "Window settings" end
     if spec.id == "dataTexts" and section then
-        section = section:match("^bar%d+") or section
+        return P.DataTextSearchTarget(rule)
     elseif page.key == "suite_hud" then
         if rule.key == "enabled" or not section then return page.key .. "_" .. spec.id .. "_module" end
         local prefix = spec.id == "runSummary" and "summary" or spec.id
@@ -240,6 +240,9 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
     AddWords(keywords, rule.help)
     local bar = spec.id == "dataTexts" and rule.key:match("^bar(%d+)")
     if bar and config then AddWords(keywords, config["bar" .. bar .. "Name"]) end
+    if bar and rule.key == "bar" .. bar .. "Enabled" then
+        keywords[#keywords + 1], keywords[#keywords + 2] = "Hide bar", Tr("Hide bar")
+    end
     if feature then
         AddWords(keywords, feature.title)
         for _, word in ipairs(feature.keywords or {}) do keywords[#keywords + 1] = word end
@@ -478,7 +481,7 @@ local function CollectBase()
     barGroups = {}
     for _, row in ipairs(P.SearchRows()) do
         local bar = row.pageKey == "suite_dataTexts" and
-            ((row.suiteRuleKey or ""):match("^bar(%d+)") or (row.sectionId or ""):match("^suite_dataTexts_bar(%d+)$"))
+            ((row.suiteRuleKey or ""):match("^bar(%d+)") or (row.sectionId or ""):match("^suite_dataTexts_bar(%d+)"))
         local group = bar and ordinal[bar]
         if group then
             local rows = barGroups[group]
@@ -605,7 +608,7 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     local spec, controlKey = P.catalog[id], key or row.suiteRuleKey
     -- Live actions and section rows carry no setting key. Removed dynamic
     -- bars must leave the visited index as well as the cold provider.
-    local bar = id == "dataTexts" and (row.sectionId or record.sectionId or ""):match("^suite_dataTexts_bar(%d+)$")
+    local bar = id == "dataTexts" and (row.sectionId or record.sectionId or ""):match("^suite_dataTexts_bar(%d+)")
     if bar then
         local barRule = spec.rules["bar" .. bar .. "Enabled"]
         if not barRule or not spec.controlAvailable(barRule, config) then return false end

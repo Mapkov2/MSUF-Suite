@@ -106,6 +106,23 @@ eq(specLabel .. "/" .. specName, "Specialization/Fire", "specialization through 
 eq(X.bindings[spec].icons[1], 135810, "specialization icon")
 specIndex = 0
 eq(select(2, X.Format(spec)), DASH, "no specialization shows the placeholder")
+specIndex = 2
+local lootID = 64
+GetLootSpecialization = function() return lootID end
+GetSpecializationInfoByID = function(id) assert(id == 64); return 64, "Frost" end
+local combined = X.Bind(Button(), c, 3, 1, "specLoot")
+M.activeSources[combined] = true
+eq(select(2, X.Format(combined)), "Fire / Loot: Frost", "explicit loot specialization")
+lootID = 0
+eq(select(2, X.Format(combined)), "Fire / Loot: Fire", "current loot specialization follows active specialization")
+local lootWanted = {}
+X.WantedEvents(M.activeSources, lootWanted)
+assert(lootWanted.PLAYER_LOOT_SPEC_UPDATED and lootWanted.PLAYER_SPECIALIZATION_CHANGED,
+    "combined specialization must subscribe to both native change events")
+local lootUpdates = #M.updates
+X.Changed(M, "PLAYER_LOOT_SPEC_UPDATED")
+eq(#M.updates, lootUpdates + 1, "loot change refreshes active combined source")
+M.activeSources[combined] = nil
 local crests = X.Bind(Button(), c, 2, 1, "crests")
 M.activeSources[crests] = true
 eq(select(2, X.Format(crests)), DASH, "season metadata is unavailable before observing an upgrade item")

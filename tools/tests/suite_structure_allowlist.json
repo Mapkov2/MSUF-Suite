@@ -2679,6 +2679,48 @@
    "symbol": "S.KeyText"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/DataTextsWorkspace.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 navigation export rebuilds an active page after its effective bar list changes, including undo. Older hosts invalidate it for the next visit instead.",
+   "symbol": "M.RebuildPageKeepingScroll"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsWorkspace.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 cache export discards hidden or unrebuildable pages after a bar-list change; no cache mutation is attempted on older hosts without the export.",
+   "symbol": "M.InvalidatePage"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsPreview.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_Modules/Surfaces.lua exports PixelUnit only after runtime loads. A disabled-module preview remains available with a one-unit fallback without loading gameplay modules.",
+   "symbol": "S.PixelUnit"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsPreview.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 preview theme is optional on older MSUF hosts. The owned preview canvas and information remain usable without this decorative background.",
+   "symbol": "chrome.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 expose a skinned menu panel; older hosts use the owned fallback popup frame and preserve source selection.",
+   "symbol": "M.CreateMenuPopupPanel"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 theme may skin the native search edit box. Older hosts keep the functional native input without this cosmetic helper.",
+   "symbol": "T.SkinEditBox"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 theme may style the native scroll frame. Older hosts retain its native scroll behavior without this cosmetic helper.",
+   "symbol": "T.StyleScrollFrame"
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/HUDPreview.lua",
    "symbol": "P.W.FocusCollapsibleSection",
    "kind": "addon",
@@ -2695,12 +2737,6 @@
    "symbol": "M.RelayoutPageHeaderHost",
    "kind": "addon",
    "reason": "Retail/Forever current Menu2 can refresh the preview dock layout; older hosts use the normal page builder layout."
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTexts.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 publishes RebuildPageKeepingScroll in Retail MSUF_Menu2_Window_PageNavigation.lua:240 and Classic:268. The Add/Remove bar action rebuilds its own current page only when the external menu lifecycle API is present; older menu providers retain the current page until navigation.",
-   "symbol": "M.RebuildPageKeepingScroll"
   }
  ]
 }

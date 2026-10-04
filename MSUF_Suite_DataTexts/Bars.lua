@@ -122,6 +122,7 @@ local function CreateSlot(bar, slot)
     -- Only volume places take the wheel; the others leave it to the camera.
     button:SetScript("OnMouseWheel", Actions.Wheel)
     button:EnableMouseWheel(false)
+    if bar.mouseEnabled == false then button:EnableMouse(false) end
     local text = S.CreateFontString(button, nil, "OVERLAY", "GameFontHighlightSmall")
     text:SetPoint("LEFT", button, "LEFT", 5, 0)
     text:SetPoint("RIGHT", button, "RIGHT", -5, 0)
@@ -129,6 +130,17 @@ local function CreateSlot(bar, slot)
     text:SetWordWrap(false)
     button.label = text
     return button
+end
+
+-- Legacy bars keep their six reusable places. Extra places allocate only
+-- when configured, and are kept for later edits or recycling of this bar.
+function Bars.EnsureSlots(bar, config)
+    local count = 6
+    for slot = 7, SLOT_COUNT do
+        local source = config[bar.prefix .. "Slot" .. slot]
+        if source and source ~= 1 then count = slot end
+    end
+    for slot = #bar.slots + 1, count do bar.slots[slot] = CreateSlot(bar, slot) end
 end
 
 local function AssignBarKeys(bar, index)
@@ -191,7 +203,7 @@ function Bars.Create(index)
     frame.bar = bar
     M.bars[index] = bar
     CreateBadge(bar)
-    for slot = 1, SLOT_COUNT do bar.slots[slot] = CreateSlot(bar, slot) end
+    Bars.EnsureSlots(bar, M.config)
     frame:SetScript("OnEnter", BarEnter)
     frame:SetScript("OnLeave", BarLeave)
     frame:SetScript("OnShow", BarShownChanged)

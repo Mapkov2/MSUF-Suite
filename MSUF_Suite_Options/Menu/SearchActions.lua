@@ -10,7 +10,6 @@ local MODULE_ACTIONS = {
     damageMeter = { { "reset_data", "Reset combat data" }, { "move", "Move on screen" } },
     minimap = { { "rescan", "Collect addon buttons again" }, { "reload", "Reload UI" } },
     actionbars = { { "bindings", "Key bindings" }, { "move", "Move on screen" }, { "reload", "Reload UI" } },
-    dataTexts = { { "addBar", "Add bar" }, { "move", "Move first bar" } },
     cooldownManager = { { "move", "Move bars on screen" }, { "blizzard", "Open Blizzard's Cooldown Settings" } },
     objectives = { { "edit", "Move in Edit Mode" }, { "colors", "Tracker colors" } },
     runSummary = { { "edit", "Move in Edit Mode" }, { "preview_raid", "Preview raid result" },
@@ -32,6 +31,7 @@ local EDITOR_ACTIONS = {
     { "damageMeter", "windows", "window.selected", "Window", "ephemeral", "dropdown" },
     { "damageMeter", "windows", "window.move", "Move this window" },
     { "dataTexts", "gold", "action.clearGold", "Clear saved character gold" },
+    { "dataTexts", "presets", "action.addBar", "Add bar" },
     { "dataTexts", "sources", "chooseSeasonStages", "Choose observed seasonal stages" },
     { "dataTexts", "sources", "chooseCrestCurrencies", "Choose crest currencies" },
     { "chat", "tools", "clearHistory", "Clear saved chat history" },
@@ -47,8 +47,9 @@ local EDITOR_ACTIONS = {
     { "cooldownManager", "spells", "spells.importBlizzard", "Import Blizzard CDM" },
 }
 local BAR_ACTIONS = {
-    { "addPlace", "Add place" }, { "move", "Move in Edit Mode" },
-    { "hide", "Hide bar" }, { "remove", "Remove bar" }, { "antiqueFooter", "Antique Footer preset" },
+    { "addPlace", "Add data" }, { "move", "Move in Edit Mode" },
+    { "manage", "Apply preset to this bar" }, { "duplicate", "Duplicate bar" },
+    { "remove", "Remove bar" }, { "shared", "All bars" },
 }
 local QOL_ACTIONS = {
     xpBar = { { "resetSession", "Reset session" } },
@@ -66,6 +67,16 @@ local function FeatureHasColors(feature)
     return false
 end
 
+local function DataTextTerms(id, key, keywords)
+    if id ~= "dataTexts" then return end
+    local bar = key:match("^bar(%d+)%.")
+    local name = bar and P.S.Config(id)["bar" .. bar .. "Name"]
+    if type(name) == "string" and name ~= "" then keywords[#keywords + 1] = name end
+    if key:match("%.manage$") then
+        keywords[#keywords + 1], keywords[#keywords + 2] = "Antique Footer preset", Tr("Antique Footer preset")
+    end
+end
+
 function P.AppendSearchActionRows(rows, pagesByKey)
     local function Add(id, key, label, sectionId, classification, kind, feature)
         local spec = P.catalog[id]
@@ -73,9 +84,7 @@ function P.AppendSearchActionRows(rows, pagesByKey)
         if not pageKey or not pagesByKey[pageKey] or not P.Suite.Client.HasAddOn(spec.addon) then return end
         local meta = P.Meta(pageKey, id, key, classification or "action", sectionId)
         local keywords = { label, Tr(label), spec.title, Tr(spec.title) }
-        local bar = id == "dataTexts" and key:match("^bar(%d+)%.")
-        local barName = bar and P.S.Config(id)["bar" .. bar .. "Name"]
-        if type(barName) == "string" and barName ~= "" then keywords[#keywords + 1] = barName end
+        DataTextTerms(id, key, keywords)
         if feature then
             keywords[#keywords + 1] = feature.title
             keywords[#keywords + 1] = Tr(feature.title)
@@ -118,6 +127,9 @@ function P.AppendSearchActionRows(rows, pagesByKey)
         for _, action in ipairs(BAR_ACTIONS) do
             Add("dataTexts", "bar" .. bar .. "." .. action[1], action[2], "suite_dataTexts_bar" .. bar)
         end
+    end
+    for _, preset in ipairs(P.Suite.DataTextPresets) do
+        Add("dataTexts", "preset." .. preset.id, preset.title, "suite_dataTexts_presets")
     end
     for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
         local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]

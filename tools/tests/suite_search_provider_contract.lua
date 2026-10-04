@@ -211,16 +211,48 @@ do
     for key, value in pairs(Suite.DataTextBarCreationValues(config, 13)) do config[key] = value end
     Suite.Suite.Normalize(Suite.DB)
     config.bar13Name = "Raid Analysis"
-    local found, stale, action
-    local actionId = P.Meta("suite_dataTexts", "dataTexts", "bar13.remove", "action", "suite_dataTexts_bar13").controlId
+    local found, stale, action, hideSwitch
+    local directActions = { duplicate = "Duplicate bar", remove = "Remove bar", shared = "All bars" }
+    local actionId = P.Meta("suite_dataTexts", "dataTexts", "bar13.manage", "action", "suite_dataTexts_bar13").controlId
+    local expectedTargets = {
+        bar13Name = "suite_dataTexts_bar13",
+        bar13Enabled = "suite_dataTexts_bar13",
+        bar13Width = "suite_dataTexts_bar13_appearance",
+        bar13FontSize = "suite_dataTexts_bar13_appearance",
+        bar13Visibility = "suite_dataTexts_bar13_visibility",
+        bar13LoadCondHideInCombat = "suite_dataTexts_bar13_visibility",
+        bar13Slot1 = "suite_dataTexts_bar13_slot1",
+        bar13Slot12 = "suite_dataTexts_bar13_slot12",
+        bar13Slot12Scale = "suite_dataTexts_bar13_slot12_details",
+    }
     for _, row in ipairs(P.SearchRows()) do
         if row.controlId == actionId then action = row end
+        if row.settingKey == "msufsuite.dataTexts.bar13Enabled" then hideSwitch = row end
+        for key, label in pairs(directActions) do
+            local wanted = P.Meta("suite_dataTexts", "dataTexts", "bar13." .. key, "action", "suite_dataTexts_bar13").controlId
+            if row.controlId == wanted then
+                Check(row.label == P.Tr(label) and row.sectionId == "suite_dataTexts_bar13", "direct bar action has wrong label or route")
+                directActions[key] = nil
+            end
+        end
         Check(not (row.controlId and row.sectionId == "suite_dataTexts_bar4"), "cold actions indexed an unconfigured bar")
         if row.settingKey == "msufsuite.dataTexts.bar13Name" then found = row end
         if row.settingKey == "msufsuite.dataTexts.bar4Name" then stale = row end
+        local ruleKey = row.settingKey and row.settingKey:match("^msufsuite%.dataTexts%.(.+)$")
+        if ruleKey and expectedTargets[ruleKey] then
+            Check(row.sectionId == expectedTargets[ruleKey], "DataTexts rule routed to the wrong editor section: " .. ruleKey)
+            expectedTargets[ruleKey] = nil
+        end
     end
     Check(found and not stale, "cold search did not match the dynamically configured bar inventory")
-    Check(action and action.sectionId == "suite_dataTexts_bar13", "cold search omitted the exact dynamic remove action")
+    Check(action and action.sectionId == "suite_dataTexts_bar13", "cold search omitted the exact dynamic manage action")
+    Check(action.label == P.Tr("Apply preset to this bar") and next(directActions) == nil,
+        "bar management actions are still hidden behind More settings")
+    local hideAlias = false
+    for _, word in ipairs(hideSwitch and hideSwitch.keywords or {}) do if word == "Hide bar" then hideAlias = true end end
+    Check(hideAlias, "Hide bar search no longer resolves to its enable switch")
+    for _, word in ipairs(action.keywords) do Check(word ~= "Hide bar", "Hide bar still points to the preset action") end
+    Check(next(expectedTargets) == nil, "DataTexts cold search omitted an editor rule: " .. tostring(next(expectedTargets)))
     local named = false
     for _, keyword in ipairs(found.keywords) do if keyword == "Raid Analysis" then named = true end end
     Check(named, "configured bar name is missing from its setting search words")
@@ -688,16 +720,54 @@ do
         local config=Suite.Suite.Config("dataTexts")
         local saved=Suite.CopyValue(config)
         Check(Suite.Suite.SetMany("dataTexts",Suite.DataTextBarCreationValues(config,400000)), "could not configure action route bar")
-        local wanted=P.Meta("suite_dataTexts","dataTexts","bar400000.remove","action","suite_dataTexts_bar400000").controlId
+        local wanted=P.Meta("suite_dataTexts","dataTexts","bar400000.manage","action","suite_dataTexts_bar400000").controlId
         local target
         for _, record in ipairs(api.GetSearchRecords()) do
             if record.exactTarget and record.exactTarget.controlId==wanted then target=record;break end
         end
-        Check(target, "cold high-ID remove action has no exact host target")
+        Check(target, "cold high-ID manage action has no exact host target")
         local selected,anchored,exact=api.OpenSearchTarget(target.key,target.label,target.anchorFallback or target.label,target.anchor,target.route,target.exactTarget)
         world.widgets:RunTimers(80)
         Check(selected and anchored and exact and M.activeKey=="suite_dataTexts", "dynamic action failed to focus its real control")
-        Check(config.bar400000Enabled==true, "search executed the remove action")
+        Check(config.bar400000Enabled==true, "search changed the managed bar")
+        local beforeIDs = config.barIds
+        Check(Suite.Suite.Set("dataTexts", "bar400001Enabled", true), "could not enable non-list dynamic bar")
+        P.Refresh()
+        world.widgets:RunTimers(80)
+        Check(config.barIds == beforeIDs, "non-list bar fixture changed its saved ID list")
+        local dataPage = M.cache.suite_dataTexts
+        Check(dataPage._msuf2ResolveMissingSection("suite_dataTexts_bar400001_slot12_details"),
+            "a newly enabled non-list bar did not refresh navigation and exact detail targets")
+        local details = dataPage.sections.suite_dataTexts_bar400001_slot12_details._msuf2CollapsibleEntry
+        local appearance = dataPage.sections.suite_dataTexts_bar400001_appearance._msuf2CollapsibleEntry
+        local nested = details.builder
+        local frame = nested.ctx.wrapper
+        local settings = frame:GetParent()
+        local _, _, _, _, offset = frame:GetPoint(1)
+        for _, contentOpen in ipairs({ false, true }) do
+            nested.collapsibles[1].open = contentOpen
+            for _, open in ipairs({ false, true, false, true }) do
+                details.open = open
+                nested:RelayoutCollapsibles()
+                local bottom = settings._msuf2RelayoutY + offset + details._msuf2RelayoutY - details.outer:GetHeight()
+                local gap = bottom - appearance._msuf2RelayoutY
+                Check(gap == 8, "Data settings to Appearance gap must be exactly 8, got " .. tostring(gap))
+            end
+        end
+        local removalId = P.Meta("suite_dataTexts", "dataTexts", "bar400000.remove", "action",
+            "suite_dataTexts_bar400000").controlId
+        local removal
+        for _, record in ipairs(api.GetSearchRecords()) do
+            if record.exactTarget and record.exactTarget.controlId == removalId then removal = record; break end
+        end
+        Check(removal, "bar removal lost its exact search action")
+        local found, anchored, exact = api.OpenSearchTarget(removal.key, removal.label,
+            removal.anchorFallback or removal.label, removal.anchor, removal.route, removal.exactTarget)
+        world.widgets:RunTimers(80)
+        local actions = dataPage.sections.suite_dataTexts_bar400000._msuf2CollapsibleEntry._msuf2SectionActions
+        Check(found and anchored and exact and actions._msuf2GetSectionPopup():IsShown(),
+            "exact removal search did not open the bar section menu")
+        actions._msuf2GetSectionPopup():Hide()
         Suite.DB.suite.modules.dataTexts=saved;P.Refresh()
     end
     -- Navigation runs through the host's routing and rendering. The harness

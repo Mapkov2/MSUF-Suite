@@ -8,13 +8,15 @@ NS.DataTextSources = {
 NS.DataTextSourceKeys = {
     false, "gold", "bags", "durability", "clock", "fps", "latency", "coordinates", "location", "xp", "sessionGold", "date", "fpsLatency",
 }
--- Bounds imported configurations to at most 1536 place buttons.
+-- Bounds imported configurations to at most 3072 place buttons.
 -- Frames are acquired on demand and recycled across profile transitions.
 NS.DataTextBarLimit = 256
+NS.DataTextSlotLimit = 12
 for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency" }, { "Crests", "crests" },
     { "Item level", "itemLevel" }, { "Professions", "professions" }, { "Specialization", "specialization" },
     { "Audio volume", "audio" }, { "Hearthstone", "hearth" }, { "XP / reputation", "progress" },
-    { "Dungeon portals", "portals" }, { "Micro menu", "microMenu" } }) do
+    { "Dungeon portals", "portals" }, { "Micro menu", "microMenu" },
+    { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
@@ -22,6 +24,11 @@ end
 NS.DataTextSourceIndex = { none = 1 }
 for index, key in ipairs(NS.DataTextSourceKeys) do
     if key then NS.DataTextSourceIndex[key] = index end
+end
+function NS.DataTextSourceAvailable(key)
+    if key == "specLoot" then return not NS.Client.isForever end
+    if key == "itemLevel" or key == "crests" or key == "portals" then return NS.Client.modernEquipment == true end
+    return true
 end
 NS.DataTextPoints = NS.AnchorPoints
 -- The choice values of the bar and source settings below (each is its
@@ -264,6 +271,21 @@ for _, rule in ipairs(spec.controls) do
         templateOrder[#templateOrder + 1] = suffix
     end
 end
+-- Keep the six legacy slots physically registered. Further slots share
+-- templates and are materialized only for bars whose controls are requested.
+NS.DataTextSlotSuffixes = { "", "Broker", "Currency", "MaxWidth", "Placement", "Padding",
+    "Background", "Alpha", "IconColor", "Scale" }
+for slot = 7, NS.DataTextSlotLimit do
+    for _, field in ipairs(NS.DataTextSlotSuffixes) do
+        local suffix = "Slot" .. slot .. field
+        local original, copy = templates["Slot6" .. field], {}
+        for key, value in pairs(original) do copy[key] = value end
+        copy.key = "bar12" .. suffix
+        copy.label = original.label and original.label:gsub("6", tostring(slot)) or nil
+        templates[suffix] = copy
+        templateOrder[#templateOrder + 1] = suffix
+    end
+end
 local function ValidID(value)
     local id = tonumber(value)
     return id and id >= 1 and id <= 1000000 and id == math.floor(id) and id or nil
@@ -300,7 +322,7 @@ setmetatable(spec.rules, { __index = function(_, key)
     if type(key) ~= "string" then return end
     local raw, suffix = key:match("^bar(%d+)(.+)$")
     local id = ValidID(raw)
-    if id and id > 12 and tostring(id) == raw and templates[suffix] then return DynamicRule(id, suffix) end
+    if id and tostring(id) == raw and templates[suffix] then return DynamicRule(id, suffix) end
 end })
 function NS.DataTextBarIDs(config)
     local ids, seen = {}, {}
@@ -382,6 +404,12 @@ spec.getControls = function(config)
     end
     return out
 end
+function NS.DataTextBarControls(config, bar)
+    local out = {}
+    if not ValidID(bar) or not ControlMap(config).present[bar] then return out end
+    for _, suffix in ipairs(templateOrder) do out[#out + 1] = spec.rules["bar" .. bar .. suffix] end
+    return out
+end
 function NS.DataTextNextBarID(config)
     local ids = NS.DataTextBarIDs(config)
     if #ids >= NS.DataTextBarLimit then return end
@@ -391,7 +419,7 @@ function NS.DataTextNextBarID(config)
     end
     for id = 1, #ids + 1 do if not seen[id] then return id end end
 end
-function NS.DataTextBarCreationValues(config, id)
+function NS.DataTextBarCreationValues(config, id, presetID)
     local ids = NS.DataTextBarIDs(config)
     ids[#ids + 1] = id
     table.sort(ids)
@@ -401,6 +429,11 @@ function NS.DataTextBarCreationValues(config, id)
         values[key] = spec.rules[key].default
     end
     values["bar" .. id .. "Enabled"] = true
+    if presetID then
+        local preset = NS.DataTextPresetValues(presetID, id, config)
+        if not preset then return nil end
+        for key, value in pairs(preset) do values[key] = value end
+    end
     return values
 end
 function NS.DataTextBarRemovalValues(config, id)
@@ -421,7 +454,7 @@ spec.prepareConfig = function(config)
     for key, value in pairs(config) do
         local raw = type(key) == "string" and key:match("^bar(%d+).+")
         local id = ValidID(raw)
-        if id and id > 12 then
+        if id and not rawget(spec.rules, key) then
             local rule = spec.rules[key]
             if rule then config[key] = Repaired(rule, value) end
         end
@@ -447,7 +480,7 @@ function NS.DataTextAntiqueFooterValues(bar, config)
     values[prefix .. "Height"] = 36
     values[prefix .. "Layout"] = 1
     values[prefix .. "StyleOverride"] = true
-    for slot = 1, 6 do values[prefix .. "Slot" .. slot] = ({ 3, 4, 5 })[slot] or 1 end
+    for slot = 1, NS.DataTextSlotLimit do values[prefix .. "Slot" .. slot] = ({ 3, 4, 5 })[slot] or 1 end
     for _, key in ipairs(NS.DataTextStyleKeys) do
         values[NS.DataTextBarStyleKey(bar, key)] = config[key]
     end
@@ -465,6 +498,110 @@ function NS.DataTextAntiqueFooterValues(bar, config)
     }
     for key, value in pairs(ornate) do
         values[NS.DataTextBarStyleKey(bar, key)] = value
+    end
+    return values
+end
+
+local information = { "microMenu", "progress" }
+if not NS.Client.isForever then information[#information + 1] = "specLoot" end
+for _, key in ipairs({ "durability", "clock", "professions", "gold", "fps", "latency", "travel" }) do
+    information[#information + 1] = key
+end
+NS.DataTextPresets = {
+    { id = "empty", title = "Empty bar", description = "Start with an empty bar and choose your own data.", sources = {} },
+    { id = "infoTop", title = "Top information bar", description = "Everyday information across the top of your screen.",
+        sources = information },
+    { id = "infoBottom", title = "Bottom information bar", description = "Everyday information across the bottom of your screen.",
+        sources = information },
+    { id = "minimap", title = "Minimap companion", description = "A compact clock, FPS and latency bar.",
+        sources = { "clock", "fps", "latency" } },
+    { id = "microMenu", title = "Menu bar", description = "Quick access to the native game menus.", sources = { "microMenu" } },
+    { id = "antique", title = "Antique footer", description = "Bags, durability and clock with the antique bag medallion.",
+        sources = { "bags", "durability", "clock" } },
+}
+local presetsByID = {}
+for _, preset in ipairs(NS.DataTextPresets) do presetsByID[preset.id] = preset end
+function NS.DataTextPresetSources(id)
+    local preset = presetsByID[id]
+    return preset and preset.sources
+end
+
+local function SlotValues(config, bar, from, to, values)
+    local prefix = "bar" .. bar .. "Slot"
+    for _, suffix in ipairs(NS.DataTextSlotSuffixes) do
+        local key = prefix .. to .. suffix
+        local value = from and config[prefix .. from .. suffix]
+        if value == nil then value = spec.rules[key].default end
+        values[key] = value
+    end
+end
+local function ValidSlot(slot)
+    return type(slot) == "number" and slot >= 1 and slot <= NS.DataTextSlotLimit and slot == math.floor(slot)
+end
+function NS.DataTextMoveSlotValues(config, bar, from, to)
+    if not ValidID(bar) or not ValidSlot(from) or not ValidSlot(to) then return nil end
+    local values, step = {}, from < to and 1 or -1
+    SlotValues(config, bar, from, to, values)
+    for slot = from, to - step, step do SlotValues(config, bar, slot + step, slot, values) end
+    return values
+end
+function NS.DataTextRemoveSlotValues(config, bar, slot)
+    if not ValidID(bar) or not ValidSlot(slot) then return nil end
+    local values = {}
+    for current = slot, NS.DataTextSlotLimit - 1 do SlotValues(config, bar, current + 1, current, values) end
+    SlotValues({}, bar, nil, NS.DataTextSlotLimit, values)
+    return values
+end
+function NS.DataTextDuplicateBarValues(config, source, target)
+    if not ValidID(source) or not ValidID(target) or source == target then return nil end
+    for _, id in ipairs(NS.DataTextBarIDs(config)) do if id == target then return nil end end
+    local values = NS.DataTextBarCreationValues(config, target)
+    for _, suffix in ipairs(templateOrder) do
+        local value = config["bar" .. source .. suffix]
+        if value ~= nil then values["bar" .. target .. suffix] = value end
+    end
+    local nameKey = "bar" .. target .. "Name"
+    local name = NS.Text("Copy of %s"):format(config["bar" .. source .. "Name"] or NS.Text("Bar %d"):format(source))
+    local limit = spec.rules[nameKey].maxLength
+    if #name > limit then
+        local edge = limit + 1
+        while edge > 1 and name:byte(edge) >= 128 and name:byte(edge) < 192 do edge = edge - 1 end
+        name = name:sub(1, edge - 1)
+    end
+    values[nameKey] = name
+    values["bar" .. target .. "Enabled"] = true
+    return values
+end
+
+-- Presets are ordinary reversible settings. Every slot field is reset so a
+-- previous broker, center position or scale cannot leak into the new layout.
+function NS.DataTextPresetValues(id, bar, config)
+    local preset = presetsByID[id]
+    if not preset or not ValidID(bar) then return nil end
+    local prefix, values = "bar" .. bar, { enabled = true }
+    for slot = 1, NS.DataTextSlotLimit do
+        SlotValues({}, bar, nil, slot, values)
+        values[prefix .. "Slot" .. slot] = NS.DataTextSourceIndex.none
+    end
+    for slot, key in ipairs(preset.sources) do values[prefix .. "Slot" .. slot] = NS.DataTextSourceIndex[key] end
+    values[prefix .. "Name"] = NS.Text(preset.title)
+    values[prefix .. "Enabled"], values[prefix .. "Vertical"] = true, false
+    values[prefix .. "FullScreen"], values[prefix .. "Dock"] = false, NS.DataTextDock.FREE
+    values[prefix .. "Width"], values[prefix .. "Height"] = 390, 28
+    values[prefix .. "Layout"], values[prefix .. "StyleOverride"] = NS.DataTextLayout.EQUAL, false
+    if id == "infoTop" or id == "infoBottom" then
+        values[prefix .. "FullScreen"], values[prefix .. "Width"] = true, 900
+        values[prefix .. "Dock"] = id == "infoTop" and NS.DataTextDock.TOP or NS.DataTextDock.BOTTOM
+        for slot, key in ipairs(preset.sources) do
+            if key == "clock" then values[prefix .. "Slot" .. slot .. "Placement"] = NS.DataTextPlacement.CENTER end
+        end
+    elseif id == "minimap" then
+        values[prefix .. "Width"], values[prefix .. "Point"] = 240, 3
+        values[prefix .. "X"], values[prefix .. "Y"] = -20, -220
+    elseif id == "microMenu" then
+        values[prefix .. "Width"] = 180
+    elseif id == "antique" then
+        for key, value in pairs(NS.DataTextAntiqueFooterValues(bar, config)) do values[key] = value end
     end
     return values
 end

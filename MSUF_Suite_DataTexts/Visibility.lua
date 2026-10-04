@@ -2,7 +2,6 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local Finite = S.Finite
 local VISIBILITY = NS.DataTextVisibility
-local SLOT_COUNT = P.SLOT_COUNT
 -- When a DataTexts bar shows (DataTexts.lua owns the bars). The visibility
 -- mode, the load conditions and the Edit Mode reveal run as state drivers, so
 -- combat itself needs no handler; zone and housing events re-evaluate the
@@ -46,7 +45,7 @@ local function SetBarMouse(bar, enabled)
     bar.mouseEnabled = enabled
     bar.frame:EnableMouse(enabled)
     bar.badge:EnableMouse(enabled)
-    for i = 1, SLOT_COUNT do
+    for i = 1, #bar.slots do
         local button = bar.slots[i]
         button:EnableMouse(enabled)
         button:EnableMouseWheel(enabled and button.extra ~= nil and button.extra.kind == "audio")

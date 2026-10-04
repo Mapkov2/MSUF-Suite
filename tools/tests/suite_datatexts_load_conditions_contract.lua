@@ -4,6 +4,14 @@ local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
 local inside, housing, health = false, false, 100
 local W = H.New(root, flavor, { beforeModules = function(world)
     local G = world.G
+    -- Native Buttons take the pointer by default; the shared harness leaves
+    -- this flag unset until EnableMouse is called.
+    local createFrame = G.CreateFrame
+    G.CreateFrame = function(kind, ...)
+        local frame = createFrame(kind, ...)
+        if kind == "Button" then frame:EnableMouse(true) end
+        return frame
+    end
     G.IsInInstance = function() return inside end
     G.C_Housing = { IsInsideHouseOrPlot = function() return housing end }
     G.GetMoney = function() return 10000 end
@@ -70,6 +78,9 @@ health = 0
 W.Event("UNIT_HEALTH", "player")
 assert(first.visual.alpha == 0, "health event did not apply the native curve")
 assert(LetsPointerThrough(first), "an injured-only bar at full health still took the pointer")
+assert(S.Set("dataTexts", "bar1Slot12", W.Suite.DataTextSourceIndex.clock))
+assert(#first.slots == 12 and LetsPointerThrough(first),
+    "new extended slots must inherit the hidden bar's pointer state")
 health = 1
 W.Event("UNIT_HEALTH", "player")
 assert(first.visual.alpha == 1 and TakesPointer(first), "an injured-only bar below full health ignored the pointer")

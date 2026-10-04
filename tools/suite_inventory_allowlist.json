@@ -1617,6 +1617,62 @@
       "date": "2026-10-04"
     },
     {
+      "category": "rule_metadata",
+      "item": "[\"retail:dataTexts.bar*Slot*\",\"choice\",false,1,24,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua appends specialization/loot and travel at source indices25/26. Existing indices1-24 and all keys stay unchanged; suite_datatexts_presets_contract.lua checks stable source indices and complete preset compositions.",
+      "reason": "Source choice upper bound grows from24 to26 for the requested presets; no previous choice or field is removed.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.bar*Slot*\",\"choice\",false,1,24,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DataTexts.lua appends specialization/loot and travel at source indices25/26. Existing indices1-24 and all keys stay unchanged; suite_datatexts_presets_contract.lua checks stable source indices and complete preset compositions.",
+      "reason": "Source choice upper bound grows from24 to26 for the requested presets; no previous choice or field is removed.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Add place",
+      "basis": "moved",
+      "evidence": "User requested a simpler DataTexts menu with all presets and previews on2026-10-04. Pages/DataTextsEditor.lua, DataTextsPresets.lua and DataTextsPreview.lua retain the operations; suite_options_menu_contract.lua checks exact controls and preview isolation.",
+      "reason": "Add data opens DataTextsSourcePicker rather than inserting an unsolicited source.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Choose the information shown in each bar.",
+      "basis": "moved",
+      "evidence": "User requested a simpler DataTexts menu with all presets and previews on2026-10-04. Pages/DataTextsEditor.lua, DataTextsPresets.lua and DataTextsPreview.lua retain the operations; suite_options_menu_contract.lua checks exact controls and preview isolation.",
+      "reason": "The clickable DataTextsPreview and Selected data inspector provide the same source editor.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Click a place to choose its text. Drag the bar in MSUF Edit Mode. Empty places disappear. The Antique Footer preset creates a bag, durability and clock strip on this bar only.",
+      "basis": "moved",
+      "evidence": "User requested a simpler DataTexts menu with all presets and previews on2026-10-04. Pages/DataTextsEditor.lua, DataTextsPresets.lua and DataTextsPreview.lua retain the operations; suite_options_menu_contract.lua checks exact controls and preview isolation.",
+      "reason": "Source choice, Edit Mode, empty slots and Antique Footer all remain; the new gallery adds explicit thumbnails.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Hide this bar when any selected condition is true. The health condition uses your character's health. At full health the bar is transparent but can still receive clicks. Edit Mode shows it for placement.",
+      "basis": "moved",
+      "evidence": "User requested a simpler DataTexts menu with all presets and previews on2026-10-04. Pages/DataTextsEditor.lua, DataTextsPresets.lua and DataTextsPreview.lua retain the operations; suite_options_menu_contract.lua checks exact controls and preview isolation.",
+      "reason": "Replaced by short visibility help and corrected health detail: runtime deliberately disables mouse at full health, covered by suite_datatexts_load_conditions_contract.lua.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Move first bar",
+      "basis": "moved",
+      "evidence": "User requested a simpler DataTexts menu with all presets and previews on2026-10-04. Pages/DataTextsEditor.lua, DataTextsPresets.lua and DataTextsPreview.lua retain the operations; suite_options_menu_contract.lua checks exact controls and preview isolation.",
+      "reason": "Each selected bar retains Move in Edit Mode, including bar1; the redundant hard-coded first-bar shortcut is consolidated.",
+      "date": "2026-10-04"
+    },
+    {
       "category": "locale",
       "item": "Choose your bars",
       "basis": "moved",

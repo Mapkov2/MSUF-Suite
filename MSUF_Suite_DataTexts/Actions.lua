@@ -26,7 +26,7 @@ local CREST = NS.DataTextCrestMode
 local Actions = {}
 P.DataTextActions = Actions
 
-local OVERLAY_KINDS = { hearth = true, specialization = true, currency = true, crests = true }
+local OVERLAY_KINDS = { hearth = true, specialization = true, currency = true, crests = true, specLoot = true }
 -- Places whose window a Blizzard button opens (S.PanelButton): built-in
 -- sources by source, additional ones by kind.
 local PANEL_SOURCES = { durability = "character", coordinates = "worldMap", location = "worldMap" }
@@ -252,6 +252,8 @@ local function FillPortal(row, index)
     row:SetAttribute("type", "spell")
     row:SetAttribute("spell", spell.id)
     row:SetAttribute("clickbutton", nil)
+    row:SetAttribute("item", nil)
+    row:SetAttribute("toy", nil)
     row.action = nil
     -- A micro menu row may have shown a disabled micro button before.
     row:SetEnabled(true)
@@ -271,12 +273,46 @@ function Actions.PortalMenu(button)
     OpenPopup(button, #portals, FillPortal)
 end
 
+local travelHearths
+local function FillTravel(row, index)
+    local item = travelHearths[index]
+    if not item then
+        FillPortal(row, index - #travelHearths)
+        return
+    end
+    row:SetAttribute("type", item.toy and "toy" or "item")
+    row:SetAttribute("item", not item.toy and "item:" .. item.id or nil)
+    row:SetAttribute("toy", item.toy and item.id or nil)
+    row:SetAttribute("spell", nil)
+    row:SetAttribute("clickbutton", nil)
+    row.action = nil
+    row:SetEnabled(true)
+    local name, _, _, _, _, _, _, _, _, icon = C_Item.GetItemInfo(item.id)
+    row.label:SetText(S.PublicText(name) or S.Text("Hearthstone"))
+    row.label:SetTextColor(1, 1, 1)
+    row.icon:SetTexture(S.Finite(icon) and icon or 134414)
+    local start, duration = C_Item.GetItemCooldown(item.id)
+    if S.Finite(start) and S.Finite(duration) then row.cooldown:SetCooldown(start, duration) else row.cooldown:Clear() end
+end
+
+function Actions.TravelMenu(button)
+    if Locked() then return end
+    travelHearths, portals = Sources.OwnedHearths(), {}
+    if NS.Client.modernEquipment then
+        if not S.LearnedDungeonPortals then C_AddOns.LoadAddOn("MSUF_Suite_QualityOfLife") end
+        if S.LearnedDungeonPortals then portals = S.LearnedDungeonPortals() end
+    end
+    OpenPopup(button, #travelHearths + #portals, FillTravel)
+end
+
 local micro = {}
 local function FillMicro(row, index)
     local entry = micro[index]
     row:SetAttribute("type", entry.button and "click" or nil)
     row:SetAttribute("clickbutton", entry.button)
     row:SetAttribute("spell", nil)
+    row:SetAttribute("item", nil)
+    row:SetAttribute("toy", nil)
     row.action = entry.action
     row:SetEnabled(entry.enabled)
     row.icon:SetTexture(nil)
@@ -346,6 +382,8 @@ function Actions.Click(button, mouse)
         Actions.PortalMenu(button)
     elseif kind == "microMenu" then
         Actions.MicroMenu(button)
+    elseif kind == "travel" then
+        Actions.TravelMenu(button)
     end
 end
 
@@ -382,8 +420,8 @@ end
 function Actions.Tooltip(button, title)
     local binding = button.extra
     local kind = binding.kind
-    if kind == "portals" then
-        Actions.PortalMenu(button)
+    if kind == "portals" or kind == "travel" then
+        if kind == "travel" then Actions.TravelMenu(button) else Actions.PortalMenu(button) end
         return
     end
     if kind == "broker" and BrokerTooltip(button, binding, title) then return end

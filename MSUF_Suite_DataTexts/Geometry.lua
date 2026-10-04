@@ -3,7 +3,6 @@ local S = P.Suite
 local LAYOUT, PLACEMENT = P.NS.DataTextLayout, P.NS.DataTextPlacement
 local Geometry = {}
 P.DataTextGeometry = Geometry
-local SLOT_COUNT = P.SLOT_COUNT
 local floor = math.floor
 local Snap, Color = P.Appearance.Snap, P.Appearance.Color
 local layoutSlots, layoutWidths, layoutLeft = {}, {}, {}
@@ -132,7 +131,7 @@ function Geometry.Layout(bar, config, extra)
     local style, slots, widths = bar.style, layoutSlots, layoutWidths
     local pixel = bar.pixelUnit or 1
     local count = 0
-    for i = 1, SLOT_COUNT do
+    for i = 1, #bar.slots do
         local button = bar.slots[i]
         if button.source then
             count = count + 1

@@ -21,6 +21,12 @@ Pages\MinimapPreview.lua
 Pages\Minimap.lua
 Pages\DamageMeter.lua
 Pages\Bags.lua
+Pages\DataTextsWorkspace.lua
+Pages\DataTextsPreviewData.lua
+Pages\DataTextsPreview.lua
+Pages\DataTextsSourcePicker.lua
+Pages\DataTextsPresets.lua
+Pages\DataTextsEditor.lua
 Pages\DataTexts.lua
 Pages\QualityOfLife.lua
 Pages\HUDWorkspace.lua

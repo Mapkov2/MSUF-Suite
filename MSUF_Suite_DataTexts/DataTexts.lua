@@ -11,7 +11,6 @@ local M = P.DataTexts
 local Bars, BarKeys = P.DataTextBars, P.DataTextBarKeys
 local ID = "dataTexts"
 local IN_COMBAT = { inCombat = true }
-local SLOT_COUNT = P.SLOT_COUNT
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local Snap, ApplyColor = Appearance.Snap, Appearance.Color
@@ -75,8 +74,9 @@ function M:UpdateSource(key, force)
             if key == "bags" and bar.badge:IsShown() then
                 bar.badge.text = Display(label, value, severity, bar.style, key, alternate)
             end
-            for i = 1, SLOT_COUNT do
-                local button = bar.slots[i]
+            local slots = bar.slots
+            for i = 1, #slots do
+                local button = slots[i]
                 if button.source == key then
                     local text, display = Display(label, value, severity, bar.style, key, alternate)
                     if button.display ~= display then
@@ -269,8 +269,9 @@ function M:Rebind()
     for _, bar in pairs(self.bars) do
         if Visible(bar) then
             if bar.badge:IsShown() then active.bags = true end
-            for i = 1, SLOT_COUNT do
-                local key = bar.slots[i].source
+            local slots = bar.slots
+            for i = 1, #slots do
+                local key = slots[i].source
                 if key then active[key] = true end
             end
         end
@@ -380,6 +381,7 @@ end
 local function RefreshBar(index)
     local c = M.config
     local bar = Bars.Create(index)
+    Bars.EnsureSlots(bar, c)
     local frame, layer = bar.frame, c[bar.prefix .. "Layer"]
     local restored = S.ApplyOwnedLayer(frame, layer)
     S.ApplyOwnedChildLayer(bar.visual, frame, layer, 1, restored)
@@ -389,7 +391,7 @@ local function RefreshBar(index)
     Appearance.Paint(bar)
     local style = bar.style
     local font = S.ResolveFont(style.font) or S.GlobalFontPath()
-    for slot = 1, SLOT_COUNT do
+    for slot = 1, #bar.slots do
         local button = bar.slots[slot]
         S.ApplyOwnedChildLayer(button, frame, layer, 2, restored)
         RefreshSlot(button, c, index, slot, style, font)
@@ -416,7 +418,7 @@ function M:Refresh()
             Visibility.SetDriver(bar, nil)
             bar.frame:Hide()
             bar.visual:SetAlpha(1)
-            for slot = 1, SLOT_COUNT do Bars.HideTooltip(bar.slots[slot]) end
+            for slot = 1, #bar.slots do Bars.HideTooltip(bar.slots[slot]) end
             self.bars[i] = nil
             self.pool[#self.pool + 1] = bar
         end
@@ -469,7 +471,7 @@ function M:Disable()
         bar.frame:Hide()
         bar.visual:SetAlpha(1)
         if owned then
-            for i = 1, SLOT_COUNT do Bars.HideTooltip(bar.slots[i]) end
+            for i = 1, #bar.slots do Bars.HideTooltip(bar.slots[i]) end
         end
     end
 end

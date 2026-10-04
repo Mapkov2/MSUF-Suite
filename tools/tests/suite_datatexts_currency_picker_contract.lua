@@ -16,8 +16,15 @@ local page
 local P={Suite=NS,S=S,Tr=function(v) return v end,RegisterPage=function(v) page=v end,
     Get=function(_,key) return config[key] end,SetMany=function(_,values) for key,value in pairs(values) do config[key]=value end end}
 assert(loadfile(root..'/MSUF_Suite_Options/Pages/DataTexts.lua'))('Options',P)
-local picker
-for i=1,50 do local name,value=debug.getupvalue(page.build,i);if not name then break end;if name=='CrestCurrencyMenu' then picker=value end end
+local function Upvalue(callback,wanted)
+ for i=1,50 do
+  local name,value=debug.getupvalue(callback,i)
+  if not name then break end
+  if name==wanted then return value end
+ end
+end
+local shared=assert(Upvalue(page.build,'Shared'),'the page must provide its shared settings builder')
+local picker=Upvalue(shared,'CrestCurrencyMenu')
 assert(picker,'real options picker closure must be reachable')
 local expanded=false
 C_CurrencyInfo={GetCurrencyInfo=function(id) return {name='Selected '..id,iconFileID=44} end,
@@ -51,8 +58,7 @@ buttons['Clear selection']()
 assert(config.crestMode==2 and config.crestCurrencyIDs=='','clear keeps manual empty mode')
 -- The observed seasonal stages come from the load-on-demand DataTexts addon
 -- (S.DataTextExtraSources, P.S); before it loads, only the reset is offered.
-local stages
-for i=1,50 do local name,value=debug.getupvalue(page.build,i);if not name then break end;if name=='SeasonStagesMenu' then stages=value end end
+local stages=Upvalue(shared,'SeasonStagesMenu')
 assert(stages,'season stage menu closure must be reachable')
 S.DataTextExtraSources=nil
 stages({})

@@ -17,7 +17,8 @@ local EVENTS = {
     PLAYER_AVG_ITEM_LEVEL_UPDATE = { itemLevel = true },
     PLAYER_EQUIPMENT_CHANGED = { itemLevel = true },
     SKILL_LINES_CHANGED = { professions = true },
-    PLAYER_SPECIALIZATION_CHANGED = { specialization = true },
+    PLAYER_SPECIALIZATION_CHANGED = { specialization = true, specLoot = true },
+    PLAYER_LOOT_SPEC_UPDATED = { specLoot = true },
     PLAYER_LEVEL_UP = { progress = true },
     UPDATE_FACTION = { progress = true },
     PLAYER_XP_UPDATE = { progress = true },
@@ -25,16 +26,16 @@ local EVENTS = {
     CVAR_UPDATE = { audio = true },
     BAG_UPDATE_DELAYED = { hearth = true },
     TOYS_UPDATED = { hearth = true },
-    SPELLS_CHANGED = { specialization = true, portals = true },
+    SPELLS_CHANGED = { specialization = true, specLoot = true, portals = true },
     ITEM_UPGRADE_MASTER_SET_ITEM = { crests = true },
 }
 Sources.kinds = {
     broker = true, currency = true, crests = true, itemLevel = true, professions = true, specialization = true,
-    audio = true, hearth = true, progress = true, portals = true, microMenu = true,
+    audio = true, hearth = true, progress = true, portals = true, microMenu = true, specLoot = true, travel = true,
 }
 -- Places whose click runs a protected action through a secure button
 -- (Actions.lua). Their bars release it when combat starts.
-Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true }
+Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true, specLoot = true, travel = true }
 
 local function Text(value)
     return S.Public(value) and type(value) == "string" and value or nil
@@ -216,6 +217,19 @@ FORMAT.specialization = function(binding)
     return S.Text("Specialization"), name
 end
 
+FORMAT.specLoot = function(binding)
+    if NS.Client.isForever then return S.Text("Specialization / loot"), NO_VALUE end
+    local _, name = FORMAT.specialization(binding)
+    if name == NO_VALUE then return S.Text("Specialization / loot"), NO_VALUE end
+    local lootID = GetLootSpecialization()
+    local lootName = name
+    if Number(lootID) and lootID > 0 then
+        local _, selected = GetSpecializationInfoByID(lootID)
+        lootName = Text(selected) or NO_VALUE
+    end
+    return S.Text("Specialization / loot"), S.Text("%s / Loot: %s"):format(name, lootName)
+end
+
 FORMAT.audio = function(_, c)
     local value = tonumber(C_CVar.GetCVar(Sources.AUDIO[c.audioChannel or 1]))
     return S.Text("Volume"), Number(value) and math.floor(value * 100 + .5) .. "%" or NO_VALUE
@@ -266,6 +280,10 @@ end
 
 FORMAT.microMenu = function()
     return S.Text("Menu"), S.Text("Open")
+end
+
+FORMAT.travel = function()
+    return S.Text("Travel cooldowns"), S.Text(NS.Client.isForever and "Hearthstone" or "Hearthstone / portals")
 end
 
 -- Label and value of a bound place; its icons land in binding.icons.
@@ -438,6 +456,18 @@ local function ReadHearths()
     return changed
 end
 
+-- The travel popup uses the same configured, owned items as the existing
+-- Hearthstone source. This read happens on opening the menu, never on a tick.
+function Sources.OwnedHearths()
+    ReadHearths()
+    local choices = {}
+    for i = 1, #hearthIDs do
+        if hearthOwned[i] then choices[#choices + 1] = { id = hearthIDs[i], toy = hearthToys[i] } end
+        if #choices == HEARTH_CHOICES then break end
+    end
+    return choices
+end
+
 -- Chooses the Hearthstone each Hearthstone place uses next (data only;
 -- Actions.lua hands it to the secure button out of combat). In combat the
 -- overlay is hidden: only mark the choice stale; DataTexts.lua checks it
@@ -448,12 +478,7 @@ function Sources.PrepareHearths()
         Sources.hearthDirty = true
         return
     end
-    ReadHearths()
-    local choices = {}
-    for i = 1, #hearthIDs do
-        if hearthOwned[i] then choices[#choices + 1] = { id = hearthIDs[i], toy = hearthToys[i] } end
-        if #choices == HEARTH_CHOICES then break end
-    end
+    local choices = Sources.OwnedHearths()
     for key in pairs(owner.activeSources or {}) do
         local binding = Sources.bindings[key]
         if binding and binding.kind == "hearth" and binding.button.extra == binding then
