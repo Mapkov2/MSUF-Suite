@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local IN_COMBAT = { inCombat = true }
 local M = {}
+local Native = P.NativeExperienceBar
 local ID = "xpBar"
 local SEGMENT_COUNT = 20
 local SESSION_MAX_AGE = 604800
@@ -492,6 +493,7 @@ local function XPChanged(self, event, unit)
 end
 
 local function EnterWorld(self)
+    Native.Sync(self, true)
     local level, current, maximum = XP()
     if level then InitializeSession(self, level, current, maximum) end
     self.cappedLevel = nil
@@ -506,6 +508,7 @@ function M:Enable()
     context:Event("PLAYER_XP_UPDATE", XPChanged, IN_COMBAT)
     context:Event("PLAYER_LEVEL_UP", XPChanged, IN_COMBAT)
     context:Event("UPDATE_EXHAUSTION", XPChanged, IN_COMBAT)
+    context:Event("ADDON_LOADED", Native.AddonLoaded, IN_COMBAT)
     if NS.loginKind then
         local level, current, maximum = XP()
         if level then
@@ -516,15 +519,18 @@ function M:Enable()
             end
         end
     end
+    Native.Sync(self, true)
     Render(self)
 end
 
 function M:Refresh()
+    Native.Sync(self, true)
     self.cappedLevel = nil
     Render(self)
 end
 
 function M:Disable()
+    Native.Sync(self, false)
     CancelRateTimer(self)
     if self.host then
         self.host:Hide()

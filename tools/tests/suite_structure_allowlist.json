@@ -15,6 +15,18 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_QualityOfLife/NativeExperienceBar.lua",
+   "kind": "addon",
+   "reason": "Blizzard_ActionBar or Blizzard_StatusTrackingBar owns the native containers; wait for its ADDON_LOADED before adopting them. suite_xp_native_contract covers late loading on Retail and Forever.",
+   "symbol": "manager (= StatusTrackingBarManager)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NativeExperienceBar.lua",
+   "kind": "addon",
+   "reason": "The same native Blizzard addon defines the experience-bar enumeration together with its manager. suite_xp_native_contract covers late loading without either global.",
+   "symbol": "info (= StatusTrackingBarInfo)"
+  },
+  {
    "file": "MSUF_Suite/Core/Catalog/QualityOfLifeCombatText.lua",
    "kind": "client",
    "reason": "Retail 12.1.0/12.1.5 and Forever call these C_CombatText methods in Blizzard_CombatText/Shared/CombatText.lua. This availability probe disables the optional module when the namespace, reader, unit selector or event is absent; suite_self_combat_text_contract checks the unavailable path.",

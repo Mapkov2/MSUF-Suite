@@ -24,6 +24,7 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Number("height", "Bar height", 18, 8, 40),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Number("layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
+    Bool("hideBlizzard", "Hide Blizzard experience bar", true),
     Bool("showSegments", "Show XP bar divisions", true),
     Bool("showRested", "Show rested XP", true),
     Bool("showSession", "Show session XP", true),

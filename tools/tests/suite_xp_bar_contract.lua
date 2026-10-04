@@ -1,6 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local now, level, xp, maximum, rested = 100000, 10, 100, 1000, 300
 local timers = {}
+local nativeSyncCalls = 0
 
 local function Widget()
     local w = { shown = true }
@@ -83,6 +84,7 @@ local translate
 local function Load(kind)
     local callbacks, movers = {}, {}
     local suite = { editMode = false, loginKind = kind, RootDB = savedRoot, MSUFMedia = MEDIA,
+        InCombat = function() return false end,
         Dispatch = function(callback, ...) return callback(...) end,
         AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
     suite.Suite = { instances = {}, editMode = false }
@@ -118,10 +120,15 @@ local function Load(kind)
     assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", suite)
     MSUFSuite = suite
     local private = {}
-    for _, file in ipairs({ "Bootstrap", "ExperienceBar" }) do
+    for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceBar" }) do
         assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
     end
     local module = runtime.instances.xpBar
+    local sync = private.NativeExperienceBar.Sync
+    private.NativeExperienceBar.Sync = function(...)
+        nativeSyncCalls = nativeSyncCalls + 1
+        return sync(...)
+    end
     module.active = true
     module.config = { enabled = true, look = 1, width = 400, height = 18, scale = 100,
         showSegments = true, showRested = true, showSession = true, showRate = true, showETA = true,
@@ -238,8 +245,10 @@ module:Refresh()
 assert(module.levelText.text:find("100 / 1.0k", 1, true))
 
 xp = 250
+local syncCalls = nativeSyncCalls
 local dividerAnchors, savedRecord = module.segments[1].anchors, savedRoot.suiteXP["Player-test"]
 events.PLAYER_XP_UPDATE(module, "PLAYER_XP_UPDATE", "player")
+assert(nativeSyncCalls == syncCalls, "an XP update walked Blizzard containers")
 assert(module.session.gained == 150 and savedRoot.suiteXP["Player-test"].gained == 150)
 assert(module.segments[1].anchors == dividerAnchors and savedRoot.suiteXP["Player-test"] == savedRecord,
     "an XP event re-anchored the dividers or replaced the saved session record")
