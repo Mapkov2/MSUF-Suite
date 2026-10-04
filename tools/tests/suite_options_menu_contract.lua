@@ -486,6 +486,7 @@ W.PageBuilder = function(ctx)
             body._msuf2Width = ctx.width
             body:SetHeight(height)
             self.y = self.y - height - 12
+            if ctx.key == "suite_dataTexts" then ctx.pageItems[#ctx.pageItems + 1] = body end
             return body
         end
     end
@@ -1483,8 +1484,16 @@ do
     current = ctx
     C_Timer = { After = function() error("DataText navigation queued a timer") end }
     local workspace = assert(ctx.dataTextWorkspace)
+    local navigation = assert(workspace.navigation, "DataTexts has no bar navigation strip")
+    assert(ctx.pageItems[1] == navigation and ctx.pageItems[2] == "suite_dataTexts_dataTexts_module",
+        "bar navigation must precede the DataTexts module switch")
+    for _, button in pairs(workspace.buttons) do
+        assert(button.parent == navigation, "bar tabs and Add bar must belong to the navigation strip")
+    end
     assert(workspace.deck.views[1] and not workspace.deck.views[2], "cold page eagerly built other bars")
     local barView = workspace.deck.views[1]
+    assert(barView.frame.parent ~= navigation and barView.frame.points[1][5] == 0,
+        "the bar editor must scroll separately without space reserved for the moved selector")
     for _, suffix in ipairs({ "slot1", "slot1_details", "appearance", "visibility" }) do
         local body = assert(ctx.entry.sections["suite_dataTexts_bar1_" .. suffix], "bar accordion header is missing: " .. suffix)
         assert(body.parent:IsVisible(), "bar accordion header is hidden behind another view: " .. suffix)
@@ -4958,7 +4967,8 @@ end)()
     local ids = {}
     for id = 1, Suite.DataTextBarLimit do ids[id] = tostring(id) end
     config.barIds = table.concat(ids, ",")
-    local ctx = { key = "suite_dataTexts", width = 720, refreshers = {}, widgets = {},
+    for _, width in ipairs({ 430, 720 }) do
+    local ctx = { key = "suite_dataTexts", width = width, refreshers = {}, widgets = {},
         sections = {}, pageItems = {}, entry = { sections = {} } }
     current = ctx
     C_Timer = { After = function() error("maximum-bar menu scheduled a bulk build") end }
@@ -4968,6 +4978,10 @@ end)()
     for _ in pairs(workspace.deck.views) do count = count + 1 end
     assert(count == 1 and #ctx.widgets < 90 and ctx.dataTextBarSelector,
         "maximum-bar profile eagerly built hidden views or lost its compact selector")
+    assert(ctx.pageItems[1] == workspace.navigation
+        and ctx.dataTextBarSelector.points[1][2] == workspace.navigation
+        and workspace.buttons.add.parent == workspace.navigation,
+        "narrow and maximum-bar selectors must share the navigation above DataTexts")
     local last = "suite_dataTexts_bar" .. Suite.DataTextBarLimit .. "_slot12"
     local body = ctx.entry._msuf2ResolveMissingSection(last)
     assert(body and workspace.deck.selected == Suite.DataTextBarLimit,
@@ -4975,6 +4989,7 @@ end)()
     local warm = #ctx.widgets
     ctx.entry._msuf2ResolveMissingSection(last)
     assert(#ctx.widgets == warm, "warm dynamic navigation rebuilt controls")
+    end
     config.barIds, current, C_Timer = savedIds, previousCurrent, previousTimer
 end)()
 

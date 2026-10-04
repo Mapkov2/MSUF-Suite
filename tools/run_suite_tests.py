@@ -21,6 +21,7 @@ EXTRA = {
     "suite_hud_contract.lua": [[], ["Forever"]],
     "suite_options_menu_contract.lua": [[], ["Forever"]],
     "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(BRANCH / "MidnightSimpleUnitFrames")]],
+    "suite_search_findability_contract.lua": [[], ["Forever"]],
     "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(BRANCH / "MidnightSimpleUnitFrames")],
                                            [str(BRANCH / "MapkoSkin"), "Forever"]],
     "suite_skin_msuf_bridge_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames"),

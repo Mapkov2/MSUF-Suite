@@ -43,9 +43,9 @@ local function BuildFeature(ctx, builder, id, title, actions, specs)
             or "Works even when the Objective Tracker is off.",
     })
     for index, spec in ipairs(specs) do
-        local body, entries = P.RuleSection(ctx, builder, PAGE, id, spec.id, spec.title, spec.rules,
-            { help = spec.help, open = index == 1 })
-        P.HUDMenu.Prepare(body, entries)
+        -- Exact search reveals the feature once the controls exist.
+        P.RuleSection(ctx, builder, PAGE, id, spec.id, spec.title, spec.rules,
+            { help = spec.help, open = index == 1, onBuilt = P.HUDMenu.Prepare })
         P.AttachRuleColors(header, spec.title, id, spec.rules)
     end
 end

@@ -101,8 +101,9 @@ function Page.ChangeBars(values, bar)
 end
 
 function Page.Rules(ctx, builder, sectionId, title, rules, reveal, opts)
-    local body, entries = P.RuleSection(ctx, builder, PAGE, ID, sectionId, title, rules, opts or { open = true })
-    Page.Prepare(entries, sectionId, reveal)
+    opts = opts or { open = true }
+    opts.onBuilt = function(_, built) Page.Prepare(built, sectionId, reveal) end
+    local body, entries = P.RuleSection(ctx, builder, PAGE, ID, sectionId, title, rules, opts)
     local entry = body._msuf2CollapsibleEntry
     if entry then entry._msuf2EnsureVisible = reveal end
     return body, entries
@@ -116,6 +117,8 @@ function Page.LazySection(ctx, builder, sectionId, title, reveal, build)
     P.FinishBody(builder, body, -68)
     local proxy = setmetatable({}, { __index = builder })
     function proxy:CollapsibleSection() return body end
+    -- This section is lazy already: what it builds, it builds at once.
+    proxy.LazyCollapsibleSection = false
     local function Ensure()
         if built then return end
         built = true
@@ -175,13 +178,26 @@ local function InstallResolver(ctx, bars, choose)
                 choose(tonumber(bar), mode, tonumber(slot))
             elseif section == PAGE .. "_presets" then choose("add")
             elseif section:match("^suite_dataTexts_") then choose("shared") end
-            return ctx.entry.sections[section]
+            -- Lazy hosts: exact search reads the controls right after this.
+            local body = ctx.entry.sections[section]
+            P.EnsureSectionContent(body)
+            return body
         end
     end
     return present
 end
 
-function Page.Build(ctx, builder, shared)
+-- The bar selector owns the fixed page header; editors stay in scroll flow.
+function Page.Navigation(ctx, builder)
+    local navigation = builder:Section(Tr("DataTexts"), 52)
+    if navigation.title then navigation.title:Hide() end
+    if W.AttachStickyPageHeader then
+        W.AttachStickyPageHeader(navigation, { ctx = ctx, builder = builder, gap = 8 })
+    end
+    return navigation
+end
+
+function Page.Build(ctx, builder, shared, navigation)
     builtBarIDs = table.concat(P.Suite.DataTextBarIDs(P.S.Config(ID)), ",")
     local host = builder:Section(Tr("DataTexts"), 160)
     if host.title then host.title:Hide() end
@@ -189,8 +205,8 @@ function Page.Build(ctx, builder, shared)
     local bars, buttons = P.Suite.DataTextBarIDs(P.S.Config(ID)), {}
     local selected, choose, deck
     local navWidth = width - 32
-    local function Resize(height) P.FinishBody(builder, host, -54 - height, 0) end
-    deck = Page.Deck(ctx, host, width, -54, Resize)
+    local function Resize(height) P.FinishBody(builder, host, -height, 0) end
+    deck = Page.Deck(ctx, host, width, 0, Resize)
     choose = function(key, mode, slot)
         selected = key
         if type(key) == "number" then Page.selectedBar = key end
@@ -210,7 +226,7 @@ function Page.Build(ctx, builder, shared)
     if #bars <= 5 and available / math.max(1, #bars) >= 84 then
         local size = math.floor(available / math.max(1, #bars))
         for index, bar in ipairs(bars) do
-            local button = Page.Tab(host, "", 16 + (index - 1) * size, -12, size - 6, function() choose(bar) end)
+            local button = Page.Tab(navigation, "", 16 + (index - 1) * size, -12, size - 6, function() choose(bar) end)
             buttons[bar] = button
             M.TrackRefresh(ctx, function()
                 local name = P.Get(ID, "bar" .. bar .. "Name") or Tr("Bar %d"):format(bar)
@@ -225,16 +241,16 @@ function Page.Build(ctx, builder, shared)
             end
             return values
         end
-        ctx.dataTextBarSelector = M.BindDropdownAt(ctx, host, "Bar", 16, 12, Values, available - 6,
+        ctx.dataTextBarSelector = M.BindDropdownAt(ctx, navigation, "Bar", 16, 12, Values, available - 6,
             function() return Page.selectedBar end, function(bar) choose(bar) end,
             P.Meta(PAGE, ID, "view.bar", "ephemeral"))
         if ctx.dataTextBarSelector._msuf2Title then ctx.dataTextBarSelector._msuf2Title:Hide() end
     end
-    buttons.add = Page.Tab(host, "+ " .. Tr("Add bar"), 16 + available, -12, 108, function() choose("add") end)
+    buttons.add = Page.Tab(navigation, "+ " .. Tr("Add bar"), 16 + available, -12, 108, function() choose("add") end)
     Page.Prepare({ { widget = buttons.add, label = "Add bar",
         meta = P.Meta(PAGE, ID, "action.addBar", "action", PAGE .. "_presets") } },
         PAGE .. "_presets", function() choose("add") end)
-    ctx.dataTextWorkspace = { deck = deck, choose = choose, buttons = buttons,
+    ctx.dataTextWorkspace = { deck = deck, choose = choose, buttons = buttons, navigation = navigation,
         presets = function(bar) return choose("preset" .. bar) end }
     local present = InstallResolver(ctx, bars, choose)
     choose(present[Page.selectedBar] and Page.selectedBar or bars[1] or "add")

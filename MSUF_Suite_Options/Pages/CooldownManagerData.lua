@@ -261,7 +261,7 @@ function Page.EnsureRuntime()
     if not Suite.Client.IsAddOnLoaded(RUNTIME) then
         local loaded, reason = C_AddOns.LoadAddOn(RUNTIME)
         if not loaded and not Suite.Client.IsAddOnLoaded(RUNTIME) then
-            Page.loadFailed = tostring(reason or "not installed")
+            Page.loadFailed = tostring(reason or Tr("not installed"))
         end
     end
     return S.CooldownManagerBarEntries ~= nil

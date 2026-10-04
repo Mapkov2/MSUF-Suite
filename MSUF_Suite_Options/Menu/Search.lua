@@ -279,6 +279,9 @@ end
 
 local function SearchableRule(spec, rule, config)
     if spec.controlAvailable and not spec.controlAvailable(rule, config) then return false end
+    -- A rule this client cannot use has no control: its page skips the section
+    -- (Buff Reminders' Mainline consumables on WoW Forever).
+    if rule.requires and P.Requires[rule.requires] and not P.Requires[rule.requires]() then return false end
     if not rule.hidden then return true end
     -- These rules are hidden only from the generic settings grid. The page
     -- owns a switch, preview or direction pad for them instead.

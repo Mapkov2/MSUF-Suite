@@ -736,6 +736,25 @@ do
         world.widgets:RunTimers(80)
         Check(config.barIds == beforeIDs, "non-list bar fixture changed its saved ID list")
         local dataPage = M.cache.suite_dataTexts
+        local navigation = Check(dataPage.pageHeaders and dataPage.pageHeaders[1],
+            "DataTexts bar navigation is not registered in the fixed page header")
+        Check(#dataPage.pageHeaders == 1 and navigation.section:GetHeight() == 52,
+            "only the compact bar navigation should consume the fixed header")
+        local module = dataPage.sections.suite_dataTexts_dataTexts_module._msuf2CollapsibleEntry
+        Check(module._msuf2RelayoutY == 0,
+            "DataTexts module switch must start the scroll flow below the fixed navigation")
+        local headerHost = env.CreateFrame("Frame", nil, env.UIParent)
+        local originalHost, wasActive = navigation.section:GetParent(), navigation.active
+        Check(navigation:Activate(headerHost), "DataTexts navigation could not activate in the header host")
+        local _, relativeTo, _, _, top = navigation.section:GetPoint(1)
+        Check(relativeTo == headerHost and top == -12 and navigation.hostHeight == 72,
+            "DataTexts navigation did not retain its own fixed geometry above the scroll body")
+        Check(module.outer:GetParent() == dataPage.wrapper and module.outer:GetParent() ~= headerHost,
+            "DataTexts settings moved into the fixed navigation instead of the scroll body")
+        navigation:Deactivate()
+        Check(navigation.section:GetParent() == dataPage.wrapper and not navigation.section:IsShown(),
+            "leaving DataTexts stranded its navigation in the shared header host")
+        if wasActive then navigation:Activate(originalHost) end
         Check(dataPage._msuf2ResolveMissingSection("suite_dataTexts_bar400001_slot12_details"),
             "a newly enabled non-list bar did not refresh navigation and exact detail targets")
         local details = dataPage.sections.suite_dataTexts_bar400001_slot12_details._msuf2CollapsibleEntry

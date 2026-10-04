@@ -75,7 +75,7 @@ end
 local function Text(owner, value, size, color)
     local label = owner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetFont(_G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size or 12, "OUTLINE")
-    label:SetText(value)
+    label:SetText(Tr(value))
     if color then label:SetTextColor(unpack(color)) end
     return label
 end
@@ -409,7 +409,7 @@ local function RenderTitle(editor, s, m)
         s.nameText:SetText(descriptor.sample)
     elseif prefix == "enemy" then
         s.title:SetText(Tr("ENEMY PLAYER / TARGET"))
-        s.nameText:SetText("Enemy Player")
+        s.nameText:SetText(Tr("Enemy Player"))
     end
     s.name:SetShown(editor:LayerOn("name") and not (m.groupOnly and editor.friendlyOutsider))
     if prefix == "friendly" then

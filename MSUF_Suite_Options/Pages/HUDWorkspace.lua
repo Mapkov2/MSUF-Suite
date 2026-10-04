@@ -78,6 +78,8 @@ function Page.Builder(ctx)
     function facade:FinishSection(section, pad)
         return section._msufSuiteHUDBuilder:FinishSection(section, pad)
     end
+    -- Every section sits in a feature panel; hidden ones build on first show.
+    facade.LazyCollapsibleSection = P.TabLazySection(builder, function() return true end)
     return setmetatable(facade, { __index = builder })
 end
 

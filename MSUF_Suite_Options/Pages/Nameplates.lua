@@ -86,6 +86,33 @@ local function EnemyResetRules(rules, elements)
     return resetRules
 end
 
+-- The Design and Blizzard elements tabs inside the enemy section.
+local function EnemyTabs(ctx, builder, body, sectionId, rules, appearance, elements)
+    local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
+    local panels, heights = EnemyPanels(ctx, body, width, sectionId, appearance, elements)
+    local function RefreshHeight(tab)
+        P.FinishBody(builder, body, -59 - heights[tab])
+    end
+    local tabs, refresh, _, selectTab = P.W.SegmentTabs(ctx, body, {
+        label = "", values = { { value = "appearance", text = Tr("Design") },
+            { value = "elements", text = Tr("Blizzard elements") } },
+        width = math.min(360, width), frames = panels, defaultTab = "appearance",
+        get = function() return enemyTab end,
+        set = function(tab)
+            enemyTab = tab
+            if tab == "elements" and P.ShowNameplatesElementsSample then P.ShowNameplatesElementsSample() end
+        end,
+        afterRefresh = RefreshHeight, x = 16, y = -12,
+    })
+    if tabs._msuf2Title then tabs._msuf2Title:Hide() end
+    if P.M.RegisterControlMetadata then
+        P.M.RegisterControlMetadata(tabs, P.Meta(PAGE, ID, "enemy.tabs", "action", sectionId),
+            "Enemy nameplate tabs", "segment")
+    end
+    P.AttachRuleColors(body, Tr("Enemy appearance"), ID, rules)
+    return refresh, selectTab
+end
+
 local function EnemySection(ctx, builder, rules)
     local appearance, elements = {}, {}
     for _, rule in ipairs(rules) do
@@ -107,37 +134,22 @@ local function EnemySection(ctx, builder, rules)
         return body
     end
 
-    local body = builder:CollapsibleSection(sectionId, Tr("Enemy appearance"), 120, true)
-    local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
-    local panels, heights = EnemyPanels(ctx, body, width, sectionId, appearance, elements)
-    local function RefreshHeight(tab)
-        P.FinishBody(builder, body, -59 - heights[tab])
-    end
-    local tabs, refresh, _, selectTab = P.W.SegmentTabs(ctx, body, {
-        label = "", values = { { value = "appearance", text = Tr("Design") },
-            { value = "elements", text = Tr("Blizzard elements") } },
-        width = math.min(360, width), frames = panels, defaultTab = "appearance",
-        get = function() return enemyTab end,
-        set = function(tab)
-            enemyTab = tab
-            if tab == "elements" and P.ShowNameplatesElementsSample then P.ShowNameplatesElementsSample() end
+    -- A lazy host builds the tabs on first open (P.LazySection).
+    local refresh, selectTab
+    return P.LazySection(builder, sectionId, Tr("Enemy appearance"), true, {
+        content = function(body) refresh, selectTab = EnemyTabs(ctx, builder, body, sectionId, rules, appearance, elements) end,
+        shell = function(body)
+            -- Preview handles select a tab from outside: build the section first.
+            P.SelectNameplatesEnemyTab = function(tab)
+                if not selectTab then P.EnsureSectionContent(body) end
+                if selectTab then selectTab(tab) end
+                return body
+            end
+            local resetRules = EnemyResetRules(rules, elements)
+            P.AttachSectionReset(ctx, body, Tr("Enemy appearance"), function() return P.ResetRules(ID, resetRules) end)
         end,
-        afterRefresh = RefreshHeight, x = 16, y = -12,
+        finish = function() refresh() end,
     })
-    if tabs._msuf2Title then tabs._msuf2Title:Hide() end
-    P.SelectNameplatesEnemyTab = function(tab)
-        if selectTab then selectTab(tab) end
-        return body
-    end
-    if P.M.RegisterControlMetadata then
-        P.M.RegisterControlMetadata(tabs, P.Meta(PAGE, ID, "enemy.tabs", "action", sectionId),
-            "Enemy nameplate tabs", "segment")
-    end
-    P.AttachRuleColors(body, Tr("Enemy appearance"), ID, rules)
-    local resetRules = EnemyResetRules(rules, elements)
-    P.AttachSectionReset(ctx, body, Tr("Enemy appearance"), function() return P.ResetRules(ID, resetRules) end)
-    refresh()
-    return body
 end
 
 local function Build(ctx)

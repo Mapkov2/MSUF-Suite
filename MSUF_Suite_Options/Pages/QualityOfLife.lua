@@ -591,7 +591,7 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
 end
 
 local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, width, panelTop,
-        state, featureRows, featureOrder)
+        state, featureRows)
     local features, tabId = tab and tab.features or category.features, tab and tab.id or "main"
     local panel = CreateFrame("Frame", nil, body)
     panel:SetPoint("TOPLEFT", body, "TOPLEFT", 16, panelTop)
@@ -644,7 +644,6 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
         }
         records[group] = record
         featureRows[oldSectionId] = record
-        featureOrder[#featureOrder + 1] = oldSectionId
         -- Legacy section IDs are virtual routes for search and menu links.
         group.reveal = function(force)
             if state.selectTab and category.tabs then state.selectTab(tabId) end
@@ -656,9 +655,28 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
     Layout()
 end
 
-local function BuildCategory(ctx, builder, category, featureRows, featureOrder)
-    local sectionId = PAGE .. "_category_" .. category.id
-    local body = builder:CollapsibleSection(sectionId, Tr(category.title), 120, false)
+-- A lazy host builds a category's feature rows when it first opens
+-- (P.LazySection). Its header keeps the enabled count, and the page resolver
+-- finds the category of each feature route (owners) to build it first.
+local function CategoryShell(ctx, body, category, featureOrder, owners)
+    for _, tab in ipairs(category.tabs or { category }) do
+        for _, group in ipairs(tab.features) do
+            local id = FeatureSectionId(group)
+            owners[id], featureOrder[#featureOrder + 1] = body, id
+        end
+    end
+    local entry = body._msuf2CollapsibleEntry
+    P.M.TrackRefresh(ctx, function()
+        local enabled = 0
+        for _, group in ipairs(category.features) do
+            if GroupEnabled(group) then enabled = enabled + 1 end
+        end
+        P.SetTranslatedText(entry.label, Tr(category.title) .. "  "
+            .. Tr("%d/%d enabled"):format(enabled, #category.features))
+    end)
+end
+
+local function CategoryContent(ctx, builder, body, category, featureRows)
     local entry = body._msuf2CollapsibleEntry
     local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
     local panelTop = category.tabs and -62 or -12
@@ -666,7 +684,7 @@ local function BuildCategory(ctx, builder, category, featureRows, featureOrder)
     if category.tabs then
         for _, tab in ipairs(category.tabs) do
             BuildCategoryPanel(ctx, builder, body, entry, category, tab, width, panelTop,
-                state, featureRows, featureOrder)
+                state, featureRows)
         end
         local values = {}
         for _, tab in ipairs(category.tabs) do
@@ -685,34 +703,35 @@ local function BuildCategory(ctx, builder, category, featureRows, featureOrder)
         refresh()
     else
         BuildCategoryPanel(ctx, builder, body, entry, category, nil, width, panelTop,
-            state, featureRows, featureOrder)
+            state, featureRows)
     end
-    P.M.TrackRefresh(ctx, function()
-        local enabled = 0
-        for _, group in ipairs(category.features) do
-            if GroupEnabled(group) then enabled = enabled + 1 end
-        end
-        P.SetTranslatedText(entry.label, Tr(category.title) .. "  "
-            .. Tr("%d/%d enabled"):format(enabled, #category.features))
-    end)
+end
+
+local function BuildCategory(ctx, builder, category, featureRows, featureOrder, owners)
+    P.LazySection(builder, PAGE .. "_category_" .. category.id, Tr(category.title), false, {
+        content = function(body) CategoryContent(ctx, builder, body, category, featureRows) end,
+        shell = function(body) CategoryShell(ctx, body, category, featureOrder, owners) end,
+    })
 end
 
 local function Build(ctx)
     SortCategories()
     local builder = P.W.PageBuilder(ctx)
-    local rows, order = {}, {}
+    local rows, order, owners = {}, {}, {}
     ctx.qualityOfLifeFeatureRows, ctx.qualityOfLifeFeatureOrder = rows, order
     if ctx.entry then
         ctx.entry.qualityOfLifeFeatureRows = rows
         ctx.entry.qualityOfLifeFeatureOrder = order
         ctx.entry.sections = ctx.entry.sections or {}
         ctx.entry._msuf2ResolveMissingSection = function(sectionId)
+            -- A lazy category builds its rows first (never in combat).
+            if not rows[sectionId] then P.EnsureSectionContent(owners[sectionId]) end
             local record = rows[sectionId]
             return record and record.reveal(true) or nil
         end
     end
     for _, category in ipairs(CATEGORIES) do
-        BuildCategory(ctx, builder, category, rows, order)
+        BuildCategory(ctx, builder, category, rows, order, owners)
     end
 end
 

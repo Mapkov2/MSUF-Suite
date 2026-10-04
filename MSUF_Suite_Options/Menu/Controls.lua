@@ -310,9 +310,9 @@ function P.GateControls(ctx, id, entries, keyFn)
     end)
 end
 
--- Adds a rule grid (two columns) plus full-width text inputs to `parent`,
--- starting at y. Returns the next free y and the list of {rule, widget}.
-function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId, columns)
+-- The W.SettingsRows rows of a rule list, the rules behind them and the text
+-- rules shown as inputs. A lazy section's header reuses them for its summary.
+function P.RuleRows(pageKey, id, rules, keyFn, sectionId)
     local rows, pending, strings = {}, {}, {}
     for _, rule in ipairs(rules) do
         -- Suite pages edit colors from their section shortcut. Only the
@@ -327,6 +327,15 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
             end
         end
     end
+    return { rows = rows, pending = pending, strings = strings }
+end
+
+-- Adds a rule grid (two columns) plus full-width text inputs to `parent`,
+-- starting at y. Returns the next free y and the list of {rule, widget}.
+-- `built` (P.RuleRows of the same rules) skips building the rows again.
+function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId, columns, built)
+    built = built or P.RuleRows(pageKey, id, rules, keyFn, sectionId)
+    local rows, pending, strings = built.rows, built.pending, built.strings
     local entries = {}
     if #rows > 0 then
         local grid = W.SettingsRows(ctx, parent, {
@@ -382,13 +391,13 @@ function P.AttachRowsSummary(ctx, body, rows)
                     local values = type(row.values) == "function" and row.values() or row.values
                     for _, item in ipairs(values or {}) do
                         if item.value == value then
-                            shown = item.text
+                            shown = Tr(item.text)
                             break
                         end
                     end
                 elseif row.kind == "toggle" then shown = Tr(value and "On" or "Off")
                 elseif not row.format and type(value) == "number" then shown = DecimalFormat(value) end
-                parts[#parts + 1] = (row.summaryLabel or row.label or "") .. ": " .. tostring(shown or "")
+                parts[#parts + 1] = Tr("%s: %s"):format(Tr(row.summaryLabel or row.label or ""), tostring(shown or ""))
             end
         end
         local text = table.concat(parts, " \194\183 ")
@@ -431,28 +440,86 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
     return shortcut
 end
 
+-- Accordions whose controls a lazy Menu2 host (b:LazyCollapsibleSection)
+-- builds when they first open; open sections still build at once. spec:
+-- content(body) -> y builds the controls, finish(body, y) sizes the body,
+-- shell(body) adds what a closed header shows (actions, header refreshers),
+-- summary(body) its collapsed line; eager builds at once on every host.
+-- Older hosts and test builders build at once: content, shell, finish.
+function P.LazySection(b, sectionId, title, open, spec)
+    if spec.eager or not b.LazyCollapsibleSection then
+        local body = b:CollapsibleSection(sectionId, title, 120, open)
+        local y = spec.content(body)
+        if spec.shell then spec.shell(body) end
+        if spec.finish then spec.finish(body, y) end
+        return body
+    end
+    return b:LazyCollapsibleSection(sectionId, title, 120, open, function(body)
+        local y = spec.content(body)
+        if spec.finish then spec.finish(body, y) end
+    end, { shell = function(body)
+        if spec.shell then spec.shell(body) end
+        if spec.summary then spec.summary(body) end
+    end })
+end
+
+-- Builds a lazy section's controls now, for page resolvers and selectors
+-- that need them before the section opens. Never in combat; older hosts
+-- have built every section already.
+function P.EnsureSectionContent(body)
+    if body and W.EnsureSectionContent and not P.Combat() then W.EnsureSectionContent(body) end
+end
+
+-- The ActionBars and HUD facades route sections into tab panels that may be
+-- hidden. On a lazy host an open section there builds on its first show.
+function P.TabLazySection(builder, routed)
+    local lazy = builder.LazyCollapsibleSection
+    if not lazy then return nil end
+    return function(self, sectionId, title, height, open, build, opts)
+        local merged = { deferWhileHidden = routed(sectionId) }
+        for key, value in pairs(opts or {}) do
+            if merged[key] == nil then merged[key] = value end
+        end
+        return lazy(self, sectionId, title, height, open, build, merged)
+    end
+end
+
 -- A collapsible section built from catalog rules, with optional help text.
 -- opts: help, open, keyFn, columns, onEnsureVisible, extra(body, y) -> y,
--- copy (see P.AttachSectionReset)
+-- copy (see P.AttachSectionReset), onBuilt(body, entries) once the controls
+-- exist. A lazy host builds a closed section's controls on first open, so
+-- the returned entries are nil until then. MSUF Colors stays eager: its
+-- painter works on the color rows of every section.
 function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     opts = opts or {}
-    local body = b:CollapsibleSection(sectionId, title, 120, opts.open)
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
-    local y = -18
-    if opts.help then
-        local help = P.Description(body, opts.help, 16, y, width, title)
-        y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
+    local built, entries = P.RuleRows(pageKey, id, rules, opts.keyFn, sectionId), nil
+    local function Content(body)
+        local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+        local y = -18
+        if opts.help then
+            local help = P.Description(body, opts.help, 16, y, width, title)
+            y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
+        end
+        y, entries = P.RuleGrid(ctx, body, pageKey, id, rules, y, width, opts.keyFn, sectionId, opts.columns, built)
+        if opts.extra then y = opts.extra(body, y, width) or y end
+        P.AttachRuleColors(body, title, id, rules, opts.keyFn)
+        return y
     end
-    local entries
-    y, entries = P.RuleGrid(ctx, body, pageKey, id, rules, y, width, opts.keyFn, sectionId, opts.columns)
-    if opts.extra then y = opts.extra(body, y, width) or y end
-    P.AttachRuleColors(body, title, id, rules, opts.keyFn)
-    P.AttachSectionReset(ctx, body, title, function()
-        return P.ResetRules(id, rules, opts.keyFn, opts.resetKeys)
-    end, opts.copy)
-    local entry = body._msuf2CollapsibleEntry
-    if entry and opts.onEnsureVisible then entry._msuf2EnsureVisible = opts.onEnsureVisible end
-    P.FinishBody(b, body, y)
+    local body = P.LazySection(b, sectionId, title, opts.open, {
+        content = Content, eager = pageKey == "colors",
+        shell = function(section)
+            P.AttachSectionReset(ctx, section, title, function()
+                return P.ResetRules(id, rules, opts.keyFn, opts.resetKeys)
+            end, opts.copy)
+            local entry = section._msuf2CollapsibleEntry
+            if entry and opts.onEnsureVisible then entry._msuf2EnsureVisible = opts.onEnsureVisible end
+        end,
+        summary = function(section) P.AttachRowsSummary(ctx, section, built.rows) end,
+        finish = function(section, y)
+            P.FinishBody(b, section, y)
+            if opts.onBuilt then opts.onBuilt(section, entries) end
+        end,
+    })
     return body, entries
 end
 

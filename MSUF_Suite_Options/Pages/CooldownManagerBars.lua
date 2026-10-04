@@ -209,7 +209,7 @@ local function NewBarValues(slot, kind, reused)
     if reused then ResetSlot(slot, values) end
     values[keys.on], values[keys.kind] = true, kind
     local name = Tr(DEFAULT_NAMES[kind]) .. " " .. slot:sub(2)
-    if #name > RULES[keys.name].maxLength then name = "Bar " .. slot:sub(2) end
+    if #name > RULES[keys.name].maxLength then name = Tr("Bar %d"):format(tonumber(slot:sub(2))) end
     values[keys.name] = name
     local anchor = values[keys.anchor] or P.Get(ID, keys.anchor)
     if anchor == FREE then

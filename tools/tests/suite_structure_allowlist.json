@@ -759,6 +759,12 @@
    "symbol": "skin.Theme.ResetColors"
   },
   {
+   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 lazy-accordion export (MSUF_Menu2_Widgets_PageBuilder.lua, with b:LazyCollapsibleSection); older MSUF menus build every section at once, so there is nothing to build",
+   "symbol": "W.EnsureSectionContent"
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",

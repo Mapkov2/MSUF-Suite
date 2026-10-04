@@ -97,6 +97,8 @@ function Page.Builder(ctx)
         local owner = body._msufSuiteActionBarBuilder or builder
         return owner:FinishSection(body, pad)
     end
+    -- Grouped sections sit in tab panels; hidden ones build on first show.
+    facade.LazyCollapsibleSection = P.TabLazySection(builder, function(sectionId) return GroupFor(sectionId) ~= nil end)
     return setmetatable(facade, { __index = builder, __newindex = function(_, key, value) builder[key] = value end })
 end
 
@@ -148,29 +150,41 @@ end
 
 -- Essential controls remain visible; offsets and optional fine adjustments
 -- expand in place. Both sets retain their exact catalog/search identities.
+-- A lazy host builds a closed section's controls on first open (P.LazySection).
 function Page.Rules(ctx, builder, sectionId, title, rules, opts)
     opts = opts or {}
-    local body = builder:CollapsibleSection(sectionId, title, 120, opts.open)
-    body._msufSuiteActionBarSectionId = sectionId
-    local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
-    local y, primary, advanced = -18, {}, {}
-    if opts.help then
-        local hint = P.Description(body, opts.help, 16, y, width, title)
-        y = y - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
-    end
+    local primary, advanced, entries = {}, {}, nil
     for _, rule in ipairs(rules) do
         local suffix = rule.key:match("^bar%d+(.+)$") or rule.key
         local target = (not opts.essential or opts.essential[suffix]) and primary or advanced
         target[#target + 1] = rule
     end
-    local entries
-    y, entries = P.RuleGrid(ctx, body, "suite_actionbars", "actionbars", primary, y, width, opts.keyFn, sectionId)
-    Page.Prepare(body, entries)
-    if opts.extra then y = opts.extra(body, y, width) or y end
-    y = BuildDetails(ctx, builder, body, sectionId, advanced, y, width, opts.keyFn)
-    P.AttachRuleColors(body, title, "actionbars", rules, opts.keyFn)
-    P.AttachSectionReset(ctx, body, title, function() return P.ResetRules("actionbars", rules, opts.keyFn) end, opts.copy)
-    P.FinishBody(builder, body, y)
+    local built = P.RuleRows("suite_actionbars", "actionbars", primary, opts.keyFn, sectionId)
+    local function Content(body)
+        body._msufSuiteActionBarSectionId = sectionId
+        local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
+        local y = -18
+        if opts.help then
+            local hint = P.Description(body, opts.help, 16, y, width, title)
+            y = y - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
+        end
+        y, entries = P.RuleGrid(ctx, body, "suite_actionbars", "actionbars", primary, y, width, opts.keyFn, sectionId, nil, built)
+        Page.Prepare(body, entries)
+        if opts.extra then y = opts.extra(body, y, width) or y end
+        y = BuildDetails(ctx, builder, body, sectionId, advanced, y, width, opts.keyFn)
+        P.AttachRuleColors(body, title, "actionbars", rules, opts.keyFn)
+        return y
+    end
+    local body = P.LazySection(builder, sectionId, title, opts.open, {
+        content = Content,
+        shell = function(section)
+            section._msufSuiteActionBarSectionId = sectionId
+            P.AttachSectionReset(ctx, section, title, function() return P.ResetRules("actionbars", rules, opts.keyFn) end,
+                opts.copy)
+        end,
+        summary = function(section) P.AttachRowsSummary(ctx, section, built.rows) end,
+        finish = function(section, y) P.FinishBody(builder, section, y) end,
+    })
     return body, entries
 end
 

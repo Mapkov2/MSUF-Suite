@@ -263,55 +263,69 @@ end
 -- (Tint glows, Class-colored border, ...) says otherwise.
 local function ColorEnabled(rule) return P.RuleEnabled(ID, rule, Page.KeyFn) end
 
+-- Layout's bar actions below its controls.
+local function LayoutButtons(ctx, body, y, width, sectionId)
+    local half = floor((width - 12) / 2)
+    -- Navigation needs no snapshot; the reset records its own history entry.
+    P.Button(ctx, body, "Move this bar on screen", 16, y - 4, half, function() P.MoveOnScreen(ID, Page.selected) end,
+        function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.IsOn(Page.selected) and Page.Movable(Page.selected) end,
+        P.Meta(PAGE, ID, "editor.move", "action", sectionId))._msuf2SkipHistoryCheckpoint = true
+    P.Button(ctx, body, "Reset this bar's settings", 28 + half, y - 4, half, function() Page.ResetBar(Page.selected) end,
+        function() return S.Availability(ID) and true or false end,
+        P.Meta(PAGE, ID, "editor.reset", "action", sectionId))._msuf2SkipHistoryCheckpoint = true
+    return y - 40
+end
+
+-- A lazy host builds a closed section's controls on first open
+-- (P.LazySection). Its header (bar name, badge, "...") is there at once.
 local function BuildSection(ctx, b, ui, spec)
     local sectionId = "suite_cooldownManager_" .. spec.id
-    local body = b:CollapsibleSection(sectionId, Tr(spec.title), 120, spec.open == true)
-    -- The selected bar and availability badge already summarize this header.
-    body._msufSuiteSkipSummary = true
-    local width = max(240, (body._msuf2Width or b.width or 720) - 32)
-    local y = Help(body, HELP[spec.id], -18, width)
-    local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)
-    y = y - 20
-    -- The attach list (Basics) and grow list (Layout) are repainted before the
-    -- dropdowns that show them read their captions (refreshers run in order).
-    if spec.id == "basics" then M.TrackRefresh(ctx, function() if not P.Combat() then PaintChoices() end end) end
-    local rules = {}
-    for i, suffix in ipairs(spec.suffixes) do rules[i] = RULES[KEYS.c1[suffix]] end
-    y = RuleGrid(ctx, body, rules, y, width, sectionId)
-    if spec.module then
-        P.Text(body, "These apply to every bar:", 16, y - 6, width, T.colors.text)
-        local shared = P.SectionRules(ID, spec.module)
-        y = RuleGrid(ctx, body, shared, y - 28, width, sectionId)
-        for _, rule in ipairs(shared) do rules[#rules + 1] = rule end
-    end
-    P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn, ColorEnabled)
-    P.AttachSectionReset(ctx, body, spec.title, function()
-        return P.ResetRules(ID, rules, Page.ResetKeyFn)
-    end)
-    if spec.id == "layout" then
-        local half = floor((width - 12) / 2)
-        -- Navigation needs no snapshot; the reset records its own history entry.
-        P.Button(ctx, body, "Move this bar on screen", 16, y - 4, half, function() P.MoveOnScreen(ID, Page.selected) end,
-            function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.IsOn(Page.selected) and Page.Movable(Page.selected) end,
-            P.Meta(PAGE, ID, "editor.move", "action", sectionId))._msuf2SkipHistoryCheckpoint = true
-        P.Button(ctx, body, "Reset this bar's settings", 28 + half, y - 4, half, function() Page.ResetBar(Page.selected) end,
-            function() return S.Availability(ID) and true or false end,
-            P.Meta(PAGE, ID, "editor.reset", "action", sectionId))._msuf2SkipHistoryCheckpoint = true
-        y = y - 40
-    end
-    ui.sections[spec.id] = body
-    M.TrackRefresh(ctx, function()
-        if P.Combat() then return end
-        local state, why = SectionState(spec)
-        local kind = Page.KindName(Page.Kind(Page.selected))
-        if body._cdmState ~= state or body._cdmStateKind ~= kind then
-            body._cdmState, body._cdmStateKind = state, kind
-            Page.SetRaw(unused, StateText(state, why, kind))
+    local own, rules = {}, {}
+    for i, suffix in ipairs(spec.suffixes) do own[i], rules[i] = RULES[KEYS.c1[suffix]], RULES[KEYS.c1[suffix]] end
+    local shared = spec.module and P.SectionRules(ID, spec.module) or {}
+    for _, rule in ipairs(shared) do rules[#rules + 1] = rule end
+    local function Content(body)
+        local width = max(240, (body._msuf2Width or b.width or 720) - 32)
+        local y = Help(body, HELP[spec.id], -18, width)
+        local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)
+        y = y - 20
+        -- The attach list (Basics) and grow list (Layout) are repainted before the
+        -- dropdowns that show them read their captions (refreshers run in order).
+        if spec.id == "basics" then M.TrackRefresh(ctx, function() if not P.Combat() then PaintChoices() end end) end
+        y = RuleGrid(ctx, body, own, y, width, sectionId)
+        if spec.module then
+            P.Text(body, "These apply to every bar:", 16, y - 6, width, T.colors.text)
+            y = RuleGrid(ctx, body, shared, y - 28, width, sectionId)
         end
-        Header(body, spec.title, state == STATE.NONE_USED, kind)
-    end)
-    P.FinishBody(b, body, y)
-    return body
+        P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn, ColorEnabled)
+        if spec.id == "layout" then y = LayoutButtons(ctx, body, y, width, sectionId) end
+        M.TrackRefresh(ctx, function()
+            if P.Combat() then return end
+            local state, why = SectionState(spec)
+            local kind = Page.KindName(Page.Kind(Page.selected))
+            if body._cdmState ~= state or body._cdmStateKind ~= kind then
+                body._cdmState, body._cdmStateKind = state, kind
+                Page.SetRaw(unused, StateText(state, why, kind))
+            end
+        end)
+        return y
+    end
+    local function Shell(body)
+        -- The selected bar and availability badge already summarize this header.
+        body._msufSuiteSkipSummary = true
+        ui.sections[spec.id] = body
+        P.AttachSectionReset(ctx, body, spec.title, function()
+            return P.ResetRules(ID, rules, Page.ResetKeyFn)
+        end)
+        M.TrackRefresh(ctx, function()
+            if P.Combat() then return end
+            local state = SectionState(spec)
+            Header(body, spec.title, state == STATE.NONE_USED, Page.KindName(Page.Kind(Page.selected)))
+        end)
+    end
+    return P.LazySection(b, sectionId, Tr(spec.title), spec.open == true, {
+        content = Content, shell = Shell, finish = function(body, y) P.FinishBody(b, body, y) end,
+    })
 end
 
 ------------------------------------------------------------------ bar choice

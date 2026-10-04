@@ -84,8 +84,8 @@ end
 
 local function SharedRules(ctx, b, reveal, section, title, rules, opts)
     opts.onEnsureVisible = reveal
-    local body, entries = P.RuleSection(ctx, b, PAGE, ID, section, title, rules, opts)
-    P.DataTextPage.Prepare(entries, section, reveal)
+    opts.onBuilt = function(_, entries) P.DataTextPage.Prepare(entries, section, reveal) end
+    local body = P.RuleSection(ctx, b, PAGE, ID, section, title, rules, opts)
     return body
 end
 
@@ -132,8 +132,9 @@ end
 
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
+    local navigation = P.DataTextPage.Navigation(ctx, b)
     P.ModuleCard(ctx, b, PAGE, ID, {}, { title = "DataTexts", open = false })
-    P.DataTextPage.Build(ctx, b, Shared)
+    P.DataTextPage.Build(ctx, b, Shared, navigation)
 end
 
 P.RegisterPage({ key = PAGE, label = "DataTexts", title = "DataTexts", build = Build, icon = { 5, 2 },

@@ -285,7 +285,7 @@ local function RegisterSuiteLayers()
         end
         local meter = S.Config("damageMeter")
         for i = 1, Suite.DamageMeterMaxWindows do
-            Add("Suite Damage Meter", "Window " .. i, "Whole window", "damageMeter", "w" .. i .. "Layer",
+            Add("Suite Damage Meter", P.Tr("Window %d"):format(i), "Whole window", "damageMeter", "w" .. i .. "Layer",
                 meter.enabled and i <= meter.windowCount)
         end
         local actions = S.Config("actionbars")
