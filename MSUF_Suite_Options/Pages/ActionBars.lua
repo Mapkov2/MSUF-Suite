@@ -14,7 +14,7 @@ local HELP = {
     cooldowns = "Cooldown numbers, swipes and state colors come from the client's action data; nothing is polled.",
     text = "Fonts, outlines, shadows and Smooth/Sharp/Slug rendering for keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below. Slug has no shadow.",
     behavior = "Paging switches bar 1 between pages, like Blizzard's own main bar. Key bindings keep using Blizzard's commands.",
-    editor = P.Help("Select a bar to adjust its layout and visibility.", "Choose a bar to adjust its layout below. The preview uses sample buttons; empty slots and stances can differ in game."),
+    editor = "Select a bar to adjust its layout and visibility.",
 }
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
@@ -31,6 +31,14 @@ local GROUPS = {
         "BackgroundY", "BackgroundBorder" } },
 }
 local POSITION = { Point = true, X = true, Y = true }
+local ESSENTIAL = {
+    layout = { Buttons = true, Rows = true, Size = true, Spacing = true, Vertical = true, ShowEmpty = true },
+    text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
+        CountSize = true, CooldownSize = true, CooldownAutoSize = true },
+    visibility = { Visibility = true, Alpha = true, FadeAlpha = true },
+    ornaments = { LeftEndcap = true, LeftEndcapSize = true, RightEndcap = true, RightEndcapSize = true },
+    background = { Background = true, BackgroundAlpha = true, BackgroundPadding = true, BackgroundBorder = true },
+}
 P.ActionBarSearchGroups = GROUPS
 -- Copy To categories, one per section above, like the Unit and Group pages.
 local COPY_CATEGORIES = {
@@ -140,24 +148,24 @@ local function SetBarOn(index, on)
     if values then P.SetMany(ID, values) end
 end
 
-local function BuildQuick(ctx, b)
-    local section = "suite_actionbars_quick"
-    local body = b:CollapsibleSection(section, Tr("Choose your bars"), 120, true)
-    local width = math.max(260, (body._msuf2Width or b.width or 720) - 32)
+local function BuildQuick(ctx, body, y, width)
+    local section = "suite_actionbars_actionbars_module"
     local columns = width >= 560 and 2 or 1
     local cell = columns == 2 and math.floor((width - 12) / 2) or width
-    local help = P.Text(body, "Switch each bar on or off here. Turning it back on restores its previous visibility mode. Open Customize a bar below for layout and other options.", 16, -18, width)
-    local top = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 18
+    local help = P.Text(body, "Switch each bar on or off here. Turning it back on restores its previous visibility mode. Select Layout to customize the bar selected above.", 16, y, width)
+    local top = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 18
     for index = 1, COUNT do
         local bar = index
         local x = 16 + ((index - 1) % columns) * (cell + 12)
         local y = top - math.floor((index - 1) / columns) * 54
         local key = "bar" .. index .. "Visibility"
-        local meta = P.Meta(PAGE, ID, "quick.bar" .. index, "setting", section)
-        meta.settingKey = "msufsuite.actionbars." .. key
+        -- These switches are actions on a fixed bar. The selected bar's
+        -- mode dropdown keeps the sole template setting identity for search.
+        local meta = P.Meta(PAGE, ID, "quick.bar" .. index, "action", section)
         local toggle = M.BindSwitchAt(ctx, body, Tr(Suite.ActionBarTitles[index]), x, y, cell - 52,
             function() return P.Get(ID, key) ~= NEVER end,
             function(value) SetBarOn(bar, value == true) end, meta)
+        P.ActionBarMenu.Prepare(body, { { widget = toggle, rule = Rule(key), meta = meta, label = BarTitle(bar) } })
         local status = P.Text(body, "", x + 44, y - 26, cell - 44, T.colors.dim or T.colors.muted)
         M.TrackRefresh(ctx, function()
             W.SetControlEnabled(toggle, Available(bar) and not P.Combat())
@@ -175,75 +183,79 @@ local function BuildQuick(ctx, b)
             end
         end)
     end
-    P.AttachSectionReset(ctx, body, "Choose your bars", function()
+    P.AttachSectionReset(ctx, body, "Enable action bars", function()
         local keys = {}
+        keys[#keys + 1] = "enabled"
         for index = 1, COUNT do
             keys[#keys + 1] = "bar" .. index .. "Visibility"
             keys[#keys + 1] = "bar" .. index .. "ResumeVisibility"
         end
         return P.ResetRules(ID, {}, nil, keys)
     end)
-    P.FinishBody(b, body, top - math.ceil(COUNT / columns) * 54 - 4)
+    return top - math.ceil(COUNT / columns) * 54 - 4
 end
 
-local function BuildPreview(ctx, parent, y, width)
-    local height = 132
-    local host = CreateFrame("Frame", nil, parent)
-    host:SetPoint("TOPLEFT", 16, y)
-    host:SetSize(width, height)
-    local back = host:CreateTexture(nil, "BACKGROUND")
-    local tiles = {}
-    for i = 1, 12 do
-        local tile = CreateFrame("Frame", nil, host)
-        tile.fill = tile:CreateTexture(nil, "ARTWORK")
-        tile.fill:SetAllPoints()
-        tile.fill:SetColorTexture(0.08, 0.20, 0.34, 1)
-        tile.label = T.Font(tile, "GameFontHighlightSmall", tostring(i), T.colors.muted)
-        tile.label:SetPoint("CENTER")
-        tiles[i] = tile
+local function BuildPreview(ctx, parent, y, width, height)
+    return P.ActionBarPreview.Build(ctx, parent, y, width, height, function() return selected end)
+end
+
+-- The selected bar stays above the scroller, so every topic keeps its scope.
+local function BuildSelection(ctx, b, attachCopy)
+    local body
+    local narrow = (b.width or ctx.width or 720) - 32 < 560
+    local height = narrow and 294 or 256
+    if W.FixedPreviewSection then
+        body = W.FixedPreviewSection(ctx, b, { title = Tr("Selected bar"), height = height })
+        -- The host caps compact previews at 180px; this header also contains
+        -- navigation and bar controls. Reserve its full height in the dock.
+        body._msuf2FixedPreviewActiveHeight = height
+        body:SetHeight(height)
+    else
+        body = b:Section(Tr("Selected bar"), height)
     end
-    local caption = P.Text(host, "", 0, -(height - 14), width)
-    local function Paint()
-        local p = "bar" .. selected
-        local count = P.Get(ID, p .. "Buttons")
-        local rows, vertical, start = P.Get(ID, p .. "Rows"), P.Get(ID, p .. "Vertical"), P.Get(ID, p .. "Start")
-        local size, gap = P.Get(ID, p .. "Size"), P.Get(ID, p .. "Spacing")
-        local columns, lines, r = Suite.ActionBarGrid(count, rows, vertical)
-        local realW = columns * size + (columns - 1) * gap
-        local realH = lines * size + (lines - 1) * gap
-        local fit = math.min(1, (width - 16) / math.max(1, realW), (height - 30) / math.max(1, realH))
-        local left = (width - realW * fit) / 2
-        local top = -((height - 22) - realH * fit) / 2
-        for i, tile in ipairs(tiles) do
-            tile:SetShown(i <= count)
-            if i <= count then
-                local column, row = Suite.ActionBarCell(i - 1, columns, lines, r, vertical, start)
-                tile:ClearAllPoints()
-                tile:SetSize(size * fit, size * fit)
-                tile:SetPoint("TOPLEFT", host, "TOPLEFT", left + column * (size + gap) * fit, top - row * (size + gap) * fit)
-            end
+    ctx._msufSuiteActionBarHeader = body
+    if body.title then body.title:Hide() end
+    local width = (body._msuf2Width or b.width or 720) - 32
+    local half, bars = math.floor((width - 12) / 2), {}
+    for i = 1, COUNT do bars[i] = { value = i, text = BarTitle(i) } end
+    local picker = M.BindDropdownAt(ctx, body, Tr("Selected bar"), 16, -54, bars, narrow and width - 100 or half,
+        function() return selected end,
+        function(value)
+            selected = tonumber(value) or 1
+            P.Refresh()
+        end,
+        P.Meta(PAGE, ID, "editor.selected", "ephemeral", "suite_actionbars_editor"))
+    local meta = P.Meta(PAGE, ID, "selected.enabled", "action", "suite_actionbars_bar_visibility")
+    local toggle = M.BindSwitchAt(ctx, body, Tr("Show this bar"), narrow and 16 or 28 + half,
+        narrow and -112 or -68, narrow and width or width - half - 106,
+        function() return not BarOff(selected) end,
+        function(value)
+            if P.Combat() then return end
+            SetBarOn(selected, value == true)
+        end, meta)
+    M.TrackRefresh(ctx, function() W.SetControlEnabled(toggle, Available(selected) and not P.Combat()) end)
+    local copyTo, copyButton = attachCopy(ctx, body, -44)
+    if copyTo then M.TrackRefresh(ctx, function() copyTo.Refresh() end) end
+    ctx._msufSuiteActionBarScopedControls = {
+        suite_actionbars_bar_visibility = { widget = toggle, meta = meta,
+            rule = { key = "selected.enabled", label = "Show this bar" } },
+        suite_actionbars_editor = { widget = copyButton,
+            meta = P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"),
+            rule = { key = "editor.copyTo", label = "Copy To" } },
+    }
+    BuildPreview(ctx, body, narrow and -148 or -110, width, 132)
+    function ctx.RefreshActionBarScope()
+        local shared = P.ActionBarMenu.IsShared(ctx)
+        if picker._msuf2Title then P.SetTranslatedText(picker._msuf2Title, Tr(shared and "Preview bar" or "Selected bar")) end
+        W.SetControlShown(toggle, not shared)
+        if copyButton then
+            copyButton:SetShown(not shared)
+            if shared then copyTo.Hide() end
         end
-        local showBack = P.Get(ID, p .. "Background")
-        back:SetShown(showBack)
-        if showBack then
-            local pad = P.Get(ID, p .. "BackgroundPadding") * fit
-            local px, py = P.Get(ID, p .. "BackgroundPaddingX"), P.Get(ID, p .. "BackgroundPaddingY")
-            px, py = px < 0 and pad or px * fit, py < 0 and pad or py * fit
-            local x, y = P.Get(ID, p .. "BackgroundX") * fit, P.Get(ID, p .. "BackgroundY") * fit
-            local r, g, b = P.RGB(P.Get(ID, p .. "BackgroundColor"))
-            back:SetColorTexture(r, g, b, P.Get(ID, p .. "BackgroundAlpha") / 100)
-            back:ClearAllPoints()
-            back:SetPoint("TOPLEFT", host, "TOPLEFT", left + x - px, top + y + py)
-            back:SetSize(realW * fit + px * 2, realH * fit + py * 2)
-        end
-        host:SetAlpha(math.max(0.25, P.Get(ID, p .. "Alpha") / 100))
-        local text = Tr(Suite.ActionBarTitles[selected])
-        if P.Get(ID, p .. "Visibility") == NEVER then text = text .. "  (" .. Tr("hidden") .. ")" end
-        if not Available(selected) then text = text .. "  (" .. Tr("not available on this client") .. ")" end
-        caption:SetText(text)
+        P.ActionBarPreview.RefreshScope(ctx._msufSuiteActionBarPreview)
     end
-    M.TrackRefresh(ctx, Paint)
-    return height
+    M.TrackRefresh(ctx, ctx.RefreshActionBarScope)
+    if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
 end
 
 -- Reuse the shared Copy To popup with independently selectable destinations.
@@ -352,7 +364,7 @@ local function AttachCopyTo(ctx, body, y)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(copy, P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"), "Copy To", "button")
     end
-    return api
+    return api, copy
 end
 
 local function BuildEditor(ctx, b)
@@ -361,19 +373,6 @@ local function BuildEditor(ctx, b)
     local half = math.floor((width - 12) / 2)
     local help = P.Description(body, HELP.editor, 16, -18, width)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
-    local bars = {}
-    for i = 1, COUNT do bars[i] = { value = i, text = Tr(Suite.ActionBarTitles[i]) } end
-    local copyTo = AttachCopyTo(ctx, body, y)
-    M.BindDropdownAt(ctx, body, Tr("Selected bar"), 16, y, bars, half,
-        function() return selected end,
-        function(value)
-            selected = tonumber(value) or 1
-            if copyTo then copyTo.Refresh() end
-            P.Refresh()
-        end,
-        P.Meta(PAGE, ID, "editor.selected", "ephemeral", "suite_actionbars_editor"))
-    y = y - 62
-    y = y - BuildPreview(ctx, body, y, width) - 8
     local quarter = math.floor((width - 36) / 4)
     for i, preset in ipairs({ { "row", "One row" }, { "double", "Two rows" }, { "grid", "Three rows" }, { "column", "One column" } }) do
         P.Button(ctx, body, preset[2], 16 + (i - 1) * (quarter + 12), y, quarter, function() Preset(selected, preset[1]) end,
@@ -425,37 +424,43 @@ P.SearchPreparers[ID] = function(rule)
 end
 
 local function Build(ctx)
-    local b = W.PageBuilder(ctx)
+    local b = P.ActionBarMenu.Builder(ctx)
+    BuildSelection(ctx, b, AttachCopyTo)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Key bindings", function() if S.OpenQuickKeybind then S.OpenQuickKeybind() end end,
           function() return S.OpenQuickKeybind ~= nil end, key = "bindings" },
         { "Move on screen", function() P.MoveOnScreen(ID, "bar1") end, nil, key = "move" },
         { "Reload UI", function() ReloadUI() end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
-    })
-    P.RuleSection(ctx, b, PAGE, ID, "suite_actionbars_look", Tr("Choose a look"),
+    }, { title = "Enable action bars", open = false, help = "Shared settings affect every action bar.",
+        prepareControl = function(body, widget, key, kind, label)
+            P.ActionBarMenu.Prepare(body, { { widget = widget, rule = { key = key, label = label },
+                meta = P.Meta(PAGE, ID, key, kind, "suite_actionbars_actionbars_module") } })
+        end,
+        buildBody = function(body, y, width) return BuildQuick(ctx, body, y, width) end })
+    P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
             help = "Choose the shared button colors and frame. Layout, bindings and visibility stay as set. Changing an individual color switches the label to Custom.",
             extra = P.LookPresetButtons(ctx, PAGE, ID, "suite_actionbars_look"),
         })
-    BuildQuick(ctx, b)
-    BuildEditor(ctx, b)
     local templates = P.SectionRules(ID, "bar1")
     for _, group in ipairs(GROUPS) do
         local rules = {}
         for _, rule in ipairs(templates) do
             if GroupOf(rule.key:sub(5)) == group.id then rules[#rules + 1] = rule end
         end
-        P.RuleSection(ctx, b, PAGE, ID, "suite_actionbars_bar_" .. group.id, Tr(group.title), rules,
-            { keyFn = BarKey, open = false, copy = SectionCopy(group.id),
+        P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_bar_" .. group.id, Tr(group.title), rules,
+            { keyFn = BarKey, open = false, copy = SectionCopy(group.id), essential = ESSENTIAL[group.id],
               help = group.id == "visibility" and "The quick switch above remembers this mode when you turn the bar off. Choose Never to keep it hidden." or nil })
     end
+    BuildEditor(ctx, b)
     for _, section in ipairs({ "appearance", "cooldowns", "text", "behavior" }) do
         local rules = P.SectionRules(ID, section)
-        P.RuleSection(ctx, b, PAGE, ID, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,
+        P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = false })
     end
+    P.ActionBarMenu.Finish(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "Action bars", title = "Action bars", build = Build, icon = { 2, 2 },

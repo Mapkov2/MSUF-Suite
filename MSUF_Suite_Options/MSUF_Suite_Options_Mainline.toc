@@ -11,6 +11,9 @@
 Menu\Bridge.lua
 Menu\Controls.lua
 Menu\SectionActions.lua
+Pages\ActionBarsWorkspace.lua
+Pages\ActionBarsPreviewData.lua
+Pages\ActionBarsPreview.lua
 Pages\ActionBars.lua
 Pages\MinimapPreviewArt.lua
 Pages\MinimapPreviewPaint.lua

@@ -1599,6 +1599,30 @@
       "evidence": "MSUF_Suite/Core/InstallerProfiles.lua and Installer.lua retain both layouts on both clients; tools/tests/suite_installer_contract.lua verifies both choices, authored colors and five explicit palettes. New label: MSUF Suite Forever",
       "reason": "Clarifies Suite layout selection and separates profile colors without removing a setup choice.",
       "date": "2026-10-03"
+    },
+    {
+      "category": "locale",
+      "item": "Switch each bar on or off here. Turning it back on restores its previous visibility mode. Open Customize a bar below for layout and other options.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/ActionBars.lua retains every independent quick switch and layout control. ActionBarsWorkspace.lua routes layout to its own tab; suite_options_menu_contract.lua checks selected-bar mapping, original section identities, exact detail reveal and old/narrow host selection. Replacement text points to Layout and the fixed selected-bar header.",
+      "reason": "Updates the navigation hint after grouping only the action bar menu; no feature, switch or layout setting is removed.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Choose a bar to adjust its layout below. The preview uses sample buttons; empty slots and stances can differ in game.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua reads current action icons, counts, bindings and cooldown duration objects; ActionBarsPreview.lua renders the selected bar and its configured style. suite_options_menu_contract.lua checks live changes, layout and subscription cleanup. The editor retains Select a bar to adjust its layout and visibility. and adds Click the preview to open the matching settings.",
+      "reason": "Replaces the obsolete sample-only hint with live preview navigation; no action bar option is removed.",
+      "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Choose your bars",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/ActionBars.lua BuildQuick now builds within Enable action bars; suite_options_menu_contract preserves quick switches and resume visibility on both clients.",
+      "reason": "User requested removing the separate accordion and placing its individual switches inside Enable action bars. No setting removed.",
+      "date": "2026-10-04"
     }
   ]
 }

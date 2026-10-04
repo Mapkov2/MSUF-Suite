@@ -724,6 +724,255 @@ do
     local bars={key="suite_actionbars",width=720,refreshers={},widgets={},sections={},pageItems={},entry={sections={}}}
     current=bars
     M.pages.suite_actionbars.build(bars)
+    -- The bar workspace changes only the view. Exact search reveals its tab
+    -- and fine settings before focus, retaining the original section identity.
+    do
+        local workspace = assert(bars._msufSuiteActionBarWorkspace, "action bar settings still use a flat accordion")
+        assert(bars.pageItems[1] == "fixed-preview" and bars.fixedPreview,
+            "selected bar preview does not precede the scrolling settings")
+        assert(bars.fixedPreview.record.heightResolver() == 256 and bars.fixedPreview.section:GetHeight() == 256,
+            "host compact-preview clamp leaves actionbar controls overlapping the settings viewport")
+        local function Control(path)
+            for _, widget in ipairs(bars.widgets) do
+                if widget.meta and widget.meta.controlId == "menu2.suite_actionbars.actionbars." .. path then return widget end
+            end
+            return registeredControls["menu2.suite_actionbars.actionbars." .. path]
+        end
+        local function Section(id)
+            for _, body in ipairs(bars.sections) do if body.sectionId == "suite_actionbars_" .. id then return body end end
+        end
+        local cfg, previousCurrent = S.Config("actionbars"), current
+        current = bars
+        local before, oldBar, historyBefore = {}, Control("editor.selected").get(), historyWrites
+        for key, value in pairs(cfg) do before[key] = value end
+        assert(workspace.groups.shared.frame:IsShown() and not workspace.groups.layout.frame:IsShown()
+            and bars.tabControls[1].segment.values[1].value == "shared",
+            "All action bars must be the first tab and the initial workspace")
+        local preview = bars._msufSuiteActionBarPreview
+        local copy = Control("editor.copyTo")
+        assert(Control("editor.selected")._msuf2Title.text == optionsNS.Tr("Preview bar")
+            and preview.status.text == optionsNS.Tr("Shared settings affect every action bar.")
+            and not Control("selected.enabled").shown and not copy.shown,
+            "shared settings misleadingly expose selected-bar editing controls")
+        assert(not Control("selected.enabled")._msuf2Label.shown and not Control("selected.enabled")._msuf2LabelHit.shown,
+            "shared settings retain the native switch's sibling label or clickable hit area")
+        assert(Section("actionbars_module").title == optionsNS.Tr("Enable action bars"),
+            "module switch still duplicates the All action bars category label")
+        assert(not Section("quick") and Control("quick.bar3").meta.sectionId == "suite_actionbars_actionbars_module",
+            "individual bar switches must live inside Enable action bars")
+        workspace.select("text")
+        Control("quick.bar3"):_msuf2PrepareExactSearchTarget()
+        assert(workspace.selected == "shared", "search cannot reveal the merged individual bar switches")
+        copy:_msuf2PrepareExactSearchTarget()
+        assert(workspace.selected == "layout" and copy.shown,
+            "search could not reveal the scoped Copy To control")
+        copy.scripts.OnClick(copy)
+        local copyPopup
+        for _, candidate in ipairs(copyPopups) do if candidate.button == copy then copyPopup = candidate end end
+        assert(copyPopup.shown)
+        workspace.select("shared")
+        assert(not copyPopup.shown and not copy.shown, "scoped copy popup remained open in shared settings")
+        Control("selected.enabled"):_msuf2PrepareExactSearchTarget()
+        assert(workspace.selected == "visibility" and Control("selected.enabled").shown,
+            "search could not reveal the selected-bar switch")
+        assert(Control("selected.enabled")._msuf2Label.shown and Control("selected.enabled")._msuf2LabelHit.shown,
+            "returning to individual settings did not restore the whole switch")
+        assert(not Section("editor").defaultOpen and Section("bar_layout").defaultOpen,
+            "primary layout controls should start open and optional tools collapsed")
+        assert(not Section("bar_layout")._msufSuiteActionBarDetails.panel:IsShown(), "fine offsets start expanded")
+        workspace.select("text")
+        assert(workspace.groups.text.frame:IsShown() and not workspace.groups.layout.frame:IsShown(), "tab selection did not update")
+        assert(Control("editor.selected")._msuf2Title.text == optionsNS.Tr("Selected bar")
+            and preview.status.text == string.format(optionsNS.Tr("Editing: %s"), optionsNS.Tr("Action bar 1")),
+            "individual-bar settings do not identify the editing scope")
+        local details = Section("bar_layout")._msufSuiteActionBarDetails
+        local modeOwners = 0
+        for _, widget in ipairs(bars.widgets) do
+            if widget.meta and widget.meta.settingKey == "msufsuite.actionbars.bar1Visibility" then modeOwners = modeOwners + 1 end
+        end
+        assert(modeOwners == 1, "visibility-mode search can resolve to a fixed-bar switch")
+        Control("bar1X"):_msuf2PrepareExactSearchTarget()
+        assert(workspace.selected == "layout" and details.panel:IsShown(), "exact search left a fine setting hidden")
+        assert(workspace.body:GetHeight() >= workspace.groups.layout.height, "fine settings were clipped by the workspace")
+        assert(workspace.navigation == bars.fixedPreview.section and workspace.inset == 0,
+            "category navigation is not above the live preview in the fixed header")
+        assert(bars.tabControls[1].segment.points[1][5] == -12 and not bars.tabControls[1].segment._msuf2Title.shown,
+            "native category title inset overlaps the selected-bar label")
+        details.toggle:GetScript("OnClick")()
+        assert(not details.panel:IsShown(), "fine settings cannot collapse again")
+        workspace.select("text")
+        local exact = Control("bar1X").registeredMeta
+        assert(type(exact) == "table", "warm search row lost its stable metadata")
+        assert(exact.searchPrepareKind == "actionbarWorkspace" and exact.searchPrepareValue == "bar1X",
+            "warm search row lacks its workspace prepare contract")
+        assert(exact.settingKey == "msufsuite.actionbars.bar1X" and exact.sectionId == "suite_actionbars_bar_layout"
+            and exact.controlId == "menu2.suite_actionbars.actionbars.bar1X",
+            "label-only host metadata discarded the stable exact search identity")
+        assert(exact.prepareExactSearchTarget(Control("bar1X"), exact) == true and details.panel:IsShown()
+            and workspace.selected == "layout", "warm exact control identity left its target hidden")
+        details.show(false)
+        workspace.select("text")
+        Section("bar_background")._msuf2CollapsibleEntry._msuf2EnsureVisible()
+        assert(workspace.selected == "appearance", "section search cannot reveal a hidden tab")
+        assert(historyWrites == historyBefore, "workspace view changes wrote profile history")
+        for key, value in pairs(before) do assert(cfg[key] == value, "view navigation changed " .. key) end
+        local picker, toggle = Control("editor.selected"), Control("selected.enabled")
+        assert(toggle.meta.classification == "action" and toggle.meta.settingKey == nil,
+            "selected bar switch shadows the exact visibility-mode search target")
+        picker.set(3)
+        cfg.bar3Visibility = 4
+        toggle.set(false)
+        assert(cfg.bar3Visibility == 6 and cfg.bar3ResumeVisibility == 4 and cfg.enabled == before.enabled,
+            "selected bar switch disabled the module or lost the visibility rule")
+        toggle.set(true)
+        assert(cfg.bar3Visibility == 4 and cfg.bar1Visibility == before.bar1Visibility, "selected switch hit the wrong bar")
+        assert(historyWrites == historyBefore + 2, "selected bar switches do not form independent undo steps")
+        local previousTabs, previousFixed = W.SegmentTabs, W.FixedPreviewSection
+        W.SegmentTabs, W.FixedPreviewSection = nil, nil
+        local narrow = { key = "suite_actionbars", width = 430, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+        M.pages.suite_actionbars.build(narrow)
+        local fallback = assert(narrow._msufSuiteActionBarWorkspace.selector, "old or narrow host lacks the settings selector")
+        assert(fallback.get() == "appearance", "reopening the actionbar menu forgot the last category")
+        assert(fallback.points[1][5] == -12 and not fallback._msuf2Title.shown,
+            "native category dropdown overlaps the selected-bar label")
+        fallback.set("visibility")
+        assert(fallback.get() == "visibility" and narrow._msufSuiteActionBarWorkspace.groups.visibility.frame:IsShown(),
+            "narrow selector did not switch the visible settings")
+        W.SegmentTabs, W.FixedPreviewSection = previousTabs, previousFixed
+        local narrowDocked = { key = "suite_actionbars", width = 430, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+        M.pages.suite_actionbars.build(narrowDocked)
+        assert(narrowDocked.fixedPreview.record.heightResolver() == 294
+            and narrowDocked._msufSuiteActionBarWorkspace.selector.points[1][5] == -12,
+            "narrow host did not reserve the stacked controls and preview height")
+        picker.set(oldBar)
+        for key, value in pairs(before) do cfg[key] = value end
+        details.show(false)
+        workspace.select("layout")
+        current = previousCurrent
+    end
+    -- Live action-bar preview: actual action data, immediate style changes,
+    -- navigation-only clicks and bounded subscriptions on the visible page.
+    do
+        local ui = assert(bars._msufSuiteActionBarPreview, "action bar preview is still a sample grid")
+        local picker
+        for _, widget in ipairs(bars.widgets) do
+            if widget.meta and widget.meta.controlId == "menu2.suite_actionbars.actionbars.editor.selected" then picker = widget end
+        end
+        local c, saved, previousBar = S.Config("actionbars"), {}, picker.get()
+        for key, value in pairs(c) do saved[key] = value end
+        local duration, recharge = {}, {}
+        actionPreview.actions[1] = { icon = 135810, count = "4", name = "Live macro", duration = duration,
+            charges = { isActive = true, maxCharges = 2, currentCharges = 1 }, recharge = recharge }
+        actionPreview.bindings.ACTIONBUTTON1 = "SHIFT-1"
+        picker.set(1)
+        c.bar1Buttons, c.bar1Rows, c.bar1Size, c.bar1Spacing = 12, 2, 42, 3
+        c.bar1Keybind, c.bar1Macro, c.bar1ShowEmpty, c.iconZoom = true, true, true, 12
+        ui.Paint()
+        local tile = ui.tiles[1]
+        assert(tile.icon.texture == 135810 and tile.count.text == "4" and tile.name.text == "Live macro",
+            "preview does not show the actual spell, stack count and macro name")
+        assert(tile.key.text == optionsNS.ActionBarPreview.Key(1, 1) and tile.cooldown.durationObject == duration
+            and tile.chargeCooldown.durationObject == recharge,
+            "preview lost live key bindings or the native cooldown duration")
+        assert(tile.width == 42 and tile.icon.texCoords[1] == .12 and ui.tiles[7].points[1][5] == -45,
+            "preview did not repaint size, icon crop and row layout")
+        local initialScale = ui.canvas.scale
+        c.bar1KeybindY = 80
+        ui.Paint()
+        assert(ui.canvas.scale < initialScale and ui.host.clipsChildren,
+            "offset text can escape the preview into the header controls")
+        -- SetPoint offsets use the canvas scale natively. The decorated bar
+        -- must fit even when its background extends only towards one side.
+        do
+            local beforeBounds = {}
+            for key, value in pairs(c) do beforeBounds[key] = value end
+            c.bar1Rows, c.bar1Size, c.bar1Spacing = 1, 64, 6
+            c.bar1Keybind, c.bar1Macro, c.cooldownNumbers = false, false, false
+            c.bar1CountX, c.bar1CountY, c.borderExpansion, c.borderScale = 0, 0, 0, 100
+            c.bar1LeftEndcap, c.bar1RightEndcap = 1, 1
+            c.bar1Background, c.bar1BackgroundPaddingX, c.bar1BackgroundPaddingY = true, 80, 80
+            c.bar1BackgroundX, c.bar1BackgroundY = 80, 80
+            ui.Paint()
+            local point, scale = ui.canvas.points[1], ui.canvas.scale
+            local x, y = point[4] * scale, point[5] * scale
+            local back = ui.background
+            local bx, by = x + 80 * scale, y + 80 * scale
+            local halfWidth, halfHeight = back.width * scale / 2, back.height * scale / 2
+            assert(scale < 1 and bx - halfWidth >= -ui.width / 2 - .001
+                and bx + halfWidth <= ui.width / 2 + .001
+                and by - halfHeight >= -(ui.height - 44) / 2 + 2 - .001
+                and by + halfHeight <= (ui.height - 44) / 2 + 2 + .001,
+                "asymmetric decorated preview escapes its bounds after native anchor scaling")
+            for key, value in pairs(beforeBounds) do c[key] = value end
+        end
+        c.bar1KeybindY = saved.bar1KeybindY
+        c.bar1ShowEmpty = false
+        ui.Paint()
+        assert(tile.shown and not ui.tiles[2].shown, "empty-slot setting does not affect the live preview")
+        local historyBefore = historyWrites
+        tile.textHit.scripts.OnClick()
+        assert(bars._msufSuiteActionBarWorkspace.selected == "text", "preview key text did not open text settings")
+        tile.scripts.OnClick()
+        assert(bars._msufSuiteActionBarWorkspace.selected == "shared" and historyWrites == historyBefore,
+            "preview icon did not open button appearance without writing settings")
+        local copy
+        for _, candidate in ipairs(copyPopups) do
+            if candidate.opts.controlPath == "actionbars.copy" and candidate.button.parent == bars.fixedPreview.section then copy = candidate end
+        end
+        assert(copy and copy.button.points[1][1] == "TOPRIGHT" and copy.button.points[1][5] == -68,
+            "Copy To is not in the fixed header's upper-right corner")
+        local timers, previousTimer = {}, C_Timer
+        C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+        ui.host.events = {}
+        function ui.host:RegisterEvent(event) self.events[event] = true end
+        function ui.host:UnregisterAllEvents() self.events = {} end
+        ui.host.scripts.OnShow()
+        assert(ui.host.events.UPDATE_BINDINGS and ui.host.events.ACTIONBAR_SLOT_CHANGED, "live preview is not listening while visible")
+        assert(ui.host.events.UPDATE_SHAPESHIFT_COOLDOWN and ui.host.events.PET_UI_UPDATE and ui.host.events.UNIT_PET,
+            "preview misses stance cooldown or pet replacement updates")
+        assert(ui.host.events.SPELL_UPDATE_ICON and ui.host.events.UPDATE_SUMMONPETS_ACTION,
+            "preview misses icon changes that do not replace the action slot")
+        ui.host.scripts.OnEvent(ui.host, "UNIT_PET", "party1")
+        assert(#timers == 0, "another player's pet repainted the actionbar preview")
+        actionPreview.actions[1].icon = 136048
+        ui.host.scripts.OnEvent(ui.host, "SPELL_UPDATE_ICON")
+        ui.host.scripts.OnEvent(ui.host, "UPDATE_SUMMONPETS_ACTION")
+        assert(#timers == 1, "preview events are not coalesced")
+        table.remove(timers, 1)()
+        assert(tile.icon.texture == 136048, "an action change did not repaint the preview")
+        ui.host.scripts.OnEvent()
+        ui.host.scripts.OnHide()
+        local reads = actionPreview.reads
+        table.remove(timers, 1)()
+        assert(not next(ui.host.events) and actionPreview.reads == reads and not ui.host:GetScript("OnUpdate"),
+            "hidden preview retained subscriptions or background painting")
+        C_Timer = previousTimer
+        actionPreview.forms[1] = 132276
+        picker.set(11); ui.Paint()
+        assert(tile.icon.texture == 132276 and tile.cooldown.cooldown[1] == 10,
+            "stance preview used action-bar slots or omitted its cooldown")
+        actionPreview.pet[1] = { name = "Attack", icon = 132152 }
+        picker.set(12); ui.Paint()
+        assert(tile.icon.texture == 132152 and tile.cooldown.cooldown[2] == 40,
+            "pet preview used action-bar slots or omitted its cooldown")
+        local petCooldown = GetPetActionCooldown
+        actionPreview.secret = 987654321
+        for secretIndex = 1, 3 do
+            GetPetActionCooldown = function()
+                local values = { 30, 40, 1 }
+                values[secretIndex] = actionPreview.secret
+                return unpack(values)
+            end
+            ui.Paint()
+            assert(rawget(tile.cooldown, "cooldown") == nil, "legacy preview passed protected cooldown data to SetCooldown")
+        end
+        GetPetActionCooldown, actionPreview.secret = petCooldown, nil
+        actionPreview.actions[1], actionPreview.forms[1], actionPreview.pet[1] = nil, nil, nil
+        actionPreview.bindings.ACTIONBUTTON1 = nil
+        for key, value in pairs(saved) do c[key] = value end
+        picker.set(previousBar)
+        bars._msufSuiteActionBarWorkspace.select("layout")
+    end
     local function Find(ctx,predicate)
         for _,widget in ipairs(ctx.widgets) do if predicate(widget) then return widget end end
     end
@@ -3015,7 +3264,8 @@ local quick2 = Find(bars, function(w) return w.meta and tostring(w.meta.controlI
 local quick3 = Find(bars, function(w) return w.meta and tostring(w.meta.controlId):find("quick%.bar3") end)
 local quick6 = Find(bars, function(w) return w.meta and tostring(w.meta.controlId):find("quick%.bar6") end)
 assert(quick2 and quick3 and quick6 and quick3.get() and quick6.get(), "quick bar switches missing")
-assert(quick3.meta.settingKey == "msufsuite.actionbars.bar3Visibility", "quick switch search route")
+assert(quick3.meta.classification == "action" and quick3.meta.settingKey == nil,
+    "fixed bar switches shadow the selected bar's visibility-mode search route")
 quick3.set(false)
 assert(S.Config("actionbars").bar3Visibility == 6 and S.Config("actionbars").bar3ResumeVisibility == 4,
     "turning off a bar lost mouseover visibility")

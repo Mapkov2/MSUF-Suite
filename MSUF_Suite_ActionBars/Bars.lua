@@ -29,11 +29,9 @@ local BAR, START = AB.ENUM.BAR, AB.ENUM.START
 AB.nativeReuse = not NS.Client.isForever
 
 -- Slot of button 1 per owned bar; bar 1 pages from slot 1.
-AB.FIRST_SLOT = { 1, 61, 49, 25, 37, 145, 157, 169, 13, 109 }
+AB.FIRST_SLOT = NS.ActionBarFirstSlots
 -- Binding command prefix per bar. Bars 9/10 have no Blizzard counterpart.
-AB.COMMANDS = { "ACTIONBUTTON", "MULTIACTIONBAR1BUTTON", "MULTIACTIONBAR2BUTTON", "MULTIACTIONBAR3BUTTON",
-    "MULTIACTIONBAR4BUTTON", "MULTIACTIONBAR5BUTTON", "MULTIACTIONBAR6BUTTON", "MULTIACTIONBAR7BUTTON",
-    "MSUFSUITE_BAR9_BUTTON", "MSUFSUITE_BAR10_BUTTON", "SHAPESHIFTBUTTON", "BONUSACTIONBUTTON" }
+AB.COMMANDS = NS.ActionBarCommands
 -- Blizzard bar and button prefix replaced by bars 1-8.
 AB.NATIVE_BARS = { "MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft",
     "MultiBar5", "MultiBar6", "MultiBar7" }
@@ -72,6 +70,18 @@ function AB.Available(index)
     return true
 end
 S.ActionBarAvailable = AB.Available
+
+-- Read-only preview seam: the secure attribute reflects custom/form paging
+-- immediately, before the deferred painter has cached the new slot.
+function S.ActionBarPreviewSlot(index, ordinal)
+    local bar = M.active and AB.bars[index]
+    local rec = bar and bar.buttons[ordinal]
+    if rec and rec.owned then
+        local slot = rec.button:GetAttribute("action")
+        if S.Public(slot) and type(slot) == "number" then return slot end
+        return rec.slot
+    end
+end
 
 -- Layout contract shared with the menu preview. n buttons, R = clamp(rows).
 -- Rows first: perRow = ceil(n/R), rows = ceil(n/perRow). Columns first:

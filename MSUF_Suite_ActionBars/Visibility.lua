@@ -313,6 +313,10 @@ local function WatchPanel(panel)
 end
 -- In combat the reveal waits: PLAYER_REGEN_ENABLED flushes it (Events.lua).
 function AB.SyncPanelReveal()
+    local quickOpen = WatchPanel(AB.Frame("QuickKeybindFrame"))
+    -- Binding surfaces are unprotected: close them immediately even if the
+    -- protected bar/grid restoration has to wait for combat to end.
+    AB.SyncQuickKeybind(quickOpen)
     if NS.IsCombatLocked() then
         AB.panelPending = true
         return
@@ -322,8 +326,7 @@ function AB.SyncPanelReveal()
     -- loads on demand.
     local spellbook = PlayerSpellsFrame and PlayerSpellsFrame.SpellBookFrame
     local spellbookOpen, macroOpen = WatchPanel(spellbook), WatchPanel(MacroFrame)
-    local open = spellbookOpen or macroOpen
-    open = M.config.showOnPanels and open or false
+    local open = quickOpen or (M.config.showOnPanels and (spellbookOpen or macroOpen)) or false
     if open == AB.panelsOpen then return end
     AB.panelsOpen = open
     AB.Reveal(16, open)

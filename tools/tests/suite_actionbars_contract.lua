@@ -401,6 +401,46 @@ TEMPLATES.ActionButtonTemplate=function(frame)
     -- BaseActionButtonMixin_OnAttributeChanged -> UpdateFlyout.
     frame.scripts.OnAttributeChanged=function() flyoutUpdates=flyoutUpdates+1 end
 end
+-- Native QuickKeybind.xml/QuickKeybind.lua boundary. The base action template
+-- above intentionally has none of these handlers; Blizzard's derived action
+-- bar template normally supplies them. Input targets commandName, not a slot.
+TEMPLATES.QuickKeybindButtonTemplate=function(frame)
+    frame.quickBinding=true
+    frame.QuickKeybindHighlightTexture=NewRegion("Texture",frame)
+    function frame:QuickKeybindButtonOnUpdate() end
+    function frame:QuickKeybindButtonOnEnter()
+        if not QuickKeybindFrame.shown then return end
+        QuickKeybindFrame:SetSelected(self.commandName,self)
+        self.oldUpdateScript=self:GetScript("OnUpdate")
+        self:SetScript("OnUpdate",self.QuickKeybindButtonOnUpdate)
+        self.changedUpdateScript=true
+    end
+    function frame:QuickKeybindButtonOnLeave()
+        if QuickKeybindFrame.shown then QuickKeybindFrame:SetSelected(nil,nil) end
+        if self.changedUpdateScript then
+            self:SetScript("OnUpdate",self.oldUpdateScript)
+            self.changedUpdateScript=nil
+        end
+    end
+    function frame:QuickKeybindButtonOnClick(input)
+        if QuickKeybindFrame.shown and input~="LeftButton" and input~="RightButton" then
+            QuickKeybindFrame:OnKeyDown(input)
+        end
+    end
+    function frame:QuickKeybindButtonOnMouseWheel(delta)
+        if QuickKeybindFrame.shown then QuickKeybindFrame:OnMouseWheel(delta) end
+    end
+    function frame:UpdateMouseWheelHandler()
+        self:SetScript("OnMouseWheel",QuickKeybindFrame.shown and self.QuickKeybindButtonOnMouseWheel or nil)
+    end
+    function frame:DoModeChange(on) self.QuickKeybindHighlightTexture:SetShown(on) end
+    frame.scripts.OnShow=frame.UpdateMouseWheelHandler
+    frame.scripts.OnEnter=frame.QuickKeybindButtonOnEnter
+    frame.scripts.OnLeave=frame.QuickKeybindButtonOnLeave
+    frame.scripts.OnClick=frame.QuickKeybindButtonOnClick
+    -- CreateFrame runs the shown template's OnShow in the client.
+    frame:UpdateMouseWheelHandler()
+end
 ActionButtonSpellAlertMixin={}
 TEMPLATES.ActionButtonSpellAlertTemplate=function(frame)
     frame.shown=false
@@ -823,6 +863,17 @@ leave.shown=false
 local quick=NewFrame("Frame","QuickKeybindFrame",UIParent,"SecureFrameTemplate")
 quick.shown=false
 quick.scripts.OnShow=function() quick.shownSecurely=secure>0 end
+function quick:SetSelected(command,button) self.selected,self.mouseOverButton=command,button end
+function quick:OnKeyDown(input)
+    if not self.selected then return end
+    local old=bindings[self.selected] or {}
+    if input=="ESCAPE" then
+        bindings[self.selected]=old[2] and {old[2]} or nil
+    else
+        bindings[self.selected]={input,old[2]}
+    end
+end
+function quick:OnMouseWheel(delta) self:OnKeyDown(delta>0 and "MOUSEWHEELUP" or "MOUSEWHEELDOWN") end
 SpellFlyout=NewFrame("Frame","SpellFlyout",UIParent)
 SpellFlyout.shown=false
 
@@ -918,6 +969,69 @@ end
 local function Bar(index) return assert(AB.bars[index],"bar "..index) end
 local function Button(index,i) return assert(Bar(index).buttons[i],"button "..index..":"..i) end
 
+local function TestQuickKeybind()
+    assert(S.SetMany("actionbars",{showOnPanels=false,bar1Visibility=4,bar2Visibility=4,
+        bar9Visibility=4,bar10Visibility=4,bar9ShowEmpty=false,bar9Buttons=12}))
+    local quickFrames=created
+    assert(S.OpenQuickKeybind() and quick.shown and quick.shownSecurely,"quick keybind opens through the restricted environment")
+    do
+        local function Surface(rec)
+            for _,child in ipairs({rec.button:GetChildren()}) do
+                if child.quickBinding and child:IsVisible() then return child end
+            end
+        end
+        assert(Bar(9).header.alpha==1 and Button(9,12).button:IsVisible(),
+            "key binding must reveal mouseover bars and empty slots even with panel reveal disabled")
+        for _,index in ipairs({1,2,9,10}) do
+            local rec=Button(index,1)
+            local surface=Surface(rec)
+            if rec.native then
+                assert(not surface,"native buttons must keep Blizzard's own binding surface")
+            else
+                assert(surface,"suite button has no quick key binding input surface: "..index)
+                local old=bindings[rec.command]
+                local clickCount=#clicks
+                Fire(surface,"OnEnter")
+                assert(quick.selected==rec.command,"hover did not select the button's binding command")
+                quick:OnKeyDown("CTRL-SHIFT-K")
+                Event("UPDATE_BINDINGS")
+                assert(GetBindingKey(rec.command)=="CTRL-SHIFT-K" and rec.button.HotKey.text==S.KeyText("CTRL-SHIFT-K"),
+                    "keyboard binding did not reach the hovered action and its label")
+                if index>=9 then assert(overrides["CTRL-SHIFT-K"]==rec.name,"extra bar binding did not route to its button") end
+                Fire(surface,"OnClick","Button4",false)
+                assert(GetBindingKey(rec.command)=="Button4" and #clicks==clickCount,
+                    "mouse binding must reach the listener without casting the action")
+                Fire(surface,"OnMouseWheel",1)
+                assert(GetBindingKey(rec.command)=="MOUSEWHEELUP","mouse wheel binding was not forwarded")
+                quick:OnKeyDown("ESCAPE")
+                assert(GetBindingKey(rec.command)==(old and old[2]),"Escape must clear the primary binding")
+                Fire(surface,"OnLeave")
+                assert(not quick.selected and not surface:GetScript("OnUpdate"),"leaving retained the binding target or update")
+                bindings[rec.command]=old
+                Event("UPDATE_BINDINGS")
+            end
+        end
+        local surface=assert(Surface(Button(9,12)),"empty buttons must be bindable")
+        Fire(surface,"OnEnter")
+        local allocated=created
+        quick:Hide()
+        assert(not surface:IsShown() and not surface:GetScript("OnUpdate"),"closing retained an input surface or its hover update")
+        assert(Bar(9).header.alpha==.01 and not Button(9,12).button.shown,"closing failed to restore fade and empty-slot settings")
+        assert(S.OpenQuickKeybind() and created==allocated and allocated>quickFrames,"reopening must reuse binding surfaces")
+        Fire(surface,"OnEnter")
+        combat=true
+        secure=secure+1
+        quick:Hide()
+        secure=secure-1
+        assert(not surface.shown and not surface:GetScript("OnUpdate") and AB.panelPending,
+            "combat close must remove input immediately while deferring protected grid writes")
+        combat=false
+        Event("PLAYER_REGEN_ENABLED")
+        assert(not AB.panelPending and not Button(9,12).button.shown,"combat exit did not restore the grid")
+    end
+    combat=true;assert(not S.OpenQuickKeybind());combat=false
+end
+
 -- Actions: bar 1 page 1 and page 2, one spell on bar 2 (slot 61), a flyout
 -- on bar 3 (slot 49), an empower spell on bar 4 (slot 25).
 for slot=1,12 do actions[slot]={kind="spell",id=1000+slot,texture=100+slot} end
@@ -942,6 +1056,7 @@ assert(M.active and S.states.actionbars.active and S.Status("actionbars")=="Acti
 RunTimers()
 local frames=created-builtBefore
 assert(c.imported==true,"first enable must import Blizzard's layout")
+assert(S.ActionBarPreviewSlot(2,1)==61,"menu preview did not resolve the selected runtime bar")
 assert((triggered[BINDINGS_EVENT] or 0)>0,"starting the bars did not tell the cooldown manager its key texts changed")
 assert(c.pickupModifier == 1 and pickupWrites == 0,
     "the default must preserve Blizzard's pickup modifier")
@@ -1213,6 +1328,7 @@ if nativeReuse then
     assert(calls.texture==painted,"suite repainted a native button")
     now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
     assert(calls.texture==painted,"native cooldown event repainted textures through suite")
+    TestQuickKeybind()
     print("Action bars native reuse: Retail bars 2-8 adopted, suite painter skipped, custom bars retained, routing passed")
     return
 end
@@ -1346,6 +1462,7 @@ conditions["mod:shift"]=true
 assert(S.SetMany("actionbars",{disableFormPaging=false,pagingModifiers=true,pageShift=3}))
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==3 and MainBar.attrs.actionpage==7,"modifier page is suite-only")
+assert(S.ActionBarPreviewSlot(1,1)==25,"menu preview followed Blizzard's page instead of the Suite's custom page")
 conditions["mod:shift"]=nil;conditions["bonusbar:1"]=nil;special.bonus=nil
 assert(S.SetMany("actionbars",{pagingModifiers=false}))
 RunTimers()
@@ -2453,8 +2570,7 @@ assert(S.SetMany("actionbars",{bar3Buttons=6,bar3Rows=3,bar3Size=51,bar3Spacing=
     and c.bar3Buttons==4 and c.bar3Rows==2 and c.bar3Size==40
     and c.bar3Visibility==2, "Edit Mode undo did not restore popup controls")
 assert(S.ActionBarAvailable(8) and not S.ActionBarAvailable(13))
-assert(S.OpenQuickKeybind() and quick.shown and quick.shownSecurely,"quick keybind opens through the restricted environment")
-combat=true;assert(not S.OpenQuickKeybind());combat=false
+TestQuickKeybind()
 
 ------------------------------------------------------------------ disable and re-enable
 do

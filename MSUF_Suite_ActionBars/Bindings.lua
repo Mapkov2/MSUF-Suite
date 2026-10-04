@@ -13,6 +13,38 @@ local AB = P.ActionBars
 local M = AB.M
 local Public = S.Public
 
+-- The base action template deliberately omits Blizzard's action-bar painter
+-- and Quick Keybind scripts. A temporary input surface supplies only the
+-- native binding template, so mouse bindings cannot also cast the action.
+-- Blizzard's reused buttons already provide this behavior themselves.
+local bindingOverlays = {}
+local function BindingHidden(button)
+    if button.changedUpdateScript then button:QuickKeybindButtonOnLeave() end
+end
+function AB.SyncQuickKeybind(open)
+    if not open or not M.active or NS.IsCombatLocked() then
+        for _, button in pairs(bindingOverlays) do button:Hide() end
+        return
+    end
+    for i = 1, #AB.owned do
+        local rec = AB.owned[i]
+        if not rec.native then
+            local button = bindingOverlays[rec.button]
+            if not button then
+                button = S.CreateFrame("Button", nil, rec.button, "QuickKeybindButtonTemplate")
+                button.commandName = rec.command
+                button:SetAllPoints(rec.button)
+                button.QuickKeybindHighlightTexture:SetAllPoints(button)
+                button:RegisterForClicks("AnyUp")
+                button:HookScript("OnHide", BindingHidden)
+                bindingOverlays[rec.button] = button
+            end
+            button:DoModeChange(true)
+            button:Show()
+        end
+    end
+end
+
 -- Short key text, shared with the cooldown icons (S.KeyText). No range dot.
 function AB.BindingText(rec)
     return S.KeyText((GetBindingKey(rec.command)))

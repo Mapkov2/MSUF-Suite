@@ -2061,12 +2061,6 @@
    "symbol": "MSUF_GlobalDB"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/DataTexts.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 publishes RebuildPageKeepingScroll in Retail MSUF_Menu2_Window_PageNavigation.lua:240 and Classic:268. The Add/Remove bar action rebuilds its own current page only when the external menu lifecycle API is present; older menu providers retain the current page until navigation.",
-   "symbol": "M.RebuildPageKeepingScroll"
-  },
-  {
    "file": "MSUF_Suite_ActionBars/Visibility.lua",
    "kind": "client",
    "reason": "12.1.0 and 12.1.5 have InputUtil without IsGamepadUIEnabled (upstream/forever Blizzard_SharedXML/Mainline/InputUtil.lua defines it); the gamepad bar rule runs after the Forever client gate.",
@@ -2649,16 +2643,52 @@
    "symbol": "frame (= ColorPickerFrame)"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/HUD.lua",
-   "kind": "addon",
-   "reason": "P.W is the external MSUF2 widget API. SegmentTabs comes from both Menu2 hosts; older hosts without it and narrow pages use BindDropdownAt. suite_options_menu_contract exercises the absent API and the wide tab path.",
-   "symbol": "P.W.SegmentTabs"
-  },
-  {
    "file": "MSUF_Suite/Core/Installer.lua",
    "kind": "client",
    "reason": "Retail and Forever: FrameXML EventRegistry broadcasts completion after setup. Standalone host fixtures may omit the registry.",
    "symbol": "registry (= EventRegistry)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 dock export; older hosts without fixed preview headers use the normal scrolling section and have no header to relayout. The native dock height override is covered by suite_options_menu_contract.",
+   "symbol": "M.RelayoutPageHeaderHost"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that scrolls to and highlights an accordion. Older hosts still select the corresponding actionbar category without this optional focus helper.",
+   "symbol": "W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreview.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Bars.lua exports availability only when the runtime addon is loaded. Preview remains available to configure a disabled module without loading or enabling it.",
+   "symbol": "S.ActionBarAvailable"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Bars.lua exports the current owned-button slot only when its runtime is loaded. Disabled-module preview instead reads the native action button or the shared default slot map.",
+   "symbol": "S.ActionBarPreviewSlot"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Bindings.lua exports the live compact binding formatter only when the runtime is loaded. Disabled-module preview uses Blizzard GetBindingText instead.",
+   "symbol": "S.KeyText"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTexts.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 publishes RebuildPageKeepingScroll in Retail MSUF_Menu2_Window_PageNavigation.lua:240 and Classic:268. The Add/Remove bar action rebuilds its own current page only when the external menu lifecycle API is present; older menu providers retain the current page until navigation.",
+   "symbol": "M.RebuildPageKeepingScroll"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/HUD.lua",
+   "kind": "addon",
+   "reason": "P.W is the external MSUF2 widget API. SegmentTabs comes from both Menu2 hosts; older hosts without it and narrow pages use BindDropdownAt. suite_options_menu_contract exercises the absent API and the wide tab path.",
+   "symbol": "P.W.SegmentTabs"
   }
  ]
 }

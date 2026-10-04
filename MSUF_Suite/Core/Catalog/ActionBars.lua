@@ -11,6 +11,11 @@ NS.ActionBarTitles = {
 }
 local BAR_COUNT = #NS.ActionBarTitles
 NS.ActionBarCount = BAR_COUNT
+-- Shared by the runtime and the menu's live preview, including extra bars.
+NS.ActionBarFirstSlots = { 1, 61, 49, 25, 37, 145, 157, 169, 13, 109 }
+NS.ActionBarCommands = { "ACTIONBUTTON", "MULTIACTIONBAR1BUTTON", "MULTIACTIONBAR2BUTTON", "MULTIACTIONBAR3BUTTON",
+    "MULTIACTIONBAR4BUTTON", "MULTIACTIONBAR5BUTTON", "MULTIACTIONBAR6BUTTON", "MULTIACTIONBAR7BUTTON",
+    "MSUFSUITE_BAR9_BUTTON", "MSUFSUITE_BAR10_BUTTON", "SHAPESHIFTBUTTON", "BONUSACTIONBUTTON" }
 
 -- The named values of the bar choices (each is the saved index of the
 -- choice's label list) and the bar numbers: bar 1 is Blizzard's main bar,
