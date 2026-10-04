@@ -645,6 +645,16 @@ do
     local createFrame = env.CreateFrame
     env.CreateFrame = function(kind, ...)
         local frame = createFrame(kind, ...)
+        local createFontString = frame.CreateFontString
+        if createFontString then
+            frame.CreateFontString = function(self, ...)
+                local text = createFontString(self, ...)
+                text.GetUnboundedStringWidth = text.GetUnboundedStringWidth or function(region)
+                    return region:GetStringWidth()
+                end
+                return text
+            end
+        end
         if kind == "Button" then
             frame.Click = frame.Click or function(self, button)
                 local handler = self:GetScript("OnClick")

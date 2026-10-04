@@ -622,6 +622,21 @@ function P.BuildColorsCategory(ctx, b)
     BuildSkinColors(ctx, b)
 end
 
+-- Preserve catalog identity while giving warm exact search a way to reveal
+-- controls inside a selected workspace. The fresh keyword list invalidates
+-- older hosts whose registry equality predates prepare-contract fields.
+function P.RegisterWorkspaceSearch(widget, identity, rule, kind, reveal, label)
+    if not M.RegisterControlMetadata then return end
+    local meta, original = {}, widget._msuf2SearchMeta or {}
+    for key, value in pairs(original) do meta[key] = value end
+    for key, value in pairs(identity) do meta[key] = value end
+    meta.searchPrepareKind, meta.searchPrepareValue = kind, rule.key
+    meta.prepareExactSearchTarget = reveal
+    meta.keywords = { rule.label }
+    for _, word in ipairs(original.keywords or {}) do meta.keywords[#meta.keywords + 1] = word end
+    M.RegisterControlMetadata(widget, meta, label or rule.label)
+end
+
 -- Standard module header card: enable switch, live status and actions.
 -- actions: list of { label, onClick, enabled(optional), key = id }.
 function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
@@ -636,6 +651,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         function() return P.Get(id, "enabled") == true end,
         function(value) P.Set(id, "enabled", value == true) end,
         P.Meta(pageKey, id, "enabled", "setting", sectionId))
+    if opts.prepareControl then opts.prepareControl(body, toggle, "enabled", "setting", "Enable") end
     local status = P.Text(body, "", 16, -18, width, T.colors.text)
     local description = P.Description(body, spec.description, 16, -42, width, title)
     local y = -42 - math.max(14, math.ceil(description:GetStringHeight() or 14)) - 14
@@ -644,9 +660,10 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
     for i, action in ipairs(actions or {}) do
         local column = (i - 1) % columns
         if column == 0 and i > 1 then y = y - 34 end
-        P.Button(ctx, body, action[1], 16 + column * (buttonWidth + 12), y, buttonWidth, action[2],
+        local button = P.Button(ctx, body, action[1], 16 + column * (buttonWidth + 12), y, buttonWidth, action[2],
             action[3] or function() return P.Available(id) and P.Get(id, "enabled") end,
             P.Meta(pageKey, id, "action." .. (action.key or i), "action", sectionId))
+        if opts.prepareControl then opts.prepareControl(body, button, "action." .. (action.key or i), "action", action[1]) end
     end
     if actions and #actions > 0 then y = y - 38 end
     if opts.help then

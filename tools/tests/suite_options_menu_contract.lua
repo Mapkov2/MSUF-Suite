@@ -24,6 +24,10 @@ local function Widget(kind)
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:IsShown() return self.shown end
+    function w:IsVisible()
+        local parent = rawget(self, "parent")
+        return self.shown and (not parent or parent:IsVisible())
+    end
     function w:SetText(t) self.text = t end
     function w:GetText() return self.text end
     function w:SetWidth(v) self.width = v end
@@ -43,6 +47,7 @@ local function Widget(kind)
     function w:GetStringHeight() return 14 end
     -- An unloaded font measures 0; the preview then estimates the width.
     function w:GetStringWidth() return 0 end
+    function w:GetUnboundedStringWidth() return #self.text * 7 end
     function w:CreateMaskTexture() return Widget("MaskTexture") end
     function w:GetEffectiveScale() return 1 end
     function w:SetScript(name, fn) self.scripts[name] = fn end
@@ -60,6 +65,31 @@ local function Widget(kind)
     function w:SetActive(v) self.active = v and true or false end
     function w:SetAtlas(v) self.atlas = v end
     function w:SetTexture(v) self.texture = v end
+    function w:SetFont(path, size, flags) self.font = { path, size, flags }; return true end
+    function w:SetTextColor(...) self.textColor = { ... } end
+    function w:RegisterEvent(event) self._events = self._events or {}; self._events[event] = true end
+    function w:UnregisterAllEvents() self._events = {} end
+    function w:SetUnit(unit) self._modelUnit = unit; self._modelReads = (self._modelReads or 0) + 1 end
+    function w:CreateAnimationGroup() return Widget("AnimationGroup") end
+    function w:CreateAnimation(kind)
+        local animation = Widget(kind)
+        self._animations = self._animations or {}
+        self._animations[#self._animations + 1] = animation
+        return animation
+    end
+    function w:SetOrder(value) self.order = value end
+    function w:SetDuration(value) self.duration = value end
+    function w:SetFromAlpha(value) self.fromAlpha = value end
+    function w:SetToAlpha(value) self.toAlpha = value end
+    function w:SetToFinalAlpha(value) self.toFinalAlpha = value end
+    function w:Play() self.playCount = (rawget(self, "playCount") or 0) + 1; self.playing = true end
+    function w:Stop() self.playing = false end
+    function w:SetTexCoord(...) self.texCoords = { ... } end
+    function w:SetScale(v) self.scale = v end
+    function w:SetClipsChildren(v) self.clipsChildren = v end
+    function w:SetCooldownFromDurationObject(v) self.durationObject = v end
+    function w:SetCooldown(start, duration) self.cooldown = { start, duration } end
+    function w:Clear() self.durationObject, self.cooldown = nil, nil end
     function w:SetColorTexture(...) self.color = { ... } end
     function w:CreateTexture() return Widget("Texture") end
     function w:CreateFontString() return Widget("FontString") end
@@ -74,6 +104,8 @@ local function Widget(kind)
     return w
 end
 CreateFrame = function(kind, _, parent) local widget = Widget(kind); widget.parent = parent; return widget end
+UIParent = Widget("Root")
+UIParent:SetSize(1920, 1080)
 
 -- WoW client stand-ins. The neutral ones: no class, zone, map position,
 -- atlas, modifier key, keyboard focus or rotating minimap.
@@ -83,6 +115,9 @@ GameTooltip = neutralTooltip
 -- cannot be entered.
 local lockedEditMode = { CanEnterEditMode = function() return false end }
 EditModeManagerFrame = lockedEditMode
+UnitName = function() return "Preview Player" end
+GetInventoryItemTexture = function() return 134400 end
+GetInventoryItemLink = function() return "|Hitem:1|h[Preview item]|h" end
 UnitClass = function() return nil end
 UnitIsPlayer = function() return false end
 GetZoneText = function() return "" end
@@ -90,6 +125,31 @@ GetGameTime = function() return 12, 34 end
 GetCVarBool = function() return false end
 IsInInstance = function() return false, "none" end
 C_Texture = { GetAtlasInfo = function() return nil end }
+local actionPreview = { actions = {}, bindings = {}, page = 1, reads = 0, forms = {}, pet = {} }
+GetActionBarPage = function() return actionPreview.page end
+GetBindingKey = function(command) return actionPreview.bindings[command] end
+GetBindingText = function(key) return key end
+GetNumShapeshiftForms = function() return #actionPreview.forms end
+GetShapeshiftFormInfo = function(index) return actionPreview.forms[index] end
+GetShapeshiftFormCooldown = function() return 10, 20, 1 end
+GetPetActionCooldown = function() return 30, 40, 1 end
+GetPetActionInfo = function(index)
+    local action = actionPreview.pet[index]
+    if action then return action.name, action.icon, false end
+end
+C_ActionBar = {
+    GetActionTexture = function(slot)
+        actionPreview.reads = actionPreview.reads + 1
+        return (actionPreview.actions[slot] or {}).icon
+    end,
+    HasAction = function(slot) return actionPreview.actions[slot] ~= nil end,
+    GetActionDisplayCount = function(slot) return (actionPreview.actions[slot] or {}).count end,
+    UsesActionText = function(slot) return (actionPreview.actions[slot] or {}).name ~= nil end,
+    GetActionText = function(slot) return (actionPreview.actions[slot] or {}).name end,
+    GetActionCooldownDuration = function(slot) return (actionPreview.actions[slot] or {}).duration end,
+    GetActionCharges = function(slot) return (actionPreview.actions[slot] or {}).charges end,
+    GetActionChargeDuration = function(slot) return (actionPreview.actions[slot] or {}).recharge end,
+}
 CreateColor = function(...) return { ... } end
 C_Map = { GetBestMapForUnit = function() return nil end }
 IsShiftKeyDown, IsControlKeyDown = function() return false end, function() return false end
@@ -153,6 +213,12 @@ assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnit
 
 -- Menu2 public surface
 local M, W, T = {}, {}, {}
+M.CreateMenuPopupPanel = function() return Widget("SectionPopup") end
+W.TopButton = function(parent, text)
+    local button = Widget("SectionAction")
+    button.parent, button.text = parent, text
+    return button
+end
 MSUF2 = M
 local layerProvider
 M.RegisterLayerOverviewProvider = function(id, provider)
@@ -204,7 +270,15 @@ T.colors = { muted = {}, text = {}, dim = {} }
 T.navIconGrid = { home = { 0, 0 }, gameplay = { 7, 1 } }
 T.navIconColors = { home = { 1 }, gameplay = { 2 }, profiles = { 3 } }
 T.Font = function(parent, template, text) local fs = Widget("FontString"); fs.text = text; return fs end
-T.Button = function(parent, text) local b = Widget("Button"); b.text = text; return b end
+T.Button = function(parent, text)
+    local b = Widget("Button")
+    b.text, b.parent = text, parent
+    if parent then
+        parent._testButtons = parent._testButtons or {}
+        parent._testButtons[#parent._testButtons + 1] = b
+    end
+    return b
+end
 T.Panel = function() return Widget("Panel") end
 T.ApplySurface = function() end
 T.CenterButtonLabel = function() end
@@ -239,6 +313,11 @@ M.ControlMeta = function(page, domain, path, classification, exact)
 end
 local previewControls, registeredControls = {}, {}
 M.RegisterControlMetadata = function(widget, meta)
+    if meta and meta.prepareExactSearchTarget and meta.searchPrepareKind and meta.searchPrepareValue then
+        widget._msuf2ExactTargetKinds = { [meta.searchPrepareKind] = true }
+        widget._msuf2ExactTargetContracts = { [meta.searchPrepareKind] = { [meta.searchPrepareValue] = true } }
+        widget._msuf2PrepareExactSearchTarget = meta.prepareExactSearchTarget
+    end
     if meta and meta.controlId then
         registeredControls[meta.controlId] = widget
         widget.registeredMeta = meta
@@ -309,12 +388,23 @@ M.RequestRefresh = function()
 end
 local function Bind(ctx, widget, get, set, meta, label)
     widget.get, widget.set, widget.meta, widget.label = get, set, meta, label
+    if ctx.key == "suite_actionbars" or ctx.key == "suite_hud" then widget._msuf2SearchMeta = { label = label } end
     ctx.widgets[#ctx.widgets + 1] = widget
     return widget
 end
-M.BindSwitchAt = function(ctx, parent, label, x, y, w, get, set, meta) return Bind(ctx, Widget("Switch"), get, set, meta, label) end
+M.BindSwitchAt = function(ctx, parent, label, x, y, w, get, set, meta)
+    local switch = Widget("Switch")
+    switch._msuf2Label, switch._msuf2LabelHit = Widget("FontString"), Widget("Button")
+    switch._msuf2Label.parent, switch._msuf2LabelHit.parent = parent, parent
+    return Bind(ctx, switch, get, set, meta, label)
+end
 M.BindBoolWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
-M.BindDropdownAt = function(ctx, parent, label, x, y, values, w, get, set, meta) return Bind(ctx, Widget("Dropdown"), get, set, meta, label) end
+M.BindDropdownAt = function(ctx, parent, label, x, y, values, w, get, set, meta)
+    local dropdown = Widget("Dropdown")
+    dropdown._msuf2Title = Widget("FontString")
+    dropdown:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 24)
+    return Bind(ctx, dropdown, get, set, meta, label)
+end
 M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta)
     local box = Widget("EditBox")
     function box:SetMaxBytes(value) self.maxBytes = value end
@@ -327,6 +417,9 @@ W.SwitchAt = function() return Widget("Switch") end
 W.MoveWidget = function() end
 W.SegmentTabs = function(ctx, parent, opts)
     local segment = Widget("SegmentTabs")
+    segment.values = opts.values
+    segment._msuf2Title = Widget("FontString")
+    segment:SetPoint("TOPLEFT", parent, "TOPLEFT", opts.x or 0, (opts.y or 0) - 24)
     local function Refresh()
         local tab = opts.get and opts.get() or opts.defaultTab
         for key, panel in pairs(opts.frames) do panel:SetShown(key == tab) end
@@ -354,6 +447,12 @@ W.AttachContextColorShortcut = function(section, opts)
 end
 W.SetControlDisabledReason = function(widget, reason) widget.disabledReason = reason end
 W.SetControlEnabled = function(widget, enabled) widget.enabled = enabled and true or false end
+W.SetControlShown = function(widget, shown)
+    widget:SetShown(shown)
+    for _, key in ipairs({ "_msuf2Title", "_msuf2Label", "_msuf2LabelHit" }) do
+        if widget[key] then widget[key]:SetShown(shown) end
+    end
+end
 W.SetCollapsibleSummary = function(body, text)
     body.summary = text
     body._msuf2CollapsibleEntry._msuf2UXSummary = true
@@ -368,16 +467,38 @@ W.SettingsRows = function(ctx, parent, spec)
     end
     return { controls = controls, bottomY = y }
 end
-W.RoleButton = function(_, text, role) local button = Widget("RoleButton"); button.text, button.role = text, role; return button end
+W.RoleButton = function(parent, text, role)
+    local button = Widget("RoleButton")
+    button.text, button.role, button.parent = text, role, parent
+    return button
+end
 W.PageBuilder = function(ctx)
-    local b = { width = ctx.width, y = -12 }
+    local b = { width = ctx.width, y = -12, collapsibles = {}, layoutEntries = {} }
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
+    if ctx.key == "suite_dataTexts" then
+        function b:RelayoutCollapsibles() self.relayouts = (self.relayouts or 0) + 1 end
+    end
+    if ctx.key == "suite_actionbars" or ctx.key == "suite_dataTexts" or ctx.key == "suite_hud" then
+        function b:Section(title, height)
+            local body = Widget("Panel")
+            body.title, body.parent = Widget("FontString"), ctx.wrapper
+            body._msuf2Width = ctx.width
+            body:SetHeight(height)
+            self.y = self.y - height - 12
+            return body
+        end
+    end
     function b:CollapsibleSection(id, title, _, defaultOpen)
         local body = Widget("Section")
         body.sectionId, body.title, body.defaultOpen = id, title, defaultOpen
         body._msuf2Width = ctx.width
-        body._msuf2CollapsibleEntry = { label = Widget("FontString") }
+        body.parent = ctx.wrapper
+        body._msuf2CollapsibleEntry = { label = Widget("FontString"), body = body, builder = self, open = defaultOpen == true }
+        self.collapsibles[#self.collapsibles + 1] = body._msuf2CollapsibleEntry
+        self.layoutEntries[#self.layoutEntries + 1] = body._msuf2CollapsibleEntry
         if ctx.key == "suite_dataTexts" and id:match("^suite_dataTexts_bar%d+$") then
+            body._msuf2CollapsibleEntry.header = Widget("SectionHeader")
+            body._msuf2CollapsibleEntry.outer = Widget("SectionOuter")
             body.shown = defaultOpen == true
             body._msuf2CollapsibleEntry.open = body.shown
             function body:IsVisible() return ctx.pageVisible == true and self.shown end
@@ -387,11 +508,18 @@ W.PageBuilder = function(ctx)
         ctx.pageItems[#ctx.pageItems + 1] = id
         return body
     end
-    function b:FinishSection(body) body.finished = true end
+    function b:FinishSection(body)
+        body.finished = true
+        body:SetHeight(-(body._msuf2CursorY or -80) + 12)
+        if ctx.SetContentHeight then ctx:SetContentHeight(body:GetHeight() + 48) end
+    end
     return b
 end
 W.FixedPreviewSection = function(ctx, b, spec)
     local section, toolbar, record = Widget("FixedPreview"), Widget("Toolbar"), {}
+    local height = math.min(180, spec.height or 180)
+    section:SetHeight(height)
+    record.heightResolver = function() return section._msuf2FixedPreviewActiveHeight or height end
     section._msuf2Width = ctx.width
     section.title = Widget("FontString")
     ctx.fixedPreview = { section = section, toolbar = toolbar, record = record }
@@ -420,7 +548,7 @@ SecureHandlerExecute, SecureHandlerSetFrameRef, RegisterStateDriver =
 C_DamageMeter = { GetCombatSessionFromType = function() end }
 Enum = { DamageMeterType = { DamageDone = 0 }, SpellBookSpellBank = { Player = 0 } }
 C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
-issecretvalue = function() return false end
+issecretvalue = function(value) return actionPreview.secret ~= nil and rawequal(value, actionPreview.secret) end
 Minimap = { SetMaskTexture = function() end }
 
 -- Boot the suite core as the client would, then attach the menu.
@@ -2793,6 +2921,10 @@ for _, ctx in pairs(contexts) do
 end
 for key in pairs(shortcutColors) do covered[key] = true end
 for key in pairs(globalColors) do covered[key] = true end
+for _, widget in pairs(registeredControls) do
+    local meta = widget.registeredMeta
+    if meta and meta.settingKey then covered[meta.settingKey] = true end
+end
 covered._nameplatePreviewPositions = {}
 for _, widget in pairs(registeredControls) do
     if widget.previewUI and widget.keyX and widget.keyY then

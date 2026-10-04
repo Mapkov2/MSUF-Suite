@@ -163,6 +163,16 @@ function P.AttachSectionReset(ctx, body, title, reset, copy)
     local state = { body = body, title = title, entry = entry, more = more }
     more:SetScript("OnClick", function() ToggleSectionPopup(state) end)
     more._msuf2GetSectionPopup = function() return state.popup end
+    more._msuf2EnsureSectionPopup = function()
+        if not state.popup then
+            BuildSectionPopup(state, body._msufSuiteSectionCopy)
+            state.popup:Hide()
+        end
+        return state.popup
+    end
+    more._msuf2OpenSectionPopup = function()
+        if not state.popup or not state.popup:IsShown() then ToggleSectionPopup(state) end
+    end
     if M.AddTooltip then M.AddTooltip(more, "Section actions", nil, { hook = true }) end
     return more
 end
