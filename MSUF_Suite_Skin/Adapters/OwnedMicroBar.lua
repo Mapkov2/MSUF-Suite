@@ -522,6 +522,9 @@ local function RegisterEvents(settings)
         eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         eventFrame:RegisterEvent("PET_BATTLE_CLOSE")
         eventFrame:RegisterUnitEvent("UNIT_PORTRAIT_UPDATE", "player")
+        if NS.Client.SupportsEvent("INPUT_DEVICE_INTERFACE_TRANSITION") then
+            eventFrame:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
+        end
         eventsRegistered = true
     end
     SyncLoadEvents(settings)
@@ -538,6 +541,7 @@ local function UnregisterEvents()
         eventFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
         eventFrame:UnregisterEvent("PET_BATTLE_CLOSE")
         eventFrame:UnregisterEvent("UNIT_PORTRAIT_UPDATE")
+        eventFrame:UnregisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
         eventsRegistered = false
     end
     for event in pairs(loadEventsRegistered) do
@@ -552,6 +556,11 @@ eventFrame:SetScript("OnEvent", function(_, event)
         if EnsureEditRegistration() then StopAddonListening() end
     elseif event == "PLAYER_REGEN_DISABLED" then
         SetMoverVisible(false)
+    elseif event == "INPUT_DEVICE_INTERFACE_TRANSITION" then
+        -- Blizzard's own listener hides MicroMenu for WoW Forever's Gamepad UI
+        -- (MainActionBar_InitializeGamepad) and shows it for mouse and keyboard;
+        -- the shell follows once it has (Visibility.Apply).
+        C_Timer.After(0, ScheduleReapply)
     elseif event == "UNIT_PORTRAIT_UPDATE" then
         -- Registered for the player unit only.
         if portraitEnabled and not NS.IsCombatLocked() then
@@ -654,6 +663,11 @@ end
 
 function OwnedMicroBar.GetFrames()
     return bar, mover
+end
+
+-- The MicroMenu the bar holds, if any.
+function OwnedMicroBar.GetRoot()
+    return activeRoot
 end
 
 function OwnedMicroBar.OpenEditMode()

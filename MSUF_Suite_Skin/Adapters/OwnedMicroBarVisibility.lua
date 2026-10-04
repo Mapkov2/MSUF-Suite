@@ -119,6 +119,13 @@ function Visibility.RefreshHealthGate(settings)
 end
 local RefreshHealthGate = Visibility.RefreshHealthGate
 
+-- Blizzard hid the menu the bar holds (WoW Forever's Gamepad UI hides
+-- MicroMenu in MainActionBar_InitializeGamepad): no empty shell stays behind.
+local function MenuHiddenByBlizzard()
+    local menu = owner and owner.GetRoot and owner.GetRoot()
+    return menu ~= nil and Call(menu, "IsShown") == false
+end
+
 -- The secure visibility driver for the mode plus the enabled load conditions.
 local function ConditionalDriver(settings, mode)
     if not settings then return VISIBILITY_DRIVERS[mode] end
@@ -146,8 +153,8 @@ function Visibility.Apply(settings)
     if not bar or NS.IsCombatLocked() then return false end
     CancelHoverTimer()
     local mode = editSession and "always" or (settings and settings.visibility) or "always"
-    local blocked = not editSession and settings and (settings.loadHideInInstance and InInstance()
-        or settings.loadHideInHousing and InHousing())
+    local blocked = not editSession and (MenuHiddenByBlizzard() or settings and (settings.loadHideInInstance
+        and InInstance() or settings.loadHideInHousing and InHousing()))
     local driver = mode ~= "never" and not editSession and ConditionalDriver(settings, mode) or nil
     if blocked and driver then driver = "hide" end
     if visibilityDriver ~= driver then

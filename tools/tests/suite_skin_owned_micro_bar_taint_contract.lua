@@ -75,7 +75,7 @@ local function Widget(name, parent, methods)
     function methods:CreateTexture() return Widget() end
     function methods:CreateMaskTexture() return Widget() end
     function methods:CreateFontString() return Widget() end
-    function methods:SetScript() end
+    function methods:SetScript(script, handler) Own()[script] = handler end
     function methods:HookScript() end
     function methods:GetScaledRect() return 0, 0, 10, 10 end
     return setmetatable(widget, { __index = function(_, key)
@@ -84,7 +84,12 @@ local function Widget(name, parent, methods)
 end
 
 UIParent = Widget("UIParent")
-CreateFrame = function(_, name, parent) return Widget(name, parent) end
+local createdFrames = {}
+CreateFrame = function(_, name, parent)
+    local frame = Widget(name, parent)
+    createdFrames[#createdFrames + 1] = frame
+    return frame
+end
 FrameUtil = { SetParentMaintainRenderLayering = function(frame, parent) frame:SetParent(parent) end }
 SetPortraitTexture, RegisterStateDriver, UnregisterStateDriver = Noop, Noop, Noop
 IsInInstance = function() return false end
@@ -310,6 +315,38 @@ NS.CombatGate.RunOrDefer = runOrDefer
 Check(State(menu).parent == bar and State(bar).alpha == 1 and not Owned.suspended,
     "the bar did not take the menu back with its shell after combat")
 Clean("yielding to a vehicle in combat")
+Owned.Disable(menu)
+
+-- WoW Forever's Gamepad UI: on INPUT_DEVICE_INTERFACE_TRANSITION Blizzard
+-- hides MicroMenu itself (MainActionBar_InitializeGamepad); the shell goes
+-- with it a frame later instead of staying behind empty, and comes back when
+-- Blizzard shows the menu for mouse and keyboard again.
+local onEvent
+for _, frame in ipairs(createdFrames) do
+    if State(frame).OnEvent then onEvent = function(...) State(frame).OnEvent(frame, ...) end end
+end
+local nextFrame = {}
+C_Timer = { After = function(seconds, callback)
+    Check(seconds == 0 and type(callback) == "function", "the Micro Bar waited on something but a frame")
+    nextFrame[#nextFrame + 1] = callback
+end }
+local function RunNextFrame()
+    local jobs = nextFrame
+    nextFrame = {}
+    for index = 1, #jobs do jobs[index]() end
+end
+Owned.Apply(menu, settings)
+Check(onEvent and State(bar).shown and State(menu).parent == bar, "the owned bar was not shown with the menu")
+AsBlizzard(menu.Hide, menu)
+onEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
+RunNextFrame()
+Check(not State(bar).shown and State(menu).parent == bar,
+    "an empty Micro Bar shell stayed on screen while Blizzard hid the menu")
+AsBlizzard(menu.Show, menu)
+onEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
+RunNextFrame()
+Check(State(bar).shown and State(menu).parent == bar, "the Micro Bar did not come back with the menu")
+Clean("following Blizzard's own hide and show")
 Owned.Disable(menu)
 
 -- No Blizzard field changed through the skin.
