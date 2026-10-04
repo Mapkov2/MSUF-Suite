@@ -59,8 +59,11 @@ local function Frame(name, parent, kind)
     function frame:SetPoint(...) GeometryWrite(self); self.point = { ... } end
     function frame:ClearAllPoints() GeometryWrite(self); self.point = nil end
     function frame:SetFrameLevel(value) self.frameLevel = value end
-    function frame:SetFrameStrata() end
-    function frame:SetClampedToScreen() end
+    function frame:GetFrameStrata()
+        return self.strata or (self.parent and self.parent:GetFrameStrata()) or "MEDIUM"
+    end
+    function frame:SetFrameStrata(value) self.strata = value end
+    function frame:SetClampedToScreen(value) self.clamped = value end
     function frame:SetMovable(value) GeometryWrite(self); self.movable = value end
     function frame:IsMovable() return self.movable end
     function frame:RegisterForDrag() end
@@ -69,7 +72,7 @@ local function Frame(name, parent, kind)
     function frame:StopMovingOrSizing() GeometryWrite(self); self.moving = false end
     function frame:RegisterForClicks() end
     function frame:SetButtonState() end
-    function frame:SetNormalTexture() end
+    function frame:SetNormalTexture(value) self.normalTexture = value end
     function frame:SetHighlightTexture() end
     function frame:SetPushedTexture() end
     function frame:SetScript(name, callback) self.scripts[name] = callback end
@@ -90,6 +93,22 @@ local function Frame(name, parent, kind)
             SetAllPoints = function() end,
             SetColorTexture = function(self, ...) self.color = { ... } end,
         }
+    end
+    function frame:CreateLine()
+        local line = {}
+        self.lines = self.lines or {}
+        self.lines[#self.lines + 1] = line
+        function line:SetThickness(value) self.thickness = value end
+        function line:SetStartPoint(point, relativeTo, x, y)
+            assert(type(relativeTo) == "table", "Line:SetStartPoint needs a relative region")
+            self.startPoint = { point, relativeTo, x, y }
+        end
+        function line:SetEndPoint(point, relativeTo, x, y)
+            assert(type(relativeTo) == "table", "Line:SetEndPoint needs a relative region")
+            self.endPoint = { point, relativeTo, x, y }
+        end
+        function line:SetColorTexture(...) self.color = { ... } end
+        return line
     end
     function frame:CreateFontString()
         return {
@@ -154,9 +173,11 @@ local NS = {
     DB = { enabled = true, skins = { blizzardWindows = true },
         windowControls = { enabled = true, scales = {}, positions = {} } },
     Theme = { GetColor = function() return 0.2, 0.3, 0.4, 1 end },
+    Surface = { SkinOwnedButton = function(button, spec) button.surfaceSpec = spec; return true end },
     Registry = { AddListener = function() end, QueueJob = QueueJob },
     BlizzardCatalog = { FindByFrame = function(name)
         if name == "CharacterFrame" or name == "InspectFrame" then return { category = "character" } end
+        if name == "WorldMapFrame" then return { category = "map" } end
         if name == "MerchantFrame" then return { category = "npc" } end
         if name == "ContainerFrameCombinedBags" then return { category = "inventory" } end
     end },
@@ -175,6 +196,7 @@ local NS = {
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(arg[3] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
 
 -- Safety helpers always return a value, even when they refuse to read.
@@ -685,6 +707,100 @@ do
     lfg.protected = false
     NS.WindowControls.DisableOwner(owner)
     NS.Client.isForever = previousForever
+end
+
+-- WorldMap's root can use LOW while BorderFrame and QuestLog stay HIGH
+-- (Blizzard_WorldMap.xml / AttachQuestLog). Own controls must follow the
+-- visible border, and the grip must leave the native scrollbar arrow clear.
+do
+    local previousForever = NS.Client.isForever
+    UIPanelWindows.WorldMapFrame = { area = "left", pushable = 0 }
+    for _, flavor in ipairs({ "Retail", "Forever" }) do
+        NS.Client.isForever = flavor == "Forever"
+        local map = Frame("WorldMapFrame", UIParent)
+        map.width, map.height = 1035, 534
+        map:SetFrameStrata("LOW")
+        map.BorderFrame = Frame(nil, map)
+        map.BorderFrame:SetFrameStrata("HIGH")
+        map.BorderFrame:SetFrameLevel(80)
+        map.BorderFrame.NineSlice = Frame(nil, map.BorderFrame)
+        map.BorderFrame.NineSlice:SetFrameLevel(180)
+        map.QuestLog = Frame("QuestMapFrame", map)
+        map.QuestLog:SetFrameStrata("HIGH")
+        map.QuestLog:SetFrameLevel(100)
+        local owner = "worldMap:" .. flavor
+        Check(NS.WindowControls.Attach(map, owner), flavor .. " map did not attach")
+        local controls = NS.WindowControls.states[map]
+        for _, control in ipairs({ controls.grip, controls.titleDrag }) do
+            Check(control:GetFrameStrata() == "HIGH"
+                and control:GetFrameLevel() > map.BorderFrame.NineSlice:GetFrameLevel(),
+                flavor .. " map control is behind native map/quest chrome")
+        end
+        Check(controls.grip.point[1] == "BOTTOMLEFT" and controls.grip.point[2] == map
+            and controls.grip.point[3] == "BOTTOMRIGHT" and controls.grip.point[4] > 0
+            and controls.grip.point[5] >= 0, flavor .. " map grip overlaps the native quest scrollbar or falls below the screen")
+        -- Native UpdateMaximizedSize can put the root bottom at screen y=0.
+        -- Resolve the vertical anchor to prove the complete grip remains visible.
+        local gripBottom = controls.grip.point[5]
+        if controls.grip.point[1] == "TOPLEFT" then gripBottom = gripBottom - controls.grip.height end
+        Check(gripBottom >= 0 and gripBottom + controls.grip.height <= UIParent.height,
+            flavor .. " maximized map grip is outside the screen")
+        Check(controls.grip.clamped == true,
+            flavor .. " map grip can disappear after moving the root to the right screen edge")
+        Check(controls.grip.surfaceSpec and controls.grip.surfaceSpec.role == "button"
+            and controls.grip.surfaceSpec.radius == 4 and not controls.grip.normalTexture,
+            flavor .. " map grip kept the old unframed artwork")
+        Check(controls.grip.lines and #controls.grip.lines == 2
+            and controls.grip.lines[1].thickness == 1 and controls.grip.lines[2].color[4] == 0.8,
+            flavor .. " map grip lacks the crisp themed corner icon")
+        NS.WindowControlChrome.StyleGrip(controls.grip)
+        Check(#controls.grip.lines == 2, flavor .. " map grip style duplicated its icon")
+        NS.DB.windowControls.positions.WorldMapFrame = { x = UIParent.width, y = -100 }
+        NS.WindowControls.Refresh()
+        Check(map.point[4] + map.width + 21 <= UIParent.width,
+            flavor .. " saved map position clamps its grip over the native scrollbar")
+        NS.DB.windowControls.positions.WorldMapFrame = nil
+        NS.WindowControls.Refresh()
+        cursorX, cursorY = 500, 500
+        controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
+        cursorX, cursorY = 700, 400
+        controls.grip.scripts.OnUpdate(controls.grip)
+        controls.grip.scripts.OnMouseUp(controls.grip)
+        local scale = map.scale
+        Check(scale > 1 and NS.DB.windowControls.scales.WorldMapFrame == scale
+            and map.BorderFrame.scale == 1 and map.QuestLog.scale == 1
+            and map.width == 1035 and map.height == 534 and not controls.grip.scripts.OnUpdate,
+            flavor .. " map grip did not scale the root and retain native geometry")
+        map:SetScale(1) -- Native panel fit before a reopen.
+        map:Hide()
+        map:Show()
+        Check(map.scale == scale and controls.grip:GetFrameStrata() == "HIGH",
+            flavor .. " map reopen lost scale or control strata")
+        map.BorderFrame.NineSlice:SetFrameLevel(250)
+        NS.WindowControls.Refresh()
+        Check(controls.grip:GetFrameLevel() > 250 and controls.titleDrag:GetFrameLevel() > 250,
+            flavor .. " map controls did not follow refreshed border levels")
+        local previousColor = NS.Theme.GetColor
+        NS.Theme.GetColor = function() return 0.9, 0.8, 0.7, 0.5 end
+        NS.WindowControls:OnThemeChanged("color", "text")
+        NextFrame()
+        Check(controls.grip.lines[1].color[1] == 0.9 and controls.grip.lines[2].color[4] == 0.4,
+            flavor .. " map grip icon retained its old palette")
+        NS.Theme.GetColor = previousColor
+        NS.WindowControls:OnThemeChanged("color", "text")
+        NextFrame()
+        combatEdge = true
+        controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
+        Check(not controls.grip.scripts.OnUpdate and map.scale == scale,
+            flavor .. " map grip started at the combat edge")
+        combatEdge = false
+        NS.WindowControls.DisableOwner(owner)
+        Check(not controls.grip.shown and not controls.titleDrag.shown and map.scale == 1,
+            flavor .. " map owner release left controls or custom scale")
+        NS.DB.windowControls.scales.WorldMapFrame = nil
+    end
+    NS.Client.isForever = previousForever
+    UIPanelWindows.WorldMapFrame = nil
 end
 
 -- Inspect skips the generic window adapter. Its dedicated, load-on-demand

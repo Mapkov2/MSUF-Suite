@@ -205,6 +205,8 @@ local function ApplyStoredPosition(state)
     local ratio = state.frame:GetEffectiveScale() / uiScale
     if ratio <= 0 then return end
     local width, height = state.frame:GetWidth() * ratio, state.frame:GetHeight() * ratio
+    -- Keep the external map grip beside its scrollbar when a saved panel is moved right.
+    if state.name == "WorldMapFrame" then width = width + 21 * ratio end
     local x = math.max(0, math.min(uiWidth - math.min(uiWidth, width), point.x))
     local y = math.max(-math.max(0, uiHeight - height), math.min(0, point.y))
     state.frame:ClearAllPoints()
@@ -456,32 +458,52 @@ local function OnGripLeave()
     GameTooltip:Hide()
 end
 
+local function ControlParent(state)
+    -- WorldMap's root can be LOW while its border and quest log are HIGH.
+    -- Inherit the visible border's strata without changing native frames.
+    if state.name == "WorldMapFrame" then
+        local border = Safety.Field(state.frame, "BorderFrame")
+        if Safety.CanDecorate(border, true) and Safety.Read(border, "GetParent") == state.frame then return border end
+    end
+    return state.frame
+end
+
 local function ControlBaseLevel(state)
-    local level = state.frame:GetFrameLevel()
-    -- Forever's spellbook/professions pages sit above the root. Their native
-    -- portrait border is above those pages, so keep our small controls above
-    -- that border too; only our own frames change level.
-    if NS.Client.isForever and (state.name == "PlayerSpellsFrame" or state.name == "ProfessionsFrame") then
-        local borderLevel = Safety.Read(Safety.Field(state.frame, "NineSlice"), "GetFrameLevel")
+    local parent = ControlParent(state)
+    local level = parent:GetFrameLevel()
+    -- Map and Forever spellbook/professions chrome sits above its root.
+    -- Keep our small controls above the portrait border too; only our own
+    -- frames change level.
+    if state.name == "WorldMapFrame"
+        or (NS.Client.isForever and (state.name == "PlayerSpellsFrame" or state.name == "ProfessionsFrame")) then
+        local borderLevel = Safety.Read(Safety.Field(parent, "NineSlice"), "GetFrameLevel")
         if type(borderLevel) == "number" then level = math.max(level, borderLevel) end
     end
     return level
 end
 
 local function CreateGrip(state)
-    local grip = Safety.CreateChildFrame("Button", state.frame)
+    local grip = Safety.CreateChildFrame("Button", ControlParent(state))
     controlStates[grip] = state
     grip:SetSize(20, 20)
     grip:SetFrameLevel(ControlBaseLevel(state) + GRIP_LEVEL_OFFSET)
-    if NS.Client.isForever and state.name == "ProfessionsFrame" then
+    if state.name == "WorldMapFrame" then
+        -- Clear quest scrolling and keep the grip above a maximized map's bottom edge.
+        grip:SetPoint("BOTTOMLEFT", state.frame, "BOTTOMRIGHT", 1, 3)
+        grip:SetClampedToScreen(true)
+    elseif NS.Client.isForever and state.name == "ProfessionsFrame" then
         -- Leave the Create button, right tab column and lower footer clear.
         grip:SetPoint("TOPLEFT", state.frame, "BOTTOMRIGHT", 1, -1)
     else
         grip:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -3, 3)
     end
-    grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    if state.name == "WorldMapFrame" then
+        NS.WindowControlChrome.StyleGrip(grip)
+    else
+        grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+        grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+        grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+    end
     grip:RegisterForClicks("LeftButtonUp")
     grip:SetScript("OnMouseDown", OnGripMouseDown)
     grip:SetScript("OnMouseUp", OnGripRelease)
@@ -537,7 +559,7 @@ local function CreateTitleDrag(state)
     -- Standard Blizzard panel headers leave the title area clear.  Keep the
     -- drag target inside that strip, away from portraits and window buttons.
     -- The Forever navigation sits below the title, so this strip stays free.
-    local strip = Safety.CreateChildFrame("Frame", state.frame)
+    local strip = Safety.CreateChildFrame("Frame", ControlParent(state))
     controlStates[strip] = state
     strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 50, -1)
     strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -110, -1)
@@ -713,6 +735,7 @@ local function RefreshQueued() WindowControls.Refresh() end
 local function RecolorMinimize()
     local r, g, b, a = NS.Theme.GetColor("buttonFill")
     for _, state in pairs(WindowControls.states) do
+        if state.name == "WorldMapFrame" then NS.WindowControlChrome.RecolorGrip(state.grip) end
         if state.minimize then
             state.minimize._msufControlBackground:SetColorTexture(r, g, b, a)
             state.minimize._msufControlLabel:SetTextColor(NS.Theme.GetColor("text"))
