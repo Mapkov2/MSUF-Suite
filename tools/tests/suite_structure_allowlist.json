@@ -2679,16 +2679,28 @@
    "symbol": "S.KeyText"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/HUDPreview.lua",
+   "symbol": "P.W.FocusCollapsibleSection",
+   "kind": "addon",
+   "reason": "Retail/Forever Menu2 exports this focus helper; older hosts retain preview and manually opened appearance accordions."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/HUDPreview.lua",
+   "symbol": "provider.GetAPI",
+   "kind": "addon",
+   "reason": "The optional Suite skin or legacy MapkoSkin provider may be unloaded. Preview reads its public palette only when available and never loads or activates it."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/HUDWorkspace.lua",
+   "symbol": "M.RelayoutPageHeaderHost",
+   "kind": "addon",
+   "reason": "Retail/Forever current Menu2 can refresh the preview dock layout; older hosts use the normal page builder layout."
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/DataTexts.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 publishes RebuildPageKeepingScroll in Retail MSUF_Menu2_Window_PageNavigation.lua:240 and Classic:268. The Add/Remove bar action rebuilds its own current page only when the external menu lifecycle API is present; older menu providers retain the current page until navigation.",
    "symbol": "M.RebuildPageKeepingScroll"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/HUD.lua",
-   "kind": "addon",
-   "reason": "P.W is the external MSUF2 widget API. SegmentTabs comes from both Menu2 hosts; older hosts without it and narrow pages use BindDropdownAt. suite_options_menu_contract exercises the absent API and the wide tab path.",
-   "symbol": "P.W.SegmentTabs"
   }
  ]
 }

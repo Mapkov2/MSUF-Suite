@@ -23,6 +23,10 @@ Pages\DamageMeter.lua
 Pages\Bags.lua
 Pages\DataTexts.lua
 Pages\QualityOfLife.lua
+Pages\HUDWorkspace.lua
+Pages\HUDPreview.lua
+Pages\HUDPreviewSamples.lua
+Pages\HUDAFKPreview.lua
 Pages\HUD.lua
 Pages\BuffReminders.lua
 Pages\Chat.lua

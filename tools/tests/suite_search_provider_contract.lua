@@ -297,9 +297,9 @@ for _, query in ipairs({ "mythic plus", "mythic+", "m+", "m+ mythic plus" }) do
         if rec.key == "suite_hud" and rec.label == "Mythic+ run summaries" then summary = rec end
     end
     if flavor == "Mainline" then
-        Check(timer and timer.route and timer.route.accordion["suite_hud:suite_hud_objectives_module"],
+        Check(timer and timer.route and timer.route.accordion["suite_hud:suite_hud_objectives_content"],
             "'" .. query .. "' did not put the timer section in the search palette")
-        Check(summary and summary.route and summary.route.accordion["suite_hud:suite_hud_runSummary_module"],
+        Check(summary and summary.route and summary.route.accordion["suite_hud:suite_hud_summary_content"],
             "'" .. query .. "' did not put run summaries in the search palette")
         Check(timer.hint:find("^MSUF Suite > ") and summary.hint:find("^MSUF Suite > "),
             "'" .. query .. "' did not identify the Suite in its result breadcrumbs")
@@ -706,17 +706,22 @@ do
     if searchHost == classic then
         if flavor == "Mainline" then
             for _, case in ipairs({
-                { label = "Mythic+ settings", sectionId = "suite_hud_objectives_module", prefix = "objectives" },
-                { label = "Mythic+ run summaries", sectionId = "suite_hud_runSummary_module", prefix = "summary" },
+                { label = "Mythic+ settings", sectionId = "suite_hud_objectives_content",
+                    settingKey = "msufsuite.objectives.showMythicPlus" },
+                { label = "Mythic+ run summaries", sectionId = "suite_hud_summary_content",
+                    settingKey = "msufsuite.runSummary.showMythicPlus" },
             }) do
                 local target
-                for i, record in ipairs(Search("mythic plus")) do
-                    if i <= 6 and record.key == "suite_hud" and record.label == case.label then
+                -- Native warm search merges provider keywords into the actual
+                -- widget and adopts its label. The setting identity survives.
+                for i, record in ipairs(Search(case.label)) do
+                    if i <= 6 and record.key == "suite_hud" and record.exactTarget
+                        and record.exactTarget.settingKey == case.settingKey then
                         target = record
                         break
                     end
                 end
-                Check(target, "Mythic+ HUD shortcut disappeared after its page was built")
+                Check(target, "Mythic+ HUD setting disappeared after its page was built")
                 local selected, anchored = api.OpenSearchTarget(target.key, target.label,
                     target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
                 world.widgets:RunTimers(80)
@@ -725,15 +730,16 @@ do
                 Check(selected and anchored and M.activeKey == "suite_hud"
                     and section and section._msuf2CollapsibleEntry.open == true,
                     "Mythic+ search did not open the HUD section: " .. case.sectionId)
-                local tabs = assert(section._msufSuiteHUDTabs)
-                tabs.select("suite_hud_" .. case.prefix .. "_type")
-                Check(tabs.panels["suite_hud_" .. case.prefix .. "_type"]:IsShown(),
-                    "HUD warm-routing setup did not select Appearance")
+                entry.sections.suite_hud_announcements_module._msufSuiteHUDReveal()
+                -- This native-host fixture aliases IsVisible to own shown;
+                -- inspect the actual PageBuilder feature parent explicitly.
+                local featureFrame = section._msuf2CollapsibleEntry.builder.parent
+                Check(not featureFrame:IsShown(), "HUD warm-routing setup did not hide the previous feature")
                 api.OpenSearchTarget(target.key, target.label,
                     target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
                 world.widgets:RunTimers(80)
-                Check(tabs.panels["suite_hud_" .. case.prefix .. "_content"]:IsShown(),
-                    "Mythic+ shortcut kept the previously selected HUD tab")
+                Check(featureFrame:IsShown() and section._msuf2CollapsibleEntry.open,
+                    "Mythic+ shortcut kept its feature or content accordion hidden")
             end
         end
 

@@ -1027,29 +1027,227 @@ do (function()
     local hudCtx = { key = "suite_hud", width = 1000, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
     current = hudCtx
     M.pages.suite_hud.build(hudCtx)
-    for _, refresh in ipairs(hudCtx.refreshers) do refresh() end
-    assert(#hudCtx.sections == 4, "HUD must have one accordion per independent feature")
-    for _, body in ipairs(hudCtx.sections) do
-        assert(body.defaultOpen == false, "HUD must start with compact feature headers")
+-- Embedded HUD examples work with every module disabled, never activate the
+-- real surfaces, and stop reading the character when the preview is hidden.
+do (function()
+    local hud = hudCtx
+    local hudSections = {}
+    for _, section in ipairs(hud.sections) do hudSections[section.sectionId] = section end
+    local ui = assert(hud._msufSuiteHUDWorkspace)
+    local preview = assert(ui.preview)
+    local saved, historyBefore = {}, historyWrites
+    local timerAPI, now, pending = C_Timer, 0, {}
+    C_Timer = { NewTimer = function(delay, callback)
+        local timer = { due = now + delay, callback = callback }
+        function timer:Cancel() self.cancelled = true end
+        pending[#pending + 1] = timer
+        return timer
+    end }
+    local function Advance(seconds)
+        now = now + seconds
+        for _, timer in ipairs(pending) do
+            if not timer.cancelled and not timer.fired and timer.due <= now then
+                timer.fired = true
+                timer.callback()
+            end
+        end
     end
+    local function ActiveTimers()
+        local count = 0
+        for _, timer in ipairs(pending) do
+            if not timer.cancelled and not timer.fired then count = count + 1 end
+        end
+        return count
+    end
+    for id in pairs(ui.groups) do
+        saved[id] = {}
+        for key, value in pairs(S.Config(id)) do saved[id][key] = value end
+        S.Config(id).enabled = false
+    end
+    local function Control(id, key)
+        for _, w in ipairs(hud.widgets) do
+            if w.meta and w.meta.controlId == "menu2.suite_hud." .. id .. "." .. key then return w end
+        end
+        error("missing HUD control " .. id .. "." .. key)
+    end
+    assert(hud.fixedPreview.record.heightResolver() == 310 and hud.fixedPreview.section:GetHeight() == 310,
+        "HUD preview overlaps settings through the native compact height cap")
+    for id, group in pairs(ui.groups) do
+        ui.select(id)
+        assert(preview.id == id and group.frame.shown, "HUD feature selection did not select its preview")
+        for other, sibling in pairs(ui.groups) do assert(sibling.frame.shown == (other == id)) end
+        assert(#preview.labels > 0 and preview.canvas:GetWidth() > 0, "disabled module has no preview")
+        for other, picker in pairs(preview.pickers) do assert(picker.shown == (other == id)) end
+        ui.select(id == "objectives" and "announcements" or "objectives")
+        local switch = Control(id, "enabled")
+        switch:_msuf2PrepareExactSearchTarget()
+        assert(ui.selected == id and switch.registeredMeta.prepareExactSearchTarget,
+            "warm exact search cannot reveal an independent HUD enable switch")
+    end
+    local announcement = S.Config("announcements")
+    ui.select("announcements")
+    preview.pickers.announcements.set("quest")
+    announcement.colorStyle, announcement.questColor = 2, "ff0000"
+    announcement.titleSize, announcement.backgroundOpacity = 40, 20
+    preview:Paint()
+    assert(preview.labels[1].font[2] == 40 and preview.labels[1].textColor[1] == 1
+        and preview.labels[1].textColor[2] == 0 and preview.fills[1].color[4] == .2,
+        "banner example does not follow font size, type color and background opacity")
+    assert(preview.fills[2].color[4] == .95 and preview.fills[3].color[4] == .62,
+        "banner accents differ from the real feature")
+    assert(preview.playButton.shown and not preview.playing, "banner playback must be explicitly started")
+    -- The setting measures from playback start to fade-out start, just like
+    -- the real banner. Exercise minimum/default/maximum without relying on
+    -- native rendering; only the client can prove the actual alpha curve.
+    for _, duration in ipairs({ 2, 4, 8 }) do
+        announcement.duration = duration
+        preview.playButton.scripts.OnClick()
+        assert(preview.playing and preview.animation.playing, "Play preview did not start the banner animation")
+        assert(preview.animation._animations[1].duration == .22 and preview.leave._animations[1].duration == .36,
+            "preview fade timings differ from the real banner")
+        assert(ActiveTimers() == 1 and preview.dismissTimer.due == now + duration,
+            "preview must wait the configured display time before starting fade-out")
+        local leaves = rawget(preview.leave, "playCount") or 0
+        Advance(.22)
+        -- Native animated alpha and the canvas base alpha are separate.
+        -- Inject a cleared base at completion: the visible hold must be
+        -- explicitly established, regardless of the preceding frame value.
+        preview.canvas:SetAlpha(0)
+        preview.animation.playing = false
+        if preview.animation.scripts.OnFinished then preview.animation.scripts.OnFinished() end
+        assert(preview.canvas.alpha == 1 and preview.playing and ActiveTimers() == 1,
+            "fade-in completion did not establish a visible hold until the display deadline")
+        assert(preview.animation.toFinalAlpha == true and preview.leave.toFinalAlpha == true,
+            "native preview fades must retain their final alpha between phases")
+        Advance(duration - .22 - .125)
+        optionsNS.Refresh()
+        assert((rawget(preview.leave, "playCount") or 0) == leaves and preview.playing and preview.canvas.alpha == 1,
+            "preview disappeared before the configured display time")
+        Advance(.125)
+        assert(preview.leave.playCount == leaves + 1 and preview.playing and ActiveTimers() == 0,
+            "preview did not start fading at its deadline")
+        -- Deliver the native completion separately: elapsed display time
+        -- starts the fade and must not finish/hide the preview immediately.
+        preview.leave.scripts.OnFinished()
+        assert(not preview.playing and preview.canvas.alpha == 0, "finished example did not fade away")
+        preview.animation.scripts.OnFinished()
+        assert(preview.canvas.alpha == 0, "late fade-in completion revived a finished preview")
+        optionsNS.Refresh()
+        assert(preview.canvas.alpha == 0, "menu refresh resurrected a completed preview")
+    end
+    preview.playButton.scripts.OnClick()
+    local previousTimer = preview.dismissTimer
+    local plays = preview.animation.playCount
+    Advance(1)
+    Control("announcements", "duration").set(7)
+    assert(historyWrites == historyBefore + 1, "duration edit must be the only history write")
+    historyBefore = historyWrites
+    assert(preview.animation.playCount == plays + 1 and previousTimer.cancelled
+        and preview.dismissTimer.due == now + 7 and ActiveTimers() == 1,
+        "duration slider did not restart animation with the new time")
+    local nextTimer, leaves = preview.dismissTimer, preview.leave.playCount
+    previousTimer.callback()
+    assert(preview.dismissTimer == nextTimer and preview.leave.playCount == leaves,
+        "an old deadline interrupted restarted playback")
+    preview:Paint()
+    assert(preview.animation.playCount == plays + 1, "unchanged duration restarts the animation")
+    Advance(6.875)
+    assert(preview.leave.playCount == leaves and preview.playing, "edited preview faded too early")
+    Advance(.125)
+    assert(preview.leave.playCount == leaves + 1 and preview.playing, "edited preview ignored its new deadline")
+    preview.host.scripts.OnHide()
+    assert(not preview.playing and not preview.leave.playing, "closing the menu did not stop fade-out")
+    preview.playButton.scripts.OnClick()
+    local hiddenTimer = preview.dismissTimer
+    preview.host.scripts.OnHide()
+    assert(not preview.playing and not preview.animation.playing and hiddenTimer.cancelled and ActiveTimers() == 0,
+        "closing the menu did not stop playback and cancel its deadline")
+    preview.playButton.scripts.OnClick()
+    local focused, oldFocus = nil, W.FocusCollapsibleSection
+    W.FocusCollapsibleSection = function(body) focused = body end
+    preview.canvas.scripts.OnClick()
+    W.FocusCollapsibleSection = oldFocus
+    assert(focused == hudSections.suite_hud_announcements_type,
+        "clicking the example does not reveal appearance settings")
+    local tracker = S.Config("objectives")
+    ui.select("objectives")
+    assert(not preview.playing and not preview.playButton.shown and preview.canvas.alpha == 1 and ActiveTimers() == 0,
+        "changing HUD category leaves playback running or the new preview invisible")
+    hiddenTimer.callback()
+    Advance(10)
+    assert(not preview.playing and preview.canvas.alpha == 1, "a cancelled deadline faded the next HUD category")
+    tracker.showHeader, tracker.width = false, 480
+    preview:Paint()
+    assert(preview.labels[1].text ~= optionsNS.Tr("OBJECTIVES") and preview.canvas:GetWidth() == 480,
+        "tracker preview does not reflect heading or width")
+    preview.pickers.objectives.set("world")
+    tracker.showWorldQuests = false
+    preview:Paint()
+    assert(preview.used == 0, "disabled tracker content still appears in the sample")
+    ui.select("runSummary")
+    local summary = S.Config("runSummary")
+    summary.showDuration, summary.showBest, summary.showGroupSize, summary.showKills = false, false, false, false
+    preview:Paint()
+    assert(preview.used == 2, "result details do not follow content switches")
+    assert(#optionsNS.HUDPreview.Choices.runSummary == (flavor == "Forever" and 1 or 2),
+        "Forever exposes a Mythic+ result example")
+    ui.select("afkScreen")
+    assert(preview.afk.model._modelUnit == "player" and preview.host._events.PLAYER_EQUIPMENT_CHANGED,
+        "AFK preview lacks the character or visible event refresh")
+    assert(preview.afk.icons[1].texture == 134400, "AFK preview lacks equipment")
+    local reads = preview.afk.model._modelReads
+    preview.host:Hide()
+    preview.host.scripts.OnHide()
+    assert(next(preview.host._events) == nil, "closing HUD leaves character event listeners registered")
+    for _, refresh in ipairs(hud.refreshers) do refresh() end
+    assert(preview.afk.model._modelReads == reads and next(preview.host._events) == nil,
+        "hidden HUD preview still reads the character or watches events")
+    preview.host:Show()
+    preview.host.scripts.OnShow()
+    assert(preview.afk.model._modelReads > reads)
+    ui.select("objectives")
+    assert(next(preview.host._events) == nil and not preview.afk.host.shown,
+        "leaving AFK retains its model/event work")
+    assert(historyWrites == historyBefore, "HUD navigation or preview wrote undo history")
+    for id, config in pairs(saved) do
+        assert(S.Config(id).enabled == false, "preview enabled a runtime feature")
+        for key, value in pairs(config) do S.Config(id)[key] = value end
+    end
+    preview.pickers.objectives.set("quests")
+    optionsNS.Refresh()
+    C_Timer = timerAPI
+end)() end
+    for _, refresh in ipairs(hudCtx.refreshers) do refresh() end
+    assert(#hudCtx.sections == (flavor == "Forever" and 13 or 17),
+        "HUD topics must be separate accordions beneath four feature categories")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
-    local legacy = { key = "suite_hud", width = 1000, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+    local textBuilder = optionsNS.Text
+    optionsNS.Text = function(parent, text, ...)
+        local label = textBuilder(parent, text, ...)
+        if text == "Sample preview. Changes update here even when the feature is off." then
+            function label:GetStringHeight() return 28 end
+        end
+        return label
+    end
+    local legacy = { key = "suite_hud", width = 520, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
     M.pages.suite_hud.build(legacy)
+    optionsNS.Text = textBuilder
     W.SegmentTabs = previousTabs
-    assert(#legacy.sections == 4 and not legacy.tabControls,
-        "older hosts must keep compact HUD features through the settings selector")
-    for i = 1, 3 do
-        local tabs = assert(legacy.sections[i]._msufSuiteHUDTabs)
-        local id = legacy.sections[i].sectionId:match("suite_hud_(.+)_module")
-        local prefix = id == "runSummary" and "summary" or id
-        tabs.select("suite_hud_" .. prefix .. "_layout")
-        assert(tabs.panels["suite_hud_" .. prefix .. "_layout"].shown,
-            "older host settings selector cannot open layout")
-        assert(tabs.selector.value == "suite_hud_" .. prefix .. "_layout",
-            "older host settings selector displays a different panel")
-        assert(tabs.selector.meta.classification == "ephemeral",
-            "HUD view selector must not act like a saved setting")
+    local workspace = legacy._msufSuiteHUDWorkspace
+    assert(legacy.fixedPreview.record.heightResolver() == 324,
+        "wrapped preview hint overlaps the settings on narrow hosts")
+    assert(workspace.selector and not legacy.tabControls,
+        "older/narrow hosts need a single HUD feature selector")
+    workspace.select("announcements")
+    assert(workspace.selector.value == "announcements" and workspace.groups.announcements.frame.shown,
+        "older host feature selector displays a different feature")
+    assert(workspace.selector.meta.classification == "ephemeral", "feature selector writes settings")
+    for _, widget in ipairs(legacy.widgets) do
+        if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.x" then
+            widget:_msuf2PrepareExactSearchTarget()
+            assert(workspace.selected == "objectives", "narrow exact search cannot reveal tracker settings")
+        end
     end
     local ids = { "objectives", "runSummary", "announcements", "afkScreen" }
     local saved, questions, reloads = {}, {}, 0
@@ -1890,14 +2088,12 @@ assert(shortcutColorCount > 0, "suite color shortcut audit did not cover the cat
 local hudSections = {}
 for _, section in ipairs(contexts.suite_hud.sections) do
     hudSections[section.sectionId] = section
-    local appearance = section.sectionId ~= "suite_hud_afkScreen_module"
-    assert((type(section.colorShortcut) == "table") == appearance,
+    local appearance = section.sectionId:match("_type$") or section.sectionId:match("_module$") and section.sectionId ~= "suite_hud_afkScreen_module"
+    assert((type(section.colorShortcut) == "table") == (appearance and true or false),
         "HUD feature header lost its three-dot colors")
 end
-assert(#contexts.suite_hud.sections == 4, "HUD still mixes settings from different features")
-local trackerTabs = assert(hudSections.suite_hud_objectives_module._msufSuiteHUDTabs)
-assert((trackerTabs.panels.suite_hud_objectives_raid ~= nil) == (flavor == "Mainline"),
-    "raid encounter tab must exist only on Retail")
+assert(#contexts.suite_hud.sections == 17, "HUD topics lost their separate accordions")
+assert(hudSections.suite_hud_objectives_raid, "Retail raid encounter accordion missing")
 local raidPause
 for _, widget in ipairs(contexts.suite_hud.widgets) do
     if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.showRaid" then
@@ -1908,39 +2104,26 @@ for _, widget in ipairs(contexts.suite_hud.widgets) do
     end
 end
 assert(raidPause and raidPause.row and raidPause.row.kind == "toggle"
-    and raidPause.meta.sectionId == "suite_hud_objectives_module"
+    and raidPause.meta.sectionId == "suite_hud_objectives_content"
     and Suite.SuiteCatalog.objectives.rules.pauseInRaidCombat.default == false,
     "raid combat tracker pause must be an optional HUD toggle")
 do (function()
-    local tabs = {
-        objectives = { "content", "layout", "type" },
-        runSummary = { "content", "layout", "type" },
-        announcements = { "content", "layout", "type" },
-    }
-    for id, kinds in pairs(tabs) do
-        local record = assert(hudSections["suite_hud_" .. id .. "_module"]._msufSuiteHUDTabs)
+    local workspace = contexts.suite_hud._msufSuiteHUDWorkspace
+    for _, id in ipairs({ "objectives", "runSummary", "announcements" }) do
         local prefix = id == "runSummary" and "summary" or id
-        for _, kind in ipairs(kinds) do
-            local panelId = "suite_hud_" .. prefix .. "_" .. kind
-            local panel = assert(record.panels[panelId])
-            record.select(panelId)
-            assert(panel.shown, "HUD settings tab did not open")
-            for otherId, other in pairs(record.panels) do
-                assert(other.shown == (otherId == panelId), "HUD shows more than one settings tab")
-            end
+        for _, kind in ipairs({ "content", "layout", "type" }) do
+            local section = assert(hudSections["suite_hud_" .. prefix .. "_" .. kind])
+            assert(section.parent == workspace.groups[id].frame,
+                "HUD topic accordion belongs to a different feature")
         end
         local exact
         for _, widget in ipairs(contexts.suite_hud.widgets) do
             if widget.meta and widget.meta.controlId == "menu2.suite_hud." .. id .. ".x" then exact = widget end
         end
-        assert(exact and exact._msuf2PrepareExactSearchTarget, "HUD lost exact-search tab preparation")
+        assert(exact and exact._msuf2PrepareExactSearchTarget)
         exact:_msuf2PrepareExactSearchTarget()
-        assert(record.panels["suite_hud_" .. prefix .. "_layout"].shown,
-            "exact search did not select the HUD layout tab")
-        if record.selector then
-            assert(record.selector.value == "suite_hud_" .. prefix .. "_layout",
-                "exact search left the HUD selector on its old label")
-        end
+        assert(workspace.selected == id and exact.meta.sectionId == "suite_hud_" .. prefix .. "_layout",
+            "exact search did not select the HUD feature/layout accordion")
     end
 end)() end
 local focusedColor, category
@@ -1965,7 +2148,7 @@ for _, section in ipairs(contexts.suite_nameplates.sections) do
 end
 assert((hudSections.raidControl ~= nil) == (flavor == "Mainline")
     and (not hudSections.raidControl
-        or hudSections.raidControl.meta.sectionId == "suite_hud_objectives_module"),
+        or hudSections.raidControl.meta.sectionId == "suite_hud_objectives_raid"),
     "raid encounter option must resolve to its own exact accordion")
 do
     local plateControls = {}

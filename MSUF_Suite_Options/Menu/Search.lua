@@ -221,7 +221,10 @@ local function RuleTarget(page, spec, rule)
     if spec.id == "dataTexts" and section then
         section = section:match("^bar%d+") or section
     elseif page.key == "suite_hud" then
-        return page.key .. "_" .. spec.id .. "_module"
+        if rule.key == "enabled" or not section then return page.key .. "_" .. spec.id .. "_module" end
+        local prefix = spec.id == "runSummary" and "summary" or spec.id
+        if rule.color or section:find("Colors$") or section == "colors" then section = "type" end
+        return page.key .. "_" .. prefix .. "_" .. section
     elseif spec.id == "nameplates" and section == "general" then
         return page.key .. "_nameplates_module"
     end
@@ -416,7 +419,7 @@ function P.SearchRows()
                         suiteModuleId = "objectives", suiteRuleKey = "showMythicPlus",
                         settingKey = "msufsuite.objectives.showMythicPlus",
                         hint = pageRow.hint .. " > " .. Tr("Mythic+ timer") .. " > " .. Tr("What to track"),
-                        sectionId = "suite_hud_objectives_module", anchorText = Tr("What to track"),
+                        sectionId = "suite_hud_objectives_content", anchorText = Tr("What to track"),
                         keywords = { "mythic plus", "m+", "mythic plus timer", "mythic plus objective tracker" },
                     }
                 end
@@ -427,7 +430,7 @@ function P.SearchRows()
                         suiteModuleId = "runSummary", suiteRuleKey = "showMythicPlus",
                         settingKey = "msufsuite.runSummary.showMythicPlus",
                         hint = pageRow.hint .. " > " .. Tr("Mythic+ run summaries") .. " > " .. Tr("Results and details"),
-                        sectionId = "suite_hud_runSummary_module", anchorText = Tr("Results and details"),
+                        sectionId = "suite_hud_summary_content", anchorText = Tr("Results and details"),
                         keywords = { "mythic plus", "m+", "mythic plus result", "mythic plus summary" },
                     }
                 end
