@@ -29,7 +29,7 @@ Usage (from the Suite root; Python 3.12, no third-party packages):
       Every locale file: valid UTF-8, each key once, keys exist in the
       extraction, format specifiers, lone % signs, escape sequences and a
       trailing space match the English, scripts fit the language, coverage
-      >= 99% chrome / 95% help. English sources hold no |h without a link.
+      100% chrome / 100% help. English sources hold no |h without a link.
   python tools/suite_locale_tool.py dynamic [--all]   text built at runtime, which cannot translate
   python tools/suite_locale_tool.py orphans      English-looking literals no sink reaches (review aid)
   python tools/suite_locale_tool.py sinks        every discovered sink and what made it one (debug aid)
@@ -67,7 +67,7 @@ CORE = "MSUF_Suite"
 SKIN_STRINGS = "MSUF_Suite_Skin/Locales/enUS.lua"
 DELTA_PENDING = ()
 
-CHROME_MIN, HELP_MIN = 0.99, 0.95
+CHROME_MIN, HELP_MIN = 1.0, 1.0
 
 # ---------------------------------------------------------------- Lua lexer
 KEYWORDS = {"and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in",
@@ -1176,7 +1176,7 @@ _COVERAGE = {}
 
 def msuf_coverage():
     """{locale: keys MSUF translates on both hosts}. A key only one host has
-    stays the Suite's to translate (its entry never overwrites MSUF's)."""
+    stays the Suite's to translate. Real host translations retain precedence."""
     if _COVERAGE:
         return _COVERAGE
     for locale in LOCALES:
@@ -1184,7 +1184,8 @@ def msuf_coverage():
         for host in ("classic", "main"):
             source = host_pack_source(host, locale)
             if source is not None:
-                sets.append(pack_keys(source))
+                sets.append({key for key, value in pack_entries(source).items()
+                             if value != key or proper_noun_like(key)})
         _COVERAGE[locale] = set.intersection(*sets) if sets else set()
     return _COVERAGE
 
@@ -1202,9 +1203,10 @@ local MSUF = _G.MSUF_NS or _G.MSUF
 if not MSUF or MSUF.LOCALE ~= "{locale}" then return end
 local L = MSUF.RegisterLocale and MSUF.RegisterLocale("{locale}") or MSUF.L
 if type(L) ~= "table" then return end
--- MSUF's own translation of a string always wins.
+-- Keep MSUF's translated wording; replace absent or English fallback entries.
 local function T(english, text)
-    if rawget(L, english) == nil then L[english] = text end
+    local current = rawget(L, english)
+    if current == nil or current == english then L[english] = text end
 end
 
 """
@@ -1281,7 +1283,7 @@ LATIN_LOCALES = ("deDE", "esES", "esMX", "frFR", "itIT", "ptBR")
 # Blizzard's own English acronyms, units. English made only of these (plus
 # numbers, ALL-CAPS abbreviations and punctuation) is proper-noun-like.
 PROPER_WORDS = {
-    "msuf", "suite", "forever", "midnight", "blue", "dark", "modern", "elvui", "bartender4", "dominos",
+    "mapkotwo", "msuf", "suite", "forever", "midnight", "blue", "dark", "modern", "elvui", "bartender4", "dominos",
     "ellesmereuiactionbars", "arkinventory", "bagnon", "baganator", "adibags", "inventorian", "details",
     "skada", "recount", "prat", "chattynator", "sexymap", "basicminimap", "minimapbuttonbag",
     "midnightcooldownmanager", "cooldownmanagercentered", "mapkoskin", "mapko", "midnightskin", "jundies", "slug",
@@ -1290,7 +1292,15 @@ PROPER_WORDS = {
 
 
 def specifiers(text):
-    return [s for s in SPECIFIER.findall(text) if s != "%%"] + ["%%"] * text.count("%%")
+    formats = []
+    for match in SPECIFIER.finditer(text):
+        value = match.group(0)
+        # A displayed percent followed by prose is not a space-flag format.
+        if value.startswith("% ") and re.match(r"[A-Za-z]", text[match.end():]):
+            continue
+        if value != "%%":
+            formats.append(value)
+    return formats + ["%%"] * text.count("%%")
 
 
 # One token per percent use: "%%", a specifier, or a lone "%". Text with a
@@ -1349,6 +1359,8 @@ def english_problems(english):
 
 
 def proper_noun_like(english):
+    if english in {"MSUF Forever Glass", "MSUF Smooth v2"}:
+        return True
     stripped = re.sub(r"\|c[0-9a-fA-F]{8}|\|r|%[-+ #0]*\d*(?:\.\d+)?[a-zA-Z%]", " ", english)
     for word in re.findall(r"[A-Za-z][A-Za-z0-9']*", stripped):
         if word.lower() in PROPER_WORDS or re.fullmatch(r"[A-Z0-9]{2,}s?", word):

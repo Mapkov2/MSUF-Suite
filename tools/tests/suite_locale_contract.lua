@@ -8,7 +8,7 @@ local root = assert(arg[1], "usage: suite_locale_contract.lua <suite root> [pyth
 local python = arg[2] or os.getenv("MSUF_PYTHON") or "python"
 local LOCALES = { "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }
 local LATIN = { deDE = true, esES = true, esMX = true, frFR = true, itIT = true, ptBR = true }
-local CHROME_MIN, HELP_MIN = 0.99, 0.95
+local CHROME_MIN, HELP_MIN = 1.0, 1.0
 local failures = {}
 local function Check(ok, message)
     if not ok then failures[#failures + 1] = message end
@@ -171,6 +171,10 @@ for _, locale in ipairs(LOCALES) do
             Check(rawget(owned, keys[1]) == "MSUF WINS", locale .. ": the pack replaced a translation MSUF already has")
             Check(rawget(owned, keys[#keys]) == entries[keys[#keys]], locale .. ": entries after MSUF's own were lost")
         end
+        local fallback = LocaleTable({ Font = "Font" })
+        Run(locale, { LOCALE = locale, L = fallback })
+        Check(rawget(fallback, "Font") == rawget(entries, "Font"),
+            locale .. ": an English host fallback blocks the Suite translation")
         -- An MSUF build without RegisterLocale still gets the pack through MSUF.L.
         local plain = LocaleTable()
         Run(locale, { LOCALE = locale, L = plain })
@@ -200,6 +204,23 @@ for _, locale in ipairs(LOCALES) do
                 locale, class, have, all, 100 * have / math.max(all, 1), minimum * 100, locale))
         end
     end
+end
+
+-- Collapsed summaries translate their UI label and their selected choice.
+do
+    local dictionary = { ["Icon size"] = "SYMBOLGROESSE", Top = "OBEN" }
+    local refresh, summary
+    local P = { S = {}, M = {}, W = {}, T = {}, Suite = {}, catalog = {} }
+    P.Tr = function(key) return dictionary[key] or key end
+    P.M.TrackRefresh = function(_, callback) refresh = callback end
+    P.W.SetCollapsibleSummary = function(_, text) summary = text end
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
+    P.AttachRowsSummary({}, { _msuf2CollapsibleEntry = {} }, {
+        { summary = 1, kind = "dropdown", label = "Icon size", get = function() return 1 end,
+          values = { { value = 1, text = "Top" } } },
+    })
+    refresh()
+    Check(summary == "SYMBOLGROESSE: OBEN", "collapsed summary left its label or choice English")
 end
 
 if #failures > 0 then

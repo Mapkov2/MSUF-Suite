@@ -35,6 +35,11 @@ check("ends with a space" not in problems("zhCN", "Loot: ", "拾取："), "a ful
 # A lone % breaks string.format only in a format string.
 check("lone %" in problems("deDE", "%d%% done", "%d%, fertig"), "a lone % in a format string was not flagged")
 check("lone %" not in problems("ruRU", "Opacity (percent)", "Непрозрачность (%)"), "a plain label may show a %")
+check(tool.specifiers("Hide % sign") == [], "plain percent prose was treated as a format")
+check(tool.specifiers("At 100% health") == [], "plain health percent was treated as a format")
+check(tool.specifiers("% s") == ["% s"], "a space flag on a real format was lost")
+check(tool.specifiers("%.1f%% of pull") == ["%.1f", "%%"], "a doubled percent was mistaken for prose")
+check(tool.specifiers("%s: %d%%") == ["%s", "%d", "%%"], "real formats were lost")
 # Pipes the client reads as an escape.
 check("pipes differ" in problems("deDE", "Usage: /mark tank||healer", "Verwendung: /mark tank|healer"),
       "a translation that unescaped a pipe was not flagged")
