@@ -599,7 +599,7 @@ local function CreateRow(v, panel, index, slot)
     local row = { slot = slot[1], slotName = slot[2], view = v }
     v.rows[index] = row
     v.bySlot[slot[1]] = row
-    local frame = CreateFrame("Button", nil, panel)
+    local frame = NS.Safety.CreateChildFrame("Button", panel)
     row.frame = frame
     frame.dossierRow = row
     frame:SetSize(324, ROW_HEIGHT)
@@ -672,7 +672,7 @@ local function CreateHeader(v, panel)
 end
 
 local function CreateToggle(v, host, panel)
-    local toggle = CreateFrame("Button", nil, host)
+    local toggle = NS.Safety.CreateChildFrame("Button", host)
     v.toggle = toggle
     toggle:SetSize(26, 26)
     toggle:SetFrameLevel(panel:GetFrameLevel() + 3)
@@ -696,13 +696,13 @@ local function Create(root, parent, kind, owner)
         if v.active and v.host:IsVisible() then Details.Refresh(v) end
     end
     v.flushRequests = function() FlushRequests(v) end
-    local host = CreateFrame("Frame", nil, parent)
+    local host = NS.Safety.CreateChildFrame("Frame", parent)
     v.host = host
     hosts[host] = true
     host:SetSize(1, 1)
     host:SetPoint("TOPLEFT")
     host:EnableMouse(false)
-    local panel = CreateFrame("Frame", nil, host)
+    local panel = NS.Safety.CreateChildFrame("Frame", host)
     v.panel = panel
     panel:SetSize(352, 610)
     panel:SetPoint("TOPLEFT", root, "TOPRIGHT", 8, 0)

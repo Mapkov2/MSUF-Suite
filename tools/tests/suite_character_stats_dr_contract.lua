@@ -126,7 +126,7 @@ local combatLocked = false
 local NOOP_METHODS = {
     "SetSize", "SetPoint", "ClearAllPoints", "SetAllPoints", "EnableMouse", "SetFrameLevel",
     "SetFont", "SetJustifyH", "SetWordWrap", "SetWidth", "SetColorTexture", "SetTexture",
-    "SetTexCoord", "SetClampedToScreen", "SetFontObject", "SetFrameStrata",
+    "SetTexCoord", "SetClampedToScreen", "SetFontObject", "SetFrameStrata", "SetParent",
 }
 local function Object(fields)
     local object = fields or {}

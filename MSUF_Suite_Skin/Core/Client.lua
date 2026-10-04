@@ -31,3 +31,13 @@ end
 function NS.Client.SupportsEvent(event)
     return C_EventUtils.IsEventValid(event) == true
 end
+
+-- WoW Forever's Gamepad UI. Its frame controls manager follows every panel the
+-- panel manager shows or hides (UIParentPanelManager.ShowUIPanel/HideUIPanel
+-- events in the forever branch), in the caller's context: driven from here,
+-- its binding state stays tainted and SetPreferredGamepadInteractTarget is
+-- blocked. The skin then leaves the panel manager to Blizzard.
+-- Forever's Mainline InputUtil always defines IsGamepadUIEnabled.
+function NS.Client.IsGamepadUI()
+    return forever and InputUtil.IsGamepadUIEnabled() == true
+end

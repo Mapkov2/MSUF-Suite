@@ -295,7 +295,7 @@ end
 function Gear.UpdateSummary(v)
     if not v.wide then return end
     if not v.wideInfo then
-        local host = CreateFrame("Frame", nil, v.host)
+        local host = NS.Safety.CreateChildFrame("Frame", v.host)
         v.wideInfo = host
         host:SetAllPoints(v.root)
         host:EnableMouse(false)
@@ -488,11 +488,11 @@ end
 local function Create(v, row, slot)
     local a = { fonts = {}, gems = {}, slot = slot, inspect = v.kind == "inspect" }
     row.annotation = a
-    local host = CreateFrame("Frame", nil, v.host)
+    local host = NS.Safety.CreateChildFrame("Frame", v.host)
     a.host = host
     host:EnableMouse(false)
     host:SetFrameLevel(slot:GetFrameLevel() + 10)
-    local status = CreateFrame("Button", nil, host)
+    local status = NS.Safety.CreateChildFrame("Button", host)
     a.status = status
     status:SetPoint("TOPLEFT")
     PropagateClicks(status)
@@ -524,7 +524,7 @@ local function Create(v, row, slot)
     a.upgradeBack:SetSize(84, 2)
     a.upgradeFill = status:CreateTexture(nil, "OVERLAY")
     a.upgradeFill:SetSize(84, 2)
-    local levelHost = CreateFrame("Frame", nil, host)
+    local levelHost = NS.Safety.CreateChildFrame("Frame", host)
     a.levelHost = levelHost
     levelHost:SetSize(1, 1)
     levelHost:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
@@ -537,7 +537,7 @@ local function Create(v, row, slot)
     a.level:SetJustifyH("RIGHT")
     a.fonts = { a.name, a.enchant, a.track, a.level, a.enchantMark, a.upgradeMark }
     for index = 1, MAX_PROVIDER_GEMS do
-        local gem = CreateFrame("Button", nil, host)
+        local gem = NS.Safety.CreateChildFrame("Button", host)
         a.gems[index] = gem
         PropagateClicks(gem)
         gem.icon = gem:CreateTexture(nil, "ARTWORK")

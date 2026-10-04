@@ -334,7 +334,7 @@ end
 
 -- The "DR" button beside Enhancements that explains the diminishing returns.
 local function CreateHelp(v, host, pane)
-    local help = CreateFrame("Button", nil, host)
+    local help = NS.Safety.CreateChildFrame("Button", host)
     v.help = help
     help:SetSize(28, 18)
     help:SetPoint("RIGHT", pane.EnhancementsCategory, "RIGHT", -5, 0)
@@ -406,7 +406,7 @@ local function Create(pane, owner)
         end
     end
 
-    local host = CreateFrame("Frame", nil, pane)
+    local host = NS.Safety.CreateChildFrame("Frame", pane)
     v.host = host
     hosts[host] = true
     host:SetSize(1, 1)

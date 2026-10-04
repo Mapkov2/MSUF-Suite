@@ -36,6 +36,7 @@ local function Frame(name, parent, kind)
     }
     function frame:GetName() return self.name end
     function frame:GetParent() return self.parent end
+    function frame:SetParent(parent) self.parent = parent end
     function frame:GetObjectType() return self.kind end
     function frame:GetWidth() return self.width end
     function frame:GetHeight() return self.height end
@@ -110,7 +111,14 @@ UIPanelWindows = { CharacterFrame = { area = "left" }, MerchantFrame = { area = 
     ContainerFrameCombinedBags = { area = "left" } }
 HideUIPanel = function(frame) frame:Hide() end
 ShowUIPanel = function(frame) frame:Show() end
-CreateFrame = function(kind, _, parent) return Frame(nil, parent, kind) end
+-- Forever's SmartNavigation post-hooks CreateFrame and rescans the panel above
+-- the parent argument in the caller's (tainted) execution; skin controls inside
+-- a Blizzard window are therefore created without one and parented afterwards.
+local parentedCreates = 0
+CreateFrame = function(kind, _, parent)
+    if parent ~= nil and parent ~= UIParent then parentedCreates = parentedCreates + 1 end
+    return Frame(nil, parent, kind)
+end
 local panelPositionHook
 UpdateUIPanelPositions = function(frame)
     if frame then frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -90) end
@@ -159,7 +167,7 @@ local NS = {
         return true
     end },
     -- Retail until the Forever check below; Client.lua loads before Defaults.
-    Client = { isForever = false },
+    Client = { isForever = false, IsGamepadUI = function() return false end },
     -- Blizzard.lua's adapter registry, which always loads with this file.
     Adapters = { ApplyAll = function() adapterPasses = adapterPasses + 1 end },
 }
@@ -193,6 +201,8 @@ Check(state and state.grip and state.minimize and state.restore and not state.mo
 Check(state.titleDrag and state.titleDrag.mouseEnabled
     and state.titleDrag.parent == character,
     "window title is not a direct mouse drag target")
+Check(parentedCreates == 0,
+    "window controls passed a Blizzard window to CreateFrame (SmartNavigation rescans it tainted)")
 Check(state.minimize.point[1] == "TOPRIGHT",
     "a bottom Close action incorrectly moved the minimize button to the footer")
 cursorX, cursorY = 500, 500
@@ -225,6 +235,28 @@ state.minimize.scripts.OnClick(state.minimize)
 Check(not character.shown and state.restore.shown, "minimize did not leave a restore tab")
 state.restore.scripts.OnClick(state.restore, "LeftButton")
 Check(character.shown and not state.restore.shown, "restore did not reopen the panel")
+-- WoW Forever's Gamepad UI: its frame controls manager follows ShowUIPanel and
+-- HideUIPanel in the caller's context, so the skin never drives the panel
+-- manager then (SetPreferredGamepadInteractTarget stayed blocked otherwise).
+state.minimize.scripts.OnClick(state.minimize)
+local panelCalls = 0
+local nativeShow, nativeHide, nativeUpdate = ShowUIPanel, HideUIPanel, UpdateUIPanelPositions
+ShowUIPanel = function(frame) panelCalls = panelCalls + 1; nativeShow(frame) end
+HideUIPanel = function(frame) panelCalls = panelCalls + 1; nativeHide(frame) end
+UpdateUIPanelPositions = function(frame) panelCalls = panelCalls + 1; nativeUpdate(frame) end
+NS.Client.IsGamepadUI = function() return true end
+state.restore.scripts.OnClick(state.restore, "LeftButton")
+Check(character.shown and not state.restore.shown and panelCalls == 0,
+    "restore drove the panel manager under the Gamepad UI")
+NS.WindowControls.Refresh()
+Check(not state.minimize.shown, "the Gamepad UI kept the skin's minimize button")
+state.minimize.scripts.OnClick(state.minimize)
+Check(character.shown and not state.restore.shown and panelCalls == 0,
+    "minimize drove the panel manager under the Gamepad UI")
+NS.Client.IsGamepadUI = function() return false end
+ShowUIPanel, HideUIPanel, UpdateUIPanelPositions = nativeShow, nativeHide, nativeUpdate
+NS.WindowControls.Refresh()
+Check(state.minimize.shown, "the minimize button did not come back without the Gamepad UI")
 Check(NS.WindowControls.SetEnabled(false) and not state.grip.shown
     and not state.minimize.shown and not state.titleDrag.shown,
     "disabling controls left live buttons")
@@ -302,7 +334,7 @@ Check(NS.WindowControls.ResetPositions()
     "position reset did not return to Blizzard layout")
 
 -- Forever's authored placement is a virtual default, not a saved position.
-NS.Client = { isForever = true }
+NS.Client = { isForever = true, IsGamepadUI = function() return false end }
 NS.DB.theme = { look = "foreverGlass" }
 NS.WindowControls:OnThemeChanged("theme", "look")
 NextFrame()

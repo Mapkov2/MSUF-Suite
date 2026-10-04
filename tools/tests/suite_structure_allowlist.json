@@ -1565,6 +1565,12 @@
   {
    "file": "MSUF_Suite_Skin/Core/Client.lua",
    "kind": "client",
+   "reason": "12.1.0 and 12.1.5 have InputUtil without IsGamepadUIEnabled (upstream/forever Blizzard_SharedXML/Mainline/InputUtil.lua defines it); IsGamepadUI reads it only after the Forever marker.",
+   "symbol": "InputUtil.IsGamepadUIEnabled"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Core/Client.lua",
+   "kind": "client",
    "reason": "flavor probe: Retail (12.1.0, 12.1.5) and WoW Forever define it; any other client stays Unknown",
    "symbol": "WOW_PROJECT_MAINLINE"
   },
@@ -1941,12 +1947,6 @@
    "symbol": "menu.ResumeForeverPadNavigation (= MSUF2)"
   },
   {
-   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
-   "kind": "addon",
-   "reason": "the Forever navigation bridge is supplied by the current Classic MSUF options build",
-   "symbol": "menu.SuspendForeverPadNavigation (= MSUF2)"
-  },
-  {
    "file": "MSUF_Suite/Core/Platform.lua",
    "kind": "client",
    "reason": "Forever pointer API is used only after the Forever client gate",
@@ -1954,9 +1954,9 @@
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "client",
-   "reason": "Forever D-pad navigation manager is absent on Retail",
-   "symbol": "GamepadMode"
+   "kind": "addon",
+   "reason": "Classic MSUF exports the Forever pad navigation; the Retail-only MSUF and older Classic hosts have none",
+   "symbol": "MSUF_PadNavigation"
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",

@@ -253,7 +253,7 @@ function Compat.Apply(owner)
     end
     Compat.active = true
     if not Compat.host then
-        local host = CreateFrame("Frame", nil, paperDoll)
+        local host = NS.Safety.CreateChildFrame("Frame", paperDoll)
         Compat.host = host
         host:SetSize(1, 1)
         host:SetPoint("TOPLEFT")

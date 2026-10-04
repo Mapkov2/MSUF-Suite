@@ -77,41 +77,37 @@ Suite.Client = {
     SupportsEvent = host and type(host.SupportsEvent) == "function" and host.SupportsEvent or SupportsEvent,
 }
 
--- Forever's Gamepad interface uses Blizzard's D-pad SmartNavigation. Native
+-- Forever's Gamepad interface: Suite windows use Classic MSUF's pad navigation
+-- (MSUF_PadNavigation, Game/Forever/PadNavigation.lua there), the same one the
+-- MSUF menu uses. Blizzard's frame controls manager is never called: an addon
+-- window registered there leaves the gamepad input state tainted, and
+-- SmartNavigation rescans the window on every CreateFrame below it. Native
 -- pointer mode uses the same open-edge cursor API as Blizzard's own panels.
--- Both paths are queried live, so no input polling or device-name mapping is
--- needed. A registered window is briefly removed while it builds new pages:
--- SmartNavigation otherwise walks the entire window on each CreateFrame.
 local function ForeverGamepadUI()
     local input = _G.InputUtil
     return isForever and input and type(input.IsGamepadUIEnabled) == "function"
         and input.IsGamepadUIEnabled() == true
 end
 
-local function ForeverFrameManager()
-    if not ForeverGamepadUI() then return nil end
-    local mode = _G.GamepadMode
-    return mode and mode.FrameControlsManager or nil
+-- Classic MSUF hosts the Suite on Forever; an older host has no navigation.
+local function PadNavigation()
+    local navigation = isForever and _G.MSUF_PadNavigation or nil
+    return type(navigation) == "table" and navigation or nil
 end
 
 function Suite.Client.PauseControllerWindow(frame)
-    if not (isForever and frame and frame._msufsuitePadRegistered) then return end
-    frame._msufsuitePadRegistered = nil
-    local mode = _G.GamepadMode
-    local manager = mode and mode.FrameControlsManager
-    if manager then manager:FrameHidden(frame) end
+    local navigation = PadNavigation()
+    if navigation and frame then navigation.Release(frame) end
 end
 
 function Suite.Client.ResumeControllerWindow(frame)
-    if not (isForever and frame and frame:IsShown()) or frame._msufsuitePadRegistered then return end
-    local manager = ForeverFrameManager()
-    if manager then frame._msufsuitePadRegistered = manager:FrameShown(frame) == true end
+    local navigation = PadNavigation()
+    if navigation and frame then navigation.Activate(frame) end
 end
 
 function Suite.Client.AttachControllerWindow(frame)
-    if not (isForever and frame) or frame._msufsuitePadAttached then return end
-    frame._msufsuitePadAttached = true
-    frame:HookScript("OnHide", Suite.Client.PauseControllerWindow)
+    local navigation = PadNavigation()
+    if navigation and frame then navigation.Attach(frame) end
 end
 
 function Suite.Client.RaiseControllerCursor()

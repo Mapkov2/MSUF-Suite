@@ -172,7 +172,8 @@ local function RestoreNativePosition(state)
     state.defaultPosition = false
     positionedStates[state.frame] = nil
     if state.panel then
-        UpdateUIPanelPositions(state.frame)
+        -- Under the Gamepad UI Blizzard places the panel again when it next opens.
+        if not NS.Client.IsGamepadUI() then UpdateUIPanelPositions(state.frame) end
     elseif state.nativePoints then
         state.frame:ClearAllPoints()
         for index = 1, #state.nativePoints do
@@ -287,7 +288,7 @@ local function Restore(state)
     if IsCombat() or not state or not state.minimized then return false end
     state.minimized = false
     state.restore:Hide()
-    if state.panel then
+    if state.panel and not NS.Client.IsGamepadUI() then
         ShowUIPanel(state.frame)
     else
         state.frame:Show()
@@ -296,7 +297,7 @@ local function Restore(state)
 end
 
 local function Minimize(state)
-    if IsCombat() or not state or state.minimized then return end
+    if IsCombat() or NS.Client.IsGamepadUI() or not state or state.minimized then return end
     local frame = state.frame
     local left, top = frame:GetLeft(), frame:GetTop()
     local uiScale = UIParent:GetEffectiveScale()
@@ -468,7 +469,7 @@ local function ControlBaseLevel(state)
 end
 
 local function CreateGrip(state)
-    local grip = CreateFrame("Button", nil, state.frame)
+    local grip = Safety.CreateChildFrame("Button", state.frame)
     controlStates[grip] = state
     grip:SetSize(20, 20)
     grip:SetFrameLevel(ControlBaseLevel(state) + GRIP_LEVEL_OFFSET)
@@ -536,7 +537,7 @@ local function CreateTitleDrag(state)
     -- Standard Blizzard panel headers leave the title area clear.  Keep the
     -- drag target inside that strip, away from portraits and window buttons.
     -- The Forever navigation sits below the title, so this strip stays free.
-    local strip = CreateFrame("Frame", nil, state.frame)
+    local strip = Safety.CreateChildFrame("Frame", state.frame)
     controlStates[strip] = state
     strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 50, -1)
     strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -110, -1)
@@ -557,7 +558,9 @@ local function ShowControls(state)
     state.grip:SetFrameLevel(level + GRIP_LEVEL_OFFSET)
     state.titleDrag:Show()
     state.grip:Show()
-    if state.minimize then state.minimize:Show() end
+    if state.minimize then
+        if NS.Client.IsGamepadUI() then state.minimize:Hide() else state.minimize:Show() end
+    end
 end
 
 -- Controls off: a panel the grip scaled gets Blizzard's scale back (the
@@ -593,7 +596,7 @@ local function PlaceMinimize(button, frame, close)
 end
 
 local function CreateMinimize(state, close)
-    local button = CreateFrame("Button", nil, state.frame)
+    local button = Safety.CreateChildFrame("Button", state.frame)
     controlStates[button] = state
     PaintControl(button, "-")
     PlaceMinimize(button, state.frame, close)

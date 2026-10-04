@@ -28,6 +28,7 @@ local function Frame(name, parent, kind)
     }
     function frame:GetName() return self.name end
     function frame:GetParent() return self.parent end
+    function frame:SetParent(parent) self.parent = parent end
     function frame:GetObjectType() return self.kind end
     function frame:GetWidth() return self.width end
     function frame:GetHeight() return self.height end
@@ -141,7 +142,7 @@ local function NewSession(forever, look)
             if name == "CharacterFrame" then return { category = "character" } end
         end },
         CombatGate = { RunOrDefer = function(_, callback) callback() return true end },
-        Client = { isForever = forever == true },
+        Client = { isForever = forever == true, IsGamepadUI = function() return false end },
         Adapters = { ApplyAll = function() end },
     }
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)

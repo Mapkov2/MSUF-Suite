@@ -159,6 +159,18 @@ function Safety.CanCreateRegions(target, allowImplicitProtected)
         and not Safety.IsCompositorManaged(target)
 end
 
+-- A frame inside a Blizzard window. Forever's SmartNavigation post-hooks
+-- CreateFrame and rescans the panel above the parent in the caller's
+-- execution: from skin code that taints the panel's gamepad navigation (a
+-- spellbook cast by gamepad is then blocked) and walks the whole panel once
+-- per frame. Created without a parent and parented afterwards, the frame never
+-- reaches that hook. No template: an OnLoad would run before the parent is set.
+function Safety.CreateChildFrame(frameType, parent)
+    local frame = CreateFrame(frameType)
+    frame:SetParent(parent)
+    return frame
+end
+
 -- Runs code that other addons can supply (theme listeners and adapters from
 -- the public API) the way Blizzard's CallbackRegistry runs its callbacks: an
 -- error is reported to the error handler (BugSack) and the caller's loop goes

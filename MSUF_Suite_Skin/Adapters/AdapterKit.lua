@@ -375,7 +375,7 @@ function AdapterKit.SelectionIndicator(context, indicators, button, panel, match
     end
     local indicator = indicators[button]
     if not indicator then
-        indicator = CreateFrame("Frame", nil, panel)
+        indicator = Safety.CreateChildFrame("Frame", panel)
         indicators[button] = indicator
     end
     indicator:SetParent(panel)

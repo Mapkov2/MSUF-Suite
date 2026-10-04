@@ -81,30 +81,35 @@ assert(Suite.Client.IsAddOnLoaded("Loaded") and not Suite.Client.IsAddOnLoaded("
 assert(Suite.L == MSUF_NS.L and frames == 0 and reads == 2)
 assert(Suite.Client.isClassic == nil and Suite.Client.family == nil,
     "the Suite no longer models Classic clients")
--- Forever's two native controller styles need no device-specific button map.
--- The D-pad manager sees a completed window once per open/page transition.
+-- Forever's Gamepad UI: Suite windows go through Classic MSUF's pad navigation.
+-- Blizzard's frame controls manager is never called: registering an addon
+-- window there taints the gamepad input state (blocked spellbook casts,
+-- SetPreferredGamepadInteractTarget) and SmartNavigation rescans the window on
+-- every CreateFrame below it. Pointer mode keeps the native cursor call.
 do
-    local style, shown, hidden, cursor = true, 0, 0, 0
+    local style, cursor = true, 0
+    local calls = {}
+    local function Record(name) return function(frame) calls[#calls + 1] = name .. ":" .. frame.name end end
     InputUtil = { IsGamepadUIEnabled = function() return style end }
-    GamepadMode = { FrameControlsManager = {
-        FrameShown = function(_, frame) shown = shown + 1; assert(frame.name == "SuiteWindow"); return true end,
-        FrameHidden = function(_, frame) hidden = hidden + 1; assert(frame.name == "SuiteWindow") end,
-    } }
+    GamepadMode = { FrameControlsManager = setmetatable({}, { __index = function(_, key)
+        error("the Suite called Blizzard's frame controls manager: " .. tostring(key))
+    end }) }
+    MSUF_PadNavigation = { Attach = Record("attach"), Activate = Record("activate"), Release = Record("release") }
     CanAutoSetGamePadCursorControl = function(on) return on == true end
     SetGamePadCursorControl = function(on) assert(on == true); cursor = cursor + 1 end
     local window = { name = "SuiteWindow", shown = true }
     function window:IsShown() return self.shown end
-    function window:HookScript(name, callback) self[name] = callback end
     Suite.Client.AttachControllerWindow(window)
     Suite.Client.ResumeControllerWindow(window)
-    Suite.Client.ResumeControllerWindow(window)
-    assert(shown == 1 and hidden == 0 and cursor == 0)
     Suite.Client.PauseControllerWindow(window)
+    assert(table.concat(calls, ",") == "attach:SuiteWindow,activate:SuiteWindow,release:SuiteWindow",
+        "Suite windows did not forward to MSUF's pad navigation: " .. table.concat(calls, ","))
+    -- A host without the navigation (Retail-only MSUF, an older Classic) is a no-op.
+    MSUF_PadNavigation = nil
+    Suite.Client.AttachControllerWindow(window)
     Suite.Client.ResumeControllerWindow(window)
-    assert(shown == 2 and hidden == 1)
-    window.shown = false
-    window.OnHide(window)
-    assert(hidden == 2)
+    Suite.Client.PauseControllerWindow(window)
+    assert(#calls == 3 and cursor == 0)
     style = false
     Suite.Client.RaiseControllerCursor()
     assert(cursor == 1)
