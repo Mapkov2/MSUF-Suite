@@ -72,6 +72,50 @@ Check(theme and theme.gradientStrength == 0 and theme.shellOpacity == 0.35,
 Check(theme.colors.text[1] == 0 and theme.colors.text[2] == 0.5 and theme.colors.text[4] == 0,
     "an imported NaN colour channel survived SanitizeProfile")
 
+------------------------------------------------------------------ listeners
+-- Inserting keys into the weak listener table while pairs() walks it can
+-- rehash the table: next() then skips or repeats owners (Lua 5.1 leaves the
+-- traversal undefined). Every size from 1 to 48 listeners, a first listener
+-- that adds eight more.
+local Registry = NS.Registry
+local saved = Registry.listeners
+for size = 1, 48 do
+    Registry.listeners = setmetatable({}, { __mode = "k" })
+    local calls, owners, added = {}, {}, {}
+    local function Count(owner) calls[owner] = (calls[owner] or 0) + 1 end
+    local function AddMore(owner)
+        Count(owner)
+        if #added == 0 then
+            for index = 1, 8 do
+                added[index] = {}
+                Registry.AddListener(added[index], Count)
+            end
+        end
+    end
+    for index = 1, size do
+        owners[index] = {}
+        Registry.AddListener(owners[index], AddMore)
+    end
+    Registry.NotifyListeners("profile", "activate")
+    for index = 1, size do
+        Check(calls[owners[index]] == 1, size .. " listeners: one was called "
+            .. tostring(calls[owners[index]] or 0) .. " times while another added listeners")
+    end
+end
+-- A listener removed by an earlier one in the same pass is not called.
+Registry.listeners = setmetatable({}, { __mode = "k" })
+local first, second, passCalls = {}, {}, 0
+-- Whichever runs first removes the other one.
+local function RemoveOther(owner)
+    passCalls = passCalls + 1
+    Registry.RemoveListener(owner == first and second or first)
+end
+Registry.AddListener(first, RemoveOther)
+Registry.AddListener(second, RemoveOther)
+Registry.NotifyListeners("profile", "activate")
+Check(passCalls == 1, "a listener removed during the pass was still called")
+Registry.listeners = saved
+
 Check(#reported == 0, "the skin core reported errors: " .. table.concat(reported, "; "))
 
 print("Suite skin core edges: " .. checks .. " checks passed")
