@@ -247,7 +247,9 @@ end
 local RESTRICTION_OFF = Enum.AddOnRestrictionState.Inactive
 local function OnRestriction(_, _, _, state)
     if Public(state) and state == RESTRICTION_OFF then
-        if next(C.Auras.pending) or C.Alerts.pending then C_Timer.After(0, C.Auras.FlushPending) end
+        if next(C.Auras.pending) or C.Alerts.pending or C.AuraGlows.HasParkedGates() then
+            C_Timer.After(0, C.Auras.FlushPending)
+        end
         if C.ActionGlows.pending then C_Timer.After(0, C.ActionGlows.Refresh) end
     end
 end
@@ -547,14 +549,37 @@ function Events.CoreEvents()
 end
 
 -- A release under lockdown parks state driver work (visibility drivers,
--- glow combat gates), and the module's own PLAYER_REGEN_ENABLED goes with
--- its events: this standalone listener applies it once combat ends.
-local parkedListener
-local function ReleaseParked(frame)
+-- glow combat gates); a glow gate also waits while its sealed aura button
+-- refuses access (AuraGlows). The module's own combat and restriction
+-- events may be gone by then (the module or its last aura bar was switched
+-- off): this standalone listener applies the work once combat or the
+-- restriction ends, and lets go when nothing is parked any more.
+local parkedListener, watchingParked
+local function ReleaseParked()
     if NS.IsCombatLocked() then return end
-    frame:UnregisterEvent("PLAYER_REGEN_ENABLED")
     C.Visibility.FlushPending()
     C.AuraGlows.FlushGates()
+    if C.Visibility.HasPending() or C.AuraGlows.HasParkedGates() then return end
+    watchingParked = false
+    parkedListener:UnregisterEvent("PLAYER_REGEN_ENABLED")
+    parkedListener:UnregisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
+end
+local function OnParked(_, event, _, state)
+    if event == "PLAYER_REGEN_ENABLED" then
+        ReleaseParked()
+    elseif Public(state) and state == RESTRICTION_OFF then
+        C_Timer.After(0, ReleaseParked)
+    end
+end
+function Events.WatchParked()
+    if watchingParked then return end
+    watchingParked = true
+    if not parkedListener then
+        parkedListener = S.CreateFrame("Frame")
+        parkedListener:SetScript("OnEvent", OnParked)
+    end
+    parkedListener:RegisterEvent("PLAYER_REGEN_ENABLED")
+    parkedListener:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 end
 
 -- Disable: the poll stops, every event goes and routing work parked for the
@@ -568,13 +593,7 @@ function Events.Release(context)
         context:RemoveEvent(event)
     end
     staleRoutes, seedLater = false, false
-    if C.Visibility.HasPending() or C.AuraGlows.HasParkedGates() then
-        if not parkedListener then
-            parkedListener = S.CreateFrame("Frame")
-            parkedListener:SetScript("OnEvent", ReleaseParked)
-        end
-        parkedListener:RegisterEvent("PLAYER_REGEN_ENABLED")
-    end
+    if C.Visibility.HasPending() or C.AuraGlows.HasParkedGates() then Events.WatchParked() end
 end
 
 ------------------------------------------------------------------ data units of the flush

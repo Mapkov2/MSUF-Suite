@@ -2419,6 +2419,22 @@ assert(S.ActionBarsBindingForSpell(3000)=="","a spell on no button has no key")
 c.disableFormPaging=true
 assert(S.ActionBarsBindingForSpell(2075)=="","bar 1 never pages to forms with the opt-out")
 c.disableFormPaging=false
+-- Labels that follow the page (the cooldown manager's "Keep key labels
+-- stable across action pages and forms" off): each button answers for the
+-- slot it presses now. Bar 1 in cat form (page 7, slots 73-84) presses slot
+-- 75 with key 3; page 1 and the other form pages count no longer.
+do
+    spellSlots[2003]={3}
+    AB.PageSlots(Bar(1),7)
+    assert(S.ActionBarsBindingForSpell(2075,true)=="3","bar 1 in a form lost the key that presses its form page")
+    assert(S.ActionBarsBindingForSpell(2003,true)=="","a page 1 spell kept bar 1's key while bar 1 presses the form page")
+    assert(S.ActionBarsBindingForSpell(2003)=="3" and S.ActionBarsBindingForSpell(2075)=="3","stable labels changed")
+    assert(S.ActionBarsBindingForSpell(2013,true)=="CM4","a bar that never pages lost its key")
+    AB.PageSlots(Bar(1),1)
+    assert(S.ActionBarsBindingForSpell(2003,true)=="3" and S.ActionBarsBindingForSpell(2075,true)=="",
+        "back on page 1 bar 1's keys press page 1 again")
+    spellSlots[2003]=nil
+end
 -- Bar 1's custom pages press their slots with bar 1's keys: a target page
 -- with the plain key, a modifier page with the modifier held while that
 -- combination has no binding of its own.

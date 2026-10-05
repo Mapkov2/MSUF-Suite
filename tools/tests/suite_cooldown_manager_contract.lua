@@ -478,6 +478,16 @@ RegisterAttributeDriver=function(frame,attribute,expression)
     if handler then handler(frame,attribute,value) end
 end
 UnregisterAttributeDriver=function(frame) drivers[frame]=nil end
+-- SecureStateDriver.lua bridges "state-<state>"; the manager's attribute
+-- writes are protected, so never in combat.
+RegisterStateDriver=function(frame,state,values)
+    assert(not combat,"a state driver registered in combat")
+    RegisterAttributeDriver(frame,"state-"..state,values)
+end
+UnregisterStateDriver=function(frame,state)
+    assert(not combat,"a state driver unregistered in combat")
+    UnregisterAttributeDriver(frame,"state-"..state)
+end
 local function DriverCount() local n=0;for _ in pairs(drivers) do n=n+1 end;return n end
 local registry,triggered={},{}
 EventRegistry={
@@ -640,8 +650,16 @@ C_PaperDollInfo={GetInventorySlotInfoForInvSlot=function(slot) return slot,13652
 GetInventoryItemCooldown=function(unit,slot) assert(unit=="player" and slot==13);invCalls=invCalls+1;return 0,0,1 end
 local actionSlots={[102]={2},[101]={62}}
 local bindings={ACTIONBUTTON2="SHIFT-2",MULTIACTIONBAR1BUTTON2="NUMPAD4"}
-C_ActionBar={FindSpellActionButtons=function(spell) local list=actionSlots[spell];return list and {unpack(list)} or {} end,
-    HasOverrideActionBar=function() return false end}
+-- The main bar's page (ActionBarController_UpdateAll): page 1, a bonus bar
+-- while a form is active (pages.bonus), no vehicle or override bar. The
+-- scenario's page state rides on the stub (the main chunk is at 200 locals).
+C_ActionBar={pages={action=1},FindSpellActionButtons=function(spell) local list=actionSlots[spell];return list and {unpack(list)} or {} end,
+    HasOverrideActionBar=function() return false end,HasVehicleActionBar=function() return false end,
+    HasTempShapeshiftActionBar=function() return false end,HasBonusActionBar=function() return C_ActionBar.pages.bonus~=nil end,
+    GetActionBarPage=function() return C_ActionBar.pages.action end,
+    GetBonusBarIndex=function() return C_ActionBar.pages.bonus or 0 end,
+    GetVehicleBarIndex=function() return 12 end,GetOverrideBarIndex=function() return 14 end,
+    GetTempShapeshiftBarIndex=function() return 13 end}
 -- No pet battle, vehicle or restricted auras in this contract (the layout and
 -- aura contracts drive those states).
 C_PetBattles={IsInBattle=function() return false end}
@@ -1099,6 +1117,15 @@ do
     assert(PendingTimers()==1 and flushes==0,"the flush waits for the next frame")
     Run()
     assert(flushes==1,"a restriction ending flushes pending aura restyles once")
+    -- Only a glow combat gate parked while auras were secret (AuraGlows):
+    -- the end of the restriction applies it too.
+    C.Auras.pending.buf=nil
+    local realParked=C.AuraGlows.HasParkedGates
+    C.AuraGlows.HasParkedGates=function() return true end
+    Fire("ADDON_RESTRICTION_STATE_CHANGED",1,0)
+    Run()
+    C.AuraGlows.HasParkedGates=realParked
+    assert(flushes==2,"a restriction ending left a parked glow combat gate waiting")
     C.Auras.FlushPending=realFlush
     C.Auras.pending.buf=nil
 end
@@ -2788,6 +2815,43 @@ do
     assert(Calls("keysRequest")==2 and PendingTimers()==1,"page and form edges share one key pass")
     Run(.2)
     assert(Calls("keysRebuild")==1,"the key pass looks every text up again")
+    -- Unstable labels show the key that presses the spell now: a spell on
+    -- page 1 (slot 3) and on the cat form page (slot 77 = page 7, button 5).
+    local KB,pages=C.Keybinds,C_ActionBar.pages
+    actionSlots[9201],actionSlots[9202]={3,77},{4}
+    bindings.ACTIONBUTTON3,bindings.ACTIONBUTTON4,bindings.ACTIONBUTTON5="Q","R","E"
+    KB.Clear()
+    assert(KB.Text(9201)=="Q" and KB.Text(9202)=="R","caster form: the page 1 keys")
+    pages.bonus=7
+    Fire("UPDATE_SHAPESHIFT_FORM")
+    Run(.2)
+    assert(KB.Text(9201)=="E","cat form: the label did not follow the key that casts the spell now")
+    assert(KB.Text(9202)=="","cat form: key 4 presses the form page, not the page 1 spell")
+    pages.action,pages.bonus=2,nil
+    actionSlots[9203]={15}
+    Fire("ACTIONBAR_PAGE_CHANGED")
+    Run(.2)
+    assert(KB.Text(9203)=="Q" and KB.Text(9201)=="","page 2: key 3 presses slot 15")
+    -- Running suite action bars answer for the slots their buttons press now.
+    local asked
+    S.ActionBarsBindingForSpell=function(_,current) asked=current;return "" end
+    KB.Clear()
+    KB.Text(9201)
+    S.ActionBarsBindingForSpell=nil
+    assert(asked==true,"the suite action bars were not asked for the keys of the current page")
+    pages.action,pages.bonus=1,7
+    config.keybindStable=true
+    module:Refresh()
+    Run()
+    KB.Clear()
+    assert(KB.Text(9201)=="Q" and KB.Text(9202)=="R","stable labels keep the page 1 keys in a form")
+    pages.action,pages.bonus=1,nil
+    actionSlots[9201],actionSlots[9202],actionSlots[9203]=nil,nil,nil
+    bindings.ACTIONBUTTON3,bindings.ACTIONBUTTON4,bindings.ACTIONBUTTON5=nil,nil,nil
+    KB.Clear()
+    config.keybindStable=false
+    module:Refresh()
+    Run()
     config.keybindStable=true
     module:Refresh()
     Run()
@@ -3388,6 +3452,71 @@ do
     assert(listeners>=1 and DriverCount()==0,"a release in combat left its visibility driver registered")
     config.uti_vis=1
     Run(5)
+end
+-- A glow combat gate released while its sealed aura button refuses access
+-- (auras secret in an M+ key, also out of combat) stays parked until the
+-- restriction ends. It still applies then when the module's own
+-- restriction and combat events are gone: the last aura bar or the module
+-- itself was switched off in between. The listener lets go afterwards.
+do
+    local access=true
+    local function Gated()
+        local host=New("Frame",UIParent)
+        host.CanBeAccessedInContext=function() return access end
+        local g=C.AuraGlows.NewGlow(host,host,1)
+        C.AuraGlows.ApplyCombatGate(g,true,false)
+        assert(drivers[g.combatGate],"the combat gate is registered before the key")
+        access=false
+        C.AuraGlows.ReleaseGlows({parts={{glow=g}}})
+        assert(drivers[g.combatGate] and C.AuraGlows.HasParkedGates(),"a release while the button refuses access parks the gate")
+        return g
+    end
+    local function Others(event)
+        local n=0
+        for i=1,#all do
+            local frame=all[i]
+            if frame~=module.context.frame and frame.events[event] then n=n+1 end
+        end
+        return n
+    end
+    local function Edge(event,...)
+        local n=0
+        for i=1,#all do
+            local frame=all[i]
+            if frame.events[event] and frame.scripts.OnEvent then
+                n=n+1
+                frame.scripts.OnEvent(frame,event,...)
+            end
+        end
+        Run()
+        return n
+    end
+    Activate()
+    config.allGlowsCombat=true
+    config.buf_on,config.bar_on,config.ess_showAura=false,false,false
+    module:Refresh()
+    Run()
+    assert(C.state.allGlowsCombat and not C.state.preview and not Registered("ADDON_RESTRICTION_STATE_CHANGED"),
+        "no aura bar left: the module itself watches no restriction")
+    local g=Gated()
+    access=true
+    Edge("ADDON_RESTRICTION_STATE_CHANGED",1,0)
+    assert(not drivers[g.combatGate] and not C.AuraGlows.HasParkedGates(),
+        "the last aura bar off: a gate parked in the key stayed registered after the key")
+    assert(Others("ADDON_RESTRICTION_STATE_CHANGED")+Others("PLAYER_REGEN_ENABLED")==0,"the parked-work listener stayed registered")
+    -- Module off in the key, a pull ends while it still runs, then the key ends.
+    config.buf_on,config.bar_on,config.ess_showAura=true,true,true
+    module:Refresh()
+    Run()
+    g=Gated()
+    Deactivate()
+    Edge("PLAYER_REGEN_ENABLED")
+    assert(drivers[g.combatGate] and C.AuraGlows.HasParkedGates(),"the button still refuses: the gate stays parked")
+    access=true
+    assert(Edge("ADDON_RESTRICTION_STATE_CHANGED",1,0)>=1 and not drivers[g.combatGate] and not C.AuraGlows.HasParkedGates(),
+        "module off: a gate parked in the key stayed registered after the key")
+    assert(Others("ADDON_RESTRICTION_STATE_CHANGED")+Others("PLAYER_REGEN_ENABLED")==0,"the parked-work listener stayed registered")
+    config.allGlowsCombat=false
 end
 config.blizzard=1
 assert(not S.CooldownManagerSetPreview(true))

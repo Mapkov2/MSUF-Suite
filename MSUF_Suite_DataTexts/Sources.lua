@@ -35,7 +35,11 @@ Sources.kinds = {
 }
 -- Places whose click runs a protected action through a secure button
 -- (Actions.lua). Their bars release it when combat starts.
-Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true, specLoot = true, travel = true }
+Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true, specLoot = true, travel = true,
+    currency = true, crests = true }
+-- Built-in places that borrow the same secure overlay, and the window the
+-- Blizzard button it clicks opens (S.PanelButton).
+Sources.panelSources = { durability = "character", coordinates = "worldMap", location = "worldMap" }
 
 local function Text(value)
     return S.Public(value) and type(value) == "string" and value or nil
@@ -322,6 +326,15 @@ local function ActiveKind(kind)
     return false
 end
 
+-- A place of this kind on any enabled bar, shown or not.
+local function ConfiguredKind(kind)
+    if not owner or not owner.active then return false end
+    for _, binding in pairs(Sources.bindings) do
+        if binding.kind == kind then return true end
+    end
+    return false
+end
+
 local function WantsCrestItems()
     if not ActiveKind("crests") or owner.config.crestMode == CREST.SELECTED then return false end
     for _, cost in ipairs(SeasonSelection(owner.config)) do
@@ -348,6 +361,10 @@ end
 
 function Sources.WantedEvents(active, wanted)
     if WantsCrestItems() then wanted.BAG_UPDATE_DELAYED = true end
+    -- The season's upgrade stages exist only while an item sits in Blizzard's
+    -- upgrade frame: every configured Crests place observes them, also one
+    -- on a bar that is hidden or not hovered at that moment.
+    if ConfiguredKind("crests") then wanted.ITEM_UPGRADE_MASTER_SET_ITEM = true end
     for key in pairs(active) do
         local binding = Sources.bindings[key]
         if binding then
@@ -359,6 +376,8 @@ function Sources.WantedEvents(active, wanted)
             if Sources.secureKinds[binding.kind] then
                 wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
             end
+        elseif Sources.panelSources[key] then
+            wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
         end
     end
 end
@@ -469,19 +488,19 @@ function Sources.OwnedHearths()
 end
 
 -- Chooses the Hearthstone each Hearthstone place uses next (data only;
--- Actions.lua hands it to the secure button out of combat). In combat the
--- overlay is hidden: only mark the choice stale; DataTexts.lua checks it
--- again at PLAYER_REGEN_ENABLED.
+-- Actions.lua hands it to the secure button out of combat). Every configured
+-- place chooses, also one on a hidden or not yet hovered Mouseover bar:
+-- showing it only rebinds. In combat the overlay is hidden: only mark the
+-- choice stale; DataTexts.lua checks it again at PLAYER_REGEN_ENABLED.
 function Sources.PrepareHearths()
-    if not ActiveKind("hearth") then return end
+    if not ConfiguredKind("hearth") then return end
     if NS.IsCombatLocked() then
         Sources.hearthDirty = true
         return
     end
     local choices = Sources.OwnedHearths()
-    for key in pairs(owner.activeSources or {}) do
-        local binding = Sources.bindings[key]
-        if binding and binding.kind == "hearth" and binding.button.extra == binding then
+    for _, binding in pairs(Sources.bindings) do
+        if binding.kind == "hearth" and binding.button.extra == binding then
             local pick = owner.config.randomHearth and #choices > 1 and math.random(#choices) or 1
             binding.hearth = choices[pick]
         end

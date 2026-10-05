@@ -367,6 +367,12 @@ local ANCHORS={ANCHOR_LEFT=true,ANCHOR_RIGHT=true,ANCHOR_BOTTOMLEFT=true,ANCHOR_
     ANCHOR_TOPLEFT=true,ANCHOR_TOP=true,ANCHOR_TOPRIGHT=true,ANCHOR_CURSOR=true,ANCHOR_NONE=true}
 function ButtonMethods:SetTooltipAnchorPoint(point) assert(ANCHORS[point],"tooltip anchor") end
 function ButtonMethods:CanBeAccessedInContext() return ACCESS end
+-- Every script object has it (SimpleFrameScriptObjectAPIDocumentation); an
+-- addon frame outside the sealed buttons is always accessible.
+function Methods:CanBeAccessedInContext()
+    if Sealed(self) then return ACCESS end
+    return true
+end
 function ButtonMethods:SetAuraBorder() error("SetAuraBorder must never be called",2) end
 function ButtonMethods:SetAuraSymbol() error("SetAuraSymbol must never be called",2) end
 
@@ -512,6 +518,11 @@ end
 LoadRuntime("Const.lua")
 LoadRuntime("Grid.lua")
 
+-- Events stand-in: a parked glow gate asks for the parked-work listener
+-- (the controller contract runs the real one). The main chunk is at the
+-- local limit: the count lives on the stand-in.
+C.Events={watches=0}
+function C.Events.WatchParked() C.Events.watches=C.Events.watches+1 end
 -- Layout stand-in with the contract the aura layer uses (EnsureBar, Cell,
 -- Metrics, FixedAuras); the real Layout.lua is checked against it further
 -- down.
@@ -2398,6 +2409,26 @@ do
     draw.ApplyCombatGate(g,false,false)
     assert(not R[g.combatGate].combatDriver,"the gate unregistered")
     C.state.allGlowsCombat=false
+    -- Auras secret out of combat (an M+ key, a PvP match): the sealed button
+    -- refuses every touch of its descendants, so a release parks the gate
+    -- instead of showing it, the container still reaches its pool, and the
+    -- gate applies once the button is plain again.
+    C.state.allGlowsCombat=true
+    A.Sync("c4")
+    assert(R[gated[1]].combatDriver,"the combat gate is registered before the key")
+    ACCESS,AURAS_SECRET=Secret(),Secret()
+    local watches=C.Events.watches
+    A.Release("c4")
+    assert(R[gated[1]].combatDriver and C.AuraGlows.HasParkedGates(),"a release while auras are secret parks the gate")
+    assert(C.Events.watches>watches,"a gate parked while auras are secret waits for no listener (the last bar may be gone)")
+    C.AuraGlows.FlushGates()
+    assert(R[gated[1]].combatDriver and C.AuraGlows.HasParkedGates(),"still secret after combat: the gate stays parked")
+    ACCESS,AURAS_SECRET=true,false
+    C.AuraGlows.FlushGates()
+    assert(not R[gated[1]].combatDriver and not C.AuraGlows.HasParkedGates(),"the parked gate applies once auras are plain")
+    C.state.allGlowsCombat=false
+    A.Sync("c4")
+    assert(Live("c4","player")==sc2,"the container released while auras were secret went back to its pool")
 end
 -- N changes on a live button: placed again and rebound (the setter
 -- replaces the element); unchanged choices make no call

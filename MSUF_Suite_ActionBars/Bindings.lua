@@ -57,6 +57,9 @@ end
 -- pages (Paging.lua), then the form pages 7-9 bar 1 switches to, pressed by
 -- bar 1's keys (page 10, slots 109-120, is bar 10). "" when no candidate has
 -- a key; nil while the suite bars are off (Blizzard's bars apply then).
+-- current (the cooldown manager's labels follow the page): each button
+-- answers for the slot it presses now, and bar 1's target and form pages,
+-- which its keys press only at other times, do not count.
 local FORM_FIRST, FORM_LAST = 73, 108
 local spellSlots = {}
 
@@ -85,9 +88,9 @@ local function PageKey(main, page, modifier)
     end
     return ""
 end
-local function CustomPagesKey(main, config)
+local function CustomPagesKey(main, config, current)
     local text = ""
-    if config.pagingTarget then
+    if config.pagingTarget and not current then
         text = PageKey(main, config.pageFriendly)
         if text == "" then text = PageKey(main, config.pageHostile) end
     end
@@ -99,7 +102,7 @@ local function CustomPagesKey(main, config)
     end
     return text
 end
-function S.ActionBarsBindingForSpell(spell)
+function S.ActionBarsBindingForSpell(spell, current)
     if not M.active then return nil end
     local slots = spell and C_ActionBar.FindSpellActionButtons(spell)
     if not (Public(slots) and type(slots) == "table") then return "" end
@@ -113,7 +116,7 @@ function S.ActionBarsBindingForSpell(spell)
         if bar then
             for i = 1, #bar.buttons do
                 local rec = bar.buttons[i]
-                if spellSlots[rec.base] then
+                if spellSlots[current and rec.slot or rec.base] then
                     local text = AB.BindingText(rec)
                     if text ~= "" then return text end
                 end
@@ -122,10 +125,10 @@ function S.ActionBarsBindingForSpell(spell)
     end
     local main = AB.bars[1]
     if main then
-        local text = CustomPagesKey(main, M.config)
+        local text = CustomPagesKey(main, M.config, current)
         if text ~= "" then return text end
     end
-    if main and not M.config.disableFormPaging then
+    if main and not current and not M.config.disableFormPaging then
         for slot = FORM_FIRST, FORM_LAST do
             if spellSlots[slot] then
                 local text = AB.BindingText(main.buttons[(slot - FORM_FIRST) % 12 + 1])
