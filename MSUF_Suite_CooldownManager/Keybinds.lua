@@ -23,7 +23,9 @@ local DELAY = 0.2
 -- forms) that the main bar keys press, which only count when no other slot
 -- has a key. With Blizzard's bars the suite commands have no keys, so slots
 -- 109-120 fall through to their form page. The suite action bars answer for
--- themselves while they run (S.ActionBarsBindingForSpell).
+-- themselves while they run (S.ActionBarsBindingForSpell). With "Keep key
+-- labels stable across action pages and forms" off, the main bar keys count
+-- only for the page they press now (MainPage).
 local RANGES = {
     { 1, 12, "ACTIONBUTTON" }, { 61, 72, "MULTIACTIONBAR1BUTTON" }, { 49, 60, "MULTIACTIONBAR2BUTTON" },
     { 25, 36, "MULTIACTIONBAR3BUTTON" }, { 37, 48, "MULTIACTIONBAR4BUTTON" }, { 145, 156, "MULTIACTIONBAR5BUTTON" },
@@ -31,24 +33,55 @@ local RANGES = {
     { 13, 24, "MSUFSUITE_BAR9_BUTTON" }, { 109, 120, "MSUFSUITE_BAR10_BUTTON" },
     { 73, 120, "ACTIONBUTTON" },
 }
-local SLOTS, COMMANDS = {}, {}
+local SLOTS, COMMANDS, MAIN = {}, {}, {}
 for i = 1, #RANGES do
     local first, last, prefix = RANGES[i][1], RANGES[i][2], RANGES[i][3]
     for slot = first, last do
         local n = #SLOTS + 1
-        SLOTS[n], COMMANDS[n] = slot, prefix .. ((slot - first) % 12 + 1)
+        SLOTS[n], COMMANDS[n], MAIN[n] = slot, prefix .. ((slot - first) % 12 + 1), prefix == "ACTIONBUTTON"
     end
 end
+local MAIN_COMMANDS = {}
+for n = 1, 12 do MAIN_COMMANDS[n] = "ACTIONBUTTON" .. n end
 
 local function BoundKey(command)
     local key = GetBindingKey(command)
     if Public(key) and type(key) == "string" and key ~= "" then return key end
 end
 
+local function Yes(value) return Public(value) and value == true end
+-- The page the main bar keys (ACTIONBUTTON1-12) press now, as Blizzard pages
+-- MainActionBar (ActionBarController_UpdateAll, Retail and Forever).
+local function MainPage()
+    local bar, page = C_ActionBar, nil
+    if Yes(bar.HasVehicleActionBar()) then
+        page = bar.GetVehicleBarIndex()
+    elseif Yes(bar.HasOverrideActionBar()) then
+        page = bar.GetOverrideBarIndex()
+    elseif Yes(bar.HasTempShapeshiftActionBar()) then
+        page = bar.GetTempShapeshiftBarIndex()
+    else
+        page = bar.GetActionBarPage()
+        if S.Finite(page) and page == 1 and Yes(bar.HasBonusActionBar()) then page = bar.GetBonusBarIndex() end
+    end
+    return S.Finite(page) and page or 1
+end
+
 -- The first candidate whose slot is in `wanted` and has a key; "" for none.
+-- Following the page, the main bar keys answer only for their current page.
 local function FirstKey(wanted)
+    local follow = C.state.keybindStable == false
+    if follow then
+        local first = (MainPage() - 1) * 12
+        for n = 1, 12 do
+            if wanted[first + n] then
+                local key = BoundKey(MAIN_COMMANDS[n])
+                if key then return S.KeyText(key) end
+            end
+        end
+    end
     for i = 1, #SLOTS do
-        if wanted[SLOTS[i]] then
+        if wanted[SLOTS[i]] and not (follow and MAIN[i]) then
             local key = BoundKey(COMMANDS[i])
             if key then return S.KeyText(key) end
         end
@@ -60,7 +93,7 @@ local spellSlots = {}
 local function Lookup(spell)
     local export = S.ActionBarsBindingForSpell
     if type(export) == "function" then
-        local text = export(spell)
+        local text = export(spell, C.state.keybindStable == false)
         if Public(text) and type(text) == "string" then return text end
     end
     local slots = C_ActionBar.FindSpellActionButtons(spell)
