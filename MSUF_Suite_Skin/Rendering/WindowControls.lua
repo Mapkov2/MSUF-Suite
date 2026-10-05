@@ -392,6 +392,7 @@ local function EndDrag(state)
             return true
         end)
         state.customScale = true
+        InstallPanelPositionHook()
     end
 end
 

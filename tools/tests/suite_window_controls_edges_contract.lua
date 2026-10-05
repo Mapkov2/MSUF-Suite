@@ -249,6 +249,25 @@ ShowUIPanel(character)
 Check(WindowControls.Attach(character, "blizzardWindows"), "the Character window was not attached")
 local characterState = WindowControls.states[character]
 
+------------------------------------------------------------------ CX-S2-01, first grip resize
+-- Nothing stored yet this session: the first grip resize stores a scale, and a
+-- UI scale change right after it (Blizzard fits every open panel) brings that
+-- scale back.
+Check(hookCalls.UpdateScaleForFitForOpenPanels == nil, "the UI scale hook was installed before anything was stored")
+local cursorX = 0
+GetCursorPosition = function() return cursorX, 0 end
+local characterGrip = characterState.grip
+characterGrip.scripts.OnMouseDown(characterGrip, "LeftButton")
+cursorX = -240 -- ((x - 0) + (0 - 0)) / 2 over max(600, 500) pixels: 1 - 0.2.
+characterGrip.scripts.OnUpdate(characterGrip)
+characterGrip.scripts.OnMouseUp(characterGrip)
+GetCursorPosition = function() return 0, 0 end
+Check(character.scale == 0.8 and NS.DB.windowControls.scales.CharacterFrame == 0.8,
+    "the first grip resize did not scale and store the Character window")
+UpdateScaleForFitForOpenPanels()
+Check(character.scale == 0.8, "a UI scale change reset the first grip resize of the session")
+Check(WindowControls.ResetScales() and character.scale == 1, "the window scale reset failed")
+
 ------------------------------------------------------------------ R-S3-F5 / H-S3-03
 -- The minimize button and the restore tab follow a look, colour or profile
 -- change (DatabaseProfiles.ApplyActiveSettings notifies domain "profile").
