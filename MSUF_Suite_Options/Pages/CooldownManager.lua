@@ -289,9 +289,6 @@ local function BuildSection(ctx, b, ui, spec)
         local y = Help(body, HELP[spec.id], -18, width)
         local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)
         y = y - 20
-        -- The attach list (Basics) and grow list (Layout) are repainted before the
-        -- dropdowns that show them read their captions (refreshers run in order).
-        if spec.id == "basics" then M.TrackRefresh(ctx, function() if not P.Combat() then PaintChoices() end end) end
         y = RuleGrid(ctx, body, own, y, width, sectionId)
         if spec.module then
             P.Text(body, "These apply to every bar:", 16, y - 6, width, T.colors.text)
@@ -323,6 +320,10 @@ local function BuildSection(ctx, b, ui, spec)
             Header(body, spec.title, state == STATE.NONE_USED, Page.KindName(Page.Kind(Page.selected)))
         end)
     end
+    -- The attach list (Basics) and the grow and overflow lists (Layout) are
+    -- repainted before the dropdowns that show them read their captions
+    -- (refreshers run in order), also while Basics is closed on a lazy host.
+    if spec.id == "basics" then M.TrackRefresh(ctx, function() if not P.Combat() then PaintChoices() end end) end
     return P.LazySection(b, sectionId, Tr(spec.title), spec.open == true, {
         content = Content, shell = Shell, finish = function(body, y) P.FinishBody(b, body, y) end,
     })

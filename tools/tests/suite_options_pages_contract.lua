@@ -41,4 +41,58 @@ do
         "the Stance bar's hidden macro settings were copied onto Action bar 1")
 end
 
+-- Cooldown manager on a lazy host (MSUF_Menu2_Widgets_PageBuilder.lua
+-- InstallLazySection: the shell at once, the content when the section is
+-- open; the player's saved accordion state wins over the default). With
+-- Basics left collapsed, Layout's grow and overflow lists still name the
+-- bars and lock the choices the selected bar cannot take.
+do
+    local W, NS = F.W, F.optionsNS
+    local eager = W.PageBuilder
+    W.PageBuilder = function(ctx)
+        local b = eager(ctx)
+        local section = b.CollapsibleSection
+        function b:CollapsibleSection(id, title, height, defaultOpen)
+            local saved = ctx.saved[id]
+            if saved == nil then saved = defaultOpen == true end
+            return section(self, id, title, height, saved)
+        end
+        function b:LazyCollapsibleSection(id, title, height, defaultOpen, build, opts)
+            local body = self:CollapsibleSection(id, title, height, defaultOpen)
+            local entry = body._msuf2CollapsibleEntry
+            if opts and opts.shell then opts.shell(body, entry) end
+            if entry.open then build(body, entry) end
+            return body
+        end
+        return b
+    end
+    local config = S.Config("cooldownManager")
+    config.c1_on, config.c1_kind, config.c1_name, config.ess_vertical = true, 1, "My burst", true
+    NS.CDMPage.ui, NS.CDMPage.selected = nil, "ess"
+    local ctx = { key = "suite_cooldownManager", width = 720, refreshers = {}, widgets = {}, sections = {},
+        pageItems = {}, saved = { suite_cooldownManager_basics = false, suite_cooldownManager_layout = true } }
+    F.SetCurrent(ctx)
+    M.pages.suite_cooldownManager.build(ctx)
+    for _, refresh in ipairs(ctx.refreshers) do refresh() end
+    W.PageBuilder = eager
+    local rows = {}
+    for _, widget in ipairs(ctx.widgets) do
+        local key = widget.meta and widget.meta.settingKey
+        if key then rows[key:match("[^.]+$")] = widget.row end
+    end
+    assert(not rows.c1_anchor, "fixture: Basics was built although it is collapsed")
+    local overflow, grow = assert(rows.c1_overflow, "Layout was not built"), rows.c1_grow
+    local function Item(slot)
+        for _, item in ipairs(overflow.values) do
+            if item.value >= 2 and NS.CDMPage.BarName(slot) == item.text then return item end
+        end
+        error("the overflow list does not name " .. slot .. " (" .. NS.CDMPage.BarName(slot) .. ")")
+    end
+    assert(Item("c1"), "the renamed bar is missing")
+    assert(Item("ess").disabled, "the selected bar is offered as its own overflow target")
+    assert(Item("buf").disabled, "a buff bar is offered as an overflow target")
+    assert(grow.values[1].text == "Right" and grow.values[2].text == "Left",
+        "a vertical bar's grow list reads " .. grow.values[1].text .. " / " .. grow.values[2].text)
+end
+
 print("options pages contract: ok")
