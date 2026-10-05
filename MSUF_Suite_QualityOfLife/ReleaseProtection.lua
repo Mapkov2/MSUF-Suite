@@ -60,14 +60,18 @@ local function Dialog(self, popup)
     if record then return record end
     local button = popup:GetButton1()
     if NS.Safety.IsForbidden(button) then return nil end
-    local hint = S.CreateFontString(popup, nil, "OVERLAY")
+    -- Not a region of the dialog: StaticPopupTemplate is a ResizeLayoutFrame
+    -- (GameDialog.xml) that DEATH lays out every frame of its countdown
+    -- (StaticPopup_OnUpdate), and the hint above it would make it taller.
+    local holder = S.CreateFrame("Frame", nil, UIParent)
+    local hint = S.CreateFontString(holder, nil, "OVERLAY")
     S.SetFont(hint, nil, 13, "OUTLINE")
     hint:SetPoint("BOTTOM", popup, "TOP", 0, 8)
     hint:SetJustifyH("CENTER")
     hint:SetTextColor(1, .82, 0)
     hint:SetWordWrap(true)
     hint:Hide()
-    record = { button = button, hint = hint, popup = popup, locked = false }
+    record = { button = button, hint = hint, holder = holder, popup = popup, locked = false }
     self.dialogs[popup] = record
     popup:HookScript("OnHide", function()
         if self.current == record then Release(self) end
@@ -91,6 +95,7 @@ local function Sync(self)
         self.current = record
         self.context:Event("MODIFIER_STATE_CHANGED", UpdateGate, IN_COMBAT)
     end
+    record.holder:SetFrameStrata(popup:GetFrameStrata())
     record.hint:SetWidth(popup:GetWidth())
     S.SetFont(record.hint, nil, 13, "OUTLINE")
     record.hint:SetText(S.Text("Hold %s to release spirit"):format(MODIFIER_NAMES[self.config.modifier]))

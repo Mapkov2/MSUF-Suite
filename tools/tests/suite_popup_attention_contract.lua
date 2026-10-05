@@ -25,6 +25,8 @@ local function Region()
     function r:IsShown() return self.shown end
     function r:EnableMouse() end
     function r:SetFrameLevel(level) self.level = level end
+    function r:SetFrameStrata(strata) self.strata = strata end
+    function r:GetFrameStrata() return self.strata or "MEDIUM" end
     function r:GetFrameLevel() return 5 end
     function r:SetBackdrop(value) self.backdrop = value end
     function r:SetBackdropColor() end
@@ -75,7 +77,7 @@ SOUNDKIT = { READY_CHECK = 8960 }
 local shown = {}
 for index = 1, 4 do
     local dialog = ScriptFrame()
-    dialog.index, dialog.height = index, 72
+    dialog.index, dialog.height, dialog.strata = index, 72, "DIALOG"
     dialog.Text = Region()
     dialog.Text.font = { "Fonts\\FRIZQT__.TTF", 12, "" }
     dialog.BG = Region()
@@ -280,6 +282,11 @@ tall:Hide()
 -- Resurrection offers.
 local revive = ShowPopup("RESURRECT", 1)
 Check(popup.cues[revive] and popup.cues[revive].shown and #sounds == 0, "a resurrection offer was not framed")
+-- StaticPopupTemplate is a ResizeLayoutFrame (GameDialog.xml): its Layout
+-- counts every shown child (LayoutFrame.lua GetLayoutChildren), so the frame
+-- 3 px outside the dialog is owned by UIParent, in the dialog's strata.
+Check(popup.cues[revive].parent == UIParent and popup.cues[revive].strata == "DIALOG",
+    "the resurrection frame is a child of Blizzard's dialog and makes it larger")
 Check(popup.buttonCues[revive.Button1] and popup.buttonCues[revive.Button1].shown, "the accept button was not framed")
 revive:Hide()
 Check(not popup.cues[revive].shown and not popup.buttonCues[revive.Button1].shown,
