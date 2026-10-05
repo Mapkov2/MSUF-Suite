@@ -42,12 +42,20 @@ local function BuildFeature(ctx, builder, id, title, actions, specs)
         help = id == "objectives" and "Announcements and run summaries keep their own switches."
             or "Works even when the Objective Tracker is off.",
     })
+    -- The header's shortcut is attached once with every topic's colors: a
+    -- second attach replaces the first one's palette.
+    local colors, colorTitle = {}, nil
     for index, spec in ipairs(specs) do
         -- Exact search reveals the feature once the controls exist.
         P.RuleSection(ctx, builder, PAGE, id, spec.id, spec.title, spec.rules,
             { help = spec.help, open = index == 1, onBuilt = P.HUDMenu.Prepare })
-        P.AttachRuleColors(header, spec.title, id, spec.rules)
+        for _, rule in ipairs(spec.rules) do
+            if rule.color and not rule.hidden then
+                colors[#colors + 1], colorTitle = rule, spec.title
+            end
+        end
     end
+    if colorTitle then P.AttachRuleColors(header, colorTitle, id, colors) end
 end
 
 local function BuildObjectives(ctx, b)

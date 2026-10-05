@@ -246,4 +246,23 @@ do
     M.CreateMenuPopupPanel, F.T.Button = create, button
 end
 
+-- HUD: a feature header's color shortcut keeps the colors of every topic, not
+-- only the last topic that has colors (the host replaces the shortcut's
+-- options on a second attach). A color in Mythic+ bars stands in for one.
+do
+    local spec = S.catalog.objectives
+    assert(not spec.getControls, "fixture: the tracker's controls are a plain list")
+    local probe = { key = "contractBarColor", label = "Contract bar color", section = "mythicBars", color = true,
+        default = "ffffff" }
+    spec.controls[#spec.controls + 1] = probe
+    local ctx = Build("suite_hud")
+    table.remove(spec.controls)
+    local header, appearance = Section(ctx, "suite_hud_objectives_module"), Section(ctx, "suite_hud_objectives_type")
+    local own = rawget(appearance, "colorShortcut").options.maxTargets
+    local shortcut = assert(rawget(header, "colorShortcut"), "the tracker header has no color shortcut")
+    assert(shortcut.options.maxTargets == own + 1, "the tracker header offers " .. shortcut.options.maxTargets
+        .. " colors, the topics have " .. (own + 1))
+    assert(shortcut.options.title == rawget(appearance, "colorShortcut").options.title, "the header shortcut was renamed")
+end
+
 print("options pages contract: ok")
