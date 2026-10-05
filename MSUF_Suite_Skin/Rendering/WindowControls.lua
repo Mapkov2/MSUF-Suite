@@ -132,6 +132,8 @@ local function Controlled(state)
     return Enabled() and next(state.owners) ~= nil and CanChangeGeometry(state)
 end
 
+local InstallPanelPositionHook
+
 local function ApplyStoredScale(state)
     if not CanChangeGeometry(state) then return end
     local limits = Limits()
@@ -141,6 +143,7 @@ local function ApplyStoredScale(state)
     if type(stored) == "number" and stored >= limits.minScale and stored <= limits.maxScale then
         scale = stored
         state.customScale = true
+        InstallPanelPositionHook()
     elseif state.customScale then
         scale = state.originalScale
         state.customScale = false
@@ -189,8 +192,6 @@ local function RestoreNativePosition(state)
     end
 end
 
-local InstallPanelPositionHook
-
 local function ApplyStoredPosition(state)
     if not CanChangeGeometry(state) or not Enabled() or state.moving then return end
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
@@ -235,10 +236,13 @@ local function OnPanelPositionsUpdated()
     end
 end
 
+-- A UI scale change fits the open panels to the screen and lays them out
+-- inside the panel manager, past that hook; a refresh puts ours back.
 InstallPanelPositionHook = function()
     if positionHooked then return end
     positionHooked = true
     hooksecurefunc("UpdateUIPanelPositions", OnPanelPositionsUpdated)
+    hooksecurefunc("UpdateScaleForFitForOpenPanels", WindowControls.Refresh)
 end
 
 -- The window's own (localized) title, else a name derived from its frame.

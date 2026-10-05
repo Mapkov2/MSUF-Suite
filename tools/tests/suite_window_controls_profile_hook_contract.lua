@@ -89,11 +89,16 @@ UIParent = Frame("UIParent")
 UIParent.width, UIParent.height = 1920, 1080
 
 local NATIVE_X, NATIVE_Y = 16, -116
-local character, hookInstalls
+local character, hookInstalls, fitInstalls
 
 -- The client's hooksecurefunc: the global becomes the original followed by
 -- the post-hook.
 hooksecurefunc = function(name, post)
+    -- The UI scale fit hook comes with it (suite_window_controls_edges_contract.lua).
+    if name == "UpdateScaleForFitForOpenPanels" then
+        fitInstalls = fitInstalls + 1
+        return
+    end
     assert(name == "UpdateUIPanelPositions", "unexpected secure hook " .. tostring(name))
     hookInstalls = hookInstalls + 1
     local original = _G[name]
@@ -111,7 +116,7 @@ end
 -- left panel at TOPLEFT (leftOffset + xoffset) / scale, yPos / scale
 -- (Blizzard_UIParentPanelManager/Shared/UIParentPanelManager.lua, UpdateUIPanelPositions).
 local function NewSession(forever, look)
-    hookInstalls = 0
+    hookInstalls, fitInstalls = 0, 0
     character = Frame("CharacterFrame", UIParent)
     character.CloseButton = Frame(nil, character, "Button")
     character.activeSubframe = "PaperDollFrame"
@@ -226,6 +231,17 @@ do
     character:Hide()
     character:Show()
     Check(hookInstalls == 0, "a session without placed panels hooked Blizzard's panel layout")
+end
+
+-- A stored scale alone installs the hooks as well: a UI scale change fits the
+-- open panels inside Blizzard's panel manager, and the grip's scale must come
+-- back after it.
+do
+    local session = NewSession(false)
+    session.Profile({})
+    session.NS.DB.windowControls.scales.CharacterFrame = 0.9
+    Check(session.NS.WindowControls.Attach(character, "blizzardWindows") and character.scale == 0.9
+        and hookInstalls == 1 and fitInstalls == 1, "a stored scale alone did not install the UI scale hook")
 end
 
 -- Forever's Glass look docks the Character window by default without a saved

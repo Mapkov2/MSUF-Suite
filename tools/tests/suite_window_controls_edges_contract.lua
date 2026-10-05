@@ -339,5 +339,30 @@ restore.scripts.OnClick(restore, "LeftButton")
 Check(character.shown and not restore.shown and not characterState.minimized,
     "the restore tab did not bring the window back once the Game Menu closed")
 
+------------------------------------------------------------------ CX-S2-01
+-- A UI scale change while Settings stays open: Blizzard fits every open panel
+-- (UpdateScaleForFitForOpenPanels: SetScale(1), then its own layout pass, which
+-- does not go through the global UpdateUIPanelPositions). The grip's scale and
+-- the stored place come back after it.
+local settings = Frame("SettingsPanel", UIParent)
+settings.width, settings.height = 920, 724
+settings.ClosePanelButton = Frame(nil, settings, "Button")
+NS.DB.windowControls.scales.SettingsPanel = 0.8
+NS.DB.windowControls.positions.SettingsPanel = { x = 300, y = -120 }
+Check(WindowControls.Attach(settings, "settings"), "Settings got no window controls")
+ShowUIPanel(settings)
+Check(settings.scale == 0.8 and At(settings, "TOPLEFT", 300 / 0.8, -120 / 0.8),
+    "opening Settings lost its stored scale or place")
+UpdateScaleForFitForOpenPanels()
+Check(settings.scale == 0.8, "a UI scale change left Settings at Blizzard's fit scale")
+Check(At(settings, "TOPLEFT", 300 / 0.8, -120 / 0.8), "a UI scale change left Settings at Blizzard's place")
+Check(hookCalls.UpdateScaleForFitForOpenPanels == 1, "the UI scale hook was installed more than once")
+-- In combat the skin leaves Blizzard's fit alone.
+combat = true
+UpdateScaleForFitForOpenPanels()
+Check(settings.scale == 1, "the skin rescaled a panel in combat")
+EndCombat()
+HideUIPanel(settings)
+
 Check(#reported == 0, "window controls reported errors: " .. table.concat(reported, "; "))
 print("Suite window controls edges: " .. checks .. " checks passed")
