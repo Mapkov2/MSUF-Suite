@@ -185,10 +185,13 @@ assert(MSUF_GlobalDB.profiles.Recovered == MSUF_DB and not MSUF_GlobalDB.profile
     and suite.Database.GetActiveProfileName() == "Recovered" and skin.Database.GetActiveProfileName() == "Recovered",
     "the recovered profile is not active in all three stores")
 
--- 8. A new name the Suite cannot store is refused with MSUF's name rule.
+-- 8. A new name the Suite cannot store is refused with MSUF's name rule (the
+--    visible-character rule, not the 80-byte limit the name is far below).
 Fixture()
 renamed, why = MSUF_RenameProfile("A", "Bad\1Name")
-assert(renamed == false and why == "invalid-profile-name" and Said("Profile names can be at most 80 bytes long."),
+assert(renamed == false and why == "invalid-profile-name"
+    and Said("Profile names need a visible character and cannot contain control characters.")
+    and not Said("Profile names can be at most 80 bytes long."),
     "a name the Suite cannot store was not refused with a reason")
 Unchanged("invalid name")
 
