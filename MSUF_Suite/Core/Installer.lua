@@ -221,9 +221,12 @@ local function ApplyForever(profile, finish)
         return false, "Forever factory profile unavailable"
     end
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    -- Both Forever frame factories carry MSUF's own screen reference on every
+    -- positioned frame, and MSUF adapts them from it. A second reference
+    -- would scale positions MSUF has already adapted.
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Forever"), frames, profile,
         skinEnabled and skin or nil, AppliedLook(), finish,
-        { screenHeight = Suite.ForeverFactoryScreenHeight, preserveSkinLayout = true })
+        { screenHeight = false, preserveSkinLayout = true })
 end
 
 -- The scale the installer applies, decided once before anything commits:
