@@ -171,9 +171,16 @@ local function Fade(owner, region, targets)
     end
 end
 
+-- Fade over Field(object, key) for each key, with both inlined: every
+-- traversal node takes this pass over the separator fields.
 local function FadeFields(owner, object, fields, targets)
+    if type(object) ~= "table" then return end
+    local Cosmetics = NS.Cosmetics
     for index = 1, #fields do
-        Fade(owner, Field(object, fields[index]), targets)
+        local region = object[fields[index]]
+        if type(region) == "table" and Cosmetics.Fade(region, owner) and targets then
+            targets[region] = true
+        end
     end
 end
 

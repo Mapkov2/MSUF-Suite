@@ -80,7 +80,8 @@ end
 
 local texturePathGetters = { "GetTextureFilePath", "GetTexture" }
 -- The sixth getter is the highlight: it takes the hover role of its button.
-local HIGHLIGHT_GETTER_INDEX = 6
+-- TrackButton reads the third, the normal texture, once before the loop.
+local NORMAL_GETTER_INDEX, HIGHLIGHT_GETTER_INDEX = 3, 6
 local buttonTextureGetters = {
     "GetCheckedTexture", "GetDisabledCheckedTexture", "GetNormalTexture",
     "GetPushedTexture", "GetDisabledTexture", "GetHighlightTexture",
@@ -154,13 +155,34 @@ local function PathRole(path)
     return role
 end
 
+-- The first result of object:name() for an object already checked to be a
+-- readable table (not forbidden): Safety.Call without its check per call.
+-- TrackButton and AssetRole read several getters of one checked object.
+local function CheckedCall(object, name)
+    local method = object[name]
+    if type(method) ~= "function" then return nil end
+    return (method(object))
+end
+
+-- A string getter of a texture AssetRole has checked; nil when missing,
+-- secret or not a string.
+local function ReadString(texture, name)
+    local value = CheckedCall(texture, name)
+    if Safety.Public(value) and type(value) == "string" then return value end
+    return nil
+end
+
+-- The texture is checked once, not once per getter as Safety.Read would.
 local function AssetRole(texture)
-    if not texture then return false end
-    local atlas = AtlasKey(texture)
-    if atlas and acceptedAtlases[atlas] then return acceptedAtlases[atlas] end
+    if not texture or type(texture) ~= "table" or Safety.IsForbidden(texture) then return false end
+    local atlas = ReadString(texture, "GetAtlas")
+    if atlas then
+        atlas = lowerAtlases.values[atlas] or Remember(lowerAtlases, atlas, atlas:lower())
+        if acceptedAtlases[atlas] then return acceptedAtlases[atlas] end
+    end
     for index = 1, #texturePathGetters do
-        local path = Safety.Read(texture, texturePathGetters[index])
-        if type(path) == "string" then
+        local path = ReadString(texture, texturePathGetters[index])
+        if path then
             local role = PathRole(path)
             if role then return role end
         end
@@ -310,17 +332,23 @@ local windowActionPairs = {
     },
 }
 
-function Checkmarks.DetectWindowAction(button)
-    if not button then return nil end
-    local normal = AtlasKey(Getter(button, "GetNormalTexture"))
+-- get reads the button's state textures (Getter, or ButtonGetter below).
+-- normal: the button's normal texture, which the caller has already read.
+local function DetectAction(button, get, normal)
+    normal = AtlasKey(normal)
     local definition = normal and windowActionPairs[normal] or nil
     if not definition
-        or AtlasKey(Getter(button, "GetPushedTexture")) ~= definition.pushed then
+        or AtlasKey(get(button, "GetPushedTexture")) ~= definition.pushed then
         return nil
     end
-    local disabled = Getter(button, "GetDisabledTexture")
+    local disabled = get(button, "GetDisabledTexture")
     if disabled and AtlasKey(disabled) ~= definition.disabled then return nil end
     return definition.kind
+end
+
+function Checkmarks.DetectWindowAction(button)
+    if not button then return nil end
+    return DetectAction(button, Getter, Getter(button, "GetNormalTexture"))
 end
 
 function Checkmarks.GetWindowAction(button)
@@ -340,17 +368,22 @@ local function CanTrack(button)
     return button and Safety.CanDecorate(button, true)
 end
 
+-- Getters of a button CanTrack accepted (a table that is not forbidden).
+-- TrackButton reads its fields directly for the same reason.
+local ButtonGetter = CheckedCall
+
 function Checkmarks.TrackButton(button, owner)
     if not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() or not CanTrack(button) then
         return false
     end
     local changed = false
     local recognized = false
-    local actionKind = Checkmarks.DetectWindowAction(button)
+    local normal = ButtonGetter(button, "GetNormalTexture")
+    local actionKind = DetectAction(button, ButtonGetter, normal)
     if not actionKind and NS.WindowActionSkin.HasOwnedStates(button) then
         actionKind = NS.WindowActionSkin.GetKind(button)
     end
-    local normalRole = AssetRole(Getter(button, "GetNormalTexture"))
+    local normalRole = AssetRole(normal)
     local highlightRole
     if normalRole == "blizzardExpand" then
         highlightRole = "blizzardExpandHover"
@@ -358,15 +391,18 @@ function Checkmarks.TrackButton(button, owner)
         highlightRole = "blizzardCloseHover"
     end
     for index = 1, #buttonTextureGetters do
-        local texture = Getter(button, buttonTextureGetters[index])
-        local role = (index == HIGHLIGHT_GETTER_INDEX and highlightRole) or AssetRole(texture)
+        local texture, role = normal, normalRole
+        if index ~= NORMAL_GETTER_INDEX then
+            texture = ButtonGetter(button, buttonTextureGetters[index])
+            role = (index == HIGHLIGHT_GETTER_INDEX and highlightRole) or AssetRole(texture)
+        end
         if role then
             recognized = true
             changed = ApplyTexture(texture, owner, role) or changed
         end
     end
     for index = 1, #buttonTextureFields do
-        local texture = Field(button, buttonTextureFields[index])
+        local texture = button[buttonTextureFields[index]]
         local role = AssetRole(texture)
         if role then
             recognized = true
@@ -415,9 +451,9 @@ function Checkmarks.UntrackButton(button, owner)
     return restored
 end
 
-local function TrackSingleFrame(frame, owner)
+local function TrackSingleFrame(frame, owner, buttonTracked)
     if not frame then return false end
-    local changed = Checkmarks.TrackButton(frame, owner)
+    local changed = not buttonTracked and Checkmarks.TrackButton(frame, owner) or false
     changed = ApplyTexture(Field(frame, "Check"), owner) or changed
     local name = Safety.Read(frame, "GetName")
     if type(name) == "string" and name ~= "" then
@@ -442,8 +478,11 @@ local function TrackChildButtons(owner, changed, ...)
     return changed
 end
 
-function Checkmarks.TrackFrame(frame, owner)
-    local changed = TrackSingleFrame(frame, owner)
+-- buttonTracked: a frame walk already ran TrackButton on frame as a child of
+-- its visited parent in this same pass (GenericWindows TraverseTree), so only
+-- its Check textures and its own children remain.
+function Checkmarks.TrackFrame(frame, owner, buttonTracked)
+    local changed = TrackSingleFrame(frame, owner, buttonTracked)
     if not HasReadableChildren(frame) then return changed end
     return TrackChildButtons(owner, changed, frame:GetChildren())
 end

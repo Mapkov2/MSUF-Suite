@@ -331,7 +331,8 @@ local function MarkWindowAction(state, actionKind)
 end
 
 local function ApplyButtonNow(button, owner, kind, spec)
-    local actionKind = TrackNativeAssets(button, owner)
+    -- An ownedArt control has no native asset to track (PublicAPI.lua).
+    local actionKind = not spec.ownedArt and TrackNativeAssets(button, owner) or nil
     local state, reason = GetState(button, kind, owner)
     if not state then
         return nil, reason
@@ -435,7 +436,8 @@ end
 -- (re)assign the owned state textures. A refresh also drops an action layer
 -- whose native art kit has changed to a non-action family.
 local function RepaintButton(target, state, active, dropStaleAction)
-    local actionKind = TrackNativeAssets(target, state.owner)
+    local actionKind = not (state.spec and state.spec.ownedArt)
+        and TrackNativeAssets(target, state.owner) or nil
     if actionKind then
         return nil, actionKind
     end

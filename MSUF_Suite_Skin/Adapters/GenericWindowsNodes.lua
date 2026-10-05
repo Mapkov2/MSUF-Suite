@@ -151,12 +151,28 @@ local function HasPanelButtonSlices(button)
         and Field(button, "Right") ~= nil
 end
 
+-- Every button node compares its state textures against two art sets, and
+-- pooled buttons share a few files: each distinct path is normalized once.
+-- The cache is dropped when it reaches NORMALIZED_PATH_LIMIT paths.
+local NORMALIZED_PATH_LIMIT = 512
+local normalizedPaths, normalizedCount = {}, 0
+
+local function NormalizedPath(value)
+    local path = normalizedPaths[value]
+    if path then return path end
+    if normalizedCount >= NORMALIZED_PATH_LIMIT then
+        normalizedPaths, normalizedCount = {}, 0
+    end
+    path = value:gsub("/", "\\"):lower():gsub("%.blp$", ""):gsub("%.tga$", "")
+    normalizedPaths[value] = path
+    normalizedCount = normalizedCount + 1
+    return path
+end
+
 local function TexturePath(texture)
     for index = 1, #texturePathGetters do
         local value = Safety.Read(texture, texturePathGetters[index])
-        if type(value) == "string" then
-            return value:gsub("/", "\\"):lower():gsub("%.blp$", ""):gsub("%.tga$", "")
-        end
+        if type(value) == "string" then return NormalizedPath(value) end
     end
     return nil
 end
@@ -515,10 +531,10 @@ local function SkinUnknownButton(frame, owner, metrics, name, objectType)
     end
 end
 
-local function TrackNode(frame, owner, metrics)
+local function TrackNode(frame, owner, metrics, buttonTracked)
     NS.BlizzardYellow.TrackFrame(frame)
     if metrics.menuPopup then NS.BlizzardYellow.TrackMenuSelection(frame) end
-    NS.Checkmarks.TrackFrame(frame, owner)
+    NS.Checkmarks.TrackFrame(frame, owner, buttonTracked)
     NS.Checkmarks.TrackDropdown(frame, owner)
 end
 
@@ -533,10 +549,12 @@ local function SkinRootChrome(frame, owner, metrics)
     end
 end
 
-local function SkinNode(frame, owner, metrics, isRoot)
+-- buttonTracked: the node is a child of a node this pass visited, whose
+-- Checkmarks child pass (TrackNode) already tracked its button textures.
+local function SkinNode(frame, owner, metrics, isRoot, buttonTracked)
     local objectType = Kit.ObjectType(frame)
     local name = ObjectName(frame)
-    TrackNode(frame, owner, metrics)
+    TrackNode(frame, owner, metrics, buttonTracked)
     if LooksLikeScrollBox(frame, name) then
         metrics.dynamicScrollBoxes[frame] = true
     end

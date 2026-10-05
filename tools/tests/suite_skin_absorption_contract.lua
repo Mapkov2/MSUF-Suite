@@ -1942,6 +1942,66 @@ if not simulateForever then
     choice:SetActive(false)
     assert(not choice._msuf2SkinnedSelectionCue.line:IsShown(),
         "Suite Skin kept the Debuffs cue after deselection")
+    -- A selection change on a button the skin already applied repaints only
+    -- the selection, exactly as a full reconcile paints it. A settings
+    -- notification or a role change sends the next one through the full
+    -- reconcile again (Perfy: the full pass was 80% of a menu selection).
+    local controlPasses, trackButton = 0, namespace.Checkmarks.TrackButton
+    namespace.Checkmarks.TrackButton = function(...)
+        controlPasses = controlPasses + 1
+        return trackButton(...)
+    end
+    local function Paint(button)
+        local surface = namespace.Registry.GetSurface(button)
+        local parts = { tostring(surface.active), tostring(surface.fill.texture), tostring(surface.fill.shown),
+            tostring(surface.edge.texture), tostring(surface.edge.shown) }
+        for _, region in ipairs({ surface.edge, surface.fill, surface.highlight, surface.pushed, surface.disabled }) do
+            local color = region.vertexColor or {}
+            parts[#parts + 1] = string.format("%.5f,%.5f,%.5f,%.5f", color[1] or -1, color[2] or -1,
+                color[3] or -1, color[4] or -1)
+        end
+        for _, color in ipairs({ surface.gradientFrom or {}, surface.gradientTo or {} }) do
+            parts[#parts + 1] = string.format("%.5f,%.5f,%.5f,%.5f", color.r or -1, color.g or -1,
+                color.b or -1, color.a or -1)
+        end
+        return table.concat(parts, "|")
+    end
+    for _, active in ipairs({ true, false, true }) do
+        controlPasses = 0
+        choice:SetActive(active)
+        local selected = Paint(choice)
+        assert(controlPasses == 0, "a selection change re-ran the control skin on an applied button")
+        assert(namespace.PublicAPI.RefreshAll() and controlPasses > 0 and Paint(choice) == selected,
+            "a selection change painted differently from the full reconcile:\n" .. selected
+                .. "\n" .. Paint(choice))
+    end
+    namespace.Registry.NotifyListeners("appearance", "contract")
+    controlPasses = 0
+    choice:SetActive(false)
+    assert(controlPasses == 1, "a selection change after a settings notification skipped the full reconcile")
+    theme.SkinPrimaryButton(choice)
+    controlPasses = 0
+    choice:SetActive(true)
+    assert(controlPasses == 0 and namespace.Registry.GetSurface(choice).spec.role == "buttonPrimary",
+        "a role change did not reapply the control skin first")
+    -- A client that declares a button ownedArt (built without native state art
+    -- or Blizzard-gold text; Classic MSUF does for Menu2 buttons) skips both
+    -- scans on it; a button without that claim keeps them.
+    local goldScans, trackFrame = 0, namespace.BlizzardYellow.TrackFrame
+    namespace.BlizzardYellow.TrackFrame = function(...)
+        goldScans = goldScans + 1
+        return trackFrame(...)
+    end
+    local foreignClient = assert(suiteApi:RegisterAddon("SuiteContractOwnedArt"))
+    for _, owned in ipairs({ false, true }) do
+        controlPasses, goldScans = 0, 0
+        local foreign = new_frame("Button", nil, host)
+        assert(foreignClient:SkinButton(foreign, { role = "button", ownedArt = owned }))
+        assert((controlPasses == 0 and goldScans == 0) == owned,
+            "ownedArt=" .. tostring(owned) .. " gave " .. controlPasses .. " art and " .. goldScans .. " gold scans")
+    end
+    namespace.BlizzardYellow.TrackFrame = trackFrame
+    namespace.Checkmarks.TrackButton = trackButton
 end
 print("Suite skin: " .. looks .. " looks, " .. palettes .. " palettes, all submenus, migration and Forever route passed")
 ]=]

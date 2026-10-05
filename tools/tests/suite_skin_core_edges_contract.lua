@@ -152,6 +152,72 @@ Check(NS.Theme.ApplyLook("cleanModern"), "the look did not change back")
 NextFrame()
 Check(friends.vertex[1] == 1 and friends.vertex[2] == 1 and friends.vertex[3] == 1,
     "the theme pass painted a released texture")
+------------------------------------------------------------------ frame walk tracking
+-- GenericWindows TraverseTree passes buttonTracked for every node but its
+-- root: the child pass of that node's parent already ran TrackButton on it.
+NS.WindowActionSkin.IsApplied = NS.WindowActionSkin.IsApplied or function() return false end
+local function Texture(atlas, path)
+    local texture = { vertex = { 1, 1, 1, 1 }, atlas = atlas, path = path }
+    function texture:GetVertexColor() return unpack(self.vertex) end
+    function texture:SetVertexColor(r, g, b, a) self.vertex = { r, g, b, a or 1 } end
+    function texture:SetDesaturated() end
+    function texture:IsDesaturated() return false end
+    function texture:GetAtlas() return self.atlas end
+    function texture:GetTextureFilePath() return self.path end
+    function texture:IsForbidden() return self.forbidden == true end
+    return texture
+end
+local function Button(checked, children)
+    local button = { checked = checked, children = children or {} }
+    function button:GetCheckedTexture() return self.checked end
+    function button:IsForbidden() return false end
+    function button:IsProtected() return false, false end
+    function button:GetChildren() return unpack(self.children) end
+    return button
+end
+local states = NS.Checkmarks.states
+local childCheck, ownCheck = Texture("checkmark-minimal"), Texture("checkmark-minimal")
+local walked = Button(ownCheck, { Button(childCheck) })
+walked.Check = Texture("checkmark-minimal")
+NS.Checkmarks.TrackFrame(walked, "walk", true)
+Check(states[ownCheck] == nil and states[walked.Check] ~= nil and states[childCheck] ~= nil,
+    "a walked node's button was tracked again, or its Check texture or children were skipped")
+NS.Checkmarks.TrackFrame(walked, "walk")
+Check(states[ownCheck] ~= nil, "a frame outside a walk lost the tracking of its own button")
+-- Each texture is checked once for all its getters: a forbidden one is never
+-- read, a secret atlas is never compared and falls through to the file path.
+local secret = setmetatable({}, { __eq = function() error("contract: compared a secret atlas") end })
+local previousSecret = issecretvalue
+issecretvalue = function(value) return value == secret end
+local forbidden = Texture("checkmark-minimal")
+forbidden.forbidden = true
+function forbidden:GetAtlas() error("contract: read a forbidden texture") end
+local secretAtlas = Texture(secret, "Interface/Buttons/UI-CheckBox-Check.blp")
+local icon = Texture(nil, "Interface\\Buttons\\UI-PlusButton-Up")
+local mixed = Button(forbidden)
+function mixed:GetDisabledCheckedTexture() return secretAtlas end
+mixed.Icon = icon
+NS.Checkmarks.TrackButton(mixed, "walk")
+issecretvalue = previousSecret
+Check(states[forbidden] == nil and states[secretAtlas] ~= nil and states[secretAtlas].colorRole == "checkmark"
+    and states[icon] ~= nil and states[icon].colorRole == "blizzardExpand",
+    "button tracking read a forbidden texture, compared a secret atlas or missed a file path")
+
+-- TrackButton reads the normal texture once for the window action, its role
+-- and the getter loop; the close role still gives the highlight its hover.
+local closeNormal, closeHighlight = Texture("redbutton-exit"), Texture("ui-highlight-square")
+local close = Button(nil)
+close.normalReads = 0
+function close:GetNormalTexture()
+    self.normalReads = self.normalReads + 1
+    return closeNormal
+end
+function close:GetHighlightTexture() return closeHighlight end
+NS.Checkmarks.TrackButton(close, "walk")
+Check(close.normalReads == 1 and states[closeNormal] and states[closeNormal].colorRole == "blizzardClose"
+    and states[closeHighlight] and states[closeHighlight].colorRole == "blizzardCloseHover",
+    "button tracking read the normal texture more than once or lost the close and hover roles")
+
 Check(#reported == 0, "the skin core reported errors: " .. table.concat(reported, "; "))
 
 print("Suite skin core edges: " .. checks .. " checks passed")

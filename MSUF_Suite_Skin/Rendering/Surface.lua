@@ -384,17 +384,22 @@ local function RefreshState(state)
     return true
 end
 
+-- deferRefresh: the caller (SkinOwnedButton) registers and paints the
+-- surface itself once it is a button, so neither happens here.
 local function AttachNow(target, spec, deferRefresh)
-    BlizzardYellow.TrackFrame(target)
     local state = NS.Registry.GetSurface(target)
+    -- An ownedArt control has no Blizzard-gold text (PublicAPI.lua).
+    if not (spec or state and state.spec or {}).ownedArt then BlizzardYellow.TrackFrame(target) end
     if state then
         state.spec = spec or state.spec
         if state.visible == false then NextPaintGeneration() end
         state.visible = true
         EnsureInteractiveHover(target, state)
         if state.hoverOverlay then AnchorTexture(state.hoverOverlay, target, state.spec.inset) end
-        NS.Registry.RegisterSurface(target, state, SurfaceTokens(state))
-        if not deferRefresh then state.refresh(state) end
+        if not deferRefresh then
+            NS.Registry.RegisterSurface(target, state, SurfaceTokens(state))
+            state.refresh(state)
+        end
         return state
     end
 
@@ -413,8 +418,10 @@ local function AttachNow(target, spec, deferRefresh)
         refresh = RefreshState,
     }
     EnsureInteractiveHover(target, state)
-    NS.Registry.RegisterSurface(target, state, SurfaceTokens(state))
-    if not deferRefresh then state.refresh(state) end
+    if not deferRefresh then
+        NS.Registry.RegisterSurface(target, state, SurfaceTokens(state))
+        state.refresh(state)
+    end
     return state
 end
 
@@ -516,7 +523,7 @@ function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
     spec = spec or {}
     local state = NS.Registry.GetSurface(button)
     if state and state.kind == "button" then
-        BlizzardYellow.TrackFrame(button)
+        if not spec.ownedArt then BlizzardYellow.TrackFrame(button) end
         state.spec = spec
         if state.visible == false then NextPaintGeneration() end
         state.visible = true
@@ -530,14 +537,16 @@ function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
     return state
 end
 
-function Surface.SetActive(target, active)
+-- repaint: paint even a surface that already shows this state (a public
+-- selection change repaints once, as its full reconcile did).
+function Surface.SetActive(target, active, repaint)
     local state = NS.Registry.GetSurface(target)
     if not state then
         return false
     end
     if NS.IsCombatLocked() then
         local _, reason = NS.CombatGate.RunOrDefer("surface-active:" .. tostring(target), function()
-            Surface.SetActive(target, active)
+            Surface.SetActive(target, active, repaint)
         end)
         return false, reason
     end
@@ -548,8 +557,8 @@ function Surface.SetActive(target, active)
     -- Selection hooks run per row initialization and per native refresh: a
     -- surface that shows this state, painted for the current generation,
     -- is left alone (Surface.Ensure's rule).
-    if state.active == active and state.paintGeneration == paintGeneration and state.visible ~= false
-        and not state.syncNativeSelected then
+    if not repaint and state.active == active and state.paintGeneration == paintGeneration
+        and state.visible ~= false and not state.syncNativeSelected then
         return true
     end
     state.active = active

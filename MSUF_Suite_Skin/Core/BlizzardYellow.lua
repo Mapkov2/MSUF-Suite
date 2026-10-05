@@ -160,15 +160,19 @@ local function CanTrack(frame)
 end
 
 -- 12.1 can return secret regions (Hierarchy aspect); they are skipped before
--- any comparison or lookup.
+-- any comparison or lookup. Every node of a window pass comes here with all
+-- its regions, so Safety.Public and IsFontString's cache are inlined.
 local function TrackRegions(...)
     local count = 0
-    local Public = Safety.Public
+    local isSecret, known = issecretvalue, fontStringRegions
     for index = 1, select("#", ...) do
         local region = select(index, ...)
-        if Public(region) and IsFontString(region)
-            and ApplyObject(region, BlizzardYellow.directStates) then
-            count = count + 1
+        if (isSecret == nil or not isSecret(region)) and type(region) == "table" then
+            local fontString = known[region]
+            if fontString == nil then fontString = IsFontString(region) end
+            if fontString and ApplyObject(region, BlizzardYellow.directStates) then
+                count = count + 1
+            end
         end
     end
     return count

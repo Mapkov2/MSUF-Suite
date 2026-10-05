@@ -25,6 +25,8 @@ local CleanupEntry = Shared.CleanupEntry
 local DropEntry = Shared.DropEntry
 local ReconcileEntry = Shared.ReconcileEntry
 local QueueEntry = Shared.QueueEntry
+local SelectEntry = Shared.SelectEntry
+local NextSettingsGeneration = Shared.NextSettingsGeneration
 local HasMethod = NS.Safety.HasMethod
 
 local listenerOwner = {}
@@ -256,7 +258,7 @@ function ScopeMethods:SetActive(target, active)
     entry.release = nil
     entry.keepEpoch = scope.releaseEpoch
     entry.active = active == true
-    return QueueEntry(scope, target, entry)
+    return SelectEntry(scope, target, entry)
 end
 
 function ScopeMethods:SetVisible(target, visible)
@@ -572,6 +574,8 @@ local function QueueAppearanceSignal(domain, key)
 end
 
 local function OnRegistryChanged(_, domain, key)
+    -- First, so the client syncs below record the new settings.
+    NextSettingsGeneration()
     if domain == "profile" or (domain == "adapter" and key == "master") then
         for _, record in pairs(clients) do QueueClientSync(record) end
     end

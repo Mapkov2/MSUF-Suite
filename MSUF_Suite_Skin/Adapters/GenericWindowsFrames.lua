@@ -252,7 +252,9 @@ local function TraverseTree(root, owner, metrics, maxDepth, maxNodes, rootIsNode
             metrics.protected = metrics.protected + 1
         else
             metrics.nodes = metrics.nodes + 1
-            SkinNode(current, owner, metrics, current == root and not rootIsNode)
+            -- Every node but the root came from its visited parent's children,
+            -- which that parent's Checkmarks child pass has already tracked.
+            SkinNode(current, owner, metrics, current == root and not rootIsNode, current ~= root)
             if depth < maxDepth then
                 if AppendChildren(queue, depths, depth + 1, maxNodes, Call(current, "GetChildren")) then
                     metrics.truncated = true

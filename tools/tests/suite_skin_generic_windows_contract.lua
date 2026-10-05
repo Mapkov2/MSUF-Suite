@@ -2357,6 +2357,28 @@ Section("generic traversal secrets", function()
     GenericWindows.Disable("secrets")
 end)
 
+Section("traversal tracks each button once", function()
+    -- A parent's Checkmarks child pass tracks every child button, so each
+    -- node but the root of a pass skips its own button tracking.
+    local tracked, trackFrame = {}, NS.Checkmarks.TrackFrame
+    NS.Checkmarks.TrackFrame = function(frame, _, buttonTracked)
+        tracked[frame] = buttonTracked == true
+    end
+    local grandchild = Frame(nil)
+    local child = Frame(nil, { grandchild })
+    local sibling = Frame(nil)
+    local window = Frame("ContractTrackOnceWindow", { child, sibling })
+    GenericWindows.ApplyFrame(window, "track-once", MODE)
+    Expect(tracked[window] == false and tracked[child] == true and tracked[sibling] == true
+        and tracked[grandchild] == true, "a frame pass tracked a child button twice or skipped its root")
+    tracked = {}
+    GenericWindows.ApplyDescendant(child, "track-once", MODE)
+    Expect(tracked[child] == false and tracked[grandchild] == true,
+        "a descendant pass skipped the button of its own root")
+    NS.Checkmarks.TrackFrame = trackFrame
+    GenericWindows.Disable("track-once")
+end)
+
 Section("supported clients and shared helpers", function()
     -- The Suite supports Retail and Forever, which both load the Mainline TOC.
     local toc = ReadSource(skin .. "MSUF_Suite_Skin_Mainline.toc")

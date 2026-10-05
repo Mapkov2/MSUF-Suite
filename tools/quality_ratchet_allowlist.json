@@ -10,6 +10,13 @@
    "max": 17,
    "reason": "Suite.Client.LoadReasonText reads Blizzard's ADDON_<reason> text by the reason code C_AddOns.LoadAddOn returns, as Blizzard's AddOnUtil.lua does; one shared read replaces raw reason codes in three places.",
    "date": "2026-10-05"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Core/Checkmarks.lua",
+   "metric": "type_guards",
+   "max": 5,
+   "reason": "CheckedCall is Safety.Call without the forbidden check per call, for the several getters TrackButton and AssetRole read from one object already checked once (CanTrack, AssetRole). It removed about 20% of the VM instructions of the first bag open (Perfy trace C, 2026-10-05).",
+   "date": "2026-10-05"
   }
  ]
 }

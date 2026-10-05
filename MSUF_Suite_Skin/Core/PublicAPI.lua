@@ -62,7 +62,11 @@ local function ReadOption(options, key)
     return rawget(options, key) or nil
 end
 
-local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape" }
+-- ownedArt: the caller built this control itself, with no native state
+-- textures, Icon or Checked fields, dropdown mixin or Blizzard-gold text,
+-- and never adds them. The skin then skips its native-asset and gold-text
+-- tracking for it; a false claim only costs the caller that adoption.
+local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape", "ownedArt" }
 
 -- Whitelist only declarative rendering values.  Public callers cannot pass
 -- region arrays, callbacks, functions, internal owner tokens, or the reviewed
@@ -90,6 +94,15 @@ end
 
 local function RuntimeEnabled()
     return PublicAPI.playerReady == true and NS.DB and NS.DB.enabled == true
+end
+
+-- Counts settings notifications (theme, colours, geometry, profile, adapters,
+-- master switch). A fully applied entry records the count it was applied
+-- under; see SelectEntry.
+local settingsGeneration = 0
+
+local function NextSettingsGeneration()
+    settingsGeneration = settingsGeneration + 1
 end
 
 -- Public input is untrusted: forbidden, protected (explicitly or through a
@@ -321,6 +334,7 @@ local function ReconcileEntry(scope, target, entry)
         if not applied then return FailEntry(scope, target, entry, reason or "unsupported-state") end
     end
     entry.applied = true
+    entry.appliedControl, entry.appliedFor = entry.control, settingsGeneration
     return true, "applied"
 end
 
@@ -334,6 +348,39 @@ local function QueueEntry(scope, target, entry)
     end
     local applied, reason = ReconcileEntry(scope, target, entry)
     return applied == true, reason
+end
+
+-- An owned button skin over a shown button surface: what ApplyButtonNow
+-- leaves behind for owner.
+local function PaintedButton(target, owner)
+    local state = ControlSkin.states[target]
+    if not state or state.kind ~= "button" or state.enabled ~= true
+        or state.windowAction or state.owner ~= owner then
+        return false
+    end
+    local surface = Registry.GetSurface(target)
+    return surface ~= nil and surface.kind == "button" and surface.visible ~= false
+        and not surface.syncNativeSelected
+end
+
+-- A selection change on a button that its last full reconcile applied with
+-- this control spec, under the same settings: that reconcile ended in one
+-- paint for the selection, and everything before it would repeat what the
+-- button already shows. So only that paint runs. Any other change (a new spec
+-- or role, a settings notification, suspend, release, another owner, an
+-- icon, cosmetic or visibility aspect) takes the full reconcile.
+local function SelectEntry(scope, target, entry)
+    local control = entry.control
+    if control and control.kind == "button" and entry.appliedControl == control
+        and entry.applied == true and entry.appliedFor == settingsGeneration
+        and not (entry.surface or entry.icon or entry.cosmetic) and entry.visible == nil
+        and PublicAPI.playerReady and not NS.IsCombatLocked()
+        and not scope.suspended and RuntimeEnabled()
+        and PaintedButton(target, entry.owner) and ValidateEntry(entry)
+        and NS.Surface.SetActive(target, entry.active, true) then
+        return true, "applied"
+    end
+    return QueueEntry(scope, target, entry)
 end
 
 -- Private to PublicAPIMethods.lua, which loads next (TOC order) and takes it
@@ -354,4 +401,6 @@ NS.PublicAPIShared = {
     DropEntry = DropEntry,
     ReconcileEntry = ReconcileEntry,
     QueueEntry = QueueEntry,
+    SelectEntry = SelectEntry,
+    NextSettingsGeneration = NextSettingsGeneration,
 }
