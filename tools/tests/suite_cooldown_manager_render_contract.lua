@@ -1130,6 +1130,20 @@ do
     assert(K.CountdownFormatter(9,.2,.4,.6)==one and createdFormatters==made+1,"a formatter just made is a hit")
     local points=one.points
     assert(points[1].format=="|cff336699%.0f|r" and points[2].threshold==9,"the formatter keeps its breakpoints")
+    -- Per-spell glow, keybind and stack colors (K.HexRGB): a picker drag
+    -- keeps two generations of decoded colors, not one per tick.
+    local r,g,b=K.HexRGB("ff8000")
+    assert(r==1 and g==128/255 and b==0 and K.HexRGB("ff8000")==1,"a hex decodes to its color")
+    local function Drag(from,count)
+        for i=from,from+count-1 do K.HexRGB(string.format("%06x",i)) end
+        collectgarbage("collect")
+        return collectgarbage("count")
+    end
+    local start=Drag(0,0)
+    local warm=Drag(1,4*limit)
+    local long=Drag(4*limit+1,20*limit)
+    assert(long-warm<(warm-start)/2,
+        string.format("a color drag kept its decoded colors: %.0f KB after warm-up, %.0f KB more after a longer drag",warm-start,long-warm))
 end
 
 ------------------------------------------------------------------ Effects: usable and range tint

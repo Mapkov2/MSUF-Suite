@@ -383,14 +383,14 @@ function K.CopySet(into, from)
     return into
 end
 
--- Hex -> rgb for per-spell glow colors; each distinct hex decoded once.
-local hexCache = {}
+-- Hex -> rgb for per-spell glow, keybind and stack colors; a hex in use is
+-- decoded once, and a color picker drag keeps only two generations.
+local hexCache = K.NewCache()
 function K.HexRGB(hex)
-    local rgb = hexCache[hex]
+    local rgb = hexCache.young[hex] or Recall(hexCache, hex)
     if not rgb then
         local r, g, b = S.RGB(hex)
-        rgb = { r, g, b }
-        hexCache[hex] = rgb
+        rgb = Remember(hexCache, hex, { r, g, b })
     end
     return rgb[1], rgb[2], rgb[3]
 end
