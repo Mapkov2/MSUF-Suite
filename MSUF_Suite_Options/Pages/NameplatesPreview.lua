@@ -406,7 +406,7 @@ local function RenderTitle(editor, s, m)
     if descriptor then
         s.title:SetText(Tr("ENEMY / TARGET") .. " · " .. Tr(descriptor.label)
             .. (editor.raidMarked and " · " .. Tr("Raid marked") or ""))
-        s.nameText:SetText(descriptor.sample)
+        s.nameText:SetText(Tr(descriptor.sample))
     elseif prefix == "enemy" then
         s.title:SetText(Tr("ENEMY PLAYER / TARGET"))
         s.nameText:SetText(Tr("Enemy Player"))
@@ -415,7 +415,7 @@ local function RenderTitle(editor, s, m)
     if prefix == "friendly" then
         s.title:SetText(Tr(editor.personal and "PERSONAL / PLAYER" or m.friendlyNPC and "FRIENDLY / ELITE NPC"
             or editor.friendlyOutsider and "FRIENDLY / OUTSIDE GROUP" or "FRIENDLY / GROUP"))
-        s.nameText:SetText(editor.personal and "Your Character" or m.friendlyNPC and "Friendly Elite" or "Friendly Player")
+        s.nameText:SetText(Tr(editor.personal and "Your Character" or m.friendlyNPC and "Friendly Elite" or "Friendly Player"))
     end
 end
 
