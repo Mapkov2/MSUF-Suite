@@ -96,8 +96,10 @@ local function Eligible(frame)
     local parent = Safety.Read(frame, "GetParent")
     if parent ~= UIParent and not (standalone and parent == nil) then return nil end
     local width, height = Safety.Read(frame, "GetWidth"), Safety.Read(frame, "GetHeight")
+    -- The Game Menu is 1 high until its first opening lays out its buttons
+    -- (MainMenuFrameTemplate): listed panels need the width only.
     if type(width) ~= "number" or type(height) ~= "number"
-        or width < 240 or height < 170 then return nil end
+        or width < 240 or height < 170 and not standalone then return nil end
     return name, entry, panel
 end
 

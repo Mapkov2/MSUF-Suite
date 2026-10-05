@@ -289,5 +289,20 @@ Check(At(character, "TOPLEFT", 420, 840 - UIParent.height) and NS.DB.windowContr
 UpdateUIPanelPositions(character)
 Check(At(character, "TOPLEFT", 420, 840 - UIParent.height), "Blizzard's panel layout moved the dropped window")
 
+------------------------------------------------------------------ H-S3-02
+-- At login the hidden Game Menu is 260 x 1 (MainMenuFrameTemplate; its
+-- buttons are laid out only once it shows). Its saved position still applies
+-- on the first Esc of the session.
+local menu = Frame("GameMenuFrame", UIParent)
+menu.width, menu.height = 260, 1
+menu:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+NS.DB.windowControls.positions.GameMenuFrame = { x = 40, y = -60 }
+Check(WindowControls.Attach(menu, "gameMenu") and WindowControls.states[menu],
+    "the Game Menu got no window controls at login")
+ShowUIPanel(menu)
+menu.height = 450
+Check(At(menu, "TOPLEFT", 40, -60), "the first Esc of the session ignored the saved Game Menu position")
+HideUIPanel(menu)
+
 Check(#reported == 0, "window controls reported errors: " .. table.concat(reported, "; "))
 print("Suite window controls edges: " .. checks .. " checks passed")
