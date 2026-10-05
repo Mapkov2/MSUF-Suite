@@ -89,6 +89,9 @@ Check(reloaded.chatHistory == history and reloaded.profiles.Default ~= saved.pro
     "login copies the profiles but carries runtime history over without copying it")
 
 local oldRoot = Suite.RootDB
+oldRoot.suiteGold = { ["Realm-Player"] = 1000 }
+oldRoot.installation, oldRoot.skinEnabled = { status = "complete" }, false
+oldRoot.quarantinedProfiles = { { name = "Old", profile = {} } }
 local oldSkin = { profiles = { Raid = { theme = { private = "skin" } } } }
 MSUFSuiteDB, MSUFSuiteSkinDB = oldRoot, oldSkin
 MSUF_GlobalDB = { profiles = { Raid = { player = "untouched" } } }
@@ -105,4 +108,12 @@ Check(type(MSUFSuiteSkinDB) == "table" and next(MSUFSuiteSkinDB) == nil and oldS
     "factory reset stages a fresh skin root without mutating the old one")
 Check(MSUF_GlobalDB.profiles.Raid.player == "untouched" and legacy.profiles.Raid.suite.modules.chat.enabled == true,
     "factory reset leaves MSUF and legacy addon data alone")
+-- The reset replaces the settings only. Runtime data the modules keep in the
+-- root stays: the saved CVars a module still has to hand back, gold and run
+-- history. The setup runs again and the skin switch starts over.
+Check(oldRoot.suiteRecovery and Suite.RootDB.suiteRecovery == oldRoot.suiteRecovery
+    and Suite.RootDB.suiteRuns == oldRoot.suiteRuns and Suite.RootDB.suiteChat == oldRoot.suiteChat
+    and Suite.RootDB.suiteGold == oldRoot.suiteGold, "factory reset deleted the modules' runtime data")
+Check(Suite.RootDB.installation == nil and Suite.RootDB.skinEnabled == nil and Suite.RootDB.migration == nil
+    and Suite.RootDB.quarantinedProfiles == nil, "factory reset kept the old settings")
 print("Standalone suite database: " .. checks .. " checks passed")
