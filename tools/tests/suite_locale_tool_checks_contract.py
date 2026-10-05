@@ -67,6 +67,14 @@ with tempfile.TemporaryDirectory() as folder:
     finally:
         tool.LOCALE_DIR, tool.LOCALES = saved
 
+# A status a module addon writes into S.states (reloadRequired) reaches
+# Suite.StatusText through the core's S.Status, directly or through a
+# module constant: the extraction lists it, so verify asks every pack for it.
+records, _ = tool.extract(ROOT)
+extracted = {record.english for record in records}
+for english in ("Reload the UI to restore Blizzard's action bars", "Reload the UI to restore Blizzard's minimap layout"):
+    check(english in extracted, "the module status %r is not extracted for translation" % english)
+
 for failure in failures:
     print("FAIL " + failure)
 print("suite locale tool checks: %s" % ("ok" if not failures else "%d failures" % len(failures)))

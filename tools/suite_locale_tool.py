@@ -655,6 +655,10 @@ FIELD_NOT_SINKS = {"L", "id", "key", "keys", "value", "kind", "type", "PAGE", "I
                    "default", "min", "max", "step", "color"}
 OPTIONS = "MSUF_Suite_Options"
 RUNTIME = "MSUF_Suite_Modules"
+# Status fields a module addon writes into its S.states record and the
+# core's S.Status returns to Suite.StatusText: a sink there is a sink in
+# every addon (S.states.actionbars.reloadRequired = AB.RELOAD_MESSAGE).
+SHARED_STATE_FIELDS = {"reloadRequired"}
 
 
 def is_translatable(text):
@@ -1038,6 +1042,12 @@ class Extractor:
                     merged = {k: set(v) for k, v in table.items()}
                     for k, v in self.field_sinks[RUNTIME].items():
                         merged.setdefault(k, set()).update(v)
+                    table = merged
+                core = self.field_sinks.get(CORE, {})
+                if f.addon != CORE and any(field in core for field in SHARED_STATE_FIELDS):
+                    merged = {k: set(v) for k, v in table.items()}
+                    for field in SHARED_STATE_FIELDS:
+                        merged.setdefault(field, set()).update(core.get(field, ()))
                     table = merged
                 for field, rng, owner in f.fields:
                     self.current = (f.rel, f.tokens[rng[0]].line, "field:" + field)
