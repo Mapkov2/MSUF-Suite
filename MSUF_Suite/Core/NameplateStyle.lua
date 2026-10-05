@@ -43,12 +43,14 @@ Style.Elements = {
     { key = "ControlAura", label = "Control effect", section = "auras" },
     { key = "SoftTarget", label = "Soft target icon", section = "signals" },
 }
+-- control: the whole label of the group's control switch, translated as one
+-- text so each language keeps its own word order.
 Style.AuraGroups = {
-    { key = "enemyNpc", label = "Enemy NPC", control = "Crowd control",
+    { key = "enemyNpc", label = "Enemy NPC", control = "Enemy NPC Crowd control",
       cvar = "nameplateEnemyNpcAuraDisplay" },
-    { key = "enemyPlayer", label = "Enemy player", control = "Loss of control",
+    { key = "enemyPlayer", label = "Enemy player", control = "Enemy player Loss of control",
       cvar = "nameplateEnemyPlayerAuraDisplay" },
-    { key = "friendlyPlayer", label = "Friendly player", control = "Loss of control",
+    { key = "friendlyPlayer", label = "Friendly player", control = "Friendly player Loss of control",
       cvar = "nameplateFriendlyPlayerAuraDisplay" },
 }
 Style.AuraCVar = {}

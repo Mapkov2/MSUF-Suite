@@ -1679,6 +1679,22 @@
       "evidence": "MSUF_Suite_Options/Pages/ActionBars.lua BuildQuick now builds within Enable action bars; suite_options_menu_contract preserves quick switches and resume visibility on both clients.",
       "reason": "User requested removing the separate accordion and placing its individual switches inside Enable action bars. No setting removed.",
       "date": "2026-10-04"
+    },
+    {
+      "category": "locale",
+      "item": "Crowd control",
+      "basis": "moved",
+      "evidence": "git log -S'Enemy NPC Crowd control' -- MSUF_Suite/Core/NameplateStyle.lua; Style.AuraGroups control now holds the whole label (Enemy NPC Crowd control), translated as one text in every pack.",
+      "reason": "Same switches and English labels; the fragment joined by '%s %s' became whole-sentence keys so translators can order the words.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "locale",
+      "item": "Loss of control",
+      "basis": "moved",
+      "evidence": "git log -S'Enemy player Loss of control' -- MSUF_Suite/Core/NameplateStyle.lua; Style.AuraGroups control now holds the whole label (Enemy player Loss of control and Friendly player Loss of control), translated as one text in every pack.",
+      "reason": "Same switches and English labels; the fragment joined by '%s %s' became whole-sentence keys so translators can order the words.",
+      "date": "2026-10-05"
     }
   ]
 }

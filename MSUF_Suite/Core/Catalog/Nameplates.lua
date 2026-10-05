@@ -219,12 +219,12 @@ Side("friendly", "Friendly appearance", 12)
 
 local auraRules = {}
 for _, group in ipairs(NS.NameplateStyle.AuraGroups) do
-    local prefix, label, control = group.key, NS.Text(group.label), NS.Text(group.control)
+    local prefix, label = group.key, NS.Text(group.label)
     auraRules[#auraRules + 1] = B.Choice(prefix .. "AuraMode", NS.Text("%s auras"):format(label), 1,
         { "Keep Blizzard setting", "Customize" })
     auraRules[#auraRules + 1] = B.Bool(prefix .. "Buffs", NS.Text("%s buffs"):format(label), true)
     auraRules[#auraRules + 1] = B.Bool(prefix .. "Debuffs", NS.Text("%s debuffs"):format(label), true)
-    auraRules[#auraRules + 1] = B.Bool(prefix .. "Control", NS.Text("%s %s"):format(label, control), true)
+    auraRules[#auraRules + 1] = B.Bool(prefix .. "Control", NS.Text(group.control), true)
 end
 auraRules[#auraRules + 1] = B.Choice("friendlyNpcDebuffs", "Friendly NPC debuffs", 1,
     { "Keep Blizzard setting", "Show", "Hide" })

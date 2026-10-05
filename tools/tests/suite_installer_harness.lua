@@ -60,7 +60,8 @@ local function TocFiles(root)
     return files
 end
 
--- options: root (required), forever, uiHeight, addons (enable state by name),
+-- options: root (required), forever, msuf (MSUF_NS: LOCALE and L for a locale
+-- pack), uiHeight, addons (enable state by name),
 -- frameFactory() (the frame profile MSUF's import creates), afterImport(name,
 -- profile) (MSUF's runtime apply after the import).
 function H.Setup(options)
@@ -73,7 +74,7 @@ function H.Setup(options)
         end
         return unpack(results, 2, table.maxn(results))
     end
-    MSUF_NS = {}
+    MSUF_NS = options.msuf or {}
     WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
     GameEvent = options.forever and { RegisterCamelotEvents = function() end } or nil
     SlashCmdList = {}
