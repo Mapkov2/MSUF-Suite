@@ -137,7 +137,9 @@ local function MarkerFree(marker, wantedUnit)
                 -- Unreadable: taken only when this module put this marker there.
                 local owner = ownMarks[marker]
                 if owner and unit ~= wantedUnit and owner == S.PublicText(UnitGUID(unit)) then return false end
-            elseif current == marker and unit ~= wantedUnit then return false end
+            elseif current == marker and unit ~= wantedUnit then
+                return false
+            end
         end
     end
     return true
