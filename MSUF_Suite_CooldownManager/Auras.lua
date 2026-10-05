@@ -154,9 +154,11 @@ end
 local function Needs(entries, aura, view)
     need.glow, need.stack, need.kit = false, false, false
     need.text = K.BarTime(view)
+    need.timers = ""
     local isKit = C.Alerts.IsKit
     for i = 1, #entries do
         local entry = entries[i]
+        if aura and entry.timer and C.AuraTimers.Wants(entry, view) then need.timers = need.timers .. entry.key .. ":" end
         local ov = entry.ov
         if ov and ov ~= EMPTY and entry.src ~= "p" then
             if ov.timeText == YES then need.text = true end
@@ -204,6 +206,7 @@ local function SyncAura(slot, view, plan, force)
     barMeta.role = role
     barMeta.look = Look(barMeta, view)
     local entries = plan.entries
+    if plan.hasTimers or C.AuraTimers.slots[slot] then C.AuraTimers.Sync(slot, view, plan) end
     Needs(entries, true, view)
     local layout = C.Layout
     -- One rule for the layout and the containers (Layout.FixedAuras).
@@ -274,6 +277,7 @@ function Auras.Sync(slot, force)
         return
     end
     if plan.kind == KIND.COOLDOWN then
+        C.AuraTimers.Release(slot)
         if live[slot] then ReleaseFam(slot, "aura") end
         Unholds(slot)
         return Auras.SyncOverlays(slot, force)
@@ -313,6 +317,7 @@ end
 function Auras.Restyle(slot) return Auras.Sync(slot) end
 
 function Auras.Release(slot)
+    C.AuraTimers.Release(slot)
     if live[slot] then
         ReleaseFam(slot, "aura")
         ReleaseFam(slot, "over")
@@ -326,6 +331,7 @@ end
 -- module may be switched off after combat but before its own
 -- PLAYER_REGEN_ENABLED ran (a profile change queued in combat).
 function Auras.ReleaseAll()
+    C.AuraTimers.ReleaseAll()
     for slot in pairs(live) do Auras.Release(slot) end
     for slot in pairs(meta) do Unholds(slot) end
     for slot in pairs(Auras.pending) do Auras.pending[slot] = nil end
@@ -407,6 +413,7 @@ end
 -- buttons take no mouse or tooltip and no aura work runs; shown again, a
 -- container reparses at once (OnShow). Legal in combat.
 function Auras.SetBarMouse(slot, on)
+    C.AuraTimers.SetBarMouse(slot, on)
     local hidden = on ~= true or nil
     if unseen[slot] == hidden then return end
     unseen[slot] = hidden
@@ -441,6 +448,7 @@ end
 -- Edit Mode / options preview: every aura-bar entry shows its sample icon
 -- on its cell; compact containers step aside so nothing is drawn twice.
 function Auras.SetPreview(on)
+    C.AuraTimers.SetPreview()
     on = on == true
     if Containers.preview == on then return end
     Containers.preview = on

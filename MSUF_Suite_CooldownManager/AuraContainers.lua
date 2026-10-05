@@ -46,7 +46,11 @@ local pools = {}    -- retired container records per bar
 local overIcon = {} -- cooldown icon -> bar slot, for icons that carry an overlay
 local unseen = {}   -- bar slot -> true while Visibility hides the bar
 local list, where, cand, lay, geo = {}, {}, {}, {}, {}
-local groupOpts, slotOpts = { maxFrameCount = 1 }, {}
+-- Default sorting can let a permanent talent aura mask its timed linked
+-- buff. Blizzard's ExpirationOnly comparator puts timed auras first without
+-- exposing their expiration times to addon Lua (live/Forever AuraUtil).
+local durationSort = AuraContainerSortMethod.ExpirationOnly
+local groupOpts, slotOpts = { maxFrameCount = 1, sortMethod = durationSort }, { sortMethod = durationSort }
 local need = {}     -- bindings the bar being synced asks for: glow, stack, kit
 local watching = {} -- ancestor watch frame -> its kit container record
 local stamp = 0
@@ -202,6 +206,7 @@ end
 
 -- Bar-level glow and text choices behind the per-spell ones.
 local function BarChoices(rec, view)
+    rec.view = view
     rec.glowAll = view.auraGlow == true
     rec.gStyle, rec.gTint = view.glowStyle, view.glowTint == true
     rec.gR, rec.gG, rec.gB = view.glowR or 1, view.glowG or 1, view.glowB or 1
@@ -377,6 +382,7 @@ local function RegionSet(fam, role, fixed, view)
     want.stack, want.kit, want.stackFill, want.stackExtra, want.color = stack, kit, stackFill, stackExtra, color
     return (fixed and "s" or "g") .. role .. (text and 1 or 0) .. (name and 1 or 0) .. (pan and 1 or 0) .. (glow and 1 or 0)
         .. (stack and 1 or 0) .. (kit and 1 or 0) .. fill .. (stackFill and 1 or 0) .. (color and 1 or 0) .. (stackExtra and 1 or 0)
+        .. (need.timers or "")
 end
 
 -- A new container for one bar, family and unit with the region set in `want`.

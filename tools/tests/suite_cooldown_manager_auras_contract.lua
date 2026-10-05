@@ -165,6 +165,7 @@ function Methods:SetFrameLevel(level)
     c.SetFrameLevel=(c.SetFrameLevel or 0)+1
 end
 function Methods:GetFrameLevel() return R[self].level end
+function Methods:GetParent() return R[self].parent end
 function Methods:GetEffectiveScale() return 1 end
 function Methods:CreateTexture() return New("Texture",self) end
 function Methods:CreateFontString() return New("FontString",self) end
@@ -190,6 +191,10 @@ end
 local scripted={}
 function Methods:SetScript(key,fn)
     local s=R[self]
+    if s.kind=="Cooldown" and key=="OnCooldownDone" then
+        s.scripts=s.scripts or {};s.scripts[key]=fn
+        return
+    end
     assert(s.kind=="Frame","scripts only on plain frames")
     -- nil clears a script (a woken button's sensor once it is built).
     assert((key=="OnShow" or key=="OnHide") and (fn==nil or type(fn)=="function"),"sensor scripts: OnShow and OnHide")
@@ -204,6 +209,7 @@ function Methods:HookScript() error("no hooks on aura layer regions",2) end
 function Methods:GetValue() return R[self].value end
 function Methods:GetText() return R[self].text end
 
+AuraContainerSortMethod={ExpirationOnly=5}
 local containers={}
 local function NewButton(container)
     local b=New("AuraButton",container,BlizzardMT)
@@ -259,7 +265,7 @@ local function Display(self,key,filter,opts,count,slot)
     ValidFilter(filter)
     assert(type(opts)=="table" and type(opts.initializeFrame)=="function","initializeFrame")
     ValidCandidates(opts.candidateFilters)
-    local g={filter=filter,cand=SecureCopy(opts.candidateFilters),layout=SecureCopy(opts.layout),max=opts.maxFrameCount,buttons={},enabled=true}
+    local g={filter=filter,cand=SecureCopy(opts.candidateFilters),layout=SecureCopy(opts.layout),max=opts.maxFrameCount,sort=opts.sortMethod,buttons={},enabled=true}
     if slot then s.slots[key]=g else s.groups[key]=g end
     s.order[#s.order+1]=key
     s.adds=s.adds+1
@@ -567,6 +573,11 @@ function L.FixedAuras(view,entries)
     local _,_,_,per,vertical,_,align=L.Metrics(view)
     local n=n1+n2
     local fixed=view.keepSlots==true or view.showMissing==true
+    if not fixed then
+        for i=1,#entries do
+            if entries[i].timer and C.AuraTimers.Wants(entries[i],view) then fixed=true;break end
+        end
+    end
     for i=1,#entries do
         local ov=entries[i].ov
         if ov and ov.showMissing==true then fixed=true end
@@ -581,11 +592,15 @@ function L.FixedAuras(view,entries)
 end
 
 -- Strict globals from here on: the runtime files may not create any.
+GetNumTotemSlots=function() return 0 end
+GetTotemInfo=function() return false,"",0,0,0,1,0 end
+GetTotemDuration=function() end
 setmetatable(_G,{__newindex=function(_,key) error("global write: "..tostring(key),2) end})
 LoadRuntime("AuraGlows.lua")
 LoadRuntime("StackColors.lua")
 LoadRuntime("AuraButtons.lua")
 LoadRuntime("AuraPlaceholders.lua")
+LoadRuntime("AuraTimers.lua")
 LoadRuntime("AuraContainers.lua")
 LoadRuntime("Auras.lua")
 LoadRuntime("Alerts.lua")
@@ -658,8 +673,9 @@ local function Aura(slot,key,src,unit,ids,extra)
     return e
 end
 local function Plan(slot,kind,entries)
-    for i,e in ipairs(entries) do e.index=i end
-    C.plans[slot]={slot=slot,kind=kind,entries=entries,gen=1}
+    local timed=false
+    for i,e in ipairs(entries) do e.index=i;C.AuraTimers.Classify(e);timed=timed or e.timer end
+    C.plans[slot]={slot=slot,kind=kind,entries=entries,gen=1,hasTimers=timed}
     return C.plans[slot]
 end
 local function Count(t) local n=0 for _ in pairs(t) do n=n+1 end return n end
@@ -737,6 +753,7 @@ local layout=ps.groups.g1.layout
 assert(layout.elementWidth==30 and layout.elementHeight==27 and layout.elementSpacing==0 and layout.groupSpacing==2
     and layout.groupLineSpacing==2,"one-frame groups spaced by groupSpacing, 10:9 elements")
 assert(ps.groups.g1.max==1)
+assert(ps.groups.g1.sort==AuraContainerSortMethod.ExpirationOnly,"native selection prefers timed buffs over permanent linked talents")
 -- growth Down, centered: flow from the top-left
 assert(ps.flow.axis==0 and ps.flow.anchor=="TOPLEFT" and ps.flow.h==1 and ps.flow.v==-1,"flow down/right")
 assert(math.abs(ps.flow.line-(10*30+9*2))<.1,"ten icons per line")
@@ -1373,7 +1390,7 @@ assert(Live("buf","player")==compactP,"re-enable reuses the pool")
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C2={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+        local C2={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},AuraTimers=C.AuraTimers,Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         local L2=C2.Layout
@@ -1410,7 +1427,7 @@ end
 -- the rule and against the real Extent from Exports.lua.
 do
     local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua"))
-    local Cx={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+    local Cx={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},AuraTimers=C.AuraTimers,Const=C.Const,Grid=C.Grid,
         Visibility={Paint=function() end}}
     chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     local L2=Cx.Layout
@@ -1747,7 +1764,7 @@ assert(#bt.points==1 and bt.points[1][1]=="TOP" and bt.points[1][2]==c2Host and 
 do
     local chunk=loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua")
     if chunk then
-        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},Const=C.Const,Grid=C.Grid,
+        local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},AuraTimers=C.AuraTimers,Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         C3.Layout.Apply("c2")
@@ -3185,4 +3202,172 @@ local kits=played.kits
 assert(Alerts.Play("kit:5001",true)==true and played.kits==kits+1 and played.kit==5001,
     "an unmapped kit did not play through C_Sound.PlaySoundWithOptions")
 
+------------------------------------------------------------------ summon/manual clocks, real Sample and native aura bindings
+do (function()
+    A.ReleaseAll()
+    local T=C.AuraTimers
+    local dtCalls=0
+    local function Duration(start,length)
+        local d={start=start,length=length}
+        function d:SetTimeFromStart(a,b)
+            assert(not IsSecret(a) and not IsSecret(b),"manual clock inputs must be public")
+            self.start,self.length=a,b
+        end
+        return d
+    end
+    C_DurationUtil.CreateDuration=function() return Duration(0,0) end
+    local make=C_DurationUtil.CreateDurationTextBinding
+    C_DurationUtil.CreateDurationTextBinding=function()
+        local binding=make()
+        function binding:Assign(template) self.template=template end
+        function binding:SetFontString(fs) self.font=fs end
+        function binding:SetDuration(d) self.duration=d end
+        return binding
+    end
+    function Methods:SetTimerDuration(d,interpolation,direction)
+        assert(type(d)=="table" and interpolation==0 and (direction==0 or direction==1),"native duration object sink")
+        R[self].duration,R[self].direction=d,direction
+        dtCalls=dtCalls+1
+    end
+    function Methods:SetCooldownFromDurationObject(d) R[self].duration=d end
+    function Methods:Clear() R[self].duration=nil end
+    local totems={}
+    local reads=0
+    GetNumTotemSlots=function() return 4 end
+    GetTotemInfo=function(slot)
+        reads=reads+1
+        local t=totems[slot]
+        if not t then return false,"",0,0,0,1,0 end
+        return t.have,"",t.start,t.length,0,1,t.spell
+    end
+    GetTotemDuration=function(slot) return assert(totems[slot]).object end
+    local spirit=Aura("bar","b1260565","b","player",Set(1260511,1260565))
+    local chi=Aura("bar","a406220","a","player",Set(406220),{base=406220,ov={auraGlow=true,stackGlow=2,sound="kit:5001"}})
+    local yu=Aura("bar","a389422","a","player",Set(389422),{base=389422})
+    C.views.bar=View("bar",3)
+    local view=C.views.bar
+    local plan=Plan("bar",3,{spirit,chi,yu})
+    assert(plan.hasTimers and chi.timer and yu.timer and not spirit.timer,"cold alias classification")
+    A.Sync("bar")
+    local rec=C.AuraContainers.live.bar.aura.player
+    assert(rec.fixed and #rec.keys==3,"summon bars retain entry positions and native aura routes")
+    local native=R[Acquired(rec.frame,rec.keys[2])].bind
+    assert(native.icon and native.name and native.count and native.appBar and not native.bar and not native.text,
+        "summon duration ownership keeps icon/name/stacks/glows while excluding the zero aura clock")
+    assert(native.shownAnims,"native aura glow preserved")
+    local function Timer(key)
+        local cell=C.bars.bar.cells[key]
+        for _,child in ipairs(R[cell].kids or {}) do
+            local s=R[child]
+            if child.part and child.part.dur then
+                for _,gate in ipairs(s.kids or {}) do
+                    if gate.timerRow then return gate.timerRow end
+                end
+            end
+        end
+        error("timer row missing at cell "..key)
+    end
+    local crane,dragon=Timer(2),Timer(3)
+    assert(crane.binding~=dragon.binding,"each timer owns a separate text binding")
+    assert(not crane.frame:IsShown() and not dragon.frame:IsShown(),"permanent aura alone does not start a summon clock")
+    local d=Duration(NOW,12)
+    totems[1]={have=true,spell=325197,start=NOW,length=12,object=d}
+    T.Totem(nil,nil,1)
+    assert(crane.frame:IsShown() and not dragon.frame:IsShown() and crane.binding.duration==d,
+        "Chi-Ji cast ID matches aura alias and uses the game's 12-second duration")
+    assert(R[crane.frame.part.bar].duration==d and R[crane.gate].duration==d,"native bar, text and completion share one clock")
+    local latest=crane.binding.duration
+    ACCESS=false;AURAS_SECRET=true
+    totems[1].object=Duration(Secret(),Secret())
+    T.Totem(nil,nil,1)
+    assert(crane.binding.duration==totems[1].object,"secret numeric duration data goes to native sinks only")
+    totems[1].have,totems[1].spell=Secret(),Secret()
+    T.Totem(nil,nil,1)
+    T.Totem(nil,nil,Secret())
+    T.Cast(nil,nil,Secret(),nil,Secret())
+    T.Cast(nil,nil,"player",nil,Secret())
+    ACCESS=true;AURAS_SECRET=false
+    totems[1]={have=true,spell=325197,start=NOW,length=12,object=latest}
+    NOW=NOW+4
+    A.Sync("bar")
+    assert(crane.binding.duration==latest and latest.start==NOW-4,"settings sync never restarts a native summon")
+    chi.ov.timerDuration=25
+    Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
+    assert(crane.binding.duration.start==NOW-4 and crane.binding.duration.length==25,"custom summon length retains the native start")
+    local clocks=tally.made
+    T.Cast(nil,nil,"target",nil,325197)
+    assert(crane.binding.duration.start==NOW-4,"other-unit casts cannot start our timer")
+    T.Cast(nil,nil,"player",nil,325197)
+    assert(crane.binding.duration.start==NOW and crane.binding.duration.length==25,"successful player cast starts the chosen duration")
+    assert(tally.made==clocks,"cast edge allocates no widgets")
+    T.SetBarMouse("bar",false)
+    assert(not crane.frame:IsShown(),"visibility masks the owned timer")
+    T.SetBarMouse("bar",true)
+    assert(crane.frame:IsShown() and crane.binding.duration.start==NOW,"show edge preserves the clock")
+    C.state.preview=true;T.SetPreview()
+    assert(not crane.frame:IsShown(),"preview shows its samples instead of live timer rows")
+    C.state.preview=false;T.SetPreview()
+    assert(crane.frame:IsShown(),"preview exit restores the existing clock")
+    view.barFill=C.Const.BAR_FILL.FILL;view.styleGen=view.styleGen+1;A.Sync("bar")
+    assert(R[crane.frame.part.bar].direction==0,"filling view uses native elapsed direction")
+    chi.ov.timeText=3;Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
+    assert(not crane.frame.part.dur:IsShown() and crane.binding.calls.SetEnabled==false,"per-spell countdown hide respected")
+    R[crane.gate].scripts.OnCooldownDone(crane.gate)
+    assert(not crane.frame:IsShown() and not crane.active and crane.binding.calls.SetEnabled==false,"native completion retires the manual clock")
+    totems[1]=nil
+    chi.ov.timerDuration=nil
+    yu.ov.timerDuration=25;yu.ov.timerSpell=322118
+    Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
+    local nextRec=C.AuraContainers.live.bar.aura.player
+    local binds=R[Acquired(nextRec.frame,nextRec.keys[3])].bind
+    assert(not binds.text and not binds.bar,"a timer setting on another entry cannot restore native zero text")
+    yu.ov.threshold=3;view.styleGen=view.styleGen+1;A.Sync("bar")
+    binds=R[Acquired(C.AuraContainers.live.bar.aura.player.frame,nextRec.keys[3])].bind
+    assert(not binds.text,"warning-color changes cannot rebind the native zero countdown")
+    T.Cast(nil,nil,"player",nil,322118)
+    assert(dragon.frame:IsShown() and dragon.binding.duration.length==25,"Yu'lon trigger spell starts the matching aura entry")
+    totems[2]={have=true,spell=389422,start=NOW,length=25,object=Duration(NOW,25)}
+    T.Totem(nil,nil,2)
+    totems[2]=nil;T.Totem(nil,nil,2)
+    assert(not dragon.frame:IsShown(),"totem removal stops the timer")
+    -- An unmapped aura can opt in with its distinct trigger spell.
+    local custom=Aura("bar","a9991","a","player",Set(9991),{base=9991,ov={timerDuration=7,timerSpell=8881}})
+    Plan("bar",3,{custom});A.Sync("bar")
+    local own=Timer(1)
+    T.Cast(nil,nil,"player",nil,9991)
+    assert(not own.frame:IsShown(),"aura ID does not replace an explicit cast ID")
+    T.Cast(nil,nil,"player",nil,8881)
+    assert(own.frame:IsShown() and own.binding.duration.length==7,"arbitrary custom aura timer")
+    local before=tally.made
+    for i=1,50 do A.Release("bar");A.Sync("bar") end
+    assert(tally.made==before,"disable/re-enable reuses the same timer cell widgets")
+    T.Cast(nil,nil,"player",nil,8881)
+    local hotMemory=collectgarbage("count")
+    collectgarbage("stop")
+    for i=1,1000 do T.Cast(nil,nil,"player",nil,8881) end
+    local delta=collectgarbage("count")-hotMemory
+    collectgarbage("restart")
+    assert(delta<1,"manual cast routing allocated "..delta.." KB")
+    custom.ov.timerDuration=nil;Plan("bar",3,{custom});A.Sync("bar")
+    local plain=C.AuraContainers.live.bar.aura.player
+    local restored=R[Acquired(plain.frame,plain.keys[1])].bind
+    assert(restored.bar and restored.text and not T.Wanted(),"clearing the option restores ordinary native duration tracking")
+    local noReads=reads
+    A.Sync("bar")
+    assert(reads==noReads,"ordinary aura bars make no totem API reads")
+    assert(not C.AuraButtons.TextOpts(C.state.threshold).binding.font,"owned timers never mutate a cached text-binding template")
+    local other=Aura("bar","a9992","a","player",Set(9992),{base=9992,ov={timerDuration=6,timerSpell=8882}})
+    custom.ov.timerDuration=7
+    Plan("bar",3,{custom,other});A.Sync("bar")
+    Plan("bar",3,{other,custom});A.Sync("bar")
+    T.Cast(nil,nil,"player",nil,8881);T.Cast(nil,nil,"player",nil,8882)
+    assert(Timer(1).active and Timer(2).active,"reordering two timer cells preserves both spell routes")
+    custom.ov.timerDuration=nil
+    Plan("bar",3,{other,custom});A.Sync("bar")
+    local transferred=C.AuraContainers.live.bar.aura.player
+    local first=R[Acquired(transferred.frame,transferred.keys[1])].bind
+    local second=R[Acquired(transferred.frame,transferred.keys[2])].bind
+    assert(not first.bar and not first.text and second.bar and second.text,"moving the duration option restores only the correct native clock")
+    A.ReleaseAll()
+end)() end
 print("suite_cooldown_manager_auras_contract: ok")

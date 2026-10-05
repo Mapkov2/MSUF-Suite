@@ -217,6 +217,7 @@ local function LinesAre(bar,first,second)
     return lines1==first and lines2==second
 end
 
+C.AuraTimers={Wants=function() return false end}
 local FILES={"Const","Grid","Layout","Visibility","Native","Preview"}
 local createdBefore=created
 for _,name in ipairs(FILES) do

@@ -106,6 +106,10 @@ local ALL_FIELDS = {
     { key = "threshold", label = "Warn below (seconds)", kind = "number", cd = true, aura = true, step = 1, max = 10,
       fallback = "All bars",
       help = "The countdown turns to the warning color below this many seconds. All bars: the Text section's setting." },
+    { key = "timerDuration", label = "Custom duration (seconds)", kind = "number", aura = true, timer = true, off = true, step = 1, max = 600,
+      help = "Zero uses the game's duration. A custom duration starts on the trigger spell's successful cast. Summon timers use fixed places." },
+    { key = "timerSpell", label = "Timer trigger spell", kind = "spell", aura = true, timer = true,
+      help = "Enter the cast spell's name or ID. Leave empty for automatic spell matching. Timers start only from readable player cast events." },
     { key = "sound", label = "Sound when ready", auraLabel = "Sound when gained", kind = "sound", cd = true, aura = true,
       help = "Plays when the spell becomes ready (a buff: when you gain it)." },
     { key = "lossSound", label = "Sound when lost", kind = "sound", aura = true, help = "Plays when the buff ends." },
@@ -154,7 +158,8 @@ end
 local pop
 
 -- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
-local function Applies(field, family, kind, aura)
+local function Applies(field, family, kind, aura, barKind)
+    if field.timer and barKind ~= CDM.KIND.AURA_BAR then return false end
     if field.blizzardOnly and kind ~= "b" then return false end
     if field.stack then return family == FAMILY.AURA or aura == true end
     if family == FAMILY.AURA then return field.aura == true end
@@ -643,7 +648,7 @@ function Page.PaintPopover()
     for i = 1, #FIELDS do
         local field = FIELDS[i]
         local row = pop.rows[field.key]
-        if Applies(field, pop.family, kind, pop.hasAura) then
+        if Applies(field, pop.family, kind, pop.hasAura, Page.Kind(pop.slot)) then
             row = Row(field)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", pop.content, "TOPLEFT", 0, -y)

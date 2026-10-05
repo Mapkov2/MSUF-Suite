@@ -447,7 +447,7 @@ local function ApplyEntry(rec, part, entry, dry)
             if part.bound then b:SetApplicationCount(part.count, count) end
         end
     end
-    local dur = part.dur
+    local dur = not part.external and part.dur
     if dur then
         local shown = Choice(ov.timeText, rec.timeBar)
         if part.durOn ~= shown then
@@ -564,11 +564,11 @@ local function Bind(rec, part, k)
             part.appMax = rec.lk.smax
             barOpts.maxApplications = part.appMax
             button:SetApplicationBar(part.bar, barOpts)
-        else
+        elseif not part.external then
             button:SetDurationBar(part.bar, BAR_OPTS[rec.fill])
         end
     end
-    if part.dur and part.durOn then
+    if part.dur and part.durOn and not part.external then
         local opts = rec.topts[k] or TEXT_DEFAULT
         button:SetDurationText(part.dur, opts)
         part.textOpts = opts
@@ -596,6 +596,12 @@ local function Adopt(rec, button, k)
         button:SetAllPoints(rec.anchors[k])
     end
     Style(rec, part)
+    local entry = rec.entry[k] or NO_ENTRY
+    part.external = entry.timer == true and C.AuraTimers.Wants(entry, rec.view)
+    if part.external then
+        part.bar:Hide()
+        if part.dur then part.dur:Hide() end
+    end
     ApplyEntry(rec, part, rec.entry[k] or NO_ENTRY, false)
     Bind(rec, part, k)
     local parts = rec.parts

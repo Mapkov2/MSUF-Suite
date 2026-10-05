@@ -524,6 +524,7 @@ local function Materialize(key, slot, index, preview, spells)
     local chosen = entry.unit and AURA_UNIT[ov.auraUnit]
     if chosen then entry.unit = chosen end
     entry.ov = ov
+    C.AuraTimers.Classify(entry)
     if old then Compare(old) end
     entry.slot, entry.index, entry.ov = slot, index, ov
     entries[key], placed[key] = entry, true
@@ -543,8 +544,10 @@ local function Placeholder(slot, n, family)
 end
 local function Fold(plan, kind, n)
     local list = plan.entries
+    plan.hasTimers = false
     local diff = plan.kind ~= kind or #list ~= n
     for j = 1, n do
+        if tmp[j].timer then plan.hasTimers = true end
         if list[j] ~= tmp[j] then
             list[j] = tmp[j]
             diff = true

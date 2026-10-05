@@ -48,8 +48,9 @@ local function Read(path)
     handle:close()
     return text
 end
+AuraContainerSortMethod={ExpirationOnly=5}
 local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","EntryFill.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
-    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Grid.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
+    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Grid.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
     "Flush.lua","Settings.lua","Events.lua","Controller.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
@@ -65,7 +66,7 @@ do
     for i=1,#tocFiles do at[tocFiles[i]]=i end
     local USES={["Settings.lua"]={"Flush.lua"},["Events.lua"]={"Flush.lua","Settings.lua"},
         ["Controller.lua"]={"Flush.lua","Settings.lua","Events.lua"},["Exports.lua"]={"Controller.lua"},
-        ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua","AuraContainers.lua"},
+        ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua"},
         ["AuraContainers.lua"]={"AuraButtons.lua"},
         ["AuraButtons.lua"]={"AuraGlows.lua"},["StackColors.lua"]={"AuraGlows.lua"}}
     for file,deps in pairs(USES) do

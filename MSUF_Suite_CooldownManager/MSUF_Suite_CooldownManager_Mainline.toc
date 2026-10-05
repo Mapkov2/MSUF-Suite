@@ -24,6 +24,7 @@ AuraGlows.lua
 StackColors.lua
 AuraButtons.lua
 AuraPlaceholders.lua
+AuraTimers.lua
 AuraContainers.lua
 Auras.lua
 ActionGlows.lua

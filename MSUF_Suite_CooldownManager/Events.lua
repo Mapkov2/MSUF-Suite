@@ -467,12 +467,12 @@ end
 ------------------------------------------------------------------ event map
 -- Context:Event's named option: the handler also runs in combat.
 local IN_COMBAT = { inCombat = true }
-local function Want(event, on, handler)
+local function Want(event, on, handler, unit)
     on = on and true or false
     if (events[event] == true) == on then return end
     events[event] = on or nil
     if on then
-        M.context:Event(event, handler, IN_COMBAT)
+        M.context:Event(event, handler, IN_COMBAT, unit)
     else
         M.context:RemoveEvent(event)
     end
@@ -516,6 +516,9 @@ local function UpdateEvents()
     Want("SPELL_UPDATE_COOLDOWN", cooldown or C.state.assistIcon and C.state.assistIconGCD, OnCooldown)
     Want("SPELL_UPDATE_USES", #Index.counted > 0, OnUses)
     Want("SPELL_UPDATE_ICON", cooldown, OnIcon)
+    local timers = C.AuraTimers.Wanted()
+    Want("PLAYER_TOTEM_UPDATE", timers, C.AuraTimers.Totem)
+    Want("UNIT_SPELLCAST_SUCCEEDED", timers, C.AuraTimers.Cast, "player")
     Want("SPELL_UPDATE_CHARGES", #Index.charged > 0, OnCharges)
     Want("BAG_UPDATE_COOLDOWN", #Index.bags > 0, OnBag)
     Want("BAG_UPDATE_DELAYED", #Index.items > 0, OnBagContents)

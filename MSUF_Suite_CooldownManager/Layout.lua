@@ -570,6 +570,10 @@ function Layout.FixedAuras(view, entries)
     if not fixed then
         for i = 1, #entries do
             local ov = entries[i].ov
+            if entries[i].timer and C.AuraTimers.Wants(entries[i], view) then
+                fixed = true
+                break
+            end
             if ov and ov.showMissing == true then
                 fixed = true
                 break

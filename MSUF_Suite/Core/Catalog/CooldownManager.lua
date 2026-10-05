@@ -415,6 +415,7 @@ CDM.SPELL_FIELDS = {
     -- Where a buff-bar aura is looked for: 1 automatic (harmful spells on the
     -- target, the rest on the player), 2 the player, 3 the target, 4 both.
     auraUnit = Range(1, 4),
+    timerDuration = Range(0, 600), timerSpell = Range(1, 2147483647),
     -- Countdown and charge/stack text: 1 the bar's setting, 2 show, 3 hide.
     -- textTop: 1 the bar's setting, 2 stacks on top, 3 countdown on top.
     timeText = Range(1, 3), stackText = Range(1, 3), textTop = Range(1, 3),

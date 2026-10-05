@@ -184,9 +184,12 @@ local S={Public=function(v) return not IsSecret(v) end,Text=function(v) return v
 local P={NS=NS,Suite=S}
 P.CDM={M={},EMPTY={},Diagnostics={},state={raidEssentials=false},views={},plans={},bars={},entries={},lists=CDM.CleanLists(nil),spells=CDM.CleanSpells(nil),
     wipe=function(t) for k in pairs(t) do t[k]=nil end return t end,}
+Enum.StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1}
+Enum.StatusBarInterpolation={Immediate=0}
 local C=P.CDM
 -- The shared constants and helpers load first, as in the TOC.
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Const.lua"))("MSUF_Suite_CooldownManager",P)
+assert(loadfile(root.."/MSUF_Suite_CooldownManager/AuraTimers.lua"))("MSUF_Suite_CooldownManager",P)
 for _,file in ipairs(FILES) do
     assert(loadfile(root.."/MSUF_Suite_CooldownManager/"..file))("MSUF_Suite_CooldownManager",P)
 end
