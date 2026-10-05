@@ -305,9 +305,9 @@ Suite.Skin.Release = skinRelease
 assert(#reported == errors + 1 and cvarValues.rotateMinimap == "0" and not Saved("minimap", "rotateMinimap"),
     "a skin error during release kept a module CVar applied")
 
--- Every frame is released on its own: a module field refresh or a native
--- setter that raises is reported, the other frames are still restored and
--- the CVars are handed back. A restore that raised stays for the next release.
+-- Every frame is released on its own: a native setter that raises is
+-- reported, the other frames are still restored and the CVars are handed
+-- back. A restore that raised stays for the next release.
 local function ScaleFrame(failRestore)
     local frame = { scale = 1 }
     function frame:GetScale() return self.scale end
@@ -318,18 +318,16 @@ local function ScaleFrame(failRestore)
     return frame
 end
 local release = S.NewContext("minimap")
-local flagged = { flag = false }
-release:Field(flagged, "flag", true, function() error("field refresh failed") end)
 local stuck, scaled = ScaleFrame(true), ScaleFrame(false)
 release:Scale(stuck, 2)
 release:Scale(scaled, 1.5)
-assert(release:CVar("rotateMinimap", 1) and flagged.flag == true and scaled.scale == 1.5)
+assert(release:CVar("rotateMinimap", 1) and scaled.scale == 1.5)
 errors = #reported
 -- The controller releases through Dispatch (MSUF_Suite/Core/Suite.lua Stop).
 Suite.Dispatch(release.Release, release)
-assert(#reported == errors + 2 and flagged.flag == false and scaled.scale == 1 and stuck.scale == 2
+assert(#reported == errors + 1 and scaled.scale == 1 and stuck.scale == 2
     and cvarValues.rotateMinimap == "0" and not Saved("minimap", "rotateMinimap")
-    and release.properties[stuck] and not release.properties[scaled] and not release.fields[flagged],
+    and release.properties[stuck] and not release.properties[scaled],
     "one raising restore skipped the other frames or kept a CVar applied")
 -- Isolation is per record: whichever setter of one frame raises first, the
 -- frame's other setters are still restored, and only the raising record

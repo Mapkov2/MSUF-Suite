@@ -142,14 +142,16 @@ function C.TabSelected(frame, _, dock)
 end
 local TabSelected = C.TabSelected
 
--- Hands the tab's fade fields and alpha back to Blizzard.
+-- Hands the tab's alpha back to Blizzard.
 local function ReleaseTabAlpha(context, tab)
-    context:RestoreFields(tab)
     context:RestoreProperty(tab, "SetAlpha")
 end
 
 -- Blizzard fades idle tabs to 0.2 alpha. The Suite strip keeps their labels
 -- readable while leaving the native title, target and click behavior intact.
+-- Blizzard's tab alphas (noMouseAlpha and mouseOverAlpha; Forever keeps them
+-- in ChatFrameUtil side tables) feed UIFrameFade and its shared FADEFRAMES
+-- list, so the Suite never writes them: it raises the tab's alpha instead.
 function C.KeepTabVisible(self, frame)
     local tab = _G[frame:GetName() .. "Tab"]
     local context = self.context
@@ -157,8 +159,6 @@ function C.KeepTabVisible(self, frame)
         ReleaseTabAlpha(context, tab)
         return
     end
-    context:Field(tab, "noMouseAlpha", TAB_MIN_ALPHA)
-    context:Field(tab, "mouseOverAlpha", 1)
     -- An idle-faded window keeps its faded tab (Fade.lua hands it back).
     local visual = self.visuals[frame]
     if visual and visual.faded then return end
@@ -168,6 +168,19 @@ function C.KeepTabVisible(self, frame)
     end
 end
 local KeepTabVisible = C.KeepTabVisible
+
+-- Post-hooks of FCF_FadeInChatFrame (hover) and FCF_FadeOutChatFrame (pointer
+-- gone): Blizzard has just started fading the tab toward its own alpha. The
+-- Suite ends that fade (UIFrameFadeRemoveFrame runs securely) and shows the
+-- tab at 1 or at its readable minimum. Chat tabs are not protected, so this
+-- also runs in combat.
+function C.HoldTabAlpha(frame, hovered)
+    local c, visual = M.config, M.active and frame and M.visuals[frame]
+    local tab = visual and visual.tab
+    if not (tab and c.tabPanel and c.panelAlpha > 0) or (visual.faded and not hovered) then return end
+    UIFrameFadeRemoveFrame(tab)
+    tab:SetAlpha(hovered and 1 or TAB_MIN_ALPHA)
+end
 
 local function ChosenFont(key)
     if key == "__BLIZZARD_CHAT_FONT__" then return nil end
@@ -242,7 +255,7 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
         visual.tabHeightOwned = nil
     end
     ApplyTabWidth(self, visual, tab)
-    M.tabs[tab] = visual
+    M.tabs[tab], visual.tab = visual, tab
     ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
     line:ClearAllPoints()

@@ -237,6 +237,19 @@ GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
 function GameTooltip:IsOwned(frame) return self.owner == frame end
 local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook, dockTabsHook
+-- Blizzard's chrome fades (FCF_FadeInChatFrame, FCF_FadeOutChatFrame) start
+-- UIFrameFade on the tab toward the tab's own mouseOverAlpha or noMouseAlpha;
+-- the fade ends there unless UIFrameFadeRemoveFrame stops it first. The
+-- post-hooks run in the order they were installed.
+local fadeInHooks, fadeOutHooks, fading = {}, {}, {}
+UIFrameFadeRemoveFrame = function(frame) fading[frame] = nil end
+local function ChromeFade(frame, hovered)
+    local tab = _G[frame:GetName() .. "Tab"]
+    fading[tab] = hovered and tab.mouseOverAlpha or tab.noMouseAlpha
+    for _, hook in ipairs(hovered and fadeInHooks or fadeOutHooks) do hook(frame) end
+    if fading[tab] then tab:SetAlpha(fading[tab]); fading[tab] = nil end
+    return tab:GetAlpha()
+end
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
 FCFDock_SelectWindow = function() end
@@ -271,7 +284,9 @@ hooksecurefunc = function(name, callback)
     elseif name == "FCFTab_UpdateAlpha" then tabAlphaHook = callback
     elseif name == "FCFTab_UpdateColors" then tabColorsHook = callback
     elseif name == "FCFDock_SelectWindow" then selectHook = callback
-    elseif name == "FCFDock_UpdateTabs" then dockTabsHook = callback end
+    elseif name == "FCFDock_UpdateTabs" then dockTabsHook = callback
+    elseif name == "FCF_FadeInChatFrame" then fadeInHooks[#fadeInHooks + 1] = callback
+    elseif name == "FCF_FadeOutChatFrame" then fadeOutHooks[#fadeOutHooks + 1] = callback end
 end
 
 function S.Install(id, module)
@@ -301,7 +316,7 @@ assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules"
 Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
-local ctx = { callbacks = {}, combat = {}, restored = 0, original = {}, properties = {}, fields = {} }
+local ctx = { callbacks = {}, combat = {}, restored = 0, original = {}, properties = {} }
 function ctx:Event(event, fn, options)
     self.callbacks[event], self.combat[event] = fn, Support.InCombatOption(options) or nil
 end
@@ -328,16 +343,6 @@ end
 function ctx:RestorePoints(frame)
     local record = self.anchors[frame]
     if record then frame.points, self.anchors[frame] = record.points, nil end
-end
-function ctx:Field(frame, key, value)
-    local record = self.fields[frame] or {}
-    self.fields[frame] = record
-    if record[key] == nil then record[key] = frame[key] end
-    frame[key] = value
-end
-function ctx:RestoreFields(frame)
-    local record = self.fields[frame]
-    if record then for key, value in pairs(record) do frame[key] = value end; self.fields[frame] = nil end
 end
 function ctx:HideControl(frame, hidden)
     if hidden then
@@ -435,8 +440,14 @@ assert(module.visuals[ChatFrame1].panel.owner == ChatFrame1
     and module.visuals[ChatFrame1].panel.points[1][5] == 0,
     "Suite chat body did not stay on the chat frame below its tabs")
 AssertJoinedDockShell()
-assert(ChatFrame1Tab.noMouseAlpha == 0.8 and ChatFrame1Tab:GetAlpha() >= 0.8,
-    "ordinary chat tabs were left unreadably dim")
+-- Blizzard's tab alphas feed UIFrameFade and its shared FADEFRAMES list
+-- (FloatingChatFrame.lua; Forever keeps them in ChatFrameUtil side tables):
+-- the Suite never writes them and holds the readable alpha after each fade.
+assert(ChatFrame1Tab.noMouseAlpha == 0.4 and ChatFrame1Tab.mouseOverAlpha == 1
+    and ChatFrame1Tab:GetAlpha() >= 0.8, "ordinary chat tabs were left unreadably dim")
+assert(ChromeFade(ChatFrame1, false) == 0.8 and ChromeFade(ChatFrame1, true) == 1
+    and ChatFrame1Tab.noMouseAlpha == 0.4 and ChatFrame1Tab.mouseOverAlpha == 1,
+    "Blizzard's chrome fade left the tab unreadably dim or its fade fields were written")
 assert(module.visuals[ChatFrame1].input.shown)
 assert(module.visuals[ChatFrame1].sidebar.shown
     and module.visuals[ChatFrame1].headerRule.shown)
@@ -978,9 +989,12 @@ assert(#reports == 1 and module.visuals[ChatFrame4] and module.visuals[ChatFrame
 assert(ChatFrame4Tab.Text:GetAlpha() == 1 and ChatFrame4Tab.Left.alpha == 0
     and not module.visuals[ChatFrame4].tabOverlay,
     "a new whisper window hid its native tab")
-assert(ChatFrame4Tab.noMouseAlpha == 0.8 and ChatFrame4Tab.mouseOverAlpha == 1
+assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
     and ChatFrame4Tab:GetAlpha() == 0.8,
     "an idle whisper tab remained too dark to find")
+assert(ChromeFade(ChatFrame4, true) == 1 and ChromeFade(ChatFrame4, false) == 0.8
+    and ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6,
+    "Blizzard's chrome fade dimmed the whisper tab or its fade fields were written")
 -- Regression: selecting a new whisper hides the primary chat frame. The Suite
 -- body must follow the selected window; the dock strip must remain on the
 -- Blizzard dock; and no replacement overlay may intercept its native tab.
@@ -1020,7 +1034,7 @@ ChatFrame4Tab.noMouseAlpha = 0.2
 ChatFrame4Tab.mouseOverAlpha = 0.6
 ChatFrame4Tab:SetAlpha(0.2)
 tabAlphaHook(ChatFrame4)
-assert(ChatFrame4Tab.noMouseAlpha == 0.8 and ChatFrame4Tab:GetAlpha() == 0.8,
+assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab:GetAlpha() == 0.8,
     "Blizzard's tab update dimmed the whisper again")
 assert(messageHooks == 0, "chat styling without message tools hooked the message path")
 -- An idle-faded window keeps its faded tab when Blizzard updates the tab's
@@ -1047,11 +1061,14 @@ local speechIcon = sidebar.buttons[3].button
 speechIcon.scripts.OnEnter(speechIcon)
 assert(module.panelDelegate.shown and module.panelDelegate:GetAttribute("clickbutton") == TextToSpeechButton,
     "the Text to speech icon did not borrow the secure delegate")
+-- The controller (Suite.lua Stop) clears active before Disable.
+module.active = false
 module:Disable()
 assert(not module.panelDelegate.shown and not module.panelDelegate.owner and not ctx.callbacks.PLAYER_REGEN_DISABLED,
     "disabling Chat left the secure delegate on the sidebar")
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
-    and ChatFrame4Tab:GetAlpha() == 0.2,
+    and ChatFrame4Tab:GetAlpha() == 0.2 and ChromeFade(ChatFrame4, true) == 0.6
+    and ChromeFade(ChatFrame4, false) == 0.2,
     "disabling Chat did not restore Blizzard's whisper-tab fading")
 assert(not module.visuals[ChatFrame1].panel.shown and not module.visuals[ChatFrame2].panel.shown
     and not module.visuals[ChatFrame3].panel.shown and not module.dockStrip.shown)
