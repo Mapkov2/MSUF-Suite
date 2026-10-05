@@ -475,19 +475,27 @@ function Sources.OwnedHearths()
 end
 
 -- Chooses the Hearthstone each Hearthstone place uses next (data only;
--- Actions.lua hands it to the secure button out of combat). In combat the
--- overlay is hidden: only mark the choice stale; DataTexts.lua checks it
--- again at PLAYER_REGEN_ENABLED.
+-- Actions.lua hands it to the secure button out of combat). Every configured
+-- place chooses, also one on a hidden or not yet hovered Mouseover bar:
+-- showing it only rebinds. In combat the overlay is hidden: only mark the
+-- choice stale; DataTexts.lua checks it again at PLAYER_REGEN_ENABLED.
+local function ConfiguredKind(kind)
+    if not owner or not owner.active then return false end
+    for _, binding in pairs(Sources.bindings) do
+        if binding.kind == kind then return true end
+    end
+    return false
+end
+
 function Sources.PrepareHearths()
-    if not ActiveKind("hearth") then return end
+    if not ConfiguredKind("hearth") then return end
     if NS.IsCombatLocked() then
         Sources.hearthDirty = true
         return
     end
     local choices = Sources.OwnedHearths()
-    for key in pairs(owner.activeSources or {}) do
-        local binding = Sources.bindings[key]
-        if binding and binding.kind == "hearth" and binding.button.extra == binding then
+    for _, binding in pairs(Sources.bindings) do
+        if binding.kind == "hearth" and binding.button.extra == binding then
             local pick = owner.config.randomHearth and #choices > 1 and math.random(#choices) or 1
             binding.hearth = choices[pick]
         end
