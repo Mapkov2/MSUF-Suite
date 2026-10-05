@@ -3480,6 +3480,7 @@ T("Suite profile is too large", "Профиль Suite слишком больш�
 T("Suite skin", "Скин Suite")
 T("Suite skin + default accents", "Скин Suite + стандартные акценты")
 T("Suite symbols", "Значки Suite")
+T("Suite: %s", "Suite: %s")
 T("Summary beside the character sheet", "Сводка рядом с окном персонажа")
 T("Summary colors", "Цвета сводки")
 T("Summary text", "Текст сводки")

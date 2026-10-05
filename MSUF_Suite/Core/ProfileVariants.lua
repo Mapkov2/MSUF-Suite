@@ -199,7 +199,7 @@ function P.Register()
     for _, id in ipairs(Suite.SuiteOrder) do
         if Allowed(id) then
             local title = Suite.SuiteCatalog[id].title
-            S.RegisterModule("suite:" .. id, "Suite: " .. (Suite.L[title] or title))
+            S.RegisterModule("suite:" .. id, Suite.Text("Suite: %s"):format(Suite.Text(title)))
         end
     end
     return true
