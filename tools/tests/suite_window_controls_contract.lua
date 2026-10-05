@@ -144,6 +144,8 @@ UpdateUIPanelPositions = function(frame)
     if panelPositionHook then panelPositionHook() end
 end
 hooksecurefunc = function(name, callback)
+    -- The UI scale fit hook comes with it (suite_window_controls_edges_contract.lua).
+    if name == "UpdateScaleForFitForOpenPanels" then return end
     assert(name == "UpdateUIPanelPositions")
     panelPositionHook = callback
 end

@@ -184,10 +184,16 @@ function Registry.NotifyListeners(domain, key)
         return false
     end
     -- Other addons can listen through the public API; one failing listener
-    -- is reported and does not stop the rest (see Safety.Dispatch).
-    local dispatch = NS.Safety.Dispatch
-    for owner, callback in pairs(Registry.listeners) do
-        dispatch(callback, owner, domain, key)
+    -- is reported and does not stop the rest (see Safety.Dispatch). A
+    -- listener can add one (WatchSettings), which pairs() must not see, so
+    -- the pass runs over the owners of its start; one removed meanwhile is
+    -- skipped.
+    local dispatch, listeners, owners = NS.Safety.Dispatch, Registry.listeners, {}
+    for owner in pairs(listeners) do owners[#owners + 1] = owner end
+    for index = 1, #owners do
+        local owner = owners[index]
+        local callback = listeners[owner]
+        if callback then dispatch(callback, owner, domain, key) end
     end
     return true
 end

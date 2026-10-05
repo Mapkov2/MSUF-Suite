@@ -150,10 +150,11 @@ local function IsListed(list, value)
     return false
 end
 
--- A number between minimum and maximum; minimum for anything else.
+-- A number between minimum and maximum; minimum for anything else, NaN
+-- included (it fails every comparison, so it takes the first branch).
 local function Clamp(value, minimum, maximum)
     value = tonumber(value) or minimum
-    if value < minimum then return minimum end
+    if not (value >= minimum) then return minimum end
     if value > maximum then return maximum end
     return value
 end

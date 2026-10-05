@@ -14,6 +14,24 @@ function Chrome.RecolorGrip(grip)
     for index = 1, #lines do lines[index]:SetColorTexture(r, g, b, a * 0.8) end
 end
 
+-- The minimize button and the restore tab are our own frames too: painted
+-- from the theme, and painted again after a look, colour or profile change.
+local fills = setmetatable({}, { __mode = "k" })
+
+function Chrome.RecolorControl(control)
+    local fill = fills[control]
+    if not fill then return end
+    fill.background:SetColorTexture(NS.Theme.GetColor(fill.role))
+    if fill.label then fill.label:SetTextColor(NS.Theme.GetColor("text")) end
+end
+
+function Chrome.PaintControl(control, role, label)
+    local background = control:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints()
+    fills[control] = { background = background, role = role, label = label }
+    Chrome.RecolorControl(control)
+end
+
 function Chrome.StyleGrip(grip)
     NS.Surface.SkinOwnedButton(grip, GRIP_SPEC)
     local lines = grips[grip]

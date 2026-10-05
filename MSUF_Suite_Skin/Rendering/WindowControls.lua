@@ -96,8 +96,10 @@ local function Eligible(frame)
     local parent = Safety.Read(frame, "GetParent")
     if parent ~= UIParent and not (standalone and parent == nil) then return nil end
     local width, height = Safety.Read(frame, "GetWidth"), Safety.Read(frame, "GetHeight")
+    -- The Game Menu is 1 high until its first opening lays out its buttons
+    -- (MainMenuFrameTemplate): listed panels need the width only.
     if type(width) ~= "number" or type(height) ~= "number"
-        or width < 240 or height < 170 then return nil end
+        or width < 240 or height < 170 and not standalone then return nil end
     return name, entry, panel
 end
 
@@ -130,6 +132,8 @@ local function Controlled(state)
     return Enabled() and next(state.owners) ~= nil and CanChangeGeometry(state)
 end
 
+local InstallPanelPositionHook
+
 local function ApplyStoredScale(state)
     if not CanChangeGeometry(state) then return end
     local limits = Limits()
@@ -139,6 +143,7 @@ local function ApplyStoredScale(state)
     if type(stored) == "number" and stored >= limits.minScale and stored <= limits.maxScale then
         scale = stored
         state.customScale = true
+        InstallPanelPositionHook()
     elseif state.customScale then
         scale = state.originalScale
         state.customScale = false
@@ -171,7 +176,8 @@ local function RestoreNativePosition(state)
     state.customPosition = false
     state.defaultPosition = false
     positionedStates[state.frame] = nil
-    if state.panel then
+    -- The panel manager never anchors the Game Menu (centerFrameSkipAnchoring).
+    if state.panel and not state.panel.centerFrameSkipAnchoring then
         -- Under the Gamepad UI Blizzard places the panel again when it next opens.
         if not NS.Client.IsGamepadUI() then UpdateUIPanelPositions(state.frame) end
     elseif state.nativePoints then
@@ -185,8 +191,6 @@ local function RestoreNativePosition(state)
         state.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 end
-
-local InstallPanelPositionHook
 
 local function ApplyStoredPosition(state)
     if not CanChangeGeometry(state) or not Enabled() or state.moving then return end
@@ -232,10 +236,16 @@ local function OnPanelPositionsUpdated()
     end
 end
 
+-- A UI scale change fits the open panels to the screen and lays them out
+-- inside the panel manager, past that hook; a refresh puts ours back, after
+-- combat when the change comes in combat.
 InstallPanelPositionHook = function()
     if positionHooked then return end
     positionHooked = true
     hooksecurefunc("UpdateUIPanelPositions", OnPanelPositionsUpdated)
+    hooksecurefunc("UpdateScaleForFitForOpenPanels", function()
+        NS.CombatGate.RunOrDefer("windowControls:refresh", WindowControls.Refresh)
+    end)
 end
 
 -- The window's own (localized) title, else a name derived from its frame.
@@ -268,34 +278,29 @@ local function SavePosition(state)
         return true
     end)
     state.customPosition = true
-    ApplyStoredPosition(state)
+    NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() ApplyStoredPosition(state) end)
     return true
 end
 
 local function PaintControl(button, glyph)
     button:SetSize(22, 22)
     button:SetFrameLevel(button:GetParent():GetFrameLevel() + CONTROL_LEVEL_OFFSET)
-    local bg = button:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(NS.Theme.GetColor("buttonFill"))
     local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("CENTER", 0, 0)
     label:SetText(glyph)
-    label:SetTextColor(NS.Theme.GetColor("text"))
-    button._msufControlBackground = bg
-    button._msufControlLabel = label
+    NS.WindowControlChrome.PaintControl(button, "buttonFill", label)
 end
 
 local function Restore(state)
     if IsCombat() or not state or not state.minimized then return false end
-    state.minimized = false
-    state.restore:Hide()
     if state.panel and not NS.Client.IsGamepadUI() then
         ShowUIPanel(state.frame)
     else
         state.frame:Show()
     end
-    return true
+    -- OnPanelShow drops the tab. Blizzard can refuse the panel (a center
+    -- panel such as the Game Menu is open): the tab stays for another try.
+    return state.frame:IsShown() == true
 end
 
 local function Minimize(state)
@@ -361,9 +366,7 @@ local function CreateRestore(state)
     bar:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     bar:SetScript("OnDragStart", OnRestoreDragStart)
     bar:SetScript("OnDragStop", OnRestoreDragStop)
-    local bg = bar:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(NS.Theme.GetColor("popup"))
+    NS.WindowControlChrome.PaintControl(bar, "popup")
     local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("LEFT", 10, 0)
     label:SetPoint("RIGHT", -10, 0)
@@ -392,6 +395,7 @@ local function EndDrag(state)
             return true
         end)
         state.customScale = true
+        InstallPanelPositionHook()
     end
 end
 
@@ -517,14 +521,15 @@ end
 
 local function EndMove(state)
     if not state.moving then return end
-    if not CanChangeGeometry(state) then
-        if IsCombat() then
-            NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() EndMove(state) end)
-        end
+    local frame = state.frame
+    -- Only a protected panel waits for the end of combat to stop; any other
+    -- stops where it was dropped, and in combat only its anchor waits.
+    if IsCombat() and Safety.GetProtection(frame) then
+        NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() EndMove(state) end)
         return
     end
     state.moving = false
-    local frame = state.frame
+    if Safety.IsForbidden(frame) then return end
     frame:StopMovingOrSizing()
     if state.nativeMovable == false then frame:SetMovable(false) end
     state.nativeMovable = nil
@@ -733,21 +738,19 @@ end
 local function RefreshQueued() WindowControls.Refresh() end
 
 local function RecolorMinimize()
-    local r, g, b, a = NS.Theme.GetColor("buttonFill")
+    local Chrome = NS.WindowControlChrome
     for _, state in pairs(WindowControls.states) do
-        if state.name == "WorldMapFrame" then NS.WindowControlChrome.RecolorGrip(state.grip) end
-        if state.minimize then
-            state.minimize._msufControlBackground:SetColorTexture(r, g, b, a)
-            state.minimize._msufControlLabel:SetTextColor(NS.Theme.GetColor("text"))
-        end
+        if state.name == "WorldMapFrame" then Chrome.RecolorGrip(state.grip) end
+        if state.minimize then Chrome.RecolorControl(state.minimize) end
+        if state.restore then Chrome.RecolorControl(state.restore) end
     end
 end
 
 -- Once per frame of settings writes: a profile or look switch rebuilds the
--- controls, a colour write repaints the minimize buttons.
+-- controls, a colour write or a profile switch repaints them.
 function WindowControls:OnThemeChanged(domain, key)
     if domain == "profile" or domain == "theme" and key == "look" then NS.Registry.QueueJob(RefreshQueued) end
-    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" then return end
+    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" and domain ~= "profile" then return end
     NS.Registry.QueueJob(RecolorMinimize)
 end
 
