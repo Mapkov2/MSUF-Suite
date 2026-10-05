@@ -565,6 +565,11 @@ assert(Suite.Menu.Attach(), "suite menu did not attach")
 assert(Suite.Menu.attached == true)
 assert(historyProvider and Suite.Options.BuildColorsCategory, "Suite did not register MSUF history and colors")
 for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .. tostring(k)) end
+-- suite_options_pages_contract.lua reuses this client and menu fixture.
+if SUITE_OPTIONS_FIXTURE then
+    return { M = M, W = W, T = T, S = S, Suite = Suite, optionsNS = optionsNS, L = L, Widget = Widget,
+        actionPreview = actionPreview, SetCurrent = function(ctx) current = ctx end }
+end
 -- The first action after a cold options attach must also offer the reload.
 do
     local previousConfirm, previous = S.Confirm, S.Config("objectives").enabled
