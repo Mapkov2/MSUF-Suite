@@ -83,13 +83,15 @@ local function CanMoveExtraAbility()
     return EditModeManagerFrame:CanEnterEditMode() == true
 end
 
--- Adds what bar `to` needs to match bar `from` in the chosen groups.
+-- Adds what bar `to` needs to match bar `from` in the chosen groups. A
+-- setting either bar does not have (hidden, such as macro names on the
+-- Stance and Pet bars) is not copied.
 local function CopyValues(values, from, to, groups)
     for _, group in ipairs(GROUPS) do
         if groups[group.id] then
             for _, suffix in ipairs(group.suffixes) do
-                local rule = Rule("bar" .. to .. suffix)
-                if not POSITION[suffix] and rule and not rule.hidden then
+                local rule, source = Rule("bar" .. to .. suffix), Rule("bar" .. from .. suffix)
+                if not POSITION[suffix] and rule and not rule.hidden and source and not source.hidden then
                     values["bar" .. to .. suffix] = P.Get(ID, "bar" .. from .. suffix)
                 end
             end

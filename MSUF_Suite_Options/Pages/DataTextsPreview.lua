@@ -239,7 +239,8 @@ local function Paint(ui)
     ui.sample:Show()
     PaintBackdrop(ui, style, inset)
     for i, entry in ipairs(entries) do PaintSlot(ui, entry, config, style, i, #entries, vertical, width, height) end
-    local status = config[prefix .. "Name"] or Tr("Bar %d"):format(bar)
+    local status = config[prefix .. "Name"]
+    if type(status) ~= "string" or status == "" then status = Tr("Bar %d"):format(bar) end
     if config[prefix .. "FullScreen"] then status = Tr("%s - Full screen"):format(status) end
     if not config[prefix .. "Enabled"] then status = Tr("%s - Hidden"):format(status) end
     P.SetTranslatedText(ui.status, status)

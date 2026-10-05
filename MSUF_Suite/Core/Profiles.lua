@@ -25,6 +25,13 @@ local function SkinEngine()
     end
 end
 
+-- A skin profile can outlive its MSUF twin: a rename or delete while the skin
+-- addon was disabled never reaches the skin store.
+function P.SkinProfileExists(name)
+    local skin = SkinEngine()
+    return skin ~= nil and skin.Database.GetProfile(name) ~= nil
+end
+
 local function SkinSnapshot(skin)
     if not skin then return nil end
     local encoded, reason = skin.ProfileIO.ExportProfile()
@@ -361,8 +368,8 @@ local WITH_TARGET = { copy = true, rename = true }
 -- A refusal names its reason; MSUF reports it.
 function P.OnLifecycle(kind, source, target)
     -- Without its store (or inside its own import) the Suite has nothing to
-    -- keep aligned: a rename goes ahead, the other kinds keep their answer.
-    if Suite.suppressProfileSync or not Suite.RootDB then return kind == "rename" end
+    -- keep aligned: MSUF's change goes ahead, as without the Suite.
+    if Suite.suppressProfileSync or not Suite.RootDB then return true end
     if Suite.IsCombatLocked() then return false, "combat" end
     local skin = SkinEngine()
     local handler = Lifecycle[kind]

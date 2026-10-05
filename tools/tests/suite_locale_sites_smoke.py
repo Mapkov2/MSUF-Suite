@@ -93,7 +93,7 @@ METADATA_COMPOSED = {
     ("MSUF_Suite_Options/Pages/DataTextsPreview.lua", 'Tr("Choose data for place %d"):format(slot)'),
     ("MSUF_Suite_Options/Pages/Minimap.lua", 'Tr("%s minimap style"):format(Tr(spec[2]))'),
     ("MSUF_Suite_Options/Pages/MinimapPreview.lua", 'Tr("%s preview layer"):format(Tr(entry[2]))'),
-    ("MSUF_Suite_Options/Pages/QualityOfLife.lua", 'Tr(group.title) .. " " .. Tr("Colors")'),
+    ("MSUF_Suite_Options/Pages/QualityOfLife.lua", 'Tr("%s Colors"):format(Tr(group.title))'),
     ("MSUF_Suite_Options/Pages/QualityOfLife.lua", 'Tr(group.title) .. " " .. Tr("Settings")'),
 }
 for path in sorted((root / "MSUF_Suite_Options").glob("**/*.lua")):

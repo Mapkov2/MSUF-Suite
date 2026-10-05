@@ -130,24 +130,24 @@ end
 local function BarSectionActions(ctx, body, bar, section, select)
     local prefix = "bar" .. bar
     local more = P.AttachSectionReset(ctx, body, Tr("Bar %d"):format(bar),
-        function() return P.ResetPrefix(ID, prefix) end)
-    local popup = more._msuf2EnsureSectionPopup()
-    P.Button(ctx, popup, "Remove bar", 14, -76, 250, function()
-        popup:Hide()
-        Page.ChangeBars(P.Suite.DataTextBarRemovalValues(P.S.Config(ID), bar))
-    end, function() return true end)
+        function() return P.ResetPrefix(ID, prefix) end, nil, function(popup)
+            P.Button(ctx, popup, "Remove bar", 14, -76, 250, function()
+                popup:Hide()
+                Page.ChangeBars(P.Suite.DataTextBarRemovalValues(P.S.Config(ID), bar))
+            end, function() return true end)
+            popup:SetHeight(114)
+        end)
     -- Search focuses the page-owned menu button and reveals its floating action.
     Page.Prepare({ { widget = more, label = "Remove bar",
         meta = P.Meta(PAGE, ID, prefix .. ".remove", "action", section) } }, section, function()
             select()
             more._msuf2OpenSectionPopup()
         end)
-    popup:SetHeight(114)
 end
 
 local function Header(ctx, builder, bar, select)
     local section, prefix = PAGE .. "_bar" .. bar, "bar" .. bar
-    local body = builder:CollapsibleSection(section, P.Get(ID, prefix .. "Name"), 120, true)
+    local body = builder:CollapsibleSection(section, Page.BarName(bar), 120, true)
     local width = (body._msuf2Width or builder.width) - 32
     local toggle = W.SectionSwitch(body, Tr("Show bar"), Tr("Show bar"))
     M.BindBoolWidget(ctx, toggle, function() return P.Get(ID, prefix .. "Enabled") end,
@@ -180,7 +180,7 @@ local function Header(ctx, builder, bar, select)
     P.FinishBody(builder, body, BarActions(ctx, body, bar, section, select, y - 40, width))
     M.TrackRefresh(ctx, function()
         local entry = body._msuf2CollapsibleEntry
-        if entry and entry.label then P.SetTranslatedText(entry.label, P.Get(ID, prefix .. "Name")) end
+        if entry and entry.label then P.SetTranslatedText(entry.label, Page.BarName(bar)) end
     end)
     if body._msuf2CollapsibleEntry then body._msuf2CollapsibleEntry._msuf2EnsureVisible = select end
     return preview

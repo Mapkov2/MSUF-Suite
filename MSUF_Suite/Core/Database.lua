@@ -159,6 +159,14 @@ function Database.StageFactoryReset()
     if not Suite.RootDB then return false, "database-unavailable" end
     local root, reason = Database.Prepare(nil, nil)
     if not root then return false, reason end
+    -- Only the settings start over (the profiles, the root settings and the
+    -- setup state). Runtime data the modules keep in the root stays: saved
+    -- CVars a module still has to hand back, gold, run and XP history.
+    local settings = { profiles = true, installation = true, quarantinedProfiles = true, migration = true }
+    for _, key in ipairs(Database.ROOT_SETTINGS) do settings[key] = true end
+    for key, value in pairs(Suite.RootDB) do
+        if root[key] == nil and not settings[key] then root[key] = value end
+    end
     -- The skin addon is load-on-demand and may be disabled when this runs.
     -- Its SavedVariables might therefore not be loaded or written this session.
     root.pendingSkinFactoryReset = true

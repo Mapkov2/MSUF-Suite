@@ -5,6 +5,7 @@ P.DataTextsSourcePicker = Picker
 local ID, PAGE = "dataTexts", "suite_dataTexts"
 local WIDTH, HEIGHT = 430, 468
 local popup
+local hookedAnchors = setmetatable({}, { __mode = "k" })
 local GROUPS = {
     { "Everyday", { "clock", "date", "gold", "sessionGold", "bags", "durability", "location", "coordinates" } },
     { "Character", { "xp", "progress", "itemLevel", "specialization", "specLoot", "professions" } },
@@ -129,9 +130,12 @@ local function SearchBox(frame)
     return input
 end
 
-local function Ensure(anchor)
+-- A child of the menu window, like the other Suite popups: under its anchor
+-- it would be clipped by the preview host and take the anchor's strata.
+local function Ensure()
     if popup then return popup end
-    local frame = M.CreateMenuPopupPanel and M.CreateMenuPopupPanel(anchor, {}) or CreateFrame("Frame", nil, anchor)
+    local parent = M.frame or UIParent
+    local frame = M.CreateMenuPopupPanel and M.CreateMenuPopupPanel(parent, {}) or CreateFrame("Frame", nil, parent)
     popup = frame
     frame:SetSize(WIDTH, HEIGHT)
     frame:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -166,16 +170,21 @@ end
 
 function Picker.Open(anchor, bar, slot, onChanged)
     if P.Combat() or not anchor or not bar or not slot then return false end
-    local frame = Ensure(anchor)
+    local frame = Ensure()
     if frame:IsShown() and frame.anchor == anchor then
         frame:Hide()
         return false
     end
     frame:Hide()
-    frame:SetParent(anchor)
+    -- It still closes with the page its anchor belongs to.
+    if not hookedAnchors[anchor] then
+        hookedAnchors[anchor] = true
+        anchor:HookScript("OnHide", function() if frame.anchor == anchor then frame:Hide() end end)
+    end
     frame.anchor, frame.bar, frame.slot, frame.onChanged = anchor, bar, slot, onChanged
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -5)
+    if M.ApplyPopupFramePriority then M.ApplyPopupFramePriority(frame) end
     frame.search:SetText("")
     Filter()
     frame:Show()

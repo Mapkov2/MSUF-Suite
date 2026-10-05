@@ -2723,6 +2723,12 @@
   {
    "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
    "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ApplyPopupFramePriority"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
    "reason": "Retail and Forever Menu2 expose a skinned menu panel; older hosts use the owned fallback popup frame and preserve source selection.",
    "symbol": "M.CreateMenuPopupPanel"
   },

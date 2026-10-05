@@ -357,6 +357,20 @@ function Page.RestoreHidden()
         return "Show removed spells"
     end)
 end
+-- Puts key on bar `slot` of specialization `spec`, its one home there. A
+-- full bar takes nothing, and the entry stays on its old bar. True when added.
+local function CopyEntry(lists, spec, slot, key)
+    local slots = lists.specs[spec] or {}
+    lists.specs[spec] = slots
+    local list = slots[slot] or {}
+    slots[slot] = list
+    local present = IndexOf(list, key)
+    if not present and #list >= CDM.LIMITS.entries then return false end
+    Unclaim(lists, spec, key, slot)
+    if present then return false end
+    list[#list + 1] = key
+    return true
+end
 -- Custom entries only: Blizzard entries follow each specialization's own list.
 function Page.CopyToSpecs(slot, key)
     local spec, err = Ready()
@@ -369,15 +383,7 @@ function Page.CopyToSpecs(slot, key)
     local changed = 0
     for _, other in ipairs(Page.ClassSpecs({})) do
         if other ~= spec then
-            local slots = lists.specs[other] or {}
-            lists.specs[other] = slots
-            Unclaim(lists, other, key, slot)
-            local list = slots[slot] or {}
-            slots[slot] = list
-            if not IndexOf(list, key) and #list < CDM.LIMITS.entries then
-                list[#list + 1] = key
-                changed = changed + 1
-            end
+            if CopyEntry(lists, other, slot, key) then changed = changed + 1 end
             Prune(lists, other)
         end
     end
@@ -401,18 +407,9 @@ function Page.CopyListToSpecs(slot)
     local added, specs = 0, 0
     for _, other in ipairs(Page.ClassSpecs({})) do
         if other ~= spec then
-            local slots = lists.specs[other] or {}
-            lists.specs[other] = slots
             local before = added
             for i = 1, #keys do
-                local key = keys[i]
-                Unclaim(lists, other, key, slot)
-                local list = slots[slot] or {}
-                slots[slot] = list
-                if not IndexOf(list, key) and #list < CDM.LIMITS.entries then
-                    list[#list + 1] = key
-                    added = added + 1
-                end
+                if CopyEntry(lists, other, slot, keys[i]) then added = added + 1 end
             end
             if added > before then specs = specs + 1 end
             Prune(lists, other)

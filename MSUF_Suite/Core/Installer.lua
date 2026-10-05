@@ -190,7 +190,7 @@ local function NextFactoryName(base)
     local name = base
     local index = 2
     while DB.GetProfile(name) or (_G.MSUF_GlobalDB and _G.MSUF_GlobalDB.profiles
-        and _G.MSUF_GlobalDB.profiles[name]) do
+        and _G.MSUF_GlobalDB.profiles[name]) or Suite.SuiteProfiles.SkinProfileExists(name) do
         name = base .. " " .. index
         index = index + 1
     end
@@ -221,9 +221,12 @@ local function ApplyForever(profile, finish)
         return false, "Forever factory profile unavailable"
     end
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    -- Both Forever frame factories carry MSUF's own screen reference on every
+    -- positioned frame, and MSUF adapts them from it. A second reference
+    -- would scale positions MSUF has already adapted.
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Forever"), frames, profile,
         skinEnabled and skin or nil, AppliedLook(), finish,
-        { screenHeight = Suite.ForeverFactoryScreenHeight, preserveSkinLayout = true })
+        { screenHeight = false, preserveSkinLayout = true })
 end
 
 -- The scale the installer applies, decided once before anything commits:
@@ -731,6 +734,8 @@ function Installer.Open()
     useRaidEssentials = not (current and current.raidEssentials == false)
     moduleOverrides = { suite = {}, classic = {}, forever = {} }
     Build().moduleTab = "modules"
+    -- A reopened window still shows the last session's slider position.
+    frame.scaleSlider:SetValue(scale)
     Installer.Refresh()
     frame.moduleScroll:SetVerticalScroll(0)
     frame:Show()
@@ -760,7 +765,8 @@ _G.SLASH_MSUFSUITEINSTALL1 = "/msufsuite"
 _G.SlashCmdList.MSUFSUITEINSTALL = function(message)
     message = type(message) == "string" and message:match("^%s*(.-)%s*$"):lower() or ""
     if message == "" or message == "install" then
-        Installer.Open()
+        local _, reason = Installer.Open()
+        if reason == "combat" then Suite.Print(Text("Finish combat first.")) end
     else
         Suite.Print("/msufsuite install")
     end

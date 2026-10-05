@@ -14,7 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
-HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua"}
+HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua",
+           "suite_installer_harness.lua"}
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {

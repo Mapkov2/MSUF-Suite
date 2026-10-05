@@ -21,12 +21,17 @@ core.ProfileVariants={
     ResolveCurrent=function() return true end,
 }
 local registered={}
-core.ProfileSync={RegisterModule=function(id) registered[id]=true end,RebaseExternal=function() end}
+core.ProfileSync={RegisterModule=function(id,label) registered[id]=label or true end,RebaseExternal=function() end}
+-- The profile sync list names Suite modules through one whole translated
+-- format, so a language can place "Suite" where it belongs.
+core.L={["Suite: %s"]="%s (Suite)"}
 Support.Load(root,"MSUF_Suite",Suite,"Core/ProfileVariants.lua")
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
 assert(Suite.ProfileVariants.Register())
 assert(provider and registered["suite:actionbars"] and not registered["suite:nameplates"])
+assert(registered["suite:actionbars"]==("%s (Suite)"):format(Suite.Text(Suite.SuiteCatalog.actionbars.title)),
+    "the profile sync label is not one translated text: "..tostring(registered["suite:actionbars"]))
 local config=Suite.DB.suite.modules.actionbars
 config.transientCache={owner="runtime"}
 local snapshot=provider.Snapshot(Suite.DB.suite.modules)

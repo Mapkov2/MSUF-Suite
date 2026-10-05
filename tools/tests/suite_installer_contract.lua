@@ -164,6 +164,8 @@ Suite.SuiteProfiles = {
     -- The follow-up repairs belong to suite_profiles_contract.
     EnsureNewCharacterProfile = function() return false end,
     EnsureRetailResourceStack = function() resourceRepairs = resourceRepairs + 1; return false end,
+    -- Stale skin profiles belong to suite_installer_session_contract.
+    SkinProfileExists = function() return false end,
     InstallSuiteFactory = function(name, profile, skin, look, finish, options)
         assert(name == "Default")
         if options and options.preserveSkinLayout then
@@ -218,7 +220,8 @@ Suite.SuiteProfiles = {
                 MSUF_GlobalDB.profiles[name], Suite.RootDB.profiles[name] = nil, nil
             end, name)
         end
-        assert(name == "MSUF Suite Forever" and options.screenHeight == 1440)
+        -- The Forever frames carry their own screen reference (suite_forever_factory_reference_smoke.py).
+        assert(name == "MSUF Suite Forever" and options.screenHeight == false)
         assert(frames == "MSUF3:frames")
         assert(skin == "MSKIN1:forever")
         assert(profile.suite.modules.chat.enabled)
@@ -651,7 +654,7 @@ local paletteFactory = Suite.SuiteProfiles.InstallFactory
 Suite.SuiteProfiles.InstallFactory = function(_, frames, profile, skin, look, finish, options)
     assert(frames == Suite.ForeverFactoryFramesCompact and skin == Suite.ForeverFactorySkinCompact
         and look == "cleanModern" and profile.suite.globalLook == "cleanModern"
-        and profile.suite.modules.actionbars.bar3X == 1039 and options.screenHeight == 1440,
+        and profile.suite.modules.actionbars.bar3X == 1039 and options.screenHeight == false,
         "color and layout choices were not independent at installation")
     return FinishInstall(finish, function() end, "Colors")
 end

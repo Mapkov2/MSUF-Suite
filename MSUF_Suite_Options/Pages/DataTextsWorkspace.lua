@@ -3,6 +3,13 @@ local W, M, T, Tr = P.W, P.M, P.T, P.Tr
 local PAGE, ID = "suite_dataTexts", "dataTexts"
 local Page = { selectedBar = 1, selections = {} }
 P.DataTextPage = Page
+-- A bar the player cleared the name of reads "Bar N", as in the layer
+-- overview and search (Menu/Register.lua).
+function Page.BarName(bar)
+    local name = P.Get(ID, "bar" .. bar .. "Name")
+    if type(name) ~= "string" or name == "" then return Tr("Bar %d"):format(bar) end
+    return name
+end
 local builtBarIDs
 
 -- Views are built on first selection. Selecting a tab never writes the profile.
@@ -229,15 +236,14 @@ function Page.Build(ctx, builder, shared, navigation)
             local button = Page.Tab(navigation, "", 16 + (index - 1) * size, -12, size - 6, function() choose(bar) end)
             buttons[bar] = button
             M.TrackRefresh(ctx, function()
-                local name = P.Get(ID, "bar" .. bar .. "Name") or Tr("Bar %d"):format(bar)
-                P.SetButtonText(button, name)
+                P.SetButtonText(button, Page.BarName(bar))
             end)
         end
     else
         local function Values()
             local values = {}
             for _, bar in ipairs(bars) do
-                values[#values + 1] = { value = bar, text = P.Get(ID, "bar" .. bar .. "Name") }
+                values[#values + 1] = { value = bar, text = Page.BarName(bar) }
             end
             return values
         end
