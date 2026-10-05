@@ -2,7 +2,8 @@
 -- Retail and WoW Forever:
 --   * on a bar docked to the top (the shipped "Top information bar" preset)
 --     the popup opens below its place, not above the screen edge;
---   * a list taller than the room beside the place wraps into columns;
+--   * a list taller than the room beside the place wraps into columns, no
+--     more than the screen is wide;
 --   * the popup is clamped to the screen.
 local root = assert(arg[1], "repository root required")
 local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
@@ -100,6 +101,45 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             "travel row " .. i .. " is not in its column: " .. flavor)
     end
     W.Click(popup.rows[1])
+
+    -- A list too long for the columns that fit beside a place in the middle
+    -- of the screen takes the screen's height instead of running off its
+    -- sides: the clamped popup stays whole on the screen, every row inside
+    -- it. On a narrow screen the rows that fit no column stay closed.
+    local function Whole(label)
+        local count = 0
+        for i = 1, #popup.rows do
+            local row = popup.rows[i]
+            if row.shown then
+                count = count + 1
+                local rowPoint = row.points[1]
+                assert(rowPoint[4] >= 4 and rowPoint[4] + 232 <= popup.width - 4
+                    and rowPoint[5] <= -4 and -rowPoint[5] + 24 <= popup.height - 4,
+                    label .. ": travel row " .. i .. " sits outside its popup: " .. flavor)
+            end
+        end
+        assert(popup.shown and popup:IsClampedToScreen() and popup.width <= W.UIParent:GetWidth()
+            and popup.height <= W.UIParent:GetHeight(),
+            label .. ": a " .. popup.width .. " x " .. popup.height .. " popup does not fit the screen: " .. flavor)
+        return count
+    end
+    for i = OWNED + 1, 100 do ids[i] = tostring(1000 + i) end
+    places = Apply("infoBottom")
+    travel = assert(places.travel)
+    travel.rect = { 400, SCREEN / 2 - 14, 100, 28 }
+    W.Click(travel)
+    popup = A.popup
+    assert(Whole("centered place") == 100, "a centered travel popup dropped rows the screen has room for: " .. flavor)
+    W.Click(popup.rows[1])
+    W.UIParent.width = 700
+    W.Click(travel)
+    local shown = Whole("narrow screen")
+    assert(shown > OWNED and shown < 100, "a narrow screen showed " .. shown .. " travel rows: " .. flavor)
+    W.Click(popup.rows[1])
+    W.UIParent.width = 1366
+    for i = OWNED + 1, 100 do ids[i] = nil end
+    places = Apply("infoBottom")
+    travel = assert(places.travel)
 
     -- A place the client has not laid out yet keeps the old upward popup.
     travel.rect = nil

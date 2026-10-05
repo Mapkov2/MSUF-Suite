@@ -238,7 +238,10 @@ local function PopupSide(button)
 end
 
 -- Opens the popup above or below a place; entries that do not fit one
--- column there wrap into further columns. fill(row, index) sets up each entry.
+-- column there wrap into further columns, as many as the screen is wide.
+-- A list those columns cannot hold there takes the screen's height (the
+-- clamp moves the popup over its place); entries beyond that stay closed.
+-- fill(row, index) sets up each entry.
 local function OpenPopup(button, count, fill)
     if Locked() then return end
     count = math.min(count, ROW_LIMIT)
@@ -250,6 +253,12 @@ local function OpenPopup(button, count, fill)
     frame.owner = button
     local below, room = PopupSide(button)
     local perColumn = math.max(1, math.min(count, math.floor((room - 11) / 26)))
+    local columns = math.max(1, math.floor((UIParent:GetWidth() - 4) / 236))
+    if count > columns * perColumn then
+        local tallest = math.max(1, math.floor((UIParent:GetHeight() - 8) / 26))
+        perColumn = math.max(perColumn, math.min(tallest, math.ceil(count / columns)))
+        count = math.min(count, columns * perColumn)
+    end
     frame:ClearAllPoints()
     if below then
         frame:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -3)
