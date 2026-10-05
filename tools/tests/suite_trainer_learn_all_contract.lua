@@ -140,10 +140,14 @@ module:UpdateButton()
 Click()
 dialogs.Accept(Question())
 assert(#buys == 3 and module.queue, "third batch started")
-combat = true
+-- The client sends PLAYER_REGEN_DISABLED while InCombatLockdown() is still
+-- false; the lockdown turns on after it.
 Emit("PLAYER_REGEN_DISABLED")
-assert(module.queue == nil and not module.button:IsShown(), "combat stops purchases")
+combat = true
+assert(module.queue == nil and not module.button:IsShown(), "combat stops purchases and hides the button")
 combat = false
+Emit("PLAYER_REGEN_ENABLED")
+assert(module.button:IsShown() and not events.PLAYER_REGEN_ENABLED, "the button did not come back after combat")
 module:UpdateButton()
 Click()
 assert(Question(), "the batch was not offered again after combat")
