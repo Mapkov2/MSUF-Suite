@@ -109,14 +109,14 @@ do
     local generator
     MenuUtil = { CreateContextMenu = function(_, fn) generator = fn end }
     local function Open()
-        local boxes, root = {}, {}
-        function root:CreateButton() return { SetResponse = function() end } end
-        function root:CreateTitle() end
-        function root:CreateCheckbox(text, isSelected, setSelected)
+        local boxes, menu = {}, {}
+        function menu:CreateButton() return { SetResponse = function() end } end
+        function menu:CreateTitle() end
+        function menu:CreateCheckbox(text, isSelected, setSelected)
             boxes[#boxes + 1] = { text = text, isSelected = isSelected, setSelected = setSelected }
             return {}
         end
-        generator(nil, root)
+        generator(nil, menu)
         return boxes
     end
     local ctx = Build("suite_dataTexts")
@@ -134,6 +134,30 @@ do
     assert(not stage.isSelected(), "the stage taken out still shows checked")
     MenuUtil, C_CurrencyInfo, C_Item = previous.MenuUtil, previous.C_CurrencyInfo, previous.C_Item
     S.DataTextExtraSources = nil
+end
+
+-- DataTexts: a bar whose name the player cleared reads "Bar N" in its tab,
+-- its header and its preview, as the layer overview and search show it.
+do
+    local NS = F.optionsNS
+    assert(NS.Set("dataTexts", "bar1Name", ""), "fixture: the name field commits an empty name")
+    local previews, build = {}, NS.DataTextsPreview.Build
+    NS.DataTextsPreview.Build = function(...)
+        local ui = build(...)
+        previews[#previews + 1] = ui
+        return ui
+    end
+    local ctx = Build("suite_dataTexts")
+    NS.DataTextsPreview.Build = build
+    local tab = ctx.dataTextWorkspace.buttons[1]
+    local label = rawget(tab, "_msuf2Label")
+    assert(((label and label.text) or tab.text) == "Bar 1", "the bar's tab is blank")
+    local header = ctx.entry.sections.suite_dataTexts_bar1._msuf2CollapsibleEntry.label
+    assert(header.text == "Bar 1", "the bar's header is blank")
+    local preview
+    for _, ui in ipairs(previews) do if ui.barId == 1 then preview = ui end end
+    assert(preview and preview.status.text:find("^Bar 1"), "the bar's preview title is blank")
+    assert(NS.Set("dataTexts", "bar1Name", "Bar 1"))
 end
 
 print("options pages contract: ok")

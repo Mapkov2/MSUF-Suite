@@ -147,7 +147,7 @@ end
 
 local function Header(ctx, builder, bar, select)
     local section, prefix = PAGE .. "_bar" .. bar, "bar" .. bar
-    local body = builder:CollapsibleSection(section, P.Get(ID, prefix .. "Name"), 120, true)
+    local body = builder:CollapsibleSection(section, Page.BarName(bar), 120, true)
     local width = (body._msuf2Width or builder.width) - 32
     local toggle = W.SectionSwitch(body, Tr("Show bar"), Tr("Show bar"))
     M.BindBoolWidget(ctx, toggle, function() return P.Get(ID, prefix .. "Enabled") end,
@@ -180,7 +180,7 @@ local function Header(ctx, builder, bar, select)
     P.FinishBody(builder, body, BarActions(ctx, body, bar, section, select, y - 40, width))
     M.TrackRefresh(ctx, function()
         local entry = body._msuf2CollapsibleEntry
-        if entry and entry.label then P.SetTranslatedText(entry.label, P.Get(ID, prefix .. "Name")) end
+        if entry and entry.label then P.SetTranslatedText(entry.label, Page.BarName(bar)) end
     end)
     if body._msuf2CollapsibleEntry then body._msuf2CollapsibleEntry._msuf2EnsureVisible = select end
     return preview
