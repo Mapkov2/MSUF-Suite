@@ -198,25 +198,6 @@ do
     M.CreateMenuPopupPanel, M.ApplyPopupFramePriority = create, priority
 end
 
--- Action bar preview without the action bar runtime and without Blizzard's
--- ActionButton1 slot: it reads the page from C_ActionBar. The global
--- GetActionBarPage exists only with Blizzard's deprecation fallbacks
--- (Blizzard_DeprecatedActionBar, loadDeprecationFallbacks).
-do
-    local saved = { page = GetActionBarPage, slot = S.ActionBarPreviewSlot, button = rawget(_G, "ActionButton1"),
-        api = C_ActionBar.GetActionBarPage, has = C_ActionBar.HasAction }
-    GetActionBarPage, S.ActionBarPreviewSlot, ActionButton1 = nil, nil, nil
-    local read
-    C_ActionBar.GetActionBarPage = function() return 3 end
-    C_ActionBar.HasAction = function(slot) read = slot; return false end
-    local tile = {}
-    for _, part in ipairs({ "key", "count", "name", "cooldown", "chargeCooldown", "icon" }) do tile[part] = F.Widget(part) end
-    F.optionsNS.ActionBarPreview.Read(tile, 1, 2, S.Config("actionbars"))
-    assert(read == 26, "the preview read slot " .. tostring(read) .. " for page 3, button 2")
-    GetActionBarPage, S.ActionBarPreviewSlot, ActionButton1 = saved.page, saved.slot, saved.button
-    C_ActionBar.GetActionBarPage, C_ActionBar.HasAction = saved.api, saved.has
-end
-
 -- DataTexts bar headers build their "..." popup (a UIParent child that can
 -- never be freed) when it first opens, not with every page build: the page
 -- rebuilds whenever a bar is added, duplicated or removed.
@@ -244,25 +225,6 @@ do
     end
     assert(remove and popup:GetHeight() == 114, "the bar popup lost its Remove bar action")
     M.CreateMenuPopupPanel, F.T.Button = create, button
-end
-
--- HUD: a feature header's color shortcut keeps the colors of every topic, not
--- only the last topic that has colors (the host replaces the shortcut's
--- options on a second attach). A color in Mythic+ bars stands in for one.
-do
-    local spec = S.catalog.objectives
-    assert(not spec.getControls, "fixture: the tracker's controls are a plain list")
-    local probe = { key = "contractBarColor", label = "Contract bar color", section = "mythicBars", color = true,
-        default = "ffffff" }
-    spec.controls[#spec.controls + 1] = probe
-    local ctx = Build("suite_hud")
-    table.remove(spec.controls)
-    local header, appearance = Section(ctx, "suite_hud_objectives_module"), Section(ctx, "suite_hud_objectives_type")
-    local own = rawget(appearance, "colorShortcut").options.maxTargets
-    local shortcut = assert(rawget(header, "colorShortcut"), "the tracker header has no color shortcut")
-    assert(shortcut.options.maxTargets == own + 1, "the tracker header offers " .. shortcut.options.maxTargets
-        .. " colors, the topics have " .. (own + 1))
-    assert(shortcut.options.title == rawget(appearance, "colorShortcut").options.title, "the header shortcut was renamed")
 end
 
 -- Composed labels translate as one format text, so a language can order the

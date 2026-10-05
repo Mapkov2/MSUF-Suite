@@ -565,10 +565,8 @@ end
 -- overlay never lives inside the menu. PLAYER_REGEN_DISABLED arrives before
 -- the lockdown and releases it; a "[combat] hide" state driver backs that up.
 local secure
--- Only the lockdown blocks the release: at PLAYER_REGEN_DISABLED the
--- player's combat flag (P.Combat) is already set, the lockdown is not.
 local function SecureDetach()
-    if not secure or Suite.IsCombatLocked() then return end
+    if not secure or P.Combat() then return end
     secure.owner = nil
     secure:Hide()
     secure:ClearAllPoints()

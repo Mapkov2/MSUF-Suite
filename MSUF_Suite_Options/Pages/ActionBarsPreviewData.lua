@@ -14,7 +14,7 @@ local function Slot(bar, ordinal)
     local native = rawget(_G, "ActionButton" .. ordinal)
     slot = native and not Suite.Safety.IsForbidden(native) and native.action
     if Number(slot) then return slot end
-    local page = C_ActionBar.GetActionBarPage()
+    local page = GetActionBarPage()
     return ((Number(page) and page or 1) - 1) * 12 + ordinal
 end
 

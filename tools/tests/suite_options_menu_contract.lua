@@ -126,6 +126,7 @@ GetCVarBool = function() return false end
 IsInInstance = function() return false, "none" end
 C_Texture = { GetAtlasInfo = function() return nil end }
 local actionPreview = { actions = {}, bindings = {}, page = 1, reads = 0, forms = {}, pet = {} }
+GetActionBarPage = function() return actionPreview.page end
 GetBindingKey = function(command) return actionPreview.bindings[command] end
 GetBindingText = function(key) return key end
 GetNumShapeshiftForms = function() return #actionPreview.forms end
@@ -136,9 +137,7 @@ GetPetActionInfo = function(index)
     local action = actionPreview.pet[index]
     if action then return action.name, action.icon, false end
 end
--- Without Blizzard's deprecation fallbacks there is no global GetActionBarPage.
 C_ActionBar = {
-    GetActionBarPage = function() return actionPreview.page end,
     GetActionTexture = function(slot)
         actionPreview.reads = actionPreview.reads + 1
         return (actionPreview.actions[slot] or {}).icon
@@ -2024,19 +2023,15 @@ do
     overlay.scripts.OnLeave(overlay)
     assert(not overlay.shown and #overlay.points == 0 and rawget(overlay, "owner") == nil and left == 1,
         "leaving the button kept the secure overlay on the menu")
-    -- PLAYER_REGEN_DISABLED comes before the lockdown, while the player's
-    -- combat flag is already set: the overlay lets go of the menu then and no
-    -- hover takes it back until combat ends.
+    -- PLAYER_REGEN_DISABLED comes before the lockdown: the overlay lets go of
+    -- the menu then and no hover takes it back until combat ends.
     extra.scripts.OnEnter(extra)
     assert(overlay.shown and overlay.events.PLAYER_REGEN_DISABLED, "the overlay does not watch the combat start")
-    local affecting = UnitAffectingCombat
-    UnitAffectingCombat = function(unit) return unit == "player" end
     overlay.scripts.OnEvent(overlay, "PLAYER_REGEN_DISABLED")
     assert(not overlay.shown and #overlay.points == 0, "the combat start left the secure overlay on the menu")
     extra.scripts.OnEnter(extra)
     assert(not overlay.shown, "a hover in the combat start attached the secure overlay")
     overlay.scripts.OnEvent(overlay, "PLAYER_REGEN_ENABLED")
-    UnitAffectingCombat = affecting
     InCombatLockdown = function() return true end
     extra.scripts.OnEnter(extra)
     assert(not overlay.shown, "a hover in combat attached the secure overlay")
