@@ -326,6 +326,15 @@ local function ActiveKind(kind)
     return false
 end
 
+-- A place of this kind on any enabled bar, shown or not.
+local function ConfiguredKind(kind)
+    if not owner or not owner.active then return false end
+    for _, binding in pairs(Sources.bindings) do
+        if binding.kind == kind then return true end
+    end
+    return false
+end
+
 local function WantsCrestItems()
     if not ActiveKind("crests") or owner.config.crestMode == CREST.SELECTED then return false end
     for _, cost in ipairs(SeasonSelection(owner.config)) do
@@ -352,6 +361,10 @@ end
 
 function Sources.WantedEvents(active, wanted)
     if WantsCrestItems() then wanted.BAG_UPDATE_DELAYED = true end
+    -- The season's upgrade stages exist only while an item sits in Blizzard's
+    -- upgrade frame: every configured Crests place observes them, also one
+    -- on a bar that is hidden or not hovered at that moment.
+    if ConfiguredKind("crests") then wanted.ITEM_UPGRADE_MASTER_SET_ITEM = true end
     for key in pairs(active) do
         local binding = Sources.bindings[key]
         if binding then
@@ -479,14 +492,6 @@ end
 -- place chooses, also one on a hidden or not yet hovered Mouseover bar:
 -- showing it only rebinds. In combat the overlay is hidden: only mark the
 -- choice stale; DataTexts.lua checks it again at PLAYER_REGEN_ENABLED.
-local function ConfiguredKind(kind)
-    if not owner or not owner.active then return false end
-    for _, binding in pairs(Sources.bindings) do
-        if binding.kind == kind then return true end
-    end
-    return false
-end
-
 function Sources.PrepareHearths()
     if not ConfiguredKind("hearth") then return end
     if NS.IsCombatLocked() then
