@@ -325,5 +325,19 @@ Notify("profile", "activate")
 Check(AtNative(menu), "a profile without a Game Menu position left it at the old one")
 HideUIPanel(menu)
 
+------------------------------------------------------------------ CX-S2-02
+-- ShowUIPanel refuses the minimized Character window while the Game Menu is
+-- open: its restore tab stays for another try.
+minimize.scripts.OnClick(minimize)
+Check(not character.shown and restore.shown and characterState.minimized, "the Character window did not minimize")
+ShowUIPanel(menu)
+restore.scripts.OnClick(restore, "LeftButton")
+Check(not character.shown, "the model let a left panel open over the Game Menu")
+Check(restore.shown and characterState.minimized, "a refused restore lost the window's restore tab")
+HideUIPanel(menu)
+restore.scripts.OnClick(restore, "LeftButton")
+Check(character.shown and not restore.shown and not characterState.minimized,
+    "the restore tab did not bring the window back once the Game Menu closed")
+
 Check(#reported == 0, "window controls reported errors: " .. table.concat(reported, "; "))
 print("Suite window controls edges: " .. checks .. " checks passed")

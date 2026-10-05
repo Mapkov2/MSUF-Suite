@@ -286,14 +286,14 @@ end
 
 local function Restore(state)
     if IsCombat() or not state or not state.minimized then return false end
-    state.minimized = false
-    state.restore:Hide()
     if state.panel and not NS.Client.IsGamepadUI() then
         ShowUIPanel(state.frame)
     else
         state.frame:Show()
     end
-    return true
+    -- OnPanelShow drops the tab. Blizzard can refuse the panel (a center
+    -- panel such as the Game Menu is open): the tab stays for another try.
+    return state.frame:IsShown() == true
 end
 
 local function Minimize(state)
