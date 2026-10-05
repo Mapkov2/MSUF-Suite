@@ -2202,7 +2202,7 @@ T("Minimum dialog height (0 keeps Blizzard's height)", "對話框最小高度（
 T("Minimum item quality", "物品最低品質")
 T("Minor Enemy", "次要敵人")
 T("Minutes buffs must last before a keystone", "鑰石前增益需持續的分鐘數")
-T("Mire Laborer", "泥沼劳动者")
+T("Mire Laborer", "泥沼勞動者")
 T("Missing enchant", "缺少附魔")
 T("Missing suite profile", "缺少 Suite 設定檔")
 T("Missing: %d enchants / %d low rank / %d gems / %d unknown", "缺少：附魔 %d / 低品級 %d / 寶石 %d / 未知 %d")
