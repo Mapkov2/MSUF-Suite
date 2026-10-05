@@ -260,6 +260,11 @@ Notify("color", "popup")
 Check(Painted(minimize.textures[1], "buttonFill") and Painted(minimize.fontStrings[1], "text", "textColor"),
     "a colour change did not repaint the minimize button")
 Check(Painted(restore.textures[1], "popup"), "a colour change did not repaint the restore tab")
+-- A profile with another look (Database.SetActiveProfile).
+palette.buttonFill, palette.popup, palette.text = { 0.5, 0.5, 0.6, 0.9 }, { 0.6, 0.5, 0.5, 0.9 }, { 0.7, 0.7, 1, 1 }
+Notify("profile", "activate")
+Check(Painted(minimize.textures[1], "buttonFill") and Painted(minimize.fontStrings[1], "text", "textColor")
+    and Painted(restore.textures[1], "popup"), "a profile switch left the window controls in the old colours")
 
 Check(#reported == 0, "window controls reported errors: " .. table.concat(reported, "; "))
 print("Suite window controls edges: " .. checks .. " checks passed")

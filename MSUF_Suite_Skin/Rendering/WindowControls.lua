@@ -735,10 +735,10 @@ local function RecolorMinimize()
 end
 
 -- Once per frame of settings writes: a profile or look switch rebuilds the
--- controls, a colour write repaints the minimize buttons.
+-- controls, a colour write or a profile switch repaints them.
 function WindowControls:OnThemeChanged(domain, key)
     if domain == "profile" or domain == "theme" and key == "look" then NS.Registry.QueueJob(RefreshQueued) end
-    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" then return end
+    if domain ~= "theme" and domain ~= "color" and domain ~= "appearance" and domain ~= "profile" then return end
     NS.Registry.QueueJob(RecolorMinimize)
 end
 
