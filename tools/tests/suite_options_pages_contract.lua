@@ -217,4 +217,33 @@ do
     C_ActionBar.GetActionBarPage, C_ActionBar.HasAction = saved.api, saved.has
 end
 
+-- DataTexts bar headers build their "..." popup (a UIParent child that can
+-- never be freed) when it first opens, not with every page build: the page
+-- rebuilds whenever a bar is added, duplicated or removed.
+do
+    local popups, create = {}, M.CreateMenuPopupPanel
+    M.CreateMenuPopupPanel = function(parent, opts)
+        local panel = create(parent, opts)
+        if parent == UIParent then popups[#popups + 1] = panel end
+        return panel
+    end
+    local buttons, button = {}, F.T.Button
+    F.T.Button = function(parent, text, ...)
+        local made = button(parent, text, ...)
+        buttons[#buttons + 1] = { parent = parent, text = text, button = made }
+        return made
+    end
+    Build("suite_dataTexts")
+    assert(#popups == 0, #popups .. " bar popups were built with the page")
+    local more = assert(F.registeredControls["menu2.suite_dataTexts.dataTexts.bar1.remove"], "bar 1 has no '...'")
+    more.scripts.OnClick(more)
+    local popup = assert(popups[1], "the bar's '...' opened no popup")
+    local remove
+    for _, made in ipairs(buttons) do
+        if made.parent == popup and made.text == "Remove bar" then remove = made.button end
+    end
+    assert(remove and popup:GetHeight() == 114, "the bar popup lost its Remove bar action")
+    M.CreateMenuPopupPanel, F.T.Button = create, button
+end
+
 print("options pages contract: ok")

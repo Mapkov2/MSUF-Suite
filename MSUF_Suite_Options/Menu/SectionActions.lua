@@ -127,6 +127,7 @@ local function BuildSectionPopup(state, spec)
             return true
         end
     end
+    if state.extend then state.extend(popup) end
 end
 
 local function ToggleSectionPopup(state)
@@ -153,14 +154,16 @@ local function ToggleSectionPopup(state)
     Controller.RaiseControllerCursor()
 end
 
-function P.AttachSectionReset(ctx, body, title, reset, copy)
+-- extend(popup) (optional) adds a page's own actions to the popup when it is
+-- first built, on its first open: popups are UIParent children, never freed.
+function P.AttachSectionReset(ctx, body, title, reset, copy, extend)
     if not body or type(reset) ~= "function" then return end
     body._msufSuiteSectionReset, body._msufSuiteSectionCopy = reset, copy
     local entry = body._msuf2CollapsibleEntry
     if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel) then return end
     if entry._msufSuiteResetButton then return entry._msufSuiteResetButton end
     local more = SectionActionButton(ctx, entry)
-    local state = { body = body, title = title, entry = entry, more = more }
+    local state = { body = body, title = title, entry = entry, more = more, extend = extend }
     more:SetScript("OnClick", function() ToggleSectionPopup(state) end)
     more._msuf2GetSectionPopup = function() return state.popup end
     more._msuf2EnsureSectionPopup = function()

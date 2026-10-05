@@ -130,19 +130,19 @@ end
 local function BarSectionActions(ctx, body, bar, section, select)
     local prefix = "bar" .. bar
     local more = P.AttachSectionReset(ctx, body, Tr("Bar %d"):format(bar),
-        function() return P.ResetPrefix(ID, prefix) end)
-    local popup = more._msuf2EnsureSectionPopup()
-    P.Button(ctx, popup, "Remove bar", 14, -76, 250, function()
-        popup:Hide()
-        Page.ChangeBars(P.Suite.DataTextBarRemovalValues(P.S.Config(ID), bar))
-    end, function() return true end)
+        function() return P.ResetPrefix(ID, prefix) end, nil, function(popup)
+            P.Button(ctx, popup, "Remove bar", 14, -76, 250, function()
+                popup:Hide()
+                Page.ChangeBars(P.Suite.DataTextBarRemovalValues(P.S.Config(ID), bar))
+            end, function() return true end)
+            popup:SetHeight(114)
+        end)
     -- Search focuses the page-owned menu button and reveals its floating action.
     Page.Prepare({ { widget = more, label = "Remove bar",
         meta = P.Meta(PAGE, ID, prefix .. ".remove", "action", section) } }, section, function()
             select()
             more._msuf2OpenSectionPopup()
         end)
-    popup:SetHeight(114)
 end
 
 local function Header(ctx, builder, bar, select)
