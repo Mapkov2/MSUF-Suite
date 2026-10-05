@@ -941,6 +941,19 @@ module:Refresh()
 assert(ChatFrame1Tab:GetWidth() == nativeTabWidth, "turning tab text padding off kept the padded width")
 dockTabsHook(GENERAL_CHAT_DOCK)
 assert(ChatFrame1Tab:GetWidth() == nativeTabWidth, "Blizzard's dock layout padded a tab with padding off")
+-- An in-combat dock layout re-anchors every docked tab 1 px apart
+-- (FCFDock_UpdateTabs); a tab gap without padding comes back after combat.
+module.config.tabGap = 6
+module:Refresh()
+queued, queue = {}, S.Queue
+S.Queue = function(id) queued[#queued + 1] = id end
+lockdown = true
+dockTabsHook(GENERAL_CHAT_DOCK)
+lockdown = false
+S.Queue = queue
+assert(queued[1] == "chat" and #queued == 1, "a dock layout in combat dropped the tab gap until a later dock update")
+module.config.tabGap = 0
+module:Refresh()
 -- A chat window that fails to style is reported; the later windows are styled.
 assert(#reports == 0, "chat styling raised: " .. tostring(reports[1]))
 ChatFrame4 = Frame("ChatFrame4")

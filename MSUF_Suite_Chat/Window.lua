@@ -459,13 +459,13 @@ end
 -- FCFDock_UpdateTabs lays the dock out again; after it, each tab moves right
 -- of the previous tab of its row (static tabs, then dynamic ones), and every
 -- styled tab gets its padded width back (ApplyTabWidth). In combat the dock
--- waits: with padding on, the module applies again once combat ends.
+-- waits: with padding or a gap on, the module applies again once combat ends.
 local spacedTabs = setmetatable({}, { __mode = "k" })
 function C.DockGeometry()
     if not M.active then return end
     local padded = M.config.tabPadding and M.config.tabPadding > 0
     if NS.IsCombatLocked() then
-        if padded then S.Queue("chat") end
+        if padded or M.config.tabGap > 0 then S.Queue("chat") end
         return
     end
     if padded then
