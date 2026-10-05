@@ -44,4 +44,17 @@ do
     assert(#H.reported == 0, "a call raised: " .. tostring(H.reported[1]))
 end
 
+-- /msufsuite in combat says why setup does not open.
+do
+    local Suite = H.Setup({ root = root, forever = true })
+    H.combat = true
+    SlashCmdList.MSUFSUITEINSTALL("")
+    assert(not Suite.Installer.IsOpen(), "setup opened in combat")
+    assert(H.chat[#H.chat] == "MSUF Suite: " .. Suite.Text("Finish combat first."),
+        "/msufsuite in combat gave no feedback")
+    H.combat = false
+    SlashCmdList.MSUFSUITEINSTALL("")
+    assert(Suite.Installer.IsOpen(), "setup did not open after combat")
+end
+
 print("installer session contract: ok")

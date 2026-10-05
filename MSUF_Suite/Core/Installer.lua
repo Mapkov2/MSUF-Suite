@@ -765,7 +765,8 @@ _G.SLASH_MSUFSUITEINSTALL1 = "/msufsuite"
 _G.SlashCmdList.MSUFSUITEINSTALL = function(message)
     message = type(message) == "string" and message:match("^%s*(.-)%s*$"):lower() or ""
     if message == "" or message == "install" then
-        Installer.Open()
+        local _, reason = Installer.Open()
+        if reason == "combat" then Suite.Print(Text("Finish combat first.")) end
     else
         Suite.Print("/msufsuite install")
     end
