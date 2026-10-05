@@ -345,6 +345,15 @@ function Suite.Client.AddOnEnabled(name)
     return false, Suite.FormatStatus("Disabled in Blizzard's AddOns list: %s", name)
 end
 
+-- Blizzard's text for a C_AddOns.LoadAddOn failure reason (ADDON_DISABLED,
+-- ADDON_MISSING...), as Blizzard's AddOnUtil.lua shows it; the translated
+-- fallback when there is no reason.
+function Suite.Client.LoadReasonText(reason, fallback)
+    local text = type(reason) == "string" and _G["ADDON_" .. reason]
+    if type(text) == "string" then return text end
+    return tostring(reason or fallback)
+end
+
 function Suite.Print(message)
     DEFAULT_CHAT_FRAME:AddMessage("MSUF Suite: " .. tostring(message))
 end

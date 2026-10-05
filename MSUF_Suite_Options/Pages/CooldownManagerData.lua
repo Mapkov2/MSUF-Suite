@@ -261,9 +261,7 @@ function Page.EnsureRuntime()
     if not Suite.Client.IsAddOnLoaded(RUNTIME) then
         local loaded, reason = C_AddOns.LoadAddOn(RUNTIME)
         if not loaded and not Suite.Client.IsAddOnLoaded(RUNTIME) then
-            -- Blizzard's own text for the load reason (AddOnUtil.lua does the same).
-            Page.loadFailed = type(reason) == "string" and _G["ADDON_" .. reason]
-                or tostring(reason or Tr("not installed"))
+            Page.loadFailed = Suite.Client.LoadReasonText(reason, Tr("not installed"))
         end
     end
     return S.CooldownManagerBarEntries ~= nil

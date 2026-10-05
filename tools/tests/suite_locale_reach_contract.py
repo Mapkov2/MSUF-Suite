@@ -71,12 +71,15 @@ for english, rel in SINKS:
     check(reached(english, rel), "%r is shown but never translated at %s" % (english, rel))
 
 # ------------------------------------------------------------ Blizzard's load reason text
-REASON = re.compile(r'type\((\w+)\) == "string" and _G\["ADDON_" \.\. \1\]')
+platform = (ROOT / CORE / "Platform.lua").read_text(encoding="utf-8")
+helper = platform[platform.find("function Suite.Client.LoadReasonText("):]
+check(re.search(r'type\(reason\) == "string" and _G\["ADDON_" \.\. reason\]', helper[:400]) is not None,
+      "Suite.Client.LoadReasonText no longer reads Blizzard's ADDON_<reason> text")
 for rel, statement in ((CORE + "Menu.lua", "Menu.error ="), (CORE + "Suite.lua", "local reason ="),
                        (OPTIONS + "CooldownManagerData.lua", "Page.loadFailed =")):
     source = (ROOT / rel).read_text(encoding="utf-8")
     at = source.find(statement)
-    check(at >= 0 and REASON.search(source[at:at + 200]) is not None,
+    check(at >= 0 and re.match(r"\s*\w+\.Client\.LoadReasonText\(", source[at + len(statement):]) is not None,
           "%s shows the raw AddOn load reason code instead of Blizzard's ADDON_<reason> text" % rel)
 
 # A status names a module in the reader's language: StatusText translates
