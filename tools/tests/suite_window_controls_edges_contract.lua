@@ -266,5 +266,28 @@ Notify("profile", "activate")
 Check(Painted(minimize.textures[1], "buttonFill") and Painted(minimize.fontStrings[1], "text", "textColor")
     and Painted(restore.textures[1], "popup"), "a profile switch left the window controls in the old colours")
 
+------------------------------------------------------------------ R-S3-F1
+-- A title drag that combat interrupts: the unprotected Character window stops
+-- where the mouse released it (StopMovingOrSizing is restricted on protected
+-- frames only, SimpleFrameAPIDocumentation.lua) and is saved there; only its
+-- anchor waits for the end of combat.
+local strip = characterState.titleDrag
+strip.scripts.OnDragStart(strip)
+Check(character.moving and characterState.moving, "the title drag did not start")
+combat = true
+character.left, character.top = 420, 840
+strip.scripts.OnDragStop(strip)
+Check(not character.moving and not characterState.moving,
+    "a drag released in combat kept the window glued to the cursor")
+local saved = NS.DB.windowControls.positions.CharacterFrame
+Check(saved and saved.x == 420 and saved.y == 840 - UIParent.height,
+    "a drag released in combat did not save where it was dropped")
+character.left, character.top = 700, 300 -- The cursor wanders on during the fight.
+EndCombat()
+Check(At(character, "TOPLEFT", 420, 840 - UIParent.height) and NS.DB.windowControls.positions.CharacterFrame == saved,
+    "after combat the window was not anchored where it was dropped")
+UpdateUIPanelPositions(character)
+Check(At(character, "TOPLEFT", 420, 840 - UIParent.height), "Blizzard's panel layout moved the dropped window")
+
 Check(#reported == 0, "window controls reported errors: " .. table.concat(reported, "; "))
 print("Suite window controls edges: " .. checks .. " checks passed")

@@ -268,7 +268,7 @@ local function SavePosition(state)
         return true
     end)
     state.customPosition = true
-    ApplyStoredPosition(state)
+    NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() ApplyStoredPosition(state) end)
     return true
 end
 
@@ -510,14 +510,15 @@ end
 
 local function EndMove(state)
     if not state.moving then return end
-    if not CanChangeGeometry(state) then
-        if IsCombat() then
-            NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() EndMove(state) end)
-        end
+    local frame = state.frame
+    -- Only a protected panel waits for the end of combat to stop; any other
+    -- stops where it was dropped, and in combat only its anchor waits.
+    if IsCombat() and Safety.GetProtection(frame) then
+        NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() EndMove(state) end)
         return
     end
     state.moving = false
-    local frame = state.frame
+    if Safety.IsForbidden(frame) then return end
     frame:StopMovingOrSizing()
     if state.nativeMovable == false then frame:SetMovable(false) end
     state.nativeMovable = nil
