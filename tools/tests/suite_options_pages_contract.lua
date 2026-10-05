@@ -160,4 +160,42 @@ do
     assert(NS.Set("dataTexts", "bar1Name", "Bar 1"))
 end
 
+-- DataTexts source picker: opened from the preview's "Add data" button, it
+-- stays a child of the menu window (or UIParent), never of its anchor inside
+-- the clipping preview host, and takes the menu's popup priority once placed.
+do
+    local NS = F.optionsNS
+    local previews, build = {}, NS.DataTextsPreview.Build
+    NS.DataTextsPreview.Build = function(...)
+        local ui = build(...)
+        previews[#previews + 1] = ui
+        return ui
+    end
+    local panels, create = {}, M.CreateMenuPopupPanel
+    M.CreateMenuPopupPanel = function(parent, opts)
+        local panel = create(parent, opts)
+        panel.createdUnder = parent
+        function panel:SetParent(value) self.reparentedTo = value end
+        panels[#panels + 1] = panel
+        return panel
+    end
+    local prioritized, priority = {}, M.ApplyPopupFramePriority
+    M.ApplyPopupFramePriority = function(frame) prioritized[frame] = #(frame.points or {}) end
+    Build("suite_dataTexts")
+    NS.DataTextsPreview.Build = build
+    local preview
+    for _, ui in ipairs(previews) do if ui.barId == 1 then preview = ui end end
+    assert(preview and preview.host.clipsChildren, "fixture: the preview host clips its children")
+    assert(NS.DataTextsSourcePicker.Open(preview.add, 1, 1), "the picker did not open")
+    local picker = assert(panels[#panels], "the picker is no menu popup")
+    assert(rawget(picker, "createdUnder") == (rawget(M, "frame") or UIParent), "the picker was created under its anchor")
+    assert(rawget(picker, "reparentedTo") == nil, "the picker was moved under the clipping preview host")
+    assert(prioritized[picker] and prioritized[picker] > 0, "the picker did not take the popup priority after placing")
+    -- It still closes with its anchor's page.
+    assert(picker:IsShown() and preview.add.scripts.OnHide, "fixture: the picker is open")
+    preview.add.scripts.OnHide(preview.add)
+    assert(not picker:IsShown(), "the picker stayed open after its anchor's page closed")
+    M.CreateMenuPopupPanel, M.ApplyPopupFramePriority = create, priority
+end
+
 print("options pages contract: ok")
