@@ -135,7 +135,10 @@ order({ 102, 101, 103, 104 })
 assert(hookCount == 1 and renderUpdates == 2,
     "reenable should reuse its hook and refresh the visible list")
 
+-- An active refresh (profile switch, spec variant) changes nothing the hook
+-- does not already apply on every native update: Blizzard's viewer rebuild
+-- is not run from addon code for it.
 sorter:Refresh()
 order({ 102, 101, 103, 104 })
-assert(hookCount == 1 and renderUpdates == 3,
-    "active profile refresh should reuse the hook and refresh the visible list")
+assert(hookCount == 1 and renderUpdates == 2 and nativeUpdates == 8,
+    "active profile refresh rebuilt Blizzard's applicant viewer from addon code")
