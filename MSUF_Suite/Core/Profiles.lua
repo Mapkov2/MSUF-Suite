@@ -368,8 +368,8 @@ local WITH_TARGET = { copy = true, rename = true }
 -- A refusal names its reason; MSUF reports it.
 function P.OnLifecycle(kind, source, target)
     -- Without its store (or inside its own import) the Suite has nothing to
-    -- keep aligned: a rename goes ahead, the other kinds keep their answer.
-    if Suite.suppressProfileSync or not Suite.RootDB then return kind == "rename" end
+    -- keep aligned: MSUF's change goes ahead, as without the Suite.
+    if Suite.suppressProfileSync or not Suite.RootDB then return true end
     if Suite.IsCombatLocked() then return false, "combat" end
     local skin = SkinEngine()
     local handler = Lifecycle[kind]
