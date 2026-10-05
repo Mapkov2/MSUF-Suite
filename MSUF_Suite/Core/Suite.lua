@@ -45,7 +45,12 @@ local function RepairedValue(rule, value)
         return ClampNumber(rule, value)
     end
     if type(value) == "string" then
-        value = value:sub(1, rule.maxLength)
+        if #value > rule.maxLength then
+            -- Cut at a character boundary, never inside a UTF-8 character.
+            local edge = rule.maxLength + 1
+            while edge > 1 and value:byte(edge) >= 128 and value:byte(edge) < 192 do edge = edge - 1 end
+            value = value:sub(1, edge - 1)
+        end
         if not ValidText(rule, value) then value = rule.default end
     end
     return value
