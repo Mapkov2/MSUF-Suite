@@ -22,6 +22,9 @@ local Finite = S.Finite
 local VISIBILITY, LAYOUT, DOCK = NS.DataTextVisibility, NS.DataTextLayout, NS.DataTextDock
 -- Rebind alternates between two active-source sets and reuses its event set.
 local activeSetA, activeSetB, wantedEvents = {}, {}, {}
+-- Unit events the places read for the player only; group members' spec
+-- swaps (PLAYER_SPECIALIZATION_CHANGED carries their unit) never arrive.
+local PLAYER_UNIT_EVENTS = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true, PLAYER_SPECIALIZATION_CHANGED = true }
 local function Clear(t)
     for key in pairs(t) do t[key] = nil end
 end
@@ -251,8 +254,7 @@ local function SyncEvents(self, active)
     end
     for event in pairs(wantedEvents) do
         if not self.events[event] then
-            self.context:Event(event, OnEvent, IN_COMBAT,
-                (event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH") and "player" or nil)
+            self.context:Event(event, OnEvent, IN_COMBAT, PLAYER_UNIT_EVENTS[event] and "player" or nil)
             self.events[event] = true
         end
     end
