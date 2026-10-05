@@ -135,10 +135,10 @@ end
 local ColorTab = C.ColorTab
 
 -- A docked window's tab is selected with its dock; a floating one always is.
-function C.TabSelected(frame, chat, dock)
-    if frame.isDocked == true then return frame == dock end
-    if frame.isDocked == false then return true end
-    return frame == chat or frame == dock
+-- Blizzard stores isDocked as 1 or nil (FCFDock_AddChatFrame/RemoveChatFrame).
+function C.TabSelected(frame, _, dock)
+    if frame.isDocked then return frame == dock end
+    return true
 end
 local TabSelected = C.TabSelected
 

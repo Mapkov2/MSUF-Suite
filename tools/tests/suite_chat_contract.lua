@@ -165,7 +165,7 @@ local panelOpens = {}
 local function PanelOnClick(button) panelOpens[#panelOpens + 1] = { button = button, secure = secureClick } end
 UIParent = Frame("UIParent")
 ChatFrame1 = Frame("ChatFrame1")
-ChatFrame1.isDocked = true
+ChatFrame1.isDocked = 1
 ChatFrame1.isStaticDocked = true
 ChatFrame1.Background = Texture()
 ChatFrame1TopLeftTexture = Texture()
@@ -779,7 +779,7 @@ assert(ChatFrame1.font[1] == globalFont and ChatFrame1.font[2] == 16,
 assert(ChatFrame1Tab.Text.font[1] == globalFont and ChatFrame1Tab.Text.font[2] == 12,
     "MSUF's changed global font did not update the native tab title")
 ChatFrame2 = Frame("ChatFrame2")
-ChatFrame2.isDocked = true
+ChatFrame2.isDocked = 1
 -- Synthetic second static tab covers the native title selection contract;
 -- Retail's additional tabs use the dynamic path exercised by ChatFrame3.
 ChatFrame2.isStaticDocked = true
@@ -799,7 +799,7 @@ assert(module.visuals[ChatFrame2].tabLabel == ChatFrame2Tab.Text
 -- Blizzard's native title without copying its text. Temporary windows are
 -- frames past the built-in ones (ChatFrame2 is always the combat log).
 ChatFrame11 = Frame("ChatFrame11")
-ChatFrame11.isDocked = true
+ChatFrame11.isDocked = 1
 ChatFrame11.editBox = Frame("ChatFrame11EditBox")
 ChatFrame11Tab = Frame("ChatFrame11Tab")
 ChatFrame11Tab.Left = Texture()
@@ -875,7 +875,7 @@ assert(sidebar.sidebarFrame.points[1][2] == ChatFrame2
     and sidebar.panel.colorUpdates == panelColorUpdates,
     "switching again to Combat Log lost the MSUF shell")
 ChatFrame3 = Frame("ChatFrame3")
-ChatFrame3.isDocked = true
+ChatFrame3.isDocked = 1
 ChatFrame3.editBox = Frame("ChatFrame3EditBox")
 ChatFrame3Tab = Frame("ChatFrame3Tab")
 ChatFrame3Tab.Left = Texture()
@@ -901,6 +901,18 @@ assert(gapPoint and gapPoint[1] == "LEFT" and gapPoint[2] == ChatFrame1Tab and g
 module.config.tabGap = 0
 module:Refresh()
 assert(not ctx.anchors[ChatFrame2Tab], "turning the tab gap off kept the moved tab")
+-- Blizzard stores isDocked as 1 or nil (FCFDock_AddChatFrame and
+-- FCFDock_RemoveChatFrame); a floating window's tab is always selected
+-- (FCFTab_UpdateColors(tab, not isDocked or ...), FloatingChatFrame.lua).
+ChatFrame3.isDocked = nil
+GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame1, ChatFrame1
+module:Refresh()
+assert(module.visuals[ChatFrame3].tabLine.shown and module.visuals[ChatFrame1].tabLine.shown
+    and not module.visuals[ChatFrame2].tabLine.shown,
+    "a floating chat window's tab was painted as an unselected docked tab")
+ChatFrame3.isDocked = 1
+GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame3, ChatFrame2
+module:Refresh()
 -- tabPadding widens each tab to its title plus the padding on both sides.
 -- Blizzard's FCFDock_UpdateTabs sizes the docked tabs again on every dock
 -- layout, a tab click included (PanelTemplates_TabResize: tab:SetWidth); the
@@ -932,7 +944,7 @@ assert(ChatFrame1Tab:GetWidth() == nativeTabWidth, "Blizzard's dock layout padde
 -- A chat window that fails to style is reported; the later windows are styled.
 assert(#reports == 0, "chat styling raised: " .. tostring(reports[1]))
 ChatFrame4 = Frame("ChatFrame4")
-ChatFrame4.isDocked = true
+ChatFrame4.isDocked = 1
 ChatFrame4.isTemporary = true
 ChatFrame4.chatType = "WHISPER"
 ChatFrame4.editBox = Frame("ChatFrame4EditBox")
