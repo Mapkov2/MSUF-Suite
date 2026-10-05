@@ -265,4 +265,66 @@ do
     assert(shortcut.options.title == rawget(appearance, "colorShortcut").options.title, "the header shortcut was renamed")
 end
 
+-- Composed labels translate as one format text, so a language can order the
+-- parts: a hidden bar in the action bar preview, an unavailable font or
+-- texture, a feature's color shortcut (QoL card and search row) and the name
+-- of a new cooldown bar. The stand-in translations put the parts in another
+-- order than English.
+do
+    local L, NS = F.L, F.optionsNS
+    local function Swap(key, text) rawset(L, key, text) end
+    Swap("%s (hidden)", "[hidden] %s")
+    Swap("Unavailable font: %s", "%s - font missing")
+    Swap("Unavailable texture: %s", "%s - texture missing")
+    Swap("%s Colors", "Colors of %s")
+    Swap("Cooldowns %d", "No. %d cooldowns")
+    local fonts, textures = NS.FontValues("Gone"), NS.TextureValues("Gone")
+    assert(fonts[#fonts].text == "Gone - font missing", "the unavailable font reads " .. fonts[#fonts].text)
+    assert(textures[#textures].text == "Gone - texture missing", "the unavailable texture reads " .. textures[#textures].text)
+    assert(S.Set("actionbars", "bar3Visibility", 6))
+    local bars = Build("suite_actionbars")
+    Control(bars, "menu2.suite_actionbars.actionbars.editor.selected").set(3)
+    local preview = bars._msufSuiteActionBarPreview
+    bars._msufSuiteActionBarWorkspace.selected = "visibility"
+    NS.ActionBarPreview.RefreshScope(preview)
+    bars._msufSuiteActionBarWorkspace.selected = "shared"
+    assert(preview.status.text:find("[hidden] ", 1, true), "the hidden bar reads " .. tostring(preview.status.text))
+    local labels, register = {}, M.RegisterControlMetadata
+    M.RegisterControlMetadata = function(widget, meta, label, ...)
+        if meta and meta.controlId then labels[meta.controlId] = label end
+        return register(widget, meta, label, ...)
+    end
+    local qol = Build("suite_qualityOfLife")
+    -- A feature's details (and its color shortcut) are built when it opens.
+    for _, record in pairs(qol.qualityOfLifeFeatureRows) do record.reveal(true) end
+    M.RegisterControlMetadata = register
+    local cards = 0
+    for id, label in pairs(labels) do
+        if id:find("%.action%.colors%.") then
+            cards = cards + 1
+            assert(label:find("^Colors of "), "a color shortcut reads " .. label)
+        end
+    end
+    assert(cards > 0, "fixture: no Quality of Life card has a color shortcut")
+    local rows, pages = {}, {}
+    for key in pairs(M.pages) do pages[key] = true end
+    NS.AppendSearchActionRows(rows, pages)
+    local searched = 0
+    for _, row in ipairs(rows) do
+        if row.controlId and row.controlId:find("%.action%.colors%.") then
+            searched = searched + 1
+            assert(row.label:find("^Colors of "), "a color search row reads " .. row.label)
+        end
+    end
+    assert(searched > 0, "fixture: no color search row")
+    local Page = NS.CDMPage
+    assert(Page.AddBar(F.Suite.CDM.KIND.COOLDOWN), "no cooldown bar was added")
+    local name = S.Config("cooldownManager")[Page.selected .. "_name"]
+    assert(name == ("No. %d cooldowns"):format(tonumber(Page.selected:sub(2))), "the new bar is named " .. tostring(name))
+    for _, key in ipairs({ "%s (hidden)", "Unavailable font: %s", "Unavailable texture: %s", "%s Colors", "Cooldowns %d" }) do
+        rawset(L, key, nil)
+    end
+    assert(S.Set("actionbars", "bar3Visibility", 1))
+end
+
 print("options pages contract: ok")

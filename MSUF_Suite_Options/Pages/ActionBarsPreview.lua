@@ -249,9 +249,9 @@ function Preview.RefreshScope(ui)
         return
     end
     local label = Tr(Suite.ActionBarTitles[bar])
-    if c[p .. "Visibility"] == 6 then label = label .. " (" .. Tr("hidden") .. ")" end
+    if c[p .. "Visibility"] == 6 then label = Tr("%s (hidden)"):format(label) end
     if S.ActionBarAvailable and not S.ActionBarAvailable(bar) then
-        label = label .. " (" .. Tr("not available on this client") .. ")"
+        label = Tr("%s (not available on this client)"):format(label)
     end
     P.SetTranslatedText(ui.status, string.format(Tr("Editing: %s"), label))
 end

@@ -148,7 +148,7 @@ local function AddQualityOfLifeRows(Add)
         end
         local colorWords = FeatureColorWords(feature)
         if colorWords then
-            local label = Tr(feature.title) .. " " .. Tr("Colors")
+            local label = Tr("%s Colors"):format(Tr(feature.title))
             Add(feature.id, "action.colors." .. feature.switch, label, sectionId, nil, nil, feature, { words = colorWords })
         end
     end

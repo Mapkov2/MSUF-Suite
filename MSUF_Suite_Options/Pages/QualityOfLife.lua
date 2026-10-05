@@ -489,7 +489,7 @@ local function BuildFeatureDetails(ctx, panel, group, sectionId, width, sections
     if colorShortcut then
         P.M.RegisterControlMetadata(colorShortcut,
             P.Meta(PAGE, group.id, "action.colors." .. group.switch, "action", sectionId),
-            Tr(group.title) .. " " .. Tr("Colors"), "button")
+            Tr("%s Colors"):format(Tr(group.title)), "button")
     end
     if #allRules > 0 then
         details._msufSuiteSectionReset = function()

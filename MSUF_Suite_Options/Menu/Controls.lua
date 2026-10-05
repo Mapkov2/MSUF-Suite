@@ -145,7 +145,7 @@ function P.FontValues(selected, defaultLabel)
         end
     end
     if type(selected) == "string" and selected ~= "" and not seen[selected] then
-        values[#values + 1] = { value = selected, text = Tr("Unavailable font") .. ": " .. selected }
+        values[#values + 1] = { value = selected, text = Tr("Unavailable font: %s"):format(selected) }
     end
     return values
 end
@@ -164,7 +164,7 @@ function P.TextureValues(selected)
         end
     end
     if type(selected) == "string" and selected ~= "" and not seen[selected] then
-        values[#values + 1] = { value = selected, text = Tr("Unavailable texture") .. ": " .. selected }
+        values[#values + 1] = { value = selected, text = Tr("Unavailable texture: %s"):format(selected) }
     end
     return values
 end

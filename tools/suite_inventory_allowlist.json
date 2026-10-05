@@ -1695,6 +1695,46 @@
       "evidence": "git log -S'Enemy player Loss of control' -- MSUF_Suite/Core/NameplateStyle.lua; Style.AuraGroups control now holds the whole label (Enemy player Loss of control and Friendly player Loss of control), translated as one text in every pack.",
       "reason": "Same switches and English labels; the fragment joined by '%s %s' became whole-sentence keys so translators can order the words.",
       "date": "2026-10-05"
+    },
+    {
+      "category": "locale",
+      "item": "Timers",
+      "basis": "moved",
+      "evidence": "git log -S'Timers %d' -- MSUF_Suite_Options/Pages/CooldownManagerBars.lua; MSUF_Suite_Options/Pages/CooldownManagerBars.lua DEFAULT_NAMES now translates the whole format 'Timers %d'.",
+      "reason": "Same text in English; the fragment that was joined to another part became a whole format key so translators can order the parts.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "locale",
+      "item": "Unavailable font",
+      "basis": "moved",
+      "evidence": "git log -S'Unavailable font: %s' -- MSUF_Suite_Options/Menu/Controls.lua; MSUF_Suite_Options/Menu/Controls.lua P.FontValues now translates the whole format 'Unavailable font: %s'.",
+      "reason": "Same text in English; the fragment that was joined to another part became a whole format key so translators can order the parts.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "locale",
+      "item": "Unavailable texture",
+      "basis": "moved",
+      "evidence": "git log -S'Unavailable texture: %s' -- MSUF_Suite_Options/Menu/Controls.lua; MSUF_Suite_Options/Menu/Controls.lua P.TextureValues now translates the whole format 'Unavailable texture: %s'.",
+      "reason": "Same text in English; the fragment that was joined to another part became a whole format key so translators can order the parts.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "locale",
+      "item": "hidden",
+      "basis": "moved",
+      "evidence": "git log -S'%s (hidden)' -- MSUF_Suite_Options/Pages/ActionBarsPreview.lua; MSUF_Suite_Options/Pages/ActionBarsPreview.lua Preview.RefreshScope now translates the whole format '%s (hidden)'.",
+      "reason": "Same text in English; the fragment that was joined to another part became a whole format key so translators can order the parts.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "locale",
+      "item": "not available on this client",
+      "basis": "moved",
+      "evidence": "git log -S'%s (not available on this client)' -- MSUF_Suite_Options/Pages/ActionBarsPreview.lua; MSUF_Suite_Options/Pages/ActionBarsPreview.lua Preview.RefreshScope now translates the whole format '%s (not available on this client)'.",
+      "reason": "Same text in English; the fragment that was joined to another part became a whole format key so translators can order the parts.",
+      "date": "2026-10-05"
     }
   ]
 }

@@ -161,7 +161,7 @@ function Page.FreeCustom()
     end
     return reuse, reuse ~= nil
 end
-local DEFAULT_NAMES = { "Cooldowns", "Buffs", "Timers" }
+local DEFAULT_NAMES = { "Cooldowns %d", "Buffs %d", "Timers %d" }
 -- A free bar that would sit exactly on another shown free bar moves down a
 -- step, so several new bars never stack on one spot.
 local function Occupied(slot, x, y)
@@ -208,7 +208,7 @@ local function NewBarValues(slot, kind, reused)
     local values = {}
     if reused then ResetSlot(slot, values) end
     values[keys.on], values[keys.kind] = true, kind
-    local name = Tr(DEFAULT_NAMES[kind]) .. " " .. slot:sub(2)
+    local name = Tr(DEFAULT_NAMES[kind]):format(tonumber(slot:sub(2)))
     if #name > RULES[keys.name].maxLength then name = Tr("Bar %d"):format(tonumber(slot:sub(2))) end
     values[keys.name] = name
     local anchor = values[keys.anchor] or P.Get(ID, keys.anchor)
