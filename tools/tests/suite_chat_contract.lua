@@ -237,17 +237,25 @@ GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
 function GameTooltip:IsOwned(frame) return self.owner == frame end
 local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook, dockTabsHook
--- Blizzard's chrome fades (FCF_FadeInChatFrame, FCF_FadeOutChatFrame) start
--- UIFrameFade on the tab toward the tab's own mouseOverAlpha or noMouseAlpha;
--- the fade ends there unless UIFrameFadeRemoveFrame stops it first. The
--- post-hooks run in the order they were installed.
-local fadeInHooks, fadeOutHooks, fading = {}, {}, {}
-UIFrameFadeRemoveFrame = function(frame) fading[frame] = nil end
-local function ChromeFade(frame, hovered)
+-- Blizzard's chrome fades (FCF_FadeInChatFrame, FCF_FadeOutChatFrame in
+-- Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua) start UIFrameFadeIn
+-- or UIFrameFadeOut on the tab, from its alpha toward its mouse-over or
+-- no-mouse alpha. Live reads those from the tab's own fields; Forever reads
+-- them from ChatFrameUtil.GetTabAlphas, side tables that only Forever's
+-- FCFTab_UpdateAlpha fills (Shared/ChatFrameUtil.lua), so a field written on
+-- the tab never reaches a Forever fade. The post-hooks run next, in the order
+-- they were installed; UIFrameFade_OnUpdate then ends every fade still in
+-- FADEFRAMES at its end alpha (Blizzard_SharedXMLBase/FrameUtil.lua).
+local fadeInHooks, fadeOutHooks, FADEFRAMES = {}, {}, {}
+local foreverTabAlphas = {}
+UIFrameFadeRemoveFrame = function(frame) FADEFRAMES[frame] = nil end
+local function ChromeFade(frame, hovered, client)
     local tab = _G[frame:GetName() .. "Tab"]
-    fading[tab] = hovered and tab.mouseOverAlpha or tab.noMouseAlpha
+    local mouseOverAlpha, noMouseAlpha = tab.mouseOverAlpha, tab.noMouseAlpha
+    if client == "forever" then mouseOverAlpha, noMouseAlpha = unpack(foreverTabAlphas[tab]) end
+    FADEFRAMES[tab] = hovered and mouseOverAlpha or noMouseAlpha
     for _, hook in ipairs(hovered and fadeInHooks or fadeOutHooks) do hook(frame) end
-    if fading[tab] then tab:SetAlpha(fading[tab]); fading[tab] = nil end
+    if FADEFRAMES[tab] then tab:SetAlpha(FADEFRAMES[tab]); FADEFRAMES[tab] = nil end
     return tab:GetAlpha()
 end
 FCF_OpenTemporaryWindow = function() end
@@ -334,6 +342,21 @@ function ctx:RestoreProperty(frame, setter)
     end
 end
 function ctx:Alpha(frame, value) self:Property(frame, "GetAlpha", "SetAlpha", value) end
+-- The plain-field writer chat tabs once used (Context:Field, since removed
+-- from MSUF_Suite_Modules/Runtime.lua). It stays in the fixture so a return to
+-- field writes is judged by what each client's fade does with them; the
+-- module must leave it unused.
+ctx.fields = {}
+function ctx:Field(frame, key, value)
+    local record = self.fields[frame] or {}
+    self.fields[frame] = record
+    if record[key] == nil then record[key] = frame[key] end
+    frame[key] = value
+end
+function ctx:RestoreFields(frame)
+    local record = self.fields[frame]
+    if record then for key, value in pairs(record) do frame[key] = value end; self.fields[frame] = nil end
+end
 ctx.anchors = {}
 function ctx:Anchor(frame, point, relative, relativePoint, x, y)
     self.anchors[frame] = self.anchors[frame] or { points = frame.points }
@@ -443,10 +466,13 @@ AssertJoinedDockShell()
 -- Blizzard's tab alphas feed UIFrameFade and its shared FADEFRAMES list
 -- (FloatingChatFrame.lua; Forever keeps them in ChatFrameUtil side tables):
 -- the Suite never writes them and holds the readable alpha after each fade.
-assert(ChatFrame1Tab.noMouseAlpha == 0.4 and ChatFrame1Tab.mouseOverAlpha == 1
-    and ChatFrame1Tab:GetAlpha() >= 0.8, "ordinary chat tabs were left unreadably dim")
+-- Forever's FCFTab_UpdateAlpha gives the selected tab 1 and 0.4.
+foreverTabAlphas[ChatFrame1Tab] = { 1, 0.4 }
+assert(ChatFrame1Tab:GetAlpha() >= 0.8, "ordinary chat tabs were left unreadably dim")
+assert(ChromeFade(ChatFrame1, false, "forever") == 0.8 and ChromeFade(ChatFrame1, true, "forever") == 1,
+    "Forever's chrome fade (ChatFrameUtil side-table alphas) left the tab unreadably dim")
 assert(ChromeFade(ChatFrame1, false) == 0.8 and ChromeFade(ChatFrame1, true) == 1
-    and ChatFrame1Tab.noMouseAlpha == 0.4 and ChatFrame1Tab.mouseOverAlpha == 1,
+    and ChatFrame1Tab.noMouseAlpha == 0.4 and ChatFrame1Tab.mouseOverAlpha == 1 and next(ctx.fields) == nil,
     "Blizzard's chrome fade left the tab unreadably dim or its fade fields were written")
 assert(module.visuals[ChatFrame1].input.shown)
 assert(module.visuals[ChatFrame1].sidebar.shown
@@ -981,6 +1007,8 @@ ChatFrame4Tab.Text = ChatFrame4Tab:CreateFontString()
 ChatFrame4Tab.Text:SetText("secret")
 ChatFrame4Tab.noMouseAlpha = 0.2
 ChatFrame4Tab.mouseOverAlpha = 0.6
+-- Forever's FCFTab_UpdateAlpha gives an unselected tab 0.6 and 0.2.
+foreverTabAlphas[ChatFrame4Tab] = { 0.6, 0.2 }
 ChatFrame4Tab:SetAlpha(0.2)
 CHAT_FRAMES[4] = "ChatFrame4"
 local getName = ChatFrame2.GetName
@@ -995,6 +1023,8 @@ assert(ChatFrame4Tab.Text:GetAlpha() == 1 and ChatFrame4Tab.Left.alpha == 0
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
     and ChatFrame4Tab:GetAlpha() == 0.8,
     "an idle whisper tab remained too dark to find")
+assert(ChromeFade(ChatFrame4, true, "forever") == 1 and ChromeFade(ChatFrame4, false, "forever") == 0.8,
+    "Forever's chrome fade (ChatFrameUtil side-table alphas) dimmed the whisper tab")
 assert(ChromeFade(ChatFrame4, true) == 1 and ChromeFade(ChatFrame4, false) == 0.8
     and ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6,
     "Blizzard's chrome fade dimmed the whisper tab or its fade fields were written")
@@ -1095,7 +1125,8 @@ assert(not module.panelDelegate.shown and not module.panelDelegate.owner and not
     "disabling Chat left the secure delegate on the sidebar")
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6
     and ChatFrame4Tab:GetAlpha() == 0.2 and ChromeFade(ChatFrame4, true) == 0.6
-    and ChromeFade(ChatFrame4, false) == 0.2,
+    and ChromeFade(ChatFrame4, false) == 0.2 and ChromeFade(ChatFrame4, true, "forever") == 0.6
+    and ChromeFade(ChatFrame4, false, "forever") == 0.2 and next(ctx.fields) == nil,
     "disabling Chat did not restore Blizzard's whisper-tab fading")
 assert(not module.visuals[ChatFrame1].panel.shown and not module.visuals[ChatFrame2].panel.shown
     and not module.visuals[ChatFrame3].panel.shown and not module.dockStrip.shown)
