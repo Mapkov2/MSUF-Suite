@@ -376,11 +376,14 @@ UpdateScaleForFitForOpenPanels()
 Check(settings.scale == 0.8, "a UI scale change left Settings at Blizzard's fit scale")
 Check(At(settings, "TOPLEFT", 300 / 0.8, -120 / 0.8), "a UI scale change left Settings at Blizzard's place")
 Check(hookCalls.UpdateScaleForFitForOpenPanels == 1, "the UI scale hook was installed more than once")
--- In combat the skin leaves Blizzard's fit alone.
+-- In combat the skin leaves Blizzard's fit alone, and puts its scale and
+-- place back once combat ends.
 combat = true
 UpdateScaleForFitForOpenPanels()
 Check(settings.scale == 1, "the skin rescaled a panel in combat")
 EndCombat()
+Check(settings.scale == 0.8 and At(settings, "TOPLEFT", 300 / 0.8, -120 / 0.8),
+    "after a UI scale change in combat Settings kept Blizzard's fit scale")
 HideUIPanel(settings)
 
 Check(#reported == 0, "window controls reported errors: " .. table.concat(reported, "; "))

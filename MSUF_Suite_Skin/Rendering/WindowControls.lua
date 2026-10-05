@@ -237,12 +237,15 @@ local function OnPanelPositionsUpdated()
 end
 
 -- A UI scale change fits the open panels to the screen and lays them out
--- inside the panel manager, past that hook; a refresh puts ours back.
+-- inside the panel manager, past that hook; a refresh puts ours back, after
+-- combat when the change comes in combat.
 InstallPanelPositionHook = function()
     if positionHooked then return end
     positionHooked = true
     hooksecurefunc("UpdateUIPanelPositions", OnPanelPositionsUpdated)
-    hooksecurefunc("UpdateScaleForFitForOpenPanels", WindowControls.Refresh)
+    hooksecurefunc("UpdateScaleForFitForOpenPanels", function()
+        NS.CombatGate.RunOrDefer("windowControls:refresh", WindowControls.Refresh)
+    end)
 end
 
 -- The window's own (localized) title, else a name derived from its frame.
