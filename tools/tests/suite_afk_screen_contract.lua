@@ -45,6 +45,7 @@ local function Frame(kind)
     function frame:SetShown(value) self.shown = value == true end
     function frame:SetTexture(path) self.texture = path end
     function frame:SetText(value) self.text = value end
+    function frame:SetTextColor(r, g, b) self.color = { r, g, b } end
     function frame:GetEffectiveScale() return self.effectiveScale or 1 end
     function frame:SetScale(value) self.scale = value end
     return setmetatable(frame, { __index = function() return function() end end })
@@ -68,10 +69,18 @@ GetInventoryItemTexture = function(unit, slot)
     assert(unit == "player")
     return 1000 + slot
 end
+-- 12.x item links carry the named quality token |cnIQ<quality>: (live and
+-- forever ColorManager.lua), never |cffRRGGBB.
 GetInventoryItemLink = function(unit, slot)
     assert(unit == "player")
-    if slot == 1 then return "|cff0070dd|Hitem:1|h[Test Helm]|h|r" end
+    if slot == 1 then return "|cnIQ3:|Hitem:1::::::::80:::::|h[Test Helm]|h|r" end
 end
+GetInventoryItemQuality = function(unit, slot)
+    assert(unit == "player")
+    if slot == 1 then return 3 end
+end
+-- Blizzard_Colors fills it from the quality colors, overrides included.
+ITEM_QUALITY_COLORS = { [3] = { r = 0, g = 0.44, b = 0.87 } }
 ModelSceneUtil = { SetUpCharacterSheetScene = function(scene)
     assert(scene.kind == "ModelScene")
     sceneSetups = sceneSetups + 1
@@ -184,6 +193,9 @@ assert(#module.icons == 18 and module.icons[1].texture == 1001
     and module.itemNames[1].text == "Test Helm" and module.captions[1].text == "Head"
     and module.itemNames[2].text == "Neck" and module.itemNames[3].text == "Schulter",
     "equipped items and names should flank the character, with Blizzard's slot names")
+local helmColor = module.itemNames[1].color
+assert(helmColor[1] == 0 and helmColor[2] == 0.44 and helmColor[3] == 0.87,
+    "an equipped item's name lost its quality color: " .. table.concat(helmColor, " "))
 assert(sceneSetups == 1 and cameraStarts == 1 and cameraStops == 0,
     "AFK should set up the model scene and start one camera orbit")
 actor.fileID = 12345
