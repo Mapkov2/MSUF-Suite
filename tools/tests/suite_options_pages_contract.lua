@@ -198,4 +198,23 @@ do
     M.CreateMenuPopupPanel, M.ApplyPopupFramePriority = create, priority
 end
 
+-- Action bar preview without the action bar runtime and without Blizzard's
+-- ActionButton1 slot: it reads the page from C_ActionBar. The global
+-- GetActionBarPage exists only with Blizzard's deprecation fallbacks
+-- (Blizzard_DeprecatedActionBar, loadDeprecationFallbacks).
+do
+    local saved = { page = GetActionBarPage, slot = S.ActionBarPreviewSlot, button = rawget(_G, "ActionButton1"),
+        api = C_ActionBar.GetActionBarPage, has = C_ActionBar.HasAction }
+    GetActionBarPage, S.ActionBarPreviewSlot, ActionButton1 = nil, nil, nil
+    local read
+    C_ActionBar.GetActionBarPage = function() return 3 end
+    C_ActionBar.HasAction = function(slot) read = slot; return false end
+    local tile = {}
+    for _, part in ipairs({ "key", "count", "name", "cooldown", "chargeCooldown", "icon" }) do tile[part] = F.Widget(part) end
+    F.optionsNS.ActionBarPreview.Read(tile, 1, 2, S.Config("actionbars"))
+    assert(read == 26, "the preview read slot " .. tostring(read) .. " for page 3, button 2")
+    GetActionBarPage, S.ActionBarPreviewSlot, ActionButton1 = saved.page, saved.slot, saved.button
+    C_ActionBar.GetActionBarPage, C_ActionBar.HasAction = saved.api, saved.has
+end
+
 print("options pages contract: ok")

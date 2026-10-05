@@ -126,7 +126,6 @@ GetCVarBool = function() return false end
 IsInInstance = function() return false, "none" end
 C_Texture = { GetAtlasInfo = function() return nil end }
 local actionPreview = { actions = {}, bindings = {}, page = 1, reads = 0, forms = {}, pet = {} }
-GetActionBarPage = function() return actionPreview.page end
 GetBindingKey = function(command) return actionPreview.bindings[command] end
 GetBindingText = function(key) return key end
 GetNumShapeshiftForms = function() return #actionPreview.forms end
@@ -137,7 +136,9 @@ GetPetActionInfo = function(index)
     local action = actionPreview.pet[index]
     if action then return action.name, action.icon, false end
 end
+-- Without Blizzard's deprecation fallbacks there is no global GetActionBarPage.
 C_ActionBar = {
+    GetActionBarPage = function() return actionPreview.page end,
     GetActionTexture = function(slot)
         actionPreview.reads = actionPreview.reads + 1
         return (actionPreview.actions[slot] or {}).icon
