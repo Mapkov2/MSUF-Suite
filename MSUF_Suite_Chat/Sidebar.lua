@@ -78,6 +78,8 @@ local function Native(definition)
     return definition.native and _G[definition.native]
 end
 
+local AttachDelegate
+
 local function SidebarClick(button, mouseButton)
     local definition = button.entry.definition
     if definition.scroll then
@@ -86,10 +88,11 @@ local function SidebarClick(button, mouseButton)
         return
     end
     if definition.menu then return end
-    -- In combat a panel icon has no secure delegate (below), and Blizzard's
-    -- panel manager refuses the Suite's ShowUIPanel.
-    if definition.panel and P.NS.InCombat() then
-        S.Print(P.NS.RestrictedNotice())
+    -- A panel opens only through the secure delegate (below): in combat there
+    -- is none and Blizzard's panel manager refuses the Suite's ShowUIPanel; a
+    -- click that reached the icon out of combat gives it the delegate.
+    if definition.panel then
+        if P.NS.InCombat() then S.Print(P.NS.RestrictedNotice()) else AttachDelegate(button) end
         return
     end
     local native = Native(definition)
@@ -210,9 +213,24 @@ local function PanelDelegate()
     return delegate
 end
 
-local function AttachDelegate(button)
+-- An icon entered in combat gets its delegate once combat ended, while the
+-- pointer is still on it.
+local waitingIcon
+local function CombatEnded()
+    M.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    local button = waitingIcon
+    waitingIcon = nil
+    if M.active and button and button.hovered and button:IsMouseOver() == true then AttachDelegate(button) end
+end
+
+AttachDelegate = function(button)
     local definition = button.entry.definition
-    if not definition.panel or P.NS.InCombat() then return end
+    if not definition.panel then return end
+    if P.NS.InCombat() then
+        waitingIcon = button
+        C.ListenInCombat(M.context, "PLAYER_REGEN_ENABLED", CombatEnded)
+        return
+    end
     local native = Native(definition)
     if not native then return end
     local frame = PanelDelegate()
