@@ -22,7 +22,7 @@ local function PlainMessage(text)
     -- GetMessageInfo returns Blizzard's rendered line, including a timestamp
     -- if its native setting is enabled. Present readable text in the copy box.
     local plain = text:gsub("|H.-|h(.-)|h", "%1")
-        :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|cn[%w_]+:", ""):gsub("|r", "")
         :gsub("|T.-|t", ""):gsub("|A.-|a", "")
     return plain
 end

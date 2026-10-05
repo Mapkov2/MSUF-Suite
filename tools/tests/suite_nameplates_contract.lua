@@ -1945,6 +1945,23 @@ do
     events.UNIT_SPELLCAST_EMPOWER_UPDATE(module, "UNIT_SPELLCAST_EMPOWER_UPDATE", "nameplate1")
     assert(not state.binding.enabled and not label:IsShown(), "an empower without its duration kept a time")
     events.UNIT_SPELLCAST_EMPOWER_STOP(module, "UNIT_SPELLCAST_EMPOWER_STOP", "nameplate1")
+    -- A plate shown while its unit already holds an empower is a running
+    -- channel (UnitChannelDuration answers); its time still comes from the
+    -- empowered duration with the hold (CastingBarFrame.lua adds
+    -- GetUnitEmpowerHoldAtMaxTime to the channel's end). An ordinary channel
+    -- has no empowered duration and keeps the channel's.
+    local empowerChannel = channelDuration
+    empoweredDuration = setmetatable({}, { __sub = function() error("secret empower arithmetic") end })
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(state.binding.duration == empoweredDuration and state.binding.enabled and label:IsShown(),
+        "a plate shown mid-empower timed the cast without the hold at its top stage")
+    empoweredDuration = nil
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(state.binding.duration == empowerChannel and state.binding.enabled and label:IsShown(),
+        "a plate shown mid-channel lost the channel's time")
+    events.UNIT_SPELLCAST_CHANNEL_STOP(module, "UNIT_SPELLCAST_CHANNEL_STOP", "nameplate1")
     events.UNIT_SPELLCAST_CHANNEL_START(module, "UNIT_SPELLCAST_CHANNEL_START", "nameplate1")
     module.config.enemyCastTimeEnabled = false
     module:Refresh()

@@ -156,9 +156,30 @@ Toast("item", "item:100", 1, true)
 Toast("item", "item:103", 1, true)
 assert(shows == before + 1, "mount-or-pet filter did not restrict ordinary items")
 
+module.config.kindFilter = 1
+module:Refresh()
+-- A first-seen item has no data yet (GetItemInfo returns nothing): its toast
+-- waits for GET_ITEM_INFO_RECEIVED of that item and is shown then.
+local waitShows = shows
+Toast("item", "item:104", 1, true)
+assert(shows == waitShows and context.events.GET_ITEM_INFO_RECEIVED,
+    "a loot toast for an uncached item was dropped instead of waiting for its data")
+context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 999, true)
+assert(shows == waitShows, "another item's data showed the waiting toast")
+items[104] = { "New mount item", 4, 1004 }
+context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 104, true)
+local arrivedToast
+for _, frame in ipairs(frames) do
+    if frame:IsShown() and frame.name.text == "New mount item" then arrivedToast = frame end
+end
+assert(shows == waitShows + 1 and arrivedToast and not context.events.GET_ITEM_INFO_RECEIVED,
+    "the loot toast did not show once its item data arrived")
+Toast("item", "item:105", 1, true)
+assert(context.events.GET_ITEM_INFO_RECEIVED, "the second uncached item did not wait")
+
 module:Disable()
 module.active = false
-assert(not context.events.SHOW_LOOT_TOAST and not frames[1]:IsShown()
+assert(not context.events.SHOW_LOOT_TOAST and not context.events.GET_ITEM_INFO_RECEIVED and not frames[1]:IsShown()
     and not frames[2]:IsShown() and not frames[3]:IsShown(),
     "disable left toasts or events active")
 frames[2].shown = true

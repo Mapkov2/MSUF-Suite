@@ -331,6 +331,13 @@ eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
 assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.BAG_UPDATE_DELAYED
     and not eventFrame.events.UNIT_INVENTORY_CHANGED and eventFrame.events.PLAYER_REGEN_ENABLED,
     "combat kept event listeners whose handlers do nothing in combat")
+-- MSUF Edit Mode closes in its own PLAYER_REGEN_DISABLED handler and the
+-- modules apply again right there (S.SetEditMode), lockdown still false.
+module:Refresh()
+assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.BAG_UPDATE_DELAYED
+    and not eventFrame.events.SPELLS_CHANGED and not eventFrame.events.PLAYER_ENTERING_WORLD
+    and eventFrame.events.PLAYER_REGEN_ENABLED,
+    "a refresh at the combat start registered the listeners again for the whole fight")
 combat = true
 before = auraReads
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")

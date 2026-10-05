@@ -72,8 +72,11 @@ function CastTime.Refresh(state, unit, event)
         or event == "UNIT_SPELLCAST_NOT_INTERRUPTIBLE" then
         -- Blizzard can report interruptibility after cast start. Retry both
         -- duration kinds without reading the native bar's secret progress.
-        if not ApplyDuration(state, unit, UnitCastingDuration) then
-            ApplyDuration(state, unit, UnitChannelDuration)
+        -- A channel may be an empower already running when the plate appears:
+        -- its own duration (nothing for other channels) adds the hold.
+        if not ApplyDuration(state, unit, UnitCastingDuration)
+            and ApplyDuration(state, unit, UnitChannelDuration) then
+            ApplyDuration(state, unit, UnitEmpoweredChannelDuration)
         end
     end
 end

@@ -83,6 +83,19 @@ local function UniqueRole(role)
     return found
 end
 
+-- GetRaidTargetIndex is secret on Retail (RaidMarkersDocumentation), so the
+-- markers this module set are the only ones it can tell apart: marker -> GUID
+-- and the role it was set for.
+local ownMarks, ownRoles = {}, {}
+local function Remember(unit, marker, role)
+    local guid = S.PublicText(UnitGUID(unit))
+    if not guid then return end
+    for held, owner in pairs(ownMarks) do
+        if owner == guid then ownMarks[held], ownRoles[held] = nil, nil end
+    end
+    ownMarks[marker], ownRoles[marker] = guid, role
+end
+
 local function MarkRole(message)
     if not Available() or not S.Public(message) or type(message) ~= "string" then return end
     local role = message:lower():match("^%s*(%a+)%s*$")
@@ -102,12 +115,15 @@ local function MarkRole(message)
     end
     local marker = role == "tank" and M.config.tankMarker or M.config.healerMarker
     if not S.Finite(marker) or marker < 1 or marker > 8 then return end
+    -- A secret index is set anyway: in a group the same marker set again stays.
     local existing = GetRaidTargetIndex(unit)
-    if not S.Public(existing) or existing == marker or not Allowed() then return end
+    if (S.Public(existing) and existing == marker) or not Allowed() then return end
     -- A refusal the restriction check could not foresee comes back as
     -- ADDON_ACTION_BLOCKED during the call (S.QoLRestrictedCall).
     if not S.QoLRestrictedCall(SetRaidTarget, unit, marker) then
         S.Print(S.Text("Raid marker could not be set by the client."))
+    else
+        Remember(unit, marker, role:upper())
     end
 end
 
@@ -118,8 +134,16 @@ local function MarkerFree(marker, wantedUnit)
         if not S.Public(exists) then return false end
         if exists == true then
             local current = GetRaidTargetIndex(unit)
-            if not S.Public(current) then return false end
-            if current == marker and unit ~= wantedUnit then return false end
+            if not S.Public(current) then
+                -- Unreadable: taken only when this module put this marker on
+                -- this member for the role it still holds. Anyone may have
+                -- changed a former role holder's marker since.
+                local owner = ownMarks[marker]
+                if owner and unit ~= wantedUnit and owner == S.PublicText(UnitGUID(unit))
+                    and ownRoles[marker] == S.PublicText(UnitGroupRolesAssigned(unit)) then return false end
+            elseif current == marker and unit ~= wantedUnit then
+                return false
+            end
         end
     end
     return true
@@ -154,6 +178,7 @@ local function AutoMark(self)
                             S.Print(S.Text("Automatic raid markers were blocked by the client."))
                             return
                         end
+                        Remember(unit, marker, spec[2])
                     end
                 end
             end

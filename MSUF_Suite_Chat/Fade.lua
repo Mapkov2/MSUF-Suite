@@ -17,7 +17,8 @@ local C = P.Chat
 -- the window's own callback): a line only moves its deadline.
 local M = C.M
 local Finite = S.Finite
--- fadeParts: 1 the window, TAB its tab, 3 the sidebar (primary window).
+-- fadeParts: 1 the window, TAB its tab, 3 the sidebar (the window it sits
+-- on: the selected dock window, else the primary window; PlaceSidebar).
 local TAB, PARTS = 2, 3
 local delay = 0
 -- edit box -> its window's visual; each box takes its focus hooks once.
@@ -140,8 +141,9 @@ function C.ApplyInactivity(self, visual)
     end
     inputs[input] = visual
     Wake(visual)
-    local parts = visual.fadeParts
-    parts[1], parts[TAB], parts[3] = frame, _G[frame:GetName() .. "Tab"], visual.sidebarFrame
+    local parts, primary = visual.fadeParts, M.visuals[ChatFrame1]
+    local sidebar = (C.DockSelection() or ChatFrame1) == frame and primary and primary.sidebarFrame or nil
+    parts[1], parts[TAB], parts[3] = frame, _G[frame:GetName() .. "Tab"], sidebar
     M.context:Cancel(visual.fadeCallback)
     visual.fadeArmed = true
     C.ChatActivity(frame)

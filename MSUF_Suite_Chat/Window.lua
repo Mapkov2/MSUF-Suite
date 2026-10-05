@@ -135,21 +135,23 @@ end
 local ColorTab = C.ColorTab
 
 -- A docked window's tab is selected with its dock; a floating one always is.
-function C.TabSelected(frame, chat, dock)
-    if frame.isDocked == true then return frame == dock end
-    if frame.isDocked == false then return true end
-    return frame == chat or frame == dock
+-- Blizzard stores isDocked as 1 or nil (FCFDock_AddChatFrame/RemoveChatFrame).
+function C.TabSelected(frame, _, dock)
+    if frame.isDocked then return frame == dock end
+    return true
 end
 local TabSelected = C.TabSelected
 
--- Hands the tab's fade fields and alpha back to Blizzard.
+-- Hands the tab's alpha back to Blizzard.
 local function ReleaseTabAlpha(context, tab)
-    context:RestoreFields(tab)
     context:RestoreProperty(tab, "SetAlpha")
 end
 
 -- Blizzard fades idle tabs to 0.2 alpha. The Suite strip keeps their labels
 -- readable while leaving the native title, target and click behavior intact.
+-- Blizzard's tab alphas (noMouseAlpha and mouseOverAlpha; Forever keeps them
+-- in ChatFrameUtil side tables) feed UIFrameFade and its shared FADEFRAMES
+-- list, so the Suite never writes them: it raises the tab's alpha instead.
 function C.KeepTabVisible(self, frame)
     local tab = _G[frame:GetName() .. "Tab"]
     local context = self.context
@@ -157,8 +159,6 @@ function C.KeepTabVisible(self, frame)
         ReleaseTabAlpha(context, tab)
         return
     end
-    context:Field(tab, "noMouseAlpha", TAB_MIN_ALPHA)
-    context:Field(tab, "mouseOverAlpha", 1)
     -- An idle-faded window keeps its faded tab (Fade.lua hands it back).
     local visual = self.visuals[frame]
     if visual and visual.faded then return end
@@ -168,6 +168,19 @@ function C.KeepTabVisible(self, frame)
     end
 end
 local KeepTabVisible = C.KeepTabVisible
+
+-- Post-hooks of FCF_FadeInChatFrame (hover) and FCF_FadeOutChatFrame (pointer
+-- gone): Blizzard has just started fading the tab toward its own alpha. The
+-- Suite ends that fade (UIFrameFadeRemoveFrame runs securely) and shows the
+-- tab at 1 or at its readable minimum. Chat tabs are not protected, so this
+-- also runs in combat.
+function C.HoldTabAlpha(frame, hovered)
+    local c, visual = M.config, M.active and frame and M.visuals[frame]
+    local tab = visual and visual.tab
+    if not (tab and c.tabPanel and c.panelAlpha > 0) or (visual.faded and not hovered) then return end
+    UIFrameFadeRemoveFrame(tab)
+    tab:SetAlpha(hovered and 1 or TAB_MIN_ALPHA)
+end
 
 local function ChosenFont(key)
     if key == "__BLIZZARD_CHAT_FONT__" then return nil end
@@ -242,7 +255,7 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
         visual.tabHeightOwned = nil
     end
     ApplyTabWidth(self, visual, tab)
-    M.tabs[tab] = visual
+    M.tabs[tab], visual.tab = visual, tab
     ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
     line:ClearAllPoints()
@@ -459,13 +472,13 @@ end
 -- FCFDock_UpdateTabs lays the dock out again; after it, each tab moves right
 -- of the previous tab of its row (static tabs, then dynamic ones), and every
 -- styled tab gets its padded width back (ApplyTabWidth). In combat the dock
--- waits: with padding on, the module applies again once combat ends.
+-- waits: with padding or a gap on, the module applies again once combat ends.
 local spacedTabs = setmetatable({}, { __mode = "k" })
 function C.DockGeometry()
     if not M.active then return end
     local padded = M.config.tabPadding and M.config.tabPadding > 0
     if NS.IsCombatLocked() then
-        if padded then S.Queue("chat") end
+        if padded or M.config.tabGap > 0 then S.Queue("chat") end
         return
     end
     if padded then

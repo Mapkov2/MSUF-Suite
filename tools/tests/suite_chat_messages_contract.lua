@@ -9,6 +9,9 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 
 local combat = false
+-- Blizzard's general dock (FloatingChatFrame.xml) exists at login on both
+-- clients; nothing is selected in it here.
+GENERAL_CHAT_DOCK = {}
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
     RootDB = {} }
 local S = {

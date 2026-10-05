@@ -173,9 +173,9 @@ end
 
 ------------------------------------------------------------------ resurrection
 -- A thin colored frame around parent, offset outward (or inward when
--- negative), drawn by Suite textures only.
-local function Outline(parent, offset, thickness, r, g, b)
-    local frame = S.CreateFrame("Frame", nil, parent)
+-- negative), drawn by Suite textures only; host (default parent) owns it.
+local function Outline(parent, offset, thickness, r, g, b, host)
+    local frame = S.CreateFrame("Frame", nil, host or parent)
     frame:SetPoint("TOPLEFT", parent, "TOPLEFT", -offset, offset)
     frame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", offset, -offset)
     for _, edge in ipairs(CUE_EDGES) do
@@ -188,10 +188,10 @@ local function Outline(parent, offset, thickness, r, g, b)
     return frame
 end
 
-local function Cue(list, owner, offset)
+local function Cue(list, owner, offset, host)
     local cue = list[owner]
     if not cue then
-        cue = Outline(owner, offset, 2, CUE_R, CUE_G, CUE_B)
+        cue = Outline(owner, offset, 2, CUE_R, CUE_G, CUE_B, host)
         list[owner] = cue
     end
     return cue
@@ -205,7 +205,11 @@ local function MarkRevive(dialog)
     local revive = which ~= nil and which:find("^RESURRECT") ~= nil
     local wanted = M.config.reviveCue
     if revive and wanted >= CUE_FRAME then
-        Cue(M.cues, dialog, 3):Show()
+        -- Owned by UIParent: a child of the dialog (a ResizeLayoutFrame,
+        -- GameDialog.xml) would count in its layout and make it larger.
+        local cue = Cue(M.cues, dialog, 3, UIParent)
+        cue:SetFrameStrata(dialog:GetFrameStrata())
+        cue:Show()
         if wanted == CUE_SOUND then PlaySound(SOUNDKIT.READY_CHECK) end
     elseif M.cues[dialog] then
         M.cues[dialog]:Hide()

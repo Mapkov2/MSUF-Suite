@@ -292,9 +292,19 @@ local function OnTrainer(self, event)
     if self.queue then Advance(self) else self:UpdateButton() end
 end
 
+local function AfterCombat(self)
+    self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    self:UpdateButton()
+end
+
+-- PLAYER_REGEN_DISABLED arrives before InCombatLockdown() turns true, so
+-- TrainerOpen still answers open here: the button hides for the fight.
 local function OnCombat(self)
     if self.queue then Stop(self, "Training stopped because combat started.") end
-    self:UpdateButton()
+    if self.button then
+        self.button:Hide()
+        self.context:Event("PLAYER_REGEN_ENABLED", AfterCombat, IN_COMBAT)
+    end
 end
 
 function M:Enable()

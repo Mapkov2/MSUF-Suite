@@ -206,49 +206,8 @@ end
 
 ------------------------------------------------------------------ contexts
 function S.NewContext(id)
-    return setmetatable({ id = id, properties = {}, points = {}, callbacks = {}, combatEvents = {}, fields = {} },
+    return setmetatable({ id = id, properties = {}, points = {}, callbacks = {}, combatEvents = {} },
         Context)
-end
-
--- Plain Lua fields on native frames (for example a mixin flag).
-function Context:Field(frame, key, value, refresh)
-    if NS.IsCombatLocked() then
-        S.Queue(self.id)
-        return false
-    end
-    if not Accessible(frame) or not Public(frame[key]) or value == nil then return false end
-    local record = self.fields[frame]
-    if not record then
-        record = { values = {}, refresh = refresh }
-        self.fields[frame] = record
-    end
-    local saved = record.values[key]
-    if not saved then
-        saved = { before = frame[key] }
-        record.values[key] = saved
-    end
-    local changed = frame[key] ~= value
-    if changed then frame[key] = value end
-    saved.applied = value
-    return changed
-end
-
--- Plain field writes cannot raise, so the record is finished once the values
--- are back; the module's refresh runs after that and has nothing to redo.
-function Context:RestoreFields(frame)
-    local record = self.fields[frame]
-    if not record then return end
-    local changed = false
-    if Accessible(frame) then
-        for key, saved in pairs(record.values) do
-            if Public(frame[key]) and frame[key] == saved.applied then
-                frame[key] = saved.before
-                changed = true
-            end
-        end
-    end
-    self.fields[frame] = nil
-    if changed and record.refresh then record.refresh(frame) end
 end
 
 function Context:Skin()
@@ -620,7 +579,7 @@ end
 
 -- Undoes everything this context changed: native frame state, events, the
 -- skin client and saved CVars. Every record (one tuple or property setter,
--- one frame's fields or anchor points) is restored on its own through
+-- one frame's anchor points) is restored on its own through
 -- Dispatch: a restore that raises is reported, every other record is still
 -- restored and the CVars are always handed back. A record is dropped once
 -- its restore finished, so one whose native setter raised stays for the
@@ -634,7 +593,6 @@ function Context:Release()
         end
     end
     Dispatch(ReleaseEvents, self)
-    for frame in pairs(self.fields) do Dispatch(Context.RestoreFields, self, frame) end
     for frame, properties in pairs(self.properties) do
         for setter in pairs(properties) do Dispatch(Context.RestoreProperty, self, frame, setter) end
     end

@@ -249,8 +249,11 @@ local function RefreshEquipment(self)
         local link = PublicText(GetInventoryItemLink("player", slot))
         if link then
             itemName = link:match("|h%[(.-)%]|h")
-            local r, g, b = link:match("^|cff(%x%x)(%x%x)(%x%x)")
-            if r then red, green, blue = tonumber(r, 16) / 255, tonumber(g, 16) / 255, tonumber(b, 16) / 255 end
+            -- 12.x links carry the named token |cnIQ<quality>: instead of
+            -- |cffRRGGBB (ColorManager.lua), so the color follows the quality.
+            local quality = GetInventoryItemQuality("player", slot)
+            local color = Number(quality) and ITEM_QUALITY_COLORS[quality]
+            if color then red, green, blue = color.r, color.g, color.b end
         end
         local slotName = S.BlizzardText(SLOT_NAMES[index][1], SLOT_NAMES[index][2])
         self.itemNames[index]:SetText(itemName or slotName)

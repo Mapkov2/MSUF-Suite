@@ -4,7 +4,7 @@ local NS, S = P.NS, P.Suite
 -- Supplemental alerts for Blizzard's personal item-loot-toast event, in and
 -- out of combat like Blizzard's own toasts. Ordinary bag gains have no
 -- equivalent public payload, so they are not inferred here.
-local M = { toasts = {}, ids = {} }
+local M = { toasts = {}, ids = {}, waiting = {}, waitingCount = 0 }
 local MAX_TOASTS = 3
 local POPUP_SECONDS = 5
 local BATTLE_PET_CLASS = 17 -- upstream/live Enum.ItemClass.Battlepet
@@ -57,8 +57,27 @@ local function MakeToast(index)
     return frame
 end
 
-local function ShowToast(self, itemLink, quantity)
+local ItemArrived
+
+-- An item the client has no data for yet: its toast waits for
+-- GET_ITEM_INFO_RECEIVED of that item and is filtered and shown then, once.
+local function Wait(self, itemLink, quantity)
+    local itemID = C_Item.GetItemInfoInstant(itemLink)
+    if not S.Finite(itemID) or self.waiting[itemID] or self.waitingCount >= MAX_TOASTS then return end
+    self.waiting[itemID] = { itemLink, quantity }
+    self.waitingCount = self.waitingCount + 1
+    self.context:Event("GET_ITEM_INFO_RECEIVED", ItemArrived)
+end
+
+local function StopWaiting(self)
+    for itemID in pairs(self.waiting) do self.waiting[itemID] = nil end
+    self.waitingCount = 0
+    self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
+end
+
+local function ShowToast(self, itemLink, quantity, arrived)
     local name, _, quality, _, _, _, _, _, _, icon = C_Item.GetItemInfo(itemLink)
+    if not arrived and S.Public(name) and name == nil then return Wait(self, itemLink, quantity) end
     local minQuality = self.config.minQuality
     if not S.Finite(minQuality) then minQuality = 4 end
     if not S.PublicText(name) or not S.Finite(quality)
@@ -107,6 +126,15 @@ local function ShowToast(self, itemLink, quantity)
     self.context:After(POPUP_SECONDS, frame.expire)
 end
 
+ItemArrived = function(self, _, itemID, success)
+    local entry = S.Finite(itemID) and self.waiting[itemID]
+    if not entry then return end
+    self.waiting[itemID] = nil
+    self.waitingCount = self.waitingCount - 1
+    if self.waitingCount == 0 then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end
+    if success == true then ShowToast(self, entry[1], entry[2], true) end
+end
+
 local function HideAll(self)
     for _, frame in ipairs(self.toasts) do
         self.context:Cancel(frame.expire)
@@ -138,11 +166,13 @@ function M:Refresh()
         frame.count:SetTextColor(S.RGB(style.muted))
     end
     HideAll(self)
+    StopWaiting(self)
 end
 
 function M:Disable()
     self.context:RemoveEvent("SHOW_LOOT_TOAST")
     HideAll(self)
+    StopWaiting(self)
     self.ids = {}
 end
 

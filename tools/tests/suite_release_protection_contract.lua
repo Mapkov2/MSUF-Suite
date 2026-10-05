@@ -55,6 +55,7 @@ end
 local PopupMethods = {}
 function PopupMethods:GetButton1() return self._s.buttons[1] end
 function PopupMethods:GetWidth() return 360 end
+function PopupMethods:GetFrameStrata() return "DIALOG" end
 function PopupMethods:HookScript(script, callback)
     assert(script == "OnHide"); self._s.onHide = callback; hooks = hooks + 1
 end
@@ -77,7 +78,14 @@ StaticPopup_Show = function(which)
     for _, button in ipairs(popupState.buttons) do button:SetShown(true) end
 end
 local hints = {}
+UIParent = { name = "UIParent" }
 local S = {
+    CreateFrame = function(kind, name, parent)
+        assert(kind == "Frame" and name == nil)
+        local frame = { parent = parent }
+        function frame:SetFrameStrata(strata) self.strata = strata end
+        return frame
+    end,
     Install = function(id, module) assert(id == "releaseProtection"); installed = module end,
     Public = function(value) return value ~= secret end,
     Text = function(text) return text == "Hold %s to release spirit" and "Halte %s zum Freilassen" or text end,
@@ -119,6 +127,12 @@ StaticPopup_Show("DEATH")
 local release, releaseState, hint = popupState.buttons[1], popupState.states[1], hints[1]
 assert(Locked(releaseState) and releaseState.shown and hint.shown and hint.text == "Halte Shift zum Freilassen",
     "Release must stay laid out but transparent and click-through, with a translated hint")
+-- StaticPopupTemplate is a ResizeLayoutFrame (GameDialog.xml): its Layout
+-- counts every shown child and region (LayoutFrame.lua GetLayoutChildren)
+-- and DEATH lays out every frame of its countdown, so the hint above the
+-- dialog lives on an owned frame of UIParent in the dialog's strata.
+assert(hint.parent ~= popup and hint.parent.parent == UIParent and hint.parent.strata == "DIALOG",
+    "the release hint is part of Blizzard's dialog layout and makes the dialog taller")
 release:Click()
 assert(releaseState.clicks == 0, "locked release remained clickable")
 for i = 2, 4 do

@@ -495,6 +495,12 @@ local function SyncSubzoneEvents(self)
 end
 
 local function RegisterEvents(self)
+    -- Suspended (combat): a refresh at the combat start (MSUF Edit Mode
+    -- closes in its PLAYER_REGEN_DISABLED) keeps PLAYER_REGEN_ENABLED only.
+    if self.listen.suspended then
+        R.Listen(self, "PLAYER_REGEN_ENABLED", OnEvent)
+        return
+    end
     for i = 1, #EVENTS do R.Listen(self, EVENTS[i], OnEvent) end
     SyncSubzoneEvents(self)
     R.SyncPreparationEvents(self, OnEvent)

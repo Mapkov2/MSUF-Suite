@@ -70,6 +70,10 @@ local function RefreshSelection(self)
     if self.config.sidebarPanel and self.config.panelAlpha > 0
         and primary and primary.sidebarFrame and dock then
         PlaceSidebar(self, primary.sidebarFrame, dock)
+        -- The sidebar fades with the window it sits on (Fade.lua); the
+        -- selection counts as activity for both windows.
+        if self.visuals[oldDock] then C.ApplyInactivity(self, self.visuals[oldDock]) end
+        if self.visuals[dock] then C.ApplyInactivity(self, self.visuals[dock]) end
     end
 end
 
@@ -95,6 +99,9 @@ end
 local function TabAlphaUpdated(frame)
     if M.active and frame then KeepTabVisible(M, frame) end
 end
+
+local function TabFadedIn(frame) C.HoldTabAlpha(frame, true) end
+local function TabFadedOut(frame) C.HoldTabAlpha(frame, false) end
 
 local function TabColorsUpdated(tab, selected)
     local visual = M.active and tab and M.tabs[tab]
@@ -130,6 +137,8 @@ function M:Enable()
     Hook(self, "hookedSelect", "FCFDock_SelectWindow", DockSelectionChanged)
     Hook(self, "hookedNewWindow", "FCF_OpenNewWindow", NewWindowOpened)
     Hook(self, "hookedTabAlpha", "FCFTab_UpdateAlpha", TabAlphaUpdated)
+    Hook(self, "hookedTabFadeIn", "FCF_FadeInChatFrame", TabFadedIn)
+    Hook(self, "hookedTabFadeOut", "FCF_FadeOutChatFrame", TabFadedOut)
     Hook(self, "hookedTabColors", "FCFTab_UpdateColors", TabColorsUpdated)
     Hook(self, "hookedDockGeometry", "FCFDock_UpdateTabs", C.DockGeometry)
     C.MessagesRefresh(self)
