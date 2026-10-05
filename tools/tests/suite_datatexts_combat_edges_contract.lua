@@ -3,6 +3,9 @@
 --   * PLAYER_SPECIALIZATION_CHANGED carries a unit (UnitDocumentation.lua,
 --     live and forever): a group member's spec swap never reformats the
 --     player's Specialization places.
+--   * Every place that borrows the secure overlay (window and Currency places
+--     too, not only Hearthstone and Specialization) releases it at
+--     PLAYER_REGEN_DISABLED and gets it back at PLAYER_REGEN_ENABLED.
 local root = assert(arg[1], "repository root required")
 local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
 
@@ -77,5 +80,29 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     -- The player's own swap still updates them.
     UnitEvent(W, "PLAYER_SPECIALIZATION_CHANGED", "player")
     assert(reads.spec > 0, "the player's spec swap did not update the specialization places: " .. flavor)
+
+    -- Places with no Hearthstone, Specialization or popup kind on any bar
+    -- still borrow the secure overlay: a built-in window place (Coordinates)
+    -- and a Currency place. PLAYER_REGEN_DISABLED (before lockdown) releases
+    -- it, so no protected frame stays anchored to a place a Fit bar moves in
+    -- combat; after combat the place under the pointer gets it again.
+    local A = W.private.DataTextActions
+    for _, key in ipairs({ "coordinates", "currency" }) do
+        assert(S.SetMany("dataTexts", { bar1Slot1 = Choice(NS, key), bar1Slot2 = 1, bar1Layout = 2 }))
+        local place = M.bars[1].slots[1]
+        place.mouseOver, M.bars[1].frame.mouseOver = true, true
+        W.Fire(place, "OnEnter")
+        local overlay = assert(A.overlay, "hovering the " .. key .. " place did not attach the overlay: " .. flavor)
+        assert(overlay.shown and overlay.points[1] and overlay.points[1][2] == place,
+            "the overlay does not cover the " .. key .. " place: " .. flavor)
+        W.SetCombat(true)
+        assert(not overlay.shown and #overlay.points == 0 and overlay.owner == nil,
+            "the secure overlay still depends on the " .. key .. " place in combat: " .. flavor)
+        W.SetCombat(false)
+        assert(overlay.shown and overlay.points[1] and overlay.points[1][2] == place,
+            "the " .. key .. " place under the pointer did not get the overlay after combat: " .. flavor)
+        place.mouseOver, M.bars[1].frame.mouseOver = false, false
+        W.Fire(overlay, "OnLeave")
+    end
     print("Suite DataTexts combat edges and unit events passed: " .. flavor)
 end

@@ -29,7 +29,7 @@ P.DataTextActions = Actions
 local OVERLAY_KINDS = { hearth = true, specialization = true, currency = true, crests = true, specLoot = true }
 -- Places whose window a Blizzard button opens (S.PanelButton): built-in
 -- sources by source, additional ones by kind.
-local PANEL_SOURCES = { durability = "character", coordinates = "worldMap", location = "worldMap" }
+local PANEL_SOURCES = Sources.panelSources
 local PANEL_KINDS = { currency = "currency", crests = "currency" }
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100

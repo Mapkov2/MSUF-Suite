@@ -35,7 +35,11 @@ Sources.kinds = {
 }
 -- Places whose click runs a protected action through a secure button
 -- (Actions.lua). Their bars release it when combat starts.
-Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true, specLoot = true, travel = true }
+Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true, specLoot = true, travel = true,
+    currency = true, crests = true }
+-- Built-in places that borrow the same secure overlay, and the window the
+-- Blizzard button it clicks opens (S.PanelButton).
+Sources.panelSources = { durability = "character", coordinates = "worldMap", location = "worldMap" }
 
 local function Text(value)
     return S.Public(value) and type(value) == "string" and value or nil
@@ -359,6 +363,8 @@ function Sources.WantedEvents(active, wanted)
             if Sources.secureKinds[binding.kind] then
                 wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
             end
+        elseif Sources.panelSources[key] then
+            wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
         end
     end
 end
