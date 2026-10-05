@@ -367,6 +367,12 @@ local ANCHORS={ANCHOR_LEFT=true,ANCHOR_RIGHT=true,ANCHOR_BOTTOMLEFT=true,ANCHOR_
     ANCHOR_TOPLEFT=true,ANCHOR_TOP=true,ANCHOR_TOPRIGHT=true,ANCHOR_CURSOR=true,ANCHOR_NONE=true}
 function ButtonMethods:SetTooltipAnchorPoint(point) assert(ANCHORS[point],"tooltip anchor") end
 function ButtonMethods:CanBeAccessedInContext() return ACCESS end
+-- Every script object has it (SimpleFrameScriptObjectAPIDocumentation); an
+-- addon frame outside the sealed buttons is always accessible.
+function Methods:CanBeAccessedInContext()
+    if Sealed(self) then return ACCESS end
+    return true
+end
 function ButtonMethods:SetAuraBorder() error("SetAuraBorder must never be called",2) end
 function ButtonMethods:SetAuraSymbol() error("SetAuraSymbol must never be called",2) end
 
@@ -2398,6 +2404,24 @@ do
     draw.ApplyCombatGate(g,false,false)
     assert(not R[g.combatGate].combatDriver,"the gate unregistered")
     C.state.allGlowsCombat=false
+    -- Auras secret out of combat (an M+ key, a PvP match): the sealed button
+    -- refuses every touch of its descendants, so a release parks the gate
+    -- instead of showing it, the container still reaches its pool, and the
+    -- gate applies once the button is plain again.
+    C.state.allGlowsCombat=true
+    A.Sync("c4")
+    assert(R[gated[1]].combatDriver,"the combat gate is registered before the key")
+    ACCESS,AURAS_SECRET=Secret(),Secret()
+    A.Release("c4")
+    assert(R[gated[1]].combatDriver and C.AuraGlows.HasParkedGates(),"a release while auras are secret parks the gate")
+    C.AuraGlows.FlushGates()
+    assert(R[gated[1]].combatDriver and C.AuraGlows.HasParkedGates(),"still secret after combat: the gate stays parked")
+    ACCESS,AURAS_SECRET=true,false
+    C.AuraGlows.FlushGates()
+    assert(not R[gated[1]].combatDriver and not C.AuraGlows.HasParkedGates(),"the parked gate applies once auras are plain")
+    C.state.allGlowsCombat=false
+    A.Sync("c4")
+    assert(Live("c4","player")==sc2,"the container released while auras were secret went back to its pool")
 end
 -- N changes on a live button: placed again and rebound (the setter
 -- replaces the element); unchanged choices make no call

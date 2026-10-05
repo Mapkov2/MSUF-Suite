@@ -1099,6 +1099,15 @@ do
     assert(PendingTimers()==1 and flushes==0,"the flush waits for the next frame")
     Run()
     assert(flushes==1,"a restriction ending flushes pending aura restyles once")
+    -- Only a glow combat gate parked while auras were secret (AuraGlows):
+    -- the end of the restriction applies it too.
+    C.Auras.pending.buf=nil
+    local realParked=C.AuraGlows.HasParkedGates
+    C.AuraGlows.HasParkedGates=function() return true end
+    Fire("ADDON_RESTRICTION_STATE_CHANGED",1,0)
+    Run()
+    C.AuraGlows.HasParkedGates=realParked
+    assert(flushes==2,"a restriction ending left a parked glow combat gate waiting")
     C.Auras.FlushPending=realFlush
     C.Auras.pending.buf=nil
 end

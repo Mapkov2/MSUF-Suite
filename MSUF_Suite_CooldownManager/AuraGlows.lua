@@ -90,7 +90,7 @@ local function NewGlow(button, parent, level)
     fade:SetToAlpha(1)
     fade:SetDuration(PULSE)
     local g = { frame = frame, flip = flip, ring = ring, edges = Edges(ring), fade = fade,
-        combatGate = combatGate, combatOnly = false }
+        combatGate = combatGate, combatOnly = false, button = button }
     -- 12.1.0 lacks AddAuraShownAnimation: the loops play without it.
     if button.AddAuraShownAnimation then
         button:AddAuraShownAnimation(loop)
@@ -105,20 +105,27 @@ end
 -- in combat only (a sealed button's descendants refuse Lua in combat). The
 -- state driver manager re-reads every driver on each pass, so only a glow
 -- that can show (on: its entry uses it) holds one. g.combatOnly is what is
--- registered now. Registering or unregistering a state driver is protected:
--- under lockdown the wish waits in parkedGates for FlushGates.
+-- registered now. Registering or unregistering a state driver is protected,
+-- and the gate is a descendant of a sealed aura button, which refuses
+-- tainted Lua while auras are secret, also out of combat (an M+ key, a PvP
+-- match; DenyTaintedAccessWhenAurasAreSecret). Under lockdown or while the
+-- button refuses access the wish waits in parkedGates for FlushGates.
 local parkedGates = {}
+local function Writable(g)
+    if IsCombatLocked() then return false end
+    local ok = g.button:CanBeAccessedInContext()
+    return S.Public(ok) and ok == true
+end
 local function Gate(g, wanted)
-    if IsCombatLocked() then
-        if g.combatOnly == wanted then
-            parkedGates[g] = nil
-        else
-            parkedGates[g] = wanted
-        end
+    if g.combatOnly == wanted then
+        parkedGates[g] = nil
+        return
+    end
+    if not Writable(g) then
+        parkedGates[g] = wanted
         return
     end
     parkedGates[g] = nil
-    if g.combatOnly == wanted then return end
     g.combatOnly = wanted
     if wanted then
         RegisterStateDriver(g.combatGate, "visibility", "[combat] show; hide")
@@ -151,7 +158,8 @@ function AuraGlows.ReleaseGlows(rec)
     end
 end
 
--- Combat ended (or the module let go): every parked wish is applied.
+-- Combat or the restriction ended (or the module let go): every parked wish
+-- is applied, or stays parked while the buttons still refuse.
 function AuraGlows.FlushGates()
     if IsCombatLocked() then return end
     for g, wanted in pairs(parkedGates) do Gate(g, wanted) end

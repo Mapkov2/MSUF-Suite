@@ -247,7 +247,9 @@ end
 local RESTRICTION_OFF = Enum.AddOnRestrictionState.Inactive
 local function OnRestriction(_, _, _, state)
     if Public(state) and state == RESTRICTION_OFF then
-        if next(C.Auras.pending) or C.Alerts.pending then C_Timer.After(0, C.Auras.FlushPending) end
+        if next(C.Auras.pending) or C.Alerts.pending or C.AuraGlows.HasParkedGates() then
+            C_Timer.After(0, C.Auras.FlushPending)
+        end
         if C.ActionGlows.pending then C_Timer.After(0, C.ActionGlows.Refresh) end
     end
 end
