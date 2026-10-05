@@ -30,21 +30,28 @@ local function SelectSource(ctx, body, bar, slot, section, y, width, reveal)
     return y - 42
 end
 
+-- A lazy host builds the place's controls when it first opens (P.LazySection).
 local function Slot(ctx, builder, bar, slot, reveal)
     local prefix = "bar" .. bar .. "Slot" .. slot
     local section = PAGE .. "_bar" .. bar .. "_slot" .. slot
-    local body = builder:CollapsibleSection(section, Tr("Selected data"), 120, true)
-    local width = (body._msuf2Width or builder.width) - 32
-    local y = SelectSource(ctx, body, bar, slot, section, -18, width - 142, reveal)
-    Page.Button(ctx, body, "Remove data", width - 120, -18, 136, function()
-        P.SetMany(ID, P.Suite.DataTextRemoveSlotValues(P.S.Config(ID), bar, slot))
-    end, prefix .. ".remove", section, reveal, function() return P.Get(ID, prefix) ~= 1 end)
-    local details
-    y, details = P.DataTextsSourcePicker.BuildDetails(ctx, body, bar, slot, section, y, width)
-    Page.Prepare(details, section, reveal)
-    P.FinishBody(builder, body, y)
-    if body._msuf2CollapsibleEntry then body._msuf2CollapsibleEntry._msuf2EnsureVisible = reveal end
-    return body
+    local function Content(body)
+        local width = (body._msuf2Width or builder.width) - 32
+        local y = SelectSource(ctx, body, bar, slot, section, -18, width - 142, reveal)
+        Page.Button(ctx, body, "Remove data", width - 120, -18, 136, function()
+            P.SetMany(ID, P.Suite.DataTextRemoveSlotValues(P.S.Config(ID), bar, slot))
+        end, prefix .. ".remove", section, reveal, function() return P.Get(ID, prefix) ~= 1 end)
+        local details
+        y, details = P.DataTextsSourcePicker.BuildDetails(ctx, body, bar, slot, section, y, width)
+        Page.Prepare(details, section, reveal)
+        return y
+    end
+    return P.LazySection(builder, section, Tr("Selected data"), true, {
+        content = Content,
+        shell = function(body)
+            if body._msuf2CollapsibleEntry then body._msuf2CollapsibleEntry._msuf2EnsureVisible = reveal end
+        end,
+        finish = function(body, y) P.FinishBody(builder, body, y) end,
+    })
 end
 
 local function SlotDetails(ctx, builder, bar, slot, reveal, select)

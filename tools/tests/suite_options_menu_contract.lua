@@ -5037,4 +5037,122 @@ end)()
     end
 end)()
 
+-- Shell-first runs: a host with b:LazyCollapsibleSection (MSUF Menu2
+-- InstallLazySection) whose sections build their content only when
+-- W.EnsureSectionContent asks, open or not. Every page first shows each
+-- accordion header as the eager build does (switch, "...", its place, the
+-- collapsed summary, the title), then, once every section is ensured, holds
+-- the same controls, bodies and refreshers. CDM's card stays eager.
+;(function()
+    local eager, previousEnsure, previous = W.PageBuilder, W.EnsureSectionContent, current
+    local pending, lazy
+    -- Every section gets a header, so its "..." takes its place there.
+    local function Builder(ctx)
+        local b = eager(ctx)
+        local section = b.CollapsibleSection
+        function b:CollapsibleSection(...)
+            local body = section(self, ...)
+            local entry = body._msuf2CollapsibleEntry
+            entry.header = entry.header or Widget("SectionHeader")
+            return body
+        end
+        if not lazy then return b end
+        function b:LazyCollapsibleSection(id, title, height, defaultOpen, build, opts)
+            opts = opts or {}
+            local body = self:CollapsibleSection(id, title, height, defaultOpen)
+            local entry = body._msuf2CollapsibleEntry
+            if opts.shell then opts.shell(body, entry) end
+            local built = false
+            entry._msuf2EnsureContent = function()
+                if not built then
+                    built = true
+                    build(body, entry)
+                    if opts.onBuilt then opts.onBuilt(body) end
+                end
+                return true
+            end
+            if opts.eager then entry._msuf2EnsureContent() else pending[#pending + 1] = entry end
+            return body
+        end
+        return b
+    end
+    W.EnsureSectionContent = function(section)
+        local entry = section and (section._msuf2CollapsibleEntry or section)
+        return not (entry and entry._msuf2EnsureContent) or entry._msuf2EnsureContent()
+    end
+    local function Headers(ctx)
+        local parts = {}
+        for _, body in ipairs(ctx.sections) do
+            local entry = body._msuf2CollapsibleEntry
+            -- Fixture widgets answer unknown fields with a function: read raw.
+            parts[#parts + 1] = table.concat({ body.sectionId, tostring(rawget(body, "summary")),
+                tostring(rawget(body, "headerSwitch") ~= nil),
+                tostring(body._msufSuiteSectionReset ~= nil), tostring(entry._msuf2ColorSwatchReserve),
+                tostring(entry.label and entry.label.text) }, "|")
+        end
+        table.sort(parts)
+        return table.concat(parts, "\n")
+    end
+    local function Shape(ctx)
+        local parts = { Headers(ctx) }
+        for _, widget in ipairs(ctx.widgets) do
+            local meta = rawget(widget, "meta") or {}
+            parts[#parts + 1] = "w|" .. tostring(meta.controlId or meta.settingKey or rawget(widget, "label")) .. "|"
+                .. tostring(rawget(widget, "rowKind"))
+        end
+        for _, body in ipairs(ctx.sections) do
+            parts[#parts + 1] = "b|" .. body.sectionId .. "|" .. tostring(rawget(body, "finished")) .. "|"
+                .. tostring(body:GetHeight()) .. "|" .. tostring(rawget(body, "colorShortcut") ~= nil)
+        end
+        table.sort(parts)
+        return table.concat(parts, "\n")
+    end
+    local function Run(key, lazyHost)
+        pending, lazy = {}, lazyHost
+        W.PageBuilder = Builder
+        local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+        if key == "suite_qualityOfLife" or key == "suite_dataTexts" then ctx.entry = { sections = {} } end
+        current = ctx
+        M.pages[key].build(ctx)
+        if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
+        for _, fn in ipairs(ctx.refreshers) do fn() end
+        -- A shell is unfinished until its content is built (FinishBody).
+        local headers, built = Headers(ctx), 0
+        for _, entry in ipairs(pending) do
+            if rawget(entry.body, "finished") then built = built + 1 end
+        end
+        if lazyHost and key == "suite_actionbars" then
+            -- The closed card's "..." resets the quick bar switches too.
+            local config, rule = S.Config("actionbars"), optionsNS.catalog.actionbars.rules.bar3Visibility
+            local saved = config.bar3Visibility
+            config.bar3Visibility = rule.default == 1 and 2 or 1
+            for _, body in ipairs(ctx.sections) do
+                if body.sectionId == "suite_actionbars_actionbars_module" then body._msufSuiteSectionReset() end
+            end
+            assert(config.bar3Visibility == rule.default, "the closed action bar card lost its quick-switch reset")
+            config.bar3Visibility = saved
+        end
+        local i = 1
+        while i <= #pending do
+            pending[i]._msuf2EnsureContent()
+            i = i + 1
+        end
+        for _, fn in ipairs(ctx.refreshers) do fn() end
+        return ctx, headers, #pending, built
+    end
+    -- The client as the first page build saw it (later steps narrowed C_CVar).
+    local meterLoadError, cvar = S.states.damageMeter.error, C_CVar
+    S.states.damageMeter.error, MapkoSkin, C_CVar = nil, skin, { GetCVar = function() return nil end }
+    for _, key in ipairs(expected) do
+        local eagerCtx, eagerHeaders = Run(key, false)
+        local lazyCtx, headers, closed, built = Run(key, true)
+        assert(headers == eagerHeaders, key .. ": a section shell lost a header part:\n" .. headers .. "\n--- eager\n" .. eagerHeaders)
+        assert(Shape(lazyCtx) == Shape(eagerCtx), key .. ": ensured lazy sections differ from the eager build")
+        assert(#lazyCtx.refreshers == #eagerCtx.refreshers, key .. ": lazy sections changed the page refreshers")
+        assert(closed > 0 and built == 0, key .. ": a shell-first page built section content")
+    end
+    S.states.damageMeter.error, MapkoSkin, C_CVar = meterLoadError, nil, cvar
+    W.PageBuilder, W.EnsureSectionContent, current = eager, previousEnsure, previous
+end)()
+
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

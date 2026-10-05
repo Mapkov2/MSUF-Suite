@@ -128,7 +128,12 @@ P.Set = Noop
 P.RuleEnabled = function() return true end
 P.Meta = function(pageKey, id, key, _, sectionId) return { controlId = pageKey .. "." .. id .. "." .. key, sectionId = sectionId } end
 P.Description = function(parent) Log("description"); return Frame(parent) end
-P.AttachSectionReset = function(_, body) Log("reset"); body.resets = (body.resets or 0) + 1 end
+-- The "..." takes its header place from the summary already there
+-- (SectionActions.lua SectionActionButton): record what it found.
+P.AttachSectionReset = function(_, body, _, reset)
+    Log("reset")
+    body.resets, body.reset, body.summariesAtReset = (body.resets or 0) + 1, reset, body.summaries or 0
+end
 P.FinishBody = function(b, body, y)
     Log("finish")
     body._msuf2CursorY = y
@@ -181,6 +186,7 @@ do
         .. table.concat(log, ","))
     Check(entries == nil and built() == nil and body.summaries == 1 and entry._msuf2EnsureVisible == Noop,
         "a closed section needs its summary and focus hook, but no controls or onBuilt yet")
+    Check(body.summariesAtReset == 1, "a lazy shell attached \"...\" before its summary: the button moves left")
     local refreshers = #ctx.refreshers
     combat = true
     P.EnsureSectionContent(body)
@@ -209,6 +215,83 @@ do
     local colorsBody, colorsEntries = Section(ctx, b, "colors_demo", { pageKey = "colors" })
     Check(Count("lazy colors_demo") == 0 and colorsEntries and #colorsEntries == 3 and colorsBody.resets == 1,
         "MSUF Colors must stay eager: its painter needs every color row")
+end
+
+------------------------------------------------------------------ module card
+-- Switch, title suffix, summary and "..." in the shell; status line,
+-- description, actions and rules on first open. Old hosts keep the eager
+-- order. opts.eager (CDM builds into its card), opts.reset, colorSections.
+local texts = {}
+P.Text = function(parent)
+    Log("text")
+    texts[#texts + 1] = Frame(parent)
+    return texts[#texts]
+end
+P.Button = function() Log("button"); return Frame() end
+P.Available, P.StatusText = function() return true end, function() return "Active" end
+P.SetTranslatedText = function(fontString, text) fontString.text = text end
+P.W.SectionSwitch = function(body) Log("switch"); return Frame(body) end
+P.M.BindBoolWidget = Noop
+P.catalog.demo.description = "Demo"
+local function Card(ctx, b, opts)
+    opts.buildBody = function(_, y) Log("buildBody"); return y end
+    return P.ModuleCard(ctx, b, "suite_demo", "demo", { { "Act", Noop, key = "act" } }, opts)
+end
+lazyHost = false
+do
+    local ctx = Ctx()
+    Clear()
+    Card(ctx, Builder(ctx), { open = false, colorSections = { { title = "Extra", rules = RULES } } })
+    Check(table.concat(log, ",") == "section suite_demo_demo_module,switch,text,description,button,reset,buildBody,finish,colors",
+        "an old host lost the module card's eager order: " .. table.concat(log, ","))
+end
+lazyHost = true
+do
+    local ctx = Ctx()
+    local b = Builder(ctx)
+    Clear()
+    local custom = function() return true end
+    local body = Card(ctx, b, { open = false, rules = RULES, reset = custom })
+    local entry = body._msuf2CollapsibleEntry
+    Check(table.concat(log, ",") == "lazy suite_demo_demo_module,section suite_demo_demo_module,switch,reset",
+        "a closed module card built more than its header: " .. table.concat(log, ","))
+    Check(body.summaries == 1 and body.summariesAtReset == 1 and body.reset == custom,
+        "a closed module card needs its summary before \"...\" and the page's own reset")
+    for _, refresh in ipairs(ctx.refreshers) do refresh() end
+    Check(entry.label.text == "Basics", "a closed module card lost its title refresher")
+    local summaries = body.summaries
+    Clear()
+    P.EnsureSectionContent(body)
+    Check(table.concat(log, ",") == "ensure,text,description,button,rows,colors,buildBody,finish",
+        "the module card's deferred build lost its order: " .. table.concat(log, ","))
+    Check(texts[#texts].text == "Active" and body.summaries == summaries, "a module card built late must show its status at once, without a second summary")
+    Clear()
+    Card(ctx, b, { open = false, eager = true })
+    Check(Count("lazy suite_demo_demo_module") == 0 and Count("button") == 1,
+        "an eager module card (CDM builds into it) must build at once")
+end
+
+------------------------------------------------------------------ skin tabs
+-- The Micro Bar tabs: the declared rows return at once (header summary and
+-- reset); panels and tabs build on first open.
+do
+    local specs = {
+        { id = "one", label = "One", title = "One", help = "First", rows = { { id = "a", label = "A" } } },
+        { id = "two", label = "Two", title = "Two", help = "Second", rows = { { id = "b", label = "B" }, { id = "c", label = "C" } } },
+    }
+    local ctx = Ctx({ suite_skin_micro = false })
+    Clear()
+    local body, rows = P.SkinTabbedSection(ctx, Builder(ctx), "suite_skin_micro", "Micro Bar", specs, {})
+    Check(rows and #rows == 3 and rows[3].id == "c" and Count("tabs") == 0 and Count("rows") == 0,
+        "a closed skin tab section must return its rows and build no tabs")
+    P.EnsureSectionContent(body)
+    Check(Count("tabs") == 1 and Count("rows") == 2 and body.finished == 1, "the skin tabs did not build on demand")
+    lazyHost = false
+    ctx = Ctx({ suite_skin_micro = false })
+    Clear()
+    P.SkinTabbedSection(ctx, Builder(ctx), "suite_skin_micro", "Micro Bar", specs, {})
+    Check(Count("tabs") == 1, "an old host builds the skin tabs at once")
+    lazyHost = true
 end
 
 ------------------------------------------------------------------ facades
@@ -286,4 +369,4 @@ do
         "an old host builds the enemy tabs at once")
 end
 
-print("Suite lazy sections: shell/content split, onBuilt, eager colors, combat refusal, facades and page selectors passed")
+print("Suite lazy sections: shell/content split, summary before \"...\", onBuilt, eager colors, combat refusal, module cards, skin tabs, facades and page selectors passed")

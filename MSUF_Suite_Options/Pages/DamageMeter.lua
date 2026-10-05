@@ -84,6 +84,62 @@ local function BuildGradientPad(ctx, body, y, width)
     return y - 114
 end
 
+-- The window picker, help and window-1 template rules resolved to the selected window.
+local function WindowControls(ctx, b, body, templates, built)
+    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+    local help = P.Text(body, HELP.window_settings, 16, -18, width)
+    local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
+    local choices = {}
+    for i = 1, Suite.DamageMeterMaxWindows do choices[i] = { value = i, text = string.format(Tr("Window %d"), i) } end
+    local picker = M.BindDropdownAt(ctx, body, Tr("Window"), 16, y, choices, math.floor(width / 2),
+        function() return selected end,
+        function(value)
+            selected = tonumber(value) or 1
+            P.Refresh()
+        end,
+        P.Meta(PAGE, ID, "window.selected", "ephemeral", "suite_damageMeter_windows"))
+    local note = P.Text(body, "", 28 + math.floor(width / 2), y - 24, math.floor(width / 2) - 12)
+    y = y - 62
+    y = P.RuleGrid(ctx, body, PAGE, ID, templates, y, width, WindowKey, "suite_damageMeter_windows", nil, built)
+    P.AttachRuleColors(body, "Window settings", ID, templates, WindowKey)
+    return y, picker, note
+end
+
+-- Window settings: one pane whose controls follow the selected window. A
+-- lazy host builds its controls when it first opens (P.LazySection).
+local function BuildWindows(ctx, b)
+    local templates = P.SectionRules(ID, "w1")
+    local built = P.RuleRows(PAGE, ID, templates, WindowKey, "suite_damageMeter_windows")
+    local picker, note
+    P.LazySection(b, "suite_damageMeter_windows", Tr("Window settings"), true, {
+        content = function(body)
+            local y
+            y, picker, note = WindowControls(ctx, b, body, templates, built)
+            return y
+        end,
+        summary = function(body) P.AttachRowsSummary(ctx, body, built.rows) end,
+        shell = function(body)
+            P.AttachSectionReset(ctx, body, "Window settings", function()
+                return P.ResetPrefix(ID, "w" .. selected)
+            end)
+        end,
+        finish = function(body, y)
+            local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+            P.Button(ctx, body, "Move this window", 16, y - 4, math.floor((width - 12) / 2),
+                function() P.MoveOnScreen(ID, "window" .. selected) end,
+                function() return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount") end,
+                P.Meta(PAGE, ID, "window.move", "action", "suite_damageMeter_windows"))
+            M.TrackRefresh(ctx, function()
+                local count = P.Get(ID, "windowCount")
+                P.SetTranslatedText(note, selected > count
+                    and string.format(Tr("Shown windows: %d. Raise the number of windows to show this one."), count) or "")
+                if picker.SetValue then picker:SetValue(selected) end
+            end)
+            P.FinishBody(b, body, y - 40)
+        end,
+    })
+end
+
 local function Build(ctx)
     local b = W.PageBuilder(ctx)
     -- S.DamageMeterReset comes with the damage meter addon.
@@ -106,33 +162,7 @@ local function Build(ctx)
                   extra = section == "bars" and function(body, y, width) return BuildGradientPad(ctx, body, y, width) end or nil })
         end
     end
-    -- Window settings: one pane whose controls follow the selected window.
-    local templates = P.SectionRules(ID, "w1")
-    local body = b:CollapsibleSection("suite_damageMeter_windows", Tr("Window settings"), 120, true)
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
-    local help = P.Text(body, HELP.window_settings, 16, -18, width)
-    local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
-    local choices = {}
-    for i = 1, Suite.DamageMeterMaxWindows do choices[i] = { value = i, text = string.format(Tr("Window %d"), i) } end
-    local picker = M.BindDropdownAt(ctx, body, Tr("Window"), 16, y, choices, math.floor(width / 2),
-        function() return selected end,
-        function(value)
-            selected = tonumber(value) or 1
-            P.Refresh()
-        end,
-        P.Meta(PAGE, ID, "window.selected", "ephemeral", "suite_damageMeter_windows"))
-    local note = P.Text(body, "", 28 + math.floor(width / 2), y - 24, math.floor(width / 2) - 12)
-    y = y - 62
-    y = P.RuleGrid(ctx, body, PAGE, ID, templates, y, width, WindowKey, "suite_damageMeter_windows")
-    P.AttachRuleColors(body, "Window settings", ID, templates, WindowKey)
-    P.AttachSectionReset(ctx, body, "Window settings", function()
-        return P.ResetPrefix(ID, "w" .. selected)
-    end)
-    P.Button(ctx, body, "Move this window", 16, y - 4, math.floor((width - 12) / 2),
-        function() P.MoveOnScreen(ID, "window" .. selected) end,
-        function() return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount") end,
-        P.Meta(PAGE, ID, "window.move", "action", "suite_damageMeter_windows"))
-    y = y - 40
+    BuildWindows(ctx, b)
     -- Windows above the configured count keep their settings but stay hidden.
     P.Gates[ID] = function(rule, key)
         if rule.key == "nameEllipsis" then return P.Get(ID, "nameMaxChars") > 0 end
@@ -142,13 +172,6 @@ local function Build(ctx)
         local index = tonumber(key:match("^w(%d+)"))
         return not index or index <= P.Get(ID, "windowCount")
     end
-    M.TrackRefresh(ctx, function()
-        local count = P.Get(ID, "windowCount")
-        P.SetTranslatedText(note, selected > count
-            and string.format(Tr("Shown windows: %d. Raise the number of windows to show this one."), count) or "")
-        if picker.SetValue then picker:SetValue(selected) end
-    end)
-    P.FinishBody(b, body, y)
 end
 
 P.RegisterPage({ key = PAGE, label = "Damage meter", title = "Damage meter", build = Build, icon = { 7, 0 },

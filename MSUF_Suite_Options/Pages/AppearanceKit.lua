@@ -155,7 +155,9 @@ local function ResetSkinSection(skin, id, rows, contextRows)
 end
 
 -- One accordion: help, a settings grid of the non-color rows, an optional
--- `extra(body, y, width) -> y` builder, and the color shortcut.
+-- `extra(body, y, width) -> y` builder, and the color shortcut. A lazy host
+-- builds them when the accordion first opens (P.LazySection); its summary
+-- and "..." are in the header at once.
 local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
     if ctx.searchRows then
         local sectionId = "suite_skin_" .. id
@@ -165,33 +167,38 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
         if extra then extra(nil, 0, 720) end
         return
     end
-    local body = b:CollapsibleSection("suite_skin_" .. id, Tr(title), 120, open)
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
-    local y = -18
-    if help then
-        local hint = P.Description(body, help, 16, y, width, title)
-        y = y - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
-    end
     local visibleRows = {}
     for _, row in ipairs(rows) do
         if row.kind ~= "color" then visibleRows[#visibleRows + 1] = row end
     end
-    if #visibleRows > 0 then
-        local grid = W.SettingsRows(ctx, body, {
-            x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = visibleRows,
-        })
-        y = grid.bottomY
+    local function Content(body)
+        local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+        local y = -18
+        if help then
+            local hint = P.Description(body, help, 16, y, width, title)
+            y = y - math.max(14, math.ceil(hint:GetStringHeight() or 14)) - 12
+        end
+        if #visibleRows > 0 then
+            local grid = W.SettingsRows(ctx, body, {
+                x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = visibleRows,
+            })
+            y = grid.bottomY
+        end
+        if extra then y = extra(body, y, width) or y end
+        P.AttachRowsSummary(ctx, body, visibleRows)
+        P.AttachSkinColors(body, title, contextRows or rows)
+        return y
     end
-    if extra then y = extra(body, y, width) or y end
-    P.AttachRowsSummary(ctx, body, visibleRows)
-    P.AttachSkinColors(body, title, contextRows or rows)
-    if id ~= "advanced" then
-        P.AttachSectionReset(ctx, body, title, function()
-            return ResetSkinSection(Engine(), id, rows, contextRows)
-        end)
-    end
-    P.FinishBody(b, body, y)
-    return body
+    return P.LazySection(b, "suite_skin_" .. id, Tr(title), open, {
+        content = Content,
+        shell = id ~= "advanced" and function(body)
+            P.AttachSectionReset(ctx, body, title, function()
+                return ResetSkinSection(Engine(), id, rows, contextRows)
+            end)
+        end or nil,
+        summary = function(body) P.AttachRowsSummary(ctx, body, visibleRows) end,
+        finish = function(body, y) P.FinishBody(b, body, y) end,
+    })
 end
 
 local function SkinColorRow(skin, key, label)

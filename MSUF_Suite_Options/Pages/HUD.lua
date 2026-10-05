@@ -36,9 +36,10 @@ local function AddSection(sections, sectionId, title, rules, opts)
     sections[#sections + 1] = { id = sectionId, title = title, rules = rules, help = opts.help }
 end
 
+-- The feature card's color shortcut lists the colors of every section.
 local function BuildFeature(ctx, builder, id, title, actions, specs)
-    local header = P.ModuleCard(ctx, builder, PAGE, id, actions, {
-        title = title, open = false, prepareControl = P.HUDMenu.PrepareControl,
+    P.ModuleCard(ctx, builder, PAGE, id, actions, {
+        title = title, open = false, prepareControl = P.HUDMenu.PrepareControl, colorSections = specs,
         help = id == "objectives" and "Announcements and run summaries keep their own switches."
             or "Works even when the Objective Tracker is off.",
     })
@@ -46,7 +47,6 @@ local function BuildFeature(ctx, builder, id, title, actions, specs)
         -- Exact search reveals the feature once the controls exist.
         P.RuleSection(ctx, builder, PAGE, id, spec.id, spec.title, spec.rules,
             { help = spec.help, open = index == 1, onBuilt = P.HUDMenu.Prepare })
-        P.AttachRuleColors(header, spec.title, id, spec.rules)
     end
 end
 

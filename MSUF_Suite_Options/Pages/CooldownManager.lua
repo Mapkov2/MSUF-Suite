@@ -586,12 +586,13 @@ local function Build(ctx)
     if not (Page.ui and Page.ui.live) then Page.ui = ui end
     -- FixedPreviewSection releases the first builder slot from scroll flow.
     Page.BuildPreview(ctx, b, ui)
+    -- Eager: the page builds Basics and the bar list into the card below.
     local card = P.ModuleCard(ctx, b, PAGE, ID, {
         -- Edit Mode opens on a bar it can move: the selected one, or the first.
         { "Move bars on screen", function() P.MoveOnScreen(ID, Page.MoveTarget()) end,
             function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.MoveTarget() ~= nil end, key = "move" },
         { "Open Blizzard's Cooldown Settings", Page.OpenBlizzardSettings, Page.CanOpenBlizzardSettings, key = "blizzard" },
-    })
+    }, { eager = true })
     -- These actions navigate, or record their own history entry (reset), so
     -- a click never takes Menu2's full settings snapshot.
     if card and card.GetChildren then

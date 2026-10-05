@@ -54,22 +54,10 @@ function P.AttachSkinColors(body, title, rows)
     if shortcut then shortcut._msuf2BoundColorShortcut = nil end
 end
 
--- Skin tabs share one accordion and exact search targets reveal their panel.
--- The same declarations collect cold search metadata without building widgets.
-function P.SkinTabbedSection(ctx, builder, sectionId, title, specs, state)
-    if ctx.searchRows then
-        P.SkinSearchRow(ctx, { kind = "section", label = title }, sectionId, title)
-        for _, spec in ipairs(specs) do
-            for _, row in ipairs(spec.rows) do
-                P.SkinSearchRow(ctx, row, sectionId, Tr(spec.title), Tr(spec.help))
-            end
-            if spec.extra then spec.extra(nil, 0, 720) end
-        end
-        return
-    end
-    local body = builder:CollapsibleSection(sectionId, title, 120, true)
+-- The tab panels and their selector inside a skin tab accordion.
+local function SkinTabs(ctx, builder, body, specs, state)
     local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
-    local panels, heights, values, allRows = {}, {}, {}, {}
+    local panels, heights, values = {}, {}, {}
     local selectTab
     for _, spec in ipairs(specs) do
         local panel = CreateFrame("Frame", nil, body)
@@ -83,7 +71,6 @@ function P.SkinTabbedSection(ctx, builder, sectionId, title, specs, state)
         local tab = spec.id
         local function Prepare() if selectTab then selectTab(tab) end end
         for _, row in ipairs(spec.rows) do
-            allRows[#allRows + 1] = row
             local widget = grid.controls[row.id]
             if widget then widget._msuf2PrepareExactSearchTarget = Prepare end
         end
@@ -104,6 +91,29 @@ function P.SkinTabbedSection(ctx, builder, sectionId, title, specs, state)
     if tabs._msuf2Title then tabs._msuf2Title:Hide() end
     selectTab = choose
     refresh()
+end
+
+-- Skin tabs share one accordion and exact search targets reveal their panel.
+-- The same declarations collect cold search metadata without building widgets.
+-- A lazy host builds the tabs on first open; the returned rows are declarations.
+function P.SkinTabbedSection(ctx, builder, sectionId, title, specs, state)
+    if ctx.searchRows then
+        P.SkinSearchRow(ctx, { kind = "section", label = title }, sectionId, title)
+        for _, spec in ipairs(specs) do
+            for _, row in ipairs(spec.rows) do
+                P.SkinSearchRow(ctx, row, sectionId, Tr(spec.title), Tr(spec.help))
+            end
+            if spec.extra then spec.extra(nil, 0, 720) end
+        end
+        return
+    end
+    local allRows = {}
+    for _, spec in ipairs(specs) do
+        for _, row in ipairs(spec.rows) do allRows[#allRows + 1] = row end
+    end
+    local body = P.LazySection(builder, sectionId, title, true, {
+        content = function(section) SkinTabs(ctx, builder, section, specs, state) end,
+    })
     return body, allRows
 end
 
@@ -444,11 +454,13 @@ end
 -- builds when they first open; open sections still build at once. spec:
 -- content(body) -> y builds the controls, finish(body, y) sizes the body,
 -- shell(body) adds what a closed header shows (actions, header refreshers),
--- summary(body) its collapsed line; eager builds at once on every host.
--- Older hosts and test builders build at once: content, shell, finish.
+-- head(body) header parts before the content, summary(body) the collapsed
+-- line; eager builds at once on every host.
+-- Older hosts and test builders build at once: head, content, shell, finish.
 function P.LazySection(b, sectionId, title, open, spec)
     if spec.eager or not b.LazyCollapsibleSection then
         local body = b:CollapsibleSection(sectionId, title, 120, open)
+        if spec.head then spec.head(body) end
         local y = spec.content(body)
         if spec.shell then spec.shell(body) end
         if spec.finish then spec.finish(body, y) end
@@ -458,8 +470,10 @@ function P.LazySection(b, sectionId, title, open, spec)
         local y = spec.content(body)
         if spec.finish then spec.finish(body, y) end
     end, { shell = function(body)
-        if spec.shell then spec.shell(body) end
+        -- In build order: the summary before "..." keeps its header place.
+        if spec.head then spec.head(body) end
         if spec.summary then spec.summary(body) end
+        if spec.shell then spec.shell(body) end
     end })
 end
 
@@ -704,23 +718,24 @@ function P.RegisterWorkspaceSearch(widget, identity, rule, kind, reveal, label)
     M.RegisterControlMetadata(widget, meta, label or rule.label)
 end
 
--- Standard module header card: enable switch, live status and actions.
--- actions: list of { label, onClick, enabled(optional), key = id }.
-function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
-    opts = opts or {}
-    local spec = P.catalog[id]
-    local sectionId = pageKey .. "_" .. id .. "_module"
-    local title = opts.title or "Basics"
-    local body = b:CollapsibleSection(sectionId, Tr(title), 120, opts.open ~= false)
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+-- The module card's switch, in its header: a closed card shows it.
+local function ModuleSwitch(ctx, body, pageKey, id, sectionId, opts)
     local toggle = W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
     M.BindBoolWidget(ctx, toggle,
         function() return P.Get(id, "enabled") == true end,
         function(value) P.Set(id, "enabled", value == true) end,
         P.Meta(pageKey, id, "enabled", "setting", sectionId))
     if opts.prepareControl then opts.prepareControl(body, toggle, "enabled", "setting", "Enable") end
-    local status = P.Text(body, "", 16, -18, width, T.colors.text)
-    local description = P.Description(body, spec.description, 16, -42, width, title)
+    return toggle
+end
+
+-- Status line, description, actions, help and rules: the card's body.
+local function ModuleBody(ctx, b, body, pageKey, id, actions, opts, card)
+    local sectionId = pageKey .. "_" .. id .. "_module"
+    local title = opts.title or "Basics"
+    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+    card.status = P.Text(body, "", 16, -18, width, T.colors.text)
+    local description = P.Description(body, P.catalog[id].description, 16, -42, width, title)
     local y = -42 - math.max(14, math.ceil(description:GetStringHeight() or 14)) - 14
     local columns = width >= 560 and 3 or 2
     local buttonWidth = math.floor((width - (columns - 1) * 12) / columns)
@@ -738,15 +753,24 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         y = y - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     end
     if opts.rules then
-        y = P.RuleGrid(ctx, body, pageKey, id, opts.rules, y, width, nil, sectionId)
+        y = P.RuleGrid(ctx, body, pageKey, id, opts.rules, y, width, nil, sectionId, nil, card.built)
         P.AttachRuleColors(body, title, id, opts.rules)
     end
+    -- Built after the header (lazy host): its refresher ran without the line.
+    if card.header then P.SetTranslatedText(card.status, P.StatusText(id)) end
+    return y
+end
+
+-- The card's refresher (switch, status once built, title suffix) and "...".
+local function ModuleHeader(ctx, body, id, opts, card)
+    local title = opts.title or "Basics"
+    card.header = true
     M.TrackRefresh(ctx, function()
         local ok, why = P.Available(id)
         -- The preference remains editable even when this client cannot run the
         -- module. S.Apply still enforces Availability before starting it.
-        W.SetControlEnabled(toggle, not P.Combat())
-        P.SetTranslatedText(status, P.StatusText(id))
+        W.SetControlEnabled(card.toggle, not P.Combat())
+        if card.status then P.SetTranslatedText(card.status, P.StatusText(id)) end
         local entry = body._msuf2CollapsibleEntry
         if entry and entry.label then
             local suffix = not ok and (" - " .. P.Suite.StatusText(why or "Unavailable on this client", Tr))
@@ -754,10 +778,33 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
             P.SetTranslatedText(entry.label, Tr(title) .. suffix)
         end
     end)
-    P.AttachSectionReset(ctx, body, title, function()
+    P.AttachSectionReset(ctx, body, title, opts.reset or function()
         return P.ResetRules(id, opts.rules or {}, nil, { "enabled" })
     end)
-    if opts.buildBody then y = opts.buildBody(body, y, width) end
-    P.FinishBody(b, body, y)
-    return body
+end
+
+-- Standard module header card: enable switch, live status and actions.
+-- actions: list of { label, onClick, enabled(optional), key = id }. A lazy
+-- host builds a closed card's body on first open; switch, title suffix,
+-- summary and "..." are there at once. opts: eager (the page adds to the card
+-- after this returns), reset, buildBody(body, y, width) -> y, colorSections.
+function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
+    opts = opts or {}
+    local sectionId = pageKey .. "_" .. id .. "_module"
+    local card = { built = opts.rules and P.RuleRows(pageKey, id, opts.rules, nil, sectionId) }
+    return P.LazySection(b, sectionId, Tr(opts.title or "Basics"), opts.open ~= false, {
+        eager = opts.eager,
+        head = function(body) card.toggle = ModuleSwitch(ctx, body, pageKey, id, sectionId, opts) end,
+        content = function(body) return ModuleBody(ctx, b, body, pageKey, id, actions, opts, card) end,
+        shell = function(body) ModuleHeader(ctx, body, id, opts, card) end,
+        summary = card.built and function(body) P.AttachRowsSummary(ctx, body, card.built.rows) end or nil,
+        finish = function(body, y)
+            local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+            if opts.buildBody then y = opts.buildBody(body, y, width) end
+            P.FinishBody(b, body, y)
+            for _, section in ipairs(opts.colorSections or {}) do
+                P.AttachRuleColors(body, section.title, id, section.rules)
+            end
+        end,
+    })
 end

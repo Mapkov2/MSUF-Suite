@@ -185,16 +185,18 @@ local function BuildQuick(ctx, body, y, width)
             end
         end)
     end
-    P.AttachSectionReset(ctx, body, "Enable action bars", function()
-        local keys = {}
-        keys[#keys + 1] = "enabled"
-        for index = 1, COUNT do
-            keys[#keys + 1] = "bar" .. index .. "Visibility"
-            keys[#keys + 1] = "bar" .. index .. "ResumeVisibility"
-        end
-        return P.ResetRules(ID, {}, nil, keys)
-    end)
     return top - math.ceil(COUNT / columns) * 54 - 4
+end
+
+-- The "Enable action bars" card's reset: the switch and every quick switch.
+local function ResetQuick()
+    local keys = {}
+    keys[#keys + 1] = "enabled"
+    for index = 1, COUNT do
+        keys[#keys + 1] = "bar" .. index .. "Visibility"
+        keys[#keys + 1] = "bar" .. index .. "ResumeVisibility"
+    end
+    return P.ResetRules(ID, {}, nil, keys)
 end
 
 local function BuildPreview(ctx, parent, y, width, height)
@@ -369,8 +371,8 @@ local function AttachCopyTo(ctx, body, y)
     return api, copy
 end
 
-local function BuildEditor(ctx, b)
-    local body = b:CollapsibleSection("suite_actionbars_editor", Tr("Customize a bar"), 120, false)
+-- A lazy host builds the editor's buttons when it first opens (P.LazySection).
+local function EditorContent(ctx, b, body)
     local width = math.max(260, (body._msuf2Width or b.width or 720) - 32)
     local half = math.floor((width - 12) / 2)
     local help = P.Description(body, HELP.editor, 16, -18, width)
@@ -396,10 +398,19 @@ local function BuildEditor(ctx, b)
     -- reparents the protected buttons.
     P.SecureMacroButton(ctx, body, "Move extra action button", 16, y, width - 32, "/editmode",
         CanMoveExtraAbility, P.Meta(PAGE, ID, "editor.extraAbility", "action", "suite_actionbars_editor"))
-    P.AttachSectionReset(ctx, body, "Customize a bar", function()
-        return P.ResetPrefix(ID, "bar" .. selected)
-    end)
-    P.FinishBody(b, body, y - 38)
+    return y - 38
+end
+
+local function BuildEditor(ctx, b)
+    P.LazySection(b, "suite_actionbars_editor", Tr("Customize a bar"), false, {
+        content = function(body) return EditorContent(ctx, b, body) end,
+        shell = function(body)
+            P.AttachSectionReset(ctx, body, "Customize a bar", function()
+                return P.ResetPrefix(ID, "bar" .. selected)
+            end)
+        end,
+        finish = function(body, y) P.FinishBody(b, body, y) end,
+    })
 end
 
 -- Per-bar controls follow the selected bar; bars missing on this client and
@@ -434,7 +445,7 @@ local function Build(ctx)
         { "Move on screen", function() P.MoveOnScreen(ID, "bar1") end, nil, key = "move" },
         { "Reload UI", function() ReloadUI() end,
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
-    }, { title = "Enable action bars", open = false, help = "Shared settings affect every action bar.",
+    }, { title = "Enable action bars", open = false, help = "Shared settings affect every action bar.", reset = ResetQuick,
         prepareControl = function(body, widget, key, kind, label)
             P.ActionBarMenu.Prepare(body, { { widget = widget, rule = { key = key, label = label },
                 meta = P.Meta(PAGE, ID, key, kind, "suite_actionbars_actionbars_module") } })
