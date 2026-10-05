@@ -20,4 +20,28 @@ do
     assert(#H.reported == 0, "a call raised: " .. tostring(H.reported[1]))
 end
 
+-- Setup reopened in the same session starts again at 100 percent: the slider
+-- shows the scale the label shows and Install applies.
+do
+    local Suite = H.Setup({ root = root, forever = true })
+    assert(Suite.Installer.Open())
+    local f = _G.MSUFSuiteInstallFrame
+    for _ = 1, 3 do f.next.scripts.OnClick() end
+    f.scaleToggle.scripts.OnClick()
+    f.presets[3].scripts.OnClick()
+    assert(f.scaleSlider:GetValue() == 0.7 and f.scaleLabel:GetText() == "70%", "the Medium preset was not chosen")
+    f.close.scripts.OnClick()
+    assert(Suite.Installer.Open())
+    for _ = 1, 3 do f.next.scripts.OnClick() end
+    f.scaleToggle.scripts.OnClick()
+    assert(f.scaleLabel:GetText() == "100%", "the reopened setup does not start at 100 percent")
+    assert(f.scaleSlider:GetValue() == 1, "the slider still shows the previous session's "
+        .. tostring(f.scaleSlider:GetValue()) .. " while the scale is 100 percent")
+    f.next.scripts.OnClick()
+    f.next.scripts.OnClick()
+    local applied = H.appliedScales[#H.appliedScales]
+    assert(applied and applied.global and applied.global.scale == 1, "Install applied another scale")
+    assert(#H.reported == 0, "a call raised: " .. tostring(H.reported[1]))
+end
+
 print("installer session contract: ok")

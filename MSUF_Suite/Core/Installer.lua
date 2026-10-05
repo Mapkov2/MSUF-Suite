@@ -734,6 +734,8 @@ function Installer.Open()
     useRaidEssentials = not (current and current.raidEssentials == false)
     moduleOverrides = { suite = {}, classic = {}, forever = {} }
     Build().moduleTab = "modules"
+    -- A reopened window still shows the last session's slider position.
+    frame.scaleSlider:SetValue(scale)
     Installer.Refresh()
     frame.moduleScroll:SetVerticalScroll(0)
     frame:Show()
