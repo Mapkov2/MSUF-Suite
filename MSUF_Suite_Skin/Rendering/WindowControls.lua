@@ -173,7 +173,8 @@ local function RestoreNativePosition(state)
     state.customPosition = false
     state.defaultPosition = false
     positionedStates[state.frame] = nil
-    if state.panel then
+    -- The panel manager never anchors the Game Menu (centerFrameSkipAnchoring).
+    if state.panel and not state.panel.centerFrameSkipAnchoring then
         -- Under the Gamepad UI Blizzard places the panel again when it next opens.
         if not NS.Client.IsGamepadUI() then UpdateUIPanelPositions(state.frame) end
     elseif state.nativePoints then

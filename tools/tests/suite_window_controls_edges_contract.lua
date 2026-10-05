@@ -304,5 +304,26 @@ menu.height = 450
 Check(At(menu, "TOPLEFT", 40, -60), "the first Esc of the session ignored the saved Game Menu position")
 HideUIPanel(menu)
 
+------------------------------------------------------------------ H-S3-01
+-- Neither ShowUIPanel nor UpdateUIPanelPositions anchors the Game Menu: a reset,
+-- or a profile without its position, puts it back on its own CENTER anchor.
+local function AtNative(frame)
+    return At(frame, "CENTER", 0, 0) and frame.point[2] == UIParent and frame.point[3] == "CENTER"
+end
+ShowUIPanel(menu)
+Check(WindowControls.ResetPositions() and NS.DB.windowControls.positions.GameMenuFrame == nil,
+    "the window position reset failed")
+Check(AtNative(menu), "a position reset left the Game Menu where it was dragged")
+HideUIPanel(menu)
+ShowUIPanel(menu)
+Check(AtNative(menu), "reopening the Game Menu after a reset moved it off its own anchor")
+NS.DB.windowControls.positions.GameMenuFrame = { x = 40, y = -60 }
+Notify("profile", "activate")
+Check(At(menu, "TOPLEFT", 40, -60), "a profile with a Game Menu position did not place it")
+NS.DB.windowControls.positions.GameMenuFrame = nil
+Notify("profile", "activate")
+Check(AtNative(menu), "a profile without a Game Menu position left it at the old one")
+HideUIPanel(menu)
+
 Check(#reported == 0, "window controls reported errors: " .. table.concat(reported, "; "))
 print("Suite window controls edges: " .. checks .. " checks passed")
