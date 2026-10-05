@@ -134,7 +134,7 @@ end
 -- it would be clipped by the preview host and take the anchor's strata.
 local function Ensure()
     if popup then return popup end
-    local parent = M.frame or _G.UIParent
+    local parent = M.frame or UIParent
     local frame = M.CreateMenuPopupPanel and M.CreateMenuPopupPanel(parent, {}) or CreateFrame("Frame", nil, parent)
     popup = frame
     frame:SetSize(WIDTH, HEIGHT)
