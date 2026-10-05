@@ -1681,6 +1681,46 @@
       "date": "2026-10-04"
     },
     {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.w1Type\",\"choice\",false,1,11,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-05 for a threat view in the WoW Forever damage meter: MSUF_Suite/Core/Catalog/DamageMeter.lua appends Threat as choice 12 on Forever; suite_damage_meter_threat_contract pins it, suite_damage_meter_contract keeps eleven Retail tiles.",
+      "reason": "Not removed: the Meter choice gains Threat (11 to 12 choices on WoW Forever). Every saved value stays valid.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.w2Type\",\"choice\",false,1,11,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-05 for a threat view in the WoW Forever damage meter: MSUF_Suite/Core/Catalog/DamageMeter.lua appends Threat as choice 12 on Forever; suite_damage_meter_threat_contract pins it, suite_damage_meter_contract keeps eleven Retail tiles.",
+      "reason": "Not removed: the Meter choice gains Threat (11 to 12 choices on WoW Forever). Every saved value stays valid.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.w3Type\",\"choice\",false,1,11,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-05 for a threat view in the WoW Forever damage meter: MSUF_Suite/Core/Catalog/DamageMeter.lua appends Threat as choice 12 on Forever; suite_damage_meter_threat_contract pins it, suite_damage_meter_contract keeps eleven Retail tiles.",
+      "reason": "Not removed: the Meter choice gains Threat (11 to 12 choices on WoW Forever). Every saved value stays valid.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.w4Type\",\"choice\",false,1,11,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-05 for a threat view in the WoW Forever damage meter: MSUF_Suite/Core/Catalog/DamageMeter.lua appends Threat as choice 12 on Forever; suite_damage_meter_threat_contract pins it, suite_damage_meter_contract keeps eleven Retail tiles.",
+      "reason": "Not removed: the Meter choice gains Threat (11 to 12 choices on WoW Forever). Every saved value stays valid.",
+      "date": "2026-10-05"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.w5Type\",\"choice\",false,1,11,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-05 for a threat view in the WoW Forever damage meter: MSUF_Suite/Core/Catalog/DamageMeter.lua appends Threat as choice 12 on Forever; suite_damage_meter_threat_contract pins it, suite_damage_meter_contract keeps eleven Retail tiles.",
+      "reason": "Not removed: the Meter choice gains Threat (11 to 12 choices on WoW Forever). Every saved value stays valid.",
+      "date": "2026-10-05"
+    },
+    {
       "category": "locale",
       "item": "Crowd control",
       "basis": "moved",

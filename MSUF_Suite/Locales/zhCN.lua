@@ -2705,6 +2705,7 @@ T("Protect release in dungeons and delves", "在地下城和地下堡中保护�
 T("Protect release in raids", "在团队副本中保护灵魂释放")
 T("Protect release in the open world", "在野外保护灵魂释放")
 T("Pull 10", "10秒后开怪")
+T("Pull aggro", "拉仇恨")
 T("Pull timer", "开怪倒计时")
 T("Pulse", "脉冲")
 T("Purple", "紫色")

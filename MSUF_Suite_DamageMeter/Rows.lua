@@ -28,6 +28,7 @@ local ranks = setmetatable({}, {
         return text
     end
 })
+D.ranks = ranks
 local separators = { [VALUE_FORMAT.PARENTHESES] = "%s (%s)", [VALUE_FORMAT.BAR] = "%s | %s" }
 -- The values of the custom layout, in the valueOrder choices' order.
 local TOTAL, RATE, PERCENT = 1, 2, 3
@@ -394,10 +395,6 @@ end
 function D.PaintSource(row, source, index, session, win)
     if row.styleGen ~= M.styleGen then D.StyleRow(row) end
     local style, meterType = M.style, win.meterType
-    if style.rank and row.rank ~= index then
-        row.rank = index
-        row.rankText:SetText(ranks[index])
-    end
     local name = source.name
     if not IsSecret(name) then
         if name ~= row.rawName then
@@ -417,6 +414,16 @@ function D.PaintSource(row, source, index, session, win)
     if row.hasIcon then
         local spec = source.specIconID
         D.UnitIcon(row, Finite(spec) and spec or 0, class, style.iconStyle)
+    end
+    -- Threat rows number the members themselves (Threat.lua).
+    if meterType == D.THREAT then
+        row.mDeath = nil
+        D.PaintThreatValue(row, source, session.maxAmount)
+        return
+    end
+    if style.rank and row.rank ~= index then
+        row.rank = index
+        row.rankText:SetText(ranks[index])
     end
     if meterType == TYPE.Deaths then
         if not row.full then

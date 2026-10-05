@@ -2705,6 +2705,7 @@ T("Protect release in dungeons and delves", "Proteggi il rilascio nelle spedizio
 T("Protect release in raids", "Proteggi il rilascio nelle incursioni")
 T("Protect release in the open world", "Proteggi il rilascio nel mondo aperto")
 T("Pull 10", "Ingaggio tra 10")
+T("Pull aggro", "Prendere l'aggro")
 T("Pull timer", "Conto alla rovescia del pull")
 T("Pulse", "Pulsazione")
 T("Purple", "Viola")

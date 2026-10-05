@@ -2707,6 +2707,7 @@ T("Protect release in dungeons and delves", "Защищать освобожде
 T("Protect release in raids", "Защищать освобождение духа в рейдах")
 T("Protect release in the open world", "Защищать освобождение духа в открытом мире")
 T("Pull 10", "Начало через 10")
+T("Pull aggro", "Сорвать агро")
 T("Pull timer", "Таймер пула")
 T("Pulse", "Пульсация")
 T("Purple", "Фиолетовый")

@@ -2706,6 +2706,7 @@ T("Protect release in dungeons and delves", "던전 및 구렁에서 영혼 해�
 T("Protect release in raids", "공격대에서 영혼 해제 보호")
 T("Protect release in the open world", "야외에서 영혼 해제 보호")
 T("Pull 10", "10초 후 전투 시작")
+T("Pull aggro", "어그로 획득")
 T("Pull timer", "전투 시작 타이머")
 T("Pulse", "맥동")
 T("Purple", "보라")

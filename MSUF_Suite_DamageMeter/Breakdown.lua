@@ -350,7 +350,8 @@ end
 -- Built once per hover, never live-updated.
 function D.ShowTip(win, row)
     local session = win.session
-    if not session or D.IsSample(session) or not row.index then return end
+    -- Threat rows have no breakdown.
+    if not session or D.IsSample(session) or not row.index or win.meterType == D.THREAT then return end
     local source = session.combatSources[row.index]
     if not source then return end
     local frame = EnsureTip()
@@ -391,7 +392,7 @@ function D.RowClick(row, button)
         D.OpenTypeMenu(win, row)
         return
     end
-    if row.index then
+    if row.index and win.meterType ~= D.THREAT then
         D.HideTip()
         D.OpenBreakdown(win, row.index)
     end

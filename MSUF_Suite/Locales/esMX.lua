@@ -2709,6 +2709,7 @@ T("Protect release in dungeons and delves", "Proteger la liberación en mazmorra
 T("Protect release in raids", "Proteger la liberación en bandas")
 T("Protect release in the open world", "Proteger la liberación en el mundo abierto")
 T("Pull 10", "Iniciar en 10")
+T("Pull aggro", "Atraer la amenaza")
 T("Pull timer", "Cuenta regresiva de pull")
 T("Pulse", "Pulso")
 T("Purple", "Morado")

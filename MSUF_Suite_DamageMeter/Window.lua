@@ -247,7 +247,13 @@ end
 
 function D.UpdateTitle(win)
     local text = D.TypeName(win.meterType)
-    if win.overall then text = format("%s (%s)", text, S.BlizzardText("DAMAGE_METER_OVERALL_SESSION", "Overall")) end
+    if win.meterType == D.THREAT then
+        -- Threat reads the watched enemy, never a fight session.
+        local enemy = D.ThreatEnemyName()
+        if enemy then text = format("%s - %s", text, enemy) end
+    elseif win.overall then
+        text = format("%s (%s)", text, S.BlizzardText("DAMAGE_METER_OVERALL_SESSION", "Overall"))
+    end
     if text ~= win.titleText then
         win.titleText = text
         win.title:SetText(text)
@@ -325,7 +331,7 @@ end
 
 function D.UpdateStatus(win, count)
     local text = ""
-    if not M.available and not M.preview then
+    if not M.available and not M.preview and win.meterType ~= D.THREAT then
         text = M.reason or ""
     elseif count == 0 and win.meterType == D.TYPE.AvoidableDamageTaken then
         local notice = _G.DAMAGE_METER_AVOIDABLE_DAMAGE_NOT_ACTIVE
@@ -388,8 +394,9 @@ function D.Render(win)
 end
 
 function D.Paint(win, session, reuseSession)
-    -- A clean window must hear session updates again (see Controller.lua).
-    if M.sessionMuted then D.ResumeSessionUpdates() end
+    -- A clean window must hear session updates again (see Controller.lua);
+    -- a threat window never hears them.
+    if M.sessionMuted and win.meterType ~= D.THREAT then D.ResumeSessionUpdates() end
     win.dirty = false
     if win.bd.open then
         D.RefreshBreakdown(win)

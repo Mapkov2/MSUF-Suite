@@ -2705,6 +2705,7 @@ T("Protect release in dungeons and delves", "在地城與探究中保護靈魂�
 T("Protect release in raids", "在團隊副本中保護靈魂釋放")
 T("Protect release in the open world", "在野外保護靈魂釋放")
 T("Pull 10", "10秒後開怪")
+T("Pull aggro", "拉仇恨")
 T("Pull timer", "開怪倒數")
 T("Pulse", "脈動")
 T("Purple", "紫色")

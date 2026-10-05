@@ -6,7 +6,8 @@ local NS, S = P.NS, P.Suite
 local D = { windows = {}, MAX = 5, KEYS = {}, OVERALL = 0, CURRENT = 1 }
 P.DamageMeter = D
 -- damageMeterEnabled is declared on the catalog entry (restored on disable).
-local M = { styleGen = 0, events = {} }
+-- eventUnits: the unit filter each registered event was registered with.
+local M = { styleGen = 0, events = {}, eventUnits = {} }
 D.M = M
 local Public, Finite = S.Public, S.Finite
 -- The client's secret test (Platform.lua) for the per-row readers.
@@ -24,6 +25,8 @@ D.countOnly = { [TYPE.Interrupts] = true, [TYPE.Dispels] = true }
 D.damageTypes = { [TYPE.DamageDone] = true, [TYPE.Dps] = true }
 D.healingTypes = { [TYPE.HealingDone] = true, [TYPE.Hps] = true }
 D.targetTypes = { [TYPE.DamageDone] = true, [TYPE.Dps] = true, [TYPE.HealingDone] = true, [TYPE.Hps] = true }
+-- The threat mode's type value (Threat.lua); nil where the client has none.
+D.THREAT = NS.DamageMeterThreatType
 -- Catalog choice values (MSUF_Suite/Core/Catalog/DamageMeter.lua).
 D.VISIBILITY, D.SESSION, D.ICON = NS.DamageMeterVisibility, NS.DamageMeterSession, NS.DamageMeterIconStyle
 D.ROW_BORDER, D.TEXT_STYLE, D.VALUE_FORMAT = NS.DamageMeterRowBorder, NS.DamageMeterTextStyle, NS.DamageMeterValueFormat
@@ -152,6 +155,11 @@ end
 -- data; the options preview always shows them.
 function D.FetchSession(win)
     if M.preview then return D.Sample(win.meterType) end
+    if win.meterType == D.THREAT then
+        local session = D.ThreatSession()
+        if M.forced and D.Count(session.combatSources) == 0 then return D.Sample(D.THREAT) end
+        return session
+    end
     if not M.available then return nil end
     local session
     if win.sessionID then
@@ -196,6 +204,7 @@ local samples = {}
 local sampleClasses = { "WARRIOR", "MAGE", "PRIEST", "HUNTER", "ROGUE", "DRUID", "PALADIN" }
 -- Static sample sessions for Edit Mode and the options preview (built once).
 function D.Sample(meterType)
+    if meterType == D.THREAT then return D.ThreatSample() end
     local kind = D.countOnly[meterType] and "count" or "amount"
     local sample = samples[kind]
     if sample then return sample end
@@ -223,7 +232,7 @@ end
 
 -- Identity test: never probe fields that C-returned sessions do not define.
 function D.IsSample(session)
-    return session ~= nil and (session == samples.count or session == samples.amount)
+    return session ~= nil and (session == samples.count or session == samples.amount or session == D.threatSample)
 end
 
 local groupIndex, groups = {}, {}

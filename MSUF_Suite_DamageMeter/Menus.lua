@@ -18,6 +18,8 @@ local GROUPS = {
     { "DAMAGE_METER_CATEGORY_HEALING", "Healing", { TYPE.HealingDone, TYPE.Hps, TYPE.Absorbs } },
     { "DAMAGE_METER_CATEGORY_ACTIONS", "Actions", { TYPE.Interrupts, TYPE.Dispels, TYPE.Deaths } },
 }
+-- WoW Forever's threat (Threat.lua) fills the damage group's free sixth tile.
+if D.THREAT then table.insert(GROUPS[1][3], D.THREAT) end
 -- Menu entry data per window, created once.
 local function Choices(win)
     local data = win.menuData
@@ -59,6 +61,8 @@ end
 function D.SetWindowType(win, meterType)
     if win.meterType == meterType then return end
     win.meterType, win.cfgType = meterType, meterType
+    -- Threat listens only while a shown window shows it.
+    D.UpdateEvents()
     Changed(win)
     D.Persist(D.KEYS[win.index].Type, meterType + 1)
 end

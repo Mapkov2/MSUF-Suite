@@ -155,8 +155,10 @@ function D.PaintDirty()
             if not win.bd.open then
                 for j = 1, i - 1 do
                     local candidate = D.windows[j]
+                    -- Threat reads the watched enemy whatever fight a window has picked.
                     if candidate and candidate.paintBatch == batch and candidate.meterType == win.meterType
-                        and candidate.sessionType == win.sessionType and candidate.sessionID == win.sessionID then
+                        and (win.meterType == D.THREAT
+                            or candidate.sessionType == win.sessionType and candidate.sessionID == win.sessionID) then
                         previous = candidate
                         break
                     end
@@ -262,7 +264,8 @@ SessionUpdated = function(self, _, meterType, sessionID)
                 local id = win.sessionID
                 if (id and id == sessionID) or (not id and sessionID == 0) then win.dirty, dirty = true, true end
             end
-            clean = clean or not win.dirty
+            -- A threat window never hears session updates, so it never keeps them on.
+            clean = clean or (not win.dirty and win.meterType ~= D.THREAT)
         end
     end
     if dirty then D.RequestPaint() end
@@ -273,7 +276,9 @@ local function CurrentUpdated(self)
     local dirty = false
     for i = 1, self.config.windowCount do
         local win = D.windows[i]
-        if win and win.shown and not win.sessionID and not win.overall then win.dirty, dirty = true, true end
+        if win and win.shown and not win.sessionID and not win.overall and win.meterType ~= D.THREAT then
+            win.dirty, dirty = true, true
+        end
     end
     if dirty then D.RequestPaint() end
 end
@@ -355,6 +360,8 @@ local function World(self)
     D.RequestPaint()
 end
 local function Roster()
+    if M.threatOn then D.ThreatRosterChanged() end
+    if M.config.visibility ~= VISIBILITY.GROUP then return end
     D.EvaluateVisibility()
     D.RequestPaint()
 end
@@ -371,27 +378,55 @@ local function Restriction(_, _, _, state)
     end
 end
 
-local function Want(event, on, handler)
+-- unit: a C-side unit filter. It is fixed when an event is registered, so a
+-- different filter registers the event again.
+local function Want(event, on, handler, unit)
     on = on and true or false
+    if on and M.events[event] and M.eventUnits[event] ~= unit then
+        M.events[event] = nil
+        M.context:RemoveEvent(event)
+    end
     if (M.events[event] == true) == on then return end
-    M.events[event] = on or nil
-    if on then M.context:Event(event, handler, IN_COMBAT) else M.context:RemoveEvent(event) end
+    M.events[event], M.eventUnits[event] = on or nil, on and unit or nil
+    if on then M.context:Event(event, handler, IN_COMBAT, unit) else M.context:RemoveEvent(event) end
 end
--- Data events only while a window is shown; combat and zone events while a
--- window could appear (or the standalone timer runs). A combat that started
--- keeps PLAYER_REGEN_ENABLED until it ends: Edit Mode or the preview can
--- force windows at combat start and stop forcing them inside it.
+-- Threat (WoW Forever, Threat.lua) listens only while a shown window shows it:
+-- the watched enemy's threat list (filtered to the target unless a friendly
+-- target's enemy is watched), target and pet changes. The roster follows
+-- GROUP_ROSTER_UPDATE through Roster.
+local function WantThreat(threat)
+    if threat and not M.threatOn then D.ThreatStart() end
+    M.threatOn = threat
+    Want("UNIT_THREAT_LIST_UPDATE", threat, D.ThreatListUpdated, threat and D.ThreatListUnit() or nil)
+    Want("PLAYER_TARGET_CHANGED", threat, D.ThreatTargetChanged)
+    Want("UNIT_TARGET", threat, D.ThreatTargetsTarget, "target")
+    Want("UNIT_PET", threat, D.ThreatPetChanged)
+end
+local function MeterShown()
+    for i = 1, M.config.windowCount do
+        local win = D.windows[i]
+        if win and win.shown and win.meterType ~= D.THREAT then return true end
+    end
+    return false
+end
+-- Data events only while a window is shown (meter data only while a window
+-- shows a meter, not threat); combat and zone events while a window could
+-- appear (or the standalone timer runs). A combat that started keeps
+-- PLAYER_REGEN_ENABLED until it ends: Edit Mode or the preview can force
+-- windows at combat start and stop forcing them inside it.
 function D.UpdateEvents()
     local c = M.config
     local possible = M.forced or c.visibility ~= VISIBILITY.NEVER
     local clock = possible or (c.combatTime and c.timer)
+    local threat = M.anyShown and D.THREAT ~= nil and D.ThreatShown()
+    local data = M.anyShown and (not threat or MeterShown())
+    WantThreat(threat)
     Want("PLAYER_REGEN_DISABLED", clock, CombatStart)
     Want("PLAYER_REGEN_ENABLED", clock or M.inCombat, CombatEnd)
     Want("PLAYER_ENTERING_WORLD", clock, World)
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
-    Want("GROUP_ROSTER_UPDATE", possible and c.visibility == VISIBILITY.GROUP, Roster)
+    Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or threat, Roster)
     Want("CHALLENGE_MODE_START", c.mythicReset, KeyStart)
-    local data = M.anyShown
     Want("DAMAGE_METER_COMBAT_SESSION_UPDATED", data, SessionUpdated)
     Want("DAMAGE_METER_CURRENT_SESSION_UPDATED", data, CurrentUpdated)
     Want("DAMAGE_METER_RESET", data, Reset)
@@ -442,6 +477,7 @@ function M:Enable()
     paintJob, clockJob = ctx:Coalesce(.1, D.DeferredPaint), ctx:Coalesce(1, D.ClockTick)
     D.paintJob, D.clockJob = paintJob, clockJob
     D.timerJob, D.lateJob = ctx:Coalesce(.1, D.TimerTick), ctx:Coalesce(.5, LateRepaint)
+    if D.THREAT then D.ThreatEnable(ctx) end
     M.inCombat = NS.IsCombatLocked()
     M.preview, M.pendingWrites, M.lastDuration, M.nextPaint = false, nil, nil, nil
     D.SessionTypes()
@@ -509,9 +545,10 @@ function M:Disable()
     if M.timerFrame then M.timerFrame:Hide() end
     S.SuppressHostElement(self.id, HOST_KEY, false)
     for event in pairs(M.events) do
-        M.events[event] = nil
+        M.events[event], M.eventUnits[event] = nil, nil
         self.context:RemoveEvent(event)
     end
+    M.threatOn = false
 end
 
 local movers

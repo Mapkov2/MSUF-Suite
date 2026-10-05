@@ -11,6 +11,13 @@ NS.DamageMeterTypeLabels = {
     "Damage done", "Damage per second", "Healing done", "Healing per second", "Absorbs",
     "Interrupts", "Dispels", "Damage taken", "Avoidable damage taken", "Deaths", "Enemy damage taken",
 }
+-- WoW Forever windows can also show threat (MSUF_Suite_DamageMeter/Threat.lua):
+-- one more choice after Blizzard's types, so its value is the next one. Saved
+-- windows keep that number: a meter type Blizzard adds later goes after it.
+if NS.Client.isForever then
+    NS.DamageMeterTypeLabels[#NS.DamageMeterTypeLabels + 1] = "Threat"
+    NS.DamageMeterThreatType = #NS.DamageMeterTypeLabels - 1
+end
 
 -- The choice values of the settings below (each is its label's position
 -- there); the damage meter runtime names its modes through these.
