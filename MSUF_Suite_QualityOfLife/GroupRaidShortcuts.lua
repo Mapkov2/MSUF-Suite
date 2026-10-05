@@ -84,15 +84,16 @@ local function UniqueRole(role)
 end
 
 -- GetRaidTargetIndex is secret on Retail (RaidMarkersDocumentation), so the
--- markers this module set are the only ones it can tell apart: marker -> GUID.
-local ownMarks = {}
-local function Remember(unit, marker)
+-- markers this module set are the only ones it can tell apart: marker -> GUID
+-- and the role it was set for.
+local ownMarks, ownRoles = {}, {}
+local function Remember(unit, marker, role)
     local guid = S.PublicText(UnitGUID(unit))
     if not guid then return end
     for held, owner in pairs(ownMarks) do
-        if owner == guid then ownMarks[held] = nil end
+        if owner == guid then ownMarks[held], ownRoles[held] = nil, nil end
     end
-    ownMarks[marker] = guid
+    ownMarks[marker], ownRoles[marker] = guid, role
 end
 
 local function MarkRole(message)
@@ -122,7 +123,7 @@ local function MarkRole(message)
     if not S.QoLRestrictedCall(SetRaidTarget, unit, marker) then
         S.Print(S.Text("Raid marker could not be set by the client."))
     else
-        Remember(unit, marker)
+        Remember(unit, marker, role:upper())
     end
 end
 
@@ -134,9 +135,12 @@ local function MarkerFree(marker, wantedUnit)
         if exists == true then
             local current = GetRaidTargetIndex(unit)
             if not S.Public(current) then
-                -- Unreadable: taken only when this module put this marker there.
+                -- Unreadable: taken only when this module put this marker on
+                -- this member for the role it still holds. Anyone may have
+                -- changed a former role holder's marker since.
                 local owner = ownMarks[marker]
-                if owner and unit ~= wantedUnit and owner == S.PublicText(UnitGUID(unit)) then return false end
+                if owner and unit ~= wantedUnit and owner == S.PublicText(UnitGUID(unit))
+                    and ownRoles[marker] == S.PublicText(UnitGroupRolesAssigned(unit)) then return false end
             elseif current == marker and unit ~= wantedUnit then
                 return false
             end
@@ -174,7 +178,7 @@ local function AutoMark(self)
                             S.Print(S.Text("Automatic raid markers were blocked by the client."))
                             return
                         end
-                        Remember(unit, marker)
+                        Remember(unit, marker, spec[2])
                     end
                 end
             end

@@ -106,4 +106,19 @@ SLASH_MSUFSUITEMARK("tank")
 assert(table.concat(calls, ",") == "party1=2" and #notices == 0,
     "/msufmark did nothing while the tank wore another marker")
 
+-- The marker /msufmark put on the tank is kept from the other role too.
+tools.config.autoMarkHealer, tools.config.healerMarker = true, 2
+calls = {}
+tools:Refresh()
+assert(#calls == 0, "the healer took the marker /msufmark put on the tank: " .. table.concat(calls, ","))
+
+-- The former healer turns DPS and someone puts Skull on it (unreadable): the
+-- healer marker this module once set there no longer blocks the new healer.
+roles.party3, roles.party2 = "DAMAGER", "HEALER"
+tools.config.autoMarkTank, tools.config.healerMarker = true, 5
+marks, calls = { party1 = 2, party3 = 8 }, {}
+tools:Refresh()
+assert(table.concat(calls, ",") == "party2=5",
+    "the marker once set on the former healer blocked the new healer: " .. table.concat(calls, ","))
+
 print("suite_group_raid_marker_secret_contract: ok")
