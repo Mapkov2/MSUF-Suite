@@ -116,6 +116,42 @@ Registry.NotifyListeners("profile", "activate")
 Check(passCalls == 1, "a listener removed during the pass was still called")
 Registry.listeners = saved
 
+------------------------------------------------------------------ bound roles
+NS.DB = NS.Database.Normalize(NS.CopyValue(NS.Defaults))
+-- QuickJoinToastButton.FriendsButton (live Blizzard_QuickJoin/QuickJoinToast.xml):
+-- an atlas the global allowlist does not know, native white vertex colour.
+local friends = { vertex = { 1, 1, 1, 1 }, desaturated = false }
+function friends:GetVertexColor() return unpack(self.vertex) end
+function friends:SetVertexColor(r, g, b, a) self.vertex = { r, g, b, a or 1 } end
+function friends:SetDesaturated(value) self.desaturated = value end
+function friends:IsDesaturated() return self.desaturated end
+function friends:GetAtlas() return "quickjoin-button-friendslist-up" end
+function friends:GetTexture() return 4615818 end
+function friends:IsForbidden() return false end
+local function Paints(role)
+    local r, g, b = NS.Theme.GetColor(role)
+    local vertex = friends.vertex
+    return math.abs(vertex[1] - r) < 1e-6 and math.abs(vertex[2] - g) < 1e-6 and math.abs(vertex[3] - b) < 1e-6
+end
+-- UIPanelButtons.lua SkinQuickJoin binds it like this.
+Check(NS.Checkmarks.TrackTexture(friends, "uipanel-buttons", "blizzardExpand") and Paints("blizzardExpand"),
+    "the bound texture was not painted")
+local before = { unpack(friends.vertex) }
+Check(NS.Theme.ApplyLook("midnight"), "the look did not change")
+NextFrame()
+local _, beforeGreen = unpack(before)
+Check(Paints("blizzardExpand") and friends.vertex[2] ~= beforeGreen,
+    "a look change left the bound texture in the previous look's colour")
+Check(NS.Theme.SetColor("blizzardExpand", 0.9, 0.1, 0.1, 1), "the colour did not change")
+NextFrame()
+Check(Paints("blizzardExpand"), "a colour change left the bound texture in its previous colour")
+-- Releasing it restores Blizzard's colour; the theme pass no longer paints it.
+Check(NS.Checkmarks.UntrackTexture(friends, "uipanel-buttons") and friends.vertex[1] == 1
+    and friends.vertex[2] == 1 and friends.vertex[3] == 1, "untracking did not restore the native colour")
+Check(NS.Theme.ApplyLook("cleanModern"), "the look did not change back")
+NextFrame()
+Check(friends.vertex[1] == 1 and friends.vertex[2] == 1 and friends.vertex[3] == 1,
+    "the theme pass painted a released texture")
 Check(#reported == 0, "the skin core reported errors: " .. table.concat(reported, "; "))
 
 print("Suite skin core edges: " .. checks .. " checks passed")

@@ -262,7 +262,11 @@ function Checkmarks.TrackTexture(texture, owner, colorRole)
         or type(colorRole) ~= "string" then
         return false
     end
-    return ApplyTexture(texture, owner, colorRole)
+    local applied = ApplyTexture(texture, owner, colorRole)
+    -- The theme pass (Checkmarks.Apply) repaints it with this role: the
+    -- allowlist does not know the asset.
+    if applied then Checkmarks.states[texture].boundRole = colorRole end
+    return applied
 end
 
 function Checkmarks.UntrackTexture(texture, owner)
@@ -567,7 +571,7 @@ function Checkmarks.Apply()
     if not NS.DB.enabled then return Checkmarks.Restore() end
     Checkmarks.RegisterLegacyDropdowns()
     for texture, state in pairs(Checkmarks.states) do
-        ApplyTexture(texture, state.owner)
+        ApplyTexture(texture, state.owner, state.boundRole)
     end
     for button in pairs(Checkmarks.buttons) do
         Checkmarks.TrackButton(button, Checkmarks.buttonOwners[button])
