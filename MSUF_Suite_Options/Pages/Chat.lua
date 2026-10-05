@@ -142,8 +142,10 @@ local function SampleTexts(sample, width, parts)
     lines:SetPoint("TOPLEFT", sample, "TOPLEFT", 39, -43)
     lines:SetWidth(width - 50)
     lines:SetJustifyH("LEFT")
-    lines:SetText("|cff9fc3e7[" .. Tr("Guild") .. "]|r Mapko: " .. Tr("Welcome to MSUF.") .. "\n|cffc9d4dd["
-        .. Tr("Party") .. "]|r " .. Tr("Chat links and channels stay native."))
+    -- Each sample line is one translated text: languages order the channel,
+    -- the name and the message their own way.
+    lines:SetText(Tr("|cff9fc3e7[Guild]|r %s: Welcome to MSUF."):format("Mapko") .. "\n"
+        .. Tr("|cffc9d4dd[Party]|r Chat links and channels stay native."))
     local input = sample:CreateTexture(nil, "BORDER")
     input:SetTexture(WHITE)
     input:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 36, 8)

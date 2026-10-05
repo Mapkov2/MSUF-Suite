@@ -21,7 +21,7 @@ function Menu.Attach()
     if not Suite.Client.IsAddOnLoaded(SUITE_OPTIONS) then
         local ok, reason = LoadAddOnByName(SUITE_OPTIONS)
         if not ok then
-            Menu.error = tostring(reason or "not loaded")
+            Menu.error = Suite.Client.LoadReasonText(reason, Suite.Text("not loaded"))
             Suite.Print(Suite.Text("Enable MSUF Suite Options in the AddOns list (%s)."):format(Menu.error))
             return false
         end

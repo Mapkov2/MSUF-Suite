@@ -17,11 +17,10 @@ local PLUS, PLUS_GAP = Page.PREVIEW_PLUS, Page.PREVIEW_PLUS_GAP
 local max, min, floor, abs, format = math.max, math.min, math.floor, math.abs, string.format
 local BuildDrag, DragCancel = Page.BuildPreviewIcons, Page.CancelPreviewDrag
 local PaintHits, PaintMarks, FollowPopover = Page.PaintPreviewIcons, Page.PaintPreviewMarks, Page.FollowPreviewPopover
-local DOT = " \194\183 "
--- Joined text cannot be looked up, so each part translates on its own.
-local HINT = Tr("Click a spell for its settings") .. DOT .. Tr("drag to reorder or onto a bar above") .. DOT
-    .. Tr("middle-click removes") .. DOT .. Tr("+ adds")
-local TIP = Tr("Click: settings") .. DOT .. Tr("Drag: reorder") .. DOT .. Tr("Middle-click: remove")
+-- English source text, each one translated as a whole (T.Font translates the
+-- hint line, the tip goes through Tr), so every language orders its parts.
+local HINT = "Click a spell for its settings \194\183 drag to reorder or onto a bar above \194\183 middle-click removes \194\183 + adds"
+local TIP = "Click: settings \194\183 Drag: reorder \194\183 Middle-click: remove"
 
 ------------------------------------------------------------------ activation
 -- The runtime keeps every bar visible while the page is open (rules

@@ -416,7 +416,7 @@ local function BuildBars(ctx, b, ui, body)
             local item = values[i] or {}
             values[i] = item
             local name = Page.BarName(info.key)
-            if not Page.IsOn(info.key) then name = name .. " " .. Tr("(off)") end
+            if not Page.IsOn(info.key) then name = Tr("%s (off)"):format(name) end
             item.value, item.text, item.translate = info.key, name, false
         end
         return values

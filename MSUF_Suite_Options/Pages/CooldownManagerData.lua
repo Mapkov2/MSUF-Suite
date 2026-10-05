@@ -261,7 +261,7 @@ function Page.EnsureRuntime()
     if not Suite.Client.IsAddOnLoaded(RUNTIME) then
         local loaded, reason = C_AddOns.LoadAddOn(RUNTIME)
         if not loaded and not Suite.Client.IsAddOnLoaded(RUNTIME) then
-            Page.loadFailed = tostring(reason or Tr("not installed"))
+            Page.loadFailed = Suite.Client.LoadReasonText(reason, Tr("not installed"))
         end
     end
     return S.CooldownManagerBarEntries ~= nil
@@ -352,7 +352,7 @@ local function KitGroup(id, rows)
         local kit = type(row) == "table" and row.soundKitID or nil
         if type(kit) == "number" and kit > 0 and kit < 2147483648 and kit == floor(kit) then
             local text = row.text
-            if type(text) ~= "string" or text == "" then text = Tr("Sound kit") .. " " .. format("%d", kit) end
+            if type(text) ~= "string" or text == "" then text = format(Tr("Sound kit %s"), format("%d", kit)) end
             group[#group + 1] = { value = "kit:" .. format("%d", kit), text = text }
             kitSounds.names[kit] = text
         end
@@ -382,10 +382,10 @@ function Page.SoundLabel(value)
     if name then return name end
     local kit = value:match("^kit:(%d+)$")
     if kit then
-        return Page.BlizzardSounds().names[tonumber(kit)] or (Tr("Sound kit") .. " " .. kit)
+        return Page.BlizzardSounds().names[tonumber(kit)] or format(Tr("Sound kit %s"), kit)
     end
     local file = value:match("^file:(%d+)$")
-    return file and (Tr("Sound file") .. " " .. file) or value
+    return file and format(Tr("Sound file %s"), file) or value
 end
 function Page.Identity(key)
     local kind, number = CDM.EntryKind(key), CDM.EntryID(key)

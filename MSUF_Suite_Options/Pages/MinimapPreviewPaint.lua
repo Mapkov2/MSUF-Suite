@@ -71,6 +71,9 @@ local function Sample(name, config)
     if name == "Durability" then
         return (config.infoDurabilityIcon and "|TInterface\\Durability\\UI-Durability-Icons:12:10|t " or "") .. "100%"
     end
+    -- The live texts' formats (Minimap/Info.lua), in the reader's language.
+    if name == "FPS" then return Tr("%d FPS"):format(60) end
+    if name == "Latency" then return Tr("%d ms"):format(23) end
     for _, spec in ipairs(TEXTS) do
         if spec[1] == name then return spec[2] end
     end

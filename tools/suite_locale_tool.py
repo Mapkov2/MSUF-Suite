@@ -634,6 +634,7 @@ BASE_SINKS = [
     (None, re.compile(r"(?:^|\.)M\.AddTooltip$"), {1: "s", 2: "s"}),
     (None, re.compile(r"(?:^|\.)M\.ShowStatusFeedback$"), {0: "s"}),
     (None, re.compile(r"(?:^|\.)M\.BindTextInputAt$"), {2: "s"}),
+    (None, re.compile(r"(?:^|\.)M\.BindDropdownAt$"), {2: "s"}),
     (None, re.compile(r"(?:^|\.)M\.RegisterControlMetadata$"), {2: "s"}),
     (None, re.compile(r"(?:^|\.)M\.RunWithHistory$"), {0: "s"}),
     (None, re.compile(r":CollapsibleSection$"), {1: "s"}),

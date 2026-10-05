@@ -389,9 +389,10 @@ local function LoadInstance(id, state)
     -- addon ran. Successful registration is the authoritative outcome.
     if S.instances[id] then return true end
     if NS.Client.IsAddOnLoaded(spec.addon) then
-        state.error = NS.FormatStatus("%s is missing from %s", spec.title, spec.addon)
+        state.error = NS.FormatStatus("%s is missing from %s", NS.Text(spec.title), spec.addon)
     else
-        state.error = NS.FormatStatus("Cannot load %s: %s", spec.addon, tostring(why or loaded or "not installed"))
+        local reason = NS.Client.LoadReasonText(why or loaded, NS.Text("not installed"))
+        state.error = NS.FormatStatus("Cannot load %s: %s", spec.addon, reason)
     end
     return false
 end

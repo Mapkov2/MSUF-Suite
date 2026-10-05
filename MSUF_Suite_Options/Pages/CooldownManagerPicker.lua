@@ -58,7 +58,7 @@ local function TrinketItem(n, trinket, row)
     local itemID = GetInventoryItemID("player", trinket)
     local name = Public(itemID) and type(itemID) == "number" and C_Item.GetItemNameByID(itemID) or nil
     local label = format(Tr("Trinket slot %d"), trinket - 12)
-    if Public(name) and type(name) == "string" then label = label .. ": " .. name end
+    if Public(name) and type(name) == "string" then label = format(Tr("Trinket slot %d: %s"), trinket - 12, name) end
     -- The runtime knows where the slot lives even without an explicit list.
     local home = row and Plain(row.slot) or Page.WhereIs(key)
     Item(n, "entry", label, key, texture, true, home, 1)
