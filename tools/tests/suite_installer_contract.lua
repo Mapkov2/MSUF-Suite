@@ -166,7 +166,7 @@ Suite.SuiteProfiles = {
     EnsureRetailResourceStack = function() resourceRepairs = resourceRepairs + 1; return false end,
     -- Stale skin profiles belong to suite_installer_session_contract.
     SkinProfileExists = function() return false end,
-    InstallSuiteFactory =function(name, profile, skin, look, finish, options)
+    InstallSuiteFactory = function(name, profile, skin, look, finish, options)
         assert(name == "Default")
         if options and options.preserveSkinLayout then
             assert(skin == Suite.RetailProfileSkinCompact and look == nil
