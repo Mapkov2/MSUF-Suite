@@ -536,13 +536,16 @@ end
 
 local function UnregisterEvents()
     if eventsRegistered then
+        eventsRegistered = false
         eventFrame:UnregisterEvent("PLAYER_REGEN_DISABLED")
         eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
         eventFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
         eventFrame:UnregisterEvent("PET_BATTLE_CLOSE")
         eventFrame:UnregisterEvent("UNIT_PORTRAIT_UPDATE")
-        eventFrame:UnregisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
-        eventsRegistered = false
+        -- Retail has no such event, and the client raises on an unknown one.
+        if NS.Client.SupportsEvent("INPUT_DEVICE_INTERFACE_TRANSITION") then
+            eventFrame:UnregisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
+        end
     end
     for event in pairs(loadEventsRegistered) do
         eventFrame:UnregisterEvent(event)
