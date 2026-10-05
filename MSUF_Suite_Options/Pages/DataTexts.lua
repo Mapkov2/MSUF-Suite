@@ -57,6 +57,14 @@ end
 -- the load-on-demand DataTexts addon and exports them on S (Suite.Suite), not
 -- on the namespace: before it loads, the menu offers only the reset to all
 -- observed stages.
+-- A checkbox click keeps Blizzard's menu open and redraws every tick, so
+-- both read the saved stages, not the ones the menu opened with.
+local function StageSelected(order)
+    for value in (P.Get(ID, "crestCurrencies") or ""):gmatch("%d+") do
+        if tonumber(value) == order then return true end
+    end
+    return false
+end
 local function SeasonStagesMenu(anchor)
     local sources = S.DataTextExtraSources
     local choices = sources and sources.CrestChoices() or {}
@@ -64,18 +72,14 @@ local function SeasonStagesMenu(anchor)
         menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = CREST_MODE.OBSERVED, crestCurrencies = "" }) end)
         for _, cost in ipairs(choices) do
             local order = cost.order
-            local selected = false
-            for value in (P.Get(ID, "crestCurrencies") or ""):gmatch("%d+") do
-                if tonumber(value) == order then selected = true end
-            end
             local info = cost.currencyID and C_CurrencyInfo.GetCurrencyInfo(cost.currencyID)
             local name = info and info.name or cost.itemID and C_Item.GetItemInfo(cost.itemID) or tostring(order)
-            menu:CreateCheckbox(tostring(order) .. ": " .. name, function() return selected end, function()
+            menu:CreateCheckbox(tostring(order) .. ": " .. name, function() return StageSelected(order) end, function()
                 local values = {}
                 for value in (P.Get(ID, "crestCurrencies") or ""):gmatch("%d+") do
                     if tonumber(value) ~= order then values[#values + 1] = value end
                 end
-                if not selected then values[#values + 1] = tostring(order) end
+                if not StageSelected(order) then values[#values + 1] = tostring(order) end
                 P.SetMany(ID, { crestMode = CREST_MODE.OBSERVED, crestCurrencies = table.concat(values, ",") })
             end)
         end

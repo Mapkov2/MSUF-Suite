@@ -568,7 +568,8 @@ for k in pairs(_G) do assert(globalsBefore[k], "options addon created global " .
 -- suite_options_pages_contract.lua reuses this client and menu fixture.
 if SUITE_OPTIONS_FIXTURE then
     return { M = M, W = W, T = T, S = S, Suite = Suite, optionsNS = optionsNS, L = L, Widget = Widget,
-        actionPreview = actionPreview, SetCurrent = function(ctx) current = ctx end }
+        actionPreview = actionPreview, registeredControls = registeredControls,
+        SetCurrent = function(ctx) current = ctx end }
 end
 -- The first action after a cold options attach must also offer the reload.
 do

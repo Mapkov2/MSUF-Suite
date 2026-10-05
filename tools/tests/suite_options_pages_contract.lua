@@ -95,4 +95,45 @@ do
         "a vertical bar's grow list reads " .. grow.values[1].text .. " / " .. grow.values[2].text)
 end
 
+-- DataTexts "Choose observed seasonal stages": Blizzard's checkbox keeps the
+-- menu open and redraws every tick from isSelected after a click
+-- (Blizzard_Menu MenuTemplates.lua MenuResponse.Refresh, Menu.lua), so a
+-- click shows at once and a second click takes the stage out again.
+do
+    local previous = { MenuUtil = MenuUtil, C_CurrencyInfo = C_CurrencyInfo, C_Item = C_Item }
+    S.DataTextExtraSources = { CrestChoices = function()
+        return { { order = 1, currencyID = 3008 }, { order = 2, currencyID = 3009 } }
+    end }
+    C_CurrencyInfo = { GetCurrencyInfo = function(id) return { name = id == 3008 and "Weathered" or "Carved" } end }
+    C_Item = { GetItemInfo = function() return nil end }
+    local generator
+    MenuUtil = { CreateContextMenu = function(_, fn) generator = fn end }
+    local function Open()
+        local boxes, root = {}, {}
+        function root:CreateButton() return { SetResponse = function() end } end
+        function root:CreateTitle() end
+        function root:CreateCheckbox(text, isSelected, setSelected)
+            boxes[#boxes + 1] = { text = text, isSelected = isSelected, setSelected = setSelected }
+            return {}
+        end
+        generator(nil, root)
+        return boxes
+    end
+    local ctx = Build("suite_dataTexts")
+    ctx.dataTextWorkspace.choose("shared")
+    local button = assert(F.registeredControls["menu2.suite_dataTexts.dataTexts.chooseSeasonStages"])
+    assert(S.Set("dataTexts", "crestCurrencies", ""))
+    button.scripts.OnClick(button)
+    local stage = Open()[1]
+    assert(not stage.isSelected(), "the stage shows checked before a click")
+    stage.setSelected()
+    assert(S.Config("dataTexts").crestCurrencies == "1", "the first click did not save the stage")
+    assert(stage.isSelected(), "the clicked stage still shows unchecked")
+    stage.setSelected()
+    assert(S.Config("dataTexts").crestCurrencies == "", "the second click did not take the stage out")
+    assert(not stage.isSelected(), "the stage taken out still shows checked")
+    MenuUtil, C_CurrencyInfo, C_Item = previous.MenuUtil, previous.C_CurrencyInfo, previous.C_Item
+    S.DataTextExtraSources = nil
+end
+
 print("options pages contract: ok")
