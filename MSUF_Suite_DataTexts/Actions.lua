@@ -189,6 +189,7 @@ local function Popup()
     if popup then return popup end
     popup = S.CreateFrame("Frame", nil, UIParent)
     popup:SetFrameStrata("TOOLTIP")
+    popup:SetClampedToScreen(true)
     popup:EnableMouse(true)
     popup.rows = {}
     local fill = S.CreateTexture(popup, nil, "BACKGROUND")
@@ -210,7 +211,6 @@ local function Row(index)
     row:SetScript("OnLeave", WatchLeave)
     row:SetScript("PostClick", RowPostClick)
     row:SetSize(232, 24)
-    row:SetPoint("TOPLEFT", popup, "TOPLEFT", 4, -4 - (index - 1) * 26)
     row.icon = S.CreateTexture(row, nil, "ARTWORK")
     row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
     row.icon:SetSize(22, 22)
@@ -224,7 +224,21 @@ local function Row(index)
     return row
 end
 
--- Opens the popup above a place; fill(row, index) sets up each entry.
+-- Whether the popup opens below the place (more room there than above it,
+-- as on a bar docked to the top of the screen) and the height it has there,
+-- in UIParent units.
+local function PopupSide(button)
+    local top, bottom = button:GetTop(), button:GetBottom()
+    local screen = UIParent:GetHeight()
+    if not S.Finite(top) or not S.Finite(bottom) then return false, screen end
+    local scale = button:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    top, bottom = top * scale, bottom * scale
+    if bottom > screen - top then return true, bottom end
+    return false, screen - top
+end
+
+-- Opens the popup above or below a place; entries that do not fit one
+-- column there wrap into further columns. fill(row, index) sets up each entry.
 local function OpenPopup(button, count, fill)
     if Locked() then return end
     count = math.min(count, ROW_LIMIT)
@@ -234,11 +248,19 @@ local function OpenPopup(button, count, fill)
     end
     local frame = Popup()
     frame.owner = button
+    local below, room = PopupSide(button)
+    local perColumn = math.max(1, math.min(count, math.floor((room - 11) / 26)))
     frame:ClearAllPoints()
-    frame:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 0, 3)
-    frame:SetSize(240, math.max(1, count) * 26 + 8)
+    if below then
+        frame:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -3)
+    else
+        frame:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 0, 3)
+    end
+    frame:SetSize(4 + math.ceil(count / perColumn) * 236, perColumn * 26 + 8)
     for i = 1, count do
         local row = Row(i)
+        local column, line = math.floor((i - 1) / perColumn), (i - 1) % perColumn
+        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + column * 236, -4 - line * 26)
         fill(row, i)
         row:Show()
     end
