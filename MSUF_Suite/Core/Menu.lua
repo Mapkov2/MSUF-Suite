@@ -21,7 +21,9 @@ function Menu.Attach()
     if not Suite.Client.IsAddOnLoaded(SUITE_OPTIONS) then
         local ok, reason = LoadAddOnByName(SUITE_OPTIONS)
         if not ok then
-            Menu.error = tostring(reason or "not loaded")
+            -- Blizzard's own text for the load reason (AddOnUtil.lua does the same).
+            Menu.error = type(reason) == "string" and _G["ADDON_" .. reason]
+                or tostring(reason or Suite.Text("not loaded"))
             Suite.Print(Suite.Text("Enable MSUF Suite Options in the AddOns list (%s)."):format(Menu.error))
             return false
         end

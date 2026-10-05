@@ -545,7 +545,7 @@ local function OnContinue(window)
     elseif page == 5 then
         local ok, reason = Installer.Apply()
         if not ok then
-            window.status:SetText("|cffff6666" .. ReasonText(reason or "Installation failed") .. "|r")
+            window.status:SetText("|cffff6666" .. (reason and ReasonText(reason) or Text("Installation failed")) .. "|r")
             return
         end
         page = 6

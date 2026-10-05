@@ -391,7 +391,10 @@ local function LoadInstance(id, state)
     if NS.Client.IsAddOnLoaded(spec.addon) then
         state.error = NS.FormatStatus("%s is missing from %s", spec.title, spec.addon)
     else
-        state.error = NS.FormatStatus("Cannot load %s: %s", spec.addon, tostring(why or loaded or "not installed"))
+        -- Blizzard's own text for the load reason (AddOnUtil.lua does the same).
+        local reason = type(why) == "string" and _G["ADDON_" .. why]
+            or tostring(why or loaded or NS.Text("not installed"))
+        state.error = NS.FormatStatus("Cannot load %s: %s", spec.addon, reason)
     end
     return false
 end
