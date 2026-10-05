@@ -275,15 +275,10 @@ end
 local function PaintControl(button, glyph)
     button:SetSize(22, 22)
     button:SetFrameLevel(button:GetParent():GetFrameLevel() + CONTROL_LEVEL_OFFSET)
-    local bg = button:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(NS.Theme.GetColor("buttonFill"))
     local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("CENTER", 0, 0)
     label:SetText(glyph)
-    label:SetTextColor(NS.Theme.GetColor("text"))
-    button._msufControlBackground = bg
-    button._msufControlLabel = label
+    NS.WindowControlChrome.PaintControl(button, "buttonFill", label)
 end
 
 local function Restore(state)
@@ -361,9 +356,7 @@ local function CreateRestore(state)
     bar:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     bar:SetScript("OnDragStart", OnRestoreDragStart)
     bar:SetScript("OnDragStop", OnRestoreDragStop)
-    local bg = bar:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(NS.Theme.GetColor("popup"))
+    NS.WindowControlChrome.PaintControl(bar, "popup")
     local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("LEFT", 10, 0)
     label:SetPoint("RIGHT", -10, 0)
@@ -733,13 +726,11 @@ end
 local function RefreshQueued() WindowControls.Refresh() end
 
 local function RecolorMinimize()
-    local r, g, b, a = NS.Theme.GetColor("buttonFill")
+    local Chrome = NS.WindowControlChrome
     for _, state in pairs(WindowControls.states) do
-        if state.name == "WorldMapFrame" then NS.WindowControlChrome.RecolorGrip(state.grip) end
-        if state.minimize then
-            state.minimize._msufControlBackground:SetColorTexture(r, g, b, a)
-            state.minimize._msufControlLabel:SetTextColor(NS.Theme.GetColor("text"))
-        end
+        if state.name == "WorldMapFrame" then Chrome.RecolorGrip(state.grip) end
+        if state.minimize then Chrome.RecolorControl(state.minimize) end
+        if state.restore then Chrome.RecolorControl(state.restore) end
     end
 end
 

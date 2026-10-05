@@ -148,6 +148,8 @@ local function NewSession(forever, look)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
+    -- The TOC loads the controls' chrome right before them.
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
     assert(loadfile(source))("MSUF_Suite_Skin", NS)
     local session = { NS = NS }
     function session.Profile(positions)
