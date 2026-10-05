@@ -105,7 +105,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     -- A list too long for the columns that fit beside a place in the middle
     -- of the screen takes the screen's height instead of running off its
     -- sides: the clamped popup stays whole on the screen, every row inside
-    -- it. On a narrow screen the rows that fit no column stay closed.
+    -- it. On a narrow screen the entries that fit no row scroll into the rows
+    -- with the mouse wheel: every entry stays reachable.
     local function Whole(label)
         local count = 0
         for i = 1, #popup.rows do
@@ -130,11 +131,65 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     W.Click(travel)
     popup = A.popup
     assert(Whole("centered place") == 100, "a centered travel popup dropped rows the screen has room for: " .. flavor)
+    assert(not popup:IsMouseWheelEnabled(), "a travel popup that shows its whole list took the mouse wheel: " .. flavor)
     W.Click(popup.rows[1])
     W.UIParent.width = 700
     W.Click(travel)
-    local shown = Whole("narrow screen")
-    assert(shown > OWNED and shown < 100, "a narrow screen showed " .. shown .. " travel rows: " .. flavor)
+    local slots = Whole("narrow screen")
+    assert(slots > OWNED and slots < 100, "a narrow screen showed " .. slots .. " travel rows: " .. flavor)
+    assert(popup:IsMouseWheelEnabled(), "a travel popup with more entries than rows ignores the mouse wheel: " .. flavor)
+    -- The entry each row shows and uses, by its place in the list.
+    local function Entry(row)
+        local item = row:GetAttribute("item")
+        local id = tonumber(item and item:match("^item:(%d+)$"))
+        assert(id and row.label:GetText() == "Item " .. id, "a travel row shows another entry than it uses: " .. flavor)
+        return id - 1000
+    end
+    local reached, first = {}, Entry(popup.rows[1])
+    local function Look(label, offset)
+        assert(Whole(label) == slots, label .. ": the travel popup changed its rows while scrolling: " .. flavor)
+        for i = 1, slots do
+            local entry = Entry(popup.rows[i])
+            assert(entry == offset + i, label .. ": travel row " .. i .. " shows entry " .. entry .. ": " .. flavor)
+            reached[entry] = true
+        end
+    end
+    assert(first == 1, "a narrow screen's travel popup does not start at the first entry: " .. flavor)
+    Look("narrow screen", 0)
+    for offset = 1, 100 - slots do
+        W.Fire(popup, "OnMouseWheel", -1)
+        Look("scrolled " .. offset, offset)
+    end
+    W.Fire(popup, "OnMouseWheel", -1)
+    Look("past the end", 100 - slots)
+    for entry = 1, 100 do
+        assert(reached[entry], "travel entry " .. entry .. " of 100 is unreachable on a narrow screen: " .. flavor)
+    end
+    -- The last entry performs its own action from its row.
+    local last = popup.rows[slots]
+    local actions = #W.secureActions
+    W.Click(last)
+    local record = W.secureActions[actions + 1]
+    assert(record and record.frame == last and record.item == "item:1100" and not popup.shown,
+        "the last travel entry of a scrolled popup does not use its Hearthstone: " .. flavor)
+    -- A popup opened again starts at the top; the wheel back up gets there too.
+    W.Click(travel)
+    Look("opened again", 0)
+    W.Fire(popup, "OnMouseWheel", -1)
+    W.Fire(popup, "OnMouseWheel", -1)
+    W.Fire(popup, "OnMouseWheel", 1)
+    Look("wheel up", 1)
+    W.Fire(popup, "OnMouseWheel", 1)
+    W.Fire(popup, "OnMouseWheel", 1)
+    Look("above the start", 0)
+    -- In combat the popup is hidden and the wheel leaves its secure rows alone.
+    W.Fire(popup, "OnMouseWheel", -1)
+    W.SetCombat(true)
+    assert(not popup:IsVisible(), "the travel popup stayed visible in combat: " .. flavor)
+    W.Fire(popup, "OnMouseWheel", -1)
+    W.SetCombat(false)
+    assert(Entry(popup.rows[1]) == 2, "the wheel scrolled the secure travel rows in combat: " .. flavor)
+    W.Click(travel)
     W.Click(popup.rows[1])
     W.UIParent.width = 1366
     for i = OWNED + 1, 100 do ids[i] = nil end

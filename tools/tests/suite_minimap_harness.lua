@@ -268,7 +268,7 @@ function H.New(root, client, options)
     function F:DoesClipChildren() return self.clips == true end
     function F:EnableMouse(value) Guard(self, "EnableMouse"); self.mouse = value and true or false end
     function F:IsMouseEnabled() return self.mouse end
-    function F:EnableMouseWheel(value) self.wheel = value and true or false end
+    function F:EnableMouseWheel(value) Guard(self, "EnableMouseWheel"); self.wheel = value and true or false end
     function F:IsMouseWheelEnabled() return self.wheel end
     function F:SetMouseClickEnabled(value) self.clicks = value end
     function F:SetMouseMotionEnabled(value) self.motion = value end

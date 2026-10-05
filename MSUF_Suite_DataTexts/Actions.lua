@@ -185,6 +185,19 @@ local function RowPostClick(row)
     if action then action() end
 end
 
+-- The open list: fill(row, index) sets up entry index of popupEntries; the
+-- popupSlots rows show the entries after popupOffset. The mouse wheel moves
+-- a list longer than its rows by one entry, out of combat (the rows are
+-- secure): the rows stay in place and take the entries now in view.
+local fillPopup, popupEntries, popupSlots, popupOffset = nil, 0, 0, 0
+local function PopupWheel(_, delta)
+    if Locked() then return end
+    local offset = math.max(0, math.min(popupEntries - popupSlots, popupOffset - (delta > 0 and 1 or -1)))
+    if offset == popupOffset then return end
+    popupOffset = offset
+    for i = 1, popupSlots do fillPopup(popup.rows[i], offset + i) end
+end
+
 local function Popup()
     if popup then return popup end
     popup = S.CreateFrame("Frame", nil, UIParent)
@@ -196,6 +209,7 @@ local function Popup()
     fill:SetAllPoints(popup)
     fill:SetColorTexture(.04, .05, .07, .97)
     popup:SetScript("OnLeave", WatchLeave)
+    popup:SetScript("OnMouseWheel", PopupWheel)
     popup:Hide()
     RegisterStateDriver(popup, "visibility", "[combat] hide")
     Actions.popup = popup
@@ -240,8 +254,8 @@ end
 -- Opens the popup above or below a place; entries that do not fit one
 -- column there wrap into further columns, as many as the screen is wide.
 -- A list those columns cannot hold there takes the screen's height (the
--- clamp moves the popup over its place); entries beyond that stay closed.
--- fill(row, index) sets up each entry.
+-- clamp moves the popup over its place); entries beyond its rows scroll
+-- into them with the mouse wheel. fill(row, index) sets up each entry.
 local function OpenPopup(button, count, fill)
     if Locked() then return end
     count = math.min(count, ROW_LIMIT)
@@ -254,26 +268,31 @@ local function OpenPopup(button, count, fill)
     local below, room = PopupSide(button)
     local perColumn = math.max(1, math.min(count, math.floor((room - 11) / 26)))
     local columns = math.max(1, math.floor((UIParent:GetWidth() - 4) / 236))
+    local slots = count
     if count > columns * perColumn then
         local tallest = math.max(1, math.floor((UIParent:GetHeight() - 8) / 26))
         perColumn = math.max(perColumn, math.min(tallest, math.ceil(count / columns)))
-        count = math.min(count, columns * perColumn)
+        slots = math.min(count, columns * perColumn)
     end
+    fillPopup, popupEntries, popupSlots, popupOffset = fill, count, slots, 0
     frame:ClearAllPoints()
     if below then
         frame:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -3)
     else
         frame:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 0, 3)
     end
-    frame:SetSize(4 + math.ceil(count / perColumn) * 236, perColumn * 26 + 8)
-    for i = 1, count do
+    frame:SetSize(4 + math.ceil(slots / perColumn) * 236, perColumn * 26 + 8)
+    for i = 1, slots do
         local row = Row(i)
         local column, line = math.floor((i - 1) / perColumn), (i - 1) % perColumn
         row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + column * 236, -4 - line * 26)
         fill(row, i)
         row:Show()
     end
-    for i = count + 1, #frame.rows do frame.rows[i]:Hide() end
+    for i = slots + 1, #frame.rows do frame.rows[i]:Hide() end
+    -- Only a list longer than its rows takes the wheel; otherwise the wheel
+    -- stays with the camera.
+    frame:EnableMouseWheel(slots < count)
     frame:Show()
 end
 
