@@ -123,6 +123,9 @@ local function Gate(g, wanted)
     end
     if not Writable(g) then
         parkedGates[g] = wanted
+        -- Applied at the end of combat or of the restriction, also after
+        -- the module or its last aura bar was switched off.
+        C.Events.WatchParked()
         return
     end
     parkedGates[g] = nil

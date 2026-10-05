@@ -518,6 +518,11 @@ end
 LoadRuntime("Const.lua")
 LoadRuntime("Grid.lua")
 
+-- Events stand-in: a parked glow gate asks for the parked-work listener
+-- (the controller contract runs the real one). The main chunk is at the
+-- local limit: the count lives on the stand-in.
+C.Events={watches=0}
+function C.Events.WatchParked() C.Events.watches=C.Events.watches+1 end
 -- Layout stand-in with the contract the aura layer uses (EnsureBar, Cell,
 -- Metrics, FixedAuras); the real Layout.lua is checked against it further
 -- down.
@@ -2412,8 +2417,10 @@ do
     A.Sync("c4")
     assert(R[gated[1]].combatDriver,"the combat gate is registered before the key")
     ACCESS,AURAS_SECRET=Secret(),Secret()
+    local watches=C.Events.watches
     A.Release("c4")
     assert(R[gated[1]].combatDriver and C.AuraGlows.HasParkedGates(),"a release while auras are secret parks the gate")
+    assert(C.Events.watches>watches,"a gate parked while auras are secret waits for no listener (the last bar may be gone)")
     C.AuraGlows.FlushGates()
     assert(R[gated[1]].combatDriver and C.AuraGlows.HasParkedGates(),"still secret after combat: the gate stays parked")
     ACCESS,AURAS_SECRET=true,false

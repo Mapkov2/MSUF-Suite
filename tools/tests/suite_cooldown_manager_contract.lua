@@ -478,6 +478,16 @@ RegisterAttributeDriver=function(frame,attribute,expression)
     if handler then handler(frame,attribute,value) end
 end
 UnregisterAttributeDriver=function(frame) drivers[frame]=nil end
+-- SecureStateDriver.lua bridges "state-<state>"; the manager's attribute
+-- writes are protected, so never in combat.
+RegisterStateDriver=function(frame,state,values)
+    assert(not combat,"a state driver registered in combat")
+    RegisterAttributeDriver(frame,"state-"..state,values)
+end
+UnregisterStateDriver=function(frame,state)
+    assert(not combat,"a state driver unregistered in combat")
+    UnregisterAttributeDriver(frame,"state-"..state)
+end
 local function DriverCount() local n=0;for _ in pairs(drivers) do n=n+1 end;return n end
 local registry,triggered={},{}
 EventRegistry={
@@ -3442,6 +3452,71 @@ do
     assert(listeners>=1 and DriverCount()==0,"a release in combat left its visibility driver registered")
     config.uti_vis=1
     Run(5)
+end
+-- A glow combat gate released while its sealed aura button refuses access
+-- (auras secret in an M+ key, also out of combat) stays parked until the
+-- restriction ends. It still applies then when the module's own
+-- restriction and combat events are gone: the last aura bar or the module
+-- itself was switched off in between. The listener lets go afterwards.
+do
+    local access=true
+    local function Gated()
+        local host=New("Frame",UIParent)
+        host.CanBeAccessedInContext=function() return access end
+        local g=C.AuraGlows.NewGlow(host,host,1)
+        C.AuraGlows.ApplyCombatGate(g,true,false)
+        assert(drivers[g.combatGate],"the combat gate is registered before the key")
+        access=false
+        C.AuraGlows.ReleaseGlows({parts={{glow=g}}})
+        assert(drivers[g.combatGate] and C.AuraGlows.HasParkedGates(),"a release while the button refuses access parks the gate")
+        return g
+    end
+    local function Others(event)
+        local n=0
+        for i=1,#all do
+            local frame=all[i]
+            if frame~=module.context.frame and frame.events[event] then n=n+1 end
+        end
+        return n
+    end
+    local function Edge(event,...)
+        local n=0
+        for i=1,#all do
+            local frame=all[i]
+            if frame.events[event] and frame.scripts.OnEvent then
+                n=n+1
+                frame.scripts.OnEvent(frame,event,...)
+            end
+        end
+        Run()
+        return n
+    end
+    Activate()
+    config.allGlowsCombat=true
+    config.buf_on,config.bar_on,config.ess_showAura=false,false,false
+    module:Refresh()
+    Run()
+    assert(C.state.allGlowsCombat and not C.state.preview and not Registered("ADDON_RESTRICTION_STATE_CHANGED"),
+        "no aura bar left: the module itself watches no restriction")
+    local g=Gated()
+    access=true
+    Edge("ADDON_RESTRICTION_STATE_CHANGED",1,0)
+    assert(not drivers[g.combatGate] and not C.AuraGlows.HasParkedGates(),
+        "the last aura bar off: a gate parked in the key stayed registered after the key")
+    assert(Others("ADDON_RESTRICTION_STATE_CHANGED")+Others("PLAYER_REGEN_ENABLED")==0,"the parked-work listener stayed registered")
+    -- Module off in the key, a pull ends while it still runs, then the key ends.
+    config.buf_on,config.bar_on,config.ess_showAura=true,true,true
+    module:Refresh()
+    Run()
+    g=Gated()
+    Deactivate()
+    Edge("PLAYER_REGEN_ENABLED")
+    assert(drivers[g.combatGate] and C.AuraGlows.HasParkedGates(),"the button still refuses: the gate stays parked")
+    access=true
+    assert(Edge("ADDON_RESTRICTION_STATE_CHANGED",1,0)>=1 and not drivers[g.combatGate] and not C.AuraGlows.HasParkedGates(),
+        "module off: a gate parked in the key stayed registered after the key")
+    assert(Others("ADDON_RESTRICTION_STATE_CHANGED")+Others("PLAYER_REGEN_ENABLED")==0,"the parked-work listener stayed registered")
+    config.allGlowsCombat=false
 end
 config.blizzard=1
 assert(not S.CooldownManagerSetPreview(true))
