@@ -371,12 +371,16 @@ function Page.CopyToSpecs(slot, key)
         if other ~= spec then
             local slots = lists.specs[other] or {}
             lists.specs[other] = slots
-            Unclaim(lists, other, key, slot)
             local list = slots[slot] or {}
             slots[slot] = list
-            if not IndexOf(list, key) and #list < CDM.LIMITS.entries then
-                list[#list + 1] = key
-                changed = changed + 1
+            -- A full bar takes nothing, and the entry stays on its old bar.
+            local present = IndexOf(list, key)
+            if present or #list < CDM.LIMITS.entries then
+                Unclaim(lists, other, key, slot)
+                if not present then
+                    list[#list + 1] = key
+                    changed = changed + 1
+                end
             end
             Prune(lists, other)
         end
@@ -406,12 +410,15 @@ function Page.CopyListToSpecs(slot)
             local before = added
             for i = 1, #keys do
                 local key = keys[i]
-                Unclaim(lists, other, key, slot)
                 local list = slots[slot] or {}
                 slots[slot] = list
-                if not IndexOf(list, key) and #list < CDM.LIMITS.entries then
-                    list[#list + 1] = key
-                    added = added + 1
+                local present = IndexOf(list, key)
+                if present or #list < CDM.LIMITS.entries then
+                    Unclaim(lists, other, key, slot)
+                    if not present then
+                        list[#list + 1] = key
+                        added = added + 1
+                    end
                 end
             end
             if added > before then specs = specs + 1 end
