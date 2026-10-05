@@ -190,7 +190,7 @@ local function NextFactoryName(base)
     local name = base
     local index = 2
     while DB.GetProfile(name) or (_G.MSUF_GlobalDB and _G.MSUF_GlobalDB.profiles
-        and _G.MSUF_GlobalDB.profiles[name]) do
+        and _G.MSUF_GlobalDB.profiles[name]) or Suite.SuiteProfiles.SkinProfileExists(name) do
         name = base .. " " .. index
         index = index + 1
     end

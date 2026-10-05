@@ -25,6 +25,13 @@ local function SkinEngine()
     end
 end
 
+-- A skin profile can outlive its MSUF twin: a rename or delete while the skin
+-- addon was disabled never reaches the skin store.
+function P.SkinProfileExists(name)
+    local skin = SkinEngine()
+    return skin ~= nil and skin.Database.GetProfile(name) ~= nil
+end
+
 local function SkinSnapshot(skin)
     if not skin then return nil end
     local encoded, reason = skin.ProfileIO.ExportProfile()
