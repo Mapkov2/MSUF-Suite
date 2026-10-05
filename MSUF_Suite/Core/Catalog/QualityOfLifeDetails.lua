@@ -5,7 +5,10 @@ local Number, Bool, Choice = B.Number, B.Bool, B.Choice
 B.Module("threatMeter", {
     title = "Threat meter (Forever)", description = "Your group's threat on the enemy you watch, read from Blizzard's own threat data, with an optional second window for your focus.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function() return NS.Client.isForever == true, "Threat meter is available in WoW Forever" end,
+    available = function()
+        if not NS.Client.isForever then return false, "Threat meter is available in WoW Forever" end
+        return true
+    end,
     editElement = "main",
 })
 B.Section("threatMeter", "threat_meter", "Threat meter", {
@@ -23,7 +26,10 @@ B.Section("threatMeter", "threat_meter", "Threat meter", {
 B.Module("flightTimer", {
     title = "Flight route timer (Forever)", description = "Learn flight-master route times, show the route and request landing at the next stop.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function() return NS.Client.isForever == true, "Flight route timer is available in WoW Forever" end,
+    available = function()
+        if not NS.Client.isForever then return false, "Flight route timer is available in WoW Forever" end
+        return true
+    end,
     editElement = "flight",
 })
 B.Section("flightTimer", "flight_route", "Flight route timer", {
