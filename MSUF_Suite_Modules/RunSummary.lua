@@ -587,8 +587,10 @@ local function ObserveLoot(self, message, _, _, _, _, _, _, _, _, _, lineID, gui
     if not result or not result.players or not self.observedLoot or not Text(guid)
         or not Text(message) or not Finite(lineID) or self.lootLines[lineID]
         or GetTime() - (self.lootStartedAt or 0) > 300 then return end
-    local link = message:match("(|c%x%x%x%x%x%x%x%x|Hitem:[^|]+|h[^|]+|h|r)")
-        or message:match("(|Hitem:[^|]+|h[^|]+|h)")
+    -- The color is |cffRRGGBB or, on 12.x, the named quality token |cnIQ4:
+    -- (ColorManager.lua); a crafted item's name may hold a quality atlas.
+    local link = message:match("(|c[^|]*|Hitem:[^|]*|h.-|h|r)")
+        or message:match("(|Hitem:[^|]*|h.-|h)")
     if not link or #link > 512 then return end
     for _, player in ipairs(result.players) do
         if player.guid == guid then

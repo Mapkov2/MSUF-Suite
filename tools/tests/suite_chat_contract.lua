@@ -560,6 +560,8 @@ module.config.sidebarClassColor = false
 module:Refresh()
 assert(not sidebar.copyButton, "copy UI must be absent by default")
 ChatFrame1.messages = {
+    -- 12.x item links carry the named quality token |cnIQ<quality>:.
+    "|cffaaaaaa[15:37]|r You receive loot: |cnIQ4:|Hitem:246771::::::::80:::::|h[Radiant Item]|h|r.",
     "|cffaaaaaa[15:38]|r First message",
     "secret",
     "|cff00ff00[15:39]|r |Hplayer:Mapko|h[Mapko]|h: Good point!",
@@ -583,7 +585,8 @@ assert(not GameTooltip.shown, "leaving the Copy button kept its tooltip")
 sidebar.copyButton:Click("LeftButton")
 assert(module.copyDialog and module.copyDialog.shown and module.copyDialog.rows[1].message == "[15:39] [Mapko]: Good point!"
     and module.copyDialog.rows[2].message == "[15:38] First message"
-    and not module.copyDialog.rows[3].shown, "copy chooser did not show recent public chat lines")
+    and module.copyDialog.rows[3].message == "[15:37] You receive loot: [Radiant Item]."
+    and not module.copyDialog.rows[4].shown, "copy chooser did not show recent public chat lines as plain text")
 local copyDialog = module.copyDialog
 assert(copyDialog.movable and copyDialog.dragHandle.dragButton == "LeftButton"
     and copyDialog.dragHandle.scripts.OnDragStart and copyDialog.dragHandle.scripts.OnDragStop,

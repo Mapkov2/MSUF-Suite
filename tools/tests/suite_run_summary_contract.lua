@@ -260,11 +260,22 @@ Loot(link, "Player-1", 4)
 Loot(link, "Player-1", 4)
 assert(#state.history[1].players[1].loot == 1 and summary.playerRows[1].loot.text == link
     and state.history[1].players[1].lootItems == nil, "loot was stored twice or not shown")
+-- 12.x CHAT_MSG_LOOT links carry the named quality token |cnIQ<quality>:
+-- (live and forever ColorManager.lua), and a crafted item's name may hold a
+-- profession quality atlas (|A...|a).
+local named = "|cnIQ4:|Hitem:246771::::::::80:::::|h[Radiant Item]|h|r"
+local crafted = "|cnIQ4:|Hitem:244569::::::::80:::::|h[Agent's Sneakers "
+    .. "|A:Professions-ChatIcon-Quality-Tier5:17:15::1|a]|h|r"
+Loot("You receive loot: " .. named .. ".", "Player-1", 6)
+Loot("You receive loot: " .. crafted .. "x2.", "Player-1", 7)
+local loot = state.history[1].players[1].loot
+assert(#loot == 3 and loot[2] == named and loot[3] == crafted,
+    "a 12.x loot link lost its quality color or was not recorded: " .. table.concat(loot, " ; "))
 Event("CHALLENGE_MODE_COMPLETED_REWARDS")
-assert(#state.history[1].players[1].loot == 1, "reward refresh lost attributed loot")
+assert(#state.history[1].players[1].loot == 3, "reward refresh lost attributed loot")
 Event("PLAYER_ENTERING_WORLD")
 Loot(link, "Player-1", 5)
-assert(#state.history[1].players[1].loot == 1, "world transition kept loot ownership")
+assert(#state.history[1].players[1].loot == 3, "world transition kept loot ownership")
 summary:Browse(-1)
 assert(summary.current.historyID ~= savedID, "previous run did not navigate history")
 summary:Browse(1)
