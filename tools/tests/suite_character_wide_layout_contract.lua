@@ -23,7 +23,8 @@ UpdateUIPanelPositions = function() panelRepositions = panelRepositions + 1 end
 
 local NS = {
     -- Retail: the dossier and its modern equipment rows are available.
-    Client = { isForever = false, isMainline = true, modernEquipment = true },
+    Client = { isForever = false, isMainline = true, modernEquipment = true,
+        IsGamepadUI = function() return false end },
     IsCombatLocked = function() return false end,
     FontFaces = { "friz", "arial", "morpheus", "skurri", "sharedMedia", "custom" },
     Theme = { RefreshDynamicLook = Noop },
@@ -149,5 +150,21 @@ Check(Native(), "a profile without a view ignored its Wide layout opt-out")
 NS.DB.characterDetails = { enabled = true, inlineGear = false, wideLayout = true }
 Gear.ApplyLayout(v)
 Check(Native(), "a profile without a view widened without its gear info")
+
+-- Under WoW Forever's Gamepad UI the skin never drives the panel manager
+-- (Core/Client.lua, IsGamepadUI): resizing the window leaves its placement to
+-- Blizzard. Forever's Camelot CharacterFrame has no InsetRight today, so this
+-- holds the rule for a layout that gains one.
+NS.DB.characterDetails = NS.CopyValue(NS.Defaults.characterDetails)
+NS.Client.IsGamepadUI = function() return true end
+repositions = panelRepositions
+Gear.ApplyLayout(v)
+Check(Wide() and panelRepositions == repositions,
+    "the wide layout drove the panel manager under the Gamepad UI")
+NS.DB.characterDetails.wideLayout = false
+Gear.ApplyLayout(v)
+Check(Native() and panelRepositions == repositions,
+    "the narrowed layout drove the panel manager under the Gamepad UI")
+NS.Client.IsGamepadUI = function() return false end
 
 print("Suite character wide layout: " .. checks .. " checks passed")

@@ -40,7 +40,7 @@ local NS = {
     IsCombatLocked = function() return false end,
     RegisterLocale = function(locale, values) locales[locale] = values end,
     -- Retail: the dossier and its modern equipment rows are available.
-    Client = { modernEquipment = true },
+    Client = { modernEquipment = true, IsGamepadUI = function() return false end },
 }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/enUS.lua"))("MSUF_Suite_Skin", NS)
 NS.L = locales.enUS

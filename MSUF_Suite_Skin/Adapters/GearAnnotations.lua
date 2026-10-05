@@ -126,8 +126,10 @@ local function Scale(v, frame, value)
     record.appliedScale = value
 end
 
+-- Under Forever's Gamepad UI the skin leaves the panel manager to Blizzard
+-- (Client.IsGamepadUI).
 local function RepositionPanels(root, oldWidth, oldHeight)
-    if root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight then
+    if (root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight) and not NS.Client.IsGamepadUI() then
         UpdateUIPanelPositions(root)
     end
 end
