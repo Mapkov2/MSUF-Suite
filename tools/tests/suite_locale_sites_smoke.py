@@ -4,8 +4,7 @@
   literal as its first argument stays English (a slash command is a name).
 * Text the locale tool sees built at runtime and handed to a translation
   sink (`suite_locale_tool.py dynamic`) cannot translate. Only the entries
-  below may do that: catalog enableKey fields hold setting keys, and the chat
-  preview joins texts that are each translated (a chat line has no grammar).
+  below may do that: catalog enableKey fields hold setting keys.
 * Menu2's font strings and buttons translate what they are given (T.Font's
   SetText, T.Button). The options pages hand them English text; text in the
   reader's language already goes through P.SetTranslatedText or
@@ -28,7 +27,6 @@ for path in sorted(root.glob("MSUF_Suite*/**/*.lua")):
 
 ALLOWED = (
     ("MSUF_Suite/Core/Catalog/", "field:enableKey"),
-    ("MSUF_Suite_Options/Pages/Chat.lua:", "lines:SetText#0"),
 )
 run = subprocess.run([sys.executable, str(root / "tools" / "suite_locale_tool.py"), "dynamic"],
                      cwd=root, capture_output=True, text=True, encoding="utf-8")
