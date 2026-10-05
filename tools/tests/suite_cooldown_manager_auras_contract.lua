@@ -1240,6 +1240,16 @@ do
     A.TargetChanged()
     assert(R[target].updates==primary+1 and R[color].updates==cu+1 and R[stack].updates==su+1,
         "a retarget reparses the sensors inside fixed target slots")
+    -- Auras secret in combat (a raid encounter, M+, arena): the sealed slot
+    -- button refuses tainted access to its descendants, the sensors too.
+    -- The retarget still tells the target container and leaves the sensors
+    -- it may not touch to their own next UNIT_AURA.
+    COMBAT,ACCESS,AURAS_SECRET=true,Secret(),Secret()
+    primary,cu,su=R[target].updates,R[color].updates,R[stack].updates
+    A.TargetChanged()
+    COMBAT,ACCESS,AURAS_SECRET=false,true,false
+    assert(R[target].updates==primary+1 and R[color].updates==cu and R[stack].updates==su,
+        "a retarget touched the sensors inside a sealed slot button")
     barView.keepSlots,barView.barStackColorAt=false,0
     Plan("bar",3,{k1,k2})
     A.Sync("bar")

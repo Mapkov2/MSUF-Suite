@@ -169,14 +169,21 @@ function StackColors.Apply(rec, part, entry, dry)
 end
 
 -- A retarget of a fixed target bar: the child containers inside its slot
--- buttons parse the new target. Container-level calls, legal in combat.
+-- buttons parse the new target. Container-level calls, legal in combat, but
+-- the children live inside a sealed button, which refuses tainted access to
+-- its descendants while auras are secret: a child that refuses parses on
+-- its own next UNIT_AURA.
+local function Accessible(frame)
+    local ok = frame:CanBeAccessedInContext()
+    return S.Public(ok) and ok == true
+end
 function StackColors.Retarget(rec)
     local parts = rec.parts
     for i = 1, #parts do
         local part = parts[i]
         local color, sensor = part.color, part.stackSensor
-        if color then color.frame:UpdateAllAuras() end
-        if sensor and sensor.enabled then sensor.frame:UpdateAllAuras() end
+        if color and Accessible(color.frame) then color.frame:UpdateAllAuras() end
+        if sensor and sensor.enabled and Accessible(sensor.frame) then sensor.frame:UpdateAllAuras() end
     end
 end
 
