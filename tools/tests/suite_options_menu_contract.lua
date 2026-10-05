@@ -2023,15 +2023,19 @@ do
     overlay.scripts.OnLeave(overlay)
     assert(not overlay.shown and #overlay.points == 0 and rawget(overlay, "owner") == nil and left == 1,
         "leaving the button kept the secure overlay on the menu")
-    -- PLAYER_REGEN_DISABLED comes before the lockdown: the overlay lets go of
-    -- the menu then and no hover takes it back until combat ends.
+    -- PLAYER_REGEN_DISABLED comes before the lockdown, while the player's
+    -- combat flag is already set: the overlay lets go of the menu then and no
+    -- hover takes it back until combat ends.
     extra.scripts.OnEnter(extra)
     assert(overlay.shown and overlay.events.PLAYER_REGEN_DISABLED, "the overlay does not watch the combat start")
+    local affecting = UnitAffectingCombat
+    UnitAffectingCombat = function(unit) return unit == "player" end
     overlay.scripts.OnEvent(overlay, "PLAYER_REGEN_DISABLED")
     assert(not overlay.shown and #overlay.points == 0, "the combat start left the secure overlay on the menu")
     extra.scripts.OnEnter(extra)
     assert(not overlay.shown, "a hover in the combat start attached the secure overlay")
     overlay.scripts.OnEvent(overlay, "PLAYER_REGEN_ENABLED")
+    UnitAffectingCombat = affecting
     InCombatLockdown = function() return true end
     extra.scripts.OnEnter(extra)
     assert(not overlay.shown, "a hover in combat attached the secure overlay")
