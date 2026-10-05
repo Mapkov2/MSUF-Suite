@@ -6,7 +6,8 @@ the packs hold real translations.
   preview's sample names and the minimap preview's FPS and latency samples
   are in the extraction at their own call sites.
 * AddOn load failures show Blizzard's text for the reason code
-  (_G["ADDON_" .. reason], as Blizzard's AddOnUtil.lua does), not the code.
+  (_G["ADDON_" .. reason], as Blizzard's AddOnUtil.lua does), not the code,
+  and a status fills in a module's title translated.
 * An options-page SetText with English source text either translates it or
   writes to a Menu2 widget that translates what it is given (T.Font,
   T.Button and the page helpers built on them). A plain font string shows
@@ -77,6 +78,17 @@ for rel, statement in ((CORE + "Menu.lua", "Menu.error ="), (CORE + "Suite.lua",
     at = source.find(statement)
     check(at >= 0 and REASON.search(source[at:at + 200]) is not None,
           "%s shows the raw AddOn load reason code instead of Blizzard's ADDON_<reason> text" % rel)
+
+# A status names a module in the reader's language: StatusText translates
+# the format and fills the stored values in again as they are.
+STATUS = re.compile(r"FormatStatus\(")
+for path in sorted(ROOT.glob("MSUF_Suite*/**/*.lua")):
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for match in STATUS.finditer(line):
+            for name in re.finditer(r"(\w+(?:\(\s*)?)?\b\w+\.(?:title|label)\b", line[match.end():]):
+                check(name.group(0).startswith(("Text(", "Tr(")),
+                      "%s:%d a status fills in an English title: %s"
+                      % (path.relative_to(ROOT).as_posix(), number, line.strip()))
 
 # ------------------------------------------------------------ SetText on plain font strings
 # Creators whose widgets translate what SetText gives them (Menu2's T.Font

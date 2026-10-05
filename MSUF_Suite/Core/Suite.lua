@@ -389,7 +389,7 @@ local function LoadInstance(id, state)
     -- addon ran. Successful registration is the authoritative outcome.
     if S.instances[id] then return true end
     if NS.Client.IsAddOnLoaded(spec.addon) then
-        state.error = NS.FormatStatus("%s is missing from %s", spec.title, spec.addon)
+        state.error = NS.FormatStatus("%s is missing from %s", NS.Text(spec.title), spec.addon)
     else
         -- Blizzard's own text for the load reason (AddOnUtil.lua does the same).
         local reason = type(why) == "string" and _G["ADDON_" .. why]
