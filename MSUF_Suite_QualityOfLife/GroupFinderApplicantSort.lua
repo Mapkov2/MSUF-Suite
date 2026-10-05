@@ -79,11 +79,9 @@ function M:Enable()
     RefreshViewer()
 end
 
--- The viewer rebuild runs Blizzard's list code from this addon's call, so it
--- follows only the player's toggle (Enable, Disable). A refresh (profile
--- switch, spec variant) keeps the sort as it is: the hook already sorts
--- every native update.
-function M:Refresh() end
+function M:Refresh()
+    RefreshViewer()
+end
 
 function M:Disable()
     RefreshViewer()
