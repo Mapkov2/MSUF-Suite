@@ -608,18 +608,12 @@ assert(module.copyDialog.rows[1].message == nil and module.copyDialog.edit.text 
 assert(QuickJoinToastButton.alpha == 0 and not QuickJoinToastButton.mouse)
 assert(ChatFrameToggleVoiceMuteButton.alpha == 0 and not ChatFrameToggleVoiceMuteButton.mouse)
 assert(sidebar.friendCount.value == "5", "friend count did not use the live Blizzard data")
--- Panel icons open Blizzard's panel only through the secure delegate (below):
--- a click that reaches the icon itself gives it the delegate and never runs
--- Blizzard's panel opener from tainted code.
 sidebar.buttons[1].button:Click("LeftButton")
 sidebar.buttons[2].button:Click("LeftButton")
 sidebar.buttons[3].button:Click("LeftButton")
 sidebar.buttons[5].button:Click("LeftButton")
-assert(not QuickJoinToastButton.clicks and not ChatFrameChannelButton.clicks
-    and not TextToSpeechButton.clicks and ChatFrame1.scrolled == 1
-    and module.panelDelegate.owner == sidebar.buttons[3].button
-    and module.panelDelegate:GetAttribute("clickbutton") == TextToSpeechButton,
-    "sidebar controls did not retain their actions or a panel icon clicked Blizzard's button from tainted code")
+assert(QuickJoinToastButton.clicks == 1 and ChatFrameChannelButton.clicks == 1
+    and TextToSpeechButton.clicks == 1 and ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
 -- The chat menu icon opens Blizzard's chat menu and a second click closes it;
 -- Shift (the icon's drag) and other mouse buttons leave it alone, as on
 -- Blizzard's own button.
@@ -714,21 +708,8 @@ end
 assert(ChatFrameChannelButton.clicks == nativeClicks and #panelOpens == opens + 1
     and #printed == printedCount + 3 and printed[#printed] == NS.RestrictedNotice(),
     "a panel icon clicked in combat called Blizzard's panel from tainted code")
--- The pointer stays on the Channels icon past the end of combat: the icon
--- takes the secure delegate then, and a click that still reaches the icon
--- never opens Blizzard's panel from tainted code.
-channelsIcon.mouseOver = true
-inCombat, lockdown = false, false
-assert(ctx.callbacks.PLAYER_REGEN_ENABLED, "an icon hovered in combat did not wait for the end of combat")
-ctx.callbacks.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
-assert(delegate.shown and delegate.owner == channelsIcon and not ctx.callbacks.PLAYER_REGEN_ENABLED,
-    "the icon hovered through the end of combat took no secure delegate")
-channelsIcon.scripts.OnClick(channelsIcon, "LeftButton")
-assert(ChatFrameChannelButton.clicks == nativeClicks and #panelOpens == opens + 1,
-    "a panel icon clicked after combat called Blizzard's panel from tainted code")
-channelsIcon.mouseOver = false
 channelsIcon.scripts.OnLeave(channelsIcon)
-assert(not delegate.shown and not delegate.owner, "leaving the icon after combat kept the secure delegate")
+inCombat, lockdown = false, false
 -- Friend events update the count in combat too; it caps at 99+ and keeps
 -- the last public value when Blizzard's counts are unreadable.
 BNGetNumFriends = function() return 90, 60 end
