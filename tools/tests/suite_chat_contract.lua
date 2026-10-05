@@ -1076,6 +1076,30 @@ assert(ChatFrame4.editBox.hooks.OnEditFocusGained and ChatFrame4.editBox.hooks.O
     "the idle fade does not follow the input line's focus")
 tabAlphaHook(ChatFrame4)
 assert(math.abs(ChatFrame4Tab:GetAlpha() - 0.2) < 0.001, "Blizzard's tab update undid the idle fade")
+-- The sidebar sits on the selected whisper window (PlaceSidebar) and fades
+-- with it: a line into the hidden primary window leaves it faded, a line
+-- into the window it sits on wakes it.
+local sidebarFrame = sidebar.sidebarFrame
+assert(sidebarFrame.points[1][2] == ChatFrame4 and math.abs(sidebarFrame:GetAlpha() - 0.2) < 0.001,
+    "the sidebar did not fade with the window it sits on")
+private.Chat.ChatActivity(ChatFrame1)
+assert(math.abs(sidebarFrame:GetAlpha() - 0.2) < 0.001,
+    "a line into the hidden primary window woke the sidebar of the selected window")
+private.Chat.ChatActivity(ChatFrame4)
+assert(sidebarFrame:GetAlpha() == 1, "a line into the window the sidebar sits on left it faded")
+-- A dock selection moves the sidebar, and its fade, to the selected window.
+GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame3, ChatFrame3
+selectHook()
+GetTime = function() return 30 end
+for _, callback in ipairs(fadeTimers) do callback() end
+assert(sidebarFrame.points[1][2] == ChatFrame3 and math.abs(sidebarFrame:GetAlpha() - 0.2) < 0.001,
+    "the sidebar did not fade with the newly selected window")
+private.Chat.ChatActivity(ChatFrame4)
+assert(math.abs(sidebarFrame:GetAlpha() - 0.2) < 0.001, "the previous window still woke the sidebar")
+private.Chat.ChatActivity(ChatFrame3)
+assert(sidebarFrame:GetAlpha() == 1, "the newly selected window did not wake the sidebar")
+GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame4, ChatFrame4
+selectHook()
 module.config.idleSeconds = 0
 module:Refresh()
 assert(ChatFrame4Tab:GetAlpha() == 0.8 and ChatFrame4:GetAlpha() == 1, "turning the fade off kept the window faded")

@@ -70,6 +70,10 @@ local function RefreshSelection(self)
     if self.config.sidebarPanel and self.config.panelAlpha > 0
         and primary and primary.sidebarFrame and dock then
         PlaceSidebar(self, primary.sidebarFrame, dock)
+        -- The sidebar fades with the window it sits on (Fade.lua); the
+        -- selection counts as activity for both windows.
+        if self.visuals[oldDock] then C.ApplyInactivity(self, self.visuals[oldDock]) end
+        if self.visuals[dock] then C.ApplyInactivity(self, self.visuals[dock]) end
     end
 end
 
