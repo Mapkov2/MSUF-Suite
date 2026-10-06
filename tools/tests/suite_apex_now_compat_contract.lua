@@ -42,6 +42,7 @@ for _, name in ipairs({ "EssentialCooldownViewer", "UtilityCooldownViewer", "Buf
     viewers[#viewers + 1] = viewer
 end
 local C = { M = M, Const = { BLIZZARD = { OFF = 1, INVISIBLE = 2 } },
+    AuraTimers = { NeedsSources = function() return false end },
     Layout = { MSUFAnchor = function() return false, false end } }
 local P = { CDM = C, Suite = S, NS = {
     CDM = { KEYS = {} }, Safety = { IsForbidden = function() return false end },

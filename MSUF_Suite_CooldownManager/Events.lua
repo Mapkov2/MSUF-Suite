@@ -35,6 +35,7 @@ local Proc, Range, ReadRange, Assist = Effects.Proc, Effects.Range, Effects.Read
 local UsableShown = Effects.UsableShown
 local cooldownEntries, chargedEntries, usableEntries = Index.cooldown, Index.charged, Index.usable
 local bagEntries, itemEntries, rangedEntries = Index.bags, Index.items, Index.ranged
+local AuraTimers = C.AuraTimers
 
 -- staleRoutes: an override arrived in combat and was routed without a
 -- rebuild; seedLater: category entries wait for combat to end.
@@ -112,6 +113,7 @@ local function SetCategorySpell(entry) entry.catSpell, entry.catItem = curSpell,
 -- that is secret counts as absent.
 local function OnCooldown(_, _, spellID, baseSpellID, category, recovery, itemID)
     stamp = stamp + 1
+    if AuraTimers.hasManual then AuraTimers.Cooldown(spellID, baseSpellID) end
     if C.state.assistIcon and (issecret(spellID) or spellID == nil or spellID == GCD_SPELL
         or not issecret(recovery) and recovery == GCD) then Effects.RecommendationGCD() end
     local item = not issecret(itemID) and itemID or nil
@@ -513,7 +515,7 @@ local function EquipWatch()
 end
 local function UpdateEvents()
     local cooldown = #cooldownEntries > 0
-    Want("SPELL_UPDATE_COOLDOWN", cooldown or C.state.assistIcon and C.state.assistIconGCD, OnCooldown)
+    Want("SPELL_UPDATE_COOLDOWN", cooldown or AuraTimers.Wanted() or C.state.assistIcon and C.state.assistIconGCD, OnCooldown)
     Want("SPELL_UPDATE_USES", #Index.counted > 0, OnUses)
     Want("SPELL_UPDATE_ICON", cooldown, OnIcon)
     local timers = C.AuraTimers.Wanted()

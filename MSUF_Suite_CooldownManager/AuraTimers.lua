@@ -10,8 +10,11 @@ local Timers = {}
 C.AuraTimers = Timers
 local CAST = { [325197] = 325197, [406220] = 325197, [322118] = 322118, [389422] = 322118 }
 local rows, routes, hidden, pool, slots = {}, {}, {}, {}, {}
+local manualRoutes, castStates = {}, {}
 Timers.slots = slots
-local serial, emptyDuration = 0, nil
+local serial, emptyDuration, sourceWanted = 0, nil, false
+Timers.generation = 0
+Timers.hasManual = false
 local direction = Enum.StatusBarTimerDirection
 local immediate = Enum.StatusBarInterpolation.Immediate
 
@@ -54,7 +57,7 @@ local function Show(row)
 end
 
 local function Stop(row)
-    row.active, row.totemSlot, row.shown = false, nil, false
+    row.active, row.totemSlot, row.shown, row.source = false, nil, false, nil
     row.frame:Hide()
     row.binding:SetEnabled(false)
     row.gate:Clear()
@@ -82,13 +85,115 @@ end
 
 local function RebuildRoutes()
     C.wipe(routes)
+    C.wipe(manualRoutes)
+    sourceWanted = false
+    Timers.hasManual = false
     for _, row in pairs(rows) do
         local cast = row.cast
         if cast then
+            if CAST[cast] == cast then sourceWanted = true end
             local list = routes[cast]
             if not list then list = {} routes[cast] = list end
             list[#list + 1] = row
+            if row.seconds > 0 then
+                manualRoutes[cast] = list
+                Timers.hasManual = true
+            end
         end
+    end
+    for cast in pairs(castStates) do
+        if not manualRoutes[cast] then castStates[cast] = nil end
+    end
+    for cast in pairs(manualRoutes) do
+        if castStates[cast] == nil then
+            local info = C_Spell.GetSpellCooldown(cast)
+            castStates[cast] = Public(info) and type(info) == "table" and Public(info.isActive) and info.isActive == true
+        end
+    end
+    Timers.generation = Timers.generation + 1
+end
+
+function Timers.NeedsSources() return sourceWanted end
+
+local function ManualCooldown(cast, list)
+    local info = C_Spell.GetSpellCooldown(cast)
+    if not Public(info) or type(info) ~= "table" then return end
+    local active, gcd, enabled = info.isActive, info.isOnGCD, info.isEnabled
+    if not Public(active) or not Public(gcd) or not Public(enabled) then return end
+    if gcd == true then
+        castStates[cast] = false
+        return
+    end
+    active = active == true and enabled ~= false
+    local previous = castStates[cast]
+    castStates[cast] = active
+    if not active or previous then return end
+    for i = 1, #list do
+        local row = list[i]
+        if row.seconds > 0 then
+            row.manual:SetTimeFromStart(GetTime(), row.seconds)
+            Paint(row, row.manual)
+        end
+    end
+end
+
+-- isActive/isOnGCD/isEnabled are NeverSecret in SpellSharedDocumentation.
+-- Observe a real cooldown's rising edge, never its protected timestamps.
+-- This also starts configured durations when cast identity/native viewers
+-- are unavailable. A late enable seeds state above without inventing a cast.
+function Timers.Cooldown(spell, base)
+    if not Timers.hasManual then return end
+    if not Public(spell) or spell == nil then
+        for cast, list in pairs(manualRoutes) do ManualCooldown(cast, list) end
+        return
+    end
+    local cast = manualRoutes[spell] and spell or (Public(base) and manualRoutes[base] and base)
+    if cast then ManualCooldown(cast, manualRoutes[cast]) end
+end
+
+-- Blizzard's RefreshTotemData associates a public cooldownID with a slot
+-- before this observer runs. GetTotemInfo/UNIT_SPELLCAST_SUCCEEDED may hide
+-- spell identity throughout M+, so route by our cold catalog instead.
+-- Read native records only; their spellID and haveTotem are never inspected.
+function Timers.Source(item)
+    if not Public(item) or type(item) ~= "table" then return end
+    local id = item.cooldownID
+    if not Public(id) or type(id) ~= "number" then return end
+    local rec = C.Catalog.records[id]
+    local cast = rec and (CAST[rec.spell] or CAST[rec.override])
+    local list = cast and routes[cast]
+    if not list then return end
+    local data = item.totemData
+    if not Public(data) then return end
+    if data == nil then
+        for i = 1, #list do
+            local row = list[i]
+            if row.source == item then Stop(row) end
+        end
+        return
+    end
+    if type(data) ~= "table" then return end
+    local slot = data.slot
+    if not Public(slot) or type(slot) ~= "number" or slot < 1 then return end
+    local duration = GetTotemDuration(slot)
+    if not Public(duration) or duration == nil then return end
+    local start
+    local expires, length = data.expirationTime, data.duration
+    if Public(expires) and type(expires) == "number" and Public(length) and type(length) == "number" then
+        start = expires - length
+    end
+    for i = 1, #list do
+        local row, object = list[i], duration
+        row.totemSlot, row.source = slot, item
+        if row.seconds > 0 then
+            if start then
+                row.manual:SetTimeFromStart(start, row.seconds)
+                object = row.manual
+            elseif row.active and row.duration == row.manual then
+                object = row.manual
+            end
+        end
+        Paint(row, object)
     end
 end
 
@@ -239,8 +344,13 @@ end
 function Timers.ReleaseAll()
     for key, row in pairs(rows) do Stop(row) rows[key] = nil end
     C.wipe(routes)
+    C.wipe(manualRoutes)
+    C.wipe(castStates)
     C.wipe(hidden)
     C.wipe(slots)
+    sourceWanted = false
+    Timers.hasManual = false
+    Timers.generation = Timers.generation + 1
 end
 
 function Timers.SetBarMouse(slot, on)

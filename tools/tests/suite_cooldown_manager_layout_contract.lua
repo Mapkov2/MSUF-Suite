@@ -217,7 +217,7 @@ local function LinesAre(bar,first,second)
     return lines1==first and lines2==second
 end
 
-C.AuraTimers={Wants=function() return false end}
+C.AuraTimers={Wants=function() return false end,NeedsSources=function() return false end}
 local FILES={"Const","Grid","Layout","Visibility","Native","Preview"}
 local createdBefore=created
 for _,name in ipairs(FILES) do
@@ -280,9 +280,10 @@ for _,name in ipairs(FILES) do
     local count=0
     for hooked in code:gmatch('hooksecurefunc%(%s*[%w_]+%s*,%s*"([%w_]+)"') do
         count=count+1
-        assert(name=="Native" and (hooked=="SetAlpha" or hooked=="OnAcquireItemFrame" or hooked=="ApplySettings"),"hook not allowed: "..hooked)
+        assert(name=="Native" and (hooked=="SetAlpha" or hooked=="OnAcquireItemFrame" or hooked=="ApplySettings"
+            or hooked=="RefreshTotemData"),"hook not allowed: "..hooked)
     end
-    assert(count==(name=="Native" and 3 or 0),"unexpected hook count in "..name)
+    assert(count==(name=="Native" and 4 or 0),"unexpected hook count in "..name)
 end
 
 ------------------------------------------------------------------ views and plans

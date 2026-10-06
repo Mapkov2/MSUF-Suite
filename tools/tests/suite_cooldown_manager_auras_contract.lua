@@ -474,7 +474,7 @@ local function SoundCount() local n=0 for _ in pairs(auraSounds) do n=n+1 end re
 MSUF_NS={Client={Family="Mainline",Flavor="Mainline",IsRetail=true,SupportsEvent=function() return true end}}
 WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
 C_CooldownViewer={GetCooldownViewerCategorySet=function() return {} end,GetCooldownViewerCooldownInfo=function() end}
-C_Spell={GetSpellCooldownDuration=function() end}
+C_Spell={GetSpellCooldownDuration=function() end,GetSpellCooldown=function() end}
 local store={}
 MSUF_EncodeCompactTable=function(t,prefix) store[#store+1]=t;return prefix..":"..#store end
 MSUF_TryDecodeCompactString=function(s) local n=tonumber(s:match("^MSUF3:(%d+)$"));return n and store[n] or nil end
@@ -518,6 +518,7 @@ C.state={config={},px=1,fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,
 local P={NS=NS,Suite=S,CDM=C}
 local function LoadRuntime(file,private)
     local path=file=="Alerts.lua" and os.getenv("MSUF_TEST_ALERTS_FILE")
+    if file=="AuraTimers.lua" then path=os.getenv("MSUF_TEST_AURA_TIMERS_FILE") end
     local chunk=assert(loadfile(path or root.."/MSUF_Suite_CooldownManager/"..file))
     chunk("MSUF_Suite_CooldownManager",private or P)
 end
@@ -3206,6 +3207,13 @@ assert(Alerts.Play("kit:5001",true)==true and played.kits==kits+1 and played.kit
 do (function()
     A.ReleaseAll()
     local T=C.AuraTimers
+    local oldCooldown=C_Spell.GetSpellCooldown
+    local cooldowns={}
+    local cooldownReads=0
+    C_Spell.GetSpellCooldown=function(spell)
+        cooldownReads=cooldownReads+1
+        return cooldowns[spell] or {isActive=false,isEnabled=true,isOnGCD=false}
+    end
     local dtCalls=0
     local function Duration(start,length)
         local d={start=start,length=length}
@@ -3286,6 +3294,59 @@ do (function()
     T.Totem(nil,nil,Secret())
     T.Cast(nil,nil,Secret(),nil,Secret())
     T.Cast(nil,nil,"player",nil,Secret())
+    -- M+ hides both event identity and direct totem identity. Blizzard's
+    -- native CDM item has already associated its public cooldownID/slot.
+    local oldCatalog=C.Catalog
+    C.Catalog={records=setmetatable({[701]={spell=325197},[702]={spell=322118},[703]={spell=9999}},
+        {__index=function(_,key) assert(not IsSecret(key),"secret catalog key");return nil end})}
+    local function Source(fields)
+        return setmetatable({}, {__index=fields,__newindex=function() error("native source write") end})
+    end
+    local nativeData={slot=1,spellID=Secret(),expirationTime=Secret(),duration=Secret()}
+    local source=Source({cooldownID=701,totemData=nativeData})
+    R[crane.gate].scripts.OnCooldownDone(crane.gate)
+    assert(not crane.active,"prepare a fresh summon inside the instance")
+    local directReads=reads
+    T.Totem(nil,nil,1);T.Cast(nil,nil,"player",nil,Secret())
+    assert(not crane.active,"restricted direct events cannot identify the summon")
+    T.Source(source)
+    assert(crane.active and crane.binding.duration==totems[1].object and crane.source==source,
+        "M+ uses the native CDM slot without inspecting protected spell/timing fields")
+    assert(reads==directReads+1,"source binding performs no additional GetTotemInfo query")
+    local unchanged=crane.binding.duration
+    for _,bad in ipairs({Secret(),Source({cooldownID=Secret()}),Source({cooldownID=701,totemData=Secret()}),
+        Source({cooldownID=701,totemData={slot=Secret()}}),Source({cooldownID=703,totemData=nativeData})}) do
+        T.Source(bad)
+    end
+    assert(crane.binding.duration==unchanged,"unreadable/unrelated native records preserve the running clock")
+    T.Source(Source({cooldownID=701}))
+    assert(crane.active,"an inactive duplicate source cannot cancel the active source")
+    local sourceFields={cooldownID=701,totemData=nil}
+    local removed=Source(sourceFields)
+    sourceFields.totemData=nativeData;T.Source(removed)
+    sourceFields.totemData=nil;T.Source(removed)
+    assert(not crane.active,"native totem removal retires its own timer")
+    -- A settings sync preserves native time, even with a manual override.
+    chi.ov.timerDuration=25;Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
+    nativeData.expirationTime,nativeData.duration=NOW+8,12
+    T.Source(source)
+    assert(crane.binding.duration.start==NOW-4 and crane.binding.duration.length==25,
+        "public native time preserves a custom summon duration after mid-cast setup")
+    nativeData.expirationTime,nativeData.duration=Secret(),Secret()
+    T.Source(source)
+    assert(crane.binding.duration==crane.manual and crane.binding.duration.length==25,
+        "protected native timing cannot replace an established configured clock")
+    chi.ov.timerDuration=nil;Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
+    T.Source(source)
+    local frames,timersBefore=tally.made,timerCount
+    local hot=collectgarbage("count")
+    collectgarbage("stop")
+    for i=1,1000 do T.Source(source) end
+    local sourceMemory=collectgarbage("count")-hot
+    collectgarbage("restart")
+    assert(sourceMemory<1,"native source routing allocated "..sourceMemory.." KB")
+    assert(tally.made==frames and timerCount==timersBefore,"native refresh adds no frames or Lua timers")
+    C.Catalog=oldCatalog
     ACCESS=true;AURAS_SECRET=false
     totems[1]={have=true,spell=325197,start=NOW,length=12,object=latest}
     NOW=NOW+4
@@ -3332,8 +3393,51 @@ do (function()
     assert(not dragon.frame:IsShown(),"totem removal stops the timer")
     -- An unmapped aura can opt in with its distinct trigger spell.
     local custom=Aura("bar","a9991","a","player",Set(9991),{base=9991,ov={timerDuration=7,timerSpell=8881}})
+    cooldowns[8881]={isActive=true,isEnabled=true,isOnGCD=true,startTime=Secret(),duration=Secret()}
     Plan("bar",3,{custom});A.Sync("bar")
     local own=Timer(1)
+    -- No native CDM item exists (hidden category/viewer); UNIT casts and
+    -- timing are protected. Only the documented public cooldown flags start
+    -- the configured clock. Shared GCDs/reductions cannot restart it.
+    assert(T.hasManual,"manual timers consume cooldown edges independently of native viewer availability")
+    T.Cooldown(Secret(),Secret())
+    assert(not own.active,"a shared GCD cannot start a configured buff timer")
+    cooldowns[8881].isOnGCD=false
+    T.Cast(nil,nil,"player",nil,Secret())
+    T.Cooldown(Secret(),Secret())
+    assert(own.active and own.binding.duration.start==NOW and own.binding.duration.length==7,
+        "hidden Blizzard source still starts the manual duration in restricted M+")
+    NOW=NOW+2;T.Cooldown(nil,nil)
+    assert(own.binding.duration.start==NOW-2,"cooldown reduction or unrelated broadcast cannot restart a running timer")
+    local queries=cooldownReads
+    T.Cooldown(9991,nil)
+    assert(cooldownReads==queries,"unrelated public cooldown payload performs no timer query")
+    cooldowns[8881].isActive=false;T.Cooldown(8881,nil)
+    cooldowns[8881].isActive=true;T.Cooldown(Secret(),8881)
+    assert(own.binding.duration.start==NOW,"cooldown reset and next cast restart the clock")
+    cooldowns[8881].isActive=false;T.Cooldown(8881,nil)
+    cooldowns[8881].isActive=Secret();T.Cooldown(nil,nil)
+    assert(own.binding.duration.start==NOW,"unreadable cooldown flags cannot fabricate a cast")
+    cooldowns[8881].isActive=true;T.Cooldown(8881,nil)
+    local nativeQueries, luaTimers, ownFrames=cooldownReads,timerCount,tally.made
+    local payload=Secret()
+    local manualHot=collectgarbage("count")
+    local instructions=0
+    collectgarbage("stop")
+    debug.sethook(function() instructions=instructions+1 end,"",1)
+    for i=1,1000 do T.Cooldown(payload,nil) end
+    debug.sethook()
+    local manualDelta=collectgarbage("count")-manualHot
+    collectgarbage("restart")
+    assert(cooldownReads-nativeQueries==1000,"one native query per configured cast per secret broadcast")
+    assert(instructions<200000,"bounded manual event VM budget: "..instructions)
+    assert(manualDelta<1,"manual routing's own Lua work allocated "..manualDelta.." KB")
+    assert(timerCount==luaTimers and tally.made==ownFrames,"manual cooldown events add no Lua timers or frames")
+    -- GetSpellCooldown returns a native result table in the client; the
+    -- above allocation bound covers our Lua work with reused fixture data.
+    -- Accept that one required native query per selected trigger to replace
+    -- the previously skipped restricted cast, without polling or aura scans.
+    R[own.gate].scripts.OnCooldownDone(own.gate)
     T.Cast(nil,nil,"player",nil,9991)
     assert(not own.frame:IsShown(),"aura ID does not replace an explicit cast ID")
     T.Cast(nil,nil,"player",nil,8881)
@@ -3362,6 +3466,7 @@ do (function()
     Plan("bar",3,{other,custom});A.Sync("bar")
     T.Cast(nil,nil,"player",nil,8881);T.Cast(nil,nil,"player",nil,8882)
     assert(Timer(1).active and Timer(2).active,"reordering two timer cells preserves both spell routes")
+    C_Spell.GetSpellCooldown=oldCooldown
     custom.ov.timerDuration=nil
     Plan("bar",3,{other,custom});A.Sync("bar")
     local transferred=C.AuraContainers.live.bar.aura.player

@@ -13,6 +13,7 @@ local M = C.M
 local CDM = NS.CDM
 local K = C.Const
 local Public = S.Public
+local Timers = C.AuraTimers
 local OFF, INVISIBLE = K.BLIZZARD.OFF, K.BLIZZARD.INVISIBLE
 local CVAR = "cooldownViewerEnabled"
 -- Lets S.RestoreSaved put the CVar back after a crash or a disable.
@@ -26,7 +27,8 @@ local APEX_PROMOTED = "Rogue Apex Now needs Blizzard's cooldown bars, so they ke
 
 local hooked = {}
 local active, guard, applied = false, false, nil
-local hookedApex, apexRequired, apexCVar = nil, false, false
+local hookedApex, apexRequired, sourceCVar = nil, false, false
+local sourceGeneration
 
 local function ID() return M.id or "cooldownManager" end
 
@@ -52,6 +54,7 @@ function Native.Mode()
     local config = M.config
     local mode = type(config) == "table" and config.blizzard == INVISIBLE and INVISIBLE or OFF
     if mode == OFF and ApexNeedsViewers() then return INVISIBLE, S.Text(APEX_PROMOTED) end
+    if mode == OFF and Timers.NeedsSources() then return INVISIBLE end
     if mode == OFF then
         local wants, follows = C.Layout.MSUFAnchor()
         if wants and not follows then return INVISIBLE, S.Text(PROMOTED) end
@@ -98,9 +101,22 @@ end
 -- Items whose mouse is off, with their viewer (weak keys: released items
 -- may go).
 local silenced = setmetatable({}, { __mode = "k" })
+local timerHooks = setmetatable({}, { __mode = "k" })
+local function SourceHook(item)
+    if active and M.active and Timers.NeedsSources() then Timers.Source(item) end
+end
+local function WatchTimer(item)
+    if not Timers.NeedsSources() or timerHooks[item] then return end
+    -- Only acquired CDM items carry this method (selection frames do not).
+    local refresh = item.RefreshTotemData
+    if not Public(refresh) or refresh == nil then return end
+    timerHooks[item] = true
+    hooksecurefunc(item, "RefreshTotemData", SourceHook)
+end
 local function Mute(viewer, item)
     item:EnableMouse(false)
     silenced[item] = viewer
+    WatchTimer(item)
 end
 local function AcquireHook(viewer, item)
     if active and type(item) == "table" and not NS.Safety.IsForbidden(item) then Mute(viewer, item) end
@@ -132,6 +148,21 @@ local function Unmute()
             local tips = viewer.tooltipsShown
             item:SetMouseClickEnabled(false)
             item:SetMouseMotionEnabled(Public(tips) and tips == true)
+        end
+    end
+end
+
+-- A rebuild may add timers while invisible mode is already applied. Seed
+-- existing items once per route generation; acquire hooks cover new ones.
+local function SeedTimerSources(viewer, ...)
+    for i = 1, select("#", ...) do
+        local item = select(i, ...)
+        if Public(item) and type(item) == "table" and not NS.Safety.IsForbidden(item) then
+            local index = item.layoutIndex
+            if Public(index) and type(index) == "number" then
+                WatchTimer(item)
+                Timers.Source(item)
+            end
         end
     end
 end
@@ -175,14 +206,21 @@ function Native.Apply()
         ctx:CVar(CVAR, "0")
     end
     applied = mode
-    -- The saved CVar may already be off when Suite starts. Apex needs it on;
+    -- The saved CVar may already be off at login. Native sources need it on;
     -- use the same reversible owner as mode 1, after the alpha hooks exist.
-    local required = mode == INVISIBLE and ApexNeedsViewers()
+    local required = mode == INVISIBLE and (ApexNeedsViewers() or Timers.NeedsSources())
     if mode == OFF then
-        apexCVar = false
-    elseif required ~= apexCVar then
+        sourceCVar = false
+    elseif required ~= sourceCVar then
         if required then ctx:CVar(CVAR, "1") else S.RestoreCVar(ID(), CVAR) end
-        apexCVar = required
+        sourceCVar = required
+    end
+    if required and Timers.NeedsSources() and sourceGeneration ~= Timers.generation then
+        sourceGeneration = Timers.generation
+        for i = 1, #VIEWERS do
+            local viewer = Viewer(VIEWERS[i])
+            if viewer then SeedTimerSources(viewer, viewer:GetChildren()) end
+        end
     end
 end
 
@@ -191,8 +229,8 @@ function Native.Release()
     if ctx then ctx:RemoveEvent("ADDON_LOADED") end
     if applied == INVISIBLE and ctx then RestoreAlpha(ctx) end
     active = false
-    if applied == OFF or apexCVar then S.RestoreCVar(ID(), CVAR) end
-    apexCVar = false
+    if applied == OFF or sourceCVar then S.RestoreCVar(ID(), CVAR) end
+    sourceCVar, sourceGeneration = false, nil
     applied = nil
 end
 

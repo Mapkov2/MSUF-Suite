@@ -219,6 +219,9 @@ local function FlushStructure()
         end
     end
     if changed and C.ActionGlows.wanted then C.ActionGlows.Refresh() end
+    -- Plans and timer routes exist only after structure sync. Reconcile
+    -- native summon sources here, including first enable and removing one.
+    if changed then S.Dispatch(C.Native.Apply) end
 end
 
 -- Cooldown state of marked entries, usability of visible icons, effects.

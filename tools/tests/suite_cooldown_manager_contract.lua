@@ -216,6 +216,7 @@ end
 local writes=0
 local Widget={}
 Widget.__index=Widget
+function Widget:GetParent() return self.parent end
 local all={}
 local created={}
 local function New(kind,parent,name)
@@ -264,6 +265,7 @@ Setter("SetCooldownFromDurationObject",function(self,duration)
     assert(getmetatable(duration)==_G.DurationMT,"not a duration object");self.running=duration
 end)
 Setter("Clear",function(self) self.running=nil end)
+Setter("SetTimerDuration",function(self,duration) self.timerDuration=duration end)
 Setter("Play",function(self) self.playing=true end)
 Setter("Stop",function(self) self.playing=false end)
 Setter("SetUnit",function(self,unit) self.unit=unit end,true)
@@ -534,11 +536,16 @@ end
 -- Duration text bindings (aura buttons) take a formatter and plain options.
 local BindingMT={}
 BindingMT.__index=BindingMT
-for _,name in ipairs({"SetFormatter","SetZeroDurationText","SetExpiredText","SetUpdateInterval","SetEnabled"}) do
-    BindingMT[name]=function(self,value) self[name]=value end
+for _,name in ipairs({"SetFormatter","SetZeroDurationText","SetExpiredText","SetUpdateInterval","SetEnabled",
+    "Assign","SetFontString","SetDuration"}) do
+    BindingMT[name]=function(self,value)
+        self.values=self.values or {}
+        self.values[name]=value
+    end
 end
 C_DurationUtil={CreateDuration=function() return NewDuration(false) end,
     CreateDurationTextBinding=function() return setmetatable({},BindingMT) end}
+GetNumTotemSlots=function() return 0 end
 local CurveMT={}
 CurveMT.__index=CurveMT
 function CurveMT:SetType(kind) self.type=kind end
@@ -2938,6 +2945,19 @@ do
 end
 
 ------------------------------------------------------------------ invisible mode and MSUF promotion
+do (function()
+    local original=config.spellsData
+    -- Refresh applies native mode before resolve; the structure flush must
+    -- reconcile the newly built timer routes in the same enable/rebuild.
+    config.spellsData=assert(Codec.EncodeSpells({e={b41={timerDuration=12,timerSpell=325197}}}))
+    module:Refresh();Run()
+    assert(C.AuraTimers.NeedsSources() and cvars.cooldownViewerEnabled=="1" and essViewer.alpha==0,
+        "first timer configuration enables native sources after structure sync")
+    config.spellsData=original
+    module:Refresh();Run()
+    assert(not C.AuraTimers.NeedsSources() and cvars.cooldownViewerEnabled=="0" and essViewer.alpha==1,
+        "removing the last timer releases sources after structure sync")
+end)() end
 config.blizzard=2
 module:Refresh()
 Run()
