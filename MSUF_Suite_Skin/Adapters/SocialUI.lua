@@ -12,7 +12,6 @@ local _, NS = ...
 -- paints only verified backgrounds plus explicit shell/divider/control fields,
 -- outside combat and without changing geometry.
 local SocialUISkin = {
-    owners = {},
     hooksInstalled = false,
     frameHooks = setmetatable({}, { __mode = "k" }),
 }
@@ -72,28 +71,23 @@ local broadcastInputBorderFields = {
 
 local SkinSocialCard
 
-local function OwnerState(parentOwner)
-    parentOwner = parentOwner or DEFAULT_OWNER
-    local state = SocialUISkin.owners[parentOwner]
-    if not state then
-        state = {
-            parentOwner = parentOwner,
-            owner = tostring(parentOwner) .. ":social-ui",
-            active = false,
-            frame = nil,
-            surfaces = Kit.WeakSet(),
-            cards = Kit.WeakSet(),
-            tabs = Kit.WeakSet(),
-            -- tabs carrying this owner's surface
-            skinnedTabs = Kit.WeakSet(),
-            scrollBoxes = Kit.WeakSet(),
-            deferred = {},
-        }
+-- Owner state per parent owner; deferral keys are social-ui:<owner>:<suffix>.
+local Owners = Kit.NewOwners({
+    prefix = "social-ui",
+    default = DEFAULT_OWNER,
+    keyField = "parentOwner",
+    surfaces = true,
+    init = function(state, parentOwner)
+        state.owner = tostring(parentOwner) .. ":social-ui"
+        state.cards = Kit.WeakSet()
+        state.tabs = Kit.WeakSet()
+        -- tabs carrying this owner's surface
+        state.skinnedTabs = Kit.WeakSet()
+        state.scrollBoxes = Kit.WeakSet()
         state.visitCard = function(card) SkinSocialCard(state, card) end
-        SocialUISkin.owners[parentOwner] = state
-    end
-    return state
-end
+    end,
+})
+SocialUISkin.owners = Owners.owners
 
 local function SkinBattleNetDialog(state, dialog, broadcast)
     if not dialog then return false end
@@ -303,32 +297,17 @@ local function ApplyState(state)
     return true, "applied"
 end
 
-local function DeferredKey(state, suffix)
-    return "social-ui:" .. tostring(state.parentOwner) .. ":" .. tostring(suffix)
-end
-
-local function DeferApply(state, suffix)
-    if not state or not state.active then return false, "disabled" end
-    local parentOwner = state.parentOwner
-    local key = DeferredKey(state, suffix)
-    state.deferred[key] = true
-    local ran, reason = NS.CombatGate.RunOrDefer(key, function()
-        local current = SocialUISkin.owners[parentOwner]
-        if current then current.deferred[key] = nil end
-        if current and current.active then
-            local applied, applyReason = ApplyState(current)
-            if applied == false and applyReason ~= "missing" then
-                NS.ReportError("social UI deferred apply", applyReason)
-            end
-        end
-    end)
-    if ran then state.deferred[key] = nil end
-    return ran == true, reason
+-- The pass a combat request runs afterwards, for the owner's state then.
+local function ApplyAfterCombat(state)
+    local applied, reason = ApplyState(state)
+    if applied == false and reason ~= "missing" then
+        NS.ReportError("social UI deferred apply", reason)
+    end
 end
 
 local function ApplyOrDefer(state, suffix)
     if not state or not state.active then return false, "disabled" end
-    if NS.IsCombatLocked() then return DeferApply(state, suffix) end
+    if NS.IsCombatLocked() then return Owners.RunOrDefer(state, suffix, ApplyAfterCombat) end
     return ApplyState(state)
 end
 
@@ -349,12 +328,12 @@ local function DisableNow(state)
     NS.Cosmetics.RestoreOwner(state.owner)
     Kit.HideSurfaces(state)
 
-    SocialUISkin.owners[state.parentOwner] = nil
+    Owners.Forget(state)
     return true
 end
 
 function SocialUISkin.Apply(parentOwner)
-    local state = OwnerState(parentOwner)
+    local state = Owners.State(parentOwner)
     Kit.CancelDeferred(state)
     state.active = true
     -- Blizzard_SocialUI is not load-on-demand on 12.1.0, 12.1.5 and Forever:
@@ -364,27 +343,11 @@ function SocialUISkin.Apply(parentOwner)
     return ApplyOrDefer(state, "apply")
 end
 
+-- In combat the disable runs once afterwards; Apply cancels it first.
 function SocialUISkin.Disable(parentOwner)
-    parentOwner = parentOwner or DEFAULT_OWNER
-    local state = SocialUISkin.owners[parentOwner]
+    local state = SocialUISkin.owners[parentOwner or DEFAULT_OWNER]
     if not state then return true end
-
-    if NS.IsCombatLocked() then
-        state.active = false
-        Kit.CancelDeferred(state)
-        local key = DeferredKey(state, "disable")
-        state.deferred[key] = true
-        NS.CombatGate.RunOrDefer(key, function()
-            local current = SocialUISkin.owners[parentOwner]
-            if current then
-                current.deferred[key] = nil
-                DisableNow(current)
-            end
-        end)
-        return false, "combat"
-    end
-
-    return DisableNow(state)
+    return Owners.DisableOrDefer(state, DisableNow)
 end
 
 return SocialUISkin

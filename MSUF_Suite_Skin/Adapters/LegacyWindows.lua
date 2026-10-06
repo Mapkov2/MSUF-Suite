@@ -16,7 +16,6 @@ local _, NS = ...
 -- hook Blizzard code, poll, install timers, or traverse foreign frame trees.
 -- UI mutations are limited to reversible Surface and Cosmetics operations.
 local LegacyWindows = {
-    owners = {},
     waiting = {},
     surfaceTargets = setmetatable({}, { __mode = "k" }),
 }
@@ -115,21 +114,16 @@ local function CategoryEnabled(category)
     return NS.GenericWindows.IsCategoryEnabled(category)
 end
 
-local function OwnerState(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = LegacyWindows.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            ownerKey = tostring(owner),
-            active = false,
-            groups = {},
-            deferred = {},
-        }
-        LegacyWindows.owners[owner] = state
-    end
-    return state
-end
+-- Deferral keys are legacy-windows:<owner>:<suffix>.
+local Owners = Kit.NewOwners({
+    prefix = "legacy-windows",
+    default = DEFAULT_OWNER,
+    init = function(state, owner)
+        state.ownerKey = tostring(owner)
+        state.groups = {}
+    end,
+})
+LegacyWindows.owners = Owners.owners
 
 -- Each group is its own skin context and cosmetic owner.
 local function GroupState(state, spec)
@@ -291,27 +285,18 @@ local function ApplyGroup(spec, state)
     return applied, reason
 end
 
-local function DeferredKey(state, suffix)
-    return "legacy-windows:" .. state.ownerKey .. ":" .. suffix
-end
-
 local Schedule
+
+-- The pass a combat request runs afterwards, for the owner's state then.
+local function ApplyGroupAfterCombat(state, spec)
+    local applied, reason = ApplyGroup(spec, state)
+    if not applied and reason == "waiting" then Schedule(spec) end
+end
 
 local function ApplyGroupOrDefer(spec, state)
     if not state or not state.active then return false, "disabled" end
     if not NS.IsCombatLocked() then return ApplyGroup(spec, state) end
-
-    local key = DeferredKey(state, "apply:" .. spec.id)
-    state.deferred[key] = true
-    NS.CombatGate.RunOrDefer(key, function()
-        local current = LegacyWindows.owners[state.owner]
-        if current then current.deferred[key] = nil end
-        if current and current.active then
-            local applied, reason = ApplyGroup(spec, current)
-            if not applied and reason == "waiting" then Schedule(spec) end
-        end
-    end)
-    return false, "combat"
+    return Owners.RunOrDefer(state, "apply:" .. spec.id, ApplyGroupAfterCombat, spec)
 end
 
 local function ApplyGroupForOwners(spec)
@@ -334,18 +319,16 @@ Schedule = function(spec)
     return true
 end
 
-local function DisableNow(owner)
-    local state = LegacyWindows.owners[owner]
-    if not state then return true end
+local function DisableNow(state)
     for index = 1, #groups do
         DisableGroup(state, groups[index])
     end
-    LegacyWindows.owners[owner] = nil
+    Owners.Forget(state)
     return true
 end
 
 function LegacyWindows.Apply(owner)
-    local state = OwnerState(owner)
+    local state = Owners.State(owner)
     Kit.CancelDeferred(state)
     state.active = true
 
@@ -379,24 +362,11 @@ function LegacyWindows.Apply(owner)
     return true, "applied"
 end
 
+-- In combat the disable runs once afterwards while the owner stays disabled.
 function LegacyWindows.Disable(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = LegacyWindows.owners[owner]
+    local state = LegacyWindows.owners[owner or DEFAULT_OWNER]
     if not state then return true end
-
-    state.active = false
-    Kit.CancelDeferred(state)
-    if NS.IsCombatLocked() then
-        local key = DeferredKey(state, "disable")
-        state.deferred[key] = true
-        NS.CombatGate.RunOrDefer(key, function()
-            local current = LegacyWindows.owners[owner]
-            if current then current.deferred[key] = nil end
-            if current and not current.active then DisableNow(owner) end
-        end)
-        return false, "combat"
-    end
-    return DisableNow(owner)
+    return Owners.DisableOrDefer(state, DisableNow)
 end
 
 return LegacyWindows

@@ -13,7 +13,6 @@ local _, NS = ...
 -- This adapter only replaces exact decorative backgrounds and the exact
 -- anonymous Cooldown Manager icon-overlay atlas with reversible primitives.
 local SemanticHUD = {
-    owners = {},
     hooks = {},
     waitingForCooldownViewer = false,
     surfaceRecords = setmetatable({}, { __mode = "k" }),
@@ -31,6 +30,17 @@ local COOLDOWN_ADDON = "Blizzard_CooldownViewer"
 local ICON_OVERLAY_ATLAS = "UI-HUD-CoolDownManager-IconOverlay"
 local MAX_ACTIVE_ITEMS = 64
 local MAX_OVERLAY_REGIONS = 16
+
+-- Owner state per parent owner; deferral keys are semantic-hud:<owner>:<suffix>.
+local Owners = Kit.NewOwners({
+    prefix = "semantic-hud",
+    default = DEFAULT_OWNER,
+    keyField = "parentOwner",
+    surfaces = true,
+    init = function(state, parentOwner) state.skinOwner = tostring(parentOwner) .. ":semantic-hud" end,
+})
+SemanticHUD.owners = Owners.owners
+local RunOrDefer = Owners.RunOrDefer
 
 local LOC_SURFACE_SPEC = {
     role = "popup",
@@ -75,23 +85,6 @@ local function CooldownsOwned(ask)
     local ownership = NS.SuiteOwnership
     if ask then return ownership.Owns("cooldownViewers") end
     return ownership.Owned("cooldownViewers")
-end
-
-local function OwnerState(parentOwner)
-    parentOwner = parentOwner or DEFAULT_OWNER
-    local state = SemanticHUD.owners[parentOwner]
-    if not state then
-        state = {
-            parentOwner = parentOwner,
-            skinOwner = tostring(parentOwner) .. ":semantic-hud",
-            active = false,
-            deferred = {},
-            jobs = {},
-            surfaces = WeakMap(),
-        }
-        SemanticHUD.owners[parentOwner] = state
-    end
-    return state, parentOwner
 end
 
 local function CosmeticOwnerAvailable(region, owner)
@@ -306,36 +299,6 @@ local function RestoreVisuals(state)
     return restored, restored and "restored" or "protected"
 end
 
-local function CancelDeferred(state)
-    for key in pairs(state.deferred) do
-        NS.CombatGate.Cancel(key)
-        state.deferred[key] = nil
-    end
-end
-
--- Runs callback(state, argument) now, or once after combat. Each suffix maps
--- to one callback, so its combat job and key are built once per owner.
-local function RunOrDefer(state, suffix, callback, argument)
-    if not state.active then return false, "disabled" end
-    if not NS.IsCombatLocked() then
-        callback(state, argument)
-        return true
-    end
-    local job = state.jobs[suffix]
-    if not job then
-        local key = "semantic-hud:" .. tostring(state.parentOwner) .. ":" .. tostring(suffix)
-        job = { key = key }
-        job.run = function()
-            local current = SemanticHUD.owners[state.parentOwner]
-            if current then current.deferred[key] = nil end
-            if current and current.active then callback(current, argument) end
-        end
-        state.jobs[suffix] = job
-    end
-    state.deferred[job.key] = true
-    return NS.CombatGate.RunOrDefer(job.key, job.run)
-end
-
 local function RequestViewerForOwners(viewer)
     if CooldownsOwned(false) then return end
     local definition = ViewerDefinition(viewer)
@@ -495,8 +458,8 @@ local function ApplyState(state)
 end
 
 function SemanticHUD.Apply(parentOwner)
-    local state = OwnerState(parentOwner)
-    CancelDeferred(state)
+    local state = Owners.State(parentOwner)
+    Kit.CancelDeferred(state)
     state.active = true
     return ApplyState(state)
 end
@@ -509,32 +472,18 @@ end
 
 local function DisableNow(state)
     state.active = false
-    CancelDeferred(state)
+    Kit.CancelDeferred(state)
     local restored, reason = RestoreVisuals(state)
     if not restored then return false, reason end
-    if SemanticHUD.owners[state.parentOwner] == state then
-        SemanticHUD.owners[state.parentOwner] = nil
-    end
+    Owners.Forget(state)
     return true
 end
 
+-- In combat the disable runs once afterwards while the owner stays disabled.
 function SemanticHUD.Disable(parentOwner)
-    parentOwner = parentOwner or DEFAULT_OWNER
-    local state = SemanticHUD.owners[parentOwner]
+    local state = SemanticHUD.owners[parentOwner or DEFAULT_OWNER]
     if not state then return true end
-
-    CancelDeferred(state)
-    state.active = false
-    if not NS.IsCombatLocked() then
-        return DisableNow(state)
-    end
-    local key = "semantic-hud:" .. parentOwner .. ":disable"
-    state.deferred[key] = true
-    return NS.CombatGate.RunOrDefer(key, function()
-        local current = SemanticHUD.owners[parentOwner]
-        if current then current.deferred[key] = nil end
-        if current and not current.active then DisableNow(current) end
-    end)
+    return Owners.DisableOrDefer(state, DisableNow)
 end
 
 return SemanticHUD

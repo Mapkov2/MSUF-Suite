@@ -11,7 +11,6 @@ local _, NS = ...
 -- are replaced.
 
 local CommonMenus = {
-    owners = {},
     activeOwnerCount = 0,
     callbackState = {},
 }
@@ -65,25 +64,20 @@ local cosmeticGlobals = {
     } },
 }
 
-local function OwnerState(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = CommonMenus.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            -- bag frame / pooled item button -> skin generation of its pass
-            frames = Kit.WeakSet(),
-            items = Kit.WeakSet(),
-            -- pooled item button -> the ItemSlotBackground its pass faded (or false)
-            slotBackgrounds = Kit.WeakSet(),
-            surfaces = Kit.WeakSet(),
-            deferred = {},
-        }
-        CommonMenus.owners[owner] = state
-    end
-    return state
-end
+-- Deferral keys are commonMenus:<owner>:<suffix>.
+local Owners = Kit.NewOwners({
+    prefix = "commonMenus",
+    default = DEFAULT_OWNER,
+    surfaces = true,
+    init = function(state)
+        -- bag frame / pooled item button -> skin generation of its pass
+        state.frames = Kit.WeakSet()
+        state.items = Kit.WeakSet()
+        -- pooled item button -> the ItemSlotBackground its pass faded (or false)
+        state.slotBackgrounds = Kit.WeakSet()
+    end,
+})
+CommonMenus.owners = Owners.owners
 
 local function SkinBagItem(state, frame, button)
     if not button or not Kit.ParentIs(button, frame)
@@ -261,15 +255,14 @@ local function ApplyNow(state)
 end
 
 function CommonMenus.Apply(owner)
-    local state = OwnerState(owner)
-    owner = state.owner
+    local state = Owners.State(owner)
     if not state.active then
         state.active = true
         CommonMenus.activeOwnerCount = CommonMenus.activeOwnerCount + 1
     end
 
     if NS.IsCombatLocked() then
-        Kit.DeferForOwner(CommonMenus.owners, owner, "commonMenus:" .. tostring(owner) .. ":apply", ApplyNow)
+        Owners.RunOrDefer(state, "apply", ApplyNow)
         return false, "combat"
     end
 
@@ -284,11 +277,7 @@ function CommonMenus.Disable(owner)
         return true
     end
 
-    state.active = false
-    Kit.CancelDeferred(state)
-    Kit.HideSurfaces(state)
-    state.surfaces = Kit.WeakSet()
-    CommonMenus.owners[owner] = nil
+    Owners.Release(state)
     CommonMenus.activeOwnerCount = math.max(0, CommonMenus.activeOwnerCount - 1)
 
     if CommonMenus.activeOwnerCount == 0 then

@@ -5,7 +5,7 @@ local _, NS = ...
 -- docking, Edit Mode placement and secure chat attributes remain Blizzard-owned.
 -- Exact decorative FloatingChatFrame/EditBox regions plus Blizzard's SYSTEM and
 -- ordinary NPC speech colors are recolored through their native OOC color path.
-local ChatFramesSkin = { owners = {}, hooks = {} }
+local ChatFramesSkin = { hooks = {} }
 NS.ChatFramesSkin = ChatFramesSkin
 
 local Safety = NS.Safety
@@ -74,22 +74,16 @@ local function NamedRegion(object, suffix)
     return _G[name .. suffix]
 end
 
-local function OwnerState(owner)
-    local state = ChatFramesSkin.owners[owner]
-    if not state then
-        state = {
-            active = false,
-            owner = owner,
-            frames = setmetatable({}, { __mode = "k" }),
-            textStates = setmetatable({}, { __mode = "k" }),
-            textureCaptured = setmetatable({}, { __mode = "k" }),
-            nativeDesaturation = setmetatable({}, { __mode = "k" }),
-            messageColors = {},
-        }
-        ChatFramesSkin.owners[owner] = state
-    end
-    return state
-end
+local Owners = Kit.NewOwners({
+    init = function(state)
+        state.frames = Kit.WeakSet()
+        state.textStates = Kit.WeakSet()
+        state.textureCaptured = Kit.WeakSet()
+        state.nativeDesaturation = Kit.WeakSet()
+        state.messageColors = {}
+    end,
+})
+ChatFramesSkin.owners = Owners.owners
 
 -- Message colors ------------------------------------------------------------
 
@@ -677,7 +671,7 @@ function ChatFramesSkin.Apply(frame, owner)
     if not frame then return false, "missing" end
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.Safety.CanDecorate(frame, true) then return false, "protected" end
-    local state = OwnerState(owner)
+    local state = Owners.State(owner)
     state.active = true
     state.owner = owner
     RegisterHooks()

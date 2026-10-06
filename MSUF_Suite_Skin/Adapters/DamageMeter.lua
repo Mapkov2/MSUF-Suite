@@ -4,7 +4,6 @@ local _, NS = ...
 -- StatusBar fills, text, icons, clicks, dropdowns, resize behavior, Edit Mode
 -- ownership, and combat-session refreshes remain Blizzard-owned.
 local DamageMeterSkin = {
-    owners = {},
     hookedWindows = setmetatable({}, { __mode = "k" }),
     hookedMeters = setmetatable({}, { __mode = "k" }),
 }
@@ -54,21 +53,15 @@ local function SkinRow(row, owner)
     return true
 end
 
-local function OwnerState(owner)
-    local state = DamageMeterSkin.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            surfaces = setmetatable({}, { __mode = "k" }),
-            scrollBoxes = setmetatable({}, { __mode = "k" }),
-            windows = setmetatable({}, { __mode = "k" }),
-        }
+local Owners = Kit.NewOwners({
+    surfaces = true,
+    init = function(state, owner)
+        state.scrollBoxes = Kit.WeakSet()
+        state.windows = Kit.WeakSet()
         state.skinRow = function(row) SkinRow(row, owner) end
-        DamageMeterSkin.owners[owner] = state
-    end
-    return state
-end
+    end,
+})
+DamageMeterSkin.owners = Owners.owners
 
 local function SkinWindowAction(button, owner, kind)
     if not button then return false end
@@ -215,7 +208,7 @@ function DamageMeterSkin.Apply(frame, owner)
     if not frame then return false, "missing" end
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.Safety.CanDecorate(frame, true) then return false, "protected" end
-    local state = OwnerState(owner)
+    local state = Owners.State(owner)
     state.active = true
     HookMeter(frame)
     SkinAllWindows(frame, state)
@@ -230,13 +223,11 @@ function DamageMeterSkin.Disable(_, owner)
     for scrollBox, event in pairs(state.scrollBoxes) do
         Kit.UnregisterRowCallback(scrollBox, event, state)
     end
-    for target in pairs(state.surfaces) do
-        NS.Surface.SetVisible(target, false)
-    end
+    Kit.HideSurfaces(state)
     NS.WindowActionSkin.DisableOwner(owner)
     NS.Checkmarks.UntrackOwner(owner)
     NS.Cosmetics.RestoreOwner(owner)
-    DamageMeterSkin.owners[owner] = nil
+    Owners.Forget(state)
     return true
 end
 

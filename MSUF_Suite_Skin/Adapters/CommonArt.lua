@@ -15,7 +15,6 @@ local _, NS = ...
 -- only addresses explicitly named globals/parentKey paths and subscribes to
 -- ScrollBoxListMixin.Event.OnInitializedFrame for Blizzard-owned pooled rows.
 local CommonArt = {
-    owners = {},
     activeOwnerCount = 0,
     scrollBoxes = setmetatable({}, { __mode = "k" }),
     navigationIndicators = setmetatable({}, { __mode = "k" }),
@@ -229,20 +228,9 @@ local function Resolve(rootName, path)
     return root
 end
 
-local function OwnerState(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = CommonArt.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            surfaces = Kit.WeakSet(),
-            deferred = {},
-        }
-        CommonArt.owners[owner] = state
-    end
-    return state
-end
+-- Deferral keys are common-art:<owner>:<suffix>.
+local Owners = Kit.NewOwners({ prefix = "common-art", default = DEFAULT_OWNER, surfaces = true })
+CommonArt.owners = Owners.owners
 
 local function CategoryCardSelected(selection, button)
     local selectedCategory = Field(selection, "selectedCategory")
@@ -283,9 +271,7 @@ local function ScheduleCategoryCards(selection, state)
     if not selection or not state.active then
         return false
     end
-    local owner = state.owner
-    return Kit.DeferForOwner(CommonArt.owners, owner, "common-art:category-cards:" .. tostring(owner),
-        SkinCardsOf, selection)
+    return Owners.RunOrDefer(state, "category-cards", SkinCardsOf, selection)
 end
 
 -- A post-hook on Blizzard's global: each owner's pass is its own error
@@ -403,7 +389,7 @@ local function ApplyNow(state)
 end
 
 function CommonArt.Apply(owner)
-    local state = OwnerState(owner)
+    local state = Owners.State(owner)
     if not state.active then
         state.active = true
         CommonArt.activeOwnerCount = CommonArt.activeOwnerCount + 1
@@ -433,11 +419,8 @@ function CommonArt.Disable(owner)
     if not state then
         return true
     end
-    state.active = false
-    Kit.CancelDeferred(state)
-    Kit.HideSurfaces(state)
+    Owners.Release(state)
     Kit.HideIndicators(CommonArt.navigationIndicators)
-    CommonArt.owners[owner] = nil
     CommonArt.activeOwnerCount = math.max(0, CommonArt.activeOwnerCount - 1)
     if CommonArt.activeOwnerCount == 0 then
         UnregisterScrollBoxes()

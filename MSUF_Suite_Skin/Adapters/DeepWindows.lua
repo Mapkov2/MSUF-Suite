@@ -25,7 +25,6 @@ local _, NS = ...
 -- windows; DeepWindowsProfessions.lua adds the profession, customer-order
 -- and generic-trait windows.
 local DeepWindows = {
-    owners = {},
     waiting = {},
     hooks = {},
     warbandCallbacks = setmetatable({}, { __mode = "k" }),
@@ -103,19 +102,16 @@ end
 
 local SkinWarbandCard
 
-local function OwnerState(parentOwner)
-    parentOwner = parentOwner or DEFAULT_OWNER
-    local state = DeepWindows.owners[parentOwner]
-    if not state then
-        state = {
-            parentOwner = parentOwner,
-            owner = tostring(parentOwner) .. ":deep-windows",
-            active = false,
-            deferred = {},
-            cardSurfaces = Kit.WeakSet(),
-            cardsVisited = 0,
-            cardsDecorated = 0,
-        }
+-- Owner state per parent owner; deferral keys are deep-windows:<owner>:<suffix>.
+local Owners = Kit.NewOwners({
+    prefix = "deep-windows",
+    default = DEFAULT_OWNER,
+    keyField = "parentOwner",
+    init = function(state, parentOwner)
+        state.owner = tostring(parentOwner) .. ":deep-windows"
+        state.cardSurfaces = Kit.WeakSet()
+        state.cardsVisited = 0
+        state.cardsDecorated = 0
         -- Built once per owner, not per refresh. Returning true ends the
         -- page walk after WARBAND_CARD_LIMIT cards.
         state.visitCard = function(card)
@@ -123,10 +119,9 @@ local function OwnerState(parentOwner)
             if SkinWarbandCard(state, card) then state.cardsDecorated = state.cardsDecorated + 1 end
             return state.cardsVisited >= WARBAND_CARD_LIMIT
         end
-        DeepWindows.owners[parentOwner] = state
-    end
-    return state
-end
+    end,
+})
+DeepWindows.owners = Owners.owners
 
 
 local function FadeMaterialPanel(state, panel)
@@ -468,15 +463,9 @@ AddAddonSpec({
 
 local ApplyState
 
-local function DeferredKey(state, suffix)
-    return "deep-windows:" .. tostring(state.parentOwner) .. ":" .. tostring(suffix)
-end
-
-local function ApplyStateOf(state) ApplyState(state) end
-
+-- ApplyState once after combat, one cached job per owner and suffix.
 local function DeferApply(state, suffix)
-    if not state or not state.active then return false, "combat" end
-    return Kit.DeferForOwner(DeepWindows.owners, state.parentOwner, DeferredKey(state, suffix), ApplyStateOf)
+    return Owners.RunOrDefer(state, suffix, ApplyState)
 end
 
 -- Each addon spec is its own error boundary per owner: a raising window is
@@ -558,39 +547,23 @@ local function DisableNow(state)
     NS.IconSkin.DisableOwner(state.owner)
     HideWarbandCards(state)
     NS.Cosmetics.RestoreOwner(state.owner)
-    DeepWindows.owners[state.parentOwner] = nil
+    Owners.Forget(state)
     return true
 end
 
 function DeepWindows.Apply(parentOwner)
-    local state = OwnerState(parentOwner)
+    local state = Owners.State(parentOwner)
     Kit.CancelDeferred(state)
     state.active = true
     if NS.IsCombatLocked() then return DeferApply(state, "apply") end
     return ApplyState(state)
 end
 
+-- In combat the disable runs once afterwards while the owner stays disabled.
 function DeepWindows.Disable(parentOwner)
-    parentOwner = parentOwner or DEFAULT_OWNER
-    local state = DeepWindows.owners[parentOwner]
+    local state = DeepWindows.owners[parentOwner or DEFAULT_OWNER]
     if not state then return true end
-
-    Kit.CancelDeferred(state)
-    if NS.IsCombatLocked() then
-        state.active = false
-        local key = DeferredKey(state, "disable")
-        state.deferred[key] = true
-        NS.CombatGate.RunOrDefer(key, function()
-            local current = DeepWindows.owners[parentOwner]
-            if current then
-                current.deferred[key] = nil
-                if not current.active then DisableNow(current) end
-            end
-        end)
-        return false, "combat"
-    end
-
-    return DisableNow(state)
+    return Owners.DisableOrDefer(state, DisableNow)
 end
 
 -- Private to DeepWindowsProfessions.lua, which loads next and takes it off

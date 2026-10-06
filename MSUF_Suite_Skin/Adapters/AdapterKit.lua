@@ -203,27 +203,112 @@ function AdapterKit.HookGlobal(name, callback)
     return true
 end
 
--- Runs run(state, arg) now, or once after combat for the owner's state then:
--- the owner may have been applied again or disabled meanwhile, and a state
--- that is no longer active is skipped. state.deferred[key] marks the
--- pending run for CancelDeferred.
-function AdapterKit.DeferForOwner(owners, owner, key, run, arg)
-    local state = owners[owner]
-    state.deferred[key] = true
-    local ran, reason = NS.CombatGate.RunOrDefer(key, function()
-        local current = owners[owner]
-        if current then current.deferred[key] = nil end
-        if current and current.active then run(current, arg) end
-    end)
-    if ran then state.deferred[key] = nil end
-    return ran == true, reason
-end
-
+-- Cancels every pass state.deferred marks as pending.
 function AdapterKit.CancelDeferred(state)
     for key in pairs(state.deferred) do
         NS.CombatGate.Cancel(key)
         state.deferred[key] = nil
     end
+end
+
+-- One job per owner state and suffix, built at its first deferral. It runs
+-- for the owner's state at PLAYER_REGEN_ENABLED, which may have been applied
+-- again meanwhile, and only while that state's active flag is job.active.
+local function OwnerJob(registry, state, suffix, whenActive)
+    local jobs = state.jobs
+    if not jobs then
+        jobs = {}
+        state.jobs = jobs
+    end
+    local job = jobs[suffix]
+    if job then return job end
+    local owners, owner = registry.owners, state[registry.keyField]
+    job = { key = registry.prefix .. ":" .. tostring(owner) .. ":" .. tostring(suffix), active = whenActive }
+    job.run = function()
+        local current = owners[owner]
+        if not current then return end
+        current.deferred[job.key] = nil
+        if (current.active and true or false) == job.active then job.callback(current, job.arg) end
+    end
+    jobs[suffix] = job
+    return job
+end
+
+local function DeferJob(job, state, callback, arg)
+    job.callback, job.arg = callback, arg
+    state.deferred[job.key] = true
+    NS.CombatGate.RunOrDefer(job.key, job.run)
+    return false, "combat"
+end
+
+-- Owner registries: one state table per owner key, made on first use and
+-- forgotten on release. config fields, all optional:
+--   prefix    combat gate key prefix; a deferred job's key is prefix:owner:suffix
+--   default   the owner key a nil owner stands for
+--   keyField  the state field holding the owner key ("owner")
+--   active    the active flag of a new state (false)
+--   surfaces  true gives each state the weak surfaces set Kit.Attach tracks
+--   isolate   true runs a pass that is not deferred as its own error boundary
+--   init      init(state, key) adds the adapter's own fields, once per state
+-- The functions close over the registry and take no self.
+function AdapterKit.NewOwners(config)
+    local owners = {}
+    local keyField = config.keyField or "owner"
+    local registry = { owners = owners, prefix = config.prefix, keyField = keyField }
+    local default, init, active = config.default, config.init, config.active == true
+    local surfaces, isolate = config.surfaces == true, config.isolate == true
+
+    function registry.State(owner)
+        if owner == nil then owner = default end
+        local state = owners[owner]
+        if not state then
+            state = { active = active, deferred = {} }
+            state[keyField] = owner
+            if surfaces then state.surfaces = AdapterKit.WeakSet() end
+            if init then init(state, owner) end
+            owners[owner] = state
+        end
+        return state, owner
+    end
+
+    -- Runs callback(state, arg) now, or once after combat. A suffix names one
+    -- pass: a later request replaces the pending one (its arg wins).
+    function registry.RunOrDefer(state, suffix, callback, arg)
+        if not state or not state.active then return false, "disabled" end
+        if NS.IsCombatLocked() then
+            return DeferJob(OwnerJob(registry, state, suffix, true), state, callback, arg)
+        end
+        if isolate then Dispatch(callback, state, arg) else callback(state, arg) end
+        return true
+    end
+
+    -- Marks the owner inactive, cancels its pending passes and runs
+    -- disable(state) now, or once after combat while it stays inactive (an
+    -- Apply before then cancels it with CancelDeferred). Its job suffix is
+    -- "disable", so RunOrDefer never uses that suffix.
+    function registry.DisableOrDefer(state, disable)
+        state.active = false
+        AdapterKit.CancelDeferred(state)
+        if NS.IsCombatLocked() then
+            return DeferJob(OwnerJob(registry, state, "disable", false), state, disable)
+        end
+        return disable(state)
+    end
+
+    function registry.Forget(state)
+        local owner = state[keyField]
+        if owners[owner] == state then owners[owner] = nil end
+    end
+
+    -- Deactivates, cancels pending passes, hides tracked surfaces and forgets.
+    function registry.Release(state)
+        state.active = false
+        AdapterKit.CancelDeferred(state)
+        if state.surfaces then AdapterKit.HideSurfaces(state) end
+        registry.Forget(state)
+    end
+
+    return registry
 end
 
 local function CanPaint(target)
@@ -289,10 +374,12 @@ function AdapterKit.FadeAtlas(context, frame, atlas)
     AdapterKit.ForEachRegion(frame, FadeAtlasRegion, context, atlas)
 end
 
+-- Records target among the surfaces context hides on disable.
 local function Track(context, target)
     local surfaces = context.surfaces
-    if surfaces then surfaces[target] = true end
+    if target and surfaces then surfaces[target] = true end
 end
+AdapterKit.Track = Track
 
 local function AttachWith(attach, context, target, spec)
     if not CanCreateRegions(target) then return false end
@@ -348,10 +435,11 @@ function AdapterKit.HideSurfaces(context)
 end
 
 -- A surface spec built once at load. Unset flags keep Surface's defaults:
--- no list-item transparency, no forced edge and a visible fill.
-function AdapterKit.SurfaceSpec(role, radius, inset, listItem, forceEdge, fillVisible)
+-- no list-item transparency, no forced edge, a visible fill and no active role.
+function AdapterKit.SurfaceSpec(role, radius, inset, listItem, forceEdge, fillVisible, activeRole)
     return {
         role = role,
+        activeRole = activeRole,
         radius = radius,
         inset = inset or 0,
         listItem = listItem == true,

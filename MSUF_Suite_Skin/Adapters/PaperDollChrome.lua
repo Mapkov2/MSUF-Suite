@@ -1,8 +1,9 @@
 local _, NS = ...
 
 -- Shared by CharacterPanel and InspectPanel (both load after this file):
--- per-owner state, combat deferral, waiting for the load-on-demand window
--- addon, and the decorative primitives both PaperDoll windows use.
+-- per-owner state and combat deferral (an AdapterKit owner registry),
+-- waiting for the load-on-demand window addon, and the decorative primitives
+-- both PaperDoll windows use.
 local Safety = NS.Safety
 local Field = Safety.Field
 local Dispatch = Safety.Dispatch
@@ -14,49 +15,26 @@ NS.PaperDollChrome = Chrome
 
 -- Surface specs are shared per call site; Surface.Attach stores, never edits them.
 function Chrome.Spec(role, radius, inset, listItem, activeRole)
-    return {
-        role = role,
-        radius = radius,
-        inset = inset,
-        listItem = listItem == true,
-        activeRole = activeRole,
-        allowImplicitProtected = true,
-    }
+    return Kit.SurfaceSpec(role, radius, inset, listItem, nil, nil, activeRole)
 end
 
 local SLOT_SPEC = Chrome.Spec("button", 4, 0, true)
 local INSET_SPEC = Chrome.Spec("panel", 5, 0)
 
-function Chrome.Track(state, target)
-    if target then state.surfaces[target] = true end
-end
-
-function Chrome.Fade(state, region)
-    if not region or NS.IsCombatLocked() or not Safety.CanDecorate(region, true) then
-        return false
-    end
-    return NS.Cosmetics.Fade(region, state.owner) == true
-end
+-- The owner state is the kit's skin context ({ owner, surfaces }), so the
+-- kit's gated primitives serve it directly.
+Chrome.Track = Kit.Track
+Chrome.Fade = Kit.Fade
 
 function Chrome.FadeNineSlice(state, target)
-    local nineSlice = Field(target, "NineSlice")
-    if not nineSlice or NS.IsCombatLocked() or not Safety.CanDecorate(nineSlice, true) then
-        return false
-    end
-    NS.Cosmetics.FadeNineSlice(nineSlice, state.owner)
-    return true
+    return Kit.FadeNineSlice(state, Field(target, "NineSlice"))
 end
 
 -- ensure: the caller is a native update hook (slot or stats update), so a
 -- surface that already shows spec and is current is left alone.
 function Chrome.Attach(state, target, spec, ensure)
-    local attach = ensure and NS.Surface.Ensure or NS.Surface.Attach
-    if not target or NS.IsCombatLocked() or not Safety.CanCreateRegions(target, true)
-        or not attach(target, spec) then
-        return false
-    end
-    state.surfaces[target] = true
-    return true
+    if ensure then return Kit.Ensure(state, target, spec) end
+    return Kit.Attach(state, target, spec)
 end
 
 function Chrome.SkinInset(state, inset)
@@ -81,53 +59,25 @@ end
 -- applyOrWait(state) (applies once the root exists, else waits for the addon),
 -- optional initState(state) and slotIcon(slot) fallback.
 function Chrome.New(config)
-    config.owners = {}
+    config.registry = Kit.NewOwners({
+        prefix = config.prefix, surfaces = true, isolate = true, init = config.initState,
+    })
+    config.owners = config.registry.owners
     config.exactSlots = Kit.WeakSet()
     config.waiting = false
     return setmetatable(config, Chrome)
 end
 
 function Chrome:OwnerState(owner)
-    local state = self.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            surfaces = Kit.WeakSet(),
-            deferred = {},
-            jobs = {},
-        }
-        if self.initState then self.initState(state) end
-        self.owners[owner] = state
-    end
-    return state
+    return (self.registry.State(owner))
 end
 
--- Runs callback(state) now, or once after combat. A suffix always maps to the
--- same callback, so its combat job and key are built once per owner. The
--- callers are Blizzard's PaperDoll post-hooks: each pass is its own error
--- boundary, so a raising pass never reaches Blizzard's caller.
+-- Runs callback(state) now, or once after combat (the kit's registry: one
+-- cached job per owner and suffix). The callers are Blizzard's PaperDoll
+-- post-hooks: each pass is its own error boundary (isolate), so a raising
+-- pass never reaches Blizzard's caller.
 function Chrome:RunOrDefer(state, suffix, callback)
-    if not state.active then return false end
-    if not NS.IsCombatLocked() then
-        Dispatch(callback, state)
-        return true
-    end
-    local job = state.jobs[suffix]
-    if not job then
-        local key = self.prefix .. ":" .. suffix .. ":" .. tostring(state.owner)
-        local owners = self.owners
-        job = { key = key }
-        job.run = function()
-            local current = owners[state.owner]
-            if current then current.deferred[key] = nil end
-            if current and current.active then callback(current) end
-        end
-        state.jobs[suffix] = job
-    end
-    state.deferred[job.key] = true
-    NS.CombatGate.RunOrDefer(job.key, job.run)
-    return false, "combat"
+    return self.registry.RunOrDefer(state, suffix, callback)
 end
 
 function Chrome:ForActiveOwners(suffix, callback)
@@ -219,15 +169,7 @@ end
 
 -- Cancels deferred work, hides this owner's surfaces and forgets the owner.
 function Chrome:Release(state)
-    state.active = false
-    for key in pairs(state.deferred) do
-        NS.CombatGate.Cancel(key)
-        state.deferred[key] = nil
-    end
-    for target in pairs(state.surfaces) do
-        NS.Surface.SetVisible(target, false)
-    end
-    self.owners[state.owner] = nil
+    self.registry.Release(state)
 end
 
 return Chrome

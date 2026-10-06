@@ -26,7 +26,6 @@ local Kit = NS.AdapterKit
 local DEFAULT_OWNER = "blizzardWindows"
 
 local frameStates = Kit.WeakSet()
-local ownerStates = {}
 local themeListenerRegistered = false
 
 local backgroundFields = {
@@ -110,26 +109,22 @@ local function HasAnyField(object, fields)
     return false
 end
 
-local function OwnerState(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = ownerStates[owner]
-    if not state then
-        state = {
-            surfaces = Kit.WeakSet(),
-            frames = Kit.WeakSet(),
-            glyphs = Kit.WeakSet(),
-            glyphRoles = Kit.WeakSet(),
-            scrollBoxes = Kit.WeakSet(),
-            -- row -> generation of its last full skin pass
-            skinnedRows = Kit.WeakSet(),
-            generation = 1,
-            deferred = {},
-            active = true,
-        }
-        ownerStates[owner] = state
-    end
-    return state, owner
-end
+-- Owner states are never forgotten: a disabled owner keeps its generation.
+local Owners = Kit.NewOwners({
+    default = DEFAULT_OWNER,
+    active = true,
+    surfaces = true,
+    init = function(state)
+        state.frames = Kit.WeakSet()
+        state.glyphs = Kit.WeakSet()
+        state.glyphRoles = Kit.WeakSet()
+        state.scrollBoxes = Kit.WeakSet()
+        -- row -> generation of its last full skin pass
+        state.skinnedRows = Kit.WeakSet()
+        state.generation = 1
+    end,
+})
+local ownerStates, OwnerState = Owners.owners, Owners.State
 
 local function OwnerKey(owner)
     return tostring(owner or DEFAULT_OWNER)

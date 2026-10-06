@@ -17,7 +17,8 @@ local Chrome = NS.PaperDollChrome
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
 local Public = NS.Safety.Public
-local Fade, Attach, Track = Chrome.Fade, Chrome.Attach, Chrome.Track
+local Kit = NS.AdapterKit
+local Fade, Attach = Chrome.Fade, Chrome.Attach
 
 local DEFAULT_OWNER = "blizzardWindows"
 local ROOT_SPEC = Chrome.Spec("shell", 8, 0)
@@ -107,28 +108,19 @@ local function SkinTabs(state)
     local selected = SelectedTab()
     local applied = false
     for index = 1, 3 do
-        local tab = _G["InspectFrameTab" .. index]
-        if tab and NS.Safety.CanControl(tab, true) then
-            local spec = TAB_SPEC_UNKNOWN
-            if selected ~= nil then
-                spec = selected == index and TAB_SPEC_ACTIVE or TAB_SPEC_INACTIVE
-            end
-            if NS.ControlSkin.ApplyPanelTab(tab, state.owner, spec) then
-                Track(state, tab)
-                applied = true
-            end
+        local spec = TAB_SPEC_UNKNOWN
+        if selected ~= nil then
+            spec = selected == index and TAB_SPEC_ACTIVE or TAB_SPEC_INACTIVE
+        end
+        if Kit.SkinControl(state, _G["InspectFrameTab" .. index], spec, "ApplyPanelTab") then
+            applied = true
         end
     end
     return applied
 end
 
 local function SkinAction(state, button)
-    if not button or NS.IsCombatLocked() or not NS.Safety.CanControl(button, true)
-        or not NS.ControlSkin.ApplyButton(button, state.owner, ACTION_SPEC) then
-        return false
-    end
-    Track(state, button)
-    return true
+    return Kit.SkinControl(state, button, ACTION_SPEC)
 end
 
 local panel

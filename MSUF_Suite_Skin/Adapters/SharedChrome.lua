@@ -24,7 +24,6 @@ local Kit = NS.AdapterKit
 -- points. It never replaces a Blizzard method or script, and deliberately
 -- leaves models, text, fonts, semantic icons, animations and geometry native.
 local SharedChrome = {
-    owners = {},
     activeOwnerCount = 0,
     callbackState = {},
     hooks = {},
@@ -135,23 +134,17 @@ local DIALOG_HEADER_FIELDS = { "LeftBG", "CenterBG", "RightBG" }
 local TALKING_HEAD_OVERLAY_FIELDS = { "Glow_TopBar", "Glow_LeftBar", "Glow_RightBar" }
 local QUICK_KEYBIND_BUTTONS = { "DefaultsButton", "CancelButton", "OkayButton" }
 
-local function OwnerState(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = SharedChrome.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            deferred = {},
-            jobs = {},
-            surfaces = Kit.WeakSet(),
-            -- pooled queue entry -> skin generation of its pass
-            queueEntries = Kit.WeakSet(),
-        }
-        SharedChrome.owners[owner] = state
-    end
-    return state, owner
-end
+-- Deferral keys are shared-chrome:<owner>:<suffix>.
+local Owners = Kit.NewOwners({
+    prefix = "shared-chrome",
+    default = DEFAULT_OWNER,
+    surfaces = true,
+    init = function(state)
+        -- pooled queue entry -> skin generation of its pass
+        state.queueEntries = Kit.WeakSet()
+    end,
+})
+SharedChrome.owners = Owners.owners
 
 local function ApplyGeneric(frame, owner, mode)
     return frame ~= nil and NS.GenericWindows.ApplyFrame(frame, owner, mode) == true
@@ -320,42 +313,11 @@ local function ApplyKind(state, kind)
     return applied, applied and "applied" or "missing"
 end
 
--- One job per kind, built once: job(state) applies that kind.
-local kindJobs = {}
-for index = 1, #allKinds do
-    local kind = allKinds[index]
-    kindJobs[kind] = function(state) ApplyKind(state, kind) end
-end
-
--- Runs job(state) now, or once after combat. A suffix always maps to the
--- same job, so its combat callback and key are built once per owner.
-local function RunOrDefer(state, suffix, job)
-    if not state.active then return false, "disabled" end
-    if not NS.IsCombatLocked() then
-        job(state)
-        return true
-    end
-    local deferred = state.jobs[suffix]
-    if not deferred then
-        local owner = state.owner
-        local key = "shared-chrome:" .. tostring(owner) .. ":" .. tostring(suffix)
-        deferred = { key = key }
-        deferred.run = function()
-            local current = SharedChrome.owners[owner]
-            if current then current.deferred[key] = nil end
-            if current and current.active then job(current) end
-        end
-        state.jobs[suffix] = deferred
-    end
-    state.deferred[deferred.key] = true
-    local ran, reason = NS.CombatGate.RunOrDefer(deferred.key, deferred.run)
-    return ran == true, reason
-end
-
+-- ApplyKind(state, kind) now, or once per owner and kind after combat.
 local function RequestKindForOwners(kind)
     for _, state in pairs(SharedChrome.owners) do
         if state.active then
-            RunOrDefer(state, kind, kindJobs[kind])
+            Owners.RunOrDefer(state, kind, ApplyKind, kind)
         end
     end
 end
@@ -470,7 +432,7 @@ local function ScheduleAddonLoads()
 end
 
 function SharedChrome.Apply(owner)
-    local state = OwnerState(owner)
+    local state = Owners.State(owner)
     if not state.active then
         state.active = true
         SharedChrome.activeOwnerCount = SharedChrome.activeOwnerCount + 1
@@ -481,7 +443,7 @@ function SharedChrome.Apply(owner)
     InstallHooks()
 
     if NS.IsCombatLocked() then
-        local _, reason = RunOrDefer(state, "apply", ApplyAllNow)
+        local _, reason = Owners.RunOrDefer(state, "apply", ApplyAllNow)
         return false, reason or "combat"
     end
     local applied = ApplyAllNow(state)
@@ -494,11 +456,7 @@ function SharedChrome.Disable(owner)
     if not state then return true end
     if NS.IsCombatLocked() then return false, "combat" end
 
-    state.active = false
-    Kit.CancelDeferred(state)
-    Kit.HideSurfaces(state)
-
-    SharedChrome.owners[owner] = nil
+    Owners.Release(state)
     SharedChrome.activeOwnerCount = math.max(0, SharedChrome.activeOwnerCount - 1)
     if SharedChrome.activeOwnerCount == 0 then
         UnregisterCallbacks()

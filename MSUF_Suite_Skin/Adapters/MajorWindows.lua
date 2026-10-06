@@ -27,7 +27,6 @@ local _, NS = ...
 -- lifecycle) and MajorWindowsItems.lua (the Great Vault and the item-service
 -- skins, added to groupSkinners).
 local MajorWindows = {
-    owners = {},
     waiting = {},
     indicators = setmetatable({}, { __mode = "k" }),
     activeOwnerCount = 0,
@@ -188,20 +187,12 @@ local function CategoryEnabled(category)
     return NS.GenericWindows.IsCategoryEnabled(category)
 end
 
-local function OwnerState(owner)
-    owner = owner or DEFAULT_OWNER
-    local state = MajorWindows.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            surfaces = Kit.WeakSet(),
-            textColors = Kit.NewTextColors(),
-        }
-        MajorWindows.owners[owner] = state
-    end
-    return state
-end
+local Owners = Kit.NewOwners({
+    default = DEFAULT_OWNER,
+    surfaces = true,
+    init = function(state) state.textColors = Kit.NewTextColors() end,
+})
+MajorWindows.owners = Owners.owners
 
 local function FadeNineSlice(state, target)
     Kit.FadeNineSlice(state, Field(target, "NineSlice"))
@@ -640,7 +631,7 @@ function MajorWindows.OnThemeChanged(_, domain)
 end
 
 function MajorWindows.Apply(owner)
-    local state = OwnerState(owner)
+    local state = Owners.State(owner)
     if not state.active then
         state.active = true
         MajorWindows.activeOwnerCount = MajorWindows.activeOwnerCount + 1
@@ -675,11 +666,9 @@ function MajorWindows.Disable(owner)
     local state = MajorWindows.owners[owner]
     if not state then return true end
     if NS.IsCombatLocked() then return false, "combat" end
-    state.active = false
-    Kit.HideSurfaces(state)
+    Owners.Release(state)
     Kit.HideIndicators(MajorWindows.indicators)
     Kit.RestoreTextColors(state.textColors)
-    MajorWindows.owners[owner] = nil
     MajorWindows.activeOwnerCount = math.max(0, MajorWindows.activeOwnerCount - 1)
     if MajorWindows.activeOwnerCount == 0 then
         UnregisterHousingCallbacks()

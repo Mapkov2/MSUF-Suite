@@ -5,7 +5,6 @@ local _, NS = ...
 -- Blizzard. MapkoSkin only adds cosmetic textures and suppresses verified
 -- decorative regions outside combat.
 local EditModeSkin = {
-    owners = {},
     checkControllers = setmetatable({}, { __mode = "k" }),
     sliderContainers = setmetatable({}, { __mode = "k" }),
 }
@@ -104,21 +103,15 @@ local function HookInstance(frame, method, callback)
     hooked[frame] = true
 end
 
-local function OwnerState(owner)
-    local state = EditModeSkin.owners[owner]
-    if not state then
-        state = {
-            owner = owner,
-            active = false,
-            callbackRegistered = false,
-            surfaces = setmetatable({}, { __mode = "k" }),
-            -- pooled setting frame -> skin generation of its pass
-            skinned = setmetatable({}, { __mode = "k" }),
-        }
-        EditModeSkin.owners[owner] = state
-    end
-    return state
-end
+local Owners = Kit.NewOwners({
+    surfaces = true,
+    init = function(state)
+        state.callbackRegistered = false
+        -- pooled setting frame -> skin generation of its pass
+        state.skinned = setmetatable({}, { __mode = "k" })
+    end,
+})
+EditModeSkin.owners = Owners.owners
 
 local function Attach(state, target, spec)
     if not target or not NS.Safety.CanDecorate(target, true)
@@ -129,13 +122,8 @@ local function Attach(state, target, spec)
     return true
 end
 
-local function Fade(region, owner)
-    if region then NS.Cosmetics.Fade(region, owner) end
-end
-
-local function FadeNineSlice(frame, owner)
-    if frame then NS.Cosmetics.FadeNineSlice(frame, owner) end
-end
+-- The kit's fades: outside combat and only on regions CanDecorate allows.
+local Fade, FadeNineSlice = Kit.Fade, Kit.FadeNineSlice
 
 local function SkinButton(state, button, role, height)
     if not button or not NS.Safety.CanControl(button, true)
@@ -190,7 +178,7 @@ SkinCheckButton = function(state, button, controller)
     -- disabled-checked textures because those communicate the saved setting,
     -- but force the configurable checkmark token: texture file IDs returned by
     -- current clients cannot be classified reliably from their source path.
-    Fade(Call(button, "GetNormalTexture"), state.owner)
+    Fade(state, Call(button, "GetNormalTexture"))
     NS.Checkmarks.TrackTexture(Call(button, "GetCheckedTexture")
         or Field(button, "CheckedTexture"), state.owner, "checkmark")
     NS.Checkmarks.TrackTexture(Call(button, "GetDisabledCheckedTexture")
@@ -255,9 +243,9 @@ local function SkinSlider(state, wrapper)
     if not slider or not Attach(state, slider, SLIDER_SPEC) then
         return false
     end
-    Fade(Field(slider, "Left"), state.owner)
-    Fade(Field(slider, "Middle"), state.owner)
-    Fade(Field(slider, "Right"), state.owner)
+    Fade(state, Field(slider, "Left"))
+    Fade(state, Field(slider, "Middle"))
+    Fade(state, Field(slider, "Right"))
     -- Recolor the stepper glyphs and the thumb while retaining Blizzard's
     -- enabled alpha, click handlers, value semantics and narration.
     EditModeSkin.sliderContainers[container] = state
@@ -353,8 +341,7 @@ local function SkinSettingsDialog(state, dialog)
 end
 
 local function SkinManagerExplicit(state, frame)
-    local owner = state.owner
-    FadeNineSlice(Field(frame, "Border"), owner)
+    FadeNineSlice(state, Field(frame, "Border"))
     SkinDropdown(state, Field(frame, "LayoutDropdown"))
     SkinActionButtons(state, frame)
     for index = 1, #managerCheckButtons do
@@ -365,14 +352,14 @@ local function SkinManagerExplicit(state, frame)
 
     local account = Field(frame, "AccountSettings")
     local settingsContainer = Field(account, "SettingsContainer")
-    FadeNineSlice(Field(settingsContainer, "BorderArt"), owner)
-    Fade(Field(Field(account, "Expander"), "Divider"), owner)
+    FadeNineSlice(state, Field(settingsContainer, "BorderArt"))
+    Fade(state, Field(Field(account, "Expander"), "Divider"))
     Attach(state, settingsContainer, ACCOUNT_SPEC)
     SkinAccountCheckButtons(state, account)
 end
 
 local function SkinDialogExplicit(state, dialog)
-    FadeNineSlice(Field(dialog, "Border"), state.owner)
+    FadeNineSlice(state, Field(dialog, "Border"))
     SkinButton(state, Field(dialog, "AcceptButton"), "buttonPrimary", 24)
     SkinButton(state, Field(dialog, "CancelButton"), "button", 24)
     SkinButton(state, Field(dialog, "SaveAndProceedButton"), "buttonPrimary", 24)
@@ -380,7 +367,7 @@ local function SkinDialogExplicit(state, dialog)
     SkinButton(state, Field(dialog, "CloseButton"), "button", 24)
     local buttons = Field(dialog, "Buttons")
     SkinButton(state, Field(buttons, "RevertChangesButton"), "button", 28)
-    Fade(Field(buttons, "Divider"), state.owner)
+    Fade(state, Field(buttons, "Divider"))
 end
 
 local function ApplyRoots(state, frame)
@@ -427,7 +414,7 @@ function EditModeSkin.Apply(frame, owner)
         return false, "protected-frame"
     end
 
-    local state = OwnerState(owner)
+    local state = Owners.State(owner)
     state.active = true
     state.frame = frame
     HookInstance(frame, "SetHasActiveChanges", OnHasActiveChanges)
@@ -451,9 +438,7 @@ function EditModeSkin.Disable(_, owner)
     NS.GenericWindows.Disable(owner)
     NS.ControlSkin.DisableOwner(owner)
     NS.Cosmetics.RestoreOwner(owner)
-    for target in pairs(state.surfaces) do
-        NS.Surface.SetVisible(target, false)
-    end
+    Kit.HideSurfaces(state)
     return true
 end
 
