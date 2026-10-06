@@ -158,6 +158,33 @@ function Gear.IsWide()
     return v and v.wide == true or false
 end
 
+-- Puts back what the layout changed on one frame. Only values we still own
+-- go back; a newer native change is kept.
+local function RestoreFrame(frame, record)
+    if SamePoints(frame, record.appliedPoints) then
+        frame:ClearAllPoints()
+        for _, point in ipairs(record.points) do frame:SetPoint(unpack(point)) end
+    end
+    if record.width and Near(frame:GetWidth(), record.appliedWidth, GEOMETRY_EPSILON) then
+        frame:SetWidth(record.width)
+    end
+    if record.height and Near(frame:GetHeight(), record.appliedHeight, GEOMETRY_EPSILON) then
+        frame:SetHeight(record.height)
+    end
+    if record.scale and Near(frame:GetScale(), record.appliedScale, SCALE_EPSILON) then
+        frame:SetScale(record.scale)
+    end
+    if record.shown ~= nil and not frame:IsShown() then frame:SetShown(record.shown) end
+end
+
+-- The view's own parts and flags back to Blizzard's layout.
+local function ClearLayoutState(v)
+    if (v.wide or v.list) and v.root.Inset then NS.Surface.SetVisible(v.root.Inset, true) end
+    if v.wideInfo then v.wideInfo:Hide() end
+    v.wide, v.list, v.layoutMode = false, false, nil
+    for _, row in ipairs(v.rows) do row.icon:Show() end
+end
+
 function Gear.RestoreLayout(v)
     if not v or not v.geometry then return end
     if NS.IsCombatLocked() then
@@ -171,29 +198,35 @@ function Gear.RestoreLayout(v)
         return
     end
     local oldWidth, oldHeight = v.root:GetWidth(), v.root:GetHeight()
-    -- Only values we still own go back; a newer native change is kept.
     for frame, record in pairs(v.geometry) do
-        if SamePoints(frame, record.appliedPoints) then
-            frame:ClearAllPoints()
-            for _, point in ipairs(record.points) do frame:SetPoint(unpack(point)) end
-        end
-        if record.width and Near(frame:GetWidth(), record.appliedWidth, GEOMETRY_EPSILON) then
-            frame:SetWidth(record.width)
-        end
-        if record.height and Near(frame:GetHeight(), record.appliedHeight, GEOMETRY_EPSILON) then
-            frame:SetHeight(record.height)
-        end
-        if record.scale and Near(frame:GetScale(), record.appliedScale, SCALE_EPSILON) then
-            frame:SetScale(record.scale)
-        end
-        if record.shown ~= nil and not frame:IsShown() then frame:SetShown(record.shown) end
+        RestoreFrame(frame, record)
         v.geometry[frame] = nil
     end
-    if (v.wide or v.list) and v.root.Inset then NS.Surface.SetVisible(v.root.Inset, true) end
-    if v.wideInfo then v.wideInfo:Hide() end
-    v.wide, v.list, v.layoutMode = false, false, nil
-    for _, row in ipairs(v.rows) do row.icon:Show() end
+    ClearLayoutState(v)
     if v.root:IsVisible() then RepositionPanels(v.root, oldWidth, oldHeight) end
+end
+
+-- CharacterFrameMixin:UpdateSize sets Blizzard's width again whenever the
+-- window opens, expands or collapses. In combat the skin may not size the
+-- window back (its size and position belong to the secure panel manager)
+-- and the relayout waits for PLAYER_REGEN_ENABLED, so the slots, model and
+-- stats it moved would hang outside the narrower window until then. They
+-- follow Blizzard's width meanwhile: only unprotected regions below the
+-- window go back. The window keeps its record, so the relayout after combat
+-- widens it again from Blizzard's size.
+function Gear.FollowNativeSize(v)
+    if not v or not v.geometry or not NS.IsCombatLocked() then return end
+    local root = v.root
+    local record = v.geometry[root]
+    if not record or Near(root:GetWidth(), record.appliedWidth, GEOMETRY_EPSILON) then return end
+    for frame, saved in pairs(v.geometry) do
+        if frame ~= root and not NS.Safety.GetProtection(frame) then
+            RestoreFrame(frame, saved)
+            v.geometry[frame] = nil
+        end
+    end
+    Gear.Hide(v)
+    ClearLayoutState(v)
 end
 
 -- "Wide layout" off keeps the modern view at Blizzard's size, with the

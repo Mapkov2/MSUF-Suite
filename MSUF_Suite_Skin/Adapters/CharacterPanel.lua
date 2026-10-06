@@ -554,11 +554,13 @@ local function RefreshForeverLook(state)
     SkinModel(state)
 end
 
+local function CharacterView() return NS.CharacterDetails.views[_G.CharacterFrame] end
+
 -- UpdateSize finishes the native PaperDoll resize. ShowSubFrame assigns
 -- activeSubframe AFTER showing the PaperDoll child, so reflow the existing
 -- snapshots here; do not perform another inventory/tooltip scan.
 local function RelayoutPaperDoll(state)
-    local view = NS.CharacterDetails.views[_G.CharacterFrame]
+    local view = CharacterView()
     NS.GearAnnotations.ApplyLayout(view)
     if view and view.wide then
         for _, row in ipairs(view.rows) do
@@ -618,7 +620,15 @@ CharacterPanel = {
 }
 NS.CharacterPanel = CharacterPanel
 
-local function OnUpdateSize() panel:ForActiveOwners("layout", RelayoutPaperDoll) end
+-- During combat the layout pass waits for combat to end, while Blizzard's
+-- resize already happened: the moved regions follow it at once (its own
+-- error boundary).
+local function OnUpdateSize()
+    if NS.IsCombatLocked() then
+        Safety.Dispatch(NS.GearAnnotations.FollowNativeSize, CharacterView())
+    end
+    panel:ForActiveOwners("layout", RelayoutPaperDoll)
+end
 -- During combat the stats pass waits for combat to end; the skin's own stat
 -- details follow the rows Blizzard just reassigned at once (paint only, its
 -- own error boundary like every pass).

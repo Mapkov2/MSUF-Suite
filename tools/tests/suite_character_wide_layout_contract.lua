@@ -124,6 +124,36 @@ Check(Details.SetOption("wideLayout", true), "the Wide layout setter refused tru
 Gear.ApplyLayout(v)
 Check(Wide(), "turning Wide layout on again did not widen the modern view")
 
+-- In combat CharacterFrameMixin:UpdateSize (open, Expand, Collapse) sets
+-- Blizzard's width again and the skin's relayout waits for the combat end.
+-- The regions it moved follow the narrower window meanwhile; the window
+-- itself, the panel manager and protected regions are left alone, and the
+-- relayout after combat widens the window again from Blizzard's size.
+local locked = true
+NS.IsCombatLocked = function() return locked end
+Gear.FollowNativeSize(v)
+Check(Wide(), "an unchanged window gave up the wide layout in combat")
+CharacterFrame.width = 540
+CharacterFrame.InsetRight.IsProtected = function() return true, false end
+local beforeCombat = panelRepositions
+Gear.FollowNativeSize(v)
+local _, _, _, headX, headY = CharacterHeadSlot:GetPoint(1)
+Check(headX == 4 and headY == -2 and CharacterModelScene.width == 231 and not Gear.IsWide(),
+    "the moved regions kept the wide layout inside Blizzard's narrower window")
+Check(CharacterFrame.width == 540 and CharacterFrame.height == 540 and panelRepositions == beforeCombat,
+    "the window or the panel manager was changed in combat")
+local _, _, _, insetX = CharacterFrame.InsetRight:GetPoint(1)
+Check(insetX == 704, "a protected region was moved in combat")
+locked = false
+CharacterFrame.InsetRight.IsProtected = nil
+Gear.ApplyLayout(v)
+Check(Wide(), "the relayout after combat did not widen the window again")
+Gear.RestoreLayout(v)
+Check(Native(), "the layout after combat no longer restores Blizzard's geometry")
+NS.IsCombatLocked = function() return false end
+Gear.ApplyLayout(v)
+Check(Wide(), "the wide layout did not come back for the next checks")
+
 -- The list and classic views are separate choices the toggle does not change.
 for _, wide in ipairs({ true, false }) do
     NS.DB.characterDetails.wideLayout = wide
