@@ -74,6 +74,10 @@ function Layout.Attach(ui, section, toolbar, record)
     body:SetScript("OnShow", Refresh)
     if record then
         record.onActivate = function()
+            -- Ownership settling can hide the body before the wrapper shows.
+            -- Compact activation must wake it just as the expander does.
+            body:SetFrameLevel(section:GetFrameLevel() + 2)
+            body:Show()
             if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview() then
                 if expander.expanded then expander:Relayout("NAMEPLATES_PREVIEW")
                 else expander:Open("NAMEPLATES_PREVIEW") end

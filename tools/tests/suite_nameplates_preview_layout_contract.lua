@@ -78,7 +78,8 @@ Frame = function(parent)
     function f:RegisterEvent(event) self.events[event] = true end
     function f:UnregisterEvent(event) self.events[event] = nil end
     function f:GetEffectiveScale() return 1 end
-    function f:GetFrameLevel() return 1 end
+    function f:GetFrameLevel() return self.frameLevel or 1 end
+    function f:SetFrameLevel(level) self.frameLevel = level end
     function f:CreateTexture() return Frame(self) end
     function f:CreateFontString() return Frame(self) end
     return setmetatable(f, { __index = function(_, key)
@@ -175,7 +176,7 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
         local bridge = { HostBridge = {} }
         assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
         P.HM = bridge.HostBridge.Menu2(M)
-        assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua"))("Options", P)
+        assert(loadfile(arg[2] or root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         local ui = P.NameplatesEditor.Create(ctx, builder, {})
@@ -197,7 +198,14 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
         CheckInside(ui.canvas, body, "compact canvas escaped its body")
         M.SetFixedPreviewExpandedPreference(false)
         fixed:Activate(headerHost, 0)
+        -- Pinned ownership checks can hide the body before the page wrapper
+        -- shows. Compact activation must recover without opening the expander.
+        body:Hide()
         fixed.onActivate()
+        assert(body:IsVisible() and ui.canvas:IsVisible() and ui.stage:IsVisible(),
+            "compact activation left the renderer hidden until Expand")
+        assert(body:GetFrameLevel() > section:GetFrameLevel(),
+            "compact renderer stayed beneath its docked section")
         assert(section:GetParent() == headerHost and ui.compact,
             "Compact preference did not activate the preview in its fixed host")
         local anchorY = select(4, Rect(section))
@@ -237,6 +245,17 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
             CheckInside(ui.canvas, body, "collapse retained expanded canvas anchors")
             assert(not ui.selection:IsShown() and not ui.tools:IsShown() and not ui.layerRail:IsShown(),
                 "collapse retained interactive controls over the settings")
+            M.SetFixedPreviewExpandedPreference(false)
+            fixed:Deactivate()
+            headerHost:SetFrameLevel(headerHost:GetFrameLevel() + 7)
+            fixed:Activate(headerHost, 0)
+            body:Hide()
+            fixed.onActivate()
+            assert(ui.compact and body:IsVisible() and ui.stage:IsVisible(),
+                "cached compact activation did not restore the renderer")
+            assert(body:GetFrameLevel() > section:GetFrameLevel(),
+                "cached compact renderer did not follow its new header level")
+            M.SetFixedPreviewExpandedPreference(true)
         end
         fixed:Deactivate()
         assert(not section:IsShown() and not expander.expanded, "leaving the page retained its fixed preview")
