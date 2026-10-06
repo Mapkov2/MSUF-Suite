@@ -242,6 +242,72 @@ host.scripts.OnEvent(host, "PLAYER_REGEN_ENABLED")
 assert(enumerations == rebuilt + 1 and not host.events.PLAYER_REGEN_ENABLED,
     "the stat rows were not refreshed after combat")
 
+-- A stat font whose anchoring is secret (its row shows a secret value)
+-- answers GetPoint with secrets, and SetPoint refuses secrets from addon code
+-- (SimpleScriptRegionResizingAPI). Such anchors are never stored or replayed:
+-- the font keeps its native anchors until they read as public, and only a
+-- font the pane re-anchored is put back.
+do
+    local SECRET = {}
+    local isSecret = issecretvalue
+    issecretvalue = function(value) return value == SECRET end
+    local function AnchoredFont(native)
+        local font = Object()
+        font.points, font.secret = { native }, true
+        function font:GetNumPoints() return #self.points end
+        function font:GetPoint(index)
+            if self.secret then return SECRET, SECRET, SECRET, SECRET, SECRET end
+            return unpack(self.points[index], 1, 5)
+        end
+        function font:ClearAllPoints() self.points = {} end
+        function font:SetPoint(...)
+            for index = 1, select("#", ...) do
+                assert(not issecretvalue((select(index, ...))), "a secret anchor reached SetPoint")
+            end
+            self.points[#self.points + 1] = { ... }
+        end
+        return font
+    end
+    local category = Object()
+    local nativeTitle = { "TOP", category, "TOP", 0, -3 }
+    category.Title = AnchoredFont(nativeTitle)
+    local row = Object()
+    row.Label = AnchoredFont({ "LEFT", row, "LEFT", 11, 0 })
+    row.Value = AnchoredFont({ "RIGHT", row, "RIGHT", -8, 0 })
+    local secretPane = Object({
+        ItemLevelCategory = category,
+        AttributesCategory = Object({ Title = Object() }),
+        EnhancementsCategory = Object({ Title = Object() }),
+        height = 400,
+        statsFramePool = { EnumerateActive = function()
+            local done = false
+            return function()
+                if done then return nil end
+                done = true
+                return row
+            end
+        end },
+    })
+    local applied, failure = pcall(stats.Apply, secretPane, "secret")
+    assert(applied, "a stat pane with secret anchors raised: " .. tostring(failure))
+    assert(category.Title.points[1] == nativeTitle and row.Label.points[1][1] == "LEFT"
+        and row.Value.points[1][1] == "RIGHT", "a font with secret anchors was re-anchored")
+    -- Public again: the header takes the pane's anchor, and disabling puts
+    -- back the native one it read then.
+    category.Title.secret = false
+    local secretView = assert(stats.views[secretPane])
+    stats.Refresh(secretView)
+    local moved = category.Title.points[1]
+    assert(moved[1] == "LEFT" and moved[2] == category and moved[4] == 11, "a public header was not laid out")
+    stats.Disable(secretPane, "secret")
+    local restored = category.Title.points[1]
+    assert(#category.Title.points == 1 and restored[1] == "TOP" and restored[2] == category
+        and restored[5] == -3, "disabling did not restore the header's native anchor")
+    assert(row.Label.points[1][1] == "LEFT" and row.Value.points[1][1] == "RIGHT",
+        "disabling replayed anchors of fonts the pane never moved")
+    issecretvalue = isSecret
+end
+
 -- PaperDoll releases and reacquires its pool without resetting frame heights.
 -- A close before combat must prepare even the retained, currently hidden rows.
 local normalCreate, gateFrame = CreateFrame

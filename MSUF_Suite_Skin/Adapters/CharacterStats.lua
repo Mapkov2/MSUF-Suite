@@ -148,14 +148,29 @@ end
 
 -- Native font snapshots -----------------------------------------------------------------
 
+-- The font's native anchors, or nil while any of them reads as a secret.
+-- GetPoint answers with secrets while the font's anchoring is secret (a stat
+-- row showing a secret value; SimpleScriptRegionResizingAPI GetPoint,
+-- SecretWhenAnchoringSecret), and SetPoint refuses secrets from addon code.
+local function PublicPoints(font)
+    local Public = NS.Safety.Public
+    local points = {}
+    for index = 1, math.min(Number(Read(font.GetNumPoints, font)) or 0, 4) do
+        local point, relativeTo, relativePoint, x, y = font:GetPoint(index)
+        if not Public(point) or not Public(relativeTo) or not Public(relativePoint)
+            or not Public(x) or not Public(y) then
+            return nil
+        end
+        points[index] = { point, relativeTo, relativePoint, x, y }
+    end
+    return points
+end
+
 local function CaptureFont(font)
     if not font or not NS.Safety.CanDecorate(font, true) then return nil end
     local path, size, flags = Read(font.GetFont, font)
     if type(path) ~= "string" or not Number(size) then return nil end
-    local points = {}
-    for index = 1, math.min(Number(Read(font.GetNumPoints, font)) or 0, 4) do
-        points[index] = { font:GetPoint(index) }
-    end
+    local points = PublicPoints(font)
     local r, g, b, a = Read(font.GetTextColor, font)
     return {
         font = font,
@@ -169,8 +184,19 @@ local function CaptureFont(font)
     }
 end
 
+-- A font is re-anchored only once its native anchors are held (MovePoints),
+-- so only a moved font is put back.
+local function MovePoints(saved)
+    if not saved.points then saved.points = PublicPoints(saved.font) end
+    if not saved.points then return false end
+    saved.moved = true
+    saved.font:ClearAllPoints()
+    return true
+end
+
 local function RestorePoints(saved)
-    if not saved or #saved.points == 0 then return end
+    if not saved or not saved.moved then return end
+    saved.moved = nil
     saved.font:ClearAllPoints()
     for _, point in ipairs(saved.points) do saved.font:SetPoint(unpack(point)) end
 end
@@ -502,9 +528,9 @@ local function StyleHeaders(v, itemLevel)
     }
     for _, field in ipairs(categories) do
         local category = v.pane[field]
-        if category and v.fonts[category.Title] then
-            category.Title:ClearAllPoints()
-            category.Title:SetPoint("LEFT", category, "LEFT", 11, 0)
+        local saved = category and v.fonts[category.Title]
+        if saved then
+            if MovePoints(saved) then category.Title:SetPoint("LEFT", category, "LEFT", 11, 0) end
             category.Title:SetJustifyH("LEFT")
             NS.Surface.Ensure(category, v.headerSpec)
         end
@@ -531,9 +557,10 @@ local function StyleRow(v, record, detailed, wide, base, detailHeight)
         if saved then
             if detailed then
                 local label = field == "Label"
-                row[field]:ClearAllPoints()
-                row[field]:SetPoint(label and "TOPLEFT" or "TOPRIGHT", row,
-                    label and "TOPLEFT" or "TOPRIGHT", label and 11 or -8, wide and -7 or -4)
+                if MovePoints(saved) then
+                    row[field]:SetPoint(label and "TOPLEFT" or "TOPRIGHT", row,
+                        label and "TOPLEFT" or "TOPRIGHT", label and 11 or -8, wide and -7 or -4)
+                end
             else
                 RestorePoints(saved)
             end
