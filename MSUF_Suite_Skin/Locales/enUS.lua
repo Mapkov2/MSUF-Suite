@@ -484,6 +484,8 @@ NS.RegisterLocale("enUS", {
     ["All profiles exported"] = "All profiles exported",
     ["Import profile"] = "Import profile",
     ["Import all"] = "Import all",
+    ["Confirm delete"] = "Confirm delete",
+    ["Click Confirm delete within 5 seconds to delete profile %s."] = "Click Confirm delete within 5 seconds to delete profile %s.",
     ["Confirm replace"] = "Confirm replace",
     ["Profile %s already exists. Click Confirm replace within 5 seconds to overwrite it."] = "Profile %s already exists. Click Confirm replace within 5 seconds to overwrite it.",
     ["Profile %s replaced"] = "Profile %s replaced",

@@ -18,6 +18,9 @@ local REFUSAL_TEXT = {
     combat = L["Profiles can only change outside combat."],
 }
 
+-- How long a two-click confirmation (delete, import replace) stays armed.
+local ARM_SECONDS = 5
+
 local function BuildProfileControls(page, view)
     local names = view.names
     -- A switch reports its outcome on the page like every profile action; a
@@ -51,9 +54,23 @@ local function BuildProfileControls(page, view)
         CreateProfile(true, L["Current profile copied"])
     end, nil, view.Refused)
     copy:SetPoint("LEFT", create, "RIGHT", 8, 0)
+    -- A delete cannot be undone, so it takes two clicks like an import that
+    -- replaces a profile: the first arms the button for the active profile,
+    -- only a second click within ARM_SECONDS on that same profile deletes it.
+    -- The last profile is never armed; the engine refuses it at once.
+    local confirmation
     local remove = O.CreateSettingButton(page, L["Delete active"], 126, 28, function()
-        view.Result(Replaced(NS.Database.DeleteProfile(NS.Database.GetActiveProfileName())))
+        local name = NS.Database.GetActiveProfileName()
+        if #names > 1 and not confirmation.IsArmed(name) then
+            confirmation.Arm(name)
+            view.Result(false, nil, nil,
+                L["Click Confirm delete within 5 seconds to delete profile %s."]:format(tostring(name)))
+            return
+        end
+        confirmation.Disarm()
+        view.Result(Replaced(NS.Database.DeleteProfile(name)))
     end, nil, view.Refused)
+    confirmation = O.CreateConfirmation(remove, L["Delete active"], L["Confirm delete"], ARM_SECONDS)
     remove:SetPoint("LEFT", copy, "RIGHT", 8, 0)
     return create
 end
@@ -81,7 +98,6 @@ end
 -- taken name arms the import button; only a second click within ARM_SECONDS,
 -- on the same text and name, replaces that profile. The replacement is one
 -- undo step whose snapshot is the replaced profile.
-local ARM_SECONDS = 5
 
 local function ReplaceProfile(view, text, name)
     local label = L["Import profile"]

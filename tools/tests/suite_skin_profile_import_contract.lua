@@ -280,4 +280,40 @@ Check(importLabel.text == "Import profile" and lastStatus.role == "success"
     "an import without a name was not placed beside the taken name: " .. tostring(lastStatus.text))
 Check(#reported == reports + 1, "the options import raised: " .. table.concat(reported, "; "))
 
+-- Deleting the active profile cannot be undone: the first click arms the
+-- button for that profile, only a second click on the same profile deletes
+-- it, and an expired arm or a switch in between starts over. widgetStates
+-- holds its buttons weakly, so a fresh page keeps the button here.
+local deleteButton
+local createSettingButton = O.CreateSettingButton
+O.CreateSettingButton = function(parent, text, ...)
+    local button = createSettingButton(parent, text, ...)
+    if text == "Delete active" then deleteButton = button end
+    return button
+end
+builder(Frame())
+O.CreateSettingButton = createSettingButton
+Check(deleteButton ~= nil, "the Delete active button was not built")
+local deleteLabel = O.widgetStates[deleteButton].label
+local function ClickDelete()
+    deleteButton:GetScript("OnClick")(deleteButton, "LeftButton")
+end
+Database.SetActiveProfile("Other")
+ClickDelete()
+Check(Database.GetProfile("Other") ~= nil and deleteLabel.text == "Confirm delete"
+    and lastStatus.role == "danger" and lastStatus.text:find("Other", 1, true),
+    "the first Delete active click deleted the profile or did not arm: " .. tostring(lastStatus.text))
+timers[#timers]()
+Check(deleteLabel.text == "Delete active", "the delete arm did not expire")
+ClickDelete()
+Check(Database.GetProfile("Other") ~= nil, "a click after the delete arm expired deleted the profile")
+Database.SetActiveProfile("Raid")
+ClickDelete()
+Check(Database.GetProfile("Raid") ~= nil and Database.GetProfile("Other") ~= nil
+    and deleteLabel.text == "Confirm delete", "a click after a profile switch deleted a profile")
+ClickDelete()
+Check(Database.GetProfile("Raid") == nil and Database.GetProfile("Other") ~= nil
+    and deleteLabel.text == "Delete active" and lastStatus.role == "success",
+    "the confirming click did not delete only the active profile")
+
 print("Suite skin profile import: " .. checks .. " checks passed")
