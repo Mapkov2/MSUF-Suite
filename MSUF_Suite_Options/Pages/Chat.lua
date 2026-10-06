@@ -1,5 +1,5 @@
 local _, P = ...
-local M, Tr = P.M, P.Tr
+local M, Tr, HM = P.M, P.Tr, P.HM
 local PAGE, ID = "suite_chat", "chat"
 -- A bubble source's own look shows only while that source uses it.
 local OWN_PARTS = { "bubbleFont", "bubbleSize", "bubbleText", "bubbleFill", "bubbleOpacity", "bubbleEdge",
@@ -196,7 +196,7 @@ local function Build(ctx)
         title = Tr("Preview"), height = 176, gap = 8,
     })
     if preview then
-        local width = math.max(240, (preview._msuf2Width or b.width or 720) - 32)
+        local width = math.max(240, (HM.GetSectionWidth(preview) or b.width or 720) - 32)
         Sample(preview, -48, width, ctx)
     end
     P.ModuleCard(ctx, b, PAGE, ID)

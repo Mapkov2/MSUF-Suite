@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, S, W, M, T, Tr = P.Suite, P.S, P.W, P.M, P.T, P.Tr
+local Suite, S, W, M, T, Tr, HM = P.Suite, P.S, P.W, P.M, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_minimap", "minimap"
 local WEATHER, SHAPE, TOOLTIP = Suite.MinimapWeatherDisplay, Suite.MinimapShape, Suite.MinimapInfoTooltip
 
@@ -70,7 +70,7 @@ local PRESET_COLUMNS, PRESET_GAP = 4, 7
 -- A tall preset tile: the style's border art as a swatch above its name.
 local function PresetButton(body, spec, index, width)
     local button = T.Button(body, spec[2], width, 55)
-    local label = rawget(button, "_msuf2Label")
+    local label = HM.GetControlLabel(button)
     if label then
         label:ClearAllPoints()
         label:SetPoint("BOTTOM", button, "BOTTOM", 0, 5)

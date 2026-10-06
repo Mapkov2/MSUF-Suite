@@ -147,6 +147,15 @@ local RULES = {
 }
 P.catalog = { demo = { rules = {}, summary = "size shown" } }
 for _, rule in ipairs(RULES) do P.catalog.demo.rules[rule.key] = rule end
+-- An older Menu2 (no host API v2): the Suite's own field writes.
+local bridge = { HostBridge = {} }
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
+P.HM = bridge.HostBridge.Menu2(P.M)
+-- Menu/Bridge.lua's helper over the adapter.
+function P.HideControlTitle(widget)
+    local title = P.HM.GetControlTitle(widget)
+    if title then title:Hide() end
+end
 local function Load(file) assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))("MSUF_Suite_Options", P) end
 Load("Menu/Controls.lua")
 local function Ctx(saved)

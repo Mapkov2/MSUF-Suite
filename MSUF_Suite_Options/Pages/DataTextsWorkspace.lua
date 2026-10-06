@@ -1,5 +1,5 @@
 local _, P = ...
-local W, M, T, Tr = P.W, P.M, P.T, P.Tr
+local W, M, T, Tr, HM = P.W, P.M, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_dataTexts", "dataTexts"
 local Page = { selectedBar = 1, selections = {} }
 P.DataTextPage = Page
@@ -31,8 +31,8 @@ function Page.Deck(ctx, parent, width, y, changed, compact)
             frame:SetSize(width, 80)
             view = { frame = frame, height = 80 }
             self.views[key] = view
-            local child = setmetatable({ wrapper = frame, width = width,
-                _msuf2ContentX = 0, _msuf2TopInset = 0 }, { __index = ctx })
+            local child = setmetatable(HM.SetBuilderInsets({ wrapper = frame, width = width }, 0, 0),
+                { __index = ctx })
             function child:SetContentHeight(height)
                 -- Embedded accordion decks use their laid-out bottom, not the
                 -- page builder's extra scroll footer or its trailing row gap.
@@ -58,7 +58,7 @@ function Page.Prepare(entries, sectionId, reveal)
     for _, item in ipairs(entries or {}) do
         local widget = item.widget
         if widget then
-            local before = widget._msuf2PrepareExactSearchTarget
+            local before = HM.GetSearchTargetPrepare(widget)
             local function Prepare()
                 reveal()
                 if before then before() end
@@ -67,7 +67,7 @@ function Page.Prepare(entries, sectionId, reveal)
             local meta = item.meta or P.Meta(PAGE, ID, item.rule.key, "setting", sectionId)
             meta.prepareExactSearchTarget = Prepare
             meta.searchPrepareKind, meta.searchPrepareValue = "dataTextWorkspace", sectionId
-            widget._msuf2PrepareExactSearchTarget = Prepare
+            HM.SetSearchTargetPrepare(widget, Prepare)
             if M.RegisterControlMetadata then
                 M.RegisterControlMetadata(widget, meta, item.label or item.rule.label)
             end
@@ -85,7 +85,7 @@ end
 function Page.Tab(body, label, x, y, width, click)
     local button = T.Button(body, label, width, 28)
     button:SetPoint("TOPLEFT", body, "TOPLEFT", x, y)
-    button._msuf2SkipHistoryCheckpoint = true
+    HM.SkipHistoryCheckpoint(button)
     button:SetScript("OnClick", click)
     return button
 end
@@ -111,8 +111,8 @@ function Page.Rules(ctx, builder, sectionId, title, rules, reveal, opts)
     opts = opts or { open = true }
     opts.onBuilt = function(_, built) Page.Prepare(built, sectionId, reveal) end
     local body, entries = P.RuleSection(ctx, builder, PAGE, ID, sectionId, title, rules, opts)
-    local entry = body._msuf2CollapsibleEntry
-    if entry then entry._msuf2EnsureVisible = reveal end
+    local entry = HM.GetSectionEntry(body)
+    if entry then HM.SetSectionEnsureVisible(entry, reveal) end
     return body, entries
 end
 
@@ -120,7 +120,7 @@ end
 -- opened. Exact search uses the same shell and materializes it synchronously.
 function Page.LazySection(ctx, builder, sectionId, title, reveal, build)
     local body = builder:CollapsibleSection(sectionId, title, 80, false)
-    local entry, built = body._msuf2CollapsibleEntry, false
+    local entry, built = HM.GetSectionEntry(body), false
     P.FinishBody(builder, body, -68)
     local proxy = setmetatable({}, { __index = builder })
     function proxy:CollapsibleSection() return body end
@@ -137,8 +137,8 @@ function Page.LazySection(ctx, builder, sectionId, title, reveal, build)
         if entry.open then Ensure() end
     end
     if entry then
-        entry._msuf2EnsureVisible = reveal
-        entry._msuf2RefreshState = Refresh
+        HM.SetSectionEnsureVisible(entry, reveal)
+        HM.SetSectionRefreshState(entry, Refresh)
         body:HookScript("OnShow", Refresh)
         Refresh()
     else Ensure() end
@@ -146,11 +146,12 @@ function Page.LazySection(ctx, builder, sectionId, title, reveal, build)
 end
 
 function Page.OpenSection(body)
-    local entry = body and body._msuf2CollapsibleEntry
+    local entry = body and HM.GetSectionEntry(body)
     if not entry then return end
     entry.open = true
     body:Show()
-    if entry._msuf2RefreshState then entry._msuf2RefreshState(entry) end
+    local refresh = HM.GetSectionRefreshState(entry)
+    if refresh then refresh(entry) end
     entry.builder:RelayoutCollapsibles()
 end
 
@@ -174,7 +175,7 @@ local function InstallResolver(ctx, bars, choose)
     local present = {}
     for _, bar in ipairs(bars) do present[bar] = true end
     if ctx.entry then
-        ctx.entry._msuf2ResolveMissingSection = function(section)
+        HM.SetMissingSectionResolver(ctx.entry, function(section)
             local bar, suffix = section:match("^suite_dataTexts_bar(%d+)(.*)$")
             if bar and present[tonumber(bar)] and suffix == "_presets" then choose("preset" .. bar)
             elseif bar and present[tonumber(bar)] then
@@ -189,7 +190,7 @@ local function InstallResolver(ctx, bars, choose)
             local body = ctx.entry.sections[section]
             P.EnsureSectionContent(body)
             return body
-        end
+        end)
     end
     return present
 end
@@ -208,7 +209,7 @@ function Page.Build(ctx, builder, shared, navigation)
     builtBarIDs = table.concat(P.Suite.DataTextBarIDs(P.S.Config(ID)), ",")
     local host = builder:Section(Tr("DataTexts"), 160)
     if host.title then host.title:Hide() end
-    local width = host._msuf2Width or builder.width or 720
+    local width = HM.GetSectionWidth(host) or builder.width or 720
     local bars, buttons = P.Suite.DataTextBarIDs(P.S.Config(ID)), {}
     local selected, choose, deck
     local navWidth = width - 32
@@ -250,7 +251,7 @@ function Page.Build(ctx, builder, shared, navigation)
         ctx.dataTextBarSelector = M.BindDropdownAt(ctx, navigation, "Bar", 16, 12, Values, available - 6,
             function() return Page.selectedBar end, function(bar) choose(bar) end,
             P.Meta(PAGE, ID, "view.bar", "ephemeral"))
-        if ctx.dataTextBarSelector._msuf2Title then ctx.dataTextBarSelector._msuf2Title:Hide() end
+        P.HideControlTitle(ctx.dataTextBarSelector)
     end
     buttons.add = Page.Tab(navigation, "+ " .. Tr("Add bar"), 16 + available, -12, 108, function() choose("add") end)
     Page.Prepare({ { widget = buttons.add, label = "Add bar",

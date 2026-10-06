@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, W, Tr = P.Suite, P.W, P.Tr
+local Suite, W, Tr, HM = P.Suite, P.W, P.Tr, P.HM
 local PAGE = "suite_skin"
 local SearchRow = P.SkinSearchRow
 
@@ -172,7 +172,7 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
         if row.kind ~= "color" then visibleRows[#visibleRows + 1] = row end
     end
     local function Content(body)
-        local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+        local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
         local y = -18
         if help then
             local hint = P.Description(body, help, 16, y, width, title)

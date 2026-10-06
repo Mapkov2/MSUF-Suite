@@ -1,5 +1,5 @@
 local _, P = ...
-local W, M, Tr = P.W, P.M, P.Tr
+local W, M, Tr, HM = P.W, P.M, P.Tr, P.HM
 local Page = {}
 P.HUDMenu = Page
 local selected = "objectives"
@@ -11,7 +11,7 @@ local FEATURES = {
 }
 
 local function Height(ui)
-    ui.body._msuf2CursorY = -(ui.groups[ui.selected].height or 80) + 12
+    HM.SetSectionCursor(ui.body, -(ui.groups[ui.selected].height or 80) + 12)
     ui.builder:FinishSection(ui.body, 12)
 end
 
@@ -32,8 +32,8 @@ local function Child(ui, id)
     panel:SetShown(id == ui.selected)
     local group = { frame = panel, height = 80 }
     ui.groups[id] = group
-    local child = setmetatable({ wrapper = panel, width = ui.width,
-        _msuf2ContentX = 0, _msuf2TopInset = 0 }, { __index = ui.ctx })
+    local child = setmetatable(HM.SetBuilderInsets({ wrapper = panel, width = ui.width }, 0, 0),
+        { __index = ui.ctx })
     function child:SetContentHeight(height)
         group.height = math.max(80, height)
         panel:SetHeight(group.height)
@@ -48,14 +48,14 @@ function Page.Builder(ctx)
     local header
     if W.FixedPreviewSection then
         header = W.FixedPreviewSection(ctx, builder, { title = Tr("Preview"), height = 310 })
-        header._msuf2FixedPreviewActiveHeight = 310
+        HM.SetFixedPreviewHeight(header, 310)
         header:SetHeight(310)
     else header = builder:Section(Tr("Preview"), 310) end
     local body = builder:Section(Tr("Settings"), 120)
     if header.title then header.title:Hide() end
     if body.title then body.title:Hide() end
     local ui = { ctx = ctx, builder = builder, body = body, header = header,
-        width = body._msuf2Width or builder.width, selected = selected, groups = {}, sections = {} }
+        width = HM.GetSectionWidth(body) or builder.width, selected = selected, groups = {}, sections = {} }
     ctx._msufSuiteHUDWorkspace = ui
     ui.select = function(id)
         if ui.chooseTab then ui.chooseTab(id) else Choose(ui, id) end
@@ -89,13 +89,13 @@ function Page.Prepare(body, entries)
     for _, entry in ipairs(entries or {}) do
         local widget = entry.widget
         if widget then
-            local prepare = widget._msuf2PrepareExactSearchTarget
+            local prepare = HM.GetSearchTargetPrepare(widget)
             local function Reveal()
                 body._msufSuiteHUDReveal()
                 if prepare then prepare() end
                 return true
             end
-            widget._msuf2PrepareExactSearchTarget = Reveal
+            HM.SetSearchTargetPrepare(widget, Reveal)
             local identity = entry.meta or P.Meta("suite_hud", body._msufSuiteHUDID, entry.rule.key, "setting", body._msufSuiteHUDSectionID)
             P.RegisterWorkspaceSearch(widget, identity, entry.rule, "hudWorkspace", Reveal, entry.label)
         end
@@ -116,13 +116,13 @@ function Page.Finish(ctx)
         panels[spec.id] = ui.groups[spec.id].frame
     end
     for _, body in ipairs(ui.sections) do
-        local entry = body._msuf2CollapsibleEntry
+        local entry = HM.GetSectionEntry(body)
         if entry then
-            local ensure = entry._msuf2EnsureVisible
-            entry._msuf2EnsureVisible = function(...)
+            local ensure = HM.GetSectionEnsureVisible(entry)
+            HM.SetSectionEnsureVisible(entry, function(...)
                 body._msufSuiteHUDReveal()
                 if ensure then return ensure(...) end
-            end
+            end)
         end
     end
     ui.preview = P.HUDPreview.Build(ctx, ui.header, ui.width - 32)
@@ -132,14 +132,14 @@ function Page.Finish(ctx)
             get = function() return ui.selected end, set = function(id) Choose(ui, id) end,
             afterRefresh = function(id) Choose(ui, id) end, x = 16, y = 12,
         })
-        if tabs._msuf2Title then tabs._msuf2Title:Hide() end
+        P.HideControlTitle(tabs)
         ui.chooseTab = selectTab
         refresh()
     else
         ui.selector = M.BindDropdownAt(ctx, ui.header, "HUD", 16, 12, values, ui.width - 32,
             function() return ui.selected end, function(id) Choose(ui, id) end,
             P.Meta("suite_hud", "objectives", "view.feature", "ephemeral"))
-        if ui.selector._msuf2Title then ui.selector._msuf2Title:Hide() end
+        P.HideControlTitle(ui.selector)
     end
     ui.finished = true
     Choose(ui, ui.selected)

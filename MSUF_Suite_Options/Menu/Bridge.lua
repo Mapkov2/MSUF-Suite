@@ -7,9 +7,12 @@ local Suite = assert(_G.MSUFSuite, "MSUF_Suite is required")
 local M = assert(_G.MSUF2, "MSUF options are required")
 P.Suite, P.S, P.M, P.host = Suite, Suite.Suite, M, _G.MSUF_NS
 P.W, P.T = M.Widgets, M.Theme
+-- Menu2's widget protocol (MSUF_Suite/Core/HostBridgeMenu.lua): the pages set
+-- and read Menu2's per-widget state only through these functions.
+P.HM = Suite.HostBridge.Menu2(M)
 P.catalog, P.order = Suite.SuiteCatalog, Suite.SuiteOrder
 P.pages = {}
-local S, T = P.S, P.T
+local S, T, HM = P.S, P.T, P.HM
 
 function P.Tr(text)
     if type(text) ~= "string" then return text end
@@ -509,13 +512,18 @@ end
 -- a second time: T.SetTranslatedText where the host has it.
 function P.SetTranslatedText(fontString, text)
     if T.SetTranslatedText then return T.SetTranslatedText(fontString, text or "") end
-    local raw = fontString._msuf2RawSetText or fontString.SetText
+    local raw = HM.GetRawSetText(fontString) or fontString.SetText
     return raw(fontString, text or "")
 end
 function P.SetButtonText(button, text)
-    local label = button._msuf2Label
+    local label = HM.GetControlLabel(button)
     if label then return P.SetTranslatedText(label, text) end
     return button:SetText(text or "")
+end
+-- Hides the title Menu2 puts above a dropdown or segment control.
+function P.HideControlTitle(widget)
+    local title = HM.GetControlTitle(widget)
+    if title then title:Hide() end
 end
 
 -- English text; Menu2's font string translates it.
@@ -640,7 +648,7 @@ end
 -- Collapsible bodies built with explicit positions report their height here,
 -- through the builder's own auto-height path.
 function P.FinishBody(b, body, bottomY, pad)
-    body._msuf2CursorY = math.min(bottomY, -39)
+    HM.SetSectionCursor(body, math.min(bottomY, -39))
     if b.FinishSection then b:FinishSection(body, pad or 12) end
 end
 

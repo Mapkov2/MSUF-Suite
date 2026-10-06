@@ -4,7 +4,7 @@ local _, P = ...
 -- what applies to every bar, and the bar being edited with its name, type
 -- and actions. The sections below edit that bar through custom bar 1's
 -- rules, which Page.KeyFn maps from c1_<setting> to <selected bar>_<setting>.
-local Page = P.CDMPage
+local Page, HM = P.CDMPage, P.HM
 if not Page then return end
 local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
 local ID, PAGE = Page.ID, Page.PAGE
@@ -221,7 +221,7 @@ end
 -- keeps its plain title and a muted badge instead. Writes only on change.
 local NO_BADGES = {}
 local function Header(body, title, unused, kind)
-    local entry = body._msuf2CollapsibleEntry
+    local entry = HM.GetSectionEntry(body)
     if not (entry and entry.label) then return end
     local name = Page.BarName(Page.selected)
     if body._cdmName == name and body._cdmUnused == unused and body._cdmKind == kind then return end
@@ -267,12 +267,12 @@ local function ColorEnabled(rule) return P.RuleEnabled(ID, rule, Page.KeyFn) end
 local function LayoutButtons(ctx, body, y, width, sectionId)
     local half = floor((width - 12) / 2)
     -- Navigation needs no snapshot; the reset records its own history entry.
-    P.Button(ctx, body, "Move this bar on screen", 16, y - 4, half, function() P.MoveOnScreen(ID, Page.selected) end,
+    HM.SkipHistoryCheckpoint(P.Button(ctx, body, "Move this bar on screen", 16, y - 4, half, function() P.MoveOnScreen(ID, Page.selected) end,
         function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.IsOn(Page.selected) and Page.Movable(Page.selected) end,
-        P.Meta(PAGE, ID, "editor.move", "action", sectionId))._msuf2SkipHistoryCheckpoint = true
-    P.Button(ctx, body, "Reset this bar's settings", 28 + half, y - 4, half, function() Page.ResetBar(Page.selected) end,
+        P.Meta(PAGE, ID, "editor.move", "action", sectionId)))
+    HM.SkipHistoryCheckpoint(P.Button(ctx, body, "Reset this bar's settings", 28 + half, y - 4, half, function() Page.ResetBar(Page.selected) end,
         function() return S.Availability(ID) and true or false end,
-        P.Meta(PAGE, ID, "editor.reset", "action", sectionId))._msuf2SkipHistoryCheckpoint = true
+        P.Meta(PAGE, ID, "editor.reset", "action", sectionId)))
     return y - 40
 end
 
@@ -285,7 +285,7 @@ local function BuildSection(ctx, b, ui, spec)
     local shared = spec.module and P.SectionRules(ID, spec.module) or {}
     for _, rule in ipairs(shared) do rules[#rules + 1] = rule end
     local function Content(body)
-        local width = max(240, (body._msuf2Width or b.width or 720) - 32)
+        local width = max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
         local y = Help(body, HELP[spec.id], -18, width)
         local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)
         y = y - 20
@@ -362,8 +362,8 @@ end
 
 -- Basics, after the module actions: what applies to every bar.
 local function BuildGeneral(ctx, card)
-    local width = max(240, (card._msuf2Width or 720) - 32)
-    local y = min(tonumber(card._msuf2CursorY) or -80, -40)
+    local width = max(240, (HM.GetSectionWidth(card) or 720) - 32)
+    local y = min(tonumber(HM.GetSectionCursor(card)) or -80, -40)
     Divider(card, y)
     y = Help(card, HELP.general, y - 8, width)
     local rules, seen = {}, {}
@@ -374,7 +374,7 @@ local function BuildGeneral(ctx, card)
     for _, rule in ipairs(P.SectionRules(ID, "general")) do
         if not seen[rule.key] then rules[#rules + 1] = rule end
     end
-    card._msuf2CursorY = RuleGrid(ctx, card, rules, y, width, MODULE_SECTION)
+    HM.SetSectionCursor(card, RuleGrid(ctx, card, rules, y, width, MODULE_SECTION))
 end
 
 -- The bar's name (custom bars) and type, next to the bar choice.
@@ -405,9 +405,9 @@ end
 -- The bar choice closes the Basics card: the bar being edited, + Add
 -- bar and the bar's actions, its name and type, and its summary.
 local function BuildBars(ctx, b, ui, body)
-    local width = max(240, (body._msuf2Width or b.width or 720) - 32)
+    local width = max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     local half = floor((width - 12) / 2)
-    local y = min(tonumber(body._msuf2CursorY) or -80, -40)
+    local y = min(tonumber(HM.GetSectionCursor(body)) or -80, -40)
     Divider(body, y)
     y = Help(body, HELP.bars, y - 8, width)
     local values = {}
@@ -533,7 +533,7 @@ end
 local function BuildSpells(ctx, b, ui)
     local sectionId = "suite_cooldownManager_spells"
     local body = b:CollapsibleSection(sectionId, Tr("Spell list"), 120, false)
-    local width = max(240, (body._msuf2Width or b.width or 720) - 32)
+    local width = max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     local y = Help(body, HELP.spells, -18, width)
     local spec = P.Text(body, "", 16, y, width, T.colors.text)
     y = y - 22
@@ -597,7 +597,7 @@ local function Build(ctx)
     -- a click never takes Menu2's full settings snapshot.
     if card and card.GetChildren then
         local children = { card:GetChildren() }
-        for i = 1, #children do children[i]._msuf2SkipHistoryCheckpoint = true end
+        for i = 1, #children do HM.SkipHistoryCheckpoint(children[i]) end
     end
     if card then
         BuildGeneral(ctx, card)

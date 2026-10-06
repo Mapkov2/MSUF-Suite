@@ -2,7 +2,7 @@ local _, P = ...
 -- Minimap page preview, the canvas: selectable, draggable elements whose
 -- offsets write the minimap settings, the keyboard nudges, zoom and layer
 -- chips. MinimapPreviewPaint.lua (loaded first) draws the elements.
-local Suite, S, W, M, T, Tr = P.Suite, P.S, P.W, P.M, P.T, P.Tr
+local Suite, S, W, M, T, Tr, HM = P.Suite, P.S, P.W, P.M, P.T, P.Tr, P.HM
 local ID, PAGE = "minimap", "suite_minimap"
 local PREVIEW_SECTION = "suite_minimap_preview"
 local COMPACT_HEIGHT, EXPANDED_HEIGHT = 112, 316
@@ -245,7 +245,7 @@ local function BuildCanvas(ui, ctx, b)
     ui.hint:SetPoint("LEFT", toolbar, "LEFT", 145, 0)
     ui.hint:SetPoint("RIGHT", toolbar, "RIGHT", -145, 0)
     ui.hint:SetJustifyH("LEFT")
-    ui.width = math.max(260, (section._msuf2Width or b.width or 720) - 28)
+    ui.width = math.max(260, (HM.GetSectionWidth(section) or b.width or 720) - 28)
 
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 14, -40)

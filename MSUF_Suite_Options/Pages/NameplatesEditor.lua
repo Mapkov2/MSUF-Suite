@@ -1,5 +1,5 @@
 local _, P = ...
-local M, W, T, Tr = P.M, P.W, P.T, P.Tr
+local M, W, T, Tr, HM = P.M, P.W, P.T, P.Tr, P.HM
 local ID = "nameplates"
 local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
 local Layers = P.NameplatesEditorLayers
@@ -519,7 +519,7 @@ function Editor.Create(ctx, builder, sections)
     local ui = setmetatable({ ctx = ctx, sections = sections, handles = {}, renderers = {}, layers = {},
         sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true,
         softTargetSample = true, aggroSample = true,
-        layoutWidth = math.max(640, (section._msuf2Width or builder.width or 720) - 28),
+        layoutWidth = math.max(640, (HM.GetSectionWidth(section) or builder.width or 720) - 28),
         inDungeon = inDungeon,
         help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
     }, { __index = Editor })

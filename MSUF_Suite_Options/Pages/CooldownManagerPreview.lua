@@ -4,7 +4,7 @@ local _, P = ...
 -- cancels the menu's scale so the bar shows at its in-game size. Bar chips
 -- select a bar and take dropped spells; the drawn icons are edited in place
 -- through the buttons of CooldownManagerPreviewIcons.lua (loaded first).
-local Page = P.CDMPage
+local Page, HM = P.CDMPage, P.HM
 local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 local ID, PAGE = Page.ID, Page.PAGE
 local SLOTS = P.Suite.CDM.SLOTS
@@ -507,7 +507,7 @@ end
 function Page.BuildPreview(ctx, b, ui)
     local section, toolbar, record = W.FixedPreviewSection(ctx, b, { title = Tr("Bar preview"), height = 180, gap = 8 })
     if not section then return end
-    ui.width, ui.compact = max(260, (section._msuf2Width or b.width or 720) - 28), true
+    ui.width, ui.compact = max(260, (HM.GetSectionWidth(section) or b.width or 720) - 28), true
     -- Tooltip lines, translated once: hovering allocates nothing.
     ui.tips = { hint = Tr(TIP), unlearned = Tr("Not learned right now."), sampleTitle = Tr("Sample icon"),
         sample = Tr("This bar has no spells yet. Click to add some."), plusTitle = Tr("Add spells"),

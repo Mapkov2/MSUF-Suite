@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
+local Suite, S, M, W, T, Tr, HM = P.Suite, P.S, P.M, P.W, P.T, P.Tr, P.HM
 local Preview = P.ActionBarPreview
 local ID, PAGE = "actionbars", "suite_actionbars"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
@@ -44,8 +44,8 @@ local function Focus(ui, suffix)
 end
 local function Target(ui, button, key, section)
     button:SetScript("OnClick", function() Focus(ui, section) end)
-    button._msuf2SkipHistoryCheckpoint = true
-    button._msuf2AllowCombatClick = true
+    HM.SkipHistoryCheckpoint(button)
+    HM.AllowCombatClick(button)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "preview." .. key, "ephemeral", "suite_actionbars_" .. section),
             "Preview", "button")

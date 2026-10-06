@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, M, T, Tr = P.Suite, P.M, P.T, P.Tr
+local Suite, M, T, Tr, HM = P.Suite, P.M, P.T, P.Tr, P.HM
 local Picker = {}
 P.DataTextsSourcePicker = Picker
 local ID, PAGE = "dataTexts", "suite_dataTexts"
@@ -148,7 +148,7 @@ local function Ensure()
     frame.title = P.Text(frame, "Choose a data source", 14, -14, WIDTH - 52, T.colors.text)
     frame.close = T.Button(frame, "x", 24, 23, { noSearch = true })
     frame.close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -8)
-    frame.close._msuf2SkipHistoryCheckpoint = true
+    HM.SkipHistoryCheckpoint(frame.close)
     frame.close:SetScript("OnClick", function() frame:Hide() end)
     frame.search = SearchBox(frame)
     frame.scroll = CreateFrame("ScrollFrame", nil, frame)

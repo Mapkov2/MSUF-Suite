@@ -211,6 +211,9 @@ do
     local dictionary = { ["Icon size"] = "SYMBOLGROESSE", Top = "OBEN" }
     local refresh, summary
     local P = { S = {}, M = {}, W = {}, T = {}, Suite = {}, catalog = {} }
+    local bridge = { HostBridge = {} }
+    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
+    P.HM = bridge.HostBridge.Menu2(P.M)
     P.Tr = function(key) return dictionary[key] or key end
     P.M.TrackRefresh = function(_, callback) refresh = callback end
     P.W.SetCollapsibleSummary = function(_, text) summary = text end

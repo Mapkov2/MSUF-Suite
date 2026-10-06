@@ -1,5 +1,5 @@
 local _, P = ...
-local M, W, T, Tr = P.M, P.W, P.T, P.Tr
+local M, W, T, Tr, HM = P.M, P.W, P.T, P.Tr, P.HM
 local Style = P.Suite.NameplateStyle
 local ID, PAGE = "nameplates", "suite_nameplates"
 local H = M.PreviewHelpers or {}
@@ -436,13 +436,13 @@ function Layers.Build(ui)
             end
             ToggleLayer(ui, key)
         end)
-        button._msuf2CommandAction = { kind = "toggle", historyMode = "none",
+        HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
             get = function() return ui:LayerActive(key) end,
             set = function(desired)
                 desired = desired == true
                 if ui:LayerActive(key) ~= desired then ToggleLayer(ui, key) end
                 return ui:LayerActive(key) == desired
-            end }
+            end })
         button:SetScript("OnEnter", function()
             P.SetTranslatedText(ui.hint, Tr(label) .. " · " .. Tr(LayerHelp(key)))
         end)

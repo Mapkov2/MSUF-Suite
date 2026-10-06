@@ -1,5 +1,5 @@
 local _, P = ...
-local W, M, Tr = P.W, P.M, P.Tr
+local W, M, Tr, HM = P.W, P.M, P.Tr, P.HM
 local Page = {}
 P.ActionBarMenu = Page
 local selectedTab = "shared"
@@ -27,7 +27,7 @@ end
 local function UpdateHeight(workspace)
     local group = workspace.groups[workspace.selected]
     local height = workspace.inset + (group and group.height or 80)
-    workspace.body._msuf2CursorY = -height + 12
+    HM.SetSectionCursor(workspace.body, -height + 12)
     workspace.builder:FinishSection(workspace.body, 12)
 end
 
@@ -44,7 +44,7 @@ local function NewWorkspace(ctx, builder)
     local body = builder:Section(Tr("Settings"), 120)
     local workspace = { ctx = ctx, builder = builder, body = body, groups = {}, sections = {}, selected = selectedTab }
     workspace.inset = ctx._msufSuiteActionBarHeader and 0 or 62
-    workspace.width = body._msuf2Width or builder.width or 720
+    workspace.width = HM.GetSectionWidth(body) or builder.width or 720
     workspace.select = function(key)
         if workspace.chooseTab then workspace.chooseTab(key) else Choose(workspace, key) end
     end
@@ -61,8 +61,8 @@ local function ChildBuilder(workspace, spec)
     panel:SetShown(spec.id == workspace.selected)
     group = { frame = panel, height = 80 }
     workspace.groups[spec.id] = group
-    local child = setmetatable({ wrapper = panel, width = workspace.width,
-        _msuf2ContentX = 0, _msuf2TopInset = 0 }, { __index = workspace.ctx })
+    local child = setmetatable(HM.SetBuilderInsets({ wrapper = panel, width = workspace.width }, 0, 0),
+        { __index = workspace.ctx })
     function child:SetContentHeight(height)
         group.height = math.max(80, height)
         panel:SetHeight(group.height)
@@ -106,14 +106,14 @@ function Page.Prepare(body, entries, revealDetails)
     for _, entry in ipairs(entries or {}) do
         local widget = entry.widget
         if widget then
-            local prepare = widget._msuf2PrepareExactSearchTarget
+            local prepare = HM.GetSearchTargetPrepare(widget)
             local function Reveal()
                 if body._msufSuiteActionBarReveal then body._msufSuiteActionBarReveal() end
                 if revealDetails then revealDetails() end
                 if prepare then prepare() end
                 return true
             end
-            widget._msuf2PrepareExactSearchTarget = Reveal
+            HM.SetSearchTargetPrepare(widget, Reveal)
             local identity = entry.meta or P.Meta("suite_actionbars", "actionbars", entry.rule.key, "setting", body._msufSuiteActionBarSectionId)
             P.RegisterWorkspaceSearch(widget, identity, entry.rule, "actionbarWorkspace", Reveal, entry.label)
         end
@@ -123,8 +123,8 @@ end
 local function BuildDetails(ctx, builder, body, sectionId, rules, y, width, keyFn)
     if #rules == 0 then return y end
     local toggle = P.T.Button(body, "More settings", width, 26)
-    toggle._msuf2SkipHistoryCheckpoint = true
-    toggle._msuf2AllowCombatClick = true
+    HM.SkipHistoryCheckpoint(toggle)
+    HM.AllowCombatClick(toggle)
     toggle:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
     local panel = CreateFrame("Frame", nil, body)
     panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y - 38)
@@ -162,7 +162,7 @@ function Page.Rules(ctx, builder, sectionId, title, rules, opts)
     local built = P.RuleRows("suite_actionbars", "actionbars", primary, opts.keyFn, sectionId)
     local function Content(body)
         body._msufSuiteActionBarSectionId = sectionId
-        local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
+        local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
         local y = -18
         if opts.help then
             local hint = P.Description(body, opts.help, 16, y, width, title)
@@ -203,14 +203,14 @@ local function InstallSelector(workspace, values, panels)
             -- Hide that title and put the actual category buttons at -12.
             x = 16, y = 12,
         })
-        if tabs._msuf2Title then tabs._msuf2Title:Hide() end
+        P.HideControlTitle(tabs)
         workspace.chooseTab = selectTab
         refresh()
     else
         workspace.selector = M.BindDropdownAt(ctx, body, "Settings", 16, 12, values, width,
             function() return workspace.selected end, function(key) Choose(workspace, key) end,
             P.Meta("suite_actionbars", "actionbars", "view.settings", "ephemeral"))
-        if workspace.selector._msuf2Title then workspace.selector._msuf2Title:Hide() end
+        P.HideControlTitle(workspace.selector)
     end
     if body.title then body.title:Hide() end
     if workspace.body.title then workspace.body.title:Hide() end
@@ -229,13 +229,13 @@ function Page.Finish(ctx)
     for _, body in ipairs(workspace.sections) do
         local scopedControl = ctx._msufSuiteActionBarScopedControls[body._msufSuiteActionBarSectionId]
         if scopedControl then Page.Prepare(body, { scopedControl }) end
-        local entry = body._msuf2CollapsibleEntry
+        local entry = HM.GetSectionEntry(body)
         if entry then
-            local ensure = entry._msuf2EnsureVisible
-            entry._msuf2EnsureVisible = function(...)
+            local ensure = HM.GetSectionEnsureVisible(entry)
+            HM.SetSectionEnsureVisible(entry, function(...)
                 body._msufSuiteActionBarReveal()
                 if ensure then return ensure(...) end
-            end
+            end)
         end
     end
     InstallSelector(workspace, values, panels)

@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
+local Suite, S, M, W, T, Tr, HM = P.Suite, P.S, P.M, P.W, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_damageMeter", "damageMeter"
 
 local HELP = {
@@ -86,7 +86,7 @@ end
 
 -- The window picker, help and window-1 template rules resolved to the selected window.
 local function WindowControls(ctx, b, body, templates, built)
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+    local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     local help = P.Text(body, HELP.window_settings, 16, -18, width)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
     local choices = {}
@@ -124,7 +124,7 @@ local function BuildWindows(ctx, b)
             end)
         end,
         finish = function(body, y)
-            local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+            local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
             P.Button(ctx, body, "Move this window", 16, y - 4, math.floor((width - 12) / 2),
                 function() P.MoveOnScreen(ID, "window" .. selected) end,
                 function() return P.Get(ID, "enabled") and selected <= P.Get(ID, "windowCount") end,

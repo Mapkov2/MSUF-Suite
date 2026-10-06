@@ -54,6 +54,14 @@ local host = {
     EventBus = { Register = noop },
 }
 MSUF_NS = host
+-- A host with the Suite link (Kernel/MSUF_SuiteLink.lua) loads it before its
+-- profile store and asks the Suite through it; an older host reads by path.
+local link = hostRoot .. "/MidnightSimpleUnitFrames/Kernel/MSUF_SuiteLink.lua"
+local probe = io.open(link, "rb")
+if probe then
+    probe:close()
+    assert(loadfile(link))("MidnightSimpleUnitFrames", host)
+end
 assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/State/MSUF_Profiles.lua"))("MidnightSimpleUnitFrames", host)
 
 -- The Suite and its skin store.
@@ -83,6 +91,8 @@ skin.Database.SanitizeProfile = function(profile) return type(profile) == "table
 MapkoSkin = skin
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DatabaseProfiles.lua"))("MSUF_Suite_Skin", skin)
 assert(loadfile(root .. "/MSUF_Suite/Core/Profiles.lua"))("MSUF_Suite", suite)
+-- The Suite API (MSUFSuite.API) the host's link prefers.
+assert(loadfile(root .. "/MSUF_Suite/Core/API.lua"))("MSUF_Suite", suite)
 
 local function Accent(r, g, b) return { theme = { colors = { accent = { r, g, b, 1 } } } } end
 local function Fixture()

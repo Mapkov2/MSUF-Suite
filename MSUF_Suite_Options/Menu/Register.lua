@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, M, T, S = P.Suite, P.M, P.T, P.S
+local Suite, M, S = P.Suite, P.M, P.S
 -- Suite pages join MSUF's navigation groups by id, in this order. Each page
 -- names its group and its place there (nav, navOrder of P.RegisterPage). A
 -- host menu without a group (Retail MSUF still has Appearance and Features)
@@ -15,7 +15,7 @@ if type(M.RegisterHistoryProvider) == "function" then
 end
 
 -- The HD host atlas gives each Suite destination its own recognizable symbol.
--- Older hosts retain their existing atlas cells.
+-- Older hosts retain their existing atlas cells (HostBridgeMenu AddNavIcon).
 local HD_NAV_ICONS = {
     suite_nameplates = { 0, 3 }, suite_cooldownManager = { 1, 3 },
     suite_buffReminders = { 2, 3 }, suite_hud = { 3, 3 },
@@ -25,13 +25,8 @@ local HD_NAV_ICONS = {
     suite_skin = { 2, 4 }, suite_qualityOfLife = { 3, 4 },
 }
 local function AddIcons()
-    if type(T.navIconGrid) ~= "table" or type(T.navIconColors) ~= "table" then return end
-    local neutral = T.navIconColors.gameplay or T.navIconColors.profiles
-    local accent = T.navIconColors.home or neutral
     for _, page in ipairs(P.pages) do
-        local icon = (tonumber(T.navIconAtlasVersion) or 0) >= 2 and HD_NAV_ICONS[page.key] or page.icon
-        if icon and T.navIconGrid[page.key] == nil then T.navIconGrid[page.key] = icon end
-        if T.navIconColors[page.key] == nil then T.navIconColors[page.key] = page.accent and accent or neutral end
+        P.HM.AddNavIcon(page.key, { icon = page.icon, hdIcon = HD_NAV_ICONS[page.key], accent = page.accent })
     end
 end
 

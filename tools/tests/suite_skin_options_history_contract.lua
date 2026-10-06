@@ -259,10 +259,15 @@ local profileOptions = {
         profileRepaints = profileRepaints + 1
     end,
     RegisterPage = function(_, _, builder) pageBuilder = builder end,
-    -- The two-click confirmation (Shell/Widgets.lua) only arms on a taken
-    -- import name, which these stand-in profile actions never report.
+    -- The two-click confirmation (Shell/Widgets.lua): import arms only on a
+    -- taken name, which these stand-in profile actions never report; Delete
+    -- active arms on its first click (RunProfileAction clicks it twice).
     CreateConfirmation = function()
-        return { IsArmed = function() return false end, Arm = function() end, Disarm = function() end }
+        local confirmation = {}
+        function confirmation.IsArmed(subject) return confirmation.subject ~= nil and confirmation.subject == subject end
+        function confirmation.Arm(subject) confirmation.subject = subject end
+        function confirmation.Disarm() confirmation.subject = nil end
+        return confirmation
     end,
     CreateCycle = function(_, label, _, _, setter) captured[label] = setter; return Widget() end,
     CreateInput = function() return Widget() end,
@@ -298,6 +303,12 @@ local PROFILE_ACTIONS = { "Active profile", "Create clean", "Copy current", "Del
     "Import profile", "Import all" }
 local function RunProfileAction(label)
     profileRepaints = 0
+    if label == "Delete active" then
+        local clearedBefore = cleared
+        captured[label]()
+        assert(profileRepaints == 0 and cleared == clearedBefore,
+            "arming Delete active changed the options or the undo step")
+    end
     captured[label]("Raid")
     return profileRepaints
 end

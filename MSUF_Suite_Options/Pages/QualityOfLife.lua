@@ -1,5 +1,5 @@
 local _, P = ...
-local S, Tr = P.S, P.Tr
+local S, Tr, HM = P.S, P.Tr, P.HM
 local PAGE = "suite_qualityOfLife"
 
 local HELP = {
@@ -369,7 +369,7 @@ function P.Suite.Menu.FocusQualityOfLifeModule(id)
     -- Multi-feature modules such as loot/merchant helpers open the overview.
     if not group then return true end
     local entry = P.M.cache and P.M.cache[PAGE]
-    local resolve = entry and entry._msuf2ResolveMissingSection
+    local resolve = entry and HM.GetMissingSectionResolver(entry)
     local section = resolve and resolve(FeatureSectionId(group))
     if not section then return false end
     -- Anchor the existing menu navigation to the detail panel itself. Focusing
@@ -435,7 +435,7 @@ local function RegisterFeatureRuleSearch(group, sectionId, entries, keywords)
             meta.pageKey, meta.kind = PAGE, RuleSearchKind(rule)
             meta.label, meta.keywords = Tr(rule.label), keywords
             P.M.RegisterSearchWidget(entry.widget, meta)
-            entry.widget._msuf2PrepareExactSearchTarget = function() group.reveal(true) end
+            HM.SetSearchTargetPrepare(entry.widget, function() group.reveal(true) end)
         end
     end
 end
@@ -448,7 +448,8 @@ local function BuildFeatureDetails(ctx, panel, group, sectionId, width, sections
     local details = P.T.Panel(panel, nil, P.T.colors.panel2, P.T.colors.borderSoft)
     P.T.ApplySurface(details, "card")
     details:SetSize(width, 100)
-    details._msuf2Width, details._msuf2ContextColorHost = width, true
+    HM.SetSectionWidth(details, width)
+    HM.MarkContextColorHost(details)
     local heading = P.Text(details, group.title, 16, -14, width - 104, P.T.colors.text)
     heading:SetWordWrap(false)
     details.title = heading
@@ -563,7 +564,7 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
     searchMeta.pageKey, searchMeta.kind = PAGE, "toggle"
     searchMeta.label, searchMeta.keywords = Tr(group.title), meta.keywords
     P.M.RegisterSearchWidget(toggle, searchMeta)
-    toggle._msuf2PrepareExactSearchTarget = function() group.reveal(true) end
+    HM.SetSearchTargetPrepare(toggle, function() group.reveal(true) end)
     local help = Tr(HELP[group.sections[1]])
     P.M.AddTooltip(toggle, Tr(group.title), help, { hook = true })
     local settings
@@ -623,7 +624,7 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
                 record.sectionId, width, record.sections, record.allRules, record.keywords)
             record.details, record.detailHeight, record.colorShortcut = details, height, colors
             details:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -8 - #features * ROW_HEIGHT)
-            details._msuf2CollapsibleEntry = entry
+            HM.SetSectionEntry(details, entry)
             P.Refresh()
         end
         selected = (not force and selected == group) and nil or group
@@ -636,7 +637,7 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
             or group.id == "xpBar" or group.id == "innervateCue" or group.id == "loadoutReminder"
         local row, toggle, settings, keywords = BuildFeatureRow(ctx, panel, group, category,
             oldSectionId, width, index, hasDetails, Select)
-        row._msuf2CollapsibleEntry = entry
+        HM.SetSectionEntry(row, entry)
         local record = {
             row = row, toggle = toggle, settings = settings, hasDetails = hasDetails,
             sectionId = oldSectionId, sections = sections, allRules = allRules,
@@ -665,7 +666,7 @@ local function CategoryShell(ctx, body, category, featureOrder, owners)
             owners[id], featureOrder[#featureOrder + 1] = body, id
         end
     end
-    local entry = body._msuf2CollapsibleEntry
+    local entry = HM.GetSectionEntry(body)
     P.M.TrackRefresh(ctx, function()
         local enabled = 0
         for _, group in ipairs(category.features) do
@@ -677,8 +678,8 @@ local function CategoryShell(ctx, body, category, featureOrder, owners)
 end
 
 local function CategoryContent(ctx, builder, body, category, featureRows)
-    local entry = body._msuf2CollapsibleEntry
-    local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
+    local entry = HM.GetSectionEntry(body)
+    local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
     local panelTop = category.tabs and -62 or -12
     local state = { panels = {}, updateHeight = {}, activeTab = category.tabs and category.tabs[1].id }
     if category.tabs then
@@ -698,7 +699,7 @@ local function CategoryContent(ctx, builder, body, category, featureRows)
             afterRefresh = function(tab) state.updateHeight[tab]() end,
             x = 16, y = -12,
         })
-        if tabs._msuf2Title then tabs._msuf2Title:Hide() end
+        P.HideControlTitle(tabs)
         state.selectTab = choose
         refresh()
     else
@@ -723,12 +724,12 @@ local function Build(ctx)
         ctx.entry.qualityOfLifeFeatureRows = rows
         ctx.entry.qualityOfLifeFeatureOrder = order
         ctx.entry.sections = ctx.entry.sections or {}
-        ctx.entry._msuf2ResolveMissingSection = function(sectionId)
+        HM.SetMissingSectionResolver(ctx.entry, function(sectionId)
             -- A lazy category builds its rows first (never in combat).
             if not rows[sectionId] then P.EnsureSectionContent(owners[sectionId]) end
             local record = rows[sectionId]
             return record and record.reveal(true) or nil
-        end
+        end)
     end
     for _, category in ipairs(CATEGORIES) do
         BuildCategory(ctx, builder, category, rows, order, owners)

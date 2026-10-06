@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, M, W, T, Tr = P.Suite, P.M, P.W, P.T, P.Tr
+local Suite, M, W, T, Tr, HM = P.Suite, P.M, P.W, P.T, P.Tr, P.HM
 local PAGE = "suite_skin"
 local format = string.format
 local SearchRow, Button = P.SkinSearchRow, P.SkinSearchButton
@@ -153,7 +153,7 @@ local function MicroPresetExtra(ctx, skin)
                     Change(skin, format(Tr("Micro Bar %s"), Tr(MICRO_PRESET_LABELS[style])), "micro.preset",
                         function() return skin.MicroMenuSkin.ApplyPreset(style) end)
                 end, nil, P.Meta(PAGE, "skin", "micro.preset." .. style, "action", "suite_skin_micro"))
-            if button then button._msuf2PrepareExactSearchTarget = prepare end
+            if button then HM.SetSearchTargetPrepare(button, prepare) end
         end
         if ctx.searchRows then
             Button(ctx, body, "Move in MSUF Edit Mode", 0, 0, width, nil, nil,
@@ -169,7 +169,7 @@ local function MicroPresetExtra(ctx, skin)
         local descHeight = math.max(22, math.ceil(description:GetStringHeight() or 22))
         local move = Button(ctx, body, "Move in MSUF Edit Mode", 16, y - 82 - descHeight, width,
             function() MoveMicroBar(skin) end, nil, P.Meta(PAGE, "skin", "micro.move", "action", "suite_skin_micro"))
-        if move then move._msuf2PrepareExactSearchTarget = prepare end
+        if move then HM.SetSearchTargetPrepare(move, prepare) end
         return y - 120 - descHeight
     end
 end
@@ -239,7 +239,7 @@ local function BuildMicroBar(ctx, b, skin)
                 local reset = Button(ctx, body, "Reset Micro Bar to client default", 16, y, width, function()
                     Change(skin, "Reset Micro Bar", "micro.reset", skin.MicroMenuSkin.ResetRecommended)
                 end, nil, P.Meta(PAGE, "skin", "micro.reset", "action", sectionId))
-                if reset then reset._msuf2PrepareExactSearchTarget = prepare end
+                if reset then HM.SetSearchTargetPrepare(reset, prepare) end
                 return y - 40
             end },
     }

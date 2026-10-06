@@ -172,6 +172,9 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
             NameplatesEditorMarkers = { TargetActive = function() return false end },
             NameplatesSize = { Build = Noop },
         }
+        local bridge = { HostBridge = {} }
+        assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
+        P.HM = bridge.HostBridge.Menu2(M)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)

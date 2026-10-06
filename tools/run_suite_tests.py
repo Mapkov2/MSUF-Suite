@@ -29,6 +29,8 @@ EXTRA = {
                                              str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
     # MSUF's real profile store renames with the Suite and skin stores.
     "suite_profile_rename_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
+    # Host API v2: the real Classic Menu2 protocol and Suite link files.
+    "suite_host_api_v2_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_security_contract.lua": [[flavor] for flavor in FLAVORS],

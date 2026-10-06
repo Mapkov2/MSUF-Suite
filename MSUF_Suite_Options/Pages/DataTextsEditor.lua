@@ -1,5 +1,5 @@
 local _, P = ...
-local Page, W, M, Tr = P.DataTextPage, P.W, P.M, P.Tr
+local Page, W, M, Tr, HM = P.DataTextPage, P.W, P.M, P.Tr, P.HM
 local PAGE, ID = "suite_dataTexts", "dataTexts"
 local VISIBILITY_HELP = P.Help("Hide this bar when any selected condition is true.",
     "Health refers to your character. At full health the bar is hidden and cannot receive clicks. Edit Mode shows it for placement.")
@@ -35,7 +35,7 @@ local function Slot(ctx, builder, bar, slot, reveal)
     local prefix = "bar" .. bar .. "Slot" .. slot
     local section = PAGE .. "_bar" .. bar .. "_slot" .. slot
     local function Content(body)
-        local width = (body._msuf2Width or builder.width) - 32
+        local width = (HM.GetSectionWidth(body) or builder.width) - 32
         local y = SelectSource(ctx, body, bar, slot, section, -18, width - 142, reveal)
         Page.Button(ctx, body, "Remove data", width - 120, -18, 136, function()
             P.SetMany(ID, P.Suite.DataTextRemoveSlotValues(P.S.Config(ID), bar, slot))
@@ -48,7 +48,8 @@ local function Slot(ctx, builder, bar, slot, reveal)
     return P.LazySection(builder, section, Tr("Selected data"), true, {
         content = Content,
         shell = function(body)
-            if body._msuf2CollapsibleEntry then body._msuf2CollapsibleEntry._msuf2EnsureVisible = reveal end
+            local entry = HM.GetSectionEntry(body)
+            if entry then HM.SetSectionEnsureVisible(entry, reveal) end
         end,
         finish = function(body, y) P.FinishBody(builder, body, y) end,
     })
@@ -82,7 +83,7 @@ local ESSENTIAL_STYLE = { Look = true, FontSize = true, ShowLabels = true, Backg
 local function Appearance(ctx, builder, bar, reveal)
     local section, prefix = PAGE .. "_bar" .. bar .. "_appearance", "bar" .. bar
     local body = builder:CollapsibleSection(section, Tr("Appearance"), 120, true)
-    local width = (body._msuf2Width or builder.width) - 32
+    local width = (HM.GetSectionWidth(body) or builder.width) - 32
     local primary = Rules(bar, function(_, suffix) return LAYOUT[suffix] end)
     local y, entries = P.RuleGrid(ctx, body, PAGE, ID, primary, -18, width, nil, section)
     Page.Prepare(entries, section, reveal)
@@ -113,7 +114,8 @@ local function Appearance(ctx, builder, bar, reveal)
     y, entries = P.RuleGrid(ctx, body, PAGE, ID, extra, y - 8, width, nil, section)
     Page.Prepare(entries, section, reveal)
     P.FinishBody(builder, body, y)
-    if body._msuf2CollapsibleEntry then body._msuf2CollapsibleEntry._msuf2EnsureVisible = reveal end
+    local entry = HM.GetSectionEntry(body)
+    if entry then HM.SetSectionEnsureVisible(entry, reveal) end
 end
 
 local function BarActions(ctx, body, bar, section, reveal, y, width)
@@ -148,14 +150,14 @@ local function BarSectionActions(ctx, body, bar, section, select)
     Page.Prepare({ { widget = more, label = "Remove bar",
         meta = P.Meta(PAGE, ID, prefix .. ".remove", "action", section) } }, section, function()
             select()
-            more._msuf2OpenSectionPopup()
+            more._msufSuiteOpenSectionPopup()
         end)
 end
 
 local function Header(ctx, builder, bar, select)
     local section, prefix = PAGE .. "_bar" .. bar, "bar" .. bar
     local body = builder:CollapsibleSection(section, Page.BarName(bar), 120, true)
-    local width = (body._msuf2Width or builder.width) - 32
+    local width = (HM.GetSectionWidth(body) or builder.width) - 32
     local toggle = W.SectionSwitch(body, Tr("Show bar"), Tr("Show bar"))
     M.BindBoolWidget(ctx, toggle, function() return P.Get(ID, prefix .. "Enabled") end,
         function(value) P.Set(ID, prefix .. "Enabled", value == true) end,
@@ -186,10 +188,11 @@ local function Header(ctx, builder, bar, select)
     BarSectionActions(ctx, body, bar, section, select)
     P.FinishBody(builder, body, BarActions(ctx, body, bar, section, select, y - 40, width))
     M.TrackRefresh(ctx, function()
-        local entry = body._msuf2CollapsibleEntry
+        local entry = HM.GetSectionEntry(body)
         if entry and entry.label then P.SetTranslatedText(entry.label, Page.BarName(bar)) end
     end)
-    if body._msuf2CollapsibleEntry then body._msuf2CollapsibleEntry._msuf2EnsureVisible = select end
+    local entry = HM.GetSectionEntry(body)
+    if entry then HM.SetSectionEnsureVisible(entry, select) end
     return preview
 end
 
@@ -214,7 +217,7 @@ function Editor.Build(ctx, builder, bar, view, select)
     for _, entry in ipairs(builder.layoutEntries) do
         if entry.frame == body then entry.gap = 8 end
     end
-    local width = body._msuf2Width or builder.width
+    local width = HM.GetSectionWidth(body) or builder.width
     local slotPicker, deck
     local sections = {}
     deck = Page.Deck(ctx, body, width, -78, function(height) P.FinishBody(builder, body, -78 - height, 0) end, true)

@@ -1,5 +1,5 @@
 local _, P = ...
-local Page, M, Tr = P.DataTextPage, P.M, P.Tr
+local Page, M, Tr, HM = P.DataTextPage, P.M, P.Tr, P.HM
 local ID, PAGE = "dataTexts", "suite_dataTexts"
 local Presets = {}
 P.DataTextPresetPage = Presets
@@ -64,7 +64,7 @@ function Presets.Build(ctx, builder, choose, target)
     local section = target and PAGE .. "_bar" .. target .. "_presets" or PAGE .. "_presets"
     local title = target and "Apply preset to this bar" or "Add bar"
     local body = builder:CollapsibleSection(section, Tr(title), 120, true)
-    local width = (body._msuf2Width or builder.width) - 32
+    local width = (HM.GetSectionWidth(body) or builder.width) - 32
     local look, cards = P.Get(ID, "look"), {}
     if look == 4 then look = P.Suite.Client.isForever and 3 or 2 end
     local y = -18

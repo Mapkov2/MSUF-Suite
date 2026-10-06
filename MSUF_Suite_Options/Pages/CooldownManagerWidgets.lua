@@ -2,7 +2,7 @@ local _, P = ...
 -- Cooldown manager page, pooled editors: popups (they close with the menu, on
 -- combat and on a click elsewhere) and the spell tiles. The spell picker is
 -- in CooldownManagerPicker.lua.
-local Page = P.CDMPage
+local Page, HM = P.CDMPage, P.HM
 local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 local CDM = P.Suite.CDM
 local FAMILY, OVERFLOW_OFF = CDM.FAMILY, CDM.OVERFLOW.OFF
@@ -17,7 +17,7 @@ local Accent, SetRaw = Page.Accent, Page.SetRaw
 ------------------------------------------------------------------ popups
 local function Button(parent, text, width, height, onClick)
     local button = T.Button(parent, text or "", width, height or 22, { noSearch = true })
-    button._msuf2SkipHistoryCheckpoint = true
+    HM.SkipHistoryCheckpoint(button)
     if T.CenterButtonLabel then T.CenterButtonLabel(button) end
     if onClick then button:SetScript("OnClick", onClick) end
     return button

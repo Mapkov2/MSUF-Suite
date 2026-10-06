@@ -1,5 +1,5 @@
 local _, P = ...
-local M, W, T, Tr = P.M, P.W, P.T, P.Tr
+local M, W, T, Tr, HM = P.M, P.W, P.T, P.Tr, P.HM
 local Controller = P.Suite.Client
 
 -- The "..." button in a Suite section header and its popup: Reset section,
@@ -23,13 +23,9 @@ local function SectionActionButton(ctx, entry)
     if W.StyleSectionActionButton then W.StyleSectionActionButton(more) end
     more:SetPoint("RIGHT", entry.header, "RIGHT", -10, 0)
     more:SetFrameLevel(entry.header:GetFrameLevel() + 4)
-    more._msuf2SkipHistoryCheckpoint = true
-    entry._msuf2SectionActions = more
+    HM.SkipHistoryCheckpoint(more)
+    HM.ReserveSectionActions(entry, more, 34)
     entry._msufSuiteResetButton = more
-    entry._msuf2ActionReserve = 34
-    if not entry._msuf2UXSummary then
-        entry._msuf2ColorSwatchReserve = (entry._msuf2ColorSwatchReserve or 0) + 34
-    end
     local function AlignSwitch()
         if entry.featureSwitch then
             entry.featureSwitch:ClearAllPoints()
@@ -38,7 +34,7 @@ local function SectionActionButton(ctx, entry)
     end
     AlignSwitch()
     if ctx and M.TrackRefresh then M.TrackRefresh(ctx, AlignSwitch) end
-    if entry._msuf2RefreshLayout then entry._msuf2RefreshLayout() end
+    HM.RefreshSectionLayout(entry)
     return more
 end
 
@@ -159,21 +155,22 @@ end
 function P.AttachSectionReset(ctx, body, title, reset, copy, extend)
     if not body or type(reset) ~= "function" then return end
     body._msufSuiteSectionReset, body._msufSuiteSectionCopy = reset, copy
-    local entry = body._msuf2CollapsibleEntry
+    local entry = HM.GetSectionEntry(body)
     if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel) then return end
     if entry._msufSuiteResetButton then return entry._msufSuiteResetButton end
     local more = SectionActionButton(ctx, entry)
     local state = { body = body, title = title, entry = entry, more = more, extend = extend }
     more:SetScript("OnClick", function() ToggleSectionPopup(state) end)
-    more._msuf2GetSectionPopup = function() return state.popup end
-    more._msuf2EnsureSectionPopup = function()
+    HM.SetSectionPopupGetter(more, function() return state.popup end)
+    -- The Suite's own handles on the popup (the DataTexts bar actions).
+    more._msufSuiteEnsureSectionPopup = function()
         if not state.popup then
             BuildSectionPopup(state, body._msufSuiteSectionCopy)
             state.popup:Hide()
         end
         return state.popup
     end
-    more._msuf2OpenSectionPopup = function()
+    more._msufSuiteOpenSectionPopup = function()
         if not state.popup or not state.popup:IsShown() then ToggleSectionPopup(state) end
     end
     if M.AddTooltip then M.AddTooltip(more, "Section actions", nil, { hook = true }) end

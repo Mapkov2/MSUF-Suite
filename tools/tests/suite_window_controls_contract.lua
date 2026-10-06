@@ -813,7 +813,8 @@ EventUtil = { ContinueOnAddOnLoaded = function(addon, callback)
     Check(addon == "Blizzard_InspectUI", "Inspect waited for the wrong addon")
     inspectLoaded = callback
 end }
-NS.AdapterKit = { WeakSet = function() return setmetatable({}, { __mode = "k" }) end }
+NS.Registry = NS.Registry or { AddListener = function() end }
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AdapterKit.lua"))("MSUF_Suite_Skin", NS)
 NS.GenericWindows = { IsCategoryEnabled = function() return true end }
 NS.Surface = { Attach = function() return true end, SetVisible = function() end }
 NS.Cosmetics = { FadeNineSlice = function() end, RestoreOwner = function() end }

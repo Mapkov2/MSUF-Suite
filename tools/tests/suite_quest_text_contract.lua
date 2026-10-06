@@ -247,12 +247,16 @@ NS.QuestText.Deactivate(map, "map")
 QuestFrame = quest
 QuestLogPopupDetailFrame = Frame()
 QuestFrameRewardPanel = { MaterialTopLeft = {} }
+-- The real owner registry (AdapterKit.NewOwners) over this test's NS.
+local kitScope = setmetatable({}, { __index = NS })
+assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/AdapterKit.lua"))("MSUF_Suite_Skin", kitScope)
 NS.AdapterKit = {
     Isolate = function(callback, ...) return true, callback(...) end,
     Fade = function(_, region) return region ~= nil end,
     Path = function() return nil end,
     WeakSet = function() return setmetatable({}, { __mode = "k" }) end,
     CancelDeferred = function() end,
+    NewOwners = kitScope.AdapterKit.NewOwners,
 }
 NS.GenericWindows = { IsCategoryEnabled = function(category) return category == "quest" end }
 NS.Client = { IsAddOnLoaded = function(addon) return addon == "Blizzard_UIPanels_Game" end }

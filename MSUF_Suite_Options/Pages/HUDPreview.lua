@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, S, M, Tr = P.Suite, P.S, P.M, P.Tr
+local Suite, S, M, Tr, HM = P.Suite, P.S, P.M, P.Tr, P.HM
 local Preview = {}
 P.HUDPreview = Preview
 local modes = { objectives = "quests", runSummary = "raid", announcements = "zone", afkScreen = "character" }
@@ -171,20 +171,20 @@ function Preview.Build(ctx, parent, width)
     host:SetClipsChildren(true)
     local canvas = CreateFrame("Button", nil, host)
     canvas:SetPoint("CENTER")
-    canvas._msuf2SkipHistoryCheckpoint = true
-    canvas._msuf2AllowCombatClick = true
+    HM.SkipHistoryCheckpoint(canvas)
+    HM.AllowCombatClick(canvas)
     local ui = { ctx = ctx, host = host, canvas = canvas, width = width, labels = {}, fills = {}, pickers = {} }
     canvas:SetScript("OnClick", function() Focus(ui) end)
     ui.Select, ui.Paint = Select, Paint
     Pickers(ui, parent)
     ui.playButton = P.T.Button(parent, "Play preview", 146, 26)
     ui.playButton:SetPoint("TOPLEFT", width - 130, -66)
-    ui.playButton._msuf2SkipHistoryCheckpoint = true
-    ui.playButton._msuf2AllowCombatClick = true
+    HM.SkipHistoryCheckpoint(ui.playButton)
+    HM.AllowCombatClick(ui.playButton)
     ui.playButton:SetScript("OnClick", function() Preview.Play(ui) end)
     local hint = P.Text(parent, "Sample preview. Changes update here even when the feature is off.", 16, -291, width, P.T.colors.muted)
     local height = math.max(310, 296 + math.ceil(hint:GetStringHeight() or 14))
-    parent._msuf2FixedPreviewActiveHeight = height
+    HM.SetFixedPreviewHeight(parent, height)
     parent:SetHeight(height)
     host:SetScript("OnShow", function() if ui.id then Select(ui, ui.id) end end)
     host:SetScript("OnHide", function()

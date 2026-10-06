@@ -1,5 +1,5 @@
 local _, P = ...
-local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
+local S, M, W, T, Tr, HM = P.S, P.M, P.W, P.T, P.Tr, P.HM
 
 -- The Skinning declarations feed the cold search index and visible controls.
 -- Collection reads metadata only: callbacks and widget builders never run.
@@ -51,12 +51,12 @@ function P.AttachSkinColors(body, title, rows)
             return targets
         end,
     })
-    if shortcut then shortcut._msuf2BoundColorShortcut = nil end
+    if shortcut then HM.ReleaseColorShortcut(shortcut) end
 end
 
 -- The tab panels and their selector inside a skin tab accordion.
 local function SkinTabs(ctx, builder, body, specs, state)
-    local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
+    local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
     local panels, heights, values = {}, {}, {}
     local selectTab
     for _, spec in ipairs(specs) do
@@ -72,7 +72,7 @@ local function SkinTabs(ctx, builder, body, specs, state)
         local function Prepare() if selectTab then selectTab(tab) end end
         for _, row in ipairs(spec.rows) do
             local widget = grid.controls[row.id]
-            if widget then widget._msuf2PrepareExactSearchTarget = Prepare end
+            if widget then HM.SetSearchTargetPrepare(widget, Prepare) end
         end
         y = grid.bottomY
         if spec.extra then y = spec.extra(panel, y, width, Prepare) or y end
@@ -88,7 +88,7 @@ local function SkinTabs(ctx, builder, body, specs, state)
         afterRefresh = function(tab) P.FinishBody(builder, body, -59 - heights[tab]) end,
         x = 16, y = -12,
     })
-    if tabs._msuf2Title then tabs._msuf2Title:Hide() end
+    P.HideControlTitle(tabs)
     selectTab = choose
     refresh()
 end
@@ -297,7 +297,7 @@ function P.GateControls(ctx, id, entries, keyFn)
         for _, entry in ipairs(entries) do
             if entry.widget then
                 local rule = entry.rule
-                entry.widget._msuf2PrepareExactSearchTarget = function() prepare(rule) end
+                HM.SetSearchTargetPrepare(entry.widget, function() prepare(rule) end)
             end
         end
     end
@@ -379,7 +379,7 @@ end
 -- A collapsed section still answers what it currently does. Read the same
 -- declared getters as its controls, including the selected bar/window scope.
 function P.AttachRowsSummary(ctx, body, rows)
-    if not W.SetCollapsibleSummary or not body._msuf2CollapsibleEntry
+    if not W.SetCollapsibleSummary or not HM.GetSectionEntry(body)
         or body._msufSuiteSummary or body._msufSuiteSkipSummary then return end
     local selected = {}
     for _, row in ipairs(rows) do
@@ -446,7 +446,7 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
         end,
     })
     -- Later bound swatches must not replace this complete, curated list.
-    if shortcut then shortcut._msuf2BoundColorShortcut = nil end
+    if shortcut then HM.ReleaseColorShortcut(shortcut) end
     return shortcut
 end
 
@@ -508,7 +508,7 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     opts = opts or {}
     local built, entries = P.RuleRows(pageKey, id, rules, opts.keyFn, sectionId), nil
     local function Content(body)
-        local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+        local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
         local y = -18
         if opts.help then
             local help = P.Description(body, opts.help, 16, y, width, title)
@@ -525,8 +525,8 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
             P.AttachSectionReset(ctx, section, title, function()
                 return P.ResetRules(id, rules, opts.keyFn, opts.resetKeys)
             end, opts.copy)
-            local entry = section._msuf2CollapsibleEntry
-            if entry and opts.onEnsureVisible then entry._msuf2EnsureVisible = opts.onEnsureVisible end
+            local entry = HM.GetSectionEntry(section)
+            if entry and opts.onEnsureVisible then HM.SetSectionEnsureVisible(entry, opts.onEnsureVisible) end
         end,
         summary = function(section) P.AttachRowsSummary(ctx, section, built.rows) end,
         finish = function(section, y)
@@ -662,7 +662,7 @@ local function BuildSkinColors(ctx, b)
     end
     if not (skin and skin.addonName == "MSUF_Suite_Skin" and skin.Theme and skin.ColorOrder) then return end
     local section = b:CollapsibleSection("colors_suite_skin", Tr("Suite skin"), 120, false)
-    local width = math.max(240, (section._msuf2Width or b.width or 720) - 32)
+    local width = math.max(240, (HM.GetSectionWidth(section) or b.width or 720) - 32)
     local rows = {}
     for _, entry in ipairs(skin.ColorOrder) do rows[#rows + 1] = SkinColorRow(skin, entry) end
     local grid = W.SettingsRows(ctx, section, { x = 16, y = -18, width = width, columns = 2, rows = rows })
@@ -708,7 +708,7 @@ end
 -- older hosts whose registry equality predates prepare-contract fields.
 function P.RegisterWorkspaceSearch(widget, identity, rule, kind, reveal, label)
     if not M.RegisterControlMetadata then return end
-    local meta, original = {}, widget._msuf2SearchMeta or {}
+    local meta, original = {}, HM.GetControlSearchMeta(widget) or {}
     for key, value in pairs(original) do meta[key] = value end
     for key, value in pairs(identity) do meta[key] = value end
     meta.searchPrepareKind, meta.searchPrepareValue = kind, rule.key
@@ -733,7 +733,7 @@ end
 local function ModuleBody(ctx, b, body, pageKey, id, actions, opts, card)
     local sectionId = pageKey .. "_" .. id .. "_module"
     local title = opts.title or "Basics"
-    local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+    local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     card.status = P.Text(body, "", 16, -18, width, T.colors.text)
     local description = P.Description(body, P.catalog[id].description, 16, -42, width, title)
     local y = -42 - math.max(14, math.ceil(description:GetStringHeight() or 14)) - 14
@@ -771,7 +771,7 @@ local function ModuleHeader(ctx, body, id, opts, card)
         -- module. S.Apply still enforces Availability before starting it.
         W.SetControlEnabled(card.toggle, not P.Combat())
         if card.status then P.SetTranslatedText(card.status, P.StatusText(id)) end
-        local entry = body._msuf2CollapsibleEntry
+        local entry = HM.GetSectionEntry(body)
         if entry and entry.label then
             local suffix = not ok and (" - " .. P.Suite.StatusText(why or "Unavailable on this client", Tr))
                 or not P.Get(id, "enabled") and Tr(" - Off") or ""
@@ -799,7 +799,7 @@ function P.ModuleCard(ctx, b, pageKey, id, actions, opts)
         shell = function(body) ModuleHeader(ctx, body, id, opts, card) end,
         summary = card.built and function(body) P.AttachRowsSummary(ctx, body, card.built.rows) end or nil,
         finish = function(body, y)
-            local width = math.max(240, (body._msuf2Width or b.width or 720) - 32)
+            local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
             if opts.buildBody then y = opts.buildBody(body, y, width) end
             P.FinishBody(b, body, y)
             for _, section in ipairs(opts.colorSections or {}) do

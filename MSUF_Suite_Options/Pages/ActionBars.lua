@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, S, M, W, T, Tr = P.Suite, P.S, P.M, P.W, P.T, P.Tr
+local Suite, S, M, W, T, Tr, HM = P.Suite, P.S, P.M, P.W, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_actionbars", "actionbars"
 local COUNT = Suite.ActionBarCount
 local NEVER = Suite.ActionBarEnum.VISIBILITY.NEVER
@@ -212,14 +212,14 @@ local function BuildSelection(ctx, b, attachCopy)
         body = W.FixedPreviewSection(ctx, b, { title = Tr("Selected bar"), height = height })
         -- The host caps compact previews at 180px; this header also contains
         -- navigation and bar controls. Reserve its full height in the dock.
-        body._msuf2FixedPreviewActiveHeight = height
+        HM.SetFixedPreviewHeight(body, height)
         body:SetHeight(height)
     else
         body = b:Section(Tr("Selected bar"), height)
     end
     ctx._msufSuiteActionBarHeader = body
     if body.title then body.title:Hide() end
-    local width = (body._msuf2Width or b.width or 720) - 32
+    local width = (HM.GetSectionWidth(body) or b.width or 720) - 32
     local half, bars = math.floor((width - 12) / 2), {}
     for i = 1, COUNT do bars[i] = { value = i, text = BarTitle(i) } end
     local picker = M.BindDropdownAt(ctx, body, Tr("Selected bar"), 16, -54, bars, narrow and width - 100 or half,
@@ -250,7 +250,8 @@ local function BuildSelection(ctx, b, attachCopy)
     BuildPreview(ctx, body, narrow and -148 or -110, width, 132)
     function ctx.RefreshActionBarScope()
         local shared = P.ActionBarMenu.IsShared(ctx)
-        if picker._msuf2Title then P.SetTranslatedText(picker._msuf2Title, Tr(shared and "Preview bar" or "Selected bar")) end
+        local title = HM.GetControlTitle(picker)
+        if title then P.SetTranslatedText(title, Tr(shared and "Preview bar" or "Selected bar")) end
         W.SetControlShown(toggle, not shared)
         if copyButton then
             copyButton:SetShown(not shared)
@@ -344,8 +345,8 @@ local function AttachCopyTo(ctx, body, y)
     local copy = (W.RoleButton and W.RoleButton(body, "Copy To", "success", 82, 24))
         or W.TopButton(body, "Copy To", 82, 24)
     copy:SetPoint("TOPRIGHT", body, "TOPRIGHT", -16, y - 24)
-    copy._msuf2AllowCombatClick = true
-    copy._msuf2SkipHistoryCheckpoint = true
+    HM.AllowCombatClick(copy)
+    HM.SkipHistoryCheckpoint(copy)
     local targets = {}
     for index = 1, COUNT do targets[index] = { value = index, text = ShortBarLabel(index) } end
     targets[#targets + 1] = { value = "all", text = "All" }
@@ -373,7 +374,7 @@ end
 
 -- A lazy host builds the editor's buttons when it first opens (P.LazySection).
 local function EditorContent(ctx, b, body)
-    local width = math.max(260, (body._msuf2Width or b.width or 720) - 32)
+    local width = math.max(260, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     local half = math.floor((width - 12) / 2)
     local help = P.Description(body, HELP.editor, 16, -18, width)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12

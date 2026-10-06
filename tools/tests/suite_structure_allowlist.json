@@ -2667,6 +2667,18 @@
    "symbol": "registry (= EventRegistry)"
   },
   {
+   "file": "MSUF_Suite/Core/API.lua",
+   "kind": "lod",
+   "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
+   "symbol": "Suite.CooldownManager"
+  },
+  {
+   "file": "MSUF_Suite/Core/API.lua",
+   "kind": "lod",
+   "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
+   "symbol": "Suite.Options"
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 dock export; older hosts without fixed preview headers use the normal scrolling section and have no header to relayout. The native dock height override is covered by suite_options_menu_contract.",

@@ -18,9 +18,11 @@ Each rule exists because breaking it caused a real defect.
 - **Secrets:** use `Suite.IsSecret` / `NS.IsSecret` first, before any compare, arithmetic, table-key lookup or truth test. Secrets only flow into C sinks.
 - **Combat edge:** at `PLAYER_REGEN_DISABLED`, `InCombatLockdown()` is still false. Refusals use `NS.InCombat`; protected-write guards keep their own owners.
 - **Blizzard frames and tables:** never write to them; `HookScript` is fine. Never write `StaticPopupDialogs`. Confirmations and text prompts use Blizzard's generic dialogs through `S.Confirm` / `P.Confirm` / `P.AskText` (keyed: one open question per key).
-- **Host coupling:** the Suite talks to MSUF only through `MSUF_Suite/Core/HostBridge.lua`.
+- **Host coupling:** the Suite talks to MSUF only through `MSUF_Suite/Core/HostBridge.lua` and its Menu2 half `HostBridgeMenu.lua`.
   - It uses host API v1 (`MSUF_HostAPI`, Menu2 page-reset providers) when the host has it, and the unchanged legacy path otherwise.
   - On v1 the Suite never writes `MSUF_DB` itself.
+  - Menu2's per-widget fields (`_msuf2*`) and nav icon tables are named only in `HostBridgeMenu.lua`; option pages call `P.HM` (host API v2, or the legacy field writes on an older Menu2).
+  - Hosts call the Suite through `MSUFSuite.API` (`MSUF_Suite/Core/API.lua`, versioned); keep `_G.MSUFSuite` and its old paths for older hosts.
   - The contract is in `../HOST_API_SPEC.md`.
   - Compatibility must hold in all four old/new host × old/new Suite combinations.
 - **Chat colours:** the ledger is a per-category state machine, documented in the header of `MSUF_Suite/Integrations/MapkoSkin.lua`.

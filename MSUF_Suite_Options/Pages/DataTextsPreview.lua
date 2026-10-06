@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, S, M, T, Tr = P.Suite, P.S, P.M, P.T, P.Tr
+local Suite, S, M, T, Tr, HM = P.Suite, P.S, P.M, P.T, P.Tr, P.HM
 local Data = P.DataTextsPreviewData
 local Preview = {}
 P.DataTextsPreview = Preview
@@ -68,8 +68,8 @@ local function NewSlot(ui, index)
     button.label:SetWordWrap(false)
     button.label:SetTextColor(1, 1, 1)
     button.divider = ui.sample:CreateTexture(nil, "ARTWORK")
-    button._msuf2SkipHistoryCheckpoint = true
-    button._msuf2AllowCombatClick = true
+    HM.SkipHistoryCheckpoint(button)
+    HM.AllowCombatClick(button)
     button:EnableMouse(ui.options.interactive ~= false)
     if ui.options.interactive == false then return button end
     button:SetScript("OnEnter", function()
@@ -321,7 +321,7 @@ function Preview.Build(ctx, parent, barId, options)
     ui.hint = P.Text(host, "Sample values. Click a data text to edit it.", 12, -(height - 22), width - 174)
     ui.add = T.Button(host, "Add data", 136, 26)
     ui.add:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -10, 8)
-    ui.add._msuf2SkipHistoryCheckpoint = true
+    HM.SkipHistoryCheckpoint(ui.add)
     ui.add:SetScript("OnClick", function()
         if not ui.disposed and ui.options.interactive ~= false and not P.Combat() and ui.options.onAdd then
             ui.options.onAdd(ui.add)

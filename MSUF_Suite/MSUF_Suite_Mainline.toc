@@ -57,6 +57,7 @@ Core\SpellRange.lua
 Core\FontBridge.lua
 Integrations\MapkoSkin.lua
 Core\HostBridge.lua
+Core\HostBridgeMenu.lua
 Core\ProfileIO.lua
 Core\InstallerLayout.lua
 Core\Profiles.lua
@@ -65,4 +66,5 @@ Core\InstallerProfiles.lua
 Core\InstallerModules.lua
 Core\Installer.lua
 Core\Menu.lua
+Core\API.lua
 Core\Startup.lua

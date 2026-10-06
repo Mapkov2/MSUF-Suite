@@ -1,5 +1,5 @@
 local _, P = ...
-local Tr = P.Tr
+local Tr, HM = P.Tr, P.HM
 local PAGE, ID = "suite_nameplates", "nameplates"
 
 local HELP = {
@@ -64,9 +64,9 @@ local function EnemyPanels(ctx, body, width, sectionId, appearance, elements)
         local tab = spec[1]
         for _, entry in ipairs(entries or {}) do
             if entry.widget then
-                entry.widget._msuf2PrepareExactSearchTarget = function()
+                HM.SetSearchTargetPrepare(entry.widget, function()
                     P.SelectNameplatesEnemyTab(tab)
-                end
+                end)
             end
         end
         heights[spec[1]] = -y + 14
@@ -88,7 +88,7 @@ end
 
 -- The Design and Blizzard elements tabs inside the enemy section.
 local function EnemyTabs(ctx, builder, body, sectionId, rules, appearance, elements)
-    local width = math.max(240, (body._msuf2Width or builder.width or 720) - 32)
+    local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
     local panels, heights = EnemyPanels(ctx, body, width, sectionId, appearance, elements)
     local function RefreshHeight(tab)
         P.FinishBody(builder, body, -59 - heights[tab])
@@ -104,7 +104,7 @@ local function EnemyTabs(ctx, builder, body, sectionId, rules, appearance, eleme
         end,
         afterRefresh = RefreshHeight, x = 16, y = -12,
     })
-    if tabs._msuf2Title then tabs._msuf2Title:Hide() end
+    P.HideControlTitle(tabs)
     if P.M.RegisterControlMetadata then
         P.M.RegisterControlMetadata(tabs, P.Meta(PAGE, ID, "enemy.tabs", "action", sectionId),
             "Enemy nameplate tabs", "segment")

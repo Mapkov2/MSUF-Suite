@@ -1414,7 +1414,8 @@ assert(M.ALIASES.chat == "suite_chat", "chat page alias is missing")
 local function Reattach()
     Suite.Menu.attached = false
     assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", {
-        Suite = Suite, M = M, T = T, pages = optionsNS.pages, Tr = M.Tr, host = MSUF_NS, Refresh = function() end,
+        Suite = Suite, M = M, T = T, HM = optionsNS.HM, pages = optionsNS.pages, Tr = M.Tr, host = MSUF_NS,
+        Refresh = function() end,
         BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
         ForgetAvailability = optionsNS.ForgetAvailability,
         S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
