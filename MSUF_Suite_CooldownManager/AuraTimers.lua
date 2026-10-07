@@ -8,7 +8,32 @@ local K = C.Const
 local Public, type, pairs = S.Public, type, pairs
 local Timers = {}
 C.AuraTimers = Timers
-local CAST = { [325197] = 325197, [406220] = 325197, [322118] = 322118, [389422] = 322118 }
+-- Cold spell identities only; duration and activity still come from Blizzard.
+-- Shaman casts must enter the same route even when they have no player aura.
+local CAST = {
+    [325197] = 325197, [406220] = 325197, [322118] = 322118, [389422] = 322118,
+    [2484] = 2484, -- Earthbind
+    [5394] = 5394, -- Healing Stream
+    [8143] = 8143, -- Tremor
+    [16191] = 16191, -- Mana Tide
+    [51485] = 51485, -- Earthgrab
+    [98008] = 98008, -- Spirit Link
+    [108270] = 108270, -- Stone Bulwark
+    [108280] = 108280, -- Healing Tide
+    [157153] = 157153, -- Cloudburst
+    [192058] = 192058, -- Capacitor
+    [192077] = 192077, -- Wind Rush
+    [192222] = 192222, -- Liquid Magma
+    [198838] = 198838, -- Earthen Wall
+    [204331] = 204331, -- Counterstrike
+    [204336] = 204336, [8178] = 204336, -- Grounding / aura
+    [207399] = 207399, -- Ancestral Protection
+    [355580] = 355580, -- Static Field
+    [383013] = 383013, -- Poison Cleansing
+    [383017] = 383017, -- Stoneskin
+    [383019] = 383019, -- Tranquil Air
+    [444995] = 444995, -- Surging
+}
 local rows, routes, hidden, pool, slots = {}, {}, {}, {}, {}
 local manualRoutes, castStates = {}, {}
 local barSources = setmetatable({}, { __mode = "k" })

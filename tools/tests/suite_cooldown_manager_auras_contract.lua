@@ -3515,6 +3515,45 @@ do (function()
         and nativeCrane.binding.duration==dragonDuration and nativeDragon.binding.duration==dragonDuration,
         "removing the override routes the native source to Yu'lon only")
     totems[2],nativeData.slot=nil,1
+    -- Shaman's totems have the same native clock contract as the summons,
+    -- including two picker choices and opaque combat identity/bar values.
+    local shaman={2484,5394,8143,16191,51485,98008,108270,108280,157153,192058,
+        192077,192222,198838,204331,204336,207399,355580,383013,383017,383019,444995}
+    for _,spell in ipairs(shaman) do
+        local base=spell==157153 and 5394 or spell
+        local picked=Aura("bar","b706","b","player",Set(base,spell),{base=base,spell=spell})
+        local custom=Aura("bar","a"..spell,"a","player",Set(spell),{base=spell})
+        C.Catalog.records[706]={spell=base,override=spell}
+        Plan("bar",3,{picked,custom});A.Sync("bar")
+        local a,b=Timer(1),Timer(2)
+        assert(picked.timer and custom.timer and a.cast==spell and b.cast==spell and T.NeedsSources(),
+            "both Shaman picker choices require the native totem source: "..spell)
+        totems[1]={have=true,spell=spell,start=NOW,length=15,object=d}
+        T.Totem(nil,nil,1)
+        assert(a.active and b.active and a.binding.duration==d and b.binding.duration==d,
+            "public Shaman totem slot uses the native duration: "..spell)
+        totems[1].have,totems[1].spell=Secret(),Secret()
+        local shamanFields={cooldownID=706,totemData=nativeData,Bar=nativeBar,isActive=Secret()}
+        local nativeTotem=Source(shamanFields)
+        local before=reads
+        T.Source(nativeTotem)
+        assert(a.source==nativeTotem and b.source==nativeTotem and reads==before,
+            "Shaman combat source ignores protected totem identity: "..spell)
+        shamanFields.totemData=Secret()
+        R[a.gate].scripts.OnCooldownDone(a.gate);R[b.gate].scripts.OnCooldownDone(b.gate)
+        T.SourceBar(nativeTotem,true)
+        assert(a.mirror==nativeTotem and b.mirror==nativeTotem and reads==before,
+            "Shaman combat bar remains timed without readable totem data: "..spell)
+        shamanFields.isActive=false;T.SourceBar(nativeTotem)
+        assert(not a.active and not b.active,"native removal retires both Shaman choices: "..spell)
+    end
+    local grounding=Aura("bar","a8178","a","player",Set(8178),{base=8178})
+    T.Classify(grounding)
+    assert(grounding.timer,"Grounding's aura alias retains the summon clock")
+    local ordinary=Aura("bar","a2825","a","player",Set(2825),{base=2825})
+    T.Classify(ordinary)
+    assert(not ordinary.timer,"ordinary Shaman buffs retain native AuraContainer ownership")
+    C.Catalog.records[706]=nil
     C.Catalog.records[701].override=325197
     Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
     crane,dragon=Timer(2),Timer(3)
