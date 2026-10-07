@@ -19,7 +19,8 @@ local direction = Enum.StatusBarTimerDirection
 local immediate = Enum.StatusBarInterpolation.Immediate
 
 local function Summon(entry)
-    local id = CAST[entry.base] or CAST[entry.spell]
+    -- Follow the current talent override, as Blizzard's GetSpellID does.
+    local id = CAST[entry.spell] or CAST[entry.base]
     if id then return id end
     for spell in pairs(entry.auraIDs or C.EMPTY) do
         id = CAST[spell]
@@ -160,7 +161,7 @@ function Timers.Source(item)
     local id = item.cooldownID
     if not Public(id) or type(id) ~= "number" then return end
     local rec = C.Catalog.records[id]
-    local cast = rec and (CAST[rec.spell] or CAST[rec.override])
+    local cast = rec and (CAST[rec.override] or CAST[rec.spell])
     local list = cast and routes[cast]
     if not list then return end
     local data = item.totemData

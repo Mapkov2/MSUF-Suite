@@ -3297,7 +3297,9 @@ do (function()
     -- M+ hides both event identity and direct totem identity. Blizzard's
     -- native CDM item has already associated its public cooldownID/slot.
     local oldCatalog=C.Catalog
-    C.Catalog={records=setmetatable({[701]={spell=325197},[702]={spell=322118},[703]={spell=9999}},
+    -- Chi-Ji overrides Yu'lon. The native cooldown keeps its base spell,
+    -- unlike the readable GetTotemInfo cast ID used in the open world.
+    C.Catalog={records=setmetatable({[701]={spell=322118,override=325197},[702]={spell=322118},[703]={spell=9999}},
         {__index=function(_,key) assert(not IsSecret(key),"secret catalog key");return nil end})}
     local function Source(fields)
         return setmetatable({}, {__index=fields,__newindex=function() error("native source write") end})
@@ -3312,6 +3314,7 @@ do (function()
     T.Source(source)
     assert(crane.active and crane.binding.duration==totems[1].object and crane.source==source,
         "M+ uses the native CDM slot without inspecting protected spell/timing fields")
+    assert(not dragon.active,"a Chi-Ji override cannot start the base Yu'lon timer")
     assert(reads==directReads+1,"source binding performs no additional GetTotemInfo query")
     local unchanged=crane.binding.duration
     for _,bad in ipairs({Secret(),Source({cooldownID=Secret()}),Source({cooldownID=701,totemData=Secret()}),
@@ -3346,6 +3349,37 @@ do (function()
     collectgarbage("restart")
     assert(sourceMemory<1,"native source routing allocated "..sourceMemory.." KB")
     assert(tally.made==frames and timerCount==timersBefore,"native refresh adds no frames or Lua timers")
+    -- Both picker choices must share the effective spell: a Blizzard row
+    -- retains Yu'lon as its base, while a custom row names the Chi-Ji aura.
+    local blizzard=Aura("bar","b701","b","player",Set(322118,325197,406220),
+        {base=322118,spell=325197,override=325197})
+    Plan("bar",3,{blizzard,chi,yu});A.Sync("bar")
+    local nativeCrane,aliasCrane,nativeDragon=Timer(1),Timer(2),Timer(3)
+    assert(nativeCrane.cast==325197 and aliasCrane.cast==325197,
+        "Blizzard and custom Chi-Ji rows prefer the current spell over the shared Yu'lon base")
+    T.Source(source)
+    assert(nativeCrane.active and aliasCrane.active and not nativeDragon.active
+        and nativeCrane.binding.duration==totems[1].object and aliasCrane.binding.duration==totems[1].object,
+        "both default Chi-Ji choices use the same native instance clock")
+    R[aliasCrane.gate].scripts.OnCooldownDone(aliasCrane.gate)
+    -- A catalog/entry refill after removing the talent drops the override.
+    C.Catalog.records[701].override=nil
+    blizzard.spell,blizzard.override=322118,nil
+    blizzard.auraIDs=Set(322118,389422)
+    Plan("bar",3,{blizzard,chi,yu});A.Sync("bar")
+    assert(nativeCrane.cast==322118 and not nativeCrane.active,
+        "returning to Yu'lon retires the former Chi-Ji clock")
+    local dragonDuration=Duration(Secret(),Secret())
+    totems[2]={have=Secret(),spell=Secret(),object=dragonDuration}
+    nativeData.slot=2
+    T.Source(source)
+    assert(nativeCrane.active and nativeDragon.active and not aliasCrane.active
+        and nativeCrane.binding.duration==dragonDuration and nativeDragon.binding.duration==dragonDuration,
+        "removing the override routes the native source to Yu'lon only")
+    totems[2],nativeData.slot=nil,1
+    C.Catalog.records[701].override=325197
+    Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
+    crane,dragon=Timer(2),Timer(3)
     C.Catalog=oldCatalog
     ACCESS=true;AURAS_SECRET=false
     totems[1]={have=true,spell=325197,start=NOW,length=12,object=latest}
