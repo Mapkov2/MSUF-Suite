@@ -206,6 +206,7 @@ Enum.UIWidgetVisualizationType = { ScenarioHeaderTimer = 20 }
 Enum.WidgetShownState = { Hidden = 0, Shown = 1 }
 local widgetTime, widgetSetLookups, lastWidgetSetID = nil, 0, nil
 C_UIWidgetManager = {
+    GetTopCenterWidgetSetID = function() return nil end,
     GetAllWidgetsBySetID = function(setID)
         widgetSetLookups, lastWidgetSetID = widgetSetLookups + 1, setID
         return setID == 777 and widgetTime and { { widgetID = 901, widgetType = 20 } } or {}
@@ -1128,6 +1129,131 @@ Drain()
 assert(tracker.rows["entry:scenario:0"].timer.text == "0:50"
     and tracker.scenarioWidgetSetID == nil and widgetSetLookups == previousLookups,
     "a phase without a widget set must retain the criterion timer fallback")
+-- Public Altar Contribution belongs to the native top-center widget set,
+-- independently of the scenario header and the weekly Abundance quest.
+do
+    local oldWidgets, oldTop = C_UIWidgetManager.GetAllWidgetsBySetID, C_UIWidgetManager.GetTopCenterWidgetSetID
+    local oldStep, oldInfo, oldCriteria = C_Scenario.GetStepInfo, C_Scenario.GetInfo, C_ScenarioInfo.GetCriteriaInfo
+    local oldObjectives = C_QuestLog.GetQuestObjectives
+    local topSet, stageSet, active = 888, 777, true
+    local contribution = { shownState = 1, text = "Public Altar Contribution", barMin = 0,
+        barMax = 4500, barValue = 0, partitionValues = { 1500, 3000 } }
+    local nativeInfo = setmetatable({}, { __index = contribution, __newindex = function() error("native widget write") end })
+    local topWidgets = { { widgetID = 9301, widgetType = 2 } }
+    local stageWidgets = { { widgetID = 901, widgetType = 20 } }
+    Enum.UIWidgetVisualizationType.StatusBar = 2
+    C_UIWidgetManager.GetTopCenterWidgetSetID = function() return topSet end
+    C_UIWidgetManager.GetAllWidgetsBySetID = function(id)
+        widgetSetLookups, lastWidgetSetID = widgetSetLookups + 1, id
+        return id == 777 and stageWidgets or id == 888 and topWidgets or {}
+    end
+    C_UIWidgetManager.GetStatusBarWidgetVisualizationInfo = function(id)
+        assert(id == 9301, "contribution identity must come from the discovered set")
+        return nativeInfo
+    end
+    C_Scenario.GetStepInfo = function()
+        return "Abundance cave", "Harvest herbs", 1, nil, nil, nil, nil, nil, nil, nil, nil, stageSet
+    end
+    C_Scenario.GetInfo = function()
+        if active then return "Abundance", 1, 1, nil, nil, nil, nil, nil, nil, nil, nil, nil, 123 end
+    end
+    C_ScenarioInfo.GetCriteriaInfo = function()
+        return { description = "Complete Event", quantity = 0, totalQuantity = 1,
+            isFormatted = false, isWeightedProgress = false, completed = false }
+    end
+    C_QuestLog.GetQuestObjectives = function() return { { text = "0/20000 Abundance earned", finished = false } } end
+    local function Contribution()
+        for _, row in pairs(tracker.rows) do
+            if row.text and type(row.text.text) == "string" and row.text.text:find("Public Altar Contribution", 1, true) then return row end
+        end
+    end
+    local function Update()
+        tracker.context.events.UPDATE_UI_WIDGET(tracker, "UPDATE_UI_WIDGET", { widgetSetID = tracker.scenarioTopWidgetSetID or 888 })
+        Drain()
+    end
+    tracker.context.events.PLAYER_ENTERING_WORLD(tracker, "PLAYER_ENTERING_WORLD"); Drain()
+    local row = assert(Contribution(), "top-center contribution omitted from the scenario")
+    assert(row.text.text == "Public Altar Contribution  0/1500" and row.progress.value == 0 and row.progress.shown,
+        "zero contribution must show Blizzard's first milestone")
+    local weekly
+    for _, item in pairs(tracker.rows) do
+        if item.text and item.text.text == "0/20000 Abundance earned" then weekly = item end
+    end
+    assert(weekly, "the weekly quest must remain independent")
+    for _, value in ipairs({ 1499, 1500, 2999, 3000, 4500 }) do
+        contribution.barValue = value
+        local beforeQuests = questUpdates
+        Update()
+        local goal = value < 1500 and 1500 or value < 3000 and 3000 or 4500
+        assert(Contribution() == row and row.text.text == string.format("Public Altar Contribution  %d/%d", value, goal)
+            and row.progress.value == 100 * value / 4500, "contribution milestones must follow native progress")
+        assert(weekly.text.text == "0/20000 Abundance earned" and questUpdates == beforeQuests,
+            "contribution changes must not reread or replace the weekly quest")
+    end
+    tracker.config.showTimers = false; Update()
+    assert(Contribution() and not tracker.rows["entry:scenario:0"].timerEnd,
+        "disabling clocks must retain contribution progress")
+    local before = widgetSetLookups
+    tracker.context.events.UPDATE_UI_WIDGET(tracker, "UPDATE_UI_WIDGET", { widgetSetID = 999 })
+    tracker.context.events.UPDATE_UI_WIDGET(tracker, "UPDATE_UI_WIDGET", { widgetSetID = secret })
+    Drain()
+    assert(widgetSetLookups == before, "unrelated and secret set IDs must not reread scenario widgets")
+    for _, field in ipairs({ "shownState", "text", "barMin", "barMax", "barValue", "partitionValues" }) do
+        local previous = contribution[field]
+        contribution[field] = secret; Update()
+        assert(not Contribution(), "secret contribution field must retire the owned row: " .. field)
+        contribution[field] = previous; Update()
+        assert(Contribution(), "public contribution must return after opaque data")
+    end
+    for _, bad in ipairs({ { secret }, { "1500" }, false }) do
+        contribution.partitionValues = bad; Update()
+        assert(not Contribution(), "malformed partitions must not manufacture milestones")
+    end
+    contribution.partitionValues = { 3000, 1500 }
+    contribution.barValue = 0; Update()
+    assert(Contribution().text.text == "Public Altar Contribution  0/1500", "partition order must not affect the next milestone")
+    contribution.partitionValues = nil; Update()
+    assert(Contribution().text.text == "Public Altar Contribution  0/4500", "an unpartitioned native bar uses its native maximum")
+    contribution.barMax = 0; Update()
+    assert(not Contribution(), "an invalid native range must retire contribution")
+    contribution.barMin, contribution.barMax, contribution.barValue = 4500, 4500, 4500; Update()
+    assert(Contribution().text.text == "Public Altar Contribution  4500/4500" and Contribution().progress.value == 100,
+        "native equal nonzero range represents a completed full bar")
+    contribution.barMin, contribution.barValue = 0, 0
+    contribution.barMax, contribution.shownState = 4500, 0; Update()
+    assert(not Contribution(), "a hidden contribution must not remain stale")
+    contribution.shownState = 1
+    stageWidgets[2] = topWidgets[1]; Update()
+    local count = 0
+    for _, line in ipairs(tracker.sources.scenario[1].lines) do
+        if line.text and line.text:find("Public Altar Contribution", 1, true) then count = count + 1 end
+    end
+    assert(count == 1, "overlapping stage and top-center sets must not duplicate contribution")
+    topSet = 777; before = widgetSetLookups; Update()
+    assert(widgetSetLookups == before + 1 and Contribution(), "identical native sets must be queried once")
+    -- A native Delve header already renders its whole stage set.
+    topSet = 888; stageWidgets[3] = { widgetID = 902, widgetType = 29 }; Update()
+    assert(not Contribution() and tracker.rows["entry:scenario:0"].scenarioHeader.shown,
+        "native Delve header widgets must not be duplicated in owned progress rows")
+    stageWidgets[2], stageWidgets[3] = nil, nil
+    stageSet = nil; Update()
+    assert(Contribution() and tracker.scenarioWidgetSetID == nil and tracker.scenarioTopWidgetSetID == 888,
+        "a scenario without a stage set still discovers top-center contribution")
+    active = false; Update()
+    assert(not Contribution() and tracker.scenarioTopWidgetSetID == nil and tracker.scenarioWidgetSetID == nil,
+        "leaving the scenario retires progress and event membership")
+    before = widgetSetLookups; Update()
+    assert(widgetSetLookups == before, "former scenario widgets must be inert after leaving")
+    active = true; tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE"); Drain()
+    assert(Contribution(), "reentering discovers current contribution")
+    tracker:Disable()
+    assert(tracker.scenarioTopWidgetSetID == nil and tracker.scenarioWidgetSetID == nil,
+        "disable must clear widget event membership")
+    C_UIWidgetManager.GetAllWidgetsBySetID, C_UIWidgetManager.GetTopCenterWidgetSetID = oldWidgets, oldTop
+    C_Scenario.GetStepInfo, C_Scenario.GetInfo, C_ScenarioInfo.GetCriteriaInfo = oldStep, oldInfo, oldCriteria
+    C_QuestLog.GetQuestObjectives = oldObjectives
+    tracker:Enable()
+end
 tracker.config.showTimers = false
 tracker:Refresh()
 assert(not tracker.rows["entry:quests:43"].timerEnd,

@@ -13,7 +13,7 @@ local S = P.Suite
 local O = {
     -- The module table; Objectives.lua installs it.
     M = {
-        sources = {}, rows = {}, freeRows = {}, dirty = {},
+        sources = {}, rows = {}, freeRows = {}, dirty = {}, scenarioProgressWidgets = {},
     },
     -- The data sources, in collection order.
     SOURCES = { "quests", "world", "bonus", "achievements", "scenario" },
@@ -301,7 +301,69 @@ local function ScenarioWidgetState(widgetSetID, showTimers)
             end
         end
     end
-    return timeLeft, headerSetID
+    return timeLeft, headerSetID, widgets
+end
+
+-- Native partitions are absolute contribution milestones, not quest totals.
+local function NextMilestone(info, value)
+    local goal, partitions = info.barMax, info.partitionValues
+    if not Public(partitions) then return end
+    if partitions == nil then return goal end
+    if type(partitions) ~= "table" then return end
+    for i = 1, #partitions do
+        local point = partitions[i]
+        if not Finite(point) then return end
+        if point > value and point > info.barMin and point < goal then goal = point end
+    end
+    return goal
+end
+
+local function ScenarioProgress(entry, widgets, seen)
+    if type(widgets) ~= "table" then return end
+    local manager, types = C_UIWidgetManager, Enum.UIWidgetVisualizationType
+    for i = 1, #widgets do
+        local widget = widgets[i]
+        if Public(widget) and type(widget) == "table" and Finite(widget.widgetID)
+            and Public(widget.widgetType) and types.StatusBar and widget.widgetType == types.StatusBar
+            and not seen[widget.widgetID] then
+            seen[widget.widgetID] = true
+            local info = Read(manager.GetStatusBarWidgetVisualizationInfo, widget.widgetID)
+            if type(info) == "table" and Public(info.shownState) and info.shownState == Enum.WidgetShownState.Shown
+                and Text(info.text) and Finite(info.barMin) and Finite(info.barMax) and Finite(info.barValue)
+                and (info.barMax > info.barMin or (info.barMin == info.barMax and info.barValue == info.barMax and info.barMax > 0)) then
+                local value = math.max(info.barMin, math.min(info.barMax, info.barValue))
+                local goal = NextMilestone(info, value)
+                if goal then
+                    -- Blizzard also treats equal nonzero min/max/value as full.
+                    local percent = info.barMax > info.barMin and 100 * (value - info.barMin) / (info.barMax - info.barMin) or 100
+                    AddLine(entry, string.format("%s  %d/%d", info.text, value, goal), value == info.barMax, percent)
+                end
+            end
+        end
+    end
+end
+
+-- Only discover the top-center set while a valid scenario is being collected.
+-- Reuse the stage snapshot; a native Delve header already displays that set.
+local function ScenarioWidgets(entry, c)
+    local self, manager = O.M, C_UIWidgetManager
+    local widgets
+    entry.timeLeft, entry.scenarioHeaderSetID, widgets = ScenarioWidgetState(self.scenarioWidgetSetID, c.showTimers ~= false)
+    local seen = self.scenarioProgressWidgets
+    for id in pairs(seen) do seen[id] = nil end
+    if entry.scenarioHeaderSetID then
+        for i = 1, #widgets do
+            local widget = widgets[i]
+            if Public(widget) and type(widget) == "table" and Finite(widget.widgetID) then seen[widget.widgetID] = true end
+        end
+    else
+        ScenarioProgress(entry, widgets, seen)
+    end
+    local top = Read(manager.GetTopCenterWidgetSetID)
+    self.scenarioTopWidgetSetID = Finite(top) and top > 0 and top or nil
+    if self.scenarioTopWidgetSetID and top ~= self.scenarioWidgetSetID then
+        ScenarioProgress(entry, Read(manager.GetAllWidgetsBySetID, top), seen)
+    end
 end
 
 local function ScenarioPercent(value)
@@ -331,7 +393,7 @@ local function CollectScenario(list, c)
         percent and not separateDetail and percent or nil)
     if separateDetail then AddLine(entry, detail .. (percent and "  " .. percentText or ""), false, percent) end
     local criteriaInfo = C_ScenarioInfo.GetCriteriaInfo
-    entry.timeLeft, entry.scenarioHeaderSetID = ScenarioWidgetState(O.M.scenarioWidgetSetID, c.showTimers ~= false)
+    ScenarioWidgets(entry, c)
     -- A step-wide progress bar replaces its individual criteria in Blizzard's tracker.
     if percent or not Finite(criteriaCount) then return end
     for i = 1, criteriaCount do
@@ -368,7 +430,7 @@ local COLLECTORS = {
     bonus = function(list, c) if c.showBonus then CollectBonus(list, c) end end,
     achievements = function(list, c) if c.showAchievements then CollectAchievements(list) end end,
     scenario = function(list, c)
-        O.M.scenarioWidgetSetID = nil
+        O.M.scenarioWidgetSetID, O.M.scenarioTopWidgetSetID = nil, nil
         if c.showScenario then CollectScenario(list, c) end
     end,
 }

@@ -206,7 +206,7 @@ local function Event(self, event, ...)
     if event == "UPDATE_UI_WIDGET" then
         local widget = ...
         if Public(widget) and type(widget) == "table" and Finite(widget.widgetSetID)
-            and widget.widgetSetID == self.scenarioWidgetSetID then
+            and (widget.widgetSetID == self.scenarioWidgetSetID or widget.widgetSetID == self.scenarioTopWidgetSetID) then
             Request(self, "scenario")
         end
         return
@@ -440,6 +440,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    self.scenarioWidgetSetID, self.scenarioTopWidgetSetID = nil, nil
     O.UpdateQuestItem(self, true)
     if MythicPlus then MythicPlus.Stop(self) end
     if Raid then Raid.Stop(self) end
