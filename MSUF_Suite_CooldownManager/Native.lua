@@ -103,7 +103,10 @@ end
 local silenced = setmetatable({}, { __mode = "k" })
 local timerHooks = setmetatable({}, { __mode = "k" })
 local function SourceHook(item)
-    if active and M.active and Timers.NeedsSources() then Timers.Source(item) end
+    if active and M.active and Timers.NeedsSources() then
+        Timers.Source(item)
+        Timers.SourceBar(item, true)
+    end
 end
 local function WatchTimer(item)
     if not Timers.NeedsSources() or timerHooks[item] then return end
@@ -111,7 +114,21 @@ local function WatchTimer(item)
     local refresh = item.RefreshTotemData
     if not Public(refresh) or refresh == nil then return end
     timerHooks[item] = true
-    hooksecurefunc(item, "RefreshTotemData", SourceHook)
+    hooksecurefunc(item, "RefreshTotemData", function() SourceHook(item) end)
+    local bar, update = item.Bar, item.RefreshCooldownInfo
+    if Public(bar) and type(bar) == "table" and Public(update) and update ~= nil then
+        -- Capture the public acquisition reference: callback self may become
+        -- secret through Blizzard's internal maps. No addon tick is registered.
+        local function Mirror()
+            if active and M.active and Timers.NeedsSources() then Timers.SourceBar(item) end
+        end
+        local function BindMirror()
+            if active and M.active and Timers.NeedsSources() then Timers.SourceBar(item, true) end
+        end
+        hooksecurefunc(item, "RefreshCooldownInfo", Mirror)
+        hooksecurefunc(item, "OnActiveStateChanged", BindMirror)
+        hooksecurefunc(item, "ResetCooldownData", BindMirror)
+    end
 end
 local function Mute(viewer, item)
     item:EnableMouse(false)
@@ -162,6 +179,7 @@ local function SeedTimerSources(viewer, ...)
             if Public(index) and type(index) == "number" then
                 WatchTimer(item)
                 Timers.Source(item)
+                Timers.SourceBar(item, true)
             end
         end
     end

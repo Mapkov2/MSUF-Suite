@@ -3361,6 +3361,144 @@ do (function()
     assert(nativeCrane.active and aliasCrane.active and not nativeDragon.active
         and nativeCrane.binding.duration==totems[1].object and aliasCrane.binding.duration==totems[1].object,
         "both default Chi-Ji choices use the same native instance clock")
+    -- Blizzard may draw an active bar without exposing a usable totem record.
+    -- Model its native widget values (not an invented duration object), with
+    -- every payload opaque and its own timer text disabled.
+    R[nativeCrane.gate].scripts.OnCooldownDone(nativeCrane.gate)
+    R[aliasCrane.gate].scripts.OnCooldownDone(aliasCrane.gate)
+    local nativeBar=New("StatusBar")
+    local min,max,value=Secret(),Secret(),Secret()
+    R[nativeBar].min,R[nativeBar].max,R[nativeBar].value=min,max,value
+    function Methods:GetMinMaxValues() return R[self].min,R[self].max end
+    function Methods:GetValue() return R[self].value end
+    Methods.SetFormattedText=Record("SetFormattedText")
+    local recordAlpha,recordBoolean=Methods.SetAlpha,Record("SetAlphaFromBoolean")
+    Methods.SetAlpha=function(self,v) R[self].alpha=v;recordAlpha(self,v) end
+    Methods.SetAlphaFromBoolean=function(self,v,a,b) R[self].alpha=v;recordBoolean(self,v,a,b) end
+    local fields={cooldownID=701,totemData=Secret(),Bar=nativeBar,isActive=Secret()}
+    local mirrored=Source(fields)
+    local slotsBefore=reads
+    T.Source(mirrored);T.SourceBar(mirrored,true)
+    assert(nativeCrane.active and aliasCrane.active and nativeCrane.mirror==mirrored
+        and aliasCrane.mirror==mirrored,"both Chi-Ji choices mirror a native bar with unreadable totem identity")
+    assert(rawequal(Args(nativeCrane.frame.part.bar,"SetMinMaxValues")[1],min)
+        and rawequal(Args(nativeCrane.frame.part.bar,"SetMinMaxValues")[2],max)
+        and rawequal(Args(nativeCrane.frame.part.bar,"SetValue")[1],value),"opaque native range/value reach only C sinks")
+    assert(rawequal(Args(nativeCrane.frame.part.dur,"SetFormattedText")[2],value)
+        and rawequal(Args(nativeCrane.frame,"SetAlphaFromBoolean")[1],fields.isActive),
+        "timer text ignores Blizzard's hidden text; protected activity reaches the alpha sink")
+    assert(not nativeCrane.binding.calls.SetEnabled and not R[nativeCrane.gate].duration and reads==slotsBefore,
+        "native mirror disables competing clock owners and performs no totem queries")
+    -- Native sinks retain payloads without constructing Lua argument tables.
+    -- The hot path shares two widget reads across both user-selected rows.
+    local rangeSink,valueSink,textSink,alphaSink=Methods.SetMinMaxValues,Methods.SetValue,
+        Methods.SetFormattedText,Methods.SetAlphaFromBoolean
+    local rangeGetter,valueGetter=Methods.GetMinMaxValues,Methods.GetValue
+    local rangeReads,valueReads,sinkCalls=0,0,0
+    Methods.GetMinMaxValues=function(self) rangeReads=rangeReads+1;return rangeGetter(self) end
+    Methods.GetValue=function(self) valueReads=valueReads+1;return valueGetter(self) end
+    Methods.SetMinMaxValues=function(self,a,b) R[self].mirrorMin,R[self].mirrorMax=a,b;sinkCalls=sinkCalls+1 end
+    Methods.SetValue=function(self,a) R[self].mirrorValue=a;sinkCalls=sinkCalls+1 end
+    Methods.SetFormattedText=function(self,fmt,a) R[self].mirrorText=a;sinkCalls=sinkCalls+1 end
+    Methods.SetAlphaFromBoolean=function(self,a) R[self].mirrorAlpha=a;sinkCalls=sinkCalls+1 end
+    local beforeFrames,beforeTimers=tally.made,timerCount
+    collectgarbage("collect");collectgarbage("stop")
+    local beforeKB=collectgarbage("count")
+    for i=1,1000 do T.SourceBar(mirrored) end
+    local mirrorKB=collectgarbage("count")-beforeKB
+    collectgarbage("restart")
+    assert(mirrorKB<1 and tally.made==beforeFrames and timerCount==beforeTimers,
+        "native bar forwarding allocates no Lua memory, widgets or timers: "..mirrorKB.." KB")
+    assert(rangeReads==1000 and valueReads==1000 and sinkCalls==8000 and reads==slotsBefore,
+        "native bar forwarding shares its two C reads and uses four sinks per mirrored row")
+    Methods.SetMinMaxValues,Methods.SetValue,Methods.SetFormattedText,Methods.SetAlphaFromBoolean=
+        rangeSink,valueSink,textSink,alphaSink
+    Methods.GetMinMaxValues,Methods.GetValue=rangeGetter,valueGetter
+    R[nativeCrane.gate].scripts.OnCooldownDone(nativeCrane.gate)
+    assert(nativeCrane.active,"a stale clock completion cannot stop a native mirror")
+    fields.isActive=false;T.SourceBar(mirrored)
+    assert(not nativeCrane.active and not aliasCrane.active,"native inactive edge retires its own mirrors")
+    fields.isActive=true;T.SourceBar(mirrored,true)
+    fields.cooldownID=703;T.SourceBar(mirrored,true)
+    assert(not nativeCrane.active and not aliasCrane.active,"pooled source reassignment retires former mirrors")
+    fields.cooldownID=701;T.SourceBar(mirrored,true)
+    fields.cooldownID=nil;T.SourceBar(mirrored,true)
+    assert(not nativeCrane.active,"pool reset retires the mirror before reuse")
+    C.Catalog.records[704]={spell=406220}
+    fields.cooldownID=704;T.SourceBar(mirrored,true)
+    assert(not nativeCrane.active and not aliasCrane.active,
+        "a permanent native aura-alias bar cannot impersonate the actual summon clock")
+    C.Catalog.records[705]={spell=325197}
+    fields.cooldownID,fields.cooldownInfo=705,{linkedSpellID=406220}
+    T.SourceBar(mirrored,true)
+    assert(nativeCrane.active and aliasCrane.active,
+        "a real Invoke Chi-Ji source remains eligible when its dynamic appearance names the aura alias")
+    fields.cooldownInfo=nil
+    -- Native dynamic/tooltip identity has precedence over the base talent.
+    C.Catalog.records[701]={spell=322118,tooltip=325197}
+    blizzard.spell,blizzard.tooltip=322118,325197
+    Plan("bar",3,{blizzard,chi,yu});A.Sync("bar")
+    fields.cooldownID=701;T.SourceBar(mirrored,true)
+    assert(nativeCrane.cast==325197 and nativeCrane.active and aliasCrane.active and not nativeDragon.active,
+        "native tooltip override cannot incorrectly route to Yu'lon")
+    fields.GetSpellID=function() error("addon code must not invoke native Lua secret branches") end
+    fields.cooldownInfo={linkedSpellID=325197}
+    C.Catalog.records[701]={spell=322118,linked={325197}}
+    T.SourceBar(mirrored,true)
+    assert(aliasCrane.active,"public native linked identity selects the current summon")
+    fields.cooldownInfo={linkedSpellID=Secret()}
+    C.Catalog.records[701]={spell=322118,override=325197}
+    blizzard.spell,blizzard.tooltip=325197,nil
+    T.SourceBar(mirrored,true)
+    assert(aliasCrane.active,"protected native identity uses only copied public catalog metadata")
+    -- A settings/route rebuild can happen before Native.Apply may seed again
+    -- (notably in combat). Cached callbacks must use the new route generation.
+    Plan("bar",3,{spirit,chi,yu});A.Sync("bar")
+    T.SourceBar(mirrored)
+    assert(not nativeCrane.active and not nativeCrane.frame:IsShown() and aliasCrane.active,
+        "a cached native callback cannot resurrect a removed consumer while another remains")
+    Plan("bar",3,{yu,chi});A.Sync("bar")
+    local recycled=Timer(1)
+    assert(recycled==nativeCrane and recycled.cast==322118,"fixture reuses the released frame for Yu'lon")
+    T.SourceBar(mirrored)
+    assert(not recycled.active and aliasCrane.active,"old Chi-Ji routes cannot paint a pooled Yu'lon row")
+    Plan("bar",3,{blizzard,chi,yu});A.Sync("bar")
+    nativeCrane,aliasCrane,nativeDragon=Timer(1),Timer(2),Timer(3)
+    T.SourceBar(mirrored)
+    assert(nativeCrane.active and aliasCrane.active and not nativeDragon.active,
+        "a generation change seeds the current native values without waiting for protected viewer writes")
+    -- Visibility/settings replay keeps source time; a usable native duration
+    -- takes back clock ownership and restores the public alpha.
+    C.state.preview=true;T.SetPreview();T.SourceBar(mirrored)
+    assert(not aliasCrane.frame:IsShown(),"preview masks native mirrors")
+    C.state.preview=false;T.SetPreview()
+    assert(aliasCrane.frame:IsShown(),"preview exit retains the active mirror")
+    T.Source(source)
+    assert(not nativeCrane.mirror and nativeCrane.binding.duration==totems[1].object
+        and R[nativeCrane.frame].alpha==1,"a duration object restores the native clock and alpha")
+    Methods.SetAlpha=recordAlpha
+    T.SourceBar(source,true)
+    local catalogReads=0
+    local records=C.Catalog.records
+    C.Catalog.records=setmetatable({}, {__index=function() catalogReads=catalogReads+1;error("hot catalog lookup") end})
+    T.SourceBar(source);T.SourceBar(mirrored)
+    C.Catalog.records=records
+    assert(catalogReads==0,"hot source callbacks never inspect the catalog, including working clock owners")
+    T.SourceBar(mirrored,true)
+    R[nativeCrane.gate].scripts.OnCooldownDone(nativeCrane.gate)
+    R[aliasCrane.gate].scripts.OnCooldownDone(aliasCrane.gate)
+    T.SourceBar(mirrored)
+    assert(nativeCrane.mirror==mirrored and aliasCrane.mirror==mirrored,
+        "completion from an icon's engine clock wakes the separate native buff-bar fallback")
+    fields.totemData=nativeData
+    T.Source(mirrored);T.SourceBar(mirrored,true)
+    assert(not nativeCrane.mirror and nativeCrane.source==mirrored,"same native item temporarily regains an engine clock")
+    fields.totemData=Secret()
+    R[nativeCrane.gate].scripts.OnCooldownDone(nativeCrane.gate)
+    T.SourceBar(mirrored)
+    assert(nativeCrane.active and nativeCrane.mirror==mirrored,
+        "an expired engine clock can fall back to a still-active native bar without a new activity edge")
+    T.Source(source)
     R[aliasCrane.gate].scripts.OnCooldownDone(aliasCrane.gate)
     -- A catalog/entry refill after removing the talent drops the override.
     C.Catalog.records[701].override=nil

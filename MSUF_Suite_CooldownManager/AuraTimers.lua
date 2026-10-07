@@ -11,6 +11,7 @@ C.AuraTimers = Timers
 local CAST = { [325197] = 325197, [406220] = 325197, [322118] = 322118, [389422] = 322118 }
 local rows, routes, hidden, pool, slots = {}, {}, {}, {}, {}
 local manualRoutes, castStates = {}, {}
+local barSources = setmetatable({}, { __mode = "k" })
 Timers.slots = slots
 local serial, emptyDuration, sourceWanted = 0, nil, false
 Timers.generation = 0
@@ -20,7 +21,7 @@ local immediate = Enum.StatusBarInterpolation.Immediate
 
 local function Summon(entry)
     -- Follow the current talent override, as Blizzard's GetSpellID does.
-    local id = CAST[entry.spell] or CAST[entry.base]
+    local id = CAST[entry.tooltip] or CAST[entry.spell] or CAST[entry.base]
     if id then return id end
     for spell in pairs(entry.auraIDs or C.EMPTY) do
         id = CAST[spell]
@@ -58,8 +59,11 @@ local function Show(row)
 end
 
 local function Stop(row)
-    row.active, row.totemSlot, row.shown, row.source = false, nil, false, nil
+    local source = barSources[row.barSource or row.source]
+    if source then source.generation = nil end
+    row.active, row.totemSlot, row.shown, row.source, row.mirror, row.barSource = false, nil, false, nil, nil, nil
     row.frame:Hide()
+    row.frame:SetAlpha(1)
     row.binding:SetEnabled(false)
     row.gate:Clear()
     if not emptyDuration then
@@ -72,10 +76,11 @@ end
 
 local function Done(gate)
     local row = gate.timerRow
-    if row.active then Stop(row) end
+    if row.active and not row.mirror then Stop(row) end
 end
 
 local function Paint(row, duration)
+    if row.mirror then row.frame:SetAlpha(1) row.mirror = nil end
     row.duration, row.active = duration, true
     row.binding:SetDuration(duration)
     row.binding:SetEnabled(row.time == true)
@@ -156,13 +161,27 @@ end
 -- before this observer runs. GetTotemInfo/UNIT_SPELLCAST_SUCCEEDED may hide
 -- spell identity throughout M+, so route by our cold catalog instead.
 -- Read native records only; their spellID and haveTotem are never inspected.
-function Timers.Source(item)
-    if not Public(item) or type(item) ~= "table" then return end
+local function SourceRows(item)
     local id = item.cooldownID
     if not Public(id) or type(id) ~= "number" then return end
     local rec = C.Catalog.records[id]
-    local cast = rec and (CAST[rec.override] or CAST[rec.spell])
-    local list = cast and routes[cast]
+    if not rec then return end
+    local spell
+    local info = item.cooldownInfo
+    if Public(info) and type(info) == "table" then
+        local linked = info.linkedSpellID
+        if Public(linked) and CAST[linked] then spell = linked end
+    end
+    if not spell then
+        spell = CAST[rec.tooltip] and rec.tooltip or CAST[rec.override] and rec.override or rec.spell
+    end
+    local cast = CAST[spell]
+    return cast and routes[cast], cast ~= nil and (spell == cast or rec.tooltip == cast or rec.override == cast or rec.spell == cast)
+end
+
+function Timers.Source(item)
+    if not Public(item) or type(item) ~= "table" then return end
+    local list = SourceRows(item)
     if not list then return end
     local data = item.totemData
     if not Public(data) then return end
@@ -196,6 +215,71 @@ function Timers.Source(item)
         end
         Paint(row, object)
     end
+end
+
+local function RetireBar(item, list)
+    for i = 1, #(list or C.EMPTY) do
+        local row = list[i]
+        if row.mirror == item then Stop(row) end
+    end
+end
+
+-- A native buff bar can have a usable clock even when the totem association
+-- is unreadable. Forward its existing writes, never reconstruct secret time.
+-- This fallback follows Blizzard's draining fill and integer timer; duration
+-- objects above retain Suite's elapsed fill and countdown formatting.
+function Timers.SourceBar(item, bind)
+    if not Public(item) or type(item) ~= "table" then return end
+    local bar = item.Bar
+    if not Public(bar) or type(bar) ~= "table" then return end
+    local source = barSources[item]
+    if not source then
+        if not bind then return end
+        source = {}
+        barSources[item] = source
+    elseif source.generation ~= Timers.generation then
+        bind = true
+    end
+    local list = source.list
+    if bind then
+        local current, summon = SourceRows(item)
+        -- Aura aliases are consumers of the summon clock, not native summon
+        -- sources: a permanent Chi Cocoon bar must not become that clock.
+        if not summon then current = nil end
+        if list ~= current then RetireBar(item, list) end
+        list = current
+        source.list, source.generation = list, Timers.generation
+    end
+    if not list then return end
+    local active = item.isActive
+    if Public(active) and active ~= true then
+        RetireBar(item, list)
+        source.list = nil
+        return
+    end
+    local needed = false
+    local minimum, maximum = bar:GetMinMaxValues()
+    local value = bar:GetValue()
+    for i = 1, #list do
+        local row = list[i]
+        -- A working duration object or explicit manual duration owns its row.
+        -- An inactive duplicate never takes an existing clock away.
+        if row.seconds == 0 then row.barSource = item end
+        if row.seconds == 0 and (not row.active or row.mirror == item) then
+            needed = true
+            if row.mirror ~= item then
+                Stop(row)
+                row.active, row.source, row.mirror, row.barSource = true, item, item, item
+            end
+            local part = row.frame.part
+            part.bar:SetMinMaxValues(minimum, maximum)
+            part.bar:SetValue(value, immediate)
+            if row.time then part.dur:SetFormattedText("%.0f", value) end
+            row.frame:SetAlphaFromBoolean(active, 1, 0)
+            Show(row)
+        end
+    end
+    source.list = needed and list or nil
 end
 
 -- One public slot read per PLAYER_TOTEM_UPDATE. All identities are guarded
@@ -349,6 +433,7 @@ function Timers.ReleaseAll()
     C.wipe(castStates)
     C.wipe(hidden)
     C.wipe(slots)
+    C.wipe(barSources)
     sourceWanted = false
     Timers.hasManual = false
     Timers.generation = Timers.generation + 1

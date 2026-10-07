@@ -281,9 +281,10 @@ for _,name in ipairs(FILES) do
     for hooked in code:gmatch('hooksecurefunc%(%s*[%w_]+%s*,%s*"([%w_]+)"') do
         count=count+1
         assert(name=="Native" and (hooked=="SetAlpha" or hooked=="OnAcquireItemFrame" or hooked=="ApplySettings"
-            or hooked=="RefreshTotemData"),"hook not allowed: "..hooked)
+            or hooked=="RefreshTotemData" or hooked=="RefreshCooldownInfo"
+            or hooked=="OnActiveStateChanged" or hooked=="ResetCooldownData"),"hook not allowed: "..hooked)
     end
-    assert(count==(name=="Native" and 4 or 0),"unexpected hook count in "..name)
+    assert(count==(name=="Native" and 7 or 0),"unexpected hook count in "..name)
 end
 
 ------------------------------------------------------------------ views and plans

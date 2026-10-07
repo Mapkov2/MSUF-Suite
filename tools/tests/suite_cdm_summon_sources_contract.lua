@@ -51,11 +51,17 @@ for _,name in ipairs({"EssentialCooldownViewer","UtilityCooldownViewer","BuffIco
     _G[name]=f;viewers[#viewers+1]=f
 end
 local existing=Frame({layoutIndex=1,cooldownID=701,totemData={slot=1,spellID={secret=true}},
-    RefreshTotemData=function() end})
+    Bar=Frame(),RefreshTotemData=function() end,RefreshCooldownInfo=function() end,
+    OnActiveStateChanged=function() end,ResetCooldownData=function() end})
 state[viewers[1]].children[1]=existing
 local T={generation=0,NeedsSources=function() return wanted end}
 function T.Source(f)
     if f.cooldownID==701 then sourceCalls=sourceCalls+1 end
+end
+local mirrorCalls,later=0,nil
+function T.SourceBar(f)
+    assert(f==existing or f==later,"observer must retain its public acquisition reference")
+    mirrorCalls=mirrorCalls+1
 end
 local C={M=M,AuraTimers=T,Const={BLIZZARD={OFF=1,INVISIBLE=2}},Layout={MSUFAnchor=function() return false,false end}}
 local P={CDM=C,Suite=S,NS={CDM={KEYS={}},Safety={IsForbidden=function() return false end},
@@ -68,6 +74,14 @@ wanted,T.generation=true,1
 N.Apply()
 assert(N.Mode()==2 and cvar=="1" and sourceCalls==1,"summon sources must be enabled and seeded after route creation")
 assert(M.config.blizzard==1,"native source requirement cannot mutate saved mode")
+assert(callbacks[existing].RefreshCooldownInfo and callbacks[existing].OnActiveStateChanged
+    and callbacks[existing].ResetCooldownData,"native bar lifecycle observers are installed at acquisition")
+local beforeMirror=mirrorCalls
+callbacks[existing].RefreshCooldownInfo({secret=true})
+assert(mirrorCalls==beforeMirror+1,"a protected callback self cannot hide the acquired source reference")
+local beforeSource=sourceCalls
+callbacks[existing].RefreshTotemData({secret=true})
+assert(sourceCalls==beforeSource+1,"totem association also retains its public acquisition reference")
 for _,f in ipairs(viewers) do assert(state[f].alpha==0,"native source viewers remain invisible") end
 local hooks,reads,calls,changed=hookCount,childReads,sourceCalls,writes
 for i=1,1000 do N.Apply() end
@@ -75,7 +89,7 @@ assert(hookCount==hooks and childReads==reads and sourceCalls==calls and writes=
     "unchanged source requirement repeats no hook, child scan, seed or CVar write")
 Call(existing,"RefreshTotemData")
 assert(sourceCalls==calls+1,"native refresh forwards its already associated slot")
-local later=Frame({layoutIndex=2,RefreshTotemData=function() end})
+later=Frame({layoutIndex=2,RefreshTotemData=function() end})
 Call(viewers[1],"OnAcquireItemFrame",later)
 assert(callbacks[later].RefreshTotemData,"acquire precedes cooldownID assignment, so source hook cannot depend on ID yet")
 state[later].cooldownID=701
@@ -94,6 +108,8 @@ wanted=false;T.generation=3;N.Apply()
 assert(cvar=="0" and N.Mode()==1,"removing the last summon releases the CVar")
 calls=sourceCalls;Call(existing,"RefreshTotemData")
 assert(sourceCalls==calls,"native source observers are inert without consumers")
+beforeMirror=mirrorCalls;Call(existing,"RefreshCooldownInfo")
+assert(mirrorCalls==beforeMirror,"native bar observers are inert without consumers")
 M.config.blizzard=2;N.Apply()
 assert(cvar=="0" and state[viewers[1]].alpha==0,"explicit invisible mode preserves originally-off CVar")
 wanted=true;T.generation=4;N.Apply()
@@ -102,6 +118,8 @@ N.Release()
 assert(cvar=="0" and saved==nil,"release restores originally-off CVar")
 calls=sourceCalls;Call(existing,"RefreshTotemData")
 assert(sourceCalls==calls,"release leaves source observers inert")
+beforeMirror=mirrorCalls;Call(existing,"OnActiveStateChanged")
+assert(mirrorCalls==beforeMirror,"release leaves native bar observers inert")
 for _,f in ipairs(viewers) do assert(state[f].alpha==1,"release restores native viewer alpha") end
 N.Apply()
 assert(sourceCalls==calls+1,"re-enable seeds an existing mid-cast source")
