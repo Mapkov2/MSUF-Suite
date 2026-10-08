@@ -596,6 +596,7 @@ function S.Reset(id)
     db.modules[id] = NS.CopyValue(NS.Defaults.suite.modules[id])
     if type(db.moduleLooks) == "table" then db.moduleLooks[id] = nil end
     local config = S.Config(id)
+    if id == "cooldownManager" then config.defaultsVersion = NS.CDM.DEFAULTS_VERSION end
     if config.enabled then AdoptLook(db, id, config) end
     S.states[id].error = nil
     S.Apply(id)

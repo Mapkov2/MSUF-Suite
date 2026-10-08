@@ -191,6 +191,11 @@ B.Section('dataTexts', 'sources', 'Additional data sources', {
     Bool('showTokenPrice', 'Show the native WoW Token market price in Gold tooltips', false),
 })
 
+for _, key in ipairs({ "itemLevelEquipped", "itemLevelDecimals", "crestCurrencies", "crestMode",
+    "crestCurrencyIDs", "crestSeparator", "showTokenPrice" }) do
+    NS.SuiteCatalog.dataTexts.rules[key].hidden = not NS.Client.modernEquipment or nil
+end
+
 -- Settings are copied from the shared style when an override is switched on.
 local function AddBarStyle(bar)
     local prefix, section = "bar" .. bar, "bar" .. bar .. "Style"

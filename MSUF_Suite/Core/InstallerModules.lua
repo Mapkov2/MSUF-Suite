@@ -12,6 +12,9 @@ local function ModuleRow(parent, id, panel, label, toggle)
     card.label:SetText(Text((Suite.SuiteCatalog[id] and Suite.SuiteCatalog[id].title) or id))
     card.state = label(card, "GameFontNormalSmall", 198, -4, 42, 16)
     card.state:SetJustifyH("RIGHT")
+    card.focus = label(card, "GameFontNormalSmall", 0, -4, 8, 16, "section")
+    card.focus:SetText(">")
+    card.focus:Hide()
     card:SetScript("OnClick", function() toggle(id) end)
     card:SetScript("OnEnter", function(self)
         local spec = Suite.SuiteCatalog[id]
@@ -43,14 +46,33 @@ function List.Show(window, shown)
     local perColumn = math.ceil(#group / 2)
     local content = scroll:GetScrollChild()
     content:SetSize(508, math.max(172, perColumn * 25))
-    for _, row in ipairs(window.moduleRows) do row:Hide() end
+    for _, row in ipairs(window.moduleRows) do
+        row:Hide()
+        row.focus:SetShown(shown and row.id == window.moduleFocus)
+    end
     for index, row in ipairs(group) do
         local column = index > perColumn and 1 or 0
         local line = column == 0 and index - 1 or index - perColumn - 1
         row:ClearAllPoints()
         row:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", column * 258, content:GetHeight() - 22 - line * 25)
         row:SetShown(shown)
+        if shown and window.moduleFocusPending and row.id == window.moduleFocus then
+            scroll:SetVerticalScroll(math.min(line * 25, math.max(0, content:GetHeight() - scroll:GetHeight())))
+            window.moduleFocusPending = nil
+        end
     end
+end
+
+function List.Focus(window, id)
+    for key, group in pairs(window.moduleGroups) do
+        for _, row in ipairs(group) do
+            if row.id == id then
+                window.moduleTab, window.moduleFocus, window.moduleFocusPending = key, id, true
+                return true
+            end
+        end
+    end
+    return false
 end
 
 function List.Build(window, panel, label, navButton, style, toggle)

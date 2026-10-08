@@ -135,6 +135,8 @@ rules.spellIDs.spells = true
 rules.mainHandItem.items = true
 rules.offHandItem.items = true
 rules.mapPotionItem.items = true
+rules.keystoneCover.hidden = NS.Client.isForever or nil
+rules.keystoneMinutes.hidden = NS.Client.isForever or nil
 rules.keystoneMinutes.requiresChoice = { key = "keystoneCover", values = { [3] = true } }
 for _, key in ipairs({ "flaskChoice", "foodChoice", "runeChoice", "oilChoice" }) do
     rules[key].items = true

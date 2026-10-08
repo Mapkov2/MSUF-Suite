@@ -99,6 +99,9 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     SlashCmdList = {}
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerAppearance.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreviewModel.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreview.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", owner)
     local maybeShow = owner.Installer.MaybeShow
     owner.Installer.MaybeShow = function(reason)

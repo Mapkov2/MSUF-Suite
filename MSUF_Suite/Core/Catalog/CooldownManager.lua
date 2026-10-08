@@ -465,6 +465,10 @@ local function CleanSpecs(data, out)
                                 clean[#clean + 1] = key
                             end
                         end
+                        -- Cross-spec additions inherit that spec's live defaults.
+                        -- A manual reorder/import materializes an ordinary list.
+                        if list.inherit == true and (slotKey == "ess" or slotKey == "uti"
+                            or slotKey == "buf" or slotKey == "bar") then clean.inherit = true end
                         cleanSlots[slotKey] = clean
                         any = true
                     end

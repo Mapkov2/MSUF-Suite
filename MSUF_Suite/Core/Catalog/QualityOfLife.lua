@@ -345,6 +345,11 @@ B.Module("guildChatPrivacy", {
         return true
     end,
 })
+B.Section("guildChatPrivacy", "guild_privacy", "Guild chat privacy cover", {
+    Choice("revealClick", "Reveal the chat with", 2,
+        { "Left-click", "Ctrl + left-click", "Shift + left-click", "Alt + left-click" }),
+    Bool("communities", "Also cover the guild chat in the Guild & Communities window", true),
+})
 
 B.Module("uiErrorFilter", {
     title = "Quiet repeated errors",

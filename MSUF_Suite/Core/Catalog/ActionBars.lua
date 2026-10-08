@@ -279,6 +279,7 @@ end
 
 local rules = NS.SuiteCatalog.actionbars.rules
 rules.imported.hidden = true
+rules.disableSkyridingPaging.hidden = NS.Client.isForever or nil
 rules.borderColor.disabledBy = "borderClassColor"
 rules.interactionColor.disabledBy = "interactionClassColor"
 rules.rangeColor.enableKey = "rangeColoring"

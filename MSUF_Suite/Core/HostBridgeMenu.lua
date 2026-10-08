@@ -144,4 +144,90 @@ function HostBridge.Menu2(M)
     return adapter
 end
 
+-- Installer chrome can open before the load-on-demand options. Resolve at
+-- paint time: caching an absent Menu2 would miss the menu loaded later.
+function HostBridge.MenuAppearance()
+    local menu = _G.MSUF2
+    if type(menu) == "table" and type(menu.Theme) == "table" then return menu.Theme end
+    local ui = _G.MSUF_UI
+    return type(ui) == "table" and ui or nil
+end
+
+-- Core shared UI and Menu2 have different public renderer sets; older
+-- hosts may expose only colors. Keep those capabilities at this boundary,
+-- resolving on each cold paint so a late Options load can provide them.
+local function AppearanceAction(theme, name)
+    local action = theme and theme[name]
+    if type(action) == "function" then return action end
+end
+
+function HostBridge.MenuColor(token, alternate)
+    local theme = HostBridge.MenuAppearance()
+    local colors = theme and theme.colors
+    local color = colors and (colors[token] or colors[alternate])
+    local get = AppearanceAction(theme, "Color")
+    return color or (get and get(token))
+end
+
+function HostBridge.MenuMaterial(frame, material)
+    local apply = AppearanceAction(HostBridge.MenuAppearance(), "ApplyMaterial")
+    if not apply then return false end
+    apply(frame, material)
+    return true
+end
+
+function HostBridge.MenuButton(parent, width, height)
+    local create = AppearanceAction(HostBridge.MenuAppearance(), "Button")
+    return create and create(parent, "", width, height) or nil
+end
+
+function HostBridge.MenuFont(label, color, role)
+    local theme = HostBridge.MenuAppearance()
+    local style = AppearanceAction(theme, "StyleFontString")
+    if style then
+        style(label, color, nil, role)
+        return true
+    end
+    local apply = AppearanceAction(theme, "ApplyFontRole")
+    if apply then apply(label, role, nil, "") end
+    return false
+end
+
+-- Public UI buttons own their hover/selection painter and the skin's
+-- corresponding control material. The label's legacy fields stay here.
+function HostBridge.MenuButtonLabel(button)
+    local menu = _G.MSUF2
+    local get = type(menu) == "table" and menu.GetControlLabel
+    return type(get) == "function" and get(button) or button._msuf2Label or button._label
+end
+
+local appearanceListeners = setmetatable({}, { __mode = "k" })
+function HostBridge.WatchMenuAppearance(owner, callback)
+    local watched = appearanceListeners[owner]
+    if not watched then
+        watched = {}
+        appearanceListeners[owner] = watched
+    end
+    -- The already loaded skin's public listener signals look, palette and
+    -- profile changes on both cold shared UI and the loaded Menu2.
+    -- Querying its API neither loads the optional addon nor activates it.
+    local skin = _G.MapkoSkin
+    if type(skin) ~= "table" or type(skin.GetAPI) ~= "function" then return end
+    local api = skin.GetAPI(2, 1)
+    if type(api) == "table" and type(api.OnAppearanceChanged) == "function" then
+        if not watched[api] then
+            -- OnAppearanceChanged follows the skin's queued palette changes.
+            -- The view coalesces repaint after core listeners finish too.
+            hooksecurefunc(api, "OnAppearanceChanged", callback)
+            watched[api] = true
+        end
+        return
+    end
+    api = skin.GetAPI(1, 0)
+    if type(api) == "table" and type(api.OnThemeChanged) == "function" and not watched[api] then
+        api.OnThemeChanged(owner, callback)
+        watched[api] = true
+    end
+end
+
 return HostBridge

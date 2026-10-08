@@ -278,6 +278,7 @@ end
 local Lifecycle = {}
 
 function Lifecycle.create(source, _, skin)
+    if DB.GetProfile(source) or skin and skin.Database.GetProfile(source) then return false, "profile-exists" end
     if not DB.GetProfile(source) then DB.Create(source, false) end
     if skin and not skin.Database.GetProfile(source) then skin.Database.CreateProfile(source, false) end
     return true
@@ -300,6 +301,7 @@ function Lifecycle.reset(source, _, skin)
 end
 
 function Lifecycle.copy(source, target, skin)
+    if DB.GetProfile(target) or skin and skin.Database.GetProfile(target) then return false, "profile-exists" end
     if not DB.GetProfile(target) then
         -- An MSUF profile from before the Suite was installed has no Suite
         -- twin yet; its copy starts from the factory like a new profile.
@@ -375,7 +377,7 @@ function P.OnLifecycle(kind, source, target)
     local handler = Lifecycle[kind]
     -- A rename names one new profile: an old name the Suite cannot store (an
     -- over-long name from older MSUF builds) has nothing here to move.
-    if not handler or kind ~= "rename" and not DB.IsProfileName(source)
+    if not handler or kind ~= "rename" and kind ~= "copy" and not DB.IsProfileName(source)
         or WITH_TARGET[kind] and not DB.IsProfileName(target) then
         return false, "invalid-profile-name"
     end
@@ -561,7 +563,19 @@ end
 local function PrepareActive()
     local source, why = Suite.ProfileVariants.BaseProfile(DB.GetActiveProfileName())
     if not source then return nil, why end
-    return IO.PrepareTable(source, false)
+    local profile, reason = IO.PrepareTable(source, false)
+    if not profile then return nil, reason end
+    local state = source.suite.moduleState
+    for id, keys in pairs(DB.PROFILE_LAYOUT_STATE) do
+        local original = state and state[id]
+        if original then
+            profile.suite.moduleState = profile.suite.moduleState or {}
+            local layout = {}
+            profile.suite.moduleState[id] = layout
+            for i = 1, #keys do layout[keys[i]] = Suite.CopyValue(original[keys[i]]) end
+        end
+    end
+    return profile
 end
 
 function P.SaveAs(name)
@@ -619,6 +633,7 @@ function P.InstallFactory(name, frames, modules, skinText, lookName, finish, opt
     end
     local profile, why = IO.PrepareTable(modules, false)
     if not profile then return false, why end
+    DB.PrepareFactory(profile)
     local skin = SkinEngine()
     local skinProfile
     if skin then
@@ -647,6 +662,7 @@ function P.InstallSuiteFactory(name, modules, skinText, lookName, finish, option
     if not DB.IsProfileName(name) then return false, "MSUF profile unavailable" end
     local profile, reason = IO.PrepareTable(modules, false)
     if not profile then return false, reason end
+    DB.PrepareFactory(profile)
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     local skin, skinProfile
     if skinEnabled then
@@ -709,7 +725,7 @@ function P.ImportModule(text)
         if not ok then return false, reason end
         return skin.Database.SetActiveProfile(name)
     end
-    local id, settings, reason = IO.PrepareModuleProfile(text)
+    local id, settings, reason = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
     local name=DB.GetActiveProfileName()
     local allowed,mutationReason=Suite.ProfileVariants.BeforeMutation(name)
@@ -734,14 +750,14 @@ function P.ImportModuleIntoNew(name, text)
         if not profile then return false, why end
         return Create(clean, frames, profile, skinProfile)
     end
-    local id, settings, why = IO.PrepareModuleProfile(text)
+    local id, settings, why = IO.PrepareModuleProfile(text, true)
     if not id then return false, why end
     local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return false, "Frame profile export failed" end
     local profile
     profile, why = PrepareActive()
     if not profile then return false, why end
-    profile.suite.modules[id] = settings
+    for key, value in pairs(settings) do profile.suite.modules[id][key] = value end
     local skin = SkinEngine()
     local skinProfile = skin and Suite.CopyValue(skin.Database.GetProfile(skin.Database.GetActiveProfileName()))
     if skin and not skinProfile then return false, "Skin profile unavailable" end

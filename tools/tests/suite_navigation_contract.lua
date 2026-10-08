@@ -155,6 +155,10 @@ end
 T.Button = function(parent, text)
     local b = Widget("Button")
     b.text, b.label, b.parent = text, text, parent
+    -- Public buttons expose their FontString through the Menu2 adapter.
+    b._msuf2Label = Widget("FontString")
+    b._msuf2Label:SetText(text)
+    function b:SetActive(active) self._msuf2Active = active == true end
     buttons[#buttons + 1] = b
     return b
 end

@@ -27,6 +27,8 @@ local _, Suite = ...
 --                ImportModuleIntoNew }        MSUF's profile import/export
 --   GetProfileModules() -> { { id, title }, ... }   in Suite order (new table)
 --   IsSkinAddOnEnabled() -> bool
+--   HasNameplateKickReady() -> bool          the nameplates draw MSUF's interrupt
+--                                             indicator (added 2026-10-07, version 1)
 local API = { version = 1 }
 Suite.API = API
 
@@ -82,5 +84,10 @@ function API.GetProfileModules()
 end
 
 function API.IsSkinAddOnEnabled() return Suite.Client.AddOnEnabled("MSUF_Suite_Skin") == true end
+
+------------------------------------------------------------------ nameplates
+-- MSUF_Suite_Nameplates draws MSUF's interrupt-ready indicator (MSUF.KickReady)
+-- while MSUF's "Show on enemy nameplates" switch is on.
+function API.HasNameplateKickReady() return Suite.SuiteCatalog.nameplates ~= nil end
 
 return API

@@ -3,6 +3,7 @@ local _, Suite = ...
 local Installer = {}
 Suite.Installer = Installer
 local DB = Suite.Database
+local Appearance = Suite.InstallerAppearance
 local selected = "suite"
 local chosenLook
 local keepFrames = true
@@ -296,56 +297,7 @@ function Installer.Apply()
     return true
 end
 
-local function Style(panel, selectedState, primary, accent)
-    if accent then
-        panel:SetBackdropColor(selectedState and 0.12 or 0.075,
-            selectedState and 0.12 or 0.095, selectedState and 0.12 or 0.14, 1)
-        panel:SetBackdropBorderColor(selectedState and accent[1] or 0.28,
-            selectedState and accent[2] or 0.34, selectedState and accent[3] or 0.42, 1)
-        return
-    end
-    panel:SetBackdropColor(selectedState and 0.07 or 0.075,
-        selectedState and 0.18 or 0.095, selectedState and 0.24 or 0.14, 1)
-    if primary or selectedState then
-        panel:SetBackdropBorderColor(0.19, 0.75, 0.86, 1)
-    else
-        panel:SetBackdropBorderColor(0.28, 0.34, 0.42, 1)
-    end
-end
-
-local function Panel(parent, x, y, width, height, isButton)
-    local panel = CreateFrame(isButton and "Button" or "Frame", nil, parent, "BackdropTemplate")
-    panel:SetSize(width, height)
-    panel:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", x, y)
-    panel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 } })
-    Style(panel, false)
-    return panel
-end
-
-local function Label(parent, template, x, y, width, height)
-    local label = parent:CreateFontString(nil, "OVERLAY", template)
-    label:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
-    label:SetSize(width, height)
-    label:SetJustifyH("LEFT")
-    label:SetJustifyV("TOP")
-    return label
-end
-
-local function NavButton(parent, x, y, width, caption, callback, primary)
-    local button = Panel(parent, x, y, width, 30, true)
-    Style(button, false, primary)
-    button.caption = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    button.caption:SetPoint("CENTER")
-    button.caption:SetText(caption)
-    button:SetScript("OnClick", callback)
-    button:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.11, primary and 0.38 or 0.19, primary and 0.48 or 0.26, 1)
-    end)
-    button:SetScript("OnLeave", function(self) Style(self, false, primary) end)
-    return button
-end
+local Style, Panel, Label, NavButton = Appearance.Style, Appearance.Panel, Appearance.Label, Appearance.Button
 
 local function InfoCard(parent, x, y, title, detail)
     local card = Panel(parent, x, y, 508, 56, false)
@@ -379,6 +331,8 @@ local function ToggleModule(id)
     local enabled = profile and ModuleEnabled(profile, id)
     if enabled == nil then return end
     moduleOverrides[selected][id] = not enabled
+    frame.moduleFocus = id
+    frame.layoutPreview.selectedModule = id
     Installer.Refresh()
 end
 
@@ -394,11 +348,7 @@ local function CreateWindow()
     -- the host may open the installer while the menu is up. Set once, before
     -- the children exist: a fixed level never ratchets.
     window:SetFrameLevel(INSTALLER_FRAME_LEVEL)
-    window:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 } })
-    window:SetBackdropColor(0.035, 0.055, 0.085, 0.985)
-    window:SetBackdropBorderColor(0.25, 0.43, 0.52, 1)
+    Appearance.Window(window)
     window:EnableMouse(true)
     window:SetMovable(true)
     window:SetClampedToScreen(true)
@@ -492,6 +442,7 @@ local function BuildScaleSlider(window)
         scale = math.floor(value * 100 + 0.5) / 100
         scalePreset = "custom"
         if window.scaleLabel then window.scaleLabel:SetText(("%d%%"):format(scale * 100 + 0.5)) end
+        if window.layoutPreview then Installer.Refresh() end
     end)
 end
 
@@ -577,6 +528,13 @@ local function Build()
     frame = CreateWindow()
     BuildHeader(frame)
     BuildProfileSteps(frame)
+    Suite.InstallerPreview.Build(frame, function()
+        return FactoryProfile(), moduleOverrides[selected], { keepFrames = keepFrames, useScale = useScale, scale = scale }
+    end, Suite.HostBridge.FactoryFramePreview, function(id)
+        page = id == "frames" and 4 or 3
+        if id and id ~= "frames" then Suite.InstallerModules.Focus(frame, id) end
+        Installer.Refresh()
+    end)
     BuildScaleStep(frame)
     BuildResultCards(frame)
     BuildNavigation(frame)
@@ -593,15 +551,10 @@ end
 local function ShowPage(f)
     local complete, scaling = page == 6, page == 4
     f.step:SetText(complete and Text("DONE") or ("%d / 5"):format(page))
-    for i, segment in ipairs(f.progress) do
-        if i <= math.min(page, 5) then
-            segment:SetColorTexture(0.16, 0.74, 0.84, 1)
-        else
-            segment:SetColorTexture(0.20, 0.25, 0.30, 1)
-        end
-    end
+    Appearance.Progress(f, page)
     SetShownAll(f.intro, page == 1)
     Suite.InstallerProfiles.Show(f, page == 2, selected, chosenLook or "authored")
+    Suite.InstallerPreview.Show(f, page >= 2 and page <= 5, selected)
     f.cooldowns:SetShown(page == 2 and RetailCooldowns())
     Suite.InstallerModules.Show(f, page == 3)
     f.keepFrames:SetShown(scaling)
@@ -672,7 +625,9 @@ local function PaintScaling(f)
         or Text("MSUF restores your current Blizzard UI scale. Click here to enable optional scaling."))
     f.scaleToggle.mark:SetText(useScale and Text("ON") or Text("OFF"))
     Style(f.scaleToggle, useScale)
-    f.scaleHint:SetText(useScale and Text("Presets") or Text("No Suite scaling will be applied."))
+    f.scaleHint:SetHeight(useScale and 18 or 44)
+    f.scaleHint:SetText(useScale and Text("Presets")
+        or Text("Off restores Blizzard scaling. This preview uses the current UI scale."))
     f.scaleLabel:SetText(scalePreset == "pixel" and ("%.2f%%"):format(scale * 100)
         or ("%d%%"):format(scale * 100 + 0.5))
 end
@@ -718,6 +673,7 @@ local PAGE_PAINTERS = { PaintWelcome, PaintProfiles, PaintModules, PaintScaling,
 
 function Installer.Refresh()
     local f = Build()
+    Appearance.Refresh()
     ShowPage(f)
     local paint = PAGE_PAINTERS[page] or PaintComplete
     paint(f)
@@ -734,6 +690,7 @@ function Installer.Open()
     useRaidEssentials = not (current and current.raidEssentials == false)
     moduleOverrides = { suite = {}, classic = {}, forever = {} }
     Build().moduleTab = "modules"
+    frame.moduleFocus, frame.moduleFocusPending, frame.layoutPreview.selectedModule = nil, nil, nil
     -- A reopened window still shows the last session's slider position.
     frame.scaleSlider:SetValue(scale)
     Installer.Refresh()

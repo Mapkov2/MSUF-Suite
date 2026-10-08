@@ -215,7 +215,7 @@ function IO.ExportModule(id, options)
     return "MSUFM2:" .. encoded
 end
 
-function IO.PrepareModuleProfile(text)
+function IO.PrepareModuleProfile(text, preservePersonal)
     if type(text) ~= "string" or #text > IO.maxBytes + 7 or text:sub(1, 7) ~= "MSUFM2:" then
         return nil, nil, "Invalid suite module profile"
     end
@@ -242,7 +242,11 @@ function IO.PrepareModuleProfile(text)
         for _, key in pairs(LEGACY_MINIMAP_KEYS) do settings[key] = clean.suite.modules.minimap[key] end
         return "minimap", settings
     end
-    return id, clean.suite.modules[id]
+    local settings, spec = clean.suite.modules[id], Suite.SuiteCatalog[id]
+    for key, rule in pairs(spec.rules) do
+        if preservePersonal and rule.personal and (envelope.characterBound ~= true or key == spec.personalExport) then settings[key] = nil end
+    end
+    return id, settings
 end
 
 function IO.PrepareProfile(text, shared)

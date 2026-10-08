@@ -1,7 +1,8 @@
 local _, Suite = ...
 
 -- The one place where the Suite reaches into MSUF for settings MSUF owns:
--- the UI scale, the class resource stack and Menu2's page resets. MSUF hosts
+-- the UI scale, the class resource stack and Menu2's page resets, plus
+-- MSUF's interrupt-ready engine for the nameplates. MSUF hosts
 -- with host API v1 (MSUF_HostAPI and Menu2's RegisterPageResetProvider, the
 -- "MSUF host API v1 for the Suite") own these writes; older hosts get the
 -- Suite's previous code, kept here unchanged. Capabilities are resolved
@@ -13,12 +14,19 @@ Suite.HostBridge = HostBridge
 local HOST_API_VERSION = 1
 local coreResolved, coreAPI = false, nil
 
+-- The table MSUF publishes as MSUF_HostAPI (any version), else nil.
+local function HostTable()
+    local api = _G.MSUF_HostAPI
+    if type(api) == "table" then return api end
+    return nil
+end
+
 -- MSUF_HostAPI when it is v1 or newer, else nil.
 local function CoreAPI()
     if not coreResolved then
         coreResolved = true
-        local api = _G.MSUF_HostAPI
-        if type(api) == "table" and type(api.version) == "number" and api.version >= HOST_API_VERSION
+        local api = HostTable()
+        if api and type(api.version) == "number" and api.version >= HOST_API_VERSION
             and type(api.ApplyUIScaleProfile) == "function" and type(api.SetResourceStack) == "function" then
             coreAPI = api
         end
@@ -30,11 +38,34 @@ function HostBridge.HasCoreAPI()
     return CoreAPI() ~= nil
 end
 
+------------------------------------------------------------------ interrupt readiness
+-- MSUF's interrupt-ready engine for the nameplate castbars: MSUF.KickReady
+-- (Classic MSUF's Castbars/MSUF_InterruptReady.lua), which hosts from
+-- 2026-10-07 hand out through MSUF_HostAPI.GetKickReady() without a version
+-- change. nil on older hosts and on Main MSUF: the nameplates then show no
+-- readiness. Resolved at the first use, like the core API.
+local KICK_READY_VERSION = 1
+local kickResolved, kickReady = false, nil
+
+function HostBridge.KickReady()
+    if not kickResolved then
+        kickResolved = true
+        local api = HostTable()
+        local get = api and api.GetKickReady
+        local engine = get and get() or nil
+        if type(engine) == "table" and type(engine.version) == "number" and engine.version >= KICK_READY_VERSION then
+            kickReady = engine
+        end
+    end
+    return kickReady
+end
+
 ------------------------------------------------------------------ UI scale
 -- The legacy path: MSUF's own scale settings and appliers, written in the
 -- order MSUF applies them.
 local function LegacyScaleReady(spec)
-    if type(_G.MSUF_DB) ~= "table" or type(_G.MSUF_DB.general) ~= "table" then
+    local db = HostBridge.CurrentFramePreview()
+    if not db or type(db.general) ~= "table" then
         return false, "MSUF scale settings unavailable"
     end
     if type(_G.MSUF_ResetGlobalUiScale) ~= "function"
@@ -323,6 +354,66 @@ function HostBridge.RegisterPageResets(M, handlers)
     end
     if M.RefreshToolbarPageReset then M.RefreshToolbarPageReset() end
     return mode
+end
+
+
+-- Read the same factory the installer applies, using the host's public codec.
+-- Cache successful decodes only: a late-loaded older host may publish it later.
+local framePreviews = {}
+function HostBridge.CurrentFramePreview()
+    local frames = _G.MSUF_DB
+    return type(frames) == "table" and frames or nil
+end
+
+function HostBridge.FactoryFramePreview(layout)
+    local host = _G.MSUF_NS
+    local compact
+    if layout == "forever" then
+        compact = Suite.Client.isForever and host and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
+            or Suite.ForeverFactoryFramesCompact
+    else
+        compact = not Suite.Client.isForever and host and host.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
+            or Suite.ClassicFactoryFramesCompact
+    end
+    if type(compact) ~= "string" then return nil end
+    if framePreviews[compact] then return framePreviews[compact] end
+    local decode = _G.MSUF_TryDecodeCompactString
+    if type(decode) ~= "function" then return nil end
+    local envelope = Suite.Dispatch(decode, compact)
+    local frames = type(envelope) == "table" and envelope.payload
+    if type(frames) ~= "table" then return nil end
+    framePreviews[compact] = frames
+    return frames
+end
+
+-- MSUF's own Blizzard adapter can register the same Blizzard surface a suite
+-- module now owns (Minimap, Blizzard's damage meter). While a suite owner
+-- claims its key, that record reports disabled. Records are looked up at call
+-- time by MSUF, so wrapping isEnabled needs no MSUF change; re-created records
+-- are wrapped again at the next session start.
+local suppressed, wrapped, EMPTY = {}, setmetatable({}, { __mode = "k" }), {}
+function HostBridge.RefreshSuppressedEditElements()
+    local em = _G.MSUF_EM2
+    local external = em and em.ExternalElements
+    if type(external) ~= "table" or type(external.GetRecord) ~= "function" then return end
+    for key in pairs(suppressed) do
+        local record = external.GetRecord(key)
+        if type(record) == "table" and not wrapped[record] then
+            local original = record.isEnabled
+            wrapped[record] = true
+            record.isEnabled = function(...)
+                if next(suppressed[key] or EMPTY) then return false end
+                if type(original) == "function" then return original(...) end
+                return true
+            end
+        end
+    end
+end
+
+function HostBridge.SuppressEditElement(owner, key, claim)
+    suppressed[key] = suppressed[key] or {}
+    suppressed[key][owner] = claim and true or nil
+    if claim then HostBridge.RefreshSuppressedEditElements() end
 end
 
 return HostBridge

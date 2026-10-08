@@ -50,7 +50,7 @@ local host = {
         assert(name == "MSUF_EnsureDB", name)
         return noop
     end,
-    ExportPublic = function(name, value) _G[name] = value end,
+    ExportPublic = function(name, value) _G[name] = value; return value end,
     EventBus = { Register = noop },
 }
 MSUF_NS = host
@@ -62,6 +62,9 @@ if probe then
     probe:close()
     assert(loadfile(link))("MidnightSimpleUnitFrames", host)
 end
+-- Every current Classic TOC loads these real state and utility providers before the profile store.
+assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/State/MSUF_GuidedTour.lua"))("MidnightSimpleUnitFrames", host)
+assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/Kernel/MSUF_Util.lua"))("MidnightSimpleUnitFrames", host)
 assert(loadfile(hostRoot .. "/MidnightSimpleUnitFrames/State/MSUF_Profiles.lua"))("MidnightSimpleUnitFrames", host)
 
 -- The Suite and its skin store.
@@ -107,9 +110,12 @@ local function Fixture()
         ["Player-Realm"] = { activeProfile = "A", specProfileMap = { [1] = "A" } },
     }, global = { defaultProfileForNewChars = "A" } }
     MSUF_ActiveProfile, MSUF_DB = "A", MSUF_GlobalDB.profiles.A
+    host.GuidedTour6:Start("A")
     chat = {}
 end
 local function Unchanged(label)
+    assert(host.GuidedTour6:GetState().profileName == "A",
+        label .. ": a refused rename changed the guided tour profile")
     local frames, char = MSUF_GlobalDB.profiles, MSUF_GlobalDB.char["Player-Realm"]
     assert(frames.A == MSUF_DB and frames.A.player.width == 222 and MSUF_ActiveProfile == "A"
         and char.activeProfile == "A" and char.specProfileMap[1] == "A"
@@ -152,6 +158,9 @@ Unchanged("combat")
 -- 4. A free name: all three stores rename together and stay active.
 Fixture()
 assert(MSUF_RenameProfile("A", "C") == true, "a rename to a free name failed")
+assert(host.GuidedTour6:GetState().profileName == "C"
+    and MSUF_GlobalDB.global.guidedTour6 == host.GuidedTour6:GetState(),
+    "the real guided tour did not rename its active profile in the current saved root")
 local char = MSUF_GlobalDB.char["Player-Realm"]
 assert(MSUF_GlobalDB.profiles.C == MSUF_DB and not MSUF_GlobalDB.profiles.A and MSUF_ActiveProfile == "C"
     and char.activeProfile == "C" and char.specProfileMap[1] == "C"

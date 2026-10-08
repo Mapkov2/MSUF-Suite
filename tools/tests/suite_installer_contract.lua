@@ -23,6 +23,16 @@ local Suite = {
         "afkScreen", "actionbars" },
     SuiteCatalog = {},
 }
+-- Use the real core action-bar enums and grid, without registering its catalog.
+do
+    local handle = assert(io.open(root .. "/MSUF_Suite/Core/Catalog/ActionBars.lua", "rb"))
+    local source = handle:read("*a")
+    handle:close()
+    local first = assert(source:find("local VISIBILITY, HIGHLIGHT, LOOK", 1, true))
+    Suite.CatalogBuild = { ForAddon = function() return {} end }
+    assert(loadstring(source:sub(1, first - 1)))("MSUF_Suite", Suite)
+    Suite.CatalogBuild = nil
+end
 -- Exercise a catalog larger than the installer viewport, including future modules.
 for index = 18, 86 do Suite.SuiteOrder[index] = "contractModule" .. index end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.SuiteCatalog[id] = { title = id, addon = id:find("contractModule") and "MSUF_Suite_QualityOfLife" or "MSUF_Suite_Modules" } end
@@ -276,6 +286,7 @@ local function FakeFrame()
         CreateFontString = function() return FakeFrame() end,
         CreateTexture = function() return FakeFrame() end,
         SetSize = function(self, width, height) self.width, self.height = width, height end,
+        SetWidth = function(self, width) self.width = width end,
         SetPoint = function(self, anchor, _, _, x, y)
             if type(x) == "number" then self.x, self.y = x, y end
             self.anchor = anchor
@@ -316,6 +327,9 @@ CreateFrame = function(kind, name, parent, template)
     end
     return frame
 end
+UIParent = FakeFrame()
+UIParent:SetSize(2560, 1440)
+GetPhysicalScreenSize = function() return UIParent:GetWidth(), UIParent:GetHeight() end
 GameTooltip = FakeFrame()
 IsLoggedIn = function() return true end
 ReloadUI = function() end
@@ -324,9 +338,13 @@ UISpecialFrames = {}
 
 -- The scale goes through the Suite's host bridge; this MSUF has no host API v1.
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerLayout.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerAppearance.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreviewModel.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreview.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
 local installerFinished = 0
 EventRegistry = { TriggerEvent = function(_, event)
@@ -721,9 +739,13 @@ local function OpenLocalized(locale, L)
     GetLocale = function() return "enUS" end
     Suite.L = L
     MSUFSuiteInstallFrame = nil
+    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerLayout.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerAppearance.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreviewModel.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreview.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
     Suite.Installer.Open()
     return assert(MSUFSuiteInstallFrame)

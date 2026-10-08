@@ -23,6 +23,21 @@ local function Widget(kind)
     function methods:SetHeight(height) self.height = height end
     function methods:GetWidth() return self.width end
     function methods:GetHeight() return self.height end
+    function methods:SetScale(value) self.scale = value end
+    function methods:GetScale() return rawget(self, "scale") or 1 end
+    function methods:GetEffectiveScale() return self:GetScale() end
+    function methods:GetVerticalScroll() return rawget(self, "scrollOffset") or 0 end
+    function methods:SetVerticalScroll(value) self.scrollOffset = value end
+    function methods:GetVerticalScrollRange()
+        return math.max(0, self.scrollChild:GetHeight() - self:GetHeight())
+    end
+    function methods:SetAlpha(value) self.alpha = value end
+    function methods:GetAlpha() return rawget(self, "alpha") or 1 end
+    function methods:SetVertexColor(...) self.color = { ... } end
+    function methods:SetColorTexture(...) self.color = { ... } end
+    function methods:SetTexture(value) self.texture = value end
+    function methods:SetPoint(...) self.point = { ... } end
+    function methods:ClearAllPoints() self.point = nil end
     function methods:SetText(text) self.text = text end
     function methods:GetText() return self.text end
     -- Blizzard's Slider: SetValue runs OnValueChanged when the value changes.
@@ -102,6 +117,11 @@ function H.Setup(options)
     end
     UIParent = Widget("Frame")
     UIParent.height = options.uiHeight or 1440
+    UIParent.width = options.uiWidth or 2560
+    UIParent:SetScale(options.uiScale or 1)
+    GetPhysicalScreenSize = function()
+        return options.physicalWidth or UIParent:GetWidth(), options.physicalHeight or UIParent:GetHeight()
+    end
     UISpecialFrames = {}
     GameTooltip = Widget("GameTooltip")
     EventRegistry = { TriggerEvent = function() end }

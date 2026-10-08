@@ -64,6 +64,9 @@ Core\Profiles.lua
 Core\ProfileVariants.lua
 Core\InstallerProfiles.lua
 Core\InstallerModules.lua
+Core\InstallerAppearance.lua
+Core\InstallerPreviewModel.lua
+Core\InstallerPreview.lua
 Core\Installer.lua
 Core\Menu.lua
 Core\API.lua

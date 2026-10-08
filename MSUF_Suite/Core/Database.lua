@@ -43,6 +43,15 @@ end
 -- New profiles start from the bundled factory of this client when MSUF's
 -- codec can read it, otherwise from catalog defaults at the current
 -- migration revision.
+function Database.PrepareFactory(profile)
+    local config = profile.suite.modules.cooldownManager
+    if config then
+        config.captured = true
+        config.defaultsVersion = Suite.CDM.DEFAULTS_VERSION
+    end
+    return profile
+end
+
 local function NewProfile()
     local function StyleFactory(profile)
         Suite.Suite.StyleProfile(profile, "cleanModern")
@@ -56,7 +65,7 @@ local function NewProfile()
         local envelope = _G.MSUF_TryDecodeCompactString(compact:sub(8))
         if type(envelope) == "table" and envelope.addon == "MSUF_Suite" and envelope.format == 1 then
             local profile = Suite.ProfileIO.PrepareTable(envelope.profile, false)
-            if profile then return StyleFactory(profile) end
+            if profile then return StyleFactory(Database.PrepareFactory(profile)) end
         end
     end
     local profile = { suite = { schema = 1, revision = Suite.Suite.MigrationRevision, modules = {} } }
