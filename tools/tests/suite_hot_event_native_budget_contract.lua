@@ -22,6 +22,9 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 --   groupDeathAlert steady (a living member's UNIT_HEALTH): base 76 instr,
 --     0 KB, 5 natives (3 issecretvalue, UnitExists, UnitIsDeadOrGhost)
 --     -> 39 instr, 0 KB, 3 natives (UnitExists only on a state change).
+--   groupDeathAlert enemyDied (UNIT_DIED of a unit outside the group, whose
+--     GUID is secret; every pack in a pull): new 2026-10-07, 25 instr, 0 KB,
+--     1 issecretvalue.
 --   groupBloodlust, the player sated, a buff with a secret spell ID per
 --     event (raid combat: 1,126 UNIT_AURA, 520 lockout reads in 120 s):
 --     secretSteady (one event) base 137 instr, .156 KB, 6 issecretvalue
@@ -33,7 +36,8 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 --       +140 VM instructions per ten events for no lockout read at all; at
 --       the trace's 2.2 events per read that is 205 instead of about 800.
 local BASELINE = {
-    groupDeathAlert = { steady = 39, steadyNatives = { issecretvalue = 2, UnitIsDeadOrGhost = 1 } },
+    groupDeathAlert = { steady = 39, steadyNatives = { issecretvalue = 2, UnitIsDeadOrGhost = 1 },
+        enemyDied = 25, enemyDiedNatives = { issecretvalue = 1 } },
     groupBloodlust = { secretSteady = 93, secretSteadyNatives = { issecretvalue = 6 },
         secretBurst = 930, secretBurstNatives = { issecretvalue = 60 } },
 }
@@ -318,6 +322,8 @@ do
         return state
     end)
     UnitName = Native("UnitName", function(unit) return names[unit] end)
+    UnitGUID = Native("UnitGUID", function(unit) return members[unit] ~= nil and "Player-1-" .. unit or nil end)
+    UnitIsFeignDeath = Native("UnitIsFeignDeath", function() return false end)
     for i = 1, raidSize do
         members["raid" .. i], names["raid" .. i] = false, "Member" .. i
     end
@@ -332,6 +338,10 @@ do
     -- Steady: a living member's health tick.
     Budget("groupDeathAlert", "steady", function() Health("raid7") end)
     assert(#printed == 0, "a living member's health tick announced a death")
+    -- An enemy dies near the raid: its GUID is secret, one test and out.
+    local enemy = Secret()
+    Budget("groupDeathAlert", "enemyDied", function() Fire("UNIT_DIED", enemy) end)
+    assert(#printed == 0, "an enemy death was announced")
     -- A death is announced once; UNIT_FLAGS for the same death stays quiet.
     members.raid7 = true
     Health("raid7")
@@ -365,6 +375,11 @@ do
     -- watched twice.
     Health("raid1")
     assert(#printed == 2 and #reported == 0, "group death alert raised: " .. tostring(reported[1]))
+    -- A member the health events still read alive: the client's death event
+    -- tells it, once.
+    Fire("UNIT_DIED", "Player-1-raid10")
+    Fire("UNIT_DIED", "Player-1-raid10")
+    assert(#printed == 3 and printed[3] == "Member10 died", "the client's death event was not told exactly once")
     combat = false
     Fire("PLAYER_REGEN_ENABLED")
     Stop(m)

@@ -9,7 +9,7 @@ end
 setmetatable(_G, { __index = function(_, key) return permissive(key) end })
 UnitClass = function() return "Warrior", "WARRIOR" end
 C_ClassColor = { GetClassColor = function() return { r = 1, g = .5, b = .2 } end }
-local ns = { Client = { isForever = client == "forever", isRetail = client == "retail" },
+local ns = { Client = { isForever = client == "forever", isRetail = client == "retail", modernEquipment = client == "retail" },
     Text = function(text) return text end, Defaults = {} }
 setmetatable(ns, { __index = function(_, key) return permissive("NS." .. key) end })
 local handle = assert(io.open(root .. "/MSUF_Suite/MSUF_Suite_Mainline.toc", "rb"))

@@ -634,18 +634,6 @@
   },
   {
    "file": "MSUF_Suite_Modules/EditMode.lua",
-   "kind": "addon",
-   "reason": "MSUF Edit Mode export: MSUF_EditModeAPI and MSUF_EM2 differ between the Main and Classic MSUF builds",
-   "symbol": "em.State.Enter"
-  },
-  {
-   "file": "MSUF_Suite_Modules/EditMode.lua",
-   "kind": "addon",
-   "reason": "MSUF Edit Mode export: MSUF_EditModeAPI and MSUF_EM2 differ between the Main and Classic MSUF builds",
-   "symbol": "external.GetRecord"
-  },
-  {
-   "file": "MSUF_Suite_Modules/EditMode.lua",
    "kind": "state",
    "reason": "optional module hook: only modules with movers define RegisterMovers",
    "symbol": "instance.RegisterMovers"
@@ -2314,18 +2302,6 @@
   },
   {
    "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_DB"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_DB.general"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "MSUF_ApplyMsufScale"
@@ -2467,12 +2443,6 @@
    "kind": "addon",
    "reason": "LibDataBroker-1.1 is another addon's library, reached through LibStub when some addon loaded it; the Suite bundles neither. suite_datatexts_sources_contract covers plugins and callbacks with the library and, without LibStub, an empty plugin list, no callback registration and the configured name with the placeholder.",
    "symbol": "LibStub"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Actions.lua",
-   "kind": "addon",
-   "reason": "Blizzard_ProfessionsBook is Blizzard's load-on-demand UI (upstream/live Blizzard_ProfessionsBook defines ProfessionsBookFrame); the Professions place requests it and toggles the frame only once it exists. suite_datatexts_sources_contract covers the missing and the loaded book.",
-   "symbol": "ProfessionsBookFrame"
   },
   {
    "file": "MSUF_Suite_DataTexts/Actions.lua",
@@ -2773,6 +2743,90 @@
    "symbol": "M.RelayoutPageHeaderHost",
    "kind": "addon",
    "reason": "Retail/Forever current Menu2 can refresh the preview dock layout; older hosts use the normal page builder layout."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "ui (= MSUF_UI)",
+   "kind": "addon",
+   "reason": "MSUF core shared UI is available before Options on current hosts; older hosts may lack it. The installer appearance contract covers cold core UI, an absent provider, partial older renderers and late Menu2 without loading Options."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "skin.GetAPI",
+   "kind": "addon",
+   "reason": "MapkoSkin is the public export of the optional Suite skin or legacy standalone addon. The appearance adapter reads its API only when already loaded; the installer appearance contract covers absence and late attachment."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "api.OnAppearanceChanged",
+   "kind": "addon",
+   "reason": "The optional skin exposes this notification in public API v2.1. The adapter hooks it once per owner and API; the installer appearance contract covers provider transitions and coalesced palette refresh. Older providers use the v1 listener."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "api.OnThemeChanged",
+   "kind": "addon",
+   "reason": "Legacy standalone MapkoSkin exposes this public API v1 listener instead of v2.1 appearance notifications. The installer appearance contract covers one registration per owner and repeated ADDON_LOADED events."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "Read-only installer factory preview uses foreign MSUF factory/codec exports, which older hosts can omit. Late availability and missing exports are covered by suite_installer_preview_contract.",
+   "symbol": "host (= MSUF_NS)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "Read-only installer factory preview uses foreign MSUF factory/codec exports, which older hosts can omit. Late availability and missing exports are covered by suite_installer_preview_contract.",
+   "symbol": "decode (= MSUF_TryDecodeCompactString)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
+   "symbol": "chrome (= P.M.PreviewHelpers)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
+   "symbol": "chrome.ApplyPreviewChrome (= P.M.PreviewHelpers)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
+   "symbol": "P.M.AddTooltip"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "symbol": "em (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "symbol": "external.GetRecord",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite_Modules/EditMode.lua",
+   "kind": "addon",
+   "symbol": "em (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite_Modules/EditMode.lua",
+   "kind": "addon",
+   "symbol": "em.State (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite_Modules/EditMode.lua",
+   "kind": "addon",
+   "symbol": "em.State.Enter (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
   }
  ]
 }

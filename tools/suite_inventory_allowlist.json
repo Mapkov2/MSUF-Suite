@@ -1871,6 +1871,310 @@
       "evidence": "57dda18 (fix/SLC); MSUF_Suite_Options/Pages/CooldownManagerPreview.lua: the DOT-joined tip becomes the one key 'Click: settings · Drag: reorder · Middle-click: remove'.",
       "reason": "Existing text retained through its replacement English key; each language orders the parts.",
       "date": "2026-10-05"
+    },
+    {
+      "category": "locale",
+      "item": "Type /msufguildprivacy or use the small ON/OFF button above the main chat window. Any chat window containing Guild or Officer is covered in full, including other channels in a mixed window. Click a cover to reveal the windows again. Messages keep arriving underneath.",
+      "basis": "moved",
+      "evidence": "Owner request 2026-10-07 (guild chat cover for the Guild & Communities window, chosen reveal click); MSUF_Suite_Options/Pages/QualityOfLife.lua: the guild_privacy help becomes the key 'Type /msufguildprivacy ... The guild chat in the Guild & Communities window can be covered as well; other communities stay visible. Reveal the chat again with the click chosen here. Messages keep arriving underneath.'",
+      "reason": "Existing help text retained through its replacement English key; all ten locales carry the reworded text.",
+      "date": "2026-10-07"
+    },
+    {
+      "category": "locale",
+      "item": "No Suite scaling will be applied.",
+      "basis": "moved",
+      "evidence": "Installer.lua PaintScaling retains the same Off toggle and ScaleSpec behavior. Its hint is now Off restores Blizzard scaling. This preview uses the current UI scale.; suite_installer_useful_preview_contract covers current0.8/Blizzard0.6 without writes.",
+      "reason": "The owner-requested useful preview replaces the same Off hint with an explicit restoration and preview limitation; no setting or behavior removed.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.disableSkyridingPaging\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:buffReminders.keystoneCover\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:buffReminders.keystoneMinutes\",\"number\",false,1,120,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.crestCurrencies\",\"string\",false,\"\",\"\",\"\",256]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.crestCurrencyIDs\",\"string\",false,\"\",\"\",\"\",1000]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.crestMode\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.crestSeparator\",\"string\",false,\"\",\"\",\"\",20]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.itemLevelDecimals\",\"number\",false,0,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.itemLevelEquipped\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dataTexts.showTokenPrice\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/{ActionBars,BuffReminders,DataTexts}.lua capability gates; Core/Platform.lua modernEquipment; suite_bh3_state_capabilities_contract.lua and suite_modules_regressions_contract.lua. Offline catalog now supplies the actual Retail modernEquipment capability.",
+      "reason": "Retains the saved setting and default; hides controls whose native API is unavailable on Forever.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.styleAlpha\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.styleBlend\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.styleColor\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.stylePlacement\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.styleRotation\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.styleScale\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.styleX\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.styleY\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.styleAlpha\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.styleBlend\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.styleColor\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.stylePlacement\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.styleRotation\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.styleScale\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.styleX\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.styleY\",\"requiresChoice\",[[\"key\",\"styleTexture\"],[\"values\",[[2,true],[3,true],[4,true],[5,true],[6,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/Minimap.lua requiresChoice adds ART.PARCHMENT_SCROLL; suite_modules_regressions_contract.lua minimap parchment style case.",
+      "reason": "Extends the existing style settings to Parchment Scroll; all prior supported choices remain available.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard's entry",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "above",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "attached %s %s",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "below",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "follows %s",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "left of",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "placed freely",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "right of",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "takes the place of %s",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
+    },
+    {
+      "category": "locale",
+      "item": "the attachments form a loop, so it is placed freely",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
+      "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
+      "date": "2026-10-08"
     }
   ]
 }

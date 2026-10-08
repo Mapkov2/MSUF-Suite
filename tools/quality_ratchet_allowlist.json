@@ -17,6 +17,20 @@
    "max": 5,
    "reason": "CheckedCall is Safety.Call without the forbidden check per call, for the several getters TrackButton and AssetRole read from one object already checked once (CanTrack, AssetRole). It removed about 20% of the VM instructions of the first bag open (Perfy trace C, 2026-10-05).",
    "date": "2026-10-05"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "metric": "g_reads",
+   "max": 29,
+   "reason": "The read-only preview reads external MSUF factories, the compact decoder and current frame settings at the host boundary. The shared current-settings getter replaces duplicate scale-readiness reads; missing exports, cache behavior and retained frames are covered by installer contracts. Edit-element suppression moved from optional MSUF_Suite_Modules/EditMode.lua into this shared host boundary: one additional external namespace read and two foreign-record checks, retaining the prior cold event-driven lifecycle. Independently reviewed against suite_runtime_owner_contract; no polling or new hot-path scan.",
+   "date": "2026-10-08"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "metric": "type_guards",
+   "max": 15,
+   "reason": "The read-only factory preview reads the external MSUF namespace and compact decoder once at the host boundary, and checks the foreign decoder before use. Missing/late host exports and cache behavior are exercised by suite_installer_preview_contract. Edit-element suppression moved from optional MSUF_Suite_Modules/EditMode.lua into this shared host boundary: one additional external namespace read and two foreign-record checks, retaining the prior cold event-driven lifecycle. Independently reviewed against suite_runtime_owner_contract; no polling or new hot-path scan.",
+   "date": "2026-10-08"
   }
  ]
 }

@@ -15,12 +15,15 @@ ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua",
-           "suite_installer_harness.lua"}
+           "suite_installer_harness.lua", "suite_bh3_state_support.lua",
+           "suite_bh3_state_gear_fixture.lua", "suite_bh3_state_inspect_fixture.lua",
+           "suite_bh3_state_navigation_fixture.lua"}
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
     "suite_hud_contract.lua": [[], ["Forever"]],
     "suite_options_menu_contract.lua": [[], ["Forever"]],
+    "suite_preview_interaction_contract.lua": [[], ["Forever"]],
     "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(BRANCH / "MidnightSimpleUnitFrames")]],
     "suite_search_findability_contract.lua": [[], ["Forever"]],
     "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(BRANCH / "MidnightSimpleUnitFrames")],

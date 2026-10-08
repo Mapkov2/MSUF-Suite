@@ -338,6 +338,7 @@ function Support.TooltipFixture(root, suite, ns)
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipLines.lua"))(
         "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
     function fixture.Run(kind, tooltip, data)
+        for _, callback in ipairs(fixture.post.ALL or {}) do callback(tooltip, data) end
         for _, callback in ipairs(fixture.post[kind] or {}) do callback(tooltip, data) end
     end
     return fixture
