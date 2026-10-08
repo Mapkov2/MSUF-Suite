@@ -187,7 +187,7 @@ local function BubbleHidden(content)
     local view = views[content]
     if not view then return end
     Release(view)
-    view.text = nil
+    view.text, view.source = nil, nil
 end
 
 local function NewView(content)
@@ -208,6 +208,7 @@ local function Update(content)
     if text == view.text then return end
     view.text = text
     local keys = text and heard[text]
+    view.source = keys
     if keys then found[text] = true end
     if keys and M.config[keys.style] then Paint(view, keys) else Release(view) end
 end
@@ -291,7 +292,7 @@ function C.BubblesDisable()
     ForgetHeard()
     for _, view in pairs(views) do
         Release(view)
-        view.text = nil
+        view.text, view.source = nil, nil
     end
 end
 
@@ -314,8 +315,8 @@ function C.BubblesRefresh(self)
     end
     -- Changed settings reach the bubbles already styled.
     for _, view in pairs(views) do
-        local keys = view.painted
-        if keys then
+        local keys = view.source
+        if keys and view.content:IsShown() and PublicText(view.region:GetText()) == view.text then
             if c[keys.style] then Paint(view, keys) else Release(view) end
         end
     end

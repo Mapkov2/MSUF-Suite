@@ -34,7 +34,8 @@ function Lines.Add(module, kind, callback)
     if not list then
         list = {}
         callbacks[kind] = list
-        TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType[kind], function(tooltip, data)
+        local tooltipType = kind == "AllTypes" and TooltipDataProcessor.AllTypes or Enum.TooltipDataType[kind]
+        TooltipDataProcessor.AddTooltipPostCall(tooltipType, function(tooltip, data)
             Run(list, tooltip, data)
         end)
     end

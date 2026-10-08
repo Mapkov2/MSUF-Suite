@@ -147,6 +147,7 @@ local function FillBlizzard(entry, rec)
     if family == AURA_FAMILY or rec.hasAura then
         entry.auraIDs = AuraSet(entry.auraIDs, base, override, rec.tooltip, rec.linked)
         entry.unit = AuraUnit(base, override, rec.tooltip, rec.linked)
+        entry.auraHelpful = entry.unit == "player"
     else
         entry.auraIDs = nil
     end
@@ -198,6 +199,7 @@ local function FillAura(entry, src, id)
     entry.texture, entry.name = texture, name
     entry.auraIDs = AuraSet(entry.auraIDs, id)
     entry.unit = src == "a" and "player" or "target"
+    entry.auraHelpful = src == "a"
     return true
 end
 local function Fill(entry, key)

@@ -221,7 +221,8 @@ local function Collect(config)
     end
     -- The stance bar follows the class's forms (FormsChanged in Events.lua).
     local stance = AB.bars[11]
-    if stance and (stance.forms ~= AB.HasForms() or stance.count ~= AB.Count(stance, config)) then
+    local forms, formCount = AB.HasForms()
+    if stance and (stance.forms ~= forms or stance.formCount ~= formCount or stance.count ~= AB.Count(stance, config)) then
         barWork[11].layout, barWork[11].visible = true, true
     end
 end
@@ -232,7 +233,7 @@ local function ApplyLayout()
         if bar and barWork[index].layout then
             if index >= BAR.STANCE then AB.Adopt(index) end
             AB.LayoutBar(bar)
-            if index == BAR.STANCE then bar.forms = AB.HasForms() end
+            if index == BAR.STANCE then bar.forms, bar.formCount = AB.HasForms() end
         end
     end
 end

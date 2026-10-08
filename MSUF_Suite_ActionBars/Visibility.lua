@@ -34,7 +34,8 @@ end
 
 local function HasForms()
     local forms = GetNumShapeshiftForms()
-    return S.Public(forms) and type(forms) == "number" and forms > 0
+    forms = S.Finite(forms) and forms or 0
+    return forms > 0, forms
 end
 AB.HasForms = HasForms
 

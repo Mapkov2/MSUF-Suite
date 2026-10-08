@@ -438,10 +438,16 @@ local COLLECTORS = {
 -- Re-reads every dirty source into its reused entry list.
 function O.CollectDirty(self)
     tasksRead, tasksTable = false, nil
+    local now = GetTime()
     for i = 1, #SOURCES do
         local key = SOURCES[i]
         if self.dirty[key] then
-            COLLECTORS[key](ResetSource(self, key), self.config)
+            local list = ResetSource(self, key)
+            COLLECTORS[key](list, self.config)
+            for index = 1, list.count do
+                local entry = list[index]
+                entry.timerEnd = Finite(entry.timeLeft) and entry.timeLeft > 0 and now + entry.timeLeft or nil
+            end
             self.dirty[key] = nil
         end
     end

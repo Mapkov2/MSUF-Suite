@@ -3,7 +3,7 @@ local S = P.Suite
 local LAYOUT, PLACEMENT = P.NS.DataTextLayout, P.NS.DataTextPlacement
 local Geometry = {}
 P.DataTextGeometry = Geometry
-local floor = math.floor
+local floor, ceil = math.floor, math.ceil
 local Snap, Color = P.Appearance.Snap, P.Appearance.Color
 local layoutSlots, layoutWidths, layoutLeft = {}, {}, {}
 
@@ -30,7 +30,9 @@ local function SlotWidths(bar, count, config)
     for i = 1, count do
         local button = layoutSlots[i]
         if fit then
-            widths[i] = math.max(44, math.ceil(button.label:GetUnboundedStringWidth()) + 2 * style.padding)
+            local demand = ceil(button.label:GetUnboundedStringWidth()) + 2 * style.padding
+            if button.extra then demand = demand + P.DataTextSources.IconWidth(button) end
+            widths[i] = math.max(44, demand)
         else
             widths[i] = (configuredWidth - inset - gaps) / count
         end

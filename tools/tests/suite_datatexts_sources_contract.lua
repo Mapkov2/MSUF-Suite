@@ -252,6 +252,13 @@ NS.IsCombatLocked = function() return false end
 local opened = {}
 C_AddOns = { LoadAddOn = function(name) opened[#opened + 1] = name end }
 ToggleFrame = function(frame) opened[#opened + 1] = frame end
+-- Blizzard_ProfessionsBook_Bootstrap.lua, shared native opener.
+ToggleProfessionsBook = function()
+    C_AddOns.LoadAddOn("Blizzard_ProfessionsBook")
+    if ProfessionsBookFrame then ToggleFrame(ProfessionsBookFrame)
+    elseif ProfessionsFrame then ToggleFrame(ProfessionsFrame)
+    elseif ShowProfessionsFrame then ShowProfessionsFrame() end
+end
 local book = Button()
 X.Bind(book, c, 3, 3, "professions")
 A.Click(book, "LeftButton")
@@ -262,6 +269,10 @@ C_AddOns.LoadAddOn = function(name)
 end
 A.Click(book, "LeftButton")
 assert(opened[2] == "Blizzard_ProfessionsBook" and opened[3] == ProfessionsBookFrame, "the professions book did not open")
+ProfessionsBookFrame, ProfessionsFrame = nil, {}
+C_AddOns.LoadAddOn = function(name) opened[#opened + 1] = name end
+A.Click(book, "LeftButton")
+assert(opened[#opened] == ProfessionsFrame, "Forever's integrated professions window did not open")
 -- Hearthstone places choose an owned item or toy; the secure button
 -- (Actions.lua, suite_datatexts_security_contract) uses it.
 local stone = Button()

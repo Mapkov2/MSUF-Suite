@@ -46,13 +46,14 @@ hooksecurefunc = function(owner, key, callback)
         _G[owner] = function(...) local a, b, c = original(...); key(...) return a, b, c end
         return
     end
+    assert(owner ~= GameTooltip, "shared tooltip method hook is forbidden")
     local original = owner[key]
     owner[key] = function(...) original(...); callback(...) end
 end
 
 -- GameTooltip as addon code meets it.
 UIParent = Widget()
-Enum = { TooltipDataType = { Item = 0, Spell = 1, Unit = 2 }, TooltipDataLineType = { UnitName = 2 } }
+Enum = { TooltipDataType = { Item = 0, Spell = 1, Unit = 2, Mount = 10 }, TooltipDataLineType = { UnitName = 2 } }
 local tooltip = { shown = false, lines = {}, scripts = {}, shows = 0, points = {} }
 function tooltip:AddDoubleLine(left, right, ...) self.lines[#self.lines + 1] = { left, right, ... } end
 function tooltip:IsShown() return self.shown end
@@ -83,6 +84,7 @@ function tooltip:ClearAllPoints() self.points = {} end
 function tooltip:SetPoint(...) self.points[#self.points + 1] = { ... } end
 function tooltip:RefreshDataNextUpdate() error("addon code wrote GameTooltip's update fields") end
 function tooltip:GetUnit() error("GetUnit tests the tooltip GUID, which can be secret") end
+function tooltip:GetProcessingTooltipInfo() return self.processingInfo end
 function tooltip:SetMountBySpellID() end
 GameTooltip = tooltip
 local health = { alpha = 1 }
@@ -487,9 +489,10 @@ tooltip.lines = {}
 tooltips.Run(Enum.TooltipDataType.Item, tooltip, { id = "secret" })
 Check(#tooltip.lines == 0, "restricted item data was displayed")
 shows = tooltip.shows
-tooltip:SetMountBySpellID(99)
-Check(LineValue("Mount collection") and tooltip.shows == shows + 1,
-    "the mount journal marker was added without sizing the tooltip again")
+tooltip.processingInfo = { getterName = "GetMountBySpellID", getterArgs = { 99 } }
+tooltips.Run(Enum.TooltipDataType.Mount, tooltip, { id = 999 })
+Check(LineValue("Mount collection") and tooltip.shows == shows,
+    "mount post-call must add collection before native sizing without recursive Show")
 
 -- Anchors: cursor offsets need ANCHOR_CURSOR_RIGHT; corners keep inward
 -- offsets. Blizzard's GameTooltip_SetDefaultAnchor makes the one SetOwner

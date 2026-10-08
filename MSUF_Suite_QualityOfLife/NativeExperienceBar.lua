@@ -10,11 +10,11 @@ local function CancelCleanup()
     if cleanupFrame then cleanupFrame:UnregisterEvent("PLAYER_REGEN_ENABLED") end
 end
 
-local function FinishCleanup()
-    if NS.InCombat() then return end
+local function FinishCleanup(_, event)
+    if NS.InCombat(event) then return end
     local owner = cleanupOwner
     CancelCleanup()
-    if owner then Native.Sync(owner, false) end
+    if owner then Native.Sync(owner, false, event) end
 end
 
 local function DeferCleanup(self)
@@ -115,10 +115,10 @@ local function RestoreXP(state)
     state.saved = nil
 end
 
-function Native.Sync(self, enabled)
+function Native.Sync(self, enabled, event)
     -- Lifecycle/mouse changes wait for combat to end, including the early
     -- PLAYER_REGEN_DISABLED edge. Native swaps only use the alpha C sink.
-    if NS.InCombat() then
+    if NS.InCombat(event) or NS.IsCombatLocked() then
         -- Stop marks a failed module inactive before Disable. Core Apply
         -- cannot replay its cleanup, so a one-shot owned event returns it.
         if enabled == false then DeferCleanup(self) else S.Queue("xpBar") end

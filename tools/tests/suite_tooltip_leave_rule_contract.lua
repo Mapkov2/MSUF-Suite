@@ -16,7 +16,7 @@ local function Files()
         for line in toc:read("*a"):gmatch("[^\r\n]+") do
             local first = line:sub(1, 1)
             local wanted = addon ~= "MSUF_Suite_QualityOfLife" or first >= "J" and first <= "Z"
-                or line == "EnemyCastStack.lua"
+                or line == "EnemyCastStack.lua" or line == "CharacterExtras.lua" or line == "GroupRaidShortcuts.lua"
             if line:match("%.lua$") and not line:match("^#") and wanted then files[#files + 1] = addon .. "/" .. line end
         end
         toc:close()

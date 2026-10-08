@@ -376,7 +376,7 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
             if entry.restock or entry.present == false then
                 mask = mask + entry.bit
             elseif entry.present == true and threshold > 0 and now and entry.expiresAt
-                and (not entry.totalDuration or entry.totalDuration > threshold) then
+                and (not entry.totalDuration or entry.totalDuration > (config.remindBeforeMinutes or 0) * 60) then
                 local due = entry.expiresAt - threshold
                 if due <= now then
                     mask = mask + entry.bit

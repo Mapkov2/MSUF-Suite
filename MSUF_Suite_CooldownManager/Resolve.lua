@@ -261,19 +261,16 @@ local function KindOf(i)
 end
 -- The list a bar holds first: the user's list for this spec, then Suite
 -- defaults for Essential, Utility, Defensives and both buff rows.
-local function ListOf(i, specLists, presets)
+local function ListOf(i, specLists, presets, defaultsOnly)
     local def = SLOTS[i]
     local view = C.views[def.key]
     if def.custom and view and view.shareContents then
         return C.lists and C.lists.shared and C.lists.shared[def.key] or EMPTY, true
     end
     local list = specLists and specLists[def.key]
-    if type(list) == "table" then return list, true end
+    if type(list) == "table" and not (defaultsOnly and list.inherit) then return list, true end
     if def.key == "ess" or def.preset == "defensives" then return presets[def.key], false end
-    if C.state.raidEssentials ~= false then
-        local defaults = Catalog.defaultByBar[def.key]
-        if defaults then return defaults, false end
-    end
+    if C.state.raidEssentials ~= false then return Catalog.defaultByBar[def.key], false end
 end
 local function ClaimList(list, slot, family)
     for j = 1, #list do
@@ -299,7 +296,9 @@ local function Claim(specLists, presets)
         end
     end
     for pass = 1, 2 do
-        if pass == 2 then
+        local defaultsOnly = pass == 2
+        local explicitPass = not defaultsOnly
+        if defaultsOnly then
             local i = CDM.SLOT_INDEX.def
             local list, explicit = ListOf(i, specLists, presets)
             local view = C.views.def
@@ -309,17 +308,16 @@ local function Claim(specLists, presets)
         end
         for i = 1, #SLOTS do
             local def = SLOTS[i]
-            local family = KIND_FAMILY[KindOf(i)]
-            local list, explicit = ListOf(i, specLists, presets)
-            if not (pass == 2 and def.preset == "defensives") and list and explicit == (pass == 1) then
+            local list, explicit = ListOf(i, specLists, presets, defaultsOnly)
+            if not (defaultsOnly and def.preset == "defensives") and list and explicit == explicitPass then
                 -- A preset only claims while its bar is shown; switched off,
                 -- its spells go back to their Blizzard bars.
                 local view = C.views[def.key]
-                if explicit or (view and view.on) then ClaimList(list, def.key, family) end
+                if explicit or (view and view.on) then ClaimList(list, def.key, KIND_FAMILY[KindOf(i)]) end
             end
-            if pass == 2 and def.preset == "racials" and presets[def.key] then
+            if defaultsOnly and def.preset == "racials" and presets[def.key] then
                 local view = C.views[def.key]
-                if view and view.on then ClaimList(presets[def.key], def.key, family) end
+                if view and view.on then ClaimList(presets[def.key], def.key, KIND_FAMILY[KindOf(i)]) end
             end
         end
     end
@@ -429,15 +427,18 @@ local function Collect(i, kind, specLists, hidden, replaced, preview, out, prese
     wipe(used)
     wipe(usedSlot)
     local list, explicit = ListOf(i, specLists, presets)
+    local inherited
+    if explicit and list.inherit then inherited = ListOf(i, specLists, presets, true) end
+    if inherited then n = CollectList(inherited, false, slot, hidden, out, n) end
     if list then n = CollectList(list, explicit, slot, hidden, out, n) end
     -- Suite spec defaults and explicitly imported Blizzard lists are complete
     -- selections. Other user lists retain the older append-new-spells rule.
-    local strict = (list ~= nil and not explicit and
+    local strict = inherited ~= nil or (list ~= nil and not explicit and
         (slot == "ess" or Catalog.defaultByBar[slot] ~= nil))
         or replaced[slot] == true
     if def.builtin and family and not strict then
         n = CollectBlizzard(slot, family, preview, hidden, out, n)
-    elseif slot == "ess" and not explicit then
+    elseif slot == "ess" and (not explicit or inherited) then
         n = FillEssential(slot, family, hidden, out, n)
     end
     -- Potions and racials: the Healthstones, then the racial, after

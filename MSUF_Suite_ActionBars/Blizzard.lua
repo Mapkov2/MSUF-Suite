@@ -272,6 +272,34 @@ local function PetHasAction(i)
     return GetPetActionInfo(i) ~= nil
 end
 
+-- Empty stance slots are passive Suite textures; no native action button is
+-- forced visible, so an unknown form can never become a clickable action.
+function AB.LayoutStanceSlots(bar, count, size, columns, rows, rowCount, step)
+    local config, style = M.config, AB.style
+    local forms = GetNumShapeshiftForms()
+    forms = S.Finite(forms) and forms or 0
+    local slots = bar.emptySlots or {}
+    bar.emptySlots = slots
+    for i = 1, #bar.buttons do
+        local shown = config[bar.key.ShowEmpty] and i > forms and i <= count
+        local slot = slots[i]
+        if shown then
+            if not slot then
+                slot = S.CreateTexture(bar.header, nil, "BACKGROUND")
+                slots[i] = slot
+            end
+            local col, row = AB.Cell(i - 1, columns, rows, rowCount, config[bar.key.Vertical], config[bar.key.Start])
+            slot:ClearAllPoints()
+            slot:SetPoint("TOPLEFT", bar.header, "TOPLEFT", col * step, -row * step)
+            slot:SetSize(size, size)
+            slot:SetColorTexture(style.sr, style.sg, style.sb, style.slotAlpha)
+            slot:Show()
+        elseif slot then
+            slot:Hide()
+        end
+    end
+end
+
 -- Adopts Blizzard's stance (11) or pet (12) buttons into the suite header
 -- and sets which of them are shown. Blizzard's own UpdateShownButtons honours
 -- statehidden (set by the secure Hide) and the showgrid bit afterwards.
@@ -296,6 +324,7 @@ function AB.Adopt(index)
         bar.adopted = true
     end
     local count = AB.Count(bar, config)
+    if index == AB.ENUM.BAR.STANCE then count = math.min(count, GetNumShapeshiftForms()) end
     local showEmpty = config[bar.key.ShowEmpty] and true or false
     SecureHandlerSetFrameRef(control, "header", bar.header)
     for i = 1, 10 do

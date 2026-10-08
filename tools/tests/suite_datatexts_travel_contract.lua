@@ -28,6 +28,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     S.LearnedDungeonPortals = function() return { { id = 900, name = "Portal", icon = 321 } } end
     S.Start()
     local values = NS.DataTextPresetValues("empty", 1, c)
+    for index = 2, NS.DataTextBarLimit do values["bar" .. index .. "Enabled"] = false end
     values.bar1Slot1 = NS.DataTextSourceIndex.travel
     values.hearthItems = "6948,42,999"
     assert(S.SetMany("dataTexts", values))

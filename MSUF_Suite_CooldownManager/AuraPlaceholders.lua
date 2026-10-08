@@ -139,7 +139,7 @@ local function Hold(cell, entry, barMeta, dim, view)
         name:SetPoint("LEFT", cell, "LEFT", (left and lead or 0) + 4 * lk.px, 0)
         name:SetPoint("RIGHT", cell, "RIGHT", -(left and 0 or lead) - 4 * lk.px, 0)
         name:SetText(entry.name or "")
-        name:Show()
+        name:SetShown(view.barName ~= false)
     else
         icon:SetPoint("TOPLEFT", cell, "TOPLEFT", bw, -bw)
         icon:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -bw, bw)

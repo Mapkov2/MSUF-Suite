@@ -4,6 +4,15 @@ local Editor = { selected = 1, rows = {} }
 P.InventoryEditor = Editor
 local Refresh
 
+local function ClearSession()
+    Editor.profile, Editor.open = nil, nil
+    NS.Registry.RemoveListener(Editor)
+end
+
+local function ProfileChanged(_, domain)
+    if domain == "profile" then Editor.Hide() end
+end
+
 local function Label(parent, text, x, y)
     local label = S.CreateFontString(parent, nil, "OVERLAY")
     S.SetFont(label, S.GlobalFontPath(), 12, "OUTLINE")
@@ -31,7 +40,10 @@ local function Action(parent, text, x, y, width, callback)
 end
 
 local function Store()
-    if NS.IsCombatLocked() then return false end
+    if not Editor.open or NS.IsCombatLocked() or Editor.profile ~= NS.DB then
+        Editor.Hide()
+        return false
+    end
     if Editor.editPins then
         local state = S.ModuleState("bags")
         if not state then return false end
@@ -59,7 +71,9 @@ Refresh = function()
     Editor.status:SetText("")
     if Editor.editPins then
         local state = S.ModuleState("bags")
-        Editor.categories = { { name = S.Text("Pinned items"), enabled = true, items = state.pinned or {} } }
+        local items = {}
+        for id, enabled in pairs(state.pinned or {}) do items[id] = enabled end
+        Editor.categories = { { name = S.Text("Pinned items"), enabled = true, items = items } }
         Editor.selected = 1
     else
         Editor.categories = Model.DecodeCategories(S.Config("bags").customCategories)
@@ -142,6 +156,7 @@ end
 local function Create()
     local frame = P.GridView.Window("MSUFSuiteBagCategories", 410, 485, "Bag categories")
     Editor.frame = frame
+    frame:HookScript("OnHide", ClearSession)
     Label(frame, "Name", 18, -40)
     Editor.name = Input(frame, 24, -61, 357)
     Editor.name:SetMaxLetters(64)
@@ -174,6 +189,8 @@ function Editor.Show(pinned)
     if NS.IsCombatLocked() then return end
     Editor.editPins = pinned == true
     if not Editor.frame then Create() end
+    Editor.profile, Editor.open = NS.DB, true
+    NS.Registry.AddListener(Editor, ProfileChanged)
     Refresh()
     Editor.frame:Show()
 end
@@ -183,5 +200,6 @@ function Editor.ShowPinned()
 end
 
 function Editor.Hide()
+    ClearSession()
     if Editor.frame then Editor.frame:Hide() end
 end

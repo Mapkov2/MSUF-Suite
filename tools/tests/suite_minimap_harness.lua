@@ -686,6 +686,7 @@ function H.New(root, client, options)
         if file:match("%.lua$") then Load("MSUF_Suite/" .. file, "MSUF_Suite", W.Suite) end
         if file == "Core/Suite.lua" then break end
     end
+    Load("MSUF_Suite/Core/HostBridge.lua", "MSUF_Suite", W.Suite)
     Load("MSUF_Suite/Integrations/MapkoSkin.lua", "MSUF_Suite", W.Suite)
     assert(W.Suite.Database.Initialize(nil))
     W.S = W.Suite.Suite

@@ -217,7 +217,8 @@ local function NewButton(container)
     s.button,s.bind=true,{}
     return b
 end
-local TOKENS={HELPFUL=true,HARMFUL=true,PLAYER=true,RAID=true,CANCELABLE=true}
+-- AuraUtil.AuraFilters (upstream/live): own helpful target filters include nameplate-only auras.
+local TOKENS={HELPFUL=true,HARMFUL=true,PLAYER=true,RAID=true,CANCELABLE=true,INCLUDE_NAME_PLATE_ONLY=true}
 local function ValidFilter(filter)
     assert(type(filter)=="string" and filter~="","filter string")
     for token in filter:gmatch("[^|%s]+") do

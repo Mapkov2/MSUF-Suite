@@ -324,6 +324,9 @@ function MM.EnsureFrames()
     clip:EnableMouse(false)
     -- Unwanted Blizzard buttons wait here: hidden, without mouse or OnUpdate.
     local park = S.CreateFrame("Frame", nil, host)
+    -- Native mail and crafting alerts call their parent Layout after events.
+    -- Parked children are hidden; their own parent has no layout to update.
+    park.Layout = function() end
     park:SetSize(1, 1)
     park:SetPoint("CENTER", host, "CENTER")
     park:Hide()

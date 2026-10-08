@@ -300,6 +300,7 @@ C_DamageMeter={
 local Suite=MSUFSuite
 local Support=dofile(root.."/tools/tests/suite_test_support.lua")
 Support.Load(root,"MSUF_Suite",Suite,"Core/Suite.lua")
+Support.Load(root,"MSUF_Suite",Suite,"Core/HostBridge.lua")
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)

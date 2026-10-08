@@ -65,6 +65,7 @@ end
 
 function M:Refresh()
     local config = self.config
+    Settings.BeginCapture(config)
     local all = first
     first = false
     local text = ReadGlobals(config, all)
@@ -136,6 +137,7 @@ function C.Cold()
     UpdateSpec()
     local catalog = C.Catalog
     if catalog.generation == 0 or catalog.specTag ~= C.state.specTag then catalog.Rebuild() end
+    if dirty.resolve then C.state.entryGen = (C.state.entryGen or 0) + 1 end
     ResetDirty()
 end
 

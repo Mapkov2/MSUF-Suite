@@ -408,6 +408,7 @@ local function CombinedModeChanged(module)
     local mode = C_CVar.GetCVar("combinedBags")
     if S.Public(mode) and mode == "0" then
         if NS.IsCombatLocked() then
+            module.combinedBagConfigured = nil
             S.Queue("bags")
         else
             module.context:CVar("combinedBags", 1)

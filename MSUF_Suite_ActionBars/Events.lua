@@ -190,9 +190,9 @@ end
 local function FormsChanged()
     local bar = AB.bars[11]
     if not bar then return end
-    local forms = AB.HasForms()
+    local forms, formCount = AB.HasForms()
     local count = AB.Count(bar, M.config)
-    if bar.count == count and bar.forms == forms then return end
+    if bar.count == count and bar.forms == forms and bar.formCount == formCount then return end
     -- Layout, adoption and the driver are protected: re-apply after combat.
     if NS.IsCombatLocked() then
         S.Queue("actionbars")

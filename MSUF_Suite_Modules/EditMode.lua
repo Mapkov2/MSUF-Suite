@@ -29,38 +29,12 @@ local function OwnerName(id)
     return "MSUFSuite." .. id
 end
 
--- MSUF's own Blizzard adapter can register the same Blizzard surface a suite
--- module now owns (Minimap, Blizzard's damage meter). While a suite owner
--- claims its key, that record reports disabled. Records are looked up at call
--- time by MSUF, so wrapping isEnabled needs no MSUF change; re-created records
--- are wrapped again at the next session start.
-local suppressed, wrapped = {}, setmetatable({}, { __mode = "k" })
-local function WrapSuppressed()
-    local em = _G.MSUF_EM2
-    local external = em and em.ExternalElements
-    if type(external) ~= "table" or type(external.GetRecord) ~= "function" then return end
-    for key in pairs(suppressed) do
-        local record = external.GetRecord(key)
-        if type(record) == "table" and not wrapped[record] then
-            local original = record.isEnabled
-            wrapped[record] = true
-            record.isEnabled = function(...)
-                if next(suppressed[key] or EMPTY) then return false end
-                if type(original) == "function" then return original(...) end
-                return true
-            end
-        end
-    end
-end
-
 function S.SuppressHostElement(owner, key, claim)
-    suppressed[key] = suppressed[key] or {}
-    suppressed[key][owner] = claim and true or nil
-    if claim then WrapSuppressed() end
+    NS.HostBridge.SuppressEditElement(owner, key, claim)
 end
 
 local function SessionChanged(active)
-    if active then WrapSuppressed() end
+    if active then NS.HostBridge.RefreshSuppressedEditElements() end
     S.SetEditMode(active)
 end
 

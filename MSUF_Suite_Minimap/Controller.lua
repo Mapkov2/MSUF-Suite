@@ -142,6 +142,9 @@ function M:Refresh()
         S.Queue("minimap")
         return
     end
+    -- Reset replaces geometry with explicit defaults. An already-owned map
+    -- must never defer first-enable capture over edits made after that reset.
+    if self.mapOwned and not self.config.captured then S.Set("minimap", "captured", true) end
     MM.EnsureFrames()
     local dirty = Dirty(self)
     if dirty.geometry or dirty.position then MM.ApplyHost() end

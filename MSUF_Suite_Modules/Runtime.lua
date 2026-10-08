@@ -313,6 +313,16 @@ function Context:Tuple(frame, getter, setter, ...)
     record.applied = Pack(frame[getter](frame))
 end
 
+function Context:TextColor(frame, r, g, b, a)
+    if not NS.IsCombatLocked() then return self:Tuple(frame, "GetTextColor", "SetTextColor", r, g, b, a) end
+    local values = self.tuples and self.tuples[frame]
+    local record = values and values.SetTextColor
+    if not record or not Accessible(frame) then return end
+    frame:SetTextColor(r, g, b, a)
+    local applied = record.applied
+    applied[1], applied[2], applied[3], applied[4] = r, g, b, a
+end
+
 function Context:RestoreTuple(frame, setter)
     local values = self.tuples and self.tuples[frame]
     local record = values and values[setter]

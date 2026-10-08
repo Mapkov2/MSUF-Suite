@@ -348,6 +348,10 @@ local function RunSnippet(frame,body,vars,control,...)
     secure=secure-1
     return unpack(results)
 end
+function Handle:ClearBindings() ClearOverrideBindings(Usable(self)) end
+function Handle:SetBindingClick(priority,key,name,button)
+    SetOverrideBindingClick(Usable(self),priority,key,name,button)
+end
 function Handle:GetAttribute(name) assert(not name:match("^_"),"restricted read of "..name);return Usable(self).attrs[name] end
 function Handle:SetAttribute(name,value) assert(not name:match("^_"),"restricted write of "..name);Usable(self):SetAttribute(name,value) end
 function Handle:GetFrameRef(label) return Usable(self).attrs["frameref-"..label] end
@@ -743,12 +747,12 @@ GetBindingKey=function(command)
 end
 GetBindingText=function(key) return key end
 SetOverrideBindingClick=function(owner,priority,key,name,button)
-    assert(not combat,"override binding in combat")
+    assert(not combat or secure>0,"insecure override binding in combat")
     assert(priority==false and button=="Keybind")
     overrides[key]=name;overrideWrites=overrideWrites+1
 end
 ClearOverrideBindings=function()
-    assert(not combat,"override clear in combat")
+    assert(not combat or secure>0,"insecure override clear in combat")
     for key in pairs(overrides) do overrides[key]=nil end
     overrideClears=overrideClears+1
 end
@@ -1056,6 +1060,29 @@ assert(M.active and S.states.actionbars.active and S.Status("actionbars")=="Acti
 RunTimers()
 local frames=created-builtBefore
 assert(c.imported==true,"first enable must import Blizzard's layout")
+assert(S.SetMany("actionbars", { bar11ShowEmpty=true, bar11Buttons=8 }))
+RunTimers()
+assert(Bar(11).count==8 and Bar(11).emptySlots[3].shown and not Bar(11).buttons[3].button.shown,
+    "empty stance slots must be passive Suite art")
+do
+    local color, alpha = c.slotColor, c.slotAlpha
+    for _, count in ipairs({ 3, 1, 2 }) do
+        forms = count
+        Event("UPDATE_SHAPESHIFT_FORMS");RunTimers()
+        assert(Bar(11).count==8 and Bar(11).buttons[count].button.shown,
+            "ShowEmpty concealed a newly available native form")
+        assert(Bar(11).emptySlots[count+1].shown and not Bar(11).buttons[count+1].button.shown,
+            "ShowEmpty did not restore art after a form disappeared")
+        if Bar(11).emptySlots[count] then assert(not Bar(11).emptySlots[count].shown, "form retained stale empty art") end
+    end
+    assert(S.SetMany("actionbars", { slotColor="804020", slotAlpha=30 }));RunTimers()
+    local rgba = Bar(11).emptySlots[3].color
+    assert(math.abs(rgba[1]-128/255)<0.001 and math.abs(rgba[2]-64/255)<0.001
+        and math.abs(rgba[3]-32/255)<0.001 and rgba[4]==0.3, "empty stance art retained old style")
+    assert(S.SetMany("actionbars", {slotColor=color,slotAlpha=alpha}));RunTimers()
+end
+assert(S.Set("actionbars", "bar11ShowEmpty", false)); RunTimers()
+assert(Bar(11).count==2 and not Bar(11).emptySlots[3].shown, "stance empty slots did not clear")
 assert(S.ActionBarPreviewSlot(2,1)==61,"menu preview did not resolve the selected runtime bar")
 assert((triggered[BINDINGS_EVENT] or 0)>0,"starting the bars did not tell the cooldown manager its key texts changed")
 assert(c.pickupModifier == 1 and pickupWrites == 0,
@@ -1457,6 +1484,12 @@ assert((triggered[BINDINGS_EVENT] or 0)>bindingEvents,"the forms opt-out did not
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==1 and Bar(1).header.attrs.mirror==false,"forms opt-out keeps page 1")
 assert(overrides["1"]=="MSUFSuiteBar1Button1" and overrides["2"]=="MSUFSuiteBar1Button2","opt-out routes bar 1 keys")
+conditions.petbattle=true; combat=true; Drivers()
+assert(not next(overrides), "pet battle must release this owner's keyboard routes")
+conditions.petbattle=nil; Drivers()
+assert(overrides["1"]=="MSUFSuiteBar1Button1" and overrides["2"]=="MSUFSuiteBar1Button2",
+    "native state exit must restore saved routes during combat")
+combat=false
 MainBar.attrs.actionpage=7
 conditions["mod:shift"]=true
 assert(S.SetMany("actionbars",{disableFormPaging=false,pagingModifiers=true,pageShift=3}))

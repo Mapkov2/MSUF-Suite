@@ -39,6 +39,7 @@ end
 local function StopWatching(self)
     self.context:RemoveEvent("UNIT_HEALTH")
     self.context:RemoveEvent("UNIT_FLAGS")
+    self.context:RemoveEvent("UNIT_DIED")
     self.context:RemoveEvent("PLAYER_ALIVE")
     self.context:RemoveEvent("PLAYER_UNGHOST")
     self.groupKind = nil
@@ -57,6 +58,12 @@ end
 -- A release keeps the player a ghost; a resurrection ends the watch.
 local function PlayerAlive(self)
     if not (self.afterDeath and PlayerDead()) then StopWatching(self) end
+end
+
+local function WatchAfterDeath(self)
+    self.afterDeath = true
+    self.context:Event("PLAYER_ALIVE", PlayerAlive, IN_COMBAT)
+    self.context:Event("PLAYER_UNGHOST", PlayerAlive, IN_COMBAT)
 end
 
 local function Announce(self, unit)
@@ -97,7 +104,27 @@ local function OnHealth(self, _, unit)
     if dead then Announce(self, unit) end
 end
 
--- The unit list and the baseline are reused for every combat.
+-- In a dungeon or raid a group member who dies stays in combat: the
+-- UNIT_HEALTH and UNIT_FLAGS of that moment can still read them alive, and
+-- the next flag change is the end of combat, so the death was told only
+-- then. The client tells the death itself with UNIT_DIED (UnitDocumentation
+-- .lua, live and forever). Its GUID is readable for party and raid members
+-- (SecretWhenUnitIdentityRestricted); every other unit that dies near the
+-- group costs one secret test or one table miss. A death already told
+-- through OnHealth reads dead here and is not told twice.
+local function OnDied(self, _, guid)
+    local states = self.dead
+    if not states or not self.active or IsSecret(guid) then return end
+    local unit = self.guids[guid]
+    if not unit or states[unit] ~= false then return end
+    -- Feign Death is not a death.
+    local feigned = UnitIsFeignDeath(unit)
+    if not IsSecret(feigned) and feigned == true then return end
+    states[unit] = true
+    Announce(self, unit)
+end
+
+-- The unit list, the baseline and the GUID index are reused for every combat.
 local function Sync(self, event)
     local afterDeath = self.afterDeath == true and not NS.InCombat(event) and PlayerDead()
     StopWatching(self)
@@ -105,10 +132,11 @@ local function Sync(self, event)
     local grouped, raid = IsInGroup(), IsInRaid()
     if not S.Public(grouped) or grouped ~= true or not S.Public(raid) then return end
     local units = raid and RAID or PARTY
-    local watched, baseline = self.watched or {}, self.baseline or {}
-    self.watched, self.baseline = watched, baseline
+    local watched, baseline, guids = self.watched or {}, self.baseline or {}, self.guids or {}
+    self.watched, self.baseline, self.guids = watched, baseline, guids
     for i = #watched, 1, -1 do watched[i] = nil end
     for unit in pairs(baseline) do baseline[unit] = nil end
+    for guid in pairs(guids) do guids[guid] = nil end
     for i = 1, #units do
         local unit = units[i]
         -- Like upstream/live CompactUnitFrame, compare identity rather than
@@ -123,23 +151,26 @@ local function Sync(self, event)
         local exists = UnitExists(unit)
         if S.Public(exists) and exists == true then
             local dead = UnitIsDeadOrGhost(unit)
-            if S.Public(dead) and type(dead) == "boolean" then baseline[unit] = dead end
+            if S.Public(dead) and type(dead) == "boolean" then
+                baseline[unit] = dead
+                local guid = S.PublicText(UnitGUID(unit))
+                if guid then guids[guid] = unit end
+            end
         end
     end
     self.dead = baseline
-    self.afterDeath = afterDeath or nil
     self.context:Event("UNIT_HEALTH", OnHealth, IN_COMBAT, watched)
     self.context:Event("UNIT_FLAGS", OnHealth, IN_COMBAT, watched)
-    if afterDeath then
-        self.context:Event("PLAYER_ALIVE", PlayerAlive, IN_COMBAT)
-        self.context:Event("PLAYER_UNGHOST", PlayerAlive, IN_COMBAT)
-    end
+    self.context:Event("UNIT_DIED", OnDied, IN_COMBAT)
+    if afterDeath then WatchAfterDeath(self) end
 end
 
-local function CombatEnded(self, event)
+-- The player's own death ends their combat, possibly before the client told
+-- it or the deaths around it. The watch keeps its states, so each of those
+-- still reads as a change from alive.
+local function CombatEnded(self)
     if self.dead and PlayerDead() then
-        self.afterDeath = true
-        Sync(self, event)
+        WatchAfterDeath(self)
     else
         StopWatching(self)
     end

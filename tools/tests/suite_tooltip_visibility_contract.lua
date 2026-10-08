@@ -19,6 +19,11 @@ IsInInstance = function() return instance, instance and "party" or "none" end
 Enum = { TooltipDataType = { Item = 1, Spell = 2, Unit = 3 } }
 -- GameTooltip as addon code meets it: Hide() would run GameTooltip_OnHide in
 -- the caller's context, so the helper must never call it.
+local built
+suite.TooltipLines = { Add = function(_, kind, callback)
+    assert(kind == "AllTypes")
+    built = callback
+end }
 local tooltip = { shown = false, alpha = 1, scripts = {}, hooks = {} }
 function tooltip:IsShown() return self.shown end
 function tooltip:GetOwner() return self.owner end
@@ -29,6 +34,7 @@ function tooltip:IsTooltipType(kind)
     return self.tooltipType == kind
 end
 function tooltip:Show()
+    if built then built(self, {}) end
     local was = self.shown
     self.shown = true
     if not was and self.scripts.OnShow then self.scripts.OnShow(self) end
@@ -43,6 +49,7 @@ function tooltip:HookScript(name, callback)
     self.scripts[name] = function(...) if old then old(...) end; callback(...) end
 end
 hooksecurefunc = function(owner, key, callback)
+    assert(owner ~= GameTooltip, "shared tooltip method hook is forbidden")
     local original = owner[key]
     owner[key] = function(...) original(...); callback(...) end
 end

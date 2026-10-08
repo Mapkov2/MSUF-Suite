@@ -168,4 +168,12 @@ for _, name in ipairs({ "CombatLog" }) do
     local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("(C_%w+) and C_%w+%.")
     assert(not guarded, name .. ".lua guards " .. tostring(guarded) .. " as if a client lacked it")
 end
+module.active, module.config.raidNormal = true, true
+module.startedBySuite, module.manualStop, logOn = false, nil, false
+for _, raidDifficulty in ipairs({242, 243}) do
+    Place("raid", raidDifficulty)
+    assert(logOn and module.startedBySuite, "Forever normal raid difficulty did not start logging")
+    Place("none")
+    assert(not logOn)
+end
 print("Combat logging: event routing, difficulty choices, ownership, timer and manual override passed")

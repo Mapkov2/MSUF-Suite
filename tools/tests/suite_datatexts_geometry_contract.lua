@@ -11,7 +11,9 @@ M.config=S.Config('dataTexts')
 local c=M.config
 c.bar1Width=600;c.bar1Height=30;c.bar1Layout=1;c.bar1Slot2Placement=2;c.bar1Slot1Placement=3
 local function Widget()
-    return {ClearAllPoints=function() end,SetPoint=function(self,p,rel,rp,x,y) self.x=x;self.y=y end,
+    return {CreateTexture=function() return G.CreateFrame("Frame"):CreateTexture() end,
+        GetHeight=function(self) return self.h or 20 end,
+        ClearAllPoints=function() end,SetPoint=function(self,p,rel,rp,x,y) self.x=x;self.y=y end,
         SetSize=function(self,w,h) self.w=w;self.h=h end,Show=function() end,Hide=function() end,
         GetUnboundedStringWidth=function() return 1000 end}
 end
@@ -34,4 +36,15 @@ assert(bar.slots[1].w>300 and bar.slots[1].x+bar.slots[1].w+6<=bar.slots[2].x+1,
 bar.vertical=true;c.bar1Slot1Scale=150;Layout(bar)
 assert(bar.slots[1].w==20 and bar.slots[1].h>200 and bar.slots[2].y<0,'vertical sizing must account for block scale')
 assert(W.Suite.DataTextBarLimit==256 and c.bar12Enabled==false,'configuration bounds must protect secure frame creation')
+bar.vertical=false;c.bar1Layout=2;c.bar1Width=44;bar.length=44
+c.bar1Slot1Placement=1;c.bar1Slot1Scale=100;bar.slots[2].source=nil
+bar.slots[1].label.GetUnboundedStringWidth=function() return 60 end
+for _, count in ipairs({0,1,2,32,40}) do
+    local icons={};for i=1,count do icons[i]=i end
+    bar.slots[1].extra={kind='profession',icons=icons}
+    Layout(bar)
+    local bounded=math.min(count,32)
+    local iconWidth=bounded>0 and bounded*14+(bounded-1)*2+4 or 0
+    assert(bar.slots[1].w==70+iconWidth,'Fit text did not reserve visible icon width')
+end
 print('datatext geometry PASS')

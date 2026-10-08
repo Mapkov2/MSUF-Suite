@@ -311,16 +311,22 @@ local function Spell(t, data)
     if S.Finite(icon) then Detail(t, "Spell icon ID", icon) end
 end
 
--- Mount journal entries call GameTooltip:SetMountBySpellID; the hook adds the
--- marker after Blizzard showed the tooltip, so it sizes the tooltip again.
-local function Mount(t, spellID)
-    if not M.active or not M.config.ownedMount or t ~= GameTooltip or not S.Finite(spellID) then return end
+-- The mount data post-call runs before native sizing. Read the documented
+-- getter arguments instead of assuming TooltipData.id is a spell identity.
+local function Mount(t)
+    if not M.config.ownedMount then return end
+    local info = t:GetProcessingTooltipInfo()
+    if not S.Public(info) or type(info) ~= "table" or not canaccesstable(info) then return end
+    local args = info.getterArgs
+    if not S.Public(info.getterName) or info.getterName ~= "GetMountBySpellID"
+        or not S.Public(args) or type(args) ~= "table" or not canaccesstable(args) then return end
+    local spellID = args[1]
+    if not S.Finite(spellID) then return end
     local mountID = C_MountJournal.GetMountFromSpell(spellID)
     if not S.Finite(mountID) then return end
     local _, _, _, _, _, _, _, _, _, _, collected = C_MountJournal.GetMountInfoByID(mountID)
     if not S.Public(collected) then return end
     Detail(t, "Mount collection", collected and S.Text("Collected") or S.Text("Not collected"))
-    t:Show()
 end
 
 ------------------------------------------------------------------ anchor
@@ -430,7 +436,7 @@ local function Install(self)
     Lines.Add(self, "Unit", Unit)
     Lines.Add(self, "Item", Item)
     Lines.Add(self, "Spell", Spell)
-    hooksecurefunc(GameTooltip, "SetMountBySpellID", Mount)
+    Lines.Add(self, "Mount", Mount)
     hooksecurefunc("GameTooltip_SetDefaultAnchor", Anchor)
     GameTooltip:HookScript("OnHide", Hidden)
     hooksecurefunc("NotifyInspect", ObserveInspect)

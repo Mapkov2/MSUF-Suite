@@ -77,6 +77,11 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         "clicking the Hearthstone place of a Mouseover bar used nothing: " .. flavor)
     Hover(W, bar, hearth, false)
     W.Fire(overlay, "OnLeave")
+    G.C_Item.GetItemCount = function() return 0 end
+    W.Event("BAG_UPDATE_DELAYED")
+    assert(hearth.extra.hearth == nil, "hidden hearth place retained a lost item")
+    Hover(W, bar, hearth, true)
+    assert(not overlay.shown, "first show offered a stale secure hearth action")
     print("Suite DataTexts hidden places passed: " .. flavor)
 end
 

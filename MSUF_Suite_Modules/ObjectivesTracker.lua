@@ -381,7 +381,7 @@ local function FlatSlot(flat, index)
     item.findGroup, item.questGroupSearch = nil, nil
     item.questIcon, item.questIconAtlas = nil, nil
     item.scenarioHeaderSetID = nil
-    item.timeLeft, item.hasLines, item.collapseKey = nil, nil, nil
+    item.timerEnd, item.hasLines, item.collapseKey = nil, nil, nil
     item.questID, item.achievementID, item.scenarioID = nil, nil, nil
     item.done, item.percent = nil, nil
     return item
@@ -432,7 +432,7 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
         item.key, item.kind, item.group = entry.entryKey, "entry", group
         item.text, item.height = entry.title, entryHeight
         item.menuTitle, item.tracked = entry.title, entry.tracked
-        item.itemIcon, item.itemLink, item.timeLeft = entry.itemIcon, entry.itemLink, entry.timeLeft
+        item.itemIcon, item.itemLink, item.timerEnd = entry.itemIcon, entry.itemLink, entry.timerEnd
         item.questIcon, item.questIconAtlas = entry.questIcon, entry.questIconAtlas
         item.scenarioHeaderSetID = entry.scenarioHeaderSetID
         item.findGroup, item.questGroupSearch = entry.findGroup, entry.questGroupSearch
@@ -460,7 +460,7 @@ local function SameItem(a, b)
         and a.percent == b.percent and a.tracked == b.tracked
         and a.questID == b.questID and a.achievementID == b.achievementID
         and a.scenarioID == b.scenarioID and a.collapsed == b.collapsed
-        and a.itemIcon == b.itemIcon and a.itemLink == b.itemLink and a.timeLeft == b.timeLeft
+        and a.itemIcon == b.itemIcon and a.itemLink == b.itemLink and a.timerEnd == b.timerEnd
         and a.questIcon == b.questIcon and a.questIconAtlas == b.questIconAtlas
         and a.scenarioHeaderSetID == b.scenarioHeaderSetID
         and a.findGroup == b.findGroup and a.questGroupSearch == b.questGroupSearch
@@ -564,7 +564,7 @@ local function PaintRowWidgets(self, row, item, color, size)
     elseif row.itemButton then
         row.itemButton:Hide()
     end
-    if Finite(item.timeLeft) and item.timeLeft > 0 and item.kind == "entry" then
+    if Finite(item.timerEnd) and item.timerEnd > GetTime() and item.kind == "entry" then
         local timer = EnsureTimer(row)
         if row.timerFont ~= self.font or row.timerSize ~= size then
             S.SetStyledFont(timer, self.font, math.max(10, size - 1), "OUTLINE", 1, true, 70, 1)
@@ -574,7 +574,7 @@ local function PaintRowWidgets(self, row, item, color, size)
         timer:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
         timer:SetWidth(58)
         timer:SetTextColor(unpack(self.mutedRGB))
-        row.timerEnd = GetTime() + item.timeLeft
+        row.timerEnd = item.timerEnd
         self.timedRows[row] = true
         rightInset = rightInset + 62
     else

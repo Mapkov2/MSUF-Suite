@@ -831,6 +831,13 @@ auras[1235110] = { spellId=1235110, auraInstanceID=801, expirationTime=now+1200,
 eventFrame.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 assert(module.view.mask == 1 and private.BuffReminders.Threshold(module) == 1800,
     "pre-key threshold did not show a buff that expires during the configured run time")
+for _, minutes in ipairs({ 60, 90 }) do
+    module.config.keystoneMinutes = minutes
+    module:Refresh()
+    assert(module.view.mask == 1, "one-hour buff must warn for a longer pre-key requirement")
+end
+module.config.keystoneMinutes = 30
+module:Refresh()
 before = auraReads
 challengeActive = true
 eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_START")
@@ -1010,7 +1017,7 @@ do
 end
 do
     local owner=Owner({config={petPassiveWarning=true,healthstoneFromWarlock=true}})
-    owner.group.classes, owner.view.host = {WARLOCK=true}, Widget()
+    owner.group.classes, owner.group.unitList, owner.view.host = {WARLOCK=true}, {"player", "party1"}, Widget()
     NUM_PET_ACTION_SLOTS=10
     UnitExists=function(unit) return unit=="pet" end
     UnitIsDeadOrGhost=function() return false end
@@ -1024,6 +1031,10 @@ do
     BR.ReadPet(owner)
     assert(owner.notices.petPassive==nil,"secret pet reaction became a warning")
     inventory={[5512]=0,[224464]=0}
+    owner.group.unitList={"player"}
+    BR.ReadHealthstone(owner)
+    assert(owner.notices.healthstoneMissing==nil,"solo Warlock received a group Healthstone notice")
+    owner.group.unitList={"player", "party1"}
     BR.ReadHealthstone(owner)
     BR.SpecialText(owner,true)
     assert(owner.notices.healthstoneMissing and owner.notices.label.shown,"missing healthstone warning not shown")
@@ -1206,6 +1217,7 @@ do
 
     NS.Client.isForever=true
     owner.config={soulstoneOnAlly=true,healthstoneFromWarlock=true}
+    owner.group.unitList={"player", "party1"}
     knownSpell=function(id) return id==20757 end
     local ranked=false
     C_UnitAuras.GetAuraDataBySpellName=function(unit,name,filter)

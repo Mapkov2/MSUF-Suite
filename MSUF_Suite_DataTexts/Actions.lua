@@ -426,8 +426,7 @@ function Actions.Click(button, mouse)
         -- without Blizzard's button opens its window right away.
         if not Actions.Attach(button) and PANEL_KINDS[kind] then S.TogglePanel(PANEL_KINDS[kind]) end
     elseif kind == "professions" then
-        C_AddOns.LoadAddOn("Blizzard_ProfessionsBook")
-        if _G.ProfessionsBookFrame then ToggleFrame(ProfessionsBookFrame) end
+        ToggleProfessionsBook()
     elseif kind == "portals" then
         Actions.PortalMenu(button)
     elseif kind == "microMenu" then

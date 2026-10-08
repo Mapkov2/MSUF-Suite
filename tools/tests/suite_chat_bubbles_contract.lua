@@ -32,6 +32,7 @@ local function Bubble(text)
     function region:SetTextColor(...) self.color = { ... } end
     local content = { String = region, scripts = {}, shown = true }
     for _, key in ipairs(CHROME) do content[key] = Texture() end
+    function content:IsShown() return self.shown end
     function content:HookScript(script, callback)
         assert(not self.scripts[script], "a bubble got the same hook twice")
         self.scripts[script] = callback
@@ -144,6 +145,12 @@ assert(not scanner.shown, "discovery kept running after every heard line found i
 config.bubbleMaxWidth = 350
 C.BubblesRefresh(M)
 eq(region.width, 350, "larger width must restore native width before applying cap")
+config.bubbleStyleNearby = false
+C.BubblesRefresh(M)
+assert(region.font ~= "Custom", "source toggle off did not restore native bubble")
+config.bubbleStyleNearby = true
+C.BubblesRefresh(M)
+assert(region.font == "Custom", "same visible text did not regain its source style")
 -- A line whose bubble shows late is still found within its time.
 local late = Bubble()
 Speech("CHAT_MSG_PARTY", "late one")

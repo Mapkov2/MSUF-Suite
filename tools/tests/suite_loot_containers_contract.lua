@@ -91,9 +91,11 @@ slots[0][4] = { guid = "combat-new", info = { itemID = 13, hasLoot = true, isLoc
 Settle(0)
 assert(#calls == 1 and context.events.PLAYER_REGEN_ENABLED,
     "combat item opened early or was not deferred")
+slots[1][3], slots[0][4] = slots[0][4], nil
+Settle(0); Settle(1)
 combat = false
 context.events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
-assert(#calls == 2 and calls[2].slot == 4, "deferred container did not open after combat")
+assert(#calls == 2 and calls[2].bag == 1 and calls[2].slot == 3, "deferred container did not open after combat")
 
 shift = true
 slots[0][5] = { guid = "paused", info = { itemID = 14, hasLoot = true, isLocked = false } }

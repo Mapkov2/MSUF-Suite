@@ -11,8 +11,8 @@ local C = P.CDM
 --  * sealed buttons are restyled only while CanBeAccessedInContext() is
 --    plainly true. While auras are secret the new look waits for them to
 --    open; buttons that refuse while auras are plain get a new container;
---  * in combat only container-level switches run: target containers pause
---    while the target is friendly, overlay slots follow their icon.
+--  * combat uses native container/slot switches: harmful target entries pause
+--    on friendly targets, helpful own auras and icon overlays keep their bindings.
 -- Per-spell stack choices ride on the same bindings, so no Lua ever reads
 -- an application count: a shared count formatter colors the stack text
 -- from N applications, and the stack glow is placed by an application bar
@@ -158,7 +158,7 @@ local function Needs(entries, aura, view)
     local isKit = C.Alerts.IsKit
     for i = 1, #entries do
         local entry = entries[i]
-        if aura and entry.timer and C.AuraTimers.Wants(entry, view) then need.timers = need.timers .. entry.key .. ":" end
+        if aura and entry.timer and C.AuraTimers.Wants(entry, view) then need.timers = need.timers .. i .. "=" .. entry.key .. ":" end
         local ov = entry.ov
         if ov and ov ~= EMPTY and entry.src ~= "p" then
             if ov.timeText == YES then need.text = true end
@@ -341,10 +341,18 @@ end
 -- Target containers pause while the target is friendly (FriendlyTarget).
 -- SetEnabled is container-level (legal in combat), refreshes the container
 -- when it turns on and makes no call while the state holds.
+local function TargetEnabled(rec, friendly)
+    if rec.friendly ~= friendly then
+        rec.friendly = friendly
+        for k = 1, #rec.keys do Apply(rec, k) end
+    end
+    return not friendly or rec.helpfulTarget == true
+end
 local function React()
-    local enabled = not FriendlyTarget()
+    local friendly = FriendlyTarget()
     for i = 1, #targets do
         local rec = targets[i]
+        local enabled = TargetEnabled(rec, friendly)
         if rec.enabled ~= enabled then
             rec.enabled = enabled
             Hush(rec)
@@ -360,9 +368,10 @@ end
 -- auras are no gains or losses: kit sensors stay silent.
 function Auras.TargetChanged()
     if targets[1] == nil then return end
-    local enabled = not FriendlyTarget()
+    local friendly = FriendlyTarget()
     for i = 1, #targets do
         local rec = targets[i]
+        local enabled = TargetEnabled(rec, friendly)
         Hush(rec)
         if rec.enabled ~= enabled then
             rec.enabled = enabled

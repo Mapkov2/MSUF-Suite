@@ -87,6 +87,7 @@ local state = {}
 local c = { font = "Suite", bankView = 4, itemCountSize = 12, itemLevelSize = 12,
     showBankTabs = true, customCategories = "", mergeStacks = true, compactGroups = true }
 local M = { active = true, config = c, Refresh = function() end, Disable = function() end,
+    StyleItemLevel = function() end, PaintItemLevelQuality = function() end,
     HideBankLevels = function(self) self.hiddenNativeLabels = true end,
     UpdateBank = function(self) self.nativeUpdates = (self.nativeUpdates or 0) + 1 end }
 local S = {

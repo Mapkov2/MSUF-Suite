@@ -71,6 +71,7 @@ Work({ "layer" }, { layout = true, aura = true, restyle = true })
 Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
     "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments",
     "barChargeDim" }, { bar = true, style = true, behavior = true })
+Work({ "barStacks" }, { index = true })
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.
 local FRESH = { layout = true, style = true, behavior = true, index = true, visible = true, resolve = true, named = true }
@@ -154,7 +155,10 @@ function Settings.ReadGlobals(config, all)
     state.pressFeedback = config.pressFeedback == true
     for i = 1, #EVENT_GLOBALS do
         local key = EVENT_GLOBALS[i]
-        if state[key] ~= config[key] then state[key], dirty.events = config[key], true end
+        if state[key] ~= config[key] then
+            state[key], dirty.events = config[key], true
+            if key == "keybindStable" then dirty.keybinds = true end
+        end
     end
     for i = 1, #PLACE_GLOBALS do
         local key = PLACE_GLOBALS[i]
@@ -263,9 +267,10 @@ end
 
 ------------------------------------------------------------------ first-run capture
 local captureWait, pendingCapture = false, nil
+local captureConfig
 local function PersistCapture()
     local values = pendingCapture
-    if not values or not M.active then
+    if not values or not M.active or M.config ~= captureConfig or S.Config(ID) ~= captureConfig then
         pendingCapture = nil
         return
     end
@@ -403,6 +408,8 @@ end
 -- Activation: Blizzard's layout is read before the takeover touches its
 -- bars; on a fresh login the capture waits for Blizzard's data.
 function Settings.BeginCapture(config)
+    if captureConfig == config then return end
+    captureConfig = config
     captureWait, pendingCapture = false, nil
     if config.captured ~= true or Outdated(config) then
         if C.Catalog.Ready() then
@@ -423,5 +430,6 @@ function Settings.CaptureAfterCombat()
     if pendingCapture then PersistCapture() end
 end
 function Settings.ForgetCapture()
+    captureConfig = nil
     captureWait, pendingCapture = false, nil
 end

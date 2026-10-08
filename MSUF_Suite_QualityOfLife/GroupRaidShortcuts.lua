@@ -216,7 +216,9 @@ local function MarkerHelp(button)
         GameTooltip:SetText(S.Text(MARK_HELP), 1, 1, 1, nil, true)
         GameTooltip:Show()
     end)
-    button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    button:SetScript("OnLeave", function(owner)
+        if GameTooltip:IsOwned(owner) then GameTooltip:Hide() end
+    end)
 end
 
 local function CreatePanel(self)

@@ -23,7 +23,7 @@ end
 
 local function Exempt(tooltip)
     -- GameTooltip is shared. MSUF's own unit/group visibility mode owns it
-    -- until MSUF clears this marker on hide or the next SetOwner call.
+    -- until MSUF clears this marker on hide (also when another owner reuses it).
     if tooltip._msufUnitTooltipOwner ~= nil then return true end
     -- Clickable aura reminders show their item or spell here and have their
     -- own tooltip switch.
@@ -69,17 +69,21 @@ local function Apply(event)
 end
 
 local function Shown() Apply() end
+local function Built(tooltip)
+    if tooltip == GameTooltip then Apply() end
+end
 local function StateChanged(_, event) Apply(event) end
 
 local function WantEvent(context, event, wanted)
     if wanted then context:Event(event, StateChanged, IN_COMBAT) else context:RemoveEvent(event) end
 end
 
--- Every build ends in GameTooltip:Show(), Blizzard's and other addons' alike.
--- Hooks cannot be removed; they do nothing while the helper is off.
+-- OnShow handles first display; native data post-calls handle a rebuild of an
+-- already visible tooltip. Both registrations are inert while disabled.
 function M:Enable()
     if not self.hooked then
-        hooksecurefunc(GameTooltip, "Show", Shown)
+        GameTooltip:HookScript("OnShow", Shown)
+        S.TooltipLines.Add(self, "AllTypes", Built)
         GameTooltip:HookScript("OnHide", Reveal)
         self.hooked = true
     end

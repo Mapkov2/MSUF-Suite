@@ -44,6 +44,7 @@ local function AcquireButton(number)
         button:HookScript("OnEnter", actions.Enter)
         button.level = Font(button, M.config.itemLevelSize)
         button.level:SetPoint("TOPRIGHT", -1, -1)
+        button.levelStyle = { label = button.level }
         BankInventory.buttons[number] = button
     end
     return button
@@ -58,10 +59,11 @@ local function StyleItem(button, item, font)
     end
     local level = c.showBankItemLevel and item.level
     if button.font ~= font or button.levelSize ~= c.itemLevelSize or button.countSize ~= c.itemCountSize then
-        S.SetFont(button.level, font, c.itemLevelSize, "OUTLINE")
         S.SetFont(button.Count, font, c.itemCountSize, "OUTLINE")
         button.font, button.levelSize, button.countSize = font, c.itemLevelSize, c.itemCountSize
     end
+    M:StyleItemLevel(button.levelStyle)
+    M:PaintItemLevelQuality(button.levelStyle, item.quality)
     if S.Finite(level) and level > 0 then
         button.level:SetText(tostring(math.floor(level)))
         button.level:Show()

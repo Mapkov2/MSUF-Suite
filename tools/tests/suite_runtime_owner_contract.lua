@@ -376,6 +376,27 @@ fonts:Tuple(label, "GetFont", "SetFont", "Suite.ttf", 14, "OUTLINE")
 fonts:Release()
 assert(label.font[1] == "Base.ttf" and label.font[2] == 16, "release did not return to Blizzard's adopted size")
 
+local tabColor = { r = .1, g = .2, b = .3, a = 1 }
+function tabColor:GetTextColor() return self.r, self.g, self.b, self.a end
+function tabColor:SetTextColor(r, g, b, a) self.r, self.g, self.b, self.a = r, g, b, a end
+local colors = S.NewContext("chat")
+local function PaintColor(context, frame, ...)
+    if context.TextColor then context:TextColor(frame, ...)
+    else context:Tuple(frame, "GetTextColor", "SetTextColor", ...) end
+end
+PaintColor(colors, tabColor, 1, 1, 1, 1)
+local appliedColor = colors.tuples[tabColor].SetTextColor.applied
+InCombatLockdown = function() return true end
+PaintColor(colors, tabColor, .8, .4, .2, 1)
+assert(tabColor.r == .8 and colors.tuples[tabColor].SetTextColor.applied == appliedColor,
+    "combat tab repaint was deferred or allocated a replacement ownership record")
+local unknown = { GetTextColor = tabColor.GetTextColor, SetTextColor = tabColor.SetTextColor }
+PaintColor(colors, unknown, 1, 1, 1, 1)
+assert(not unknown.r and not colors.tuples[unknown], "combat painting acquired new font ownership")
+InCombatLockdown = function() return false end
+colors:Release()
+assert(tabColor.r == .1 and tabColor.g == .2 and tabColor.b == .3, "combat color did not restore its original")
+
 -- Data ticks share one timer. A tick that raises is reported; the other ticks
 -- of that round still run and the timer is armed again.
 local timers, now, ran = {}, 100, {}
@@ -420,6 +441,8 @@ UnitExists = function(unit) return deadUnits[unit] ~= nil end
 UnitIsDeadOrGhost = function(unit) return deadUnits[unit] end
 UnitIsUnit = function(unit, other) return unit == "raid1" and other == "player" end
 UnitName = function(unit) return unit == "raid5" and "Røxì" or "Teammate" end
+UnitGUID = function(unit) return deadUnits[unit] ~= nil and "Player-1-" .. unit or nil end
+UnitIsFeignDeath = function() return false end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) deathChat[#deathChat + 1] = text end }
 RaidWarningFrame, GameFontNormalHuge = {}, {}
 ChatTypeInfo, SOUNDKIT = { RAID_WARNING = { r = 1, g = .28, b = 0 } }, { RAID_WARNING = 8959 }
@@ -445,10 +468,15 @@ assert(#deathChat == 2 and #deathScreen == 2 and deathSounds == 1,
 deadUnits.raid5 = false
 death.context.frame:callback("UNIT_FLAGS", "raid5")
 assert(#deathChat == 2, "resurrection emitted a death message")
+-- The client's own death event reaches the module through the real runtime.
+assert(death.context.frame.events.UNIT_DIED == true, "the death event was not registered in combat")
+death.context.frame:callback("UNIT_DIED", "Player-1-raid5")
+assert(#deathChat == 3 and deathChat[3] == "MSUF Suite: Røxì died", "the runtime lost the client's death event")
 inCombat = false
 death.context.frame:callback("PLAYER_REGEN_ENABLED")
 assert(not death.dead and not death.context.callbacks.UNIT_HEALTH
-    and not death.context.callbacks.UNIT_FLAGS, "runtime watched deaths outside combat")
+    and not death.context.callbacks.UNIT_FLAGS and not death.context.callbacks.UNIT_DIED,
+    "runtime watched deaths outside combat")
 death:Disable()
 death.active = false
 print("Standalone runtime: shared HUD modules and " .. (count - 3)

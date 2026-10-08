@@ -373,6 +373,7 @@ local function Style(row, entry, view)
     row.frame.part.timeFrame:SetFrameLevel(level + (K.Choice(ov.textTop, K.BarStacksTop(view)) and K.AURA_LEVEL.text or K.AURA_LEVEL.stacks))
     row.time = K.Choice(ov.timeText, K.BarTime(view))
     row.frame.part.dur:SetShown(row.time)
+    row.frame.part.dur:SetTextColor(C.state.cdR or 1, C.state.cdG or 1, C.state.cdB or 1)
     row.direction = view.barFill == K.BAR_FILL.FILL and direction.ElapsedTime or direction.RemainingTime
     local opts = C.AuraButtons.TextOpts(ov.threshold or C.state.threshold)
     if row.opts ~= opts then

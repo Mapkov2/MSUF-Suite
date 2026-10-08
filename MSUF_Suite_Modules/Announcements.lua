@@ -163,9 +163,13 @@ local function Enqueue(self, kind, title, subtitle, key)
     if not self.active or not Text(title) then return end
     local now = GetTime()
     if key and self.lastKey == key and now - (self.lastTime or 0) < 2 then return end
+    if kind == "quest" and key then
+        if self.current and self.current.key == key then return end
+        for i = 1, #self.queue do if self.queue[i].key == key then return end end
+    end
     self.lastKey, self.lastTime = key, now
     if #self.queue >= 4 then table.remove(self.queue, 1) end
-    self.queue[#self.queue + 1] = { kind = kind, title = title, subtitle = subtitle }
+    self.queue[#self.queue + 1] = { kind = kind, title = title, subtitle = subtitle, key = key }
     self:Next()
 end
 
@@ -375,9 +379,11 @@ local function OnShowAlert(system, data)
     SuppressAlerts(self, system, kind)
     if not self.active or not self.config[kind] or not S.Public(data) or type(data) ~= "table" then return end
     local title = kind == "quests" and Text(data.taskName) or kind == "scenario" and Text(data.name)
-    if title and not RecentlyDirect(self, kind) then
-        Enqueue(self, kind, title, kind == "quests" and Tr("QUEST COMPLETE") or Tr("SCENARIO COMPLETE"),
-            "alert:" .. kind .. ":" .. title)
+    local announcement = kind == "quests" and "quest" or kind
+    if title and (announcement == "quest" or not RecentlyDirect(self, announcement)) then
+        Enqueue(self, announcement, title, announcement == "quest" and Tr("QUEST COMPLETE") or Tr("SCENARIO COMPLETE"),
+            announcement == "quest" and Number(data.questID) and "QUEST_TURNED_IN:" .. data.questID
+                or "alert:" .. announcement .. ":" .. title)
     end
 end
 

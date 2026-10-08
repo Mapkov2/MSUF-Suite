@@ -17,7 +17,10 @@ IsInGroup = function() return grouped end
 IsInRaid = function() return raid end
 UnitExists = function(unit) return members[unit] ~= nil end
 UnitIsDeadOrGhost = function(unit) return members[unit] end
-UnitName = function(unit) return unit == "party1" and "Alice" or "Player" end
+local names, feigned = { party1 = "Alice", party3 = "Cleo" }, {}
+UnitName = function(unit) return names[unit] or "Player" end
+UnitGUID = function(unit) return members[unit] ~= nil and "GUID-" .. unit or nil end
+UnitIsFeignDeath = function(unit) return feigned[unit] == true end
 local context = { events = {} }
 function context:Event(event, callback, _, units)
     self.events[event] = { callback = callback, units = units }
@@ -85,10 +88,34 @@ assert(screen.visibleFor == 10 and screen.fadeFor == 3 and screen.fading and scr
     "screen messages must fade natively and leave input alone")
 assert(screen.point[2] == RaidWarningFrame and screen.point[3] == "TOP",
     "owned death messages must stay above the native raid-warning/debuff stack")
+-- In an instance the dying member stays in combat: the health and flag
+-- events of that moment still read them alive, and UNIT_DIED tells the death.
+members.party3 = false
+context.events.GROUP_ROSTER_UPDATE.callback(module, "GROUP_ROSTER_UPDATE")
+assert(context.events.UNIT_DIED and module.guids["GUID-party3"] == "party3",
+    "the death event or the member GUID index was not set up in combat")
+context.events.UNIT_HEALTH.callback(module, "UNIT_HEALTH", "party3")
+context.events.UNIT_FLAGS.callback(module, "UNIT_FLAGS", "party3")
+assert(#lines == 1, "a member read alive was announced")
+feigned.party3 = true
+context.events.UNIT_DIED.callback(module, "UNIT_DIED", "GUID-party3")
+assert(#lines == 1, "Feign Death was announced as a death")
+feigned.party3 = nil
+-- Units outside the group die with a secret or an unknown GUID.
+context.events.UNIT_DIED.callback(module, "UNIT_DIED", "secret")
+context.events.UNIT_DIED.callback(module, "UNIT_DIED", "Creature-0-1")
+assert(#lines == 1, "a death outside the group was announced")
+context.events.UNIT_DIED.callback(module, "UNIT_DIED", "GUID-party3")
+assert(#lines == 2 and lines[2] == "Cleo died", "the client's death event was not announced")
+members.party3 = true
+context.events.UNIT_FLAGS.callback(module, "UNIT_FLAGS", "party3")
+context.events.UNIT_DIED.callback(module, "UNIT_DIED", "GUID-party3")
+assert(#lines == 2 and #screen.messages == 2, "a death told by UNIT_DIED was told again")
+members.party3 = nil
 combat = false
 context.events.PLAYER_REGEN_ENABLED.callback(module, "PLAYER_REGEN_ENABLED")
-assert(not context.events.UNIT_HEALTH and not context.events.UNIT_FLAGS,
-    "group health events remained registered after combat")
+assert(not context.events.UNIT_HEALTH and not context.events.UNIT_FLAGS and not context.events.UNIT_DIED,
+    "group health or death events remained registered after combat")
 -- A wipe: the player's own death ends their combat (PLAYER_REGEN_ENABLED),
 -- the other deaths are still told until the player is alive again.
 members.party1, members.party2, members.player = false, false, false
@@ -100,17 +127,34 @@ assert(context.events.UNIT_HEALTH.units == watched and module.dead == baseline,
     "a roster change in combat built new unit and baseline tables")
 members.player, combat = true, false
 context.events.PLAYER_REGEN_ENABLED.callback(module, "PLAYER_REGEN_ENABLED")
-assert(context.events.UNIT_HEALTH and context.events.PLAYER_UNGHOST,
+assert(context.events.UNIT_HEALTH and context.events.UNIT_DIED and context.events.PLAYER_UNGHOST,
     "the player's death stopped the alerts for the rest of the wipe")
 members.party2 = true
 context.events.UNIT_HEALTH.callback(module, "UNIT_HEALTH", "party2")
-assert(#lines == 2 and lines[2] == "Player died", "a death after the player's own was not reported")
+assert(#lines == 3 and lines[3] == "Player died", "a death after the player's own was not reported")
 context.events.PLAYER_ALIVE.callback(module, "PLAYER_ALIVE")
 assert(context.events.UNIT_HEALTH, "releasing the spirit ended the watch while the group still fights")
 members.player = false
 context.events.PLAYER_UNGHOST.callback(module, "PLAYER_UNGHOST")
 assert(not context.events.UNIT_HEALTH and not context.events.PLAYER_ALIVE,
     "the watch outlived the player's resurrection")
+-- The player's own death ends their combat, possibly before the client
+-- tells it: the combat end keeps the states, so the later UNIT_DIED counts.
+module.config.includePlayer = true
+members.party2 = false
+context.events.PLAYER_REGEN_DISABLED.callback(module, "PLAYER_REGEN_DISABLED")
+combat = true
+local states = module.dead
+members.player, combat = true, false
+context.events.PLAYER_REGEN_ENABLED.callback(module, "PLAYER_REGEN_ENABLED")
+assert(module.dead == states and states.player == false,
+    "the combat end rebuilt the states and took the player's death as known")
+context.events.UNIT_DIED.callback(module, "UNIT_DIED", "GUID-player")
+assert(#lines == 4 and lines[4] == "Player died", "the player's own death told after combat was lost")
+members.player = false
+context.events.PLAYER_UNGHOST.callback(module, "PLAYER_UNGHOST")
+assert(not context.events.UNIT_DIED, "the death event outlived the player's resurrection")
+module.config.includePlayer = false
 module.config.screen = false
 module:Refresh()
 assert(not screen.shown and #screen.messages == 0, "turning screen alerts off left stale messages")

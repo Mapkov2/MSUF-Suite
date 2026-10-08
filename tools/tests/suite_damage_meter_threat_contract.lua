@@ -163,6 +163,7 @@ C_StringUtil={
 local Suite=MSUFSuite
 local Support=dofile(root.."/tools/tests/suite_test_support.lua")
 Support.Load(root,"MSUF_Suite",Suite,"Core/Suite.lua")
+assert(loadfile(root.."/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite",Suite)
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
@@ -337,6 +338,15 @@ Event("UNIT_THREAT_LIST_UPDATE","nameplate7")
 assert(RunThreatPaint()==0,"another enemy's threat list repainted")
 Event("UNIT_THREAT_LIST_UPDATE","nameplate3")
 assert(RunThreatPaint()==1 and reads>0,"the watched enemy's threat list did not repaint")
+local originalIsUnit=UnitIsUnit
+for _, unreadable in ipairs({false,true}) do
+    UnitIsUnit=function() if unreadable then return Secret() end end
+    reads=0
+    Event("UNIT_THREAT_LIST_UPDATE","nameplate3")
+    Event("UNIT_THREAT_LIST_UPDATE","nameplate7")
+    assert(RunThreatPaint()==1 and reads>0,"unknown compound identity lost or duplicated a coalesced repaint")
+end
+UnitIsUnit=originalIsUnit
 
 ------------------------------------------------------------------ leaving threat releases everything
 D.SetWindowType(win,0)

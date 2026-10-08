@@ -377,11 +377,18 @@ function ctx:HideControl(frame, hidden)
     end
 end
 function ctx:Tuple(frame, getter, setter, ...)
+    if lockdown then return end
     local record = self.original[frame] or {}
     self.original[frame] = record
     record[setter] = record[setter] or { before = { frame[getter](frame) } }
     frame[setter](frame, ...)
     record[setter].applied = { frame[getter](frame) }
+end
+function ctx:TextColor(frame, ...)
+    if lockdown then
+        local owned = self.original[frame] and self.original[frame].SetTextColor
+        if owned then frame:SetTextColor(...); owned.applied = { ... } end
+    else self:Tuple(frame, "GetTextColor", "SetTextColor", ...) end
 end
 function ctx:RestoreTuple(frame, setter)
     self.restored = self.restored + 1
@@ -502,7 +509,9 @@ assert(sidebar.input.points[1][2] == ChatFrame1 and sidebar.input.points[1][3] =
 -- color. Suite must keep that one FontString and recolor it after Blizzard.
 ChatFrame1Tab.Text:SetText("General Chat")
 ChatFrame1Tab.Text:SetTextColor(0.1, 0.2, 0.3, 1)
+lockdown = true
 tabColorsHook(ChatFrame1Tab, true)
+lockdown = false
 local activeR, activeG, activeB = S.RGB(module.config.tabActiveColor)
 assert(sidebar.tabLabel == ChatFrame1Tab.Text and sidebar.tabLabel:GetText() == "General Chat"
     and not sidebar.tabOverlay and math.abs(sidebar.tabLabel.color[1] - activeR) < 0.001
@@ -700,10 +709,19 @@ shiftDown = true
 delegate.scripts.OnDragStart(delegate)
 assert(friendsIcon.moving and friendsIcon.dragging, "a Shift-drag on the delegate did not move the icon")
 local saved = {}
-S.SetMany = function(_, values) for key, value in pairs(values) do saved[key] = value end end
+S.CommitEditPosition = function(_, values)
+    if lockdown then return false end
+    for key, value in pairs(values) do saved[key] = value end
+end
+S.SetMany = function(...)
+    if inCombat then return false end
+    return S.CommitEditPosition(...)
+end
 friendsIcon.GetCenter = function() return 10, 20 end
 sidebar.sidebarFrame.GetCenter = function() return 4, 6 end
+inCombat = true
 delegate.scripts.OnDragStop(delegate)
+inCombat = false
 shiftDown = false
 assert(not friendsIcon.moving and saved.sidebarButton1X == 6 and saved.sidebarButton1Y == 14,
     "a Shift-drag through the delegate did not save the icon's place")

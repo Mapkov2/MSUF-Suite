@@ -29,6 +29,7 @@ local EMPTY = C.EMPTY
 
 local STRATA = K.STRATA
 local HELP_MINE, HELP_ANY, HARM_MINE = "HELPFUL|PLAYER", "HELPFUL", "HARMFUL|PLAYER"
+local HELP_TARGET = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 -- No aura passes this (maxDuration also drops permanent auras): 12.1.0
 -- slots have no enable flag.
 local NONE = { maxDuration = 0 }
@@ -84,7 +85,7 @@ end
 -- Own helpful auras (any caster for custom "a" entries) or own harmful
 -- auras on the target.
 local function FilterOf(entry, unit)
-    if unit == "target" then return HARM_MINE end
+    if unit == "target" then return entry.auraHelpful and HELP_TARGET or HARM_MINE end
     return entry.src == "a" and HELP_ANY or HELP_MINE
 end
 -- The part of an aura bar an entry takes: e.unit=="target" entries the
@@ -113,6 +114,7 @@ end
 -- when it comes on.
 local function Apply(rec, k)
     local on = rec.on[k] == true and not rec.shut[k]
+        and not (rec.friendly and rec.filter[k] == HARM_MINE)
     if rec.act[k] == on then return end
     rec.act[k] = on
     local container, key = rec.frame, rec.keys[k]
@@ -276,9 +278,11 @@ local function Build(rec, view, n)
     local threshold = C.state.threshold
     local keys = rec.keys
     stamp = stamp + 1
+    rec.helpfulTarget = false
     for i = 1, n do
         local entry = list[i]
         local set, filter = Ids(entry), FilterOf(entry, rec.unit)
+        if rec.unit == "target" and entry.auraHelpful then rec.helpfulTarget = true end
         local k = KeyOf(rec, entry, i)
         rec.mark[k] = stamp
         if rec.text then rec.topts[k] = TextOpts((entry.ov or EMPTY).threshold or threshold) end
@@ -297,6 +301,11 @@ local function Build(rec, view, n)
             rec.on[k] = false
             Apply(rec, k)
         end
+    end
+    local enabled = not rec.friendly or rec.helpfulTarget
+    if rec.enabled ~= enabled then
+        rec.enabled = enabled
+        container:SetEnabled(enabled)
     end
     return Refit(rec, look)
 end
@@ -430,7 +439,8 @@ local function FitContainer(rec, bar, fam, unit, view)
         rec.unit = unit
         container:SetUnit(unit)
     end
-    local enabled = not (unit == "target" and FriendlyTarget())
+    rec.friendly = unit == "target" and FriendlyTarget()
+    local enabled = not rec.friendly or rec.helpfulTarget == true
     if rec.enabled ~= enabled then
         rec.enabled = enabled
         container:SetEnabled(enabled)

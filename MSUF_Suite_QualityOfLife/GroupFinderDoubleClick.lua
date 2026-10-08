@@ -65,10 +65,15 @@ local function SaveNote(self)
     if text == nil or NS.IsCombatLocked() then return end
     self.pendingNote = nil
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    if text ~= (self.config.note or "") then S.Set(ID, "note", text) end
+    if self.noteProfile ~= NS.DB or self.noteBaseline ~= (self.config.note or "") then return end
+    self.noteDirty = nil
+    if text ~= (self.config.note or "") and S.Set(ID, "note", text) then
+        self.noteBaseline = self.config.note or ""
+    end
 end
 
 local function NoteChanged(self, box)
+    if not self.noteDirty or self.noteProfile ~= NS.DB or self.noteBaseline ~= (self.config.note or "") then return end
     self.pendingNote = box:GetText()
     if NS.IsCombatLocked() then
         self.context:Event("PLAYER_REGEN_ENABLED", SaveNote, IN_COMBAT)
@@ -87,6 +92,9 @@ local function NoteBox(self, panel)
     edit:SetScript("OnEscapePressed", function(box)
         box:SetText(self.config.note or "")
         box:ClearFocus()
+    end)
+    edit:SetScript("OnTextChanged", function(_, userInput)
+        if userInput then self.noteDirty = true end
     end)
     edit:SetScript("OnEnterPressed", function(box) box:ClearFocus() end)
     edit:SetScript("OnEditFocusGained", function(box) box:HighlightText() end)
@@ -114,7 +122,12 @@ local function ShowNote(self)
         label:SetText(S.Text("Saved note: select and copy, then paste into the application."))
         self.notePanel, self.noteEdit = panel, NoteBox(self, panel)
     end
-    self.noteEdit:SetText(self.pendingNote or self.config.note or "")
+    local baseline = self.config.note or ""
+    if self.noteProfile ~= NS.DB or self.noteBaseline ~= baseline or not self.noteDirty then
+        self.pendingNote, self.noteDirty = nil, nil
+        self.noteProfile, self.noteBaseline = NS.DB, baseline
+        self.noteEdit:SetText(baseline)
+    end
     self.notePanel:Show()
 end
 
@@ -124,10 +137,15 @@ function M:Enable()
         hooksecurefunc("LFGListSearchEntry_OnClick", OnEntryClick)
         LFGListApplicationDialog:HookScript("OnShow", function() ShowNote(self) end)
     end
+    self:Refresh()
 end
 
 function M:Refresh()
-    if self.notePanel and not self.config.showNote then self.notePanel:Hide() end
+    if LFGListApplicationDialog:IsShown() then
+        ShowNote(self)
+    elseif self.notePanel then
+        self.notePanel:Hide()
+    end
 end
 
 function M:Disable()

@@ -133,7 +133,7 @@ local function SidebarDragStop(button)
     local sidebarX, sidebarY = button:GetParent():GetCenter()
     if S.Finite(x) and S.Finite(y) and S.Finite(sidebarX) and S.Finite(sidebarY) then
         local prefix = "sidebarButton" .. button.sidebarIndex
-        S.SetMany("chat", {
+        S.CommitEditPosition("chat", {
             [prefix .. "X"] = x - sidebarX, [prefix .. "Y"] = y - sidebarY, [prefix .. "Moved"] = true,
         })
     end

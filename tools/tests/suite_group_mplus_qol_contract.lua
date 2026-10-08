@@ -156,11 +156,13 @@ finder.config.showNote = true
 dialogHooks.OnShow()
 assert(edit and edit.maxBytes == 64 and finder.notePanel.shown, "note panel missing or not byte-limited")
 edit.text = "Übung"
+edit.OnTextChanged(edit, true)
 assert(#noteWrites == 0, "the note was saved per keystroke")
 edit.OnEditFocusLost(edit)
 assert(#noteWrites == 1 and noteWrites[1] == "Übung", "finished note edit was not saved once")
 combatNow = true
 edit.text = "Kampfnotiz"
+edit.OnTextChanged(edit, true)
 edit.OnEditFocusLost(edit)
 assert(#noteWrites == 1 and finder.context.events.PLAYER_REGEN_ENABLED, "combat note edit was lost or written in combat")
 combatNow = false
@@ -544,6 +546,8 @@ UnitIsUnit = function(unit, other)
 end
 UnitIsDeadOrGhost = function(unit) return unitDead[canonical(unit)] == true end
 UnitName = function(unit) return canonical(unit) == "player" and "Self" or "Teammate" end
+UnitGUID = function(unit) return UnitExists(unit) and "Player-1-" .. canonical(unit) or nil end
+UnitIsFeignDeath = function() return false end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 local death = assert(installed.groupDeathAlert)

@@ -3,6 +3,7 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local combat, earlyCombat, queued, hooks, alphaWrites, mouseWrites, poolWalks = false, false, 0, 0, 0, 0, 0
 local data, methods = {}, {}
 local cleanupFrame
+local staleCombat
 local function Widget(alpha, click, motion)
     local frame = setmetatable({}, {
         __index = function(self, key) return methods[key] or data[self][key] end,
@@ -88,7 +89,9 @@ local function Load(forever)
     local module = { config = defaults }
     cleanupFrame = nil
     local private = { NS = { IsCombatLocked = function() return combat end,
-        InCombat = function() return combat or earlyCombat end },
+        InCombat = function(event)
+            return combat or earlyCombat or staleCombat and event ~= "PLAYER_REGEN_ENABLED"
+        end },
         Suite = { Queue = function(id) assert(id == "xpBar"); queued = queued + 1 end,
             CreateFrame = function()
                 local frame = { events = {} }
@@ -173,8 +176,10 @@ for _, forever in ipairs({ false, true }) do
     combat = true
     native.Sync(module, false)
     assert(cleanupFrame and cleanupFrame.events.PLAYER_REGEN_ENABLED, "combat disable has no cleanup event")
-    combat = false
-    cleanupFrame.callback()
+    -- The native lockdown is over before PLAYER_REGEN_ENABLED is delivered.
+    combat, earlyCombat, staleCombat = false, false, true
+    cleanupFrame.callback(cleanupFrame, "PLAYER_REGEN_ENABLED")
+    staleCombat = false
     assert(xp:GetAlpha() == .8 and not cleanupFrame.events.PLAYER_REGEN_ENABLED,
         "combat disable stranded native state or retained an idle listener")
     native.Sync(module, true)

@@ -177,6 +177,18 @@ end
 local routedKeys, routedNames, wantedKeys, wantedNames = {}, {}, {}, {}
 local routed = false
 
+-- Restricted binding handles call ClearOverrideBindings/SetOverrideBindingClick
+-- (Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua). Pet battles
+-- release only this owner, so native ActionButtonDown reaches pet abilities.
+local APPLY_ROUTES = [[
+self:ClearBindings()
+if self:GetAttribute("routingEnabled") and self:GetAttribute("state-petbattle")~="battle" then
+    for i=1,self:GetAttribute("routeCount") or 0 do
+        self:SetBindingClick(false,self:GetAttribute("key"..i),self:GetAttribute("name"..i),"Keybind")
+    end
+end
+]]
+
 local function Want(count, key, name)
     count = count + 1
     wantedKeys[count], wantedNames[count] = key, name
@@ -216,15 +228,25 @@ function AB.UpdateRouting(force)
     for i = count + 1, #routedKeys do routedKeys[i], routedNames[i] = nil, nil end
     local owner = AB.bindingOwner
     if not owner then
-        owner = S.CreateFrame("Frame")
+        owner = S.CreateFrame("Frame", nil, UIParent, "SecureHandlerStateTemplate")
+        owner:SetAttribute("_onstate-petbattle", APPLY_ROUTES)
+        RegisterStateDriver(owner, "petbattle", "[petbattle] battle; normal")
         AB.bindingOwner = owner
     end
-    ClearOverrideBindings(owner)
-    for i = 1, count do SetOverrideBindingClick(owner, false, routedKeys[i], routedNames[i], "Keybind") end
+    owner:SetAttribute("routingEnabled", true)
+    owner:SetAttribute("routeCount", count)
+    for i = 1, count do
+        owner:SetAttribute("key" .. i, routedKeys[i])
+        owner:SetAttribute("name" .. i, routedNames[i])
+    end
+    SecureHandlerExecute(owner, APPLY_ROUTES)
 end
 
 function AB.ClearRouting()
-    if AB.bindingOwner then ClearOverrideBindings(AB.bindingOwner) end
+    if AB.bindingOwner then
+        AB.bindingOwner:SetAttribute("routingEnabled", false)
+        SecureHandlerExecute(AB.bindingOwner, APPLY_ROUTES)
+    end
     routed, AB.routingPending = false, nil
 end
 

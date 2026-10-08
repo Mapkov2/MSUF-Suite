@@ -702,6 +702,12 @@ assert(ContainerFrameCombinedBags.point[4] == -40 and ContainerFrameCombinedBags
 bagMode = "0"
 context.events.USE_COMBINED_BAGS_CHANGED(module, "USE_COMBINED_BAGS_CHANGED", false)
 assert(bagMode == "1", "native split mode was not restored while the module is active")
+combat, bagMode = true, "0"
+context.events.USE_COMBINED_BAGS_CHANGED(module, "USE_COMBINED_BAGS_CHANGED", false)
+assert(bagMode == "0", "combined bags changed during lockdown")
+combat = false
+module:Refresh()
+assert(bagMode == "1", "queued combined bag restoration was skipped")
 assert(#fonts == 2 and module.overlays[buttons[1]].label.text == "640"
     and module.overlays[buttons[1]].label.shown, "equipment item level not visible on first open")
 assert(module.overlays[buttons[1]].label.flags == "OUTLINE,SLUG"

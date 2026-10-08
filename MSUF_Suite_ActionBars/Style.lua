@@ -367,6 +367,15 @@ end
 
 -- Restyles the buttons whose look changed: every button after a global
 -- style change (rebuild set), else only those of bars whose styleGen moved.
+local function StyleEmptySlots(bar, gen, barGen)
+    if not bar.emptySlots or (bar.slotStyleGen == gen and bar.slotBarStyleGen == barGen) then return end
+    local style = AB.style
+    for _, slot in pairs(bar.emptySlots) do
+        slot:SetColorTexture(style.sr, style.sg, style.sb, style.slotAlpha)
+    end
+    bar.slotStyleGen, bar.slotBarStyleGen = gen, barGen
+end
+
 function AB.StyleAll(rebuild)
     if rebuild or not AB.style then AB.BuildStyle() end
     local gen = AB.styleGen
@@ -374,6 +383,7 @@ function AB.StyleAll(rebuild)
         local bar = AB.bars[index]
         if bar then
             local barGen = bar.styleGen
+            StyleEmptySlots(bar, gen, barGen)
             for i = 1, #bar.buttons do
                 local rec = bar.buttons[i]
                 if rec.styleGen ~= gen or rec.barStyleGen ~= barGen then AB.StyleButton(rec) end

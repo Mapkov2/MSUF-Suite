@@ -91,7 +91,9 @@ local function Build(self)
         row.text:SetPoint("LEFT", row, "LEFT", 0, 0)
         row:SetScript("OnClick", RowClick)
         row:SetScript("OnEnter", RowEnter)
-        row:SetScript("OnLeave", GameTooltip_Hide)
+        row:SetScript("OnLeave", function(button)
+            if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
+        end)
         self.rows[index] = row
     end
     panel.vault = Shortcut(panel, "Great Vault", OpenVault)

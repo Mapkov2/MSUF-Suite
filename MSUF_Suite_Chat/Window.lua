@@ -110,7 +110,7 @@ function C.ColorTab(self, visual, selected)
     local c = self.config
     if c.tabPanel and c.panelAlpha > 0 then
         local r, g, b = RGB(selected and c.tabActiveColor or c.tabInactiveColor)
-        self.context:Tuple(visual.tabLabel, "GetTextColor", "SetTextColor", r, g, b, 1)
+        self.context:TextColor(visual.tabLabel, r, g, b, 1)
     else
         self.context:RestoreTuple(visual.tabLabel, "SetTextColor")
     end

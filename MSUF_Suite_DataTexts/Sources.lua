@@ -7,6 +7,7 @@ local CREST = NS.DataTextCrestMode
 -- ("kind:bar:place"), their values and the events that change them.
 -- Actions.lua owns what their clicks and tooltips do.
 local Sources = { bindings = {} }
+local ICON_SIZE, ICON_GAP, ICON_TEXT_GAP = 14, 2, 4
 P.DataTextSources = Sources
 S.DataTextExtraSources = Sources
 local broker, owner
@@ -365,6 +366,10 @@ function Sources.WantedEvents(active, wanted)
     -- upgrade frame: every configured Crests place observes them, also one
     -- on a bar that is hidden or not hovered at that moment.
     if ConfiguredKind("crests") then wanted.ITEM_UPGRADE_MASTER_SET_ITEM = true end
+    if ConfiguredKind("hearth") then
+        wanted.BAG_UPDATE_DELAYED, wanted.TOYS_UPDATED = true, true
+        wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
+    end
     for key in pairs(active) do
         local binding = Sources.bindings[key]
         if binding then
@@ -514,7 +519,7 @@ end
 -- lost, and an unrelated loot builds nothing. The overlay is hidden in
 -- combat, so a combat update only marks the choice for PLAYER_REGEN_ENABLED.
 function Sources.HearthsMayHaveChanged()
-    if not ActiveKind("hearth") then return end
+    if not ConfiguredKind("hearth") then return end
     if NS.IsCombatLocked() then
         Sources.hearthDirty = true
         return
@@ -523,6 +528,12 @@ function Sources.HearthsMayHaveChanged()
 end
 
 ------------------------------------------------------------------ icons
+function Sources.IconWidth(button)
+    local binding = button.extra
+    local count = binding and math.min(#binding.icons, 32) or 0
+    return count > 0 and count * ICON_SIZE + (count - 1) * ICON_GAP + ICON_TEXT_GAP or 0
+end
+
 local function IconTexture(button, index)
     local icons = button.dataIcons
     if not icons then
@@ -532,7 +543,7 @@ local function IconTexture(button, index)
     local icon = icons[index]
     if not icon then
         icon = S.CreateTexture(button, nil, "ARTWORK")
-        icon:SetSize(14, 14)
+        icon:SetSize(ICON_SIZE, ICON_SIZE)
         icons[index] = icon
     end
     return icon
@@ -564,14 +575,14 @@ function Sources.Paint(button, relayout)
             local icon = button.dataIcons[i]
             icon:ClearAllPoints()
             if previous then
-                icon:SetPoint("LEFT", previous, "RIGHT", 2, 0)
+                icon:SetPoint("LEFT", previous, "RIGHT", ICON_GAP, 0)
             else
                 icon:SetPoint("LEFT", button, "LEFT", padding, 0)
             end
             previous = icon
         end
         button.label:ClearAllPoints()
-        button.label:SetPoint("LEFT", previous, "RIGHT", 4, 0)
+        button.label:SetPoint("LEFT", previous, "RIGHT", ICON_TEXT_GAP, 0)
         button.label:SetPoint("RIGHT", button, "RIGHT", -padding, 0)
     elseif count == 0 and shown > 0 and not relayout and button.labelInset then
         -- Icons disappeared: the label goes back to its layout inset.

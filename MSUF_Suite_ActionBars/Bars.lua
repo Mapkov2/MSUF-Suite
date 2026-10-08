@@ -119,7 +119,7 @@ end
 -- Stance buttons follow the class's forms; everything else the setting.
 function AB.Count(bar, config)
     local n = config[bar.key.Buttons]
-    if bar.index == BAR.STANCE then
+    if bar.index == BAR.STANCE and not config[bar.key.ShowEmpty] then
         local forms = GetNumShapeshiftForms()
         n = min(n, S.Public(forms) and type(forms) == "number" and forms or 0)
     end
@@ -340,6 +340,7 @@ function AB.LayoutBar(bar)
         button:SetPoint("TOPLEFT", header, "TOPLEFT", col * step, -row * step)
         button:SetSize(size, size)
     end
+    if bar.index == BAR.STANCE then AB.LayoutStanceSlots(bar, count, size, columns, rows, r, step) end
     bar.count, bar.size = count, size
     local mouse = not config[keys.ClickThrough]
     if bar.owned then

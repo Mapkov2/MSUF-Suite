@@ -85,6 +85,7 @@ local function Load(kind)
     local callbacks, movers = {}, {}
     local suite = { editMode = false, loginKind = kind, RootDB = savedRoot, MSUFMedia = MEDIA,
         InCombat = function() return false end,
+        IsCombatLocked = function() return false end,
         Dispatch = function(callback, ...) return callback(...) end,
         AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
     suite.Suite = { instances = {}, editMode = false }

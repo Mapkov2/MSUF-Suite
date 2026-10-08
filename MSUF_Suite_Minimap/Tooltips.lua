@@ -44,13 +44,9 @@ local function RestoreTooltipScale()
     end
 end
 
-local function TooltipOwnerChanged(_, nextOwner)
-    if scaleOwner and nextOwner ~= scaleOwner then RestoreTooltipScale() end
-end
-
--- Scale only the Suite's current tooltip session. Returning a tooltip to a
--- different addon or Blizzard restores the previous value, unless another
--- owner has already changed it. The hook never reclaims the tooltip.
+-- Scale only the Suite tooltip session. OnHide releases the snapshot; shared
+-- tooltip reuse without a hide deliberately retains it until that hide. Never
+-- hook shared tooltip methods to intercept another owner.
 function MM.ScaleTooltip(button)
     local tooltip = _G.GameTooltip
     if not M.active or NS.Safety.IsForbidden(tooltip) or tooltip:GetOwner() ~= button then return end
@@ -61,7 +57,6 @@ function MM.ScaleTooltip(button)
     if not S.Finite(before) or before <= 0 then return end
     if not scaleHooked then
         tooltip:HookScript("OnHide", RestoreTooltipScale)
-        hooksecurefunc(tooltip, "SetOwner", TooltipOwnerChanged)
         scaleHooked = true
     end
     if not scaleOwner then previousScale = before end

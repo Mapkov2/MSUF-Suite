@@ -138,7 +138,8 @@ end
 function R.ReadHealthstone(self)
     local notices, classes = self.notices, self.group.classes
     notices.healthstoneMissing = nil
-    if not self.config.healthstoneFromWarlock or not classes or not classes.WARLOCK then return end
+    if not self.config.healthstoneFromWarlock or not classes or not classes.WARLOCK
+        or not self.group.unitList or #self.group.unitList < 2 then return end
     local stones = NS.Client.isForever and R.FOREVER_HEALTHSTONES or R.HEALTHSTONES
     local unknown = false
     for _, id in ipairs(stones) do

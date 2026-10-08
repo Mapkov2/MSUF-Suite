@@ -266,7 +266,9 @@ function D.ThreatListUpdated(_, _, unit)
     if T.enemy == "targettarget" then
         if not Public(unit) then return end
         local same = UnitIsUnit(unit, "targettarget")
-        if not (Public(same) and same) then return end
+        -- Unknown/secret identity must invalidate; only a public false can
+        -- rule an enemy out. The existing job coalesces unknown identities.
+        if Public(same) and same == false then return end
     end
     Changed()
 end
