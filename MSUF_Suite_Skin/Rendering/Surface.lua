@@ -395,6 +395,11 @@ local function AttachNow(target, spec, deferRefresh)
         if state.visible == false then NextPaintGeneration() end
         state.visible = true
         EnsureInteractiveHover(target, state)
+        if state.inset ~= state.spec.inset then
+            state.inset = state.spec.inset
+            AnchorTexture(state.fill, target, state.inset)
+            AnchorTexture(state.edge, target, state.inset)
+        end
         if state.hoverOverlay then AnchorTexture(state.hoverOverlay, target, state.spec.inset) end
         if not deferRefresh then
             NS.Registry.RegisterSurface(target, state, SurfaceTokens(state))
@@ -412,6 +417,7 @@ local function AttachNow(target, spec, deferRefresh)
     state = {
         target = target,
         spec = spec or {},
+        inset = spec and spec.inset,
         fill = fill,
         edge = edge,
         visible = true,

@@ -727,7 +727,7 @@ function Gear.Update(v, row, slotName)
     local config = NS.DB.characterDetails
     local inline
     if v.kind == "inspect" then inline = config.inlineGear ~= false
-    else inline = config.view and config.view == "modern" or (not config.view and config.inlineGear) end
+    else inline = config.inlineGear ~= false and (config.view == "modern" or not config.view) end
     if not inline or not slot or not NS.Safety.CanCreateRegions(slot, true) then
         HideAnnotation(row.annotation)
         return

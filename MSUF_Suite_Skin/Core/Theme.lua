@@ -351,13 +351,14 @@ end
 
 -- Undoes a cancelled color edit: the color and the palette and look names
 -- that SetColor replaced return together, announced once.
-function Theme.RestoreColor(key, r, g, b, a, preset, look)
+function Theme.RestoreColor(key, r, g, b, a, preset, look, microPreset)
     if NS.IsCombatLocked() or not NS.Defaults.theme.colors[key] then
         return false
     end
     WriteColor(key, r, g, b, a)
     NS.DB.theme.preset = preset or NS.DB.theme.preset
     NS.DB.theme.look = look or NS.DB.theme.look
+    if microPreset and NS.DB.icons and NS.DB.icons.microMenu then NS.DB.icons.microMenu.preset = microPreset end
     NS.Registry.QueueRefresh(key)
     NS.Registry.NotifyListeners("color", key)
     return true
@@ -550,6 +551,10 @@ end
 function Theme.RefreshDynamicLook()
     if not NS.DB then return false end
     local look = NS.LookPresets[NS.DB.theme.look]
+    if NS.DB.theme.preset == "classColor" and (not look or not look.dynamicPalette) then
+        InstallPalette(NS.DB, ResolvePaletteOverrides("classColor", true))
+        return true
+    end
     if not look or not look.dynamicPalette or not Theme.ValidateLook(NS.DB.theme.look) then
         return false
     end

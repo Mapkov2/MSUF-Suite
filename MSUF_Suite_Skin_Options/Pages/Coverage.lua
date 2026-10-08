@@ -46,6 +46,7 @@ local function BuildCharacterControls(page)
     end, WIDTH, CharacterViewLabel, nil, { history = false })
     view:SetPoint("TOPLEFT", 4, -65)
     page._mskinCharacterViewSelector = viewButton
+    O.TrackRefresh(function() viewButton:SetEnabled(NS.Client.modernEquipment == true) end)
 
     local previous = view
     for index = 1, #CHARACTER_TOGGLES do
@@ -57,6 +58,7 @@ local function BuildCharacterControls(page)
             NS[module].SetOption(key, value)
         end, WIDTH)
         toggle:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -6)
+        O.TrackRefresh(function() toggle:SetEnabled(NS.Client.modernEquipment == true) end)
         previous = toggle
     end
     -- EnhanceQoL styling is on unless it was switched off.

@@ -142,6 +142,7 @@ end
 -- standalone step then snapshots that profile, so its undo restores it.
 function O.BeginUserChange(label, profileName)
     if history.restoring or history.active or NS.IsCombatLocked() then return false end
+    if profileName then NS.Database.BeginHistoryProfile(profileName) end
     local menu = NativeHistory()
     if menu and menu.IsHistoryCapturing and menu.IsHistoryCapturing() then
         history.active = { nativeNested = true }
@@ -156,7 +157,7 @@ function O.BeginUserChange(label, profileName)
     local data = profileName and NS.Database.GetProfile(profileName) or NS.DB
     history.active = {
         label = tostring(label or "Setting"),
-        profile = profile,
+        profile = profile, epoch = NS.Database.GetHistoryEpoch(),
         data = NS.CopyValue(data),
     }
     return true
@@ -167,6 +168,7 @@ function O.IsUserChangeActive()
 end
 
 function O.CancelUserChange()
+    NS.Database.EndHistoryProfile(false)
     if history.active and history.active.native then
         local menu = NativeHistory()
         if menu and menu.CancelHistoryTransaction then menu.CancelHistoryTransaction() end
@@ -186,17 +188,20 @@ function O.CommitUserChange(label)
     elseif change and change.nativeNested then
         committed = true
     elseif change and change.profile == NS.Database.GetActiveProfileName()
+        and change.epoch == NS.Database.GetHistoryEpoch()
         and not DeepEqual(change.data, NS.DB) then
         change.label = tostring(label or change.label or "Setting")
         history.undo = change
         history.redo = nil
         committed = true
     end
+    NS.Database.EndHistoryProfile(committed)
     O.RefreshAll()
     return committed
 end
 
 function O.ClearHistory()
+    NS.Database.EndHistoryProfile(false)
     history.active, history.undo, history.redo = nil, nil, nil
     O.RefreshAll()
 end
@@ -212,9 +217,9 @@ local function RestoreHistory(sourceKey, destinationKey)
     if NS.IsCombatLocked() then return false end
     local item = history[sourceKey]
     local profile = NS.Database.GetActiveProfileName()
-    if not item or item.profile ~= profile then return false end
+    if not item or item.profile ~= profile or item.epoch ~= NS.Database.GetHistoryEpoch() then return false end
     history.restoring = true
-    history[destinationKey] = { label = item.label, profile = profile, data = NS.CopyValue(NS.DB) }
+    history[destinationKey] = { label = item.label, profile = profile, epoch = item.epoch, data = NS.CopyValue(NS.DB) }
     history[sourceKey] = nil
     -- The restore applies the whole profile; if it raises, the error is
     -- reported and the history still accepts new changes afterwards.
@@ -242,7 +247,9 @@ function O.GetHistoryState()
         local state = menu.GetHistoryState()
         return state.undoLabel, state.redoLabel
     end
-    return history.undo and history.undo.label or nil, history.redo and history.redo.label or nil
+    local epoch = NS.Database.GetHistoryEpoch()
+    return history.undo and history.undo.epoch == epoch and history.undo.label or nil,
+        history.redo and history.redo.epoch == epoch and history.redo.label or nil
 end
 
 function O.DiscardLastChange(label)

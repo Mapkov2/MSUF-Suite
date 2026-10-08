@@ -105,6 +105,13 @@ end
 
 local function SkinTabs(state)
     if not state.active or NS.IsCombatLocked() then return false end
+    if NS.Client.isForever then
+        local tabs = Field(Field(_G, "InspectFrame"), "ModeTabs")
+        for _, key in ipairs({ "CharacterTab", "GuildTab" }) do
+            Kit.SkinControl(state, Field(tabs, key), TAB_SPEC_UNKNOWN)
+        end
+        return true
+    end
     local selected = SelectedTab()
     local applied = false
     for index = 1, 3 do
@@ -154,7 +161,7 @@ local function ApplyNow(state)
     panel:SkinAllSlots(state)
     SkinTabs(state)
     SkinAction(state, Field(_G.InspectPaperDollFrame, "ViewButton"))
-    SkinAction(state, Field(_G.InspectPaperDollItemsFrame, "InspectTalents"))
+    SkinAction(state, Field(Field(_G, NS.Client.isForever and "InspectPaperDollFrame" or "InspectPaperDollItemsFrame"), "InspectTalents"))
     NS.CharacterDetails.Apply(root, "inspect", state.owner)
     -- Inspect skips the generic adapter, which normally attaches the shared
     -- window controls. Keep its scale grip available after load-on-demand.

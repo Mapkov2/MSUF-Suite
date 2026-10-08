@@ -38,6 +38,7 @@ end
 
 -- One MSUF context-color target bound to a skin color token.
 local function ColorTarget(colorKey, label)
+    local profile, epoch = NS.DB, NS.Database.GetHistoryEpoch()
     return {
         label = label,
         hasOpacity = true,
@@ -48,6 +49,7 @@ local function ColorTarget(colorKey, label)
         getOpacity = function() return NS.Theme.GetColorTable(colorKey)[4] end,
         -- SetColor notifies the options, which repaint once per frame.
         setRGB = function(r, g, b, a)
+            if NS.DB ~= profile or NS.Database.GetHistoryEpoch() ~= epoch then return end
             NS.Theme.SetColor(colorKey, r, g, b, a)
         end,
     }
@@ -78,6 +80,9 @@ local function OpenBlizzardColorPicker(colorKey)
     local original = { current[1], current[2], current[3], current[4] }
     local originalPreset = NS.DB.theme.preset
     local originalLook = NS.DB.theme.look
+    local profile, epoch = NS.DB, NS.Database.GetHistoryEpoch()
+    local micro = profile.icons and profile.icons.microMenu
+    local originalMicro = micro and micro.preset
     local historyLabel = ColorHistoryLabel(colorKey)
     local historyCaptured = false
     local changed = false
@@ -85,6 +90,7 @@ local function OpenBlizzardColorPicker(colorKey)
     -- Blizzard calls this on every color move, again on Okay, and may call
     -- it while the picker opens; the shown color itself changes nothing.
     local function ApplySelection()
+        if NS.DB ~= profile or NS.Database.GetHistoryEpoch() ~= epoch or not CanChange() then return end
         local r, g, b = ColorPickerFrame:GetColorRGB()
         local a = ColorPickerFrame:GetColorAlpha()
         if SameByteColor(NS.Theme.GetColorTable(colorKey), r, g, b, a) then return end
@@ -103,9 +109,9 @@ local function OpenBlizzardColorPicker(colorKey)
             popups.pickerCancel = nil
             WatchCombat()
         end
-        if not CanChange() or not changed then return end
+        if NS.DB ~= profile or NS.Database.GetHistoryEpoch() ~= epoch or not CanChange() or not changed then return end
         NS.Theme.RestoreColor(colorKey, original[1], original[2], original[3], original[4],
-            originalPreset, originalLook)
+            originalPreset, originalLook, originalMicro)
         if historyCaptured then O.DiscardLastChange(historyLabel) end
         O.RefreshAll()
     end
@@ -147,7 +153,7 @@ end
 
 local function ParseHex(value, fallbackAlpha)
     value = tostring(value or ""):gsub("%s+", ""):gsub("^#", "")
-    if #value ~= 6 and #value ~= 8 then return nil end
+    if (#value ~= 6 and #value ~= 8) or value:find("[^%x]") then return nil end
     local r = tonumber(value:sub(1, 2), 16)
     local g = tonumber(value:sub(3, 4), 16)
     local b = tonumber(value:sub(5, 6), 16)
@@ -248,7 +254,7 @@ function O.CreateColorRow(parent, colorKey, labelText, width, description)
         widgets.AttachContextColorShortcut(row, {
             title = tostring(labelText),
             offsetX = -207,
-            targets = { ColorTarget(colorKey, tostring(labelText)) },
+            getTargets = function() return { ColorTarget(colorKey, tostring(labelText)) } end,
             historyLabel = ColorHistoryLabel(colorKey),
             historySource = "suite:skin-color",
         })

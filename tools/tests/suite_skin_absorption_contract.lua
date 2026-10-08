@@ -86,6 +86,7 @@ do
 end
 -- Every frame has a level; the fixture's SetFrameLevel only records calls.
 function Frame:GetFrameLevel() return 0 end
+function Frame:SetEnabled(enabled) self.enabled = enabled end
 -- SharedXML grid utilities and unit events used by the owned Micro Bar.
 GridLayoutUtil = { calls = {} }
 function GridLayoutUtil.CreateStandardGridLayout(stride, xPadding, yPadding, xMultiplier, yMultiplier)

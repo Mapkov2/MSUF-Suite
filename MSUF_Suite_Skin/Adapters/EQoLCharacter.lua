@@ -177,7 +177,7 @@ function Compat.RefreshElement(element)
         return
     end
     local definition = Compat.elements[element]
-    if NS.CharacterDetails.GetView() == "list" then
+    if NS.Client.modernEquipment and NS.CharacterDetails.GetView() == "list" then
         -- The dossier list shows these annotations; the provider's own copy is hidden.
         if definition then
             NS.CharacterDetails.RefreshEQoL(element, definition[1])

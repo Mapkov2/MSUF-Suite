@@ -323,16 +323,24 @@ function WorldMapSkin:OnQuestLogModeChanged()
     end
 end
 
+local function MapDisplayChanged()
+    NS.CombatGate.RunOrDefer("windowControls:worldMap", NS.WindowControls.Refresh)
+end
+
 local function RegisterCallbacks()
     if callbacksRegistered then return end
     EventRegistry:RegisterCallback(SHOW_CALLBACK, WorldMapSkin.OnWorldMapShown, WorldMapSkin)
     EventRegistry:RegisterCallback(DISPLAY_MODE_CALLBACK, WorldMapSkin.OnQuestLogModeChanged, WorldMapSkin)
+    EventRegistry:RegisterCallback("WorldMapMaximized", MapDisplayChanged, WorldMapSkin)
+    EventRegistry:RegisterCallback("WorldMapMinimized", MapDisplayChanged, WorldMapSkin)
     callbacksRegistered = true
 end
 
 local function UnregisterCallbacksIfIdle()
     if not callbacksRegistered or next(activeFrames) ~= nil then return end
     callbacksRegistered = false
+    EventRegistry:UnregisterCallback("WorldMapMaximized", WorldMapSkin)
+    EventRegistry:UnregisterCallback("WorldMapMinimized", WorldMapSkin)
     EventRegistry:UnregisterCallback(SHOW_CALLBACK, WorldMapSkin)
     EventRegistry:UnregisterCallback(DISPLAY_MODE_CALLBACK, WorldMapSkin)
 end

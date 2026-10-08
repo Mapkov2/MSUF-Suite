@@ -202,6 +202,7 @@ O.RegisterPage("profiles", NS.L.PROFILES, function(page)
         else
             text = failureText or REFUSAL_TEXT[value] or L["Error: %s"]:format(tostring(value))
         end
+        view.statusProfile = NS.DB
         view.status:SetText(text)
         O.SetTextColor(view.status, ok and "success" or "danger")
         RefreshNames()
@@ -216,7 +217,9 @@ O.RegisterPage("profiles", NS.L.PROFILES, function(page)
         RefreshNames()
         local status = view.status
         local text = status:GetText()
-        if text == nil or text == "" then
+        if text == nil or text == "" or view.statusProfile ~= NS.DB then
+            view.statusProfile = NS.DB
+            O.SetTextColor(status, "muted")
             status:SetText(L["Active: %s"]:format(NS.Database.GetActiveProfileName()))
         end
     end)

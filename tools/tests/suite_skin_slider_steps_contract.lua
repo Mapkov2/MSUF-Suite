@@ -48,6 +48,7 @@ local locked = false
 local colors = { accent = { 0.2, 0.4, 0.6, 1 } }
 local setColors = 0
 local NS = {
+    Database = {GetHistoryEpoch = function() return 0 end},
     path = "",
     IsCombatLocked = function() return locked end,
     L = setmetatable({}, { __index = function(_, key) return key end }),
@@ -288,6 +289,7 @@ locked = false
 -- Active profile switch included.
 local deleted = 0
 NS.Database = {
+    GetHistoryEpoch = function() return 0 end,
     GetActiveProfileName = function() return "Default" end,
     GetProfileNames = function() return { "Default" } end,
     DeleteProfile = function() deleted = deleted + 1; return true, "Default" end,

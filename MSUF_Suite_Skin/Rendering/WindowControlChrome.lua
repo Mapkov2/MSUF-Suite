@@ -49,3 +49,25 @@ function Chrome.StyleGrip(grip)
     end
     Chrome.RecolorGrip(grip)
 end
+
+-- The window's own (localized) title, else a name derived from its frame.
+function Chrome.Title(state)
+    local frame = state.frame
+    local title = NS.Safety.Call(frame, "GetTitleText")
+        or NS.Safety.Field(NS.Safety.Field(frame, "TitleContainer"), "TitleText")
+    local text = NS.Safety.Read(title, "GetText")
+    -- Forever's outer container has no title region; all three child panes
+    -- use this same localized native caption.
+    if state.name == "LFGParentFrame" then text = NS.Safety.Field(_G, "LFG_TITLE") end
+    if type(text) == "string" and text ~= "" then return text end
+    return (state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2"))
+end
+
+function Chrome.Control(button, glyph, offset)
+    button:SetSize(22, 22)
+    button:SetFrameLevel(button:GetParent():GetFrameLevel() + offset)
+    local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("CENTER", 0, 0)
+    label:SetText(glyph)
+    NS.WindowControlChrome.PaintControl(button, "buttonFill", label)
+end

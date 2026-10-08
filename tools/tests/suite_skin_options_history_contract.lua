@@ -12,6 +12,9 @@ skin = {
     DB = { color = 1 }, CopyValue = Copy,
     IsCombatLocked = function() return false end,
     Database = {
+        GetHistoryEpoch = function() return 0 end,
+        BeginHistoryProfile = function() end,
+        EndHistoryProfile = function() end,
         GetRoot = function() return root end,
         GetActiveProfileName = function() return "Default" end,
         SetProfile = function(_, data) skin.DB = Copy(data); return true end,

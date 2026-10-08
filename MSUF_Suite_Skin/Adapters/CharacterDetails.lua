@@ -69,7 +69,7 @@ local function Enabled(v)
     local config = Config()
     return v.active and NS.DB and NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character")
-        and ((config.view and config.view ~= "classic") or config.enabled)
+        and ((v.kind == "character" and config.view and config.view ~= "classic") or config.enabled)
 end
 
 local function Color(region, token)
@@ -775,7 +775,7 @@ function Details.SetOption(key, value)
 end
 
 function Details.SetView(value)
-    if NS.IsCombatLocked() or not VIEWS[value] then return false end
+    if not NS.Client.modernEquipment or NS.IsCombatLocked() or not VIEWS[value] then return false end
     if Config().view == value then return true end
     Config().view = value
     -- This selector is reload-only: persist first, then let Blizzard rebuild

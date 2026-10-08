@@ -3,6 +3,18 @@ local _, NS = ...
 -- The skin's saved root and its named profiles (MSUFSuiteSkinDB). The
 -- profile schema, its migrations and SanitizeProfile live in Database.lua.
 local Database = NS.Database
+local historyEpoch, historyTarget, previousHistoryEpoch = 0
+
+function Database.GetHistoryEpoch() return historyEpoch end
+function Database.GetHistoryProfile() return historyTarget or Database.GetActiveProfileName() end
+function Database.BeginHistoryProfile(name)
+    previousHistoryEpoch, historyTarget = historyEpoch, name
+    historyEpoch = historyEpoch + 1
+end
+function Database.EndHistoryProfile(committed)
+    if historyTarget and not committed then historyEpoch = previousHistoryEpoch end
+    historyTarget, previousHistoryEpoch = nil, nil
+end
 
 local function IsForever()
     return NS.Client.isForever
@@ -218,6 +230,7 @@ function Database.SetActiveProfile(name)
     if not NS.RootDB then return false, "database-not-ready" end
     if not name or not NS.RootDB.profiles[name] then return false, "missing-profile" end
     NS.Typography.Restore()
+    if NS.RootDB.activeProfile ~= name and historyTarget ~= name then historyEpoch = historyEpoch + 1 end
     NS.RootDB.activeProfile = name
     NS.DB = NS.RootDB.profiles[name]
     ApplyActiveSettings("activate")
@@ -232,6 +245,7 @@ function Database.DeleteProfile(name)
     local count = 0
     for _ in pairs(NS.RootDB.profiles) do count = count + 1 end
     if count <= 1 then return false, "last-profile" end
+    historyEpoch = historyEpoch + 1
     local wasActive = name == NS.RootDB.activeProfile
     NS.RootDB.profiles[name] = nil
     if wasActive then
@@ -261,6 +275,7 @@ function Database.ReplaceProfiles(profiles, activeName)
         activeName = clean.Default and "Default" or next(clean)
     end
     NS.Typography.Restore()
+    historyEpoch = historyEpoch + 1
     NS.RootDB.profiles = clean
     NS.RootDB.activeProfile = activeName
     NS.DB = clean[activeName]

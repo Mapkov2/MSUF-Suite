@@ -132,10 +132,18 @@ local function Controlled(state)
     return Enabled() and next(state.owners) ~= nil and CanChangeGeometry(state)
 end
 
+local function Maximized(state)
+    return state.name == "WorldMapFrame" and Safety.Read(state.frame, "IsMaximized") == true
+end
+
 local InstallPanelPositionHook
 
 local function ApplyStoredScale(state)
     if not CanChangeGeometry(state) then return end
+    if Maximized(state) then
+        if state.frame:GetScale() ~= state.originalScale then state.frame:SetScale(state.originalScale) end
+        return
+    end
     local limits = Limits()
     local scales = NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales
     local stored = scales and scales[state.name]
@@ -193,7 +201,7 @@ local function RestoreNativePosition(state)
 end
 
 local function ApplyStoredPosition(state)
-    if not CanChangeGeometry(state) or not Enabled() or state.moving then return end
+    if not CanChangeGeometry(state) or not Enabled() or state.moving or Maximized(state) then return end
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
     local point = positions and positions[state.name]
     local defaultPosition = not point and state.name == "CharacterFrame"
@@ -248,19 +256,6 @@ InstallPanelPositionHook = function()
     end)
 end
 
--- The window's own (localized) title, else a name derived from its frame.
-local function WindowTitle(state)
-    local frame = state.frame
-    local title = Safety.Call(frame, "GetTitleText")
-        or Safety.Field(Safety.Field(frame, "TitleContainer"), "TitleText")
-    local text = Safety.Read(title, "GetText")
-    -- Forever's outer container has no title region; all three child panes
-    -- use this same localized native caption.
-    if state.name == "LFGParentFrame" then text = Safety.Field(_G, "LFG_TITLE") end
-    if type(text) == "string" and text ~= "" then return text end
-    return (state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2"))
-end
-
 local function SavePosition(state)
     local frame = state.frame
     local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
@@ -273,22 +268,13 @@ local function SavePosition(state)
     local positions = NS.DB.windowControls.positions
     local x = math.floor(left * ratio + 0.5)
     local y = math.floor((top * ratio - uiHeight) + 0.5)
-    CommitWithHistory(NS.L["Move %s"]:format(WindowTitle(state)), "positions." .. state.name, function()
+    CommitWithHistory(NS.L["Move %s"]:format(NS.WindowControlChrome.Title(state)), "positions." .. state.name, function()
         positions[state.name] = { x = x, y = y }
         return true
     end)
     state.customPosition = true
     NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() ApplyStoredPosition(state) end)
     return true
-end
-
-local function PaintControl(button, glyph)
-    button:SetSize(22, 22)
-    button:SetFrameLevel(button:GetParent():GetFrameLevel() + CONTROL_LEVEL_OFFSET)
-    local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("CENTER", 0, 0)
-    label:SetText(glyph)
-    NS.WindowControlChrome.PaintControl(button, "buttonFill", label)
 end
 
 local function Restore(state)
@@ -305,6 +291,9 @@ end
 
 local function Minimize(state)
     if IsCombat() or NS.Client.IsGamepadUI() or not state or state.minimized then return end
+    -- Native OnHide resets pending changes. Keep the editor open until the
+    -- user explicitly applies or cancels them; never write its save flag.
+    if state.name == "AddonList" and AddonList_HasAnyChanged() then return false end
     local frame = state.frame
     local left, top = frame:GetLeft(), frame:GetTop()
     local uiScale = UIParent:GetEffectiveScale()
@@ -316,7 +305,7 @@ local function Minimize(state)
     else
         state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
     end
-    state.restoreLabel:SetText(WindowTitle(state) .. "  +")
+    state.restoreLabel:SetText(NS.WindowControlChrome.Title(state) .. "  +")
     state.minimized = true
     if state.panel then
         HideUIPanel(frame)
@@ -390,7 +379,7 @@ local function EndDrag(state)
     local scale = state.frame:GetScale()
     if NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales then
         local value = math.floor(scale * 100 + 0.5) / 100
-        CommitWithHistory(NS.L["Scale %s"]:format(WindowTitle(state)), "scales." .. state.name, function()
+        CommitWithHistory(NS.L["Scale %s"]:format(NS.WindowControlChrome.Title(state)), "scales." .. state.name, function()
             NS.DB.windowControls.scales[state.name] = value
             return true
         end)
@@ -428,7 +417,7 @@ local function OnGripUpdate(grip)
 end
 
 local function BeginDrag(state)
-    if not CanChangeGeometry(state) or not Enabled() then return end
+    if not CanChangeGeometry(state) or not Enabled() or Maximized(state) then return end
     local x, y = GetCursorPosition()
     local frame = state.frame
     local width, height = frame:GetWidth(), frame:GetHeight()
@@ -537,7 +526,7 @@ local function EndMove(state)
 end
 
 local function BeginMove(state)
-    if not CanChangeGeometry(state) or not Enabled() then return end
+    if not CanChangeGeometry(state) or not Enabled() or Maximized(state) then return end
     local frame = state.frame
     local movable = Safety.Read(frame, "IsMovable")
     state.nativeMovable = movable
@@ -580,6 +569,11 @@ local function CreateTitleDrag(state)
 end
 
 local function ShowControls(state)
+    if Maximized(state) then
+        state.titleDrag:Hide()
+        state.grip:Hide()
+        return
+    end
     local level = ControlBaseLevel(state)
     state.titleDrag:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
     state.grip:SetFrameLevel(level + GRIP_LEVEL_OFFSET)
@@ -606,7 +600,7 @@ local function HideControls(state)
     state.grip:Hide()
     if state.minimize then state.minimize:Hide() end
     RestoreNativeScale(state)
-    if state.defaultPosition and not IsCombat() then RestoreNativePosition(state) end
+    if state.customPosition and not IsCombat() then RestoreNativePosition(state) end
 end
 
 local function CanMinimize(name)
@@ -625,7 +619,7 @@ end
 local function CreateMinimize(state, close)
     local button = Safety.CreateChildFrame("Button", state.frame)
     controlStates[button] = state
-    PaintControl(button, "-")
+    NS.WindowControlChrome.Control(button, "-", CONTROL_LEVEL_OFFSET)
     PlaceMinimize(button, state.frame, close)
     button:RegisterForClicks("LeftButtonUp")
     button:SetScript("OnClick", OnMinimizeClick)
@@ -635,14 +629,21 @@ end
 -- Hooked once per panel. The invisible title strip takes the clicks of the
 -- title area, so it only comes back while the controls are on, an owner
 -- still skins the panel and the panel can be controlled.
-local function OnPanelShow(frame)
+local OnPanelShow
+local function ReplayPanelShow(frame)
+    if frame:IsShown() then OnPanelShow(frame) end
+end
+OnPanelShow = function(frame)
     local state = WindowControls.states[frame]
     if not state then return end
     if state.restore then
         state.minimized = false
         state.restore:Hide()
     end
-    if IsCombat() then return end
+    if IsCombat() then
+        NS.CombatGate.RunOrDefer("windowControls:show:" .. state.name, function() ReplayPanelShow(frame) end)
+        return
+    end
     if Controlled(state) then
         ShowControls(state)
         -- Blizzard fits checkFit panels (PlayerSpellsFrame, ProfessionsFrame,
