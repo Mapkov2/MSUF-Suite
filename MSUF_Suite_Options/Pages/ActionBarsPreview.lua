@@ -43,7 +43,11 @@ local function Focus(ui, suffix)
     end
 end
 local function Target(ui, button, key, section)
-    button:SetScript("OnClick", function() Focus(ui, section) end)
+    button:SetScript("OnClick", function()
+        P.PreviewInteraction.Select(ui.selection, button, section == "bar_ornaments" and "Endcaps"
+            or section == "bar_background" and "Background" or "Action buttons", function() Focus(ui, section) end)
+        Focus(ui, section)
+    end)
     HM.SkipHistoryCheckpoint(button)
     HM.AllowCombatClick(button)
     if M.RegisterControlMetadata then
@@ -287,6 +291,7 @@ local function Paint(ui)
     end
     Endcap(ui, c, p, "Left", color)
     Endcap(ui, c, p, "Right", color)
+    P.PreviewInteraction.Refresh(ui.selection)
 end
 
 function Preview.Build(ctx, parent, y, width, height, selected)
@@ -312,8 +317,8 @@ function Preview.Build(ctx, parent, y, width, height, selected)
         ui.caps[side] = cap
         Target(ui, cap, side .. "Endcap", "bar_ornaments")
     end
-    local hint = P.Text(host, "Click the preview to open the matching settings.", 0, -(height - 16), width)
-    ui.hint = hint
+    ui.selection = P.PreviewInteraction.Bar(ctx, host, width, "Click the preview to open the matching settings.")
+    ui.selection:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
     ui.Paint = function() Paint(ui) end
     M.TrackRefresh(ctx, function() if ui.active or host:IsVisible() then ui.Paint() end end)
     Preview.Watch(ui)

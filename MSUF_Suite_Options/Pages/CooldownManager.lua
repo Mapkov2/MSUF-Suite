@@ -278,6 +278,14 @@ end
 
 -- A lazy host builds a closed section's controls on first open
 -- (P.LazySection). Its header (bar name, badge, "...") is there at once.
+local function ResetAnchor(values)
+    local key = KEYS[Page.selected].anchor
+    local anchor = values[key]
+    if anchor and anchor ~= P.Get(ID, key) and S.CooldownManagerConvertAnchor then
+        local moved = S.CooldownManagerConvertAnchor(Page.selected, anchor)
+        for setting, value in pairs(moved or {}) do values[setting] = value end
+    end
+end
 local function BuildSection(ctx, b, ui, spec)
     local sectionId = "suite_cooldownManager_" .. spec.id
     local own, rules = {}, {}
@@ -312,7 +320,7 @@ local function BuildSection(ctx, b, ui, spec)
         body._msufSuiteSkipSummary = true
         ui.sections[spec.id] = body
         P.AttachSectionReset(ctx, body, spec.title, function()
-            return P.ResetRules(ID, rules, Page.ResetKeyFn)
+            return P.ResetRules(ID, rules, Page.ResetKeyFn, nil, spec.id == "basics" and ResetAnchor or nil)
         end)
         M.TrackRefresh(ctx, function()
             if P.Combat() then return end
@@ -330,7 +338,7 @@ local function BuildSection(ctx, b, ui, spec)
 end
 
 ------------------------------------------------------------------ bar choice
-local SIDES = { "below", "above", "left of", "right of" }
+local ATTACH_SUMMARY = { "%s - attached below %s", "%s - attached above %s", "%s - attached left of %s", "%s - attached right of %s" }
 function Page.Summary(slot)
     local keys = KEYS[slot]
     local text = Page.KindName(Page.Kind(slot))
@@ -338,25 +346,23 @@ function Page.Summary(slot)
     local parent = anchor > FREE and SLOTS[anchor - FREE]
     local target = parent and Page.BarName(parent.key) or CDM.FRAME_ANCHORS[anchor] and Tr(CDM.ANCHOR_LABELS[anchor])
     if target then
-        text = text .. "  -  " .. format(Tr("attached %s %s"), Tr(SIDES[P.Get(ID, keys.side)] or SIDES[1]), target)
+        text = format(Tr(ATTACH_SUMMARY[P.Get(ID, keys.side)] or ATTACH_SUMMARY[1]), text, target)
         if parent and Page.InLoop(slot) then
-            -- Old settings may hold a loop: the runtime places such bars freely.
-            text = text .. " (" .. Tr("the attachments form a loop, so it is placed freely") .. ")"
+            text = format(Tr("%s (attachment loop; placed freely)"), text)
         elseif parent and not Page.IsOn(parent.key) then
-            -- A bar attached to a bar that is off follows the next shown bar
-            -- up the chain, or takes the place of the bar that is off.
             local shown, standIn = Page.Chain(slot)
-            text = text .. " (" .. Tr("off") .. ")"
             if shown then
-                text = text .. ", " .. format(Tr("follows %s"), Page.BarName(shown))
+                text = format(Tr("%s (anchor off; follows %s)"), text, Page.BarName(shown))
             elseif standIn then
-                text = text .. ", " .. format(Tr("takes the place of %s"), Page.BarName(standIn))
+                text = format(Tr("%s (anchor off; takes the place of %s)"), text, Page.BarName(standIn))
+            else
+                text = format(Tr("%s (anchor off)"), text)
             end
         end
     else
-        text = text .. "  -  " .. Tr("placed freely")
+        text = format(Tr("%s - placed freely"), text)
     end
-    if not Page.IsOn(slot) then text = text .. "  -  " .. Tr("off") end
+    if not Page.IsOn(slot) then text = format(Tr("%s - off"), text) end
     return text
 end
 

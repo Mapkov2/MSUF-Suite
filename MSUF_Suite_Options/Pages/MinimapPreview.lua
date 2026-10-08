@@ -40,7 +40,7 @@ end
 local function UpdateHint(ui)
     local handle = ui.hovered or ui.body._selectedHandle
     if handle then
-        P.SetTranslatedText(ui.hint, Tr(handle._label) .. "  -  " .. Tr("Drag or use arrows to move; click for settings."))
+        P.PreviewInteraction.SetHint(ui.hint, handle._label, true)
     else
         P.SetTranslatedText(ui.hint, Tr(DEFAULT_HINT))
     end
@@ -63,6 +63,7 @@ local function Select(ui, handle)
     elseif not active and chrome and chrome.ReleaseKeyboardCapture then
         chrome.ReleaseKeyboardCapture(body)
     end
+    for _, target in ipairs(ui.handles) do P.PreviewInteraction.Outline(target, target == handle) end
     if M.PreviewSelectionBar and M.PreviewSelectionBar.Refresh then M.PreviewSelectionBar.Refresh(body) end
     UpdateHint(ui)
 end
@@ -543,6 +544,8 @@ local function BuildLayerChips(ui)
 end
 
 local function Paint(ui)
+    local selected = ui.body._selectedHandle
+    if selected then P.PreviewInteraction.Outline(selected, selected:IsShown()) end
     local config = S.Config(ID)
     local state = ui.state
     local base = state.compact and math.min(state.zoom, 94 / math.max(100, config.size or P.catalog[ID].rules.size.default))

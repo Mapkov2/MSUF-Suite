@@ -10,6 +10,7 @@
 
 Menu\Bridge.lua
 Menu\Controls.lua
+Menu\PreviewInteraction.lua
 Menu\SectionActions.lua
 Pages\ActionBarsWorkspace.lua
 Pages\ActionBarsPreviewData.lua

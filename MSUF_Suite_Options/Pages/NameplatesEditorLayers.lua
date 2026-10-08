@@ -80,6 +80,7 @@ local function AuraGroup(ui)
 end
 
 local AURA_KIND = { auras = "Debuffs", buffs = "Buffs", controlAura = "Control" }
+Layers.AuraElement = { Auras = "auras", Buffs = "buffs", ControlAura = "controlAura" }
 local function AuraOn(ui, key)
     local group = AuraGroup(ui)
     if not group then return key == "auras" and NativeToggle("friendlyNpcDebuffs", "nameplateShowDebuffsOnFriendly") end
@@ -207,7 +208,7 @@ function Layers.Active(ui, key)
 end
 
 local function FocusLayer(ui, section, key)
-    if section == "enemy" and ui.sampleKind == "friendly" then section = "friendly" end
+    if (section == "enemy" or key == "castTime") and ui.sampleKind == "friendly" then section = "friendly" end
     if section == "elements" and ui.sampleKind == "friendly"
         and (key == "name" or key == "level" or key == "healthText") then section = "friendly" end
     local target = section == "elements" and P.SelectNameplatesEnemyTab("elements")
@@ -216,7 +217,9 @@ local function FocusLayer(ui, section, key)
         W.FocusCollapsibleSection(target, { persist = true, flash = true })
     end
     local setting = LAYER_SETTING[key]
-    if key == "backdrop" or key == "border" then
+    if key == "castTime" then
+        setting = ui.sampleKind .. "CastTimeEnabled"
+    elseif key == "backdrop" or key == "border" then
         setting = ui.sampleKind .. (key == "backdrop" and "BackdropEnabled" or "BorderEnabled")
     elseif ui.sampleKind == "friendly" and key == "health" then
         setting = "friendlyHealthWidthDelta"

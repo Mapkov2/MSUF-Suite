@@ -112,6 +112,7 @@ local function Shared(ctx, b, reveal)
     SharedRules(ctx,b,reveal,PAGE..'_sources',Tr('Additional data sources'),P.SectionRules(ID,'sources'),{
         help='Choose broker names and discovered currency IDs per place. Select your current-season crest currencies from the native currency list; saved currency selections work after login without visiting an upgrade NPC. Selection order and separator control the crest block. Observed upgrade stages remain available as an alternative after selecting an upgrade item this login. Hearthstone actions require a deliberate click.',
         extra=function(body,y,width)
+            if not P.Suite.Client.modernEquipment then return y end
             local button
             local picker
             picker=P.Button(ctx,body,'Choose crest currencies',16,y,width,function() CrestCurrencyMenu(picker) end,

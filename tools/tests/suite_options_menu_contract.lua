@@ -266,7 +266,8 @@ M.PreviewSelectionBar = {
 M.ShouldExpandFixedPreview = function() return true end
 M.pages, M.bound = {}, {}
 M.Tr = function(text) return L[text] end
-T.colors = { muted = {}, text = {}, dim = {} }
+T.colors = { muted = {}, text = {}, dim = {}, panel = { .08, .09, .1, 1 },
+    panel2 = { .1, .11, .12, 1 }, pillHover = { .13, .14, .15, 1 } }
 T.navIconGrid = { home = { 0, 0 }, gameplay = { 7, 1 } }
 T.navIconColors = { home = { 1 }, gameplay = { 2 }, profiles = { 3 } }
 T.Font = function(parent, template, text) local fs = Widget("FontString"); fs.text = text; return fs end
@@ -1078,7 +1079,7 @@ do (function()
         end
         error("missing HUD control " .. id .. "." .. key)
     end
-    assert(hud.fixedPreview.record.heightResolver() == 310 and hud.fixedPreview.section:GetHeight() == 310,
+    assert(hud.fixedPreview.record.heightResolver() == 326 and hud.fixedPreview.section:GetHeight() == 326,
         "HUD preview overlaps settings through the native compact height cap")
     for id, group in pairs(ui.groups) do
         ui.select(id)
@@ -1243,7 +1244,7 @@ end)() end
     optionsNS.Text = textBuilder
     W.SegmentTabs = previousTabs
     local workspace = legacy._msufSuiteHUDWorkspace
-    assert(legacy.fixedPreview.record.heightResolver() == 324,
+    assert(legacy.fixedPreview.record.heightResolver() == 326,
         "wrapped preview hint overlaps the settings on narrow hosts")
     assert(workspace.selector and not legacy.tabControls,
         "older/narrow hosts need a single HUD feature selector")
@@ -1603,6 +1604,26 @@ do
     assert(combatLog.row._msufSuiteSelected and combatLog.row._msufSuiteStripe.shown
         and not action.row._msufSuiteSelected and not action.row._msufSuiteStripe.shown,
         "Quality of Life submenu highlight did not follow the selected feature")
+    do
+        local colors = T.colors
+        local raised, hover = colors.panel2, colors.pillHover
+        colors.panel2, colors.pillHover = { .21, .19, .15, .88 }, { .32, .28, .20, .95 }
+        action.row.scripts.OnLeave(action.row)
+        local shade = action.row._msufSuiteShade.color
+        assert(shade[1] == .21 and shade[2] == .19 and shade[3] == .15,
+            "Quality of Life idle row retained a fixed blue shade")
+        action.row.scripts.OnEnter(action.row)
+        shade = action.row._msufSuiteShade.color
+        assert(shade[1] == .32 and shade[2] == .28 and shade[3] == .20 and shade[4] == .55,
+            "Quality of Life hover row ignored the active theme")
+        colors.pillHover = { .16, .17, .18, .95 }
+        action.row.scripts.OnEnter(action.row)
+        shade = action.row._msufSuiteShade.color
+        assert(shade[1] == .16 and shade[2] == .17 and shade[3] == .18,
+            "Quality of Life cached the old hover theme")
+        colors.panel2, colors.pillHover = raised, hover
+        action.row.scripts.OnLeave(action.row)
+    end
     resolver(actionId)
     local finderId = "suite_qualityOfLife_groupFinderDoubleClick_group_finder_double_click"
     local finder = assert(rows[finderId])
@@ -4499,9 +4520,11 @@ do
         and asked.text_arg1 == M.BuildPageResetWarning("suite_cooldownManager")
         and S.Config("cooldownManager").ess_size == 50, "the cooldown manager Reset page did not ask first")
     asked.callback()
-    -- Catalog defaults, with the shared look on top as on every page Reset.
+    -- A deliberate reset is stamped current so a later enable cannot migrate
+    -- new edits over the reset. All other fields follow catalog + shared look.
     local expected = {}
     for key, rule in pairs(S.catalog.cooldownManager.rules) do expected[key] = rule.default end
+    expected.defaultsVersion = Suite.CDM.DEFAULTS_VERSION
     if expected.enabled then Suite.SuiteLooks.ApplyToConfig("cooldownManager", expected, Suite.DB.suite.globalLook) end
     for key in pairs(S.catalog.cooldownManager.rules) do
         assert(S.Config("cooldownManager")[key] == expected[key], "the cooldown manager Reset page left " .. key)

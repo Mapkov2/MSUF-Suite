@@ -106,10 +106,12 @@ local function RestoreLayoutState(root, snapshot)
 end
 
 -- A skin profile holds settings only and is copied whole.
-local function CaptureSkin(root)
+local function CaptureSkin(root, name)
     if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end
     local snapshot = CopyKeys(root, SKIN_ROOT_SETTINGS, { profiles = {} })
-    local name, profile = root.activeProfile, root.profiles[root.activeProfile]
+    name = name or root.activeProfile
+    snapshot.activeProfile = name
+    local profile = root.profiles[name]
     if name ~= nil and type(profile) == "table" then snapshot.profiles[name] = Suite.CopyValue(profile) end
     return snapshot
 end
@@ -143,8 +145,11 @@ end
 function P.CaptureHistoryState()
     local root = CaptureSuite(Suite.RootDB)
     if not root then return nil end
-    local _, skinRoot = SkinRoot()
-    return { root = root, skinRoot = CaptureSkin(skinRoot) }
+    local skin, skinRoot = SkinRoot()
+    local db = skin and skin.Database
+    local name = db and db.GetHistoryProfile and db.GetHistoryProfile()
+    local epoch = db and db.GetHistoryEpoch and db.GetHistoryEpoch() or 0
+    return { root = root, skinRoot = CaptureSkin(skinRoot, name), skinEpoch = epoch }
 end
 
 function P.RestoreHistoryState(state)
@@ -166,7 +171,9 @@ function P.RestoreHistoryState(state)
     if lifted then Suite.ProfileVariants.LayOverlay() end
     if type(active) ~= "table" then return false end
     local skin, skinRoot = SkinRoot()
-    if type(state.skinRoot) == "table" and type(skinRoot) == "table" and type(skinRoot.profiles) == "table" then
+    local epoch = skin and skin.Database.GetHistoryEpoch and skin.Database.GetHistoryEpoch() or 0
+    if (state.skinEpoch or 0) == epoch and type(state.skinRoot) == "table"
+        and type(skinRoot) == "table" and type(skinRoot.profiles) == "table" then
         RestoreRoot(skinRoot, state.skinRoot, SKIN_ROOT_SETTINGS)
         skin.Database.SetActiveProfile(skinRoot.activeProfile)
     end

@@ -177,6 +177,7 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
         assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
         P.HM = bridge.HostBridge.Menu2(M)
         assert(loadfile(arg[2] or root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua"))("Options", P)
+        assert(loadfile(root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         local ui = P.NameplatesEditor.Create(ctx, builder, {})

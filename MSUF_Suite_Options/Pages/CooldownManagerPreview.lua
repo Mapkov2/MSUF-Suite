@@ -457,6 +457,7 @@ local function Render(ui)
             handle:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", RIM, -RIM)
         end
         handle:Show()
+        P.PreviewInteraction.Outline(handle, true)
         message:Hide()
     else
         Page.SetRaw(message, Tr("Nothing to show on this bar yet."))

@@ -336,9 +336,8 @@ function Page.EchoCustom()
         SetRaw(picker.echo, Tr("Type an ID or a spell name."))
     elseif spellID or itemID then
         r, g, b = 0.35, 0.95, 0.45
-        local parts = spellID and format(Tr("Spell %d"), spellID) .. ": " .. spellName or ""
-        if blizzard then parts = parts .. " (" .. Tr("Blizzard's entry") .. ")" end
-        if itemID then parts = parts .. (parts ~= "" and "  |  " or "") .. format(Tr("Item %d"), itemID) .. ": " .. itemName end
+        local parts = spellID and format(Tr(blizzard and "Spell %d: %s (Blizzard's entry)" or "Spell %d: %s"), spellID, spellName) or ""
+        if itemID then parts = parts .. (parts ~= "" and "  |  " or "") .. format(Tr("Item %d: %s"), itemID, itemName) end
         SetRaw(picker.echo, parts)
     else
         r, g, b = 1, 0.35, 0.3
@@ -355,6 +354,8 @@ local function AddCustom(prefix)
     local id = prefix == "i" and picker.customItem or picker.customSpell
     if not id then return end
     local blizzard = prefix ~= "i" and picker.customBlizzard or nil
+    local keys = CDM.KEYS[Page.selected]
+    if keys.shareContents and P.Get(Page.ID, keys.shareContents) then blizzard = nil end
     if blizzard then
         if blizzard.slot == Page.selected then
             SetRaw(picker.note, Tr("Blizzard's entry for this spell is already on this bar."))

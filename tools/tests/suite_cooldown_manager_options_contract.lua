@@ -586,7 +586,7 @@ local globalsBefore = {}
 for key in pairs(_G) do globalsBefore[key] = true end
 local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
-for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/SectionActions.lua",
+for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
     "Pages/DataTextsWorkspace.lua",
     "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua",
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
@@ -2179,6 +2179,7 @@ do
     -- Catalog defaults, with the shared look on top as on every page Reset.
     local expected = {}
     for key, rule in pairs(P.catalog[ID].rules) do expected[key] = rule.default end
+    expected.defaultsVersion = P.Suite.CDM.DEFAULTS_VERSION
     if expected.enabled then P.Suite.SuiteLooks.ApplyToConfig(ID, expected, P.Suite.DB.suite.globalLook) end
     for key in pairs(P.catalog[ID].rules) do
         assert(Config()[key] == expected[key], "the page Reset left " .. key .. " changed")
@@ -2247,7 +2248,7 @@ M.RequestRefresh()
 -- Attached to a bar that is off: the summary and the drag refusal say so,
 -- and Edit Mode opens on a bar it can move.
 Config().ess_on = false
-assert(Page.Summary("uti"):find("(off), takes the place of Essential cooldowns", 1, true),
+assert(Page.Summary("uti"):find("anchor off; takes the place of Essential cooldowns", 1, true),
     "summary hides that the parent bar is off: " .. Page.Summary("uti"))
 assert(Page.AttachedText("uti"):find("Essential cooldowns", 1, true), "drag refusal must name the bar that is off")
 assert(Page.Summary("buf"):find("Utility cooldowns", 1, true) and not Page.Summary("buf"):find("(off)", 1, true),

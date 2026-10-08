@@ -135,6 +135,9 @@ end
 local function Select(ui, id)
     if ui.id ~= id then Preview.Stop(ui) end
     ui.id = id
+    if ui.selection then
+        P.PreviewInteraction.Select(ui.selection, ui.canvas, P.catalog[id].title, function() Focus(ui) end)
+    end
     ui.playButton:SetShown(id == "announcements")
     for key, picker in pairs(ui.pickers) do P.W.SetControlShown(picker, key == id) end
     -- Only the AFK example reads character events, and only while visible.
@@ -174,7 +177,10 @@ function Preview.Build(ctx, parent, width)
     HM.SkipHistoryCheckpoint(canvas)
     HM.AllowCombatClick(canvas)
     local ui = { ctx = ctx, host = host, canvas = canvas, width = width, labels = {}, fills = {}, pickers = {} }
-    canvas:SetScript("OnClick", function() Focus(ui) end)
+    canvas:SetScript("OnClick", function()
+        P.PreviewInteraction.Select(ui.selection, canvas, P.catalog[ui.id].title, function() Focus(ui) end)
+        Focus(ui)
+    end)
     ui.Select, ui.Paint = Select, Paint
     Pickers(ui, parent)
     ui.playButton = P.T.Button(parent, "Play preview", 146, 26)
@@ -182,8 +188,9 @@ function Preview.Build(ctx, parent, width)
     HM.SkipHistoryCheckpoint(ui.playButton)
     HM.AllowCombatClick(ui.playButton)
     ui.playButton:SetScript("OnClick", function() Preview.Play(ui) end)
-    local hint = P.Text(parent, "Sample preview. Changes update here even when the feature is off.", 16, -291, width, P.T.colors.muted)
-    local height = math.max(310, 296 + math.ceil(hint:GetStringHeight() or 14))
+    ui.selection = P.PreviewInteraction.Bar(ctx, parent, width, "Sample preview. Changes update here even when the feature is off.")
+    ui.selection:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, -291)
+    local height = 326
     HM.SetFixedPreviewHeight(parent, height)
     parent:SetHeight(height)
     host:SetScript("OnShow", function() if ui.id then Select(ui, ui.id) end end)

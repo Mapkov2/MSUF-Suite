@@ -133,7 +133,7 @@ local function Materialize(lists, spec, slot)
         for i = 1, #old do if not IndexOf(list, old[i]) then list[#list + 1] = old[i] end end
     end
     slots[slot] = list
-    if slot == "ess" and not old and P.Get(ID, "raidEssentials") ~= false then
+    if slot == "ess" and (not old or old.inherit) and P.Get(ID, "raidEssentials") ~= false then
         local replace = lists.replace[spec] or {}
         replace.ess = true
         lists.replace[spec] = replace
@@ -244,7 +244,8 @@ function Page.RemoveEntry(slot, key)
         if at then table.remove(list, at) end
         -- Blizzard entries and preset spells come back unless hidden for this spec.
         local info = Page.SlotInfo(slot)
-        if not info.custom and (CDM.EntryKind(key) == "b" or info.preset) then
+        if not info.custom and (CDM.EntryKind(key) == "b" or info.preset
+            or not at and slot == "ess" and P.Get(ID, "raidEssentials") ~= false) then
             local hidden = lists.hidden[spec] or {}
             local count = 0
             for _ in pairs(hidden) do count = count + 1 end
@@ -362,10 +363,15 @@ end
 local function CopyEntry(lists, spec, slot, key)
     local slots = lists.specs[spec] or {}
     lists.specs[spec] = slots
-    local list = slots[slot] or {}
+    local list = slots[slot]
+    if not list and P.Get(ID, "raidEssentials") ~= false
+        and (slot == "ess" or slot == "uti" or slot == "buf" or slot == "bar") then
+        list = { inherit = true }
+    end
+    list = list or {}
     slots[slot] = list
     local present = IndexOf(list, key)
-    if not present and #list >= CDM.LIMITS.entries then return false end
+    if not present and #list >= CDM.LIMITS.entries then return false, "full" end
     Unclaim(lists, spec, key, slot)
     if present then return false end
     list[#list + 1] = key
@@ -380,13 +386,16 @@ function Page.CopyToSpecs(slot, key)
     -- its per-specialization lists are unused and other bars keep theirs.
     if KEYS[slot].shareContents and P.Get(ID, KEYS[slot].shareContents) then return true, 0 end
     local lists = CDM.Codec.DecodeLists(P.Get(ID, "listsData"))
-    local changed = 0
+    local changed, refused = 0, nil
     for _, other in ipairs(Page.ClassSpecs({})) do
         if other ~= spec then
-            if CopyEntry(lists, other, slot, key) then changed = changed + 1 end
+            local added, reason = CopyEntry(lists, other, slot, key)
+            if added then changed = changed + 1 end
+            refused = refused or reason
             Prune(lists, other)
         end
     end
+    if changed == 0 and refused then return false, refused == "full" and "This bar is full." or refused end
     if changed == 0 then return true, 0 end
     local ok, reason = Page.Commit("Copy to all specializations", lists)
     return ok, ok and changed or reason
@@ -404,17 +413,20 @@ function Page.CopyListToSpecs(slot)
         if CDM.EntryKind(own[i]) ~= "b" then keys[#keys + 1] = own[i] end
     end
     if #keys == 0 then return false, "This bar has no spells or items you added." end
-    local added, specs = 0, 0
+    local added, specs, refused = 0, 0, nil
     for _, other in ipairs(Page.ClassSpecs({})) do
         if other ~= spec then
             local before = added
             for i = 1, #keys do
-                if CopyEntry(lists, other, slot, keys[i]) then added = added + 1 end
+                local copied, reason = CopyEntry(lists, other, slot, keys[i])
+                if copied then added = added + 1 end
+                refused = refused or reason
             end
             if added > before then specs = specs + 1 end
             Prune(lists, other)
         end
     end
+    if added == 0 and refused then return false, refused == "full" and "This bar is full." or refused end
     if added == 0 then return true, 0, 0 end
     local ok, reason = Page.Commit("Copy bar to all specializations", lists)
     if not ok then return false, reason end

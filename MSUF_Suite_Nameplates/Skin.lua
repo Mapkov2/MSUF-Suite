@@ -6,6 +6,7 @@ local Style = NS.NameplateStyle
 local Border = Style.PaintBorder
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
 local Level, CastTime, CVars, Auras = private.Level, private.CastTime, private.CVars, private.Auras
+local KickReady = private.KickReady
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local IN_COMBAT = { inCombat = true }
 local M = {
@@ -19,6 +20,7 @@ local M = {
     friendlyNames = setmetatable({}, { __mode = "k" }),
     raidIcons = setmetatable({}, { __mode = "k" }),
     castTimes = setmetatable({}, { __mode = "k" }),
+    kicks = setmetatable({}, { __mode = "k" }),
     levelLabels = setmetatable({}, { __mode = "k" }),
     nativeLevelAlphas = setmetatable({}, { __mode = "k" }),
 }
@@ -301,6 +303,7 @@ local function Paint(uf)
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local prefix = Prefix(uf)
     CastTime.Paint(cast, prefix, M.units[health])
+    KickReady.Paint(cast, prefix, M.units[health])
     Threat.Apply(uf)
     FilterFriendlyName(uf, prefix)
     PaintRaidIcon(uf, prefix)
@@ -328,6 +331,7 @@ local function RestorePlate(uf)
     Layout.Restore(uf)
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     CastTime.Restore(cast)
+    KickReady.Restore(cast)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
     M.roles[health], M.units[health] = nil, nil
@@ -543,6 +547,17 @@ local function OnCastChanged(module, event, unit)
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     local state = cast and module.castTimes[cast]
     if state and state.unit == unit then CastTime.Refresh(state, unit, event) end
+    if cast then KickReady.OnCast(cast, unit, event) end
+end
+
+-- MSUF's interrupt-ready settings were applied: repaint the castbars of the
+-- shown plates (KickReady.lua decides from MSUF's switch and look).
+local function RepaintCasts()
+    for _, uf in pairs(M.activeUnits) do
+        local health = Safe(uf) and uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+        local cast = health and uf.CastBarsContainer and uf.CastBarsContainer.castBar
+        if cast then KickReady.Paint(cast, Prefix(uf), M.units[health]) end
+    end
 end
 
 -- Subzone steps (ZONE_CHANGED) fire often while moving; they repaint only
@@ -650,6 +665,7 @@ function M:Refresh()
     self.targetConfig = Style.TargetConfig(self.config)
     CVars.Apply(self)
     Threat.Refresh()
+    KickReady.Configure()
     EachPlate(ApplyPlate)
     AfterClassify(self)
     Power.Refresh()
@@ -674,11 +690,13 @@ function M:Disable()
     end
     Level.RestoreNative()
     Auras.Restore()
+    KickReady.Disable()
 end
 
 Layout.Bind(M)
 Text.Bind(M)
 Level.Bind(M)
 CastTime.Bind(M)
+KickReady.Bind(M, RepaintCasts)
 Auras.Bind(M)
 S.Install("nameplates", M)

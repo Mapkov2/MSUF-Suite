@@ -4,6 +4,7 @@ local ID = "nameplates"
 local SB, H = M.PreviewSelectionBar, M.PreviewHelpers or {}
 local Layers = P.NameplatesEditorLayers
 local AURA_KIND, AuraGroup = Layers.AURA_KIND, Layers.AuraGroup
+local AURA_ELEMENT = Layers.AuraElement
 local Register, OpenSetting = Layers.Register, Layers.OpenSetting
 local Editor = {}
 P.NameplatesEditor = Editor
@@ -33,7 +34,7 @@ local function Focus(ui, handle)
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
     if handle then
         local key = handle._npSettingKey
-        local kind = handle._key and handle._key:match("%.([%a]+)$")
+        local kind = handle._key and AURA_ELEMENT[handle._key:match("%.([%a]+)$")]
         if kind and AURA_KIND[kind] then
             local group = AuraGroup(ui)
             key = group and group .. AURA_KIND[kind] or "friendlyNpcDebuffs"
@@ -72,7 +73,8 @@ end
 function Editor:RefreshSelection()
     local selected = self.body._selectedHandle
     for _, handle in ipairs(self.handles) do
-        handle.outline(handle == selected and 1 or 0, "4ebaff")
+        handle.outline(0, "4ebaff")
+        P.PreviewInteraction.Outline(handle, handle == selected)
     end
     if SB then SB.Refresh(self.body) end
     if self.RefreshSizeSelection then self:RefreshSizeSelection() end
@@ -176,7 +178,7 @@ local function BindSetting(handle, id)
             or (id:find("elite") and "friendlyEliteMarker" or "friendlyQuestMarker")
     elseif id:match("%.SoftTarget$") then
         handle._npSettingKey = id:match("^enemy") and "softTargetEnemy" or "softTargetFriend"
-    elseif AURA_KIND[id:match("%.([%a]+)$")] then
+    elseif AURA_ELEMENT[id:match("%.([%a]+)$")] then
         handle._npSettingKey = "enemyNpcAuraMode"
     end
 end

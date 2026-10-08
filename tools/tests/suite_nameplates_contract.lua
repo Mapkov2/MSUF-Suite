@@ -2,7 +2,7 @@ local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
-    .. "Level.lua,CastTime.lua,CVars.lua,Auras.lua,Skin.lua",
+    .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -352,6 +352,8 @@ end
 local NS = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
+    -- MSUF without the interrupt-ready engine (the scenario at the end has one).
+    HostBridge = { KickReady = function() return nil end },
     Client = { IsAddOnLoaded = function() return true end },
     MSUFMedia = { barTexture = "fallback-msuf-texture" },
 }
@@ -2011,3 +2013,92 @@ do
     module.config.enabled, liveCVars.nameplateShowFriendlyNpcs = true, "secret"
     assert(not NS.ToggleFriendlyNPCNameplates() and writes == 2)
 end
+
+-- Interrupt readiness through the real plate lifecycle (KickReady.lua; the
+-- engine side is suite_nameplates_kick_ready_contract.lua). MSUF owns the
+-- switch and the look; only while that switch is on may the skin decorate
+-- Blizzard's castbar: a plate add paints a running cast, cast events follow
+-- it, removal restores it, a reused plate starts from its new unit, MSUF's
+-- settings repaint the shown plates, and disabling the module unregisters.
+do
+    local look = { show = false, style = "fill", marker = false, segment = false,
+        readyR = 0, readyG = 1, readyB = 0, readyA = 1, outline = 1, boxSize = 0,
+        boxAnchor = "RIGHT", boxOffsetX = 4, boxOffsetY = 0, texture = "msuf-castbar-texture" }
+    local castColor, nonColor, unavailableColor = { name = "cast" }, { name = "non" }, { name = "unavailable" }
+    local engine = { version = 1, ready = false }
+    function engine.Register(_, onChange) engine.onChange = onChange end
+    function engine.Unregister() engine.onChange, engine.active = nil, false end
+    function engine.SetActive(_, active) engine.active = active end
+    function engine.Look() return look end
+    function engine.RGBA() if engine.ready then return 0, 1, 0, 1 end return 1, 0, 0, 1 end
+    function engine.FillColors() return castColor, nonColor, unavailableColor end
+    function engine.SelectColor(ready, notReady) if engine.ready then return ready end return notReady end
+    function engine.SlotCount() return 1 end
+    function engine.Cooldown() return nil end
+    NS.HostBridge = { KickReady = function() return engine end }
+    UnitCastingInfo = function() return "Bolt", "", 1, 0, 1, false, 7, false, 1 end
+    UnitChannelInfo = function() return nil end
+    local bans = { CreateTexture = cast.CreateTexture, GetStatusBarTexture = cast.GetStatusBarTexture }
+    local create = Region().CreateTexture
+    cast.CreateTexture = function(self, ...)
+        local texture = create(self, ...)
+        function texture:SetVertexColorFromBoolean(value, ifTrue, ifFalse)
+            if value then self.vertex = ifTrue else self.vertex = ifFalse end
+        end
+        return texture
+    end
+    function cast:GetStatusBarTexture() return self.statusTexture end
+    function cast:GetEffectiveScale() return 1 end
+    PixelUtil.GetNearestPixelSize = PixelUtil.GetNearestPixelSize or function(size) return size end
+    local function Overlay() return module.kicks[cast] and module.kicks[cast].fill end
+    castDuration, channelDuration, empoweredDuration = { GetStartTime = function() return 0 end,
+        GetEndTime = function() return 1 end }, nil, nil
+    uf.isFriend, uf.isPlayer = false, false
+    module.active = true
+    module:Refresh()
+    assert(engine.onChange, "the running module did not register with MSUF's engine")
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(module.kicks[cast] == nil, "MSUF's nameplate switch is off, yet the castbar was decorated")
+
+    -- MSUF's switch turns on: its settings call repaints the shown plates.
+    look.show = true
+    engine.onChange("settings")
+    local overlay = Overlay()
+    assert(overlay and overlay.shown and overlay.allPoints == cast.statusTexture and engine.active,
+        "MSUF's switch did not show readiness on a plate mid-cast")
+    assert(overlay.texture == "msuf-castbar-texture" and overlay.vertex == unavailableColor,
+        "the fill is not MSUF's castbar texture in MSUF's unavailable color")
+    engine.ready = true
+    engine.onChange("readiness")
+    assert(overlay.vertex == castColor, "the engine's change did not reach the plate")
+    castDuration = nil
+    events.UNIT_SPELLCAST_STOP(module, "UNIT_SPELLCAST_STOP", "nameplate1")
+    assert(not overlay.shown and engine.active == false, "a finished cast kept its readiness")
+    castDuration = { GetStartTime = function() return 2 end, GetEndTime = function() return 3 end }
+    events.UNIT_SPELLCAST_START(module, "UNIT_SPELLCAST_START", "nameplate1")
+    assert(overlay.shown and engine.active, "a new cast did not show readiness")
+
+    -- MSUF's style changes to its castbar border: the fill gives way.
+    look.style = "border"
+    engine.onChange("settings")
+    local edges = module.kicks[cast].border.edges
+    assert(not overlay.shown and edges[1].shown and edges[1].vertexColor[2] == 1, "MSUF's border style did not follow")
+
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    assert(not edges[1].shown and engine.active == false and module.kicks[cast].unit == nil,
+        "a removed plate kept its readiness")
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(edges[1].shown and engine.active, "a reused plate did not start over")
+
+    -- MSUF's switch turns off: everything is restored at once.
+    look.show = false
+    engine.onChange("settings")
+    assert(not edges[1].shown and engine.active == false, "turning MSUF's switch off left readiness on a plate")
+    look.show = true
+    engine.onChange("settings")
+    module.active = false
+    module:Disable()
+    assert(engine.onChange == nil and not edges[1].shown, "disabling the module left readiness registered")
+    cast.CreateTexture, cast.GetStatusBarTexture = bans.CreateTexture, bans.GetStatusBarTexture
+end
+print("Suite nameplates: interrupt readiness through the plate lifecycle passed")

@@ -152,6 +152,25 @@ local function EnemySection(ctx, builder, rules)
     })
 end
 
+-- MSUF owns the interrupt-ready indicator on these castbars: its switch and
+-- its look are MSUF's (Castbars > Interrupt Ready Indicator), drawn here by
+-- MSUF_Suite_Nameplates/KickReady.lua. Shown where the host has the engine.
+-- Every host with the engine has Menu2's exact setting jump.
+local KICK_SWITCH, KICK_SWITCH_LABEL = "general.kickReadyShowNameplates", "Show on enemy nameplates (MSUF Suite)"
+local KICK_HELP =
+    "Interrupt readiness on these castbars looks exactly like on MSUF's castbars. Turn it on and style it in MSUF: Castbars > Interrupt Ready Indicator."
+local function KickReadyLink(ctx)
+    return function(body, y, width)
+        if not P.Suite.HostBridge.KickReady() then return y end
+        local text = P.Description(body, KICK_HELP, 16, y, width, Tr("Enemy castbar"))
+        y = y - math.max(14, math.ceil(text:GetStringHeight() or 14)) - 8
+        P.Button(ctx, body, "Open interrupt settings", 16, y, 220, function()
+            P.M.OpenExactSettingControl(KICK_SWITCH, KICK_SWITCH_LABEL, "opt_castbar")
+        end, nil, P.Meta(PAGE, ID, "action.kickReady", "action", PAGE .. "_castbar"))
+        return y - 40
+    end
+end
+
 local function Build(ctx)
     local builder = P.W.PageBuilder(ctx)
     local sections = {}
@@ -180,7 +199,8 @@ local function Build(ctx)
             sections.enemy = EnemySection(ctx, builder, allRules)
         else
             sections[section] = P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. section, Tr(rules[1].sectionTitle), rules,
-                { help = HELP[section], resetKeys = PositionKeys(allRules) })
+                { help = HELP[section], resetKeys = PositionKeys(allRules),
+                  extra = section == "castbar" and KickReadyLink(ctx) or nil })
         end
     end
 end

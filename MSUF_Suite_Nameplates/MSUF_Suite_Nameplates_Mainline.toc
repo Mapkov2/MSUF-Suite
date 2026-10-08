@@ -18,6 +18,7 @@ Power.lua
 Threat.lua
 Level.lua
 CastTime.lua
+KickReady.lua
 CVars.lua
 Auras.lua
 Skin.lua

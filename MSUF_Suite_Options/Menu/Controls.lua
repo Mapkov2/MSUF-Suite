@@ -578,9 +578,8 @@ function P.LookPresetButtons(ctx, pageKey, id, sectionId, after)
 end
 
 -- A reset writes the exact catalog keys owned by an accordion. Dynamic
--- sections resolve their selected bar/window only when the action is clicked;
--- a keyFn returns nil for a rule its target lacks, and that rule is skipped.
-function P.ResetRules(id, rules, keyFn, extraKeys)
+-- sections resolve keys on click; nil keys are skipped and adjust adds dependent values.
+function P.ResetRules(id, rules, keyFn, extraKeys, adjust)
     if P.Combat() then return false end
     local values = {}
     for _, rule in ipairs(rules or {}) do
@@ -598,6 +597,7 @@ function P.ResetRules(id, rules, keyFn, extraKeys)
         local preset = look.presets and look.presets[values[look.key]]
         for key, value in pairs(preset or {}) do values[key] = value end
     end
+    if adjust then adjust(values) end
     if not next(values) then return false end
     local ok = P.WithHistory("Reset section", "suite:" .. id .. ".section-reset", function()
         return S.ResetKeys(id, values)

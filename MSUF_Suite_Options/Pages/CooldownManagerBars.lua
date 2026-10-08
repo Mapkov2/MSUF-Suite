@@ -41,8 +41,12 @@ local function Snapshot(keys)
     for i = 1, #keys do out[keys[i]] = P.Get(ID, keys[i]) end
     return out
 end
-local function Restore(before, after)
+local function Restore(before, after, config)
     if P.Combat() then return false end
+    if S.Config(ID) ~= config then
+        Page.ClearNote()
+        return false
+    end
     local values = {}
     for key, value in pairs(after) do
         if P.Get(ID, key) ~= value then
@@ -69,11 +73,11 @@ function Page.WithUndo(text, keys, run)
     local before = Snapshot(keys)
     local ok, reason, extra = run()
     if not ok then return false, reason end
-    local after = Snapshot(keys)
+    local after, config = Snapshot(keys), S.Config(ID)
     for key, value in pairs(after) do
         if before[key] ~= value then
             if type(text) == "function" then text = text(reason, extra) end
-            Page.Note(text, function() return Restore(before, after) end)
+            Page.Note(text, function() return Restore(before, after, config) end)
             break
         end
     end
@@ -284,7 +288,7 @@ end
 -- Settings that make a bar what it is and where it sits never copy: name,
 -- type, attachment, position and how it grows.
 local COPY_SKIP = { on = true, name = true, kind = true, anchor = true, side = true, gap = true, x = true, y = true,
-    vertical = true, grow = true, align = true }
+    vertical = true, grow = true, align = true, shareContents = true }
 function Page.CopyBarSettings(from, to)
     if P.Combat() or from == to or not (KEYS[from] and KEYS[to]) then return false end
     local values, keys = {}, {}

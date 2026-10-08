@@ -41,7 +41,7 @@ local HELP = {
     daily_comfort = "Cinematic confirmation can be skipped after you choose to exit. Automatic skipping is a separate option and also skips movies. Both stay inactive during combat, and a vehicle sequence always keeps its exit confirmation. Hide tutorials while this helper is enabled, prefill the DELETE word while keeping the final confirmation manual, hide only the successful screenshot notice, or open your character window at merchants on the tab you used last. At the auction house, Blizzard's filter button is marked while Current Expansion Only is off; tick it there once and Blizzard keeps it for this character.",
     daily_cvars = "Optional Blizzard settings for chat, map, sound and low-health or alternate screen flashes. MSUF restores the previous value when you turn a choice or this helper off. Changes you make yourself in Blizzard settings while this helper runs are respected.",
     collection_markers = "Clear only new mount, pet and toy fanfares acquired while this helper is active. Your collection entries remain available. Each collection type can be switched off independently.",
-    guild_privacy = "Type /msufguildprivacy or use the small ON/OFF button above the main chat window. Any chat window containing Guild or Officer is covered in full, including other channels in a mixed window. Click a cover to reveal the windows again. Messages keep arriving underneath.",
+    guild_privacy = "Type /msufguildprivacy or use the small ON/OFF button above the main chat window. Any chat window containing Guild or Officer is covered in full, including other channels in a mixed window. The guild chat in the Guild & Communities window can be covered as well; other communities stay visible. Reveal the chat again with the click chosen here. Messages keep arriving underneath.",
     ui_error_filter = "Hide only the selected error types. Blizzard keeps handling all other messages and their sounds. Each choice remembers and restores its previous display state when you turn it off.",
     cursor_effects = "A ring around the mouse pointer that makes it easy to find. Pick its shape, size, color, an optional short trail and a centre dot; No ring keeps only the dot or the progress fill. The camera mode shows ring, dot and trail only while you hold a mouse button down on the game world to turn the camera. The highlight follows the pointer only while something is shown, and it moves nothing while the pointer rests.",
     cursor_progress = "Blizzard's own cooldown swipe fills the ring: the global cooldown after each ability, and casts or channels while they run. A cast takes the place of the global cooldown until it ends; the bright edge marks how far the cast has come.",
@@ -516,9 +516,11 @@ local function PaintFeatureRow(row)
         shade:SetColorTexture(accent[1], accent[2], accent[3], hovered and 0.46 or 0.36)
         stripe:SetColorTexture(accent[1], accent[2], accent[3], 0.95)
     elseif hovered then
-        shade:SetColorTexture(0.10, 0.15, 0.22, 0.55)
+        local color = P.T.colors.pillHover or P.T.colors.panel2 or P.T.colors.panel
+        shade:SetColorTexture(color[1], color[2], color[3], 0.55)
     else
-        shade:SetColorTexture(0.07, 0.10, 0.15, row._msufSuiteEven and 0.34 or 0.22)
+        local color = P.T.colors.panel2 or P.T.colors.pillBase or P.T.colors.panel
+        shade:SetColorTexture(color[1], color[2], color[3], row._msufSuiteEven and 0.34 or 0.22)
     end
     stripe:SetShown(selected == true)
 end

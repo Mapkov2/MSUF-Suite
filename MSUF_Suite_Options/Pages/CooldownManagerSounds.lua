@@ -187,8 +187,8 @@ function Page.OpenSoundPicker(anchor, current, onPick)
         SoundItem(n, current, Page.SoundLabel(current))
     end
     n = AddMediaSounds(AddKitSounds(n, kits))
-    sounds.count, sounds.current, sounds.onPick = n, current, onPick
     Page.ClosePopups(Page.popover)
+    sounds.count, sounds.current, sounds.onPick = n, current, onPick
     Page.PlacePopup(sounds, anchor)
     if Page.popover then sounds:SetFrameLevel(Page.popover:GetFrameLevel() + 20) end
     sounds.search:SetText("")

@@ -86,7 +86,9 @@ local function Builder(ctx)
 end
 
 ------------------------------------------------------------------ namespace
-local P = { S = {}, Suite = { RGB = function() return 1, 1, 1 end }, SearchPreparers = {}, ChoiceGates = {} }
+-- Suite.HostBridge: an MSUF host without the interrupt-ready engine.
+local P = { S = {}, Suite = { RGB = function() return 1, 1, 1 end, HostBridge = { KickReady = function() return nil end } },
+    SearchPreparers = {}, ChoiceGates = {} }
 P.Tr = function(text) return text end
 P.M = {
     TrackRefresh = function(ctx, fn) ctx.refreshers[#ctx.refreshers + 1] = fn end,

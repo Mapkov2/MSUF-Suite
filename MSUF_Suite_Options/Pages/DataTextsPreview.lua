@@ -51,7 +51,7 @@ end
 local function Highlight(ui, button)
     local selected = ui.options.interactive ~= false and Selection(ui) == button.slot
     local thickness = 2 * ui.pixel / math.max(.01, (ui.fit or 1) * (button.slotScale or 1))
-    Border(button.edges, "57c7df", thickness, selected)
+    P.PreviewInteraction.Outline(button, selected and ui.host:IsVisible(), thickness)
     button.hover:SetShown(button.hovered and not selected)
 end
 
@@ -63,7 +63,6 @@ local function NewSlot(ui, index)
     button.hover = button:CreateTexture(nil, "HIGHLIGHT")
     button.hover:SetAllPoints(button)
     button.hover:SetColorTexture(.34, .78, .87, .12)
-    button.edges = Edges(button)
     button.label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     button.label:SetWordWrap(false)
     button.label:SetTextColor(1, 1, 1)
@@ -249,6 +248,14 @@ local function Paint(ui)
     ui.add:SetEnabled(#entries < ui.maxSlots and not P.Combat())
     Metadata(ui, ui.add, ".preview.add", Tr("Add data"))
     ui.entries = entries
+    local selected = Selection(ui)
+    local target = selected and ui.slots[selected]
+    if target and target:IsShown() and ui.options.onSelect then
+        P.PreviewInteraction.Select(ui.selection, target, "Data texts", function() ui.options.onSelect(selected) end,
+            2 * ui.pixel / math.max(.01, (ui.fit or 1) * (target.slotScale or 1)))
+    else
+        P.PreviewInteraction.Select(ui.selection, nil)
+    end
 end
 
 local function MakeCanvas(ui)
@@ -270,6 +277,7 @@ end
 local function Lifecycle(ui)
     function ui:Refresh() Paint(self) end
     function ui:SetBar(bar)
+        self.selectedSlot = nil
         self.barId = bar
         self:Refresh()
     end
@@ -318,7 +326,8 @@ function Preview.Build(ctx, parent, barId, options)
     local emptyText = options.compact and "Empty bar" or "Add your first data source to this bar."
     ui.empty = P.Text(host, emptyText, 12, -math.floor(height / 2), width - 24)
     ui.empty:SetJustifyH("CENTER")
-    ui.hint = P.Text(host, "Sample values. Click a data text to edit it.", 12, -(height - 22), width - 174)
+    ui.selection = P.PreviewInteraction.Bar(ctx, host, width - 166, "Sample values. Click a data text to edit it.")
+    ui.selection:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 12, 8)
     ui.add = T.Button(host, "Add data", 136, 26)
     ui.add:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -10, 8)
     HM.SkipHistoryCheckpoint(ui.add)
@@ -328,7 +337,7 @@ function Preview.Build(ctx, parent, barId, options)
         end
     end)
     ui.status:SetShown(not options.compact)
-    ui.hint:SetShown(not options.compact)
+    ui.selection:SetShown(not options.compact and options.interactive ~= false)
     MakeCanvas(ui)
     Lifecycle(ui)
     ui:Refresh()
