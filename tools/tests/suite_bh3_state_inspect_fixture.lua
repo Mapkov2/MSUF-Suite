@@ -2,8 +2,12 @@ BH3("S08-A2",function()
     local function noop() end
     local hooks, painted={},{}
     local ns={Client={isForever=true},IsCombatLocked=function() return false end,
-        Safety={Field=function(t,k) return t and t[k] end,Public=function() return true end},
-        AdapterKit={SkinControl=function(_,target) if target then painted[target]=true end end}}
+        Safety={Field=function(t,k) return t and t[k] end,Public=function() return true end,Read=noop},
+        Surface={SetActive=noop},
+        -- Forever's ModeTabs are Frames (LargeSideTabButtonTemplate): they take a surface (FV-9).
+        AdapterKit={SkinControl=function(_,target) if target then painted[target]=true end end,
+            Ensure=function(_,target) if target then painted[target]=true end return target~=nil end,
+            SuppressVertexAlpha=noop,HookFunction=function() return true end}}
     local chrome={Spec=function() return {} end,Fade=noop,Attach=noop}
     chrome.New=function()
         return {owners={},exactSlots={},Activate=function() end,

@@ -131,6 +131,11 @@ PaperDollFrame_UpdateStats = function() end
 local headSlot = Frame()
 headSlot.Icon, headSlot.IconBorder = Texture(), Texture()
 CharacterHeadSlot = headSlot
+-- Forever's ranged and ammo slots (Blizzard_UIPanels_Game/Camelot/PaperDollFrame.xml:863, :868).
+local rangedSlot, ammoSlot = Frame(), Frame()
+rangedSlot.Icon, rangedSlot.IconBorder = Texture(), Texture()
+ammoSlot.Icon, ammoSlot.IconBorder = Texture(), Texture()
+CharacterRangedSlot, CharacterAmmoSlot = rangedSlot, ammoSlot
 PAPERDOLL_SIDEBARS = { "Stats", "Equipment", "Titles", "Pet" }
 PaperDollSidebarTabs = Frame()
 for index = 1, #PAPERDOLL_SIDEBARS do
@@ -152,8 +157,9 @@ local function NextFrame()
     queuedJobs = {}
     for _, job in ipairs(jobs) do job() end
 end
+local gamepadUI = false
 local ns = {
-    Client = { isForever = true },
+    Client = { isForever = true, IsGamepadUI = function() return gamepadUI end },
     DB = { theme = { look = "foreverGlass" } },
     Theme = { GetColor = function() return 0.7, 0.5, 0.3, 1 end },
     Registry = { AddListener = function(_, callback) themeListener = callback end, QueueJob = QueueJob },
@@ -196,6 +202,10 @@ if secretCase then
 end
 assert(ns.CharacterPanel.Apply("blizzardWindows"))
 assert(PaperDollSidebarTab4.surface, "70170 pet sidebar tab was not skinned")
+assert(rangedSlot.surface and ammoSlot.surface, "Forever's ranged and ammo slots stayed unskinned (FV-10)")
+rangedSlot.surface = nil
+hooks.PaperDollItemSlotButton_Update(rangedSlot)
+assert(rangedSlot.surface, "a native ranged slot update did not refresh its skin (FV-10)")
 assert(hooks.PaperDollFrame_UpdateSidebarTabs, "native sidebar updates were not observed")
 PaperDollSidebarTab4.surface = nil
 hooks.PaperDollFrame_UpdateSidebarTabs()
@@ -287,6 +297,20 @@ NextFrame()
 assert(character.ModeTabs.frameStrata == "HIGH"
     and Parts(2).label.shown == true,
     "expanded Forever panel did not restore visible top tabs")
+-- Forever's Gamepad UI: CharacterFrameTabIndicators is vertical (Camelot/
+-- CharacterFrame.xml:606-610) and puts LB above the first and RB below the
+-- last tab (Tab/TabIndicators.lua:66-72); the native rail stays, still skinned.
+gamepadUI = true
+hooks.SetSelectedModeTabByFrame()
+assert(character.ModeTabs.points[1][3] == "TOPRIGHT" and character.ModeTabs.points[1][5] == -30
+    and tabs[3].points[1][2] == character.ModeTabs and tabs[3].points[1][4] == 0
+    and tabs[3].points[1][5] == -110 and Parts(2).label.shown == false
+    and tabs[2].surface and tabs[2].surface.fillVisible ~= false and tabs[3].active,
+    "the Gamepad UI kept the horizontal tab row under its vertical LB/RB prompts (FV-12b)")
+gamepadUI = false
+hooks.SetSelectedModeTabByFrame()
+assert(character.ModeTabs.points[1][4] == 8 and Parts(2).label.shown == true,
+    "leaving the Gamepad UI did not bring the Forever tab row back")
 
 -- Blizzard's PaperDoll post-hooks: a raising pass is reported and never
 -- reaches Blizzard's caller.

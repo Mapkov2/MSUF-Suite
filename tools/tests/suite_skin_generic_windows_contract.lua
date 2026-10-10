@@ -1693,7 +1693,20 @@ Section("major windows pvp categories", function()
     _G.HonorFrame = Frame("HonorFrame")
     _G.LFGListPVPStub = Frame("LFGListPVPStub")
     _G.TrainingGroundsFrame = Frame("TrainingGroundsFrame")
+    -- 12.1.5 and Forever name the first Training Grounds button
+    -- RandomTrainingGroundBGButton (Blizzard_PVPUI/Mainline/Blizzard_PVPUI.xml:1543).
+    local trainingList = Frame("BonusTrainingGroundList")
+    trainingList.RandomTrainingGroundBGButton = Frame("RandomTrainingGroundBGButton")
+    trainingList.RandomTrainingGroundArenaButton = Frame("RandomTrainingGroundArenaButton")
+    _G.TrainingGroundsFrame.BonusTrainingGroundList = trainingList
+    local paintedPvP = {}
+    local pvpApplyButton = NS.ControlSkin.ApplyButton
+    NS.ControlSkin.ApplyButton = function(button) paintedPvP[button] = true; return {} end
     NS.MajorWindows.Apply("major")
+    NS.ControlSkin.ApplyButton = pvpApplyButton
+    Expect(paintedPvP[trainingList.RandomTrainingGroundBGButton]
+        and paintedPvP[trainingList.RandomTrainingGroundArenaButton],
+        "the 12.1.5 and Forever Training Grounds battleground button stayed unskinned (P2-2)")
     local indicators = NS.MajorWindows.indicators
     Expect(indicators[queue.CategoryButton1] ~= nil and indicators[queue.CategoryButton3] ~= nil
         and indicators[queue.CategoryButton4] ~= nil,

@@ -162,6 +162,12 @@ local PVP_BONUS_BUTTONS = {
 local PVP_RATED_BUTTONS = {
     "RatedSoloShuffle", "RatedBGBlitz", "Arena2v2", "Arena3v3", "RatedBG",
 }
+-- 12.1.5 and Forever renamed RandomTrainingGroundButton to RandomTrainingGroundBGButton
+-- (ptr2 and forever Blizzard_PVPUI/Mainline/Blizzard_PVPUI.xml:1543); 12.1.0 keeps the
+-- old key. A client has one of the two.
+local PVP_TRAINING_BUTTONS = {
+    "RandomTrainingGroundBGButton", "RandomTrainingGroundButton", "RandomTrainingGroundArenaButton",
+}
 local GROUP_FINDER_CHROME = {
     "PVEFrameBlueBg", "PVEFrameTLCorner", "PVEFrameTRCorner",
     "PVEFrameBRCorner", "PVEFrameBLCorner", "PVEFrameLLVert",
@@ -453,8 +459,9 @@ local function SkinPVPContent(root, state)
     local trainingBonus = Field(training, "BonusTrainingGroundList")
     Attach(state, trainingBonus, PANEL)
     Fade(state, Field(trainingBonus, "WorldBattlesTexture"))
-    SkinPVPActivity(state, Field(trainingBonus, "RandomTrainingGroundButton"))
-    SkinPVPActivity(state, Field(trainingBonus, "RandomTrainingGroundArenaButton"))
+    for index = 1, #PVP_TRAINING_BUTTONS do
+        SkinPVPActivity(state, Field(trainingBonus, PVP_TRAINING_BUTTONS[index]))
+    end
 
     Fade(state, Field(plunder, "Background"))
     SkinInsetCard(state, Field(plunder, "Inset"))

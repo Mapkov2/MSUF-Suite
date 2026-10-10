@@ -1,8 +1,7 @@
 local _, NS = ...
 
--- Window geometry is deliberately separate from cosmetic skinning.  Only
--- reviewed, top-level Blizzard panels are candidates; native controls win.
--- No global frame scans or permanent OnUpdate; geometry is gated below.
+-- Window geometry, separate from cosmetic skinning: only reviewed top-level Blizzard
+-- panels, native controls win, no global frame scans or permanent OnUpdate.
 local WindowControls = { states = setmetatable({}, { __mode = "k" }) }
 NS.WindowControls = WindowControls
 
@@ -10,8 +9,7 @@ local Safety = NS.Safety
 
 -- Panels placed by us, re-placed after Blizzard's panel layout runs.
 local positionedStates = setmetatable({}, { __mode = "k" })
--- Our own grip, drag strip, minimize and restore frames, mapped to their
--- panel state so every control shares one set of script handlers.
+-- Our grip, drag strip, minimize and restore frames -> panel state (shared handlers).
 local controlStates = setmetatable({}, { __mode = "k" })
 
 local FOREVER_CHARACTER_DOCK = { x = 0, y = 0 }
@@ -30,8 +28,7 @@ local specialPanels = {
 local nativeMinimize = {
     WorldMapFrame = true, PlayerSpellsFrame = true,
 }
--- Closing an NPC or transient panel can end its game interaction.  Only
--- persistent, player-opened windows get a restore tab.
+-- Only persistent, player-opened windows get a restore tab (closing an NPC panel ends it).
 local minimizablePanels = {
     CharacterFrame = true, FriendsFrame = true, PVEFrame = true,
     PVPUIFrame = true, ProfessionsBookFrame = true,
@@ -126,8 +123,7 @@ local function CanChangeGeometry(state)
     return CanChangeFrameGeometry(state.frame)
 end
 
--- The controls are on for this panel: Window controls are enabled, an
--- owner still skins it and it can be controlled.
+-- The controls are on for this panel: they are enabled, an owner skins it, it can be controlled.
 local function Controlled(state)
     return Enabled() and next(state.owners) ~= nil and CanChangeGeometry(state)
 end
@@ -161,8 +157,7 @@ local function ApplyStoredScale(state)
     end
 end
 
--- The panel's own anchors, when they are all readable. Anchors of a panel
--- inside secret-anchored layout come back as secrets and are not kept.
+-- The panel's own anchors when all are readable (secret-anchored layout returns secrets).
 local function CaptureNativePoints(frame)
     local count = Safety.Read(frame, "GetNumPoints")
     if type(count) ~= "number" or count < 1 or count > 8 then return nil end
@@ -244,9 +239,8 @@ local function OnPanelPositionsUpdated()
     end
 end
 
--- A UI scale change fits the open panels to the screen and lays them out
--- inside the panel manager, past that hook; a refresh puts ours back, after
--- combat when the change comes in combat.
+-- A UI scale change fits the open panels to the screen inside the panel manager, past
+-- that hook; a refresh puts ours back (after combat when the change comes in combat).
 InstallPanelPositionHook = function()
     if positionHooked then return end
     positionHooked = true
@@ -366,17 +360,19 @@ local function CreateRestore(state)
     return bar
 end
 
--- Scale grip. The drag follows the cursor from a transient OnUpdate that
--- clears itself as soon as the mouse button is up, combat starts or the
--- panel hides.
+-- Scale grip. The drag follows the cursor from a transient OnUpdate that clears
+-- itself as soon as the mouse button is up, combat starts or the panel hides.
 
 local function EndDrag(state)
-    local grip = state.grip
+    local grip, drag = state.grip, state.drag
     grip:SetScript("OnUpdate", nil)
-    if not state.drag then return end
+    if not drag then return end
     state.drag = nil
     if grip:IsMouseOver() then grip:SetButtonState("NORMAL") end
     local scale = state.frame:GetScale()
+    -- A press that changed nothing (a click, or A on the grip under Forever's
+    -- Gamepad UI) stores nothing and leaves no history entry.
+    if scale == drag.scale then return end
     if NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales then
         local value = math.floor(scale * 100 + 0.5) / 100
         CommitWithHistory(NS.L["Scale %s"]:format(NS.WindowControlChrome.Title(state)), "scales." .. state.name, function()
@@ -464,9 +460,8 @@ end
 local function ControlBaseLevel(state)
     local parent = ControlParent(state)
     local level = parent:GetFrameLevel()
-    -- Map and all Forever portrait chrome sit above their root.
-    -- Keep our small controls above the portrait border too; only our own
-    -- frames change level.
+    -- Map and all Forever portrait chrome sit above their root: our controls go
+    -- above the portrait border too; only our own frames change level.
     if state.name == "WorldMapFrame" or NS.Client.isForever then
         local borderLevel = Safety.Read(Safety.Field(parent, "NineSlice"), "GetFrameLevel")
         if type(borderLevel) == "number" then level = math.max(level, borderLevel) end
@@ -517,6 +512,7 @@ local function EndMove(state)
         return
     end
     state.moving = false
+    state.titleDrag:UnregisterEvent("GLOBAL_MOUSE_UP")
     if Safety.IsForbidden(frame) then return end
     frame:StopMovingOrSizing()
     if state.nativeMovable == false then frame:SetMovable(false) end
@@ -538,6 +534,7 @@ local function BeginMove(state)
     end
     frame:StartMoving()
     state.moving = true
+    state.titleDrag:RegisterEvent("GLOBAL_MOUSE_UP")
 end
 
 local function OnTitleDragStart(strip)
@@ -549,9 +546,8 @@ local function OnTitleRelease(strip)
 end
 
 local function CreateTitleDrag(state)
-    -- Standard Blizzard panel headers leave the title area clear.  Keep the
-    -- drag target inside that strip, away from portraits and window buttons.
-    -- The Forever navigation sits below the title, so this strip stays free.
+    -- The title area of standard Blizzard panels is clear (and below it on
+    -- Forever): the drag target stays there, away from portraits and buttons.
     local strip = Safety.CreateChildFrame("Frame", ControlParent(state))
     controlStates[strip] = state
     strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 50, -1)
@@ -562,7 +558,12 @@ local function CreateTitleDrag(state)
     strip:RegisterForDrag("LeftButton")
     strip:SetScript("OnDragStart", OnTitleDragStart)
     strip:SetScript("OnDragStop", OnTitleRelease)
-    strip:SetScript("OnMouseUp", OnTitleRelease)
+    -- No OnMouseUp/OnMouseDown on this Frame: Forever's SmartNavigation reads both
+    -- with GetScript on every non-Button of a panel it scans (Blizzard_GamepadSmart-
+    -- Navigation/Utility.lua:196-206); the skin's handler tainted that secure scan and
+    -- the gamepad bindings after it (B on the Game Menu: SetPreferredGamepadInteract-
+    -- Target blocked). Release net: GLOBAL_MOUSE_UP, registered only while moving.
+    strip:SetScript("OnEvent", OnTitleRelease)
     strip:SetScript("OnHide", OnTitleRelease)
     return strip
 end
@@ -626,9 +627,8 @@ local function CreateMinimize(state, close)
     return button
 end
 
--- Hooked once per panel. The invisible title strip takes the clicks of the
--- title area, so it only comes back while the controls are on, an owner
--- still skins the panel and the panel can be controlled.
+-- Hooked once per panel. The invisible title strip takes the title area's clicks: it
+-- comes back only while the controls are on, an owner skins and it can be controlled.
 local OnPanelShow
 local function ReplayPanelShow(frame)
     if frame:IsShown() then OnPanelShow(frame) end

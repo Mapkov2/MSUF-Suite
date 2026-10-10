@@ -86,6 +86,9 @@ local function Frame(name, parent, kind)
     function frame:SetHighlightTexture() end
     function frame:SetPushedTexture() end
     function frame:SetScript(script, callback) self.scripts[script] = callback end
+    -- The title strip watches GLOBAL_MOUSE_UP while its panel moves.
+    function frame:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
+    function frame:UnregisterEvent(event) if self.events then self.events[event] = nil end end
     function frame:HookScript(script, callback)
         self.hooks[script] = self.hooks[script] or {}
         table.insert(self.hooks[script], callback)

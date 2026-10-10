@@ -78,6 +78,10 @@ local slotNames = {
     "CharacterTrinket1Slot",
     "CharacterMainHandSlot",
     "CharacterSecondaryHandSlot",
+    -- Forever only (Blizzard_UIPanels_Game/Camelot/PaperDollFrame.xml:863, :868);
+    -- Retail has neither global, so they are skipped there.
+    "CharacterRangedSlot",
+    "CharacterAmmoSlot",
 }
 
 local statCategoryFields = {
@@ -147,6 +151,14 @@ end
 local function ForeverLook()
     return NS.Client.isForever and NS.DB and NS.DB.theme
         and NS.DB.theme.look == "foreverGlass"
+end
+
+-- Forever Glass lays the mode tabs out as a row above the content, except under
+-- the Gamepad UI: its LB/RB prompts sit above the first and below the last tab
+-- of the native vertical rail (CharacterFrameTabIndicators isVertical, Camelot/
+-- CharacterFrame.xml:606-610; Tab/TabIndicators.lua:66-72), so there the rail stays.
+local function ForeverTabRow()
+    return ForeverLook() and not NS.Client.IsGamepadUI()
 end
 
 -- Forever mode tabs ------------------------------------------------------------------------
@@ -260,7 +272,7 @@ local function PlaceForeverTab(state, root, container, tab, index, visualIndex, 
 end
 
 local function PositionForeverTabs(state, root)
-    if not ForeverLook() or not CanMoveForever(root) then
+    if not ForeverTabRow() or not CanMoveForever(root) then
         RestoreForeverTabs(state, root)
         return false
     end
@@ -361,12 +373,12 @@ local function SkinForeverModeTabs(state, root)
     local tabs = Field(container, "Tabs")
     if type(tabs) ~= "table" then return end
     Attach(state, container, PANE_SPEC)
-    local foreverLook = ForeverLook()
+    local tabRow = ForeverTabRow()
     for index = 1, #tabs do
         local tab = tabs[index]
         if tab then
             local attached
-            if foreverLook then
+            if tabRow then
                 attached = NS.Surface.Attach(tab, FOREVER_TAB_SPEC) ~= nil
                 if attached then Track(state, tab) end
             else

@@ -76,6 +76,12 @@ local function Frame(name, parent, kind)
     function frame:SetHighlightTexture() end
     function frame:SetPushedTexture() end
     function frame:SetScript(name, callback) self.scripts[name] = callback end
+    -- Like the client: a hook on an empty script slot becomes its handler.
+    function frame:GetScript(name)
+        return self.scripts[name] or (self.hooks[name] and self.hooks[name][1])
+    end
+    function frame:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
+    function frame:UnregisterEvent(event) if self.events then self.events[event] = nil end end
     function frame:HookScript(name, callback)
         self.hooks[name] = self.hooks[name] or {}
         table.insert(self.hooks[name], callback)
@@ -134,9 +140,29 @@ ShowUIPanel = function(frame) frame:Show() end
 -- the parent argument in the caller's (tainted) execution; skin controls inside
 -- a Blizzard window are therefore created without one and parented afterwards.
 local parentedCreates = 0
+local createdFrames = {}
 CreateFrame = function(kind, _, parent)
     if parent ~= nil and parent ~= UIParent then parentedCreates = parentedCreates + 1 end
-    return Frame(nil, parent, kind)
+    local frame = Frame(nil, parent, kind)
+    createdFrames[#createdFrames + 1] = frame
+    return frame
+end
+-- WoW Forever's SmartNavigation scans a panel it focuses or whose subtree gets
+-- a new frame (Blizzard_GamepadSmartNavigation/SmartNavigation.lua:1612-1658,
+-- Utility.lua:208-260) in secure code. SmartNavigation_CanFocusFrame
+-- (Utility.lua:196-206) reads GetScript("OnMouseUp") and GetScript("OnMouseDown")
+-- of every descendant that is not a Button or EditBox: a skin handler there is
+-- a skin-tainted value in that execution (B on the Game Menu then had
+-- SetPreferredGamepadInteractTarget blocked, MSUF_Suite_Skin blamed).
+local function SkinHandlerSeenBySmartNavigation(panel)
+    for _, frame in ipairs(createdFrames) do
+        local ancestor = frame.parent
+        while ancestor and ancestor ~= panel do ancestor = ancestor.parent end
+        if ancestor == panel and frame.kind ~= "Button" and frame.kind ~= "EditBox"
+            and (frame:GetScript("OnMouseUp") ~= nil or frame:GetScript("OnMouseDown") ~= nil) then
+            return frame
+        end
+    end
 end
 local panelPositionHook
 UpdateUIPanelPositions = function(frame)
@@ -227,6 +253,23 @@ Check(state.titleDrag and state.titleDrag.mouseEnabled
     "window title is not a direct mouse drag target")
 Check(parentedCreates == 0,
     "window controls passed a Blizzard window to CreateFrame (SmartNavigation rescans it tainted)")
+Check(SkinHandlerSeenBySmartNavigation(character) == nil,
+    "a skin Frame inside a Blizzard window has a mouse handler SmartNavigation reads (FV-2)")
+-- The title strip's release net without a mouse handler: GLOBAL_MOUSE_UP,
+-- registered only while the panel moves.
+state.titleDrag.scripts.OnDragStart(state.titleDrag)
+Check(character.moving and state.titleDrag.events and state.titleDrag.events.GLOBAL_MOUSE_UP,
+    "a title drag did not watch for the mouse release")
+state.titleDrag.scripts.OnEvent(state.titleDrag, "GLOBAL_MOUSE_UP", "LeftButton")
+Check(not character.moving and not state.titleDrag.events.GLOBAL_MOUSE_UP,
+    "a mouse release outside the title strip did not end the move")
+NS.DB.windowControls.positions.CharacterFrame, historyCalls = nil, 0
+-- A grip press that changes nothing (a click, or A on the grip under Forever's
+-- Gamepad UI, where SmartNavigation clicks it) stores no scale and no history.
+state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
+state.grip.scripts.OnMouseUp(state.grip)
+Check(historyCalls == 0 and NS.DB.windowControls.scales.CharacterFrame == nil and not state.customScale,
+    "a grip press that changed nothing wrote a scale and a history entry")
 Check(state.minimize.point[1] == "TOPRIGHT",
     "a bottom Close action incorrectly moved the minimize button to the footer")
 cursorX, cursorY = 500, 500

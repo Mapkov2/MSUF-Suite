@@ -19,6 +19,7 @@ local Call = NS.Safety.Call
 local Public = NS.Safety.Public
 local Kit = NS.AdapterKit
 local Fade, Attach = Chrome.Fade, Chrome.Attach
+local Read = NS.Safety.Read
 
 local DEFAULT_OWNER = "blizzardWindows"
 local ROOT_SPEC = Chrome.Spec("shell", 8, 0)
@@ -59,6 +60,8 @@ local slotNames = {
     "InspectTrinket1Slot",
     "InspectMainHandSlot",
     "InspectSecondaryHandSlot",
+    -- Forever only (Blizzard_InspectUI/Camelot/InspectPaperDollFrame.xml:310).
+    "InspectRangedSlot",
 }
 
 -- ControlSkin copies these specs. Tab selection may be unknown (nil).
@@ -78,6 +81,13 @@ local TAB_SPEC_ACTIVE = ControlSpec(24, "navigation", "navigationActive", true)
 local TAB_SPEC_INACTIVE = ControlSpec(24, "navigation", "navigationActive", false)
 local TAB_SPEC_UNKNOWN = ControlSpec(24, "navigation", "navigationActive", nil)
 local ACTION_SPEC = ControlSpec(24, "button", "buttonPrimary", nil)
+-- Forever's Inspect mode tabs (Camelot/Blizzard_InspectUI.xml:4-11, 54-75) use
+-- LargeSideTabButtonTemplate, a Frame: the ControlSkin button path refuses it
+-- (Surface.SkinOwnedButton needs the button state-texture setters). They get a
+-- surface; the native HIGHLIGHT layer keeps the mouseover.
+local SIDE_TAB_SPEC = Chrome.Spec("navigation", 4, 0, false, "navigationActive")
+local FOREVER_TAB_KEYS = { "CharacterTab", "PvPTab", "GuildTab" }
+local checkedHooks = setmetatable({}, { __mode = "k" })
 
 local function SkinModel(state)
     if not state.active or NS.IsCombatLocked() then return false end
@@ -103,14 +113,34 @@ local function SelectedTab()
     return tonumber(selected)
 end
 
-local function SkinTabs(state)
+local SkinTabs
+local OnSideTabChecked
+
+-- SidePanelTabButtonMixin:SetChecked shows SelectedTexture for the selected tab
+-- (Blizzard_SharedXML/Mainline/SharedUIPanelTemplates.lua:389-399); the surface
+-- follows it, its own art fades.
+local function SkinSideTab(state, tab)
+    if not tab or not Kit.Ensure(state, tab, SIDE_TAB_SPEC) then return false end
+    local selected = Field(tab, "SelectedTexture")
+    Fade(state, Field(tab, "Background"))
+    Fade(state, selected)
+    Kit.SuppressVertexAlpha(state, Field(tab, "TabGlow"))
+    NS.Surface.SetActive(tab, Read(selected, "IsShown") == true)
+    if not checkedHooks[tab] then
+        checkedHooks[tab] = Kit.HookFunction(tab, "SetChecked", OnSideTabChecked)
+    end
+    return true
+end
+
+SkinTabs = function(state)
     if not state.active or NS.IsCombatLocked() then return false end
     if NS.Client.isForever then
         local tabs = Field(Field(_G, "InspectFrame"), "ModeTabs")
-        for _, key in ipairs({ "CharacterTab", "PvPTab", "GuildTab" }) do
-            Kit.SkinControl(state, Field(tabs, key), TAB_SPEC_UNKNOWN)
+        local applied = false
+        for index = 1, #FOREVER_TAB_KEYS do
+            applied = SkinSideTab(state, Field(tabs, FOREVER_TAB_KEYS[index])) or applied
         end
-        return true
+        return applied
     end
     local selected = SelectedTab()
     local applied = false
@@ -195,6 +225,7 @@ NS.InspectPanel = InspectPanel
 
 local function OnSlotUpdated(slot) panel:RefreshSlot(slot) end
 local function OnTabsSwitched() panel:ForActiveOwners("tabs", SkinTabs) end
+OnSideTabChecked = OnTabsSwitched
 
 local function OnPaperDollBackground(model)
     if model == _G.InspectModelFrame then
