@@ -185,19 +185,23 @@ local function NativeFont()
 end
 S.NativeFontPath = NativeFont
 
--- Prefer the host's font setter. Older hosts use the native font fallback
--- below when an external font cannot be applied.
+-- Prefer the host's font setter; older hosts set the font natively. A font
+-- the client refused falls back to the native font, so a missing external
+-- font never leaves a string without any font.
 function S.SetFont(fontString, path, size, flags)
     path = path or S.GlobalFontPath()
     flags = flags or ""
-    -- Classic may report false before its glyph metrics become ready. The
-    -- host setter keeps the chosen face instead of treating this as failure.
+    -- MSUF's setter answers the client's own result on Retail and Forever
+    -- (Kernel/MSUF_Libs.lua of the Classic host): false is a refused font,
+    -- unless the string shows the requested file anyway (Platform.lua).
     local checked = _G.MSUF_SetFontChecked
+    local applied
     if type(checked) == "function" then
-        checked(fontString, path, size, flags)
-        return flags
+        applied = checked(fontString, path, size, flags) ~= false or Suite.FontFileApplied(fontString, path)
+    else
+        applied = fontString:SetFont(path, size, flags) ~= false
     end
-    if fontString:SetFont(path, size, flags) == false then
+    if not applied then
         if fontString:SetFont(NativeFont(), size, flags) == false then
             -- Some clients or font files do not support optional rendering
             -- flags. Keep the text visible with the native font.

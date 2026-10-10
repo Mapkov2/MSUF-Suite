@@ -59,13 +59,13 @@
   {
    "file": "MSUF_Suite_Modules/Surfaces.lua",
    "kind": "addon",
-   "reason": "The external MSUF font setter preserves fonts while Classic glyph metrics become ready. Older hosts without this export retain the native fallback; suite_text_effects_contract exercises both paths.",
+   "reason": "The external MSUF font setter answers the client's SetFont result on Retail and Forever; a refused font falls back to the native font unless the string shows the requested file anyway. Older hosts without this export set the font natively with the same fallback; suite_text_effects_contract exercises both paths.",
    "symbol": "checked (= MSUF_SetFontChecked)"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",
    "kind": "addon",
-   "reason": "Preview text uses the external MSUF font setter when available. Older hosts retain their native fallback; suite_options_menu_contract checks that a cold false return does not discard the chosen font.",
+   "reason": "Preview text uses the external MSUF font setter when available and falls back to the standard font when it reports a refused font the label does not show. Older hosts retain their native fallback; suite_options_menu_contract checks both answers.",
    "symbol": "checked (= MSUF_SetFontChecked)"
   },
   {

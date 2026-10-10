@@ -34,12 +34,17 @@ function P.StylePreviewFont(label, path, size, outline, rendering, shadow, opaci
         flags = flags == "" and "MONOCHROME" or flags .. ",MONOCHROME"
     end
     local fallback = _G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
+    -- MSUF's setter answers false for a font the client refused (as
+    -- S.SetFont): fall back unless the label shows the requested file anyway.
+    local requested = path or fallback
     local checked = _G.MSUF_SetFontChecked
+    local applied
     if type(checked) == "function" then
-        checked(label, path or fallback, size, flags)
-    elseif label:SetFont(path or fallback, size, flags) == false then
-        label:SetFont(fallback, size, "")
+        applied = checked(label, requested, size, flags) ~= false or Suite.FontFileApplied(label, requested)
+    else
+        applied = label:SetFont(requested, size, flags) ~= false
     end
+    if not applied then label:SetFont(fallback, size, "") end
     local shown = shadow == true and rendering ~= RENDERING.SLUG
     label:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
     local offset = shown and (distance or 1) or 0

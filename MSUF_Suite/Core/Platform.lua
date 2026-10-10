@@ -314,6 +314,23 @@ function Suite.GlobalFontPath()
         and path or Suite.MSUFMedia.font
 end
 
+-- Whether a font string shows the requested font file. MSUF's font setter
+-- (MSUF_SetFontChecked) answers false when the client refused a font, and a
+-- string refused its first font has none ("Font not set" on SetText); the
+-- Suite's font setters then fall back to a native font. GetFont names the
+-- file in use, nil before any font (SimpleFontStringAPIDocumentation.lua
+-- 121-132 on live, ptr2 and forever): a false answer after which the string
+-- shows the requested file anyway keeps that face. The client may spell the
+-- path with other slashes or case.
+local function FontFileKey(path)
+    return (path:gsub("/", "\\"):lower())
+end
+
+function Suite.FontFileApplied(fontString, path)
+    local current = fontString:GetFont()
+    return type(current) == "string" and type(path) == "string" and FontFileKey(current) == FontFileKey(path)
+end
+
 function Suite.Safety.IsForbidden(frame)
     return frame and type(frame.IsForbidden) == "function" and frame:IsForbidden() == true
 end

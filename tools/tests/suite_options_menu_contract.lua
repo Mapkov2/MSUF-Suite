@@ -4987,6 +4987,30 @@ end)()
     function font:SetFont(path) self.path, self.calls = path, self.calls + 1; return false end
     optionsNS.StylePreviewFont(font, "Selected.ttf", 14, "", 1, false)
     assert(font.path == "Selected.ttf" and font.calls == 1, "preview replaced a pending custom font")
+    -- The host setter on Retail and Forever (Kernel/MSUF_Libs.lua of the
+    -- Classic host) answers the client's false for a font file it cannot
+    -- load; the client keeps the label without a font, so the preview falls
+    -- back to the standard font. A false answer while the label shows the
+    -- requested file anyway keeps the face.
+    MSUF_SetFontChecked = function(label, path, size, flags) return label:SetFont(path, size, flags or "") ~= false end
+    local label = { calls = 0, SetShadowColor = function() end, SetShadowOffset = function() end }
+    function label:SetFont(path, size, flags)
+        self.calls = self.calls + 1
+        if path ~= STANDARD_TEXT_FONT and path ~= "Fonts\\FRIZQT__.TTF" then return false end
+        self.font = { path, size, flags }
+        return true
+    end
+    function label:GetFont() if self.font then return unpack(self.font) end end
+    optionsNS.StylePreviewFont(label, "Interface\\AddOns\\Gone\\gone.ttf", 13, "OUTLINE", 1, false)
+    assert(label.font and label.font[2] == 13 and label.calls == 2,
+        "preview kept no font after the host reported the chosen font as refused")
+    local shown = { font = { "interface/addons/media/selected.ttf", 14, "" }, calls = 0,
+        SetShadowColor = function() end, SetShadowOffset = function() end }
+    function shown:SetFont() self.calls = self.calls + 1; return false end
+    function shown:GetFont() return unpack(self.font) end
+    optionsNS.StylePreviewFont(shown, "Interface\\AddOns\\Media\\Selected.ttf", 14, "", 1, false)
+    assert(shown.calls == 1 and shown.font[1] == "interface/addons/media/selected.ttf",
+        "preview replaced a face that applied despite a false answer")
     MSUF_SetFontChecked, S.SetStyledFont = previousOwner, previousStyled
 end)()
 
