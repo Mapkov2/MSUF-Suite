@@ -465,26 +465,38 @@ function Effects.ReadRange(entry)
 end
 
 ------------------------------------------------------------------ reasons
+-- Entry keys that showed a real spell alert this session: the options
+-- simulation plays the alert glow only on spells that raise one.
+local procced = {}
+function Effects.Procced(key) return procced[key] == true end
+
 local function ProcWanted(entry, view)
     if not entry.procOn then return false end
     return K.Pick(entry.ov or EMPTY, view, "procGlow")
 end
 
+-- Glow when ready / when all charges are ready, from a cooling and a
+-- full-charges state; the simulation (Preview.Glows) feeds its own.
+local function ReadyRule(ov, view, cooling, full)
+    return (K.Pick(ov, view, "readyGlow") and not cooling) or (K.Pick(ov, view, "fullChargeGlow") and full == true)
+end
+Effects.ReadyRule = ReadyRule
+
 local function ReadyWanted(entry, view)
     local ov = entry.ov or EMPTY
-    local normal = K.Pick(ov, view, "readyGlow") and not entry.cooling
-    local full = K.Pick(ov, view, "fullChargeGlow") and entry.fullyCharged == true
-    if not (normal or full) or entry.hidden then return false end
+    if not ReadyRule(ov, view, entry.cooling, entry.fullyCharged) or entry.hidden then return false end
     if K.Pick(ov, view, "readyResources") and entry.resourcesAvailable ~= true then return false end
     local state = C.state
     if state.readyGlowCombat and not state.inCombat and not state.preview then return false end
     return true
 end
 
+-- A simulated icon (icon.simFx, Preview.lua) keeps the simulation's glows.
 function Effects.Proc(entry, on)
     entry.procOn = on and true or false
+    if on then procced[entry.key] = true end
     local icon = entry.icon
-    if not icon then return end
+    if not icon or icon.simFx then return end
     local view = C.views[entry.slot]
     Effects.SetGlow(icon, "proc", view and ProcWanted(entry, view) or false)
 end
@@ -498,6 +510,7 @@ local function Bind(entry, icon, view)
     if spell then
         local shown = IsOverlayed(spell)
         entry.procOn = (Public(shown) and shown) and true or false
+        if entry.procOn then procced[entry.key] = true end
     end
     -- Entries bound after the last suggestion change still match it.
     local assist = assistSpell
@@ -515,8 +528,12 @@ function Effects.Update(entry)
     if icon.fxEntry ~= entry or icon.fxOv ~= entry.ov or icon.fxGen ~= view.behaviorGen or icon.fxSpell ~= entry.spell then
         Bind(entry, icon, view)
     end
-    Effects.SetGlow(icon, "proc", ProcWanted(entry, view))
-    Effects.SetGlow(icon, "ready", ReadyWanted(entry, view))
+    if icon.simFx then
+        C.Preview.Glows(entry)
+    else
+        Effects.SetGlow(icon, "proc", ProcWanted(entry, view))
+        Effects.SetGlow(icon, "ready", ReadyWanted(entry, view))
+    end
     Effects.Ants(icon, entry.assistOn == true and view.assist == true)
     Restyle(icon, entry, view)
     Tint(entry)
@@ -560,7 +577,7 @@ end
 local function ReadyEntry(entry)
     local icon = entry.icon
     local view = icon and C.views[entry.slot]
-    if view then Effects.SetGlow(icon, "ready", ReadyWanted(entry, view)) end
+    if view and not icon.simFx then Effects.SetGlow(icon, "ready", ReadyWanted(entry, view)) end
 end
 Effects.RefreshReady = ReadyEntry
 
@@ -591,7 +608,7 @@ end
 -- Stops every visual on a recycled icon; the next Update re-seeds.
 function Effects.ResetIcon(icon)
     if icon.pressPulse then icon.pressPulse:Stop() end
-    icon.gProc, icon.gReady, icon.gAura = nil, nil, nil
+    icon.gProc, icon.gReady, icon.gAura, icon.simFx = nil, nil, nil, nil
     HideGlow(icon)
     Effects.Ants(icon, false)
     icon.fxEntry = nil

@@ -160,7 +160,7 @@ local function CaptureGeometry(frame)
     local count = frame:GetNumPoints()
     if type(count) ~= "number" or count > 4 then return nil end
     local snapshot = { width = frame:GetWidth(), height = frame:GetHeight(), points = {} }
-    if HasMethod(frame, "GetFrameStrata") then snapshot.strata = frame:GetFrameStrata() end
+    snapshot.strata = Safety.Read(frame, "GetFrameStrata")
     if HasMethod(frame, "GetFrameLevel") then snapshot.level = frame:GetFrameLevel() end
     for index = 1, count do
         snapshot.points[index] = { frame:GetPoint(index) }

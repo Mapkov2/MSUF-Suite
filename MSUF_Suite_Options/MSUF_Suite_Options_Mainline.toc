@@ -37,6 +37,8 @@ Pages\HUDAFKPreview.lua
 Pages\HUD.lua
 Pages\BuffReminders.lua
 Pages\Chat.lua
+Pages\NameplatesAuraDraft.lua
+Pages\NameplatesAuraColors.lua
 Pages\NameplatesSize.lua
 Pages\NameplatesEditorMarkers.lua
 Pages\NameplatesEditorLayers.lua

@@ -725,6 +725,14 @@ end
 
 -- Also while the Skin addon is off: its maintenance actions stay findable
 -- (on the notice, outside any section, then).
+local COLD_SKIN_SECTIONS = {
+    { "basic", "Choose a look" }, { "material", "Glass and surfaces" },
+    { "shape", "Corners and hover" }, { "fonts", "Fonts" },
+    { "icons", "Window buttons and icon borders" },
+    { "window_controls", "Window position, size and minimize" },
+    { "windows", "Blizzard windows" }, { "coverage", "Window categories" },
+    { "character", "Character panel and stats" },
+}
 function P.SkinSearchRows()
     local ctx, b = { searchRows = {} }, {}
     local skin = _G.MapkoSkin
@@ -734,6 +742,14 @@ function P.SkinSearchRows()
             "suite_skin_frame_basic", Tr("Basics"))
         if Suite.Client.AddOnEnabled("MSUF_Suite_Skin") then
             BuildBasicsWithoutEngine(ctx, b, nil)
+            -- These sections exist when the page loads the engine. Collection
+            -- stays metadata-only and never fabricates a setting identity.
+            for _, section in ipairs(COLD_SKIN_SECTIONS) do
+                ctx.searchRows[#ctx.searchRows + 1] = {
+                    pageKey = PAGE, kind = "section", label = Tr(section[2]),
+                    sectionId = PAGE .. "_" .. section[1], keywords = { section[2], Tr(section[2]) },
+                }
+            end
         else
             MaintenanceButtons(ctx, nil, 0, 720, nil)
         end

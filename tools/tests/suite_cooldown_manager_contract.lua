@@ -2111,12 +2111,88 @@ local canvasIcon=canvas.icons[1]
 local liveCount=C.Diagnostics.IconCount("ess")
 assert(S.CooldownManagerSimulate(true))
 local live,ticker=LiveTickers()
-assert(live==1 and ticker.interval==10,"one simulation ticker")
+assert(live==1 and ticker.interval==1,"one simulation ticker, one step a second")
 assert(C.plans.ess.entries[1].icon.sim and canvasIcon.cd.running,"simulated cooldown on live and canvas icons")
 assert(C.Diagnostics.IconCount("ess")==liveCount,"the canvas never touches live bars")
+-- The simulation plays each spell with its own settings, never a fixed
+-- sample: casts follow bar order three seconds apart, a charge spell spends
+-- a charge and stays usable, Glow when ready follows the bar's switch, the
+-- spell alert glow plays only on a spell that raised a real one, and no
+-- cooldown icon gets a buff glow.
+do
+    local KEYS=Suite.CDM.KEYS.ess
+    local places={}
+    for _,entry in ipairs(C.plans.ess.entries) do
+        if entry.icon then places[#places+1]=entry;places[entry.key]=#places end
+    end
+    local b11,b12,b14=C.entries.b11,C.entries.b12,C.entries.b14
+    assert(places[1]==b14 and places.b11 and places.b12,"Essential holds b14 first, then b11 and b12")
+    local function Cast(key) return ((places[key]-1)*3)%10 end
+    -- The start played step 0; each ticker call plays the next one.
+    local nextStep=1
+    local function Play()
+        local played=nextStep
+        now=now+1;ticker.fn();nextStep=(nextStep+1)%10
+        return played
+    end
+    local function PlayTo(step)
+        for _=1,10 do if Play()==step then return end end
+        error("step "..step.." never played")
+    end
+    assert(b14.icon.simCooling and b14.icon.sim~=true,"the first icon casts at once")
+    for i=2,#places do
+        local icon=places[i].icon
+        assert(icon.sim==true and icon.simFx and not icon.simCooling and not icon.cd.running,"icon "..i.." waits ready for its cast")
+    end
+    -- b11 has Glow when ready switched on for the spell (above); the bar has it off.
+    assert(b11.ov.readyGlow==true and not config[KEYS.readyGlow],"fixture: Glow when ready on b11 only")
+    assert(b11.icon.gReady and not b12.icon.gReady and not b14.icon.gReady,"Glow when ready follows the spell's choice")
+    config[KEYS.readyGlow]=true
+    module:Refresh();Run()
+    assert(b11.icon.gReady and b12.icon.gReady and not b14.icon.gReady,
+        "the bar's Glow when ready lights the ready icons, not the cooling one")
+    PlayTo(Cast("b11"))
+    local icon=b11.icon
+    assert(icon.count.text==1 and icon.chargeCd and icon.chargeCd.running and not icon.simCooling and icon.gReady,
+        "a charge spell spends one of its two charges, recharges and stays ready")
+    PlayTo((Cast("b11")+6)%10)
+    assert(icon.count.text==2 and not icon.chargeCd.running and icon.simFull and icon.gReady,"every charge comes back")
+    -- b12 raised a real spell alert above (SPELL_ACTIVATION_OVERLAY_GLOW_SHOW 102); b14 never did.
+    PlayTo((Cast("b12")+7)%10)
+    assert(b12.icon.gProc and b12.icon.glow.shown,"a spell that raised a spell alert plays it before its cast")
+    PlayTo(Cast("b12"))
+    assert(not b12.icon.gProc and b12.icon.simCooling,"the cast spends the spell alert")
+    for _=1,10 do
+        Play()
+        assert(not b14.icon.gProc,"a spell that never raised a spell alert plays none")
+        for _,entry in ipairs(places) do assert(not entry.icon.gAura,"a cooldown icon got a buff glow") end
+    end
+    config[KEYS.readyGlow]=false
+    module:Refresh();Run()
+    assert(not b12.icon.gReady and b11.icon.gReady,"switching the bar's Glow when ready off reaches the simulated icons")
+    -- Buff icons on the canvas: active for six seconds a loop, glowing only
+    -- with Glow while active.
+    local buffStage=New("Frame",UIParent)
+    local buffs=assert(S.CooldownManagerRenderPreview(buffStage,"buf",400,100))
+    local buff=buffs.icons[1]
+    assert(buffs.kind==Suite.CDM.KIND.AURA_ICON and buff.simFx and not buff.gProc and not buff.gReady,"buff samples join the simulation")
+    PlayTo(0)
+    assert(buff.simActive and buff.cd.running and not buff.gAura,"an active buff glows only with Glow while active")
+    config[Suite.CDM.KEYS.buf.auraGlow]=true
+    module:Refresh();Run()
+    S.CooldownManagerRenderPreview(buffStage,"buf",400,100)
+    assert(buff.gAura,"Glow while active lights the active buff")
+    PlayTo(6)
+    assert(not buff.simActive and not buff.gAura,"the glow ends with the buff")
+    config[Suite.CDM.KEYS.buf.auraGlow]=false
+    module:Refresh();Run()
+    S.CooldownManagerReleasePreview(buffStage)
+    assert(not buff.simFx and not buff.gAura,"a released canvas leaves the simulation")
+end
 combat=true
 Fire("PLAYER_REGEN_DISABLED")
 assert(LiveTickers()==0 and not C.plans.ess.entries[1].icon.sim,"combat stops the simulation")
+assert(not C.entries.b11.icon.simFx and not C.entries.b11.icon.sim,"the end gives every icon its real state back")
 assert(not S.CooldownManagerSimulate(true),"no simulation in combat")
 combat=false
 Fire("PLAYER_REGEN_ENABLED")

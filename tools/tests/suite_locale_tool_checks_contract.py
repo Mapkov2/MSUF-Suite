@@ -75,6 +75,26 @@ extracted = {record.english for record in records}
 for english in ("Reload the UI to restore Blizzard's action bars", "Reload the UI to restore Blizzard's minimap layout"):
     check(english in extracted, "the module status %r is not extracted for translation" % english)
 
+# A squircle is a rounded square; prior packs called it a squirrel or a circle.
+shape_labels = {"deDE": "Abgerundetes Quadrat", "esES": "Cuadrado redondeado",
+                "esMX": "Cuadrado redondeado", "frFR": "Carré arrondi",
+                "itIT": "Quadrato arrotondato", "ptBR": "Quadrado arredondado"}
+for locale, label in shape_labels.items():
+    entries = tool.read_locale(locale)
+    for key in ("Squircle", "Squircle n=6", "Squircle  n=6"):
+        suffix = " n=6" if "n=6" in key else ""
+        check(" ".join(entries[key].split()) == label + suffix,
+              "%s: %s is not the translated rounded-square shape" % (locale, key))
+check(tool.read_locale("deDE")["Preset"] != "Preset", "German preset label stays English")
+
+# Localized native features must not leave their English names inside translated help.
+native_terms = ("Burning Rush", "Great Vault", "Raid Manager")
+for locale in tool.LOCALES:
+    for english, text in tool.read_locale(locale).items():
+        for term in native_terms:
+            if term in english:
+                check(term not in text, "%s leaves %s inside translated text: %s" % (locale, term, english))
+
 for failure in failures:
     print("FAIL " + failure)
 print("suite locale tool checks: %s" % ("ok" if not failures else "%d failures" % len(failures)))

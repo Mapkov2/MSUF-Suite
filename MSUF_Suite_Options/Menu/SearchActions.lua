@@ -49,6 +49,10 @@ local EDITOR_ACTIONS = {
     { "cooldownManager", "spells", "spells.clear", "Reset to Blizzard's list" },
     { "cooldownManager", "spells", "spells.copy", "Copy to other specializations" },
     { "cooldownManager", "spells", "spells.importBlizzard", "Import Blizzard CDM" },
+    { "nameplates", "auraColors", "action.auraSpec", "DoTs by specialization", nil, "dropdown" },
+    { "nameplates", "auraColors", "action.auraSuggestion", "Add a DoT from MSUF", nil, "dropdown" },
+    { "nameplates", "auraColors", "action.auraCustom", "Custom aura ID", nil, "textinput" },
+    { "nameplates", "auraColors", "action.auraSample", "Preview DoT state", nil, "dropdown" },
 }
 local BAR_ACTIONS = {
     { "addPlace", "Add data" }, { "move", "Move in Edit Mode" },

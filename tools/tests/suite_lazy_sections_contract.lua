@@ -358,7 +358,7 @@ P.SectionRules = function(_, section)
     if section == "enemyColors" then return {} end
     return { { key = section .. "Size", label = "Size", sectionTitle = section, section = section, default = 1, min = 0, max = 2 } }
 end
-P.ModuleCard, P.BuildNameplatesPreview = Noop, Noop
+P.ModuleCard, P.BuildNameplatesPreview, P.BuildNameplatesAuraColors = Noop, Noop, Noop
 P.catalog.nameplates = { rules = {} }
 Load("Pages/Nameplates.lua")
 do

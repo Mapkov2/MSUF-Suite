@@ -160,7 +160,7 @@ local card = { Icon = cardArt, Cover = {}, Label = cardLabel, HighlightTexture =
 local rolesSection = { GetRegions = function() return roleArt, roleIcon end }
 local listingInset = { CustomBG = {}, Border = {} }
 local divider = {}
-local activityView = { BarTop = {}, BarMiddle = {}, PlayStyleDropdown = Button(),
+local activityView = { BarTop = {}, BarMiddle = {}, PlayStyleDropdown = Button(), VoiceChatDropdown = Button(),
     ScrollBar = {}, ScrollBox = ScrollBox(), Comment = { EditBox = {}, NineSlice = {} },
     LevelRangesCheckbox = { Checkbox = {} } }
 local browseInset = { CustomBG = {}, Border = {} }
@@ -228,7 +228,7 @@ for _, control in ipairs({ browse.CategoryDropdown, browse.ActivityDropdown, bro
     browse.SendMessageButton, browse.GroupInviteButton, who.WhoSearch,
     _G.LFGListingFrame.BackButton, _G.LFGListingFrame.PostButton,
     _G.LFGListingFrame.GroupRoleButtons.RolePollButton,
-    _G.LFGListingFrame.GroupRoleButtons.RoleDropdown, activityView.PlayStyleDropdown }) do
+    _G.LFGListingFrame.GroupRoleButtons.RoleDropdown, activityView.PlayStyleDropdown, activityView.VoiceChatDropdown }) do
     assert(buttons[control], "Forever browser control stayed unskinned")
     assert(not faded[control.Icon], "a browser action lost its semantic icon")
     assert(faded[control:GetNormalTexture()], "native button chrome covered the browser skin")
@@ -320,6 +320,11 @@ assert(surfaces[browseTab].active == disabledActive and surfaces[browseTab].visi
 assert(adapter.Apply(), "re-enable failed")
 assert(buttons[combatRow] and surfaces[browseTab].visible == true,
     "re-enable did not replay already visible rows/tabs")
+adapter.Disable()
+-- Older Forever builds omit the voice selector; the remaining controls still skin.
+activityView.VoiceChatDropdown = nil
+assert(adapter.Apply() and buttons[activityView.PlayStyleDropdown],
+    "an older listing without a voice selector did not skin")
 adapter.Disable()
 
 -- A queued apply/repaint must not revive the adapter after disable.

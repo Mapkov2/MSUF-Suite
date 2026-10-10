@@ -2772,12 +2772,6 @@
    "file": "MSUF_Suite/Core/HostBridge.lua",
    "kind": "addon",
    "reason": "Read-only installer factory preview uses foreign MSUF factory/codec exports, which older hosts can omit. Late availability and missing exports are covered by suite_installer_preview_contract.",
-   "symbol": "host (= MSUF_NS)"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "Read-only installer factory preview uses foreign MSUF factory/codec exports, which older hosts can omit. Late availability and missing exports are covered by suite_installer_preview_contract.",
    "symbol": "decode (= MSUF_TryDecodeCompactString)"
   },
   {
@@ -2827,6 +2821,12 @@
    "kind": "addon",
    "symbol": "em.State.Enter (= MSUF_EM2)",
    "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/QualityOfLife.lua",
+   "kind": "addon",
+   "reason": "P.W is the external MSUF Menu2 widget API. New hosts provide the shared framed help button; older hosts retain a readable clickable fallback. suite_help_controls_contract exercises both host versions.",
+   "symbol": "P.W.HelpButton"
   }
  ]
 }

@@ -21,4 +21,5 @@ CastTime.lua
 KickReady.lua
 CVars.lua
 Auras.lua
+AuraColors.lua
 Skin.lua

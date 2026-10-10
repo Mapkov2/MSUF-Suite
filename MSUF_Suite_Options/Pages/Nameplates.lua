@@ -176,6 +176,7 @@ local function Build(ctx)
     local sections = {}
     P.BuildNameplatesPreview(ctx, builder, sections)
     P.ModuleCard(ctx, builder, PAGE, ID, nil, { rules = P.SectionRules(ID, "general"), help = HELP.general })
+    P.BuildNameplatesAuraColors(ctx, builder, sections)
     for _, section in ipairs({ "enemy", "roleColors", "castbar", "auras", "signals", "friendly", "personal" }) do
         local allRules = P.SectionRules(ID, section)
         local rules = VisibleRules(allRules)

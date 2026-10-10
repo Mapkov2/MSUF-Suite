@@ -13,10 +13,11 @@
 --     "interrupt is ready") are still found;
 --   * rows of controls a client never builds stay out (WoW Forever: the Mainline
 --     consumables of Buff Reminders, the Mythic+ run history).
---   lua suite_search_findability_contract.lua <suiteRoot> [Mainline|Forever]
+--   lua suite_search_findability_contract.lua <suiteRoot> [Mainline|Forever] [locale] [hostRoot]
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
-local classic = root .. "/../MidnightSimpleUnitFrames-Classic"
+local classic = arg[4] or (root .. "/../MidnightSimpleUnitFrames-Classic")
 local flavor = arg[2] or "Mainline"
+local locale = arg[3] or "enUS"
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 
 local failures = {}
@@ -35,10 +36,11 @@ end
 ------------------------------------------------------------------ one client, both addons
 local World = assert(loadfile(classic .. "/tools/tests/client_world.lua"),
     "the Classic MSUF checkout is required next to the Suite (" .. classic .. ")")()
-local world = World.New(classic, flavor)
+local world = World.New(classic, flavor, { locale = locale })
 world:Boot()
 local failure = world:FirstFailure()
 assert(failure == nil, "MSUF did not boot: " .. tostring(failure and failure.file) .. " " .. tostring(failure and failure.message))
+assert(world.core.FinalizeLocale() == locale, "requested locale was not selected")
 local env = world.env
 local M = world.core.MSUF2
 M.frame = { IsShown = function() return true end }
@@ -79,6 +81,7 @@ end
 P.InvalidateSearch()
 local api = M.Search._CoreAPI
 local PALETTE = 6
+flavor = flavor .. " " .. locale -- Include the language in every failure.
 
 local function Rank(query, wanted)
     local rows = api.SearchPages(query)
@@ -105,8 +108,17 @@ local tested, missed = 0, {}
 for _, row in ipairs(rows) do
     local name = row.label and Normalize(row.label) or ""
     if name ~= "" and byName[name] == 1 then
+        local query = row.label
+        if M.Search.Text.CharCount(name) < 2 then
+            local spec = assert(P.catalog[row.suiteModuleId], "single-character setting has no module")
+            query = P.Tr(spec.title) .. " " .. row.label
+        end
         tested = tested + 1
-        local rank = Rank(row.label, function(rec) return rec.key == row.pageKey and rec.label == row.label end)
+        local rank = Rank(query, function(rec)
+            local target = rec.exactTarget or {}
+            return rec.key == row.pageKey and rec.label == row.label
+                and target.controlId == row.controlId and target.settingKey == row.settingKey
+        end)
         if not rank or rank > PALETTE then
             missed[#missed + 1] = string.format("%s \"%s\" (%s)", row.pageKey, row.label, rank and ("rank " .. rank) or "not found")
         end
@@ -120,13 +132,16 @@ end
 
 ------------------------------------------------------------------ named cases
 local function HasRow(pageKey, label)
+    label = P.Tr(label)
     for _, row in ipairs(rows) do
         if row.pageKey == pageKey and row.label == label then return true end
     end
     return false
 end
 local function Expect(query, pageKey, label, limit)
+    if Normalize(query) == Normalize(label) then query = P.Tr(label) end
     if not Check(HasRow(pageKey, label), flavor .. ": no search row for " .. pageKey .. " \"" .. label .. "\"") then return end
+    label = P.Tr(label)
     local rank, results = Rank(query, function(rec) return rec.key == pageKey and rec.label == label end)
     Check(rank and rank <= limit, string.format("%s: \"%s\" ranks %s \"%s\" at %s, want <= %d (got %s)",
         flavor, query, pageKey, label, tostring(rank), limit, Got(results)))
@@ -150,6 +165,34 @@ end
 local interruptLabel = "Mark interruptible casts while your interrupt is ready"
 if HasRow("suite_qualityOfLife", interruptLabel) then Expect(interruptLabel, "suite_qualityOfLife", interruptLabel, 1) end
 
+local nativeTasks = {
+    ["enUS"] = { "I want to make my minimap bigger", "I want to make my bags bigger", "make my chat font bigger", "make my chat tab font bigger" },
+    ["enGB"] = { "I want to make my minimap bigger", "I want to make my bags bigger", "make my chat font bigger", "make my chat tab font bigger" },
+    ["deDE"] = { "ich möchte die Minikarte größer machen", "ich möchte meine Taschen größer machen", "die Schrift im Chat größer machen", "ich möchte die Schrift der Chat Tabs größer machen" },
+    ["esES"] = { "quiero agrandar el minimapa", "quiero agrandar las bolsas", "quiero agrandar la fuente del chat", "quiero agrandar la fuente de las pestañas del chat" },
+    ["esMX"] = { "quiero agrandar el minimapa", "quiero agrandar las bolsas", "quiero agrandar la fuente del chat", "quiero agrandar la fuente de las pestañas del chat" },
+    ["frFR"] = { "je veux agrandir la minicarte", "je veux agrandir les sacs", "je veux agrandir la police du chat", "je veux agrandir la police des onglets du chat" },
+    ["itIT"] = { "voglio ingrandire la minimappa", "voglio ingrandire le borse", "voglio ingrandire il carattere della chat", "voglio ingrandire il carattere delle schede della chat" },
+    ["ptBR"] = { "quero aumentar o tamanho do minimapa", "quero aumentar as bolsas", "quero aumentar a fonte do chat", "quero aumentar a fonte das abas do chat" },
+    ["ruRU"] = { "хочу увеличить миникарту", "хочу увеличить сумки", "хочу увеличить шрифт чата", "хочу увеличить шрифт вкладок чата" },
+    ["koKR"] = { "미니맵을 더 크게 하고 싶어요", "가방을 더 크게 하고 싶어요", "채팅 글꼴을 더 크게 하고 싶어요", "채팅 탭 글꼴 크기를 크게 하고 싶어요" },
+    ["zhCN"] = { "我想把小地图放大", "我想把背包放大", "我想把聊天字体调大", "我想把聊天标签字体放大" },
+    ["zhTW"] = { "我想把小地圖放大", "我想把背包放大", "我想把聊天字型調大", "我想把聊天標籤字型放大" },
+}
+local nativeSettings = { "msufsuite.minimap.size", "msufsuite.bags.windowScale", "msufsuite.chat.fontSize", "msufsuite.chat.tabFontSize" }
+for _, enabled in ipairs({ true, false }) do
+    for _, id in ipairs({ "minimap", "bags", "chat" }) do Suite.Suite.Config(id).enabled = enabled end
+    P.InvalidateSearch()
+    for i, query in ipairs(nativeTasks[locale]) do
+        local rank, results = Rank(query, function(rec)
+            return rec.exactTarget and rec.exactTarget.settingKey == nativeSettings[i]
+        end)
+        Check(rank and rank <= PALETTE, flavor .. ": native Suite task missed its control: " .. query .. " -> " .. Got(results))
+    end
+    Check(Suite.Suite.Config("minimap").enabled == enabled and Suite.Suite.Config("bags").enabled == enabled
+        and Suite.Suite.Config("chat").enabled == enabled, flavor .. ": searching changed a module's state")
+end
+
 ------------------------------------------------------------------ only controls this client builds
 local modern = P.Requires.modernEquipment and P.Requires.modernEquipment()
 local mythicPlus = P.catalog.runSummary and P.catalog.runSummary.rules.showMythicPlus ~= nil
@@ -157,7 +200,7 @@ for _, row in ipairs(rows) do
     if row.suiteRuleKey == "autoFlask" then
         Check(modern, flavor .. ": a Buff Reminders consumable rule is searchable where the page never builds it")
     end
-    if row.label == "Clear run history" then
+    if row.label == P.Tr("Clear run history") then
         Check(mythicPlus, flavor .. ": Clear run history is searchable where the button never exists")
     end
 end

@@ -107,7 +107,7 @@ local function SkinTabs(state)
     if not state.active or NS.IsCombatLocked() then return false end
     if NS.Client.isForever then
         local tabs = Field(Field(_G, "InspectFrame"), "ModeTabs")
-        for _, key in ipairs({ "CharacterTab", "GuildTab" }) do
+        for _, key in ipairs({ "CharacterTab", "PvPTab", "GuildTab" }) do
             Kit.SkinControl(state, Field(tabs, key), TAB_SPEC_UNKNOWN)
         end
         return true

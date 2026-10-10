@@ -612,8 +612,9 @@ function Time.Done(icon, cooldown)
     if changed then Request(entry.slot) end
 end
 
--- Preview: a synthetic duration owns the icon until cleared; placeholders
--- never read live state.
+-- Preview: a synthetic duration owns the icon until cleared (false: owned
+-- and ready); placeholders never read live state, and a cleared one drops
+-- its sample charges and count.
 function Time.Simulate(entry, duration)
     local icon = entry.icon
     if not icon then return end
@@ -628,8 +629,40 @@ function Time.Simulate(entry, duration)
         Feedback(icon, duration)
         return
     end
-    icon.sim = nil
+    icon.sim = duration == false or nil
     ClearMain(icon)
     Feedback(icon, nil)
-    if entry.src ~= "p" then Time.Refresh(entry, "full") end
+    if icon.sim then return end
+    if entry.src ~= "p" then
+        Time.Refresh(entry, "full")
+    else
+        ClearCharge(icon)
+        CountOff(icon)
+    end
+end
+
+-- Preview: sample charges of a simulated icon: the count (where the entry
+-- shows counts), the recharge swipe or edge as the entry draws it, and the
+-- timer bar's segments. duration nil: every charge is back.
+local simCharges = { maxCharges = 0, currentCharges = 0, isActive = false }
+function Time.SimulateCharges(entry, current, maximum, duration)
+    local icon = entry.icon
+    if not icon then return end
+    if duration then
+        local cooldown = icon.chargeCd or C.Icons.ChargeCooldown(icon)
+        cooldown:SetCooldownFromDurationObject(duration, true)
+        icon.chargeSet = true
+    else
+        ClearCharge(icon)
+    end
+    TrackingBars.Duration(icon, duration)
+    simCharges.maxCharges, simCharges.currentCharges, simCharges.isActive = maximum, current, duration ~= nil
+    TrackingBars.Charges(icon, simCharges, duration)
+    if icon.stackOn then ShowCount(icon, current) else CountOff(icon) end
+end
+-- Preview: a sample stack count (nil: none), where the entry shows counts.
+function Time.SimulateCount(entry, count)
+    local icon = entry.icon
+    if not icon then return end
+    if count and icon.stackOn then ShowCount(icon, count) else CountOff(icon) end
 end

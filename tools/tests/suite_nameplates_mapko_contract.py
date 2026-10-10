@@ -53,7 +53,10 @@ for _, forever in ipairs({ false, true }) do
     end
     local spec = ns.SuiteCatalog.nameplates
     for key, rule in pairs(spec.rules) do
-        assert(rule.default == expected[key], "Mapko catalog default differs from export: " .. key)
+        if not key:match("^auraColors") then
+            assert(rule.default == expected[key], "Mapko catalog default differs from export: " .. key)
+        end
+        if key == "auraColorsEnabled" then assert(rule.default == false) end
     end
     assert(spec.rules.look.choices[1] == "Jundies" and spec.rules.look.choices[4] == "Mapko")
     local old = spec.look.presets[1]

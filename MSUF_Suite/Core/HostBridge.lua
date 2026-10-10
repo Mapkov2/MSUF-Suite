@@ -14,6 +14,12 @@ Suite.HostBridge = HostBridge
 local HOST_API_VERSION = 1
 local coreResolved, coreAPI = false, nil
 
+-- Catalog and factory preview share the live host namespace; do not cache
+-- a missing or late-published older host export.
+local function HostNamespace()
+    return _G.MSUF_NS
+end
+
 -- The table MSUF publishes as MSUF_HostAPI (any version), else nil.
 local function HostTable()
     local api = _G.MSUF_HostAPI
@@ -58,6 +64,26 @@ function HostBridge.KickReady()
         end
     end
     return kickReady
+end
+
+------------------------------------------------------------------ target DoT suggestions
+-- Read the host's curated aura IDs without sharing its mutable data or
+-- changing the unit-frame DoT selection. Older hosts can omit this catalog.
+function HostBridge.TargetDotCatalog(class)
+    local host = HostNamespace()
+    local auras = type(host) == "table" and host.MSUF_Auras3
+    local data = type(auras) == "table" and auras.TargetDotData
+    local source = type(data) == "table" and data[class]
+    local out = {}
+    if type(source) ~= "table" then return out end
+    for i = 1, math.min(#source, 64) do
+        local row = source[i]
+        local id = type(row) == "table" and row[1]
+        if Suite.Public(id) and type(id) == "number" and id > 0 and id < 2147483648 and id == math.floor(id) then
+            out[#out + 1] = { id = id, curated = true }
+        end
+    end
+    return out
 end
 
 ------------------------------------------------------------------ UI scale
@@ -366,7 +392,7 @@ function HostBridge.CurrentFramePreview()
 end
 
 function HostBridge.FactoryFramePreview(layout)
-    local host = _G.MSUF_NS
+    local host = HostNamespace()
     local compact
     if layout == "forever" then
         compact = Suite.Client.isForever and host and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT

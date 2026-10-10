@@ -64,21 +64,10 @@ local FEATURE_WORDS = {
 local KIND_OF = { font = "dropdown", texture = "dropdown", choices = "dropdown" }
 local EMPTY_ROWS = {}
 
--- Search follows availability and the active configuration. A module or
--- Quality of Life feature that can run on this client keeps its page, its FAQ
--- answers and its own enable switch searchable while it is off, so players
--- find how to turn it on. Its settings, sections and actions follow its
--- enable switch (and a feature's own switch).
+-- Search describes what this client can use, including settings of features
+-- that the player has turned off. Opening a result never turns a feature on.
 local function ModuleAvailable(id)
     return P.catalog[id] ~= nil and P.Available(id) == true
-end
-
-local function ModuleActive(id)
-    return ModuleAvailable(id) and P.S.Config(id).enabled == true
-end
-
-local function FeatureActive(feature)
-    return ModuleActive(feature.id) and P.S.Config(feature.id)[feature.switch] == true
 end
 
 local function SkinAvailable()
@@ -90,21 +79,6 @@ local function PageAvailable(pageKey)
     if pageKey == "suite_skin" then return SkinAvailable() end
     for _, id in ipairs(P.order) do
         if P.catalog[id].page == pageKey and ModuleAvailable(id) then return true end
-    end
-    return false
-end
-
--- Page-level details: some module (or QoL feature) of the page is on.
-local function PageActive(pageKey)
-    if pageKey == "suite_skin" then return SkinAvailable() and P.SkinningEnabled() == true end
-    if pageKey == "suite_qualityOfLife" then
-        for _, feature in ipairs(P.QualityOfLifeSearchFeatures or EMPTY_ROWS) do
-            if FeatureActive(feature) then return true end
-        end
-        return false
-    end
-    for _, id in ipairs(P.order) do
-        if P.catalog[id].page == pageKey and ModuleActive(id) then return true end
     end
     return false
 end
@@ -260,7 +234,8 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
     -- the page, so a color row leads to its section.
     local exact = kind ~= "color" and targetExact ~= false
     return {
-        pageKey = page.key, kind = kind, label = Tr(rule.label),
+        pageKey = page.key, kind = kind,
+        label = rule.key == "enabled" and spec.title ~= page.title and Tr(spec.title) or Tr(rule.label),
         suiteModuleId = spec.id, suiteFeatureSwitch = feature and feature.switch or nil, suiteRuleKey = rule.key,
         section = section, keywords = keywords, help = rule.help and Tr(rule.help) or nil,
         settingKey = exact and ("msufsuite." .. spec.id .. "." .. rule.key) or nil,
@@ -361,7 +336,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
                     if rule.key ~= feature.switch and not rule.hidden and not seen[rule.key] then
                         seen[rule.key] = true
                         AddWords(keywords, rule.label)
-                        if not rule.color and FeatureActive(feature) then
+                        if not rule.color then
                             local row = RuleRow(page, spec, rule, nil, feature, category)
                             if row then ruleRows[#ruleRows + 1] = row end
                         end
@@ -400,13 +375,6 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
     return true
 end
 
--- A module that is off keeps only its own enable switch.
-local function SwitchRow(rows, page, spec)
-    local config = Suite.Suite.Config(spec.id)
-    local rule = spec.rules.enabled
-    if SearchableRule(spec, rule, config) then rows[#rows + 1] = RuleRow(page, spec, rule, nil, nil, nil, config) end
-end
-
 function P.SearchRows()
     P.ForgetAvailability()
     local rows, byPage, pagesByKey = {}, ModulesByPage(), {}
@@ -443,11 +411,7 @@ function P.SearchRows()
             end
             if page.key ~= "suite_qualityOfLife" or not QualityOfLifeRows(rows, page, modules, pageRow) then
                 for _, spec in ipairs(modules) do
-                    if ModuleActive(spec.id) then
-                        ModuleRows(rows, page, spec, instanceTitles)
-                    else
-                        SwitchRow(rows, page, spec)
-                    end
+                    ModuleRows(rows, page, spec, instanceTitles)
                 end
             end
             for _, title in ipairs(instanceTitles) do AddWords(pageRow.keywords, title) end
@@ -463,7 +427,15 @@ function P.SearchRows()
     P.AppendSearchActionRows(rows, pagesByKey)
     local visible = {}
     for _, row in ipairs(rows) do
-        if P.SearchRowAvailable(row.pageKey, row.settingKey, row) then visible[#visible + 1] = row end
+        local available, inactive = P.SearchRowAvailable(row.pageKey, row.settingKey, row)
+        if available then
+            if inactive then
+                row.inactive = true
+                row.section = Tr("Off") .. (row.section and (" > " .. row.section) or "")
+                if row.hint then row.hint = row.hint .. " > " .. Tr("Off") end
+            end
+            visible[#visible + 1] = row
+        end
     end
     return visible
 end
@@ -528,8 +500,8 @@ for index = 1, GROUP_COUNT do
 end
 
 -- Search records from visited pages and the cold provider share this gate.
--- Pages, FAQ answers and enable switches stay while their module can run
--- here; details leave as soon as their module or feature is switched off.
+-- Supported details remain discoverable while a module is off. Unavailable
+-- clients, disabled AddOns and removed dynamic controls still leave the index.
 local function ModuleForRecord(pageKey, settingKey, record)
     local row = record.providerRow or record
     local id, key
@@ -572,11 +544,10 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     if pageKey == "suite_skin" then
         if not SkinAvailable() then return false end
         if settingKey == "msufsuite.skin.enabled" then return true end
-        if P.SkinningEnabled() ~= true then return false end
         if (row.sectionId or record.sectionId) == "suite_skin_hud" and P.S.OwnsBlizzardSurface("damageMeter") then
             return false
         end
-        return true
+        return true, P.SkinningEnabled() ~= true
     end
     local id, key = ModuleForRecord(pageKey, settingKey, record)
     if not id then
@@ -587,7 +558,7 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
             end
             return false
         end
-        return PageActive(pageKey)
+        return PageAvailable(pageKey)
     end
     if not ModuleAvailable(id) then return false end
     if key == "enabled" or row.suiteModuleSwitch then return true end
@@ -620,7 +591,7 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
         local rule = spec.rules[controlKey]
         if not rule or not spec.controlAvailable(rule, config) then return false end
     end
-    return config.enabled == true and (not featureSwitch or config[featureSwitch] == true)
+    return true, config.enabled ~= true or (featureSwitch and config[featureSwitch] ~= true)
 end
 
 if M.RegisterSearchAvailability then M.RegisterSearchAvailability("MSUF_Suite", P.SearchRowAvailable) end

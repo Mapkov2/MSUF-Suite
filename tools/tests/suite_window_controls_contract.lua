@@ -861,4 +861,90 @@ surfaceFile:close()
 Check(surfaceSource:find("A spec is caller-owned and read-only here", 1, true)
     and surfaceSource:find("Surface never writes to a spec", 1, true),
     "Surface.Attach does not document who owns a surface spec")
+-- Forever 1.60.1.70291 loads PetStableFrame and LegacySystemFrame. Use the
+-- real catalog: the normal geometry fixture's small stub cannot prove that
+-- their load-on-demand roots ever reach WindowControls in the client.
+do
+    local previousCatalog, previousClient = NS.BlizzardCatalog, NS.Client
+    NS.Client = { isForever = false, IsGamepadUI = function() return false end }
+    assert(loadfile(arg[4] or root .. "/MSUF_Suite_Skin/Adapters/Catalog.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/CatalogGlass.lua"))("MSUF_Suite_Skin", NS)
+    Check(NS.BlizzardCatalog.FindByFrame("StableFrame") ~= nil
+        and not NS.BlizzardCatalog.FindByFrame("PetStableFrame")
+        and not NS.BlizzardCatalog.FindByFrame("LegacySystemFrame"),
+        "Forever-only windows changed the Retail catalog")
+    for _, name in ipairs({ "PetStableFrame", "LegacySystemFrame" }) do
+        UIPanelWindows[name] = { area = "left", pushable = 1 }
+        Check(not NS.WindowControls.Attach(Frame(name, UIParent), "retail"), name .. " gained controls on Retail")
+        UIPanelWindows[name] = nil
+    end
+    local gamepad = false
+    NS.Client = { isForever = true, IsGamepadUI = function() return gamepad end }
+    assert(loadfile(arg[4] or root .. "/MSUF_Suite_Skin/Adapters/Catalog.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/CatalogGlass.lua"))("MSUF_Suite_Skin", NS)
+    Check(NS.BlizzardCatalog.glass.valid, "Forever catalog has an unclassified window")
+    for _, name in ipairs({ "PetStableFrame", "LegacySystemFrame" }) do
+        local entry = NS.BlizzardCatalog.FindByFrame(name)
+        Check(entry and entry.addon == (name == "PetStableFrame" and "Blizzard_StableUI" or "Blizzard_LegacySystem"),
+            name .. " is absent from its native addon catalog")
+        local panel = Frame(name, UIParent)
+        panel.width, panel.height = 384, 512
+        if name == "LegacySystemFrame" then panel.width, panel.height = 920, 575 end
+        panel.NineSlice = Frame(nil, panel)
+        panel.NineSlice:SetFrameLevel(500)
+        panel.CloseButton = Frame(name .. "CloseButton", panel, "Button")
+        panel.CloseButton:SetFrameLevel(510)
+        panel.CloseButton.anchorName = "TOPRIGHT"
+        local nativeClick = function() HideUIPanel(panel) end
+        panel.CloseButton.scripts.OnClick = nativeClick
+        UIPanelWindows[name] = { area = "left", pushable = 1, allowOtherPanels = 1 }
+        local owner = "contract:" .. name
+        Check(NS.WindowControls.Attach(panel, owner), name .. " did not attach")
+        local controls = NS.WindowControls.states[panel]
+        Check(controls.titleDrag:GetFrameLevel() > 500 and controls.grip:GetFrameLevel() > 500,
+            name .. " geometry controls are behind native portrait chrome")
+        Check(panel.CloseButton.scripts.OnClick == nativeClick and panel.CloseButton:GetFrameLevel() == 510,
+            name .. " changed the native X script or frame level")
+        if name == "LegacySystemFrame" then
+            Check(controls.minimize and controls.restore and controls.minimize:GetFrameLevel() > 500,
+                "Legacy minimize/restore is missing or behind its portrait chrome")
+            Check(controls.minimize.point[2] == panel.CloseButton, "Legacy minimize misses the native X anchor")
+            controls.minimize.scripts.OnClick(controls.minimize)
+            Check(not panel.shown and controls.restore.shown, "Legacy window did not minimize")
+            controls.restore.scripts.OnClick(controls.restore, "LeftButton")
+            Check(panel.shown and not controls.restore.shown, "Legacy window did not restore")
+        else
+            Check(not controls.minimize and not controls.restore, "stable gained an NPC-closing minimize")
+        end
+        panel.NineSlice:SetFrameLevel(900)
+        panel:Hide()
+        panel:Show()
+        Check(controls.titleDrag:GetFrameLevel() > 900 and controls.grip:GetFrameLevel() > 900
+            and (not controls.minimize or controls.minimize:GetFrameLevel() > 900),
+            name .. " controls did not follow native levels on reopen")
+        panel.CloseButton:Hide() -- Blizzard's InitializeGamepad hides its X.
+        gamepad = true
+        NS.WindowControls.Refresh()
+        Check(not panel.CloseButton.shown and (not controls.minimize or not controls.minimize.shown),
+            name .. " forced mouse-only window buttons into Gamepad UI")
+        gamepad = false
+        NS.WindowControls.Refresh()
+        Check(not panel.CloseButton.shown, name .. " took ownership of native close visibility")
+        combatEdge = true
+        controls.titleDrag.scripts.OnDragStart(controls.titleDrag)
+        controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
+        Check(not panel.moving and not controls.grip.scripts.OnUpdate, name .. " wrote geometry at combat edge")
+        combatEdge = false
+        NS.WindowControls.DisableOwner(owner)
+        Check(not controls.titleDrag.shown and not controls.grip.shown
+            and (not controls.minimize or not controls.minimize.shown), name .. " left disabled controls visible")
+        panel.CloseButton.scripts.OnClick(panel.CloseButton)
+        Check(not panel.shown, name .. " lost its native close action")
+        panel.explicitProtected = true
+        Check(not NS.WindowControls.Attach(panel, owner), name .. " bypassed explicit protection")
+        UIPanelWindows[name] = nil
+    end
+    NS.BlizzardCatalog, NS.Client = previousCatalog, previousClient
+end
+
 print("Suite window controls: " .. checks .. " checks passed")

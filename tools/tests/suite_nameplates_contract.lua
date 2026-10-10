@@ -2,7 +2,7 @@ local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
-    .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,Skin.lua",
+    .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -375,6 +375,7 @@ local S = {
     Install = function(_, module) installed = module end,
 }
 local context = {
+    RemoveEvent = function(_, event) events[event] = nil end,
     Event = function(_, event, callback, allowCombat)
         events[event] = callback
         -- Every plate listener also runs in combat (the context's allowCombat).
@@ -383,8 +384,10 @@ local context = {
     CVar = function(_, key, value) cvars[key] = value; liveCVars[key] = value end,
 }
 NS.Suite = S
+NS.InCombat = function() return combat end
 NS.RGB, NS.Public, NS.Finite, NS.ResolveFont = S.RGB, S.Public, S.Finite, S.ResolveFont
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraColors.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
 -- No runtime file needs a protected call: every API both clients have is
@@ -2102,3 +2105,43 @@ do
     cast.CreateTexture, cast.GetStatusBarTexture = bans.CreateTexture, bans.GetStatusBarTexture
 end
 print("Suite nameplates: interrupt readiness through the plate lifecycle passed")
+
+-- Catalog/talent changes must update already-visible DoTs without a
+-- nameplate scan or an unrelated role/quest refresh. Disabled stays idle.
+do
+    local colors = private.AuraColors
+    local configure, apply = colors.Configure, colors.Apply
+    local calls, applied, forced = 0, 0, false
+    colors.Configure = function(_, force) calls, forced = calls + 1, force end
+    colors.Apply = function(frame, unit, enemy)
+        assert(frame == uf and unit == "nameplate1" and enemy)
+        applied = applied + 1
+    end
+    local catalogEvents = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
+        "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED", "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" }
+    module.active, module.config.auraColorsEnabled = true, false
+    module:Enable()
+    for _, event in ipairs(catalogEvents) do assert(events[event] == nil, "disabled DoT colors listened to " .. event) end
+    module.config.auraColorsEnabled = true
+    module:Refresh()
+    for _, event in ipairs(catalogEvents) do
+        assert(events[event], "DoT colors missed " .. event)
+        local beforeCalls, beforeApplied = calls, applied
+        local beforeScans, beforeThreat = scans, #threatCalls
+        events[event](module, event)
+        assert(calls == beforeCalls + 1 and forced == true and applied == beforeApplied + 1,
+            "catalog change did not force-refresh visible DoTs")
+        assert(scans == beforeScans and #threatCalls == beforeThreat, "catalog change scanned/reclassified plates")
+    end
+    module.config.auraColorsEnabled = false
+    module:Refresh()
+    for _, event in ipairs(catalogEvents) do assert(events[event] == nil, "disabled DoT colors kept " .. event) end
+    module.needsRefresh = false
+    local beforeCalls, beforeScans, beforeApplied = calls, scans, applied
+    events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    assert(calls == beforeCalls and scans == beforeScans and applied == beforeApplied,
+        "disabled DoT colors added combat-exit work")
+    module:Disable()
+    colors.Configure, colors.Apply = configure, apply
+end
+print("Suite nameplates: optional catalog listeners, readiness and disabled combat-exit budget passed")

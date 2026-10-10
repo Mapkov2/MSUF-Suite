@@ -9,6 +9,7 @@ a filter selects it with "ratchet".
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,11 +22,15 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_forever_character_contract.lua": [[], ["secret"]],
     "suite_hud_contract.lua": [[], ["Forever"]],
     "suite_options_menu_contract.lua": [[], ["Forever"]],
     "suite_preview_interaction_contract.lua": [[], ["Forever"]],
     "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(BRANCH / "MidnightSimpleUnitFrames")]],
-    "suite_search_findability_contract.lua": [[], ["Forever"]],
+    "suite_search_findability_contract.lua": [
+        [flavor, locale] for flavor in FLAVORS
+        for locale in ("enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW")
+    ],
     "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(BRANCH / "MidnightSimpleUnitFrames")],
                                            [str(BRANCH / "MapkoSkin"), "Forever"]],
     "suite_skin_msuf_bridge_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames"),
@@ -50,6 +55,21 @@ def commands(test):
     if test.name == "suite_skin_msuf_bridge_contract.lua":
         return [[LUA, str(test)] + EXTRA[test.name][0]]
     return [[LUA, str(test), str(ROOT)] + extra for extra in EXTRA.get(test.name, [[]])]
+
+
+def run_commands(test):
+    batch = commands(test)
+
+    def run(command):
+        return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, errors="replace")
+
+    # Each locale boots a separate, read-only Lua world. Keep reporting ordered.
+    if test.name == "suite_search_findability_contract.lua" and len(batch) > 2:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            yield from zip(batch, pool.map(run, batch))
+    else:
+        for command in batch:
+            yield command, run(command)
 
 
 def ratchet_path():
@@ -81,8 +101,7 @@ def main():
     failed = []
     total = sum(len(commands(test)) for test in tests)
     for test in tests:
-        for command in commands(test):
-            run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, errors="replace")
+        for command, run in run_commands(test):
             label = " ".join([test.name] + [Path(a).name for a in command[2:] if a != str(ROOT)])
             if run.returncode == 0:
                 print("ok   " + label)

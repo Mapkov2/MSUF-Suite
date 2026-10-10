@@ -9,8 +9,8 @@
 -- M.ALIASES), that a setting of a never-opened page is found with its exact
 -- target, that hidden rules, per-instance duplicates and modules whose addon is
 -- not installed stay out, and that "minimap" reads apart from MSUF's own icon.
--- A module that is off keeps its page, FAQ answers and enable switch; only its
--- details leave the index, on the Classic host and on the Main host (which
+-- A module that is off keeps its page, FAQ answers and enable switch; its
+-- supported details remain discoverable without enabling it, on the Classic host and on the Main host (which
 -- refreshes only when the provider registers again).
 -- An MSUF build without the hook gets no rows and no error.
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
@@ -125,8 +125,8 @@ for _, feature in ipairs(P.QualityOfLifeSearchFeatures or {}) do
     Suite.Suite.Config(feature.id)[feature.switch] = true
 end
 
--- Disabling a module/feature hides its details, but its real setting key must
--- still identify the switch used to turn it back on (cold or visited page).
+-- Disabling a module/feature keeps its supported settings and enable switch
+-- discoverable without changing configuration (cold or visited page).
 do
     local chat = Suite.Suite.Config("chat")
     chat.enabled = false
@@ -135,10 +135,10 @@ do
     }), "a disabled module's enable switch disappeared from cold search")
     Check(P.SearchRowAvailable("suite_chat", "msufsuite.chat.enabled", { kind = "toggle" }),
         "a disabled module's enable switch disappeared from visited-page search")
-    Check(not P.SearchRowAvailable("suite_chat", "msufsuite.chat.fontSize", { kind = "slider" }),
-        "a disabled module still exposed its detail settings")
+    Check(P.SearchRowAvailable("suite_chat", "msufsuite.chat.fontSize", { kind = "slider" }),
+        "a disabled module lost its detail settings")
     P.ForgetAvailability()
-    local page, switch
+    local page, switch, detail
     for _, row in ipairs(P.SearchRows()) do
         if row.pageKey == "suite_chat" then
             if row.kind == "page" then
@@ -146,17 +146,18 @@ do
             elseif row.settingKey == "msufsuite.chat.enabled" then
                 switch = row
             else
-                Check(false, "disabled chat retained a cold detail, section or action: " .. tostring(row.label))
+                detail = detail or row
+                Check(row.section and row.section:find(P.Tr("Off"), 1, true), "disabled detail lacks Off context")
             end
         end
     end
-    Check(page and switch, "disabled chat lost its cold page or enable switch")
+    Check(page and switch and detail, "disabled chat lost its page, switch or details")
     chat.enabled = true
 
     local protection = Suite.Suite.Config("releaseProtection")
     protection.enabled = false
     Check(P.SearchRowAvailable("suite_qualityOfLife", "msufsuite.releaseProtection.enabled", { kind = "toggle" })
-        and not P.SearchRowAvailable("suite_qualityOfLife", "msufsuite.releaseProtection.modifier", { kind = "dropdown" }),
+        and P.SearchRowAvailable("suite_qualityOfLife", "msufsuite.releaseProtection.modifier", { kind = "dropdown" }),
         "disabled release protection must remain searchable through its enable switch")
     protection.enabled = true
 
@@ -176,16 +177,26 @@ do
     Check(checkedFeature, "the QoL fixture had no independent feature switch")
 
     -- Skinning switched off keeps its page and the switch that turns it on.
+    local skinBeforeSearch, skinLoadedBefore = env.MapkoSkin, loaded.MSUF_Suite_Skin
     Suite.Skin.enabled = false
     Check(P.SearchRowAvailable("suite_skin", "msufsuite.skin.enabled", { kind = "toggle" })
         and P.SearchRowAvailable("suite_skin", nil, { kind = "page" })
-        and not P.SearchRowAvailable("suite_skin", "msufsuite.skin.font.path", { kind = "textinput" }),
-        "Skinning that is off lost its page or switch, or kept its details")
+        and P.SearchRowAvailable("suite_skin", "msufsuite.skin.font.path", { kind = "textinput" }),
+        "Skinning that is off lost its page, switch or details")
     local skinSwitch
     for _, row in ipairs(P.SearchRows()) do
         if row.settingKey == "msufsuite.skin.enabled" then skinSwitch = row end
     end
     Check(skinSwitch, "Skinning that is off lost its cold enable switch")
+    local coldSections = {}
+    for _, row in ipairs(P.SkinSearchRows()) do
+        if row.kind == "section" then coldSections[row.sectionId] = true end
+    end
+    for _, suffix in ipairs({ "basic", "material", "shape", "fonts", "icons", "window_controls",
+        "windows", "coverage", "character" }) do
+        Check(coldSections["suite_skin_" .. suffix], "unloaded Skin lost its real section: " .. suffix)
+    end
+    Check(loaded.MSUF_Suite_Skin == skinLoadedBefore and env.MapkoSkin == skinBeforeSearch, "cold search loaded the Skin engine")
     Suite.Skin.enabled = true
 
     -- A module this client cannot run (its AddOn is off in Blizzard's list)
@@ -268,6 +279,21 @@ Check(P.searchRegistered == true, "the Suite provider did not register")
 Check(api.GetSearchProviderCache() == nil, "Suite rows were collected at load instead of on the first search")
 
 local function Search(query) return api.SearchPages(query) end
+do
+    local expected = { ["action.auraSpec"] = "dropdown", ["action.auraSuggestion"] = "dropdown",
+        ["action.auraCustom"] = "textinput", ["action.auraSample"] = "dropdown" }
+    local found = {}
+    for _, row in ipairs(P.SearchRows()) do
+        for key, kind in pairs(expected) do
+            local meta = P.Meta("suite_nameplates", "nameplates", key, "action", "suite_nameplates_auraColors")
+            if row.controlId == meta.controlId then
+                Check(row.kind == kind and row.sectionId == meta.sectionId, "DoT search lost its real control: " .. key)
+                found[key] = true
+            end
+        end
+    end
+    for key in pairs(expected) do Check(found[key], "cold search omitted the DoT editor control: " .. key) end
+end
 Check(Suite.SuiteCatalog.partyEffects == nil, "retired Celebrations remains in the catalog")
 for _, query in ipairs({ "Celebrations", "When you or your pet cast Bloodlust", "Bloodlust" }) do
     for _, record in ipairs(Search(query)) do
@@ -376,7 +402,9 @@ do
     for _, row in ipairs(api.GetSearchRecords()) do
         local key = row.exactTarget and row.exactTarget.settingKey
         if key == "msufsuite.objectives.width" then activeSibling = row end
-        Check(key ~= "msufsuite.announcements.zone", "a disabled HUD module kept its settings in the index")
+        if key == "msufsuite.announcements.zone" then
+            Check(P.SearchRowAvailable(row.key, key, row), "disabled HUD detail became unavailable")
+        end
     end
     Check(activeSibling, "active HUD sibling disappeared")
     for _, id in ipairs({"runSummary", "announcements", "afkScreen"}) do
@@ -563,7 +591,7 @@ do
             local indexed = {}
             for _, record in ipairs(api.GetSearchRecords()) do indexed[Identity(record)] = true end
             for _, identity in ipairs(details) do
-                Check(not indexed[identity], "disabled module retained a cold detail: " .. id .. " " .. identity)
+                Check(indexed[identity], "disabled module lost a cold detail: " .. id .. " " .. identity)
             end
             if hadMaster then
                 Check(FindSetting("msufsuite." .. id .. ".enabled"), "disabled module lost its switch: " .. id)
@@ -602,7 +630,7 @@ do
     Check(Suite.Database.Create("Search disabled module", true), "could not create test profile")
     Suite.Database.GetProfile("Search disabled module").suite.modules.chat.enabled = false
     Check(Suite.Database.Activate("Search disabled module"), "could not activate test profile")
-    Check(not FindSetting("msufsuite.chat.fontSize"), "profile activation retained previous module details")
+    Check(FindSetting("msufsuite.chat.fontSize"), "disabled profile lost supported module details")
     Check(FindSetting("msufsuite.chat.enabled"), "profile activation hid the module switch")
     Check(Suite.Database.Activate(original), "could not restore test profile")
     Check(FindSetting("msufsuite.chat.fontSize"), "profile restoration did not rebuild search")
@@ -931,26 +959,26 @@ do
     end
     if M.RegisterSearchAvailability then
         Check(Suite.Suite.Set("qol", "autoJunk", false), "could not disable visited QoL subfeature")
-        Check(not FindSetting("msufsuite.qol.junkReport"), "disabled subfeature retained its live detail")
+        Check(FindSetting("msufsuite.qol.junkReport"), "disabled feature lost its supported detail")
         Check(FindSetting("msufsuite.qol.autoJunk") and FindSetting("msufsuite.qol.guildRepair"),
             "disabling one subfeature hid its switch or another feature in the same module")
         Check(Suite.Suite.Set("qol", "autoJunk", true), "could not reenable visited QoL subfeature")
         Check(FindSetting("msufsuite.qol.junkReport"), "reenabled subfeature did not return")
+        local activeRows = FindSetting("msufsuite.actionTracker.rows")
+        Check(activeRows and activeRows.anchor, "warm fixture did not build the actual action-tracker control")
         Check(Suite.Suite.Set("actionTracker", "enabled", false), "could not disable visited feature")
-        Check(not FindSetting("msufsuite.actionTracker.rows"), "visited disabled feature retained a live setting")
+        local inactiveRows = FindSetting("msufsuite.actionTracker.rows")
+        Check(inactiveRows and inactiveRows.anchor == activeRows.anchor
+            and inactiveRows.hint:find(P.Tr("Off"), 1, true), "warm disabled setting lost its control or Off context")
         Check(FindSetting("msufsuite.actionTracker.enabled"), "visited disabled feature lost its switch")
-        for _, record in ipairs(api.GetSearchRecords()) do
-            Check(not (record.key == "suite_qualityOfLife" and record.kind ~= "toggle"
-                and record.sectionId == "suite_qualityOfLife_actionTracker_main"),
-                "visited disabled feature retained a live action or section")
-        end
         Check(Suite.Suite.Set("actionTracker", "enabled", true), "could not reenable visited feature")
-        Check(FindSetting("msufsuite.actionTracker.rows"), "visited reenabled feature did not return")
+        local restoredRows = FindSetting("msufsuite.actionTracker.rows")
+        Check(restoredRows and restoredRows.hint == activeRows.hint, "reenabled visited setting retained its Off context")
 
         -- The visited Repair/Sell junk rows own separate switches; there is
         -- no qol.enabled widget. Both survive when their backing module is off.
         Check(Suite.Suite.Set("qol", "enabled", false), "could not disable visited aggregate module")
-        Check(not FindSetting("msufsuite.qol.junkReport"), "visited disabled aggregate retained a detail")
+        Check(FindSetting("msufsuite.qol.junkReport"), "disabled feature lost its supported detail")
         local featureSwitches = 0
         for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
             if feature.id == "qol" then
@@ -1009,7 +1037,7 @@ do
         for _,record in ipairs(Search(case[1])) do
             if record.exactTarget and record.exactTarget.settingKey=="msufsuite."..case[2]..".enabled" then found=record;break end
         end
-        Check((found ~= nil) == (P.Available(case[2]) == true and Suite.Suite.Config(case[2]).enabled == true),
+        Check((found ~= nil) == (P.Available(case[2]) == true),
             "German feature alias did not follow client availability: "..case[1])
     end
     local seen={}
@@ -1118,13 +1146,13 @@ do
         Suite.Suite.Config("bags").enabled=false
         Suite.Suite.Config("cooldownManager").enabled=false
         P.InvalidateSearch()
-        -- Off modules answer with their page and switch only, never details.
+        -- Off modules keep their supported details discoverable.
         for _, example in ipairs(examples) do
             local page = example[3]
             if page == "suite_bags" or page == "suite_cooldownManager" then
                 for _, row in ipairs(Search(example[2])) do
                     local key = row.exactTarget and row.exactTarget.settingKey or ""
-                    Check(row.key ~= page or row.kind == "page" or row.kind == "faq" or key:match("%.enabled$"),
+                    Check(P.SearchRowAvailable(row.key, key, row),
                         locale .. ": a Suite module that is off kept a detail in an example query: " .. example[2])
                 end
                 -- MSUF folds Latin letters only, so the Cyrillic page title
@@ -1137,7 +1165,7 @@ do
         end
         for _, row in ipairs(Search(questions[locale])) do
             local key = row.exactTarget and row.exactTarget.settingKey or ""
-            Check(row.key ~= "suite_bags" or row.kind == "page" or row.kind == "faq" or key:match("%.enabled$"),
+            Check(P.SearchRowAvailable(row.key, key, row),
                 locale .. ": bags that are off kept a detail in the natural question")
         end
         Suite.Suite.Config("bags").enabled=true
@@ -1150,9 +1178,9 @@ do
     P.InvalidateSearch()
 end
 
--- With every Suite module off, search keeps only what turns them back on:
--- pages, FAQ answers, enable switches and Quality of Life categories, and the
--- Skinning page's two maintenance actions, which need no Skin addon. With
+-- With every Suite module off, search keeps supported settings discoverable
+-- along with pages, FAQ answers, switches and Quality of Life categories.
+-- Skinning's two maintenance actions need no Skin addon. With
 -- their AddOns off it keeps nothing of the Suite but those two. The Main host
 -- cannot filter widgets of pages already visited (it has no availability
 -- hook), so the visited-cache checks need that hook.
@@ -1181,22 +1209,19 @@ do
     local offRows = P.SearchRows()
     Check(#offRows > 0, "modules that are off lost their pages and switches")
     Check(MaintenanceRows(offRows) == 2, "Save setup as or Restore chat colors is not found without the Skin addon")
+    local details = 0
     for _, row in ipairs(offRows) do
-        local key = row.settingKey or ""
-        local switch = key:match("%.enabled$") or row.suiteModuleSwitch
-            or (row.sectionId or ""):match("^suite_qualityOfLife_category_")
-        Check(row.kind == "page" or row.kind == "faq" or switch or row.suiteAlways,
-            "modules that are off kept a cold detail: " .. tostring(row.pageKey) .. " " .. tostring(row.label))
-    end
-    if M.RegisterSearchAvailability then
-        for _, row in ipairs(api.GetSearchRecords()) do
-            local key = row.exactTarget and row.exactTarget.settingKey or ""
-            local provider = row.providerRow or {}
-            Check(not row.key:match("^suite_") or row.kind == "page" or row.kind == "faq" or row.kind == "section"
-                or key:match("%.enabled$") or provider.suiteModuleSwitch or provider.suiteAlways
-                or key:match("^msufsuite%.qol%.") or key:match("^msufsuite%.loot%."),
-                "Suite-off cache retained " .. row.kind .. " on " .. row.key)
+        if row.kind ~= "page" and row.kind ~= "faq" and not row.suiteAlways then
+            details = details + 1
+            Check(P.SearchRowAvailable(row.pageKey, row.settingKey, row), "disabled supported row was unavailable")
         end
+    end
+    Check(details > 500, "disabled modules lost their detail inventory")
+    if M.RegisterSearchAvailability then
+        Check(FindSetting("msufsuite.chat.fontSize"), "disabled module lost its cached detail")
+    end
+    for _, id in ipairs(Suite.SuiteOrder) do
+        Check(Suite.Suite.Config(id).enabled == false, "search enabled a module: " .. id)
     end
     Check(#Search("target width") > 0, "Suite-off search lost Core settings")
     for id, value in pairs(savedEnabled) do Suite.Suite.Config(id).enabled = value end

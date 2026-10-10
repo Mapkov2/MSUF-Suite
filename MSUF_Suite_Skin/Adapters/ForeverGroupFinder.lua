@@ -301,6 +301,7 @@ local function SkinControls(listing, browse, who)
     if not activity then return end
     SkinFrame(activity, CONTENT_MODE)
     SkinButton(activity.PlayStyleDropdown, FILTER_SPEC)
+    SkinButton(activity.VoiceChatDropdown, FILTER_SPEC)
     NS.Checkmarks.TrackFrame(Kit.Path(activity, "LevelRangesCheckbox", "Checkbox"), OWNER)
     -- Paint the input container; Blizzard's secure EditBox and its text/paste
     -- restrictions remain under the native input-scrollframe lifecycle.

@@ -49,6 +49,7 @@ Core\Catalog\DataTexts.lua
 Core\Catalog\BuffReminders.lua
 Core\Catalog\Chat.lua
 Core\NameplateStyle.lua
+Core\NameplateAuraColors.lua
 Core\Catalog\Nameplates.lua
 Core\Catalog\CooldownManager.lua
 Core\SuiteMigrations.lua

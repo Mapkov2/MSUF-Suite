@@ -233,6 +233,16 @@ auraRules[#auraRules + 1] = B.Choice("auraScaleMode", "Blizzard aura icon size",
 auraRules[#auraRules + 1] = B.Number("auraScalePercent", "Aura icon size (%)", 100, 70, 140, 10)
 B.Section(id, "auras", "Blizzard auras", auraRules)
 
+B.Section(id, "auraColors", "DoT health colors", {
+    B.Bool("auraColorsEnabled", "Color enemy health by your DoTs", false),
+    B.Color("auraColorsAll", "All selected DoTs", "48af97"),
+    B.Bool("auraColorsNoneEnabled", "Warn when no selected DoT is active", false),
+    B.Color("auraColorsNone", "No selected DoT", "d9ab4b"),
+    B.Bool("auraColorsIndividual", "Use individual DoT colors in list order", false),
+    B.String("auraColorsData", "DoTs by specialization", "", 60000),
+})
+NS.SuiteCatalog[id].rules.auraColorsData.hidden = true
+
 B.Section(id, "signals", "Blizzard indicators", {
     B.Choice("threatSignalMode", "Blizzard aggro signals", 1,
         { "Keep Blizzard setting", "Customize" }),

@@ -724,7 +724,7 @@ local entries = {
         id = "stable",
         category = "character",
         addon = "Blizzard_StableUI",
-        frames = { "StableFrame" },
+        frames = { NS.Client.isForever and "PetStableFrame" or "StableFrame" },
     },
     {
         id = "item-interaction",
@@ -1907,6 +1907,18 @@ local entries = {
     },
 }
 
+-- Forever 1.60.1.70291 (upstream/forever 9465cb273): the legacy progression
+-- window is a player-opened PortraitFrame, loaded by Blizzard_LegacySystem.
+-- Camelot StableUI uses PetStableFrame in the stable entry above.
+if NS.Client.isForever then
+    entries[#entries + 1] = {
+        id = "forever-legacy-system",
+        category = "character",
+        addon = "Blizzard_LegacySystem",
+        frames = { "LegacySystemFrame" },
+    }
+end
+
 -- Glass coverage is a reviewed contract for the exact Retail source snapshot
 -- named at the top of this file. The fingerprint covers entry order, ids,
 -- categories, addon owners, skip flags, and ordered root names. Any new,
@@ -1918,6 +1930,12 @@ local REVIEWED_CATALOG_FINGERPRINT = "71c8992a-6a8e1ad9"
 local REVIEWED_CATALOG_ENTRIES = 241
 local REVIEWED_CATALOG_ROOTS = 464
 local REVIEWED_SOURCE_REVISION = "8ea15b61e45c0ed4eba01439c90757f86eb78d34"
+if NS.Client.isForever then
+    REVIEWED_CATALOG_FINGERPRINT = "6272f4e2-335c3116"
+    REVIEWED_CATALOG_ENTRIES = 242
+    REVIEWED_CATALOG_ROOTS = 465
+    REVIEWED_SOURCE_REVISION = "9465cb273b5513495d8ecc12fbb19930dd6b8957"
+end
 
 local dedicatedGlassOwners = {
     ["talking-head"] = "SharedChrome",

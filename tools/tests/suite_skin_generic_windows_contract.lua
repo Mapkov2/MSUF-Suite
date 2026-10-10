@@ -130,13 +130,13 @@ do
         return copy.BlizzardCatalog, modifiedData
     end
     -- An unreviewed catalog fails this contract; the game keeps its entries.
-    local unreviewed, unreviewedData = LoadModified('REVIEWED_CATALOG_FINGERPRINT = "[^"]+"',
-        'REVIEWED_CATALOG_FINGERPRINT = "00000000-00000000"')
+    local unreviewed, unreviewedData = LoadModified('local REVIEWED_CATALOG_FINGERPRINT = "[^"]+"',
+        'local REVIEWED_CATALOG_FINGERPRINT = "00000000-00000000"')
     Check(HasProblem(ReviewProblems(unreviewedData, unreviewed), "catalog-snapshot-unreviewed:"),
         "the review contract missed an unreviewed catalog snapshot")
     Check(unreviewed.ValidateGlassEntry(unreviewed.entries[1]) and unreviewed.glass.valid,
         "an unreviewed catalog snapshot switched the catalog off in game")
-    local recounted, recountedData = LoadModified("REVIEWED_CATALOG_ROOTS = %d+", "REVIEWED_CATALOG_ROOTS = 1")
+    local recounted, recountedData = LoadModified("local REVIEWED_CATALOG_ROOTS = %d+", "local REVIEWED_CATALOG_ROOTS = 1")
     Check(HasProblem(ReviewProblems(recountedData, recounted), "catalog-root-count:"),
         "the review contract missed a changed root inventory")
     Check(recounted.ValidateGlassEntry(recounted.entries[1]),
@@ -468,6 +468,62 @@ Check(not entryApplied and entryState == "disabled" and GenericWindows.GetStatus
 suiteOwned.bagBar = false
 entryApplied, entryState = GenericWindows.ApplyEntry(bagBarEntry, "entries")
 Check(entryState ~= "disabled", "the skin left a visible bag bar unstyled")
+
+-- The Forever roots must travel through the real catalog's LoD dispatcher,
+-- native X skinning and the normal shared geometry attachment.
+do
+    local forever = {}
+    for key, value in pairs(NS) do forever[key] = value end
+    local loaded, attached, painted = {}, {}, {}
+    forever.Client = { isForever = true,
+        IsAddOnLoaded = function(addon) return loaded[addon] == true end,
+        HasAddOn = function() return true end }
+    forever.WindowControls = {
+        Attach = function(frame, owner) attached[frame] = owner end,
+        DisableOwner = function() end,
+    }
+    forever.ControlSkin = {}
+    for key, value in pairs(NS.ControlSkin) do forever.ControlSkin[key] = value end
+    forever.ControlSkin.ApplyButton = function(button) painted[button] = true; return {} end
+    forever.Checkmarks = {}
+    for key, value in pairs(NS.Checkmarks) do forever.Checkmarks[key] = value end
+    forever.Checkmarks.GetWindowAction = function(button) return button.nativeClose and "close" or nil end
+    assert(loadfile(arg[2] or skin .. "Adapters/Catalog.lua"))("MSUF_Suite_Skin", forever)
+    local data = forever.BlizzardCatalogData
+    for _, file in ipairs({ "Adapters/CatalogGlass.lua", "Adapters/GenericWindows.lua",
+        "Adapters/GenericWindowsNodes.lua", "Adapters/GenericWindowsFrames.lua", "Adapters/GenericWindowsCatalog.lua" }) do
+        assert(loadfile(skin .. file))("MSUF_Suite_Skin", forever)
+    end
+    Check(#ReviewProblems(data, forever.BlizzardCatalog) == 0 and forever.BlizzardCatalog.glass.valid,
+        "Forever catalog fingerprint, root count or classifications are stale")
+    local loader = createdFrames[#createdFrames]
+    for _, name in ipairs({ "PetStableFrame", "LegacySystemFrame" }) do
+        local entry = forever.BlizzardCatalog.FindByFrame(name)
+        Check(entry ~= nil, name .. " has no Forever catalog entry")
+        local panel = Frame(name)
+        panel.scripts = {}
+        function panel:HookScript(script, callback) self.scripts[script] = callback end
+        panel.CloseButton = Frame(name .. "CloseButton")
+        function panel.CloseButton:GetObjectType() return "Button" end
+        panel.CloseButton.nativeClose, panel.CloseButton.shown = true, false
+        local nativeClick = function() end
+        panel.CloseButton.OnClick = nativeClick
+        local prior = _G[name]
+        _G[name] = panel
+        local owner = "contract:forever:" .. name
+        local applied, status = forever.GenericWindows.ApplyEntry(entry, owner)
+        Check(not applied and status == "waiting" and loader.events.ADDON_LOADED
+            and not attached[panel] and not painted[panel.CloseButton], name .. " skipped its native LoD gate")
+        loaded[entry.addon] = true
+        loader.scripts.OnEvent(loader, "ADDON_LOADED", entry.addon)
+        Check(attached[panel] == owner and painted[panel.CloseButton] and panel.surfaceSpec,
+            name .. " did not receive its native X skin and shared controls after addon load")
+        Check(not loader.events.ADDON_LOADED and not panel.CloseButton.shown
+            and panel.CloseButton.OnClick == nativeClick, name .. " changed native close behavior or retained a load poll")
+        forever.GenericWindows.Disable(owner)
+        _G[name] = prior
+    end
+end
 
 -- Cooldown viewers: Loss of Control keeps its skin, the viewers wait for
 -- Blizzard only while the Suite cooldown manager is off.

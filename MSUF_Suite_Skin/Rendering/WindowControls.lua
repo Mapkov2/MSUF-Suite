@@ -37,7 +37,7 @@ local minimizablePanels = {
     PVPUIFrame = true, ProfessionsBookFrame = true,
     CollectionsJournal = true, EncounterJournal = true,
     SettingsPanel = true, AddonList = true,
-    LFGParentFrame = true,
+    LFGParentFrame = true, LegacySystemFrame = true,
 }
 local excludedCategories = {
     hud = true, inventory = true, tutorial = true, utility = true,
@@ -464,11 +464,10 @@ end
 local function ControlBaseLevel(state)
     local parent = ControlParent(state)
     local level = parent:GetFrameLevel()
-    -- Map and Forever spellbook/professions chrome sits above its root.
+    -- Map and all Forever portrait chrome sit above their root.
     -- Keep our small controls above the portrait border too; only our own
     -- frames change level.
-    if state.name == "WorldMapFrame"
-        or (NS.Client.isForever and (state.name == "PlayerSpellsFrame" or state.name == "ProfessionsFrame")) then
+    if state.name == "WorldMapFrame" or NS.Client.isForever then
         local borderLevel = Safety.Read(Safety.Field(parent, "NineSlice"), "GetFrameLevel")
         if type(borderLevel) == "number" then level = math.max(level, borderLevel) end
     end
@@ -580,6 +579,7 @@ local function ShowControls(state)
     state.titleDrag:Show()
     state.grip:Show()
     if state.minimize then
+        state.minimize:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
         if NS.Client.IsGamepadUI() then state.minimize:Hide() else state.minimize:Show() end
     end
 end
@@ -697,7 +697,7 @@ function WindowControls.Attach(frame, owner)
         state.minimize = CreateMinimize(state, close)
     end
     state.titleDrag = CreateTitleDrag(state)
-    state.titleDrag:Show()
+    ShowControls(state)
     ApplyStoredPosition(state)
     frame:HookScript("OnShow", OnPanelShow)
     frame:HookScript("OnHide", OnPanelHide)

@@ -518,6 +518,10 @@ local function RenderHealth(editor, s, m)
     else
         Tint(s.progress, prefix == "enemy" and "c64b52" or "52a873")
     end
+    if prefix == "enemy" and P.Get(ID, "look") ~= 2 then
+        local color = P.NameplatesAuraDraft.Color()
+        if color then Tint(s.progress, color) end
+    end
     s.progress:SetWidth(m.barWidth * s.state.health / 100)
     local customThreat = P.Get(ID, "look") ~= 2 and P.Get(ID, "threatSignalMode") == 2
     local flashOn = customThreat and P.Get(ID, "threatFlash")
@@ -711,5 +715,6 @@ function P.BuildNameplatesPreview(ctx, builder, sections)
     editor.sampleCells = {}
     Sample(editor, "enemy", 0)
     Sample(editor, "friendly", 0)
+    P.BuildNameplatesAuraSamples(editor)
     editor:Paint()
 end

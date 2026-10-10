@@ -407,17 +407,24 @@ local function FeatureKeywords(group)
 end
 
 local function AddFeatureHelp(details, group, sections)
-    local info = CreateFrame("Frame", nil, details)
-    info:SetPoint("TOPRIGHT", details, "TOPRIGHT", -54, -10)
-    info:SetSize(20, 20)
-    info:EnableMouse(true)
-    local glyph = P.T.Font(info, "GameFontHighlightSmall", "?", P.T.colors.muted, "caption")
-    glyph:SetAllPoints(info)
-    glyph:SetJustifyH("CENTER")
-    glyph:SetJustifyV("MIDDLE")
     local helpText = {}
     for _, section in ipairs(sections) do helpText[#helpText + 1] = Tr(HELP[section.key]) end
-    P.M.AddTooltip(info, Tr(group.title), table.concat(helpText, "\n\n"), { hook = true })
+    local title, text = Tr(group.title), table.concat(helpText, "\n\n")
+    local info
+    if P.W.HelpButton then
+        info = P.W.HelpButton(details, title, text)
+    else
+        info = CreateFrame("Button", nil, details)
+        info:SetSize(24, 24)
+        P.T.ApplySurface(info, "card")
+        local glyph = P.T.Font(info, "GameFontHighlight", "?", P.T.colors.text, "body")
+        glyph:SetAllPoints(info)
+        glyph:SetJustifyH("CENTER")
+        glyph:SetJustifyV("MIDDLE")
+        P.M.AddTooltip(info, title, text, { hook = true })
+        info:SetScript("OnClick", function(self) self:GetScript("OnEnter")(self) end)
+    end
+    info:SetPoint("TOPRIGHT", details, "TOPRIGHT", -54, -10)
 end
 
 local function RuleSearchKind(rule)

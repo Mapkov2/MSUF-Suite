@@ -1,4 +1,7 @@
 local rootPath = assert(arg[1], "Suite root required")
+local secretCase = arg[2] == "secret"
+local secretStrata = newproxy(true)
+issecretvalue = function(value) return rawequal(value, secretStrata) end
 
 -- Blizzard's callback isolation: an error is reported and the caller goes on.
 local reported = {}
@@ -29,7 +32,10 @@ local function Frame(regions)
     return { points = {}, width = 646, height = 540,
         frameStrata = "MEDIUM", frameLevel = 0,
         GetFrameStrata = function(self) return self.frameStrata end,
-        SetFrameStrata = function(self, value) self.frameStrata = value end,
+        SetFrameStrata = function(self, value)
+            assert(not issecretvalue(value), "character skin restored a secret strata")
+            self.frameStrata = value
+        end,
         GetFrameLevel = function(self) return self.frameLevel end,
         SetFrameLevel = function(self, value) self.frameLevel = value end,
         GetParent = function(self) return self.parent end,
@@ -184,6 +190,10 @@ local ns = {
 for _, file in ipairs({ "AdapterKit", "SharedChrome", "PaperDollChrome", "CharacterPanel" }) do
     assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Adapters/" .. file .. ".lua"))("MSUF_Suite_Skin", ns)
 end
+if secretCase then
+    character.ModeTabs.frameStrata = secretStrata
+    tabs[2].frameStrata = secretStrata
+end
 assert(ns.CharacterPanel.Apply("blizzardWindows"))
 assert(PaperDollSidebarTab4.surface, "70170 pet sidebar tab was not skinned")
 assert(hooks.PaperDollFrame_UpdateSidebarTabs, "native sidebar updates were not observed")
@@ -254,7 +264,7 @@ NextFrame()
 assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
     and Parts(2).label.shown == false
     and tabs[2].Icon.alpha == 1
-    and character.ModeTabs.frameStrata == "MEDIUM"
+    and character.ModeTabs.frameStrata == (secretCase and "HIGH" or "MEDIUM")
     and character.ModeTabs.frameLevel == 0
     and modelBackgrounds[1].vertex[1] == 1,
     "switching looks did not restore the native tabs")
@@ -268,7 +278,7 @@ character.width = 398
 character:UpdateTabLayout()
 hooks.UpdateTabLayout()
 assert(character.ModeTabs.points[1][3] == "TOPRIGHT"
-    and character.ModeTabs.frameStrata == "MEDIUM"
+    and character.ModeTabs.frameStrata == (secretCase and "HIGH" or "MEDIUM")
     and Parts(2).label.shown == false,
     "collapsed Forever panel did not fall back to accessible native side tabs")
 character.width = 646
@@ -323,4 +333,4 @@ for _, frame in ipairs(blizzardFrames) do
         assert(type(key) ~= "string" or not key:find("^_msuf"), "the skin wrote " .. key .. " onto a Blizzard frame")
     end
 end
-print("Suite Forever character: Camelot panes, visible mode tabs and restore passed")
+print("Suite Forever character: panes, mode tabs and restore passed (secret strata: " .. tostring(secretCase) .. ")")

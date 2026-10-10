@@ -5,21 +5,24 @@ local C = P.CDM
 -- ("options"): every bar visible, rules suspended, unlearned spells shown
 -- and three sample icons on empty bars. The options page also gets a
 -- standalone drawing of one bar (never a live bar) and an optional
--- simulation: an 8 s cooldown on the first icon of each bar, a proc glow on
--- the second and a buff glow on the third, from duration objects built out
--- of plain numbers. The simulation runs only while the page is open and out
--- of combat; its one ticker exists only while it runs. At load it reads
--- only C.EMPTY, C.Const.QUESTION_ICON, C.Const.KIND and C.Layout.Shown (Const.lua and
--- Layout.lua load first), so the options contract loads it with a stub
--- CDM table that has those.
+-- simulation that plays every icon with its own settings (see below),
+-- from duration objects built out of plain numbers. The simulation runs
+-- only while the page is open and out of combat; its one ticker exists
+-- only while it runs. At load it reads only C.EMPTY, C.Const.QUESTION_ICON,
+-- C.Const.KIND and C.Layout.Shown (Const.lua and Layout.lua load first), so
+-- the options contract loads it with a stub CDM table that has those.
 local Preview = { mode = nil, sim = false }
 C.Preview = Preview
 local EMPTY = C.EMPTY
 local pairs, type, max, min = pairs, type, math.max, math.min
 local wipe = table.wipe
-local QUESTION = C.Const.QUESTION_ICON
-local KIND = C.Const.KIND
-local SIM_LENGTH, SIM_LOOP = 8, 10
+local K = C.Const
+local QUESTION = K.QUESTION_ICON
+local KIND = K.KIND
+-- The loop: one step a second, a cast per icon every ten seconds, casts
+-- three seconds apart in bar order, six-second cooldowns, recharges and
+-- buffs, and a spell alert three seconds before its cast.
+local SIM_STEP, SIM_LOOP, SIM_GAP, SIM_LENGTH, PROC_LEAD = 1, 10, 3, 6, 3
 
 ------------------------------------------------------------------ sample icons
 -- The first class spells of each family in Blizzard's order, unlearned ones
@@ -83,10 +86,30 @@ function Preview.SetMode(mode)
 end
 
 ------------------------------------------------------------------ simulation
+-- The simulation plays every icon as its spell and its bar are set up, never
+-- a fixed sample. Each loop casts every icon once, SIM_GAP apart in bar
+-- order, so ready and cooling icons sit side by side as in play:
+--  * a cooldown spell cools down with its own swipe, countdown,
+--    desaturation, opacity and timer-bar choices, then is ready again;
+--  * a charge spell (its real maximum) spends one charge: the count and the
+--    recharge swipe or edge run as the spell draws them, and it stays usable;
+--  * Glow when ready shows while the spell is ready, Glow when all charges
+--    are ready while every charge is back; resources count as available;
+--  * the spell alert glow lights PROC_LEAD before the cast, only on spells
+--    that showed a real spell alert this session (Effects.Procced) or whose
+--    alert glow is switched on for the spell itself;
+--  * a buff icon (options canvas) is active for SIM_LENGTH and glows only
+--    with Glow while active or a stack glow (whose count it then shows).
+-- Nothing hides and nothing plays a sound. While an icon is simulated
+-- (icon.simFx) its glows come from Preview.Glows, also when Effects
+-- refreshes the entry after a settings change.
 local durations = setmetatable({}, { __mode = "k" })
-local touched = {}   -- entry -> "cd"|"proc"|"aura" while simulated
+local touched = {}   -- entry -> true while simulated
 local canvases = {}  -- canvas holders by parent
 local ticker
+local tick = 0
+-- Timer-bar charge segments of a canvas icon at rest.
+local SAMPLE_CHARGES = { maxCharges = 3, currentCharges = 2, isActive = false }
 
 local function Duration(icon)
     local d = durations[icon]
@@ -97,70 +120,198 @@ local function Duration(icon)
     return d
 end
 
-local function Sim(entry, role)
+-- The real maximum of a charge spell (NeverSecret, tested anyway); nil for
+-- every other entry. A canvas sample reads the entry it draws (sample.real).
+local function MaxCharges(entry)
+    local real = entry.real or entry
+    local spell = real.charges and real.spell
+    if not spell then return nil end
+    local info = C_Spell.GetSpellCharges(spell)
+    local maximum = info and info.maxCharges
+    if NS.IsSecret(maximum) or type(maximum) ~= "number" or maximum < 2 then return nil end
+    return maximum
+end
+
+local function Procs(entry, ov, view)
+    if not K.Pick(ov, view, "procGlow") then return false end
+    if ov.procGlow == true then return true end
+    local real = entry.real or (entry.src ~= "p" and entry)
+    return real and C.Effects.Procced(real.key) or false
+end
+
+-- The count a stack glow waits for, its comparison included; nil without one.
+local function StackGoal(ov)
+    local n = ov.stackGlow
+    if type(n) ~= "number" or n < 1 then return nil end
+    n = math.floor(n)
+    if ov.stackGlowOp == K.STACK_OP.MORE_THAN then n = n + 1 end
+    return n
+end
+
+-- The glows of a simulated icon: its sample state through its choices.
+function Preview.Glows(entry)
     local icon = entry.icon
-    if not icon then return end
-    touched[entry] = role
-    if role == "cd" then
-        local d = Duration(icon)
-        if d then
-            d:SetTimeFromStart(GetTime(), SIM_LENGTH)
+    local view = icon and C.views[entry.slot]
+    if not view then return end
+    local ov, fx = entry.ov or EMPTY, C.Effects
+    if K.AURA_KINDS[view.kind] then
+        fx.SetGlow(icon, "aura", icon.simActive == true and (K.Pick(ov, view, "auraGlow") or StackGoal(ov) ~= nil))
+        return
+    end
+    fx.SetGlow(icon, "proc", icon.simProc == true and K.Pick(ov, view, "procGlow"))
+    fx.SetGlow(icon, "ready", fx.ReadyRule(ov, view, icon.simCooling, icon.simFull))
+end
+
+-- An icon joins ready: every charge back, no alert, its live state held off.
+-- An entry without charges draws no charge segments (a canvas sample has them).
+local function Claim(entry, aura)
+    local icon = entry.icon
+    touched[entry] = true
+    icon.simFx, icon.simReal, icon.simSlot = true, entry.real, entry.slot
+    icon.simCooling, icon.simProc, icon.simActive = false, false, false
+    icon.simMax = not aura and MaxCharges(entry) or nil
+    icon.simFull = icon.simMax and true or nil
+    C.Time.Simulate(entry, false)
+    if icon.simMax then
+        C.Time.SimulateCharges(entry, icon.simMax, icon.simMax, nil)
+    else
+        C.TrackingBars.Charges(icon, nil)
+    end
+    Preview.Glows(entry)
+end
+
+-- A cast: a cooldown starts, a charge is spent, or a buff goes up.
+local function Cast(entry, aura)
+    local icon = entry.icon
+    local d = Duration(icon)
+    if not d then return end
+    d:SetTimeFromStart(GetTime(), SIM_LENGTH)
+    icon.simProc = false
+    if aura then
+        icon.simActive = true
+        C.Time.Simulate(entry, d)
+        C.Time.SimulateCount(entry, StackGoal(entry.ov or EMPTY))
+    else
+        local maximum = MaxCharges(entry)
+        icon.simMax = maximum
+        if maximum then
+            icon.simFull = false
+            C.Time.SimulateCharges(entry, maximum - 1, maximum, d)
+        else
+            icon.simCooling, icon.simFull = true, nil
             C.Time.Simulate(entry, d)
         end
-    else
-        C.Effects.SetGlow(icon, role, true)
     end
+    Preview.Glows(entry)
 end
 
--- Live icons return to their real state (a real proc glow comes back
--- through Update); canvas icons to rest.
-local function Unsim(entry, role)
+-- The cooldown, recharge or buff ran out. The main swipe ends on its own,
+-- so Flash when ready still plays.
+local function Ready(entry, aura)
     local icon = entry.icon
-    if not icon then return end
-    if role == "cd" then
-        if icon.sim then C.Time.Simulate(entry, nil) end
+    if aura then
+        icon.simActive = false
+        C.Time.SimulateCount(entry, nil)
+    elseif icon.simMax then
+        icon.simFull = true
+        C.Time.SimulateCharges(entry, icon.simMax, icon.simMax, nil)
     else
-        C.Effects.SetGlow(icon, role, false)
-        if entry.src ~= "p" then C.Effects.Update(entry) end
+        icon.simCooling = false
+    end
+    Preview.Glows(entry)
+end
+
+-- Live icons return to their real state (Effects re-derives the glows);
+-- canvas icons to rest with their sample charges.
+local function Unsim(entry)
+    local icon = entry.icon
+    if not icon or not icon.simFx then return end
+    icon.simFx, icon.simReal, icon.simSlot, icon.simMax = nil, nil, nil, nil
+    icon.simCooling, icon.simProc, icon.simActive, icon.simFull = nil, nil, nil, nil
+    local fx = C.Effects
+    fx.SetGlow(icon, "proc", false)
+    fx.SetGlow(icon, "ready", false)
+    fx.SetGlow(icon, "aura", false)
+    C.Time.Simulate(entry, nil)
+    if entry.src ~= "p" then
+        fx.Update(entry)
+    elseif entry.canvas then
+        C.TrackingBars.Charges(icon, SAMPLE_CHARGES)
     end
 end
 
--- Sample icons that already run their role keep running (a repaint on a
--- slider tick restarts nothing); the ticker restarts every sample.
-local ROLES = { "cd", "proc", "aura" }
-local function Canvas(holder)
+-- Where the loop stands for the icon at bar place n.
+local function Visit(entry, n, aura)
+    local phase = (tick - (n - 1) * SIM_GAP) % SIM_LOOP
+    if phase == 0 then
+        Cast(entry, aura)
+    elseif phase == SIM_LENGTH then
+        Ready(entry, aura)
+    elseif phase == SIM_LOOP - PROC_LEAD and not aura then
+        local view = C.views[entry.slot]
+        if view and Procs(entry, entry.ov or EMPTY, view) then
+            entry.icon.simProc = true
+            Preview.Glows(entry)
+        end
+    end
+end
+
+-- Canvas samples join on a repaint, which only refreshes their glows (a
+-- slider tick restarts nothing); a sample that now draws another spell or
+-- bar starts over. The loop step (step set) moves them.
+local function Canvas(holder, step)
+    local kind = holder.kind
+    if kind == KIND.AURA_BAR then return end
+    local aura = kind == KIND.AURA_ICON
     local fakes = holder.fakes
-    for i = 1, 3 do
-        local fake, role = fakes[i], ROLES[i]
-        if fake and i <= holder.count and holder.kind ~= KIND.AURA_BAR and touched[fake] ~= role then Sim(fake, role) end
+    for i = 1, holder.count do
+        local fake = fakes[i]
+        local icon = fake.icon
+        if icon.simFx and (icon.simReal ~= fake.real or icon.simSlot ~= fake.slot) then Unsim(fake) end
+        if not icon.simFx then
+            Claim(fake, aura)
+        elseif not step then
+            Preview.Glows(fake)
+        end
+        if step then Visit(fake, i, aura) end
     end
 end
 
 local function StopAll()
-    for entry, role in pairs(touched) do
+    for entry in pairs(touched) do
         touched[entry] = nil
-        Unsim(entry, role)
+        Unsim(entry)
     end
 end
 
-local function Restart()
-    StopAll()
-    if not Preview.sim then return end
+-- One step of the loop over the live cooldown bars and the shown canvases.
+local function Step()
     for _, plan in pairs(C.plans) do
         if plan.kind == KIND.COOLDOWN then
             local entries, n = plan.entries, 0
             for i = 1, #entries do
                 local entry = entries[i]
-                if entry.icon and n < 3 then
+                local icon = entry.icon
+                if icon then
                     n = n + 1
-                    Sim(entry, ROLES[n])
+                    if not icon.simFx then Claim(entry, false) end
+                    Visit(entry, n, false)
                 end
             end
         end
     end
     for _, holder in pairs(canvases) do
-        if holder.shown then Canvas(holder) end
+        if holder.shown then Canvas(holder, true) end
     end
+    tick = (tick + 1) % SIM_LOOP
+end
+
+-- Starts the loop over: every icon ready, the first casts at once.
+local function Restart()
+    StopAll()
+    if not Preview.sim then return end
+    tick = 0
+    Step()
 end
 Preview.Restart = Restart
 
@@ -174,7 +325,7 @@ function Preview.Simulate(on)
         ticker = nil
     end
     if on then
-        ticker = C_Timer.NewTicker(SIM_LOOP, Restart)
+        ticker = C_Timer.NewTicker(SIM_STEP, Step)
         Restart()
     else
         StopAll()
@@ -282,7 +433,6 @@ local function HideFrom(list, first)
     for i = first, #list do Shown(list[i], false) end
 end
 
-local SAMPLE_CHARGES = { maxCharges = 3, currentCharges = 2, isActive = false }
 local function Icons(holder, view, count, slot)
     local icons, fakes, out, textures = holder.icons, holder.fakes, holder.out, holder.textures
     for i = 1, count do
@@ -291,7 +441,7 @@ local function Icons(holder, view, count, slot)
             icon = C.Icons.CreateStandalone(holder)
             icons[i] = icon
             -- A plain sample entry lets the glow and time layers find the bar.
-            fakes[i] = { key = "preview", src = "p", id = i, family = 1, ov = EMPTY, icon = icon }
+            fakes[i] = { key = "preview", src = "p", id = i, family = 1, ov = EMPTY, icon = icon, canvas = true }
             icon.entry = fakes[i]
         end
         local fake = fakes[i]
@@ -301,7 +451,8 @@ local function Icons(holder, view, count, slot)
         if type(ov) ~= "table" then ov = EMPTY end
         local name = holder.names[i]
         if fake.ov ~= ov or fake.name ~= name or fake.slot ~= slot then icon.esEntry = nil end
-        fake.slot, fake.ov, fake.name = slot, ov, name
+        -- The entry it draws (false for a sample icon): the simulation reads its charges.
+        fake.slot, fake.ov, fake.name, fake.real = slot, ov, name, entry or false
         if C.Layout.MixedRows(view) then
             local iw, ih = C.Layout.Footprint(view, i)
             if icon.styleGen ~= view.styleGen or icon.styleView ~= view or icon.w ~= iw or icon.h ~= ih then C.Icons.StyleIcon(icon, view, iw, ih) end
@@ -313,7 +464,8 @@ local function Icons(holder, view, count, slot)
         C.Icons.SetKeybind(fake, keyText and keyText ~= "" and keyText or tostring(i))
         if icon.pvChargeView ~= view or icon.pvChargeStyle ~= view.styleGen then
             icon.pvChargeView, icon.pvChargeStyle = view, view.styleGen
-            C.TrackingBars.Charges(icon, SAMPLE_CHARGES)
+            -- A simulated icon draws its own charges (Unsim restores the sample).
+            if not icon.simFx then C.TrackingBars.Charges(icon, SAMPLE_CHARGES) end
         end
         C.Icons.SetTexture(icon, textures[i])
         Place(icon, holder, out[2 * i - 1], out[2 * i])
@@ -342,10 +494,10 @@ end
 local function Rest(holder, keep)
     local fakes = holder.fakes
     for i = keep + 1, #fakes do
-        local role = touched[fakes[i]]
-        if role then
-            touched[fakes[i]] = nil
-            Unsim(fakes[i], role)
+        local fake = fakes[i]
+        if touched[fake] then
+            touched[fake] = nil
+            Unsim(fake)
         end
     end
 end
@@ -386,7 +538,7 @@ function Preview.Render(parent, slot, maxWidth, maxHeight)
         holder.shown = true
         holder:Show()
     end
-    if Preview.sim then Canvas(holder) end
+    if Preview.sim then Canvas(holder, false) end
     return holder
 end
 

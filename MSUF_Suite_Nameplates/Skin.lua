@@ -310,6 +310,7 @@ local function Paint(uf)
     Level.PaintNative(uf, prefix)
     Level.Paint(uf, prefix, M.units[health])
     Layout.Apply(uf, prefix, M.config)
+    private.AuraColors.Apply(uf, M.units[health], prefix == "enemy")
     if M.config.look == LOOK_BLIZZARD or not prefix or not M.config[prefix] then
         if M.targetUF == uf then M.targetUF = nil end
         HideVisual(M.visuals[health])
@@ -323,6 +324,7 @@ local function Paint(uf)
 end
 
 local function RestorePlate(uf)
+    private.AuraColors.Restore(uf)
     Threat.Restore(uf)
     RestoreFriendlyName(uf.name)
     Level.PaintNative(uf, nil)
@@ -563,6 +565,9 @@ end
 -- Subzone steps (ZONE_CHANGED) fire often while moving; they repaint only
 -- when the context the colors depend on changed.
 local function OnContextChanged(module, event)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" then
+        private.AuraColors.Configure(module.config, true)
+    end
     local changed = Roles.RefreshContext()
     if event == "ZONE_CHANGED" and not changed then return end
     CancelQuestRefresh(module)
@@ -606,6 +611,7 @@ local function OnFrameOptions(uf)
 end
 
 local function OnCombatEnded(module)
+    if module.needsRefresh and module.config.auraColorsEnabled then private.AuraColors.Configure(module.config, true) end
     local retryQuests = Roles.RetryQuests()
     if not module.needsRefresh then
         if retryQuests then
@@ -629,6 +635,13 @@ local CAST_EVENTS = { "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_DELAYED",
     "UNIT_SPELLCAST_CHANNEL_STOP", "UNIT_SPELLCAST_EMPOWER_STOP" }
 local CONTEXT_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAYER_LEVEL_UP",
     "GROUP_ROSTER_UPDATE", "PLAYER_ROLES_ASSIGNED", "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED" }
+local AURA_CONFIG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
+    "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED", "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" }
+
+local function OnAuraSpellsChanged(module)
+    private.AuraColors.Configure(module.config, true)
+    for unit, uf in pairs(module.activeUnits) do private.AuraColors.Apply(uf, unit, Prefix(uf) == "enemy") end
+end
 
 -- Every plate listener also runs in combat (the context's allowCombat, kept
 -- explicit should the module ever move frames itself): restyling a native
@@ -666,6 +679,14 @@ function M:Refresh()
     CVars.Apply(self)
     Threat.Refresh()
     KickReady.Configure()
+    private.AuraColors.Configure(self.config)
+    if self.config.auraColorsEnabled then
+        for _, event in ipairs(AURA_CONFIG_EVENTS) do Listen(self, event, OnAuraSpellsChanged) end
+        self.auraSpellsListening = true
+    elseif self.auraSpellsListening then
+        for _, event in ipairs(AURA_CONFIG_EVENTS) do self.context:RemoveEvent(event) end
+        self.auraSpellsListening = nil
+    end
     EachPlate(ApplyPlate)
     AfterClassify(self)
     Power.Refresh()
@@ -674,6 +695,7 @@ end
 function M:Disable()
     CancelQuestRefresh(self)
     self.active = false
+    self.auraSpellsListening = nil
     Power.Disable()
     Threat.Disable()
     self.rarityBefore = nil
@@ -699,4 +721,5 @@ Level.Bind(M)
 CastTime.Bind(M)
 KickReady.Bind(M, RepaintCasts)
 Auras.Bind(M)
+private.AuraColors.Bind(M)
 S.Install("nameplates", M)
