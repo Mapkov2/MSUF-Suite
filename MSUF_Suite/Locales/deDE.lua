@@ -4090,3 +4090,8 @@ T("yd", "m")
 T("|cff9fc3e7[Guild]|r %s: Welcome to MSUF.", "|cff9fc3e7[Gilde]|r %s: Willkommen bei MSUF.")
 T("|cffc9d4dd[Party]|r Chat links and channels stay native.", "|cffc9d4dd[Gruppe]|r Chatlinks und Kanäle bleiben original.")
 T("• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state", "• Kein dauerhaftes OnUpdate; nur das Ziehen einer Fensterecke nutzt eines, solange die Maustaste gedrückt ist\n• Keine wiederholenden Ticker; kurze einmalige Timer bündeln nur Layout- und Hover-Updates\n• Ein Frame-Durchlauf pro Sitzung, wenn der Fenster-Skin zum ersten Mal aktiviert wird, übernimmt vorhandene Panel-Schaltflächen\n• Keine Aura- oder Namensplakettenlistener; Einheitenereignisse nur für das Microleisten-Porträt und geöffnete Charakterfenster\n• Kampfstatus-Ereignisse pausieren und setzen nur aufgeschobene Arbeit fort und schließen offene Options-Popups\n• Ein gemeinsamer ADDON_LOADED-Verteiler nur, solange Katalogziele ausstehen\n• Laufzeitzustand extern mit schwachen Schlüsseln")
+
+T("Preview Layers", "Vorschau-Ebenen")
+T("Player arrow", "Spielerpfeil")
+T("Difficulty text", "Schwierigkeitsgrad-Text")
+T("Compass", "Kompass")

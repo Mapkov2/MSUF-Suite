@@ -4127,3 +4127,8 @@ T("yd", "碼")
 T("|cff9fc3e7[Guild]|r %s: Welcome to MSUF.", "|cff9fc3e7[公會]|r %s：歡迎使用MSUF。")
 T("|cffc9d4dd[Party]|r Chat links and channels stay native.", "|cffc9d4dd[隊伍]|r 聊天連結與頻道維持原生。")
 T("• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state", "• 無常駐OnUpdate；僅在按住滑鼠拖曳視窗角落時才執行一個\n• 無重複計時器；短暫的一次性計時器只用於合併版面與滑鼠指向更新\n• 每次登入僅在首次啟用視窗美化時遍歷一次框架，接管現有面板按鈕\n• 不監聽光環或名條；單位事件僅用於微型選單列頭像與已開啟的角色面板\n• 戰鬥狀態事件只暫停與恢復延遲工作，並關閉已開啟的選項彈出視窗\n• 僅在目錄目標待載入時使用一個共用的ADDON_LOADED分派器\n• 執行階段狀態以弱鍵表外部保存")
+
+T("Preview Layers", "預覽圖層")
+T("Player arrow", "玩家箭頭")
+T("Difficulty text", "難度文字")
+T("Compass", "指南針")

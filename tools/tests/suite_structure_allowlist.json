@@ -2833,6 +2833,24 @@
    "kind": "lod",
    "reason": "export of MSUF_Suite_Modules (Dialogs.lua), which loads on demand; the options addon does not depend on it",
    "symbol": "S.GamepadUI"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
+   "symbol": "H.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
+   "symbol": "button.Refresh"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
+   "symbol": "chrome.RefreshSelectedLayerButtons"
   }
  ]
 }

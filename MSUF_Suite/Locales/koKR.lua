@@ -4129,3 +4129,8 @@ T("yd", "미터")
 T("|cff9fc3e7[Guild]|r %s: Welcome to MSUF.", "|cff9fc3e7[길드]|r %s: MSUF에 오신 것을 환영합니다.")
 T("|cffc9d4dd[Party]|r Chat links and channels stay native.", "|cffc9d4dd[파티]|r 대화 링크와 채널은 기본 기능 그대로 유지됩니다.")
 T("• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state", "• 상시 OnUpdate 없음. 창 모서리를 끌 때만 마우스 버튼을 누르고 있는 동안 하나가 실행됩니다\n• 반복 티커 없음. 짧은 일회성 타이머는 배치와 마우스오버 갱신을 묶기만 합니다\n• 창 스킨을 처음 켤 때 세션당 한 번 프레임을 순회하여 기존 패널 버튼을 적용합니다\n• 오라나 이름표 감지 없음. 유닛 이벤트는 마이크로 메뉴 초상화와 열린 캐릭터 창에만 사용합니다\n• 전투 상태 이벤트는 지연된 작업을 일시 중지·재개하고 열린 옵션 팝업을 닫기만 합니다\n• 카탈로그 대상이 대기 중일 때만 공용 ADDON_LOADED 디스패처 하나를 사용합니다\n• 런타임 상태는 약한 키 테이블에 외부 보관합니다")
+
+T("Preview Layers", "미리보기 레이어")
+T("Player arrow", "플레이어 화살표")
+T("Difficulty text", "난이도 텍스트")
+T("Compass", "나침반")

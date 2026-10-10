@@ -42,10 +42,29 @@ local LAYERS = {
     { "map", "Map" }, { "border", "Border" }, { "ornament", "Artwork" }, { "glow", "Glow" },
     { "backdrop", "Plate" }, { "shadow", "Shadow" },
     { "text", "Texts" }, { "blizzard", "Blizzard" }, { "folio", "Folio" },
-    { "addons", "Addons" }, { "guides", "Guides" }, { "hidden", "Hidden" },
+    { "addons", "Addons" }, { "player", "Player arrow" },
+    { "clock", "Clock" }, { "fps", "FPS" }, { "latency", "Latency" },
+    { "coordinates", "Coordinates" }, { "durability", "Durability" }, { "location", "Location" },
+    { "weather", "Weather" }, { "difficultyText", "Difficulty text" },
+    { "tracking", "Tracking" }, { "calendar", "Calendar" }, { "mail", "Mail" },
+    { "crafting", "Crafting" }, { "compartment", "Compartment" }, { "difficulty", "Difficulty" },
+    { "zoom", "Zoom buttons" }, { "compass", "Compass" },
+    { "guides", "Guides" }, { "hidden", "Hidden" },
 }
+local LAYER_COLORS = {
+    map = { 0.30, 0.66, 1.00 }, border = { 0.85, 0.70, 0.25 }, ornament = { 0.90, 0.42, 1.00 },
+    glow = { 0.20, 0.90, 0.85 }, backdrop = { 0.80, 0.55, 0.25 }, shadow = { 0.48, 0.56, 0.72 },
+    text = { 0.70, 0.90, 1.00 }, blizzard = { 0.95, 0.72, 0.18 }, folio = { 0.90, 0.42, 1.00 },
+    addons = { 0.30, 0.78, 0.55 }, specialization = { 0.30, 0.78, 0.55 },
+    player = { 0.95, 0.72, 0.18 }, guides = { 0.42, 0.72, 1.00 }, hidden = { 0.48, 0.56, 0.72 },
+}
+for _, entry in ipairs(LAYERS) do
+    local key = entry[1]
+    entry[3] = LAYER_COLORS[key] or (key == "zoom" or key == "compass") and LAYER_COLORS.blizzard
+        or LAYER_COLORS.text
+end
 local ORNAMENT_EDGES = { "TOP", "BOTTOM", "LEFT", "RIGHT" }
-if not Suite.Client.isForever then table.insert(LAYERS, #LAYERS - 1, { "specialization", "Specialization" }) end
+if not Suite.Client.isForever then table.insert(LAYERS, #LAYERS - 1, { "specialization", "Specialization", LAYER_COLORS.specialization }) end
 
 local function Clamp(value, low, high) return math.max(low, math.min(high, value)) end
 -- Secret-safe readers from MSUF_Suite (always loaded, also without the runtime).
@@ -219,7 +238,8 @@ end
 local function PaintText(ui, config, item)
     local name, prefix = item.spec[1], "info" .. item.spec[1]
     local on = config[prefix] == true
-    local shown = ui.LayerOn("text") and (on or ui.LayerOn("hidden"))
+    local layer = name == "Difficulty" and "difficultyText" or item.spec[3]
+    local shown = ui.LayerOn("text") and ui.LayerOn(layer) and (on or ui.LayerOn("hidden"))
     local button = item.button
     button:SetShown(shown)
     if not shown then return end
@@ -357,7 +377,7 @@ local function PaintIcons(ui, config)
         local spec, button = item.spec, item.button
         local key = spec[1]
         local wanted = IconWanted(config, spec)
-        button:SetShown(ui.LayerOn(spec[5]) and (wanted or ui.LayerOn("hidden")))
+        button:SetShown(ui.LayerOn(spec[5]) and ui.LayerOn(key) and (wanted or ui.LayerOn("hidden")))
         button:SetAlpha(wanted and 1 or 0.38)
         button:SetSize(size, size)
         if key == "specialization" then
@@ -418,7 +438,7 @@ local function PaintMapControls(ui, config)
     local scale = ui.art.scale
     local mode = config.zoomButtons or RULES.zoomButtons.default
     for index, button in ipairs(ui.zoomItems) do
-        button:SetShown(ui.LayerOn("blizzard") and (mode ~= ZOOM.HIDE or ui.LayerOn("hidden")))
+        button:SetShown(ui.LayerOn("blizzard") and ui.LayerOn("zoom") and (mode ~= ZOOM.HIDE or ui.LayerOn("hidden")))
         button:SetAlpha(mode == ZOOM.ALWAYS and 1 or mode == ZOOM.MOUSEOVER and 0.62 or 0.38)
         local prefix = index == 1 and "zoomIn" or "zoomOut"
         button:ClearAllPoints()
@@ -431,7 +451,7 @@ local function PaintMapControls(ui, config)
         local value = GetCVarBool("rotateMinimap")
         rotating = Public(value) and value == true
     end
-    ui.compass:SetShown(ui.LayerOn("blizzard") and (rotating or ui.LayerOn("hidden")))
+    ui.compass:SetShown(ui.LayerOn("blizzard") and ui.LayerOn("compass") and (rotating or ui.LayerOn("hidden")))
     ui.compass:SetAlpha(rotating and 1 or 0.38)
 end
 

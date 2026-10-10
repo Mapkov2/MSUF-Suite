@@ -239,7 +239,7 @@ function Art:Paint(config, scale, layerOn)
     self.clip:SetShown(showMap)
     self.mask:SetTexture(round and CIRCLE or SQUARE_MASK)
     PaintTerrain(self, width, showMap)
-    self.arrow:SetShown(showMap)
+    self.arrow:SetShown(showMap and layerOn("player"))
 
     local border = PaintBorder(self, config, scale, width, height, round, layerOn("border"))
     PaintShadow(self, config, scale, width, height, round, border, layerOn("shadow"))

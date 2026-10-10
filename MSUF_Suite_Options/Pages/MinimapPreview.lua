@@ -16,7 +16,11 @@ local OffsetPrefix, OffsetKeys, PaintElements = Data.OffsetPrefix, Data.OffsetKe
 -- Right-clicking a layer chip opens the accordion that styles it.
 local LAYER_SECTIONS = { map = "layout", border = "shape", shadow = "shape", ornament = "style_art",
     glow = "style_glow", backdrop = "style_backdrop", text = "info_colors", blizzard = "elements",
-    folio = "landing", addons = "addons", specialization = "specialization" }
+    folio = "landing", addons = "addons", specialization = "specialization", player = "shape",
+    clock = "info_clock", fps = "info_fps", latency = "info_latency", coordinates = "info_coordinates", durability = "info_durability",
+    location = "info_location", weather = "info_weather", difficultyText = "info_difficulty",
+    tracking = "elements", calendar = "elements", mail = "elements", crafting = "elements",
+    compartment = "elements", difficulty = "elements", zoom = "behavior", compass = "behavior" }
 ------------------------------------------------------------------ offsets
 local function WriteOffsets(key, x, y)
     if P.Combat() then return false end
@@ -55,6 +59,7 @@ local function Select(ui, handle)
     local previous = body._selectedHandle
     if previous and previous ~= handle then previous:EnableKeyboard(false) end
     body._selectedHandle = handle
+    if chrome and chrome.RefreshSelectedLayerButtons then chrome.RefreshSelectedLayerButtons(ui, handle) end
     local active = handle and handle:IsShown() and body:IsShown() and not P.Combat() and true or false
     if handle then handle:EnableKeyboard(active) end
     SetArrowBindings(ui, active)
@@ -205,6 +210,14 @@ local function BindHandle(ui, button, key, label, section)
     button.previewUI = ui
     button.previewKey, button.previewSection = key, section
     button._key, button._label, button._color = key, label, HANDLE_COLOR
+    button._previewLayerKey = key == "style" and "map" or key == "drawer" and "addons"
+        or (key == "zoomIn" or key == "zoomOut") and "zoom" or key
+    if key:match("^ornament_") then button._previewLayerKey = "ornament" end
+    for _, spec in ipairs(TEXTS) do
+        if key == "info" .. spec[1] then
+            button._previewLayerKey = spec[1] == "Difficulty" and "difficultyText" or spec[3]
+        end
+    end
     button:SetScript("OnEnter", HandleEnter)
     button:SetScript("OnLeave", HandleLeave)
     button:SetScript("OnKeyDown", HandleKeyDown)
@@ -509,31 +522,73 @@ local function BuildSelectionBar(ui)
     ui.selection:SetPoint("TOPRIGHT", ui.canvas, "BOTTOMRIGHT", 0, -8)
 end
 
--- Layer chips: left-click toggles a layer, right-click opens its settings.
+local function LayoutLayerChips(ui)
+    local H = ui.chrome or {}
+    local width = ui.body:GetWidth()
+    if not width or width < 260 then width = ui.width end
+    ui.width = width
+    local headerWidth = ui.layerTitle:GetStringWidth() + 18
+    if H.FlowLayerChips then
+        H.FlowLayerChips(ui.chips, ui.layerButtons, {
+            width = width, padX = 10 + headerWidth, padXRight = 10, rowHeight = 20,
+        })
+    else
+        local x, row = 10 + headerWidth, 0
+        for _, button in ipairs(ui.layerButtons) do
+            if x > 10 + headerWidth and x + button:GetWidth() > width - 10 then x, row = 10 + headerWidth, row + 1 end
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", ui.chips, "TOPLEFT", x, -5 - row * 24)
+            x = x + button:GetWidth() + 5
+        end
+        ui.chips:SetHeight(30 + row * 24)
+    end
+end
+
+-- Layer switches affect this preview; right-click opens the existing settings.
 local function BuildLayerChips(ui)
-    local width = ui.width
-    local chips = CreateFrame("Frame", nil, ui.body)
-    chips:SetPoint("TOPLEFT", ui.selection, "BOTTOMLEFT", 0, -8)
-    local perRow = math.max(1, math.floor((width - 63) / 78))
-    ui.chipRows = math.ceil(#LAYERS / perRow)
-    chips:SetSize(width, 8 + ui.chipRows * 25)
-    local layersTitle = T.Font(chips, "GameFontHighlightSmall", "LAYERS", T.colors.muted)
-    layersTitle:SetPoint("TOPLEFT", chips, "TOPLEFT", 7, -8)
+    local H = ui.chrome or {}
+    local chips = CreateFrame("Frame", nil, ui.body, "BackdropTemplate")
+    chips:SetPoint("BOTTOMLEFT", ui.body, "BOTTOMLEFT", 0, 4)
+    chips:SetPoint("BOTTOMRIGHT", ui.body, "BOTTOMRIGHT", 0, 4)
+    if H.ApplyPreviewChrome then H.ApplyPreviewChrome(chips, "sidebar", T) end
+    local title = T.Font(chips, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
+    title:SetPoint("TOPLEFT", chips, "TOPLEFT", 10, -8)
     ui.layerButtons = {}
+    local measure = T.Font(chips, "GameFontDisableSmall", "", T.colors.muted)
+    measure:Hide()
+    local opts
+    if H.LayerChipButtonOpts then
+        opts = H.LayerChipButtonOpts(Tr, T.colors, H.PreviewChromePalette(T), {
+            IsOn = function(owner, key) return owner.LayerOn(key) end,
+        })
+    end
     for i, entry in ipairs(LAYERS) do
         local layer = entry[1]
-        local button = T.Button(chips, entry[2], 76, 20)
-        local row, col = math.floor((i - 1) / perRow), (i - 1) % perRow
-        button:SetPoint("TOPLEFT", chips, "TOPLEFT", 61 + col * 78, -2 - row * 25)
+        local button
+        if H.CreateLayerButton and opts then
+            button = H.CreateLayerButton(chips, ui,
+                { key = layer, label = entry[2], color = entry[3] }, i, 95, opts)
+        else
+            P.SetTranslatedText(measure, Tr(entry[2]))
+            local buttonWidth = math.max(76, measure:GetStringWidth() + 30)
+            button = T.Button(chips, entry[2], buttonWidth, 20)
+            button.key = layer
+        end
         button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         button:SetScript("OnClick", function(_, mouseButton)
-            if mouseButton == "RightButton" and LAYER_SECTIONS[layer] then
-                Focus(ui, LAYER_SECTIONS[layer], layer)
+            if mouseButton == "RightButton" then FocusSection(ui, LAYER_SECTIONS[layer])
             else
                 ui.state.layers[layer] = not ui.LayerOn(layer)
                 ui.Paint()
             end
         end)
+        HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
+            get = function() return ui.LayerOn(layer) end,
+            set = function(value)
+                ui.state.layers[layer] = value == true
+                ui.Paint()
+                return ui.LayerOn(layer) == (value == true)
+            end })
         if M.RegisterControlMetadata then
             M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "preview.layer." .. layer, "action", PREVIEW_SECTION),
                 Tr("%s preview layer"):format(Tr(entry[2])), "button")
@@ -541,6 +596,10 @@ local function BuildLayerChips(ui)
         ui.layerButtons[i] = button
     end
     ui.chips = chips
+    ui.layerTitle = title
+    ui.LayoutLayers = function() LayoutLayerChips(ui) end
+    ui.LayoutLayers()
+    ui.body:HookScript("OnSizeChanged", function() ui.LayoutLayers() end)
 end
 
 local function Paint(ui)
@@ -554,7 +613,9 @@ local function Paint(ui)
     ui.style:SetWidth(ui.art.width + (config.borderSize or 0) * base * 2)
     PaintElements(ui, config)
     ui.zoomLabel:SetText(string.format("%d%%", math.floor(base * 100 + 0.5)))
-    for i, entry in ipairs(LAYERS) do ui.layerButtons[i]:SetAlpha(ui.LayerOn(entry[1]) and 1 or 0.42) end
+    for _, button in ipairs(ui.layerButtons) do
+        if button.Refresh then button:Refresh() else button:SetAlpha(ui.LayerOn(button.key) and 1 or 0.42) end
+    end
     local selected = ui.body._selectedHandle
     if selected and not selected:IsShown() then Select(ui, nil) end
     M.PreviewSelectionBar.Refresh(ui.body)
@@ -565,13 +626,24 @@ local function BuildExpander(ui, ctx)
     local body = ui.body
     function body:ApplyCompactPreviewPresentation(compact)
         ui.state.compact = compact == true
-        ui.canvas:SetHeight(ui.state.compact and COMPACT_HEIGHT or EXPANDED_HEIGHT)
+        ui.LayoutLayers()
+        ui.canvas:ClearAllPoints()
+        ui.canvas:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+        ui.canvas:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, 0)
+        if ui.state.compact then
+            ui.canvas:SetHeight(COMPACT_HEIGHT)
+        else
+            ui.selection:ClearAllPoints()
+            ui.selection:SetPoint("BOTTOMLEFT", ui.chips, "TOPLEFT", 0, 8)
+            ui.selection:SetPoint("BOTTOMRIGHT", ui.chips, "TOPRIGHT", 0, 8)
+            ui.canvas:SetPoint("BOTTOMRIGHT", ui.selection, "TOPRIGHT", 0, 8)
+        end
         M.PreviewSelectionBar.SetShown(body, not ui.state.compact)
         ui.chips:SetShown(not ui.state.compact)
         ui.Paint()
     end
     body:ApplyCompactPreviewPresentation(true)
-    local expandedHeight = EXPANDED_HEIGHT + 8 + 24 + 8 + (8 + ui.chipRows * 25) + 8
+    local expandedHeight = EXPANDED_HEIGHT + 8 + 24 + 8 + ui.chips:GetHeight() + 8
     local expander = W.AttachFixedPreviewExpander(ui.section, ui.toolbar, body, {
         pageKey = ctx.key,
         wrapper = ctx.wrapper,

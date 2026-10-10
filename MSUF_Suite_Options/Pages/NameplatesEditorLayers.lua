@@ -414,8 +414,9 @@ function Layers.Build(ui)
     background:SetColorTexture(0.04, 0.06, 0.09, 0.96)
     local border = P.Suite.NameplateStyle.CreateBorder(rail)
     P.Suite.NameplateStyle.PaintBorder(border, rail, 1, "9e997f")
-    local title = T.Font(rail, "GameFontDisableSmall", "LAYERS", T.colors.muted)
+    local title = T.Font(rail, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
     title:SetPoint("TOPLEFT", rail, "TOPLEFT", 8, -8)
+    local headerWidth = title:GetStringWidth() + 24
     ui.layerButtons = {}
     for i, def in ipairs(LAYERS) do
         local key, label, section = def[1], def[2], def[3]
@@ -457,14 +458,14 @@ function Layers.Build(ui)
         local width = self.body:GetWidth()
         if not width or width < 300 then width = self.layoutWidth end
         if H.FlowLayerChips then
-            H.FlowLayerChips(rail, self.layerButtons, { width = width, padX = 64,
+            H.FlowLayerChips(rail, self.layerButtons, { width = width, padX = headerWidth,
                 padXRight = 8, padY = 6, gapX = 5, gapY = 4, rowHeight = 20 })
         else
-            local perRow = math.max(1, math.floor((width - 64) / 100))
+            local perRow = math.max(1, math.floor((width - headerWidth) / 100))
             for i, button in ipairs(self.layerButtons) do
                 local row, col = math.floor((i - 1) / perRow), (i - 1) % perRow
                 button:ClearAllPoints()
-                button:SetPoint("TOPLEFT", rail, "TOPLEFT", 64 + col * 100, -6 - row * 24)
+                button:SetPoint("TOPLEFT", rail, "TOPLEFT", headerWidth + col * 100, -6 - row * 24)
             end
             rail:SetHeight(12 + math.ceil(#self.layerButtons / perRow) * 20
                 + math.max(0, math.ceil(#self.layerButtons / perRow) - 1) * 4)

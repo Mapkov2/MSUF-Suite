@@ -4130,3 +4130,8 @@ T("yd", "м")
 T("|cff9fc3e7[Guild]|r %s: Welcome to MSUF.", "|cff9fc3e7[Гильдия]|r %s: Добро пожаловать в MSUF.")
 T("|cffc9d4dd[Party]|r Chat links and channels stay native.", "|cffc9d4dd[Группа]|r Ссылки и каналы чата остаются стандартными.")
 T("• No idle OnUpdate; a window corner drag runs one only while the mouse button is held\n• No repeating tickers; short one-shot timers only batch layout and hover updates\n• One frame walk per session, when the window skin is first enabled, adopts existing panel buttons\n• No aura or nameplate listeners; unit events only for the Micro Bar portrait and open character panels\n• Combat-state events only pause and resume deferred work and close open option popups\n• One shared ADDON_LOADED dispatcher only while catalog targets are pending\n• External weak-key runtime state", "• Нет постоянного OnUpdate; перетаскивание угла окна запускает его, только пока зажата кнопка мыши\n• Нет повторяющихся тикеров; короткие одноразовые таймеры лишь объединяют обновления раскладки и наведения\n• Один обход фреймов за сеанс при первом включении скина окон подхватывает существующие кнопки панелей\n• Нет слушателей аур и индикаторов здоровья; события юнитов только для портрета в микроменю и открытых окон персонажа\n• События боевого состояния лишь приостанавливают и возобновляют отложенную работу и закрывают открытые всплывающие окна настроек\n• Один общий диспетчер ADDON_LOADED, только пока цели каталога ожидают загрузки\n• Состояние выполнения хранится отдельно, в таблицах со слабыми ключами")
+
+T("Preview Layers", "Слои предпросмотра")
+T("Player arrow", "Стрелка игрока")
+T("Difficulty text", "Текст сложности")
+T("Compass", "Компас")
