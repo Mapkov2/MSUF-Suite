@@ -38,11 +38,18 @@ local hooks,events={},{}
 hooksecurefunc=function(name,fn) hooks[name]=fn end
 local early=0
 TaxiRequestEarlyLanding=function() early=early+1;hooks.TaxiRequestEarlyLanding() end
-GameTooltip=Widget();GameTooltip.AddLine=function(self,line) self.line=line end;GameTooltip.Show=function() end
+GameTooltip=Widget();GameTooltip.AddLine=function(self,line) self.line=line end
+GameTooltip.Show=function(self) self.shows=(self.shows or 0)+1 end
+GameTooltip.ownerReads=0
+-- Script hooks as the client runs them: after the original handler, on a show.
+GameTooltip.scripts={}
+function GameTooltip:HookScript(name,fn) self.scripts[name]=fn end
+function GameTooltip:GetOwner() self.ownerReads=self.ownerReads+1;return self.owner end
+Enum={FlightPathState={Current=0,Reachable=1,Unreachable=2}}
 C_DurationUtil={CreateDuration=Widget,CreateDurationTextBinding=Widget}
 local formatters=0
 C_StringUtil={CreateSecondsFormatter=function() formatters=formatters+1;return Widget() end}
-Enum={SecondsFormatterInterval={Seconds=0},SecondsFormatterAbbreviation={OneLetter=2}}
+Enum.SecondsFormatterInterval,Enum.SecondsFormatterAbbreviation={Seconds=0},{OneLetter=2}
 local S={}
 local state={}
 -- The runtime's per-profile module state (MSUF_Suite/Core/Suite.lua).
@@ -55,7 +62,7 @@ S.Text=function(v) return v end
 local movers={}
 S.RegisterOwnedMover=function(id,element,spec) assert(id=="flightTimer");movers[element]=spec end
 S.Install=function(id,m) assert(id=="flightTimer");S.module=m end
-assert(loadfile(root.."/MSUF_Suite_QualityOfLife/FlightTimer.lua"))("test",{NS={},Suite=S})
+assert(loadfile(root.."/MSUF_Suite_QualityOfLife/FlightTimer.lua"))("test",{NS={Safety={IsForbidden=function(frame) return frame.forbidden==true end}},Suite=S})
 local m=S.module
 m.active=true;m.config={width=340,scale=100,x=0,y=0,fontSize=12,showStops=true,routePreview=true,classColor=true,hideDisplay=false}
 m.context={Event=function(_,name,callback) events[name]=callback end}
@@ -69,6 +76,65 @@ assert(formatters==1 and m.binding.formatter,"the remaining time is not formatte
 assert(m.routes[3].key=="A > B > C","native route stops were not reconstructed")
 hooks.TaxiNodeOnButtonEnter(Widget())
 assert(GameTooltip.line=="A → B → C","taxi route preview lost intermediate stops")
+-- FV-12a: the flight map (FlightMapFrame, what Forever's and many Retail
+-- flight masters open) shows its nodes as pins whose tooltip is filled by
+-- Blizzard and then shown; the route line joins it on that show.
+do
+    local function Pin(fields)
+        local pin=Widget()
+        pin.pinTemplate="FlightMap_FlightPointPinTemplate"
+        pin.taxiNodeData={slotIndex=3,state=Enum.FlightPathState.Reachable}
+        for key,value in pairs(fields or {}) do pin[key]=value end
+        return pin
+    end
+    local function Hover(owner)
+        GameTooltip.owner,GameTooltip.line,GameTooltip.shows=owner,nil,0
+        assert(GameTooltip.scripts.OnShow,"the flight map pin tooltip is not watched")
+        GameTooltip.scripts.OnShow(GameTooltip)
+    end
+    Hover(Pin())
+    assert(GameTooltip.line=="A → B → C" and GameTooltip.shows==1,"flight map pin lost its route preview")
+    Hover(Pin({taxiNodeData={slotIndex=2,state=Enum.FlightPathState.Reachable}}))
+    assert(GameTooltip.line=="A → B","flight map pin showed another node's route")
+    Hover(Pin({taxiNodeData={slotIndex=3,state=Enum.FlightPathState.Unreachable}}))
+    assert(GameTooltip.line==nil,"an unreachable flight map node got a route")
+    Hover(Pin({taxiNodeData={slotIndex=3,state=Enum.FlightPathState.Current}}))
+    assert(GameTooltip.line==nil,"the current flight map node got a route")
+    Hover(Pin({isMapLayerTransition=true}))
+    assert(GameTooltip.line==nil,"a map transition point got a route")
+    Hover(Pin({taxiNodeData={slotIndex="secret",state=Enum.FlightPathState.Reachable}}))
+    assert(GameTooltip.line==nil,"a restricted slot index got a route")
+    Hover(Pin({forbidden=true}))
+    assert(GameTooltip.line==nil,"a forbidden owner was read")
+    Hover(Pin({pinTemplate="WorldMap_POIPinTemplate"}))
+    assert(GameTooltip.line==nil,"another map pin got a route line")
+    Hover(nil)
+    assert(GameTooltip.line==nil,"a tooltip without owner got a route line")
+    Hover(Widget())
+    assert(GameTooltip.line==nil,"an unrelated tooltip got a route line")
+    m.config.routePreview=false
+    Hover(Pin())
+    assert(GameTooltip.line==nil,"the preview switch ignored the flight map")
+    m.config.routePreview=true
+    m.active=false
+    Hover(Pin())
+    assert(GameTooltip.line==nil,"a disabled flight timer previewed a route")
+    m.active=true
+    -- TAXIMAP_OPENED/CLOSED (live, ptr2 and forever; HandleTaxiMapOpened opens
+    -- the old TaxiFrame or FlightMapFrame, both close on TAXIMAP_CLOSED): with no
+    -- taxi map open the hook returns before it reads anything.
+    assert(events.TAXIMAP_CLOSED,"the flight timer does not follow TAXIMAP_CLOSED")
+    events.TAXIMAP_CLOSED(m)
+    GameTooltip.ownerReads=0
+    Hover(Pin())
+    assert(GameTooltip.line==nil and GameTooltip.ownerReads==0,
+        "a tooltip show with no taxi map open still did work")
+    events.TAXIMAP_OPENED(m)
+    Hover(Pin())
+    assert(GameTooltip.line=="A → B → C" and GameTooltip.ownerReads==1,"reopening the taxi map did not restore the preview")
+    m.mapOpen=nil
+    GameTooltip.owner=nil
+end
 -- The client's takeoff order: TakeTaxiNode returns before the flight starts,
 -- PLAYER_CONTROL_LOST arrives while UnitOnTaxi is still false, the taxi flag
 -- follows with UNIT_FLAGS.
@@ -138,6 +204,8 @@ end
 Landed(now)
 assert(next(state.timings) == nil and not m.host.shown, "the event storm taught or kept a flight")
 TakeOff(600)
+events.TAXIMAP_OPENED(m)
 m.active=false;m:Disable();Landed(650)
+assert(m.mapOpen==nil,"disabling left the taxi map flag set")
 assert(next(state.timings)==nil and not m.host.shown,"disabled flight timer recorded or reopened")
 print("suite_flight_timer_contract: OK")

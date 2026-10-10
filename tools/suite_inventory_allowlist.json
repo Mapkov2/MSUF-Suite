@@ -2175,6 +2175,14 @@
       "evidence": "MSUF_Suite_CooldownManager/Settings.lua and MSUF_Suite_Options/Pages/CooldownManagerLists.lua full-format labels; suite_locale_tool.py extract and suite-locale-integration.json local audit.",
       "reason": "Replaces sentence fragments with complete format strings so each language controls its word order; all ten language packs include replacements.",
       "date": "2026-10-08"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.showBankItemLevel\",\"boolean\",true,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Bags/BankItemLevel.lua and MSUF_Suite/Core/Catalog/Bags.lua: the hidden flag of showBankItemLevel on Forever is gone; forever Blizzard_UIPanels_Game Camelot/BankFrame.xml builds BankFrame.BankPanel from BankPanelTemplate (Mainline/BankFrameTemplates.lua) with the same panel and item button mixins; suite_bags_contract runs the bank item level scenario for Retail and Forever and pins the visible catalog rule.",
+      "reason": "The same option, now visible on Forever like on Retail (its metadata row changes from hidden to shown); nothing was removed.",
+      "date": "2026-10-10"
     }
   ]
 }

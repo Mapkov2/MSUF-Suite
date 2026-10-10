@@ -284,6 +284,10 @@ function AB.LayoutStanceSlots(bar, count, size, columns, rows, rowCount, step)
         local shown = config[bar.key.ShowEmpty] and i > forms and i <= count
         local slot = slots[i]
         if shown then
+            -- The first layout of a session runs before the first style pass
+            -- (Controller Refresh: ApplyLayout, then ApplyStyle), so the style
+            -- is built on demand here; StyleAll reuses it afterwards.
+            style = style or AB.BuildStyle()
             if not slot then
                 slot = S.CreateTexture(bar.header, nil, "BACKGROUND")
                 slots[i] = slot

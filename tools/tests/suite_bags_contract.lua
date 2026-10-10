@@ -1113,9 +1113,14 @@ do
         or code:match("[^_.](GetCVar)%(")
     assert(not probe, "Bags probes or bypasses " .. tostring(probe))
 end
--- The native Retail bank pools item buttons. Exercise its post-refresh and
--- search hooks without creating a second bank window or touching item clicks.
-do
+-- The native bank pools item buttons (Retail, and WoW Forever's Camelot bank,
+-- which is the same BankPanelTemplate with artwork added after Refresh).
+-- Exercise its post-refresh and search hooks without creating a second bank
+-- window or touching item clicks, once per client.
+for _, forever in ipairs({ false, true }) do
+    state.Client.isForever = forever
+    module.bankHooked, module.bankPending = nil, {}
+    requests[1105], requests[1106], levels["pending-bank"], levels["pending-fail"] = nil, nil, nil, nil
     state.Safety = { IsForbidden = function() return false end }
     local bankHooks = {}
     local bankButtons, bankPanel = {}, nil
@@ -1248,5 +1253,15 @@ do
     module:Disable()
     BankFrame = nil
     hooksecurefunc = nativeHook
+end
+state.Client.isForever = false
+-- WoW Forever shows the bank item level switch like Retail does (FV note).
+do
+    local foreverCatalog = { Client = { isForever = true } }
+    for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
+        assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", foreverCatalog)
+    end
+    local rule = foreverCatalog.SuiteCatalog.bags.rules.showBankItemLevel
+    assert(rule.hidden ~= true and rule.default == true, "Forever hides or disables the bank item level switch")
 end
 print("Suite bags: window styling, native bag layout, item levels, cache, and disable passed")

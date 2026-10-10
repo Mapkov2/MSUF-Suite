@@ -6,8 +6,9 @@ local IN_COMBAT = { inCombat = true }
 -- code would run GameTooltip_OnHide in the addon's context and leave the
 -- fields it writes (waitingForData, infoList and others, GameTooltip.lua)
 -- tainted for later builds. A concealed tooltip keeps working natively at
--- alpha 0 and gets its alpha back when it hides or a later Show() no longer
--- matches a rule.
+-- alpha 0 and gets its alpha back when it hides, when a later Show() no longer
+-- matches a rule, or when it is cleared for new content that no rule keeps
+-- concealed (a reused tooltip need not hide in between).
 local M = {}
 local TYPE_CHOICES = {
     { "hideItems", "Item" },
@@ -35,8 +36,9 @@ local function Exempt(tooltip)
     return false
 end
 
--- PLAYER_REGEN_DISABLED arrives before InCombatLockdown() turns true.
-local function ShouldConceal(tooltip, event)
+-- PLAYER_REGEN_DISABLED arrives before InCombatLockdown() turns true. plain:
+-- the tooltip holds no Blizzard data, so only the state rules can apply.
+local function ShouldConceal(tooltip, event, plain)
     if Exempt(tooltip) then return false end
     local c = M.config
     if c.inCombat and NS.InCombat(event) then return true end
@@ -44,6 +46,7 @@ local function ShouldConceal(tooltip, event)
         local inInstance = IsInInstance()
         if S.Public(inInstance) and inInstance == true then return true end
     end
+    if plain then return false end
     for i = 1, #TYPE_CHOICES do
         local choice = TYPE_CHOICES[i]
         if c[choice[1]] and MatchesType(tooltip, choice[2]) then return true end
@@ -57,10 +60,10 @@ local function Reveal(tooltip)
     concealedAlpha = nil
 end
 
-local function Apply(event)
+local function Apply(event, plain)
     local tooltip = GameTooltip
     if not M.active or not tooltip:IsShown() then return end
-    if ShouldConceal(tooltip, event) then
+    if ShouldConceal(tooltip, event, plain) then
         if concealedAlpha == nil then concealedAlpha = tooltip:GetAlpha() end
         tooltip:SetAlpha(0)
     else
@@ -74,17 +77,28 @@ local function Built(tooltip)
 end
 local function StateChanged(_, event) Apply(event) end
 
+-- OnTooltipCleared (SetOwner, ClearLines) starts new content, possibly on a
+-- tooltip that never hid. Blizzard data announces itself again through the
+-- post-call; plain SetText/AddLine content does not, so a concealed tooltip is
+-- judged by the state rules alone here. A tooltip that is not concealed needs
+-- nothing: the state events conceal it when a rule begins.
+local function Cleared(tooltip)
+    if concealedAlpha ~= nil and tooltip == GameTooltip then Apply(nil, true) end
+end
+
 local function WantEvent(context, event, wanted)
     if wanted then context:Event(event, StateChanged, IN_COMBAT) else context:RemoveEvent(event) end
 end
 
 -- OnShow handles first display; native data post-calls handle a rebuild of an
--- already visible tooltip. Both registrations are inert while disabled.
+-- already visible tooltip; OnTooltipCleared releases a concealed tooltip that
+-- is reused for plain content. All registrations are inert while disabled.
 function M:Enable()
     if not self.hooked then
         GameTooltip:HookScript("OnShow", Shown)
         S.TooltipLines.Add(self, "AllTypes", Built)
         GameTooltip:HookScript("OnHide", Reveal)
+        GameTooltip:HookScript("OnTooltipCleared", Cleared)
         self.hooked = true
     end
     self:Refresh()

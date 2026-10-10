@@ -61,15 +61,29 @@ function R.ReadEnvironment(self, event)
     environment.key = key
 end
 
+-- A profile saved before a setting existed lacks its key; the catalog default
+-- (MSUF_Suite/Core/Catalog/BuffReminders.lua) is the one source of its value.
+-- Hot paths write `config.key or R.Default("key")`: the default is read only
+-- when the key is missing, so a present setting costs what it always did.
+local function Default(key)
+    return NS.Defaults.suite.modules.buffReminders[key]
+end
+R.Default = Default
+local function NumberSetting(config, key)
+    local value = config[key]
+    if type(value) == "number" then return value end
+    return Default(key)
+end
+
 -- Seconds a buff must still last. Before a keystone starts, the dungeon's
 -- timer or the chosen minutes replace the normal warning time.
 function R.Threshold(self)
     local c, environment = self.config, self.environment
     if environment.preKey then
         if c.keystoneCover == 2 and environment.keystoneSeconds then return environment.keystoneSeconds end
-        if c.keystoneCover == 3 then return c.keystoneMinutes * 60 end
+        if c.keystoneCover == 3 then return (c.keystoneMinutes or Default("keystoneMinutes")) * 60 end
     end
-    return (c.remindBeforeMinutes or 0) * 60
+    return (c.remindBeforeMinutes or Default("remindBeforeMinutes")) * 60
 end
 
 function R.SyncPreparationEvents(self, callback)
@@ -105,7 +119,8 @@ function R.ReadyCheck(self)
     local power, maximum = UnitPower("player", mana), UnitPowerMax("player", mana)
     if not Public(power) or not Public(maximum) or type(power) ~= "number" or type(maximum) ~= "number"
         or maximum <= 0 or power < 0 then return end
-    if power / maximum * 100 >= (self.config.readyCheckManaPercent or 80) then return end
+    local limit = NumberSetting(self.config, "readyCheckManaPercent")
+    if power / maximum * 100 >= limit then return end
     local readyCheck = self.readyCheck
     local text = readyCheck.label
     if not text then
@@ -117,13 +132,13 @@ function R.ReadyCheck(self)
     -- The note turns red once the mana is below half of the chosen limit.
     local percent = power / maximum * 100
     text:SetText(S.Text("Mana at the ready check: %d%%"):format(math.floor(percent + .5)))
-    if percent < self.config.readyCheckManaPercent / 2 then
+    if percent < limit / 2 then
         text:SetTextColor(1, .3, .25)
     else
         text:SetTextColor(1, .82, 0)
     end
     text:Show()
-    self.context:After(self.config.readyCheckDuration or 10, R.HideReadyCheck)
+    self.context:After(NumberSetting(self.config, "readyCheckDuration"), R.HideReadyCheck)
 end
 
 function R.StyleCount(button, config)

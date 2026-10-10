@@ -120,6 +120,10 @@ local config, catalogNS = Support.CatalogDefaults(root, "buffReminders")
 local NS = { IsCombatLocked = function() return false end, Client = { isForever = false, modernEquipment = true,
     SupportsEvent = function() return true end }, AnchorPoints = { "CENTER" },
     BuffReminderDemons = catalogNS.BuffReminderDemons }
+-- The module reads the catalog defaults where a profile lacks a key.
+catalogNS.Defaults = {}
+catalogNS.FinalizeCatalog()
+NS.Defaults = catalogNS.Defaults
 local private = { NS = NS, Suite = S }
 Support.Load(root, "MSUF_Suite_BuffReminders", private, nil, { ["Bootstrap.lua"] = true })
 local R = private.BuffReminders
@@ -335,6 +339,12 @@ do
     eq(R.Threshold(owner), 2400, "the chosen minutes did not apply before a keystone")
     R.ReadEnvironment(owner, "CHALLENGE_MODE_START")
     eq(R.Threshold(owner), 300, "the normal warning time did not return once the key started")
+    -- S18-K1: missing settings follow the catalog defaults (30 minutes, 5 minutes).
+    owner.config.keystoneMinutes, owner.config.remindBeforeMinutes = nil, nil
+    R.ReadEnvironment(owner, "PLAYER_ENTERING_WORLD")
+    eq(R.Threshold(owner), 1800, "a missing keystone minutes setting did not follow the catalog default")
+    R.ReadEnvironment(owner, "CHALLENGE_MODE_START")
+    eq(R.Threshold(owner), 300, "a missing advance warning did not follow the catalog default")
     GetInstanceInfo = function() return "World", "none" end
     GetDifficultyInfo = function() end
 end
@@ -366,6 +376,20 @@ do
     mana = 80
     R.ReadyCheck(owner)
     assert(not note.shown, "mana above the limit still showed a note")
+    -- S18-K1: a profile without the two settings follows the catalog defaults
+    -- (70 percent, 8 seconds), not private fallbacks, and never divides nil.
+    owner.config.readyCheckManaPercent, owner.config.readyCheckDuration = nil, nil
+    mana = 75
+    R.ReadyCheck(owner)
+    assert(not note.shown, "a missing limit used a fallback that disagrees with the catalog default")
+    mana = 65
+    R.ReadyCheck(owner)
+    assert(note.shown and note.color[2] > .5, "a missing limit did not follow the catalog default")
+    assert(owner.context.timers[R.HideReadyCheck].due == GetTime() + 8,
+        "a missing display time did not follow the catalog default")
+    mana = 30
+    R.ReadyCheck(owner)
+    assert(note.shown and note.color[2] < .5, "a missing limit broke the red note below half the limit")
 end
 
 -- The module follows subzone steps only for the map potion.

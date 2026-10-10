@@ -3,6 +3,7 @@ local NS, S = P.NS, P.Suite
 local MM = P.Minimap
 local M = MM.M
 local LANDING, LANDING_ICON = NS.MinimapLanding, NS.MinimapLandingIcon
+local SHAPE = NS.MinimapShape
 -- Blizzard's own minimap buttons, moved into suite slots around the map.
 -- Missing buttons are skipped. Blizzard keeps deciding when each button is
 -- shown (nothing here force-shows a button): a hidden button keeps an empty
@@ -196,6 +197,22 @@ local function StyleLanding(button, c)
     landingBadge:Show()
 end
 
+-- WoW Forever's day/night ring (Camelot/Diel.lua) is a child of MinimapCluster
+-- and fades with it. It moves onto the border of the suite map, at the spot
+-- Blizzard gives it on its default map (198 wide): 53 right of and 87 above
+-- the map centre, on the rim of the circle. Beyond the circle the same
+-- direction meets the rectangle's edge. Retail has no such frame.
+local DIEL_MAP, DIEL_X, DIEL_Y = 198, 53, 87
+local DIEL_LENGTH = math.sqrt(DIEL_X * DIEL_X + DIEL_Y * DIEL_Y)
+local function LayoutDiel(c)
+    local ring, width, height = Cluster("DielFrame"), MM.width, MM.height
+    if not ring or not width or not height then return end
+    local ux, uy = DIEL_X / DIEL_LENGTH, DIEL_Y / DIEL_LENGTH
+    local reach = c.shape == SHAPE.CIRCLE and width / 2 or math.min(width / 2 / ux, height / 2 / uy)
+    -- Blizzard never shrinks the ring below its own size (Diel.lua).
+    Own(ring, MM.host, "CENTER", MM.host, "CENTER", MM.Snap(ux * reach), MM.Snap(uy * reach), math.max(1, width / DIEL_MAP))
+end
+
 -- Eight row modes: corner of the map, growth direction, and the outward side.
 -- { item point, map point, outward x, outward y, step x, step y }
 local ROWS = NS.MinimapRowGeometry
@@ -309,6 +326,7 @@ function MM.LayoutElements()
         end
     end
     for i = count + 1, #items do items[i] = nil end
+    LayoutDiel(c)
     MM.LayoutRow(c.elementRow, items, count, size, c.elementSpacing, c.elementDistance, 0, "elements")
     if MM.rowCount ~= count then
         MM.rowCount = count

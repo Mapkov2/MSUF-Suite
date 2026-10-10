@@ -939,6 +939,65 @@ do
     print("Minimap WoW Forever deltas (landing, coordinates, skin mask) passed")
 end
 
+-- FV-11: WoW Forever's day/night ring (Camelot/Diel.lua) is a child of
+-- MinimapCluster, which the suite fades to alpha 0. It must stay visible on the
+-- rim of the suite map, follow its size and shape, survive Blizzard's own
+-- SetPoint/SetScale writes (SetEditModeScale) and return to the cluster.
+do
+    local W = H.New(root, "Forever")
+    W.editModeReady = true
+    H.Enable(W, { captured = true, shape = 2 })
+    W.Step()
+    local S, MM, cluster = W.S, W.MM, W.cluster
+    local ring = cluster.DielFrame
+    check(ring and cluster:GetAlpha() == 0, "the Forever ring or the faded cluster is missing")
+    check(ring:GetParent() == MM.host, "the day/night ring stayed under the faded cluster")
+    check(ring:IsVisible() and ring:GetEffectiveAlpha() == 1, "the day/night ring is invisible")
+    -- Centre of the ring relative to the host centre, in host units.
+    local function Spot()
+        local point, relative, relativePoint, x, y = ring:GetPoint(1)
+        check(point == "CENTER" and relative == MM.host and relativePoint == "CENTER", "the ring is not centred on the host")
+        return x * ring:GetScale(), y * ring:GetScale()
+    end
+    local function Rim()
+        local x, y = Spot()
+        return math.sqrt(x * x + y * y), x, y
+    end
+    local radius, x, y = Rim()
+    check(H.Near(radius, MM.width / 2, 1), "the ring is not on the rim of the round map: " .. radius)
+    check(x > 0 and y > x, "the ring is not up and to the right of the map centre, as Blizzard places it")
+    check(H.Near(x / radius, 53 / math.sqrt(53 * 53 + 87 * 87), .02), "the ring left Blizzard's direction")
+    -- Blizzard's own scale write follows its SetPoint: both must be put back.
+    W.Blizzard(function() ring:SetScale(1); ring:SetPoint("CENTER", 63, 72) end)
+    W.Step()
+    check(ring:GetParent() == MM.host and H.Near(Rim(), MM.width / 2, 1), "Blizzard's SetPoint moved the ring off the rim")
+    -- A larger map moves the ring out and grows it as Blizzard's scale rule does.
+    assert(S.Set("minimap", "size", 300))
+    W.Step()
+    check(H.Near(Rim(), 150, 1) and ring:GetScale() > 1.5, "the ring did not follow a larger map")
+    -- A square map: the same direction meets the top edge.
+    assert(S.Set("minimap", "shape", 1))
+    W.Step()
+    local _, _, top = Rim()
+    check(H.Near(top, MM.height / 2, 1), "the ring is not on the top edge of the square map")
+    assert(S.Set("minimap", "shape", 3))
+    W.Step()
+    _, _, top = Rim()
+    check(H.Near(top, MM.height / 2, 1) and MM.height < MM.width, "the ring is not on the top edge of the wide map")
+    -- Combat: the plain ring is not protected, but the layout waits like the others.
+    W.SetCombat(true)
+    W.Blizzard(function() ring:SetPoint("CENTER", 63, 72) end)
+    W.Step()
+    W.SetCombat(false)
+    W.Step()
+    check(ring:GetParent() == MM.host and H.Near(select(3, Rim()), MM.height / 2, 1), "the ring was not put back after combat")
+    assert(S.Set("minimap", "enabled", false))
+    local point, relative, _, rx, ry = ring:GetPoint(1)
+    check(ring:GetParent() == cluster and ring:GetScale() == 1 and point == "CENTER" and relative == cluster
+        and rx == 63 and ry == 72, "disabling the minimap did not return the ring to the cluster")
+    print("Minimap WoW Forever day/night ring passed")
+end
+
 -- Original ornamental art uses the same saved values as the options preview;
 -- WoW Forever swaps the map mask when rotation changes. A change inside
 -- combat must not place the protected map; the mask returns after combat.

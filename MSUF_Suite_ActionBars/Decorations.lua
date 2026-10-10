@@ -240,10 +240,12 @@ function AB.StyleDecoration(rec, size)
     if rec.quality then rec.quality:SetSize(math.max(8, size * .4), math.max(8, size * .4)) end
 end
 
--- Assisted combat recommendation, Retail only: Forever's Camelot UI has no
--- assisted combat (InterfaceOverrides.HasAssistedCombat() is false there and
--- AssistedCombatManager loads for mainline only, forever Blizzard_ActionBar
--- .toc), so its options are hidden on Forever. Blizzard computes the
+-- Assisted combat recommendation, Retail only: Forever's Camelot UI offers no
+-- assisted combat setting (InterfaceOverrides.HasAssistedCombat() is false
+-- there), so its options are hidden and nothing is hooked on Forever.
+-- AssistedCombatManager itself does load there (forever Blizzard_ActionBar
+-- .toc lists it for mainline, which Forever loads unless a file excludes
+-- camelot). Blizzard computes the
 -- recommendation only while its Assisted Highlight option (the
 -- assistedCombatHighlight CVar) is on, and highlights its own buttons: the
 -- reused buttons of bars 2-8 and the adopted stance buttons. There the Suite

@@ -44,6 +44,19 @@ function tooltip:NativeHide()
     self.shown = false
     if self.scripts.OnHide then self.scripts.OnHide(self) end
 end
+-- SetOwner and ClearLines clear the lines and run OnTooltipCleared; the tooltip
+-- stays shown (GameTooltip.xml, SharedTooltipTemplates.xml).
+function tooltip:Clear()
+    self.tooltipType = nil
+    if self.scripts.OnTooltipCleared then self.scripts.OnTooltipCleared(self) end
+end
+-- Plain SetText/AddLine content: no Blizzard data, so no TooltipData post-call;
+-- Show() on a shown tooltip does not run OnShow again.
+function tooltip:ShowPlain()
+    local was = self.shown
+    self.shown = true
+    if not was and self.scripts.OnShow then self.scripts.OnShow(self) end
+end
 function tooltip:HookScript(name, callback)
     local old = self.scripts[name]
     self.scripts[name] = function(...) if old then old(...) end; callback(...) end
@@ -111,6 +124,43 @@ tooltip.tooltipType = Enum.TooltipDataType.Unit
 tooltip:Show()
 assert(tooltip.alpha == 0, "unit tooltip was not concealed")
 tooltip:NativeHide()
+-- DA-2: a concealed tooltip that the client reuses for plain text without a
+-- Hide in between (SetOwner/ClearLines run OnTooltipCleared) must come back; a
+-- rebuild from Blizzard data is judged again by the post-call; state rules keep
+-- the tooltip concealed.
+module.config.hideItems, module.config.hideSpells, module.config.hideUnits = true, false, false
+module:Refresh()
+tooltip.tooltipType = Enum.TooltipDataType.Item
+tooltip:Show()
+assert(tooltip.alpha == 0, "item tooltip was not concealed before the reuse")
+tooltip:Clear()
+tooltip:ShowPlain()
+assert(tooltip.alpha == 1, "a concealed tooltip stayed invisible when reused for plain text")
+tooltip.tooltipType = Enum.TooltipDataType.Item
+tooltip:Show()
+assert(tooltip.alpha == 0, "the rebuilt item tooltip was not concealed again")
+tooltip:Clear()
+tooltip.tooltipType = Enum.TooltipDataType.Spell
+tooltip:Show()
+assert(tooltip.alpha == 1, "a concealed tooltip stayed invisible when reused for an unselected type")
+tooltip:Clear()
+assert(tooltip.alpha == 1, "clearing an unconcealed tooltip changed its alpha")
+tooltip:NativeHide()
+module.config.hideItems, module.config.inCombat = false, true
+module:Refresh()
+combat = true
+tooltip:Show()
+assert(tooltip.alpha == 0, "combat tooltip was not concealed before the reuse")
+tooltip:Clear()
+tooltip:ShowPlain()
+assert(tooltip.alpha == 0, "clearing a tooltip released the combat rule")
+combat = false
+context.events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+assert(tooltip.alpha == 1, "the tooltip stayed concealed after combat")
+tooltip:NativeHide()
+module.config.hideSpells, module.config.hideUnits = true, true
+module.config.inCombat = false
+module:Refresh()
 -- The shared GameTooltip also renders MSUF unit/group frame tooltips.
 -- Their own Always/OOC/Modifier/Never setting must win over every QoL rule.
 tooltip._msufUnitTooltipOwner = {}

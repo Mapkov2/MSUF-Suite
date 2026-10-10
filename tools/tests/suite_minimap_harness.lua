@@ -646,6 +646,13 @@ function H.New(root, client, options)
     if client == "Forever" then
         backdrop:CreateTexture("MinimapCompassTextureUnderlay", "OVERLAY")
         container.PlayerCoords = New("Frame", nil, container)
+        -- Blizzard_Minimap/Camelot/Diel.lua: the day/night ring is a plain
+        -- child of the cluster, level 5, 63 right and 72 above its centre.
+        local diel = New("Frame", nil, cluster)
+        diel:SetSize(60, 60)
+        diel:SetFrameLevel(5)
+        diel:SetPoint("CENTER", cluster, "CENTER", 63, 72)
+        cluster.DielFrame = diel
     end
     W.map, W.cluster, W.container, W.backdrop = map, cluster, container, backdrop
     -- Blizzard's world map and character window (both load at startup) are

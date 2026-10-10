@@ -7,7 +7,13 @@ local ID, M = "flightTimer", { routes = {}, nodes = {} }
 local REQUEST_WINDOW = 5
 local function Text(value) return S.Public(value) and type(value) == "string" and value ~= "" end
 local function RouteKey(names) return table.concat(names, " > ") end
+-- A taxi map is open between TAXIMAP_OPENED and TAXIMAP_CLOSED, for the old
+-- TaxiFrame and for FlightMapFrame alike (Blizzard_Game HandleTaxiMapOpened
+-- shows one of them; TaxiFrame.lua and Blizzard_FlightMap.lua both close on
+-- TAXIMAP_CLOSED). The tooltip hook below does nothing otherwise.
+local function MapClosed(self) self.mapOpen = nil end
 local function MapOpened(self)
+    self.mapOpen = true
     wipe(self.nodes)
     wipe(self.routes)
     self.startName = nil
@@ -42,6 +48,33 @@ local function MapOpened(self)
         end
     end
 end
+
+-- The route line under a node's tooltip (setting routePreview).
+local function AddRoute(self, index)
+    local route = self.active and self.config.routePreview and self.routes[index]
+    if route then
+        GameTooltip:AddLine(table.concat(route.names, " → "), 1, .85, .4, true)
+        GameTooltip:Show()
+    end
+end
+
+-- A FlightMapFrame node (Blizzard_FlightMap, FM_FlightPathDataProvider.lua
+-- OnMouseEnter) fills the shared tooltip and then shows it, so the tooltip's
+-- OnShow is where the line joins it: its owner is the pin, its slotIndex the
+-- number TakeTaxiNode takes. Only a reachable node leads anywhere.
+local FLIGHT_PIN = "FlightMap_FlightPointPinTemplate"
+local function FlightPinShown(self, tooltip)
+    if not self.mapOpen or not self.active or not self.config.routePreview then return end
+    local owner = tooltip:GetOwner()
+    if not owner or NS.Safety.IsForbidden(owner) or owner.pinTemplate ~= FLIGHT_PIN or owner.isMapLayerTransition then
+        return
+    end
+    local data = owner.taxiNodeData
+    if type(data) == "table" and data.state == Enum.FlightPathState.Reachable and S.Finite(data.slotIndex) then
+        AddRoute(self, data.slotIndex)
+    end
+end
+
 local LABELS = { "title", "route", "time" }
 
 local function Create(self)
@@ -203,15 +236,11 @@ function M:Enable()
             Update(self)
         end)
         hooksecurefunc("TaxiRequestEarlyLanding", function() if self.active then self.earlyLanding = true end end)
-        hooksecurefunc("TaxiNodeOnButtonEnter", function(button)
-            local route = self.active and self.config.routePreview and self.routes[button:GetID()]
-            if route then
-                GameTooltip:AddLine(table.concat(route.names, " → "), 1, .85, .4, true)
-                GameTooltip:Show()
-            end
-        end)
+        hooksecurefunc("TaxiNodeOnButtonEnter", function(button) AddRoute(self, button:GetID()) end)
+        GameTooltip:HookScript("OnShow", function(tooltip) FlightPinShown(self, tooltip) end)
     end
     self.context:Event("TAXIMAP_OPENED", MapOpened, IN_COMBAT)
+    self.context:Event("TAXIMAP_CLOSED", MapClosed, IN_COMBAT)
     self.context:Event("PLAYER_CONTROL_LOST", State, IN_COMBAT)
     self.context:Event("PLAYER_CONTROL_GAINED", State, IN_COMBAT)
     self.context:Event("UNIT_FLAGS", State, nil, "player")
@@ -236,6 +265,7 @@ function M:Refresh()
 end
 function M:Disable()
     Forget(self)
+    self.mapOpen = nil
     self.paintedVisible = nil
     if self.host then
         self.binding:SetEnabled(false)

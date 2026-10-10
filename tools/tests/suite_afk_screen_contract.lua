@@ -48,6 +48,8 @@ local function Frame(kind)
     function frame:SetTextColor(r, g, b) self.color = { r, g, b } end
     function frame:GetEffectiveScale() return self.effectiveScale or 1 end
     function frame:SetScale(value) self.scale = value end
+    function frame:SetPoint(...) self.point = { ... } end
+    function frame:SetSize(width, height) self.width, self.height = width, height end
     return setmetatable(frame, { __index = function() return function() end end })
 end
 
@@ -65,6 +67,12 @@ UnitName = function() return firstName, surname end
 GetZoneText = function() return "Test zone" end
 UnitClass = function() return "Mage" end
 UnitLevel = function() return 80 end
+-- PaperDollInfoDocumentation.lua: both clients have it; the answer is the
+-- character sheet's own (Retail shows no ranged slot).
+-- UnitUsesAmmo exists on WoW Forever only (the sheet's own gate for its ammo slot).
+local rangedShown, usesAmmo = false, false
+C_PaperDollInfo = { IsRangedSlotShown = function() return rangedShown end }
+UnitUsesAmmo = function(unit) assert(unit == "player"); return usesAmmo end
 GetInventoryItemTexture = function(unit, slot)
     assert(unit == "player")
     return 1000 + slot
@@ -109,7 +117,7 @@ C_Timer = { After = function(delay, callback)
     deferred = callback
 end }
 
-local events = {}
+local events, createdFrames = {}, nil
 -- A distinct media path proves the screen reads MSUF's shared font constant.
 local SUITE_FONT = "Interface\\AddOns\\Test\\SuiteFont.ttf"
 local suite = {
@@ -118,6 +126,7 @@ local suite = {
     CreateFrame = function(kind, name, parent)
         local frame = Frame(kind)
         frame.parent = parent
+        if createdFrames then createdFrames[#createdFrames + 1] = frame end
         return frame
     end,
     CreateTexture = function(_, ...) return Frame("Texture") end,
@@ -391,6 +400,77 @@ assert(formActor.nativeCalls == 1 and not formOnly.fallback:IsShown(),
     "a form-tagged active actor should be reused for the native model")
 formOnly:Disable()
 assert(UIParent.alpha == .85, "form previews should restore the UI")
+
+-- FV-10b: WoW Forever's character sheet has a ranged slot (INVSLOT_RANGED, 18;
+-- Blizzard's gate is C_PaperDollInfo.IsRangedSlotShown). The screen lists it
+-- after the off hand there and nowhere else: Retail has no such slot.
+do
+    local savedForever = NS.Client.isForever
+    local function Screen(forever, shown)
+        NS.Client.isForever, rangedShown = forever, shown
+        createdFrames = {}
+        installed = nil
+        assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)
+        local screen = assert(installed)
+        local screenEvents = {}
+        screen.active = true
+        screen.context = TimerContext("afkScreen", screen, {
+            Event = function(_, event, callback) screenEvents[event] = callback end,
+            RemoveEvent = function(_, event) screenEvents[event] = nil end,
+        })
+        afk = true
+        screen:Enable()
+        assert(screen.host:IsShown(), "the ranged slot scenario did not show the screen")
+        afk = false
+        screenEvents.PLAYER_FLAGS_CHANGED(screen, "PLAYER_FLAGS_CHANGED", "player")
+        screen:Disable()
+        screen.rows = {}
+        for _, frame in ipairs(createdFrames) do
+            if frame.width == 418 and frame.height == 62 then screen.rows[#screen.rows + 1] = frame end
+        end
+        createdFrames = nil
+        return screen
+    end
+    local forever = Screen(true, true)
+    assert(#forever.icons == 20 and forever.icons[19].texture == 1018 and forever.itemNames[19].text == "Ranged"
+        and forever.itemNames[18].text == "Off Hand" and forever.icons[18].texture == 1017,
+        "WoW Forever's AFK screen lacks the ranged slot after the off hand")
+    RANGEDSLOT = "Fernkampf"
+    local localized = Screen(true, true)
+    assert(localized.itemNames[19].text == "Fernkampf", "the ranged slot name ignored Blizzard's localized string")
+    RANGEDSLOT = nil
+    assert(#Screen(true, false).icons == 18, "a Forever sheet without a ranged slot got an extra row")
+    assert(#Screen(false, true).icons == 18, "the ranged slot leaked onto Retail")
+    -- The ammunition slot (INVSLOT_AMMO, 0): Forever, with a ranged slot; shown
+    -- while the ranged weapon uses ammunition (PaperDollFrame_OnShow).
+    usesAmmo = true
+    local ammo = Screen(true, true)
+    assert(#ammo.icons == 20 and ammo.icons[20].texture == 1000 and ammo.itemNames[20].text == "Ammo"
+        and ammo.icons[19].texture == 1018 and ammo.ammoSlot and ammo.ammoSlot:IsShown(),
+        "WoW Forever's AFK screen lacks the ammunition slot of an ammunition user")
+    AMMOSLOT = "Munition"
+    assert(Screen(true, true).itemNames[20].text == "Munition", "the ammo slot name ignored Blizzard's localized string")
+    AMMOSLOT = nil
+    usesAmmo = false
+    local noAmmo = Screen(true, true)
+    assert(#noAmmo.icons == 20 and noAmmo.ammoSlot and not noAmmo.ammoSlot:IsShown(),
+        "the ammunition slot stayed visible for a ranged weapon without ammunition")
+    usesAmmo = true
+    assert(#Screen(true, false).icons == 18, "a Forever sheet without a ranged slot listed the ammunition")
+    assert(#Screen(false, true).icons == 18, "the ammunition slot leaked onto Retail")
+    -- Every row stays inside the 1120 high panel, in its own column cell.
+    local rows = Screen(true, true).rows
+    assert(#rows == 20, "expected twenty slot rows")
+    local seen = {}
+    for _, row in ipairs(rows) do
+        local x, y = row.point[4], row.point[5]
+        assert(-y + 62 <= 1120, "a slot row ends below the panel: " .. y)
+        local key = x .. ":" .. y
+        assert(not seen[key], "two slot rows share a cell: " .. key)
+        seen[key] = true
+    end
+    NS.Client.isForever, rangedShown, usesAmmo = savedForever, false, false
+end
 
 installed = nil
 assert(loadfile(root .. "/MSUF_Suite_Modules/AFKScreen.lua"))("MSUF_Suite_Modules", private)

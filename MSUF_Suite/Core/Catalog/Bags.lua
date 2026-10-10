@@ -159,7 +159,6 @@ rules.keystoneDungeonSize.enableKey = "showKeystoneDetails"
 rules.customCategories.hidden = true
 rules.recentHours.enableKey = "showRecent"
 rules.showBindBadge.hidden = NS.Client.isForever
-rules.showBankItemLevel.hidden = NS.Client.isForever
 rules.itemLevelSize.enableKey = "showItemLevel"
 rules.qualityColor.enableKey = "showItemLevel"
 rules.font.enableKey = "showItemLevel"

@@ -205,6 +205,11 @@ assert(#tocFiles == #BR_FILES, "the BuffReminders TOC must list " .. #BR_FILES .
 for i = 1, #BR_FILES do
     assert(tocFiles[i] == BR_FILES[i], "BuffReminders TOC order: expected " .. BR_FILES[i] .. " at " .. i)
 end
+-- The module reads the catalog defaults where a profile lacks a key.
+local _, catalogNS = Support.CatalogDefaults(root, "buffReminders")
+catalogNS.Defaults = {}
+catalogNS.FinalizeCatalog()
+NS.Defaults = catalogNS.Defaults
 local private = { NS=NS, Suite=S }
 Support.Load(root, "MSUF_Suite_BuffReminders", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(testModule)
@@ -573,6 +578,15 @@ assert(module.view.mask == 0 and module.list.thresholdAt == nil and not Threshol
 module.config.remindBeforeMinutes = 5
 module:Refresh()
 assert(module.view.mask == 1, "restoring advance warning did not refresh the visible reminder")
+-- S18-K1: a profile without the setting follows the catalog default (5 minutes)
+-- in the threshold and in the entry check alike, not a private zero.
+local maskFive, dueFive = module.view.mask, module.list.thresholdAt
+module.config.remindBeforeMinutes = nil
+module:Refresh()
+assert(maskFive == 1 and module.view.mask == maskFive and module.list.thresholdAt == dueFive,
+    "a profile without the advance warning ignored the catalog default")
+module.config.remindBeforeMinutes = 5
+module:Refresh()
 auras[2823] = { spellId=2823, auraInstanceID=100, expirationTime=now+900, duration=3600 }
 auras[381637] = { spellId=381637, auraInstanceID=101, expirationTime=now+1200, duration=3600 }
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player", { isFullUpdate=true })
@@ -710,6 +724,15 @@ module:Enable()
 assert(module.view.mask == 0 and module.list.thresholdAt == nil and not ThresholdPending(),
     "short eating aura was incorrectly treated as expiring food")
 module:Disable()
+-- S18-K1: without the setting the entry check uses the catalog's five minutes
+-- as the threshold does, not zero (which would warn at once for this aura).
+module.config.remindBeforeMinutes = nil
+module.active = true
+module:Enable()
+assert(module.view.mask == 0 and module.list.thresholdAt == nil and not ThresholdPending(),
+    "a profile without the advance warning treated a short eating aura as expiring food")
+module:Disable()
+module.config.remindBeforeMinutes = 5
 auras[104280] = nil
 
 -- A food aura learned from a UNIT_AURA delta by its icon, whose spell ID is

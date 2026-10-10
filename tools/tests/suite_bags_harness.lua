@@ -277,11 +277,16 @@ local function Bank(W, env)
     local bank = env.NewWidget("Frame", "BankFrame", W.UIParent, true)
     bank.shown, bank.width, bank.height = false, 738, 460
     bank:SetPoint("TOPLEFT", W.UIParent, "TOPLEFT", 20, -100)
-    if env.forever then return bank end
+    -- Retail and WoW Forever (Camelot/BankFrame.xml) both build BankPanel from
+    -- BankPanelTemplate: the panel methods the item level overlay hooks.
     local panel = env.NewWidget("Frame", "BankPanel", bank, true)
     panel.width, panel.height, panel.bankType = 738, 460, Enum.BankType.Character
     panel:SetPoint("LEFT", bank, "LEFT", 0, 0)
     bank.BankPanel = panel
+    function panel:EnumerateValidItems() return function() end end
+    function panel:UpdateSearchResults() end
+    function panel:GenerateItemSlotsForSelectedTab() end
+    if env.forever then return bank end
     bank.TabSystem = env.NewWidget("Frame", nil, bank, true)
     bank.TabSystem:SetPoint("TOPLEFT", bank, "BOTTOMLEFT", 22, 2)
     bank.TabSystem.width, bank.TabSystem.height = 300, 32
@@ -295,9 +300,6 @@ local function Bank(W, env)
     bank.TabIDToBankType = { [1] = Enum.BankType.Character, [2] = Enum.BankType.Account }
     function panel:GetActiveBankType() return self.bankType end
     function panel:SetBankType(kind) env.Taint("BankPanel:SetBankType"); self.bankType = kind end
-    function panel:EnumerateValidItems() return function() end end
-    function panel:UpdateSearchResults() end
-    function panel:GenerateItemSlotsForSelectedTab() end
     function bank:SetTab(id)
         W.calls.setTab = W.calls.setTab + 1
         env.Taint("BankFrame:SetTab")

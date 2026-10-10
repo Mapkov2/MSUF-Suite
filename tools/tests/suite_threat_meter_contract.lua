@@ -25,7 +25,8 @@ UnitCanAttack=function(_,unit) return unit=="targettarget" or unit=="focus" or u
 UnitDetailedThreatSituation=function(unit,enemy) assert(enemy=="targettarget" or enemy=="focus" or enemy=="target"); return unpack(threats[unit] or {}) end
 UnitName=function(unit) return unit end
 UnitClass=function() return "Warrior","WARRIOR" end
-UnitIsUnit=function(a,b) return a==b end
+local secretIdentity=false
+UnitIsUnit=function(a,b) if secretIdentity then return "secret" end return a==b end
 IsInRaid=function() return false end
 GetNumGroupMembers=function() return 2 end
 RAID_CLASS_COLORS={WARRIOR={r=.7,g=.5,b=.3}}
@@ -94,6 +95,24 @@ assert(#queued==0,"unrelated world threat/target events scheduled a roster scan"
 events.UNIT_THREAT_LIST_UPDATE(m,"UNIT_THREAT_LIST_UPDATE","targettarget")
 events.UNIT_THREAT_LIST_UPDATE(m,"UNIT_THREAT_LIST_UPDATE","targettarget")
 assert(#queued==1 and delays[1]>=.2,"threat bursts were not throttled to a few repaints per second")
-m.active=false;m:Disable();queued[1]()
+-- LB-5: on restricted maps UnitIsUnit answers a secret for targettarget and
+-- focustarget; an unknown identity must repaint, only a public false rules a
+-- unit out.
+queued[1]()
+local drained=#queued
+secretIdentity=true
+events.UNIT_THREAT_LIST_UPDATE(m,"UNIT_THREAT_LIST_UPDATE","focustarget")
+assert(#queued==drained+1,"a secret unit identity did not repaint the threat meter")
+queued[#queued]()
+local settled=#queued
+secretIdentity=false
+events.UNIT_THREAT_LIST_UPDATE(m,"UNIT_THREAT_LIST_UPDATE","focustarget")
+assert(#queued==settled,"a public non-match scheduled a repaint")
+secretIdentity=true
+events.UNIT_THREAT_LIST_UPDATE(m,"UNIT_THREAT_LIST_UPDATE","focustarget")
+events.UNIT_THREAT_LIST_UPDATE(m,"UNIT_THREAT_LIST_UPDATE","targettarget")
+assert(#queued==settled+1,"unknown identities were not coalesced into one repaint")
+secretIdentity=false
+m.active=false;m:Disable();queued[#queued]()
 assert(not m.windows.main.shown,"late callback reopened disabled meter")
 print("suite_threat_meter_contract: OK")

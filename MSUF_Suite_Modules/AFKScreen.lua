@@ -12,7 +12,10 @@ local GOLD = { .88, .69, .42 }
 local WHITE = { .96, .95, .91 }
 local MUTED = { .67, .72, .76 }
 local EMPTY_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
-local SLOTS = { 1, 2, 3, 15, 5, 4, 19, 9, 10, 6, 7, 8, 11, 12, 13, 14, 16, 17 }
+-- The list ends with slot 18, the ranged weapon, and slot 0, the ammunition:
+-- only WoW Forever's character sheet has them (SlotCount); Retail has neither.
+local SLOTS = { 1, 2, 3, 15, 5, 4, 19, 9, 10, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18, 0 }
+local RANGED_ROW, AMMO_ROW = 19, 20
 -- Blizzard's localized slot names (GlobalStrings), English through the
 -- Suite locale only where a client lacks one.
 local SLOT_NAMES = {
@@ -20,7 +23,8 @@ local SLOT_NAMES = {
     { "CHESTSLOT", "Chest" }, { "SHIRTSLOT", "Shirt" }, { "TABARDSLOT", "Tabard" }, { "WRISTSLOT", "Wrists" },
     { "HANDSSLOT", "Hands" }, { "WAISTSLOT", "Waist" }, { "LEGSSLOT", "Legs" }, { "FEETSLOT", "Feet" },
     { "FINGER0SLOT", "Ring" }, { "FINGER1SLOT", "Ring" }, { "TRINKET0SLOT", "Trinket" }, { "TRINKET1SLOT", "Trinket" },
-    { "MAINHANDSLOT", "Main Hand" }, { "SECONDARYHANDSLOT", "Off Hand" },
+    { "MAINHANDSLOT", "Main Hand" }, { "SECONDARYHANDSLOT", "Off Hand" }, { "RANGEDSLOT", "Ranged" },
+    { "AMMOSLOT", "Ammo" },
 }
 local Tr = S.Text
 
@@ -82,7 +86,7 @@ local function CreateSlot(parent, index, left)
     name:SetWordWrap(false)
     local caption = Label(slot, 12, MUTED, "")
     caption:SetPoint("TOPLEFT", slot, "TOPLEFT", 73, -35)
-    return icon, name, caption
+    return icon, name, caption, slot
 end
 
 -- Blizzard's character sheet setup (ModelSceneUtil) and this template load
@@ -107,6 +111,14 @@ local function CreateBackdrops(panel)
     rightBackdrop:SetWidth(540)
 end
 
+-- Slots the screen lists: the ranged slot only where the character sheet
+-- shows it (Blizzard's own gate, C_PaperDollInfo.IsRangedSlotShown, Forever),
+-- and the ammunition slot there too; RefreshEquipment shows it only while the
+-- ranged weapon uses ammunition (UnitUsesAmmo, which Forever alone has).
+local function SlotCount()
+    return NS.Client.isForever and C_PaperDollInfo.IsRangedSlotShown() == true and AMMO_ROW or RANGED_ROW - 1
+end
+
 -- The character model, its fallback portrait and the equipment slots.
 local function CreateStage(self, panel)
     local stage = S.CreateFrame("Frame", nil, panel)
@@ -120,8 +132,15 @@ local function CreateStage(self, panel)
     local fallbackNote = Label(stage, 19, MUTED, Tr("CHARACTER PREVIEW"))
     fallbackNote:SetPoint("CENTER", stage, "CENTER", 0, -115)
     local icons, itemNames, captions = {}, {}, {}
-    for n = 1, #SLOTS do
-        icons[n], itemNames[n], captions[n] = CreateSlot(stage, n <= 9 and n or n - 9, n <= 9)
+    self.slotCount = SlotCount()
+    for n = 1, self.slotCount do
+        -- The ammunition has the tenth row of the left column: the right one
+        -- (waist to ranged) already ends near the bottom of the panel.
+        local ammo = n == AMMO_ROW
+        local left = n <= 9 or ammo
+        local slot
+        icons[n], itemNames[n], captions[n], slot = CreateSlot(stage, ammo and 10 or (n <= 9 and n or n - 9), left)
+        if ammo then self.ammoSlot = slot end
     end
     self.fallback, self.fallbackNote, self.icons = fallback, fallbackNote, icons
     self.itemNames, self.captions = itemNames, captions
@@ -241,7 +260,11 @@ local function RefreshModel(self)
 end
 
 local function RefreshEquipment(self)
-    for index, slot in ipairs(SLOTS) do
+    -- The character sheet shows the ammunition slot while the player's ranged
+    -- weapon uses ammunition (PaperDollFrame_OnShow: UnitUsesAmmo).
+    if self.ammoSlot then self.ammoSlot:SetShown(UnitUsesAmmo("player") == true) end
+    for index = 1, self.slotCount do
+        local slot = SLOTS[index]
         -- A texture ID (or nil for an empty slot) goes straight to the sink.
         self.icons[index]:SetTexture(GetInventoryItemTexture("player", slot))
         local itemName

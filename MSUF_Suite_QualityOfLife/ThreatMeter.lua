@@ -225,7 +225,10 @@ local function Relevant(self, event, unit)
     if event ~= "UNIT_THREAT_LIST_UPDATE" and (self.unitSet[unit] or unit == "player") then return true end
     for _, enemy in pairs(self.enemies) do
         local match = UnitIsUnit(unit, enemy)
-        if S.Public(match) and match then return true end
+        -- Unknown/secret identity must invalidate (UnitIsUnit answers a secret
+        -- for targettarget and focustarget on restricted maps); only a public
+        -- false rules a unit out. The coalesced repaint absorbs the extras.
+        if not (S.Public(match) and match == false) then return true end
     end
     return false
 end

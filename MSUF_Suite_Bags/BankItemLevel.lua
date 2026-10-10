@@ -7,7 +7,7 @@ local IN_COMBAT = { inCombat = true }
 M.bankOverlays = setmetatable({}, { __mode = "k" })
 M.bankPending, M.bankLoads = {}, Loads.New()
 
--- The Retail bank owns its pooled buttons, search and tab handling. Only
+-- The native bank owns its pooled buttons, search and tab handling. Only
 -- attach a label to a visible native button after Blizzard has refreshed it
 -- (upstream/live BankPanelItemButtonMixin:Refresh).
 function M:HideBankLevels()
@@ -18,10 +18,12 @@ function M:HideBankLevels()
     Loads.Reset(self.bankLoads)
 end
 
--- Blizzard_UIPanels_Game creates BankFrame at startup; only the Retail one
--- has a BankPanel (Forever loads the Camelot bank).
+-- Blizzard_UIPanels_Game creates BankFrame at startup. Retail and WoW Forever
+-- both have its BankPanel (Forever: Camelot/BankFrame.xml, BankPanelTemplate
+-- with the same panel and item button mixins; its button only adds artwork
+-- after the native Refresh).
 local function BankVisible(self)
-    return self.active and not self.organizedBankActive and not NS.Client.isForever and self.config.showBankItemLevel
+    return self.active and not self.organizedBankActive and self.config.showBankItemLevel
         and BankFrame:IsShown() and BankFrame.BankPanel:IsShown()
 end
 
@@ -166,7 +168,7 @@ local function BankPanelShown(panel)
 end
 
 local function InstallBankHooks(self)
-    if self.bankHooked or NS.Client.isForever then return end
+    if self.bankHooked then return end
     local panel = BankFrame.BankPanel
     -- XML already copied BankPanelMixin into this native panel before the
     -- Suite loaded. Hook the instance, then attach existing/new pooled buttons
@@ -183,7 +185,7 @@ local function BankOpened(self)
 end
 
 function M:ApplyBankLevels()
-    if NS.Client.isForever or not self.config.showBankItemLevel then
+    if not self.config.showBankItemLevel then
         self.context:RemoveEvent("BANKFRAME_OPENED")
         self:HideBankLevels()
         if not next(self.pending) then self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED") end

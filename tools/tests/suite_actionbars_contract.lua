@@ -695,8 +695,8 @@ ActionButtonSpellAlertManager={
     end,
     HideAlert=function(_,button) alerts[button]=nil end,
 }
--- Blizzard_ActionBar/Mainline/AssistedCombatManager.lua (Retail; Forever
--- does not load it). Candidates are Blizzard's own buttons only (its
+-- Blizzard_ActionBar/Mainline/AssistedCombatManager.lua (loads on Retail and
+-- on Forever, which offers no setting for it). Candidates are Blizzard's own buttons only (its
 -- ActionBarButtonEventsFrame list); a button's highlight frame appears on its
 -- first recommendation, at alpha 1. Recommend models the manager's OnUpdate
 -- seeing a new C_AssistedCombat.GetNextCastSpell answer.
@@ -1055,9 +1055,28 @@ petActions[1]="Attack"
 S.started=true
 local builtBefore=created
 c.enabled = false
+-- DA-1: a profile that shows empty stance slots (the default for normal bars,
+-- reached through Copy To) is in place at the FIRST enable of a session, where
+-- the first layout runs before the first style pass built AB.style. The module
+-- must start with its empty-slot art, not fail with Blizzard's bars disposed.
+assert(AB.style==nil,"the first layout of a session must not have a style yet")
+c.bar11ShowEmpty = true
+c.bar11Buttons = 8
+dispatch.expect=true;dispatch.errors={}
 assert(S.Set("actionbars","enabled",true))
-assert(M.active and S.states.actionbars.active and S.Status("actionbars")=="Active")
+dispatch.expect=false
+assert(#dispatch.errors==0,"first enable with ShowEmpty raised: "..tostring(dispatch.errors[1]))
+assert(M.active and S.states.actionbars.active and S.Status("actionbars")=="Active",
+    "first enable with ShowEmpty left the module stopped")
 RunTimers()
+assert(AB.style and Bar(11).count==8 and Bar(11).emptySlots and Bar(11).emptySlots[3].shown,
+    "first enable with ShowEmpty did not draw the empty stance slots")
+do
+    local color = Bar(11).emptySlots[3].color
+    local sr, sg, sb = S.RGB(c.slotColor)
+    assert(color and color[1]==sr and color[2]==sg and color[3]==sb and color[4]==c.slotAlpha/100,
+        "first-layout empty stance art was not painted with the configured slot style")
+end
 local frames=created-builtBefore
 assert(c.imported==true,"first enable must import Blizzard's layout")
 assert(S.SetMany("actionbars", { bar11ShowEmpty=true, bar11Buttons=8 }))
