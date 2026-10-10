@@ -153,7 +153,9 @@ function A.Preview(rows, present, config)
     for _, row in ipairs(rows) do
         if present[row.id] then count, first = count + 1, first or row end
     end
-    if count == #rows and (not config.auraColorsIndividual or #rows > 1) then return config.auraColorsAll end
+    -- Every selected DoT active takes the all color, a lone DoT too: its own
+    -- color marks it only beside other DoTs that are still missing.
+    if count == #rows then return config.auraColorsAll end
     if count == 0 then return config.auraColorsNoneEnabled and config.auraColorsNone or nil end
     return config.auraColorsIndividual and first and first.color or nil
 end

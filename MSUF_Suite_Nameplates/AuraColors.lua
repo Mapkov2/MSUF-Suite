@@ -19,11 +19,11 @@ end
 -- DenyTaintedAccessWhenAurasAreSecret (AuraContainerFrameProviders.lua:78-86,
 -- AuraContainerShared.lua:108; live, ptr2 and forever). While auras are
 -- secret, addon code may then not even name the slot as an anchor target.
--- So each slot's initializeFrame anchors an own marker to the slot's top,
--- and every later anchor (the next slot of the chain, the masks) names the
--- marker. The marker is the wrapper's child, never the slot's: descendants of
--- a sealed button are restricted too. Building or re-anchoring a plate thus
--- names no sealed object and runs in combat and while auras are secret. The
+-- Each slot's initializeFrame anchors an own marker to the slot's top.
+-- Markers stay outside the slot hierarchy, but their layout dependencies
+-- still reach it: a mask anchored to a marker can become inaccessible too.
+-- Build mask geometry once, before that dependency is established; later
+-- configuration only updates native filters and ordinary fill textures. The
 -- container calls it makes (AddAuraSlot, SetAuraSlotCandidateFilters,
 -- SetEnabled, SetUnit; Blizzard_CustomAuraContainer.lua,
 -- Blizzard_AuraContainer.lua:28-48) carry no combat or secret restriction:
@@ -47,8 +47,8 @@ local function Blocked()
     return true
 end
 
--- Each colour texture draws at a (layer, sublevel) of its own: within one
--- sublevel the draw order is undefined. Rank 0 is drawn lowest; New gives
+-- Each active colour predicate has its own (layer, sublevel): the hidden
+-- count variants share a rank but never draw together. Rank 0 is lowest; New gives
 -- rows LIMIT..1 ranks 0..LIMIT-1, then "all" (it beats every row) and "none"
 -- (its mask excludes the others). The band lies above the native fill
 -- (StatusBar ARTWORK 0), absorb art (ARTWORK 1-2) and the role tint
@@ -84,7 +84,7 @@ local function Root(frame)
 end
 
 local function New(health)
-    local state = { slots = {}, singles = {}, layers = {} }
+    local state = { slots = {}, singles = {}, layers = {}, allCounts = {}, noneCounts = {} }
     -- Keep the large predicate slots out of Blizzard's pooled nameplate
     -- hierarchy, beside the plates. Only the small fill textures belong to
     -- the health bar.
@@ -95,10 +95,9 @@ local function New(health)
     -- No Edit Mode samples in the DoT predicate (12.1.5, Forever; Platform.lua).
     state.realAuras = NS.Client.RealAurasOnly(state.container)
     state.container:SetSize(1, 1)
-    state.container:SetPoint("BOTTOM", health, "BOTTOM", 0, 0)
+    state.container:SetPoint("TOP", health, "BOTTOM", 0, 0)
     -- Priority by draw level (DrawLevel): row 1 above row 2 and so on.
     for i = 1, A.LIMIT do state.layers[i] = Layer(state, health, A.LIMIT - i) end
-    state.all, state.none = Layer(state, health, A.LIMIT), Layer(state, health, A.LIMIT + 1)
     return state
 end
 
@@ -127,22 +126,24 @@ local function Slot(state, pool, key, index, anchor, relative, offset, filter)
     return marker
 end
 
-local function Anchor(layer, fill, marker, offset, color)
+local function Anchor(layer, health, marker, offset)
+    if layer.anchored then return end
+    layer.mask:SetPoint("LEFT", health, "LEFT", 0, 0)
+    layer.mask:SetPoint("RIGHT", health, "RIGHT", 0, 0)
+    -- Last: this anchor can inherit the slot's access restrictions.
+    layer.mask:SetPoint("BOTTOM", marker, "BOTTOM", 0, offset)
+    layer.anchored = true
+end
+
+local function PaintLayer(layer, fill, color)
     layer.texture:SetAllPoints(fill)
     Paint(layer.texture, color)
-    layer.mask:ClearAllPoints()
-    layer.mask:SetPoint("LEFT", fill, "LEFT", 0, 0)
-    layer.mask:SetPoint("RIGHT", fill, "RIGHT", 0, 0)
-    layer.mask:SetPoint("BOTTOM", marker, "BOTTOM", 0, offset)
 end
 
 local function ConfigureState(state, health)
     state.active = false
     state.container:SetEnabled(false)
     local fill, previous, relative = health:GetStatusBarTexture(), state.container, "TOP"
-    -- Origin is the health bottom, independent of its secret dimensions.
-    state.container:ClearAllPoints()
-    state.container:SetPoint("TOP", health, "BOTTOM", 0, -SPAN * #rows)
     for i, row in ipairs(rows) do
         local ids = {}
         for _, id in ipairs(row.ids) do ids[id] = true end
@@ -150,9 +151,17 @@ local function ConfigureState(state, health)
         -- The first slot sits on the container's top, each further one on
         -- the previous slot's marker (a marker's bottom is its slot's top).
         previous, relative = Slot(state, state.slots, "all", i, previous, relative, 0, filter), "BOTTOM"
+        -- The count-specific masks keep this prefix's marker forever.
+        -- Only the variants matching the current selected count are shown.
+        if not state.allCounts[i] then
+            state.allCounts[i], state.noneCounts[i] = Layer(state, health, A.LIMIT), Layer(state, health, A.LIMIT + 1)
+            Anchor(state.allCounts[i], health, previous, -SPAN * i - SPAN / 2)
+            Anchor(state.noneCounts[i], health, previous, -SPAN / 2)
+        end
         if config.auraColorsIndividual then
             local marker = Slot(state, state.singles, "single", i, health, "BOTTOM", -SPAN, filter)
-            Anchor(state.layers[i], fill, marker, -SPAN / 2, row.color)
+            Anchor(state.layers[i], health, marker, -SPAN / 2)
+            PaintLayer(state.layers[i], fill, row.color)
         end
     end
     for i = #rows + 1, #state.slots do
@@ -165,8 +174,13 @@ local function ConfigureState(state, health)
     end
     -- Keep visible health well inside the opaque mask, away from sampled
     -- edges. Missing/present slots shift it by a full span in native layout.
-    Anchor(state.all, fill, previous, -SPAN / 2, config.auraColorsAll)
-    Anchor(state.none, fill, previous, SPAN * #rows - SPAN / 2, config.auraColorsNone)
+    if state.all then
+        state.all.texture:Hide()
+        state.none.texture:Hide()
+    end
+    state.all, state.none = state.allCounts[#rows], state.noneCounts[#rows]
+    PaintLayer(state.all, fill, config.auraColorsAll)
+    PaintLayer(state.none, fill, config.auraColorsNone)
     state.revision, state.fill = revision, fill
 end
 
@@ -202,7 +216,7 @@ end
 
 -- force: catalog, talent and spec events read the selection again. Only a
 -- change of the resolved rows or the shared colors and switches makes the
--- plates re-anchor (a new revision); an equal read leaves them as they are.
+-- plates reconfigure (a new revision); an equal read leaves them as they are.
 function Colors.Configure(c, force)
     if not c.auraColorsEnabled then
         config, rows, plan = c, {}, nil
@@ -235,7 +249,7 @@ function Colors.Apply(uf, unit, enemy)
     if not health or NS.Safety.IsForbidden(health) then return end
     local fill = health:GetStatusBarTexture()
     -- A new plate, another selection or another fill texture builds or
-    -- re-anchors; only an open Forever gamepad panel holds that back.
+    -- reconfigures; only an open Forever gamepad panel holds that back.
     if (not state or state.revision ~= revision or state.fill ~= fill) and Blocked() then return end
     if not state then
         state = New(health)
@@ -255,7 +269,8 @@ function Colors.Apply(uf, unit, enemy)
     end
     state.wrapper:Show()
     state.container:SetEnabled(true)
-    state.all.texture:SetShown(not config.auraColorsIndividual or #rows > 1)
+    -- A lone DoT takes the all color as well (A.Preview).
+    state.all.texture:Show()
     state.none.texture:SetShown(config.auraColorsNoneEnabled)
     for i, layer in ipairs(state.layers) do layer.texture:SetShown(config.auraColorsIndividual and i <= #rows) end
     state.active = true

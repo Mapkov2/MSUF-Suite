@@ -5,7 +5,7 @@ local PAGE, ID, SECTION = "suite_nameplates", "nameplates", "suite_nameplates_au
 local UI = {}
 P.NameplatesAuraUI = UI
 local HELP = P.Help(
-    "Individual colors follow list order; a lone DoT uses its own color. With multiple selected DoTs, all active wins over individual and role colors.",
+    "With every selected DoT active, even a lone one, the all-DoTs color wins over individual and role colors. Otherwise individual colors follow list order.",
     "Blizzard supplies health and aura updates. List edits and preview work during combat; color pickers work after combat.")
 local CUSTOM_HELP = P.Help("Choose DoTs for this specialization. Disabled entries keep their position.",
     "MSUF supplies class suggestions. Unlearned entries pause only when Blizzard supplies their talent mapping.")

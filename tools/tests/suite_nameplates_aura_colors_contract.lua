@@ -76,14 +76,37 @@ local cfg = { auraColorsEnabled = true, auraColorsAll = "48af97", auraColorsNone
     auraColorsNoneEnabled = false, auraColorsIndividual = false, auraColorsData = encoded, look = 4, enemy = true }
 assert(A.Preview({}, {}, cfg) == nil, "empty selection activated the all color")
 assert(A.Preview(decoded[101], {}, cfg) == nil)
+-- A lone DoT active is every selected DoT active: the all color, with
+-- individual colors as well (owner report 2026-10-10: the set all color
+-- never showed, the DoT's untouched default color did).
 cfg.auraColorsIndividual = true
-assert(A.Preview(decoded[102], { [777] = true }, cfg) == "ccddee",
-    "the all color overrides the only selected DoT's individual color")
+assert(A.Preview(decoded[102], { [777] = true }, cfg) == cfg.auraColorsAll,
+    "a lone DoT with individual colors lost the all color")
 cfg.auraColorsIndividual = false
 assert(A.Preview(decoded[102], { [777] = true }, cfg) == cfg.auraColorsAll,
     "a singleton without individual colors lost its all color")
 
 local containers, textures = {}, {}
+local function SlotCount(owner)
+    local count = 0
+    for _ in pairs(owner.slots) do count = count + 1 end
+    return count
+end
+-- Model the observed mask -> marker -> native-slot restriction. The engine
+-- propagates layout dependencies (ForbiddenAspectConstantsDocumentation);
+-- a marker does not make a previously anchored mask safe to rewrite.
+local function RestrictedLayout(region, seen)
+    if not region or not secretAuras then return false end
+    if region.sealed then return true end
+    seen = seen or {}
+    if seen[region] then return false end
+    seen[region] = true
+    if RestrictedLayout(region.parent, seen) then return true end
+    for _, point in pairs(region.points) do
+        if RestrictedLayout(point.target, seen) then return true end
+    end
+    return false
+end
 local function Region(parent)
     local r = { parent = parent, points = {}, shown = true }
     -- DenyTaintedAccessWhenAurasAreSecret covers a sealed slot passed as an
@@ -94,11 +117,16 @@ local function Region(parent)
     end
     function r:SetPoint(point, target, relative, x, y)
         assert(not self.native, "aura colors reanchored a native nameplate frame")
+        assert(not RestrictedLayout(self), "aura colors rewrote a restricted mask or marker")
         Named(target)
         self.points[point] = { target = target, relative = relative, y = y or 0 }
         writes = writes + 1
     end
-    function r:ClearAllPoints() assert(not self.sealed); self.points = {}; writes = writes + 1 end
+    function r:ClearAllPoints()
+        assert(not self.sealed and not RestrictedLayout(self), "aura colors cleared a restricted mask or marker")
+        self.points = {}
+        writes = writes + 1
+    end
     function r:SetSize(w, h) assert(not self.sealed and not self.native); self.width, self.height = w, h end
     function r:SetHeight(h) assert(not self.sealed and not self.native); self.height = h end
     function r:SetAllPoints(target) assert(not self.native); Named(target); self.allPoints = target; writes = writes + 1 end
@@ -201,21 +229,26 @@ C.Apply(uf, "nameplate1", true)
 assert(creations == 0 and #textures == 0, "disabled feature allocated frames")
 C.Configure(cfg)
 C.Apply(uf, "nameplate1", true)
-assert(creations == 2 and #textures == A.LIMIT + 2 and #containers == 1)
+assert(creations == 2 and #textures == A.LIMIT + 4 and #containers == 1)
 local container = containers[1]
+assert(SlotCount(container) == 2, "two selected DoTs allocated extra native predicates")
 assert(container.editPreview == false, "12.1.5/Forever: the DoT container kept Edit Mode's sample auras")
--- Explicit priority: every colour texture at a draw level of its own, above
+-- Explicit priority: individual colors and none have their own level, above
 -- the native fill, absorbs and the role tint (ARTWORK 0-3) and below the
 -- native selection art and text (OVERLAY 0 and up).
 local levels = {}
+local allKey = A.LIMIT < 4 and "ARTWORK" .. (4 + A.LIMIT) or "OVERLAY" .. (A.LIMIT - 12)
+local noneRank = A.LIMIT + 1
+local noneKey = noneRank < 4 and "ARTWORK" .. (4 + noneRank) or "OVERLAY" .. (noneRank - 12)
 for _, texture in ipairs(textures) do
     local key = texture.layer .. texture.sublevel
-    assert(not levels[key], "two DoT colour textures share a draw sublevel; priority rests on creation order")
-    levels[key] = true
+    assert(not levels[key] or key == allKey or key == noneKey, "unrelated DoT colors share a draw sublevel")
+    levels[key] = (levels[key] or 0) + 1
     assert(texture.layer == "ARTWORK" and texture.sublevel > 3 and texture.sublevel <= 7
         or texture.layer == "OVERLAY" and texture.sublevel < 0 and texture.sublevel >= -8,
         "a DoT colour left the band between the role tint and the native text")
 end
+assert(levels[allKey] == 2 and levels[noneKey] == 2, "mask variants exceeded the two selected DoTs")
 local wrapper = container.parent
 assert(wrapper.parent == WorldFrame and wrapper.ignoreChildrenForBounds,
     "oversized aura slots entered native nameplate bounds")
@@ -291,6 +324,7 @@ for _, individual in ipairs({ false, true }) do
         end
     end
 end
+assert(SlotCount(container) == 4, "two individual DoTs exceeded four native predicates")
 local beforeFrames, beforeTextures, beforeWrites, beforeMarkers = creations, #textures, writes, markersMade
 for _, slot in pairs(container.slots) do assert(slot.clicks == false and slot.motion == false) end
 for i = 1, 100 do C.Apply(uf, "nameplate1", true) end
@@ -301,7 +335,7 @@ C.Apply(uf, "nameplate1", true)
 assert(writes == beforeWrites, "unrelated settings refresh rebuilt the native aura layout")
 -- Catalog, talent and spec events force a fresh read (Skin.lua
 -- OnAuraSpellsChanged): an equal selection leaves every plate as it is, a
--- changed one (a DoT no longer known) re-anchors it.
+-- changed one (a DoT no longer known) reconfigures it.
 for i = 1, 5 do C.Configure(cfg, true) end
 C.Apply(uf, "nameplate1", true)
 assert(writes == beforeWrites, "a forced read of unchanged DoTs re-anchored the plate")
@@ -312,21 +346,75 @@ assert(writes > beforeWrites, "a forced read missed a changed DoT selection")
 info[12].isKnown = true
 C.Configure(cfg, true)
 C.Apply(uf, "nameplate1", true)
-NativePass({ [589] = true, [34914] = true })
-assert(VisibleColor() == cfg.auraColorsAll, "the relearned DoT did not return to the selection")
+NativePass({ [34914] = true })
+assert(VisibleColor() == "445566", "the relearned DoT did not return to the selection")
 -- In combat while auras are secret (a keystone pull) a changed selection
--- re-anchors at once: the masks name the slots' markers, never a sealed slot.
+-- applies at once without rewriting the masks' restricted geometry.
+-- 34914 alone tells the selections apart: no selected DoT without it, its
+-- own color with it.
 combat, secretAuras = true, true
 info[12].isKnown = false
 C.Configure(cfg, true)
 C.Apply(uf, "nameplate1", true)
-NativePass({ [589] = true, [34914] = true })
-assert(VisibleColor() == "112233", "a selection change in combat while auras were secret did not apply")
+NativePass({ [34914] = true })
+assert(VisibleColor() == cfg.auraColorsNone, "a selection change in combat while auras were secret did not apply")
 info[12].isKnown = true
 C.Configure(cfg, true)
 C.Apply(uf, "nameplate1", true)
+NativePass({ [34914] = true })
+assert(VisibleColor() == "445566", "the restored selection did not apply in combat")
+-- Changes during secret auras must update the public color textures and
+-- native filters while preserving every existing mask's point identities.
+local oldData, oldAll, oldNone = cfg.auraColorsData, cfg.auraColorsAll, cfg.auraColorsNone
+local geometry = {}
+for _, texture in ipairs(textures) do
+    if texture.parent == health then
+        local points = texture.mask.points
+        geometry[texture.mask] = { points, points.LEFT, points.RIGHT, points.BOTTOM }
+    end
+end
+fill = Region(health)
+C.Apply(uf, "nameplate1", true)
+NativePass({ [34914] = true })
+assert(VisibleColor() == "445566", "a new fill lost the individual color while auras were secret")
+for _, texture in ipairs(textures) do
+    if texture.shown then assert(texture.allPoints == fill, "an active color kept the previous fill") end
+end
+cfg.auraColorsAll, cfg.auraColorsNone = "abcdef", "fedcba"
+C.Configure(cfg)
+C.Apply(uf, "nameplate1", true)
 NativePass({ [589] = true, [34914] = true })
-assert(VisibleColor() == cfg.auraColorsAll, "the restored selection did not apply in combat")
+assert(VisibleColor() == "abcdef", "the all color did not update while auras were secret")
+NativePass({})
+assert(VisibleColor() == "fedcba", "the warning color did not update while auras were secret")
+local reordered = A.Decode(oldData)
+reordered[101][1], reordered[101][2] = reordered[101][2], reordered[101][1]
+cfg.auraColorsData = A.Encode(reordered)
+C.Configure(cfg)
+C.Apply(uf, "nameplate1", true)
+NativePass({ [34914] = true })
+assert(VisibleColor() == "445566", "reordering DoTs changed their individual colors")
+reordered[101] = { reordered[101][1] }
+cfg.auraColorsData = A.Encode(reordered)
+C.Configure(cfg)
+C.Apply(uf, "nameplate1", true)
+NativePass({ [34914] = true })
+assert(VisibleColor() == "abcdef", "shrinking to one DoT kept the previous all mask")
+cfg.auraColorsIndividual, cfg.auraColorsNoneEnabled = false, false
+C.Configure(cfg)
+C.Apply(uf, "nameplate1", true)
+NativePass({})
+assert(VisibleColor() == nil, "disabling the warning retained its previous mask")
+cfg.auraColorsData, cfg.auraColorsAll, cfg.auraColorsNone = oldData, oldAll, oldNone
+cfg.auraColorsIndividual, cfg.auraColorsNoneEnabled = true, true
+C.Configure(cfg)
+C.Apply(uf, "nameplate1", true)
+for mask, old in pairs(geometry) do
+    local points = mask.points
+    assert(points == old[1] and points.LEFT == old[2] and points.RIGHT == old[3] and points.BOTTOM == old[4],
+        "configuration changed an existing mask's geometry")
+end
+assert(SlotCount(container) == 4, "reconfiguring two DoTs allocated more native predicates")
 C.Restore(uf)
 assert(not container.enabled and not wrapper.shown and VisibleColor() == nil,
     "removed plate retained its detached aura helpers")
@@ -418,7 +506,7 @@ C.Apply(uf, "nameplate2", true)
 NativePass({ [589] = true })
 assert(VisibleColor() == cfg.auraColorsNone, "new spec read the old spec's list")
 NativePass({ [777] = true })
-assert(VisibleColor() == "ccddee", "runtime overrides the only selected DoT's individual color")
+assert(VisibleColor() == cfg.auraColorsAll, "runtime showed a lone DoT's individual color over the all color")
 C.Apply(uf, "nameplate2", false)
 assert(VisibleColor() == nil and not container.enabled and not wrapper.shown,
     "friendly plate retained detached harmful aura helpers")
@@ -441,6 +529,7 @@ cfg.auraColorsIndividual, cfg.auraColorsNoneEnabled = true, true
 cfg.auraColorsData = A.Encode({ [101] = many })
 C.Configure(cfg)
 C.Apply(uf, "nameplate3", true)
+assert(SlotCount(container) == 2 * A.LIMIT, "the maximal selection exceeded the native predicate bound")
 for subset = 0, 2 ^ A.LIMIT - 1 do
     local present, first, count = {}, nil, 0
     for i, row in ipairs(many) do
@@ -721,14 +810,23 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
     C.Configure(cfg)
     C.Apply(uf, "nameplate4", true)
     NativePass({ [589] = true })
-    assert(VisibleColor() == palette[3] and A.Preview(A.Selected(D.Rows()), { [589] = true }, cfg) == palette[3],
-        host .. ": picker color differs from singleton runtime/preview")
+    assert(VisibleColor() == palette[1] and A.Preview(A.Selected(D.Rows()), { [589] = true }, cfg) == palette[1],
+        host .. ": picker all color differs from lone-DoT runtime/preview")
+    -- A second DoT still missing: the picked individual color marks the first.
+    local withSecond = A.Decode(config.auraColorsData)
+    withSecond[101][2] = { id = 34914, ids = { 34914 }, enabled = true, color = "445566" }
+    cfg.auraColorsData = A.Encode(withSecond)
+    C.Configure(cfg)
+    C.Apply(uf, "nameplate4", true)
+    NativePass({ [589] = true })
+    assert(VisibleColor() == palette[3] and A.Preview(A.Selected(A.Decode(cfg.auraColorsData)[101]),
+        { [589] = true }, cfg) == palette[3], host .. ": picker individual color differs from runtime/preview")
     NativePass({})
     assert(VisibleColor() == palette[2], host .. ": picker warning color differs from runtime")
     cfg.auraColorsIndividual = false
     C.Configure(cfg)
     C.Apply(uf, "nameplate4", true)
-    NativePass({ [589] = true })
+    NativePass({ [589] = true, [34914] = true })
     assert(VisibleColor() == palette[1], host .. ": picker all color differs from runtime")
     -- An older host's widgets without the contextual picker, or one that
     -- makes no shortcut: the page still builds and releases nothing.
