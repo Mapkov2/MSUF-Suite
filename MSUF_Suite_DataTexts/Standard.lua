@@ -169,7 +169,14 @@ end
 -- calendar through ShowUIPanel (Calendar_Toggle). OpenAllBags has no Blizzard
 -- button with the same effect: the backpack button puts a held item into the
 -- bag or toggles the backpack alone (BaseBagSlotButtonMixin:BagSlotOnClick).
+-- Under WoW Forever's Gamepad UI every built-in window place carries the
+-- overlay (Sources.gamepadPanelSources) and nothing opens from here: a click
+-- that reaches the place found it detached and attaches it for the next one.
 function Standard.Click(button)
+    if S.GamepadUI() then
+        P.DataTextActions.Attach(button)
+        return
+    end
     local name = CLICK[button.source]
     if name then
         _G[name]()

@@ -387,7 +387,9 @@ end
 suite.Dispatch = S.Dispatch
 TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, suite)
 local private = { NS = suite, Suite = S }
-for _, file in ipairs({ "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData", "ObjectivesDetails", "ObjectivesActions", "ObjectivesTracker", "Objectives", "Announcements" }) do
+-- Dialogs.lua and MicroMenu.lua: S.ContextMenu, S.GamepadUI and S.CanOpenNativeWindow.
+for _, file in ipairs({ "Dialogs", "MicroMenu", "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData",
+    "ObjectivesDetails", "ObjectivesActions", "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
@@ -414,6 +416,12 @@ do
     function native:AddModule(module)
         module:SetParent(self)
         nativeTrackerChildren[#nativeTrackerChildren + 1] = module
+    end
+    -- WoW Forever's tracker takes the gamepad's focus from its frame
+    -- controls manager (Blizzard_ObjectiveTracker.lua there).
+    if flavor == "Forever" then
+        function native:FocusGamepad() self.gamepadFocused = true end
+        function native:UnfocusGamepad() self.gamepadFocused = false end
     end
     for _, key in ipairs({ "Header", "Selection" }) do
         native[key] = Widget(native)
@@ -459,6 +467,47 @@ assert(ObjectiveTrackerFrame.Header:GetScale() == 1,
 combatLocked = false
 tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
 assert(NativeTrackerSuppressed(), "native tracker must be hidden after combat ends")
+-- FV-6: Forever's gamepad Quests shortcut focuses Blizzard's tracker while it
+-- is shown (ShortcutsActionBar.lua SetUpDpadTop). While it holds the focus it
+-- is visible and reachable again; the suppression returns with the focus.
+if flavor == "Forever" then
+    local gamepadUI = true
+    InputUtil = { IsGamepadUIEnabled = function() return gamepadUI end }
+    ObjectiveTrackerFrame:FocusGamepad()
+    assert(not tracker.context.hidden[ObjectiveTrackerFrame] and ObjectiveTrackerFrame.Header:GetScale() == 1
+        and nativeQuestModule:GetScale() == 1, "the gamepad's focus went to Blizzard's invisible tracker")
+    tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
+    assert(not tracker.context.hidden[ObjectiveTrackerFrame], "a refresh hid the tracker the gamepad focuses")
+    ObjectiveTrackerFrame:UnfocusGamepad()
+    assert(NativeTrackerSuppressed(), "the native tracker stayed visible after the gamepad's focus left")
+    -- Leaving the Gamepad UI never calls UnfocusGamepad
+    -- (GamepadFrameControlsManagerMixin:UninitializeGamepad): the input
+    -- switch ends the reveal, after combat when it comes in combat, and so
+    -- does any later suppression outside the Gamepad UI.
+    local transition = assert(tracker.context.events.INPUT_DEVICE_INTERFACE_TRANSITION,
+        "Forever's tracker does not follow the input device switch")
+    ObjectiveTrackerFrame:FocusGamepad()
+    gamepadUI = false
+    transition(tracker, "INPUT_DEVICE_INTERFACE_TRANSITION", 0, 1)
+    assert(NativeTrackerSuppressed(), "leaving the Gamepad UI left Blizzard's tracker shown over the Suite's")
+    gamepadUI = true
+    ObjectiveTrackerFrame:FocusGamepad()
+    gamepadUI = false
+    combatLocked = true
+    transition(tracker, "INPUT_DEVICE_INTERFACE_TRANSITION", 0, 1)
+    assert(not tracker.context.hidden[ObjectiveTrackerFrame], "the input switch changed the tracker in combat")
+    combatLocked = false
+    tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
+    assert(NativeTrackerSuppressed(), "the reveal stayed after combat although the Gamepad UI was off")
+    gamepadUI = true
+    ObjectiveTrackerFrame:FocusGamepad()
+    gamepadUI = false
+    tracker.context.events.GROUP_ROSTER_UPDATE(tracker, "GROUP_ROSTER_UPDATE")
+    assert(NativeTrackerSuppressed(), "a suppression outside the Gamepad UI kept the reveal")
+    InputUtil = nil
+else
+    assert(tracker.context.events.INPUT_DEVICE_INTERFACE_TRANSITION == nil, "Retail listens for Forever's input switch")
+end
 assert(movers.objectives.element == "tracker" and tracker.rows["entry:quests:42"])
 assert(tracker.host.shown and tracker.count.text == "1" and questUpdates == 1)
 tracker.rows["entry:quests:42"].OnClick(tracker.rows["entry:quests:42"])
@@ -466,9 +515,15 @@ assert(openedLog == 1 and openedQuest == 42, "quest title did not open its quest
 openedQuest = nil
 tracker.rows["line:quests:42:1"].OnClick(tracker.rows["line:quests:42:1"])
 assert(openedLog == 2 and openedQuest == 42, "objective line did not open its quest details")
-tracker.headerClick.OnClick()
+tracker.headerClick.OnClick(tracker.headerClick, "LeftButton")
 assert(openedLog == 3, "tracker header did not open the quest log")
 local questRow = tracker.rows["entry:quests:42"]
+-- Row data clicked through a live row's handler. On Forever the rows are
+-- InsecureActionButtonTemplate buttons, whose template reads attributes first.
+local function RowData(data)
+    function data:GetAttribute() end
+    return data
+end
 -- The row height is read from the text's wrap at its own width, which is set
 -- before the read instead of following anchors resolved later.
 assert(questRow.text.width and questRow.text.width > 0 and questRow.text.width < questRow.width,
@@ -529,30 +584,30 @@ assert(superTracked == 0, "stop-focus must clear Blizzard super tracking")
 C_SuperTrack.GetSuperTrackedQuestID = superTrackGetter
 tracker.rows["line:quests:42:1"].OnClick(tracker.rows["line:quests:42:1"], "RightButton")
 assert(lastMenu.title == "A New Hope", "objective line must use its parent quest menu")
-questRow.OnClick({ questID = 77, group = "world", tracked = true, menuTitle = "World Task" }, "RightButton")
+questRow.OnClick(RowData { questID = 77, group = "world", tracked = true, menuTitle = "World Task" }, "RightButton")
 assert(lastMenu.buttons["Stop tracking"] and not lastMenu.buttons["Abandon quest"])
 lastMenu.buttons["Stop tracking"]()
 assert(stoppedWorld == 77 and stoppedQuest == 42, "world quest used the wrong untrack API")
 stoppedWorld = nil
 shiftDown = true
-questRow.OnClick({ questID = 77, group = "world", tracked = true }, "LeftButton")
+questRow.OnClick(RowData { questID = 77, group = "world", tracked = true }, "LeftButton")
 assert(stoppedWorld == 77 and openedLog == 3,
     "Shift-left-click must use the world quest untrack API")
 shiftDown = false
-questRow.OnClick({ questID = 88, group = "bonus", menuTitle = "Bonus" }, "RightButton")
+questRow.OnClick(RowData { questID = 88, group = "bonus", menuTitle = "Bonus" }, "RightButton")
 assert(lastMenu.buttons["Show on map"] and not lastMenu.buttons["Stop tracking"],
     "automatic bonus objective must not offer an invalid untrack action")
-questRow.OnClick({ achievementID = 99, group = "achievements", menuTitle = "Heroic" }, "RightButton")
+questRow.OnClick(RowData { achievementID = 99, group = "achievements", menuTitle = "Heroic" }, "RightButton")
 assert(lastMenu.buttons["View achievement"] and lastMenu.buttons["Stop tracking"])
 lastMenu.buttons["Stop tracking"]()
 assert(stoppedAchievement == 99, "achievement menu did not use content tracking")
 stoppedAchievement = nil
 shiftDown = true
-questRow.OnClick({ achievementID = 99, group = "achievements", tracked = true }, "LeftButton")
+questRow.OnClick(RowData { achievementID = 99, group = "achievements", tracked = true }, "LeftButton")
 assert(stoppedAchievement == 99 and openedLog == 3,
     "Shift-left-click must untrack an achievement")
 shiftDown = false
-questRow.OnClick({ group = "scenario", scenarioID = 123, menuTitle = "Delve" }, "RightButton")
+questRow.OnClick(RowData { group = "scenario", scenarioID = 123, menuTitle = "Delve" }, "RightButton")
 assert(lastMenu.buttons["Adventure Guide"] and not lastMenu.buttons["Find group"],
     "the scenario menu must leave the group search to the row's secure group button")
 if flavor == "Mainline" then
@@ -562,6 +617,145 @@ if flavor == "Mainline" then
     shownPanel = nil
 else
     assert(not lastMenu.buttons["Open group finder"], "Forever has no group finder menu action")
+end
+-- KS-2: in combat Blizzard's panel manager refuses the Suite's ShowUIPanel
+-- (CheckProtectedFunctionsAllowed: "Interface action failed because of an
+-- AddOn"). A row click then opens nothing and says why; its menu offers the
+-- window actions switched off.
+local printed = {}
+S.Print = function(text) printed[#printed + 1] = text end
+suite.RestrictedNotice = function() return "Blizzard blocks this right now." end
+combatLocked = true
+local logBefore = openedLog
+questRow.OnClick(questRow, "LeftButton")
+tracker.headerClick.OnClick(tracker.headerClick, "LeftButton")
+assert(openedLog == logBefore and printed[1] == "Blizzard blocks this right now.",
+    "a row or header click in combat ran Blizzard's panel manager from the Suite (KS-2)")
+local enabled = {}
+MenuUtil.CreateContextMenu = function(owner, build)
+    local root = { owner = owner, buttons = {} }
+    function root:CreateTitle(title) self.title = title end
+    function root:CreateButton(label, action)
+        self.buttons[label] = action
+        return { SetEnabled = function(_, value) enabled[label] = value end }
+    end
+    build(owner, root)
+    lastMenu = root
+end
+questRow.OnClick(questRow, "RightButton")
+assert(enabled[OBJECTIVES_VIEW_IN_QUESTLOG] == false, "the quest menu offered its window action in combat")
+assert(enabled["Abandon quest"] ~= false, "Abandon quest must stay available outside the Gamepad UI")
+combatLocked = false
+-- WoW Forever's Gamepad UI: a row's left click clicks Blizzard's own button
+-- from the row's InsecureActionButtonTemplate handler (PreClick sets it up):
+-- the native tracker's quest header, the quest log micro button for the
+-- header; the menu is the Suite's own list (S.ContextMenu).
+if flavor == "Forever" then
+    InputUtil = { IsGamepadUIEnabled = function() return true end }
+    local clicked = {}
+    local function NativeButton(name)
+        local button = Widget(UIParent)
+        button.name = name
+        function button:Click() clicked[#clicked + 1] = name end
+        function button:IsEnabled() return true end
+        return button
+    end
+    QuestLogMicroButton = NativeButton("QuestLogMicroButton")
+    local header = NativeButton("HeaderButton")
+    QuestObjectiveTracker = { GetExistingBlock = function(_, id)
+        return id == 42 and { used = true, HeaderButton = header } or nil
+    end }
+    logBefore = openedLog
+    assert(questRow.template == "InsecureActionButtonTemplate" and questRow.PreClick,
+        "a Forever row is not an InsecureActionButtonTemplate button with a PreClick")
+    questRow.PreClick(questRow, "LeftButton")
+    questRow.OnClick(questRow, "LeftButton")
+    tracker.headerClick.PreClick(tracker.headerClick, "LeftButton")
+    tracker.headerClick.OnClick(tracker.headerClick, "LeftButton")
+    assert(clicked[1] == "HeaderButton" and clicked[2] == "QuestLogMicroButton" and openedLog == logBefore,
+        "the Gamepad UI opened a quest window from the Suite's code instead of Blizzard's buttons")
+    -- A right click clicks the native header with the right button from the
+    -- template's handler: Blizzard's own quest menu (QuestObjectiveTrackerMixin:
+    -- OnBlockHeaderClick, Abandon quest included) opens from secure code.
+    local buttons = {}
+    function header:Click(mouseButton)
+        clicked[#clicked + 1] = "HeaderButton"
+        buttons[#buttons + 1] = mouseButton
+    end
+    lastMenu = nil
+    local listOwner, contextMenu = nil, S.ContextMenu
+    S.ContextMenu = function(owner, generator)
+        listOwner = owner
+        return contextMenu ~= nil and generator ~= nil
+    end
+    questRow.PreClick(questRow, "RightButton")
+    questRow.OnClick(questRow, "RightButton")
+    assert(clicked[3] == "HeaderButton" and buttons[1] == "RightButton" and listOwner == nil and lastMenu == nil,
+        "a right click did not open Blizzard's quest menu through the native header")
+    -- Without a native header the menu is the Suite's own list (the list
+    -- itself is suite_gamepad_openers_contract's menus case).
+    local blocks = QuestObjectiveTracker
+    QuestObjectiveTracker = nil
+    questRow.PreClick(questRow, "RightButton")
+    questRow.OnClick(questRow, "RightButton")
+    assert(#clicked == 3 and lastMenu == nil and listOwner == questRow,
+        "the Gamepad UI opened Blizzard's context menu from the Suite's call")
+    QuestObjectiveTracker = blocks
+    -- World quests and threat quests: their own modules' headers open the
+    -- task map (left) and Blizzard's stop-tracking menu (right, while
+    -- watched), not the quest log; a plain bonus objective's header answers
+    -- nothing, so it keeps the quest log and the Suite's menu.
+    local function TaskRow(data)
+        data = RowData(data)
+        function data:SetAttribute(key, value)
+            self.attributes = self.attributes or {}
+            self.attributes[key] = value
+        end
+        function data:GetAttribute(key) return self.attributes and self.attributes[key] end
+        return data
+    end
+    local worldHeader, bonusHeader = NativeButton("WorldHeader"), NativeButton("BonusHeader")
+    WorldQuestObjectiveTracker = { showWorldQuests = true, GetExistingBlock = function(_, id)
+        return id == 77 and { used = true, HeaderButton = worldHeader } or nil
+    end }
+    BonusObjectiveTracker = { GetExistingBlock = function(_, id)
+        return (id == 88 or id == 89) and { used = true, HeaderButton = bonusHeader } or nil
+    end }
+    local zone, watched, threat = C_TaskQuest.GetQuestZoneID, QuestUtils_IsQuestWatched, C_QuestLog.IsThreatQuest
+    C_TaskQuest.GetQuestZoneID = function(id) return (id == 77 or id == 89) and 2022 or nil end
+    QuestUtils_IsQuestWatched = function(id) return id == 77 end
+    C_QuestLog.IsThreatQuest = function(id) return id == 89 end
+    local function Press(data, mouseButton)
+        local row = TaskRow(data)
+        listOwner = nil
+        questRow.PreClick(row, mouseButton)
+        questRow.OnClick(row, mouseButton)
+        return clicked[#clicked], row
+    end
+    local count = #clicked
+    assert(Press({ questID = 77, group = "world", tracked = true }, "LeftButton") == "WorldHeader"
+        and #clicked == count + 1, "a world quest row did not open its task map through the native header")
+    Press({ questID = 77, group = "world", tracked = true, menuTitle = "World Task" }, "RightButton")
+    assert(clicked[#clicked] == "WorldHeader" and #clicked == count + 2 and listOwner == nil,
+        "a world quest row's right click did not open Blizzard's menu through the native header")
+    assert(Press({ questID = 89, group = "bonus" }, "LeftButton") == "BonusHeader" and #clicked == count + 3,
+        "a threat quest row did not open its task map through the native header")
+    local _, threatRow = Press({ questID = 89, group = "bonus", menuTitle = "Threat" }, "RightButton")
+    assert(#clicked == count + 3 and listOwner == threatRow, "a threat quest's right click took a header without a menu")
+    assert(Press({ questID = 88, group = "bonus" }, "LeftButton") == "QuestLogMicroButton" and #clicked == count + 4,
+        "a bonus objective's left click went to a header that answers nothing")
+    local _, bonusRow = Press({ questID = 88, group = "bonus", menuTitle = "Bonus" }, "RightButton")
+    assert(#clicked == count + 4 and listOwner == bonusRow, "a bonus objective's right click lost the Suite's menu")
+    C_TaskQuest.GetQuestZoneID, QuestUtils_IsQuestWatched, C_QuestLog.IsThreatQuest = zone, watched, threat
+    WorldQuestObjectiveTracker, BonusObjectiveTracker = nil, nil
+    -- In combat the template acts on nothing: the Suite's menu (KS-2 rules).
+    combatLocked = true
+    questRow.PreClick(questRow, "RightButton")
+    questRow.OnClick(questRow, "RightButton")
+    assert(#clicked == count + 4 and listOwner == questRow, "a combat right click went to Blizzard's header")
+    combatLocked = false
+    S.ContextMenu = contextMenu
+    InputUtil, QuestLogMicroButton, QuestObjectiveTracker = nil, nil, nil
 end
 local before = setPoints
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")

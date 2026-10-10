@@ -74,9 +74,9 @@ local function Build()
     MM.microMenu = flyout
 end
 
--- One row per offered micro button; returns how many rows show.
-local function Fill()
-    local count, font = S.MicroMenuEntries(entries, false), S.GlobalFontPath()
+-- One row per entry (S.MicroMenuEntries' shape) of the first count entries.
+local function Fill(count, title)
+    local font = S.GlobalFontPath()
     for i = 1, count do
         local entry, row = entries[i], Row(i)
         row:SetAttribute("clickbutton", entry.button)
@@ -92,20 +92,21 @@ local function Fill()
         rows[i]:SetAttribute("clickbutton", nil)
     end
     S.SetFont(flyout.title, font, FONT, "")
-    flyout.title:SetText(S.Text("Micro menu"))
+    flyout.title:SetText(title)
     flyout.title:SetTextColor(.8, .8, .8)
     return count
 end
 
--- Opens the flyout at the cursor; a second middle click closes it.
-function MM.OpenMicroMenu()
+-- Opens the flyout at the cursor with the entries collect(entries) fills (it
+-- returns their count); a second middle click closes it.
+local function Open(collect, title)
     if not M.active or NS.IsCombatLocked() then return end
     Build()
     if flyout:IsShown() then
         Close()
         return
     end
-    local count = Fill()
+    local count = Fill(collect(entries), title)
     if count == 0 then return end
     flyout:SetSize(WIDTH, PAD * 2 + ROW * (count + 1))
     local r, g, b = MM.BorderRGB()
@@ -117,4 +118,24 @@ function MM.OpenMicroMenu()
     flyout:Show()
     MM.Listen("GLOBAL_MOUSE_DOWN", "micro", ClickAway)
     MM.Listen("PLAYER_REGEN_DISABLED", "micro", Close)
+end
+
+local function MicroEntries(list) return S.MicroMenuEntries(list, false) end
+function MM.OpenMicroMenu()
+    Open(MicroEntries, S.Text("Micro menu"))
+end
+
+-- Under WoW Forever's Gamepad UI (S.GamepadUI) the middle-click's calendar
+-- and world map (Input.lua) open through the same flyout: one secure row
+-- that clicks Blizzard's own button (S.PanelButton), because the map's
+-- OnMouseUp runs the Suite's code and cannot click securely.
+function MM.OpenWindowFlyout(panel, label)
+    Open(function(list)
+        local button = S.PanelButton(panel)
+        if not button then return 0 end
+        local entry = list[1] or {}
+        list[1] = entry
+        entry.button, entry.action, entry.label, entry.enabled = button, nil, label, true
+        return 1
+    end, label)
 end

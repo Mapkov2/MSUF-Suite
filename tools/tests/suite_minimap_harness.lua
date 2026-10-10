@@ -275,6 +275,8 @@ function H.New(root, client, options)
     function F:SetPassThroughButtons(...) Guard(self, "SetPassThroughButtons"); self.passThrough = { ... } end
     function F:SetPropagateMouseMotion(value) Guard(self, "SetPropagateMouseMotion"); self.propagate = value end
     function F:IsMouseOver() return self.mouseOver == true end
+    -- Region:IsMouseMotionFocus: the pointer rests on this frame itself.
+    function F:IsMouseMotionFocus() return self.motionFocus == true end
     function F:AddRoleset(value) self.roleset = value end
     function F:SetScript(key, value) self.scripts[key] = value end
     function F:GetScript(key) return self.scripts[key] end
@@ -426,12 +428,22 @@ function H.New(root, client, options)
     -- Suite sets (item, toy, spell, click), each recorded in W.secureActions;
     -- the "click" action clicks its clickbutton from secure code.
     W.secureActions = {}
+    -- SecureButton_GetModifiedAttribute: the client's GetAttribute(prefix,
+    -- name, suffix) tries prefix..name..suffix, "*"..name..suffix,
+    -- prefix..name.."*", "*"..name.."*", then name; the prefix names the held
+    -- modifiers (SecureButton_GetModifierPrefix: "alt-ctrl-shift-" order).
+    -- W.modifiers.shift/ctrl/alt hold them here.
+    W.modifiers = {}
     local function ModifiedAttribute(frame, name, button)
-        local suffix = button == "LeftButton" and "1" or button == "RightButton" and "2" or ""
-        local value = frame:GetAttribute(name .. suffix)
-        if value == nil then value = frame:GetAttribute("*" .. name .. suffix) end
-        if value == nil then value = frame:GetAttribute(name) end
-        return value
+        local suffix = button == "LeftButton" and "1" or button == "RightButton" and "2"
+            or button == "MiddleButton" and "3" or ""
+        local prefix = (W.modifiers.alt and "alt-" or "") .. (W.modifiers.ctrl and "ctrl-" or "")
+            .. (W.modifiers.shift and "shift-" or "")
+        for _, key in ipairs({ prefix .. name .. suffix, "*" .. name .. suffix, prefix .. name .. "*",
+            "*" .. name .. "*", name }) do
+            local value = frame:GetAttribute(key)
+            if value ~= nil then return value end
+        end
     end
     local function SecureActionClick(frame, button, down)
         local keydown = frame:GetAttribute("useOnKeyDown")
@@ -472,6 +484,18 @@ function H.New(root, client, options)
     end
     -- A hardware click: an enabled button receives the press and the release
     -- kinds it registered for, each through PreClick, OnClick and PostClick.
+    -- A mouse button released over the map as the client delivers it: the
+    -- map's OnMouseUp script (the Suite wraps Blizzard's on Retail), then
+    -- GLOBAL_MOUSE_UP with the map holding the pointer (the Suite listens
+    -- there on WoW Forever, Input.lua).
+    function W.MapMouseUp(button)
+        local map = W.map
+        local handler = map:GetScript("OnMouseUp")
+        if handler then handler(map, button) end
+        map.motionFocus = true
+        W.Event("GLOBAL_MOUSE_UP", button)
+        map.motionFocus = false
+    end
     function W.HardwareClick(frame, button)
         button = button or "LeftButton"
         if not frame.enabled then return end
@@ -709,7 +733,7 @@ function H.New(root, client, options)
     if options.beforeModules then options.beforeModules(W) end
     -- Blizzard builds its shared font objects at startup on every client.
     G.GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
-    for _, file in ipairs({ "Surfaces", "Runtime", "Timers", "MicroMenu", "DataSources", "EditMode" }) do
+    for _, file in ipairs({ "Surfaces", "Runtime", "Timers", "Dialogs", "MicroMenu", "DataSources", "EditMode" }) do
         Load("MSUF_Suite_Modules/" .. file .. ".lua", "MSUF_Suite_Modules", W.private)
     end
     for _, file in ipairs(options.modules or H.MODULES) do

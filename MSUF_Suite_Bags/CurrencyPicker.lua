@@ -120,7 +120,9 @@ end
 function S.BagCurrencyMenu(anchor)
     if not M.active then return false end
     ReadSelected()
-    MenuUtil.CreateContextMenu(anchor or UIParent, function(_, root)
+    -- Blizzard's context menu, or the Suite's list under WoW Forever's
+    -- Gamepad UI (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
+    S.ContextMenu(anchor or UIParent, function(_, root)
         for id in pairs(seen) do seen[id], options[id] = nil, nil end
         root:SetScrollMode(420)
         root:CreateTitle(S.Text("Choose currencies"))

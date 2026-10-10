@@ -408,7 +408,7 @@ for _, client in ipairs({ "Mainline", "Forever" }) do
     H.Enable(W, { captured = true, middleClick = 5 })
     W.Step()
     local MM, map = W.MM, W.map
-    local mouseUp = map:GetScript("OnMouseUp")
+    local function mouseUp(_, button) W.MapMouseUp(button) end
     mouseUp(map, "MiddleButton")
     local flyout = MM.microMenu
     check(flyout and flyout.shown, client .. ": middle click did not open the micro menu")

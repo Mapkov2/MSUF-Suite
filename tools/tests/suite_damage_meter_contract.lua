@@ -308,7 +308,7 @@ local files={"Data","Rows","Window","Breakdown","Menus","Timer","Controller"}
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
-for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode","Dialogs"}) do
+for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode","Dialogs","MicroMenu"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
 local baseFrames=#frames
@@ -802,6 +802,16 @@ roster[1].recap=55
 Event("DAMAGE_METER_RESET")
 Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
 assert(recapOpened==55,"death recap not opened")
+-- Blizzard's recap is a panel of its panel manager (OpenDeathRecapUI:
+-- ShowUIPanel): from the Suite's call it is refused in combat lockdown and
+-- under WoW Forever's Gamepad UI it would run the frame controls manager
+-- tainted. Then the death opens in the Suite's own panel.
+recapOpened=nil
+InputUtil={IsGamepadUIEnabled=function() return true end}
+Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
+InputUtil=nil
+assert(recapOpened==nil and win.bd.open,"the Gamepad UI opened Blizzard's death recap from the Suite's call")
+D.CloseBreakdown(win,true)
 roster[1].recap=nil
 S.Set("damageMeter","w1Session",2)
 assert(Row(win,1).valueText.text=="" and win.title.text=="Deaths (Overall)","overall deaths must have no time: "..tostring(win.title.text))

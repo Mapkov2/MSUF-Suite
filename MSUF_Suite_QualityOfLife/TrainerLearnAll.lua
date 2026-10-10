@@ -239,7 +239,11 @@ local function Attach(self)
         return
     end
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
-    local button = S.CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    -- Parented after creation: on WoW Forever's Gamepad UI the open trainer
+    -- is a panel SmartNavigation rescans from a CreateFrame post-hook in the
+    -- caller's execution (SmartNavigation.lua SetupFrameHooks, UpdateParent).
+    local button = S.CreateFrame("Button", nil, nil, "UIPanelButtonTemplate")
+    button:SetParent(frame)
     button:SetSize(125, 22)
     button:SetPoint("RIGHT", ClassTrainerTrainButton, "LEFT", -8, 0)
     button:SetFrameLevel(frame:GetFrameLevel() + 10)

@@ -22,6 +22,12 @@ local function Widget(parent)
     end
     function w:SetShown(value) if value then self:Show() else self:Hide() end end
     function w:IsShown() return self.shown end
+    function w:SetParent(value) self.parent = value end
+    function w:GetScript(name) return self.scripts[name] end
+    function w:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
+    function w:UnregisterEvent(event) if self.events then self.events[event] = nil end end
+    -- Region:IsMouseMotionFocus: the pointer rests on this frame, not a child.
+    function w:IsMouseMotionFocus() return self.motionFocus == true end
     function w:SetAlpha(value) self.alpha = value end
     function w:GetAlpha() return self.alpha end
     function w:EnableMouse(value) self.mouse = value end
@@ -170,9 +176,15 @@ S.Text = function(value) return value end
 S.BlizzardText = function(_, fallback) return fallback end
 S.SetFont = function(w, ...) w:SetFont(...) end
 S.Dispatch = function(callback, ...) return callback(...) end
-S.CreateFrame = function(_, _, parent, template)
+-- Every frame the list creates, and how many were created with a parent.
+local created, parentedCreates = {}, 0
+S.CreateFrame = function(kind, _, parent, template)
     templates[#templates + 1] = template or false
-    return Widget(parent)
+    if parent ~= nil then parentedCreates = parentedCreates + 1 end
+    local frame = Widget(parent)
+    frame.kind = kind
+    created[#created + 1] = frame
+    return frame
 end
 S.CreateTexture = function(parent) return Widget(parent) end
 S.CreateFontString = S.CreateTexture
@@ -218,6 +230,20 @@ Check(not list.panel or not list.panel.shown, "the list showed without an open m
 MerchantFrame:Show()
 local panel = list.panel
 Check(panel and panel.shown and panel.parent == MerchantFrame, "opening the merchant did not show the list")
+-- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans the panel
+-- above the new frame's parent in the caller's execution, and its scan reads
+-- GetScript("OnMouseUp") and ("OnMouseDown") of every non-Button in the panel
+-- (Blizzard_GamepadSmartNavigation/SmartNavigation.lua SetupFrameHooks,
+-- Utility.lua SmartNavigation_CanFocusFrame): MerchantFrame is such a panel
+-- on the Gamepad UI. The list creates its frames without a parent, and no
+-- Suite handler is one SmartNavigation reads.
+Check(parentedCreates == 0, "the merchant list created frames with a parent inside MerchantFrame")
+for _, frame in ipairs(created) do
+    Check(frame.kind == "Button" or frame.kind == "EditBox"
+        or (frame:GetScript("OnMouseUp") == nil and frame:GetScript("OnMouseDown") == nil),
+        "a merchant list " .. tostring(frame.kind) .. " has a mouse handler SmartNavigation reads")
+end
+Check(panel.events and panel.events.GLOBAL_MOUSE_UP, "the shown list does not watch for a release over it")
 for _, template in ipairs(templates) do
     Check(template ~= "MerchantItemTemplate", "the list built Blizzard's merchant item rows from addon code")
 end
@@ -354,7 +380,13 @@ Check(#picked == 3 and #bought == 4 and Confirmation()
     and Confirmation().text == "Refund bagitem for its purchase price?", "a refundable item was sold without asking")
 dialogs.Accept(Confirmation())
 Check(refunds[1] and refunds[1][1] == 0 and refunds[1][2] == 3 and refunds[1][3] == false, "the accepted refund did not run")
-panel.scripts.OnMouseUp(panel)
+-- A release over a row is the row's click; over the list itself it sells.
+panel.motionFocus = false
+panel.scripts.OnEvent(panel, "GLOBAL_MOUSE_UP", "LeftButton")
+Check(#refunds == 1 and not Confirmation(), "a release elsewhere sold the cursor item")
+panel.motionFocus = true
+panel.scripts.OnEvent(panel, "GLOBAL_MOUSE_UP", "LeftButton")
+panel.motionFocus = false
 dialogs.Cancel(Confirmation())
 Check(cleared == 1 and #refunds == 1 and #picked == 3, "declining the refund did not put the item back")
 cursor, cursorItem, purchase = nil, nil, nil

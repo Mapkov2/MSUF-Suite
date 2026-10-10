@@ -25,6 +25,7 @@ function methods:GetTop() return self.top end
 function methods:GetScale() return 1 end
 function methods:GetFrameLevel() return 10 end
 function methods:SetScript(event, callback) self.scripts[event] = callback end
+function methods:SetParent(value) self.parent = value end
 function methods:HookScript(event, callback)
     local previous = self.scripts[event]
     self.scripts[event] = function(...) if previous then previous(...) end; callback(...) end
@@ -123,6 +124,20 @@ local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, Bag
     Client = { SupportsEvent = function() return true end } }, BagsModule = module,
     BagFinance = { Refresh = function() end },
     InventoryEditor = { Show = function() end, Hide = function() end, ShowPinned = function() end } }
+-- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans the open
+-- bag or bank window above a new frame's parent in the caller's execution
+-- (Blizzard_GamepadSmartNavigation/SmartNavigation.lua SetupFrameHooks,
+-- UpdateParent): the Suite creates its frames there without a parent
+-- (P.ChildFrame, MSUF_Suite_Bags/Bootstrap.lua) and parents them afterwards.
+local parentedCreates = 0
+do
+    local create = S.CreateFrame
+    S.CreateFrame = function(kind, name, parent, ...)
+        if parent ~= nil then parentedCreates = parentedCreates + 1 end
+        return create(kind, name, parent, ...)
+    end
+end
+P.ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S)
 -- Renders are one coalesced job on the Bags module's context.
 P.NS.Dispatch = function(callback, ...) return callback(...) end
 module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", module)
@@ -180,4 +195,5 @@ for i = 1, #buttons do
     assert(buttons[i].shown and buttons[i].point[1] == "NATIVE", "native slots restored")
     assert(buttons[i].Count.font[1] == "Native" and buttons[i].Count.font[2] == 14, "native count fonts restored")
 end
+assert(parentedCreates == 0, "the bag view created Suite frames with a parent inside Blizzard's bag window")
 print("bag view coalescing, hidden/combat paths, physical transactions and restoration passed")

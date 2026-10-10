@@ -617,6 +617,17 @@ end
 -- The nameplate token lists exactly as MSUF_Suite_Modules/Runtime.lua builds
 -- them (S.NameplateUnits, S.NameplateUnit), for contracts that load a module
 -- on a stub Suite table without the shared runtime.
+-- The Bags addon's P.ChildFrame (MSUF_Suite_Bags/Bootstrap.lua) over the
+-- test's Suite table S: frames below Blizzard's bag and bank windows are
+-- created without a parent and parented afterwards.
+function Support.BagsChildFrame(root, S)
+    local previous, private = _G.MSUFSuite, {}
+    _G.MSUFSuite = { Suite = S }
+    assert(loadfile(root .. "/MSUF_Suite_Bags/Bootstrap.lua"))("MSUF_Suite_Bags", private)
+    _G.MSUFSuite = previous
+    return private.ChildFrame
+end
+
 function Support.NameplateUnits(root)
     local suite = {}
     local ns = setmetatable({ Suite = suite }, { __index = function() return function() end end })

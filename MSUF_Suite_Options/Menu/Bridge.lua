@@ -360,8 +360,18 @@ function P.Combat() return Suite.InCombat() end
 -- while that load-on-demand runtime is not loaded, so they open Blizzard's
 -- dialog themselves then and keep that question here, and close it when the
 -- runtime asks the next one.
+-- Under WoW Forever's Gamepad UI the runtime's questions and menus are the
+-- Suite's own list (S.Confirm, S.AskText, S.ContextMenu): Blizzard's popup
+-- and menu code would run its frame controls manager in the page's call
+-- there. So on WoW Forever a page loads that runtime when no module has, out
+-- of combat; Retail has no Gamepad UI and never loads it for a question, so
+-- there the pages use the runtime only once a module loaded it, as before.
 local GENERIC_CONFIRMATION, GENERIC_INPUT_BOX = "GENERIC_CONFIRMATION", "GENERIC_INPUT_BOX"
 local questions = {}
+local function SuiteDialogs()
+    if not S.Confirm and Suite.Client.isForever and not P.Combat() then C_AddOns.LoadAddOn("MSUF_Suite_Modules") end
+    return S.Confirm ~= nil
+end
 local function CloseQuestion(key)
     local earlier = questions[key]
     if not earlier then return end
@@ -371,7 +381,7 @@ end
 function P.Confirm(key, text, onAccept)
     CloseQuestion(key)
     local data = { text = "%s", text_arg1 = text, callback = onAccept }
-    if S.Confirm then return S.Confirm("options:" .. key, data) end
+    if SuiteDialogs() then return S.Confirm("options:" .. key, data) end
     questions[key] = { which = GENERIC_CONFIRMATION, data = data }
     StaticPopup_ShowCustomGenericConfirmation(data)
 end
@@ -395,7 +405,7 @@ function P.AskText(key, text, onAccept, maxLetters, maxBytes)
     end
     local onHide = maxBytes and Hidden or nil
     local dialog
-    if S.AskText then
+    if SuiteDialogs() then
         dialog = S.AskText("options:" .. key, data, onHide)
     else
         questions[key] = { which = GENERIC_INPUT_BOX, data = data }
@@ -408,6 +418,13 @@ function P.AskText(key, text, onAccept, maxLetters, maxBytes)
         edit:SetMaxBytes(maxBytes + 1)
     end
     return dialog
+end
+
+-- A page's context menu (MenuUtil.CreateContextMenu arguments) through the
+-- runtime's S.ContextMenu, as the questions above.
+function P.ContextMenu(owner, generator, ...)
+    if SuiteDialogs() then return S.ContextMenu(owner, generator, ...) end
+    return MenuUtil.CreateContextMenu(owner, generator, ...)
 end
 
 -- "Save setup as…": the MSUF frames, the Suite and the skin of the active
@@ -584,6 +601,8 @@ end
 -- (SecureActionButton_OnClick, Blizzard_FrameXML/SecureTemplates.lua). The
 -- overlay never lives inside the menu. PLAYER_REGEN_DISABLED arrives before
 -- the lockdown and releases it; a "[combat] hide" state driver backs that up.
+-- The same overlay clicks a Blizzard button instead (type "click") for a page
+-- button set up by P.SecureClick.
 local secure
 local function SecureDetach()
     if not secure or P.Combat() then return end
@@ -632,11 +651,15 @@ local function SecureOverlay()
     return secure
 end
 local function SecureAttach(button)
-    if P.Combat() or secure and secure.combat or not button.secureMacro or not button.secureReady() then return end
+    if P.Combat() or secure and secure.combat or not button.secureReady() then return end
+    local target = button.secureClick and button.secureClick()
+    if not (target or button.secureMacro) then return end
     local overlay = SecureOverlay()
     if overlay.owner == button and overlay:IsShown() then return end
     overlay.owner = button
-    overlay:SetAttribute("macrotext1", button.secureMacro)
+    overlay:SetAttribute("type1", target and "click" or "macro")
+    overlay:SetAttribute("clickbutton1", target)
+    overlay:SetAttribute("macrotext1", not target and button.secureMacro or nil)
     overlay:SetFrameStrata(button:GetFrameStrata())
     overlay:SetFrameLevel(button:GetFrameLevel() + 5)
     overlay:ClearAllPoints()
@@ -655,6 +678,18 @@ function P.SecureMacroButton(ctx, parent, label, x, y, width, macro, enabled, me
     if meta and M.RegisterControlMetadata then M.RegisterControlMetadata(button, meta, label, "button") end
     M.TrackRefresh(ctx, function() button:SetEnabled(button.secureReady() and not P.Combat()) end)
     return button
+end
+
+-- A page button (P.Button, enabled by its page) whose click, while target()
+-- names a Blizzard button, clicks that button from the secure overlay above;
+-- otherwise the page button's own OnClick runs.
+function P.SecureClick(button, target)
+    button.secureClick, button.secureMacro = target, false
+    button.secureReady = function() return button:IsEnabled() == true end
+    button:HookScript("OnEnter", SecureAttach)
+    button:HookScript("OnHide", function(self)
+        if secure and secure.owner == self then SecureDetach() end
+    end)
 end
 
 -- Collapsible bodies built with explicit positions report their height here,

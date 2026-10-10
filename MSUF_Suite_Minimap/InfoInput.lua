@@ -16,7 +16,12 @@ local CLOCK_CLICK = NS.MinimapClockClick
 -- ToggleCalendar and ToggleTimeManager are the bootstrap entry points of
 -- Blizzard's load-on-demand calendar and clock (they load the addon first):
 -- the calendar opens through ShowUIPanel (Calendar_Toggle), the clock window
--- is a plain frame outside the panel manager.
+-- is a plain frame outside the panel manager. Under WoW Forever's Gamepad UI
+-- (S.GamepadUI) both register with Blizzard's frame controls manager in the
+-- caller's context (TimeManager_Toggle calls FrameShown itself), so there the
+-- Clock text borrows the overlay too: its left and right clicks click
+-- Blizzard's calendar button and clock button (S.PanelButton "calendar" and
+-- "clock"), and no window opens from the text's own click.
 local PANELS = { Coordinates = "worldMap", Location = "worldMap", Durability = "character" }
 -- Blizzard's localized names where one exists, else the suite's own text.
 local TITLES = {
@@ -33,11 +38,18 @@ local overlay
 local function OpensWindow(button)
     local key = button.infoKey
     return key == "Coordinates" or key == "Durability" or key == "Location" and M.config.infoLocationClick == true
+        or key == "Clock" and S.GamepadUI()
+end
+
+-- The Clock text's windows: the left click's, then the right click's.
+local function ClockPanels()
+    if M.config.infoClockClick == CLOCK_CLICK.CALENDAR then return "calendar", "clock" end
+    return "clock", "calendar"
 end
 
 local function Click(button, mouseButton)
     if not M.active or NS.IsCombatLocked() then return end
-    if button.infoKey == "Clock" then
+    if button.infoKey == "Clock" and not S.GamepadUI() then
         local calendar = M.config.infoClockClick == CLOCK_CLICK.CALENDAR
         if mouseButton == "RightButton" then calendar = not calendar end
         if calendar then ToggleCalendar() else ToggleTimeManager() end
@@ -98,11 +110,23 @@ end
 
 local function Attach(button)
     if S.editMode or NS.IsCombatLocked() or not OpensWindow(button) then return end
-    local target = S.PanelButton(PANELS[button.infoKey])
-    if not target then return end
+    local target, left, right
+    if button.infoKey == "Clock" then
+        local leftPanel, rightPanel = ClockPanels()
+        left, right = S.PanelButton(leftPanel), S.PanelButton(rightPanel)
+        if not (left or right) then return end
+    else
+        target = S.PanelButton(PANELS[button.infoKey])
+        if not target then return end
+    end
     local frame = Overlay()
     frame.owner = button
+    -- SecureButton_GetModifiedAttribute looks up "shift-clickbutton1" and
+    -- the like first: the "*" prefix serves every modifier, so a modified
+    -- click opens the same window as a plain one.
     frame:SetAttribute("clickbutton", target)
+    frame:SetAttribute("*clickbutton1", left)
+    frame:SetAttribute("*clickbutton2", right)
     frame:SetFrameStrata(button:GetFrameStrata())
     frame:SetFrameLevel(button:GetFrameLevel() + 5)
     frame:ClearAllPoints()

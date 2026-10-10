@@ -95,6 +95,11 @@ local function PadNavigation()
     return type(navigation) == "table" and navigation or nil
 end
 
+-- True on a host whose pad navigation can reach Suite-owned windows.
+function Suite.Client.HasControllerNavigation()
+    return PadNavigation() ~= nil
+end
+
 function Suite.Client.PauseControllerWindow(frame)
     local navigation = PadNavigation()
     if navigation and frame then navigation.Release(frame) end

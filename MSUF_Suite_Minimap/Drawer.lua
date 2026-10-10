@@ -127,7 +127,9 @@ function S.MinimapButtonLayoutMenu(anchor)
     if not M.active or not MM.CollectsButtons() or NS.IsCombatLocked() then return false end
     local positions = Positions()
     if not positions then return false end
-    MenuUtil.CreateContextMenu(anchor or UIParent, function(_, root)
+    -- Blizzard's context menu, or the Suite's list under WoW Forever's
+    -- Gamepad UI (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
+    S.ContextMenu(anchor or UIParent, function(_, root)
         root:CreateTitle(S.Text("Addon button positions"))
         for _, button in ipairs(list) do
             if MM.Usable(button) then

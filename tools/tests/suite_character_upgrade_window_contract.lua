@@ -35,6 +35,8 @@ local NS = {
 }
 local watcher
 local S = {
+    -- MSUF_Suite_Modules/Dialogs.lua: Retail and Forever without its Gamepad UI.
+    GamepadUI = function() return false end,
     Dispatch = Support.Dispatcher(reported),
     CreateFrame = function()
         watcher = { events = {} }

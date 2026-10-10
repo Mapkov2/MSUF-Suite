@@ -69,6 +69,7 @@ GetMoney = function() return money end
 GetServerTime = function() return now end
 hooksecurefunc = function() end
 UISpecialFrames = {}
+P.ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S)
 assert(loadfile(root .. "/MSUF_Suite_Bags/GridView.lua"))("Bags", P)
 -- A client in UTC: local calendar days are the UTC days below.
 date = function(format, time)
@@ -209,6 +210,7 @@ do
             IsShown = function(self) return self.shown ~= false end,
             Show = function(self) self.shown = true end, Hide = function(self) self.shown = false end,
             SetShown = function(self, value) self.shown = value end,
+            SetParent = function(self, value) self.parent = value end,
             TitleText = { SetText = Noop } }
     end
     S.CreateFrame = Frame
@@ -229,7 +231,18 @@ do
     C_CurrencyInfo = { GetCurrencyInfo = function() return nil end }
     M.frame = Frame()
     M.config.font = nil
+    -- The footer button sits in Blizzard's open bag window: WoW Forever's
+    -- SmartNavigation post-hooks CreateFrame and rescans that panel in the
+    -- caller's execution, so it is created without a parent (P.ChildFrame).
+    local parented = 0
+    S.CreateFrame = function(kind, name, parent)
+        if parent ~= nil then parented = parented + 1 end
+        return Frame(kind, name, parent)
+    end
     F.Refresh()
+    assert(parented == 0 and F.button.parent == M.frame,
+        "the gold history button was created with a parent inside Blizzard's bag window")
+    S.CreateFrame = Frame
     assert(F.label.font == globalFont and F.label.text == "Gold history",
         "default font must initialize the footer before text is set")
     F.Show()

@@ -56,6 +56,7 @@ local PopupMethods = {}
 function PopupMethods:GetButton1() return self._s.buttons[1] end
 function PopupMethods:GetWidth() return 360 end
 function PopupMethods:GetFrameStrata() return "DIALOG" end
+function PopupMethods:IsShown() return self._s.shown == true end
 function PopupMethods:HookScript(script, callback)
     assert(script == "OnHide"); self._s.onHide = callback; hooks = hooks + 1
 end
@@ -79,6 +80,16 @@ StaticPopup_Show = function(which)
 end
 local hints = {}
 UIParent = { name = "UIParent" }
+-- WoW Forever's Gamepad UI and the client's pad modifier CVars.
+local gamepadUI, padModifiers = false, { GamePadEmulateShift = "PADLTRIGGER", GamePadEmulateCtrl = "none" }
+C_CVar = { GetCVar = function(name) return padModifiers[name] end }
+-- S.GamepadUI (MSUF_Suite_Modules/Dialogs.lua, loaded by the QoL fixture) reads InputUtil.
+InputUtil = { IsGamepadUIEnabled = function() return gamepadUI end }
+-- The client's display text for a key; a pad button's is its icon markup.
+GetBindingText = function(key, abbreviate)
+    assert(abbreviate == true)
+    return "|A:Gamepad_" .. key .. "_32:14:14|a"
+end
 local S = {
     CreateFrame = function(kind, name, parent)
         assert(kind == "Frame" and name == nil)
@@ -88,7 +99,11 @@ local S = {
     end,
     Install = function(id, module) assert(id == "releaseProtection"); installed = module end,
     Public = function(value) return value ~= secret end,
-    Text = function(text) return text == "Hold %s to release spirit" and "Halte %s zum Freilassen" or text end,
+    Text = function(text)
+        if text == "Hold %s to release spirit" then return "Halte %s zum Freilassen" end
+        if text == "Press %s, then %s to release spirit" then return "Drücke %s, dann %s zum Freilassen" end
+        return text
+    end,
     SetFont = function() end,
     CreateFontString = function(parent)
         local hint = { parent = parent }
@@ -105,15 +120,35 @@ local S = {
     end,
 }
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
-local NS = { Safety = { IsForbidden = function(frame) return frame._s.forbidden == true end } }
+local NS = { Safety = { IsForbidden = function(frame) return frame._s.forbidden == true end },
+    Client = { isForever = true } }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ReleaseProtection.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local M = assert(installed)
 M.active, M.config = true, { modifier = 1, openWorld = true, party = true, raid = true, pvp = true }
-M.context = { events = {}, Event = function(self, event, callback, allowCombat)
+-- Context timers (MSUF_Suite_Modules/Timers.lua): After runs fn(module) once
+-- delay has passed (Elapse here), Cancel drops it.
+M.context = { events = {}, timers = {}, Event = function(self, event, callback, allowCombat)
     assert(dofile(root .. "/tools/tests/suite_test_support.lua").InCombatOption(allowCombat), "death protection must react during combat")
     self.events[event] = callback
-end, RemoveEvent = function(self, event) self.events[event] = nil end }
+end, RemoveEvent = function(self, event) self.events[event] = nil end,
+After = function(self, delay, fn) self.timers[fn] = delay end,
+Cancel = function(self, fn) self.timers[fn] = nil end }
+local function Elapse(seconds)
+    local due = {}
+    for fn, left in pairs(M.context.timers) do
+        if left <= seconds then due[#due + 1] = fn else M.context.timers[fn] = left - seconds end
+    end
+    for _, fn in ipairs(due) do
+        M.context.timers[fn] = nil
+        fn(M)
+    end
+end
+local function Transition(toGamepad)
+    gamepadUI = toGamepad
+    M.context.events.INPUT_DEVICE_INTERFACE_TRANSITION(M, "INPUT_DEVICE_INTERFACE_TRANSITION",
+        toGamepad and 1 or 0, toGamepad and 0 or 1)
+end
 local function Modifier(index, down)
     modifiers[index] = down
     local event = M.context.events.MODIFIER_STATE_CHANGED
@@ -238,6 +273,127 @@ assert(Locked(releaseState))
 M.active = false
 M:Disable()
 assert(releaseState.alpha == .6 and releaseState.mouse == false, "disable lost the native alpha or mouse state")
+
+-- WoW Forever's Gamepad UI. GamepadPopupHandler binds only the bare PAD1
+-- to the dialog's first button (StaticPopupGamepad.lua InitializeBindings,
+-- ClickPopupButton: IsShown and IsEnabled, then Click), after its binding
+-- group's BlockEverything bound SHIFT-PAD1, CTRL-PAD1 and CTRL-SHIFT-PAD1 to
+-- nothing (BindingSetFactory.lua BlockKeysWithModifiers); the Gamepad UI's
+-- triggers are those modifiers (GamepadConstants.lua: LT Shift, RT Ctrl).
+-- So an A pressed while a modifier is held never reaches Release.
+local function PadPress(button)
+    if modifiers[1] or modifiers[2] or modifiers[3] then return "blocked" end
+    if button:IsShown() and button._s.enabled then
+        button._s.clicks = button._s.clicks + 1
+        return "clicked"
+    end
+    return "hidden"
+end
+local PAD_HINT = "Drücke |A:Gamepad_PADLTRIGGER_32:14:14|a, dann |A:Gamepad_PAD1_32:14:14|a zum Freilassen"
+M.active = true
+M.config.modifier = 1
+M:Enable()
+StaticPopup_Show("DEATH")
+releaseState = popupState.states[1]
+local padClicks = releaseState.clicks
+assert(PadPress(release) == "clicked" and releaseState.clicks == padClicks + 1,
+    "fixture: outside the Gamepad UI the pad press still releases")
+-- Under the Gamepad UI the lock hides Release and the hint says how to
+-- release with the pad alone.
+gamepadUI = true
+M:Refresh()
+assert(PadPress(release) == "hidden" and releaseState.clicks == padClicks + 1 and hint.shown and hint.text == PAD_HINT,
+    "the pad's A released without the modifier under the Gamepad UI, or the hint does not name the pad's buttons")
+-- Pressing the modifier arms Release; while it is held the A is a modified
+-- chord that Blizzard blocks, so the window lasts past the release.
+Modifier(1, true)
+assert(releaseState.shown and not Locked(releaseState), "the pad modifier did not bring Release back")
+assert(PadPress(release) == "blocked" and releaseState.clicks == padClicks + 1, "fixture: a modified A reached Release")
+Modifier(1, false)
+assert(releaseState.shown and not Locked(releaseState), "letting go of the modifier took Release away at once")
+Elapse(2)
+assert(PadPress(release) == "clicked" and releaseState.clicks == padClicks + 2,
+    "the bare A right after the modifier did not release (the pad-only player is stuck)")
+Elapse(1)
+assert(not releaseState.shown and Locked(releaseState), "Release stayed pressable after the armed window")
+assert(PadPress(release) == "hidden" and releaseState.clicks == padClicks + 2, "the A released after the window")
+-- A second press restarts the window; holding keeps Release up.
+Modifier(1, true)
+Elapse(10)
+assert(releaseState.shown, "holding the modifier lost Release")
+Modifier(1, false)
+Elapse(2)
+Modifier(1, true)
+Modifier(1, false)
+Elapse(2)
+assert(releaseState.shown and PadPress(release) == "clicked", "a second press did not restart the window")
+Elapse(1)
+assert(not releaseState.shown, "the restarted window did not end")
+-- Without a pad button for the modifier a pad-only player could never arm
+-- it: Release keeps Blizzard's A press then.
+M.config.modifier = 2
+M:Refresh()
+assert(releaseState.shown and Locked(releaseState) and hint.text == "Halte Ctrl zum Freilassen",
+    "a modifier the pad cannot press hid Release")
+M.config.modifier = 1
+M:Refresh()
+assert(not releaseState.shown, "the pad lock did not return")
+popup:Hide()
+assert(not releaseState.shown, "closing the dialog showed a button of a hidden dialog")
+StaticPopup_Show("DEATH")
+assert(not releaseState.shown and Locked(releaseState), "a shown DEATH dialog lost the pad lock")
+gamepadUI = false
+M:Refresh()
+assert(releaseState.shown and Locked(releaseState), "leaving the Gamepad UI kept Release hidden")
+-- The input device switch alone re-syncs: the mouse UI shows Release while
+-- dead at once, the Gamepad UI hides it at once (Forever's
+-- INPUT_DEVICE_INTERFACE_TRANSITION).
+gamepadUI = true
+M:Refresh()
+assert(not releaseState.shown, "fixture: the Gamepad UI did not hide Release")
+Transition(false)
+assert(releaseState.shown and Locked(releaseState) and hint.text == "Halte Shift zum Freilassen",
+    "switching to the mouse UI while dead kept Release hidden")
+Transition(true)
+assert(not releaseState.shown and hint.text == PAD_HINT,
+    "switching into the Gamepad UI while dead left Release pressable or the mouse hint")
+M.active = false
+M:Disable()
+
+-- Rescue: whatever the pad does, the pad lock ends 30 seconds after it began
+-- on a dialog, also after the modifier was used, and the A releases as on
+-- Blizzard's own dialog. A new dialog starts locked again.
+popup:Hide()
+M.active = true
+M:Enable()
+StaticPopup_Show("DEATH")
+releaseState = popupState.states[1]
+padClicks = releaseState.clicks
+assert(not releaseState.shown, "fixture: the Gamepad UI hid Release")
+Modifier(1, true)
+Modifier(1, false)
+Elapse(3)
+Elapse(26)
+assert(PadPress(release) == "hidden" and releaseState.clicks == padClicks, "the rescue freed Release too early")
+Elapse(1)
+assert(releaseState.shown and not Locked(releaseState) and not hint.shown,
+    "the rescue left the pad-only player without a visible Release")
+assert(PadPress(release) == "clicked" and releaseState.clicks == padClicks + 1, "the rescued Release did not take the A")
+Modifier(1, true)
+Modifier(1, false)
+Elapse(3)
+assert(releaseState.shown, "the modifier took the rescued Release away")
+Transition(false)
+assert(releaseState.shown and Locked(releaseState) and hint.shown, "the mouse UI lost its lock after a pad rescue")
+Transition(true)
+popup:Hide()
+assert(next(M.context.timers) == nil, "a closed dialog kept a timer")
+StaticPopup_Show("DEATH")
+assert(not releaseState.shown and hint.text == PAD_HINT, "a new death started without the pad lock")
+Elapse(30)
+assert(releaseState.shown, "the rescue did not come on the next death")
+M.active = false
+M:Disable()
 
 -- A different pooled popup gets its own hint and cleanup; forbidden UI is untouched.
 popup:Hide()

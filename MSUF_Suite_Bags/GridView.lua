@@ -32,8 +32,10 @@ function GridView.RefreshFonts()
     for text in pairs(GridView.texts) do ApplyFont(text, path) end
 end
 
+-- Parented after creation (P.ChildFrame, Bootstrap.lua): these buttons sit
+-- in Blizzard's bag and bank windows.
 function GridView.Button(parent, label, width, callback, height)
-    local button = S.CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    local button = P.ChildFrame("Button", parent, "UIPanelButtonTemplate")
     button:SetSize(width, height or 22)
     button:SetText(S.Text(label))
     button:SetScript("OnClick", callback)

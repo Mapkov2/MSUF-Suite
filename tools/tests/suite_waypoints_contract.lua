@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local module, notices = nil, {}
+local module, notices, combat = nil, {}, false
 local suite = {
     Install = function(_, value) module = value end,
     Public = function(value) return value ~= "secret" end,
@@ -8,6 +8,8 @@ local suite = {
     Finite = function(value) return type(value) == "number" and value == value end,
     Text = function(value) return value end,
     Print = function(value) notices[#notices + 1] = value end,
+    -- MSUF_Suite_Modules/MicroMenu.lua: out of combat lockdown (Retail only).
+    CanOpenNativeWindow = function() return not combat end,
 }
 local slash = Support.SlashRegistry()
 local placed, tracked, mapOpened = nil, false, false
@@ -67,6 +69,12 @@ WorldMapFrame.shown = false
 tracked = false
 assert(slash.Type("/msufway 22 75 20") and placed.mapID == 22 and placed.x == .75 and placed.y == .2
     and tracked and mapOpened, "explicit map waypoint was not tracked")
+-- In combat Blizzard's panel manager refuses the Suite's ToggleWorldMap:
+-- the waypoint is placed and the map is left alone.
+mapOpened, combat = false, true
+assert(slash.Type("/msufway 22 50 50") and placed.x == .5 and not mapOpened,
+    "the waypoint command opened the world map from the Suite's code in combat")
+combat = false
 local oldPoint = placed
 slash.Type("/way 101 20")
 assert(placed == oldPoint and #notices == 1, "out of range coordinates were accepted")

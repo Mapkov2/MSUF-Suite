@@ -2266,12 +2266,6 @@
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "lod",
-   "reason": "export of MSUF_Suite_Modules, which loads on demand: the pages ask in Blizzard's generic dialog themselves until it is loaded",
-   "symbol": "S.Confirm"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
    "symbol": "M.ShowStatusFeedback (= MSUF2)"
@@ -2833,6 +2827,12 @@
    "kind": "addon",
    "reason": "P.W is the external MSUF Menu2 widget API. New hosts provide the shared framed help button; older hosts retain a readable clickable fallback. suite_help_controls_contract exercises both host versions.",
    "symbol": "P.W.HelpButton"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Bags.lua",
+   "kind": "lod",
+   "reason": "export of MSUF_Suite_Modules (Dialogs.lua), which loads on demand; the options addon does not depend on it",
+   "symbol": "S.GamepadUI"
   }
  ]
 }

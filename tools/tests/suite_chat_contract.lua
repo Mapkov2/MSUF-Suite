@@ -643,12 +643,24 @@ assert(module.copyDialog.rows[1].message == nil and module.copyDialog.edit.text 
 assert(QuickJoinToastButton.alpha == 0 and not QuickJoinToastButton.mouse)
 assert(ChatFrameToggleVoiceMuteButton.alpha == 0 and not ChatFrameToggleVoiceMuteButton.mouse)
 assert(sidebar.friendCount.value == "5", "friend count did not use the live Blizzard data")
-sidebar.buttons[1].button:Click("LeftButton")
-sidebar.buttons[2].button:Click("LeftButton")
-sidebar.buttons[3].button:Click("LeftButton")
+-- S18-K4: a panel icon clicked without its secure delegate (the pointer
+-- rested on it since before combat ended) never clicks Blizzard's button
+-- from the Suite's code: the click attaches the delegate, and the delegate's
+-- click opens the panel from secure code.
+for index, native in ipairs({ QuickJoinToastButton, ChatFrameChannelButton, TextToSpeechButton }) do
+    local icon = sidebar.buttons[index].button
+    icon:Click("LeftButton")
+    local attached = module.panelDelegate
+    assert(not native.clicks and attached and attached.shown and attached.owner == icon
+        and attached:GetAttribute("clickbutton") == native,
+        "a panel icon clicked without its delegate clicked Blizzard's button from the Suite's code")
+    SecureClick(attached, "LeftButton")
+    assert(native.clicks == 1 and panelOpens[#panelOpens].button == native and panelOpens[#panelOpens].secure,
+        "the attached delegate did not open the panel from secure code")
+end
+module.panelDelegate.scripts.OnLeave(module.panelDelegate)
 sidebar.buttons[5].button:Click("LeftButton")
-assert(QuickJoinToastButton.clicks == 1 and ChatFrameChannelButton.clicks == 1
-    and TextToSpeechButton.clicks == 1 and ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
+assert(ChatFrame1.scrolled == 1, "sidebar controls did not retain their actions")
 -- The chat menu icon opens Blizzard's chat menu and a second click closes it;
 -- Shift (the icon's drag) and other mouse buttons leave it alone, as on
 -- Blizzard's own button.
@@ -672,6 +684,13 @@ HardwareClick(menuIcon, "LeftButton")
 ChatFrame1:Show()
 assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
     "the chat menu opened for a hidden Blizzard menu button")
+-- Under WoW Forever's Gamepad UI the menu, opened from the Suite's call,
+-- would run MenuProxy.OnShow's focus code tainted: the icon opens nothing.
+InputUtil = { IsGamepadUIEnabled = function() return true end }
+HardwareClick(menuIcon, "LeftButton")
+InputUtil = nil
+assert(not ChatFrameMenuButton:IsMenuOpen() and ChatFrameMenuButton.menuOpens == 1,
+    "the chat menu icon opened Blizzard's menu from the Suite's call under the Gamepad UI")
 -- Hovering a sidebar button lights its glyph in the accent color and names it.
 local channels = sidebar.buttons[2]
 channels.button.scripts.OnEnter(channels.button)
@@ -685,6 +704,7 @@ assert(not GameTooltip.shown and channels.glyph.color[4] == 0.94 and channels.hi
 -- through ShowUIPanel. Out of combat the icon under the pointer borrows one
 -- secure delegate that clicks Blizzard's button from secure code; it keeps
 -- the icon's hover look and tooltip and passes Shift-drags on.
+panelOpens = {}
 local friendsIcon = sidebar.buttons[1].button
 friendsIcon.scripts.OnEnter(friendsIcon)
 local delegate = module.panelDelegate
@@ -754,6 +774,34 @@ assert(ChatFrameChannelButton.clicks == nativeClicks and #panelOpens == opens + 
     "a panel icon clicked in combat called Blizzard's panel from tainted code")
 channelsIcon.scripts.OnLeave(channelsIcon)
 inCombat, lockdown = false, false
+-- KS-3: a plain icon (no delegate) dragged across the combat start keeps
+-- its new place: PLAYER_REGEN_DISABLED, before the lockdown, ends the drag
+-- and saves it; the release in combat changes nothing.
+local scrollIcon = sidebar.buttons[5].button
+shiftDown = true
+scrollIcon.scripts.OnDragStart(scrollIcon)
+shiftDown = false
+assert(scrollIcon.moving and ctx.callbacks.PLAYER_REGEN_DISABLED, "a plain icon drag does not watch the combat start")
+scrollIcon.GetCenter = function() return 30, 40 end
+inCombat = true
+ctx.callbacks.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+lockdown = true
+scrollIcon.scripts.OnDragStop(scrollIcon)
+assert(not scrollIcon.moving and saved.sidebarButton5X == 26 and saved.sidebarButton5Y == 34
+    and saved.sidebarButton5Moved == true, "a plain icon dragged across the combat start lost its new place")
+inCombat, lockdown = false, false
+-- The icon still under the pointer gets its delegate back after combat.
+channelsIcon.scripts.OnEnter(channelsIcon)
+inCombat = true
+ctx.callbacks.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+assert(not delegate.owner, "combat kept the delegate on the sidebar")
+inCombat = false
+channelsIcon.mouseOver = true
+ctx.callbacks.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+assert(delegate.shown and delegate.owner == channelsIcon, "the hovered icon did not get its delegate back after combat")
+channelsIcon.mouseOver = false
+delegate.mouseOver = false
+delegate.scripts.OnLeave(delegate)
 -- Friend events update the count in combat too; it caps at 99+ and keeps
 -- the last public value when Blizzard's counts are unreadable.
 BNGetNumFriends = function() return 90, 60 end

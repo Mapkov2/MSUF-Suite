@@ -23,6 +23,7 @@ function methods:GetWidth() return self.width or 750 end
 function methods:GetHeight() return self.height or 500 end
 function methods:GetFrameLevel() return 10 end
 function methods:SetScript(event, callback) self.scripts[event] = callback end
+function methods:SetParent(value) self.parent = value end
 function methods:HookScript(event, callback) self.scripts[event] = callback end
 function methods:SetEnabled(value) self.enabled = value end
 function methods:SetScrollChild(value) self.child = value end
@@ -104,6 +105,20 @@ local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
     BagsView = catalog.BagsView, BagsBankView = catalog.BagsBankView,
     Client = { SupportsEvent = function() return true end } }, BagsModule = M,
     StackSplitter = { OwnerHidden = function() end, OpenFor = function() end } }
+-- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans the open
+-- bag or bank window above a new frame's parent in the caller's execution
+-- (Blizzard_GamepadSmartNavigation/SmartNavigation.lua SetupFrameHooks,
+-- UpdateParent): the Suite creates its frames there without a parent
+-- (P.ChildFrame, MSUF_Suite_Bags/Bootstrap.lua) and parents them afterwards.
+local parentedCreates = 0
+do
+    local create = S.CreateFrame
+    S.CreateFrame = function(kind, name, parent, ...)
+        if parent ~= nil then parentedCreates = parentedCreates + 1 end
+        return create(kind, name, parent, ...)
+    end
+end
+P.ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S)
 UnitGUID = function() return "Player-1" end
 -- The Bags module's context timers: bank passes are one coalesced job.
 P.NS.Dispatch = function(callback, ...) return callback(...) end
@@ -246,4 +261,5 @@ Fire("BAG_UPDATE", 12)
 assert(#timers == 0, "closed bank performs no scan or render")
 M:Disable()
 assert(not B.modeButton:IsShown() and next(B.events.events) == nil, "disable releases owned controls and events")
+assert(parentedCreates == 0, "the bank view created Suite frames with a parent inside Blizzard's bank window")
 print("bank scopes, native actions, physical slots, incremental updates and ownership passed")

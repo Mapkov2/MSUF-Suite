@@ -27,7 +27,7 @@ local function CrestCurrencyMenu(anchor)
             CrestCurrencyMenu(anchor)
         end)
     end
-    MenuUtil.CreateContextMenu(anchor,function(_,menu)
+    P.ContextMenu(anchor,function(_,menu)
         menu:SetScrollMode(420)
         menu:CreateTitle(Tr('Select your current-season crests from the native currency list.'))
         menu:CreateTitle(Tr('Selection order is display order. Remove and select again to move a currency last.'))
@@ -68,7 +68,7 @@ end
 local function SeasonStagesMenu(anchor)
     local sources = S.DataTextExtraSources
     local choices = sources and sources.CrestChoices() or {}
-    MenuUtil.CreateContextMenu(anchor, function(_, menu)
+    P.ContextMenu(anchor, function(_, menu)
         menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = CREST_MODE.OBSERVED, crestCurrencies = "" }) end)
         for _, cost in ipairs(choices) do
             local order = cost.order

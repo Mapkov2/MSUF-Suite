@@ -273,8 +273,22 @@ local function IconTexture(row, layer, path)
     return texture
 end
 
+-- The list and its rows sit inside MerchantFrame, a panel of Blizzard's
+-- frame controls manager on WoW Forever's Gamepad UI. Its SmartNavigation
+-- post-hooks CreateFrame and rescans the panel of the new frame's parent in
+-- the caller's execution (Blizzard_GamepadSmartNavigation/SmartNavigation.lua
+-- SetupFrameHooks, UpdateParent): from the Suite's code that taints the
+-- merchant's gamepad navigation. So every frame here is created without a
+-- parent and parented afterwards (as Safety.CreateChildFrame in
+-- MSUF_Suite_Skin/Core/Safety.lua does).
+local function ChildFrame(kind, parent)
+    local frame = S.CreateFrame(kind)
+    frame:SetParent(parent)
+    return frame
+end
+
 local function NewRow(panel)
-    local row = S.CreateFrame("Button", nil, panel)
+    local row = ChildFrame("Button", panel)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row:RegisterForDrag("LeftButton")
     local highlight = S.CreateTexture(row, nil, "HIGHLIGHT")
@@ -387,19 +401,34 @@ local function Wheel(_, delta)
     Scroll(M.offset - delta)
 end
 
+-- An item released over the list itself (not over a row, which sells on its
+-- own click) is sold. The list is a plain Frame, and SmartNavigation reads
+-- GetScript("OnMouseUp") and ("OnMouseDown") of every non-Button in a panel
+-- it scans (Blizzard_GamepadSmartNavigation/Utility.lua
+-- SmartNavigation_CanFocusFrame): a Suite handler there would taint that
+-- secure scan and the gamepad bindings after it. The release therefore
+-- arrives as GLOBAL_MOUSE_UP, registered only while the list shows.
+local function ListMouseUp(panel)
+    local over = panel:IsMouseMotionFocus()
+    if S.Public(over) and over == true then SellCursorItem() end
+end
+
+local function ListShown(panel) panel:RegisterEvent("GLOBAL_MOUSE_UP") end
+local function ListHidden(panel) panel:UnregisterEvent("GLOBAL_MOUSE_UP") end
+
 local function Build(self)
     if self.panel then return self.panel end
-    local panel = S.CreateFrame("Frame", nil, MerchantFrame)
-    panel:SetPoint("TOPLEFT", MerchantFrame, "TOPLEFT", 8, LIST_TOP)
-    panel:SetSize(LIST_WIDTH, LIST_HEIGHT)
-    panel:SetFrameLevel(MerchantFrame:GetFrameLevel() + 20)
+    local panel = S.CreateFrame("Frame")
     -- The mouse over the faded offers and page buttons reaches the list only.
     panel:EnableMouse(true)
     panel:EnableMouseWheel(true)
     panel:SetScript("OnMouseWheel", Wheel)
-    panel:SetScript("OnMouseUp", SellCursorItem)
+    panel:SetScript("OnEvent", ListMouseUp)
+    panel:SetScript("OnShow", ListShown)
+    panel:SetScript("OnHide", ListHidden)
     panel:SetScript("OnReceiveDrag", SellCursorItem)
-    local bar = S.CreateFrame("Slider", nil, panel)
+    local bar = S.CreateFrame("Slider")
+    bar:SetParent(panel)
     bar:SetOrientation("VERTICAL")
     bar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
     bar:SetSize(8, LIST_HEIGHT)
@@ -415,6 +444,10 @@ local function Build(self)
     bar:SetScript("OnValueChanged", BarMoved)
     panel.bar = bar
     panel:Hide()
+    panel:SetParent(MerchantFrame)
+    panel:SetPoint("TOPLEFT", MerchantFrame, "TOPLEFT", 8, LIST_TOP)
+    panel:SetSize(LIST_WIDTH, LIST_HEIGHT)
+    panel:SetFrameLevel(MerchantFrame:GetFrameLevel() + 20)
     self.panel = panel
     return panel
 end

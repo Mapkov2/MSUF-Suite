@@ -33,7 +33,7 @@ local function AcquireButton(number)
     local button = BankInventory.buttons[number]
     if not button then
         local actions = P.BankActions
-        button = S.CreateFrame("ItemButton", nil, BankInventory.frame, "BankItemButtonTemplate")
+        button = P.ChildFrame("ItemButton", BankInventory.frame, "BankItemButtonTemplate")
         button:SetSize(37, 37)
         button:SetScript("OnClick", actions.Click)
         button:SetScript("OnDragStart", actions.Drag)
@@ -127,7 +127,7 @@ local function NextMode()
 end
 
 local function Create()
-    BankInventory.frame = S.CreateFrame("Frame", nil, BankFrame.BankPanel)
+    BankInventory.frame = P.ChildFrame("Frame", BankFrame.BankPanel)
     local frame = BankInventory.frame
     frame:SetAllPoints(BankFrame.BankPanel)
     frame:SetFrameLevel(BankFrame.BankPanel:GetFrameLevel() + 100)
@@ -147,11 +147,11 @@ local function Create()
     BankInventory.position:SetPoint("LEFT", BankInventory.next, "RIGHT", 8, 0)
     BankInventory.native = Button(frame, "Manage bank tabs", 145, function() S.Set("bags", "bankView", BANK_VIEW.TABS) end)
     BankInventory.native:SetPoint("BOTTOMRIGHT", -12, 8)
-    BankInventory.side = S.CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    BankInventory.side = P.ChildFrame("ScrollFrame", frame, "UIPanelScrollFrameTemplate")
     BankInventory.side:SetPoint("TOPLEFT", 10, -40)
     BankInventory.side:SetPoint("BOTTOMLEFT", 10, 40)
     BankInventory.side:SetWidth(133)
-    BankInventory.sideChild = S.CreateFrame("Frame", nil, BankInventory.side)
+    BankInventory.sideChild = P.ChildFrame("Frame", BankInventory.side)
     BankInventory.sideChild:SetSize(132, 25)
     BankInventory.side:SetScrollChild(BankInventory.sideChild)
     -- Below the bank window, opposite Blizzard's bank tabs (BankFrame.xml

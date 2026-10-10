@@ -72,9 +72,15 @@ local function Shortcut(panel, label, click)
     return button
 end
 
+-- The summary sits in the character window, a panel of Blizzard's frame
+-- controls manager on WoW Forever's Gamepad UI. Its SmartNavigation
+-- post-hooks CreateFrame and rescans the panel of the new frame's parent in
+-- the caller's execution (Blizzard_GamepadSmartNavigation/SmartNavigation.lua
+-- SetupFrameHooks, UpdateParent): the summary and its rows are built without
+-- a parent and the summary joins PaperDollFrame last.
 local function Build(self)
     if self.panel then return self.panel end
-    local panel = S.CreateFrame("Frame", nil, PaperDollFrame)
+    local panel = S.CreateFrame("Frame")
     panel:SetSize(210, 80)
     panel:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 5, -30)
     local background = S.CreateTexture(panel, nil, "BACKGROUND")
@@ -98,6 +104,7 @@ local function Build(self)
     end
     panel.vault = Shortcut(panel, "Great Vault", OpenVault)
     panel.expansion = Shortcut(panel, "Expansion page", OpenExpansion)
+    panel:SetParent(PaperDollFrame)
     self.panel = panel
     return panel
 end

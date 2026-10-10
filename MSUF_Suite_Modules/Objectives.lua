@@ -251,15 +251,52 @@ local function NativeModuleAdded()
     if M.active then M:SuppressNative() end
 end
 
+-- WoW Forever's gamepad Quests shortcut gives the gamepad's focus to
+-- Blizzard's tracker while it is shown (GamepadShortcutsActionBarMixin:
+-- SetUpDpadTop, Blizzard_GamepadActionBars/TargetActionBars/
+-- ShortcutsActionBar.lua: FrameControlsManager:FrameShown), and here it stays
+-- shown, only transparent (above). While the frame controls manager focuses
+-- it (ObjectiveTrackerFrameMixin:FocusGamepad and :UnfocusGamepad, which
+-- FrameControlsManager.lua's FocusFrame and UnfocusFocusedFrame call; only
+-- Forever's tracker has them), its alpha, mouse and children's scales come
+-- back, so the player sees what the pad selects and opens. Restoring works
+-- in combat; the suppression returns once the focus leaves (after combat,
+-- where its writes wait). Leaving the Gamepad UI drops the focus without
+-- UnfocusGamepad (GamepadFrameControlsManagerMixin:UninitializeGamepad,
+-- FrameControlsManager.lua, never calls it), so the reveal also ends when
+-- the Gamepad UI is off: on INPUT_DEVICE_INTERFACE_TRANSITION and at every
+-- suppression.
+local function NativeFocused(native)
+    if not M.active or M.nativeRevealed then return end
+    M.nativeRevealed = true
+    local context = M.context
+    context:HideControl(native, false)
+    for _, child in ipairs({ native:GetChildren() }) do context:RestoreProperty(child, "SetScale") end
+end
+
+local function NativeUnfocused()
+    if not M.nativeRevealed then return end
+    M.nativeRevealed = nil
+    if M.active then M:SuppressNative() end
+end
+
+local function HookNative(self, native)
+    if self.nativeModuleHook then return end
+    self.nativeModuleHook = true
+    hooksecurefunc(native, "AddModule", NativeModuleAdded)
+    if NS.Client.isForever then
+        hooksecurefunc(native, "FocusGamepad", NativeFocused)
+        hooksecurefunc(native, "UnfocusGamepad", NativeUnfocused)
+    end
+end
+
 function M:SuppressNative()
-    if not self.active or NS.IsCombatLocked() then return end
+    if self.nativeRevealed and not S.GamepadUI() then self.nativeRevealed = nil end
+    if not self.active or self.nativeRevealed or NS.IsCombatLocked() then return end
     -- Blizzard_ObjectiveTracker loads at startup on every supported client.
     local native = ObjectiveTrackerFrame
     if NS.Safety.IsForbidden(native) then return end
-    if not self.nativeModuleHook then
-        self.nativeModuleHook = true
-        hooksecurefunc(native, "AddModule", NativeModuleAdded)
-    end
+    HookNative(self, native)
     self.context:HideControl(native, true)
     SuppressNativeChildren(self.context, native:GetChildren())
 end
@@ -388,6 +425,7 @@ function M:Enable()
     self.context:Event("ENCOUNTER_END", Event, IN_COMBAT)
     SetWorkEvents(self, true)
     self.context:Event("ADDON_LOADED", NativeAddonLoaded, IN_COMBAT)
+    if NS.Client.isForever then self.context:Event("INPUT_DEVICE_INTERFACE_TRANSITION", M.SuppressNative, IN_COMBAT) end
     self:SuppressNative()
     MarkAllDirty(self)
     self.contentSignature = ContentSignature(self.config)
@@ -445,7 +483,7 @@ function M:Disable()
     if MythicPlus then MythicPlus.Stop(self) end
     if Raid then Raid.Stop(self) end
     CancelPending(self)
-    self.pausedForRaidCombat = false
+    self.pausedForRaidCombat, self.nativeRevealed = false, nil
     if self.host then self.host:Hide() end
     for i = 1, #SOURCES do
         local list = self.sources[SOURCES[i]]

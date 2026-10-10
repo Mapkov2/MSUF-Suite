@@ -64,6 +64,7 @@ local function VisualFrame(parent)
     function frame:ClearAllPoints() self.points = {} end
     function frame:GetFrameLevel() return self.level end
     function frame:SetFrameLevel(value) self.level = value end
+    function frame:SetParent(value) self.parent = value end
     function frame:SetAllPoints(target) self.allPoints = target end
     function frame:RegisterForClicks(value) self.clicks = value end
     function frame:RegisterForDrag(value) self.drags = value end
@@ -232,6 +233,7 @@ function tooltip:Show() self.shown = true end
 function tooltip:Hide() self.shown = false end
 
 local deferred, setManyCalls = {}, 0
+local bagParentedCreates, gamepadUI = 0, false
 C_Timer = { After = function(_, callback) deferred[#deferred + 1] = callback end }
 local function RunDeferred()
     local list = deferred
@@ -244,7 +246,13 @@ local S = {
     Public = function(value) return value ~= "secret" end,
     Text = function(value) return translations[value] or value end,
     CreateFontString = function(parent) local font = Font(); font.parent = parent; return font end,
-    CreateFrame = function(_, _, parent) return VisualFrame(parent) end,
+    -- Frames below Blizzard's bag windows come parentless (P.ChildFrame).
+    CreateFrame = function(_, _, parent)
+        if parent ~= nil then bagParentedCreates = bagParentedCreates + 1 end
+        return VisualFrame(parent)
+    end,
+    -- MSUF_Suite_Modules/Dialogs.lua: WoW Forever's Gamepad UI.
+    GamepadUI = function() return gamepadUI end,
     CreateTexture = function(parent, _, layer, _, sublevel)
         local texture = Texture(parent)
         texture.layer, texture.sublevel = layer, sublevel
@@ -313,7 +321,8 @@ local state = { IsCombatLocked = function() return combat end,
 state.Finite = S.Finite
 state.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state)
-local bagsPrivate = { NS = state, Suite = S }
+local bagsPrivate = { NS = state, Suite = S,
+    ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S) }
 -- The Bags catalog (always loaded): its sections, the gold ledger and the
 -- session gold baseline (MSUF_Suite/Core/Catalog/Bags.lua).
 state.Text = function(text) return text end
@@ -343,6 +352,7 @@ end
 for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
         NS = state, Suite = S, BagsModule = module, ItemLoads = bagsPrivate.ItemLoads,
+        ChildFrame = bagsPrivate.ChildFrame,
     })
 end
 assert(module and #fonts == 0 and #textures == 0 and not next(hooks) and infoCalls == 0,
@@ -624,6 +634,19 @@ combinedHandle.scripts.OnMouseDown(combinedHandle)
 combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
 assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
     "second title click did not close Blizzard's bag menu")
+-- S12-A5: under WoW Forever's Gamepad UI Blizzard's bag menu, opened from
+-- the Suite's call, would run MenuProxy.OnShow's focus code tainted; there the
+-- portrait button itself opens it. The title still drags the window.
+gamepadUI = true
+combinedHandle.scripts.OnMouseDown(combinedHandle)
+combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
+assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
+    "the bag title opened Blizzard's bag menu from the Suite under the Gamepad UI")
+gamepadUI = false
+-- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans an open
+-- bag window above a new frame's parent in the caller's execution
+-- (Blizzard_GamepadSmartNavigation/SmartNavigation.lua SetupFrameHooks).
+assert(bagParentedCreates == 0, "the bag window created Suite frames with a parent inside Blizzard's bags")
 combinedHandle.scripts.OnDragStart(combinedHandle)
 assert(ContainerFrameCombinedBags.moving, "combined bag did not start moving")
 layoutInfoCalls, layoutEnumerations = infoCalls, enumerations

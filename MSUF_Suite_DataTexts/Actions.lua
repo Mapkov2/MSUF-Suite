@@ -19,6 +19,10 @@ local CREST = NS.DataTextCrestMode
 --     currency tab and the world map open from secure code. Without that
 --     button the place opens the window through Blizzard's panel manager
 --     (S.TogglePanel; Standard.Click for the built-in places).
+--   * Under WoW Forever's Gamepad UI (S.GamepadUI) the Gold, Session, Bags,
+--     Date, Time and Professions places borrow it as well
+--     (Sources.gamepadPanelSources): no window opens from the Suite's own
+--     code there, and a place without its Blizzard button opens nothing.
 --   * Dungeon portals and the micro menu open a popup of secure rows.
 -- PLAYER_REGEN_DISABLED runs before lockdown starts: DataTexts.lua releases
 -- both there, so no protected frame depends on a bar during combat. A
@@ -31,6 +35,7 @@ local OVERLAY_KINDS = { hearth = true, specialization = true, currency = true, c
 -- sources by source, additional ones by kind.
 local PANEL_SOURCES = Sources.panelSources
 local PANEL_KINDS = { currency = "currency", crests = "currency" }
+local GAMEPAD_SOURCES, GAMEPAD_KINDS = Sources.gamepadPanelSources, Sources.gamepadPanelKinds
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100
 local overlay, popup
@@ -40,25 +45,27 @@ local function Locked()
 end
 
 ------------------------------------------------------------------ secure overlay
+-- The window a place opens through a Blizzard button (S.PanelButton), or nil.
+local function PanelOf(button)
+    local binding, gamepad = button.extra, S.GamepadUI()
+    if binding then return PANEL_KINDS[binding.kind] or gamepad and GAMEPAD_KINDS[binding.kind] or nil end
+    return PANEL_SOURCES[button.source] or gamepad and GAMEPAD_SOURCES[button.source] or nil
+end
+
 -- The left-button action of a place: type, item, toy and click target.
 local function SecureAction(button)
-    local binding = button.extra
-    if not binding then
-        local target = S.PanelButton(PANEL_SOURCES[button.source])
+    local binding, panel = button.extra, PanelOf(button)
+    if panel then
+        local target = S.PanelButton(panel)
         if target then return "click", nil, nil, target end
         return nil
     end
+    if not binding then return nil end
     if binding.kind == "hearth" then
         local item = binding.hearth
         if not item then return nil end
         if item.toy then return "toy", nil, item.id end
         return "item", "item:" .. item.id
-    end
-    local panel = PANEL_KINDS[binding.kind]
-    if panel then
-        local target = S.PanelButton(panel)
-        if target then return "click", nil, nil, target end
-        return nil
     end
     local native = _G[SPEC_BUTTON]
     if native then return "click", nil, nil, native end
@@ -96,8 +103,7 @@ end
 
 local function Overlaid(button)
     local binding = button.extra
-    if binding then return OVERLAY_KINDS[binding.kind] == true end
-    return PANEL_SOURCES[button.source] ~= nil
+    return binding ~= nil and OVERLAY_KINDS[binding.kind] == true or PanelOf(button) ~= nil
 end
 
 -- Puts the secure overlay over a Hearthstone, Specialization or window
@@ -420,10 +426,11 @@ function Actions.Click(button, mouse)
         Actions.Wheel(button, mouse == "RightButton" and -1 or 1)
     elseif Locked() then
         return
-    elseif OVERLAY_KINDS[kind] then
+    elseif OVERLAY_KINDS[kind] or PanelOf(button) then
         -- The overlay performs this click; a click that reaches the place
         -- found it detached, so attach it for the next one. A window place
-        -- without Blizzard's button opens its window right away.
+        -- without Blizzard's button opens its window right away (not under
+        -- the Gamepad UI: S.TogglePanel).
         if not Actions.Attach(button) and PANEL_KINDS[kind] then S.TogglePanel(PANEL_KINDS[kind]) end
     elseif kind == "professions" then
         ToggleProfessionsBook()

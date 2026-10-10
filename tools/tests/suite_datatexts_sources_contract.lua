@@ -10,7 +10,9 @@ local config = { audioChannel = 1, itemLevelEquipped = true, itemLevelDecimals =
     randomHearth = true }
 local S = { Text = function(v) return v end, Public = function(v) return v ~= "secret" end,
     Finite = function(v) return type(v) == "number" and v == v end, MoneyText = tostring,
-    RGB = function() return 1, 1, 1 end, Config = function() return config end }
+    RGB = function() return 1, 1, 1 end, Config = function() return config end,
+    -- MSUF_Suite_Modules/Dialogs.lua: Retail and Forever without its Gamepad UI.
+    GamepadUI = function() return false end }
 NS.Suite = S
 -- The addon's own Bootstrap.lua fills the shared private table.
 local function Load(file, package)

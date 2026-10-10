@@ -254,7 +254,7 @@ function Finance.Refresh()
     if not Finance.button then
         -- Above the inventory view's footer, which stands on Blizzard's money
         -- row (it moves up for tracked currencies); see Place.
-        Finance.button = S.CreateFrame("Button", nil, M.frame)
+        Finance.button = P.ChildFrame("Button", M.frame)
         Finance.button:SetHeight(14)
         Finance.button:SetFrameLevel(M.frame:GetFrameLevel() + 16)
         Finance.button:SetScript("OnEnter", Tooltip)

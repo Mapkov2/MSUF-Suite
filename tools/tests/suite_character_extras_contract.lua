@@ -15,6 +15,11 @@ local function Widget(parent)
         coords = { 0, 0, 0, 1, 1, 0, 1, 1 } }
     if parent then parent.children[#parent.children + 1] = w end
     function w:SetScript(name, callback) self.scripts[name] = callback end
+    function w:GetScript(name) return self.scripts[name] end
+    function w:SetParent(value)
+        self.parent = value
+        if value then value.children[#value.children + 1] = self end
+    end
     function w:HookScript(name, callback)
         local old = self.scripts[name]
         self.scripts[name] = function(...) if old then old(...) end; callback(...) end
@@ -132,7 +137,20 @@ S.Finite = function(value) return S.Public(value) and type(value) == "number" an
 S.Text = function(value) return value end
 S.SetFont = function(w, ...) w:SetFont(...) end
 S.GlobalFontPath = function() return "global" end
-S.CreateFrame = function(_, _, parent) return Widget(parent) end
+-- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans the panel
+-- above a new frame's parent in the caller's execution; its scan reads
+-- GetScript("OnMouseUp") and ("OnMouseDown") of every non-Button
+-- (SmartNavigation.lua SetupFrameHooks, Utility.lua SmartNavigation_CanFocusFrame).
+local parentedCreates, createdFrames = 0, {}
+S.CreateFrame = function(kind, _, parent)
+    local ancestor = parent
+    while ancestor and ancestor ~= CharacterFrame do ancestor = ancestor.parent end
+    if ancestor then parentedCreates = parentedCreates + 1 end
+    local frame = Widget(parent)
+    frame.kind = kind
+    createdFrames[#createdFrames + 1] = frame
+    return frame
+end
 S.CreateTexture = function(parent) return Widget(parent) end
 S.CreateFontString = S.CreateTexture
 S.Dispatch = function(callback, ...) return callback(...) end
@@ -290,4 +308,9 @@ Check(not panel.shown and not model.shown and not m.flyoutLabels[flyoutButton].s
 CharacterFrame:Hide()
 CharacterFrame:Show()
 Check(not panel.shown, "the disabled module came back with the sheet")
+Check(parentedCreates == 0, "the character sheet additions created frames with a parent inside Blizzard's window")
+for _, frame in ipairs(createdFrames) do
+    Check(frame.kind == "Button" or (frame:GetScript("OnMouseUp") == nil and frame:GetScript("OnMouseDown") == nil),
+        "a character sheet " .. tostring(frame.kind) .. " has a mouse handler SmartNavigation reads")
+end
 print("Character sheet additions: " .. checks .. " checks passed")

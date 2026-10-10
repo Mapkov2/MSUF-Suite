@@ -41,6 +41,14 @@ Sources.secureKinds = { hearth = true, specialization = true, portals = true, mi
 -- Built-in places that borrow the same secure overlay, and the window the
 -- Blizzard button it clicks opens (S.PanelButton).
 Sources.panelSources = { durability = "character", coordinates = "worldMap", location = "worldMap" }
+-- Under WoW Forever's Gamepad UI the bag, date and clock places and the
+-- Professions place borrow it too: they otherwise open their windows from
+-- the Suite's own code (OpenAllBags, ToggleCalendar, ToggleProfessionsBook),
+-- which leaves Blizzard's gamepad focus state tainted there
+-- (MSUF_Suite_Modules/Dialogs.lua, S.GamepadUI).
+Sources.gamepadPanelSources = { gold = "bags", sessionGold = "bags", bags = "bags", date = "calendar",
+    clock = "calendar" }
+Sources.gamepadPanelKinds = { professions = "professions" }
 
 local function Text(value)
     return S.Public(value) and type(value) == "string" and value or nil
@@ -378,10 +386,12 @@ function Sources.WantedEvents(active, wanted)
             end
             -- PLAYER_REGEN_DISABLED runs before lockdown: the secure button of
             -- these places is released there and offered again after combat.
-            if Sources.secureKinds[binding.kind] then
+            -- Forever may switch to its Gamepad UI at any time.
+            if Sources.secureKinds[binding.kind]
+                or NS.Client.isForever and Sources.gamepadPanelKinds[binding.kind] then
                 wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
             end
-        elseif Sources.panelSources[key] then
+        elseif Sources.panelSources[key] or NS.Client.isForever and Sources.gamepadPanelSources[key] then
             wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
         end
     end

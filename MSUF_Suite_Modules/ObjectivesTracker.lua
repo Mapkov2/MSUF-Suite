@@ -1,5 +1,5 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local O = P.Objectives
 local M, SOURCES, Read = O.M, O.SOURCES, O.Read
 local MythicPlus = S.MythicPlus
@@ -33,6 +33,7 @@ for _, group in ipairs(ORDER) do SECTION_KEYS[group] = "section:" .. group end
 local TEXT_RGB, MUTED_RGB, COMPLETE_RGB = { .95, .96, .98 }, { .78, .81, .85 }, { .49, .75, .53 }
 
 ------------------------------------------------------------------ frames
+-- Row and header buttons: O.ClickButton (ObjectivesActions.lua).
 local function Create(self)
     if self.host then return end
     local host = S.CreateFrame("Frame", "MSUFSuiteObjectiveTracker", UIParent)
@@ -43,12 +44,12 @@ local function Create(self)
     local title = S.CreateFontString(host, nil, "OVERLAY")
     title:SetPoint("TOPLEFT", 11, -7)
     title:SetJustifyH("LEFT")
-    local headerClick = S.CreateFrame("Button", nil, host)
+    local headerClick = O.ClickButton(host, O.OnHeaderClick)
+    headerClick.kind = "header"
     headerClick:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
     headerClick:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
     headerClick:SetHeight(34)
     headerClick:RegisterForClicks("LeftButtonUp")
-    headerClick:SetScript("OnClick", function() OpenQuestLog() end)
     local count = S.CreateFontString(host, nil, "OVERLAY")
     count:SetPoint("TOPRIGHT", -11, -10)
     local divider = S.CreateTexture(host, nil, "ARTWORK")
@@ -89,6 +90,11 @@ end
 
 local function OnRowClick(button, mouseButton)
     if mouseButton == "RightButton" then
+        -- Blizzard's own quest menu opened from its header (O.RowPreClick).
+        if button.secureWindow then
+            button.secureWindow = nil
+            return
+        end
         ShowContextMenu(button)
         return
     end
@@ -105,7 +111,20 @@ local function OnRowClick(button, mouseButton)
         -- would also mark Blizzard's tracker dirty inside this addon's call.
         RemoveAutoQuestPopUp(button.questID)
         ShowQuestComplete(button.questID)
-    elseif Finite(button.questID) then
+        return
+    end
+    if button.secureWindow then
+        -- Blizzard's own button opened the window (O.RowPreClick).
+        button.secureWindow = nil
+        return
+    end
+    local opens = Finite(button.questID) or Finite(button.achievementID) or button.group == "scenario"
+    -- Blizzard's panel manager refuses the Suite's call in combat (KS-2).
+    if opens and NS.IsCombatLocked() then
+        S.Print(NS.RestrictedNotice())
+        return
+    end
+    if Finite(button.questID) then
         OpenQuestDetails(button.questID)
     elseif Finite(button.achievementID) then
         OpenAchievement(button.achievementID)
@@ -168,9 +187,8 @@ local function NewRow(self, key, kind)
         self.rows[key] = row
         return row
     end
-    row = S.CreateFrame("Button", nil, self.content)
+    row = O.ClickButton(self.content, OnRowClick)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    row:SetScript("OnClick", OnRowClick)
     row:SetScript("OnEnter", OnRowEnter)
     row:SetScript("OnLeave", OnOwnedLeave)
     local stripe = S.CreateTexture(row, nil, "ARTWORK")

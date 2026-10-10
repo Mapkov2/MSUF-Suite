@@ -60,6 +60,7 @@ local function Widget(kind)
         end
     end
     function w:SetEnabled(v) self.enabled = v and true or false end
+    function w:IsEnabled() return self.enabled ~= false end
     function w:SetAlpha(v) self.alpha = v end
     function w:GetAlpha() return self.alpha end
     function w:SetActive(v) self.active = v and true or false end
@@ -713,7 +714,49 @@ do
     assert(Suite.RootDB.goldLedger == nil and Suite.RootDB.suiteBagGold == nil,
         "Clear saved character gold must remove the balances and the gold history")
     Suite.RootDB.goldLedger, Suite.RootDB.suiteBagGold = savedLedger, savedHistory
+    -- With the runtime installed but not loaded yet, a page on WoW Forever
+    -- loads it (out of combat) and asks through S.Confirm and S.ContextMenu,
+    -- which show the Suite's own list under the Gamepad UI; Blizzard's dialog
+    -- code would run its frame controls manager in the page's call there.
+    -- Retail has no Gamepad UI: a page loads nothing for a question there and
+    -- keeps Blizzard's dialog and menu, as before.
+    local previousLoad, previousContext, previousMenuUtil = C_AddOns.LoadAddOn, S.ContextMenu, _G.MenuUtil
+    local runtimeQuestion, runtimeMenu, loaded, blizzardQuestion, blizzardMenu
+    S.Confirm, S.ContextMenu = nil, nil
+    _G.StaticPopup_ShowCustomGenericConfirmation = function(data) blizzardQuestion = data end
+    _G.MenuUtil = { CreateContextMenu = function(owner) blizzardMenu = owner end }
+    C_AddOns.LoadAddOn = function(name)
+        if name ~= "MSUF_Suite_Modules" then return previousLoad(name) end
+        loaded = true
+        S.Confirm = function(key, data) runtimeQuestion = { key = key, data = data } end
+        S.ContextMenu = function(owner) runtimeMenu = owner end
+        return true
+    end
+    optionsNS.Confirm("probe", "Question?", function() end)
+    optionsNS.ContextMenu("owner", function() end)
+    if flavor == "Forever" then
+        assert(loaded and runtimeQuestion and runtimeQuestion.key == "options:probe"
+            and runtimeQuestion.data.text_arg1 == "Question?" and runtimeMenu == "owner"
+            and not blizzardQuestion and not blizzardMenu,
+            "a Forever page asked through Blizzard's dialog or menu instead of loading the Suite runtime")
+    else
+        assert(not loaded and blizzardQuestion and blizzardQuestion.text_arg1 == "Question?" and blizzardMenu == "owner",
+            "a Retail page loaded the Suite runtime for a question instead of Blizzard's dialog and menu")
+    end
+    C_AddOns.LoadAddOn, S.ContextMenu, _G.MenuUtil = previousLoad, previousContext, previousMenuUtil
     _G.StaticPopup_ShowCustomGenericConfirmation, S.Confirm = previousGeneric, previousConfirm
+    -- WoW Forever's Gamepad UI: OpenAllBags from the page's call would run
+    -- Blizzard's frame controls manager in it (ContainerFrame.OpenBag); there
+    -- the gamepad's bag button opens the bags and Open bags stays off.
+    local open = assert(registeredControls["menu2.suite_bags.bags.action.open"], "the Bags page has no Open bags action")
+    local previousGamepad, previousOpenAll, bagOpens = S.GamepadUI, _G.OpenAllBags, 0
+    _G.OpenAllBags = function() bagOpens = bagOpens + 1 end
+    open.scripts.OnClick(open)
+    assert(bagOpens == 1, "Open bags stopped opening the bags outside the Gamepad UI")
+    S.GamepadUI = function() return true end
+    open.scripts.OnClick(open)
+    assert(bagOpens == 1, "Open bags ran OpenAllBags from the Suite's call under the Gamepad UI")
+    S.GamepadUI, _G.OpenAllBags = previousGamepad, previousOpenAll
     -- disabledCategories was read but never written; per-category switches cover it.
     assert(S.catalog.bags.rules.disabledCategories == nil, "the dead disabledCategories setting returned")
     -- The look help names every preset of the look choice.
@@ -2065,6 +2108,63 @@ do
     assert(not overlay.shown and #overlay.points == 0, "a hidden menu kept the secure overlay")
     EditModeManagerFrame = lockedEditMode
     RefreshBars()
+    -- The Bags page's Open bags: under WoW Forever's Gamepad UI the same
+    -- overlay clicks Blizzard's backpack button (P.SecureClick; S.PanelButton,
+    -- MSUF_Suite_Modules/MicroMenu.lua), so the bags open from secure code;
+    -- elsewhere the page keeps OpenAllBags and takes no overlay.
+    local open = assert(registeredControls["menu2.suite_bags.bags.action.open"], "the Bags page has no Open bags action")
+    local status, availability, gamepadUI, panelButton = S.Status, S.Availability, S.GamepadUI, S.PanelButton
+    local bagsEnabled, openAll, previous = S.Config("bags").enabled, OpenAllBags, current
+    S.Status, S.Availability = function() return "Active" end, function() return true end
+    S.Config("bags").enabled = true
+    local gamepad, backpack, bagOpens = false, Widget("Button"), 0
+    S.GamepadUI = function() return gamepad end
+    S.PanelButton = function(panel) return panel == "bags" and backpack or nil end
+    OpenAllBags = function() bagOpens = bagOpens + 1 end
+    local function RefreshBags()
+        current = contexts.suite_bags
+        M.RequestRefresh()
+    end
+    -- A pointer resting on the page button (it has no hover script of its own).
+    local function Hover(button)
+        local enter = button.scripts.OnEnter
+        if enter then enter(button) end
+    end
+    RefreshBags()
+    assert(open.enabled, "Open bags is off outside the Gamepad UI")
+    Hover(open)
+    assert(not (overlay.shown and rawget(overlay, "owner") == open), "Open bags took the secure overlay outside the Gamepad UI")
+    open.scripts.OnClick(open)
+    assert(bagOpens == 1, "Open bags stopped opening the bags outside the Gamepad UI")
+    gamepad = true
+    RefreshBags()
+    assert(open.enabled, "Open bags stayed off although Blizzard's backpack button opens the bags")
+    Hover(open)
+    assert(overlay.shown and rawget(overlay, "owner") == open and overlay.attributes.type1 == "click"
+        and overlay.attributes.clickbutton1 == backpack and overlay.attributes.macrotext1 == nil,
+        "Open bags does not click Blizzard's backpack button from the secure overlay")
+    -- The pad's A on the page button is the page's own (addon) call.
+    open.scripts.OnClick(open)
+    assert(bagOpens == 1, "Open bags ran OpenAllBags from the Suite's call under the Gamepad UI")
+    overlay.scripts.OnLeave(overlay)
+    -- The macro buttons keep their macro on the same overlay.
+    EditModeManagerFrame = { CanEnterEditMode = function() return true end }
+    RefreshBars()
+    extra.scripts.OnEnter(extra)
+    assert(rawget(overlay, "owner") == extra and overlay.attributes.type1 == "macro" and overlay.attributes.clickbutton1 == nil
+        and overlay.attributes.macrotext1 == "/editmode", "the click delegate stayed on the overlay of a macro button")
+    overlay.scripts.OnLeave(overlay)
+    EditModeManagerFrame = lockedEditMode
+    RefreshBars()
+    -- Without Blizzard's button Open bags stays off and takes no overlay.
+    backpack = nil
+    RefreshBags()
+    Hover(open)
+    assert(not open.enabled and not overlay.shown, "Open bags offered a click with no Blizzard button to take it")
+    S.Status, S.Availability, S.GamepadUI, S.PanelButton = status, availability, gamepadUI, panelButton
+    S.Config("bags").enabled, OpenAllBags = bagsEnabled, openAll
+    RefreshBags()
+    current = previous
     local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/ActionBars.lua", "rb"))
     local source = handle:read("*a")
     handle:close()

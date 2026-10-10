@@ -207,7 +207,7 @@ local function BrokerMenu(anchor, block)
         end
     end
     table.sort(names)
-    MenuUtil.CreateContextMenu(anchor, function(_, menu)
+    P.ContextMenu(anchor, function(_, menu)
         menu:SetScrollMode(340)
         menu:CreateTitle(Tr("Choose loaded broker"))
         if #names == 0 then menu:CreateTitle(Tr("No broker plugins are loaded. You can enter a name below.")) end
@@ -219,7 +219,7 @@ local function BrokerMenu(anchor, block)
 end
 
 local function CurrencyMenu(anchor, block)
-    MenuUtil.CreateContextMenu(anchor, function(_, menu)
+    P.ContextMenu(anchor, function(_, menu)
         menu:SetScrollMode(340)
         menu:CreateTitle(Tr("Choose discovered currency"))
         local found = false

@@ -24,6 +24,7 @@ local function Frame(shown)
     function frame:SetText(value) self.text = value end
     function frame:SetEnabled(value) self.enabled = value end
     function frame:SetScript(kind, fn) self.scripts[kind] = fn end
+    function frame:SetParent(value) self.parent = value end
     function frame:HookScript(kind, fn) self.hooks[kind] = fn end
     function frame:Show() self.shown = true end
     function frame:Hide() self.shown = false end
@@ -74,7 +75,11 @@ local suite = {
     end,
     Text = function(value) return value end,
     BlizzardText = function(_, fallback) return fallback end,
-    CreateFrame = function() return Frame(false) end,
+    -- Parented after creation (SmartNavigation's CreateFrame post-hook).
+    CreateFrame = function(_, _, parent)
+        assert(parent == nil, "the trainer button was created with a parent inside Blizzard's trainer window")
+        return Frame(false)
+    end,
     Dispatch = Support.Dispatcher(reported),
 }
 local ns = {
@@ -188,4 +193,5 @@ assert(#reported == 1 and reported[1]:find("client rejected purchase", 1, true)
     "a raising purchase call was swallowed instead of reported")
 Emit("TRAINER_UPDATE")
 assert(#buys == beforeFailure, "later updates cannot restart a failed purchase")
+assert(module.button.parent == ClassTrainerFrame, "the trainer button did not join the trainer window")
 print("Suite trainer learn-all confirmation and update lifecycle passed")

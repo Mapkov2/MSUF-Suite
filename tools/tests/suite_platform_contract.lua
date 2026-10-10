@@ -104,8 +104,10 @@ do
     Suite.Client.PauseControllerWindow(window)
     assert(table.concat(calls, ",") == "attach:SuiteWindow,activate:SuiteWindow,release:SuiteWindow",
         "Suite windows did not forward to MSUF's pad navigation: " .. table.concat(calls, ","))
+    assert(Suite.Client.HasControllerNavigation() == true, "the host's pad navigation was not reported")
     -- A host without the navigation (Retail-only MSUF, an older Classic) is a no-op.
     MSUF_PadNavigation = nil
+    assert(Suite.Client.HasControllerNavigation() == false, "a host without pad navigation reported one")
     Suite.Client.AttachControllerWindow(window)
     Suite.Client.ResumeControllerWindow(window)
     Suite.Client.PauseControllerWindow(window)

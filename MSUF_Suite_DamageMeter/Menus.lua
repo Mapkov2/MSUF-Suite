@@ -397,7 +397,9 @@ function D.HeaderButtonClick(button)
         D.OpenTypeMenu(win, button)
         return
     end
-    MenuUtil.CreateContextMenu(button, menus[kind], win)
+    -- Blizzard's context menu, or the Suite's list under WoW Forever's
+    -- Gamepad UI (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
+    S.ContextMenu(button, menus[kind], win)
 end
 
 local function ButtonLabel(kind)

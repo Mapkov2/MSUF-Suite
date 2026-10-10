@@ -9,6 +9,12 @@ local NS, S = P.NS, P.Suite
 -- opens on the tab the player used last. Each helper owns only an opening it
 -- made: the window closes once no owner holds it, and never after the player
 -- or anything else closed it in between.
+-- These openings follow events (MERCHANT_SHOW, the upgrade window), which no
+-- secure click can follow. Under WoW Forever's Gamepad UI (S.GamepadUI) the
+-- panel manager would run Blizzard's frame controls manager in the Suite's
+-- call and leave the gamepad's focus and binding state tainted
+-- (MSUF_Suite_Modules/Dialogs.lua), so there the helpers open nothing, and a
+-- window they opened before the Gamepad UI came on stays with the player.
 local owners, watcher = {}, nil
 
 local function CancelPendingClose()
@@ -22,7 +28,7 @@ end
 
 local function CloseUnowned()
     CancelPendingClose()
-    if next(owners) == nil and CharacterFrame:IsShown() then
+    if next(owners) == nil and CharacterFrame:IsShown() and not S.GamepadUI() then
         S.Dispatch(NS.Finish, HideUIPanel, CharacterFrame)
     end
 end
@@ -37,7 +43,7 @@ end
 -- Opens the window for owner outside combat. True when owner now holds it;
 -- a window the player opened stays the player's.
 function S.OpenCharacterFor(owner)
-    if InCombatLockdown() or CharacterFrame:IsShown() then return owners[owner] == true end
+    if InCombatLockdown() or S.GamepadUI() or CharacterFrame:IsShown() then return owners[owner] == true end
     Watch()
     S.Dispatch(NS.Finish, ShowUIPanel, CharacterFrame)
     if not CharacterFrame:IsShown() then return false end

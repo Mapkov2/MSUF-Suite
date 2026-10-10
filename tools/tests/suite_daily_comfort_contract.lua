@@ -15,7 +15,10 @@ local function Widget(parent)
     function w:Hide() self.shown = false end
     return w
 end
+local gamepadUI = false
 local suite = {
+    -- MSUF_Suite_Modules/Dialogs.lua: WoW Forever's Gamepad UI.
+    GamepadUI = function() return gamepadUI end,
     Dispatch = Support.Dispatcher(reported),
     Install = function(_, value) module = value end,
     RestoreCVar = function(_, key) restored[key] = (restored[key] or 0) + 1 end,
@@ -214,6 +217,25 @@ module.context.events.MERCHANT_SHOW(module)
 module.context.events.MERCHANT_CLOSED(module)
 assert(panels.shown == 3 and panels.hidden == 2 and CharacterFrame:IsShown() and panels.blocked == 0,
     "merchant helper closed a character window it did not open")
+-- WoW Forever's Gamepad UI: ShowUIPanel and HideUIPanel from the Suite's
+-- event handler would run Blizzard's frame controls manager in that call
+-- (BroadcastShowUIPanelEvent, FrameControlsManager:FrameShown). The merchant
+-- opens no window there, and one the helper opened earlier stays with the
+-- player instead of closing from the Suite's code.
+CharacterFrame:Hide()
+gamepadUI = true
+module.context.events.MERCHANT_SHOW(module)
+module.context.events.MERCHANT_CLOSED(module)
+assert(panels.shown == 3 and panels.hidden == 2 and not CharacterFrame:IsShown(),
+    "the Gamepad UI ran Blizzard's panel manager from the merchant helper")
+gamepadUI = false
+module.context.events.MERCHANT_SHOW(module)
+gamepadUI = true
+module.context.events.MERCHANT_CLOSED(module)
+assert(panels.shown == 4 and panels.hidden == 2 and CharacterFrame:IsShown(),
+    "the Gamepad UI closed the character window from the merchant helper")
+gamepadUI = false
+CharacterFrame:Hide()
 
 module.config.hideTutorials, module.config.fillDelete = false, false
 module.config.hideScreenshotSuccess = false

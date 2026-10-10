@@ -70,9 +70,11 @@ local function IsCurrentLoot(id)
     return CurrentLoot() == id
 end
 
+-- Blizzard's context menu, or the Suite's list under WoW Forever's Gamepad UI
+-- (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
 local function OpenMenu(button)
     if not Wanted() then return end
-    MenuUtil.CreateContextMenu(button, function(_, root)
+    S.ContextMenu(button, function(_, root)
         root:CreateTitle(S.Text("Quick specialization"))
         local locked = NS.IsCombatLocked()
         local count = SpecCount()

@@ -39,7 +39,10 @@ local function Place(message)
     local placed = C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(mapID, x / 100, y / 100))
     if not S.Public(placed) or placed ~= true then return Refuse() end
     if M.config.superTrack then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
-    if M.config.openMap and not mapShown then ToggleWorldMap() end
+    -- The world map is a panel of Blizzard's panel manager, which refuses the
+    -- Suite's ToggleWorldMap in combat lockdown ("Interface action failed
+    -- because of an AddOn"): the waypoint is placed and the map stays shut.
+    if M.config.openMap and not mapShown and S.CanOpenNativeWindow() then ToggleWorldMap() end
 end
 
 -- /way stays with a waypoint addon (TomTom and others) whenever one owns it.

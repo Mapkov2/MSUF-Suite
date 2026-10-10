@@ -131,10 +131,14 @@ end
 
 -- Blizzard's recap panel reads the recap in the calling (addon) context and
 -- would receive secrets during combat; it opens once the row is readable.
+-- It is a panel of Blizzard's panel manager (OpenDeathRecapUI: ShowUIPanel),
+-- which refuses the Suite's call in combat lockdown and under WoW Forever's
+-- Gamepad UI would run the frame controls manager in it
+-- (S.CanOpenNativeWindow): then the death shows in the Suite's own panel.
 function D.OpenRecap(win, source)
     local id = source.deathRecapID
     if not Finite(id) or id <= 0 then return end
-    if Public(source.deathTimeSeconds) then
+    if Public(source.deathTimeSeconds) and S.CanOpenNativeWindow() then
         OpenDeathRecapUI(id)
         return
     end

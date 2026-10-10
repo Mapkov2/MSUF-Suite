@@ -171,7 +171,7 @@ end
 
 local function MakeControls()
     local frame = InventoryView.frame
-    InventoryView.chrome = S.CreateFrame("Frame", nil, frame)
+    InventoryView.chrome = P.ChildFrame("Frame", frame)
     InventoryView.chrome:SetAllPoints(frame)
     InventoryView.chrome:SetFrameLevel(frame:GetFrameLevel() + 15)
     -- The Suite views: the first three inventoryView choices.
@@ -182,11 +182,11 @@ local function MakeControls()
         button:SetPoint("TOPLEFT", 12 + (view - 1) * 104, -62)
     end
     MakeFooter(frame)
-    InventoryView.sidebar = S.CreateFrame("ScrollFrame", nil, InventoryView.chrome, "UIPanelScrollFrameTemplate")
+    InventoryView.sidebar = P.ChildFrame("ScrollFrame", InventoryView.chrome, "UIPanelScrollFrameTemplate")
     InventoryView.sidebar:SetPoint("TOPLEFT", 12, -TOP)
     InventoryView.sidebar:SetPoint("BOTTOMLEFT", InventoryView.previous, "TOPLEFT", -4, 8)
     InventoryView.sidebar:SetWidth(142)
-    InventoryView.sidebarChild = S.CreateFrame("Frame", nil, InventoryView.sidebar)
+    InventoryView.sidebarChild = P.ChildFrame("Frame", InventoryView.sidebar)
     InventoryView.sidebarChild:SetSize(140, 30)
     InventoryView.sidebar:SetScrollChild(InventoryView.sidebarChild)
     InventoryView.clearRecent = Button(InventoryView.chrome, "Clear recent items", 136, function()

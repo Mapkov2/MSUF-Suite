@@ -54,7 +54,7 @@ local function NewWindowStyle(frame, combined)
     shadow:SetPoint("TOPLEFT", frame, "TOPLEFT", -3, 3)
     shadow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 3, -3)
 
-    local shell = S.CreateFrame("Frame", nil, frame)
+    local shell = Private.ChildFrame("Frame", frame)
     shell:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
     shell:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
     shell:SetFrameLevel(panel:GetFrameLevel())
@@ -103,7 +103,12 @@ local function HandleClick(handle, button)
         return
     end
     if button ~= "LeftButton" or IsShiftKeyDown() then return end
-    -- The portrait button is Blizzard's bag menu DropdownButton.
+    -- The portrait button is Blizzard's bag menu DropdownButton. Its menu
+    -- opens on its own press only; opened from here under WoW Forever's
+    -- Gamepad UI, MenuProxy.OnShow would run the frame controls manager's
+    -- focus code in the Suite's call (S.GamepadUI). There the portrait
+    -- button itself, which the gamepad reaches in the bag window, opens it.
+    if S.GamepadUI() then return end
     local menu = handle.window.PortraitButton
     menu:SetMenuOpen(not menu:IsMenuOpen())
 end
@@ -133,7 +138,7 @@ end
 local function NewDragHandle(frame)
     local title = frame.TitleContainer
     if not title or not frame.PortraitButton then return nil end
-    local handle = S.CreateFrame("Button", nil, frame)
+    local handle = Private.ChildFrame("Button", frame)
     handle.window = frame
     handle:SetAllPoints(title)
     handle:SetFrameLevel(math.max(title:GetFrameLevel(), frame.PortraitButton:GetFrameLevel()) + 1)

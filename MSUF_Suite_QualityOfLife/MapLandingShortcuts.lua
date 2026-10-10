@@ -25,8 +25,9 @@ local function Run(callback, ...)
     if not NS.IsCombatLocked() then S.Dispatch(NS.Finish, callback, ...) end
 end
 
+-- Blizzard's context menu (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
 local function OpenMenu(button)
-    MenuUtil.CreateContextMenu(button, function(_, root)
+    S.ContextMenu(button, function(_, root)
         root:CreateTitle(S.Text("Expansion shortcuts"))
         local locked = NS.IsCombatLocked()
         local c = M.config

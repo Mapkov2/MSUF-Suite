@@ -2,19 +2,38 @@ local _, P = ...
 local S, Tr = P.S, P.Tr
 local PAGE, ID = "suite_bags", "bags"
 
+-- OpenAllBags from these buttons runs in the Suite's call. Under WoW
+-- Forever's Gamepad UI that would run Blizzard's frame controls manager in it
+-- (ContainerFrame.OpenBag; S.GamepadUI, MSUF_Suite_Modules/Dialogs.lua, which
+-- an enabled Bags module has loaded). There Open bags clicks Blizzard's own
+-- backpack button from the page's secure overlay instead (S.PanelButton,
+-- MicroMenu.lua; P.SecureClick, Menu/Bridge.lua), which needs a pointer
+-- click: the pad's A on the page button is an addon call and opens nothing.
+-- Move bag windows only opens Edit Mode there.
+local function OpensBags()
+    return not (S.GamepadUI and S.GamepadUI())
+end
+
+local function BagButton()
+    return not OpensBags() and S.PanelButton("bags") or nil
+end
+
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Choose currencies", function(button)
             if S.BagCurrencyMenu then S.BagCurrencyMenu(button) end
           end, function() return P.Get(ID, "enabled") and S.Availability(ID) end, key = "currencies" },
-        { "Open bags", function() OpenAllBags() end,
-          function() return P.Get(ID, "enabled") and S.Availability(ID) end, key = "open" },
+        { "Open bags", function() if OpensBags() then OpenAllBags() end end,
+          function() return P.Get(ID, "enabled") and S.Availability(ID) and (OpensBags() or BagButton() ~= nil) end,
+          key = "open" },
         { "Move bag windows", function()
-            OpenAllBags()
+            if OpensBags() then OpenAllBags() end
             P.OpenEditMode(ID, "combined")
           end, function() return P.EditModeReady() and P.Get(ID, "enabled") and S.Availability(ID) end, key = "move" },
-    })
+    }, { prepareControl = function(_, button, key)
+        if key == "action.open" then P.SecureClick(button, BagButton) end
+    end })
     P.RuleSection(ctx, b, PAGE, ID, "suite_bags_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             help = "Choose Clean Modern, Midnight Blue, Midnight Dark, MSUF Forever or Class Style. This changes only the bag window colors and opacity; item slots and Blizzard bag actions remain intact.",

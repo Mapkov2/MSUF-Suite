@@ -78,6 +78,8 @@ local function Native(definition)
     return definition.native and _G[definition.native]
 end
 
+local AttachDelegate, WatchCombat
+
 local function SidebarClick(button, mouseButton)
     local definition = button.entry.definition
     if definition.scroll then
@@ -90,6 +92,15 @@ local function SidebarClick(button, mouseButton)
     -- panel manager refuses the Suite's ShowUIPanel.
     if definition.panel and P.NS.InCombat() then
         S.Print(P.NS.RestrictedNotice())
+        return
+    end
+    -- A panel icon opens its panel only through the secure delegate (below):
+    -- Blizzard's button clicked from here would run ToggleFriendsFrame and the
+    -- others in the Suite's call (S18-K4). A click that reaches the icon
+    -- found it detached (the pointer rested there since before combat
+    -- ended), so the delegate attaches for the next click.
+    if definition.panel then
+        AttachDelegate(button)
         return
     end
     local native = Native(definition)
@@ -105,8 +116,12 @@ end
 -- Blizzard's menu manager from closing the open menu on that press. Blizzard
 -- closes the menu once its owner hides (another docked tab hides ChatFrame1
 -- and the button with it), so the menu only opens while the button shows.
+-- Under WoW Forever's Gamepad UI (S.GamepadUI) a menu opened from here would
+-- run MenuProxy.OnShow's focus code in the Suite's call and leave the
+-- gamepad's binding state tainted; no secure click reaches a DropdownButton's
+-- press, so the icon opens nothing there.
 local function SidebarMenuPress(button, mouseButton)
-    if mouseButton ~= "LeftButton" or IsShiftKeyDown() then return end
+    if mouseButton ~= "LeftButton" or IsShiftKeyDown() or S.GamepadUI() then return end
     local native = Native(button.entry.definition)
     if not native then return end
     local open = not native:IsMenuOpen()
@@ -119,16 +134,22 @@ local function MenuHandlesGlobalMouse(_, mouseButton, event)
 end
 
 -- Shift-drag moves one icon; its offset from the sidebar center is saved.
+-- A drag still held when combat starts ends at PLAYER_REGEN_DISABLED, before
+-- the lockdown, where S.CommitEditPosition still saves it (KS-3).
+local draggingIcon
 local function SidebarDragStart(button)
     if not M.active or not IsShiftKeyDown() or P.NS.IsCombatLocked() then return end
     button.dragging = true
     button:StartMoving()
+    draggingIcon = button
+    WatchCombat()
 end
 
 local function SidebarDragStop(button)
     if not button.dragging then return end
     button:StopMovingOrSizing()
     button.dragging = nil
+    if draggingIcon == button then draggingIcon = nil end
     local x, y = button:GetCenter()
     local sidebarX, sidebarY = button:GetParent():GetCenter()
     if S.Finite(x) and S.Finite(y) and S.Finite(sidebarX) and S.Finite(sidebarY) then
@@ -166,13 +187,45 @@ local function ReleaseDelegate()
     local owner = delegate and delegate.owner
     if not owner then return end
     delegate.owner = nil
-    if M.context then M.context:RemoveEvent("PLAYER_REGEN_DISABLED") end
     if owner.dragging then SidebarDragStop(owner) end
+    WatchCombat()
     if P.NS.IsCombatLocked() then return end
     delegate:Hide()
     delegate:ClearAllPoints()
 end
 C.ReleasePanelDelegate = ReleaseDelegate
+
+-- PLAYER_REGEN_DISABLED, before the lockdown: the held drag ends and is
+-- saved, the delegate is let go, and after combat the icon still under the
+-- pointer gets it back.
+local resumeIcon
+local function CombatEnd()
+    M.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    local button = resumeIcon
+    resumeIcon = nil
+    if button and button.hovered and button:IsMouseOver() then AttachDelegate(button) end
+end
+
+local function CombatStart()
+    if draggingIcon then SidebarDragStop(draggingIcon) end
+    local owner = delegate and delegate.owner
+    ReleaseDelegate()
+    WatchCombat()
+    if owner and owner.hovered and M.context then
+        resumeIcon = owner
+        C.ListenInCombat(M.context, "PLAYER_REGEN_ENABLED", CombatEnd)
+    end
+end
+
+-- The combat start is watched while a drag or the delegate needs it.
+function WatchCombat()
+    if not M.context then return end
+    if draggingIcon or delegate and delegate.owner then
+        C.ListenInCombat(M.context, "PLAYER_REGEN_DISABLED", CombatStart)
+    else
+        M.context:RemoveEvent("PLAYER_REGEN_DISABLED")
+    end
+end
 
 local function Covered(button)
     return delegate ~= nil and delegate.owner == button and delegate:IsShown() and delegate:IsMouseOver() == true
@@ -210,7 +263,7 @@ local function PanelDelegate()
     return delegate
 end
 
-local function AttachDelegate(button)
+function AttachDelegate(button)
     local definition = button.entry.definition
     if not definition.panel or P.NS.InCombat() then return end
     local native = Native(definition)
@@ -223,7 +276,7 @@ local function AttachDelegate(button)
     frame:ClearAllPoints()
     frame:SetAllPoints(button)
     frame:Show()
-    C.ListenInCombat(M.context, "PLAYER_REGEN_DISABLED", ReleaseDelegate)
+    WatchCombat()
 end
 
 -- Sidebar buttons share these scripts; button.entry holds their definition.

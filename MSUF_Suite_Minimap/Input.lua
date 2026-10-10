@@ -75,7 +75,13 @@ local function MouseUp(_, button)
     if button ~= "MiddleButton" or not M.active or NS.IsCombatLocked() then return end
     local action = M.config.middleClick
     if action == MIDDLE.TRACKING then
-        local tracking = TrackingButton()
+        -- Blizzard's tracking menu opens on the press of its own
+        -- DropdownButton (OnMouseDown_Intrinsic), which no secure click
+        -- reaches; opened from here under WoW Forever's Gamepad UI it would
+        -- run MenuProxy.OnShow's focus code in the Suite's call
+        -- (S.GamepadUI). There the tracking button itself and the gamepad
+        -- radial's Tracking segment open it.
+        local tracking = not S.GamepadUI() and TrackingButton()
         if not tracking then return end
         if tracking:IsMenuOpen() then
             tracking:CloseMenu()
@@ -83,18 +89,40 @@ local function MouseUp(_, button)
             tracking:OpenMenu()
         end
     elseif action == MIDDLE.CALENDAR then
-        ToggleCalendar()
+        if S.GamepadUI() then MM.OpenWindowFlyout("calendar", S.Text("Calendar")) else ToggleCalendar() end
     elseif action == MIDDLE.WORLD_MAP then
         -- No secure click reaches the map's own mouse handler: the world map
-        -- opens through Blizzard's panel manager (MicroMenu.lua).
-        S.TogglePanel("worldMap")
+        -- opens through Blizzard's panel manager (MicroMenu.lua), under the
+        -- Gamepad UI through a one-row secure flyout (MicroMenu.lua here).
+        if S.GamepadUI() then MM.OpenWindowFlyout("worldMap", S.Text("World map")) else S.TogglePanel("worldMap") end
     elseif action == MIDDLE.MICRO_MENU then
         -- A secure flyout clicks Blizzard's own micro buttons (MicroMenu.lua).
         MM.OpenMicroMenu()
     end
 end
 
-local function RestoreMapInput()
+-- Under WoW Forever's Gamepad UI the map keeps Blizzard's own OnMouseUp and
+-- OnMouseWheel. There SmartNavigation scans the panels the frame controls
+-- manager focuses (FrameControlsManager.lua FrameShown returns at once
+-- outside the Gamepad UI; Blizzard_GamepadSmartNavigation/Utility.lua
+-- SmartNavigation_CanFocusFrame reads GetScript("OnMouseUp") and
+-- ("OnMouseDown") of every non-Button it finds): a Suite function there would
+-- be a Suite-tainted value in that secure scan. The middle-click then arrives
+-- as GLOBAL_MOUSE_UP while the map itself holds the pointer (Blizzard pings
+-- on it as well), and the wheel zooms through Blizzard's zoom buttons with
+-- their sound; their clicks arm the reset (ZoomClicked). The mode follows
+-- INPUT_DEVICE_INTERFACE_TRANSITION (Blizzard_SharedXML/InputUtil.lua, the
+-- event Forever's own interface switch listens to).
+local padInput, modeWatch
+local function MapMouseUp(_, _, button)
+    local map = inputMap
+    if button ~= "MiddleButton" or not padInput or not MM.Usable(map) then return end
+    local over = map:IsMouseMotionFocus()
+    if S.Public(over) and over == true then MouseUp(map, button) end
+end
+
+-- Puts back Blizzard's own handlers where the Suite's wrappers still sit.
+local function UnwrapMap()
     local map, scripts = inputMap, inputScripts
     if map and scripts and MM.Usable(map) then
         if map:GetScript("OnMouseUp") == scripts.mouseUp then
@@ -104,21 +132,33 @@ local function RestoreMapInput()
             map:SetScript("OnMouseWheel", scripts.originalMouseWheel)
         end
     end
-    inputMap, inputScripts = nil, nil
+    inputScripts = nil
 end
 
--- The map's own OnMouseUp and OnMouseWheel are wrapped, not hooked: Blizzard
+local function StopPadInput()
+    if not padInput then return end
+    padInput = nil
+    if M.context then MM.Unlisten("GLOBAL_MOUSE_UP", "middleClick") end
+end
+
+local function RestoreMapInput()
+    UnwrapMap()
+    StopPadInput()
+    if modeWatch and M.context then MM.Unlisten("INPUT_DEVICE_INTERFACE_TRANSITION", "mapInput") end
+    modeWatch, inputMap = nil, nil
+end
+
+-- Elsewhere the map's own OnMouseUp and OnMouseWheel are wrapped, not hooked: Blizzard
 -- pings on every mouse button (middle-click is the suite's action) and zooms
 -- through its zoom buttons with a sound; a post-hook could not suppress either.
 -- Other buttons still reach Blizzard's handler, and disable restores both.
-local function InstallMapInput(map)
-    if not MM.Usable(map) then return end
+local function WrapMap(map)
     if inputMap == map and inputScripts
         and map:GetScript("OnMouseUp") == inputScripts.mouseUp
         and map:GetScript("OnMouseWheel") == inputScripts.mouseWheel then
         return
     end
-    RestoreMapInput()
+    UnwrapMap()
     local originalMouseUp = map:GetScript("OnMouseUp")
     local originalMouseWheel = map:GetScript("OnMouseWheel")
     local mouseUp = function(self, button, ...)
@@ -127,13 +167,44 @@ local function InstallMapInput(map)
     end
     map:SetScript("OnMouseUp", mouseUp)
     map:SetScript("OnMouseWheel", Wheel)
-    inputMap = map
     inputScripts = {
         originalMouseUp = originalMouseUp,
         originalMouseWheel = originalMouseWheel,
         mouseUp = mouseUp,
         mouseWheel = Wheel,
     }
+end
+
+local InstallMapInput
+-- The protected map takes no script change in combat: the switch waits.
+local function InputModeChanged()
+    if not M.active or not inputMap then return end
+    if NS.IsCombatLocked() then
+        MM.Force("input")
+        S.Queue("minimap")
+        return
+    end
+    InstallMapInput(inputMap)
+end
+
+function InstallMapInput(map)
+    if not MM.Usable(map) then return end
+    if NS.Client.isForever and not modeWatch then
+        modeWatch = true
+        MM.Listen("INPUT_DEVICE_INTERFACE_TRANSITION", "mapInput", InputModeChanged)
+    end
+    if inputMap ~= map then UnwrapMap() end
+    inputMap = map
+    if S.GamepadUI() then
+        UnwrapMap()
+        if not padInput then
+            padInput = true
+            MM.Listen("GLOBAL_MOUSE_UP", "middleClick", MapMouseUp)
+        end
+    else
+        StopPadInput()
+        WrapMap(map)
+    end
     MM.HookHover(map)
 end
 

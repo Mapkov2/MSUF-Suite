@@ -31,6 +31,9 @@ C_CurrencyInfo = {
     GetCurrencyIDFromLink = tonumber,
     ExpandCurrencyList = function(index, value) assert(index == 1); expanded = value; toggles[#toggles + 1] = value end,
 }
+-- S.ContextMenu: Blizzard's context menu outside WoW Forever's Gamepad UI
+-- (MSUF_Suite_Modules/Dialogs.lua).
+assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_Bags/CurrencyPicker.lua"))("Bags", { Suite = S, BagsModule = module })
 assert(queries == 0, "currency chooser does not enumerate currencies in the background")
 S.BagCurrencyMenu({})
