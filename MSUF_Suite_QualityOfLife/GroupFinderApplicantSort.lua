@@ -67,8 +67,10 @@ end
 local function RefreshViewer()
     local viewer = LFGListFrame.ApplicationViewer
     if not VisibleViewer(viewer) then return end
-    LFGListApplicationViewer_UpdateResultList(viewer)
-    LFGListApplicationViewer_UpdateResults(viewer)
+    -- Use the native Refresh button's C request (upstream/live LFGList.xml).
+    -- Calling the Lua updates here taints applicants and rendered row fields;
+    -- GROUP_ROSTER_UPDATE later reads those before UpdateInfo tests secrets.
+    C_LFGList.RefreshApplicants()
 end
 
 function M:Enable()
