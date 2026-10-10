@@ -218,8 +218,7 @@ local Widget={}
 Widget.__index=Widget
 function Widget:GetParent() return self.parent end
 -- SetParent as in the client: the frame joins its new parent's children one
--- level above it (the aura layer makes frames inside aura buttons parentless
--- and parents them at once, Const.lua K.Child).
+-- level above it.
 function Widget:SetParent(parent)
     local old=self.parent
     if old and old.children then

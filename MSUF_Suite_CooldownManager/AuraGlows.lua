@@ -14,7 +14,7 @@ local AuraGlows = {}
 C.AuraGlows = AuraGlows
 
 -- Regions inside Blizzard's aura buttons are created with the client's
--- CreateFrame, parentless and parented at once (K.Child, AuraButtons.lua).
+-- CreateFrame, with their parent at creation (K.Child, AuraButtons.lua).
 local Child = K.Child
 local IsCombatLocked = NS.IsCombatLocked
 local floor, max, min = math.floor, math.max, math.min

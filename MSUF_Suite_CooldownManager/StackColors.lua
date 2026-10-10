@@ -11,7 +11,7 @@ local StackColors = {}
 C.StackColors = StackColors
 local K = C.Const
 local SameSet, CopySet = K.SameSet, K.CopySet
--- Frames inside aura buttons: parentless, parented at once (K.Child).
+-- Frames inside aura buttons: parented at creation (K.Child).
 local ChildFrame = K.Child
 local Glows = C.AuraGlows
 local options = {}

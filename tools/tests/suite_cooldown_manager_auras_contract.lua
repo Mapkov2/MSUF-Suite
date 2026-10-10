@@ -196,9 +196,17 @@ function Methods:GetFrameLevel() return R[self].level end
 function Methods:GetParent() return R[self].parent end
 -- Reparenting as in the client: the frame joins the new parent one level
 -- above it (SetParent resets the level), and a sealed button may not be
--- named while auras are secret.
+-- named while auras are secret. Nothing may be reparented into an aura
+-- button at all: the button's ForbiddenAspects (Blizzard_AuraButton.xml
+-- :16-24) would pass to the frame, and the client refuses (in game,
+-- Forever 1.60.1). Frames inside a button are made with their parent.
 function Methods:SetParent(parent)
     assert(not (parent and Sealed(parent) and ACCESS~=true),"a sealed aura button was named as a parent while auras are secret")
+    local up=parent and R[parent]
+    while up do
+        assert(not up.button,"Reparenting disallowed as child object would inherit forbidden aspects")
+        up=up.parent and R[up.parent]
+    end
     local s=R[self]
     local old=s.parent and R[s.parent]
     if old and old.kids then
@@ -3244,31 +3252,9 @@ do
     assert(next(R[list[5]].bind)==nil and pad.Waiting(),"a woken button built its stack sensor under an open gamepad panel")
     pad.Close()
     assert(next(R[list[5]].bind)~=nil and not pad.Waiting(),"the woken button was not built after the gamepad panel closed")
-    -- Blizzard grows the group's pool on its own while a panel is open, in
-    -- combat with auras secret (AuraContainerFrameProviders.lua:102-104 ->
-    -- :79): the button is built in its initializeFrame like any other, with
-    -- no frame made with a parent inside it (the hook above); only its stack
-    -- sensors, slots SmartNavigation would walk, wait for the panel. Once it
-    -- closed and auras are plain, the bar's sync adds them.
-    pad.Reopen()
-    COMBAT,AURAS_SECRET=true,true
-    local live=Live("c5","player")
-    local grown=NewButton(live)
-    local function Sensors()
-        local n=0
-        for _,c in ipairs(containers) do if R[c].parent==grown then n=n+1 end end
-        return n
-    end
-    R[live].groups.g1.init(grown)
-    R[grown].sealed=true
-    ACCESS=false
-    assert(R[grown].bind.icon and R[grown].bind.text and R[grown].bind.appBar,"a pool button Blizzard grew under an open gamepad panel stayed bare")
-    assert(Sensors()==0 and pad.Waiting() and A.pending.c5,"a grown pool button built stack sensor slots under an open gamepad panel")
-    pad.Close()
-    assert(Sensors()==0,"stack sensors were built in combat while auras were secret")
-    COMBAT,ACCESS,AURAS_SECRET=false,true,false
-    A.FlushPending()
-    assert(Sensors()==2 and not A.pending.c5,"the grown pool button's stack sensors were not added once the panel closed and auras were plain")
+    -- Blizzard never grows a group's pool on its own (one frame of ten,
+    -- AddAuraGroup above asserts maxFrameCount 1; Const.lua K.Child), so no
+    -- initializeFrame runs outside our own, waiting builds.
     pad.Finish(NS.Client)
     A.Release("c5")
     C.views.c5,C.plans.c5=nil,nil

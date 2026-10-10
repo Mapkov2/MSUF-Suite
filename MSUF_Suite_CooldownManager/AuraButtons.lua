@@ -27,7 +27,7 @@ local AuraButtons = {}
 C.AuraButtons = AuraButtons
 
 -- Regions inside Blizzard's aura buttons are created with the client's
--- CreateFrame, parentless and parented at once (K.Child): the container lays
+-- CreateFrame, with their parent at creation (K.Child): the container lays
 -- those buttons out and seals their bound regions, so MSUF's pixel-layout
 -- policy (S.CreateFrame) must not round what Blizzard positions.
 -- Placeholders sit on our own cells (S.CreateTexture).
@@ -725,10 +725,9 @@ end
 
 -- initializeFrame, from Blizzard's frame provider: inside a collected
 -- batch the button waits for EndBatch; otherwise it is built at once (a
--- slot's one button, a batch made while auras are secret, a batch Blizzard
--- grows on its own). Its frames never reach SmartNavigation's CreateFrame
--- hook (K.Child), so it is built under an open Forever gamepad panel too;
--- only its stack sensors wait for the panel (StackColors.lua Held).
+-- slot's one button, a batch made while auras are secret). Both run inside
+-- our AddAuraGroup and AddAuraSlot, which wait for an open Forever gamepad
+-- panel (Blocked); a group's pool never grows on its own (K.Child).
 local function Init(rec, button, k)
     local list = rec.batch
     if list then

@@ -367,22 +367,24 @@ end
 -- Four edges inside owner's rect (shared with the action bars).
 K.PlaceEdges = S.PlaceEdges
 
--- Spell ID sets (id -> true): equal members, and a copy into a kept table.
--- A frame inside an aura button, or inside one of ours there. Forever's
--- SmartNavigation post-hooks CreateFrame and walks the parent chain of each
--- frame made with a parent (SmartNavigation.lua:203-209, "if parent then"):
--- from an initializeFrame Blizzard runs when it grows a group's pool
--- (AuraContainerFrameProviders.lua:102-104 -> :79) that walk runs in our
--- execution and throws (:929). Made without a parent and parented at once,
--- the frame never reaches the hook. A template's OnLoad runs before the
--- parent is set: CooldownFrameTemplate (FrameXMLUtil Cooldown.xml) and
--- CustomAuraContainerTemplate need none, and callers anchor and level the
--- frame afterwards. The client's CreateFrame: Blizzard lays these out.
+-- A frame inside an aura button, or inside one of ours there, made with its
+-- parent in the one CreateFrame call. The client refuses to SetParent a
+-- frame into an aura button later ("Reparenting disallowed as child object
+-- would inherit forbidden aspects": the button's ForbiddenAspects,
+-- Blizzard_AuraButton.xml:16-24, would pass to it). Forever's SmartNavigation
+-- walks the parent chain of every frame made with a parent while a gamepad
+-- panel is open (SmartNavigation.lua:203-209, :921-934) and throws inside an
+-- aura button (:929), so each build that makes one waits for the panel
+-- (AuraButtons.Blocked). Blizzard never runs initializeFrame on its own
+-- later: a group shows one frame (maxFrameCount 1) of the ten AddAuraGroup
+-- pre-builds and releases before it acquires (AuraContainerGroups.lua
+-- :241-305), so its pool never grows (AuraContainerFrameProviders.lua
+-- :102-105). The client's CreateFrame: Blizzard lays these out.
 function K.Child(kind, parent, template)
-    local frame = CreateFrame(kind, nil, nil, template)
-    frame:SetParent(parent)
-    return frame
+    return CreateFrame(kind, nil, parent, template)
 end
+
+-- Spell ID sets (id -> true): equal members, and a copy into a kept table.
 
 function K.SameSet(a, b)
     for id in pairs(a) do
