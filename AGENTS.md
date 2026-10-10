@@ -12,12 +12,13 @@
 Each rule exists because breaking it caused a real defect.
 
 - **Clients:** Retail (12.1+) and WoW Forever only. Never use the combat log (`COMBAT_LOG_EVENT_UNFILTERED`) on these clients.
+- **GameTooltip:** never hook the shared `GameTooltip`'s methods, above all `hooksecurefunc(GameTooltip, "SetOwner", ...)` (owner decision 2026-10-06). It broke Blizzard callers in game twice (867x "attempt to call a nil value", gamepad taint). The MSUF core releases its `_msufUnitTooltipOwner` marker on `OnHide` only, so a tooltip reused without hiding keeps that marker until it hides; Suite visibility rules must live with that rather than add a hook.
 - **Error handling:** no `pcall`/`xpcall`. Boundaries go through `Safety.Dispatch`, which uses `securecallfunction`.
   - `securecallfunction` takes a function, never a callable table. Pass `job:EventFunction()`, not the job.
   - `Context:Event` accepts a job and converts it.
 - **Secrets:** use `Suite.IsSecret` / `NS.IsSecret` first, before any compare, arithmetic, table-key lookup or truth test. Secrets only flow into C sinks.
 - **Combat edge:** at `PLAYER_REGEN_DISABLED`, `InCombatLockdown()` is still false. Refusals use `NS.InCombat`; protected-write guards keep their own owners.
-- **Blizzard frames and tables:** never write to them; `HookScript` is fine. Never write `StaticPopupDialogs`. Confirmations and text prompts use Blizzard's generic dialogs through `S.Confirm` / `P.Confirm` / `P.AskText` (keyed: one open question per key).
+- **Blizzard frames and tables:** never write to them; `HookScript` is fine. Never write `StaticPopupDialogs`. Confirmations and text prompts use Blizzard's generic dialogs through `S.Confirm` / `P.Confirm` / `P.AskText` (keyed: one open question per key). Under WoW Forever's Gamepad UI `S.Confirm`, `S.AskText` and `S.ContextMenu` show the Suite's own pad list instead (on hosts with MSUF's pad navigation; older hosts keep Blizzard's), and Blizzard panels open only through secure click delegates on Blizzard's own buttons (`S.PanelButton`).
 - **Host coupling:** the Suite talks to MSUF only through `MSUF_Suite/Core/HostBridge.lua` and its Menu2 half `HostBridgeMenu.lua`.
   - It uses host API v1 (`MSUF_HostAPI`, Menu2 page-reset providers) when the host has it, and the unchanged legacy path otherwise.
   - On v1 the Suite never writes `MSUF_DB` itself.
