@@ -442,12 +442,14 @@ local function Collect(i, kind, specLists, hidden, replaced, preview, out, prese
         n = FillEssential(slot, family, hidden, out, n)
     end
     -- Potions and racials: the Healthstones, then the racial, after
-    -- Blizzard's entries (and after a user list, which they survive).
+    -- Blizzard's entries (and after a user list, which they survive). Other
+    -- races' racials stop here, as Materialize would drop them.
     local extra = def.preset == "racials" and presets[slot]
     if extra then
         for j = 1, #extra do
             local key = extra[j]
-            if claimed[key] == slot and not used[key] and not hidden[key] then
+            if claimed[key] == slot and not used[key] and not hidden[key]
+                and not (presetSpell[key] and not PresetKnown(key)) then
                 used[key] = true
                 n = n + 1
                 out[n] = key

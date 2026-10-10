@@ -173,8 +173,11 @@ function Presets.RaidEssentials(specID)
     return RAID_ESSENTIALS[specID]
 end
 
--- Active racial abilities, appended to the Potions and racials bar. Blizzard's
--- catalog does not list them; only the character's own racial is known.
+-- Active racial abilities, appended to the Potions and racials bar. Retail's
+-- Blizzard catalog does not list them; only the character's own racial is
+-- known. WoW Forever keeps the Vanilla IDs (the last group), and its catalog
+-- lists the racial as a Utility record hidden by default (Perception 20600,
+-- in game): the preset claims that record for this bar.
 local RACIALS = {
     7744,    -- Will of the Forsaken
     20549,   -- War Stomp
@@ -203,6 +206,11 @@ local RACIALS = {
     368970,  -- Tail Swipe
     436344,  -- Azerite Surge
     1237885, 1287685, -- Haranir racial
+    -- WoW Forever (Vanilla IDs)
+    20600,   -- Perception
+    20580,   -- Shadowmeld
+    20577,   -- Cannibalize
+    20554, 26296, -- Berserking
 }
 Presets.RACIALS = RACIALS
 

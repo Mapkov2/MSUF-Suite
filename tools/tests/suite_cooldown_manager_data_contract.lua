@@ -1329,6 +1329,21 @@ C_Item.GetItemIconByID,C_Item.GetItemNameByID=getIcon,getName
 Catalog.Rebuild()
 plans=Resolve.Build()
 Bars("stones gone",{ext="b501,b502,s28730"})
+-- WoW Forever: the racial keeps its Vanilla ID and is a Utility record
+-- Blizzard hides by default (in game: Perception 20600, flags 2). The preset
+-- claims that record for Potions and racials, off Utility.
+local utiSetRacial=sets[1]
+sets[1]={111,112,SECRET_ID,113,114,115,185}
+infos[185]=Info(185,1,20600,{flags=2})
+names[20600],textures[20600]="Perception",{120600,220600,nil}
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("forever racial",{ext="b501,b502,s28730,b185",uti="b112"})
+assert(E.b185.slot=="ext" and E.b185.name=="Perception" and E.b185.known,"the Forever racial record joins Potions and racials")
+sets[1],infos[185]=utiSetRacial,nil
+Catalog.Rebuild()
+plans=Resolve.Build()
+Bars("forever racial gone",{ext="b501,b502,s28730"})
 
 -- Across every catalog generation, spec and preview above, each spell ID was
 -- asked whether it is harmful once.
