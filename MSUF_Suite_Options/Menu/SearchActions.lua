@@ -5,7 +5,8 @@ local Tr = P.Tr
 -- that open an editor, preview, picker or operation on the real feature page.
 -- Searching them only navigates to the control; it never runs the action.
 local MODULE_ACTIONS = {
-    bags = { { "open", "Open bags" }, { "move", "Move bag windows" }, { "currencies", "Choose currencies" } },
+    bags = { { "open", "Open bags" }, { "move", "Move bag windows" }, { "currencies", "Choose currencies" },
+        { "categories", "Edit categories" } },
     buffReminders = { { "edit", "Edit Mode" }, { "potionMap", "Add this map to the potion maps" } },
     damageMeter = { { "reset_data", "Reset combat data" }, { "move", "Move on screen" } },
     minimap = { { "rescan", "Collect addon buttons again" }, { "button_positions", "Arrange individual addon buttons" },
@@ -21,6 +22,10 @@ local MODULE_ACTIONS = {
 
 -- module, section suffix, control key, visible label, optional classification/kind.
 local EDITOR_ACTIONS = {
+    { "buffReminders", "composer", "composer.kind", "Reminder", "ephemeral", "dropdown" },
+    { "buffReminders", "composer", "composer.spell", "Spell name or ID", "ephemeral", "textinput" },
+    { "buffReminders", "composer", "composer.item", "Item ID", "ephemeral", "textinput" },
+    { "buffReminders", "composer", "action.addReminder", "Add reminder" },
     { "actionbars", "editor", "editor.selected", "Selected bar", "ephemeral", "dropdown" },
     { "actionbars", "editor", "editor.copyTo", "Copy To", "ephemeral" },
     { "actionbars", "editor", "editor.preset.row", "One row" },
@@ -49,6 +54,7 @@ local EDITOR_ACTIONS = {
     { "cooldownManager", "spells", "spells.clear", "Reset to Blizzard's list" },
     { "cooldownManager", "spells", "spells.copy", "Copy to other specializations" },
     { "cooldownManager", "spells", "spells.importBlizzard", "Import Blizzard CDM" },
+    { "cooldownManager", "overrides", "spells.overrides", "Spell overrides" },
     { "nameplates", "auraColors", "action.auraSpec", "DoTs by specialization", nil, "dropdown" },
     { "nameplates", "auraColors", "action.auraSuggestion", "Add a DoT from MSUF", nil, "dropdown" },
     { "nameplates", "auraColors", "action.auraCustom", "Custom aura ID", nil, "textinput" },

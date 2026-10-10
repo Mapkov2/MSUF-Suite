@@ -38,7 +38,7 @@ end
 
 -- The docked sample renders with the skin engine's own surfaces.
 local function Preview(ctx, b, skin)
-    local section, toolbar = W.FixedPreviewSection(ctx, b, { title = Tr("Skin preview"), height = 176 })
+    local section, toolbar = W.FixedPreviewSection(ctx, b, { title = Tr("Skin preview"), height = 240 })
     if not section then return end
     local hint = T.Font(toolbar, "GameFontDisableSmall", "Choose a look below; this sample follows your changes.",
         T.colors.muted)
@@ -46,19 +46,22 @@ local function Preview(ctx, b, skin)
     hint:SetPoint("RIGHT", toolbar, "RIGHT", -12, 0)
     hint:SetJustifyH("LEFT")
     local canvas = CreateFrame("Frame", nil, section)
-    canvas:SetPoint("TOPLEFT", 14, -42)
+    canvas:SetPoint("TOPLEFT", 14, -96)
     canvas:SetPoint("BOTTOMRIGHT", -14, 9)
-    local shell = SkinBox(skin, canvas, 10, -7, 292, 116, "shell")
+    local width = (HM.GetSectionWidth(section) or b.width or 720) - 48
+    local shellWidth = math.min(292, width)
+    local shell = SkinBox(skin, canvas, 10, -7, shellWidth, 116, "shell")
     local title = T.Font(shell, "GameFontNormal", "Window shell", T.colors.text)
     title:SetPoint("TOPLEFT", 14, -12)
-    local panel = SkinBox(skin, shell, 13, -37, 266, 66, "panel")
-    local card = SkinBox(skin, panel, 10, -10, 246, 22, "card")
+    local panel = SkinBox(skin, shell, 13, -37, shellWidth - 26, 66, "panel")
+    local card = SkinBox(skin, panel, 10, -10, shellWidth - 46, 22, "card")
     local cardLabel = T.Font(card, "GameFontHighlightSmall", "Panel and card layer", T.colors.text)
     cardLabel:SetPoint("LEFT", 8, 0)
     local button = SkinBox(skin, panel, 10, -40, 76, 19, "buttonPrimary")
     local buttonLabel = T.Font(button, "GameFontHighlightSmall", "Primary", T.colors.text)
     buttonLabel:SetPoint("CENTER")
-    local note = P.Text(canvas, "", 326, -18, 300)
+    local note = P.Text(canvas, "", 326, -18, math.max(1, width - 316))
+    note:SetShown(width >= 520)
     -- Labels take the token's RGB only; the preview keeps them opaque.
     local function PaintLabel(label, token)
         local r, g, blue = skin.Theme.GetColor(token)
@@ -73,6 +76,7 @@ local function Preview(ctx, b, skin)
         P.SetTranslatedText(note, Tr(look and look.label or "Custom") .. "\n"
             .. Tr(description))
     end)
+    return section
 end
 
 ------------------------------------------------------------------ Micro Bar
@@ -322,6 +326,8 @@ local function BuildLook(ctx, b, skin)
                     Change(skin, "Skin color palette", "palette", function() return skin.Theme.ApplyPreset(value) end)
                 end, paletteValues),
         }, true, function(body, y, width)
+            local scope = P.Text(body, "Applies to Skinning and all enabled Suite modules.", 16, y, width, T.colors.text)
+            y = y - math.max(14, scope:GetStringHeight()) - 12
             local half = math.floor((width - 12) / 2)
             local restore = format(Tr("Restore %s"), defaultLabel)
             Button(ctx, body, restore, 16, y, half, function()
@@ -770,8 +776,16 @@ local function Build(ctx)
     end
     -- FixedPreviewSection must own the first builder slot so its reserved
     -- header space contains the preview instead of leaving a blank gap.
-    Preview(ctx, b, skin)
-    BuildSections(ctx, b, skin)
+    local header = Preview(ctx, b, skin)
+    local workspace, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = "skin", title = "Skinning",
+        builder = b, header = header, height = 240, tabY = -22, tabs = {
+            { id = "style", label = "Style", sections = "frame_basic basic material shape fonts icons" },
+            { id = "windows", label = "Blizzard windows", sections = "micro hud window_controls windows coverage" },
+            { id = "character", label = "Character and equipment", sections = "character" },
+            { id = "maintenance", label = "Maintenance", sections = "advanced" },
+        } })
+    BuildSections(ctx, workspace, skin)
+    P.MenuWorkspace.Finish(ui)
 end
 
 -- The Skin addon is off in Blizzard's AddOn list: below the notice

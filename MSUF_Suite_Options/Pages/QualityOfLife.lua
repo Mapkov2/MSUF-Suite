@@ -600,6 +600,48 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
     return row, toggle, settings, meta.keywords
 end
 
+local function LayoutFeatureRows(panel, features, records, selected, activeOnly)
+    local offset = 4
+    for _, group in ipairs(features) do
+        local record = records[group]
+        local shown = not activeOnly or GroupEnabled(group) or group == selected
+        if record.shown ~= shown then
+            record.row:SetShown(shown)
+            record.shown = shown
+        end
+        if record.rowY ~= offset then
+            record.row:ClearAllPoints()
+            record.row:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -offset)
+            record.rowY = offset
+        end
+        if shown then offset = offset + ROW_HEIGHT end
+        if record.details and group == selected then
+            if record.detailsY ~= offset then
+                record.details:ClearAllPoints()
+                record.details:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -offset - 4)
+                record.detailsY = offset
+            end
+            offset = offset + record.detailHeight + 12
+        end
+        local isSelected = group == selected
+        if record.details and record.detailsShown ~= isSelected then
+            record.details:SetShown(isSelected)
+            record.detailsShown = isSelected
+        end
+        if record.row._msufSuiteSelected ~= isSelected then
+            record.row._msufSuiteSelected = isSelected
+            if record.settings then record.settings:SetActive(isSelected) end
+            PaintFeatureRow(record.row)
+        end
+    end
+    local height = offset + 4
+    if panel.suiteQoLHeight ~= height then
+        panel:SetHeight(height)
+        panel.suiteQoLHeight = height
+    end
+    return height
+end
+
 local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, width, panelTop,
         state, featureRows)
     local features, tabId = tab and tab.features or category.features, tab and tab.id or "main"
@@ -609,20 +651,10 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
     state.panels[tabId] = panel
     local records, selected = {}, nil
     local function Layout()
-        local detailHeight = selected and records[selected] and records[selected].detailHeight or 0
-        for group, record in pairs(records) do
-            if record.details then record.details:SetShown(group == selected) end
-            if record.settings then record.settings:SetActive(group == selected) end
-            local active = group == selected
-            if record.row._msufSuiteSelected ~= active then
-                record.row._msufSuiteSelected = active
-                PaintFeatureRow(record.row)
-            end
-        end
-        local height = 8 + #features * ROW_HEIGHT + (detailHeight > 0 and detailHeight + 12 or 0)
-        panel:SetHeight(height)
-        if not category.tabs or state.activeTab == tabId then
+        local height = LayoutFeatureRows(panel, features, records, selected, ctx.suiteQoLActiveOnly)
+        if (not category.tabs or state.activeTab == tabId) and (state.height ~= height or state.heightTab ~= tabId) then
             P.FinishBody(builder, body, panelTop - height)
+            state.height, state.heightTab = height, tabId
         end
     end
     state.updateHeight[tabId] = Layout
@@ -632,7 +664,6 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
             local details, height, colors = BuildFeatureDetails(ctx, panel, group,
                 record.sectionId, width, record.sections, record.allRules, record.keywords)
             record.details, record.detailHeight, record.colorShortcut = details, height, colors
-            details:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -8 - #features * ROW_HEIGHT)
             HM.SetSectionEntry(details, entry)
             P.Refresh()
         end
@@ -657,12 +688,13 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
         -- Legacy section IDs are virtual routes for search and menu links.
         group.reveal = function(force)
             if state.selectTab and category.tabs then state.selectTab(tabId) end
-            if hasDetails then Select(group, force ~= false) end
+            if hasDetails or ctx.suiteQoLActiveOnly then Select(group, force ~= false) end
             return record.details or row
         end
         record.reveal = group.reveal
     end
     Layout()
+    P.M.TrackRefresh(ctx, Layout)
 end
 
 -- A lazy host builds a category's feature rows when it first opens
@@ -727,6 +759,16 @@ end
 local function Build(ctx)
     SortCategories()
     local builder = P.W.PageBuilder(ctx)
+    if builder.Section then
+        local header = builder:Section(Tr("Quality of Life"), 72)
+        if header.title then header.title:Hide() end
+        P.M.BindDropdownAt(ctx, header, Tr("Show"), 16, -8, {
+            { value = false, text = Tr("All") }, { value = true, text = Tr("Enabled only") },
+        }, math.max(240, (builder.width or 720) - 32), function() return ctx.suiteQoLActiveOnly == true end,
+            function(value) ctx.suiteQoLActiveOnly = value == true
+                P.Refresh() end,
+            P.Meta(PAGE, "qol", "view.enabled", "ephemeral"))
+    end
     local rows, order, owners = {}, {}, {}
     ctx.qualityOfLifeFeatureRows, ctx.qualityOfLifeFeatureOrder = rows, order
     if ctx.entry then

@@ -89,18 +89,20 @@ local function WindowControls(ctx, b, body, templates, built)
     local width = math.max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
     local help = P.Text(body, HELP.window_settings, 16, -18, width)
     local y = -18 - math.max(14, math.ceil(help:GetStringHeight() or 14)) - 12
-    local choices = {}
-    for i = 1, Suite.DamageMeterMaxWindows do choices[i] = { value = i, text = string.format(Tr("Window %d"), i) } end
-    local picker = M.BindDropdownAt(ctx, body, Tr("Window"), 16, y, choices, math.floor(width / 2),
-        function() return selected end,
-        function(value)
-            selected = tonumber(value) or 1
-            P.Refresh()
-        end,
-        P.Meta(PAGE, ID, "window.selected", "ephemeral", "suite_damageMeter_windows"))
+    local picker = ctx.meterWindowPicker
+    if not picker then
+        local choices = {}
+        for i = 1, Suite.DamageMeterMaxWindows do choices[i] = { value = i, text = Tr("Window %d"):format(i) } end
+        picker = M.BindDropdownAt(ctx, body, Tr("Window"), 16, y, choices, math.floor(width / 2),
+            function() return selected end, function(value) selected = tonumber(value) or 1
+                P.Refresh() end,
+            P.Meta(PAGE, ID, "window.selected", "ephemeral", "suite_damageMeter_windows"))
+    end
     local note = P.Text(body, "", 28 + math.floor(width / 2), y - 24, math.floor(width / 2) - 12)
     y = y - 62
-    y = P.RuleGrid(ctx, body, PAGE, ID, templates, y, width, WindowKey, "suite_damageMeter_windows", nil, built)
+    local entries
+    y, entries = P.RuleGrid(ctx, body, PAGE, ID, templates, y, width, WindowKey, "suite_damageMeter_windows", nil, built)
+    P.MenuWorkspace.Prepare(body, entries)
     P.AttachRuleColors(body, "Window settings", ID, templates, WindowKey)
     return y, picker, note
 end
@@ -141,14 +143,20 @@ local function BuildWindows(ctx, b)
 end
 
 local function Build(ctx)
-    local b = W.PageBuilder(ctx)
+    local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Damage meter", height = 264,
+        tabs = {
+            { id = "shared", label = "General settings", sections = "damageMeter_module look general bars text window details timer" },
+            { id = "window", label = "Window settings", sections = "windows" },
+        } })
+    P.MenuSamples.Meter(ui, function() return selected end, function(value) selected = value
+                P.Refresh() end)
     -- S.DamageMeterReset comes with the damage meter addon.
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Reset combat data", function() if S.DamageMeterReset then S.DamageMeterReset() end end,
           function() return S.DamageMeterReset ~= nil and P.Get(ID, "enabled") end, key = "reset_data" },
         { "Move on screen", function() P.MoveOnScreen(ID, "window1") end, nil, key = "move" },
     })
-    P.RuleSection(ctx, b, PAGE, ID, "suite_damageMeter_look", Tr("Choose a look"),
+    P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_damageMeter_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
             help = "Clean Modern uses matte panels with white accents. Midnight Blue keeps the original blue palette. Midnight Dark uses neutral charcoal glass; MSUF Forever retains its muted gold. Color changes become Custom.",
@@ -157,7 +165,7 @@ local function Build(ctx)
     for _, section in ipairs({ "general", "bars", "text", "window", "details", "timer" }) do
         local rules = P.SectionRules(ID, section)
         if #rules > 0 then
-            P.RuleSection(ctx, b, PAGE, ID, "suite_damageMeter_" .. section, Tr(rules[1].sectionTitle), rules,
+            P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_damageMeter_" .. section, Tr(rules[1].sectionTitle), rules,
                 { help = HELP[section], open = section == "general",
                   extra = section == "bars" and function(body, y, width) return BuildGradientPad(ctx, body, y, width) end or nil })
         end
@@ -172,6 +180,7 @@ local function Build(ctx)
         local index = tonumber(key:match("^w(%d+)"))
         return not index or index <= P.Get(ID, "windowCount")
     end
+    P.MenuWorkspace.Finish(ui)
 end
 
 P.RegisterPage({ key = PAGE, label = "Damage meter", title = "Damage meter", build = Build, icon = { 7, 0 },

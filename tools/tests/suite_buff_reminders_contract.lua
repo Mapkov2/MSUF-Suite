@@ -199,7 +199,7 @@ local NS = { IsCombatLocked=function() return combat end,
 -- Data, readers, entry selection and the controller load in TOC order into
 -- one private table (Bootstrap only fills it from _G.MSUFSuite).
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local BR_FILES = { "Bootstrap.lua", "Data.lua", "State.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Special.lua", "Cursor.lua", "Controller.lua" }
+local BR_FILES = { "Bootstrap.lua", "Data.lua", "State.lua", "Readers.lua", "Group.lua", "Entries.lua", "Preparation.lua", "Alerts.lua", "Visuals.lua", "Preview.lua", "Special.lua", "Cursor.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_BuffReminders")
 assert(#tocFiles == #BR_FILES, "the BuffReminders TOC must list " .. #BR_FILES .. " files")
 for i = 1, #BR_FILES do

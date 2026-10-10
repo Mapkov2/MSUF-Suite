@@ -58,6 +58,9 @@ R.STATE = {
     -- The ready check mana note (Preparation): its label (its hide is a
     -- context wait).
     readyCheck = { "label" },
+    -- The options stage owns a separate entry buffer and selection snapshot;
+    -- no menu drawing uses the live controller's mutable list or view.
+    menuPreview = { "buffer", "settings" },
 }
 
 -- Gives an owner (the module, or a test's owner) one empty table per concern.

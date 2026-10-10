@@ -195,6 +195,10 @@ function Editor.Show(pinned)
     Editor.frame:Show()
 end
 
+function S.OpenBagCategoryEditor()
+    Editor.Show()
+end
+
 function Editor.ShowPinned()
     Editor.Show(true)
 end

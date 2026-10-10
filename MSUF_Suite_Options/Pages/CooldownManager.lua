@@ -618,7 +618,10 @@ local function Build(ctx)
     -- Basics first, then the closed spell list, then the other topics.
     for _, spec in ipairs(SECTIONS) do
         BuildSection(ctx, b, ui, spec)
-        if spec.id == "basics" then BuildSpells(ctx, b, ui) end
+        if spec.id == "basics" then
+            BuildSpells(ctx, b, ui)
+            P.CDMOverrides.Build(ctx, b)
+        end
     end
 end
 

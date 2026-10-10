@@ -74,6 +74,7 @@ end
 local function NewBuffer()
     return { list = {}, records = {}, lethal = {}, nonlethal = {} }
 end
+R.NewEntryBuffer = NewBuffer
 local buffers = { NewBuffer(), NewBuffer() }
 local building
 local buildingCategory = "personal"
@@ -441,8 +442,8 @@ function R.StockChanged(self)
 end
 
 -- Returns the new list, built into the buffer the active list does not use.
-function R.BuildEntries(self)
-    building = self.list.entries == buffers[1].list and buffers[2] or buffers[1]
+function R.BuildEntries(self, previewBuffer)
+    building = previewBuffer or (self.list.entries == buffers[1].list and buffers[2] or buffers[1])
     local list = building.list
     for index = #list, 1, -1 do list[index] = nil end
     Clear(seenAuras)

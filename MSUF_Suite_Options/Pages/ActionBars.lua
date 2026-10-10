@@ -338,6 +338,31 @@ local function RunCopyTo(popup)
     if all then return ConfirmCopyAll(Run) end
     return Run()
 end
+local function RefreshCopySummary(popup)
+    local targets, categories = {}, {}
+    for _, index in ipairs(CopyTargets(selected)) do
+        if CopyDestination(selected)[index] then targets[#targets + 1] = BarTitle(index) end
+    end
+    for _, category in ipairs(COPY_CATEGORIES) do
+        if copyScopes[category.key] then categories[#categories + 1] = Tr(category.label) end
+    end
+    P.SetTranslatedText(popup.suiteCopySummary, Tr("Copy %s to %s.\nSettings: %s.\nPositions stay as they are."):format(
+        BarTitle(selected), #targets > 0 and table.concat(targets, ", ") or Tr("None"),
+        #categories > 0 and table.concat(categories, ", ") or Tr("None")))
+    popup:SetHeight(math.max(340, 264 + (popup.suiteCopySummary:GetStringHeight() or 42)))
+end
+
+local function BuildCopySummary(popup)
+    popup.suiteCopySummary = P.Text(popup, "", 16, -210, 448, T.colors.text)
+    popup:HookScript("OnShow", function() RefreshCopySummary(popup) end)
+    for _, child in ipairs({ popup:GetChildren() }) do
+        if child:IsObjectType("Button") then
+            child:HookScript("OnClick", function() RefreshCopySummary(popup) end)
+        end
+    end
+    RefreshCopySummary(popup)
+end
+
 -- Uses MSUF's own Copy To popup, so the chrome is the same on every page.
 local function AttachCopyTo(ctx, body, y)
     local Shared = M.UnitSectionsShared
@@ -352,7 +377,8 @@ local function AttachCopyTo(ctx, body, y)
     targets[#targets + 1] = { value = "all", text = "All" }
     local api = Shared.MakeScopeCopyPopup(copy, {
         controlDomain = "suite", controlPageKey = PAGE, controlPath = "actionbars.copy",
-        width = 480, height = 240, categoryRowsPerColumn = 3,
+        width = 480, height = 340, categoryRowsPerColumn = 3,
+        onPopupCreated = BuildCopySummary,
         categories = COPY_CATEGORIES, scopes = copyScopes,
         targets = targets, targetWidths = TARGET_WIDTHS, targetWidth = 26,
         sourceKey = function() return selected end,

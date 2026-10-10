@@ -12,6 +12,8 @@ Menu\Bridge.lua
 Menu\Controls.lua
 Menu\PreviewInteraction.lua
 Menu\SectionActions.lua
+Menu\Workspace.lua
+Pages\MenuSamples.lua
 Pages\ActionBarsWorkspace.lua
 Pages\ActionBarsPreviewData.lua
 Pages\ActionBarsPreview.lua
@@ -35,6 +37,9 @@ Pages\HUDPreview.lua
 Pages\HUDPreviewSamples.lua
 Pages\HUDAFKPreview.lua
 Pages\HUD.lua
+Pages\BuffRemindersVisibility.lua
+Pages\BuffRemindersEditor.lua
+Pages\BuffRemindersPreview.lua
 Pages\BuffReminders.lua
 Pages\Chat.lua
 Pages\NameplatesAuraDraft.lua
@@ -55,6 +60,7 @@ Pages\CooldownManagerSounds.lua
 Pages\CooldownManagerPopover.lua
 Pages\CooldownManagerPreviewIcons.lua
 Pages\CooldownManagerPreview.lua
+Pages\CooldownManagerOverrides.lua
 Pages\CooldownManager.lua
 Pages\AppearanceKit.lua
 Pages\Appearance.lua

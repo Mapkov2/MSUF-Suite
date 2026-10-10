@@ -119,15 +119,7 @@ end
 local function MakeButton(self, index)
     local button = CreateFrame("Button", nil, self.view.host, "SecureActionButtonTemplate")
     button:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
-    button.icon = S.CreateTexture(button, nil, "ARTWORK")
-    button.icon:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
-    button.icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
-    button.icon:SetTexCoord(.08, .92, .08, .92)
-    button.border = S.CreateTexture(button, nil, "BACKGROUND")
-    button.border:SetAllPoints(button)
-    button.border:SetColorTexture(1, .72, .34, 1)
-    button.count = S.CreateFontString(button, nil, "OVERLAY", "GameFontHighlightSmall")
-    button.count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+    R.CreateIcon(button)
     button:SetScript("OnEnter", Tooltip)
     button:SetScript("OnLeave", HideTooltip)
     button:Hide()
@@ -222,10 +214,8 @@ local function BindButton(button, entry)
     button:SetAttribute("item1", click and action == "item" and ("item:" .. entry.id) or nil)
     button:SetAttribute("target-slot", entry.slot)
     button:SetAttribute("unit", "player")
-    button.icon:SetTexture(Texture(action, entry.id))
-    button.icon:SetDesaturated(entry.restock)
+    R.PaintEntry(button, entry)
     entry.actionID = entry.id
-    button.count:SetText("")
 end
 
 -- What one compile changed: the reminder list (entries), the host anchor,
@@ -255,13 +245,10 @@ end
 
 local function LayoutButtons(self, entries)
     local c, view = self.config, self.view
-    local size, spacing, columns = c.size, c.spacing, c.columns
+    local size = c.size
     local newEntries, geometry = changed.entries, changed.geometry
     if newEntries or geometry then
-        local displayColumns = math.min(columns, math.max(1, #entries))
-        local rows = math.max(1, math.ceil(#entries / columns))
-        view.host:SetSize(displayColumns * size + (displayColumns - 1) * spacing,
-            rows * size + (rows - 1) * spacing)
+        view.host:SetSize(R.IconGeometry(c, #entries))
     end
     if not (newEntries or geometry or changed.color or changed.text) then return end
     local r, g, b = S.RGB(c.borderColor)
@@ -392,15 +379,13 @@ end
 
 local function ShowMask(self, mask)
     local view, entries = self.view, self.list.entries
-    local shown, columns, size, spacing = 0, self.config.columns, self.config.size, self.config.spacing
+    local shown = 0
     for index, button in ipairs(view.buttons) do
         local entry = entries[index]
         local bit = entry and entry.bit or 2 ^ (index - 1)
         R.AlertTransition(self, button, entry, mask % (bit * 2) >= bit)
         if mask % (bit * 2) >= bit then
-            button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", view.host, "TOPLEFT", (shown % columns) * (size + spacing),
-                -math.floor(shown / columns) * (size + spacing))
+            R.PositionIcon(button, view.host, shown, self.config)
             button:Show()
             shown = shown + 1
         else
@@ -438,7 +423,7 @@ local function Preview(self)
         view.previewing, view.mask = true, mask
         ShowMask(self, mask)
         for i, entry in ipairs(list.entries) do
-            view.buttons[i].count:SetText(entry.group and "2" or entry.kind ~= "spell" and not entry.notice and "5" or "")
+            view.buttons[i].count:SetText(R.PreviewCount(entry))
         end
     end
     list.needsFullRefresh, list.countsDirty = true, true

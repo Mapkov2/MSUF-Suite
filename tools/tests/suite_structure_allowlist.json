@@ -2851,6 +2851,36 @@
    "kind": "addon",
    "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
    "symbol": "chrome.RefreshSelectedLayerButtons"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
+   "kind": "addon",
+   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
+   "symbol": "W.FixedPreviewSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
+   "kind": "addon",
+   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
+   "symbol": "W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
+   "kind": "addon",
+   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
+   "symbol": "M.RelayoutPageHeaderHost"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Bags.lua",
+   "kind": "lod",
+   "reason": "The existing category editor is exported by MSUF_Suite_Bags, which loads on demand and is not an options dependency; the button is disabled until its editor is available.",
+   "symbol": "S.OpenBagCategoryEditor"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/BuffRemindersPreview.lua",
+   "kind": "lod",
+   "reason": "The BuffReminders LoD renderer can be absent when the menu closes after a cold combat open or failed addon load; the preview lifecycle contract covers release with and without the renderer.",
+   "symbol": "S.BuffRemindersReleasePreview"
   }
  ]
 }

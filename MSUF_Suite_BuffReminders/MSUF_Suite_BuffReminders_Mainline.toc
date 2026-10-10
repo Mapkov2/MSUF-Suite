@@ -17,6 +17,8 @@ Group.lua
 Entries.lua
 Preparation.lua
 Alerts.lua
+Visuals.lua
+Preview.lua
 Special.lua
 Cursor.lua
 Controller.lua

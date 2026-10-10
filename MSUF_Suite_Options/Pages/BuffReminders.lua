@@ -46,18 +46,30 @@ local function AddPotionMap()
 end
 
 local function Build(ctx)
-    local b = P.W.PageBuilder(ctx)
+    local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Buff Reminders", height = 202,
+        tabs = {
+            { id = "reminders", label = "What to remind", sections = "buffReminders_module composer tracking demons recommended readycheck" },
+            { id = "visibility", label = "When to show", sections = "visibility classVisibility personalVisibility consumableVisibility" },
+            { id = "appearance", label = "Appearance", sections = "appearance position" },
+        } })
+    P.MenuSamples.Reminders(ui)
     P.ModuleCard(ctx, b, PAGE, ID, {
         { "Edit Mode", function() P.OpenEditMode(ID, "buffs") end,
             function() return P.EditModeReady() and S.Status(ID) == "Active" end, key = "edit" },
         { "Add this map to the potion maps", AddPotionMap, nil, key = "potionMap" },
     })
+    P.ReminderEditor.Build(ctx, b)
     for _, section in ipairs(SECTIONS) do
         if section[1] ~= "recommended" or P.Requires.modernEquipment() then
-            P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
-                P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = section[1] == "tracking" })
+            if section[1]:match("Visibility$") then
+                P.ReminderVisibility.Build(ctx, b, section[1], section[2])
+            else
+                P.MenuWorkspace.Rules(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
+                    P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = false })
+            end
         end
     end
+    P.MenuWorkspace.Finish(ui)
 end
 
 P.RegisterPage({ key = PAGE, label = "Buff Reminders", title = "Buff Reminders", build = Build, icon = { 7, 1 },

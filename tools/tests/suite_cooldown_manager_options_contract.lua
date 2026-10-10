@@ -591,7 +591,7 @@ for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewInt
     "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua",
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
     "Pages/CooldownManagerSounds.lua", "Pages/CooldownManagerPopover.lua",
-    "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManager.lua",
+    "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManager.lua",
     "Pages/AppearanceKit.lua", "Pages/Appearance.lua", "Menu/Register.lua" }) do
     local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))
     if file:find("CooldownManager", 1, true) then setfenv(chunk, strict) end
@@ -765,27 +765,27 @@ for i, section in ipairs(ctx.sections) do
     order[i] = section.sectionId:gsub("^suite_cooldownManager_", "")
     if section.defaultOpen then openSections[#openSections + 1] = order[i] end
 end
-assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,layout,look,text,effects,buffs,barstyle,visibility",
+assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,overrides,layout,look,text,effects,buffs,barstyle,visibility",
     "unexpected section order: " .. table.concat(order, ","))
 assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only Basics and Basics start open: "
     .. table.concat(openSections, ","))
 assert(ctx.sections[3].title == "Spell list", "the tile section is the Spell list")
-assert(ctx.sections[9].title == "Timer bar style", "the timer bar section says what it styles")
+assert(ctx.sections[10].title == "Timer bar style", "the timer bar section says what it styles")
 assert(ctx.sections[2]._msuf2CollapsibleEntry.label.text == "Basics: Utility cooldowns"
-    and ctx.sections[4]._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
+    and ctx.sections[5]._msuf2CollapsibleEntry.label.text:find("Utility cooldowns", 1, true),
     "section headers do not name the selected bar")
 -- Basics holds the most used settings of the bar, the attachment complete.
 for _, suffix in ipairs({ "on", "size", "perRow", "anchor", "side", "gap", "align", "alpha" }) do
     assert(Control(suffix).parent == ctx.sections[2], "Basics lacks " .. suffix)
 end
-assert(Control("grow").parent == ctx.sections[4] and Control("zoom").parent == ctx.sections[5],
+assert(Control("grow").parent == ctx.sections[5] and Control("zoom").parent == ctx.sections[6],
     "Layout and Look keep the rest")
 -- Opacity out of combat sits with the other visibility rules; the text
 -- switches and Text on top in Text.
-assert(Control("oocAlpha").parent == ctx.sections[10] and Control("vis").parent == ctx.sections[10],
+assert(Control("oocAlpha").parent == ctx.sections[11] and Control("vis").parent == ctx.sections[11],
     "Visibility holds the fade out of combat")
 for _, suffix in ipairs({ "cdText", "stackText", "textTop", "stackPos" }) do
-    assert(Control(suffix).parent == ctx.sections[6], "Text lacks " .. suffix)
+    assert(Control(suffix).parent == ctx.sections[7], "Text lacks " .. suffix)
 end
 local textTop = Control("textTop").row.values
 assert(#textTop == 2 and textTop[1].text == "Stacks" and textTop[2].text == "Countdown", "Text on top choices")
@@ -923,7 +923,7 @@ assert(Control("grow").row.values[2].text == "Left", "vertical bars grow left or
 -- bars row has no icon look and Essential cooldowns no buff rules: their
 -- resets must leave custom bar 1's template keys alone.
 do
-    local look, buffs = ctx.sections[5], ctx.sections[8]
+    local look, buffs = ctx.sections[6], ctx.sections[9]
     assert(look.title == "Look" and buffs.title == "Buffs", "unexpected section order for the reset check")
     Config().c1_zoom, Config().c1_border, Config().c1_pandemic = 20, 3, false
     Config().bar_strata, Config().ess_pandemic = 1, false
@@ -2207,7 +2207,7 @@ do
         end
         return ""
     end
-    local effects, text = ctx.sections[7], ctx.sections[6]
+    local effects, text = ctx.sections[8], ctx.sections[7]
     Page.Select("bar")
     M.RequestRefresh()
     assert(effects._msuf2CollapsibleEntry.label.text == "Cooldown effects"

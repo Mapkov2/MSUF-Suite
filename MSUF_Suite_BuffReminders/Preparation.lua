@@ -140,10 +140,3 @@ function R.ReadyCheck(self)
     text:Show()
     self.context:After(NumberSetting(self.config, "readyCheckDuration"), R.HideReadyCheck)
 end
-
-function R.StyleCount(button, config)
-    local point = NS.AnchorPoints[config.countPosition or 9] or "BOTTOMRIGHT"
-    button.count:ClearAllPoints()
-    button.count:SetPoint(point, button, point, config.countX or -2, config.countY or 2)
-    S.SetFont(button.count, S.ResolveFont(config.countFont), config.countSize or 12, "OUTLINE")
-end
