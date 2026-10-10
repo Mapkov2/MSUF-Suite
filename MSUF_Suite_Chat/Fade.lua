@@ -32,17 +32,16 @@ end
 
 local function FadeOut(visual)
     local alpha = M.config.idleAlpha / 100
-    local parts, before, applied = visual.fadeParts, visual.fadeBefore, visual.fadeApplied
+    local parts, before = visual.fadeParts, visual.fadeBefore
     for i = 1, PARTS do
         local part = parts[i]
-        if part then
+        if part and not (i == TAB and visual.unreadType) then
             if before[i] == nil then
                 local current = part:GetAlpha()
                 if Finite(current) then before[i] = current end
             end
             if before[i] ~= nil then
-                part:SetAlpha(alpha)
-                applied[i] = part:GetAlpha()
+                C.FadePart(visual, i, alpha)
             end
         end
     end
@@ -57,6 +56,7 @@ local function Wake(visual, skip)
     local parts, before, applied = visual.fadeParts, visual.fadeBefore, visual.fadeApplied
     for i = 1, PARTS do
         local part, value = parts[i], before[i]
+        C.StopFadeAnimation(visual, i)
         if part and value ~= nil and i ~= skip then
             local current = part:GetAlpha()
             if Finite(current) and current == applied[i] then part:SetAlpha(value) end
@@ -83,31 +83,43 @@ end
 -- Blizzard shows the window's chrome while the pointer is over it.
 local function HoverStarted(chatFrame)
     local visual = M.active and M.visuals[chatFrame]
-    if not (visual and visual.fadeArmed) then return end
+    if not visual then return end
     visual.hovered = true
-    Wake(visual, TAB)
+    C.MessageFadeFocus(visual, true)
+    C.UpdateMinimalChrome(visual)
+    if visual.fadeArmed then Wake(visual, TAB) end
 end
 
 local function HoverEnded(chatFrame)
     local visual = M.active and M.visuals[chatFrame]
-    if not (visual and visual.fadeArmed) then return end
+    if not visual then return end
     visual.hovered = nil
+    C.MessageFadeFocus(visual, visual.frame.editBox:HasFocus())
+    C.UpdateMinimalChrome(visual)
     C.ChatActivity(chatFrame)
 end
 
 -- The player starts typing into the window's input line.
 local function InputFocused(editBox)
     local visual = M.active and inputs[editBox]
-    if visual and visual.fadeArmed then Wake(visual) end
+    if not visual then return end
+    C.MessageFadeFocus(visual, true)
+    C.UpdateMinimalChrome(visual, true)
+    if visual.fadeArmed then Wake(visual) end
 end
 
 local function InputReleased(editBox)
     local visual = M.active and inputs[editBox]
-    if visual then C.ChatActivity(visual.frame) end
+    if visual then
+        C.MessageFadeFocus(visual, visual.hovered == true)
+        C.UpdateMinimalChrome(visual, false)
+        C.ChatActivity(visual.frame)
+    end
 end
 
 function C.ReleaseFade(visual)
-    visual.fadeArmed, visual.hovered = nil, nil
+    visual.fadeArmed = nil
+    if not M.active or not (visual.nativeFadeBefore or M.config.minimalChrome) then visual.hovered = nil end
     if visual.fadeCallback then M.context:Cancel(visual.fadeCallback) end
     Wake(visual)
 end
@@ -116,7 +128,8 @@ end
 -- settings change counts as activity, so the window wakes and counts anew.
 function C.ApplyInactivity(self, visual)
     local seconds = self.config.idleSeconds
-    if not (Finite(seconds) and seconds > 0) then
+    local idle = Finite(seconds) and seconds > 0
+    if not idle and not visual.nativeFadeBefore and not self.config.minimalChrome then
         C.ReleaseFade(visual)
         return
     end
@@ -140,10 +153,15 @@ function C.ApplyInactivity(self, visual)
         input:HookScript("OnEditFocusLost", InputReleased)
     end
     inputs[input] = visual
+    if not idle then
+        C.ReleaseFade(visual)
+        return
+    end
     Wake(visual)
     local parts, primary = visual.fadeParts, M.visuals[ChatFrame1]
     local sidebar = (C.DockSelection() or ChatFrame1) == frame and primary and primary.sidebarFrame or nil
     parts[1], parts[TAB], parts[3] = frame, _G[frame:GetName() .. "Tab"], sidebar
+    C.PrepareFadeAnimations(visual, self.config.idleFadeDuration)
     M.context:Cancel(visual.fadeCallback)
     visual.fadeArmed = true
     C.ChatActivity(frame)

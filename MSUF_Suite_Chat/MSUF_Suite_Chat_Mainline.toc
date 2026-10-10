@@ -11,6 +11,10 @@
 
 Bootstrap.lua
 Shared.lua
+Appearance.lua
+MinimalChrome.lua
+FadeAnimation.lua
+Unread.lua
 Sidebar.lua
 Copy.lua
 History.lua

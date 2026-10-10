@@ -44,7 +44,7 @@ local function LoadChat(saved)
     local toc = Support.TocFiles(root, "MSUF_Suite_Chat")
     local position = {}
     for i, file in ipairs(toc) do position[file] = i end
-    local files = { "Shared.lua", "History.lua", "Fade.lua", "Messages.lua" }
+    local files = { "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "History.lua", "Fade.lua", "Messages.lua" }
     for i = 2, #files do
         assert(position[files[i - 1]] < position[files[i]], files[i] .. " loads before " .. files[i - 1])
     end
@@ -628,6 +628,23 @@ eq(#otherFrame.lines, 0, "another character replayed the previous character hist
 otherFrame:AddMessage("character B")
 eq(MSUFSuiteChatHistory.tabs["ChatFrame1:General"].count, 1, "another character saved under wrong identity")
 eq(saved.tabs["ChatFrame1:General"].count, 1, "another character altered previous history")
+-- The public delivery type reaches the unread observer even when the text
+-- cannot be inspected. Neither the formatter nor history sees that text.
+ChatTypeInfo = { GUILD = { id = 4, r = 0.2, g = 1, b = 0.2 } }
+config.coloredUnreadTabs = true
+otherChat.MessagesRefresh(other)
+otherChat.ApplyMessages(other, otherFrame)
+local deliveredFrame, deliveredType
+otherChat.MessageUnread = function(frame, kind) deliveredFrame, deliveredType = frame, kind end
+local otherCount = MSUFSuiteChatHistory.tabs["ChatFrame1:General"].count
+otherFrame:AddMessage("secret", 1, 1, 1, 4)
+eq(deliveredFrame, otherFrame, "unread observer lost the native destination")
+eq(deliveredType, 4, "unread observer did not receive the fifth AddMessage argument")
+eq(MSUFSuiteChatHistory.tabs["ChatFrame1:General"].count, otherCount, "unread capture saved restricted text")
+otherChat.MessagesDisable()
+deliveredFrame = nil
+otherFrame:AddMessage("secret", 1, 1, 1, 4)
+eq(deliveredFrame, nil, "disabled unread observer still processed delivery")
 -- History is per character: the Chat TOC declares the table, and the
 -- account-wide Suite database never holds chat lines.
 local tocFile = assert(io.open(root .. "/MSUF_Suite_Chat/MSUF_Suite_Chat_Mainline.toc", "rb"))

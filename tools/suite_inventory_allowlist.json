@@ -2191,6 +2191,134 @@
       "evidence": "MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua and MinimapPreview.lua retain the layer rails with the explicit Preview Layers title; suite_minimap_preview_layers_contract and suite_nameplates_preview_layout_contract preserve their switches.",
       "reason": "Owner-requested rename from LAYERS to Preview Layers clarifies preview scope without removing a control.",
       "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:chat\",\"conflicts\",[[1,\"EllesmereUIChat\"],[2,\"ElvUI\"]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain ElvUI and EllesmereUIChat conflict IDs; add Glass and Glassy to prevent competing ownership of native chat.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:chat\",\"look.presets.1\",[[\"accentAlpha\",88],[\"accentColor\",\"57c7df\"],[\"borderAlpha\",78],[\"borderColor\",\"41627a\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",86],[\"inputColor\",\"0a1522\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",74],[\"panelColor\",\"0a1220\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"f4f7fb\"],[\"tabInactiveColor\",\"aab5c2\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:chat\",\"look.presets.2\",[[\"accentAlpha\",78],[\"accentColor\",\"b9ab86\"],[\"borderAlpha\",78],[\"borderColor\",\"575b58\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",88],[\"inputColor\",\"111315\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",82],[\"panelColor\",\"151719\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"e9e9e4\"],[\"tabInactiveColor\",\"b9bdb9\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:chat\",\"look.presets.3\",[[\"accentAlpha\",92],[\"accentColor\",\"d8b66a\"],[\"borderAlpha\",85],[\"borderColor\",\"9f8960\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",88],[\"inputColor\",\"111517\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",77],[\"panelColor\",\"14181b\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"f1e3c4\"],[\"tabInactiveColor\",\"d4dce2\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:chat\",\"look.presets.5\",[[\"accentAlpha\",88],[\"accentColor\",\"e6ecf2\"],[\"borderAlpha\",90],[\"borderColor\",\"333333\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",90],[\"inputColor\",\"0a0a0a\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",82],[\"panelColor\",\"101010\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"f5f5f5\"],[\"tabInactiveColor\",\"bfc4c9\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:chat\",\"look.presets.6\",[[\"accentAlpha\",88],[\"accentColor\",\"e6ecf2\"],[\"borderAlpha\",90],[\"borderColor\",\"737679\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",90],[\"inputColor\",\"0a0a0a\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",82],[\"panelColor\",\"101010\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"e6ecf2\"],[\"tabInactiveColor\",\"bfc4c9\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:chat\",\"look.visualKeys\",[[\"accentAlpha\",true],[\"accentColor\",true],[\"borderAlpha\",true],[\"borderColor\",true],[\"borderSize\",true],[\"fontSize\",true],[\"inputAlpha\",true],[\"inputColor\",true],[\"inputPanel\",true],[\"padding\",true],[\"panelAlpha\",true],[\"panelColor\",true],[\"sidebarPanel\",true],[\"sidebarWidth\",true],[\"tabAccent\",true],[\"tabActiveColor\",true],[\"tabInactiveColor\",true],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every existing visual key; include the appended appearance and fading controls in Custom-look detection.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:chat\",\"conflicts\",[[1,\"EllesmereUIChat\"],[2,\"ElvUI\"]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain ElvUI and EllesmereUIChat conflict IDs; add Glass and Glassy to prevent competing ownership of native chat.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:chat\",\"look.presets.1\",[[\"accentAlpha\",88],[\"accentColor\",\"57c7df\"],[\"borderAlpha\",78],[\"borderColor\",\"41627a\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",86],[\"inputColor\",\"0a1522\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",74],[\"panelColor\",\"0a1220\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"f4f7fb\"],[\"tabInactiveColor\",\"aab5c2\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:chat\",\"look.presets.2\",[[\"accentAlpha\",78],[\"accentColor\",\"b9ab86\"],[\"borderAlpha\",78],[\"borderColor\",\"575b58\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",88],[\"inputColor\",\"111315\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",82],[\"panelColor\",\"151719\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"e9e9e4\"],[\"tabInactiveColor\",\"b9bdb9\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:chat\",\"look.presets.3\",[[\"accentAlpha\",92],[\"accentColor\",\"d8b66a\"],[\"borderAlpha\",85],[\"borderColor\",\"9f8960\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",88],[\"inputColor\",\"111517\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",77],[\"panelColor\",\"14181b\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"f1e3c4\"],[\"tabInactiveColor\",\"d4dce2\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:chat\",\"look.presets.5\",[[\"accentAlpha\",88],[\"accentColor\",\"e6ecf2\"],[\"borderAlpha\",90],[\"borderColor\",\"333333\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",90],[\"inputColor\",\"0a0a0a\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",82],[\"panelColor\",\"101010\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"f5f5f5\"],[\"tabInactiveColor\",\"bfc4c9\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:chat\",\"look.presets.6\",[[\"accentAlpha\",88],[\"accentColor\",\"e6ecf2\"],[\"borderAlpha\",90],[\"borderColor\",\"737679\"],[\"borderSize\",1],[\"fontSize\",0],[\"inputAlpha\",90],[\"inputColor\",\"0a0a0a\"],[\"inputPanel\",true],[\"padding\",4],[\"panelAlpha\",82],[\"panelColor\",\"101010\"],[\"sidebarPanel\",true],[\"sidebarWidth\",28],[\"tabAccent\",true],[\"tabActiveColor\",\"e6ecf2\"],[\"tabInactiveColor\",\"bfc4c9\"],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every frozen palette/geometry value; append reset fields so returning from Immersive ends optional idle/message fading, unread colors and gradients.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:chat\",\"look.visualKeys\",[[\"accentAlpha\",true],[\"accentColor\",true],[\"borderAlpha\",true],[\"borderColor\",true],[\"borderSize\",true],[\"fontSize\",true],[\"inputAlpha\",true],[\"inputColor\",true],[\"inputPanel\",true],[\"padding\",true],[\"panelAlpha\",true],[\"panelColor\",true],[\"sidebarPanel\",true],[\"sidebarWidth\",true],[\"tabAccent\",true],[\"tabActiveColor\",true],[\"tabInactiveColor\",true],[\"tabPanel\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Retain every existing visual key; include the appended appearance and fading controls in Custom-look detection.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:chat.look\",\"choice\",false,1,6,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Append Immersive at index 7; retain all six existing choice indices, labels, default and other limits.",
+      "date": "2026-10-10"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:chat.look\",\"choice\",false,1,6,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
+      "reason": "Append Immersive at index 7; retain all six existing choice indices, labels, default and other limits.",
+      "date": "2026-10-10"
     }
   ]
 }

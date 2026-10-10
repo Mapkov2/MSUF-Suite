@@ -9,6 +9,7 @@ for _, source in ipairs(P.Suite.ChatBubbleSources) do
     for _, part in ipairs(OWN_PARTS) do OWNED[part .. source.key] = "bubbleOwn" .. source.key end
 end
 P.Gates[ID] = function(rule)
+    if rule.key == "panelTexture" then return not P.Get(ID, "panelGradient") end
     local own = OWNED[rule.key]
     if own then return P.Get(ID, own) == true end
     if rule.key == "tabActiveBackground" or rule.key == "tabInactiveBackground"
@@ -102,6 +103,14 @@ local function SampleTextures(sample)
     parts.fill = sample:CreateTexture(nil, "BACKGROUND")
     parts.fill:SetAllPoints(sample)
     parts.fill:SetTexture(WHITE)
+    parts.fadeLeft = sample:CreateTexture(nil, "BACKGROUND")
+    parts.fadeLeft:SetTexture(WHITE)
+    parts.fadeLeft:SetPoint("TOPLEFT")
+    parts.fadeLeft:SetPoint("BOTTOMRIGHT", sample, "BOTTOM")
+    parts.fadeRight = sample:CreateTexture(nil, "BACKGROUND")
+    parts.fadeRight:SetTexture(WHITE)
+    parts.fadeRight:SetPoint("TOPLEFT", sample, "TOP")
+    parts.fadeRight:SetPoint("BOTTOMRIGHT")
     local sidebar = sample:CreateTexture(nil, "BORDER")
     sidebar:SetTexture(WHITE)
     sidebar:SetPoint("TOPLEFT")
@@ -154,11 +163,54 @@ local function SampleTexts(sample, width, parts)
     local prompt = sample:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     prompt:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 43, 10)
     prompt:SetText(Tr("Say:"))
-    parts.label, parts.otherTab, parts.lines, parts.input = label, otherTab, lines, input
+    parts.label, parts.otherTab, parts.lines, parts.input, parts.prompt = label, otherTab, lines, input, prompt
+end
+
+local function PlaceSample(parts, minimal)
+    local sample = parts.sample
+    local x = P.Get(ID, "sidebarPanel") and 38 or 10
+    parts.label:ClearAllPoints()
+    parts.label:SetPoint("TOPLEFT", sample, "TOPLEFT", x, -8)
+    parts.lines:ClearAllPoints()
+    parts.lines:SetPoint("TOPLEFT", sample, "TOPLEFT", x + 1, -43)
+    parts.lines:SetWidth(parts.width - x - 12)
+    parts.input:ClearAllPoints()
+    parts.input:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", x - 2, 8)
+    parts.input:SetPoint("BOTTOMRIGHT", sample, "BOTTOMRIGHT", -8, 8)
+    parts.prompt:ClearAllPoints()
+    parts.prompt:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", x + 5, 10)
+    parts.accent:ClearAllPoints()
+    parts.accent:SetPoint("TOPLEFT", sample, "TOPLEFT", x, minimal and -4 or -27)
+    parts.accent:SetHeight(minimal and 1 or 2)
+    parts.fadeLeft:ClearAllPoints()
+    parts.fadeRight:ClearAllPoints()
+    parts.fadeLeft:SetPoint("TOPLEFT", sample, "TOPLEFT")
+    if minimal then
+        parts.fadeLeft:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT")
+        parts.fadeLeft:SetWidth(50)
+        parts.fadeRight:SetPoint("TOPLEFT", parts.fadeLeft, "TOPRIGHT")
+    else
+        parts.fadeLeft:SetPoint("BOTTOMRIGHT", sample, "BOTTOM")
+        parts.fadeRight:SetPoint("TOPLEFT", sample, "TOP")
+    end
+    parts.fadeRight:SetPoint("BOTTOMRIGHT", sample, "BOTTOMRIGHT")
 end
 
 local function PaintSample(parts, fonts)
+    local minimal = P.Get(ID, "minimalChrome")
+    PlaceSample(parts, minimal)
     Color(parts.fill, P.Get(ID, "panelColor"), P.Get(ID, "panelAlpha"))
+    local gradient = P.Get(ID, "panelGradient")
+    parts.fill:SetShown(not gradient)
+    parts.fadeLeft:SetShown(gradient)
+    parts.fadeRight:SetShown(gradient)
+    if gradient then
+        local r, g, b = P.RGB(P.Get(ID, "panelColor"))
+        local transparent = CreateColor(r, g, b, 0)
+        local solid = CreateColor(r, g, b, P.Get(ID, "panelAlpha") / 100)
+        parts.fadeLeft:SetGradient("HORIZONTAL", minimal and solid or transparent, solid)
+        parts.fadeRight:SetGradient("HORIZONTAL", solid, transparent)
+    end
     Color(parts.sidebar, P.Get(ID, "panelColor"), math.min(100, P.Get(ID, "panelAlpha") + 8))
     parts.sidebar:SetShown(P.Get(ID, "sidebarPanel"))
     local r, g, b = P.RGB(P.Get(ID, "accentColor"))
@@ -169,7 +221,7 @@ local function PaintSample(parts, fonts)
     local accentShown = P.Get(ID, "tabPanel") and P.Get(ID, "tabAccent") and P.Get(ID, "accentAlpha") > 0
     Color(parts.top, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
     parts.top:SetHeight(2)
-    parts.top:SetShown(accentShown)
+    parts.top:SetShown(accentShown and not minimal)
     Color(parts.accent, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
     parts.accent:SetShown(accentShown)
     RefreshSampleText(parts.label, parts.otherTab, parts.lines, fonts)
@@ -183,11 +235,30 @@ local function Sample(body, y, width, ctx)
     sample:SetSize(width, 108)
     local parts = SampleTextures(sample)
     SampleTexts(sample, width, parts)
+    parts.sample, parts.width = sample, width
     local fonts = {}
     fonts.tab, fonts.tabSize, fonts.tabFlags = parts.label:GetFont()
     fonts.message, fonts.messageSize, fonts.messageFlags = parts.lines:GetFont()
     M.TrackRefresh(ctx, function() PaintSample(parts, fonts) end)
     return y - 121
+end
+
+local function ImmersiveButton(ctx)
+    return function(body, y, width)
+        local button = P.T.Button(body, "Immersive", width, 26)
+        button:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
+        button:SetScript("OnClick", function()
+            if not P.Combat() then P.Set(ID, "look", 7) end
+        end)
+        if M.RegisterControlMetadata then
+            M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "look.7", "action", PAGE .. "_look"), "Immersive", "button")
+        end
+        M.TrackRefresh(ctx, function()
+            button:SetAlpha(P.Get(ID, "look") == 7 and 1 or 0.65)
+            button:SetEnabled(P.RuleEnabled(ID, P.catalog[ID].rules.look))
+        end)
+        return y - 38
+    end
 end
 
 local function Build(ctx)
@@ -204,7 +275,7 @@ local function Build(ctx)
         P.SectionRules(ID, "look"), {
             open = true,
             help = P.Help("Choose a look, then adjust its colors.", "Clean Modern is the Retail default; MSUF Forever is the Forever default. Midnight Blue keeps the original blue glass. Open a section's three-dot menu to change its colors, or use MSUF Colors for the full palette. Your own color changes become Custom."),
-            extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look"),
+            extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look", ImmersiveButton(ctx)),
         })
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_window", Tr("Chat window"),
         P.SectionRules(ID, "window"), {

@@ -5,7 +5,7 @@ B.Module("chat", {
     title = "Chat",
     description = "Style Blizzard's native chat windows, tabs and input line. Links, channels, filters, docking and message delivery remain Blizzard-owned.",
     page = "suite_chat", optIn = true,
-    conflicts = { "EllesmereUIChat", "ElvUI" },
+    conflicts = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy" },
     summary = "look fontSize tabFontSize tabAccent panelAlpha sidebarPanel sidebarWidth inputPanel inputAlpha"
         .. " copyMessages",
 })
@@ -53,8 +53,39 @@ local cleanModern = {
 }
 NS.ChatLookPresets = { [1] = midnight, [2] = midnightDark, [3] = forever, [5] = cleanModern }
 NS.ChatLookPresets[6] = B.ClassPreset(cleanModern, { borderColor = "border", accentColor = "accent", tabActiveColor = "label" })
+-- Appended choice: existing profiles and global palettes keep their indices.
+local immersive = {}
+for key, value in pairs(cleanModern) do immersive[key] = value end
+immersive.panelColor, immersive.panelAlpha, immersive.borderSize, immersive.sidebarPanel = "000000", 40, 0, false
+immersive.inputColor, immersive.inputAlpha, immersive.panelGradient = "000000", 60, true
+immersive.minimalChrome, immersive.padding = true, 0
+immersive.tabHeight, immersive.tabPadding, immersive.tabGap, immersive.tabPanelGap = 20, 15, 4, 0
+immersive.tabIndividualPanels = false
+immersive.accentColor, immersive.accentAlpha = "dfba69", 100
+immersive.tabActiveColor, immersive.tabInactiveColor = "dfba69", "d9d9d9"
+immersive.font, immersive.tabFont = "__BLIZZARD_CHAT_FONT__", "__BLIZZARD_CHAT_FONT__"
+immersive.fontSize, immersive.tabFontSize, immersive.fontOutline, immersive.fontRendering = 12, 12, 4, 1
+immersive.fontShadow, immersive.fontShadowOpacity, immersive.fontShadowDistance = 2, 70, 1
+immersive.idleSeconds, immersive.idleAlpha, immersive.idleFadeDuration = 12, 0, 0.35
+immersive.messageFading, immersive.messageTimeVisible, immersive.messageFadeDuration = true, 20, 3
+immersive.coloredUnreadTabs = true
+NS.ChatLookPresets[7] = immersive
+for index, preset in pairs(NS.ChatLookPresets) do
+    if index ~= 7 then
+        preset.panelGradient, preset.idleFadeDuration, preset.messageFading, preset.coloredUnreadTabs = false, 0, false, false
+        preset.idleSeconds, preset.idleAlpha = 0, 20
+        preset.minimalChrome = false
+        preset.tabHeight, preset.tabPadding, preset.tabGap, preset.tabPanelGap = 24, 0, 0, 0
+        preset.tabIndividualPanels = false
+        preset.font, preset.tabFont, preset.tabFontSize = "", "", 0
+        preset.fontOutline, preset.fontRendering, preset.fontShadow = 1, 3, 1
+        preset.fontShadowOpacity, preset.fontShadowDistance = 100, 1
+    end
+end
 NS.ChatLookVisualKeys = {}
 for key in pairs(midnight) do NS.ChatLookVisualKeys[key] = true end
+NS.ChatLookVisualKeys.panelGradient = true
+for key in pairs(immersive) do NS.ChatLookVisualKeys[key] = true end
 NS.SuiteCatalog[id].look = {
     key = "look", presets = NS.ChatLookPresets, visualKeys = NS.ChatLookVisualKeys,
     custom = 4, global = true,
@@ -63,7 +94,7 @@ local initial = NS.Client.isForever and forever or midnightDark
 
 B.Section(id, "look", "Choose a look", {
     B.Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style", "Immersive" }),
 })
 B.Section(id, "window", "Chat window", {
     B.Texture("panelTexture", "Background texture"),
@@ -73,6 +104,9 @@ B.Section(id, "window", "Chat window", {
     B.Number("windowHeight", "Locked height", 180, 80, 800),
     B.Number("idleSeconds", "Fade after inactivity (seconds; 0 disables)", 0, 0, 300),
     B.Number("idleAlpha", "Idle panel opacity (percent)", 20, 0, 100),
+    B.Number("idleFadeDuration", "Idle fade duration (seconds; 0 is instant)", 0, 0, 2, 0.05),
+    B.Bool("panelGradient", "Fade background edges to transparent", false),
+    B.Bool("minimalChrome", "Minimal chat style", false),
     B.Color("panelColor", "Background color", initial.panelColor),
     B.Number("panelAlpha", "Background opacity (percent)", initial.panelAlpha, 0, 100, 5),
     B.Color("borderColor", "Border color", initial.borderColor),
@@ -95,6 +129,7 @@ B.Section(id, "tabs", "Tabs and accent", {
     B.Color("tabInactiveBorder", "Inactive tab border", initial.borderColor),
     B.Bool("tabPanel", "Dark tab strip", initial.tabPanel),
     B.Bool("tabAccent", "Underline chat tabs", initial.tabAccent),
+    B.Bool("coloredUnreadTabs", "Color unread tabs by message type", false),
     B.Font("tabFont", "Font"),
     B.Number("tabFontSize", "Font size", 0, 0, 24),
     B.Color("tabActiveColor", "Active tab text", initial.tabActiveColor),
@@ -127,6 +162,9 @@ for index = 1, 5 do
     B.Add(id, B.Number(prefix .. "Y", NS.Text("Sidebar icon %d Y"):format(index), 0, -800, 800), "sidebar")
 end
 B.Section(id, "text", "Message text", {
+    B.Bool("messageFading", "Fade individual messages", false),
+    B.Number("messageTimeVisible", "Message visibility (seconds)", 20, 5, 120),
+    B.Number("messageFadeDuration", "Message fade duration (seconds)", 3, 0.1, 10, 0.1),
     B.Number("fontSize", "Font size", 0, 0, 24),
     B.Font("font", "Font"),
     B.Choice("fontOutline", "Text outline", 1, { "Follow Blizzard", "Outline", "Thick outline", "None" }),
@@ -202,6 +240,8 @@ for _, source in ipairs(NS.ChatBubbleSources) do
     end
 end
 local textRules = NS.SuiteCatalog[id].rules
+textRules.messageTimeVisible.enableKey = "messageFading"
+textRules.messageFadeDuration.enableKey = "messageFading"
 textRules.font.defaultLabel = "MSUF global font (default)"
 textRules.tabFont.defaultLabel = "MSUF global font (default)"
 for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do

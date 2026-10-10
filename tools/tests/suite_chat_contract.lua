@@ -41,11 +41,13 @@ S.FontFlags = function(outline, rendering)
     return outline
 end
 local textures = {}
+CreateColor = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
 local function Texture()
     local texture = { shown = true, alpha = 1 }
     function texture:SetTexture(path) self.path = path end
     function texture:SetVertexColor(...) self.color = { ... } end
     function texture:SetColorTexture(...) self.path = nil; self.color = { ... }; self.colorUpdates = (self.colorUpdates or 0) + 1 end
+    function texture:SetGradient(direction, first, last) self.gradient = { direction, first, last } end
     function texture:ClearAllPoints() self.points = {} end
     function texture:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
     function texture:SetHeight(height) self.height = height end
@@ -308,7 +310,7 @@ local private = { NS = NS, Suite = S }
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
 NS.ChatBubbleSources = catalogNS.ChatBubbleSources
-local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Sidebar.lua", "Copy.lua", "History.lua", "Fade.lua",
+local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "Fade.lua",
     "Messages.lua", "Window.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
@@ -1208,6 +1210,60 @@ assert(ChatFrame1Tab.Left.alpha == 1 and ChatFrame1Tab.noMouseAlpha == 0.4
     and ChatFrame1Tab.Text.alpha == 1 and ChatFrame1EditBox.Left.alpha == 1
     and CombatLogQuickButtonFrame_CustomTexture.alpha == 1,
     "disabling chat did not restore Blizzard tab/input")
+-- The real window painter must match Glass's compact, frameless layout.
+-- Keep native message animation off in this chrome-only fixture.
+local reportedBefore = #reports
+local nativeHeightBeforeImm, nativeWidthBeforeImm = ChatFrame1Tab:GetHeight(), ChatFrame1Tab:GetWidth()
+GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame1, ChatFrame1
+for key, value in pairs(catalogNS.ChatLookPresets[7]) do module.config[key] = value end
+module.config.idleSeconds, module.config.messageFading, module.config.coloredUnreadTabs = 0, false, false
+module.active = true
+module:Enable()
+local minimal = module.visuals[ChatFrame1]
+assert(not minimal.headerRule.shown, "minimal chat retained the full-width separator")
+assert(minimal.tabLine.points[1][1] == "TOPLEFT" and minimal.tabLine.height == 1,
+    "minimal selected-tab marker is not above its native tab")
+assert(ChatFrame1Tab:GetHeight() == 20 and ChatFrame1Tab:GetWidth() == minimal.tabLabel:GetUnboundedStringWidth() + 30,
+    "minimal native tabs are not compact")
+assert(ChatFrame1Tab.Text.font[1] == "Fonts/FRIZQT__.TTF" and ChatFrame1.font[1] == "Fonts/FRIZQT__.TTF"
+    and ChatFrame1.font[2] == 12, "Immersive retained the global condensed font")
+assert(minimal.gradientLeft.alpha == 0 and module.dockStrip.alpha == 0, "idle chat retained its dark rectangle")
+assert(module.dockStrip.gradient[3].a == 0 and minimal.gradientLeft.gradient[2].a == 0.4,
+    "minimal background did not fade black from left to right")
+ChromeFade(ChatFrame1, true, "forever")
+assert(minimal.gradientLeft.alpha == 1 and module.dockStrip.alpha == 1, "hover did not reveal minimal art")
+module:Refresh()
+assert(minimal.gradientLeft.alpha == 1, "refresh lost the active hover")
+ChromeFade(ChatFrame1, false, "forever")
+assert(minimal.gradientLeft.alpha == 0 and module.dockStrip.alpha == 0, "pointer leave kept minimal art")
+GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame3, ChatFrame3
+selectHook()
+local secondary = module.visuals[ChatFrame3]
+foreverTabAlphas[ChatFrame3Tab] = { 1, 0.4 }
+ChromeFade(ChatFrame3, true, "forever")
+ChromeFade(ChatFrame1, false, "forever")
+assert(secondary.gradientLeft.alpha == 1 and module.dockStrip.alpha == 1,
+    "hover in the selected secondary window did not retain its dock background")
+GENERAL_CHAT_DOCK.selected, SELECTED_CHAT_FRAME = ChatFrame1, ChatFrame1
+selectHook()
+assert(module.dockStrip.alpha == 0, "tab selection retained the old window's background")
+ChromeFade(ChatFrame3, false, "forever")
+for key, value in pairs(catalogNS.ChatLookPresets[2]) do module.config[key] = value end
+module:Refresh()
+assert(minimal.headerRule.shown and minimal.panel.alpha == 1 and module.dockStrip.alpha == 1,
+    "normal look did not restore its panel and separator")
+assert(ChatFrame1.font[1] == globalFont and ChatFrame1Tab.Text.font[1] == globalFont,
+    "leaving Immersive retained its native font override")
+assert(ChatFrame1Tab:GetHeight() == nativeHeightBeforeImm and ChatFrame1Tab:GetWidth() == nativeWidthBeforeImm,
+    "normal preset did not restore pre-Immersive native dimensions")
+assert(minimal.tabLine.points[1][1] == "BOTTOMLEFT" and minimal.tabLine.height == 2,
+    "normal look retained the minimal tab marker")
+assert(module.dockStrip.gradient[2].a == module.dockStrip.gradient[3].a
+    and module.dockStrip.gradient[3].a == math.min(100, module.config.panelAlpha + 12) / 100,
+    "normal look retained the transparent dock gradient")
+module.active = false
+module:Disable()
+assert(#reports == reportedBefore, "minimal window lifecycle reported an error")
 -- Every runtime file starts with the shared private-table header, and
 -- Suite-created regions go through the shared S.CreateTexture/S.CreateFontString.
 for i = 2, #CHAT_FILES do

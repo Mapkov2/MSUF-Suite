@@ -215,7 +215,9 @@ function C.CompileMessages(config)
     tools.format = tools.plain or tools.channels or tools.stamps
     tools.history = config.saveHistory
     tools.fade = config.idleSeconds > 0
-    tools.any = tools.format or tools.history or tools.fade
+    tools.unread = config.coloredUnreadTabs
+    tools.any = tools.format or tools.history or tools.fade or tools.unread
+    C.CompileUnread(config)
     CompileChannels(config)
     stampFormat = ValidFormat(config.timestampFormat) and config.timestampFormat or DEFAULT_STAMP
     stampPattern = StampPattern(stampFormat)
@@ -241,13 +243,15 @@ local function Transform(frame, record)
     return true
 end
 
-local function MessageAdded(frame, text, r, g, b)
+local function MessageAdded(frame, text, r, g, b, chatTypeID)
     local record = hooks[frame]
     if not record.live or record.source then return end
     if record.wakeOnly then
         ChatActivity(frame)
         return
     end
+    if tools.unread then C.MessageUnread(frame, chatTypeID) end
+    if tools.fade then ChatActivity(frame) end
     local public = PublicText(text)
     if not public then return end
     local rendered = public
@@ -260,7 +264,6 @@ local function MessageAdded(frame, text, r, g, b)
         end
     end
     if record.ring then HistoryStore(record.ring, rendered, r, g, b) end
-    if tools.fade then ChatActivity(frame) end
 end
 
 local function NewRecord()

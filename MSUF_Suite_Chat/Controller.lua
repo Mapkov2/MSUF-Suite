@@ -62,6 +62,10 @@ local function RefreshSelection(self)
     if chat == self.selectedChat and dock == self.selectedDock then return end
     local oldChat, oldDock = self.selectedChat, self.selectedDock
     self.selectedChat, self.selectedDock = chat, dock
+    if dock then
+        C.ChatActivity(dock)
+        if self.visuals[dock] then C.UpdateMinimalChrome(self.visuals[dock]) end
+    end
     RecolorTab(self, oldChat, chat, dock)
     if oldDock ~= oldChat then RecolorTab(self, oldDock, chat, dock) end
     if chat ~= oldChat and chat ~= oldDock then RecolorTab(self, chat, chat, dock) end
@@ -80,7 +84,7 @@ end
 -- Other chat addons change the module's availability; Blizzard's quick join,
 -- chat and combat log addons add parts the windows restyle around.
 local function AddonLoaded(_, _, name)
-    if name == "EllesmereUIChat" or name == "ElvUI" then S.Apply("chat") end
+    if name == "EllesmereUIChat" or name == "ElvUI" or name == "Glass" or name == "Glassy" then S.Apply("chat") end
     if name == "Blizzard_QuickJoin" or name == "Blizzard_ChatFrame" or name == "Blizzard_CombatLog" then
         ApplyAll(M)
     end

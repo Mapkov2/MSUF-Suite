@@ -107,14 +107,15 @@ local function ReleaseNativeChrome(self, frame, tab)
 end
 
 function C.ColorTab(self, visual, selected)
+    if selected then C.ClearUnread(visual) end
     local c = self.config
-    if c.tabPanel and c.panelAlpha > 0 then
+    if C.HasTabStyle(c) then
         local r, g, b = RGB(selected and c.tabActiveColor or c.tabInactiveColor)
         self.context:TextColor(visual.tabLabel, r, g, b, 1)
     else
         self.context:RestoreTuple(visual.tabLabel, "SetTextColor")
     end
-    visual.tabLine:SetShown(c.tabPanel and c.panelAlpha > 0
+    visual.tabLine:SetShown(C.HasTabStyle(c)
         and c.tabAccent and c.accentAlpha > 0 and selected)
     if visual.tabFill then
         local panels = c.tabIndividualPanels and c.tabPanel and c.panelAlpha > 0
@@ -155,7 +156,7 @@ end
 function C.KeepTabVisible(self, frame)
     local tab = _G[frame:GetName() .. "Tab"]
     local context = self.context
-    if not (self.config.tabPanel and self.config.panelAlpha > 0) then
+    if not C.HasTabStyle(self.config) then
         ReleaseTabAlpha(context, tab)
         return
     end
@@ -177,7 +178,7 @@ local KeepTabVisible = C.KeepTabVisible
 function C.HoldTabAlpha(frame, hovered)
     local c, visual = M.config, M.active and frame and M.visuals[frame]
     local tab = visual and visual.tab
-    if not (tab and c.tabPanel and c.panelAlpha > 0) or (visual.faded and not hovered) then return end
+    if not (tab and C.HasTabStyle(c)) or (visual.faded and not hovered) then return end
     UIFrameFadeRemoveFrame(tab)
     tab:SetAlpha(hovered and 1 or TAB_MIN_ALPHA)
 end
@@ -258,10 +259,7 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
     M.tabs[tab], visual.tab = visual, tab
     ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
-    line:ClearAllPoints()
-    line:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 5, 1)
-    line:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -5, 1)
-    line:SetHeight(2)
+    C.PlaceTabMarker(line, tab, c)
     Tint(line, c.accentColor, c.accentAlpha)
     ColorTab(self, visual, selected)
 end
@@ -280,6 +278,7 @@ local function ApplyPanel(self, visual, frame, top)
         visual.panel:SetVertexColor(r, g, b, c.panelAlpha / 100)
     end
     visual.panel:SetShown(c.panelAlpha > 0)
+    C.PaintGradient(visual, visual.panel, c)
     if frame == _G.ChatFrame1 then
         local strip = M.dockStrip
         if not strip then
@@ -292,7 +291,7 @@ local function ApplyPanel(self, visual, frame, top)
         strip:ClearAllPoints()
         strip:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, top)
         strip:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", c.padding, 0)
-        Tint(strip, c.panelColor, math.min(100, c.panelAlpha + 12))
+        C.PaintDockGradient(strip, c)
         strip:SetShown(c.tabPanel and c.panelAlpha > 0)
     end
     visual.headerRule:ClearAllPoints()
@@ -301,7 +300,7 @@ local function ApplyPanel(self, visual, frame, top)
     visual.headerRule:SetHeight(2)
     Tint(visual.headerRule, c.accentColor, c.accentAlpha)
     visual.headerRule:SetShown(c.tabPanel and c.panelAlpha > 0
-        and c.tabAccent and c.accentAlpha > 0)
+        and c.tabAccent and c.accentAlpha > 0 and not c.minimalChrome)
     for side = 1, 4 do
         local edge = visual.edges[side]
         ApplyEdge(edge, frame, side, c.borderSize, c.padding, top, c.borderColor, c.borderAlpha)
@@ -425,8 +424,9 @@ function C.ApplyWindow(self, frame)
     ApplyPanel(self, visual, frame, top)
     local tab, input = _G[frame:GetName() .. "Tab"], frame.editBox
     local tabFont, messageFont = ChosenFont(c.tabFont), ChosenFont(c.font)
-    SetNativeChrome(self, frame, tab, input, c.panelAlpha > 0)
+    SetNativeChrome(self, frame, tab, input, c.panelAlpha > 0 or c.minimalChrome)
     ApplyTabVisual(self, visual, tab, TabSelected(frame, _G.SELECTED_CHAT_FRAME, DockSelection()), tabFont)
+    C.ApplyUnread(visual, tab)
     KeepTabVisible(self, frame)
     if frame == _G.ChatFrame1 then ApplySidebar(self, visual, frame) end
     ApplyCopyButton(self, visual, frame, top)
@@ -434,10 +434,15 @@ function C.ApplyWindow(self, frame)
     ApplyFont(self, frame, messageFont)
     ApplySizeLock(self, visual, frame)
     C.ApplyMessages(self, frame)
+    C.ApplyMessageFade(visual, c)
     C.ApplyInactivity(self, visual)
+    C.UpdateMinimalChrome(visual)
 end
 
 local function HideVisual(visual)
+    C.HideGradient(visual)
+    C.ClearUnread(visual)
+    C.ReleaseMessageFade(visual)
     visual.panel:Hide()
     if visual.frame == _G.ChatFrame1 and M.dockStrip then M.dockStrip:Hide() end
     visual.headerRule:Hide()
