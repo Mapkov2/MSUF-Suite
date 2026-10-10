@@ -274,6 +274,12 @@
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "client",
+   "reason": "Forever only: Blizzard_GamepadSmartNavigation's SmartNavigation frame and its activePanels list (Retail 12.1.0 and 12.1.5 do not ship it); read only, type-checked, behind NS.Client.isForever",
+   "symbol": "SmartNavigation"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
    "kind": "addon",
    "reason": "Classic MSUF's Client export; the Retail (Main) MSUF has none",
    "symbol": "host.SupportsEvent"

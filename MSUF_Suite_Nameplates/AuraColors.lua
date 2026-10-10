@@ -3,7 +3,8 @@ local NS, A = private.NS, private.NS.NameplateAuraColors
 local Colors = {}
 private.AuraColors = Colors
 local states = setmetatable({}, { __mode = "k" })
-local module, config, rows, revision, plan = nil, nil, {}, 0, nil
+local module, refresh, config, rows, revision, plan = nil, nil, nil, {}, 0, nil
+local waiting, editMode = false, false
 -- A public fixed span exceeds every supported nameplate height. Hidden
 -- native slots collapse to zero; no secret size or visibility is read.
 local SPAN = 4096
@@ -13,8 +14,56 @@ local function Paint(texture, hex)
     texture:SetColorTexture(NS.RGB(hex))
 end
 
-local function Layer(state, health)
-    local texture = health:CreateTexture(nil, "ARTWORK", nil, 7)
+-- Blizzard seals each native slot once its initializeFrame returns: the
+-- provider runs initializeFrame, then ApplyAccessRestrictions with
+-- DenyTaintedAccessWhenAurasAreSecret (AuraContainerFrameProviders.lua:78-86,
+-- AuraContainerShared.lua:108; live, ptr2 and forever). While auras are
+-- secret, addon code may then not even name the slot as an anchor target.
+-- So each slot's initializeFrame anchors an own marker to the slot's top,
+-- and every later anchor (the next slot of the chain, the masks) names the
+-- marker. The marker is the wrapper's child, never the slot's: descendants of
+-- a sealed button are restricted too. Building or re-anchoring a plate thus
+-- names no sealed object and runs in combat and while auras are secret. The
+-- container calls it makes (AddAuraSlot, SetAuraSlotCandidateFilters,
+-- SetEnabled, SetUnit; Blizzard_CustomAuraContainer.lua,
+-- Blizzard_AuraContainer.lua:28-48) carry no combat or secret restriction:
+-- access restrictions are applied to the slots only.
+local function Marker(state, button)
+    local marker = CreateFrame("Frame", nil, state.wrapper, "DisableUntrustedLayoutScriptsTemplate")
+    marker:SetIgnoringChildrenForBounds(true)
+    marker:SetSize(1, 1)
+    marker:SetPoint("BOTTOM", button, "TOP", 0, 0)
+    return marker
+end
+
+-- Only Forever's gamepad navigation still holds builds back: while a panel is
+-- open it would walk each new slot from our execution and throw
+-- (MSUF_Suite/Core/Platform.lua AuraBuildBlocked). The panel's closing
+-- resumes them (Colors.Resume); the plate waits uncolored meanwhile.
+local function Blocked()
+    if not NS.Client.AuraBuildBlocked() then return false end
+    NS.Client.AfterAuraBuild(Colors, Colors.Resume)
+    waiting = true
+    return true
+end
+
+-- Each colour texture draws at a (layer, sublevel) of its own: within one
+-- sublevel the draw order is undefined. Rank 0 is drawn lowest; New gives
+-- rows LIMIT..1 ranks 0..LIMIT-1, then "all" (it beats every row) and "none"
+-- (its mask excludes the others). The band lies above the native fill
+-- (StatusBar ARTWORK 0), absorb art (ARTWORK 1-2) and the role tint
+-- (Skin.lua, ARTWORK 3), below the selection border and dim overlay
+-- (OVERLAY 0), the health text (OVERLAY 1) and the aggro flash (OVERLAY 2):
+-- healthBar layers in Blizzard_NamePlates.xml, the same on live, ptr2 and
+-- forever. ARTWORK 4-7 and OVERLAY -8..-1 hold up to twelve ranks.
+local function DrawLevel(rank)
+    if rank < 4 then return "ARTWORK", 4 + rank end
+    return "OVERLAY", rank - 12
+end
+
+local function Layer(state, health, rank)
+    local layer, sublevel = DrawLevel(rank)
+    local texture = health:CreateTexture(nil, layer, nil, sublevel)
     local mask = state.wrapper:CreateMaskTexture()
     mask:SetTexture("Interface\\Buttons\\WHITE8X8", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE", "NEAREST")
     mask:SetHeight(SPAN)
@@ -23,26 +72,42 @@ local function Layer(state, health)
     return { texture = texture, mask = mask }
 end
 
+-- The top of the plate's own frame tree (WorldFrame for Blizzard's
+-- nameplates, read here rather than assumed): the masks then share the
+-- plates' visibility. Under UIParent they hid with the interface (Alt+Z
+-- hides UIParent only) while the plate and its colour textures stayed,
+-- unmasked over the whole bar.
+local function Root(frame)
+    local parent = frame:GetParent()
+    while parent do frame, parent = parent, parent:GetParent() end
+    return frame
+end
+
 local function New(health)
     local state = { slots = {}, singles = {}, layers = {} }
     -- Keep the large predicate slots out of Blizzard's pooled nameplate
-    -- hierarchy. Only the small fill textures belong to the health bar.
-    state.wrapper = CreateFrame("Frame", nil, UIParent, "DisableUntrustedLayoutScriptsTemplate")
+    -- hierarchy, beside the plates. Only the small fill textures belong to
+    -- the health bar.
+    state.wrapper = CreateFrame("Frame", nil, Root(health), "DisableUntrustedLayoutScriptsTemplate")
     state.wrapper:SetIgnoringChildrenForBounds(true)
     state.wrapper:SetAllPoints(health)
     state.container = CreateFrame("AuraContainer", nil, state.wrapper, "CustomAuraContainerTemplate")
+    -- No Edit Mode samples in the DoT predicate (12.1.5, Forever; Platform.lua).
+    state.realAuras = NS.Client.RealAurasOnly(state.container)
     state.container:SetSize(1, 1)
     state.container:SetPoint("BOTTOM", health, "BOTTOM", 0, 0)
-    -- Creation order establishes priority within ARTWORK, below native text.
-    for i = A.LIMIT, 1, -1 do state.layers[i] = Layer(state, health) end
-    state.all, state.none = Layer(state, health), Layer(state, health)
+    -- Priority by draw level (DrawLevel): row 1 above row 2 and so on.
+    for i = 1, A.LIMIT do state.layers[i] = Layer(state, health, A.LIMIT - i) end
+    state.all, state.none = Layer(state, health, A.LIMIT), Layer(state, health, A.LIMIT + 1)
     return state
 end
 
+-- A slot's marker (its top, see Marker). anchor is the container, the health
+-- bar or the previous slot's marker; the slot itself is never kept.
 local function Slot(state, pool, key, index, anchor, relative, offset, filter)
-    local frame = pool[index]
-    if not frame then
-        frame = state.container:AddAuraSlot(key .. index, "HARMFUL|PLAYER", {
+    local marker = pool[index]
+    if not marker then
+        state.container:AddAuraSlot(key .. index, "HARMFUL|PLAYER", {
             candidateFilters = filter,
             initializeFrame = function(button)
                 button:SetMouseClickEnabled(false)
@@ -50,30 +115,31 @@ local function Slot(state, pool, key, index, anchor, relative, offset, filter)
                 button:SetSize(1, SPAN)
                 button:SetCollapsesLayout(true)
                 button:SetPoint("BOTTOM", anchor, relative, 0, offset)
+                marker = Marker(state, button)
             end,
         })
-        pool[index] = frame
+        pool[index] = marker
     else
         -- SetEnabled queues a native dirty pass; it does not synchronously
         -- remove frame restrictions. Existing slot layout is never touched.
         state.container:SetAuraSlotCandidateFilters(key .. index, filter)
     end
-    return frame
+    return marker
 end
 
-local function Anchor(layer, fill, slot, offset, color)
+local function Anchor(layer, fill, marker, offset, color)
     layer.texture:SetAllPoints(fill)
     Paint(layer.texture, color)
     layer.mask:ClearAllPoints()
     layer.mask:SetPoint("LEFT", fill, "LEFT", 0, 0)
     layer.mask:SetPoint("RIGHT", fill, "RIGHT", 0, 0)
-    layer.mask:SetPoint("BOTTOM", slot, "TOP", 0, offset)
+    layer.mask:SetPoint("BOTTOM", marker, "BOTTOM", 0, offset)
 end
 
 local function ConfigureState(state, health)
     state.active = false
     state.container:SetEnabled(false)
-    local fill, previous = health:GetStatusBarTexture(), state.container
+    local fill, previous, relative = health:GetStatusBarTexture(), state.container, "TOP"
     -- Origin is the health bottom, independent of its secret dimensions.
     state.container:ClearAllPoints()
     state.container:SetPoint("TOP", health, "BOTTOM", 0, -SPAN * #rows)
@@ -81,10 +147,12 @@ local function ConfigureState(state, health)
         local ids = {}
         for _, id in ipairs(row.ids) do ids[id] = true end
         local filter = { includeSpellIDs = ids }
-        previous = Slot(state, state.slots, "all", i, previous, "TOP", 0, filter)
+        -- The first slot sits on the container's top, each further one on
+        -- the previous slot's marker (a marker's bottom is its slot's top).
+        previous, relative = Slot(state, state.slots, "all", i, previous, relative, 0, filter), "BOTTOM"
         if config.auraColorsIndividual then
-            local slot = Slot(state, state.singles, "single", i, health, "BOTTOM", -SPAN, filter)
-            Anchor(state.layers[i], fill, slot, -SPAN / 2, row.color)
+            local marker = Slot(state, state.singles, "single", i, health, "BOTTOM", -SPAN, filter)
+            Anchor(state.layers[i], fill, marker, -SPAN / 2, row.color)
         end
     end
     for i = #rows + 1, #state.slots do
@@ -118,13 +186,26 @@ function Colors.Restore(uf)
     if state then Hide(state) end
 end
 
+-- The resolved rows of two reads: the same DoTs (IDs and aliases) with the
+-- same colors in the same order.
+local function SameRows(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do
+        local x, y = a[i], b[i]
+        if x.id ~= y.id or x.color ~= y.color or #x.ids ~= #y.ids then return false end
+        for k = 1, #x.ids do
+            if x.ids[k] ~= y.ids[k] then return false end
+        end
+    end
+    return true
+end
+
+-- force: catalog, talent and spec events read the selection again. Only a
+-- change of the resolved rows or the shared colors and switches makes the
+-- plates re-anchor (a new revision); an equal read leaves them as they are.
 function Colors.Configure(c, force)
     if not c.auraColorsEnabled then
         config, rows, plan = c, {}, nil
-        return
-    end
-    if NS.InCombat() then
-        module.needsRefresh = true
         return
     end
     config = c
@@ -132,10 +213,15 @@ function Colors.Configure(c, force)
     if not force and plan and plan.spec == spec and plan.data == c.auraColorsData
         and plan.all == c.auraColorsAll and plan.none == c.auraColorsNone
         and plan.warn == c.auraColorsNoneEnabled and plan.individual == c.auraColorsIndividual then return end
-    rows = A.Selected(A.Decode(c.auraColorsData)[spec])
-    plan = { spec = spec, data = c.auraColorsData, all = c.auraColorsAll, none = c.auraColorsNone,
-        warn = c.auraColorsNoneEnabled, individual = c.auraColorsIndividual }
-    revision = revision + 1
+    local selected = A.Selected(A.Decode(c.auraColorsData)[spec])
+    local changed = not plan or plan.all ~= c.auraColorsAll or plan.none ~= c.auraColorsNone
+        or plan.warn ~= c.auraColorsNoneEnabled or plan.individual ~= c.auraColorsIndividual
+        or not SameRows(rows, selected)
+    rows = selected
+    plan = plan or {}
+    plan.spec, plan.data, plan.all, plan.none = spec, c.auraColorsData, c.auraColorsAll, c.auraColorsNone
+    plan.warn, plan.individual = c.auraColorsNoneEnabled, c.auraColorsIndividual
+    if changed then revision = revision + 1 end
 end
 
 function Colors.Apply(uf, unit, enemy)
@@ -147,15 +233,20 @@ function Colors.Apply(uf, unit, enemy)
     end
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not health or NS.Safety.IsForbidden(health) then return end
-    if state and state.revision ~= revision and NS.InCombat() then
-        module.needsRefresh = true
-        return
-    end
+    local fill = health:GetStatusBarTexture()
+    -- A new plate, another selection or another fill texture builds or
+    -- re-anchors; only an open Forever gamepad panel holds that back.
+    if (not state or state.revision ~= revision or state.fill ~= fill) and Blocked() then return end
     if not state then
         state = New(health)
         states[uf] = state
     end
-    local fill = health:GetStatusBarTexture()
+    -- 12.1.0 feeds the container Edit Mode's samples, which match no DoT:
+    -- its colors hide until Edit Mode closes (SetEditMode).
+    if editMode and not state.realAuras then
+        Hide(state)
+        return
+    end
     if state.active and state.revision == revision and state.fill == fill and state.unit == unit then return end
     if state.revision ~= revision or state.fill ~= fill then ConfigureState(state, health) end
     if state.unit ~= unit then
@@ -170,4 +261,20 @@ function Colors.Apply(uf, unit, enemy)
     state.active = true
 end
 
-function Colors.Bind(owner) module = owner end
+-- The gamepad panel that held builds back closed (Platform.lua calls back):
+-- the shown plates are painted.
+function Colors.Resume()
+    if not waiting or Blocked() then return end
+    waiting = false
+    refresh(module)
+end
+
+-- Blizzard's Edit Mode opened or closed (Skin.lua): the shown plates repaint
+-- unless the caller repaints them itself (repaint == false).
+function Colors.SetEditMode(active, repaint)
+    editMode = active == true
+    if repaint ~= false then refresh(module) end
+end
+
+-- owner: the nameplate module; repaint(owner) applies the colors of the shown plates.
+function Colors.Bind(owner, repaint) module, refresh = owner, repaint end

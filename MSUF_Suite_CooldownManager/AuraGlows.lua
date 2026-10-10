@@ -14,8 +14,8 @@ local AuraGlows = {}
 C.AuraGlows = AuraGlows
 
 -- Regions inside Blizzard's aura buttons are created with the client's
--- CreateFrame (see AuraButtons.lua).
-local CreateFrame = CreateFrame
+-- CreateFrame, parentless and parented at once (K.Child, AuraButtons.lua).
+local Child = K.Child
 local IsCombatLocked = NS.IsCombatLocked
 local floor, max, min = math.floor, math.max, math.min
 local type, pairs, ipairs, next = type, pairs, ipairs, next
@@ -54,9 +54,9 @@ end
 local function NewGlow(button, parent, level)
     -- This independent native visibility gate never reads aura state and
     -- never requires a Lua mutation of protected descendants in combat.
-    local combatGate = CreateFrame("Frame", nil, parent)
+    local combatGate = Child("Frame", parent)
     combatGate:SetAllPoints(parent)
-    local frame = CreateFrame("Frame", nil, combatGate)
+    local frame = Child("Frame", combatGate)
     frame:SetAllPoints(parent)
     frame:SetFrameLevel(level)
     frame:Hide()
@@ -79,7 +79,7 @@ local function NewGlow(button, parent, level)
     book:SetDuration(FLIP.duration)
     -- The edges share the glow's level: a child would sit one above it, on
     -- the countdown's level.
-    local ring = CreateFrame("Frame", nil, frame)
+    local ring = Child("Frame", frame)
     ring:SetAllPoints(frame)
     ring:SetFrameLevel(level)
     ring:Hide()
@@ -217,17 +217,17 @@ end
 -- missing application moves it one travel (more than the gate is wide) to
 -- the left, out of the gate. The count stays in C: no Lua compares it.
 local function NewStack(button, level)
-    local gate = CreateFrame("Frame", nil, button)
+    local gate = Child("Frame", button)
     gate:SetPoint("CENTER", button, "CENTER", 0, 0)
     gate:SetFrameLevel(level)
     gate:SetClipsChildren(true)
     gate:Hide()
-    local bar = CreateFrame("StatusBar", nil, button)
+    local bar = Child("StatusBar", button)
     bar:SetStatusBarTexture(STACK_TEXTURE)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
     bar:SetAlpha(0)
-    local host = CreateFrame("Frame", nil, gate)
+    local host = Child("Frame", gate)
     host:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
     local glow = NewGlow(button, host, level)
     glow.frame:Show()

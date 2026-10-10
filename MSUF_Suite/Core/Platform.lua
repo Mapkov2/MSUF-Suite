@@ -120,6 +120,100 @@ function Suite.Client.RaiseControllerCursor()
     end
 end
 
+-- Forever's gamepad navigation (Blizzard_GamepadSmartNavigation; Retail
+-- 12.1.0 and 12.1.5 do not ship it) post-hooks CreateFrame and, while a
+-- gamepad panel is registered, walks the parent chain of every new frame in
+-- the caller's execution (SmartNavigation.lua:203-209, :1652-1656,
+-- :921-934). An AuraContainer makes its buttons with its private object as
+-- parent (AuraContainerFrameProviders.lua:76, from AddAuraSlot and
+-- AddAuraGroup); walked from addon code, indexing that object throws
+-- (:929, once per button). True while that walk would run: aura containers
+-- add no group or slot then (AfterAuraBuild). A read of Blizzard's panel
+-- list; nothing is written.
+function Suite.Client.AuraBuildBlocked()
+    if not Suite.Client.isForever then return false end
+    local navigation = SmartNavigation
+    local panels = type(navigation) == "table" and navigation.activePanels
+    return type(panels) == "table" and panels[1] ~= nil
+end
+
+-- callback(owner) once no panel blocks aura builds; one entry per owner.
+-- SmartNavigation drops a panel in that panel's own OnHide hook (:735-741,
+-- :782-807) and tells nobody else, so each blocking panel gets an OnHide
+-- hook of ours as well (once per frame; it only looks a frame later, after
+-- SmartNavigation's own hook ran). A panel may also stay listed while hidden
+-- for good: GroupTargeting's StopTargeting clears its container before it
+-- asks to drop it (GroupTargeting.lua:108, :121), and a host that parks the
+-- party or raid frames under a hidden parent never hides them again. A
+-- check chain covers that: every quarter second for the first five seconds
+-- of a wait, then every two seconds, and it stops with the last wait.
+local waitingBuilds, runningBuilds = {}, {}
+local waitSince, checkArmed = nil, false
+local watchedPanels = setmetatable({}, { __mode = "k" })
+
+local function RunWaitingBuilds()
+    if next(waitingBuilds) == nil or Suite.Client.AuraBuildBlocked() then return end
+    waitSince = nil
+    waitingBuilds, runningBuilds = runningBuilds, waitingBuilds
+    for owner, callback in pairs(runningBuilds) do
+        runningBuilds[owner] = nil
+        Suite.Dispatch(callback, owner)
+    end
+end
+
+local function PanelHidden()
+    if next(waitingBuilds) ~= nil then C_Timer.After(0, RunWaitingBuilds) end
+end
+
+-- HookScript only, and out of combat: nothing is written onto Blizzard's
+-- panels, and a panel holding secure frames is never touched in combat (the
+-- check chain covers that time).
+local function WatchPanels()
+    local navigation = SmartNavigation
+    local panels = type(navigation) == "table" and navigation.activePanels
+    if type(panels) ~= "table" or InCombatLockdown() then return end
+    for _, info in ipairs(panels) do
+        local frame = type(info) == "table" and info.frame
+        if frame and frame.HookScript and not watchedPanels[frame] and not Suite.Safety.IsForbidden(frame) then
+            watchedPanels[frame] = true
+            frame:HookScript("OnHide", PanelHidden)
+        end
+    end
+end
+
+local function CheckWaitingBuilds()
+    checkArmed = false
+    RunWaitingBuilds()
+    if next(waitingBuilds) == nil then return end
+    WatchPanels()
+    checkArmed = true
+    C_Timer.After(GetTime() - waitSince < 5 and 0.25 or 2, CheckWaitingBuilds)
+end
+
+function Suite.Client.AfterAuraBuild(owner, callback)
+    waitingBuilds[owner] = callback
+    waitSince = waitSince or GetTime()
+    if checkArmed then return end
+    WatchPanels()
+    checkArmed = true
+    C_Timer.After(0.25, CheckWaitingBuilds)
+end
+
+-- Blizzard's Edit Mode feeds every aura container sample auras while it is
+-- open (EditModeManager.lua:95 C_UnitAuras.SwitchAuraDataProvider; each
+-- container listens for AURA_DATA_PROVIDER_SWITCH, Blizzard_AuraContainer.lua
+-- :88-91, :132). On 12.1.5 and Forever a container can keep its real auras
+-- (SetEditModePreviewEnabled, Blizzard_ManagedAuraContainer.lua:49-61; the
+-- template turns the preview on, Blizzard_CustomAuraContainer.xml:11): true
+-- once that is done. 12.1.0 has no such switch (false): there a container
+-- shows the samples, which match none of the Suite's spell lists, so its
+-- glows, stack colours and cues pause until Edit Mode closes.
+function Suite.Client.RealAurasOnly(container)
+    if not container.SetEditModePreviewEnabled then return false end
+    container:SetEditModePreviewEnabled(false)
+    return true
+end
+
 -- Which MSUF build hosts the suite, for diagnostics; every integration below
 -- probes the capability it needs instead.
 Suite.Host = { build = host and "Classic" or "Main" }

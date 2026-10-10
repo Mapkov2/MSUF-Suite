@@ -34,6 +34,34 @@ C_Timer={After=function(delay,fn)
     timerCount=timerCount+1
     timerFns[timerCount],timerDelays[timerCount]=fn,delay
 end}
+-- Forever's gamepad panels (SmartNavigation, see Display): Platform.lua's
+-- AuraBuildBlocked reads the open panels for real; its wait (AfterAuraBuild,
+-- own contract suite_aura_build_wait_contract) is recorded here and called
+-- back by Gamepad.Close. Test-only fields on the stand-in: the main chunk is
+-- at the local limit.
+C_Timer.Gamepad={waits={}}
+function C_Timer.Gamepad.Open(client)
+    local pad=C_Timer.Gamepad
+    pad.forever,pad.after,pad.navigation=client.isForever,client.AfterAuraBuild,{activePanels={{}}}
+    client.isForever=true
+    client.AfterAuraBuild=function(owner,callback) pad.waits[owner]=callback end
+    rawset(_G,"SmartNavigation",pad.navigation)
+end
+function C_Timer.Gamepad.Reopen() C_Timer.Gamepad.navigation.activePanels[1]={} end
+function C_Timer.Gamepad.Waiting() return next(C_Timer.Gamepad.waits)~=nil end
+function C_Timer.Gamepad.Close()
+    local waits=C_Timer.Gamepad.waits
+    C_Timer.Gamepad.navigation.activePanels[1]=nil
+    for owner,callback in pairs(waits) do
+        waits[owner]=nil
+        callback(owner)
+    end
+end
+function C_Timer.Gamepad.Finish(client)
+    local pad=C_Timer.Gamepad
+    rawset(_G,"SmartNavigation",nil)
+    client.isForever,client.AfterAuraBuild=pad.forever,pad.after
+end
 local function RunTimers()
     local i,guard=1,0
     while i<=timerCount do
@@ -166,6 +194,23 @@ function Methods:SetFrameLevel(level)
 end
 function Methods:GetFrameLevel() return R[self].level end
 function Methods:GetParent() return R[self].parent end
+-- Reparenting as in the client: the frame joins the new parent one level
+-- above it (SetParent resets the level), and a sealed button may not be
+-- named while auras are secret.
+function Methods:SetParent(parent)
+    assert(not (parent and Sealed(parent) and ACCESS~=true),"a sealed aura button was named as a parent while auras are secret")
+    local s=R[self]
+    local old=s.parent and R[s.parent]
+    if old and old.kids then
+        for i=#old.kids,1,-1 do if old.kids[i]==self then table.remove(old.kids,i) end end
+    end
+    local ps=parent and R[parent]
+    s.parent,s.level=parent,ps and ps.level+1 or 0
+    if ps then
+        ps.kids=ps.kids or {}
+        ps.kids[#ps.kids+1]=self
+    end
+end
 function Methods:GetEffectiveScale() return 1 end
 function Methods:CreateTexture() return New("Texture",self) end
 function Methods:CreateFontString() return New("FontString",self) end
@@ -260,13 +305,21 @@ function ContainerMethods:IsEnabled() return R[self].enabled==true end
 function ContainerMethods:UpdateAllAuras() local s=R[self];s.updates=s.updates+1 end
 function ContainerMethods:SetEditModePreviewEnabled(on) R[self].editPreview=on end
 local function Display(self,key,filter,opts,count,slot)
+    -- Forever's SmartNavigation post-hooks CreateFrame and, while a gamepad
+    -- panel is registered, walks each new button's private parent from the
+    -- addon's execution (SmartNavigation.lua:203-209, :921-934).
+    local navigation=rawget(_G,"SmartNavigation")
+    if navigation and navigation.activePanels[1]~=nil then
+        error("SmartNavigation.lua:929: attempted to index a table that cannot be accessed while tainted",2)
+    end
     local s=R[self]
     assert(type(key)=="string" and key~="","key")
     assert(not s.groups[key] and not s.slots[key],"key reused: "..key)
     ValidFilter(filter)
     assert(type(opts)=="table" and type(opts.initializeFrame)=="function","initializeFrame")
     ValidCandidates(opts.candidateFilters)
-    local g={filter=filter,cand=SecureCopy(opts.candidateFilters),layout=SecureCopy(opts.layout),max=opts.maxFrameCount,sort=opts.sortMethod,buttons={},enabled=true}
+    local g={filter=filter,cand=SecureCopy(opts.candidateFilters),layout=SecureCopy(opts.layout),max=opts.maxFrameCount,sort=opts.sortMethod,buttons={},enabled=true,
+        init=opts.initializeFrame}
     if slot then s.slots[key]=g else s.groups[key]=g end
     s.order[#s.order+1]=key
     s.adds=s.adds+1
@@ -384,6 +437,20 @@ function ButtonMethods:SetAuraBorder() error("SetAuraBorder must never be called
 function ButtonMethods:SetAuraSymbol() error("SetAuraSymbol must never be called",2) end
 
 function CreateFrame(kind,name,parent,template)
+    -- Forever's SmartNavigation post-hooks CreateFrame (SmartNavigation.lua
+    -- :203-209): while a gamepad panel is open, a frame made with a parent
+    -- has its parent chain walked from our execution, and inside an aura
+    -- button or container that walk throws (:929).
+    local navigation=rawget(_G,"SmartNavigation")
+    if parent and navigation and navigation.activePanels[1]~=nil then
+        local s=R[parent]
+        while s do
+            if s.button or s.container then
+                error("SmartNavigation.lua:929: attempted to index a table that cannot be accessed while tainted",2)
+            end
+            s=s.parent and R[s.parent]
+        end
+    end
     if kind=="AuraContainer" then
         assert(template=="CustomAuraContainerTemplate","container template")
         local c=New("AuraContainer",parent,BlizzardMT)
@@ -2947,6 +3014,8 @@ do
     assert(R[container].parent==action and R[button].allPoints==action and R[second].parent==paged,
         "glow follows the actual action button")
     assert(R[container].slots.glow.cand.includeSpellIDs[456] and R[container].enabled==true,"native received-buff binding")
+    assert(R[container].editPreview==false and R[second].editPreview==false,
+        "12.1.5: action glows kept Blizzard Edit Mode's sample auras")
     assert(not R[button].bind.icon and not R[button].bind.text,"no duplicate action icon or timer")
     local count=#containers
     bridge.Refresh()
@@ -3012,6 +3081,20 @@ do
     assert(timerCount==quiet+1,"the action bars starting arms the pass")
     RunTimers()
     assert(bridge.wanted and R[stacked].enabled and R[stackedPaged].enabled,"the glows come back with the action bars")
+    -- Forever with a gamepad panel open: a new record's slot waits for the
+    -- panel (SmartNavigation, see Display); the pass runs once it closed.
+    local pad=C_Timer.Gamepad
+    pad.Open(NS.Client)
+    C.entries.third={key="a790",slot="bridge",auraIDs={[790]=true},ov={actionGlowSpell=123,actionGlowMode=2,stackGlow=2}}
+    local held=#containers
+    bridge.Refresh()
+    assert(#containers==held and bridge.pending and pad.Waiting(),"an action glow built its slot under an open gamepad panel")
+    pad.Close()
+    assert(#containers==held+2 and not bridge.pending and not pad.Waiting(),
+        "the action glow did not build after the gamepad panel closed")
+    C.entries.third=nil
+    bridge.Refresh()
+    pad.Finish(NS.Client)
     C.entries.other=nil
     bridge.Refresh()
     assert(not R[stacked].enabled and not bridge.wanted,"removed entry releases its glow")
@@ -3130,6 +3213,65 @@ do
     A.FlushPending()
     assert(R[list[4]].bind.icon,"the woken button was not built after combat")
     A.Release("c6")
+    -- Forever with a gamepad panel open (SmartNavigation, see Display): a new
+    -- bar's groups and a woken stack-colour button's sensor slot would be
+    -- walked from our execution. Both wait for the panel and build once it
+    -- closed.
+    local pad=C_Timer.Gamepad
+    pad.Open(NS.Client)
+    C.views.c5=View("c5",3)
+    C.views.c5.barStacks,C.views.c5.barStackColorAt=true,4
+    Plan("c5",3,{Aura("c5","a6301","a","player",Set(6301),{ov={stackGlow=3}})})
+    local made=#containers
+    A.Sync("c5")
+    assert(#containers==made and A.pending.c5 and pad.Waiting(),"a bar built aura groups under an open gamepad panel")
+    pad.Close()
+    assert(not pad.Waiting() and not A.pending.c5 and Live("c5","player"),"the bar did not build after the gamepad panel closed")
+    -- Its stack-colour and stack-glow sensors keep their real auras in Blizzard's Edit Mode, like the bar.
+    local sensors=0
+    for i=made+1,#containers do
+        local s=R[containers[i]]
+        if R[s.parent].button then
+            sensors=sensors+1
+            assert(s.editPreview==false,"12.1.5: a stack sensor kept Blizzard Edit Mode's sample auras")
+        end
+    end
+    assert(sensors>0,"the stack-colour bar built no sensor container")
+    list=Buttons(Live("c5","player"),"g1")
+    pad.Reopen()
+    Wake(5)
+    RunTimers()
+    assert(next(R[list[5]].bind)==nil and pad.Waiting(),"a woken button built its stack sensor under an open gamepad panel")
+    pad.Close()
+    assert(next(R[list[5]].bind)~=nil and not pad.Waiting(),"the woken button was not built after the gamepad panel closed")
+    -- Blizzard grows the group's pool on its own while a panel is open, in
+    -- combat with auras secret (AuraContainerFrameProviders.lua:102-104 ->
+    -- :79): the button is built in its initializeFrame like any other, with
+    -- no frame made with a parent inside it (the hook above); only its stack
+    -- sensors, slots SmartNavigation would walk, wait for the panel. Once it
+    -- closed and auras are plain, the bar's sync adds them.
+    pad.Reopen()
+    COMBAT,AURAS_SECRET=true,true
+    local live=Live("c5","player")
+    local grown=NewButton(live)
+    local function Sensors()
+        local n=0
+        for _,c in ipairs(containers) do if R[c].parent==grown then n=n+1 end end
+        return n
+    end
+    R[live].groups.g1.init(grown)
+    R[grown].sealed=true
+    ACCESS=false
+    assert(R[grown].bind.icon and R[grown].bind.text and R[grown].bind.appBar,"a pool button Blizzard grew under an open gamepad panel stayed bare")
+    assert(Sensors()==0 and pad.Waiting() and A.pending.c5,"a grown pool button built stack sensor slots under an open gamepad panel")
+    pad.Close()
+    assert(Sensors()==0,"stack sensors were built in combat while auras were secret")
+    COMBAT,ACCESS,AURAS_SECRET=false,true,false
+    A.FlushPending()
+    assert(Sensors()==2 and not A.pending.c5,"the grown pool button's stack sensors were not added once the panel closed and auras were plain")
+    pad.Finish(NS.Client)
+    A.Release("c5")
+    C.views.c5,C.plans.c5=nil,nil
     C.views.c6,C.plans.c6=nil,nil
 end
 

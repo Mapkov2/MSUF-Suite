@@ -27,10 +27,10 @@ local AuraButtons = {}
 C.AuraButtons = AuraButtons
 
 -- Regions inside Blizzard's aura buttons are created with the client's
--- CreateFrame: the container lays those buttons out and seals their bound
--- regions, so MSUF's pixel-layout policy (S.CreateFrame) must not round what
--- Blizzard positions. Placeholders sit on our own cells (S.CreateTexture).
-local CreateFrame = CreateFrame
+-- CreateFrame, parentless and parented at once (K.Child): the container lays
+-- those buttons out and seals their bound regions, so MSUF's pixel-layout
+-- policy (S.CreateFrame) must not round what Blizzard positions.
+-- Placeholders sit on our own cells (S.CreateTexture).
 local IsCombatLocked = NS.IsCombatLocked
 local floor, max, min = math.floor, math.max, math.min
 local type, tonumber = type, tonumber
@@ -70,6 +70,7 @@ local sensed = {}    -- kit sensor frame -> its button record
 local premade = setmetatable({}, { __mode = "k" })
 
 local Px = K.Px
+local Child = K.Child
 local function Snap(value, px) return floor(value / px + .5) * px end
 local ClassRGB = K.ClassRGB
 -- Glows and edges (AuraGlows.lua loads first).
@@ -224,6 +225,16 @@ end
 local function Open(button)
     local ok = button:CanBeAccessedInContext()
     return Public(ok) and ok == true
+end
+-- Forever's gamepad navigation would walk every new aura button from our
+-- execution while a gamepad panel is open, and throw (MSUF_Suite/Core/
+-- Platform.lua AuraBuildBlocked): new groups, slots and stack sensors wait.
+-- resume(owner) runs once the panel closed; the aura layer's FlushPending
+-- unless the caller names its own.
+local function Blocked(owner, resume)
+    if not NS.Client.AuraBuildBlocked() then return false end
+    NS.Client.AfterAuraBuild(owner or C.Auras, resume or C.Auras.FlushPending)
+    return true
 end
 local function Mutable(rec)
     if not Quiet() then return false end
@@ -494,19 +505,19 @@ local function NewPart(rec, button, k)
     local lower
     if rec.role == "bar" then
         part.bg = button:CreateTexture(nil, "BACKGROUND")
-        lower = CreateFrame("StatusBar", nil, button)
+        lower = Child("StatusBar", button)
         lower:SetMinMaxValues(0, 1)
         lower:SetValue(0)
         part.bar = lower
         -- Stack markers sit above the threshold colour (Style places them
         -- from a pool; the look says which).
         if rec.stackFill and rec.color then
-            local markerHost = CreateFrame("Frame", nil, button)
+            local markerHost = Child("Frame", button)
             markerHost:SetFrameLevel(base + LEVEL.marks)
             part.markerHost = markerHost
         end
     else
-        lower = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+        lower = Child("Cooldown", button, "CooldownFrameTemplate")
         lower:SetAllPoints(part.icon)
         lower:SetDrawBling(false)
         lower:SetHideCountdownNumbers(true)
@@ -517,7 +528,7 @@ local function NewPart(rec, button, k)
     -- Glows over the icon, fill, colour and markers; text above the glows.
     local level = base + LEVEL.glow
     if rec.pandemic then
-        local pan = CreateFrame("Frame", nil, button)
+        local pan = Child("Frame", button)
         pan:SetAllPoints(button)
         pan:SetFrameLevel(level)
         pan:Hide()
@@ -527,10 +538,10 @@ local function NewPart(rec, button, k)
     if rec.stack then part.stack = NewStack(button, level) end
     -- Stacks and countdown (with the name) on two frames above the glows,
     -- stacks on top until the entry's Text on top says otherwise.
-    local stacks = CreateFrame("Frame", nil, button)
+    local stacks = Child("Frame", button)
     stacks:SetAllPoints(button)
     stacks:SetFrameLevel(base + LEVEL.stacks)
-    local texts = CreateFrame("Frame", nil, button)
+    local texts = Child("Frame", button)
     texts:SetAllPoints(button)
     texts:SetFrameLevel(base + LEVEL.text)
     part.stackFrame, part.timeFrame, part.top = stacks, texts, true
@@ -544,7 +555,7 @@ local function NewPart(rec, button, k)
         -- sensor initializeFrame gave it; no script is set any more.
         local sensor = premade[button]
         if not sensor then
-            sensor = CreateFrame("Frame", nil, button)
+            sensor = Child("Frame", button)
             sensor:SetAllPoints(button)
             sensor:SetScript("OnShow", Gained)
             sensor:SetScript("OnHide", Lost)
@@ -632,8 +643,9 @@ local function AdoptWoken()
     wakeArmed = false
     for i = #woken, 1, -1 do
         local shell = woken[i]
-        if not (Quiet() and Open(shell.button)) then
-            -- Pending, so the end of combat or of a restriction comes back.
+        if not (Quiet() and Open(shell.button)) or Blocked() then
+            -- Pending, so the end of combat, of a restriction or of a
+            -- gamepad panel comes back.
             C.Auras.pending[shell.rec.slot] = true
             return
         end
@@ -664,7 +676,7 @@ local function SensorHidden(sensor)
     if sensed[sensor] then Lost(sensor) end
 end
 local function Dormant(rec, button, k)
-    local sensor = CreateFrame("Frame", nil, button)
+    local sensor = Child("Frame", button)
     sensor:SetAllPoints(button)
     dormant[sensor] = { rec = rec, button = button, pos = k, sensor = sensor }
     premade[button] = sensor
@@ -713,7 +725,10 @@ end
 
 -- initializeFrame, from Blizzard's frame provider: inside a collected
 -- batch the button waits for EndBatch; otherwise it is built at once (a
--- slot's one button, a batch made while auras are secret).
+-- slot's one button, a batch made while auras are secret, a batch Blizzard
+-- grows on its own). Its frames never reach SmartNavigation's CreateFrame
+-- hook (K.Child), so it is built under an open Forever gamepad panel too;
+-- only its stack sensors wait for the panel (StackColors.lua Held).
 local function Init(rec, button, k)
     local list = rec.batch
     if list then
@@ -725,4 +740,5 @@ local function Init(rec, button, k)
 end
 
 AuraButtons.TextOpts, AuraButtons.Look, AuraButtons.Hush, AuraButtons.Quiet, AuraButtons.Mutable = TextOpts, Look, Hush, Quiet, Mutable
+AuraButtons.Blocked = Blocked
 AuraButtons.Style, AuraButtons.ApplyEntry, AuraButtons.Init = Style, ApplyEntry, Init

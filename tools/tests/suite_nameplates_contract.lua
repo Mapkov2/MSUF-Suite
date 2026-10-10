@@ -16,7 +16,20 @@ local threatCalls = {}
 local isTank, grouped, onThreatList = false, false, false
 PlayerUtil = { IsPlayerEffectivelyTank = function() return isTank end }
 UnitInParty = function() return grouped end
-CompactUnitFrame_IsOnThreatListWithPlayer = function() return onThreatList end
+-- The threat list: the player's detailed threat status on the unit
+-- (onThreatList "secret": threat values restricted). Blizzard's own rule
+-- (CompactUnitFrame.lua:565-572) compares that status: from addon code a
+-- secret one throws.
+UnitDetailedThreatSituation = function(unit, mob)
+    assert(unit == "player" and mob == "nameplate1", "threat list read for the wrong units")
+    if onThreatList == "secret" then return "secret", "secret" end
+    if onThreatList then return false, 0 end
+end
+CompactUnitFrame_IsOnThreatListWithPlayer = function(unit)
+    local _, status = UnitDetailedThreatSituation("player", unit)
+    if status == "secret" then error("CompactUnitFrame.lua:566: attempt to compare a secret value (tainted)") end
+    return status ~= nil
+end
 UnitIsUnit = function(unit, other)
     assert(unit == "nameplate1")
     return (other == "focus" and focusUnit == unit) or (other == "target" and targetUnit == unit)
@@ -72,7 +85,8 @@ C_PvP = { GetZonePVPInfo = function() return nil end }
 GetInstanceInfo = function() return nil, instanceType, 0, nil, nil, nil, nil, nil, nil, false end
 GetMaximumExpansionLevel = function() return 11 end
 GetMaxLevelForExpansionLevel = function() return 90 end
-C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end }
+C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end,
+    ShouldAurasBeSecret = function() return false end }
 -- C_TooltipInfo.GetUnit may return nothing; quest blocks supply lines.
 C_TooltipInfo = { GetUnit = function() return nil end }
 Enum = {
@@ -354,7 +368,8 @@ local NS = {
     IsCombatLocked = function() return combat end,
     -- MSUF without the interrupt-ready engine (the scenario at the end has one).
     HostBridge = { KickReady = function() return nil end },
-    Client = { IsAddOnLoaded = function() return true end },
+    -- Retail: no gamepad navigation ever blocks an aura container build.
+    Client = { IsAddOnLoaded = function() return true end, AuraBuildBlocked = function() return false end },
     MSUFMedia = { barTexture = "fallback-msuf-texture" },
 }
 local cvars, restored = {}, {}
@@ -374,8 +389,13 @@ local S = {
     end,
     Install = function(_, module) installed = module end,
 }
+local registryCallbacks = {}
+local editModeOpen = false
+EditModeManagerFrame = { IsEditModeActive = function() return editModeOpen end }
 local context = {
     RemoveEvent = function(_, event) events[event] = nil end,
+    -- EventRegistry callbacks (Runtime.lua Context:Callback): once per event.
+    Callback = function(_, event, callback) registryCallbacks[event] = callback end,
     Event = function(_, event, callback, allowCombat)
         events[event] = callback
         -- Every plate listener also runs in combat (the context's allowCombat).
@@ -981,6 +1001,11 @@ assert(threatCalls[#threatCalls][1] == "lead" and threatCalls[#threatCalls][2] =
 onThreatList = false
 events.UNIT_THREAT_LIST_UPDATE(module, "UNIT_THREAT_LIST_UPDATE", "nameplate1")
 assert(module.roles[bar] == "Melee", "unengaged mob was colored as safe tank aggro")
+-- Restricted threat values: the list is unknown, so no tank color and no error.
+onThreatList = "secret"
+events.UNIT_THREAT_LIST_UPDATE(module, "UNIT_THREAT_LIST_UPDATE", "nameplate1")
+assert(module.roles[bar] == "Melee", "a secret threat status counted as safe tank aggro")
+onThreatList = false
 isTank, threatStatus = false, 3
 events.PLAYER_ROLES_ASSIGNED(module, "PLAYER_ROLES_ASSIGNED")
 assert(module.roles[bar] == "ThreatLost", "damage/healer taking aggro was not highlighted")
@@ -1396,7 +1421,8 @@ do
     c.friendlyCastFont, c.friendlyCastSize, c.friendlyCastOutline = "friendly-font", 18, 5
     classification, instanceType, focusUnit = "rareelite", "none", nil
     C_TooltipInfo = { GetUnit = function() return nil end }
-    C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end }
+    C_Secrets = { ShouldUnitIdentityBeSecret = function() return false end,
+        ShouldAurasBeSecret = function() return false end }
     cast.Text:SetFont("friendly-native", 10, "")
     cast.CastTargetNameText:SetFont("friendly-target-native", 9, "")
     private.Roles.ClearQuest()
@@ -2133,8 +2159,26 @@ do
             "catalog change did not force-refresh visible DoTs")
         assert(scans == beforeScans and #threatCalls == beforeThreat, "catalog change scanned/reclassified plates")
     end
+    -- DoT colors build in combat and while auras are secret (AuraColors.lua
+    -- markers): nothing waits for a restriction to end.
+    assert(events.ADDON_RESTRICTION_STATE_CHANGED == nil, "DoT colors still wait for aura restrictions")
     module.config.auraColorsEnabled = false
     module:Refresh()
+    -- Blizzard's Edit Mode edges reach the DoT colors (12.1.0 hides them).
+    assert(registryCallbacks["EditMode.Enter"] and registryCallbacks["EditMode.Exit"],
+        "DoT colors missed Blizzard's Edit Mode edges")
+    local editModes, setEditMode = {}, colors.SetEditMode
+    colors.SetEditMode = function(active) editModes[#editModes + 1] = active end
+    registryCallbacks["EditMode.Enter"](module)
+    registryCallbacks["EditMode.Exit"](module)
+    assert(editModes[1] == true and editModes[2] == false, "Blizzard's Edit Mode edges missed the DoT colors")
+    -- Turned on while Edit Mode is open (its edge came while the colors were off).
+    editModeOpen, module.config.auraColorsEnabled = true, true
+    module:Refresh()
+    assert(editModes[3] == true, "DoT colors turned on in an open Edit Mode missed it")
+    editModeOpen, module.config.auraColorsEnabled = false, false
+    module:Refresh()
+    colors.SetEditMode = setEditMode
     for _, event in ipairs(catalogEvents) do assert(events[event] == nil, "disabled DoT colors kept " .. event) end
     module.needsRefresh = false
     local beforeCalls, beforeScans, beforeApplied = calls, scans, applied

@@ -1,5 +1,10 @@
 local root = assert(arg[1])
-local combat, spec, creations, writes = false, 101, 0, 0
+local combat, spec, creations, writes, markersMade = false, 101, 0, 0, 0
+-- Auras secret (C_Secrets.ShouldAurasBeSecret, SecretPredicateAPIDocumentation
+-- .lua on live, ptr2 and forever): sealed native slots then refuse tainted
+-- access, also as another region's anchor target. The runtime never asks.
+local secretAuras = false
+C_Secrets = { ShouldAurasBeSecret = function() return secretAuras end }
 local secret = setmetatable({}, { __lt = function() error("secret comparison") end })
 local info = { [11] = { spellID = 589, hasAura = true, selfAura = false, isKnown = true, linkedSpellIDs = {} },
     [12] = { spellID = 34914, hasAura = true, selfAura = false, isKnown = true, linkedSpellIDs = {} } }
@@ -20,6 +25,25 @@ local NS = {
         return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
     end,
     HostBridge = {},
+}
+-- Forever with a gamepad panel open: SmartNavigation's CreateFrame hook walks
+-- each new aura slot's private parent from addon code and throws (see the
+-- fake AddAuraSlot). MSUF_Suite/Core/Platform.lua reports it and calls back
+-- once the panel closed (its own contract: suite_cooldown_manager_auras).
+local panelOpen, buildWaits = false, {}
+-- previewSwitch: 12.1.5 and Forever containers have SetEditModePreviewEnabled
+-- (Blizzard_ManagedAuraContainer.lua:49), 12.1.0 ones do not. RealAurasOnly
+-- follows MSUF_Suite/Core/Platform.lua (checked for real in
+-- suite_cooldown_manager_auras_contract).
+local previewSwitch = true
+NS.Client = {
+    AuraBuildBlocked = function() return panelOpen end,
+    AfterAuraBuild = function(owner, callback) buildWaits[owner] = callback end,
+    RealAurasOnly = function(frame)
+        if not frame.SetEditModePreviewEnabled then return false end
+        frame:SetEditModePreviewEnabled(false)
+        return true
+    end,
 }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraColors.lua"))("MSUF_Suite", NS)
@@ -62,16 +86,22 @@ assert(A.Preview(decoded[102], { [777] = true }, cfg) == cfg.auraColorsAll,
 local containers, textures = {}, {}
 local function Region(parent)
     local r = { parent = parent, points = {}, shown = true }
+    -- DenyTaintedAccessWhenAurasAreSecret covers a sealed slot passed as an
+    -- argument too (MaskTexture:SetPoint(): forbidden object, 2026-10-09).
+    local function Named(target)
+        assert(not (type(target) == "table" and target.sealed and secretAuras),
+            "a sealed native slot was named as an anchor target while auras were secret")
+    end
     function r:SetPoint(point, target, relative, x, y)
         assert(not self.native, "aura colors reanchored a native nameplate frame")
-        assert(not self.sealed, "addon changed the layout of a sealed native slot")
+        Named(target)
         self.points[point] = { target = target, relative = relative, y = y or 0 }
         writes = writes + 1
     end
     function r:ClearAllPoints() assert(not self.sealed); self.points = {}; writes = writes + 1 end
     function r:SetSize(w, h) assert(not self.sealed and not self.native); self.width, self.height = w, h end
     function r:SetHeight(h) assert(not self.sealed and not self.native); self.height = h end
-    function r:SetAllPoints(target) assert(not self.native); self.allPoints = target; writes = writes + 1 end
+    function r:SetAllPoints(target) assert(not self.native); Named(target); self.allPoints = target; writes = writes + 1 end
     function r:SetIgnoringChildrenForBounds(value) self.ignoreChildrenForBounds = value end
     function r:SetCollapsesLayout(value) assert(not self.sealed); self.collapse = value end
     function r:SetMouseClickEnabled(value) assert(not self.sealed and value == false); self.clicks = value end
@@ -83,6 +113,7 @@ local function Region(parent)
     function r:Hide() assert(not self.native); self.shown = false; writes = writes + 1 end
     function r:SetShown(value) assert(not self.native); self.shown = value == true; writes = writes + 1 end
     function r:IsShown() error("addon queried native secret visibility") end
+    function r:GetParent() return self.parent end
     function r:GetHeight() error("addon queried native secret height") end
     function r:CreateMaskTexture() return Region(self) end
     function r:CreateTexture(_, layer, _, sublevel)
@@ -93,18 +124,41 @@ local function Region(parent)
     end
     return r
 end
+-- Blizzard's nameplates live under WorldFrame: they stay when Alt+Z hides
+-- UIParent, the interface.
 UIParent = Region()
+WorldFrame = Region()
+-- Blizzard seals a slot once its initializeFrame returns
+-- (AuraContainerFrameProviders.lua:78-86): from then on every method of it
+-- refuses addon code, and its descendants are restricted too.
+local function Seal(slot)
+    for key, value in pairs(slot) do
+        if type(value) == "function" then
+            slot[key] = function() error("addon code touched a sealed native slot: " .. key) end
+        end
+    end
+    slot.sealed = true
+end
 CreateFrame = function(kind, _, parent, template)
-    creations = creations + 1
+    assert(not (parent and parent.sealed), "a frame was made inside a sealed native slot")
     local r = Region(parent)
+    if kind ~= "Frame" or parent == WorldFrame then creations = creations + 1 end
     if kind == "AuraContainer" then
         assert(template == "CustomAuraContainerTemplate")
         r.slots = {}
+        if previewSwitch then
+            function r:SetEditModePreviewEnabled(value)
+                assert(next(self.slots) == nil, "the Edit Mode switch came after the slots")
+                self.editPreview = value
+            end
+        end
         function r:AddAuraSlot(key, filter, options)
             assert(filter == "HARMFUL|PLAYER", "other players' or friendly auras included")
+            assert(not panelOpen, "SmartNavigation.lua:929: attempted to index a table that cannot be accessed while tainted")
             local slot = Region(self)
             options.initializeFrame(slot)
-            slot.sealed, slot.filter = true, options.candidateFilters
+            Seal(slot)
+            slot.filter = options.candidateFilters
             self.slots[key] = slot
             return slot
         end
@@ -114,13 +168,19 @@ CreateFrame = function(kind, _, parent, template)
         containers[#containers + 1] = r
     else
         assert(template == "DisableUntrustedLayoutScriptsTemplate")
-        assert(parent == UIParent, "aura helpers joined the native nameplate hierarchy")
+        if parent == WorldFrame then
+            r.isWrapper = true
+        else
+            -- A slot's marker: the wrapper's child, never the slot's.
+            assert(parent.isWrapper, "aura helpers left the plates' root or joined the native nameplate hierarchy")
+            markersMade = markersMade + 1
+        end
     end
     return r
 end
-local plate = Region(UIParent)
+local plate = Region(WorldFrame)
 local health = Region(plate)
-plate.native, health.native = true, true
+plate.native, health.native, health.isHealth = true, true, true
 health.height = 32
 local fill = Region(health)
 function health:GetStatusBarTexture() return fill end
@@ -129,7 +189,13 @@ local private = { NS = NS, Mode = { LOOK_BLIZZARD = 2 } }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/AuraColors.lua"))("MSUF_Suite_Nameplates", private)
 local C = private.AuraColors
 local module = {}
-C.Bind(module)
+-- The shown plates the module repaints at a safe moment (Skin.lua
+-- RepaintAuraColors).
+local shownPlates = {}
+C.Bind(module, function(owner)
+    assert(owner == module, "the repaint lost its module")
+    for frame, unit in pairs(shownPlates) do C.Apply(frame, unit, true) end
+end)
 C.Configure({ auraColorsEnabled = false })
 C.Apply(uf, "nameplate1", true)
 assert(creations == 0 and #textures == 0, "disabled feature allocated frames")
@@ -137,22 +203,36 @@ C.Configure(cfg)
 C.Apply(uf, "nameplate1", true)
 assert(creations == 2 and #textures == A.LIMIT + 2 and #containers == 1)
 local container = containers[1]
+assert(container.editPreview == false, "12.1.5/Forever: the DoT container kept Edit Mode's sample auras")
+-- Explicit priority: every colour texture at a draw level of its own, above
+-- the native fill, absorbs and the role tint (ARTWORK 0-3) and below the
+-- native selection art and text (OVERLAY 0 and up).
+local levels = {}
+for _, texture in ipairs(textures) do
+    local key = texture.layer .. texture.sublevel
+    assert(not levels[key], "two DoT colour textures share a draw sublevel; priority rests on creation order")
+    levels[key] = true
+    assert(texture.layer == "ARTWORK" and texture.sublevel > 3 and texture.sublevel <= 7
+        or texture.layer == "OVERLAY" and texture.sublevel < 0 and texture.sublevel >= -8,
+        "a DoT colour left the band between the role tint and the native text")
+end
 local wrapper = container.parent
-assert(wrapper.parent == UIParent and wrapper.ignoreChildrenForBounds,
+assert(wrapper.parent == WorldFrame and wrapper.ignoreChildrenForBounds,
     "oversized aura slots entered native nameplate bounds")
 assert(wrapper.allPoints == health and health.parent == plate and health.height == 32,
     "helper setup changed the native plate hierarchy or dimensions")
-local function NativePass(present)
-    for _, slot in pairs(container.slots) do
+local function NativePass(present, owner)
+    owner = owner or container
+    for _, slot in pairs(owner.slots) do
         slot.nativeShown = false
-        if container.enabled then
+        if owner.enabled then
             for id in pairs(present) do if slot.filter.includeSpellIDs[id] then slot.nativeShown = true end end
         end
     end
 end
 local Top
 local function Bottom(region)
-    if region == health then return 0 end
+    if region.isHealth then return 0 end
     local p = region.points.BOTTOM
     if p then return (p.relative == "TOP" and Top(p.target) or Bottom(p.target)) + p.y end
     local top = region.points.TOP
@@ -162,14 +242,28 @@ end
 Top = function(region)
     return Bottom(region) + (region.collapse and not region.nativeShown and 0 or region.height or 0)
 end
-local function VisibleColor()
+-- The client draws by layer, then sublevel; within one sublevel the order is
+-- undefined, so two covering colour textures there have no defined winner.
+local LAYER_RANK = { BACKGROUND = 1, BORDER = 2, ARTWORK = 3, OVERLAY = 4, HIGHLIGHT = 5 }
+local function Above(a, b)
+    if LAYER_RANK[a.layer] ~= LAYER_RANK[b.layer] then return LAYER_RANK[a.layer] > LAYER_RANK[b.layer] end
+    assert(a.sublevel ~= b.sublevel, "two covering DoT colours share a draw sublevel: their order is undefined")
+    return a.sublevel > b.sublevel
+end
+local function VisibleColor(bar)
+    bar = bar or health
     local chosen
     for _, texture in ipairs(textures) do
-        local visible, parent = texture.shown, texture.parent
+        local visible, parent = texture.shown and texture.parent == bar, texture.parent
         while parent do visible, parent = visible and parent.shown, parent.parent end
         if visible then
-            local maskBottom = Bottom(texture.mask)
-            if maskBottom < health.height and maskBottom + texture.mask.height > 0 then chosen = texture end
+            -- A mask whose frame is hidden clips nothing: its texture then
+            -- covers the whole bar.
+            local masked, owner = true, texture.mask.parent
+            while owner do masked, owner = masked and owner.shown, owner.parent end
+            local maskBottom = masked and Bottom(texture.mask)
+            if (not masked or maskBottom < bar.height and maskBottom + texture.mask.height > 0)
+                and (not chosen or Above(texture, chosen)) then chosen = texture end
         end
     end
     if not chosen then return nil end
@@ -189,28 +283,58 @@ for _, individual in ipairs({ false, true }) do
             local expected = mask == 3 and cfg.auraColorsAll or mask == 0 and none and cfg.auraColorsNone
                 or individual and mask == 1 and "112233" or individual and mask == 2 and "445566" or nil
             assert(VisibleColor() == expected, "native collapsed mask predicate / layer priority differed from preview")
+            -- The interface hidden (Alt+Z): the plates stay, and so do the
+            -- masks beside them; the colors keep following the DoTs.
+            UIParent.shown = false
+            assert(VisibleColor() == expected, "with the interface hidden the colors covered the bar unmasked")
+            UIParent.shown = true
         end
     end
 end
-local beforeFrames, beforeTextures, beforeWrites = creations, #textures, writes
+local beforeFrames, beforeTextures, beforeWrites, beforeMarkers = creations, #textures, writes, markersMade
 for _, slot in pairs(container.slots) do assert(slot.clicks == false and slot.motion == false) end
 for i = 1, 100 do C.Apply(uf, "nameplate1", true) end
-assert(creations == beforeFrames and #textures == beforeTextures and writes == beforeWrites,
-    "warm role/health repaint allocated or rewrote aura visuals")
+assert(creations == beforeFrames and #textures == beforeTextures and writes == beforeWrites
+    and markersMade == beforeMarkers, "warm role/health repaint allocated or rewrote aura visuals")
 C.Configure(cfg)
 C.Apply(uf, "nameplate1", true)
 assert(writes == beforeWrites, "unrelated settings refresh rebuilt the native aura layout")
-combat = true
-C.Configure(cfg)
-assert(module.needsRefresh, "combat configuration was not deferred")
+-- Catalog, talent and spec events force a fresh read (Skin.lua
+-- OnAuraSpellsChanged): an equal selection leaves every plate as it is, a
+-- changed one (a DoT no longer known) re-anchors it.
+for i = 1, 5 do C.Configure(cfg, true) end
+C.Apply(uf, "nameplate1", true)
+assert(writes == beforeWrites, "a forced read of unchanged DoTs re-anchored the plate")
+info[12].isKnown = false
+C.Configure(cfg, true)
+C.Apply(uf, "nameplate1", true)
+assert(writes > beforeWrites, "a forced read missed a changed DoT selection")
+info[12].isKnown = true
+C.Configure(cfg, true)
+C.Apply(uf, "nameplate1", true)
+NativePass({ [589] = true, [34914] = true })
+assert(VisibleColor() == cfg.auraColorsAll, "the relearned DoT did not return to the selection")
+-- In combat while auras are secret (a keystone pull) a changed selection
+-- re-anchors at once: the masks name the slots' markers, never a sealed slot.
+combat, secretAuras = true, true
+info[12].isKnown = false
+C.Configure(cfg, true)
+C.Apply(uf, "nameplate1", true)
+NativePass({ [589] = true, [34914] = true })
+assert(VisibleColor() == "112233", "a selection change in combat while auras were secret did not apply")
+info[12].isKnown = true
+C.Configure(cfg, true)
+C.Apply(uf, "nameplate1", true)
+NativePass({ [589] = true, [34914] = true })
+assert(VisibleColor() == cfg.auraColorsAll, "the restored selection did not apply in combat")
 C.Restore(uf)
 assert(not container.enabled and not wrapper.shown and VisibleColor() == nil,
     "removed plate retained its detached aura helpers")
-plate = Region(UIParent)
+plate = Region(WorldFrame)
 plate.native = true
 health.parent = plate
 C.Apply(uf, "nameplate2", true)
-assert(container.unit == "nameplate2" and wrapper.shown and wrapper.parent == UIParent
+assert(container.unit == "nameplate2" and wrapper.shown and wrapper.parent == WorldFrame
     and creations == beforeFrames, "recycled plate retained its previous unit or reparented/recreated helpers")
 NativePass({ [589] = true })
 assert(VisibleColor() == "112233")
@@ -219,6 +343,74 @@ C.Apply(uf, "nameplate2", true)
 assert(not health.shown and VisibleColor() == nil, "colors changed native plate visibility")
 health.shown = true
 assert(VisibleColor() == "112233", "detached helpers lost inherited native texture visibility")
+-- A pooled plate frame first met in combat while auras are secret (a
+-- keystone after a /reload): it is built at once and its colors follow the
+-- DoTs, every slot sealed right after its initializeFrame.
+local plate2 = Region(WorldFrame)
+local health2 = Region(plate2)
+plate2.native, health2.native, health2.isHealth, health2.height = true, true, true, 32
+local fill2 = Region(health2)
+function health2:GetStatusBarTexture() return fill2 end
+local uf2 = { HealthBarsContainer = { healthBar = health2 } }
+local made = creations
+C.Apply(uf2, "nameplate7", true)
+local waited = containers[#containers]
+assert(creations == made + 2 and waited.unit == "nameplate7" and waited.enabled and waited.parent.shown,
+    "a new plate met in combat while auras were secret was not built")
+for present, expected in pairs({ [589] = "112233", [34914] = "445566", none = cfg.auraColorsNone,
+    all = cfg.auraColorsAll }) do
+    local ids = present == "none" and {} or present == "all" and { [589] = true, [34914] = true } or { [present] = true }
+    NativePass(ids, waited)
+    assert(VisibleColor(health2) == expected, "a plate built in combat while auras were secret showed the wrong color")
+end
+C.Restore(uf2)
+combat, secretAuras = false, false
+-- Forever with a gamepad panel open: a new plate waits for the panel instead
+-- of handing Blizzard a slot build SmartNavigation would walk.
+local plate3 = Region(WorldFrame)
+local health3 = Region(plate3)
+plate3.native, health3.native = true, true
+local fill3 = Region(health3)
+function health3:GetStatusBarTexture() return fill3 end
+local uf3 = { HealthBarsContainer = { healthBar = health3 } }
+panelOpen, made = true, creations
+C.Apply(uf3, "nameplate8", true)
+assert(creations == made and buildWaits[C] == C.Resume, "a nameplate built aura slots under an open gamepad panel")
+shownPlates[uf3], panelOpen = "nameplate8", false
+buildWaits[C](C)
+waited = containers[#containers]
+assert(creations == made + 2 and waited.unit == "nameplate8" and waited.enabled,
+    "the plate that waited for the gamepad panel was not built after it closed")
+-- Blizzard's Edit Mode feeds containers sample auras. 12.1.5 and Forever
+-- keep the real ones (the switch above), so their colors stay; 12.1.0 has no
+-- switch: there the colors hide until Edit Mode closes.
+C.SetEditMode(true)
+assert(waited.editPreview == false and waited.enabled and waited.parent.shown,
+    "Edit Mode hid the colors of a container that keeps its real auras")
+C.SetEditMode(false)
+previewSwitch = false
+local plate4 = Region(WorldFrame)
+local health4 = Region(plate4)
+plate4.native, health4.native = true, true
+local fill4 = Region(health4)
+function health4:GetStatusBarTexture() return fill4 end
+local uf4 = { HealthBarsContainer = { healthBar = health4 } }
+shownPlates[uf4] = "nameplate9"
+C.Apply(uf4, "nameplate9", true)
+local sampled = containers[#containers]
+assert(sampled.editPreview == nil and sampled.enabled and sampled.parent.shown)
+C.SetEditMode(true)
+assert(not sampled.enabled and not sampled.parent.shown and waited.enabled,
+    "12.1.0: Edit Mode's sample auras drove the DoT colors")
+C.Apply(uf4, "nameplate9", true)
+assert(not sampled.enabled, "12.1.0: a repaint in Edit Mode showed the sampled colors")
+C.SetEditMode(false)
+assert(sampled.enabled and sampled.parent.shown and sampled.unit == "nameplate9",
+    "the DoT colors did not come back after Edit Mode")
+previewSwitch, shownPlates[uf4] = true, nil
+C.Restore(uf4)
+shownPlates[uf3] = nil
+C.Restore(uf3)
 combat = false
 spec = 102
 C.Configure(cfg)
@@ -538,5 +730,14 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
     C.Apply(uf, "nameplate4", true)
     NativePass({ [589] = true })
     assert(VisibleColor() == palette[1], host .. ": picker all color differs from runtime")
+    -- An older host's widgets without the contextual picker, or one that
+    -- makes no shortcut: the page still builds and releases nothing.
+    local attach, release = W.AttachContextColorShortcut, P.HM.ReleaseColorShortcut
+    P.HM.ReleaseColorShortcut = function(button) assert(button, host .. ": released a shortcut the host never made") end
+    W.AttachContextColorShortcut = function() return nil end
+    P.BuildNameplatesAuraColors({ refreshers = {} }, { width = 720 }, {})
+    W.AttachContextColorShortcut = nil
+    P.BuildNameplatesAuraColors({ refreshers = {} }, { width = 720 }, {})
+    W.AttachContextColorShortcut, P.HM.ReleaseColorShortcut = attach, release
 end
 print("Actual Retail/Classic themes and callbacks: numeric fonts, drafts, picker RGB persistence and runtime/preview colors passed")

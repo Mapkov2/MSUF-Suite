@@ -368,6 +368,22 @@ end
 K.PlaceEdges = S.PlaceEdges
 
 -- Spell ID sets (id -> true): equal members, and a copy into a kept table.
+-- A frame inside an aura button, or inside one of ours there. Forever's
+-- SmartNavigation post-hooks CreateFrame and walks the parent chain of each
+-- frame made with a parent (SmartNavigation.lua:203-209, "if parent then"):
+-- from an initializeFrame Blizzard runs when it grows a group's pool
+-- (AuraContainerFrameProviders.lua:102-104 -> :79) that walk runs in our
+-- execution and throws (:929). Made without a parent and parented at once,
+-- the frame never reaches the hook. A template's OnLoad runs before the
+-- parent is set: CooldownFrameTemplate (FrameXMLUtil Cooldown.xml) and
+-- CustomAuraContainerTemplate need none, and callers anchor and level the
+-- frame afterwards. The client's CreateFrame: Blizzard lays these out.
+function K.Child(kind, parent, template)
+    local frame = CreateFrame(kind, nil, nil, template)
+    frame:SetParent(parent)
+    return frame
+end
+
 function K.SameSet(a, b)
     for id in pairs(a) do
         if not b[id] then return false end

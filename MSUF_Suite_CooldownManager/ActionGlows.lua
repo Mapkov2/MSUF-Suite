@@ -131,6 +131,8 @@ local function Visit(button)
     local rec = Take(list, entry.key, mode)
     if not rec then
         local frame = CreateFrame("AuraContainer", nil, button, "CustomAuraContainerTemplate")
+        -- No Edit Mode samples on the action buttons (MSUF_Suite/Core/Platform.lua).
+        NS.Client.RealAurasOnly(frame)
         frame:SetAllPoints(button)
         frame:SetUnit("player")
         rec = { frame = frame, parts = {}, lk = {}, mode = mode, ov = {}, ids = {}, button = button }
@@ -221,6 +223,11 @@ function ActionGlows.Refresh()
         C.Schedule()
     end
     if NS.IsCombatLocked() or not AuraButtons.Quiet() then
+        ActionGlows.pending = true
+        return
+    end
+    -- A new record's slot waits for Forever's gamepad panel to close.
+    if AuraButtons.Blocked(ActionGlows, ActionGlows.Refresh) then
         ActionGlows.pending = true
         return
     end

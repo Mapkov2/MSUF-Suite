@@ -53,6 +53,9 @@ local function Create(self)
     -- Blizzard owns all aura selection, UNIT_AURA dispatch and button
     -- visibility. The initializer runs before its aura button is sealed.
     local container = CreateFrame("AuraContainer", nil, host, "CustomAuraContainerTemplate")
+    -- The real cue in Blizzard's Edit Mode, not its sample auras
+    -- (MSUF_Suite/Core/Platform.lua; 12.1.0 has no switch).
+    NS.Client.RealAurasOnly(container)
     container:SetAllPoints(host)
     container:SetUnit("player")
     container:AddAuraSlot("burningRush", "HELPFUL", {

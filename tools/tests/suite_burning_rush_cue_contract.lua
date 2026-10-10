@@ -113,8 +113,10 @@ local suite = {
     Set = function(_, key, value) config[key] = value end,
     Queue = function(id) assert(id == "burningRushCue"); queued = queued + 1 end,
 }
+local realAuras = {}
 local ns = {
-    Client = { isForever = false },
+    -- MSUF_Suite/Core/Platform.lua: the Edit Mode switch (12.1.5, Forever).
+    Client = { isForever = false, RealAurasOnly = function(frame) realAuras[#realAuras + 1] = frame; return true end },
     IsCombatLocked = function() return combat end,
     AnchorPoints = { [5] = "CENTER" },
 }
@@ -137,6 +139,8 @@ assert(nativeCount == 1 and slotCount == 1 and moverCount == 1
     and cue.container.unit == "player" and cue.container.enabled == true
     and driver == cue.container and driverCount == 1,
     "Warlock must bind exactly one native player aura slot")
+assert(#realAuras == 1 and realAuras[1] == cue.container,
+    "the cue's container kept Blizzard Edit Mode's sample auras")
 assert(events.PLAYER_ENTERING_WORLD and events.PLAYER_REGEN_DISABLED
     and events.PLAYER_REGEN_ENABLED and not events.UNIT_AURA,
     "only public combat/world events should be routed through Suite")

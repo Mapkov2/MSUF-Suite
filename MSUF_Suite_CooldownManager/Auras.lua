@@ -257,10 +257,11 @@ local function SyncAura(slot, view, plan, force)
     Placeholders(slot, view, plan, barMeta, Containers.preview == true)
 end
 
--- Structure changes only out of combat: in combat the bar is marked
--- pending for FlushPending and the sync stops.
+-- Structure changes only out of combat and, on Forever, while no gamepad
+-- panel would walk the new buttons (AuraButtons.Blocked): otherwise the bar
+-- is marked pending for FlushPending and the sync stops.
 local function Deferred(slot)
-    if IsCombatLocked() then
+    if IsCombatLocked() or AuraButtons.Blocked() then
         Auras.pending[slot] = true
         return true
     end

@@ -157,7 +157,10 @@ local function ColorTarget(key, label, entry)
     }
 end
 
+-- The section's three-dot colour shortcut, where the host's widgets offer
+-- one (older hosts do not, like the skin sections in Menu/Controls.lua).
 local function AttachColors(body)
+    if not W.AttachContextColorShortcut then return end
     local shortcut = W.AttachContextColorShortcut(body, { title = Tr("DoT health colors"), maxTargets = A.LIMIT + 2,
         getTargets = function()
             local targets = { ColorTarget("auraColorsAll", Tr("All selected DoTs")),
@@ -168,7 +171,7 @@ local function AttachColors(body)
             return targets
         end,
     })
-    P.HM.ReleaseColorShortcut(shortcut)
+    if shortcut then P.HM.ReleaseColorShortcut(shortcut) end
 end
 
 local function Actions(ctx, parent, index)

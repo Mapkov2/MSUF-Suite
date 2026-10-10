@@ -11,6 +11,8 @@ local StackColors = {}
 C.StackColors = StackColors
 local K = C.Const
 local SameSet, CopySet = K.SameSet, K.CopySet
+-- Frames inside aura buttons: parentless, parented at once (K.Child).
+local ChildFrame = K.Child
 local Glows = C.AuraGlows
 local options = {}
 
@@ -41,16 +43,16 @@ local function Initialize(color, part, rec, button)
     button:SetFrameLevel(level)
     -- The outer clip follows the primary fill texture entirely on the
     -- native side. Nothing reads its restricted size or the stack count.
-    local gate = CreateFrame("Frame", nil, button)
+    local gate = ChildFrame("Frame", button)
     gate:SetFrameLevel(level)
     gate:SetAllPoints(part.bar:GetStatusBarTexture())
     gate:SetClipsChildren(true)
-    local sensor = CreateFrame("StatusBar", nil, button)
+    local sensor = ChildFrame("StatusBar", button)
     sensor:SetStatusBarTexture(K.WHITE)
     sensor:SetMinMaxValues(0, 1)
     sensor:SetValue(0)
     sensor:SetAlpha(0)
-    local host = CreateFrame("Frame", nil, gate)
+    local host = ChildFrame("Frame", gate)
     host:SetFrameLevel(level)
     host:SetPoint("LEFT", sensor:GetStatusBarTexture(), "RIGHT", 0, 0)
     local texture = host:CreateTexture(nil, "ARTWORK")
@@ -65,7 +67,9 @@ end
 -- registers and ParseAllAuras reads only while enabled), so it is enabled
 -- once its slot exists.
 local function Child(button, unit, key, filter, ids, init)
-    local frame = CreateFrame("AuraContainer", nil, button, "CustomAuraContainerTemplate")
+    local frame = ChildFrame("AuraContainer", button, "CustomAuraContainerTemplate")
+    -- Real auras in Edit Mode, like the bar's own container (AuraContainers.lua).
+    NS.Client.RealAurasOnly(frame)
     frame:SetUnit(unit)
     frame:AddAuraSlot(key, filter, { candidateFilters = { includeSpellIDs = ids }, initializeFrame = init })
     frame:SetEnabled(true)
@@ -84,6 +88,18 @@ local function Create(part, rec, ids, filter)
     color.frame = Child(part.button, rec.unit, "color", filter, color.ids,
         function(button) Initialize(color, part, rec, button) end)
     return color
+end
+
+-- A sensor's child container adds a slot, a build SmartNavigation would walk
+-- from our execution while a Forever gamepad panel is open (MSUF_Suite/Core/
+-- Platform.lua AuraBuildBlocked). Only then a button Blizzard made on its
+-- own (AuraButtons.lua Init) gets its sensors later: the bar is synced again
+-- once the panel closed (AuraButtons.Blocked -> Auras.FlushPending), and that
+-- restyle adds them while auras are plain (its dry pass finds them missing).
+local function Held(rec)
+    if not C.AuraButtons.Blocked() then return false end
+    C.Auras.pending[rec.slot] = true
+    return true
 end
 
 -- A stack-filled primary keeps its application sink. The optional glow
@@ -109,6 +125,7 @@ local function ApplyStack(rec, part, entry, dry)
     local draw = Glows
     if not sensor then
         if dry then return true end
+        if Held(rec) then return false end
         sensor = { ids = CopySet({}, ids), unit = rec.unit, filter = filter, enabled = true }
         part.stackSensor = sensor
         sensor.frame = Child(part.button, rec.unit, "stack", filter, sensor.ids, function(button)
@@ -154,7 +171,7 @@ function StackColors.Apply(rec, part, entry, dry)
     if not shape and not routing then return false end
     if dry then return true end
     if not color then
-        Create(part, rec, ids, filter)
+        if not Held(rec) then Create(part, rec, ids, filter) end
         return false
     end
     if routing then

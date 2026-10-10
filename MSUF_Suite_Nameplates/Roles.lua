@@ -135,8 +135,16 @@ function Roles.Quest(unit)
     return found
 end
 
+-- Blizzard's rule (CompactUnitFrame_IsOnThreatListWithPlayer,
+-- CompactUnitFrame.lua:565-572 on live, ptr2 and forever): on the list while
+-- the player has a threat status on the unit. Read here directly: that body
+-- compares the status, which is secret while threat values are restricted
+-- (UnitDetailedThreatSituation, SecretWhenUnitThreatValuesRestricted in
+-- UnitDocumentation.lua), and from addon code the compare throws. A secret
+-- status is unknown: not on the list, as before.
 local function OnThreatList(unit)
-    return Read(CompactUnitFrame_IsOnThreatListWithPlayer, unit) == true
+    local _, status = UnitDetailedThreatSituation("player", unit)
+    return S.Public(status) and status ~= nil
 end
 
 -- Blizzard live CompactUnitFrame_GetThreatSituation: tanks use lead status

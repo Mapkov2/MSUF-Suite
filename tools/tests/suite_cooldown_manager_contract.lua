@@ -217,6 +217,17 @@ local writes=0
 local Widget={}
 Widget.__index=Widget
 function Widget:GetParent() return self.parent end
+-- SetParent as in the client: the frame joins its new parent's children one
+-- level above it (the aura layer makes frames inside aura buttons parentless
+-- and parents them at once, Const.lua K.Child).
+function Widget:SetParent(parent)
+    local old=self.parent
+    if old and old.children then
+        for i=#old.children,1,-1 do if old.children[i]==self then table.remove(old.children,i) end end
+    end
+    self.parent,self.level=parent,(parent and parent.level or 0)+1
+    if parent and parent.children then parent.children[#parent.children+1]=self end
+end
 local all={}
 local created={}
 local function New(kind,parent,name)
@@ -2992,9 +3003,9 @@ do
     Run()
     assert(not frame.shown,"the assisted icon stayed shown")
 end
--- Forever has no AssistedCombatManager (its ActionBar TOC loads the file for
--- the mainline game type only): the assist source falls back to the poll and
--- nothing reads or registers for the missing table.
+-- On Forever the assist source is the poll (Events.lua HighlightOn): nothing
+-- reads or registers for AssistedCombatManager there, even with the table
+-- absent as below.
 do
     local manager=AssistedCombatManager
     AssistedCombatManager=nil
