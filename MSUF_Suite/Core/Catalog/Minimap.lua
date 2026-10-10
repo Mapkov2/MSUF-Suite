@@ -224,6 +224,7 @@ end
 B.Section(id, "elements", "Blizzard buttons", {
     Bool("showTracking", "Tracking button", true),
     Bool("showCalendar", "Calendar button", true),
+    Bool("showDayNight", "Day/night indicator", false),
     Bool("showMail", "Mail indicator", true),
     Bool("showCrafting", "Crafting order indicator", true),
     Bool("showDifficulty", "Instance difficulty", true),
@@ -389,6 +390,7 @@ for _, rule in ipairs({
 end
 
 local rules = NS.SuiteCatalog.minimap.rules
+rules.showDayNight.hidden = not NS.Client.isForever or nil
 for _, key in ipairs({ "specButton", "specShowSpec", "specShowLoot", "specCorner", "specSize", "specX", "specY" }) do
     rules[key].hidden = NS.Client.isForever or nil
     if key ~= "specButton" then rules[key].enableKey = "specButton" end

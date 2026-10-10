@@ -198,7 +198,7 @@ local function StyleLanding(button, c)
 end
 
 -- WoW Forever's day/night ring (Camelot/Diel.lua) is a child of MinimapCluster
--- and fades with it. It moves onto the border of the suite map, at the spot
+-- and fades with it. When enabled it moves onto the suite map's border, at the spot
 -- Blizzard gives it on its default map (198 wide): 53 right of and 87 above
 -- the map centre, on the rim of the circle. Beyond the circle the same
 -- direction meets the rectangle's edge. Retail has no such frame.
@@ -207,6 +207,10 @@ local DIEL_LENGTH = math.sqrt(DIEL_X * DIEL_X + DIEL_Y * DIEL_Y)
 local function LayoutDiel(c)
     local ring, width, height = Cluster("DielFrame"), MM.width, MM.height
     if not ring or not width or not height then return end
+    if not c.showDayNight then
+        Park(ring)
+        return
+    end
     local ux, uy = DIEL_X / DIEL_LENGTH, DIEL_Y / DIEL_LENGTH
     local reach = c.shape == SHAPE.CIRCLE and width / 2 or math.min(width / 2 / ux, height / 2 / uy)
     -- Blizzard never shrinks the ring below its own size (Diel.lua).

@@ -159,6 +159,8 @@ do
     check(S.Config("minimap").size == 190 and S.Config("minimap").showLanding == 2
         and S.Config("minimap").landingIcon == 1 and S.Config("minimap").shadowSize == 0,
         "minimap defaults")
+    check(S.catalog.minimap.rules.showDayNight.hidden == true and W.cluster.DielFrame == nil,
+        "Retail must not offer Forever's day/night indicator")
     local edges, disc = MM.edges, MM.disc
     check(edges[1].shown and not disc.shown and not MM.shadows and edges[1].height == 1 and edges[3].width == 1,
         "default 1px square border creates no shadow textures")
@@ -941,7 +943,7 @@ end
 
 -- FV-11: WoW Forever's day/night ring (Camelot/Diel.lua) is a child of
 -- MinimapCluster, which the suite fades to alpha 0. It must stay visible on the
--- rim of the suite map, follow its size and shape, survive Blizzard's own
+-- rim of the suite map when enabled, follow its size and shape, survive Blizzard's own
 -- SetPoint/SetScale writes (SetEditModeScale) and return to the cluster.
 do
     local W = H.New(root, "Forever")
@@ -951,6 +953,13 @@ do
     local S, MM, cluster = W.S, W.MM, W.cluster
     local ring = cluster.DielFrame
     check(ring and cluster:GetAlpha() == 0, "the Forever ring or the faded cluster is missing")
+    check(W.config.showDayNight == false and not S.catalog.minimap.rules.showDayNight.hidden,
+        "Forever must offer the day/night indicator as an opt-in")
+    check(ring:GetParent() == MM.park and not ring:IsVisible(), "the day/night ring must be hidden by default")
+    W.Blizzard(function() ring:SetScale(1); ring:SetPoint("CENTER", 63, 72); ring:Show() end)
+    W.Step()
+    check(ring:GetParent() == MM.park and not ring:IsVisible(), "Blizzard restored the disabled day/night ring")
+    assert(S.Set("minimap", "showDayNight", true)); W.Step()
     check(ring:GetParent() == MM.host, "the day/night ring stayed under the faded cluster")
     check(ring:IsVisible() and ring:GetEffectiveAlpha() == 1, "the day/night ring is invisible")
     -- Centre of the ring relative to the host centre, in host units.
@@ -987,14 +996,26 @@ do
     -- Combat: the plain ring is not protected, but the layout waits like the others.
     W.SetCombat(true)
     W.Blizzard(function() ring:SetPoint("CENTER", 63, 72) end)
+    W.config.showDayNight = false
+    S.Apply("minimap")
+    check(ring:GetParent() == MM.host, "the day/night setting changed placement in combat")
     W.Step()
     W.SetCombat(false)
     W.Step()
-    check(ring:GetParent() == MM.host and H.Near(select(3, Rim()), MM.height / 2, 1), "the ring was not put back after combat")
+    check(ring:GetParent() == MM.park and not ring:IsVisible(), "the day/night ring was not hidden after combat")
+    assert(S.Set("minimap", "showDayNight", true)); W.Step()
+    check(ring:GetParent() == MM.host and H.Near(select(3, Rim()), MM.height / 2, 1), "the ring was not put back after enabling")
+    assert(S.Set("minimap", "showDayNight", false)); W.Step()
+    check(not ring:IsVisible(), "the day/night ring ignored its toggle")
     assert(S.Set("minimap", "enabled", false))
     local point, relative, _, rx, ry = ring:GetPoint(1)
     check(ring:GetParent() == cluster and ring:GetScale() == 1 and point == "CENTER" and relative == cluster
         and rx == 63 and ry == 72, "disabling the minimap did not return the ring to the cluster")
+    check(ring:IsVisible(), "disabling the minimap did not restore Blizzard's day/night ring")
+    assert(S.Set("minimap", "enabled", true)); W.Step()
+    check(ring:GetParent() == MM.park and not ring:IsVisible(), "reenabling the minimap ignored the disabled ring")
+    assert(S.Set("minimap", "showDayNight", true)); W.Step()
+    check(ring:IsVisible(), "reenabling the day/night setting did not restore the ring")
     print("Minimap WoW Forever day/night ring passed")
 end
 
