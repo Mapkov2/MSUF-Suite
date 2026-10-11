@@ -39,6 +39,20 @@ local function Clear(self)
     self.cursor = 0
 end
 
+local function NewText(frame)
+    local text = S.CreateFontString(frame, nil, "OVERLAY")
+    text:SetAllPoints(frame)
+    text:SetJustifyH("CENTER")
+    text:SetJustifyV("MIDDLE")
+    text:SetWordWrap(false)
+    return text
+end
+
+-- Each slot has one string per size, normal and crit, sized once per Layout.
+-- A slot reused for the other size shows the other string instead of
+-- changing its font height: in the 2026-10-11 raid trace 827 paints (Paint
+-- 9.95 ms self) reused slots in turn, crit or not. slot.text is the string
+-- shown; the other one stays hidden.
 local function Create(self)
     if self.host then return end
     local host = S.CreateFrame("Frame", nil, UIParent)
@@ -48,11 +62,8 @@ local function Create(self)
     for i = 1, CAPACITY do
         local frame = S.CreateFrame("Frame", nil, host)
         frame:EnableMouse(false)
-        local text = S.CreateFontString(frame, nil, "OVERLAY")
-        text:SetAllPoints(frame)
-        text:SetJustifyH("CENTER")
-        text:SetJustifyV("MIDDLE")
-        text:SetWordWrap(false)
+        local normal, crit = NewText(frame), NewText(frame)
+        crit:Hide()
         local animation = frame:CreateAnimationGroup()
         animation.owner = frame
         animation:SetLooping("NONE")
@@ -63,7 +74,8 @@ local function Create(self)
         fade:SetOrder(1)
         fade:SetFromAlpha(1)
         fade:SetToAlpha(0)
-        self.slots[i] = { frame = frame, text = text, animation = animation, move = move, fade = fade }
+        self.slots[i] = { frame = frame, text = normal, normal = normal, crit = crit, animation = animation,
+            move = move, fade = fade }
         animation.slot = self.slots[i]
         frame:Hide()
     end
@@ -73,7 +85,7 @@ end
 local function Layout(self)
     Clear(self)
     local c, host = self.config, self.host
-    self.normalSize, self.critSize = c.fontSize, c.fontSize * c.critScale / 100
+    self.critSize = c.fontSize * c.critScale / 100
     self.damageR, self.damageG, self.damageB = S.RGB(c.damageColor)
     self.healR, self.healG, self.healB = S.RGB(c.healColor)
     host:SetSize(c.width, c.distance + self.critSize * 2)
@@ -90,8 +102,9 @@ local function Layout(self)
         local x = ((i - 1) % 4 - 1.5) * c.width * .12
         slot.frame:SetPoint(upward and "BOTTOM" or "TOP", host,
             upward and "BOTTOM" or "TOP", x, 0)
-        S.SetFont(slot.text, nil, c.fontSize, "OUTLINE")
-        slot.size, slot.kind = c.fontSize, nil
+        S.SetFont(slot.normal, nil, c.fontSize, "OUTLINE")
+        S.SetFont(slot.crit, nil, self.critSize, "OUTLINE")
+        slot.normalKind, slot.critKind = nil, nil
         slot.move:SetOffset(0, upward and c.distance or -c.distance)
         slot.move:SetDuration(c.duration)
         slot.fade:SetStartDelay(c.duration * .6)
@@ -100,28 +113,32 @@ local function Layout(self)
     host:Show()
 end
 
+-- slot.normalKind and slot.critKind: the colour (1 damage, 3 heal) each
+-- string has; nil after Layout.
 local function Paint(self, slot, kind, amount)
     local heal, crit = kind >= 3, kind == 2 or kind == 4
-    local size = crit and self.critSize or self.normalSize
-    if slot.size ~= size then
-        slot.text:SetFontHeight(size)
-        slot.size = size
+    local text = crit and slot.crit or slot.normal
+    if slot.text ~= text then
+        slot.text:Hide()
+        text:Show()
+        slot.text = text
     end
     local color = heal and 3 or 1
-    if slot.kind ~= color then
+    local colorKey = crit and "critKind" or "normalKind"
+    if slot[colorKey] ~= color then
         if heal then
-            slot.text:SetTextColor(self.healR, self.healG, self.healB)
+            text:SetTextColor(self.healR, self.healG, self.healB)
         else
-            slot.text:SetTextColor(self.damageR, self.damageG, self.damageB)
+            text:SetTextColor(self.damageR, self.damageG, self.damageB)
         end
-        slot.kind = color
+        slot[colorKey] = color
     end
     -- No comparisons, concatenation, tonumber, arithmetic or Lua formatting
     -- on amount. SetFormattedText accepts secret arguments even when tainted.
     -- The frame's own alpha is never anything but 1: the fade is an Alpha
     -- animation (no final alpha kept), which leaves it when the animation
     -- stops or finishes.
-    slot.text:SetFormattedText(heal and "+%s" or "-%s", amount)
+    text:SetFormattedText(heal and "+%s" or "-%s", amount)
     slot.frame:Show()
 end
 

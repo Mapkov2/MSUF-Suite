@@ -4,6 +4,8 @@ local root = assert(arg[1], "repository root required")
 local created, fontCount, reads, writes = 0, 0, 0, 0
 -- Native calls the paint path may skip: animation Stop, frame SetAlpha, Dispatch.
 local stops, alphas, dispatches = 0, 0, 0
+-- Font writes the paint path must not make: SetFontHeight and S.SetFont.
+local fontHeights, fontSets = 0, 0
 local duringEvent, vehicle, validEvent, locked = false, false, true, false
 local activeUnit, cvar = "target", "1"
 local secret = setmetatable({}, {
@@ -38,7 +40,7 @@ Widget = function()
     function w:SetJustifyH() end
     function w:SetJustifyV() end
     function w:SetWordWrap() end
-    function w:SetFontHeight(size) self.fontSize = size end
+    function w:SetFontHeight(size) self.fontSize = size; fontHeights = fontHeights + 1 end
     function w:SetTextColor(r, g, b) self.r, self.g, self.b = r, g, b end
     -- A C sink may receive a secret without any Lua coercion.
     function w:SetFormattedText(format, value) self.format, self.value = format, value end
@@ -122,7 +124,7 @@ assert(spec.available() == false)
 validEvent = true
 S.CreateFrame = function() created = created + 1; return Widget() end
 S.CreateFontString = function() fontCount = fontCount + 1; return Widget() end
-S.SetFont = function(text, _, size) text.fontSize = size end
+S.SetFont = function(text, _, size) text.fontSize = size; fontSets = fontSets + 1 end
 S.RGB = function(hex) return tonumber(hex:sub(1, 2), 16)/255, tonumber(hex:sub(3, 4), 16)/255, tonumber(hex:sub(5, 6), 16)/255 end
 S.Queue = function() error("combat text must not defer its payload") end
 local private = {}
@@ -149,8 +151,9 @@ local function Event(event, ...)
     frame.scripts.OnEvent(frame, event, ...)
     duringEvent = false
 end
--- Host, 20 slots, the routing frame and the direct frame (COMBAT_TEXT_UPDATE).
-assert(created == 23 and fontCount == 20 and #M.slots == 20)
+-- Host, 20 slots, the routing frame and the direct frame (COMBAT_TEXT_UPDATE);
+-- two strings per slot, one per size.
+assert(created == 23 and fontCount == 40 and #M.slots == 20)
 assert(cvar == "0" and activeUnit == "player" and not CombatText.shown)
 assert(not M.context.frame.events.ADDON_LOADED, "loaded native UI left an addon listener")
 local frames, fonts = created, fontCount
@@ -217,6 +220,39 @@ do
     for i = 1, 20 do assert(M.slots[i].frame.alpha ~= 0, "a slot frame kept a zero alpha") end
     Event("COMBAT_TEXT_UPDATE", "SPELL_AURA_START")
     assert(dispatches == 0, "an unpainted message type went through Dispatch")
+    M.config.maxMessages = 3
+end
+-- The 2026-10-11 raid trace: 827 paints (Paint 9.95 ms self) on reused
+-- slots, crit and normal in turn; each change of size was a SetFontHeight.
+-- A slot now has a string per size, sized once per Layout: the messages show
+-- on the string of their size, in their colour, and no paint writes a font.
+do
+    M.config.maxMessages = 20
+    local MESSAGES = { "SPELL_DAMAGE", "SPELL_DAMAGE_CRIT", "HEAL", "HEAL_CRIT" }
+    local last = {}
+    fontHeights, fontSets = 0, 0
+    for round = 1, 3 do
+        for i = 1, 20 do
+            local message = MESSAGES[(i + round) % 4 + 1]
+            Event("COMBAT_TEXT_UPDATE", message)
+            last[M.cursor] = message
+        end
+    end
+    assert(fontHeights == 0 and fontSets == 0, ("alternating sizes wrote %d font heights and %d fonts")
+        :format(fontHeights, fontSets))
+    for i = 1, 20 do
+        local each, message = M.slots[i], last[i]
+        local crit, heal = message:find("CRIT") ~= nil, message:find("HEAL") ~= nil
+        local shown, hidden = each.crit, each.normal
+        if not crit then shown, hidden = each.normal, each.crit end
+        assert(each.text == shown and shown.shown and not hidden.shown, "slot " .. i .. " showed the wrong string")
+        assert(each.normal.fontSize == M.config.fontSize and each.crit.fontSize == M.critSize
+            and M.critSize == M.config.fontSize * M.config.critScale / 100, "a slot string lost its size")
+        assert(shown.format == (heal and "+%s" or "-%s"), "slot " .. i .. " shows the wrong sign")
+        local r = heal and M.healR or M.damageR
+        assert(shown.r == r and shown.g == (heal and M.healG or M.damageG)
+            and shown.b == (heal and M.healB or M.damageB), "slot " .. i .. " shows the wrong colour")
+    end
     M.config.maxMessages = 3
 end
 vehicle = true
