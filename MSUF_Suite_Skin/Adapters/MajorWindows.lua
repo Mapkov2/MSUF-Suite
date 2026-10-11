@@ -33,6 +33,7 @@ local MajorWindows = {
     housingCallbacksRegistered = false,
     -- HouseUpgradeFrame instances whose SetRewards is post-hooked
     rewardHooks = setmetatable({}, { __mode = "k" }),
+    scoutingHooks = setmetatable({}, { __mode = "k" }),
 }
 NS.MajorWindows = MajorWindows
 
@@ -79,6 +80,12 @@ local groups = {
         category = "expansion",
         addon = "Blizzard_WeeklyRewards",
         root = "WeeklyRewardsFrame",
+    },
+    {
+        id = "scouting-map",
+        category = "expansion",
+        addon = "Blizzard_GarrisonUI",
+        root = "CovenantMissionFrame",
     },
     {
         id = "item-socketing",
@@ -534,11 +541,58 @@ local function SkinGroupFinder(root, state)
 end
 
 
+-- Retail upstream/live 09b9db79 and Forever 94376449 share these fields in
+-- Blizzard_GarrisonUI/Mainline/Blizzard_CovenantMissionUI.xml/.lua. Prey
+-- uses its midnight texture kit. UpdateTextures runs on every native show
+-- and changes both the modern Border texture and legacy nine-slice chrome.
+local SCOUTING_SHELL = { role = "shell", radius = 8, inset = 0, fillVisible = false }
+local SCOUTING_CLOSE = { role = "button", radius = 4, inset = 2 }
+local SCOUTING_ART = {
+    "Border", "BackgroundTile", "Top", "Bottom", "Left", "Right",
+    "TopLeftCorner", "TopRightCorner", "BotLeftCorner", "BotRightCorner",
+    "TopBorder", "BottomBorder", "LeftBorder", "RightBorder",
+}
+
+local function SkinScoutingChrome(root, state)
+    if not Kit.Ensure(state, root, SCOUTING_SHELL) then return false, "protected" end
+    FadeFields(state, root, SCOUTING_ART)
+    Kit.FadeNineSlice(state, Field(root, "RaisedBorder"))
+    Fade(state, Path(root, "OverlayElements", "CloseButtonBorder"))
+    SkinControl(state, Field(root, "CloseButton"), SCOUTING_CLOSE)
+    return true, "applied"
+end
+
+local function RefreshScoutingChrome()
+    if MajorWindows.activeOwnerCount == 0 or not CategoryEnabled("expansion") then return end
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer("major-windows:scouting-map", RefreshScoutingChrome)
+        return
+    end
+    local root = Field(_G, "CovenantMissionFrame")
+    if not root then return end
+    for _, state in pairs(MajorWindows.owners) do
+        if state.active then SkinScoutingChrome(root, state) end
+    end
+end
+
+local function OnScoutingTextures()
+    Dispatch(RefreshScoutingChrome)
+end
+
+local function SkinScoutingMap(root, state)
+    local applied, reason = SkinScoutingChrome(root, state)
+    if applied and not MajorWindows.scoutingHooks[root] then
+        MajorWindows.scoutingHooks[root] = Kit.HookFunction(root, "UpdateTextures", OnScoutingTextures)
+    end
+    return applied, reason
+end
+
 local groupSkinners = {
     ["profession-book"] = SkinProfessionBook,
     ["housing-dashboard"] = SkinHousingDashboard,
     pvp = SkinPVP,
     ["group-finder"] = SkinGroupFinder,
+    ["scouting-map"] = SkinScoutingMap,
 }
 
 -- Private to MajorWindowsItems.lua, which loads next (TOC order), adds the
@@ -681,6 +735,7 @@ function MajorWindows.Disable(owner)
         UnregisterHousingCallbacks()
         NS.Registry.RemoveListener(MajorWindows)
         NS.CombatGate.Cancel("major-windows:housing-rewards")
+        NS.CombatGate.Cancel("major-windows:scouting-map")
         for index = 1, #groups do
             NS.CombatGate.Cancel("major-windows:load:" .. groups[index].id)
         end

@@ -1011,6 +1011,11 @@ local entries = {
             "GarrisonShipyardFrame",
             "OrderHallMissionFrame",
         },
+        -- CovenantMissionFrame also hosts Prey's Midnight scouting map. Its
+        -- map canvas uses the root frame level, so a root material fill would
+        -- paint over the map tiles. Mission/follower descendants keep their
+        -- ordinary traversal; MajorWindows replaces the exact scouting chrome.
+        frameModes = { CovenantMissionFrame = { role = "shell", fillVisible = false } },
     },
     {
         id = "help",

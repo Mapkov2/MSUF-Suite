@@ -1726,6 +1726,150 @@ Section("major windows pvp categories", function()
     _G.PVPUIFrame, _G.WeeklyRewardsFrame = nil, nil
 end)
 
+Section("prey scouting map", function()
+    -- Retail/Forever reuse CovenantMissionFrame for the midnight texture kit.
+    -- MapTab, its scroll child and detail tiles use the root's frame level;
+    -- a root BACKGROUND fill therefore washes over the semantic map tiles.
+    Load("MajorWindows.lua")
+    Load("MajorWindowsItems.lua")
+    local previousCosmetics = NS.Cosmetics
+    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    local function Texture(parent, atlas)
+        local texture = { parent = parent, atlas = atlas, alpha = 1 }
+        function texture:GetObjectType() return "Texture" end
+        function texture:GetParent() return self.parent end
+        function texture:GetAtlas() return self.atlas end
+        function texture:GetAlpha() return self.alpha end
+        function texture:SetAlpha(alpha) self.alpha = alpha end
+        return texture
+    end
+    local child = Frame(nil)
+    child.TiledBackground = Texture(child, "AdventureMap_TileBg")
+    child.Tile = Texture(child, "native-map-tile")
+    local pin = Frame(nil)
+    pin.Icon = Texture(pin, "AdventureMapIcon-Quest")
+    local scroll = Frame(nil, { child, pin })
+    scroll.Child = child
+    local map = Frame(nil, { scroll })
+    map.ScrollContainer = scroll
+    local raised = Frame(nil)
+    raised.TopEdge = Texture(raised, "native-raised-edge")
+    local close = Frame(nil)
+    function close:GetObjectType() return "Button" end
+    local nativeClick = function() end
+    close.OnClick = nativeClick
+    local mission = Frame("CovenantMissionFrameMissions")
+    local frame = Frame("CovenantMissionFrame", { map, raised, close, mission })
+    frame.MapTab, frame.RaisedBorder, frame.CloseButton = map, raised, close
+    frame.Border = Texture(frame, "UI-Frame-midnight-Border")
+    frame.BackgroundTile = Texture(frame, "Adventures-Missions-BG-02")
+    frame.Top, frame.Bottom = Texture(frame), Texture(frame)
+    frame.Left, frame.Right = Texture(frame), Texture(frame)
+    frame.TopLeftCorner, frame.TopRightCorner = Texture(frame), Texture(frame)
+    frame.BotLeftCorner, frame.BotRightCorner = Texture(frame), Texture(frame)
+    frame.TopBorder, frame.BottomBorder = Texture(frame), Texture(frame)
+    frame.LeftBorder, frame.RightBorder = Texture(frame), Texture(frame)
+    frame.OverlayElements = { CloseButtonBorder = Texture(close, "native-close-ring") }
+    function frame:UpdateTextures()
+        self.Border.atlas = "UI-Frame-" .. (self.textureKit or "midnight") .. "-Border"
+        self.Border:SetAlpha(1)
+        self.RaisedBorder.TopEdge:SetAlpha(1)
+        self.OverlayElements.CloseButtonBorder:SetAlpha(1)
+        self.nativeUpdates = (self.nativeUpdates or 0) + 1
+    end
+    local priorRoot = _G.CovenantMissionFrame
+    _G.CovenantMissionFrame = nil
+    local previousButton, previousAction = NS.ControlSkin.ApplyButton, NS.Checkmarks.GetWindowAction
+    NS.ControlSkin.ApplyButton = function(button) button.controlSkinned = true; return {} end
+    NS.Checkmarks.GetWindowAction = function(button) return button == close and "close" or nil end
+    local previousLoaded, previousEvents = NS.Client.IsAddOnLoaded, EventUtil
+    local onLoaded
+    NS.Client.IsAddOnLoaded = function(addon) return addon ~= "Blizzard_GarrisonUI" end
+    EventUtil = { ContinueOnAddOnLoaded = function(addon, callback)
+        if addon == "Blizzard_GarrisonUI" then onLoaded = callback end
+    end }
+    NS.MajorWindows.Apply("prey")
+    Expect(type(onLoaded) == "function", "scouting skin missed late Blizzard_GarrisonUI loading")
+    _G.CovenantMissionFrame = frame
+    NS.Client.IsAddOnLoaded, EventUtil = previousLoaded, previousEvents
+    if onLoaded then onLoaded() end
+    local previousHook, hookCount = hooksecurefunc, 0
+    hooksecurefunc = function(target, method, callback)
+        if target == frame and method == "UpdateTextures" then hookCount = hookCount + 1 end
+        return previousHook(target, method, callback)
+    end
+    -- A late generic catalog pass must keep the dedicated skin's clear canvas.
+    local entry = NS.BlizzardCatalog.FindByFrame("CovenantMissionFrame")
+    GenericWindows.ApplyEntry(entry, "prey")
+    Expect(frame.surfaceSpec and frame.surfaceSpec.fillVisible == false,
+        "late generic catalog pass covered Prey map with a root fill")
+    NS.MajorWindows.Apply("prey")
+    Expect(frame.surfaceSpec and frame.surfaceSpec.fillVisible == false,
+        "Prey map is covered by a generic root material fill")
+    Expect(frame.Border.alpha == 0 and raised.TopEdge.alpha == 0
+        and frame.OverlayElements.CloseButtonBorder.alpha == 0,
+        "Midnight scouting border, raised border or close ring stayed native")
+    Expect(frame.Top.alpha == 0 and frame.BotLeftCorner.alpha == 0,
+        "legacy scouting corner/edge chrome stayed native")
+    Expect(map.surfaceSpec == nil and child.surfaceSpec == nil and pin.surfaceSpec == nil
+        and child.Tile.alpha == 1 and child.TiledBackground.alpha == 1 and pin.Icon.alpha == 1,
+        "scouting skin changed map art, pins or canvas surfaces")
+    Expect(mission.childReads > 0 and close.controlSkinned and close.OnClick == nativeClick,
+        "scouting fix removed mission traversal or changed the native close action")
+    frame:UpdateTextures()
+    Expect(frame.nativeUpdates == 1 and frame.Border.alpha == 0 and raised.TopEdge.alpha == 0
+        and frame.OverlayElements.CloseButtonBorder.alpha == 0,
+        "native UpdateTextures restored scouting chrome on reopening")
+    frame.textureKit = "Dragonflight"
+    frame:UpdateTextures()
+    Expect(frame.Border.atlas == "UI-Frame-Dragonflight-Border" and frame.Border.alpha == 0,
+        "texture-kit switch escaped the scouting skin or changed its native atlas")
+    local previousDB = NS.DB
+    NS.DB = { skinCategories = { expansion = false } }
+    frame:UpdateTextures()
+    Expect(frame.Border.alpha == 1, "disabled expansion category was reskinned by the hook")
+    NS.DB = previousDB
+    local previousDefer, pending = NS.CombatGate.RunOrDefer, nil
+    NS.CombatGate.RunOrDefer = function(key, callback)
+        if locked and key == "major-windows:scouting-map" then pending = callback; return false end
+        return previousDefer(key, callback)
+    end
+    locked = true
+    frame:UpdateTextures()
+    Expect(frame.Border.alpha == 1, "scouting update mutated chrome during combat")
+    locked = false
+    if pending then pending() end
+    Expect(pending ~= nil and frame.Border.alpha == 0,
+        "scouting chrome did not replay after combat")
+    NS.CombatGate.RunOrDefer = previousDefer
+    function frame:IsProtected() return true, true end
+    frame:UpdateTextures()
+    Expect(frame.Border.alpha == 1, "scouting hook decorated an explicitly protected root")
+    frame.IsProtected = nil
+    NS.MajorWindows.Apply("prey")
+    NS.MajorWindows.Disable("prey")
+    GenericWindows.Disable("prey")
+    Expect(frame.Border.alpha == 1 and frame.Top.alpha == 1 and raised.TopEdge.alpha == 1
+        and frame.OverlayElements.CloseButtonBorder.alpha == 1,
+        "scouting disable did not restore native chrome")
+    local before = counters.attach
+    frame:UpdateTextures()
+    Expect(frame.Border.alpha == 1 and counters.attach == before,
+        "scouting hook kept painting after disable")
+    GenericWindows.ApplyEntry(entry, "prey")
+    NS.MajorWindows.Apply("prey")
+    frame:UpdateTextures()
+    Expect(frame.Border.alpha == 0 and frame.surfaceSpec.fillVisible == false,
+        "scouting skin failed to re-enable")
+    Expect(hookCount == 0, "scouting repaint or re-enable installed a duplicate native hook")
+    NS.MajorWindows.Disable("prey")
+    GenericWindows.Disable("prey")
+    _G.CovenantMissionFrame = priorRoot
+    NS.ControlSkin.ApplyButton, NS.Checkmarks.GetWindowAction = previousButton, previousAction
+    NS.Cosmetics = previousCosmetics
+    hooksecurefunc = previousHook
+end)
+
 Section("common art", function()
     Load("CommonArt.lua")
     _G.PVEFrame = Frame("PVEFrame")
