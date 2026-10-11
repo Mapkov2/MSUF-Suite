@@ -342,6 +342,8 @@ local function SecureWrap(owner, method, callback)
     end
 end
 local layoutCallbacks = {}
+-- The aura frame's RefreshAuras/RefreshLossOfControl post-hooks.
+local auraHooks = {}
 MSUF_UpdateCastbarVisuals = function() end
 hooksecurefunc = function(frame, method, callback)
     if type(frame) == "string" then error("do not install cast media hooks") end
@@ -370,6 +372,7 @@ hooksecurefunc = function(frame, method, callback)
     end
     assert(frame == aura and (method == "RefreshAuras" or method == "RefreshLossOfControl"),
         "nameplate skin must not hook native layout")
+    auraHooks[method] = callback
 end
 
 local NS = {
@@ -917,6 +920,81 @@ do
     assert(auraButton.mouseClickEnabled == true, "unprotected aura button kept click-through")
     module.needsRefresh = false
     scans = auraScans
+end
+-- Pool walks follow new buttons only (Auras.lua peaks): the 2026-10-07 raid
+-- trace ran 1,716 walks in 60 s for 1,368 buttons. Blizzard's pool makes a
+-- button only when all of its buttons are active and never touches their
+-- mouse state, so a refresh with no more active buttons than the last
+-- complete walk reads one GetNumActive and nothing else.
+do
+    local pool, saved = aura.auraItemFramePool, aura.auraItemFramePool
+    local function Button()
+        local button = Region()
+        button.IsMouseClickEnabled = auraButton.IsMouseClickEnabled
+        button.SetMouseClickEnabled = auraButton.SetMouseClickEnabled
+        return button
+    end
+    local list, created, nexts, counts, reads = {}, {}, 0, 0, 0
+    for i = 1, 4 do created[i] = Button() end
+    for i = 1, 4 do
+        local reader = created[i].IsMouseClickEnabled
+        created[i].IsMouseClickEnabled = function(self) reads = reads + 1; return reader(self) end
+    end
+    pool = {
+        GetNumActive = function() counts = counts + 1; return #list end,
+        GetNextActive = function(_, current)
+            nexts = nexts + 1
+            if current == nil then return list[1] end
+            for i = 1, #list do if list[i] == current then return list[i + 1] end end
+        end,
+    }
+    aura.auraItemFramePool = pool
+    module.config.auraClickthrough = true
+    local refresh = assert(auraHooks.RefreshAuras, "no RefreshAuras post-hook")
+    local function Show(n)
+        for i = #list, 1, -1 do list[i] = nil end
+        for i = 1, n do list[i] = created[i] end
+        nexts, counts, reads = 0, 0, 0
+        refresh(aura)
+    end
+    Show(2)
+    assert(created[1].mouseClickEnabled == false and created[2].mouseClickEnabled == false and reads == 2,
+        "the first walk missed an aura button")
+    -- Blizzard re-acquires the same buttons (RefreshAuras: ReleaseAll, then Acquire).
+    Show(2)
+    assert(counts == 1 and nexts == 0 and reads == 0, "an unchanged pool was walked again: "
+        .. nexts .. " GetNextActive, " .. reads .. " mouse reads")
+    Show(1)
+    assert(counts == 1 and nexts == 0 and reads == 0, "a smaller pool was walked again")
+    Show(3)
+    assert(nexts == 4 and created[3].mouseClickEnabled == false, "a new pooled button kept its clicks")
+    Show(3)
+    assert(nexts == 0 and reads == 0, "the grown pool was walked again")
+    -- A protected button in combat leaves the pool unfinished: the next refresh walks.
+    created[4].protected = true
+    combat = true
+    Show(4)
+    assert(created[4].mouseClickEnabled ~= false and module.needsRefresh, "a protected button changed in combat")
+    Show(4)
+    assert(nexts == 5 and reads == 4, "an unfinished pool was not walked again")
+    combat = false
+    Show(4)
+    assert(created[4].mouseClickEnabled == false, "the protected button stayed clickable after combat")
+    Show(4)
+    assert(nexts == 0, "the finished pool was walked again")
+    -- Restore hands the clicks back and forgets the peak: switching on again walks.
+    module.config.auraClickthrough = false
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(created[1].mouseClickEnabled == true and created[4].mouseClickEnabled == true, "restore missed a pooled button")
+    module.config.auraClickthrough = true
+    Show(4)
+    assert(nexts == 5 and created[1].mouseClickEnabled == false and created[4].mouseClickEnabled == false,
+        "switching click-through on again skipped the restored buttons")
+    created[4].protected = nil
+    module.config.auraClickthrough = false
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    module.needsRefresh = false
+    aura.auraItemFramePool = saved
 end
 module.config.enemyRaidIcon = false
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
