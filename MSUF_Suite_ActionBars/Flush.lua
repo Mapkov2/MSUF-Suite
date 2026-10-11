@@ -244,7 +244,16 @@ local function WalkDirty(now)
     end
 end
 
--- Shown/empty state and key routing are protected: out of combat only.
+-- Shown/empty state and key routing are protected: out of combat only. A
+-- bar's shown-button plan is one SecureHandlerExecute of the restricted GRID
+-- snippet. The 2026-10-11 raid trace ran five plans (374 us each) in the
+-- first flush after every combat end, because Blizzard's in-combat plan
+-- (Blizzard.lua) and slot changes (Events.lua) mark the bars, and five
+-- again after a stealth swap just after combat. A flush runs at most
+-- GRID_PER_FLUSH plans, in bar order, and schedules the next flush for the
+-- rest. In combat the flush returns before any plan; PLAYER_REGEN_ENABLED
+-- resumes the parked ones (Events.lua).
+local GRID_PER_FLUSH = 2
 local function GridUnit(bar)
     AB.Execute(bar.header, AB.SNIPPET.GRID)
 end
@@ -257,9 +266,15 @@ local function FlushProtected()
             if bar then gridBars[bar] = true end
         end
     end
+    local budget = GRID_PER_FLUSH
     for index = 1, 10 do
         local bar = AB.bars[index]
         if bar and gridBars[bar] then
+            if budget == 0 then
+                Schedule()
+                break
+            end
+            budget = budget - 1
             gridBars[bar] = nil
             Run(gridBars, bar, true, GridUnit, bar)
         end
@@ -304,9 +319,10 @@ end
 
 -- Re-runs the suite's shown-button plan on one bar after Blizzard applied
 -- its own (Blizzard.lua). Blizzard plans on every UpdateAction, so a slot
--- burst (spec, talent or loadout swap) marks the bar and the next flush runs
--- the plan once; in combat it waits for combat to end (FlushProtected). The
--- reused buttons' OnHide wrap keeps them shown until then.
+-- burst (spec, talent or loadout swap) marks the bar and one of the next
+-- flushes runs the plan once (FlushProtected: two bars per flush); in combat
+-- it waits for combat to end. The reused buttons' OnHide wrap keeps them
+-- shown until then.
 function AB.Regrid(bar)
     gridBars[bar] = true
     Schedule()

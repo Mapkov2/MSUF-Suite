@@ -1040,6 +1040,76 @@ local function TestQuickKeybind()
     combat=true;assert(not S.OpenQuickKeybind());combat=false
 end
 
+-- The 2026-10-11 raid trace ran five shown-button plans (one restricted GRID
+-- execute each, 264 us) in the first flush after every combat end and after
+-- a stealth swap. A flush runs at most two, in bar order, and schedules the
+-- next one for the rest. None runs in combat, the key routing is never held
+-- back, and a raising plan keeps no flush alive.
+local function TestGridCap()
+    RunTimers()
+    local execute,ran,raising=SecureHandlerExecute,{},nil
+    SecureHandlerExecute=function(frame,body)
+        if body==AB.SNIPPET.GRID then
+            ran[#ran+1]=AB.headers[frame].index
+            if frame==raising then error("plan raised") end
+        end
+        return execute(frame,body)
+    end
+    -- One client frame: the timers due now run; the ones they add wait.
+    local function NextFrame()
+        local due={}
+        for i=#timers,1,-1 do
+            if timers[i].at<=now then table.insert(due,1,table.remove(timers,i)) end
+        end
+        for i=1,#due do due[i].fn() end
+        return #due
+    end
+    local function Expect(label,...)
+        local got,want=table.concat(ran,","),table.concat({...},",")
+        for i=#ran,1,-1 do ran[i]=nil end
+        assert(got==want,label..": plans ran on bars {"..got.."}, expected {"..want.."}")
+    end
+    for _,index in ipairs({5,2,4,1,3}) do AB.Regrid(Bar(index)) end
+    NextFrame();Expect("first flush",1,2)
+    NextFrame();Expect("second flush",3,4)
+    NextFrame();Expect("third flush",5)
+    assert(NextFrame()==0,"a flush without parked plans scheduled another")
+    -- Combat parks the rest; combat end resumes in order.
+    for index=1,5 do AB.Regrid(Bar(index)) end
+    NextFrame();Expect("before combat",1,2)
+    combat=true
+    NextFrame();Expect("in combat")
+    assert(NextFrame()==0,"parked plans kept a flush running in combat")
+    combat=false
+    Event("PLAYER_REGEN_ENABLED")
+    NextFrame();Expect("after combat",3,4)
+    NextFrame();Expect("after combat, next flush",5)
+    assert(NextFrame()==0,"the resumed plans scheduled another flush")
+    -- A full refresh: every bar's plan, two per flush; routing in the first.
+    local update,routes=AB.UpdateRouting,0
+    AB.UpdateRouting=function(...)
+        routes=routes+1
+        return update(...)
+    end
+    AB.MarkAll()
+    NextFrame();Expect("full refresh",1,2)
+    assert(routes==1,"the plan cap held back the key routing")
+    for first=3,9,2 do NextFrame();Expect("full refresh",first,first+1) end
+    assert(NextFrame()==0 and routes==1,"a full refresh kept flushing")
+    AB.UpdateRouting=update
+    -- A raising plan gets its one retry (S.NewUnitRunner) and is dropped.
+    raising=Bar(1).header
+    dispatch.expect=true;dispatch.errors={}
+    for index=1,5 do AB.Regrid(Bar(index)) end
+    NextFrame();Expect("raising plan",1,2)
+    NextFrame();Expect("raising plan, retry",1,3)
+    NextFrame();Expect("raising plan, rest",4,5)
+    assert(NextFrame()==0 and #dispatch.errors==2,"a raising plan kept the flush alive: "..#dispatch.errors.." errors")
+    dispatch.expect=false;raising=nil
+    SecureHandlerExecute=execute
+    RunTimers()
+end
+
 -- Actions: bar 1 page 1 and page 2, one spell on bar 2 (slot 61), a flyout
 -- on bar 3 (slot 49), an empower spell on bar 4 (slot 25).
 for slot=1,12 do actions[slot]={kind="spell",id=1000+slot,texture=100+slot} end
@@ -1379,6 +1449,7 @@ if nativeReuse then
     now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
     assert(calls.texture==painted,"native cooldown event repainted textures through suite")
     TestQuickKeybind()
+    TestGridCap()
     print("Action bars native reuse: Retail bars 2-8 adopted, suite painter skipped, custom bars retained, routing passed")
     return
 end
@@ -1579,6 +1650,9 @@ combat=true;cursor="spell";Event("ACTIONBAR_SHOWGRID");RunTimers()
 assert(not Bar(6).header.shown and AB.dragPending,"combat drags from outside wait")
 combat=false;cursor=nil;Event("PLAYER_REGEN_ENABLED");RunTimers()
 assert(not AB.dragPending)
+
+------------------------------------------------------------------ protected flush cap
+TestGridCap()
 
 ------------------------------------------------------------------ visibility and mouseover
 assert(S.SetMany("actionbars",{bar3Visibility=4,bar3Alpha=80,bar3FadeAlpha=10,bar4Visibility=4,bar4FadeAlpha=30}))
