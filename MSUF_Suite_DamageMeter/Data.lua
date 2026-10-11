@@ -7,7 +7,8 @@ local D = { windows = {}, MAX = 5, KEYS = {}, OVERALL = 0, CURRENT = 1 }
 P.DamageMeter = D
 -- damageMeterEnabled is declared on the catalog entry (restored on disable).
 -- eventUnits: the unit filter each registered event was registered with.
-local M = { styleGen = 0, events = {}, eventUnits = {} }
+-- watchTypes: the session updates a shown window hears (Window.lua D.SyncWatch).
+local M = { styleGen = 0, events = {}, eventUnits = {}, watchTypes = {} }
 D.M = M
 local Public, Finite = S.Public, S.Finite
 -- The client's secret test (Platform.lua) for the per-row readers.

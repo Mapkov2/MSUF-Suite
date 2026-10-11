@@ -112,6 +112,32 @@ function D.EnsureWindow(index)
     return win
 end
 
+-- The session updates a shown window hears (Controller.lua SessionUpdated):
+-- M.watchTypes[meter type][key] is true for every shown window, key being
+-- its pinned fight's sessionID, else 0 (Current and Overall take the copy
+-- with sessionID 0). The 2026-10-11 raid trace: 38,586 session events,
+-- 4,092 (10.6 %) of them dirtied a window. Rebuilt wherever a window shows,
+-- hides or changes its meter or fight. An entry left over only costs the
+-- window walk; a missing one would lose an update.
+function D.SyncWatch()
+    local watch = M.watchTypes
+    for _, sessions in pairs(watch) do
+        for key in pairs(sessions) do sessions[key] = nil end
+    end
+    for i = 1, D.MAX do
+        local win = D.windows[i]
+        local kind = win and win.shown and win.meterType
+        if kind then
+            local sessions = watch[kind]
+            if not sessions then
+                sessions = {}
+                watch[kind] = sessions
+            end
+            sessions[win.sessionID or 0] = true
+        end
+    end
+end
+
 -- Runtime session state; historic session IDs are never saved.
 function D.ApplySession(win, value, sessionID, duration)
     win.cfgSession, win.sessionID = value, sessionID
@@ -119,6 +145,7 @@ function D.ApplySession(win, value, sessionID, duration)
     local overall = value == D.SESSION.OVERALL
     win.sessionType = overall and D.OVERALL or D.CURRENT
     win.overall = not sessionID and overall
+    D.SyncWatch()
 end
 
 -- Settings are the authority; runtime picks survive a Refresh while the
@@ -128,6 +155,7 @@ function D.SyncWindow(win)
     local meterType = c[keys.Type] - 1
     if meterType ~= win.cfgType then
         win.cfgType, win.meterType = meterType, meterType
+        D.SyncWatch()
         D.CloseBreakdown(win, true)
         win.offset, win.dirty = 0, true
     end
@@ -292,11 +320,13 @@ function D.SetShown(win, show)
         if win.styleGen ~= M.styleGen then D.StyleWindow(win) end
         if not win.shown then
             win.shown, win.dirty = true, true
+            D.SyncWatch()
             win.frame:Show()
         end
         D.ApplyHover(win)
     elseif win.shown then
         win.shown, win.hover = false, false
+        D.SyncWatch()
         if D.typePanel and D.typePanel.win == win then D.HideTypeMenu() end
         D.CloseBreakdown(win, true)
         D.HideTip()

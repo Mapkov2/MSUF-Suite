@@ -11,6 +11,9 @@ local NS, S = P.NS, P.Suite
 -- because declassification can lag the regen edge.
 local D = P.DamageMeter
 local M = D.M
+-- The session updates a shown window hears (Window.lua D.SyncWatch); the
+-- table is never replaced.
+local watchTypes = M.watchTypes
 -- Context:Event's named option: the meter's events also run in combat.
 local IN_COMBAT = { inCombat = true }
 -- The session event storm (22,487 in 60 s of the 2026-10-07 raid trace, 375
@@ -258,12 +261,20 @@ function D.ZoneKey()
     return ZONES[kind] or "HideWorld"
 end
 
--- The storm path (see DIRECT): every shown window is visited once, and the
--- hover target cache (D.TargetGroups) is invalidated only out of combat: it
--- is never read or built in combat, and CombatEnd invalidates it.
+-- The storm path (see DIRECT). The hover target cache (D.TargetGroups) is
+-- invalidated only out of combat: it is never read or built in combat, and
+-- CombatEnd invalidates it. Out of combat every update still invalidates it
+-- (the targets read the Enemy Damage Taken meter, which no window needs to
+-- show). Then an update no shown window hears (M.watchTypes, D.SyncWatch)
+-- returns: 34,494 of the 38,586 events of the 2026-10-11 raid trace dirtied
+-- no window. It also skips the mute test below, which the next heard update
+-- runs; the mute only drops updates the pending paint covers anyway.
+-- Every heard update visits each shown window once.
 SessionUpdated = function(self, _, meterType, sessionID)
     if IsSecret(meterType) or IsSecret(sessionID) then return end
     if not M.inCombat then D.InvalidateTargets() end
+    local heard = watchTypes[meterType]
+    if not heard or not heard[sessionID] then return end
     local windows, dirty, clean = D.windows, false, false
     for i = 1, self.config.windowCount do
         local win = windows[i]
@@ -550,6 +561,7 @@ function M:Disable()
             win.frame:Hide()
         end
     end
+    D.SyncWatch()
     D.HideTip()
     if M.timerFrame then M.timerFrame:Hide() end
     S.SuppressHostElement(self.id, HOST_KEY, false)

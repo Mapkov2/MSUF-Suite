@@ -940,6 +940,7 @@ assert(not M.active and LiveTimers()==0 and not PaintRequest()
     and not next(Frame().events) and not next(M.context.callbacks)
     and not (M.context.directFrame and next(M.context.directFrame.events)),"disable leaked events or timers")
 for i=1,5 do if D.windows[i] then assert(not D.windows[i].frame.shown,"window left visible") end end
+for _,sessions in pairs(M.watchTypes) do assert(not next(sessions),"a disabled meter still watches session updates") end
 assert(cvars.damageMeterEnabled=="1","CVar not restored")
 assert(hostRecord.isEnabled()==true,"host mover claim not released")
 RunAfters();assert(RunAfters()==0,"inactive module scheduled work")
@@ -1370,6 +1371,7 @@ do
     -- through the native formatter (no Lua secret test before it).
     -- 2026-10-07: 2844 before, 2808 with the direct session event
     -- and the in-combat target cache skip (the 2804 + 2 % ceiling stays).
+    -- 2026-10-11: 2783 with the watched-meter return.
     assert(instructions<=math.floor(2804*1.02),"a combat second cost "..instructions.." instructions")
     -- Only the meter nobody shows changed: no fetch, no paint.
     fetched=Measure(function() Storm({5});Second() end)
@@ -1453,7 +1455,9 @@ do
     assert(dispatches==dispatchBefore,"a session event ran "..(dispatches-dispatchBefore).." Dispatch calls for "..delivered)
     -- The hover target cache is out-of-combat only; combat end invalidates it.
     assert(M.targetRevision==revision,"combat session events invalidated the out-of-combat target cache")
-    assert(perEvent<=61,"a delivered session event cost "..perEvent.." instructions")
+    -- 2026-10-11: 30.6 with the watched-meter return (950 of the 1000
+    -- events carry a meter or fight no shown window shows).
+    assert(perEvent<=31,"a delivered session event cost "..perEvent.." instructions")
     -- The quiet window still repaints within one interval of its own update.
     Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",9,0)
     assert(deaths.dirty,"the quiet window missed its update")
@@ -1464,6 +1468,112 @@ do
     api.secret=false
     print(("damage meter unmuted storm: %d of %d events delivered, %.1f instructions and 0 Dispatch calls per event")
         :format(delivered,sent,perEvent))
+end
+------------------------------------------------------------------ session storm, watched meters
+-- The 2026-10-11 raid trace (88.5 s): 38,586 session events reached
+-- SessionUpdated (0.45 ms/s self) and 4,092 of them (10.6 %) dirtied a
+-- window; the rest carried a meter or fight no shown window shows.
+-- M.watchTypes (Window.lua D.SyncWatch) holds every shown window's meter and
+-- session key (its pinned fight's ID, else 0), rebuilt when a window shows,
+-- hides or changes meter or fight; any other update returns before the
+-- window walk. Out of combat it still invalidates the hover target cache
+-- first: the targets read the Enemy Damage Taken meter, which no window
+-- needs to show.
+do
+    local function Watched()
+        local list={}
+        for kind,sessions in pairs(M.watchTypes) do
+            for key in pairs(sessions) do list[#list+1]=kind..":"..key end
+        end
+        table.sort(list)
+        return table.concat(list,",")
+    end
+    -- Paint requests and Suite VM instructions of fn (a window walk is about
+    -- 30 instructions per update).
+    local function Walks(fn)
+        local requests,request=0,D.RequestPaint
+        D.RequestPaint=function(...) requests=requests+1;return request(...) end
+        local count=0
+        debug.sethook(function()
+            local source=debug.getinfo(2,"S").source:gsub("\\","/")
+            if source:find("/MSUF_Suite[%w_]*/") and not source:find("/tools/",1,true) then count=count+1 end
+        end,"",1)
+        fn()
+        debug.sethook()
+        D.RequestPaint=request
+        return requests,count
+    end
+    local damage,win2=D.windows[1],D.windows[2]
+    assert(S.SetMany("damageMeter",{windowCount=2,w1Type=1,w2Type=3,w1Session=1,w2Session=2,
+        visibility=Suite.DamageMeterVisibility.ALWAYS}))
+    assert(damage.shown and win2.shown and win2.overall and Watched()=="0:0,2:0",
+        "the shown Current damage and Overall healing windows are not the watched updates: "..Watched())
+    for i=1,2 do D.windows[i].dirty=false end
+    -- Out of combat an unwatched meter still invalidates the target cache.
+    local revision=M.targetRevision
+    Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",D.TYPE.EnemyDamageTaken,0)
+    assert(M.targetRevision==revision+1 and not damage.dirty and not win2.dirty and not PaintRequest(),
+        "an out-of-combat update of an unshown meter kept the target cache or dirtied a window")
+    api.secret=true
+    combat=true;now=now+10;Event("PLAYER_REGEN_DISABLED")
+    RunPaint();RunClock()
+    assert(not damage.dirty and not win2.dirty and not PaintRequest(),"combat start left work behind")
+    -- An unshown meter and the current fight's own copy (no window pinned it)
+    -- return before the window walk: no window dirty, no paint request.
+    revision=M.targetRevision
+    local requests,count=Walks(function()
+        Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",5,0)
+        Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,9)
+        Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",2,9)
+    end)
+    assert(requests==0 and not damage.dirty and not win2.dirty and not PaintRequest()
+        and M.targetRevision==revision,"an unwatched update dirtied a window or invalidated targets in combat")
+    -- Measured 2026-10-11: 87 VM instructions for the three (direct
+    -- frame and handler), 188 with the window walk.
+    assert(count<=87,"three unwatched updates cost "..count.." instructions")
+    -- A watched update still dirties its window and asks for the paint.
+    requests=Walks(function() Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0) end)
+    assert(requests==1 and damage.dirty and not win2.dirty and PaintRequest(),"a watched update missed its window")
+    Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",2,0)
+    assert(win2.dirty,"the Overall window missed the update with sessionID 0")
+    now=now+c.refreshRate;RunPaint()
+    assert(not damage.dirty and not win2.dirty,"the paint did not cover both windows")
+    -- A meter pick (in combat it applies at once) rebuilds the watched set.
+    D.SetWindowType(win2,5)
+    assert(Watched()=="0:0,5:0","a meter pick did not rebuild the watched updates: "..Watched())
+    now=now+c.refreshRate;RunPaint()
+    win2.dirty=false
+    Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",2,0)
+    assert(not win2.dirty,"the previous meter still dirtied the window")
+    Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",5,0)
+    assert(win2.dirty,"the picked meter's update missed the window")
+    now=now+c.refreshRate;RunPaint()
+    combat=false;Event("PLAYER_REGEN_ENABLED");RunPaint();RunClock()
+    api.secret=false
+    assert(c.w2Type==6 and Watched()=="0:0,5:0","the combat pick was not saved or lost its watch")
+    -- A pinned fight watches its own sessionID instead of 0.
+    D.SetWindowSession(damage,D.SESSION.CURRENT,7,65)
+    assert(Watched()=="0:7,5:0","pinning a fight did not rebuild the watched updates: "..Watched())
+    damage.dirty=false
+    Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
+    assert(not damage.dirty,"a pinned window took the Current copy")
+    Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,7)
+    assert(damage.dirty,"a pinned window missed its own fight's update")
+    RunPaint()
+    D.SetWindowSession(damage,D.SESSION.CURRENT,nil,nil)
+    assert(Watched()=="0:0,5:0","returning to Current did not rebuild the watched updates")
+    -- Hiding a window drops its updates; showing it again restores them.
+    assert(S.Set("damageMeter","windowCount",1) and not win2.shown and Watched()=="0:0",
+        "a hidden window's meter is still watched: "..Watched())
+    assert(S.Set("damageMeter","windowCount",2) and win2.shown and Watched()=="0:0,5:0",
+        "a shown window's meter is not watched: "..Watched())
+    -- Closing the last window resets its slot to the defaults (Healing
+    -- Done, Current) and stops watching it.
+    assert(D.CloseWindow(win2) and c.windowCount==1 and not win2.shown and Watched()=="0:0",
+        "a closed window's meter is still watched: "..Watched())
+    assert(S.Set("damageMeter","windowCount",2) and win2.shown and Watched()=="0:0,2:0",
+        "a reopened default window is not watched: "..Watched())
+    print(("damage meter watched meters: 3 unwatched updates cost %d instructions, 0 window walks"):format(count))
 end
 -- No migration: a profile that stored the old default keeps it; a profile
 -- without the setting gets the new default.

@@ -61,6 +61,7 @@ end
 function D.SetWindowType(win, meterType)
     if win.meterType == meterType then return end
     win.meterType, win.cfgType = meterType, meterType
+    D.SyncWatch()
     -- Threat listens only while a shown window shows it.
     D.UpdateEvents()
     Changed(win)
@@ -325,6 +326,7 @@ function D.CloseWindow(win)
     end
     list[count], win.index = win, count
     win.cfgType, win.cfgSession, win.sessionID, win.shown, win.hover = nil, nil, nil, false, false
+    D.SyncWatch()
     win.frame:Hide()
     return S.SetMany(M.id, values)
 end
