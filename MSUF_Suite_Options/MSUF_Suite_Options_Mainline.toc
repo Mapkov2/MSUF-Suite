@@ -17,6 +17,9 @@ Menu\Workspace.lua
 Menu\PreviewClasses.lua
 Menu\PreviewCanvas.lua
 Pages\BagsPreview.lua
+Pages\DamageMeterPreviewProperties.lua
+Pages\DamageMeterPreviewEditor.lua
+Pages\DamageMeterPreviewLayers.lua
 Pages\DamageMeterPreview.lua
 Pages\MenuSamples.lua
 Pages\ActionBarsWorkspace.lua

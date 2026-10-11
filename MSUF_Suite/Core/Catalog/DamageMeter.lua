@@ -96,6 +96,9 @@ B.Section(id, "bars", "Bars", {
     Texture("barTexture", "Bar texture"),
     Number("barHeight", "Bar height", 18, 8, 40),
     Number("barSpacing", "Bar spacing", 2, -1, 10),
+    Number("barsOffsetX", "Bars: horizontal", 0, -200, 200),
+    Number("barsOffsetY", "Bars: vertical", 0, -200, 200),
+    Number("barsLayer", "Bars: MSUF layer (-1 = Auto)", -1, -1, 30),
     Bool("classColors", "Class-colored bars", true),
     Color("barColor", "Bar color", initial.barColor),
     Number("barAlpha", "Bar opacity (percent)", 100, 0, 100, 5),
@@ -103,6 +106,10 @@ B.Section(id, "bars", "Bars", {
     Number("trackAlpha", "Bar background opacity (percent)", initial.trackAlpha, 0, 100, 5),
     Choice("iconStyle", "Bar icons", 2, { "None", "Specialization", "Class" }),
     Number("iconZoom", "Icon zoom (percent)", 6, 0, 20),
+    Number("iconOffsetX", "Icons: horizontal", 0, -200, 200),
+    Number("iconOffsetY", "Icons: vertical", 0, -200, 200),
+    Number("iconLayer", "Icons: MSUF layer (-1 = Auto)", -1, -1, 30),
+    Number("iconSize", "Icon size (0 = bar height)", 0, 0, 40),
     Choice("rowBorderMode", "Row border", 1, { "None", "Full row", "Filled portion" }),
     Number("rowBorderSize", "Row border thickness", 1, 1, 4),
     Color("rowBorderColor", "Row border color", "575b58"),
@@ -128,6 +135,12 @@ B.Section(id, "text", "Text and numbers", {
     Number("baseline", "Text baseline (px)", 0, -4, 4),
     Number("leftSize", "Name size", 11, 8, 18),
     Number("rightSize", "Value size", 11, 8, 18),
+    Number("nameOffsetX", "Names: horizontal", 0, -200, 200),
+    Number("nameOffsetY", "Names: vertical", 0, -200, 200),
+    Number("valueOffsetX", "Values: horizontal", 0, -200, 200),
+    Number("valueOffsetY", "Values: vertical", 0, -200, 200),
+    Number("nameLayer", "Names: MSUF layer (-1 = Auto)", -1, -1, 30),
+    Number("valueLayer", "Values: MSUF layer (-1 = Auto)", -1, -1, 30),
     Bool("showRealm", "Show server names", false),
     Number("nameMaxChars", "Shorten names after characters (0 = off)", 0, 0, 40),
     Bool("nameEllipsis", "Add ... to shortened names", true),
@@ -156,6 +169,23 @@ B.Section(id, "window", "Window and header", {
     Number("headerFontSize", "Header text size", 11, 8, 18),
     Color("titleColor", "Header text color", initial.titleColor),
     Number("headerIconSize", "Header button size", 18, 14, 30),
+    Number("titleOffsetX", "Title: horizontal", 0, -200, 200),
+    Number("titleOffsetY", "Title: vertical", 0, -200, 200),
+    Number("buttonsOffsetX", "Header buttons: horizontal", 0, -200, 200),
+    Number("buttonsOffsetY", "Header buttons: vertical", 0, -200, 200),
+    Number("settingsOffsetX", "Horizontal position", 0, -200, 200),
+    Number("settingsOffsetY", "Vertical position", 0, -200, 200),
+    Number("resetOffsetX", "Horizontal position", 0, -200, 200),
+    Number("resetOffsetY", "Vertical position", 0, -200, 200),
+    Number("sessionOffsetX", "Horizontal position", 0, -200, 200),
+    Number("sessionOffsetY", "Vertical position", 0, -200, 200),
+    Number("typeOffsetX", "Horizontal position", 0, -200, 200),
+    Number("typeOffsetY", "Vertical position", 0, -200, 200),
+    Number("settingsSize", "Header button size", 0, 0, 64),
+    Number("resetSize", "Header button size", 0, 0, 64),
+    Number("sessionSize", "Header button size", 0, 0, 64),
+    Number("typeSize", "Header button size", 0, 0, 64),
+    Number("titleSize", "Title size (0 = header text size)", 0, 0, 40),
     Bool("headerMouseover", "Show header buttons only on mouseover", false),
 })
 B.Section(id, "details", "Details", {
@@ -167,6 +197,9 @@ B.Section(id, "details", "Details", {
 B.Section(id, "timer", "Combat timer", {
     Bool("combatTime", "Show combat time", true),
     Bool("headerTimer", "Show duration in window headers", true),
+    Number("headerTimerOffsetX", "Header timer: horizontal", 0, -200, 200),
+    Number("headerTimerOffsetY", "Header timer: vertical", 0, -200, 200),
+    Number("headerTimerSize", "Header timer size (0 = header text size)", 0, 0, 40),
     Bool("timer", "Show a separate floating timer", false),
     Number("timerSize", "Timer text size", 26, 10, 40),
     Bool("timerDecimals", "Show tenths of a second", false),
@@ -204,6 +237,11 @@ end
 -- Presentation dependencies for the menu: enableKey needs the named switch on,
 -- disabledBy needs it off, requiresChoice needs one of the listed choices.
 local rules = NS.SuiteCatalog.damageMeter.rules
+-- Direct element controls live beside the preview instead of duplicating
+-- twelve anonymous position/size rows in the header accordion.
+for _, kind in ipairs({ "settings", "reset", "session", "type" }) do
+    rules[kind .. "OffsetX"].hidden, rules[kind .. "OffsetY"].hidden, rules[kind .. "Size"].hidden = true, true, true
+end
 rules.leftColor.disabledBy = "leftClassColor"
 rules.rightColor.disabledBy = "rightClassColor"
 rules.barColor.disabledBy = "classColors"

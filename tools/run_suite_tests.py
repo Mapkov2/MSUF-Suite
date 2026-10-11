@@ -28,6 +28,8 @@ EXTRA = {
     "suite_menu_ux_contract.lua": [[], ["Forever"]],
     "suite_buff_reminders_preview_contract.lua": [[], ["Forever"]],
     "suite_meter_menu_preview_contract.lua": [[], ["Forever"]],
+    "suite_meter_preview_editor_contract.lua": [[], ["Forever"]],
+    "suite_meter_icon_layout_contract.lua": [[], ["Forever"]],
     "suite_preview_quality_contract.lua": [[], ["Forever"]],
     "suite_preview_interaction_contract.lua": [[], ["Forever"]],
     "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(BRANCH / "MidnightSimpleUnitFrames")]],

@@ -1,26 +1,63 @@
 local _, P = ...
 local K, Tr = P.PreviewCanvas, P.Tr
+local E, Layers = P.MeterPreviewEditor, P.MeterPreviewLayers
 local function Hits(ui, win)
+    local preview = ui.meterPreview
     local targets = {}
+    local function Properties(handle, size, layer, fallback)
+        handle.sizeSetting, handle.layerSetting, handle.defaultSizeSetting = size or false, layer or false, fallback or false
+    end
     targets.body = K.Jump(ui, win.body, win.body, "suite_damageMeter_windows")
     targets.body:SetFrameLevel(win.body:GetFrameLevel())
     targets.header = K.Jump(ui, win.header, win.header, "suite_damageMeter_window")
     targets.header:SetFrameLevel(win.header:GetFrameLevel())
     targets.title = K.Jump(ui, win.title, win.header, "suite_damageMeter_window")
     targets.timer = K.Jump(ui, win.timer, win.header, "suite_damageMeter_timer")
-    local sections = { settings = "general", reset = "general", session = "windows", type = "windows" }
+    E.Handle(preview, targets.body, win.body, "window", "Window", "window", "suite_damageMeter_windows", "w1Width")
+    E.Handle(preview, targets.header, win.header, "window", "Header", "header", "suite_damageMeter_window", "headerHeight")
+    E.Handle(preview, targets.title, win.title, "titleOffset", "Title", "title", "suite_damageMeter_window", "titleSize")
+    E.Handle(preview, targets.timer, win.timer, "headerTimerOffset", "Combat timer", "timer", "suite_damageMeter_timer", "headerTimerSize")
+    targets.body.widthSetting, targets.body.heightSetting, targets.body.layerSetting = "windowWidth", "windowHeight", "windowLayer"
+    Properties(targets.header, "headerHeight")
+    Properties(targets.title, "titleSize", nil, "headerFontSize")
+    Properties(targets.timer, "headerTimerSize", nil, "headerFontSize")
+    local sections = { settings = "general", reset = "damageMeter_module", session = "windows", type = "windows" }
+    targets.buttons = {}
+    local buttonLabels = { settings = "Window settings", reset = "Reset combat data", session = "Fight", type = "Meter" }
+    local buttonKeys = { settings = "windowCount", reset = "action.reset_data", session = "w1Session", type = "w1Type" }
     for key, button in pairs(win.buttons) do
         button:SetFrameLevel(win.header:GetFrameLevel() + 8)
         local section = "suite_damageMeter_" .. sections[key]
         button:SetScript("OnClick", function() ui:Focus(section) end)
+        local target = K.Jump(ui, button, win.header, section)
+        target:SetFrameLevel(win.header:GetFrameLevel() + 9)
+        targets.buttons[key] = target
+        E.Handle(preview, target, button, key .. "Offset", buttonLabels[key], "buttons", section, buttonKeys[key])
+        Properties(target, key .. "Size", nil, "headerIconSize")
         P.HM.SkipHistoryCheckpoint(button)
     end
     targets.rows = {}
     for i, row in ipairs(win.rows) do
         row:SetScript("OnClick", function() ui:Focus("suite_damageMeter_bars") end)
-        targets.rows[i] = { name = K.Jump(ui, row.nameText, row, "suite_damageMeter_text"),
+        targets.rows[i] = { barHit = K.Jump(ui, row, row, "suite_damageMeter_bars"),
+            name = K.Jump(ui, row.nameText, row, "suite_damageMeter_text"),
             value = K.Jump(ui, row.valueText, row, "suite_damageMeter_text"),
             icon = K.Jump(ui, row.icon, row, "suite_damageMeter_bars") }
+        local hits = targets.rows[i]
+        hits.barHit:SetFrameLevel(row:GetFrameLevel() + 1)
+        E.Handle(preview, hits.barHit, row, "barsOffset", "Bars", "bars", "suite_damageMeter_bars", "barHeight")
+        E.Handle(preview, hits.name, row.nameText, "nameOffset", "Name", "name", "suite_damageMeter_text", "leftSize")
+        E.Handle(preview, hits.value, row.valueText, "valueOffset", "Value", "value", "suite_damageMeter_text", "rightSize")
+        E.Handle(preview, hits.icon, row.icon, "iconOffset", "Bar icons", "icon", "suite_damageMeter_bars", "iconStyle")
+        Properties(hits.barHit, "barHeight", "barsLayer")
+        Properties(hits.name, "leftSize", "nameLayer")
+        Properties(hits.value, "rightSize", "valueLayer")
+        Properties(hits.icon, "iconSize", "iconLayer", "barHeight")
+        if row.rankText then
+            hits.rank = K.Jump(ui, row.rankText, row, "suite_damageMeter_text")
+            E.Handle(preview, hits.rank, row.rankText, "nameOffset", "Show rank numbers", "name", "suite_damageMeter_text", "rank")
+            Properties(hits.rank, "leftSize", "nameLayer")
+        end
         P.HM.SkipHistoryCheckpoint(row)
     end
     return targets
@@ -39,12 +76,16 @@ function P.BuildMeterMenuPreview(ui, selected, setSelected)
     viewport:SetPoint("TOPLEFT", 20, -118)
     viewport:SetSize(width - 8, 250)
     local stage = CreateFrame("Frame", nil, viewport)
+    stage:SetClipsChildren(true)
     stage:SetPoint("TOPLEFT", 0, 0)
     stage:SetSize(width - 8, 100)
     local title = K.Text(ui.header, "Preview", 16, -94, width)
     local footer = K.Text(ui.header, "", 16, -230, width)
-    local preview = { stage = stage, viewport = viewport, title = title, footer = footer }
+    local preview = { stage = stage, viewport = viewport, title = title, footer = footer,
+        ui = ui, selected = selected, availableWidth = width - 8 }
     ui.meterPreview = preview
+    E.Build(preview)
+    Layers.Build(preview)
     K.Watch(ui, function()
         if not K.Runtime("MSUF_Suite_DamageMeter", "DamageMeterDrawMenuPreview") then
             P.SetTranslatedText(footer, Tr("Preview is available outside combat."))
@@ -54,22 +95,42 @@ function P.BuildMeterMenuPreview(ui, selected, setSelected)
         if not preview.targets then preview.targets = Hits(ui, win) end
         local native = UIParent:GetEffectiveScale() / ui.header:GetEffectiveScale()
         local w, h = win.frame:GetWidth(), win.frame:GetHeight()
-        local fit = math.min(1, (width - 8) / (w * native), 250 / (h * native))
+        local fit = math.min(1, preview.availableWidth / (w * native), 250 / (h * native))
         local scale, height = native * fit, h * native * fit
         if preview.scale ~= scale or preview.height ~= height or preview.width ~= w then
             preview.scale, preview.height, preview.width = scale, height, w
             stage:SetScale(scale)
             stage:SetSize(w, h)
             viewport:SetHeight(height)
-            footer:ClearAllPoints()
-            footer:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 16, -128 - height)
             P.SetTranslatedText(title, fit < .995 and Tr("Preview %d%%"):format(math.floor(fit * 100 + .5)) or Tr("Preview"))
         end
-        local scope = ui.selected == "window" and Tr("Only the selected window") or Tr("Applies to all windows")
-        if preview.scope ~= scope then
-            preview.scope = scope
-            P.SetTranslatedText(footer, scope .. "\n" .. Tr("Sample values. Click an element to open its settings."))
+        Layers.Paint(preview, win)
+        E.Refresh(preview)
+        local handle = viewport._selectedHandle
+        local scope = handle and handle.widthSetting == "windowWidth" and Tr("Only the selected window") or Tr("Applies to all windows")
+        local hint = handle and handle.canMove and Tr("Click to select; drag or use arrow keys; edit exact X/Y below.")
+            or Tr("Sample values. Click an element to open its settings.")
+        if preview.scope ~= scope or preview.hint ~= hint then
+            preview.scope, preview.hint = scope, hint
+            P.SetTranslatedText(footer, scope .. "\n" .. hint)
         end
-        P.MenuWorkspace.FitHeader(ui, 144 + height + math.ceil(footer:GetStringHeight() or 28))
+        local selectionHeight = preview.selectionHeight or 0
+        local propertiesHeight = preview.propertiesHeight or 0
+        preview.properties:ClearAllPoints()
+        preview.properties:SetPoint("TOPLEFT", viewport, "BOTTOMLEFT", 0, -8 - selectionHeight)
+        preview.chips:ClearAllPoints()
+        preview.chips:SetPoint("TOPLEFT", viewport, "BOTTOMLEFT", 0, -8 - selectionHeight - propertiesHeight)
+        footer:ClearAllPoints()
+        footer:SetPoint("TOPLEFT", preview.chips, "BOTTOMLEFT", 0, -8)
+        P.MenuWorkspace.FitHeader(ui, 144 + height + selectionHeight + propertiesHeight
+            + preview.chips:GetHeight() + math.ceil(footer:GetStringHeight() or 28))
+    end)
+    ui.header:HookScript("OnSizeChanged", function()
+        local headerWidth = ui.header:GetWidth()
+        if not headerWidth or headerWidth <= 32 then return end
+        preview.availableWidth = math.max(200, headerWidth - 40)
+        viewport:SetWidth(preview.availableWidth)
+        Layers.Layout(preview)
+        ui.refreshPreview()
     end)
 end

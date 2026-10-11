@@ -42,7 +42,7 @@ end
 function K.Watch(ui, paint)
     local events = CreateFrame("Frame", nil, ui.header)
     local function Refresh()
-        if ui.header:IsVisible() then paint() end
+        if ui.header:IsVisible() and ui.ctx.wrapper:IsVisible() then paint() end
     end
     local function Activate()
         events:RegisterEvent("PLAYER_REGEN_ENABLED")

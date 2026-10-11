@@ -89,14 +89,18 @@ function Workspace.Builder(ctx, spec)
     local builder = spec.builder or W.PageBuilder(ctx)
     if not builder.Section then return builder, nil end
     local height = spec.height or 62
-    local header = spec.header or W.FixedPreviewSection and W.FixedPreviewSection(ctx, builder, { title = Tr(spec.title), height = height })
+    local ui
+    local header = spec.header or W.FixedPreviewSection and W.FixedPreviewSection(ctx, builder, {
+        title = Tr(spec.title), height = height,
+        onActivate = function() if ui and ui.refreshPreview then ui.refreshPreview() end end,
+    })
         or builder:Section(Tr(spec.title), height)
     HM.SetFixedPreviewHeight(header, height)
     header:SetHeight(height)
     local body = builder:Section(Tr("Settings"), 120)
     if header.title then header.title:Hide() end
     if body.title then body.title:Hide() end
-    local ui = { ctx = ctx, spec = spec, builder = builder, body = body, header = header,
+    ui = { ctx = ctx, spec = spec, builder = builder, body = body, header = header,
         width = HM.GetSectionWidth(body) or builder.width or 720, groups = {}, sections = {},
         selected = selections[spec.page] or spec.tabs[1].id }
     ctx.suiteWorkspace = ui

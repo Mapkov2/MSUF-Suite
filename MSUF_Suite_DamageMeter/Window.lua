@@ -156,25 +156,25 @@ function D.StyleHeader(win)
     local size = min(c.headerIconSize, c.headerHeight)
     local r, g, b = S.RGB(c.titleColor)
     local previous
-    for _, kind in ipairs(ORDER) do
+    for index, kind in ipairs(ORDER) do
         local button = win.buttons[kind]
         button:ClearAllPoints()
-        button:SetSize(size, size)
-        if previous then
-            button:SetPoint("RIGHT", previous, "LEFT", -2, 0)
-        else
-            button:SetPoint("RIGHT", win.header, "RIGHT", -3, 0)
-        end
+        local elementSize = c[kind .. "Size"] > 0 and c[kind .. "Size"] or size
+        button:SetSize(elementSize, elementSize)
+        -- Every element has a stable slot; moving/resizing one never drags
+        -- its siblings, the title or the combat timer through an anchor chain.
+        button:SetPoint("RIGHT", win.header, "RIGHT", -3 - (index - 1) * (size + 2)
+            + c.buttonsOffsetX + c[kind .. "OffsetX"], c.buttonsOffsetY + c[kind .. "OffsetY"])
         previous = button
-        if button.iconScale then button.icon:SetSize(size * button.iconScale, size * button.iconScale) end
+        if button.iconScale then button.icon:SetSize(elementSize * button.iconScale, elementSize * button.iconScale) end
         if button.label then
-            D.FontStyle(button.label, max(8, c.headerFontSize - 1))
+            D.FontStyle(button.label, c[kind .. "Size"] > 0 and max(8, floor(elementSize * .6)) or max(8, c.headerFontSize - 1))
             button.label:SetTextColor(r, g, b)
             button.label:ClearAllPoints()
             button.label:SetPoint("CENTER", button, "CENTER", 0, M.style.baseline)
         end
         if button.bars then
-            local width, thick = size * .7, max(1, floor(size / 9 + .5))
+            local width, thick = elementSize * .7, max(1, floor(elementSize / 9 + .5))
             for i, bar in ipairs(button.bars) do
                 bar:ClearAllPoints()
                 bar:SetSize(width * (1.3 - .3 * i), thick)
@@ -184,15 +184,16 @@ function D.StyleHeader(win)
         end
     end
     win.firstButton = previous
-    D.FontStyle(win.title, c.headerFontSize)
+    D.FontStyle(win.title, c.titleSize > 0 and c.titleSize or c.headerFontSize)
     win.title:SetTextColor(r, g, b)
-    D.FontStyle(win.timer, c.headerFontSize)
+    D.FontStyle(win.timer, c.headerTimerSize > 0 and c.headerTimerSize or c.headerFontSize)
     win.timer:SetTextColor(r, g, b)
     win.title:ClearAllPoints()
     win.timer:ClearAllPoints()
-    win.timer:SetPoint("RIGHT", previous, "LEFT", -4, M.style.baseline)
-    win.title:SetPoint("LEFT", win.header, "LEFT", 6, M.style.baseline)
-    win.title:SetPoint("RIGHT", win.timer, "LEFT", -4, 0)
+    local timerRight = -3 - #ORDER * (size + 2) - 2
+    win.timer:SetPoint("RIGHT", win.header, "RIGHT", timerRight + c.headerTimerOffsetX, M.style.baseline + c.headerTimerOffsetY)
+    win.title:SetPoint("LEFT", win.header, "LEFT", 6 + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
+    win.title:SetPoint("RIGHT", win.header, "RIGHT", timerRight - c.headerFontSize * 3 - 4 + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
 end
 
 -- The outline sits outside the window: S.PlaceEdges frames the box that

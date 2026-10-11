@@ -15,12 +15,9 @@ local HELP = {
 -- The selected window is shared by the window controls below; their rules use
 -- window 1's keys as templates and resolve to the selected window at runtime.
 local selected = 1
-P.SearchPreparers[ID] = function(rule)
-    if rule.window and selected > P.Get(ID, "windowCount") then
-        selected = 1
-        P.Refresh()
-    end
-end
+-- Exact navigation follows the explicit picker, including retained windows
+-- above windowCount. Their controls keep the existing disabled-state hint.
+P.SearchPreparers[ID] = function() return selected end
 local function WindowKey(key)
     local suffix = key:match("^w%d+(.+)$")
     return suffix and ("w" .. selected .. suffix) or key

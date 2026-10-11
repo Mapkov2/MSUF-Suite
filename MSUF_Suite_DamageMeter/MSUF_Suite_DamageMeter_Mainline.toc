@@ -10,6 +10,7 @@
 
 Bootstrap.lua
 Data.lua
+IconLayout.lua
 Rows.lua
 Window.lua
 Breakdown.lua

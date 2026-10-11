@@ -68,11 +68,12 @@ function D.CreateRow(parent, win, kind)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
     row.bar = bar
-    row.track = S.CreateTexture(row, nil, "BACKGROUND")
-    row.icon = S.CreateTexture(row, nil, "ARTWORK")
-    row.rankText = S.CreateFontString(bar, nil, "OVERLAY")
-    row.nameText = S.CreateFontString(bar, nil, "OVERLAY")
-    row.valueText = S.CreateFontString(bar, nil, "OVERLAY")
+    D.CreateRowSurfaces(row)
+    row.track = S.CreateTexture(bar, nil, "BACKGROUND")
+    row.icon = S.CreateTexture(row.iconHost or row, nil, "ARTWORK")
+    row.rankText = S.CreateFontString(row.nameHost or bar, nil, "OVERLAY")
+    row.nameText = S.CreateFontString(row.nameHost or bar, nil, "OVERLAY")
+    row.valueText = S.CreateFontString(row.valueHost or bar, nil, "OVERLAY")
     row.nameText:SetJustifyH("LEFT")
     row.valueText:SetJustifyH("RIGHT")
     row.rankText:SetWordWrap(false)
@@ -93,9 +94,11 @@ end
 
 function D.AnchorRow(row, parent, slot)
     local offset = -(slot - 1) * (M.style.barHeight + M.style.spacing)
+    local x, y = 0, 0
+    if row.kind == "list" then x, y = M.config.barsOffsetX, M.config.barsOffsetY end
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, offset)
-    row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, offset)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", x, offset + y)
+    row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", x, offset + y)
 end
 
 function D.ClearMemo(row)
@@ -146,6 +149,7 @@ local function RowEdges(row, key, parent)
     if not holder then
         holder = S.CreateFrame("Frame", nil, parent)
         holder:SetFrameLevel(parent:GetFrameLevel() + 2)
+        holder:EnableMouse(false)
         holder.edges = {}
         for i = 1, 4 do holder.edges[i] = S.CreateTexture(holder, nil, "OVERLAY") end
         row[key] = holder
@@ -158,15 +162,20 @@ local function StyleRowBorder(row, hasIcon)
     local r, g, b = S.RGB(c.rowBorderColor)
     if mode ~= ROW_BORDER.NONE then
         local holder = RowEdges(row, "fillBorder", bar)
+        local level = bar:GetFrameLevel() + 2
+        if holder:GetFrameLevel() ~= level then holder:SetFrameLevel(level) end
         local target = mode == ROW_BORDER.FILLED and bar:GetStatusBarTexture() or bar
         holder:ClearAllPoints()
-        holder:SetPoint("TOPLEFT", hasIcon and c.rowBorderIcon and row.icon or target, "TOPLEFT", 0, 0)
+        -- Include the reserved icon column; a displaced icon must not invert
+        -- the full-row rectangle by crossing its opposite bar corner.
+        holder:SetPoint("TOPLEFT", hasIcon and c.rowBorderIcon and row or target, "TOPLEFT", 0, 0)
         holder:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
         S.PlaceEdges(holder.edges, holder, c.rowBorderSize, r, g, b, 1)
         holder:Show()
     elseif row.fillBorder then row.fillBorder:Hide() end
     if c.iconBorder and hasIcon then
-        local holder = RowEdges(row, "iconBorder", bar)
+        local holder = RowEdges(row, "iconBorder", row.iconHost or bar)
+        if row.iconHost then holder:SetFrameLevel(row.iconHost:GetFrameLevel() + 1) end
         holder:SetAllPoints(row.icon)
         S.PlaceEdges(holder.edges, holder, c.rowBorderSize, r, g, b, 1)
         holder:Show()
@@ -180,13 +189,17 @@ function D.StyleRow(row)
     local height = tip and 16 or style.barHeight
     local left, right = tip and 11 or style.leftSize, tip and 11 or style.rightSize
     local hasIcon = not list or style.iconStyle ~= ICON.NONE
+    local c = M.config
+    local nx, ny = list and c.nameOffsetX or 0, list and c.nameOffsetY or 0
+    local vx, vy = list and c.valueOffsetX or 0, list and c.valueOffsetY or 0
     row:SetHeight(height)
     local icon, bar = row.icon, row.bar
     icon:ClearAllPoints()
     bar:ClearAllPoints()
     if hasIcon then
-        icon:SetSize(height, height)
-        icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+        local size = list and c.iconSize > 0 and c.iconSize or height
+        icon:SetSize(size, size)
+        icon:SetPoint("LEFT", row, "LEFT", list and c.iconOffsetX or 0, list and c.iconOffsetY or 0)
         bar:SetPoint("TOPLEFT", row, "TOPLEFT", height + 1, 0)
     else
         icon:Hide()
@@ -194,6 +207,7 @@ function D.StyleRow(row)
     end
     bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
     bar:SetStatusBarTexture(style.texture)
+    D.StyleRowSurfaces(row)
     StyleGradient(bar, style)
     StyleRowBorder(row, hasIcon)
     row.track:ClearAllPoints()
@@ -207,16 +221,16 @@ function D.StyleRow(row)
     rank:ClearAllPoints()
     name:ClearAllPoints()
     value:ClearAllPoints()
-    value:SetPoint("RIGHT", bar, "RIGHT", -3, style.baseline)
+    value:SetPoint("RIGHT", bar, "RIGHT", -3 + vx, style.baseline + vy)
     if list and style.rank then
-        rank:SetPoint("LEFT", bar, "LEFT", 3, style.baseline)
+        rank:SetPoint("LEFT", bar, "LEFT", 3 + nx, style.baseline + ny)
         rank:Show()
         name:SetPoint("LEFT", rank, "RIGHT", 2, 0)
     else
         rank:Hide()
-        name:SetPoint("LEFT", bar, "LEFT", 3, style.baseline)
+        name:SetPoint("LEFT", bar, "LEFT", 3 + nx, style.baseline + ny)
     end
-    name:SetPoint("RIGHT", value, "LEFT", -6, 0)
+    name:SetPoint("RIGHT", value, "LEFT", -6 + nx - vx, ny - vy)
     D.ClearMemo(row)
 end
 

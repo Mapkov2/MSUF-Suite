@@ -32,6 +32,7 @@ local function Passive(frame, scripts)
 end
 local function Create(parent, index)
     local win = D.NewWindow(parent, index)
+    win.menuPreview = true
     Passive(win.header, D.headerScripts)
     Passive(win.body, D.bodyScripts)
     Passive(win.grip, D.gripScripts)

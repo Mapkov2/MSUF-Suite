@@ -304,7 +304,7 @@ Support.Load(root,"MSUF_Suite",Suite,"Core/HostBridge.lua")
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
-local files={"Data","Rows","Window","Breakdown","Menus","Timer","Controller"}
+local files={"Data","IconLayout","Rows","Window","Breakdown","Menus","Timer","Controller"}
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
@@ -1164,7 +1164,7 @@ do
     assert(S.SetMany("damageMeter",{rowBorderMode=3,rowBorderIcon=true,iconBorder=true}))
     local row=D.CreateRow(win.body,win,"tip")
     D.StyleRow(row)
-    assert(row.fillBorder.points[1][2]==row.icon and row.fillBorder.points[2][2]==row.bar:GetStatusBarTexture(),
+    assert(row.fillBorder.points[1][2]==row and row.fillBorder.points[2][2]==row.bar:GetStatusBarTexture(),
         "filled border lost native texture anchors")
     assert(row.iconBorder.allPoints==row.icon,"separate icon border lost icon geometry")
     assert(S.SetMany("damageMeter",{timer=true,combatTime=true,timerDecimals=true,timerKeep=true,timerBorderSize=2}))
