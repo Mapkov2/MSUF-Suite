@@ -301,25 +301,26 @@ local function ShownButtonMask()
     return mask
 end
 
+-- In combat the button set is checked once combat ends
+-- (MicroMenuSkin.RefreshAfterCombat).
+local function LayoutWaitsForCombat()
+    if not NS.IsCombatLocked() then return false end
+    layoutChangedInCombat = true
+    return true
+end
+
+-- A check queued before combat started keeps its obligation for combat end.
 local function FlushButtonLayout()
     layoutRefreshPending = false
-    if NS.IsCombatLocked() or visualSuspended or transitionInProgress
-        or not MicroMenuSkin.active then
-        return
-    end
+    if LayoutWaitsForCombat() or SkinQuiet() then return end
     MicroMenuSkin.RefreshActive(true)
 end
 
 -- Every MicroButton's OnShow/OnHide calls MicroMenuContainer:Layout() (all
 -- clients), so one hook on the container sees each visibility change. Repeated
--- signals within a frame collapse into one deferred check; a signal in combat
--- is checked when combat ends (MicroMenuSkin.RefreshAfterCombat).
+-- signals within a frame collapse into one deferred check.
 local function OnContainerLayout()
-    if NS.IsCombatLocked() then
-        layoutChangedInCombat = true
-        return
-    end
-    if SkinQuiet() or layoutRefreshPending then return end
+    if LayoutWaitsForCombat() or SkinQuiet() or layoutRefreshPending then return end
     layoutRefreshPending = true
     C_Timer.After(0, FlushButtonLayout)
 end
@@ -584,13 +585,14 @@ end
 -- and a MicroButton shown or hidden meanwhile gets the owned grid placed
 -- again. Buttons whose hooks stayed silent still show the art of their last
 -- repaint. False when the hooks are quiet for another reason (a Blizzard
--- override, a transition or no active skin); the caller then runs its full
--- pass.
+-- override, a transition or no active skin) or the grid could not be placed;
+-- the caller then runs its full pass. The layout obligation ends only with a
+-- grid that matches the shown buttons.
 function MicroMenuSkin.RefreshAfterCombat()
     if HooksQuiet() then return false end
     if layoutChangedInCombat then
+        if not RefreshLayout() then return false end
         layoutChangedInCombat = false
-        RefreshLayout()
     end
     for button in pairs(staleButtons) do
         staleButtons[button] = nil

@@ -376,16 +376,20 @@ end
 
 -- Combat end. Every in-combat change that moves, scales, hides or hands over
 -- the menu defers Reapply under REAPPLY_KEY (native reset, override, layout
--- and scale hooks, drags, zone, housing and Gamepad UI signals); while that
--- is pending, or while the bar does not hold the menu, the full pass runs as
--- before. Otherwise the bar is still placed as it was, and only what combat
--- itself held back comes back: the skin's quiet button hooks and button set
--- (MicroMenuSkin.RefreshAfterCombat), the portrait (UNIT_PORTRAIT_UPDATE
--- skips it in combat) and the mover hidden at combat start.
+-- and scale hooks, drags, zone, housing and Gamepad UI signals). That full
+-- pass (it repaints every button, places the grid and shell with the
+-- portrait and shows the mover again) runs from the CombatGate drain within
+-- its frame budget; asking for it again here would run it, and every job
+-- the budget left for the next frame, at once. While the bar does not hold
+-- the menu the full pass runs as before. Otherwise the bar is still placed
+-- as it was, and only what combat itself held back comes back: the skin's
+-- quiet button hooks and button set (MicroMenuSkin.RefreshAfterCombat), the
+-- portrait (UNIT_PORTRAIT_UPDATE skips it in combat) and the mover hidden
+-- at combat start.
 local function OnCombatEnded()
-    if not desired then return end
+    if not desired or NS.CombatGate.IsPending(REAPPLY_KEY) then return end
     local settings = Settings()
-    if NS.CombatGate.IsPending(REAPPLY_KEY) or not OwnedMicroBar.active
+    if not OwnedMicroBar.active
         or not HoldsMenu(settings) or not NS.MicroMenuSkin.RefreshAfterCombat() then
         ScheduleReapply()
         return

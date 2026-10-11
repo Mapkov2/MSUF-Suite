@@ -3,8 +3,10 @@
 -- the menu defers the bar's Reapply through CombatGate; combat end with
 -- nothing deferred brings back only what combat held back (the mover, the
 -- portrait, the buttons whose state hooks fired, a changed button set) and
--- neither re-skins nor places the bar again. A deferred Reapply, or a menu
--- Blizzard holds, still takes the full pass. A native state hook repaints a
+-- neither re-skins nor places the bar again; a layout check queued before
+-- combat keeps its obligation. A deferred Reapply runs once, from the
+-- CombatGate drain within its frame budget; a menu Blizzard holds still
+-- takes the full pass. A native state hook repaints a
 -- clean button without repeating the CanControl check per faded region, and
 -- keeps the overlay paint while its inputs are unchanged; the native state
 -- masks and the borrowed performance bar are checked on every repaint.
@@ -89,6 +91,9 @@ RegisterStateDriver, UnregisterStateDriver = Noop, Noop
 IsInInstance = function() return false end
 C_Housing = { IsInsideHouseOrPlot = function() return false end }
 C_GameRules = { GetGameRuleAsFloat = function() return 0 end }
+-- CombatGate's drain budget reads this clock (milliseconds).
+local clock = 0
+debugprofilestop = function() return clock end
 local nextFrame = {}
 C_Timer = { After = function(_, callback) nextFrame[#nextFrame + 1] = callback end }
 local function RunNextFrame()
@@ -280,6 +285,21 @@ container:Layout()
 RunNextFrame()
 Check(counts.grid == 2, "showing the button again did not place the owned grid")
 
+-- A button hidden just before combat: its check, queued for the next frame,
+-- meets combat and keeps its obligation; combat end places the grid once.
+buttons[2].shown = false
+container:Layout()
+StartCombat()
+Reset()
+RunNextFrame()
+Check(not counts.grid, "a queued layout check placed the owned grid in combat")
+EndCombat()
+Check(counts.grid == 1, "a layout check that met combat placed the owned grid "
+    .. tostring(counts.grid or 0) .. " times at combat end, not once")
+buttons[2].shown = true
+container:Layout()
+RunNextFrame()
+
 ------------------------------------------------------------------ Reapply deferred
 -- MicroMenu:Layout in combat defers the full pass: combat end keeps it, in
 -- either order of the two PLAYER_REGEN_ENABLED handlers.
@@ -298,15 +318,40 @@ for _, gateFirst in ipairs({ false, true }) do
         order .. ": a deferred full pass did not repaint every button")
     Check(mover.shown, order .. ": a deferred full pass did not bring the mover back")
 end
--- The bar's handler runs its full pass at once as before, and the drain runs
--- the deferred one; when the drain ran first, the bar's handler adds nothing.
-for _, case in ipairs({ { false, 2 }, { true, 1 } }) do
+-- The deferred full pass runs once, from the drain; the bar's handler does
+-- not ask for it again.
+for _, gateFirst in ipairs({ false, true }) do
     StartCombat()
     menu:Layout()
     Reset()
-    EndCombat(case[1])
-    Check(counts.grid == case[2], "combat end placed the owned grid " .. tostring(counts.grid)
-        .. " times, not " .. case[2] .. (case[1] and " (drain first)" or " (bar first)"))
+    EndCombat(gateFirst)
+    Check(counts.grid == 1, "combat end placed the owned grid " .. tostring(counts.grid)
+        .. " times, not once" .. (gateFirst and " (drain first)" or " (bar first)"))
+end
+
+-- The drain keeps its frame budget (4 ms) around the deferred full pass: an
+-- expensive job asked for before it uses up the frame, and the full pass
+-- and a trailing job run once each on the next frame, with everything the
+-- light path would restore (stale button, portrait, mover).
+for _, gateFirst in ipairs({ false, true }) do
+    local order = gateFirst and "drain first" or "bar first"
+    local expensive, trailing = 0, 0
+    StartCombat()
+    Gate.RunOrDefer("contract:expensive", function() expensive = expensive + 1; clock = clock + 5 end)
+    menu:Layout()
+    buttons[1]:SetPushed()
+    Gate.RunOrDefer("contract:trailing", function() trailing = trailing + 1 end)
+    Reset()
+    EndCombat(gateFirst)
+    Check(expensive == 1 and not counts.grid and trailing == 0 and Gate.IsPending(REAPPLY_KEY),
+        order .. ": combat end ran the deferred full pass past the drain budget")
+    RunNextFrame()
+    Check(counts.grid == 1 and trailing == 1 and expensive == 1 and Gate.GetPendingCount() == 0,
+        order .. ": the drain did not run the full pass and the trailing job exactly once")
+    Check(mover.shown and counts.portrait == 1 and (stateApplies[buttons[1]] or 0) >= 1,
+        order .. ": the drained full pass lost the mover, the portrait or a stale button")
+    RunNextFrame()
+    Check(counts.grid == 1, order .. ": the deferred full pass ran again")
 end
 
 ------------------------------------------------------------------ menu held by Blizzard
