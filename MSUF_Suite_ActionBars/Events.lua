@@ -329,6 +329,14 @@ local optionalEvents = {
 }
 -- Context:Event's named option: the handler also runs in combat.
 local IN_COMBAT = { inCombat = true }
+-- The cooldown and state storms of the 2026-10-07 raid trace (60 s) reach
+-- their handlers straight from the context's direct frame (Runtime.lua
+-- DirectEvent), without RouteEvent and a Dispatch each:
+-- SPELL_UPDATE_COOLDOWN 1,596, ACTIONBAR_UPDATE_COOLDOWN 739,
+-- CURRENT_SPELL_CAST_CHANGED 381 and ACTIONBAR_UPDATE_STATE 278 events.
+local DIRECT = { inCombat = true, direct = true }
+local DIRECT_EVENTS = { SPELL_UPDATE_COOLDOWN = DIRECT, ACTIONBAR_UPDATE_COOLDOWN = DIRECT,
+    CURRENT_SPELL_CAST_CHANGED = DIRECT, ACTIONBAR_UPDATE_STATE = DIRECT }
 function AB.SyncOptionalEvents()
     local context = M.context
     for event in pairs(optionalEvents) do
@@ -390,7 +398,7 @@ function AB.StartDispatcher()
     GCD_RECOVERY = Constants.SpellCooldownConsts.GLOBAL_RECOVERY_CATEGORY
     AB.locActive = ActiveLossOfControl()
     for event, handler in pairs(EVENTS) do
-        if not optionalEvents[event] then context:Event(event, handler, IN_COMBAT) end
+        if not optionalEvents[event] then context:Event(event, handler, DIRECT_EVENTS[event] or IN_COMBAT) end
     end
     AB.SyncOptionalEvents()
     AB.cooldownOwner = AB.cooldownOwner or {}

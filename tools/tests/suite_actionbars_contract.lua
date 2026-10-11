@@ -22,8 +22,9 @@ issecretvalue=IsSecret
 -- The client's securecallfunction reports an error to the error handler and
 -- returns nothing; the caller goes on. Here errors still raise unless a test
 -- expects one; a coroutine then holds the error back from the caller.
-local dispatch={expect=false,errors={}}
+local dispatch={expect=false,errors={},calls=0}
 securecallfunction=function(fn,...)
+    dispatch.calls=dispatch.calls+1
     if not dispatch.expect then return fn(...) end
     local results={coroutine.resume(coroutine.create(fn),...)}
     if results[1] then return unpack(results,2,table.maxn(results)) end
@@ -965,8 +966,11 @@ Suite.Client.isForever=false
 local M=AB.M
 local c=S.Config("actionbars")
 assert(Suite.Client.hasSecrets,"harness must model a secret client")
+-- The cooldown and state storms live on the context's direct frame
+-- (Runtime.lua DirectEvent); every other event on the routing frame.
 local function Event(name,...)
-    local frame=M.context.frame
+    local direct=M.context.directFrame
+    local frame=direct and direct.events[name] and direct or M.context.frame
     assert(frame.events[name],name.." is not registered")
     frame.scripts.OnEvent(frame,name,...)
 end
@@ -1645,7 +1649,7 @@ assert(walk>0,"cooldown walk ran")
 assert(calls.cooldown==infoCalls,"default cooldown walk allocated info tables")
 cooldownCalls=calls.duration
 now=now+.2
-assert(M.context.frame.events.SPELL_UPDATE_COOLDOWN,
+assert(M.context.directFrame and M.context.directFrame.events.SPELL_UPDATE_COOLDOWN,
     "spell actions lost their SPELL_UPDATE_COOLDOWN route")
 assert(not M.context.frame.events.SPELL_UPDATE_USABLE,
     "Retail action bars retained the redundant global spell usability event")
@@ -2671,6 +2675,20 @@ do
     assert(S.Set("actionbars","bar1HideGamepad",false));RunTimers()
     assert(Bar(1).header.shown and not M.context.frame.events.GAME_PAD_ACTIVE_CHANGED,"other client flavors release gamepad triggers")
 end
+-- The 2026-10-07 raid trace (60 s): these four storms reached the bars
+-- through RouteEvent and a Dispatch each (1,596 + 739 + 381 + 278 events).
+-- They arrive on the context's direct frame: no Dispatch per event.
+do
+    local before=dispatch.calls
+    for _,event in ipairs({"SPELL_UPDATE_COOLDOWN","ACTIONBAR_UPDATE_COOLDOWN","CURRENT_SPELL_CAST_CHANGED",
+        "ACTIONBAR_UPDATE_STATE"}) do
+        assert(M.context.directFrame.events[event] and not M.context.frame.events[event],
+            event.." is not on the direct frame")
+        Event(event)
+    end
+    assert(dispatch.calls==before,"an action bar storm event ran "..(dispatch.calls-before).." Dispatch calls")
+    RunTimers()
+end
 local clears=overrideClears
 local enabledEvents=triggered[BINDINGS_EVENT] or 0
 -- Every release step runs isolated: the first one raising is reported, and
@@ -2692,7 +2710,7 @@ assert((triggered[BINDINGS_EVENT] or 0)>enabledEvents and not S.ActionBarsBindin
 assert(overrideClears==clears+1 and not next(overrides),"disable clears override bindings")
 assert(S.Status("actionbars")==AB.RELOAD_MESSAGE,"reload message after disable")
 for index=1,12 do assert(not Bar(index).header.shown,"suite bars hide on disable") end
-assert(not next(M.context.frame.events),"no events while disabled")
+assert(not next(M.context.frame.events) and not next(M.context.directFrame.events),"no events while disabled")
 assert(AB.Diagnostics.RangeReferences()==0)
 local count=created
 assert(S.Set("actionbars","enabled",true))
