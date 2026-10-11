@@ -13,8 +13,9 @@ local function Check(condition, message)
 end
 
 local Noop = function() end
-local Methods = {}
+local Methods, frameCalls = {}, 0
 local function Frame(parent)
+    frameCalls = frameCalls + 1
     local frame = { shown = true, parent = parent, height = 0 }
     return setmetatable(frame, { __index = function(_, key)
         if type(key) == "string" and key:match("^%u") then return Methods[key] or Noop end
@@ -40,7 +41,7 @@ local function Count(text)
 end
 
 ------------------------------------------------------------------ fake host
-local lazyHost = true
+local lazyHost, rowAllocations = true, 0
 local function Builder(ctx)
     local b = { ctx = ctx, width = 720, parent = ctx.wrapper or Frame(), collapsibles = {}, layoutEntries = {} }
     function b:Section(title, height)
@@ -99,6 +100,7 @@ P.W = {
     PageBuilder = Builder,
     SettingsRows = function(_, parent, spec)
         Log("rows")
+        rowAllocations = rowAllocations + #spec.rows
         local controls = {}
         for _, row in ipairs(spec.rows) do controls[row.id] = Frame(parent) end
         P.lastRows = spec.rows
@@ -160,6 +162,7 @@ function P.HideControlTitle(widget)
 end
 local function Load(file) assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))("MSUF_Suite_Options", P) end
 Load("Menu/Controls.lua")
+Load("Menu/Colors.lua")
 local function Ctx(saved)
     return { refreshers = {}, wrapper = Frame(), key = "suite_demo", saved = saved }
 end
@@ -224,8 +227,85 @@ do
 
     Clear()
     local colorsBody, colorsEntries = Section(ctx, b, "colors_demo", { pageKey = "colors" })
-    Check(Count("lazy colors_demo") == 0 and colorsEntries and #colorsEntries == 3 and colorsBody.resets == 1,
-        "MSUF Colors must stay eager: its painter needs every color row")
+    Check(Count("lazy colors_demo") == 1 and colorsEntries == nil and Count("rows") == 0 and colorsBody.resets == 1,
+        "closed Colors section allocated controls before opening")
+    P.EnsureSectionContent(colorsBody)
+    Check(Count("rows") == 1 and #P.lastRows == 3, "opening Colors lost its rows")
+    P.EnsureSectionContent(colorsBody)
+    Check(Count("rows") == 1, "reopening Colors allocated its rows again")
+end
+
+------------------------------------------------------------------ Colors cold/warm budgets
+local function Instructions(callback)
+    local ticks = 0
+    debug.sethook(function() ticks = ticks + 1 end, "", 100)
+    callback()
+    debug.sethook()
+    return ticks * 100
+end
+do
+    local oldCatalog, oldOrder, oldSkin, oldProvider = P.catalog, P.order, P.Suite.Skin, _G.MapkoSkin
+    local loads = 0
+    local function Catalog(count)
+        local controls, rules = {}, {}
+        for i = 1, count do
+            local rule = { key = "color" .. i, label = "Color " .. i, default = "ffffff", color = true }
+            controls[i], rules[rule.key] = rule, rule
+        end
+        return { title = "Palette", controls = controls, rules = rules }
+    end
+    P.catalog = { minimap = Catalog(2), actionbars = Catalog(96), damageMeter = Catalog(96) }
+    P.order = { "minimap", "actionbars", "damageMeter" }
+    P.ForgetAvailability = Noop
+    _G.MapkoSkin = nil
+    P.Suite.Skin = { EnsureEngine = function()
+        loads = loads + 1
+        local order = {}
+        for i = 1, 64 do order[i] = { "tint" .. i, "Tint " .. i } end
+        _G.MapkoSkin = { addonName = "MSUF_Suite_Skin", ColorOrder = order,
+            SourceText = function(text) return text end,
+            Theme = { GetColorTable = function() return { 0.1, 0.2, 0.3, 0.4 } end,
+                SetColor = Noop, ResetColors = Noop } }
+    end }
+    local ctx, before = Ctx(), rowAllocations
+    local b = Builder(ctx)
+    local beforeFrames = frameCalls
+    local coldInstructions = Instructions(function() P.BuildColorsCategory(ctx, b) end)
+    local coldFrames = frameCalls - beforeFrames
+    Check(rowAllocations - before == 2 and loads == 0,
+        "cold Colors built closed palettes or loaded the skin engine")
+    local sections = {}
+    for _, entry in ipairs(b.collapsibles) do sections[entry.sectionId] = entry.body end
+    for i = 1, 5 do for _, refresh in ipairs(ctx.refreshers) do refresh() end end
+    Check(rowAllocations - before == 2 and loads == 0, "Colors refresh allocated closed palettes")
+    P.EnsureSectionContent(sections.colors_suite_damageMeter)
+    Check(rowAllocations - before == 98 and #P.lastRows == 96, "opening a palette lost its declared colors")
+    P.EnsureSectionContent(sections.colors_suite_damageMeter)
+    Check(rowAllocations - before == 98, "warm palette allocated rows again")
+    combat = true
+    P.EnsureSectionContent(sections.colors_suite_skin)
+    Check(loads == 0, "Colors loaded skin in combat")
+    combat = false
+    P.EnsureSectionContent(sections.colors_suite_skin)
+    Check(loads == 1 and rowAllocations - before == 162 and #P.lastRows == 64,
+        "opening skin did not materialize its complete palette once")
+    Check(select(4, P.lastRows[1].get()) == 0.4, "deferred skin color lost opacity")
+    P.EnsureSectionContent(sections.colors_suite_skin)
+    Check(loads == 1 and rowAllocations - before == 162, "warm skin rebuilt its palette")
+    -- Legacy hosts still expose every color without the lazy API.
+    lazyHost, _G.MapkoSkin = false, nil
+    before = rowAllocations
+    ctx = Ctx()
+    beforeFrames = frameCalls
+    local legacyInstructions = Instructions(function() P.BuildColorsCategory(ctx, Builder(ctx)) end)
+    local legacyFrames = frameCalls - beforeFrames
+    Check(coldInstructions < legacyInstructions and coldFrames < legacyFrames,
+        "cold Colors did not reduce VM work and native frame requests")
+    Check(rowAllocations - before == 258 and loads == 2, "legacy Colors lost palette coverage")
+    lazyHost = true
+    P.catalog, P.order, P.Suite.Skin, _G.MapkoSkin = oldCatalog, oldOrder, oldSkin, oldProvider
+    print(("Colors budget fixture: cold 2/258 rows, %d/%d VM instructions, %d/%d frame requests; warm 0 new rows")
+        :format(coldInstructions, legacyInstructions, coldFrames, legacyFrames))
 end
 
 ------------------------------------------------------------------ module card
@@ -380,4 +460,4 @@ do
         "an old host builds the enemy tabs at once")
 end
 
-print("Suite lazy sections: shell/content split, summary before \"...\", onBuilt, eager colors, combat refusal, module cards, skin tabs, facades and page selectors passed")
+print("Suite lazy sections: shell/content split, summary before \"...\", onBuilt, lazy Colors budgets, combat refusal, module cards, skin tabs, facades and page selectors passed")

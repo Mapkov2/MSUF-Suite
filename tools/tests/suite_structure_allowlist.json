@@ -747,7 +747,7 @@
    "symbol": "popup.RefreshTargets"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "file": "MSUF_Suite_Options/Menu/Colors.lua",
    "kind": "lod",
    "reason": "export of MSUF_Suite_Skin, which loads on demand",
    "symbol": "skin.Theme.ResetColors"

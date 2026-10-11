@@ -502,8 +502,8 @@ end
 -- opts: help, open, keyFn, columns, onEnsureVisible, extra(body, y) -> y,
 -- copy (see P.AttachSectionReset), onBuilt(body, entries) once the controls
 -- exist. A lazy host builds a closed section's controls on first open, so
--- the returned entries are nil until then. MSUF Colors stays eager: its
--- painter works on the color rows of every section.
+-- the returned entries are nil until then. Colors uses the same lazy path;
+-- the Suite category has no preview paint targets outside these sections.
 function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
     opts = opts or {}
     local built, entries = P.RuleRows(pageKey, id, rules, opts.keyFn, sectionId), nil
@@ -520,7 +520,7 @@ function P.RuleSection(ctx, b, pageKey, id, sectionId, title, rules, opts)
         return y
     end
     local body = P.LazySection(b, sectionId, title, opts.open, {
-        content = Content, eager = pageKey == "colors",
+        content = Content,
         shell = function(section)
             P.AttachSectionReset(ctx, section, title, function()
                 return P.ResetRules(id, rules, opts.keyFn, opts.resetKeys)
@@ -634,50 +634,6 @@ function P.SectionRules(id, section, filter)
     return out
 end
 
-local function SkinColorRow(skin, entry)
-    local key = entry[1]
-    return {
-        id = "skin." .. key,
-        kind = "color",
-        label = Tr(skin.SourceText(entry[2]) or key),
-        get = function()
-            local color = skin.Theme.GetColorTable(key)
-            return color[1], color[2], color[3], color[4]
-        end,
-        set = function(r, g, blue, alpha)
-            skin.Theme.SetColor(key, r, g, blue, alpha)
-            P.Refresh()
-        end,
-        settingKey = "msufsuite.skin." .. key,
-        sectionId = "colors_suite_skin",
-    }
-end
-
--- The skin palette joins MSUF Colors once the skin engine is loaded.
-local function BuildSkinColors(ctx, b)
-    local skin = _G.MapkoSkin
-    if not skin and not P.Combat() then
-        P.Suite.Skin.EnsureEngine()
-        skin = _G.MapkoSkin
-    end
-    if not (skin and skin.addonName == "MSUF_Suite_Skin" and skin.Theme and skin.ColorOrder) then return end
-    local section = b:CollapsibleSection("colors_suite_skin", Tr("Suite skin"), 120, false)
-    local width = math.max(240, (HM.GetSectionWidth(section) or b.width or 720) - 32)
-    local rows = {}
-    for _, entry in ipairs(skin.ColorOrder) do rows[#rows + 1] = SkinColorRow(skin, entry) end
-    local grid = W.SettingsRows(ctx, section, { x = 16, y = -18, width = width, columns = 2, rows = rows })
-    P.AttachSectionReset(ctx, section, "Suite skin", function()
-        if P.Combat() or not skin.Theme.ResetColors then return false end
-        local ok = P.WithHistory("Reset Suite skin colors", "suite:skin.colors.reset", function()
-            skin.Theme.ResetColors()
-            return true
-        end)
-        if ok then P.Refresh() end
-        return ok
-    end)
-    P.FinishBody(b, section, grid.bottomY)
-end
-
 -- The MSUF Colors painter asks for this category lazily. It uses the same
 -- bound color rows as Suite pages, so both locations share live values and the
 -- native color picker/history path.
@@ -700,7 +656,7 @@ function P.BuildColorsCategory(ctx, b)
                 Tr(P.catalog[id].title), colors, { open = id == "minimap" })
         end
     end
-    BuildSkinColors(ctx, b)
+    P.BuildSkinColors(ctx, b)
 end
 
 -- Preserve catalog identity while giving warm exact search a way to reveal
