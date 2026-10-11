@@ -8,6 +8,9 @@ local at = assert(source:find(marker, 1, true), "MapkoSkin smoke fixture changed
 -- Reuse MapkoSkin's mature WoW API fixture, then boot the Suite-owned TOC.
 local fixture = source:sub(1, at - 1)
 local contract = [=[
+-- The skin's Safety reads issecretvalue at load; the secret cases below
+-- assign it later.
+dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SecretValues()
 -- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(arg[1])
 -- The chat adapter keeps its colour ledger in the Suite core's skin boundary.

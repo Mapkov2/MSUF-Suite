@@ -34,6 +34,8 @@ GameTooltip = {
 }
 
 local locales = {}
+-- Safety reads issecretvalue at load; the cases below assign it later.
+dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 local NS = {
     Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     Registry = { AddListener = function() end },

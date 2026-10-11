@@ -31,6 +31,24 @@ end
 
 -- The Suite's anchor point list (NS.AnchorPoints, MSUF_Suite/Core/
 -- SuiteCatalog.lua), read from the shipped file.
+-- The client's issecretvalue never changes, so the skin's Safety reads it
+-- once, at load. A contract that turns values secret part-way still assigns
+-- the global; call this before Safety loads, and the function Safety keeps
+-- answers with whatever the global holds at each call (the function there
+-- before, or nothing secret, while the global is this stand-in or nil).
+function Support.SecretValues()
+    local before = issecretvalue
+    local standIn
+    standIn = function(value)
+        local current = issecretvalue
+        if current == standIn then current = before end
+        if current == nil then return false end
+        return current(value)
+    end
+    issecretvalue = standIn
+    return standIn
+end
+
 function Support.AnchorPoints(root)
     local file = assert(io.open(root .. "/MSUF_Suite/Core/SuiteCatalog.lua", "rb"))
     local source = file:read("*a")

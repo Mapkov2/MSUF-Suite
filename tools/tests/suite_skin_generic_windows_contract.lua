@@ -315,6 +315,8 @@ do
     NS.Clamp, NS.IsListed = defaults.Clamp, defaults.IsListed
     NS.MicroMenuMaxButtonsPerLine = defaults.MicroMenuMaxButtonsPerLine
 end
+-- Safety reads issecretvalue at load; "generic traversal secrets" assigns it later.
+dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 for _, file in ipairs({ "Core/Safety.lua", "Core/SuiteOwnership.lua",
     "Adapters/Catalog.lua", "Adapters/CatalogGlass.lua",
     "Adapters/AdapterKit.lua", "Adapters/SharedChrome.lua",

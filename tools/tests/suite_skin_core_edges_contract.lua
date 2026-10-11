@@ -49,6 +49,8 @@ local NS = {
     WindowActionSkin = { Restore = function() end, HasOwnedStates = function() return false end,
         DisableOwner = function() end },
 }
+-- Safety reads issecretvalue at load; the button walk below assigns it later.
+dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 for _, file in ipairs({ "Core/Defaults.lua", "Core/DefaultsLooks.lua", "Core/Database.lua", "Core/Safety.lua",
     "Core/Registry.lua", "Core/CombatGate.lua", "Core/Theme.lua", "Core/Checkmarks.lua",
     "Core/CheckmarksMenus.lua" }) do

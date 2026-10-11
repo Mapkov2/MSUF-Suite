@@ -12,14 +12,20 @@ local _, NS = ...
 local Safety = {}
 NS.Safety = Safety
 
+-- These wrappers run thousands of times in one burst (a chat drain, a
+-- ScrollBox row refresh), so the module calls its own functions as locals and
+-- reads the client's issecretvalue once, at load: it is a client function
+-- that never changes. A client without it has no secret values.
+local IsSecretValue = issecretvalue
+
 -- True when the value can be compared, used as a key or in arithmetic: it is
 -- not secret. The Suite core's rule (MSUF_Suite/Core/Platform.lua Public): a
 -- secret never counts as readable, whatever canaccessvalue says, since that
 -- answers only for its immediate caller, not for the code that compares.
-function Safety.Public(value)
-    local isSecret = issecretvalue
-    return isSecret == nil or not isSecret(value)
+local function Public(value)
+    return IsSecretValue == nil or not IsSecretValue(value)
 end
+Safety.Public = Public
 
 -- Every helper below returns at least one value, so a result can go straight
 -- into type(), tonumber() or a comparison.
@@ -30,16 +36,21 @@ function Safety.Field(target, key)
     return nil
 end
 
-function Safety.IsForbidden(target)
+-- The three hottest callers of Public (IsForbidden, ReadColor and
+-- PublicNumber: 18,000 of its 25,000 calls in the 2026-10-11 raid trace) test
+-- the value inline: not Public(value) is IsSecretValue ~= nil and
+-- IsSecretValue(value).
+local function IsForbidden(target)
     if type(target) ~= "table" or type(target.IsForbidden) ~= "function" then return false end
     local forbidden = target:IsForbidden()
-    return not Safety.Public(forbidden) or forbidden == true
+    return IsSecretValue ~= nil and IsSecretValue(forbidden) or forbidden == true
 end
+Safety.IsForbidden = IsForbidden
 
 -- True when target is a readable (not forbidden) table with a method of that
 -- name. Works for widgets and plain mixin tables alike.
 function Safety.HasMethod(target, name)
-    return type(target) == "table" and not Safety.IsForbidden(target) and type(target[name]) == "function"
+    return type(target) == "table" and not IsForbidden(target) and type(target[name]) == "function"
 end
 
 -- Passes all results through; a call that returned nothing yields nil.
@@ -50,16 +61,17 @@ end
 -- Calls target:name(...) when the object is readable and has that method,
 -- and returns its results. nil otherwise. Results may be secret: check them
 -- with Safety.Public before comparing.
-function Safety.Call(target, name, ...)
-    if type(target) ~= "table" or Safety.IsForbidden(target) then return nil end
+local function Call(target, name, ...)
+    if type(target) ~= "table" or IsForbidden(target) then return nil end
     local method = target[name]
     if type(method) ~= "function" then return nil end
     return AtLeastOne(method(target, ...))
 end
+Safety.Call = Call
 
 -- Calls target:name(...) for its side effect. True when the call happened.
 function Safety.Invoke(target, name, ...)
-    if type(target) ~= "table" or Safety.IsForbidden(target) then return false end
+    if type(target) ~= "table" or IsForbidden(target) then return false end
     local method = target[name]
     if type(method) ~= "function" then return false end
     method(target, ...)
@@ -69,17 +81,17 @@ end
 -- The first result of target:name(...), or nil when it is unavailable or
 -- secret. Use for getters whose result is compared or used as a number.
 function Safety.Read(target, name, ...)
-    local value = Safety.Call(target, name, ...)
-    if Safety.Public(value) then return value end
+    local value = Call(target, name, ...)
+    if Public(value) then return value end
     return nil
 end
 
 -- r, g, b, a from a color getter such as GetVertexColor or GetTextColor, or
 -- nil unless every channel is a readable number. A missing alpha reads as 1.
 function Safety.ReadColor(target, name)
-    local r, g, b, a = Safety.Call(target, name)
-    local Public = Safety.Public
-    if not Public(r) or not Public(g) or not Public(b) or not Public(a) then return nil end
+    local r, g, b, a = Call(target, name)
+    local isSecret = IsSecretValue
+    if isSecret ~= nil and (isSecret(r) or isSecret(g) or isSecret(b) or isSecret(a)) then return nil end
     if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then return nil end
     if type(a) ~= "number" then a = 1 end
     return r, g, b, a
@@ -89,60 +101,63 @@ end
 -- (read back at the widget's 8-bit precision). NATIVE classifies a Blizzard
 -- colour against a known font colour (Blizzard's constants are not exact
 -- 8-bit values either).
-Safety.COLOR_OWN = 1 / 255
+local COLOR_OWN = 1 / 255
+Safety.COLOR_OWN = COLOR_OWN
 Safety.COLOR_NATIVE = 0.015
 
 local function PublicNumber(value)
-    return type(value) == "number" and Safety.Public(value)
+    return type(value) == "number" and (IsSecretValue == nil or not IsSecretValue(value))
 end
 
 -- True when both colours are readable numbers within tolerance on every
 -- channel. A missing alpha counts as 1. A secret channel never matches: it
 -- is rejected before any arithmetic.
-function Safety.SameColor(r1, g1, b1, a1, r2, g2, b2, a2, tolerance)
+local function SameColor(r1, g1, b1, a1, r2, g2, b2, a2, tolerance)
     if not PublicNumber(r1) or not PublicNumber(g1) or not PublicNumber(b1)
         or not PublicNumber(r2) or not PublicNumber(g2) or not PublicNumber(b2) then
         return false
     end
-    if type(a1) ~= "number" then a1 = 1 elseif not Safety.Public(a1) then return false end
-    if type(a2) ~= "number" then a2 = 1 elseif not Safety.Public(a2) then return false end
-    local limit = tolerance or Safety.COLOR_OWN
+    if type(a1) ~= "number" then a1 = 1 elseif not Public(a1) then return false end
+    if type(a2) ~= "number" then a2 = 1 elseif not Public(a2) then return false end
+    local limit = tolerance or COLOR_OWN
     return math.abs(r1 - r2) <= limit and math.abs(g1 - g2) <= limit
         and math.abs(b1 - b2) <= limit and math.abs(a1 - a2) <= limit
 end
+Safety.SameColor = SameColor
 
 -- SameColor against a stored { r, g, b, a } table; false without one.
 function Safety.ColorMatches(color, r, g, b, a, tolerance)
     return type(color) == "table"
-        and Safety.SameColor(r, g, b, a, color[1], color[2], color[3], color[4], tolerance)
+        and SameColor(r, g, b, a, color[1], color[2], color[3], color[4], tolerance)
 end
 
 -- The compositor's permitted Attach* redirects identify its frames without
 -- touching a disallowed member.
-function Safety.IsCompositorManaged(target)
+local function IsCompositorManaged(target)
     return type(target) == "table"
         and type(target.AttachTexture) == "function"
         and type(target.AttachFontString) == "function"
         and type(target.AttachFrame) == "function"
         and type(target.AttachTemplate) == "function"
 end
+Safety.IsCompositorManaged = IsCompositorManaged
 
 -- protected, explicit. Unreadable answers count as protected.
 local function ReadProtection(target)
     if type(target.IsProtected) ~= "function" then return false, false end
     local protected, explicit = target:IsProtected()
-    if not Safety.Public(protected) or not Safety.Public(explicit) then return true, true end
+    if not Public(protected) or not Public(explicit) then return true, true end
     return protected == true, explicit == true
 end
 
 function Safety.GetProtection(target)
     if type(target) ~= "table" then return false, false end
-    if Safety.IsForbidden(target) then return true, true end
+    if IsForbidden(target) then return true, true end
     return ReadProtection(target)
 end
 
-function Safety.CanDecorate(target, allowImplicitProtected)
-    if type(target) ~= "table" or Safety.IsForbidden(target) then return false end
+local function CanDecorate(target, allowImplicitProtected)
+    if type(target) ~= "table" or IsForbidden(target) then return false end
     local protected, explicit = ReadProtection(target)
     if explicit then return false end
     if protected then
@@ -150,13 +165,14 @@ function Safety.CanDecorate(target, allowImplicitProtected)
     end
     return true
 end
+Safety.CanDecorate = CanDecorate
 
 -- Controls follow the same rule as cosmetic surfaces.
-Safety.CanControl = Safety.CanDecorate
+Safety.CanControl = CanDecorate
 
 function Safety.CanCreateRegions(target, allowImplicitProtected)
-    return Safety.CanDecorate(target, allowImplicitProtected)
-        and not Safety.IsCompositorManaged(target)
+    return CanDecorate(target, allowImplicitProtected)
+        and not IsCompositorManaged(target)
 end
 
 -- A frame inside a Blizzard window. Forever's SmartNavigation post-hooks
