@@ -2,6 +2,8 @@
 -- surface (the functions both MSUF builds share) and checks navigation
 -- placement, page registration, control coverage of every catalog setting,
 -- per-bar/per-window key mapping, enable gating and the locale merge.
+C_CreatureInfo = { GetClassInfo = function(id) return { className = "Class " .. id } end }
+LOCALIZED_CLASS_NAMES_MALE = {}
 local root = assert(arg[1], "repository root required")
 -- The client's securecallfunction reports an error and returns nothing;
 -- this stand-in lets errors raise, so a failing callback fails the test.
@@ -3196,6 +3198,7 @@ assert(skin.Defaults.theme.look == "cleanModern" and skin.Defaults.theme.preset 
 skin.DB = skin.CopyValue(skin.Defaults)
 local previewSurfaces = {}
 skin.Surface = { Attach = function(frame, spec) previewSurfaces[#previewSurfaces + 1] = spec.role; return frame end }
+skin.Surface.SkinOwnedButton = skin.Surface.Attach
 skin.Theme = {
     GetColor = function(key) return unpack(skin.DB.theme.colors[key]) end,
     GetColorTable = function(key) return skin.DB.theme.colors[key] end,
@@ -3271,7 +3274,7 @@ end
 assert(skinContext.pageItems[1] == "fixed-preview"
     and skinContext.pageItems[2] == "suite_skin_frame_basic",
     "Skin preview must own the fixed header before Basics")
-assert(table.concat(previewSurfaces, ",") == "shell,panel,card,buttonPrimary",
+assert(table.concat(previewSurfaces, ",") == "shell,button,button,panel,card,card,card,button,buttonPrimary",
     "Skin preview must render with the same engine surfaces as the runtime")
 assert(skinContext.sections[1].sectionId == "suite_skin_frame_basic"
     and skinContext.sections[1].headerSwitch

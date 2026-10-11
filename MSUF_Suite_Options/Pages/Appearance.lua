@@ -28,56 +28,7 @@ local BAR_MATERIAL_LABELS = {
     forever = "MSUF Forever", theme = "Follow skin look",
 }
 
-local function SkinBox(skin, parent, x, y, width, height, role)
-    local frame = CreateFrame("Frame", nil, parent)
-    frame:SetPoint("TOPLEFT", x, y)
-    frame:SetSize(width, height)
-    if skin.Surface and skin.Surface.Attach then skin.Surface.Attach(frame, { role = role }) end
-    return frame
-end
-
--- The docked sample renders with the skin engine's own surfaces.
-local function Preview(ctx, b, skin)
-    local section, toolbar = W.FixedPreviewSection(ctx, b, { title = Tr("Skin preview"), height = 240 })
-    if not section then return end
-    local hint = T.Font(toolbar, "GameFontDisableSmall", "Choose a look below; this sample follows your changes.",
-        T.colors.muted)
-    hint:SetPoint("LEFT", toolbar, "LEFT", 125, 0)
-    hint:SetPoint("RIGHT", toolbar, "RIGHT", -12, 0)
-    hint:SetJustifyH("LEFT")
-    local canvas = CreateFrame("Frame", nil, section)
-    canvas:SetPoint("TOPLEFT", 14, -96)
-    canvas:SetPoint("BOTTOMRIGHT", -14, 9)
-    local width = (HM.GetSectionWidth(section) or b.width or 720) - 48
-    local shellWidth = math.min(292, width)
-    local shell = SkinBox(skin, canvas, 10, -7, shellWidth, 116, "shell")
-    local title = T.Font(shell, "GameFontNormal", "Window shell", T.colors.text)
-    title:SetPoint("TOPLEFT", 14, -12)
-    local panel = SkinBox(skin, shell, 13, -37, shellWidth - 26, 66, "panel")
-    local card = SkinBox(skin, panel, 10, -10, shellWidth - 46, 22, "card")
-    local cardLabel = T.Font(card, "GameFontHighlightSmall", "Panel and card layer", T.colors.text)
-    cardLabel:SetPoint("LEFT", 8, 0)
-    local button = SkinBox(skin, panel, 10, -40, 76, 19, "buttonPrimary")
-    local buttonLabel = T.Font(button, "GameFontHighlightSmall", "Primary", T.colors.text)
-    buttonLabel:SetPoint("CENTER")
-    local note = P.Text(canvas, "", 326, -18, math.max(1, width - 316))
-    note:SetShown(width >= 520)
-    -- Labels take the token's RGB only; the preview keeps them opaque.
-    local function PaintLabel(label, token)
-        local r, g, blue = skin.Theme.GetColor(token)
-        label:SetTextColor(r, g, blue)
-    end
-    M.TrackRefresh(ctx, function()
-        PaintLabel(title, "title")
-        PaintLabel(cardLabel, "text")
-        PaintLabel(buttonLabel, "accent")
-        local look = skin.LookPresets[skin.DB.theme.look]
-        local description = look and look.description or "Your own colors, materials and shape."
-        P.SetTranslatedText(note, Tr(look and look.label or "Custom") .. "\n"
-            .. Tr(description))
-    end)
-    return section
-end
+local Preview = P.BuildSkinMenuPreview
 
 ------------------------------------------------------------------ Micro Bar
 local MICRO_PRESETS = { "modern", "midnightDark", "forever", "blizzard" }
@@ -778,12 +729,14 @@ local function Build(ctx)
     -- header space contains the preview instead of leaving a blank gap.
     local header = Preview(ctx, b, skin)
     local workspace, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = "skin", title = "Skinning",
-        builder = b, header = header, height = 240, tabY = -22, tabs = {
+        builder = b, header = header, height = 380, tabY = -22, tabs = {
             { id = "style", label = "Style", sections = "frame_basic basic material shape fonts icons" },
             { id = "windows", label = "Blizzard windows", sections = "micro hud window_controls windows coverage" },
             { id = "character", label = "Character and equipment", sections = "character" },
             { id = "maintenance", label = "Maintenance", sections = "advanced" },
         } })
+    local skinPreview = rawget(ctx, "skinPreview")
+    if ui and skinPreview then ui.refreshPreview = skinPreview.Paint end
     BuildSections(ctx, workspace, skin)
     P.MenuWorkspace.Finish(ui)
 end

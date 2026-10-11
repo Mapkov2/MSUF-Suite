@@ -188,6 +188,20 @@ local function ChosenFont(key)
     return S.ResolveFont(key) or S.GlobalFontPath()
 end
 
+function S.ChatStylePreviewFonts(parts, fonts, c)
+    local tab = ChosenFont(c.tabFont) or fonts.tab
+    local size = c.tabFontSize > 0 and c.tabFontSize or fonts.tabSize
+    parts.label:SetFont(tab, size, fonts.tabFlags)
+    parts.otherTab:SetFont(tab, size, fonts.tabFlags)
+    local path = ChosenFont(c.font) or fonts.message
+    local outline = OUTLINES[c.fontOutline] or fonts.messageFlags
+    local shadow = c.fontRendering ~= 3 and (c.fontShadow == 2 or c.fontShadow == 1 and fonts.shadowAlpha > 0)
+    local opacity = c.fontShadow == 1 and fonts.shadowAlpha * 100 or c.fontShadowOpacity
+    local distance = c.fontShadow == 1 and fonts.shadowX or c.fontShadowDistance
+    S.SetStyledFont(parts.lines, path, c.fontSize > 0 and c.fontSize or fonts.messageSize,
+        outline, c.fontRendering, shadow, opacity, distance)
+end
+
 -- Keep Blizzard's tab FontString and title updates. Only its font tuple is
 -- owned, so disabling Chat hands its original face and size back.
 local function ApplyTabFont(self, label, chosenFont)

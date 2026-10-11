@@ -43,12 +43,9 @@ local function HeaderButton(win, kind)
     return button
 end
 
-function D.EnsureWindow(index)
-    local win = D.windows[index]
-    if win then return win end
-    win = { index = index, rows = {}, maxRow = 0, offset = 0, count = 0, capacity = 0, bd = { offset = 0 }, dirty = true, buttons = {}, hover = false }
-    D.windows[index] = win
-    local frame = S.CreateFrame("Frame", nil, UIParent)
+function D.NewWindow(parent, index)
+    local win = { index = index, rows = {}, maxRow = 0, offset = 0, count = 0, capacity = 0, bd = { offset = 0 }, dirty = true, buttons = {}, hover = false }
+    local frame = S.CreateFrame("Frame", nil, parent)
     frame.win, win.frame = win, frame
     frame:Hide()
     frame:SetClampedToScreen(true)
@@ -103,6 +100,15 @@ function D.EnsureWindow(index)
     grip:SetPushedTexture(GRIP .. "Down")
     for script, handler in pairs(D.gripScripts) do grip:SetScript(script, handler) end
     grip:Hide()
+    return win
+end
+
+function D.EnsureWindow(index)
+    local win = D.windows[index]
+    if not win then
+        win = D.NewWindow(UIParent, index)
+        D.windows[index] = win
+    end
     return win
 end
 
@@ -205,16 +211,12 @@ function D.StyleBorder(win)
 end
 
 -- Layout pass: runs when the style generation changed (after Refresh).
-function D.StyleWindow(win)
+function D.StyleWindowLayout(win)
     local c, keys = M.config, D.KEYS[win.index]
     local frame, header, body = win.frame, win.header, win.body
     win.styleGen = M.styleGen
     local height = c[keys.Height]
     frame:SetSize(c[keys.Width], height)
-    D.PlaceWindow(win)
-    local rules = S.catalog[M.id].rules
-    frame:SetResizeBounds(rules[keys.Width].min, rules[keys.Height].min, rules[keys.Width].max,
-        rules[keys.Height].max)
     header:ClearAllPoints()
     header:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
@@ -241,6 +243,14 @@ function D.StyleWindow(win)
     -- Keep the current fade state through a style refresh. Resetting it would
     -- make ApplyHover fetch and paint once before Refresh's batched paint.
     win.titleText, win.statusText, win.timerSecond, win.buttonAlpha = nil, nil, false, nil
+end
+
+function D.StyleWindow(win)
+    D.StyleWindowLayout(win)
+    D.PlaceWindow(win)
+    local keys, rules = D.KEYS[win.index], S.catalog[M.id].rules
+    win.frame:SetResizeBounds(rules[keys.Width].min, rules[keys.Height].min,
+        rules[keys.Width].max, rules[keys.Height].max)
     D.UpdateTitle(win)
     D.ApplyHover(win)
 end

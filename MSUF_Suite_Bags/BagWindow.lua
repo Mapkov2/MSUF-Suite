@@ -171,6 +171,8 @@ local function PaintWindow(textures, c)
     if textures.goldLabel then S.SetFont(textures.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
 end
 
+S.BagsPaintPreviewWindow = PaintWindow
+
 -- Blizzard's title router forwards to PortraitButton, so the bag menu
 -- remains available from the heading. Hide the full button: the Suite
 -- skin can otherwise leave a styled but empty plate in this corner.

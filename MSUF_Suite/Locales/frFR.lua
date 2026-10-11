@@ -4176,3 +4176,8 @@ T("General settings", "Paramètres généraux")
 T("No reminders are configured for this character.", "Aucun rappel n’est configuré pour ce personnage.")
 
 T("Preview is available outside combat.", "L’aperçu est disponible hors combat.")
+T("Preview class", "Classe de prévisualisation")
+T("Your character", "Votre personnage")
+T("Search items", "Rechercher des objets")
+T("Class sample. Your saved reminders stay unchanged.", "Exemple de classe. Vos rappels enregistrés restent inchangés.")
+T("Class sample. Your saved bars stay unchanged.", "Exemple de classe. Vos barres enregistrées restent inchangées.")

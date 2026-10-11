@@ -1,3 +1,5 @@
+C_CreatureInfo = { GetClassInfo = function(id) return { className = "Class " .. id } end }
+LOCALIZED_CLASS_NAMES_MALE = {}
 local root = assert(arg[1], "repository root required")
 -- The client's securecallfunction reports an error and returns nothing;
 -- this stand-in lets errors raise, so a failing callback fails the test.
@@ -586,7 +588,7 @@ local globalsBefore = {}
 for key in pairs(_G) do globalsBefore[key] = true end
 local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
-for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
+for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewClasses.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
     "Pages/DataTextsWorkspace.lua",
     "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua",
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",

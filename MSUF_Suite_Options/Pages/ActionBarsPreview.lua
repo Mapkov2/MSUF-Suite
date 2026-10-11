@@ -261,6 +261,7 @@ function Preview.RefreshScope(ui)
 end
 
 local function Paint(ui)
+    if not ui.canvas:IsVisible() then return end
     Preview.RefreshScope(ui)
     local bar, c = ui.selected(), S.Config(ID)
     local p = "bar" .. bar

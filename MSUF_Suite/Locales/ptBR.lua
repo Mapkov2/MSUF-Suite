@@ -4169,3 +4169,8 @@ T("General settings", "Configurações gerais")
 T("No reminders are configured for this character.", "Nenhum lembrete está configurado para este personagem.")
 
 T("Preview is available outside combat.", "A prévia está disponível fora de combate.")
+T("Preview class", "Classe da prévia")
+T("Your character", "Seu personagem")
+T("Search items", "Buscar itens")
+T("Class sample. Your saved reminders stay unchanged.", "Exemplo de classe. Seus lembretes salvos permanecem inalterados.")
+T("Class sample. Your saved bars stay unchanged.", "Exemplo de classe. Suas barras salvas permanecem inalteradas.")

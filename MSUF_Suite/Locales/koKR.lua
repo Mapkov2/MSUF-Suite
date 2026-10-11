@@ -4169,3 +4169,8 @@ T("General settings", "일반 설정")
 T("No reminders are configured for this character.", "이 캐릭터에 설정된 알림이 없습니다.")
 
 T("Preview is available outside combat.", "미리보기는 전투 중이 아닐 때 사용할 수 있습니다.")
+T("Preview class", "미리보기 직업")
+T("Your character", "내 캐릭터")
+T("Search items", "아이템 검색")
+T("Class sample. Your saved reminders stay unchanged.", "직업 예시입니다. 저장된 알림은 변경되지 않습니다.")
+T("Class sample. Your saved bars stay unchanged.", "직업 예시입니다. 저장된 바는 변경되지 않습니다.")

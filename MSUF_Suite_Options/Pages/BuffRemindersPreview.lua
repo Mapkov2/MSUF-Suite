@@ -22,41 +22,54 @@ local EVENTS = { "BAG_UPDATE_DELAYED", "SPELLS_CHANGED", "PLAYER_SPECIALIZATION_
 function P.MenuSamples.Reminders(ui)
     if not ui then return end
     local width = ui.width - 54
-    local title = P.Text(ui.header, "Preview", 16, -52, width)
+    local title = P.Text(ui.header, "Preview", 16, -100, width)
     local viewport = CreateFrame("ScrollFrame", nil, ui.header, "ScrollFrameTemplate")
     viewport.ScrollBar:SetHideIfUnscrollable(true)
-    viewport:SetPoint("TOPLEFT", 16, -76)
+    viewport:SetPoint("TOPLEFT", 16, -124)
     viewport:SetSize(width, 76)
     local stage = CreateFrame("Frame", nil, viewport)
     stage:SetSize(width, 76)
     viewport:SetScrollChild(stage)
     local status = P.Text(viewport, "", 0, 0, width)
     local footer = P.Text(ui.header, "Sample values. Click an element to open its settings.", 16, -160, width)
-    local dirty = true
+    local dirty, settings, previousScale = true, {}, nil
+    local function OpenAppearance() ui:Focus("suite_buffReminders_appearance") end
     local function Refresh()
         if not viewport:IsVisible() then return end
+        local config = S.Config("buffReminders")
+        local changed = P.PreviewCanvas.Changed(settings, config, P.catalog.buffReminders.rules)
+        local nativeScale = UIParent:GetEffectiveScale() / viewport:GetEffectiveScale()
+        if not dirty and not changed and previousScale == nativeScale then return end
+        previousScale = nativeScale
         local height = 76
         if EnsureRuntime() then
-            local w, h, count = S.BuffRemindersDrawPreview(stage, S.Config("buffReminders"), dirty,
-                function() ui:Focus("suite_buffReminders_appearance") end)
+            local w, h, count = S.BuffRemindersDrawPreview(stage, config, dirty,
+                OpenAppearance, ui.previewClass)
             dirty = false
             -- Match the live UIParent size despite the menu's own scale. Only
             -- a row wider than the panel is fitted; its scale stays explicit.
-            local nativeScale = UIParent:GetEffectiveScale() / viewport:GetEffectiveScale()
             local fit = math.min(1, width / (w * nativeScale))
             stage:SetScale(nativeScale * fit)
             height = math.min(180, math.max(38, h * nativeScale * fit))
             P.SetTranslatedText(title, fit < .995 and Tr("Preview %d%%"):format(math.floor(fit * 100 + .5)) or Tr("Preview"))
             P.SetTranslatedText(status, count == 0 and Tr("No reminders are configured for this character.") or "")
+            P.SetTranslatedText(footer, ui.previewClass and Tr("Class sample. Your saved reminders stay unchanged.")
+                or Tr("Sample values. Click an element to open its settings."))
         else
             P.SetTranslatedText(status, loadFailure and Tr("Cannot load %s: %s"):format(Tr("Buff reminders"), loadFailure)
                 or Tr("Preview is available outside combat."))
         end
-        viewport:SetHeight(height)
-        footer:ClearAllPoints()
-        footer:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 16, -84 - height)
-        P.MenuWorkspace.FitHeader(ui, 100 + height + math.ceil(footer:GetStringHeight() or 14))
+        if viewport.previewHeight ~= height then
+            viewport.previewHeight = height
+            viewport:SetHeight(height)
+            footer:ClearAllPoints()
+            footer:SetPoint("TOPLEFT", ui.header, "TOPLEFT", 16, -132 - height)
+        end
+        P.MenuWorkspace.FitHeader(ui, 148 + height + math.ceil(footer:GetStringHeight() or 14))
     end
+    ui.reminderClassPicker = P.PreviewClasses.Bind(ui, ui.header, 16, -42, math.min(220, width),
+        "suite_buffReminders", "buffReminders", "suite_buffReminders_appearance", function() dirty = true
+        Refresh() end)
     local function Activate()
         dirty = true
         for _, event in ipairs(EVENTS) do viewport:RegisterEvent(event) end

@@ -4170,3 +4170,8 @@ T("General settings", "Общие настройки")
 T("No reminders are configured for this character.", "Для этого персонажа не настроены напоминания.")
 
 T("Preview is available outside combat.", "Предпросмотр доступен вне боя.")
+T("Preview class", "Класс для просмотра")
+T("Your character", "Ваш персонаж")
+T("Search items", "Поиск предметов")
+T("Class sample. Your saved reminders stay unchanged.", "Пример класса. Сохранённые напоминания не изменяются.")
+T("Class sample. Your saved bars stay unchanged.", "Пример класса. Сохранённые полосы не изменяются.")

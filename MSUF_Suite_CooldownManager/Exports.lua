@@ -127,10 +127,10 @@ function S.CooldownManagerCatalogEntries(family)
 end
 
 ------------------------------------------------------------------ previews, status, sounds
-function S.CooldownManagerRenderPreview(parent, slot, maxWidth, maxHeight)
+function S.CooldownManagerRenderPreview(parent, slot, maxWidth, maxHeight, classSample)
     if not CDM.SLOT_INDEX[slot] or type(parent) ~= "table" then return nil end
     Cold()
-    return C.Preview.Render(parent, slot, maxWidth, maxHeight)
+    return C.Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
 end
 function S.CooldownManagerReleasePreview(parent)
     C.Preview.Release(parent)

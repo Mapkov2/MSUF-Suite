@@ -4170,3 +4170,8 @@ T("General settings", "常规设置")
 T("No reminders are configured for this character.", "尚未为该角色配置提醒。")
 
 T("Preview is available outside combat.", "预览仅在非战斗状态下可用。")
+T("Preview class", "预览职业")
+T("Your character", "你的角色")
+T("Search items", "搜索物品")
+T("Class sample. Your saved reminders stay unchanged.", "职业示例。已保存的提醒保持不变。")
+T("Class sample. Your saved bars stay unchanged.", "职业示例。已保存的条保持不变。")

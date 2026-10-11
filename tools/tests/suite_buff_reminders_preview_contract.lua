@@ -7,7 +7,7 @@ local mutations = {
     effects = { "Preview.lua", "R.AlertTransition(state, button, entry, entry ~= nil)", "-- missing runtime effects" },
     count = { "Preview.lua", "R.StyleCount(button, config)", "-- missing runtime typography" },
     geometry = { "Preview.lua", "button:SetSize(config.size, config.size)", "button:SetSize(38, 38)" },
-    cached = { "Preview.lua", "if dirty or changed or not state.list.entries then", "if true then" },
+    cached = { "Preview.lua", "if not classSample and (dirty or changed or not state.list.entries) then", "if true then" },
 }
 loadfile = function(path)
     local chunk = assert(originalLoad(path))
@@ -126,6 +126,19 @@ local _, _, empty = S.BuffRemindersDrawPreview(stage, config, false, Open)
 assert(empty == 0, "preview invented reminders for an empty configuration")
 for _, button in ipairs(state.view.buttons) do assert(not button.shown and not button.alertPulsing, "removed preview stayed visible") end
 assert(secureWrites == writes and sounds == 0, "menu repaint changed runtime actions or played sound")
+-- Other-class samples never compile bags, edit a saved list, cast or play sounds.
+local snapshot, liveEntries = {}, module.list.entries
+for key, value in pairs(config) do snapshot[key] = value end
+local classSample = { "WARRIOR", 1, 6673, 1719, 871, 132333 }
+local priorBuilds = builds
+local _, _, sampleCount = S.BuffRemindersDrawPreview(stage, config, false, Open, classSample)
+assert(sampleCount == 3 and builds == priorBuilds, "class sample compiled the character's reminder selection")
+assert(state.view.buttons[1].entry.id == 6673, "class sample did not use the selected class buff")
+assert(module.list.entries == liveEntries, "class sample replaced live reminder entries")
+for key, value in pairs(config) do assert(snapshot[key] == value, "class sample changed saved reminders") end
+S.BuffRemindersDrawPreview(stage, config, false, Open)
+assert(#state.list.entries == 0 and not state.view.buttons[1].shown, "returning to character kept class samples")
+assert(secureWrites == writes and sounds == 0, "class preview used runtime actions or sounds")
 R.BuildEntries = compile
 S.editMode = false
 module:Disable()

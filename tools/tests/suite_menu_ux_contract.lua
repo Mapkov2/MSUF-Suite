@@ -244,8 +244,15 @@ do
     assert(loads == 1 and paints > 0 and dirtyPaints > 0, "combat end did not load the real reminder renderer")
     assert(preview.stage:GetHeight() == 300 and preview.viewport:GetHeight() == 180 and preview.stage.scale == 1,
         "reminder preview shrank the native icons to a fixed height")
+    local priorPaints = paints
     M.RequestRefresh()
-    assert(not lastDirty, "appearance refresh rescanned reminder entries")
+    assert(paints == priorPaints, "unchanged reminder refresh redrew the preview")
+    local config = P.S.Config("buffReminders")
+    local size = config.size
+    config.size = size + 1
+    M.RequestRefresh()
+    assert(paints == priorPaints + 1 and not lastDirty, "appearance refresh rescanned reminder entries")
+    config.size = size
     preview.viewport.GetEffectiveScale = function() return 2 end
     M.RequestRefresh()
     assert(preview.stage.scale == .5, "preview did not cancel menu scale")

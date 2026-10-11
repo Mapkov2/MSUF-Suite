@@ -32,14 +32,36 @@ local function State(stage)
     return state
 end
 
-function S.BuffRemindersDrawPreview(stage, config, dirty, open)
+local function ClassSample(state, sample)
+    local entries = state.menuPreview.classEntries
+    if not entries then entries = {}
+    state.menuPreview.classEntries = entries end
+    if state.menuPreview.classSample ~= sample then
+        state.menuPreview.classSample = sample
+        local buff = R.ClassBuff(sample[1])
+        for i = 1, 3 do
+            local entry = entries[i] or {}
+            entries[i] = entry
+            entry.kind, entry.category = "spell", i == 1 and "class" or "personal"
+            entry.id = i == 1 and buff and buff.cast or sample[i + 2]
+            entry.previewTexture = sample[6]
+            entry.group = i == 1 and buff ~= nil
+        end
+    end
+    return entries
+end
+
+function S.BuffRemindersDrawPreview(stage, config, dirty, open, classSample)
     local state = State(stage)
     state.config = config
+    if state.menuPreview.activeClass ~= classSample then
+        state.menuPreview.activeClass, dirty = classSample, true
+    end
     local changed = SelectionChanged(state, config)
-    if dirty or changed or not state.list.entries then
+    if not classSample and (dirty or changed or not state.list.entries) then
         state.list.entries = R.BuildEntries(state, state.menuPreview.buffer)
     end
-    local entries, view = state.list.entries, state.view
+    local entries, view = classSample and ClassSample(state, classSample) or state.list.entries, state.view
     local width, height = R.IconGeometry(config, #entries)
     stage:SetSize(width, height)
     for index = 1, math.max(#entries, #view.buttons) do
@@ -54,6 +76,7 @@ function S.BuffRemindersDrawPreview(stage, config, dirty, open)
         button.entry = entry
         if entry then
             R.PaintEntry(button, entry)
+            if classSample and not C_Spell.GetSpellTexture(entry.id) then button.icon:SetTexture(entry.previewTexture) end
             R.StyleCount(button, config)
             button.count:SetText(R.PreviewCount(entry))
             button:SetSize(config.size, config.size)

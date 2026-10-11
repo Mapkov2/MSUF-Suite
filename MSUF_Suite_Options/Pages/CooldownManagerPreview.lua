@@ -9,7 +9,7 @@ local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 local ID, PAGE = Page.ID, Page.PAGE
 local SLOTS = P.Suite.CDM.SLOTS
 local SECTION = Page.PREVIEW_SECTION
-local COMPACT, EXPANDED, STRIP_ROW = 132, 330, 24
+local COMPACT, EXPANDED, STRIP_ROW = 180, 378, 24
 -- The hint (or note) line under the canvas, the + tile beside the drawing
 -- and the rim around it that still drags the whole bar.
 local LINE, RIM = 18, 6
@@ -317,7 +317,7 @@ end
 
 local function BuildStrip(ui, body)
     ui.strip = CreateFrame("Frame", nil, body)
-    ui.strip:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
+    ui.strip:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -48)
     ui.strip:SetSize(ui.width, STRIP_ROW)
     ui.chips = {}
     for i = 1, #SLOTS do ui.chips[SLOTS[i].key] = NewChip(ui, SLOTS[i].key) end
@@ -386,7 +386,7 @@ local function BuildNoteLine(ui, body)
             Page.SetRaw(line, Page.note)
             if Page.noteError then line:SetTextColor(1, 0.4, 0.35) else line:SetTextColor(Page.TextColor()) end
         else
-            line:SetText(HINT)
+            line:SetText(ui.previewClass and "Class sample. Your saved bars stay unchanged." or HINT)
             line:SetTextColor(Page.MutedColor())
         end
         undo:SetShown(Page.undo ~= nil)
@@ -444,7 +444,7 @@ local function Render(ui)
     -- Room for the + tile right of the drawing; both stay centered.
     local room = (PLUS + PLUS_GAP) / scale
     handle.baseX = -room / 2
-    local frame = render(ui.stage, Page.selected, max(40, w - 12 - room), max(20, h - 8))
+    local frame = render(ui.stage, Page.selected, max(40, w - 12 - room), max(20, h - 8), ui.previewClass)
     handle.target = frame
     if frame then
         -- A drag in progress keeps the drawing under the cursor.
@@ -467,11 +467,11 @@ local function Render(ui)
     return frame
 end
 local function Paint(ui)
-    if P.Combat() then return end
+    if not ui.previewBody:IsVisible() or P.Combat() then return end
     -- The layout on screen keeps the runtime's preview mode on (the module
     -- may have been switched on while the page is open).
     if ui.live then Page.Activate() end
-    local stripHeight = PaintStrip(ui, ui.width)
+    local stripHeight = 48 + PaintStrip(ui, ui.width)
     local room = ui.compact and (COMPACT - 22 - LINE - 2) or (EXPANDED - 60 - LINE - 2)
     local height = max(40, room - stripHeight)
     if ui.canvasHeight ~= height then
@@ -479,11 +479,12 @@ local function Paint(ui)
         ui.canvas:SetHeight(height)
     end
     local frame = Render(ui)
-    PaintHits(ui, frame, frame ~= nil and not Page.EditorBlocked())
+    PaintHits(ui, frame, frame ~= nil and not ui.previewClass and not Page.EditorBlocked())
+    ui.handle:EnableMouse(ui.previewClass == nil)
     FollowPopover(ui)
     local handle, body = ui.handle, ui.previewBody
     handle._label = Page.BarName(Page.selected)
-    body._selectedHandle = handle:IsShown() and Page.Movable(Page.selected) and handle or nil
+    body._selectedHandle = not ui.previewClass and handle:IsShown() and Page.Movable(Page.selected) and handle or nil
     ui.simulate:SetEnabled(S.CooldownManagerSimulate ~= nil and Page.Running())
     ui.simulate:SetActive(Page.simulating == true)
     Page.SetRaw(ui.status, StatusText())
@@ -505,8 +506,18 @@ local function ApplyCompact(body, compact)
     Paint(ui)
 end
 
+local function BuildClassPicker(ui, body)
+    ui.classPicker = P.PreviewClasses.Bind(ui, body, 0, 0, math.min(220, ui.width), PAGE, ID, SECTION,
+        function()
+            DragCancel(ui.drag)
+            Paint(ui)
+            ui.PaintPreviewNote()
+        end)
+end
+
 function Page.BuildPreview(ctx, b, ui)
-    local section, toolbar, record = W.FixedPreviewSection(ctx, b, { title = Tr("Bar preview"), height = 180, gap = 8 })
+    ui.ctx = ctx
+    local section, toolbar, record = W.FixedPreviewSection(ctx, b, { title = Tr("Bar preview"), height = 228, gap = 8 })
     if not section then return end
     ui.width, ui.compact = max(260, (HM.GetSectionWidth(section) or b.width or 720) - 28), true
     -- Tooltip lines, translated once: hovering allocates nothing.
@@ -520,6 +531,7 @@ function Page.BuildPreview(ctx, b, ui)
     body:SetHeight(COMPACT)
     body:SetClipsChildren(true)
     body._cdmUI, ui.previewBody = ui, body
+    BuildClassPicker(ui, body)
     BuildStrip(ui, body)
     BuildCanvas(ui, body)
     BuildHandle(ui)

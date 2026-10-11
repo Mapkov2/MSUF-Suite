@@ -603,6 +603,7 @@ local function BuildLayerChips(ui)
 end
 
 local function Paint(ui)
+    if not ui.body:IsVisible() then return end
     local selected = ui.body._selectedHandle
     if selected then P.PreviewInteraction.Outline(selected, selected:IsShown()) end
     local config = S.Config(ID)

@@ -78,22 +78,16 @@ local function Color(texture, hex, alpha)
     texture:SetVertexColor(r, g, b, (alpha or 100) / 100)
 end
 
-local function RefreshSampleText(label, otherTab, lines, fonts)
+local function RefreshSampleText(parts, fonts)
+    local label, otherTab, lines = parts.label, parts.otherTab, parts.lines
+    if parts.fontReady then
+        P.S.ChatStylePreviewFonts(parts, fonts, P.S.Config(ID))
+    end
     local ar, ag, ab = P.RGB(P.Get(ID, "tabActiveColor"))
     local ir, ig, ib = P.RGB(P.Get(ID, "tabInactiveColor"))
     label:SetTextColor(ar, ag, ab)
     otherTab:SetTextColor(ir, ig, ib)
-    local selectedTabSize = tonumber(P.Get(ID, "tabFontSize")) or 0
-    local selectedMessageSize = tonumber(P.Get(ID, "fontSize")) or 0
-    if fonts.tab then
-        local size = selectedTabSize > 0 and selectedTabSize or fonts.tabSize
-        label:SetFont(fonts.tab, size, fonts.tabFlags)
-        otherTab:SetFont(fonts.tab, size, fonts.tabFlags)
-    end
-    if fonts.message then
-        lines:SetFont(fonts.message, selectedMessageSize > 0 and selectedMessageSize or fonts.messageSize,
-            fonts.messageFlags)
-    end
+
 end
 
 -- The sample's panel textures, in drawing order: fill, sidebar with its
@@ -197,6 +191,13 @@ local function PlaceSample(parts, minimal)
 end
 
 local function PaintSample(parts, fonts)
+    if not parts.sample:IsVisible() then return end
+    local config = P.S.Config(ID)
+    local changed = P.PreviewCanvas.Changed(parts.settings, config, P.catalog[ID].rules)
+    local font = P.Suite.GlobalFontPath()
+    local ready = P.PreviewCanvas.Runtime("MSUF_Suite_Chat", "ChatStylePreviewFonts")
+    if not changed and parts.fontPath == font and parts.fontReady == ready then return end
+    parts.fontPath, parts.fontReady = font, ready
     local minimal = P.Get(ID, "minimalChrome")
     PlaceSample(parts, minimal)
     Color(parts.fill, P.Get(ID, "panelColor"), P.Get(ID, "panelAlpha"))
@@ -224,7 +225,7 @@ local function PaintSample(parts, fonts)
     parts.top:SetShown(accentShown and not minimal)
     Color(parts.accent, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
     parts.accent:SetShown(accentShown)
-    RefreshSampleText(parts.label, parts.otherTab, parts.lines, fonts)
+    RefreshSampleText(parts, fonts)
     Color(parts.input, P.Get(ID, "inputColor"), P.Get(ID, "inputAlpha"))
     parts.input:SetShown(P.Get(ID, "inputPanel"))
 end
@@ -235,11 +236,20 @@ local function Sample(body, y, width, ctx)
     sample:SetSize(width, 108)
     local parts = SampleTextures(sample)
     SampleTexts(sample, width, parts)
-    parts.sample, parts.width = sample, width
+    parts.sample, parts.width, parts.settings = sample, width, {}
+    ctx.chatPreview = parts
     local fonts = {}
     fonts.tab, fonts.tabSize, fonts.tabFlags = parts.label:GetFont()
     fonts.message, fonts.messageSize, fonts.messageFlags = parts.lines:GetFont()
-    M.TrackRefresh(ctx, function() PaintSample(parts, fonts) end)
+    local _, _, _, alpha = parts.lines:GetShadowColor()
+    fonts.shadowAlpha = alpha or 0
+    fonts.shadowX = parts.lines:GetShadowOffset() or 1
+    local function Refresh() PaintSample(parts, fonts) end
+    sample:SetScript("OnShow", function()
+        parts.fontPath = nil
+        Refresh()
+    end)
+    P.PreviewCanvas.Watch({ header = sample, ctx = ctx }, Refresh)
     return y - 121
 end
 

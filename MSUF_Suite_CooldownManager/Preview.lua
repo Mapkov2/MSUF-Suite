@@ -503,15 +503,34 @@ local function Rest(holder, keep)
 end
 
 -- Draws one bar into parent, scaled down only when it exceeds the space.
-function Preview.Render(parent, slot, maxWidth, maxHeight)
+local function ClassContent(holder, sample)
+    if holder.classSample == sample then return 3 end
+    holder.classSample, holder.cSlot = sample, nil
+    for i = 1, 3 do
+        local id = sample[i + 2]
+        holder.textures[i] = C_Spell.GetSpellTexture(id) or sample[6]
+        holder.names[i] = C_Spell.GetSpellName(id) or ""
+        holder.keys[i], holder.dim[i] = false, false
+    end
+    for i = #holder.textures, 4, -1 do holder.textures[i], holder.names[i], holder.keys[i], holder.dim[i] = nil, nil, nil, nil end
+    return 3
+end
+
+function Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
     local view = parent and C.views[slot]
     if not view then return nil end
     local holder = Holder(parent)
     local kind = view.kind or KIND.COOLDOWN
     local n = holder.n
-    if not SameContent(holder, slot, kind) or not n then
-        n = Content(slot, kind, holder)
+    if classSample then
+        n = ClassContent(holder, classSample)
         holder.n = n
+    else
+        if holder.classSample then holder.classSample, holder.cSlot = nil, nil end
+        if not SameContent(holder, slot, kind) or not n then
+            n = Content(slot, kind, holder)
+            holder.n = n
+        end
     end
     local width, height, count = C.Layout.Offsets(view, n, holder.out)
     Rest(holder, kind ~= KIND.AURA_BAR and count or 0)

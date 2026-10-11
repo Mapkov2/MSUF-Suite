@@ -3681,6 +3681,18 @@ do
         and effectCanvas.rows[1].name.shadowColor[4]==0,
         "Cooldown Manager Slug retained a shadow")
 end
+(function()
+    local savedLists, savedSpells, livePlans = C.lists, C.spells, C.plans
+    local classSample = { "WARRIOR", 1, 6673, 1719, 871, 132333 }
+    local classCanvas = assert(S.CooldownManagerRenderPreview(barStage, "bar", 400, 200, classSample))
+    assert(classCanvas.count == 3 and classCanvas.keys[1] == false, "class sample is not isolated from editable spell keys")
+    local textures = classCanvas.textures
+    local warm = S.CooldownManagerRenderPreview(barStage, "bar", 400, 200, classSample)
+    assert(warm == classCanvas and warm.textures == textures, "class sample rebuilt its pooled content")
+    assert(C.lists == savedLists and C.spells == savedSpells and C.plans == livePlans, "class sample changed live CDM state")
+    local actual = S.CooldownManagerRenderPreview(barStage, "bar", 400, 200)
+    assert(not actual.classSample, "returning to character retained another class")
+end)()
 S.CooldownManagerReleasePreview(barStage)
 Deactivate()
 for key in pairs(_G) do assert(globalsBefore[key] or key=="MSUF_DB","runtime created the global "..tostring(key)) end

@@ -14,6 +14,10 @@ Menu\Colors.lua
 Menu\PreviewInteraction.lua
 Menu\SectionActions.lua
 Menu\Workspace.lua
+Menu\PreviewClasses.lua
+Menu\PreviewCanvas.lua
+Pages\BagsPreview.lua
+Pages\DamageMeterPreview.lua
 Pages\MenuSamples.lua
 Pages\ActionBarsWorkspace.lua
 Pages\ActionBarsPreviewData.lua
@@ -64,6 +68,7 @@ Pages\CooldownManagerPreview.lua
 Pages\CooldownManagerOverrides.lua
 Pages\CooldownManager.lua
 Pages\AppearanceKit.lua
+Pages\AppearancePreview.lua
 Pages\Appearance.lua
 Menu\Register.lua
 Menu\SearchActions.lua

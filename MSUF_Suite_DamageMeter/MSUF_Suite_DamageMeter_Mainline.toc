@@ -16,4 +16,5 @@ Breakdown.lua
 Menus.lua
 Timer.lua
 Threat.lua
+Preview.lua
 Controller.lua

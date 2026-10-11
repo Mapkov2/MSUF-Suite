@@ -120,11 +120,15 @@ local function EnsureLabel(self, button)
     return record
 end
 
+function S.BagsStylePreviewLabel(label, c, font)
+    S.SetStyledFont(label, font or S.ResolveFont(c.font), c.itemLevelSize, OUTLINES[c.fontOutline] or "OUTLINE",
+        c.fontRendering, c.fontShadow, c.fontShadowOpacity, c.fontShadowDistance)
+end
+
 local function Style(self, record)
     if record.style == self.labelStyle then return end
     local c = self.config
-    S.SetStyledFont(record.label, self.fontPath, c.itemLevelSize, OUTLINES[c.fontOutline] or "OUTLINE",
-        c.fontRendering, c.fontShadow, c.fontShadowOpacity, c.fontShadowDistance)
+    S.BagsStylePreviewLabel(record.label, c, self.fontPath)
     record.style = self.labelStyle
     record.quality = nil
 end
