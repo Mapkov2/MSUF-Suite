@@ -1,7 +1,10 @@
 local root=assert(arg[1],"repository root required")
 -- The client's securecallfunction reports an error and returns nothing;
 -- this stand-in lets errors raise, so a failing callback fails the test.
-securecallfunction = function(callback, ...) return callback(...) end
+-- dispatches counts the stand-in's calls: in game each is a native
+-- securecallfunction, the per-event cost the session storm budget pins.
+local dispatches=0
+securecallfunction = function(callback, ...) dispatches=dispatches+1;return callback(...) end
 -- Offline contract for the damage meter runtime (MSUF_Suite_DamageMeter).
 -- Secret values are sentinel tables that raise on comparison, arithmetic,
 -- concatenation, indexing and tostring; the runtime may only hand them to sinks.
@@ -364,11 +367,22 @@ S.Apply("damageMeter")
 assert(not M.context and #frames==baseFrames and #timers==0 and #afters==0,"disabled module allocated work")
 
 local function Frame() return M.context.frame end
-local function Event(name,...)
-    assert(Frame().events[name],"event not registered: "..name)
-    Frame().scripts.OnEvent(Frame(),name,...)
+-- The session event lives on the context's direct frame (options.direct,
+-- Runtime.lua); every other event on the routing frame.
+local function Holder(name)
+    local direct=M.context and M.context.directFrame
+    if direct and direct.events[name] then return direct end
+    return M.context and M.context.frame
 end
-local function Registered(name) return M.context.frame and M.context.frame.events[name]==true end
+local function Event(name,...)
+    local frame=Holder(name)
+    assert(frame and frame.events[name],"event not registered: "..name)
+    frame.scripts.OnEvent(frame,name,...)
+end
+local function Registered(name)
+    local frame=Holder(name)
+    return frame~=nil and frame.events[name]==true
+end
 local function Row(win,slot) return win.rows[slot] end
 
 ------------------------------------------------------------------ enable
@@ -923,7 +937,8 @@ assert(PaintRequest(),"combat event did not schedule a paint before disable")
 local framesBefore=#frames
 assert(S.Set("damageMeter","enabled",false))
 assert(not M.active and LiveTimers()==0 and not PaintRequest()
-    and not next(Frame().events) and not next(M.context.callbacks),"disable leaked events or timers")
+    and not next(Frame().events) and not next(M.context.callbacks)
+    and not (M.context.directFrame and next(M.context.directFrame.events)),"disable leaked events or timers")
 for i=1,5 do if D.windows[i] then assert(not D.windows[i].frame.shown,"window left visible") end end
 assert(cvars.damageMeterEnabled=="1","CVar not restored")
 assert(hostRecord.isEnabled()==true,"host mover claim not released")
@@ -1353,7 +1368,9 @@ do
     -- events (most muted behind the pending paint). 2026-10-03: 2804 and 12
     -- AbbreviateNumbers calls at both de9835f and since every amount goes
     -- through the native formatter (no Lua secret test before it).
-    assert(instructions<=math.floor(2804*1.02),"a combat second cost "..instructions.." instructions")
+    -- 2026-10-07: 2844 before, 2808 with the direct session event
+    -- and the in-combat target cache skip.
+    assert(instructions<=math.floor(2808*1.02),"a combat second cost "..instructions.." instructions")
     -- Only the meter nobody shows changed: no fetch, no paint.
     fetched=Measure(function() Storm({5});Second() end)
     assert(fetched==0 and not PaintRequest(),"an unshown meter's update fetched "..fetched.." sessions")
@@ -1385,6 +1402,68 @@ do
     print(("damage meter raid budget: 2 fetches, %d instructions, %d AbbreviateNumbers calls, %d of 600 events"
         .. " delivered; 3 s of combat: %d fetches at the 1.5 s default, %d at a stored 1 s"):format(
         instructions,abbreviated,raidDelivered,window,storedOne))
+end
+------------------------------------------------------------------ session storm, unmuted
+-- The 2026-10-07 raid trace (60 s): 22,487 DAMAGE_METER_COMBAT_SESSION_UPDATED
+-- reached SessionUpdated (30.2 ms self) through RouteEvent (1.7 us self per
+-- event, plus one native securecallfunction each), yet only 61 window paints
+-- ran: one shown window's meter never changed, so it stayed clean and the
+-- mute behind a pending paint (all shown windows dirty) never engaged. That
+-- window must keep hearing its own update, so every event is still
+-- delivered; the session event now arrives on the context's direct frame
+-- (Runtime.lua DirectEvent): no Dispatch per event, and SessionUpdated
+-- visits each shown window once and leaves the out-of-combat hover target
+-- cache alone in combat. Measured per delivered event before this change: 79
+-- VM instructions and 1 Dispatch (a native securecallfunction in game);
+-- with the direct path and the slimmer handler: 61 and 0.
+do
+    assert(S.SetMany("damageMeter",{windowCount=2,w1Type=1,w2Type=10,w1Session=1,w2Session=1,
+        visibility=Suite.DamageMeterVisibility.ALWAYS}))
+    api.secret=true
+    combat=true;now=now+10;Event("PLAYER_REGEN_DISABLED")
+    RunPaint();RunClock()
+    local damage,deaths=assert(D.windows[1]),assert(D.windows[2])
+    assert(damage.shown and deaths.shown and damage.meterType==0 and deaths.meterType==9,"busy and quiet window expected")
+    local delivered,sent=0,0
+    local function Storm()
+        for _=1,50 do
+            for meterType=0,10 do
+                if meterType~=9 then
+                    for _,sessionID in ipairs({0,9}) do
+                        sent=sent+1
+                        if Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED") then
+                            delivered=delivered+1
+                            Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",meterType,sessionID)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local count,dispatchBefore,revision=0,dispatches,M.targetRevision
+    debug.sethook(function()
+        local source=debug.getinfo(2,"S").source:gsub("\\","/")
+        if source:find("/MSUF_Suite[%w_]*/") and not source:find("/tools/",1,true) then count=count+1 end
+    end,"",1)
+    Storm()
+    debug.sethook()
+    local perEvent=count/delivered
+    assert(delivered==sent and damage.dirty and not deaths.dirty and PaintRequest(),
+        "the quiet window must keep hearing session updates behind the pending paint")
+    assert(dispatches==dispatchBefore,"a session event ran "..(dispatches-dispatchBefore).." Dispatch calls for "..delivered)
+    -- The hover target cache is out-of-combat only; combat end invalidates it.
+    assert(M.targetRevision==revision,"combat session events invalidated the out-of-combat target cache")
+    assert(perEvent<=61,"a delivered session event cost "..perEvent.." instructions")
+    -- The quiet window still repaints within one interval of its own update.
+    Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",9,0)
+    assert(deaths.dirty,"the quiet window missed its update")
+    now=now+c.refreshRate;RunPaint()
+    assert(not damage.dirty and not deaths.dirty,"the pending paint did not cover both windows")
+    combat=false;Event("PLAYER_REGEN_ENABLED");RunPaint();RunClock()
+    assert(M.targetRevision>revision,"combat end kept the hover target cache of the fight")
+    api.secret=false
+    print(("damage meter unmuted storm: %d of %d events delivered, %.1f instructions and 0 Dispatch calls per event")
+        :format(delivered,sent,perEvent))
 end
 -- No migration: a profile that stored the old default keeps it; a profile
 -- without the setting gets the new default.

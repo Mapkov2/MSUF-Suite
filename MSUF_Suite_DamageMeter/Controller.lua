@@ -13,6 +13,10 @@ local D = P.DamageMeter
 local M = D.M
 -- Context:Event's named option: the meter's events also run in combat.
 local IN_COMBAT = { inCombat = true }
+-- The session event storm (22,487 in 60 s of the 2026-10-07 raid trace, 375
+-- per second) reaches SessionUpdated straight from its own frame, without
+-- the Dispatch per event (options.direct, MSUF_Suite_Modules/Runtime.lua).
+local DIRECT = { inCombat = true, direct = true }
 local Public = S.Public
 -- The client's secret test (Platform.lua) for the session event storm.
 local IsSecret = NS.IsSecret
@@ -113,6 +117,7 @@ end
 -- soon as the pending paint clears or any window paints, before anything is
 -- drawn. So a muted meter always has every shown window dirty.
 local SESSION_EVENT = "DAMAGE_METER_COMBAT_SESSION_UPDATED"
+local EVENT_OPTIONS = { [SESSION_EVENT] = DIRECT }
 local SessionUpdated
 
 local function MuteSessionUpdates()
@@ -125,7 +130,7 @@ function D.ResumeSessionUpdates()
     if not M.sessionMuted then return end
     M.sessionMuted = false
     D.InvalidateTargets()
-    if M.events[SESSION_EVENT] then M.context:Event(SESSION_EVENT, SessionUpdated, IN_COMBAT) end
+    if M.events[SESSION_EVENT] then M.context:Event(SESSION_EVENT, SessionUpdated, DIRECT) end
 end
 
 -- Deferred paints, clock ticks, the timer's tenths and the late repaint are
@@ -253,23 +258,27 @@ function D.ZoneKey()
     return ZONES[kind] or "HideWorld"
 end
 
+-- The storm path (see DIRECT): every shown window is visited once, and the
+-- hover target cache (D.TargetGroups) is invalidated only out of combat: it
+-- is never read or built in combat, and CombatEnd invalidates it.
 SessionUpdated = function(self, _, meterType, sessionID)
     if IsSecret(meterType) or IsSecret(sessionID) then return end
-    D.InvalidateTargets()
-    local dirty, clean = false, false
+    if not M.inCombat then D.InvalidateTargets() end
+    local windows, dirty, clean = D.windows, false, false
     for i = 1, self.config.windowCount do
-        local win = D.windows[i]
+        local win = windows[i]
         if win and win.shown then
-            if win.meterType == meterType then
+            local kind = win.meterType
+            if kind == meterType then
                 local id = win.sessionID
                 if (id and id == sessionID) or (not id and sessionID == 0) then win.dirty, dirty = true, true end
             end
             -- A threat window never hears session updates, so it never keeps them on.
-            clean = clean or (not win.dirty and win.meterType ~= D.THREAT)
+            if not clean and not win.dirty and kind ~= D.THREAT then clean = true end
         end
     end
     if dirty then D.RequestPaint() end
-    if paintJob.pending and not clean then MuteSessionUpdates() end
+    if not clean and paintJob.pending then MuteSessionUpdates() end
 end
 local function CurrentUpdated(self)
     D.InvalidateTargets()
@@ -388,7 +397,7 @@ local function Want(event, on, handler, unit)
     end
     if (M.events[event] == true) == on then return end
     M.events[event], M.eventUnits[event] = on or nil, on and unit or nil
-    if on then M.context:Event(event, handler, IN_COMBAT, unit) else M.context:RemoveEvent(event) end
+    if on then M.context:Event(event, handler, EVENT_OPTIONS[event] or IN_COMBAT, unit) else M.context:RemoveEvent(event) end
 end
 -- Threat (WoW Forever, Threat.lua) listens only while a shown window shows it:
 -- the watched enemy's threat list (filtered to the target unless a friendly

@@ -484,14 +484,30 @@ local function RouteEvent(frame, event, ...)
     if callback then Dispatch(callback, module, event, ...) end
 end
 
-local function RoutingFrame(ctx)
+-- OnEvent of a context's direct frame (options.direct, Context:Event): the
+-- hot events a module asked to get at the lowest cost. The 2026-10-07 raid
+-- trace delivered 22,487 DAMAGE_METER_COMBAT_SESSION_UPDATED in 60 s, and
+-- RouteEvent cost 1.7 us of Lua per event before the meter's own handler
+-- ran. Here the callback runs without RouteEvent's filters and without
+-- Dispatch (one native securecallfunction per event): this OnEvent is its
+-- own boundary, so an error still reaches the error handler, and no other
+-- callback shares the call. Context:Event refuses the cases RouteEvent
+-- filters (ADDON_LOADED, unit filters, geometry deferral).
+local function DirectEvent(frame, event, ...)
+    local module = frame.module
+    if not module.active then return end
+    local callback = frame.callbacks[event]
+    if callback then callback(module, event, ...) end
+end
+
+local function RoutingFrame(ctx, onEvent)
     local frame = S.CreateFrame("Frame")
     frame.context = ctx
     -- The context keeps this table for its lifetime (Release empties it).
     frame.callbacks = ctx.callbacks
     -- Install owns this instance for the context's lifetime.
     frame.module = S.instances[ctx.id]
-    frame:SetScript("OnEvent", RouteEvent)
+    frame:SetScript("OnEvent", onEvent or RouteEvent)
     return frame
 end
 
@@ -521,19 +537,27 @@ end
 -- never changed (IN_COMBAT = { inCombat = true }). unit (for example
 -- "player", or a list such as the boss tokens) limits a unit event to those
 -- units. The older positional boolean allowCombat in place of options still
--- works for the callers not moved yet.
+-- works for the callers not moved yet. options.direct (with inCombat, no
+-- unit, never ADDON_LOADED) registers a hot event on the context's direct
+-- frame (DirectEvent): no Dispatch per event. The first registration of an
+-- event decides its frame until RemoveEvent.
 function Context:Event(event, callback, options, unit)
     if not NS.Client.SupportsEvent(event) then return end
     -- A job (Timers.lua) registers its event function: Dispatch only runs functions.
     if type(callback) == "table" then callback = callback:EventFunction() end
-    local inCombat = options
-    if options and options ~= true then inCombat = options.inCombat end
+    local inCombat, direct = options, false
+    if options and options ~= true then inCombat, direct = options.inCombat, options.direct == true end
+    assert(not direct or (inCombat and unit == nil and event ~= "ADDON_LOADED"), "a direct event needs inCombat, no unit")
     local alreadyRegistered = self.callbacks[event] ~= nil
     if not self.frame then self.frame = RoutingFrame(self) end
     self.combatEvents[event] = inCombat or nil
     self.callbacks[event] = callback
     if alreadyRegistered then return end
-    if type(unit) == "table" then
+    if direct then
+        if not self.directFrame then self.directFrame, self.directEvents = RoutingFrame(self, DirectEvent), {} end
+        self.directEvents[event] = true
+        self.directFrame:RegisterEvent(event)
+    elseif type(unit) == "table" then
         RegisterUnitList(self, event, unit)
     elseif unit and self.frame.RegisterUnitEvent then
         self.frame:RegisterUnitEvent(event, unit)
@@ -546,6 +570,12 @@ function Context:RemoveEvent(event)
     if self.callbacks[event] == nil then return end
     self.callbacks[event] = nil
     self.combatEvents[event] = nil
+    local directEvents = self.directEvents
+    if directEvents and directEvents[event] then
+        directEvents[event] = nil
+        self.directFrame:UnregisterEvent(event)
+        return
+    end
     if self.frame then self.frame:UnregisterEvent(event) end
     if self.unitFrames then
         for _, frame in ipairs(self.unitFrames) do frame:UnregisterEvent(event) end
@@ -574,6 +604,10 @@ end
 ------------------------------------------------------------------ release
 local function ReleaseEvents(self)
     if self.frame then self.frame:UnregisterAllEvents() end
+    if self.directFrame then
+        self.directFrame:UnregisterAllEvents()
+        for key in pairs(self.directEvents) do self.directEvents[key] = nil end
+    end
     if self.unitFrames then
         for _, frame in ipairs(self.unitFrames) do frame:UnregisterAllEvents() end
     end

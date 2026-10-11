@@ -158,13 +158,51 @@ local reportedBefore = #reported
 assert(pcall(context.frame.callback, context.frame, "RAISING_EVENT"), "a module callback raised out of OnEvent")
 assert(#reported == reportedBefore + 1, "a raising module callback was not reported")
 context:RemoveEvent("RAISING_EVENT")
+-- options.direct: a hot event on the context's own direct frame, called
+-- without Dispatch (the damage meter's session storm, 22,487 events in 60 s
+-- of the 2026-10-07 raid trace). Its OnEvent is the boundary: a raising
+-- callback raises out of it, where the client reports it.
+do
+    local direct, hot = { inCombat = true, direct = true }, 0
+    local routed, routedOff = context.frame.registrations, context.frame.unregistrations
+    context:Event("HOT_EVENT", function(self, event, a, b)
+        assert(self == module and event == "HOT_EVENT" and a == 1 and b == 2)
+        hot = hot + 1
+    end, direct)
+    local frame = assert(context.directFrame, "a direct event made no direct frame")
+    -- The direct frame is a Suite frame (S.CreateFrame) like the routing frame.
+    assert(pixelVisits == 2, "the direct frame skipped S.CreateFrame")
+    assert(frame.events.HOT_EVENT and not context.frame.events.HOT_EVENT and context.frame.registrations == routed
+        and context.combatEvents.HOT_EVENT, "a direct event was registered on the routing frame")
+    local dispatched = #reported
+    frame:callback("HOT_EVENT", 1, 2)
+    assert(hot == 1, "the direct frame did not run its callback")
+    module.active = false
+    frame:callback("HOT_EVENT", 1, 2)
+    module.active = true
+    assert(hot == 1, "a stopped module heard a direct event")
+    context:Event("HOT_EVENT", function() error("direct callback raised") end, direct)
+    assert(frame.registrations == 1, "a re-registered direct event repeated the native registration")
+    assert(not pcall(frame.callback, frame, "HOT_EVENT", 1, 2) and #reported == dispatched,
+        "a direct callback went through Dispatch")
+    context:RemoveEvent("HOT_EVENT")
+    assert(not frame.events.HOT_EVENT and context.callbacks.HOT_EVENT == nil and frame.unregistrations == 1
+        and context.frame.unregistrations == routedOff, "removing a direct event missed its frame")
+    for _, bad in ipairs({ { "UNIT_HEALTH", { inCombat = true, direct = true }, "player" },
+        { "ADDON_LOADED", { inCombat = true, direct = true } }, { "HOT_EVENT", { direct = true } } }) do
+        assert(not pcall(context.Event, context, bad[1], function() end, bad[2], bad[3]),
+            "a direct registration skipped a RouteEvent filter: " .. bad[1])
+    end
+    context:Event("HOT_EVENT", function() end, direct)
+end
 local native = { scale = 1 }
 function native:GetScale() return self.scale end
 function native:SetScale(value) self.scale = value end
 context:Scale(native, 1.3)
-assert(native.scale == 1.3 and pixelVisits == 1, "native parent was claimed by suite layout")
+assert(native.scale == 1.3 and pixelVisits == 2, "native parent was claimed by suite layout")
 context:Release()
-assert(native.scale == 1 and not next(context.frame.events) and not next(context.callbacks))
+assert(native.scale == 1 and not next(context.frame.events) and not next(context.callbacks)
+    and not next(context.directFrame.events) and not next(context.directEvents), "release kept a direct event")
 context:Scale(native, 1.2)
 native.scale = 1.5
 context:Release()

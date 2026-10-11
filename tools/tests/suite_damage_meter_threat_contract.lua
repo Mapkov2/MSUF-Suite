@@ -182,11 +182,17 @@ assert(Suite.Client.isForever,"the test client is not WoW Forever")
 local labels=Suite.DamageMeterTypeLabels
 assert(#labels==12 and labels[12]=="Threat" and D.THREAT==11,"WoW Forever lacks the threat meter type after Blizzard's")
 
-local function Frame() return M.context.frame end
-local function Registered(name) return Frame() and Frame().events[name]==true end
+-- The session event lives on the context's direct frame (options.direct,
+-- Runtime.lua); every other event on the routing frame.
+local function Frame(name)
+    local direct=M.context and M.context.directFrame
+    if name and direct and direct.events[name] then return direct end
+    return M.context and M.context.frame
+end
+local function Registered(name) return Frame(name)~=nil and Frame(name).events[name]==true end
 local function Event(name,...)
     assert(Registered(name),"event not registered: "..name)
-    Frame().scripts.OnEvent(Frame(),name,...)
+    Frame(name).scripts.OnEvent(Frame(name),name,...)
 end
 local function RunThreatPaint()
     local job,list,ran=D.threatJob,afters,0
