@@ -512,6 +512,15 @@ local function TrackCombat(ui)
     if body:IsVisible() then body:RegisterEvent("PLAYER_REGEN_DISABLED") end
 end
 
+-- The page's area header shows the matching sample (NameplatesWorkspace.lua).
+function Editor:ShowSample(kind, personal)
+    personal = personal == true
+    if self.sampleKind == kind and self.personal == personal then return end
+    self.sampleKind, self.personal = kind, personal
+    self:Select(nil)
+    self:Paint()
+end
+
 function Editor.Create(ctx, builder, sections)
     local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 162, gap = 8 })
     if not section then return end
@@ -526,6 +535,7 @@ function Editor.Create(ctx, builder, sections)
         help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
     }, { __index = Editor })
     ui.previewRole, ui.previewRoleSource = nil, P.Get(ID, "enemyPreviewRole")
+    P.ShowNameplatesSample = function(kind, personal) ui:ShowSample(kind, personal) end
     P.ShowNameplatesElementsSample = function()
         ui.sampleKind = "enemy"
         ui.previewRole = nil

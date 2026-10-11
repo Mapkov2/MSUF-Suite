@@ -39,6 +39,12 @@ B.Module("nameplates", {
         nameplateShowFriendlyNpcs = true,
         UnitNamePlayerGuild = true,
         UnitNamePlayerPVPTitle = true,
+        nameplateShowAll = true,
+        nameplateShowEnemyMinions = true,
+        nameplateShowEnemyMinus = true,
+        nameplateShowFriendlyPlayerMinions = true,
+        nameplateShowOffscreen = true,
+        nameplateStackingTypes = true,
     },
     summary = "look nativeStyle nativeSize enemyTextMode enemyNameSize friendlyNamesOnly friendlyNameSize",
 })
@@ -155,12 +161,12 @@ end
 local function Side(prefix, title, size)
     local font = B.Font(prefix .. "NameFont", "Name font")
     local appearance = {
-        B.Bool(prefix .. "BackdropEnabled", "Skin health backdrop", true),
-        B.Bool(prefix .. "BorderEnabled", "Skin health border", true),
-        B.Number(prefix .. "BorderSize", "Health border (px)", prefix == "enemy" and 1 or 0, 0, 3),
-        B.Color(prefix .. "BorderColor", "Health border", "000000"),
-        B.Color(prefix .. "BackdropColor", "Health backdrop", "000000"),
-        B.Number(prefix .. "BackdropAlpha", "Health backdrop opacity (%)", 50, 0, 100, 5),
+        B.Bool(prefix .. "BackdropEnabled", "Show backdrop", true),
+        B.Bool(prefix .. "BorderEnabled", "Show border", true),
+        B.Number(prefix .. "BorderSize", "Border size (px)", prefix == "enemy" and 1 or 0, 0, 3),
+        B.Color(prefix .. "BorderColor", "Border color", "000000"),
+        B.Color(prefix .. "BackdropColor", "Backdrop color", "000000"),
+        B.Number(prefix .. "BackdropAlpha", "Backdrop opacity (%)", 50, 0, 100, 5),
         B.Bool(prefix .. "TextEnabled", "Customize nameplate text", true),
         B.Bool(prefix .. "LevelEnabled", "Show unit level",
             prefix == "enemy" and NS.Client.isForever),
@@ -183,17 +189,17 @@ local function Side(prefix, title, size)
         appearance[#appearance + 1] = B.Bool("enemyColorsOutside", "Role colors outdoors", true)
         appearance[#appearance + 1] = B.Bool("enemyQuestColors", "Quest objective colors", true)
         appearance[#appearance + 1] = B.Bool("enemyTankMode", "Tank mode: safe aggro color", false)
-        appearance[#appearance + 1] = B.Bool("enemyTargetMarker", "Target arrows", true)
+        appearance[#appearance + 1] = B.Bool("enemyTargetMarker", "Show target arrows", true)
         appearance[#appearance + 1] = B.Bool("enemyTargetHideFriendly", "Hide target arrows on friendly plates", true)
-        appearance[#appearance + 1] = B.Choice("enemyTargetStyle", "Target marker", 1, NS.NameplateStyle.TargetLabels)
-        appearance[#appearance + 1] = B.Choice("enemyTargetLayout", "Target marker layout", 2,
+        appearance[#appearance + 1] = B.Choice("enemyTargetStyle", "Arrow style", 1, NS.NameplateStyle.TargetLabels)
+        appearance[#appearance + 1] = B.Choice("enemyTargetLayout", "Arrow layout", 2,
             { "Single", "Both sides inward", "Both sides outward" })
-        appearance[#appearance + 1] = B.Choice("enemyTargetAnchor", "Target marker anchor (single)", 4, NS.AnchorLabels)
-        appearance[#appearance + 1] = B.Choice("enemyTargetDirection", "Target marker direction (single)", 1,
+        appearance[#appearance + 1] = B.Choice("enemyTargetAnchor", "Single arrow anchor", 4, NS.AnchorLabels)
+        appearance[#appearance + 1] = B.Choice("enemyTargetDirection", "Single arrow direction", 1,
             { "Right", "Left", "Up", "Down" })
-        appearance[#appearance + 1] = B.Number("enemyTargetMarkerSize", "Target marker size", 16, 8, 96)
-        appearance[#appearance + 1] = B.Number("enemyTargetOffsetX", "Target marker X (0 = outside left edge)", 0, -POSITION_LIMIT, POSITION_LIMIT)
-        appearance[#appearance + 1] = B.Number("enemyTargetOffsetY", "Target marker Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
+        appearance[#appearance + 1] = B.Number("enemyTargetMarkerSize", "Arrow size", 16, 8, 96)
+        appearance[#appearance + 1] = B.Number("enemyTargetOffsetX", "Arrow X (0 = outside left edge)", 0, -POSITION_LIMIT, POSITION_LIMIT)
+        appearance[#appearance + 1] = B.Number("enemyTargetOffsetY", "Arrow Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
         appearance[#appearance + 1] = B.Bool("enemyEliteMarker", "Boss and rare marker", false)
         appearance[#appearance + 1] = B.Choice("enemyEliteMarkerAnchor", "Boss and rare marker anchor", 1, NS.NameplateStyle.AnchorLabels)
         appearance[#appearance + 1] = B.Number("enemyEliteMarkerSize", "Boss and rare marker size", 14, 8, 48)
@@ -247,11 +253,11 @@ B.Section(id, "signals", "Blizzard indicators", {
     B.Choice("threatSignalMode", "Blizzard aggro signals", 1,
         { "Keep Blizzard setting", "Customize" }),
     B.Bool("threatFlash", "Flash when aggro changes", true),
-    B.Bool("threatHighlight", "Progressive aggro highlight", true),
+    B.Bool("threatHighlight", "Aggro glow (grows with threat)", true),
     B.Bool("threatFlashColorEnabled", "Custom flash color", false),
     B.Color("threatFlashColor", "Flash color", "ffff00"),
-    B.Bool("threatHighlightColorEnabled", "Custom progressive highlight color", false),
-    B.Color("threatHighlightColor", "Progressive highlight color", "ffe93a"),
+    B.Bool("threatHighlightColorEnabled", "Custom aggro glow color", false),
+    B.Color("threatHighlightColor", "Aggro glow color", "ffe93a"),
     B.Choice("softTargetEnemy", "Enemy soft target icon", 1,
         { "Keep Blizzard setting", "Show", "Hide" }),
     B.Choice("softTargetFriend", "Friendly soft target icon", 1,
@@ -260,6 +266,29 @@ B.Section(id, "signals", "Blizzard indicators", {
         { "Keep Blizzard setting", "Show", "Hide" }),
     B.Choice("softTargetIconGate", "Soft target icon on nameplates", 1,
         { "Keep Blizzard setting", "Show", "Hide" }),
+    B.Choice("selectionBorder", "Target and focus border", 1, { "Keep Blizzard setting", "Custom colors", "Hide" }),
+    B.Color("selectionTargetColor", "Target border", "ffffff"),
+    B.Color("selectionFocusColor", "Focus border", "ff66ff"),
+    B.Choice("selectionDim", "Dim other nameplates", 1, { "Keep Blizzard setting", "Custom strength", "Off" }),
+    B.Number("selectionDimPercent", "Dim strength (%)", 50, 0, 100, 5),
+})
+
+-- Which units get a plate and how plates share space: Blizzard's own
+-- nameplate options (Settings > Nameplates). Not part of a look.
+local SHOW_HIDE, SIMPLE = { "Keep Blizzard setting", "Show", "Hide" }, { "Keep Blizzard setting", "Simplified", "Full size" }
+local STACK = { "Keep Blizzard setting", "Stack", "Overlap" }
+B.Section(id, "visibility", "Visibility", {
+    B.Choice("plateShowAll", "Always show nameplates", 1, { "Keep Blizzard setting", "On", "Off" }),
+    B.Choice("plateStackEnemy", "Enemy nameplate stacking", 1, STACK),
+    B.Choice("plateStackFriendly", "Friendly nameplate stacking", 1, STACK),
+    B.Choice("plateEnemyMinions", "Enemy minions (pets, guardians, totems)", 1, SHOW_HIDE),
+    B.Choice("plateEnemyMinus", "Minor enemies", 1, SHOW_HIDE),
+    B.Choice("plateFriendlyMinions", "Friendly player minions", 1, SHOW_HIDE),
+    B.Choice("plateOffscreen", "Off-screen nameplates", 1, SHOW_HIDE),
+    B.Choice("plateSimpleMinion", "Enemy minion plates", 1, SIMPLE),
+    B.Choice("plateSimpleMinus", "Minor enemy plates", 1, SIMPLE),
+    B.Choice("plateSimpleFriendlyPlayer", "Friendly player plates", 1, SIMPLE),
+    B.Choice("plateSimpleFriendlyNpc", "Friendly NPC plates", 1, SIMPLE),
 })
 
 B.Section(id, "personal", "Personal power bar", {
@@ -336,3 +365,60 @@ for key, value in pairs(overrides) do mapko[key] = value end
 for key, value in pairs(mapko) do spec.rules[key].default = value end
 spec.rules.enemyPreviewRole.default = 4
 spec.look = { key = "look", presets = { [1] = preset, [2] = native, [4] = mapko }, visualKeys = visual, custom = 3 }
+
+-- Settings that act only while another one is on or set. The options page
+-- greys them out with the reason (P.RuleEnabled) instead of leaving inert
+-- controls live. Each pair mirrors the runtime: Text.Configure, Skin.lua
+-- PaintHealth/PaintMarker, Roles.Base, CVars.lua Casts/Auras/Signals,
+-- Threat.lua and Selection.lua.
+local rules, CUSTOM = spec.rules, { [2] = true }
+local function Requires(keys, choiceKey, values)
+    for _, key in ipairs(keys) do rules[key].requiresChoice = { key = choiceKey, values = values or CUSTOM } end
+end
+local function EnabledBy(keys, enableKey)
+    for _, key in ipairs(keys) do rules[key].enableKey = enableKey end
+end
+-- Per side: { switch suffix, dependent suffixes }. The keys are built here
+-- and assigned directly (the locale tool's catalog enableKey rule).
+local SIDE_SWITCHES = {
+    { "TextEnabled", "CustomFont", "TextShadow", "NameSize", "TextOutline" },
+    { "CustomFont", "NameFont" },
+    { "LevelEnabled", "LevelSize" },
+    { "BorderEnabled", "BorderSize", "BorderColor" },
+    { "BackdropEnabled", "BackdropColor", "BackdropAlpha" },
+    { "EliteMarker", "EliteMarkerAnchor", "EliteMarkerSize" },
+    { "QuestMarker", "QuestMarkerAnchor", "QuestMarkerSize" },
+    { "CastTextEnabled", "CastCustomFont", "CastTextShadow", "CastSize", "CastOutline" },
+    { "CastCustomFont", "CastFont" },
+}
+for _, side in ipairs({ "enemy", "friendly" }) do
+    for _, switch in ipairs(SIDE_SWITCHES) do
+        for i = 2, #switch do rules[side .. switch[i]].enableKey = side .. switch[1] end
+    end
+    -- Hidden castbars show no text or time (CastTime.Paint).
+    Requires({ side .. "CastTextEnabled", side .. "CastTimeEnabled" }, "enemyCastEnabled", { [1] = true, [2] = true })
+end
+EnabledBy({ "enemyHealthTextSize" }, "enemyTextEnabled")
+EnabledBy({ "enemyTargetHideFriendly", "enemyTargetStyle", "enemyTargetLayout", "enemyTargetAnchor",
+    "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetColor" }, "enemyTargetMarker")
+EnabledBy({ "enemyColorsInDungeons", "enemyColorsOutside", "enemyQuestColors", "enemyTankMode" }, "enemyRoleColors")
+for _, role in ipairs(roles) do
+    local switch = role.key == "TankMode" and "enemyTankMode" or "enemy" .. role.key .. "Enabled"
+    if role.key ~= "TankMode" then
+        rules[switch].enableKey = role.key == "OtherTank" and "enemyTankMode" or "enemyRoleColors"
+    end
+    rules["enemy" .. role.key .. "Color"].enableKey = switch
+end
+for _, group in ipairs(NS.NameplateStyle.AuraGroups) do
+    Requires({ group.key .. "Buffs", group.key .. "Debuffs", group.key .. "Control" }, group.key .. "AuraMode")
+end
+Requires({ "auraScalePercent" }, "auraScaleMode")
+Requires({ "enemyCastDisplay" }, "enemyCastEnabled", { [1] = true, [2] = true })
+Requires({ "enemyCastSpellName", "enemyCastSpellIcon", "enemyCastSpellTarget", "enemyCastImportant",
+    "enemyCastTargetHighlight" }, "enemyCastDisplay")
+Requires({ "threatFlash", "threatHighlight" }, "threatSignalMode")
+EnabledBy({ "threatFlashColor" }, "threatFlashColorEnabled")
+EnabledBy({ "threatHighlightColor" }, "threatHighlightColorEnabled")
+Requires({ "selectionTargetColor", "selectionFocusColor" }, "selectionBorder")
+Requires({ "selectionDimPercent" }, "selectionDim")
+EnabledBy({ "personalPowerBorderSize", "personalPowerBorderColor" }, "personalPowerSkin")

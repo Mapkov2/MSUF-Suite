@@ -592,11 +592,11 @@ function P.ResetRules(id, rules, keyFn, extraKeys, adjust)
         local live = P.catalog[id].rules[key]
         if live then values[key] = live.default end
     end
+    -- Resetting the look applies its preset; a section reset keeps the current preset look's values.
     local look = P.catalog[id].look
-    if look and values[look.key] ~= nil then
-        local preset = look.presets and look.presets[values[look.key]]
-        for key, value in pairs(preset or {}) do values[key] = value end
-    end
+    local whole = look and values[look.key] ~= nil
+    local preset = look and look.presets and look.presets[whole and values[look.key] or P.Get(id, look.key)]
+    for key, value in pairs(preset or {}) do if whole or values[key] ~= nil then values[key] = value end end
     if adjust then adjust(values) end
     if not next(values) then return false end
     local ok = P.WithHistory("Reset section", "suite:" .. id .. ".section-reset", function()

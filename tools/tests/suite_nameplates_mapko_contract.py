@@ -52,8 +52,19 @@ for _, forever in ipairs({ false, true }) do
         assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", ns)
     end
     local spec = ns.SuiteCatalog.nameplates
+    -- Settings added after export revision 17 keep Blizzard's behaviour by
+    -- default (the other-tank color follows tank mode, which stays off).
+    local newer = { plateShowAll = 1, plateStackEnemy = 1, plateStackFriendly = 1, plateEnemyMinions = 1,
+        plateEnemyMinus = 1, plateFriendlyMinions = 1, plateOffscreen = 1, plateSimpleMinion = 1,
+        plateSimpleMinus = 1, plateSimpleFriendlyPlayer = 1, plateSimpleFriendlyNpc = 1,
+        selectionBorder = 1, selectionTargetColor = "ffffff", selectionFocusColor = "ff66ff",
+        selectionDim = 1, selectionDimPercent = 50, enemyOtherTankEnabled = true, enemyOtherTankColor = "3fc77a" }
+    for key, value in pairs(newer) do
+        assert(expected[key] == nil, "the export already holds " .. key)
+        assert(spec.rules[key] and spec.rules[key].default == value, "newer setting default changed: " .. key)
+    end
     for key, rule in pairs(spec.rules) do
-        if not key:match("^auraColors") then
+        if not key:match("^auraColors") and newer[key] == nil then
             assert(rule.default == expected[key], "Mapko catalog default differs from export: " .. key)
         end
         if key == "auraColorsEnabled" then assert(rule.default == false) end

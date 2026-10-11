@@ -22,4 +22,5 @@ KickReady.lua
 CVars.lua
 Auras.lua
 AuraColors.lua
+Selection.lua
 Skin.lua

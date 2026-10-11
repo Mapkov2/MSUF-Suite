@@ -27,6 +27,53 @@ local function LowBits(module, key, mask, width)
     module.context:CVar(key, value)
 end
 
+-- Several settings that each choose one flag of the same array CVar, flag i
+-- from settings[i]: Keep takes the flag the CVar had before the first custom
+-- write (or forced[i] when given), Show sets it, Hide clears it. One write
+-- carries all of them; with every setting on Keep and nothing forced,
+-- Blizzard's value comes back.
+local function Flags(module, key, settings, c, forced)
+    local custom = false
+    for i = 1, #settings do
+        if (c[settings[i]] or KEEP) ~= KEEP or forced and forced[i] ~= nil then custom = true end
+    end
+    local before = module.flagsBefore
+    if not custom then
+        before[key] = nil
+        Restore(key)
+        return
+    end
+    local flags = Style.CVarFlags(C_CVar.GetCVar(key))
+    if flags == nil then return end
+    if before[key] == nil then before[key] = flags end
+    local mask = 0
+    for i = 1, #settings do
+        local mode, bit = c[settings[i]] or KEEP, 2 ^ (i - 1)
+        local on = mode == SHOW
+        if mode == KEEP then
+            if forced and forced[i] ~= nil then
+                on = forced[i]
+            else
+                on = math.floor(before[key] / bit) % 2 == 1
+            end
+        end
+        if on then mask = mask + bit end
+    end
+    LowBits(module, key, mask, #settings)
+end
+
+-- Blizzard's NamePlateStackType and NamePlateSimplifiedType flags, in order.
+local STACKING = { "plateStackEnemy", "plateStackFriendly" }
+local SIMPLIFIED = { "plateSimpleMinion", "plateSimpleMinus", "plateSimpleFriendlyPlayer", "plateSimpleFriendlyNpc" }
+-- Forced full enemy minion and minor plates (InfoDisplay's names) unless the
+-- player chose otherwise.
+local FULL_ENEMY_PLATES = { false, false }
+
+local function Visibility(module, c, namesForced)
+    Flags(module, "nameplateStackingTypes", STACKING, c)
+    Flags(module, "nameplateSimplifiedTypes", SIMPLIFIED, c, namesForced and FULL_ENEMY_PLATES or nil)
+end
+
 -- A three-way choice: keep Blizzard's value, write on (SHOW) or off.
 local function Toggle(module, mode, key)
     if mode == KEEP then
@@ -54,12 +101,11 @@ end
 local function InfoDisplay(module, c)
     local textMode = c.enemy and c.look ~= LOOK_BLIZZARD and c.enemyTextMode or KEEP
     local rarityMode = c.enemy and c.look ~= LOOK_BLIZZARD and c.enemyRarityIcon or KEEP
+    -- Forced names also need full minion and minor plates (Visibility).
     if textMode == KEEP then
         Restore("nameplateForceShowUnitName")
-        Restore("nameplateSimplifiedTypes")
     else
         module.context:CVar("nameplateForceShowUnitName", "1")
-        LowBits(module, "nameplateSimplifiedTypes", 0, 2)
     end
     if textMode == KEEP and (rarityMode == KEEP or module.infoTextApplied) then Restore("nameplateInfoDisplay") end
     if textMode ~= KEEP or rarityMode ~= KEEP then
@@ -144,6 +190,11 @@ local CHOICES = {
     { "friendlyNPCs", "nameplateShowFriendlyNpcs" },
     { "playerGuildNames", "UnitNamePlayerGuild" },
     { "playerTitles", "UnitNamePlayerPVPTitle" },
+    { "plateShowAll", "nameplateShowAll" },
+    { "plateEnemyMinions", "nameplateShowEnemyMinions" },
+    { "plateEnemyMinus", "nameplateShowEnemyMinus" },
+    { "plateFriendlyMinions", "nameplateShowFriendlyPlayerMinions" },
+    { "plateOffscreen", "nameplateShowOffscreen" },
 }
 
 local function Names(module, c)
@@ -161,10 +212,19 @@ local function Names(module, c)
     end
 end
 
+-- Blizzard may lock CVars during combat: a write then waits for its end
+-- (Skin.lua OnCombatEnded) instead of failing half applied.
 function CVars.Apply(module)
+    if NS.InCombat() then
+        module.cvarsPending = true
+        return
+    end
+    module.cvarsPending = nil
+    module.flagsBefore = module.flagsBefore or {}
     local c = module.config
     Size(module, c)
     InfoDisplay(module, c)
+    Visibility(module, c, module.infoTextApplied)
     Casts(module, c)
     Auras(module, c)
     Signals(module, c)

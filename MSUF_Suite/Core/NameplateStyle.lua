@@ -97,8 +97,9 @@ function Style.RepairGeometry(modules)
         local mapko = plates.look == 4
         if plates.look == 3 then
             mapko = true
+            -- A key the export lacks is a setting added after it was made.
             for key, value in pairs(NS.SuiteCatalog.nameplates.look.presets[4]) do
-                if key ~= "barGeometry" and key ~= "levelAppearance" and plates[key] ~= value then
+                if key ~= "barGeometry" and key ~= "levelAppearance" and plates[key] ~= nil and plates[key] ~= value then
                     mapko = false
                     break
                 end
@@ -121,6 +122,7 @@ Style.Roles = {
     { key = "ThreatLost", label = "Threat lost / taking aggro", sample = "Loose Enemy", color = "dd6f00" },
     { key = "ThreatWarning", label = "Threat warning", sample = "Unstable Aggro", color = "ffe93a" },
     { key = "TankMode", label = "Tank safe", sample = "Tank Enemy", color = "26d9ff" },
+    { key = "OtherTank", label = "Held by another tank", sample = "Offtank Enemy", color = "3fc77a" },
 }
 Style.RoleLabels = {}
 for index, role in ipairs(Style.Roles) do Style.RoleLabels[index] = role.label end

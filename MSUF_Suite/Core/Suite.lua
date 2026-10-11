@@ -4,6 +4,7 @@ NS.FinalizeCatalog()
 local S = { states = {}, instances = {}, catalog = NS.SuiteCatalog, order = NS.SuiteOrder, started = false }
 NS.Suite = S
 S.ApplyOwnedLayer = NS.ApplyOwnedLayer
+S.OwnedElementLevel = NS.OwnedElementLevel
 S.ApplyOwnedChildLayer = NS.ApplyOwnedChildLayer
 local pending, pendingFrame, pendingListening = {}, nil, false
 local RUNTIME_ADDON = "MSUF_Suite_Modules"

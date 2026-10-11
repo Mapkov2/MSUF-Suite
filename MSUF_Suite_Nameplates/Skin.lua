@@ -6,7 +6,7 @@ local Style = NS.NameplateStyle
 local Border = Style.PaintBorder
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
 local Level, CastTime, CVars, Auras = private.Level, private.CastTime, private.CVars, private.Auras
-local KickReady = private.KickReady
+local KickReady, Selection, AuraColors = private.KickReady, private.Selection, private.AuraColors
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local IN_COMBAT = { inCombat = true }
 local M = {
@@ -314,19 +314,21 @@ local function Paint(uf)
         if M.targetUF == uf then M.targetUF = nil end
         HideVisual(M.visuals[health])
         RestorePlateFonts(uf, health, cast)
+        if Selection.inUse then Selection.Apply(health, false) end
     else
         local visual = Visual(health, uf)
         PaintHealth(health, visual, prefix)
         PaintTarget(uf, health, visual, prefix)
         PaintFonts(uf, health, cast, prefix)
+        if Selection.inUse then Selection.Apply(health, true) end
     end
     -- Last: the role tint, arrows and fonts come first whatever the DoT
     -- colors do (AuraColors.lua).
-    private.AuraColors.Apply(uf, M.units[health], prefix == "enemy")
+    AuraColors.Apply(uf, M.units[health], prefix == "enemy")
 end
 
 local function RestorePlate(uf)
-    private.AuraColors.Restore(uf)
+    AuraColors.Restore(uf)
     Threat.Restore(uf)
     RestoreFriendlyName(uf.name)
     Level.PaintNative(uf, nil)
@@ -341,6 +343,7 @@ local function RestorePlate(uf)
     M.roles[health], M.units[health] = nil, nil
     if M.facts[health] then Facts(health) end
     HideVisual(M.visuals[health])
+    Selection.Restore(health)
     RestorePlateFonts(uf, health, cast)
 end
 
@@ -568,7 +571,7 @@ end
 -- when the context the colors depend on changed.
 local function OnContextChanged(module, event)
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
-        private.AuraColors.Configure(module.config, true)
+        AuraColors.Configure(module.config, true)
     end
     local changed = Roles.RefreshContext()
     if event == "ZONE_CHANGED" and not changed then return end
@@ -613,6 +616,8 @@ local function OnFrameOptions(uf)
 end
 
 local function OnCombatEnded(module)
+    -- CVar writes held back for combat (CVars.Apply).
+    if module.cvarsPending then CVars.Apply(module) end
     local retryQuests = Roles.RetryQuests()
     if not module.needsRefresh then
         if retryQuests then
@@ -640,18 +645,18 @@ local AURA_CONFIG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_P
     "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED", "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" }
 
 local function RepaintAuraColors(module)
-    for unit, uf in pairs(module.activeUnits) do private.AuraColors.Apply(uf, unit, Prefix(uf) == "enemy") end
+    for unit, uf in pairs(module.activeUnits) do AuraColors.Apply(uf, unit, Prefix(uf) == "enemy") end
 end
 
 local function OnAuraSpellsChanged(module)
-    private.AuraColors.Configure(module.config, true)
+    AuraColors.Configure(module.config, true)
     RepaintAuraColors(module)
 end
 
 -- Blizzard's Edit Mode feeds aura containers sample auras: on 12.1.0 the DoT
 -- colors hide while it is open (AuraColors.SetEditMode).
-local function OnEditModeEnter() private.AuraColors.SetEditMode(true) end
-local function OnEditModeExit() private.AuraColors.SetEditMode(false) end
+local function OnEditModeEnter() AuraColors.SetEditMode(true) end
+local function OnEditModeExit() AuraColors.SetEditMode(false) end
 
 -- Every plate listener also runs in combat (the context's allowCombat, kept
 -- explicit should the module ever move frames itself): restyling a native
@@ -689,14 +694,15 @@ function M:Refresh()
     CVars.Apply(self)
     Threat.Refresh()
     KickReady.Configure()
-    private.AuraColors.Configure(self.config)
+    Selection.Configure(self.config)
+    AuraColors.Configure(self.config)
     if self.config.auraColorsEnabled then
         for _, event in ipairs(AURA_CONFIG_EVENTS) do Listen(self, event, OnAuraSpellsChanged) end
         self.context:Callback("EditMode.Enter", OnEditModeEnter)
         self.context:Callback("EditMode.Exit", OnEditModeExit)
         -- Edit Mode may have opened or closed while the module was off; the
         -- plate pass below repaints.
-        private.AuraColors.SetEditMode(EditModeManagerFrame:IsEditModeActive(), false)
+        AuraColors.SetEditMode(EditModeManagerFrame:IsEditModeActive(), false)
         self.auraSpellsListening = true
     elseif self.auraSpellsListening then
         for _, event in ipairs(AURA_CONFIG_EVENTS) do self.context:RemoveEvent(event) end
@@ -728,6 +734,7 @@ function M:Disable()
     Level.RestoreNative()
     Auras.Restore()
     KickReady.Disable()
+    Selection.RestoreAll()
 end
 
 Layout.Bind(M)
@@ -736,5 +743,5 @@ Level.Bind(M)
 CastTime.Bind(M)
 KickReady.Bind(M, RepaintCasts)
 Auras.Bind(M)
-private.AuraColors.Bind(M, RepaintAuraColors)
+AuraColors.Bind(M, RepaintAuraColors)
 S.Install("nameplates", M)

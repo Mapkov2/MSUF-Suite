@@ -55,6 +55,7 @@ Pages\NameplatesEditorLayers.lua
 Pages\NameplatesPreviewLayout.lua
 Pages\NameplatesEditor.lua
 Pages\NameplatesPreview.lua
+Pages\NameplatesWorkspace.lua
 Pages\Nameplates.lua
 Pages\CooldownManagerData.lua
 Pages\CooldownManagerLists.lua

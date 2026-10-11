@@ -2,7 +2,7 @@ local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
-    .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Skin.lua",
+    .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -20,7 +20,16 @@ UnitInParty = function() return grouped end
 -- (onThreatList "secret": threat values restricted). Blizzard's own rule
 -- (CompactUnitFrame.lua:565-572) compares that status: from addon code a
 -- secret one throws.
+-- Another group tank (Roles.lua ReadOtherTanks / HeldByOtherTank): its unit
+-- and whether it tanks nameplate1 ("secret": restricted).
+local otherTank, otherTankTanking = nil, false
+UnitExists = function(unit) return unit == otherTank end
+UnitGroupRolesAssigned = function(unit) return unit == otherTank and "TANK" or "NONE" end
 UnitDetailedThreatSituation = function(unit, mob)
+    if otherTank and unit == otherTank then
+        assert(mob == "nameplate1", "another tank's threat read for the wrong unit")
+        return otherTankTanking
+    end
     assert(unit == "player" and mob == "nameplate1", "threat list read for the wrong units")
     if onThreatList == "secret" then return "secret", "secret" end
     if onThreatList then return false, 0 end
@@ -823,6 +832,23 @@ local unchangedTextureReads = bar.textureReads
 events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
 assert(bar.textureReads == unchangedTextureReads,
     "unchanged threat role repainted the health skin")
+-- Another group tank holds the mob: its own color instead of lost threat. A
+-- restricted (secret) answer or the switch off keeps lost threat.
+module.config.enemyOtherTankColor = "3fc77a"
+otherTank, otherTankTanking, threatStatus = "party2", true, 3
+private.Roles.RefreshContext()
+events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
+assert(module.visuals[bar].fill.color[2] == 0xc7 / 255, "a mob held by another tank lost its color")
+otherTankTanking = "secret"
+events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
+assert(module.visuals[bar].fill.color[1] == 1 and module.visuals[bar].fill.color[2] == 0x4d / 255,
+    "a restricted tank answer must keep the lost-threat color")
+otherTankTanking, module.config.enemyOtherTankEnabled = true, false
+private.Roles.RefreshContext()
+events.UNIT_THREAT_SITUATION_UPDATE(module, "UNIT_THREAT_SITUATION_UPDATE", "nameplate1")
+assert(module.visuals[bar].fill:IsShown() and module.visuals[bar].fill.color[2] == 0x4d / 255,
+    "the switched-off other-tank color must give way to the lost-threat color")
+module.config.enemyOtherTankEnabled, otherTank = nil, nil
 module.config.enemyTankMode, threatStatus = false, nil
 instanceType = "none"
 isBoss, classification, hasMana, questUnit, tappedUnit = false, "secret", "secret", "secret", "secret"

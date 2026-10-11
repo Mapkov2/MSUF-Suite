@@ -24,13 +24,34 @@ function Roles.Configure(config)
     Roles.RefreshContext()
 end
 
+-- The other tanks of the player's group (unit tokens), read on group and role
+-- events only. Threat events then ask at most these units per plate. Returns
+-- a key that changes whenever the list does.
+local otherTanks = {}
+local function ReadOtherTanks()
+    for i = #otherTanks, 1, -1 do otherTanks[i] = nil end
+    local raid = Read(IsInRaid) == true
+    local prefix, count = raid and "raid" or "party", raid and 40 or 4
+    local key = ""
+    for i = 1, count do
+        local unit = prefix .. i
+        -- partyN never names the player; raidN can.
+        if Read(UnitExists, unit) == true and (not raid or Read(UnitIsUnit, unit, "player") ~= true)
+            and Read(UnitGroupRolesAssigned, unit) == "TANK" then
+            otherTanks[#otherTanks + 1] = unit
+            key = key .. unit
+        end
+    end
+    return key
+end
+
 -- World/group changes are infrequent. Never rediscover this context per plate
 -- health update. LFG scaling uses the same reference level as EQoL. Returns
 -- true when a fact the plate colors depend on changed.
 function Roles.RefreshContext()
     local known = Roles.contextKnown
-    local wasAllowed, wasInstanced, wasTank, wasGrouped, wasReference =
-        Roles.allowed, Roles.instanced, Roles.tank, Roles.grouped, Roles.reference
+    local wasAllowed, wasInstanced, wasTank, wasGrouped, wasReference, wasTanks =
+        Roles.allowed, Roles.instanced, Roles.tank, Roles.grouped, Roles.reference, Roles.otherTanks
     local _, instanceType = IsInInstance()
     local public = S.Public(instanceType)
     Roles.inInstance = not public or instanceType ~= "none"
@@ -45,6 +66,10 @@ function Roles.RefreshContext()
         or (not Roles.instanced and c.enemyColorsOutside ~= false))
     Roles.tank = Read(PlayerUtil.IsPlayerEffectivelyTank) == true
     Roles.grouped = Read(UnitInParty, "player") == true or Read(IsInRaid) == true
+    -- Only a tank in a group with tank mode on asks for the others.
+    local wantsTanks = Roles.tank and Roles.grouped and c.enemyTankMode and c.enemyOtherTankEnabled ~= false
+    Roles.otherTanks = wantsTanks and ReadOtherTanks() or nil
+    if not wantsTanks then for i = #otherTanks, 1, -1 do otherTanks[i] = nil end end
     Roles.reference = Level("player")
     if Roles.instanced then
         local _, _, _, _, _, _, _, _, _, lfg = GetInstanceInfo()
@@ -59,6 +84,7 @@ function Roles.RefreshContext()
     Roles.contextKnown = true
     return not known or wasAllowed ~= Roles.allowed or wasInstanced ~= Roles.instanced
         or wasTank ~= Roles.tank or wasGrouped ~= Roles.grouped or wasReference ~= Roles.reference
+        or wasTanks ~= Roles.otherTanks
 end
 
 function Roles.ClearQuest(unit)
@@ -169,6 +195,16 @@ local function Threat(uf, unit)
     if S.Finite(status) and status > 0 then return status end
 end
 
+-- Another tank of the group tanks the unit (EQoL 13.8 "other tank" color).
+-- A restricted (secret) answer counts as not tanking, like OnThreatList.
+local function HeldByOtherTank(unit)
+    for i = 1, #otherTanks do
+        local tanking = UnitDetailedThreatSituation(otherTanks[i], unit)
+        if S.Public(tanking) and tanking == true then return true end
+    end
+    return false
+end
+
 -- The unit's type role (Boss, Miniboss, Trivial, Caster, Melee) or nil.
 -- Level, classification and power display change it; threat never does.
 -- An elite one level above a lieutenant seen in this context is a boss; a
@@ -246,7 +282,10 @@ function Roles.Get(facts, unit, uf)
     -- A secret threat value only removes the threat override. It must not
     -- suppress the ordinary NPC role color.
     local threat = Threat(uf, unit)
-    if c.enemyTankMode and Roles.tank and not threat and OnThreatList(unit) then return "TankMode" end
+    if c.enemyTankMode and Roles.tank then
+        if not threat and OnThreatList(unit) then return "TankMode" end
+        if otherTanks[1] and HeldByOtherTank(unit) then return "OtherTank" end
+    end
     if threat then
         local role = threat >= 3 and "ThreatLost" or "ThreatWarning"
         if c[RoleKey[role].enabled] ~= false then return role end

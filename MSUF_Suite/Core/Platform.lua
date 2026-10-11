@@ -11,6 +11,14 @@ function Suite.ApplyOwnedLayer(frame, layer, detail)
     return false
 end
 
+-- Public level mapping for independently owned child artwork. Auto uses the
+-- caller's current parent-relative default, including on older MSUF hosts.
+function Suite.OwnedElementLevel(layer, detail)
+    if layer == nil or layer < 0 then return nil end
+    local layers = MSUF.UF and MSUF.UF.Layers
+    if layers and type(layers.ElementLevel) == "function" then return layers.ElementLevel(layer, 0, detail) end
+end
+
 -- Child artwork stays inside its parent's 32-level slot. On Auto, restore
 -- its relative level only after the parent actually returned to legacy mode.
 function Suite.ApplyOwnedChildLayer(frame, parent, layer, detail, parentRestored)
@@ -19,8 +27,8 @@ function Suite.ApplyOwnedChildLayer(frame, parent, layer, detail, parentRestored
     if not (layers and type(layers.ApplyOwnedSurface) == "function") then return false end
     local wanted
     if type(layer) == "number" and layer >= 0 then
-        if not (layers and type(layers.ElementLevel) == "function") then return false end
-        wanted = layers.ElementLevel(layer, 0, detail)
+        wanted = Suite.OwnedElementLevel(layer, detail)
+        if wanted == nil then return false end
     elseif parentRestored then
         wanted = parent:GetFrameLevel() + detail
     else
