@@ -165,6 +165,42 @@ end
 local interruptLabel = "Mark interruptible casts while your interrupt is ready"
 if HasRow("suite_qualityOfLife", interruptLabel) then Expect(interruptLabel, "suite_qualityOfLife", interruptLabel, 1) end
 
+-- Familiar feature names must resolve to the feature switch, including English
+-- names in translated clients and aliases of client-specific helpers.
+local featureAliases = {
+    { "groupDeathAlert", { "death announcer", "death announce", "death announcements", "death alert",
+        "Todesmelder", "Todesansage", "Todesmeldungen" } },
+    { "battleRes", { "combat resurrection", "brez", "kampfwiederbelebung" } },
+    { "groupBloodlust", { "bloodlust timer", "heroism timer", "exhaustion timer", "kampfrausch timer" } },
+    { "cursorEffects", { "cursor ring", "gcd ring" } },
+    { "actionTracker", { "cast history", "spell history", "last casts", "zauberverlauf" } },
+    { "enemyCastStack", { "enemy casts", "cast list" } },
+    { "xpBar", { "exp bar", "erfahrungsleiste" } },
+    { "targetDistance", { "range finder", "zielreichweite" } },
+    { "threatMeter", { "aggro meter", "threat list", "bedrohungsliste" } },
+    { "flightTimer", { "taxi timer", "flight path timer" } },
+}
+local function CheckFeatureAliases(stage)
+    for _, case in ipairs(featureAliases) do
+        local settingKey = "msufsuite." .. case[1] .. ".enabled"
+        for _, query in ipairs(case[2]) do
+            local rank, results = Rank(query, function(rec)
+                return rec.key == "suite_qualityOfLife" and rec.exactTarget and rec.exactTarget.settingKey == settingKey
+            end)
+            if P.Available(case[1]) then
+                Check(rank and rank <= PALETTE, flavor .. " " .. stage .. ": feature alias missed its switch: "
+                    .. query .. " -> " .. Got(results))
+            else
+                Check(not rank, flavor .. " " .. stage .. ": feature alias exposed an unavailable switch: " .. query)
+            end
+        end
+    end
+end
+CheckFeatureAliases("cold enabled")
+for _, case in ipairs(featureAliases) do Suite.Suite.Config(case[1]).enabled = false end
+P.Refresh()
+CheckFeatureAliases("cold disabled")
+
 local nativeTasks = {
     ["enUS"] = { "I want to make my minimap bigger", "I want to make my bags bigger", "make my chat font bigger", "make my chat tab font bigger" },
     ["enGB"] = { "I want to make my minimap bigger", "I want to make my bags bigger", "make my chat font bigger", "make my chat tab font bigger" },
@@ -204,6 +240,74 @@ for _, row in ipairs(rows) do
         Check(mythicPlus, flavor .. ": Clear run history is searchable where the button never exists")
     end
 end
+
+-- Supply the native Widget methods omitted by the client-world fixture, as in
+-- the provider contract, then build the real QoL page and its feature details.
+local createFrame = env.CreateFrame
+env.CreateFrame = function(kind, ...)
+    local frame = createFrame(kind, ...)
+    local createFontString = frame.CreateFontString
+    if createFontString then
+        frame.CreateFontString = function(self, ...)
+            local text = createFontString(self, ...)
+            text.GetUnboundedStringWidth = text.GetUnboundedStringWidth or function(region)
+                return region:GetStringWidth()
+            end
+            return text
+        end
+    end
+    if kind == "Button" then
+        frame.Click = frame.Click or function(self, button)
+            local handler = self:GetScript("OnClick")
+            if handler then return handler(self, button or "LeftButton") end
+        end
+    elseif kind == "CheckButton" then
+        frame.SetChecked = function(self, value) self._checked = value end
+        frame.GetChecked = function(self) return self._checked end
+    elseif kind == "Slider" then
+        frame.SetValueStep = frame.SetValueStep or function() end
+        frame.SetMinMaxValues = function(self, lo, hi) self._min, self._max = lo, hi end
+        frame.GetMinMaxValues = function(self) return self._min or 0, self._max or 1 end
+        frame.SetValue = function(self, value) self._value = value end
+        frame.GetValue = function(self) return self._value or 0 end
+    elseif kind == "EditBox" then
+        frame.SetAutoFocus = frame.SetAutoFocus or function() end
+        frame.SetNumeric = frame.SetNumeric or function() end
+        frame.SetMaxLetters = frame.SetMaxLetters or function(self, value) self._maxLetters = value end
+        frame.HasFocus = frame.HasFocus or function() return false end
+    end
+    return frame
+end
+M.SetActivePageHeader = M.SetActivePageHeader or function() end
+M.RunStickyHeaderActivation = M.RunStickyHeaderActivation or function() end
+M.SetTitle, M.UpdateNav = function() end, function() end
+M.scrollChild = env.CreateFrame("Frame", nil, env.UIParent)
+M.frame = env.CreateFrame("Frame", nil, env.UIParent)
+M.frame:Show()
+for _, case in ipairs(featureAliases) do
+    if P.Available(case[1]) then
+        local settingKey = "msufsuite." .. case[1] .. ".enabled"
+        local target
+        for _, record in ipairs(api.GetSearchRecords()) do
+            if record.key == "suite_qualityOfLife" and record.exactTarget
+                and record.exactTarget.settingKey == settingKey then target = record; break end
+        end
+        if Check(target, flavor .. ": missing feature route: " .. settingKey) then
+            local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
+                target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+            world.widgets:RunTimers(80)
+            local page = M.cache.suite_qualityOfLife
+            local feature = page and page.qualityOfLifeFeatureRows[target.exactTarget.sectionId]
+            local category = feature and page.sections["suite_qualityOfLife_category_" .. feature.category]
+            Check(selected and anchored and exact and feature and feature.details and feature.details:IsShown()
+                and category and category._msuf2CollapsibleEntry.open,
+                flavor .. ": feature route did not reveal its settings: " .. settingKey)
+            Check(Suite.Suite.Config(case[1]).enabled == false, flavor .. ": search enabled a feature: " .. settingKey)
+        end
+        if case[1] == "groupDeathAlert" then CheckFeatureAliases("page visited disabled") end
+    end
+end
+CheckFeatureAliases("details visited disabled")
 
 if #failures > 0 then
     error("suite_search_findability_contract failed:\n  " .. table.concat(failures, "\n  "))

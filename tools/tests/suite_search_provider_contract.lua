@@ -316,6 +316,25 @@ local function CheckReleaseSearch(stage)
             stage .. " search did not find the exact release protection switch: " .. query)
     end
 end
+local function CheckDeathSearch(stage)
+    local first
+    for _, query in ipairs({ "death announcer", "death announce", "death announcements", "death alert",
+        "Todesmelder", "Todesansage", "Todesmeldungen" }) do
+        local found
+        for index, record in ipairs(Search(query)) do
+            if index <= 6 and record.key == "suite_qualityOfLife" and record.exactTarget
+                and record.exactTarget.settingKey == "msufsuite.groupDeathAlert.enabled" then
+                found = record
+                break
+            end
+        end
+        Check(found and (not found.provided
+            or found.exactTarget.sectionId == "suite_qualityOfLife_groupDeathAlert_group_death_alert"),
+            stage .. " search did not find the exact death announcer switch: " .. query)
+        first = first or found
+    end
+    return first
+end
 local function Line(rec)
     return string.format("%s [%s] %s", tostring(rec.label), tostring(rec.kind), tostring(rec.hint))
 end
@@ -367,6 +386,7 @@ for _, query in ipairs({ "mythic plus", "mythic+", "m+", "m+ mythic plus" }) do
 end
 Check(api.GetSearchProviderCache().skipped == 0, "the host skipped Suite rows as malformed")
 CheckReleaseSearch("unopened page")
+CheckDeathSearch("unopened page")
 
 -- Every alias of every page is a search word of that page (Register.lua only
 -- fills M.ALIASES). Quality of Life aliases name features of both clients;
@@ -888,6 +908,22 @@ do
         end
 
         Check(M.cache.suite_qualityOfLife == nil, "Quality of Life page unexpectedly warm before exact search")
+        local deathTarget = CheckDeathSearch("before opening result")
+        local deathConfig = Suite.Suite.Config("groupDeathAlert")
+        local savedDeathEnabled = deathConfig.enabled
+        deathConfig.enabled = false
+        P.Refresh()
+        deathTarget = CheckDeathSearch("disabled module")
+        local selected, anchored, exact = api.OpenSearchTarget(deathTarget.key, deathTarget.label,
+            deathTarget.anchorFallback or deathTarget.label, deathTarget.anchor, deathTarget.route, deathTarget.exactTarget)
+        world.widgets:RunTimers(80)
+        Check(selected and anchored and exact and deathConfig.enabled == false,
+            "death announcer result did not navigate without enabling its module")
+        RouteExact("msufsuite.groupDeathAlert.enabled", "main")
+        RouteExact("msufsuite.groupDeathAlert.screen", "main", "suite_qualityOfLife_groupDeathAlert_group_death_alert")
+        CheckDeathSearch("visited disabled page")
+        deathConfig.enabled = savedDeathEnabled
+        P.Refresh()
         RouteExact("msufsuite.releaseProtection.enabled", "main")
         RouteExact("msufsuite.releaseProtection.modifier", "main", "suite_qualityOfLife_releaseProtection_release_protection")
         RouteExact("msufsuite.actionTracker.rows", "main")
@@ -931,6 +967,7 @@ do
             M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight = previousScroll, previousTop, previousHeight
         end
         CheckReleaseSearch("visited page")
+        CheckDeathSearch("visited page")
         for _, settingKey in ipairs({ "msufsuite.actionTracker.rows", "msufsuite.qol.junkReport" }) do
             local matches = 0
             for _, record in ipairs(api.GetSearchRecords()) do

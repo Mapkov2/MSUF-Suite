@@ -87,36 +87,43 @@ local HELP = {
     flight_colors = "Pick a preset above or use the three color dots in this header for your own colors. Changing a color marks the look as Custom. Panel opacity and empty bar opacity are separate.",
 }
 
+-- Aliases name feature switches; keywords also describe their detail controls.
 local GROUPS = {
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
         keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
     { id = "actionTracker", title = "Action tracker", switch = "enabled",
-        sections = { "action_tracker", "action_tracker_visibility", "action_tracker_colors" } },
+        sections = { "action_tracker", "action_tracker_visibility", "action_tracker_colors" },
+        aliases = { "cast history", "spell history", "last casts", "zauberverlauf" } },
     { id = "dungeonPortals", title = "Dungeon portals (Retail)", switch = "enabled", sections = { "dungeon_portals" } },
     { id = "enemyCastStack", title = "Dungeon cast stack (Retail)", switch = "enabled",
-        sections = { "dungeon_casts" } },
+        sections = { "dungeon_casts" }, aliases = { "enemy casts", "cast list" } },
     { id = "groupFinderExitReminder", title = "Active application reminder (Retail)", switch = "enabled",
         sections = { "group_finder_exit" } },
     { id = "trustedPartyInvites", title = "Trusted party invites (Retail)", switch = "enabled",
         sections = { "trusted_invites" } },
     { id = "battleRes", title = "Battle resurrection (Retail)", switch = "enabled",
-        sections = { "battle_res" } },
-    { id = "groupBloodlust", title = "Bloodlust lockout (Retail)", switch = "enabled", sections = { "bloodlust_lockout" } },
+        sections = { "battle_res" }, aliases = { "combat resurrection", "brez", "kampfwiederbelebung" } },
+    { id = "groupBloodlust", title = "Bloodlust lockout (Retail)", switch = "enabled", sections = { "bloodlust_lockout" },
+        aliases = { "bloodlust timer", "heroism timer", "exhaustion timer", "kampfrausch timer" } },
     { id = "loot", title = "Collecting loot", switch = "quickLoot", other = "manageHistory", sections = { "collection" } },
     { id = "collectionNewMarkers", title = "Collection new markers (Retail)", switch = "enabled", sections = { "collection_markers" } },
     { id = "combatLog", title = "Combat logging", switch = "enabled",
         sections = { "log_dungeons", "log_raids", "log_other", "log_exit" } },
     { id = "cursorEffects", title = "Cursor highlight (Retail)", switch = "enabled",
-        sections = { "cursor_effects", "cursor_progress", "cursor_gcd", "cursor_when" } },
+        sections = { "cursor_effects", "cursor_progress", "cursor_gcd", "cursor_when" },
+        aliases = { "cursor ring", "gcd ring" } },
     { id = "dailyComfort", title = "Daily UI comforts", switch = "enabled", sections = { "daily_comfort", "daily_cvars" } },
     { id = "delveSolePower", title = "Delve single power (Retail)", switch = "enabled",
         sections = { "delve_sole_power" } },
-    { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" } },
+    { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" },
+        aliases = { "exp bar", "erfahrungsleiste" } },
     { id = "mapLandingShortcuts", title = "Expansion shortcuts (Retail)", switch = "enabled",
         sections = { "expansion_shortcuts" } },
     { id = "vaultSpec", title = "Great Vault loot spec (Retail)", switch = "enabled", sections = { "vault_spec" } },
-    { id = "groupDeathAlert", title = "Group death alert", switch = "enabled", sections = { "group_death_alert" } },
+    { id = "groupDeathAlert", title = "Group death alert", switch = "enabled", sections = { "group_death_alert" },
+        aliases = { "death announcer", "death announce", "death announcements", "death alert",
+            "Todesmelder", "Todesansage", "Todesmeldungen" } },
     { id = "releaseProtection", title = "Release spirit protection", switch = "enabled", sections = { "release_protection" },
         keywords = { "freilassen", "releasen", "geist freilassen", "release schutz", "release-schutz", "anti release" } },
     { id = "groupFinderDoubleClick", title = "Group finder double-click (Retail)", switch = "enabled",
@@ -165,15 +172,18 @@ local GROUPS = {
     { id = "qol", title = "Repair", switch = "repair", other = "autoJunk", sections = { "repair" } },
     { id = "combatStatsHUD", title = "Secondary stats (Retail)", switch = "enabled",
         sections = { "secondary_stats", "stats_numbers", "stats_fps" } },
-    { id = "targetDistance", title = "Target spell-range estimate (Retail)", switch = "enabled", sections = { "target_distance" } },
+    { id = "targetDistance", title = "Target spell-range estimate (Retail)", switch = "enabled", sections = { "target_distance" },
+        aliases = { "range finder", "zielreichweite" } },
     { id = "qol", title = "Sell junk", switch = "autoJunk", other = "repair", sections = { "junk" } },
     { id = "lootVendorRules", title = "Sell marked items (Retail)", switch = "enabled", sections = { "marked_sales" } },
     { id = "lootToastFilter", title = "Filtered loot notice (Retail)", switch = "enabled",
         sections = { "filtered_loot" } },
     { id = "skyriding", title = "Skyriding HUD (Retail)", switch = "enabled",
         sections = { "flight_hud", "flight_typography", "flight_colors" } },
-    { id = "threatMeter", title = "Threat meter (Forever)", switch = "enabled", sections = { "threat_meter" } },
-    { id = "flightTimer", title = "Flight route timer (Forever)", switch = "enabled", sections = { "flight_route" } },
+    { id = "threatMeter", title = "Threat meter (Forever)", switch = "enabled", sections = { "threat_meter" },
+        aliases = { "aggro meter", "threat list", "bedrohungsliste" } },
+    { id = "flightTimer", title = "Flight route timer (Forever)", switch = "enabled", sections = { "flight_route" },
+        aliases = { "taxi timer", "flight path timer" } },
     { id = "characterExtras", title = "Character sheet additions (Retail)", switch = "enabled",
         sections = { "character_extras", "character_model", "character_flyouts" },
         keywords = { "charakterfenster", "character window" } },
@@ -390,8 +400,11 @@ local function FeatureRules(group)
     return sections, all
 end
 
-local function FeatureKeywords(group)
+local function FeatureKeywords(group, includeAliases)
     local words = { group.title, Tr(group.title), group.categoryTitle, Tr(group.categoryTitle) }
+    if includeAliases then
+        for _, word in ipairs(group.aliases or {}) do words[#words + 1] = word end
+    end
     for _, word in ipairs(group.keywords or {}) do words[#words + 1] = word end
     if group.tabTitle then
         words[#words + 1], words[#words + 2] = group.tabTitle, Tr(group.tabTitle)
@@ -565,7 +578,7 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
     label:SetMaxLines(2)
     local toggle = P.W.SwitchAt(row, "", width - 52, -10, 0, "HIDDEN")
     local meta = P.Meta(PAGE, group.id, group.switch, "setting", sectionId)
-    meta.label, meta.keywords = Tr(group.title), FeatureKeywords(group)
+    meta.label, meta.keywords = Tr(group.title), FeatureKeywords(group, true)
     P.M.BindBoolWidget(ctx, toggle,
         function() return GroupEnabled(group) end,
         function(value) SetGroupEnabled(group, value == true) end, meta)
@@ -597,7 +610,7 @@ local function BuildFeatureRow(ctx, panel, group, category, sectionId, width, in
         P.SetTranslatedText(label, Tr(group.title) .. suffix)
         PaintFeatureRow(row)
     end)
-    return row, toggle, settings, meta.keywords
+    return row, toggle, settings, group.aliases and FeatureKeywords(group) or meta.keywords
 end
 
 local function LayoutFeatureRows(panel, features, records, selected, activeOnly)

@@ -326,6 +326,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
             AddWords(keywords, feature.title)
             AddWords(keywords, category.title)
             AddWords(keywords, spec.title)
+            for _, word in ipairs(feature.aliases or {}) do keywords[#keywords + 1] = word end
             for _, word in ipairs(feature.keywords or {}) do keywords[#keywords + 1] = word end
             for _, word in ipairs(FEATURE_WORDS[feature.id] or EMPTY_ROWS) do AddWords(keywords, word) end
             -- Color settings live in the feature's shortcut rather than as
