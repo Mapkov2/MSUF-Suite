@@ -58,6 +58,7 @@ Pages\NameplatesPreview.lua
 Pages\Nameplates.lua
 Pages\CooldownManagerData.lua
 Pages\CooldownManagerLists.lua
+Pages\CooldownManagerTarget.lua
 Pages\CooldownManagerBars.lua
 Pages\CooldownManagerWidgets.lua
 Pages\CooldownManagerPicker.lua

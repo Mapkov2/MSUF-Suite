@@ -53,9 +53,9 @@ end
 -- that slot, if any.
 local function TrinketItem(n, trinket, row)
     local key = "e" .. trinket
-    local texture = GetInventoryItemTexture("player", trinket)
+    local texture = not Page.ForeignSpec() and GetInventoryItemTexture("player", trinket)
     if not Public(texture) or texture == nil then texture = row and Plain(row.texture) or nil end
-    local itemID = GetInventoryItemID("player", trinket)
+    local itemID = not Page.ForeignSpec() and GetInventoryItemID("player", trinket)
     local name = Public(itemID) and type(itemID) == "number" and C_Item.GetItemNameByID(itemID) or nil
     local label = format(Tr("Trinket slot %d"), trinket - 12)
     if Public(name) and type(name) == "string" then label = format(Tr("Trinket slot %d: %s"), trinket - 12, name) end

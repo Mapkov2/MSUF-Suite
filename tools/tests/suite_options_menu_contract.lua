@@ -169,6 +169,13 @@ GetInstanceInfo = function() return "outside", "none", 0 end
 GetLocale = function() return "deDE" end
 -- The specialization is not known yet at this point of the login.
 C_SpecializationInfo = { GetSpecialization = function() return nil end }
+
+C_SpecializationInfo.GetNumSpecializationsForClassID = function(classID) return (classID == 8 or classID == 9) and 3 or 0 end
+GetSpecializationInfoForClassID = function(classID, index)
+    local ids = classID == 8 and {62,63,64} or classID == 9 and {265,266,267} or {}
+    return ids[index], ids[index] and ("Spec " .. ids[index])
+end
+
 WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 -- Forever loads the Mainline TOCs; Blizzard's camelot marker tells it apart.
 GameEvent = flavor == "Forever" and { RegisterCamelotEvents = function() end } or nil

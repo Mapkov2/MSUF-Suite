@@ -39,4 +39,5 @@ Flush.lua
 Settings.lua
 Events.lua
 Controller.lua
+Editor.lua
 Exports.lua

@@ -9,10 +9,10 @@ local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 local ID, PAGE = Page.ID, Page.PAGE
 local SLOTS = P.Suite.CDM.SLOTS
 local SECTION = Page.PREVIEW_SECTION
-local COMPACT, EXPANDED, STRIP_ROW = 180, 378, 24
+local COMPACT, EXPANDED, STRIP_ROW = 300, 460, 24
 -- The hint (or note) line under the canvas, the + tile beside the drawing
 -- and the rim around it that still drags the whole bar.
-local LINE, RIM = 18, 6
+local LINE, RIM = 42, 6
 local PLUS, PLUS_GAP = Page.PREVIEW_PLUS, Page.PREVIEW_PLUS_GAP
 local max, min, floor, abs, format = math.max, math.min, math.floor, math.abs, string.format
 local BuildDrag, DragCancel = Page.BuildPreviewIcons, Page.CancelPreviewDrag
@@ -160,6 +160,10 @@ end
 -- Every listed bar: shown ones, the built-in bars and custom bars that were
 -- set up; bars that are off are dimmed. Returns the strip height.
 local function PaintStrip(ui, width)
+    if ui.stripPicker then
+        ShowChip(ui.addChip, Page.FreeCustom() ~= nil)
+        return 48
+    end
     local x, row = 0, 0
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
@@ -280,13 +284,16 @@ local function StatusText()
     local _, specName = Page.Spec()
     local slot = Page.selected
     local text = specName and format(Tr("Spells for %s."), specName) or ""
+    if Page.ForeignSpec() then
+        return text .. "  " .. Tr("Offline view: talent choices and equipped items are not available.")
+    end
     if not Page.IsOn(slot) then
         text = text .. "  " .. Tr("This bar is off.")
     elseif Page.Movable(slot) then
         local label = P.Get(ID, Page.Key("anchor")) == P.Suite.CDM.ANCHOR.FREE and "Position %d, %d." or "Offset %d, %d from its anchor."
         text = text .. "  " .. format(Tr(label), P.Get(ID, Page.Key("x")), P.Get(ID, Page.Key("y")))
     end
-    local status = S.CooldownManagerStatus and S.CooldownManagerStatus()
+    local status = not Page.ForeignSpec() and S.CooldownManagerStatus and S.CooldownManagerStatus()
     if type(status) == "string" and status ~= "" then text = text .. "  " .. status end
     return text
 end
@@ -318,6 +325,25 @@ end
 local function BuildStrip(ui, body)
     ui.strip = CreateFrame("Frame", nil, body)
     ui.strip:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -48)
+    if ui.width < 600 then
+        ui.chips = {}
+        ui.strip:SetSize(ui.width, 48)
+        local function Choices()
+            local rows = {}
+            for _, info in ipairs(SLOTS) do
+                if Page.Listed(info.key) then rows[#rows + 1] = { value = info.key, text = Page.BarName(info.key) } end
+            end
+            return rows
+        end
+        ui.stripPicker = M.BindDropdownAt(ui.ctx, ui.strip, Tr("Selected bar"), 0, 0, Choices, ui.width - 96,
+            function() return Page.selected end, Page.Select, P.Meta(PAGE, ID, "preview.selectedBar", "ephemeral", SECTION))
+        ui.addChip = NewChip(ui, nil)
+        ui.addChip.add = true
+        ui.addChip:SetPoint("TOPRIGHT", ui.strip, "TOPRIGHT", 0, -22)
+        ui.addChip:SetWidth(88)
+        Page.ButtonText(ui.addChip, Tr("+ Add bar"))
+        return
+    end
     ui.strip:SetSize(ui.width, STRIP_ROW)
     ui.chips = {}
     for i = 1, #SLOTS do ui.chips[SLOTS[i].key] = NewChip(ui, SLOTS[i].key) end
@@ -376,7 +402,8 @@ local function BuildNoteLine(ui, body)
     line:SetPoint("TOPLEFT", canvas, "BOTTOMLEFT", 2, -4)
     line:SetPoint("TOPRIGHT", canvas, "BOTTOMRIGHT", -88, -4)
     line:SetJustifyH("LEFT")
-    line:SetWordWrap(false)
+    line:SetWordWrap(true)
+    line:SetHeight(LINE)
     local undo = Page.Button(body, "Undo", 80, LINE, Page.RunUndo)
     undo:SetPoint("TOPRIGHT", canvas, "BOTTOMRIGHT", 0, -1)
     undo:Hide()
@@ -386,7 +413,7 @@ local function BuildNoteLine(ui, body)
             Page.SetRaw(line, Page.note)
             if Page.noteError then line:SetTextColor(1, 0.4, 0.35) else line:SetTextColor(Page.TextColor()) end
         else
-            line:SetText(ui.previewClass and "Class sample. Your saved bars stay unchanged." or HINT)
+            line:SetText(HINT)
             line:SetTextColor(Page.MutedColor())
         end
         undo:SetShown(Page.undo ~= nil)
@@ -444,7 +471,7 @@ local function Render(ui)
     -- Room for the + tile right of the drawing; both stay centered.
     local room = (PLUS + PLUS_GAP) / scale
     handle.baseX = -room / 2
-    local frame = render(ui.stage, Page.selected, max(40, w - 12 - room), max(20, h - 8), ui.previewClass)
+    local frame = render(ui.stage, Page.selected, max(40, w - 12 - room), max(20, h - 8), Page.TargetContext())
     handle.target = frame
     if frame then
         -- A drag in progress keeps the drawing under the cursor.
@@ -471,21 +498,21 @@ local function Paint(ui)
     -- The layout on screen keeps the runtime's preview mode on (the module
     -- may have been switched on while the page is open).
     if ui.live then Page.Activate() end
-    local stripHeight = 48 + PaintStrip(ui, ui.width)
-    local room = ui.compact and (COMPACT - 22 - LINE - 2) or (EXPANDED - 60 - LINE - 2)
+    local stripHeight = Page.PaintTargetPicker(ui) + PaintStrip(ui, ui.width)
+    local room = ui.compact and (ui.compactHeight - 46 - LINE - 8) or (EXPANDED - 84 - LINE - 8)
     local height = max(40, room - stripHeight)
     if ui.canvasHeight ~= height then
         ui.canvasHeight = height
         ui.canvas:SetHeight(height)
     end
     local frame = Render(ui)
-    PaintHits(ui, frame, frame ~= nil and not ui.previewClass and not Page.EditorBlocked())
-    ui.handle:EnableMouse(ui.previewClass == nil)
+    PaintHits(ui, frame, frame ~= nil and not Page.EditorBlocked())
+    ui.handle:EnableMouse(true)
     FollowPopover(ui)
     local handle, body = ui.handle, ui.previewBody
     handle._label = Page.BarName(Page.selected)
-    body._selectedHandle = not ui.previewClass and handle:IsShown() and Page.Movable(Page.selected) and handle or nil
-    ui.simulate:SetEnabled(S.CooldownManagerSimulate ~= nil and Page.Running())
+    body._selectedHandle = handle:IsShown() and Page.Movable(Page.selected) and handle or nil
+    ui.simulate:SetEnabled(not Page.ForeignSpec() and S.CooldownManagerSimulate ~= nil and Page.Running())
     ui.simulate:SetActive(Page.simulating == true)
     Page.SetRaw(ui.status, StatusText())
     if ui.selection and ui.selectionBar.Refresh then ui.selectionBar.Refresh(body) end
@@ -506,32 +533,14 @@ local function ApplyCompact(body, compact)
     Paint(ui)
 end
 
-local function BuildClassPicker(ui, body)
-    ui.classPicker = P.PreviewClasses.Bind(ui, body, 0, 0, math.min(220, ui.width), PAGE, ID, SECTION,
-        function()
-            DragCancel(ui.drag)
-            Paint(ui)
-            ui.PaintPreviewNote()
-        end)
-end
-
-function Page.BuildPreview(ctx, b, ui)
-    ui.ctx = ctx
-    local section, toolbar, record = W.FixedPreviewSection(ctx, b, { title = Tr("Bar preview"), height = 228, gap = 8 })
-    if not section then return end
-    ui.width, ui.compact = max(260, (HM.GetSectionWidth(section) or b.width or 720) - 28), true
-    -- Tooltip lines, translated once: hovering allocates nothing.
-    ui.tips = { hint = Tr(TIP), unlearned = Tr("Not learned right now."), sampleTitle = Tr("Sample icon"),
-        sample = Tr("This bar has no spells yet. Click to add some."), plusTitle = Tr("Add spells"),
-        plus = Tr("Pick cooldowns, buffs, trinkets or custom IDs for this bar.") }
-    BuildToolbar(ui, toolbar)
+local function BuildBody(section, ui)
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 14, -40)
     body:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, -40)
-    body:SetHeight(COMPACT)
+    body:SetHeight(ui.compactHeight)
     body:SetClipsChildren(true)
     body._cdmUI, ui.previewBody = ui, body
-    BuildClassPicker(ui, body)
+    Page.BuildTargetPicker(ui, body)
     BuildStrip(ui, body)
     BuildCanvas(ui, body)
     BuildHandle(ui)
@@ -541,6 +550,8 @@ function Page.BuildPreview(ctx, b, ui)
     ui.status = T.Font(body, "GameFontDisableSmall", "", T.colors.muted)
     ui.status:SetWidth(ui.width - 4)
     ui.status:SetJustifyH("LEFT")
+    ui.status:SetWordWrap(true)
+    ui.status:SetHeight(42)
     ui.PaintPreview = function() Paint(ui) end
     ui.PaintHitMarks = function() PaintMarks(ui) end
     body.ApplyCompactPreviewPresentation = ApplyCompact
@@ -548,12 +559,30 @@ function Page.BuildPreview(ctx, b, ui)
         DragCancel(ui.drag)
         Page.Deactivate(ui)
     end)
+    return body
+end
+
+function Page.BuildPreview(ctx, b, ui)
+    ui.ctx = ctx
+    local narrow = (ctx.width or b.width or 720) < 640
+    ui.compactHeight = narrow and 352 or COMPACT
+    local section, toolbar, record = W.FixedPreviewSection(ctx, b, { title = Tr("Bar preview"), height = ui.compactHeight + 48, gap = 8 })
+    if not section then return end
+    HM.SetFixedPreviewCompactHeight(section, ui.compactHeight + 48)
+    if record then record.fixedHeight = ui.compactHeight + 48 end
+    ui.width, ui.compact = max(260, (HM.GetSectionWidth(section) or b.width or 720) - 28), true
+    -- Tooltip lines, translated once: hovering allocates nothing.
+    ui.tips = { hint = Tr(TIP), unlearned = Tr("Not learned right now."), sampleTitle = Tr("Sample icon"),
+        sample = Tr("This bar has no spells yet. Click to add some."), plusTitle = Tr("Add spells"),
+        plus = Tr("Pick cooldowns, buffs, trinkets or custom IDs for this bar.") }
+    BuildToolbar(ui, toolbar)
+    local body = BuildBody(section, ui)
     body:ApplyCompactPreviewPresentation(true)
     ui.PaintPreviewNote()
     local expander = W.AttachFixedPreviewExpander(section, toolbar, body, {
         pageKey = ctx.key,
         wrapper = ctx.wrapper,
-        compactHeight = COMPACT,
+        compactHeight = ui.compactHeight,
         compactTop = -40,
         expandedHeight = EXPANDED,
         expandedTop = -40,

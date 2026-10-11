@@ -65,6 +65,16 @@ function L.GetSectionCursor(frame) return frame._msuf2CursorY end
 function L.SetSectionCursor(frame, y) frame._msuf2CursorY = y end
 function L.MarkContextColorHost(frame) frame._msuf2ContextColorHost = true end
 function L.SetFixedPreviewHeight(frame, height) frame._msuf2FixedPreviewActiveHeight = height end
+-- A page with multiple editor selectors needs a larger compact reservation.
+-- Keep the sticky host and its expander on the same size on old/v2 hosts.
+function L.SetFixedPreviewCompactHeight(frame, height)
+    frame._msuf2FixedPreviewActiveHeight = height
+    frame._msuf2FixedPreviewHeight = height
+    frame._msuf2FixedPreviewCompactHeight = height
+    local record = frame._msuf2FixedPagePreviewRecord
+    if record then record.fixedHeight = height end
+    frame:SetHeight(height)
+end
 function L.SetBuilderInsets(ctx, contentX, topInset)
     ctx._msuf2ContentX, ctx._msuf2TopInset = contentX, topInset
     return ctx
@@ -126,7 +136,7 @@ local function Build(M)
         adapter.AddNavIcon = function(pageKey, spec) return LegacyNavIcon(T, pageKey, spec) end
         return adapter
     end
-    local adapter = { mode = "host" }
+    local adapter = { mode = "host", SetFixedPreviewCompactHeight = L.SetFixedPreviewCompactHeight }
     for index = 1, #NAMES do adapter[NAMES[index]] = M[NAMES[index]] end
     return adapter
 end

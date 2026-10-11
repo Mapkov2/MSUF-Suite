@@ -312,6 +312,7 @@ end
 -- they are. A complete selection is marked so new Blizzard entries do not
 -- silently append after import; the user can restore a Suite spec default later.
 function Page.ImportBlizzard()
+    if Page.ForeignSpec() then return false, "Log into this specialization to import its Blizzard layout." end
     local spec, err = Ready()
     if not spec then return false, err end
     local snapshot = S.CooldownManagerBlizzardSnapshot

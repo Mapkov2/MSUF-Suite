@@ -109,9 +109,10 @@ assert(skinPaints == prior, "hidden skin preview repainted runtime surfaces")
 section:Show()
 for _, state in ipairs(states) do state.refresh(state) end
 assert(skinPaints > prior, "reopened skin preview did not resume its runtime painter")
--- Class controls are ephemeral; CDM sample mode disables canvas editing.
+-- Editor selection passes isolated saved-spec data and keeps profile lists.
 P.CDMPage.ui = nil
 local sample, renders = nil, 0
+P.S.CooldownManagerEditorContext = function(spec, classID) return {spec=spec,classID=classID,bars={}} end
 P.S.CooldownManagerRenderPreview = function(_, _, _, _, value)
     sample, renders = value, renders + 1
     return nil
@@ -119,13 +120,13 @@ end
 local cdmCtx = Build("suite_cooldownManager")
 local cdm = P.CDMPage.ui
 local saved = P.S.Config("cooldownManager")
-local lists = saved.lists
-cdm.classPicker.set("WARRIOR")
-assert(sample and sample[1] == "WARRIOR" and not cdm.previewBody._selectedHandle,
-    "class sample did not reach the readonly CDM canvas")
-assert(saved.lists == lists, "class selector changed saved CDM lists")
-cdm.classPicker.set("")
-assert(sample == nil and cdm.previewClass == nil, "character selection did not restore the CDM canvas")
+local lists = saved.listsData
+cdm.classPicker.set(9)
+assert(sample and sample.spec == 265 and sample.classID == 9,
+    "selected specialization did not reach the isolated CDM canvas")
+assert(saved.listsData == lists, "class selector changed saved CDM lists")
+cdm.classPicker.set(0)
+assert(sample == nil and P.CDMPage.targetSpec == nil, "character selection did not restore the CDM canvas")
 prior = renders
 cdm.previewBody:Hide()
 cdm.PaintPreview()

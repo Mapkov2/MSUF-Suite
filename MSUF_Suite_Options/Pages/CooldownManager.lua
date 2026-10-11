@@ -533,7 +533,7 @@ local function PaintSpellButtons(body, buttons)
     end
     buttons.clear:SetEnabled(not blocked and Page.HasList(Page.selected))
     buttons.copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))
-    buttons.import:SetEnabled(not blocked and type(S.CooldownManagerBlizzardSnapshot) == "function")
+    buttons.import:SetEnabled(not blocked and not Page.ForeignSpec() and type(S.CooldownManagerBlizzardSnapshot) == "function")
 end
 
 local function BuildSpells(ctx, b, ui)

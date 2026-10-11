@@ -170,6 +170,13 @@ C_SpecializationInfo = {
     GetSpecializationInfo = function(index) return ({ 62, 63, 64 })[index], ({ "Arcane", "Fire", "Frost" })[index] end,
 }
 GetNumSpecializations = function() return 3 end
+
+C_SpecializationInfo.GetNumSpecializationsForClassID = function(classID) return (classID == 8 or classID == 9) and 3 or 0 end
+GetSpecializationInfoForClassID = function(classID, index)
+    local ids = classID == 8 and {62,63,64} or classID == 9 and {265,266,267} or {}
+    return ids[index], ids[index] and ("Spec " .. ids[index])
+end
+
 local cursorX, cursorY = 100, 100
 GetCursorPosition = function() return cursorX, cursorY end
 -- No modifier key is down unless a step says so.
@@ -590,7 +597,7 @@ local P = {}
 local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) error("options page wrote global " .. tostring(key), 2) end })
 for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewClasses.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
     "Pages/DataTextsWorkspace.lua",
-    "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua",
+    "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua", "Pages/CooldownManagerTarget.lua",
     "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
     "Pages/CooldownManagerSounds.lua", "Pages/CooldownManagerPopover.lua",
     "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManager.lua",

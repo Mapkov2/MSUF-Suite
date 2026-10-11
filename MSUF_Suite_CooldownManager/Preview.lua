@@ -446,8 +446,8 @@ local function Icons(holder, view, count, slot)
         end
         local fake = fakes[i]
         local key = holder.keys[i]
-        local entry = key and C.entries[key]
-        local ov = key and C.Choices()[key] or EMPTY
+        local entry = not holder.editor and key and C.entries[key]
+        local ov = key and (holder.editor and holder.editor.choices or C.Choices())[key] or EMPTY
         if type(ov) ~= "table" then ov = EMPTY end
         local name = holder.names[i]
         if fake.ov ~= ov or fake.name ~= name or fake.slot ~= slot then icon.esEntry = nil end
@@ -477,7 +477,7 @@ end
 
 -- Buff bars use the same plain sample and live style as Edit Mode.
 local function Rows(holder, view, count)
-    local choices = C.Choices()
+    local choices = holder.editor and holder.editor.choices or C.Choices()
     for i = 1, count do
         local ov = choices[holder.keys[i]]
         if type(ov) ~= "table" then ov = EMPTY end
@@ -522,7 +522,25 @@ function Preview.Render(parent, slot, maxWidth, maxHeight, classSample)
     local holder = Holder(parent)
     local kind = view.kind or KIND.COOLDOWN
     local n = holder.n
-    if classSample then
+    local editor = classSample and classSample.bars and classSample or nil
+    if editor and editor.classToken then view = C.Editor.View(editor, slot, view) end
+    if holder.editor ~= editor then holder.editor, holder.editorRows, holder.cSlot = editor, nil, nil end
+    if editor then
+        if holder.editorRows ~= editor.bars[slot] then
+            holder.editorRows = editor.bars[slot]
+            local rows = holder.editorRows or EMPTY
+            n = #rows
+            for i = 1, n do
+                local row, ov = rows[i], editor.choices[rows[i].key]
+                holder.keys[i], holder.dim[i] = row.key, row.unavailable == true
+                holder.textures[i], holder.names[i] = ov and ov.icon or row.texture, row.name
+            end
+            for i = #holder.keys, n + 1, -1 do
+                holder.keys[i], holder.dim[i], holder.textures[i], holder.names[i] = nil, nil, nil, nil
+            end
+            holder.n = n
+        end
+    elseif classSample then
         n = ClassContent(holder, classSample)
         holder.n = n
     else

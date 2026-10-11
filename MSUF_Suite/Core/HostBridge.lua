@@ -44,6 +44,33 @@ function HostBridge.HasCoreAPI()
     return CoreAPI() ~= nil
 end
 
+-- Read-only profile assignments. A character without a spec binding still
+-- appears, but its unknown class/spec is never guessed from the current player.
+function HostBridge.ProfileCharacters(profile)
+    local db, rows = _G.MSUF_GlobalDB, {}
+    local chars = type(db) == "table" and db.char
+    if type(chars) ~= "table" then return rows end
+    for name, entry in pairs(chars) do
+        if type(name) == "string" and #name <= 160 and type(entry) == "table" then
+            local any = false
+            if type(entry.specProfileMap) == "table" then
+                for spec, assigned in pairs(entry.specProfileMap) do
+                    if assigned == profile and type(spec) == "number" and spec > 0 and spec < 100000 then
+                        rows[#rows + 1] = { name = name, spec = spec }
+                        any = true
+                    end
+                end
+            end
+            if not any and entry.activeProfile == profile then rows[#rows + 1] = { name = name } end
+        end
+    end
+    table.sort(rows, function(a, b)
+        if a.name == b.name then return (a.spec or 0) < (b.spec or 0) end
+        return a.name < b.name
+    end)
+    return rows
+end
+
 ------------------------------------------------------------------ interrupt readiness
 -- MSUF's interrupt-ready engine for the nameplate castbars: MSUF.KickReady
 -- (Classic MSUF's Castbars/MSUF_InterruptReady.lua), which hosts from

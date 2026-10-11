@@ -21,9 +21,9 @@
   {
    "file": "MSUF_Suite/Core/HostBridge.lua",
    "metric": "g_reads",
-   "max": 29,
-   "reason": "The read-only preview reads external MSUF factories, the compact decoder and current frame settings at the host boundary. The shared current-settings getter replaces duplicate scale-readiness reads; missing exports, cache behavior and retained frames are covered by installer contracts. Edit-element suppression moved from optional MSUF_Suite_Modules/EditMode.lua into this shared host boundary: one additional external namespace read and two foreign-record checks, retaining the prior cold event-driven lifecycle. Independently reviewed against suite_runtime_owner_contract; no polling or new hot-path scan.",
-   "date": "2026-10-08"
+   "max": 30,
+   "reason": "The read-only preview reads external MSUF factories, the compact decoder and current frame settings at the host boundary. The shared current-settings getter replaces duplicate scale-readiness reads; missing exports, cache behavior and retained frames are covered by installer contracts. Edit-element suppression moved from optional MSUF_Suite_Modules/EditMode.lua into this shared host boundary: one additional external namespace read and two foreign-record checks, retaining the prior cold event-driven lifecycle. Independently reviewed against suite_runtime_owner_contract; no polling or new hot-path scan. CDM offline editor reads the existing character profile assignments once when its dropdown opens, through this sole host boundary; targeted tests require profile filtering and preserve unknown class/spec identity.",
+   "date": "2026-10-11"
   },
   {
    "file": "MSUF_Suite/Core/HostBridge.lua",

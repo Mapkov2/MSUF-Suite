@@ -234,7 +234,7 @@ Presets.CATEGORY_ITEMS = {
 }
 
 -- Spell IDs of the player's class, strongest first; C.EMPTY when unknown.
-function Presets.Defensives()
-    local classID = select(3, UnitClass("player"))
+function Presets.Defensives(classID)
+    classID = classID or select(3, UnitClass("player"))
     return classID and DEFENSIVES[classID] or C.EMPTY
 end
