@@ -218,6 +218,8 @@ local function IconRules(Add, p, d)
     Add(Number(p .. "maxIcons", "Maximum icons (0 = all)", 0, 0, 40), "maxIcons")
     Add(Bool(p .. "vertical", "Vertical", false), "vertical")
     Add(Choice(p .. "align", "Alignment", d.align or CDM.ALIGN.CENTER, { "Center", "Start", "End" }), "align")
+    Add(B.Tooltip(Bool(p .. "centerFirst", "Keep first icon centered", false),
+        "Requires Center alignment. Icons alternate around the first icon. Buffs keep fixed places; inactive buffs leave gaps."), "centerFirst")
     Add(Choice(p .. "grow", "New rows", d.grow, { "Down", "Up" }), "grow")
     Add(Number(p .. "zoom", "Icon zoom (percent)", 8, 0, 30), "zoom")
     Add(Number(p .. "border", "Border", 1, 0, 4), "border")

@@ -288,7 +288,7 @@ end
 -- Settings that make a bar what it is and where it sits never copy: name,
 -- type, attachment, position and how it grows.
 local COPY_SKIP = { on = true, name = true, kind = true, anchor = true, side = true, gap = true, x = true, y = true,
-    vertical = true, grow = true, align = true, shareContents = true }
+    vertical = true, grow = true, align = true, centerFirst = true, shareContents = true }
 function Page.CopyBarSettings(from, to)
     if P.Combat() or from == to or not (KEYS[from] and KEYS[to]) then return false end
     local values, keys = {}, {}

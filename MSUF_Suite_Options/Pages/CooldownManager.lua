@@ -17,7 +17,7 @@ local MODULE_SECTION = PAGE .. "_" .. ID .. "_module"
 local HELP = {
     general = "These apply to every bar. The standalone assisted icon follows Blizzard's assisted combat highlight; enable that highlight in the game's Combat options. Its position is available in MSUF Edit Mode. Action bar presses show on cooldown icons only with the MSUF Suite action bars.",
     bars = "The preview and every section below edit this bar. Shared custom groups start with a separate list for explicit spell, aura and item IDs; disabling sharing restores the existing per-specialization list.",
-    basics = "The settings you change most. Attach the bar to another bar or to your player frame to keep them together; the gap is the space between them. Center keeps the first cooldown icon in the middle and adds the next icons right, left, right, left. Visible buffs stay compact; on a horizontal mixed bar, player and target buffs grow outward from the center on one row.",
+    basics = "Center keeps the whole visible cooldown row centered as icons appear or disappear. Enable Keep first icon centered for alternating growth around the first icon. Buff icons then keep fixed places, with gaps for inactive buffs. Attach the bar to another bar or to your player frame; Gap controls the space between them.",
     spells = P.Help("Add spells, then click an icon to customize it.", "Every spell of this bar, unlearned ones included. On a buff bar, Add spells offers received buffs such as Power Infusion and Innervate; Buff on me also accepts a buff aura ID or resolvable name and tracks that ID from any caster. With Show missing buffs off, only active buffs appear. The preview edits entries too: click for options, drag to reorder or onto a bar above, middle-click to remove (with undo). Removed spells stay under Add spells. Lists are kept per specialization."),
     layout = "How the icons line up and grow. A free bar's position counts from the screen center; an attached bar's is an offset from its attach point. Excess cooldowns can move past Maximum icons to another enabled cooldown bar. The destination must have overflow off; chained routes are ignored.",
     look = "Icon crop, border, swipe and frame layer of this bar.",
@@ -33,7 +33,7 @@ local HELP = {
 local SECTIONS = {
     { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "side", "gap", "align",
         "alpha", "cooldownDuration", "shareContents" } },
-    { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "overflow",
+    { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "centerFirst", "overflow",
         "laterPerRow", "laterSize", "vertical", "grow", "x", "y" } },
     { id = "look", title = "Look", suffixes = { "zoom", "border", "borderColor", "borderClass", "swipeAlpha", "edge",
         "strata", "layer" } },

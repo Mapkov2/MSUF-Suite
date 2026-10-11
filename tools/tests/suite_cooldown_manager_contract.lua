@@ -2614,6 +2614,32 @@ do (function()
     Compact("split, both",target,"TOPLEFT","TOP",sp/2,0)
     assert(player:Tracks(302) and target:Tracks(302),"split, both: Ignite on both sides")
     Check("split, both")
+    -- Toggling only centerFirst rebuilds compact containers as native slots.
+    -- Every entry retains its plan place across mixed units and later rows.
+    config[K2.centerFirst]=true
+    ResetCalls()
+    module:Refresh()
+    Run()
+    fixed,ordered,split=C.Layout.FixedAuras(C.views.c2,C.plans.c2.entries)
+    assert(fixed and ordered and not split,"center-first buffs use ordered native slots")
+    player,target=Live()
+    Fixed("center-first buffs",player);Fixed("center-first buffs",target)
+    CellsAt("center-first buffs",{{2,0},{3,0},{1,0},{4,0}})
+    Size("center-first buffs",5*cw+4*sp,h)
+    assert(SlotCell(player,401)==cells[1] and SlotCell(target,302)==cells[2]
+        and SlotCell(player,301)==cells[3] and SlotCell(target,303)==cells[4],
+        "center-first mixed buffs must bind the original plan cells")
+    Check("center-first buffs")
+    fixed,ordered,split=Bar({perRow=2},4)
+    assert(fixed and ordered and not split,"center-first multiline buffs keep plan order")
+    CellsAt("center-first buff rows",{{1,0},{2,0},{1,1},{2,1}})
+    Size("center-first buff rows",3*cw+2*sp,2*h+sp)
+    Check("center-first buff rows")
+    fixed,ordered,split=Bar({centerFirst=false,perRow=4},4)
+    assert(not fixed and not ordered and split,"disabling center-first restores compact buffs")
+    player,target=Live()
+    Compact("restored compact buffs",player,"TOPRIGHT","TOP",-sp/2,0)
+    Compact("restored compact buffs",target,"TOPLEFT","TOP",sp/2,0)
     -- Without target entries nothing mixes: one compact player container
     -- from the top center. Me takes Ignite off the target container.
     config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"},

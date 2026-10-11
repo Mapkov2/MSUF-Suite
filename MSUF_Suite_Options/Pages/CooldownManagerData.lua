@@ -178,6 +178,8 @@ function Page.Relevant(slot, suffix)
     local key = KEYS[slot] and KEYS[slot][suffix]
     if not key or RULES[key].hidden then return false end
     local kind = Page.Kind(slot)
+    if suffix == "centerFirst" then return kind == KIND.AURA_ICON
+        or kind == KIND.COOLDOWN and P.Get(ID, KEYS[slot].cooldownDuration) ~= true end
     if suffix == "barStacks" or suffix == "barStackMax" or suffix == "barStackEach" or suffix == "barStackMarks"
         or suffix == "barStackColorAt" or suffix == "barStackColor" then return kind == KIND.AURA_BAR end
     if suffix == "barChargeSegments" or suffix == "barChargeDim" then return kind == KIND.COOLDOWN and P.Get(ID, KEYS[slot].cooldownDuration) == true end

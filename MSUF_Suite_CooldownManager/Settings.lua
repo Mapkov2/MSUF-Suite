@@ -43,6 +43,7 @@ end
 Work({ "x", "y", "anchor", "side", "gap" }, { layout = true })
 Work({ "align", "spacing", "perRow", "maxIcons", "vertical", "grow" }, { layout = true, flow = true })
 Work({ "cooldownFixed" }, { layout = true })
+Work({ "centerFirst" }, { layout = true, flow = true })
 Work({ "overflow", "maxIcons" }, { resolve = true })
 Work({ "shareContents" }, { resolve = true })
 Work({ "cooldownDuration" }, { layout = true, style = true, behavior = true, index = true, overlay = true })

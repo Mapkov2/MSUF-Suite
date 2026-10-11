@@ -566,7 +566,8 @@ function Layout.FixedAuras(view, entries)
     local _, _, _, per, vertical, _, align = Cells(view, px or Layout.PixelScale())
     local n = n1 + n2
     local single = n <= per or per == 1
-    local fixed = view.keepSlots == true or view.showMissing == true
+    local centered = view.centerFirst == true and Grid.CenterFirst(view)
+    local fixed = view.keepSlots == true or view.showMissing == true or centered
     if not fixed then
         for i = 1, #entries do
             local ov = entries[i].ov
@@ -588,7 +589,7 @@ function Layout.FixedAuras(view, entries)
             if align == CENTER then split = true else fixed = true end
         end
     end
-    return fixed, fixed and single, split
+    return fixed, fixed and (single or centered), split
 end
 
 -- Diagnostics: the player and target lines an aura bar reserves.
@@ -614,7 +615,9 @@ local function PlaceAuras(bar, view, plan)
     local _, ordered, split = Layout.FixedAuras(view, entries)
     ordered = ordered or split
     local width, height
-    if ordered then
+    if view.centerFirst == true and Grid.CenterFirst(view) then
+        width, height = Offsets(view, n1 + n2, out, unit)
+    elseif ordered then
         width, height = Fill(w, h, sp, per, vertical, grow, align, n1 + n2, 0, out, unit)
     else
         width, height = Fill(w, h, sp, per, vertical, grow, align, n1, n2, out, unit)

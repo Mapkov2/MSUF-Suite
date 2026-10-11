@@ -143,9 +143,10 @@ end
 local function GuideCatalog(context)
     local guide = C.GuideProfiles[context.spec]
     if not guide then return end
-    for i = 1, math.min(#guide.order, 600) do
-        local id = guide.order[i]
-        local category = guide.moves[id]
+    local order, moves = guide.order or EMPTY, guide.moves or EMPTY
+    for i = 1, math.min(#order, 600) do
+        local id = order[i]
+        local category = moves[id]
         if category == nil then
             local info = Plain(C_CooldownViewer.GetCooldownViewerCooldownInfo(id))
             local value = type(info) == "table" and Plain(info.category)

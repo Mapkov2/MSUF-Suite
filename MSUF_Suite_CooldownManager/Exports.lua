@@ -185,6 +185,7 @@ local function Extent(view, plan)
             n1 = n1 + 1
         end
     end
+    if view.centerFirst == true and C.Grid.CenterFirst(view) then return C.Layout.Offsets(view, n1 + n2, offsetScratch) end
     local w, h, sp, per, vertical = C.Layout.Metrics(view)
     -- Fixed places on one line keep target entries on that line (Layout.PlaceAuras).
     local _, ordered, split = C.Layout.FixedAuras(view, list)

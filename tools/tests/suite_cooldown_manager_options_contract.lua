@@ -798,6 +798,13 @@ for _, suffix in ipairs({ "cdText", "stackText", "textTop", "stackPos" }) do
 end
 local textTop = Control("textTop").row.values
 assert(#textTop == 2 and textTop[1].text == "Stacks" and textTop[2].text == "Countdown", "Text on top choices")
+picker.set("buf")
+M.RequestRefresh()
+assert(Control("centerFirst").enabled, "Buffs centered-first switch must be clickable after selection")
+Control("centerFirst").set(true)
+assert(Config()[CDM.KEYS.buf.centerFirst] == true and Control("centerFirst").get() == true,
+    "Buffs centered-first switch must write and read the selected bar setting")
+Control("centerFirst").set(false)
 picker.set("bar")
 M.RequestRefresh()
 assert(not size.enabled and Control("barWidth").enabled and not Control("desat").enabled and Control("pandemic").enabled,
@@ -1828,8 +1835,20 @@ do
     assert(Keys("ess") == "b3,b1,i5512" and historyWrites == writes + 2 and PendingTasks() == 0 and not ui.previewUndo.shown
         and ui.previewLine.text == HINT, "Undo under the preview must bring the spell back")
 
+    -- Whole-row Center retains left-to-right insertion on every tile.
+    hits[1].cx,hits[2].cx,hits[3].cx=80,120,160
+    for i=1,3 do hits[i].cy=50 end
+    cursorX,cursorY=80,50
+    Fire(hits[1],"OnMouseDown","LeftButton")
+    cursorX=165
+    hits[3].mouseOver=true
+    Fire(drag.host,"OnUpdate",0.01)
+    assert(drag.dropAfter and drag.marker.points[1][3]=="RIGHT","Center third tile must insert after its right half")
+    Page.CancelPreviewDrag(drag)
+    hits[3].mouseOver=false
     -- Center-out cooldowns are drawn in list order: center, right, left.
     -- The outer half of each icon inserts after it; the inner half before.
+    Config()[CDM.KEYS.ess.centerFirst]=true
     hits[1].cx, hits[2].cx, hits[3].cx = 100, 140, 60
     for i = 1, 3 do hits[i].cy = 50 end
     cursorX, cursorY = 100, 50
@@ -2023,6 +2042,7 @@ do
     assert(Keys("buf") == "b10" and Page.note == "Removed Ice Barrier.", "middle-click must remove buffs too")
 
     Page.ClearNote()
+    Config()[CDM.KEYS.ess.centerFirst]=nil
     Config().listsData = listsBefore
     picker.set("ess")
     M.RequestRefresh()
@@ -2586,6 +2606,19 @@ do
             assert(body:find('T("' .. label .. '", "', 1, true), locale .. " lacks the row label " .. label)
         end
     end
+end
+-- The centered-first option must be available on the standard Buffs bar
+-- and custom buff-icon bars, while timer bars remain excluded.
+do
+    assert(CDM.KEYS.buf.centerFirst and Page.Relevant("buf", "centerFirst"),
+        "Standard Buffs must expose the centered-first option")
+    local key = CDM.KEYS.c1.kind
+    local saved = Config()[key]
+    Config()[key] = CDM.KIND.AURA_ICON
+    assert(Page.Relevant("c1", "centerFirst"), "Custom buff icons must expose centered-first")
+    Config()[key] = CDM.KIND.AURA_BAR
+    assert(not Page.Relevant("c1", "centerFirst"), "Aura timer bars cannot use centered-first icons")
+    Config()[key] = saved
 end
 -- Each page file keeps real headroom below Lua 5.1's 200 locals per chunk.
 for _, file in ipairs({ "CooldownManagerData", "CooldownManagerBars", "CooldownManagerWidgets", "CooldownManagerPicker", "CooldownManagerPopover",

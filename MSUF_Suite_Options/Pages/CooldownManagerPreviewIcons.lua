@@ -90,10 +90,11 @@ local function Flow(drag, ui)
         end
     end
     drag.axis, drag.sign = axis, sign
-    drag.centerOut = ui.kind == KIND.COOLDOWN and P.Get(ID, Page.Key("align")) == ALIGN.CENTER
+    drag.centerOut = ui.kind ~= KIND.AURA_BAR and P.Get(ID, Page.Key("align")) == ALIGN.CENTER
+        and P.Get(ID, Page.Key("centerFirst")) == true
     drag.perRow = drag.centerOut and (tonumber(P.Get(ID, Page.Key("perRow"))) or 1) or 1
 end
--- Center-out cooldowns alternate sides of the midpoint in list order.
+-- Center-out icons alternate sides of the midpoint in list order.
 -- Each hit's outer half inserts after it; its inner half inserts before it.
 local function TargetSign(drag, target)
     if not drag.centerOut or target.plus then return drag.sign end

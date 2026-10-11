@@ -105,3 +105,34 @@ assert(actual=='b6101','native-default fixture did not exercise the runtime fall
 local editor=C.Editor.Context(63,8,config)
 print('sparse guide fallback','runtime='..actual,'editor='..Keys(editor.bars.uti))
 assert(Keys(editor.bars.uti)==actual,'OFFLINE_SPARSE_GUIDE_DROPS_READABLE_NATIVE_CATEGORY')
+
+-- Shipped guides may omit the entire move map or even the order. Exercise
+-- the unobserved-spec path, before any character metadata has been saved.
+local arms=assert(C.GuideProfiles[71])
+assert(arms.moves==nil and arms.order[1]==27 and arms.order[2]==28,
+ 'Arms guide must exercise the missing-move-map case')
+NS.RootDB.cdmEditorCatalog[profile][71]=nil
+C_CooldownViewer.GetCooldownViewerCooldownInfo=function(id)
+ if id==27 then return {spellID=10001,category=0,hasAura=false} end
+ if id==28 then return {spellID=10002,category=1,hasAura=false} end
+end
+C.Catalog.generation=C.Catalog.generation+1
+local warrior=C.Editor.Context(71,1,config,'WARRIOR')
+assert(warrior.catalogCount==2,'Unresolved guide entries must be omitted')
+assert(table.concat(warrior.defaultByBar.ess,',')=='b27','Arms essential native category lost')
+assert(table.concat(warrior.defaultByBar.uti,',')=='b28','Arms utility native category lost')
+assert(arms.moves==nil,'Editor must not mutate the shipped guide')
+assert(C.Editor.Context(71,1,config,'WARRIOR')==warrior,'Repeated selection must reuse the context')
+
+-- No native entries are available, as can happen for an unobserved spec.
+C_CooldownViewer.GetCooldownViewerCooldownInfo=function() end
+C.Catalog.generation=C.Catalog.generation+1
+assert(C.Editor.Context(71,1,config,'WARRIOR').catalogCount==0,
+ 'Missing native metadata must not fabricate guide entries')
+local disc=assert(C.GuideProfiles[256])
+assert(disc.order==nil and disc.moves==nil,'Discipline guide must exercise the empty-guide case')
+NS.RootDB.cdmEditorCatalog[profile][256]=nil
+local priest=C.Editor.Context(256,5,config,'PRIEST')
+assert(priest.catalogCount==0,'Empty guide must not fabricate catalog entries')
+assert(disc.order==nil and disc.moves==nil,'Editor must not populate the empty guide')
+print('Optional guide fields passed: Arms native fallback, missing metadata, empty Discipline guide')

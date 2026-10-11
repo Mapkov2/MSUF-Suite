@@ -2,8 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
 -- Grid math of the bars: cell sizes and spacing in whole physical pixels,
--- the offsets of every place (lines of perRow in growth order, Center
--- alignment from the middle out, later rows with their own size), the
+-- the offsets of every place (lines of perRow in growth order, centered
+-- rows or optional growth from the first icon, later rows with their own size), the
 -- footprint and the growth-edge point. Pure: every function takes the UI
 -- units per pixel (Layout.PixelScale), reads only the view and writes only
 -- the caller's offsets table.
@@ -12,12 +12,16 @@ C.Grid = Grid
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local type = type
 local KIND = C.Const.KIND
-local COOLDOWN, AURA_BAR = KIND.COOLDOWN, KIND.AURA_BAR
+local COOLDOWN, AURA_ICON, AURA_BAR = KIND.COOLDOWN, KIND.AURA_ICON, KIND.AURA_BAR
 local DOWN, UP = C.Const.GROW.DOWN, C.Const.GROW.UP
 local CENTER, START, END = C.Const.ALIGN.CENTER, C.Const.ALIGN.START, C.Const.ALIGN.END
 local ALIGNED = { [START] = true, [END] = true }
 
 local function Round(value) return floor(value + .5) end
+local function CenterFirst(view)
+    return view.centerFirst == true and not ALIGNED[view.align]
+        and (view.kind == AURA_ICON or view.kind == COOLDOWN and not view.cooldownDuration)
+end
 
 -- Growth direction: Down (vertical: Right) or Up (vertical: Left). Aura
 -- bars without a grow rule (built-in "Buff bars") stack upward.
@@ -83,10 +87,39 @@ local function Fill(w, h, sp, per, vertical, grow, align, n1, n2, out, unit)
     return extent * unit, depth * unit
 end
 
--- Cooldown icons with Center keep the first visible icon on the bar's
--- midpoint. Later icons occupy right, left, right, left in plan order.
+-- One compact cooldown row per line, centered by its visible width. Unlike
+-- aura groups, these rows have no group boundaries to reserve or traverse.
+local function CenteredRows(w, h, sp, per, vertical, grow, n, out, unit)
+    if n == 0 then return w * unit, h * unit end
+    local along, across = w, h
+    if vertical then along, across = h, w end
+    local full = min(n, per)
+    local extent = full * along + (full - 1) * sp
+    local lines = ceil(n / per)
+    local depth = lines * across + (lines - 1) * sp
+    local index, stride, up = 0, along + sp, grow == UP
+    for line = 0, lines - 1 do
+        local count = min(per, n - line * per)
+        local a = floor((extent - count * along - (count - 1) * sp) / 2)
+        local b = (up and lines - 1 - line or line) * (across + sp)
+        for _ = 1, count do
+            index = index + 1
+            if vertical then
+                out[2 * index - 1], out[2 * index] = b * unit, -a * unit
+            else
+                out[2 * index - 1], out[2 * index] = a * unit, -b * unit
+            end
+            a = a + stride
+        end
+    end
+    if vertical then return depth * unit, extent * unit end
+    return extent * unit, depth * unit
+end
+
+-- Center-first keeps the first cell on the bar's midpoint. Cooldowns use
+-- visible icons; native buff slots retain their configured cells and gaps.
+-- Later icons occupy right, left, right, left in plan order.
 -- The symmetric footprint keeps that midpoint stable when the count changes.
--- Aura buttons use Blizzard's own compact flow instead (Fill above).
 local function CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
     if n == 0 then return w * unit, h * unit end
     local along, across = w, h
@@ -145,7 +178,7 @@ local function FillMixed(view, n, out, unit)
     local rows = ceil(remaining / per2)
     local a, b, a2, b2 = w, h, w2, h2
     if vertical then a, b, a2, b2 = h, w, h2, w2 end
-    local centered, atStart, atEnd, up = align == CENTER, align == START, align == END, grow == UP
+    local centered, atStart, atEnd, up = align == CENTER and view.centerFirst == true, align == START, align == END, grow == UP
     local extent = max(RowSpan(first, a, centered, sp), RowSpan(min(remaining, per2), a2, centered, sp))
     local depth = b + rows * (b2 + sp)
     local index = 0
@@ -154,7 +187,8 @@ local function FillMixed(view, n, out, unit)
         local along, across = row == 0 and a or a2, row == 0 and b or b2
         local cross = row == 0 and 0 or b + sp + (row - 1) * (b2 + sp)
         if up then cross = depth - cross - across end
-        local origin = atStart and 0 or atEnd and extent - RowSpan(count, along, centered, sp) or floor((extent - along) / 2)
+        local span = centered and along or RowSpan(count, along, false, sp)
+        local origin = atStart and 0 or atEnd and extent - span or floor((extent - span) / 2)
         for ordinal = 0, count - 1 do
             local offset = ordinal
             if centered then offset = ordinal == 0 and 0 or ordinal % 2 == 1 and (ordinal + 1) / 2 or -ordinal / 2 end
@@ -180,8 +214,10 @@ local function Offsets(view, count, out, unit)
     local width, height
     if MixedRows(view) then
         width, height = FillMixed(view, n, out, unit)
-    elseif view.kind == COOLDOWN and align == CENTER then
+    elseif view.centerFirst == true and CenterFirst(view) then
         width, height = CenterOut(w, h, sp, per, vertical, grow, n, out, unit)
+    elseif view.kind == COOLDOWN and align == CENTER then
+        width, height = CenteredRows(w, h, sp, per, vertical, grow, n, out, unit)
     else
         width, height = Fill(w, h, sp, per, vertical, grow, align, n, 0, out, unit)
     end
@@ -203,3 +239,4 @@ end
 
 Grid.Cells, Grid.Fill, Grid.MixedRows, Grid.Footprint = Cells, Fill, MixedRows, Footprint
 Grid.Offsets, Grid.Metrics, Grid.Point = Offsets, Metrics, Point
+Grid.CenterFirst = CenterFirst

@@ -338,6 +338,38 @@ end
 ------------------------------------------------------------------ offsets (pure)
 local out={}
 local grid={kind=1,size=10,height=100,spacing=2,perRow=4,maxIcons=0,vertical=false,align=1,grow=1}
+-- Default Center keeps every visible row compact, ordered and symmetric.
+-- Check odd/even counts, short rows, both axes and growth directions.
+do
+    for _, vertical in ipairs({false,true}) do
+        for grow=1,2 do
+            grid.vertical,grid.grow=vertical,grow
+            for count=1,9 do
+                local width,height,laid=L.Offsets(grid,count,out)
+                local extent=math.min(count,4)*12-2
+                assert(laid==count and (vertical and height or width)==extent,"Center reserves no empty edge slot")
+                for first=1,count,4 do
+                    local last=math.min(first+3,count)
+                    local leading=vertical and -out[2*first] or out[2*first-1]
+                    local trailing=(vertical and -out[2*last] or out[2*last-1])+10
+                    assert(math.abs(leading+trailing-extent)<=1,"visible row lost its midpoint")
+                    for i=first+1,last do
+                        local at=vertical and -out[2*i] or out[2*i-1]
+                        local before=vertical and -out[2*i-2] or out[2*i-3]
+                        assert(at-before==12,"Center must retain left-to-right/top-to-bottom order")
+                    end
+                end
+            end
+        end
+    end
+    grid.vertical,grid.grow=false,1
+    local mixed={kind=1,size=20,height=100,spacing=2,perRow=2,laterPerRow=3,laterSize=10,align=1,grow=1}
+    local mw,mh=L.Offsets(mixed,6,out)
+    assert(mw==42 and mh==44 and out[1]==0 and out[3]==22,"Center larger first row")
+    assert(out[5]==4 and out[7]==16 and out[9]==28 and out[11]==16,"Center each later row by its own size")
+end
+-- The former first-icon layout remains an explicit, opt-in choice.
+grid.centerFirst=true
 do
     local mixed={kind=1,size=20,height=100,spacing=2,perRow=2,laterPerRow=3,laterSize=10,align=2,grow=1}
     local points={}
@@ -422,6 +454,8 @@ L.InvalidateScale()
 
 ------------------------------------------------------------------ bars: layout and zero-call repeat
 local ess,uti,buf,ext=C.views.ess,C.views.uti,C.views.buf,C.views.ext
+assert(ess.centerFirst==false,"whole-row centering must be the default")
+ess.centerFirst=true
 -- slot order: anchor index = slot index + 1, then MSUF's player and target frames
 local ORDER={"ess","uti","def","ext","buf","bar","c1","c2","c3","c4","c5","c6"}
 for i,key in ipairs(ORDER) do assert(CDM.SLOTS[i].key==key and CDM.SLOT_INDEX[key]==i,"slot "..i.." is "..key) end
@@ -1216,6 +1250,22 @@ C.state.preview=false
 essEntries[2].hidden=nil
 L.Apply("ess")
 assert(#overlayLog==2,"no edge while the icon stays shown")
+-- Live and options canvas share Center's packed order; hiding a middle
+-- entry changes the row width and keeps its geometric midpoint at the anchor.
+ess.centerFirst=false
+Touch("ess")
+L.Apply("ess")
+for i=1,5 do CheckPoint(essEntries[i].icon,"TOPLEFT",essBar.frame,"TOPLEFT",(i-1)*42,0,"Center ordered live icon") end
+essEntries[2].hidden=true
+L.Apply("ess")
+assert(essBar.frame.w==166,"Center shrinks an even visible row without a spare cell")
+CheckPoint(essEntries[1].icon,"TOPLEFT",essBar.frame,"TOPLEFT",0,0,"Center first visible edge")
+CheckPoint(essEntries[5].icon,"TOPLEFT",essBar.frame,"TOPLEFT",126,0,"Center last visible edge")
+CheckPoint(essBar.frame,"TOP",UIParent,"CENTER",0,ESS_Y,"Center anchor stays fixed while row shrinks")
+essEntries[2].hidden=nil
+ess.centerFirst=true
+Touch("ess")
+L.Apply("ess")
 Clear(overlayLog)
 -- pooled icon released by the icon layer and back for another entry
 local moved=essEntries[5].icon
@@ -2235,9 +2285,20 @@ do
     Pv.Render(stage,"bar",400,200)
     assert(Writes()==0,"an unchanged repaint of rows wrote "..Writes().." times")
     -- icons on the same holder: rows hide, icons show; a repaint writes nothing
+    local savedCenterFirst=ess.centerFirst
+    ess.centerFirst=false
     local same=Pv.Render(stage,"ess",60,100)
     assert(same==canvas and #canvas.icons==3 and canvas.icons[1].shown and not canvas.rows[1].shown,"one reused canvas per parent")
     assert(canvas.scale<1,"the canvas shrinks to fit")
+    for i=1,3 do CheckPoint(canvas.icons[i],"TOPLEFT",canvas,"TOPLEFT",(i-1)*42,0,"Center ordered preview icon") end
+    local savedLists=C.lists
+    C.lists={}
+    keys.ess[3]=nil
+    Pv.Render(stage,"ess",60,100)
+    assert(canvas.w==82,"Center preview shrinks to the even visible footprint")
+    keys.ess[3]="s3"
+    C.lists=savedLists
+    Pv.Render(stage,"ess",60,100)
     ResetCalls()
     Pv.Render(stage,"ess",60,100)
     assert(Writes()==0,"an unchanged repaint of icons wrote "..Writes().." times")
@@ -2247,6 +2308,7 @@ do
     assert(canvas.shown,"a later render shows it again")
     Pv.ReleaseAll()
     assert(not canvas.shown,"release all")
+    ess.centerFirst=savedCenterFirst
 end
 
 print("suite cooldown manager layout contract: ok")

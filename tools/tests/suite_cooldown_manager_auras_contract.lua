@@ -649,7 +649,8 @@ function L.FixedAuras(view,entries)
     for i=1,cap do if entries[i].unit=="target" then n2=n2+1 else n1=n1+1 end end
     local _,_,_,per,vertical,_,align=L.Metrics(view)
     local n=n1+n2
-    local fixed=view.keepSlots==true or view.showMissing==true
+    local centered=view.kind==2 and view.centerFirst==true and align==1
+    local fixed=view.keepSlots==true or view.showMissing==true or centered
     if not fixed then
         for i=1,#entries do
             if entries[i].timer and C.AuraTimers.Wants(entries[i],view) then fixed=true;break end
@@ -665,7 +666,7 @@ function L.FixedAuras(view,entries)
         elseif per==1 then fixed=true
         elseif line then split=align==1;fixed=not split end
     end
-    return fixed,fixed and (line or per==1),split
+    return fixed,fixed and (line or per==1 or centered),split
 end
 
 -- Strict globals from here on: the runtime files may not create any.
@@ -1514,7 +1515,7 @@ do
     handle:close()
     local body=text:match("\n(local function Extent%(view, plan%)\n.-\nend)\n")
     assert(body and body:find("FixedAuras(",1,true),"Exports.lua: Extent sizes aura bars by Layout.FixedAuras")
-    local Extent=assert(loadstring("local C,probe,ceil,KIND=...\n"..body.."\nreturn Extent","=Exports.Extent"))(Cx,{},math.ceil,
+    local Extent=assert(loadstring("local C,offsetScratch,ceil,KIND=...\n"..body.."\nreturn Extent","=Exports.Extent"))(Cx,{},math.ceil,
         C.Const.KIND)
     local UNIT={p="player",t="target",b="both",m="player"}
     -- p player, t target, b both (player part), m player with a per-spell showMissing
@@ -1560,6 +1561,17 @@ do
         end
     end
     local ROW4,COL4={{0,0},{32,0},{64,0},{96,0}},{{0,0},{0,-32},{0,-64},{0,-96}}
+    -- Center-first reserves native slots in plan order, across unit groups
+    -- and rows; the live cells and mover conversion must share the footprint.
+    Case("center-first mixed buffs",{centerFirst=true},"ptpt",{true,true,false},{158,30},
+        {{64,0},{96,0},{32,0},{128,0}})
+    Case("center-first mixed buff rows",{centerFirst=true,perRow=2},"ptpt",{true,true,false},{94,62},
+        {{32,0},{64,0},{32,-32},{64,-32}})
+    Case("center-first vertical buff columns",{centerFirst=true,perRow=2,vertical=true},"ptpt",{true,true,false},{62,94},
+        {{0,-32},{0,-64},{32,-32},{32,-64}})
+    Case("center-first capped buffs",{centerFirst=true,maxIcons=3},"ptpt",{true,true,false},{94,30},
+        {{32,0},{64,0},{0,0}})
+    Case("center-first ignored at start",{centerFirst=true,align=2},"pppp",{false,false,false},{126,30},ROW4)
     -- A column that mixes both parts: fixed, every entry on its plan cell.
     Case("vertical mixed column",{vertical=true},"ptpt",{true,true,false},{30,126},COL4)
     Case("vertical mixed column growing left",{vertical=true,grow=2},"ptpt",{true,true,false},{30,126},COL4)

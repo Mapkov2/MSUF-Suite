@@ -72,7 +72,12 @@ function L.SetFixedPreviewCompactHeight(frame, height)
     frame._msuf2FixedPreviewHeight = height
     frame._msuf2FixedPreviewCompactHeight = height
     local record = frame._msuf2FixedPagePreviewRecord
-    if record then record.fixedHeight = height end
+    if record then
+        record.fixedHeight = height
+        -- Closing the expander clears ActiveHeight; the host's original
+        -- resolver otherwise falls back to its smaller, clamped height.
+        record.heightResolver = function() return tonumber(frame._msuf2FixedPreviewActiveHeight) or height end
+    end
     frame:SetHeight(height)
 end
 function L.SetBuilderInsets(ctx, contentX, topInset)
