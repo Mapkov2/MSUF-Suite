@@ -90,6 +90,23 @@ function R.GroupRoster(self)
     end
 end
 
+-- Combat end after a roster change in combat (Controller.lua
+-- CompileAfterCombat): reads the roster and tells whether a class another
+-- class's buff notice depends on (otherClassBuffs) came or went, the only
+-- roster input of the reminder list.
+local hadClass = {}
+function R.RosterChanged(self)
+    local watched, classes = self.config.otherClassBuffs == true, self.group.classes
+    for i = 1, #CLASSES do hadClass[i] = classes ~= nil and classes[CLASSES[i]] == true end
+    R.GroupRoster(self)
+    if not watched then return false end
+    classes = self.group.classes
+    for i = 1, #CLASSES do
+        if (classes[CLASSES[i]] == true) ~= hadClass[i] then return true end
+    end
+    return false
+end
+
 local function Eligible(unit)
     local exists, connected, visible, dead = UnitExists(unit), UnitIsConnected(unit), UnitIsVisible(unit), UnitIsDeadOrGhost(unit)
     return Public(exists) and exists == true and Public(connected) and connected == true

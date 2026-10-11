@@ -80,6 +80,9 @@ local building
 local buildingCategory = "personal"
 local seenAuras, seenSlots = {}, {}
 local seenFood = false
+-- An item or spell whose data had not arrived when the build asked; a later
+-- compile asks again (stock.pending).
+local undecided = false
 
 local function Full()
     return #building.list >= MAX_ENTRIES
@@ -255,7 +258,9 @@ end
 -- A spell the client has data for (a name); asked on compile only.
 local function SpellExists(spellID)
     local name = C_Spell.GetSpellName(spellID)
-    return Public(name) and name ~= nil
+    if Public(name) and name ~= nil then return true end
+    undecided = true
+    return false
 end
 
 local function AddConfigured(c)
@@ -302,7 +307,10 @@ local function IsFood(itemID)
         return false
     end
     local _, spellID = C_Item.GetItemSpell(itemID)
-    if not Public(spellID) or type(spellID) ~= "number" then return false end
+    if not Public(spellID) or type(spellID) ~= "number" then
+        undecided = true
+        return false
+    end
     food = EATING_SPELLS[spellID] == true
     foodItems[itemID] = food
     return food
@@ -401,6 +409,7 @@ local function PotionAura(itemID)
     local _, spellID = C_Item.GetItemSpell(itemID)
     if Public(spellID) and type(spellID) == "number" then return spellID end
     C_Item.RequestLoadItemDataByID(itemID)
+    undecided = true
 end
 
 -- stock.potion remembers whether the potion was in the bags, so a bag update
@@ -448,7 +457,7 @@ function R.BuildEntries(self, previewBuffer)
     for index = #list, 1, -1 do list[index] = nil end
     Clear(seenAuras)
     Clear(seenSlots)
-    seenFood = false
+    seenFood, undecided = false, false
     local c = self.config
     local class = PlayerClass()
     buildingCategory = "class"
@@ -484,5 +493,6 @@ function R.BuildEntries(self, previewBuffer)
     local mainID, offID = AddConfigured(c)
     if NS.Client.modernEquipment then AddStocked(self, c, mainID, offID) end
     AddMapPotion(self, c)
+    stock.pending = undecided
     return list
 end

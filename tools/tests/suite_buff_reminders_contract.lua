@@ -332,21 +332,36 @@ assert(module.view.mask==14 and not module.view.buttons[1].shown and module.view
 before, itemReads = auraReads, 0
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 assert(auraReads == before + 3 and itemReads == 0, "unchanged auras repainted item counts")
+-- In combat only PLAYER_REGEN_ENABLED and the compile inputs stay; those
+-- only note what combat end owes (Controller.lua OWED).
+local COMBAT_LISTENERS = { PLAYER_REGEN_ENABLED = true, SPELLS_CHANGED = true, PLAYER_SPECIALIZATION_CHANGED = true,
+    PLAYER_EQUIPMENT_CHANGED = true, PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true,
+    BAG_UPDATE_DELAYED = true, GROUP_ROSTER_UPDATE = true }
+local function CombatListeners(label)
+    for event in pairs(eventFrame.events) do
+        assert(COMBAT_LISTENERS[event], label .. ": combat kept " .. event)
+    end
+    assert(eventFrame.events.PLAYER_REGEN_ENABLED and eventFrame.events.BAG_UPDATE_DELAYED
+        and eventFrame.events.SPELLS_CHANGED, label .. ": combat stopped hearing the compile inputs")
+end
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
-assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.BAG_UPDATE_DELAYED
-    and not eventFrame.events.UNIT_INVENTORY_CHANGED and eventFrame.events.PLAYER_REGEN_ENABLED,
-    "combat kept event listeners whose handlers do nothing in combat")
+CombatListeners("combat start")
 -- MSUF Edit Mode closes in its own PLAYER_REGEN_DISABLED handler and the
 -- modules apply again right there (S.SetEditMode), lockdown still false.
 module:Refresh()
-assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.BAG_UPDATE_DELAYED
-    and not eventFrame.events.SPELLS_CHANGED and not eventFrame.events.PLAYER_ENTERING_WORLD
-    and eventFrame.events.PLAYER_REGEN_ENABLED,
-    "a refresh at the combat start registered the listeners again for the whole fight")
+CombatListeners("a refresh at the combat start")
 combat = true
 before = auraReads
 eventFrame.OnEvent(eventFrame, "UNIT_AURA", "player")
 assert(auraReads == before, "combat caused aura queries")
+-- A compile input in combat reads nothing and compiles nothing.
+itemReads = 0
+local entriesInCombat = module.list.entries
+for _, event in ipairs({ "SPELLS_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "BAG_UPDATE_DELAYED" }) do
+    eventFrame.OnEvent(eventFrame, event)
+end
+assert(auraReads == before and itemReads == 0 and module.list.entries == entriesInCombat,
+    "a compile input in combat did work")
 combat = false
 enchant[16] = {}
 eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
@@ -1418,7 +1433,7 @@ do
     auras[1459] = nil
 end
 
--- Consumables used in combat: no bag event is followed there, so leaving
+-- Consumables used in combat: a bag event there only takes note, and leaving
 -- combat reads the item counts once more.
 do
     combat = false
@@ -1435,7 +1450,9 @@ do
     eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
     combat = true
     inventory[123] = 1
-    assert(not eventFrame.events.BAG_UPDATE_DELAYED, "bag events were followed in combat")
+    itemReads = 0
+    eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
+    assert(itemReads == 0 and button.count.text == "4", "a bag event in combat read the bags")
     combat = false
     eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
     assert(button.count.text == "1", "the item count stayed stale after combat: " .. tostring(button.count.text))
@@ -1449,9 +1466,15 @@ end
 -- item and the automatic flask, food and rune: the player's unrelated aura
 -- delta, one coalesced member pass, an unchanged compile and an unchanged
 -- bag update. 2026-10-02 (W-S3b baseline): 1497, 748, 6466 and 3288
--- instructions; each budget is the baseline +2 %.
+-- instructions; each budget is the baseline +2 %. 2026-10-11, a combat
+-- end after a fight in which no compile input changed (the raid trace
+-- compiled at all 4 combat ends, M:Compile 0.75 ms each): base 10282
+-- instructions and 80 bag slots read (the food scan) -> 5963 and none; the
+-- owed-input checks cost the other rows 5 (aura delta, bag update) and 19
+-- (compile) instructions.
 do
     local AURA_BUDGET, MEMBER_BUDGET, COMPILE_BUDGET, BAG_BUDGET = 1526, 762, 6595, 3353
+    local COMBAT_END_BUDGET = 6082
     local roster = { player = "MAGE", party1 = "PRIEST", party2 = "WARRIOR", party3 = "DRUID", party4 = "ROGUE" }
     UnitClass = function(unit) return roster[unit], roster[unit] end
     knownSpell = function(id) return id == 1459 end
@@ -1513,9 +1536,22 @@ do
     end
     local function Compile() eventFrame.OnEvent(eventFrame, "SPELLS_CHANGED") end
     local function Bag() eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED") end
+    -- A fight in which no compile input changed: the combat end.
+    local function CombatEnd()
+        eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_DISABLED")
+        eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+    end
+    do
+        local slots, slotRead = 0, C_Container.GetContainerItemID
+        C_Container.GetContainerItemID = function(...) slots = slots + 1; return slotRead(...) end
+        CombatEnd()
+        C_Container.GetContainerItemID = slotRead
+        assert(slots == 0, "a combat end without a changed compile input read " .. slots .. " bag slots")
+    end
     local results = {
         { "player aura delta", Aura, AURA_BUDGET }, { "member pass", Member, MEMBER_BUDGET },
         { "unchanged compile", Compile, COMPILE_BUDGET }, { "unchanged bag update", Bag, BAG_BUDGET },
+        { "combat end", CombatEnd, COMBAT_END_BUDGET },
     }
     for _, row in ipairs(results) do
         local used, grown = Instructions(row[2]), Kilobytes(row[2])

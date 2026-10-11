@@ -6,9 +6,11 @@ local R = P.BuffReminders
 -- on the module table. A field is nil until its file first sets it.
 R.STATE = {
     -- Event registration (Controller). suspended: in combat every listener
-    -- but PLAYER_REGEN_ENABLED is released. aura: the UNIT_AURA registration
-    -- ("group", "player" or false); weapon: the weapon events are registered.
-    listen = { "suspended", "aura", "weapon" },
+    -- but PLAYER_REGEN_ENABLED and the compile inputs is released. aura: the
+    -- UNIT_AURA registration ("group", "player" or false); weapon: the weapon
+    -- events are registered; owed: what the combat end owes ("compile",
+    -- "bags", "roster" set to true), emptied by every compile.
+    listen = { "suspended", "aura", "weapon", "owed" },
     -- The reminder list and its evaluation (Controller, Entries). entries:
     -- the compiled list; poisonStates: one record per Rogue poison group;
     -- hasAura, hasFood and hasWeapon: the event groups the list needs;
@@ -32,9 +34,10 @@ R.STATE = {
     food = { "ids", "known", "scanKeys" },
     -- The automatic consumable picks of the last compile (Entries): the
     -- flask, rune, oil and food picked (false for none), whether the map
-    -- potion was in the bags, the last food eaten from the bags and whether
-    -- the player stood on a potion map.
-    stock = { "flask", "rune", "oil", "food", "potion", "lastFood", "onPotionMap" },
+    -- potion was in the bags, the last food eaten from the bags, whether
+    -- the player stood on a potion map and whether item or spell data the
+    -- compile asked for had not arrived yet (pending).
+    stock = { "flask", "rune", "oil", "food", "potion", "lastFood", "onPotionMap", "pending" },
     -- The group (Group). settings: the group options of the last roster
     -- read; buffers: the two roster buffers; units and unitList: the member
     -- set and the member events' unit filter ("player" first); classes: the

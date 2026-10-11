@@ -4,7 +4,8 @@ local R = P.BuffReminders
 local IN_COMBAT = { inCombat = true }
 -- Lifecycle, secure buttons and evaluation. Secure action buttons change
 -- only out of combat; in combat a state driver hides the reminders and every
--- listener except PLAYER_REGEN_ENABLED is released. An evaluation re-reads
+-- listener except PLAYER_REGEN_ENABLED and the compile inputs (OWED) is
+-- released. An evaluation re-reads
 -- only what its event can have changed and shows the missing entries as a
 -- bit mask. Every runtime field lives in one of the state tables State.lua
 -- documents.
@@ -12,8 +13,9 @@ local M = R.NewState({})
 local Public = S.Public
 local ANCHORS = { "CENTER", "TOP" }
 -- Registered while out of combat. In combat the reminders are hidden by their
--- state driver, so only PLAYER_REGEN_ENABLED stays registered. Subzone steps
--- (SUBZONE_EVENTS) are listened to only for the map potion.
+-- state driver, so only PLAYER_REGEN_ENABLED and the compile inputs (OWED)
+-- stay registered. Subzone steps (SUBZONE_EVENTS) are listened to only for
+-- the map potion.
 local EVENTS = {
     "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "SPELLS_CHANGED",
     "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED_NEW_AREA", "BAG_UPDATE_DELAYED",
@@ -24,6 +26,18 @@ local COMPILE_EVENTS = {
     SPELLS_CHANGED = true, PLAYER_REGEN_ENABLED = true, PLAYER_SPECIALIZATION_CHANGED = true,
     PLAYER_EQUIPMENT_CHANGED = true, WEAPON_SLOT_CHANGED = true,
     PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true,
+}
+-- Heard while suspended (combat): the compile inputs combat can change.
+-- Their handler only notes in listen.owed what the combat end owes
+-- (CompileAfterCombat): "compile", "bags" (a consumable pick may have
+-- changed) or "roster" (the other classes may have changed). Every weapon
+-- swap also sends PLAYER_EQUIPMENT_CHANGED, and the weapon slots' items are
+-- the only equipment a compile reads. GROUP_ROSTER_UPDATE is registered only
+-- while a group option wants it (RegisterEvents).
+local OWED = {
+    SPELLS_CHANGED = "compile", PLAYER_SPECIALIZATION_CHANGED = "compile", PLAYER_EQUIPMENT_CHANGED = "compile",
+    PLAYER_ENTERING_WORLD = "compile", ZONE_CHANGED_NEW_AREA = "compile",
+    BAG_UPDATE_DELAYED = "bags", GROUP_ROSTER_UPDATE = "roster",
 }
 -- Subzone steps matter only to the map potion: listened to while it has maps,
 -- and they compile only when the player crossed onto or off such a map.
@@ -50,6 +64,23 @@ local ReadPoisonState, BuildPoisonWarnings = R.ReadPoisonState, R.BuildPoisonWar
 local BuildEntries, SameEntries, StockChanged = R.BuildEntries, R.SameEntries, R.StockChanged
 
 local ReadInstance = R.ReadEnvironment
+
+-- The compile inputs that changed while suspended (OWED), made on first use.
+local function Owed(self)
+    local owed = self.listen.owed
+    if not owed then
+        owed = {}
+        self.listen.owed = owed
+    end
+    return owed
+end
+
+-- Nothing is owed any more: a compile read every input again, or combat end
+-- read what changed.
+local function Settle(self)
+    local owed = self.listen.owed
+    if owed then owed.compile, owed.bags, owed.roster = nil, nil, nil end
+end
 
 local function Allowed(self)
     local dead = UnitIsDeadOrGhost("player")
@@ -273,7 +304,12 @@ local function LayoutButtons(self, entries)
 end
 
 function M:Compile()
-    if NS.IsCombatLocked() then return end
+    -- A compile refused in combat (a settings change) runs at combat end.
+    if NS.IsCombatLocked() then
+        Owed(self).compile = true
+        return
+    end
+    Settle(self)
     local c = self.config
     local entries = BuildEntries(self)
     R.ReadPet(self)
@@ -481,23 +517,26 @@ end
 
 local function RegisterEvents(self)
     -- Suspended (combat): a refresh at the combat start (MSUF Edit Mode
-    -- closes in its PLAYER_REGEN_DISABLED) keeps PLAYER_REGEN_ENABLED only.
-    if self.listen.suspended then
-        R.Listen(self, "PLAYER_REGEN_ENABLED", OnEvent)
-        return
+    -- closes in its PLAYER_REGEN_DISABLED handler) keeps PLAYER_REGEN_ENABLED
+    -- and the compile inputs (OWED) only.
+    local suspended = self.listen.suspended
+    for i = 1, #EVENTS do
+        local event = EVENTS[i]
+        if not suspended or OWED[event] or event == "PLAYER_REGEN_ENABLED" then R.Listen(self, event, OnEvent) end
     end
-    for i = 1, #EVENTS do R.Listen(self, EVENTS[i], OnEvent) end
-    SyncSubzoneEvents(self)
-    R.SyncPreparationEvents(self, OnEvent)
-    R.SyncSpecialEvents(self, OnEvent)
     if R.WantsGroup(self) then
         R.Listen(self, "GROUP_ROSTER_UPDATE", OnEvent)
     else
         self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     end
+    if suspended then return end
+    SyncSubzoneEvents(self)
+    R.SyncPreparationEvents(self, OnEvent)
+    R.SyncSpecialEvents(self, OnEvent)
 end
 
--- Entering combat: every handler would return early, so stop listening.
+-- Entering combat: every handler would return early, so stop listening;
+-- the compile inputs (OWED) only take note.
 local function Suspend(self)
     self.listen.suspended = true
     R.StopCursor(self)
@@ -505,23 +544,47 @@ local function Suspend(self)
     R.StopReminderAlerts(self)
     self.view.mask = nil
     for i = 1, #EVENTS do
-        if EVENTS[i] ~= "PLAYER_REGEN_ENABLED" then self.context:RemoveEvent(EVENTS[i]) end
+        local event = EVENTS[i]
+        if event ~= "PLAYER_REGEN_ENABLED" and not OWED[event] then self.context:RemoveEvent(event) end
     end
     SyncSubzoneEvents(self)
     SyncUnitEvents(self)
     R.SyncPreparationEvents(self, OnEvent)
     R.HideReadyCheck(self)
     R.SyncSpecialEvents(self, OnEvent)
+    -- A roster pass still waiting would have compiled.
+    if self.group.rosterDirty then Owed(self).roster = true end
     R.CancelGroupWork(self)
-    self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
 end
 
--- Leaving combat: bag events were not followed, so the item counts are read
+-- Leaving combat: bag events only took note, so the item counts are read
 -- once more (consumables used in combat).
 local function Resume(self)
     self.listen.suspended = false
     self.list.countsDirty = true
     RegisterEvents(self)
+    SyncUnitEvents(self)
+end
+
+-- Leaving combat compiles only when a compile input changed while suspended:
+-- a compile event or a compile refused in combat, a roster change that
+-- changed the other classes, a bag change that changed a consumable pick, a
+-- step onto or off a potion map (subzone steps are not heard in combat) or
+-- item data the last compile still waited for (stock.pending). The
+-- 2026-10-11 raid trace compiled at all 4 combat ends (M:Compile 3.0 ms,
+-- most of it BuildEntries' bag scans: 608 GetContainerItemID, GetItemCount
+-- 13 us each). Otherwise the pet, Healthstone and member-event state are
+-- read as a compile reads them.
+local function CompileAfterCombat(self)
+    local owed, stock = Owed(self), self.stock
+    if owed.compile or stock.pending or R.OnPotionMap(self) ~= stock.onPotionMap
+        or owed.roster and R.RosterChanged(self) or owed.bags and StockChanged(self) then
+        self:Compile()
+        return
+    end
+    Settle(self)
+    R.ReadPet(self)
+    R.ReadHealthstone(self)
     SyncUnitEvents(self)
 end
 
@@ -544,7 +607,13 @@ OnEvent = function(self, event, unit, updateInfo)
         Suspend(self)
         return
     end
-    if event == "PLAYER_REGEN_ENABLED" and listen.suspended then Resume(self) end
+    local resumed = event == "PLAYER_REGEN_ENABLED" and listen.suspended
+    if resumed then
+        Resume(self)
+    elseif listen.suspended then
+        if OWED[event] then Owed(self)[OWED[event]] = true end
+        return
+    end
     if NS.IsCombatLocked() then return end
     if event == "PET_BAR_UPDATE" or event == "PET_UI_UPDATE" or event == "UNIT_PET" then
         if event ~= "UNIT_PET" or unit == "player" then
@@ -582,7 +651,11 @@ OnEvent = function(self, event, unit, updateInfo)
     end
     local bagUpdate = event == "BAG_UPDATE_DELAYED"
     if bagUpdate then R.ReadHealthstone(self) end
-    if COMPILE_EVENTS[event] or (bagUpdate and StockChanged(self)) then self:Compile() end
+    if resumed then
+        CompileAfterCombat(self)
+    elseif COMPILE_EVENTS[event] or (bagUpdate and StockChanged(self)) then
+        self:Compile()
+    end
     self:Update(EVENT_MODES[event] or "visual", bagUpdate, updateInfo, foodDirty)
 end
 
