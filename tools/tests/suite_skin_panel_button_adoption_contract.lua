@@ -29,6 +29,8 @@ UIPanelCloseButton_SetBorderAtlas = Noop
 EventUtil = { ContinueOnAddOnLoaded = Noop }
 
 local gateFrame
+-- CombatGate times its drain (about 4 ms per frame); these jobs cost nothing.
+debugprofilestop = function() return 0 end
 CreateFrame = function()
     gateFrame = { events = {} }
     function gateFrame:RegisterEvent(event) self.events[event] = true end

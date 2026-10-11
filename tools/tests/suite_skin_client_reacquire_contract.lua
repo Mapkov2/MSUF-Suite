@@ -33,6 +33,8 @@ GetRealmName = function() return "Realm" end
 
 -- The real CombatGate.lua drains its jobs on PLAYER_REGEN_ENABLED.
 local gateFrame
+-- CombatGate times its drain (about 4 ms per frame); these jobs cost nothing.
+debugprofilestop = function() return 0 end
 CreateFrame = function()
     local frame = { RegisterEvent = Noop, UnregisterEvent = Noop }
     function frame:SetScript(_, handler) self.handler = handler end

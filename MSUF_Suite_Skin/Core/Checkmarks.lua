@@ -297,6 +297,32 @@ function Checkmarks.UntrackTexture(texture, owner)
     return RestoreTexture(texture, state)
 end
 
+-- True when UntrackTexture followed by TrackTexture with the same owner and
+-- role would leave the texture exactly as it is: the skin owns it for that
+-- owner and role and is enabled out of combat, the texture still shows the
+-- applied colour (within COLOR_OWN, as RestoreTexture judges it) and the
+-- skin's desaturation, and the applied colour is the theme's current one.
+-- nativeDesaturated, when not nil, is the desaturation the caller rebases
+-- to between the two; the stored original must agree. Anything unreadable
+-- or secret answers false, so the caller takes the round trip.
+function Checkmarks.StillApplied(texture, owner, colorRole, nativeDesaturated)
+    local state = texture and Checkmarks.states[texture]
+    if not state or state.owner ~= owner or state.boundRole ~= colorRole or state.colorRole ~= colorRole
+        or not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() then
+        return false
+    end
+    if state.appliedDesaturated ~= true or ReadDesaturated(texture) ~= true
+        or nativeDesaturated ~= nil and (state.originalDesaturated == true) ~= (nativeDesaturated == true) then
+        return false
+    end
+    local applied = state.applied
+    local r, g, b, a = ReadVertex(texture)
+    if not r or not ColorMatches(applied, r, g, b, a, COLOR_OWN) then return false end
+    local tokenR, tokenG, tokenB, tokenA = NS.Theme.GetColor(colorRole)
+    return applied[1] == tokenR and applied[2] == tokenG and applied[3] == tokenB
+        and applied[4] == tokenA * (state.original[4] or 1)
+end
+
 -- Window actions are deliberately stricter than the color allowlist. A lone
 -- plus/minus texture or a suggestive field name is not enough: Blizzard uses
 -- both for steppers, lists and semantic actions. Only complete known

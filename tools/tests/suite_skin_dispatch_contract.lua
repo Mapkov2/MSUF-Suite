@@ -201,6 +201,8 @@ assert(table.concat(stages, ",") == "look,checkmarks,typography,adapters,api"
     and Reported("gold text failed"), "a failing login stage stopped the stages after it")
 
 -- Deferred combat jobs: each job is its own boundary within one drain.
+-- CombatGate times its drain (about 4 ms per frame); these jobs cost nothing.
+debugprofilestop = function() return 0 end
 local locked = false
 local gate = { Safety = NS.Safety, IsCombatLocked = function() return locked end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", gate)

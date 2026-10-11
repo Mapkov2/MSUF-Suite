@@ -325,6 +325,11 @@ local function TrackTexture(state, texture, role, recapture)
         end
     end
     if recapture then
+        -- Still showing exactly what the round trip below would leave: no
+        -- write (raid trace 2026-10-11: 307 identical round trips per full pass).
+        if NS.Checkmarks.StillApplied(texture, state.owner, role, state.nativeDesaturation[texture]) then
+            return true
+        end
         NS.Checkmarks.UntrackTexture(texture, state.owner)
         -- Blizzard's refresh functions rewrite vertex RGB but do not own the
         -- desaturation flag. Rebase from the latest RGB while retaining the
@@ -421,21 +426,51 @@ local function AnyActive()
     return false
 end
 
--- Native chat hooks can fire in combat; they defer one full recapture instead.
-local function DeferIfCombat()
+-- work(state, object, arg) for each active owner.
+local function ForActive(work, object, arg)
+    for _, state in pairs(ChatFramesSkin.owners) do
+        if state.active then work(state, object, arg) end
+    end
+end
+
+-- Native chat hooks can fire in combat. Each records the object it touched
+-- with the serial of its request (a tab also its latest selected state);
+-- one job after combat replays exactly the hook's out-of-combat work for
+-- those objects, not a full recapture (raid trace 2026-10-11: two tab
+-- updates in combat cost a 23.7 ms combat-end drain). A temporary window
+-- keeps its full pass: objects asked for before it are replayed before that
+-- pass, later ones after it, so each ends as its last request leaves it.
+local function NewDeferred()
+    return { serial = 0, tabs = Kit.WeakSet(), windows = Kit.WeakSet(), editBoxes = Kit.WeakSet(),
+        args = Kit.WeakSet() }
+end
+local deferred, DrainDeferred = NewDeferred()
+
+-- In combat: records object in set with arg (no set: the full pass), queues
+-- the drain and answers true. Out of combat: false, the caller works now.
+local function DeferIfCombat(set, object, arg)
     if not NS.IsCombatLocked() then return false end
-    if AnyActive() then NS.CombatGate.RunOrDefer(REFRESH_KEY, RefreshAll) end
+    if AnyActive() then
+        local serial = deferred.serial + 1
+        deferred.serial = serial
+        if not set then
+            deferred.fullAt = serial
+        elseif type(object) == "table" then
+            set[object], deferred.args[object] = serial, arg
+        end
+        NS.CombatGate.RunOrDefer(REFRESH_KEY, DrainDeferred)
+    end
     return true
 end
+
+local function SkinEditBoxNow(state, editBox) SkinEditBox(state, editBox, true) end
 
 -- ChatFrameEditBoxMixin is copied onto each edit box when it is created, so
 -- a hook on the mixin table never reaches the edit boxes that existed before
 -- this load-on-demand addon. Hook each skinned instance instead.
 local function OnEditBoxHeader(editBox)
-    if DeferIfCombat() then return end
-    for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then SkinEditBox(state, editBox, true) end
-    end
+    if DeferIfCombat(deferred.editBoxes, editBox) then return end
+    ForActive(SkinEditBoxNow, editBox)
 end
 
 -- Every chat hook runs inside Blizzard's own call (FCFTab_UpdateColors runs
@@ -534,27 +569,52 @@ local function ApplyAllNow(state, recapture)
     return true
 end
 
+local function SkinTabNow(state, tab, selected) SkinTab(state, tab, selected, true) end
+
+local function SkinWindowNow(state, frame)
+    SkinFrameChrome(state, frame, true)
+    SkinFrameChrome(state, Field(frame, "buttonFrame") or NamedRegion(frame, "ButtonFrame"), true)
+end
+
 local function OnTabColors(tab, selected)
-    if DeferIfCombat() then return end
-    for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then SkinTab(state, tab, selected == true, true) end
-    end
+    selected = selected == true
+    if DeferIfCombat(deferred.tabs, tab, selected) then return end
+    ForActive(SkinTabNow, tab, selected)
 end
 
 local function OnWindowColor(frame)
-    if DeferIfCombat() then return end
-    local buttonFrame = Field(frame, "buttonFrame") or NamedRegion(frame, "ButtonFrame")
-    for _, state in pairs(ChatFramesSkin.owners) do
-        if state.active then
-            SkinFrameChrome(state, frame, true)
-            SkinFrameChrome(state, buttonFrame, true)
-        end
-    end
+    if DeferIfCombat(deferred.windows, frame) then return end
+    ForActive(SkinWindowNow, frame)
 end
 
 local function OnTemporaryWindow()
-    if DeferIfCombat() then return end
+    if DeferIfCombat(nil) then return end
     RefreshAll()
+end
+
+-- The objects of one kind asked for before (before true) or after the full
+-- pass; all of them when combat asked for none.
+local function Replay(record, set, work, before)
+    local fullAt, args = record.fullAt, record.args
+    for object, serial in pairs(set) do
+        if not fullAt or (serial < fullAt) == before then ForActive(work, object, args[object]) end
+    end
+end
+
+local function ReplayKinds(record, before)
+    Replay(record, record.tabs, SkinTabNow, before)
+    Replay(record, record.windows, SkinWindowNow, before)
+    Replay(record, record.editBoxes, SkinEditBoxNow, before)
+end
+
+DrainDeferred = function()
+    local record = deferred
+    deferred = NewDeferred()
+    if record.fullAt then
+        ReplayKinds(record, true)
+        RefreshAll()
+    end
+    ReplayKinds(record, false)
 end
 
 -- A ChangeChatColor the skin did not make. One that leaves the stored bytes
@@ -689,7 +749,10 @@ function ChatFramesSkin.Disable(_, owner)
     end
     NS.Checkmarks.UntrackOwner(owner)
     ChatFramesSkin.owners[owner] = nil
-    if not AnyActive() then NS.CombatGate.Cancel(REFRESH_KEY) end
+    if not AnyActive() then
+        NS.CombatGate.Cancel(REFRESH_KEY)
+        deferred = NewDeferred()
+    end
     return true
 end
 

@@ -12,6 +12,8 @@ end
 
 local locked = false
 local frames = {}
+-- CombatGate times its drain (about 4 ms per frame); these jobs cost nothing.
+debugprofilestop = function() return 0 end
 CreateFrame = function()
     local frame = { events = {} }
     function frame:RegisterEvent(event) self.events[event] = true end

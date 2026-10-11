@@ -41,15 +41,26 @@ local function Clear()
     eventFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
 end
 
+-- A drain runs jobs for about DRAIN_BUDGET_MS per frame (debugprofilestop,
+-- milliseconds; at least one job) and goes on with the rest on the next
+-- frame, in the same order: a safety net (raid trace 2026-10-11: one
+-- combat-end drain took 23.7 ms in one frame). Combat before then holds the
+-- rest until it ends. A job leaves the queue before it runs: none runs twice.
+local DRAIN_BUDGET_MS = 4
+local draining, resumeQueued = false, false
+local ResumeDrain
+
 -- Each deferred job is its own boundary: a job that raises is reported and
--- the remaining jobs still run in the same drain.
-local function DrainPending()
+-- the remaining jobs still run in the same drain. budget nil: no limit.
+local function Drain(budget)
     if NS.IsCombatLocked() then
         return
     end
     local pending, order, positions = CombatGate.pending, CombatGate.order, CombatGate.positions
     local dispatch = NS.Safety.Dispatch
+    local started = budget and CombatGate.count > 1 and debugprofilestop() or nil
     local index = 1
+    draining = true
     while index <= #order do
         local key = order[index]
         local callback = positions[key] == index and pending[key]
@@ -57,10 +68,28 @@ local function DrainPending()
             pending[key], positions[key] = nil, nil
             CombatGate.count = CombatGate.count - 1
             dispatch(callback)
+            if started and CombatGate.count > 0 and debugprofilestop() - started >= budget then
+                draining = false
+                if not resumeQueued then
+                    resumeQueued = true
+                    C_Timer.After(0, ResumeDrain)
+                end
+                return
+            end
         end
         index = index + 1
     end
+    draining = false
     Clear()
+end
+
+local function DrainPending()
+    Drain(DRAIN_BUDGET_MS)
+end
+
+ResumeDrain = function()
+    resumeQueued = false
+    DrainPending()
 end
 
 eventFrame:SetScript("OnEvent", DrainPending)
@@ -70,6 +99,9 @@ function CombatGate.RunOrDefer(key, callback)
         return false, "invalid callback"
     end
     if not NS.IsCombatLocked() then
+        -- Jobs a budgeted drain left for the next frame were asked for
+        -- before this request: they run first, without the budget.
+        if resumeQueued and not draining and CombatGate.count > 0 then Drain(nil) end
         callback()
         return true
     end
@@ -87,6 +119,10 @@ function CombatGate.RunOrDefer(key, callback)
         if #order > CombatGate.count * 2 + 16 then Compact() end
     end
     return false, "combat"
+end
+
+function CombatGate.IsPending(key)
+    return CombatGate.pending[tostring(key)] ~= nil
 end
 
 function CombatGate.Cancel(key)
