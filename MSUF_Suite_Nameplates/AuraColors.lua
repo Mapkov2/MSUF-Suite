@@ -19,20 +19,21 @@ end
 -- DenyTaintedAccessWhenAurasAreSecret (AuraContainerFrameProviders.lua:78-86,
 -- AuraContainerShared.lua:108; live, ptr2 and forever). While auras are
 -- secret, addon code may then not even name the slot as an anchor target.
--- Each slot's initializeFrame anchors an own marker to the slot's top.
--- Markers stay outside the slot hierarchy, but their layout dependencies
--- still reach it: a mask anchored to a marker can become inaccessible too.
--- Build mask geometry once, before that dependency is established; later
+-- A marker tied to a sealed slot is already a forbidden anchor argument.
+-- Prepare all masks against the chain's head first. Each new slot extends
+-- its still-public tail marker, inside initializeFrame. Earlier sealed
+-- slots depend on that marker; it does not depend on them.
+-- No operation then names an already restricted marker. Later
 -- configuration only updates native filters and ordinary fill textures. The
 -- container calls it makes (AddAuraSlot, SetAuraSlotCandidateFilters,
 -- SetEnabled, SetUnit; Blizzard_CustomAuraContainer.lua,
 -- Blizzard_AuraContainer.lua:28-48) carry no combat or secret restriction:
 -- access restrictions are applied to the slots only.
-local function Marker(state, button)
+local function Marker(state)
     local marker = CreateFrame("Frame", nil, state.wrapper, "DisableUntrustedLayoutScriptsTemplate")
     marker:SetIgnoringChildrenForBounds(true)
     marker:SetSize(1, 1)
-    marker:SetPoint("BOTTOM", button, "TOP", 0, 0)
+    marker:SetPoint("BOTTOM", state.container, "TOP", 0, 0)
     return marker
 end
 
@@ -83,8 +84,41 @@ local function Root(frame)
     return frame
 end
 
+local function Anchor(layer, health, marker, offset)
+    layer.mask:SetPoint("LEFT", health, "LEFT", 0, 0)
+    layer.mask:SetPoint("RIGHT", health, "RIGHT", 0, 0)
+    layer.mask:SetPoint("BOTTOM", marker, "BOTTOM", 0, offset)
+end
+
+-- All dependencies are still public when this callback runs. Binding the
+-- marker is last; Blizzard seals the slot after initializeFrame returns.
+local function Slot(state, key, marker, anchor, relative, offset, filter)
+    state.container:AddAuraSlot(key, "HARMFUL|PLAYER", {
+        candidateFilters = filter,
+        initializeFrame = function(button)
+            button:SetMouseClickEnabled(false)
+            button:SetMouseMotionEnabled(false)
+            button:SetSize(1, SPAN)
+            button:SetCollapsesLayout(true)
+            button:SetPoint("BOTTOM", anchor, relative, 0, offset)
+            marker:SetPoint("BOTTOM", button, "TOP", 0, 0)
+        end,
+    })
+end
+
+local function CountLayers(state, health)
+    -- All count variants follow the same head. Unbound tail markers sit at
+    -- the container's top until a selected DoT needs its native slot.
+    for i = 1, A.LIMIT do state.slots[i] = Marker(state) end
+    for i = 1, A.LIMIT do
+        state.allCounts[i], state.noneCounts[i] = Layer(state, health, A.LIMIT), Layer(state, health, A.LIMIT + 1)
+        Anchor(state.allCounts[i], health, state.slots[1], -SPAN * i - SPAN / 2)
+        Anchor(state.noneCounts[i], health, state.slots[1], -SPAN / 2)
+    end
+end
+
 local function New(health)
-    local state = { slots = {}, singles = {}, layers = {}, allCounts = {}, noneCounts = {} }
+    local state = { slots = {}, countSlots = {}, singles = {}, layers = {}, allCounts = {}, noneCounts = {} }
     -- Keep the large predicate slots out of Blizzard's pooled nameplate
     -- hierarchy, beside the plates. Only the small fill textures belong to
     -- the health bar.
@@ -94,45 +128,25 @@ local function New(health)
     state.container = CreateFrame("AuraContainer", nil, state.wrapper, "CustomAuraContainerTemplate")
     -- No Edit Mode samples in the DoT predicate (12.1.5, Forever; Platform.lua).
     state.realAuras = NS.Client.RealAurasOnly(state.container)
+    state.container:SetEnabled(false)
     state.container:SetSize(1, 1)
     state.container:SetPoint("TOP", health, "BOTTOM", 0, 0)
     -- Priority by draw level (DrawLevel): row 1 above row 2 and so on.
     for i = 1, A.LIMIT do state.layers[i] = Layer(state, health, A.LIMIT - i) end
+    CountLayers(state, health)
     return state
 end
 
--- A slot's marker (its top, see Marker). anchor is the container, the health
--- bar or the previous slot's marker; the slot itself is never kept.
-local function Slot(state, pool, key, index, anchor, relative, offset, filter)
-    local marker = pool[index]
-    if not marker then
-        state.container:AddAuraSlot(key .. index, "HARMFUL|PLAYER", {
-            candidateFilters = filter,
-            initializeFrame = function(button)
-                button:SetMouseClickEnabled(false)
-                button:SetMouseMotionEnabled(false)
-                button:SetSize(1, SPAN)
-                button:SetCollapsesLayout(true)
-                button:SetPoint("BOTTOM", anchor, relative, 0, offset)
-                marker = Marker(state, button)
-            end,
-        })
-        pool[index] = marker
+local function Individual(state, health, index, filter)
+    if not state.singles[index] then
+        local marker = Marker(state)
+        -- Prepare this independent mask before its slot can seal the marker.
+        Anchor(state.layers[index], health, marker, -SPAN / 2)
+        Slot(state, "single" .. index, marker, health, "BOTTOM", -SPAN, filter)
+        state.singles[index] = marker
     else
-        -- SetEnabled queues a native dirty pass; it does not synchronously
-        -- remove frame restrictions. Existing slot layout is never touched.
-        state.container:SetAuraSlotCandidateFilters(key .. index, filter)
+        state.container:SetAuraSlotCandidateFilters("single" .. index, filter)
     end
-    return marker
-end
-
-local function Anchor(layer, health, marker, offset)
-    if layer.anchored then return end
-    layer.mask:SetPoint("LEFT", health, "LEFT", 0, 0)
-    layer.mask:SetPoint("RIGHT", health, "RIGHT", 0, 0)
-    -- Last: this anchor can inherit the slot's access restrictions.
-    layer.mask:SetPoint("BOTTOM", marker, "BOTTOM", 0, offset)
-    layer.anchored = true
 end
 
 local function PaintLayer(layer, fill, color)
@@ -143,28 +157,24 @@ end
 local function ConfigureState(state, health)
     state.active = false
     state.container:SetEnabled(false)
-    local fill, previous, relative = health:GetStatusBarTexture(), state.container, "TOP"
+    local fill = health:GetStatusBarTexture()
     for i, row in ipairs(rows) do
         local ids = {}
         for _, id in ipairs(row.ids) do ids[id] = true end
         local filter = { includeSpellIDs = ids }
-        -- The first slot sits on the container's top, each further one on
-        -- the previous slot's marker (a marker's bottom is its slot's top).
-        previous, relative = Slot(state, state.slots, "all", i, previous, relative, 0, filter), "BOTTOM"
-        -- The count-specific masks keep this prefix's marker forever.
-        -- Only the variants matching the current selected count are shown.
-        if not state.allCounts[i] then
-            state.allCounts[i], state.noneCounts[i] = Layer(state, health, A.LIMIT), Layer(state, health, A.LIMIT + 1)
-            Anchor(state.allCounts[i], health, previous, -SPAN * i - SPAN / 2)
-            Anchor(state.noneCounts[i], health, previous, -SPAN / 2)
+        if not state.countSlots[i] then
+            local anchor = state.slots[i + 1] or state.container
+            Slot(state, "all" .. i, state.slots[i], anchor, i < A.LIMIT and "BOTTOM" or "TOP", 0, filter)
+            state.countSlots[i] = true
+        else
+            state.container:SetAuraSlotCandidateFilters("all" .. i, filter)
         end
         if config.auraColorsIndividual then
-            local marker = Slot(state, state.singles, "single", i, health, "BOTTOM", -SPAN, filter)
-            Anchor(state.layers[i], health, marker, -SPAN / 2)
+            Individual(state, health, i, filter)
             PaintLayer(state.layers[i], fill, row.color)
         end
     end
-    for i = #rows + 1, #state.slots do
+    for i = #rows + 1, #state.countSlots do
         state.container:SetAuraSlotCandidateFilters("all" .. i, EMPTY_FILTER)
     end
     for i = 1, #state.singles do

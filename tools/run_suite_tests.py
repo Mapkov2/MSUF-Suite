@@ -22,6 +22,7 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_nameplates_aura_colors_contract.lua": [[], ["secret"]],
     "suite_forever_character_contract.lua": [[], ["secret"]],
     "suite_hud_contract.lua": [[], ["Forever"]],
     "suite_options_menu_contract.lua": [[], ["Forever"]],

@@ -3,7 +3,7 @@ local combat, spec, creations, writes, markersMade = false, 101, 0, 0, 0
 -- Auras secret (C_Secrets.ShouldAurasBeSecret, SecretPredicateAPIDocumentation
 -- .lua on live, ptr2 and forever): sealed native slots then refuse tainted
 -- access, also as another region's anchor target. The runtime never asks.
-local secretAuras = false
+local secretAuras = arg[2] == "secret"
 C_Secrets = { ShouldAurasBeSecret = function() return secretAuras end }
 local secret = setmetatable({}, { __lt = function() error("secret comparison") end })
 local info = { [11] = { spellID = 589, hasAura = true, selfAura = false, isKnown = true, linkedSpellIDs = {} },
@@ -109,11 +109,11 @@ local function RestrictedLayout(region, seen)
 end
 local function Region(parent)
     local r = { parent = parent, points = {}, shown = true }
-    -- DenyTaintedAccessWhenAurasAreSecret covers a sealed slot passed as an
-    -- argument too (MaskTexture:SetPoint(): forbidden object, 2026-10-09).
+    -- SetPoint checks its anchor argument too, including a marker already
+    -- tied to a sealed slot (669x MaskTexture:SetPoint, 2026-10-11).
     local function Named(target)
-        assert(not (type(target) == "table" and target.sealed and secretAuras),
-            "a sealed native slot was named as an anchor target while auras were secret")
+        assert(not (type(target) == "table" and RestrictedLayout(target)),
+            "a restricted native slot or marker was named as an anchor target while auras were secret")
     end
     function r:SetPoint(point, target, relative, x, y)
         assert(not self.native, "aura colors reanchored a native nameplate frame")
@@ -214,7 +214,7 @@ local fill = Region(health)
 function health:GetStatusBarTexture() return fill end
 local uf = { HealthBarsContainer = { healthBar = health } }
 local private = { NS = NS, Mode = { LOOK_BLIZZARD = 2 } }
-assert(loadfile(root .. "/MSUF_Suite_Nameplates/AuraColors.lua"))("MSUF_Suite_Nameplates", private)
+assert(loadfile(arg[3] or root .. "/MSUF_Suite_Nameplates/AuraColors.lua"))("MSUF_Suite_Nameplates", private)
 local C = private.AuraColors
 local module = {}
 -- The shown plates the module repaints at a safe moment (Skin.lua
@@ -229,9 +229,13 @@ C.Apply(uf, "nameplate1", true)
 assert(creations == 0 and #textures == 0, "disabled feature allocated frames")
 C.Configure(cfg)
 C.Apply(uf, "nameplate1", true)
-assert(creations == 2 and #textures == A.LIMIT + 4 and #containers == 1)
+assert(creations == 2 and #textures == 3 * A.LIMIT and #containers == 1)
 local container = containers[1]
-assert(SlotCount(container) == 2, "two selected DoTs allocated extra native predicates")
+-- Cold trade: prepare all mask variants/public tail markers so growth never
+-- names a sealed marker. Native count and individual predicates remain
+-- demand-built, preserving filtering budgets (maximum16) and warm no-ops.
+assert(SlotCount(container) == 2 and markersMade == A.LIMIT,
+    "the prepared chain exceeded its cold native predicate/marker budget")
 assert(container.editPreview == false, "12.1.5/Forever: the DoT container kept Edit Mode's sample auras")
 -- Explicit priority: individual colors and none have their own level, above
 -- the native fill, absorbs and the role tint (ARTWORK 0-3) and below the
@@ -248,7 +252,7 @@ for _, texture in ipairs(textures) do
         or texture.layer == "OVERLAY" and texture.sublevel < 0 and texture.sublevel >= -8,
         "a DoT colour left the band between the role tint and the native text")
 end
-assert(levels[allKey] == 2 and levels[noneKey] == 2, "mask variants exceeded the two selected DoTs")
+assert(levels[allKey] == A.LIMIT and levels[noneKey] == A.LIMIT, "mask variants exceeded the fixed count chain")
 local wrapper = container.parent
 assert(wrapper.parent == WorldFrame and wrapper.ignoreChildrenForBounds,
     "oversized aura slots entered native nameplate bounds")
@@ -527,9 +531,13 @@ end
 spec = 101
 cfg.auraColorsIndividual, cfg.auraColorsNoneEnabled = true, true
 cfg.auraColorsData = A.Encode({ [101] = many })
+combat, secretAuras = true, true
+local grownTextures, grownMarkers = #textures, markersMade
 C.Configure(cfg)
 C.Apply(uf, "nameplate3", true)
 assert(SlotCount(container) == 2 * A.LIMIT, "the maximal selection exceeded the native predicate bound")
+assert(#textures == grownTextures and markersMade == grownMarkers + A.LIMIT - 2,
+    "growing the selected count rebuilt masks or exceeded the demand-built individual marker budget")
 for subset = 0, 2 ^ A.LIMIT - 1 do
     local present, first, count = {}, nil, 0
     for i, row in ipairs(many) do
@@ -546,6 +554,7 @@ for subset = 0, 2 ^ A.LIMIT - 1 do
     end
 end
 assert(plate.shown and health.shown, "aura colors hid a native plate")
+combat, secretAuras = false, false
 cfg.auraColorsEnabled = false
 C.Configure(cfg)
 C.Apply(uf, "nameplate3", true)
