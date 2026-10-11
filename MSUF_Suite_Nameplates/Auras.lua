@@ -77,10 +77,11 @@ local function SetClickthrough(button)
 end
 
 -- GetNextActive (Blizzard_SharedXMLBase Pools.lua, both clients) visits the
--- active buttons without the iterator closure EnumerateActive allocates.
+-- active buttons without the iterator closure EnumerateActive allocates;
+-- GetNumActive is on the same pool proxy (ObjectPoolProxyMixin, both clients).
 local function ApplyPool(pool)
     if not M.active or not M.config.auraClickthrough or not pool then return end
-    local count = pool.GetNumActive and pool:GetNumActive()
+    local count = pool:GetNumActive()
     if not S.Public(count) or type(count) ~= "number" then count = nil end
     local peak = peaks[pool]
     if count and peak and count <= peak then return end

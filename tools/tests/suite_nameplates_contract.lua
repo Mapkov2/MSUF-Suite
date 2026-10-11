@@ -227,6 +227,7 @@ function auraButton:SetMouseClickEnabled(value)
 end
 aura.auraItemFramePool = {
     GetNextActive = function(_, current) if current == nil then return auraButton end end,
+    GetNumActive = function() return 1 end,
     EnumerateActive = function() error("EnumerateActive allocates an iterator per refresh") end,
 }
 function aura:RefreshAuras() end
