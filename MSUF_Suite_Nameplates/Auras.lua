@@ -7,17 +7,23 @@ local Auras = {}
 private.Auras = Auras
 local M
 -- Click-through is a property of a pooled button frame. Blizzard's pool
--- reset (Blizzard_NamePlateAuras.lua auraItemFrameResetCallback) and
--- RefreshAuras never touch its mouse state (live and forever), and a pool
--- makes a new button only when every button it has is active. Once a walk
--- left every active button click-through, peaks[pool] keeps that active
--- count: a later refresh with no more active buttons can only show buttons
--- that already are, so one GetNumActive replaces the walk. The 2026-10-07
--- raid trace ran 1,716 pool walks in 60 s (ApplyPool 11.5 ms self through
--- the secure pool proxy, SetClickthrough 7.3 ms) for 1,368 buttons.
--- Restore hands clicks back and forgets every peak; a button that could
--- not change (protected in combat) or read as secret leaves its pool
--- without a peak, so the next refresh walks again.
+-- reset (Blizzard_NamePlateAuras.lua auraItemFrameResetCallback),
+-- NamePlateAuraItemMixin and RefreshAuras never touch its mouse state (live,
+-- ptr2 and forever), and a pool makes a new button only when every button it
+-- has is active. Once a walk left every active button click-through,
+-- peaks[pool] keeps that active count: RefreshAuras releases them all onto
+-- the pool's stack (SecureStack, last in first out) before it acquires, so a
+-- later refresh with no more active buttons can only show buttons that
+-- already are, and one GetNumActive replaces the walk. The 2026-10-07 raid
+-- trace ran 1,716 pool walks in 60 s (ApplyPool 11.5 ms self through the
+-- secure pool proxy, SetClickthrough 7.3 ms) for 1,368 buttons; the
+-- 2026-10-11 raid trace (without peaks) 2,754 walks in 88 s, 0.24 ms/s.
+-- A peak is the count of the last complete walk, never a high-water mark
+-- kept across an incomplete one: a button that could not change (protected
+-- in combat) or read as secret leaves its pool without a peak, so the next
+-- refresh walks again until a walk completes. A refresh the module does not
+-- follow (switched off or inactive) can add buttons unseen and drops the
+-- pool's peak; Restore hands clicks back and forgets every peak.
 local peaks = setmetatable({}, { __mode = "k" })
 
 function Auras.Bind(module) M = module end
@@ -60,13 +66,15 @@ function Auras.Restore()
     M.auraRestoreFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 end
 
--- True when the button needs nothing more: click-through now, or forbidden
--- (never touched). A protected button in combat waits for the end of
--- combat, which applies its plate again (Skin.lua OnCombatEnded):
--- M.auraHooks maps the plate's aura frame (auras) to its unit frame, a pair
--- Blizzard keeps for the session.
+-- True when the button needs nothing more: click-through by our own write
+-- (M.auraButtons keeps it until Restore hands the clicks back; no Blizzard
+-- code changes it meanwhile), click-through already, or forbidden (never
+-- touched). A protected button in combat waits for the end of combat, which
+-- applies its plate again (Skin.lua OnCombatEnded): M.auraHooks maps the
+-- plate's aura frame (auras) to its unit frame, a pair Blizzard keeps for
+-- the session.
 local function SetClickthrough(button, auras)
-    if not Safe(button) then return true end
+    if M.auraButtons[button] ~= nil or not Safe(button) then return true end
     local current = button:IsMouseClickEnabled()
     if not S.Public(current) then return false end
     if current ~= true then return true end
@@ -74,7 +82,7 @@ local function SetClickthrough(button, auras)
         M.pendingPlates[M.auraHooks[auras]] = true
         return false
     end
-    if M.auraButtons[button] == nil then M.auraButtons[button] = current end
+    M.auraButtons[button] = current
     button:SetMouseClickEnabled(false)
     return true
 end
@@ -83,7 +91,11 @@ end
 -- active buttons without the iterator closure EnumerateActive allocates;
 -- GetNumActive is on the same pool proxy (ObjectPoolProxyMixin, both clients).
 local function ApplyPool(pool, auras)
-    if not M.active or not M.config.auraClickthrough or not pool then return end
+    if not pool then return end
+    if not M.active or not M.config.auraClickthrough then
+        peaks[pool] = nil
+        return
+    end
     local count = pool:GetNumActive()
     if not S.Public(count) or type(count) ~= "number" then count = nil end
     local peak = peaks[pool]

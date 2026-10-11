@@ -982,6 +982,9 @@ do
     assert(counts == 1 and nexts == 0 and reads == 0, "a smaller pool was walked again")
     Show(3)
     assert(nexts == 4 and created[3].mouseClickEnabled == false, "a new pooled button kept its clicks")
+    -- The buttons this module made click-through (module.auraButtons) are
+    -- not read again: only the new one is.
+    assert(reads == 1, "a grown pool read its click-through buttons again: " .. reads .. " mouse reads")
     Show(3)
     assert(nexts == 0 and reads == 0, "the grown pool was walked again")
     -- A protected button in combat leaves the pool unfinished: the next refresh walks.
@@ -991,7 +994,7 @@ do
     assert(created[4].mouseClickEnabled ~= false, "a protected button changed in combat")
     assert(DeferredPlate(uf), "a protected pooled button held back more than its own plate")
     Show(4)
-    assert(nexts == 5 and reads == 4, "an unfinished pool was not walked again")
+    assert(nexts == 5 and reads == 1, "an unfinished pool was not walked again, or read its done buttons")
     combat = false
     Show(4)
     assert(created[4].mouseClickEnabled == false, "the protected button stayed clickable after combat")
@@ -1008,6 +1011,50 @@ do
     created[4].protected = nil
     module.config.auraClickthrough = false
     events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    -- A refresh while click-through is off is not followed and may grow the
+    -- pool unseen: it drops the pool's peak. Here no button needed a write
+    -- (another addon made them click-through), so switching off had nothing
+    -- to hand back; the button the pool made meanwhile then comes back
+    -- among no more buttons than the old peak (Blizzard's pool stack).
+    assert(next(module.auraButtons) == nil, "restore kept a pooled button")
+    local extra = Button()
+    created[1].mouseClickEnabled, created[2].mouseClickEnabled = false, false
+    module.config.auraClickthrough = true
+    Show(2)
+    assert(next(module.auraButtons) == nil and reads == 2, "click-through buttons of another addon were changed")
+    module.config.auraClickthrough = false
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    created[3] = extra
+    Show(3)
+    assert(nexts == 0 and extra.mouseClickEnabled ~= false, "click-through off walked or changed a pool")
+    created[1], created[2] = extra, created[1]
+    module.config.auraClickthrough = true
+    Show(2)
+    assert(extra.mouseClickEnabled == false, "a button made while click-through was off kept its clicks")
+    module.config.auraClickthrough = false
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(extra.mouseClickEnabled == true, "restore missed the late pooled button")
+    -- A walk a protected button left unfinished keeps no peak, not even the
+    -- one before it: that button can come back among no more buttons than
+    -- that peak, and the end of combat must still reach it.
+    local poolScans, done, held = scans, Button(), Button()
+    held.protected = true
+    created[1], created[2], created[3] = done, extra, held
+    module.config.auraClickthrough = true
+    Show(2)
+    combat = true
+    Show(3)
+    assert(held.mouseClickEnabled ~= false and DeferredPlate(uf), "a protected button changed or held back no plate")
+    created[1], created[2] = held, done
+    Show(2)
+    combat = false
+    events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    assert(held.mouseClickEnabled == false and not Deferred(),
+        "the end of combat missed a protected button that came back below the old peak")
+    module.config.auraClickthrough = false
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(held.mouseClickEnabled == true and done.mouseClickEnabled == true, "restore missed a pooled button")
+    scans = poolScans
     ClearDeferred()
     aura.auraItemFramePool = saved
 end
