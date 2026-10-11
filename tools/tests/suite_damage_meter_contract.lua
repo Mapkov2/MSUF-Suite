@@ -1369,8 +1369,8 @@ do
     -- AbbreviateNumbers calls at both de9835f and since every amount goes
     -- through the native formatter (no Lua secret test before it).
     -- 2026-10-07: 2844 before, 2808 with the direct session event
-    -- and the in-combat target cache skip.
-    assert(instructions<=math.floor(2808*1.02),"a combat second cost "..instructions.." instructions")
+    -- and the in-combat target cache skip (the 2804 + 2 % ceiling stays).
+    assert(instructions<=math.floor(2804*1.02),"a combat second cost "..instructions.." instructions")
     -- Only the meter nobody shows changed: no fetch, no paint.
     fetched=Measure(function() Storm({5});Second() end)
     assert(fetched==0 and not PaintRequest(),"an unshown meter's update fetched "..fetched.." sessions")
