@@ -2319,6 +2319,630 @@
       "evidence": "Owner-approved Glass-inspired Immersive chat addition 2026-10-10. MSUF_Suite/Core/Catalog/Chat.lua appends preset 7 without renumbering; tools/tests/suite_chat_preset_inventory_contract.py verifies all frozen fields and choice indices on Retail and Forever. suite_chat_immersive_contract.lua and suite_chat_immersive_options_contract.lua verify preset exit and native ownership restoration.",
       "reason": "Append Immersive at index 7; retain all six existing choice indices, labels, default and other limits.",
       "date": "2026-10-10"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:nameplates\",\"cvars\",[[\"ShowClassColorInNameplate\",true],[\"SoftTargetIconEnemy\",true],[\"SoftTargetIconFriend\",true],[\"SoftTargetIconInteract\",true],[\"SoftTargetNameplateSize\",true],[\"UnitNamePlayerGuild\",true],[\"UnitNamePlayerPVPTitle\",true],[\"nameplateAuraScale\",true],[\"nameplateCastBarDisplay\",true],[\"nameplateEnemyNpcAuraDisplay\",true],[\"nameplateEnemyPlayerAuraDisplay\",true],[\"nameplateForceShowUnitName\",true],[\"nameplateFriendlyPlayerAuraDisplay\",true],[\"nameplateInfoDisplay\",true],[\"nameplateShowAllPersonalAuras\",true],[\"nameplateShowCastBars\",true],[\"nameplateShowClassColor\",true],[\"nameplateShowDebuffsOnFriendly\",true],[\"nameplateShowFriendlyClassColor\",true],[\"nameplateShowFriendlyNpcs\",true],[\"nameplateShowFriendlyRealmName\",true],[\"nameplateShowOnlyNameForFriendlyPlayerUnits\",true],[\"nameplateSimplifiedTypes\",true],[\"nameplateSize\",true],[\"nameplateStyle\",true],[\"nameplateThreatDisplay\",true],[\"nameplateUseClassColorForFriendlyPlayerUnitNames\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The nameplate module now also declares the visibility CVars it writes (nameplateShowAll, minions, minus, friendly minions, off-screen, stacking); every earlier CVar stays declared.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:nameplates\",\"look.presets.1\",[[\"auraClickthrough\",false],[\"auraScaleMode\",1],[\"auraScalePercent\",100],[\"barGeometry\",1],[\"enemyAurasOffsetX\",0],[\"enemyAurasOffsetY\",0],[\"enemyBackdropAlpha\",50],[\"enemyBackdropColor\",\"000000\"],[\"enemyBackdropEnabled\",true],[\"enemyBorderColor\",\"000000\"],[\"enemyBorderEnabled\",true],[\"enemyBorderSize\",1],[\"enemyBossColor\",\"ff00ff\"],[\"enemyBossEnabled\",true],[\"enemyBuffsOffsetX\",0],[\"enemyBuffsOffsetY\",0],[\"enemyCastCustomFont\",true],[\"enemyCastDisplay\",2],[\"enemyCastEnabled\",2],[\"enemyCastFont\",\"\"],[\"enemyCastIconOffsetX\",0],[\"enemyCastIconOffsetY\",0],[\"enemyCastImportant\",true],[\"enemyCastOffsetX\",0],[\"enemyCastOffsetY\",0],[\"enemyCastOutline\",4],[\"enemyCastShieldOffsetX\",0],[\"enemyCastShieldOffsetY\",0],[\"enemyCastSize\",11],[\"enemyCastSpellIcon\",false],[\"enemyCastSpellName\",true],[\"enemyCastSpellTarget\",false],[\"enemyCastTargetHighlight\",true],[\"enemyCastTargetOffsetX\",0],[\"enemyCastTargetOffsetY\",0],[\"enemyCastTextEnabled\",true],[\"enemyCastTextOffsetX\",0],[\"enemyCastTextOffsetY\",0],[\"enemyCastTextShadow\",false],[\"enemyCastTimeEnabled\",true],[\"enemyCastTimeOffsetX\",0],[\"enemyCastTimeOffsetY\",0],[\"enemyCasterColor\",\"00bfff\"],[\"enemyCasterEnabled\",true],[\"enemyClassificationOffsetX\",0],[\"enemyClassificationOffsetY\",0],[\"enemyColorsInDungeons\",true],[\"enemyColorsOutside\",true],[\"enemyControlAuraOffsetX\",0],[\"enemyControlAuraOffsetY\",0],[\"enemyCustomFont\",true],[\"enemyEliteMarker\",false],[\"enemyEliteMarkerAnchor\",1],[\"enemyEliteMarkerSize\",14],[\"enemyEliteOffsetX\",-13],[\"enemyEliteOffsetY\",0],[\"enemyFocusColor\",\"ff00ff\"],[\"enemyFocusEnabled\",true],[\"enemyHealthHeightDelta\",0],[\"enemyHealthOffsetX\",0],[\"enemyHealthOffsetY\",0],[\"enemyHealthTextOffsetX\",0],[\"enemyHealthTextOffsetY\",0],[\"enemyHealthTextSize\",11],[\"enemyHealthWidthDelta\",0],[\"enemyLevelEnabled\",true],[\"enemyLevelOffsetX\",0],[\"enemyLevelOffsetY\",0],[\"enemyLevelSize\",0],[\"enemyMeleeColor\",\"be301d\"],[\"enemyMeleeEnabled\",true],[\"enemyMinibossColor\",\"9370db\"],[\"enemyMinibossEnabled\",true],[\"enemyNameFont\",\"\"],[\"enemyNameOffsetX\",0],[\"enemyNameOffsetY\",0],[\"enemyNameSize\",12],[\"enemyNeutralColor\",\"e5db00\"],[\"enemyNeutralEnabled\",true],[\"enemyNpcAuraMode\",1],[\"enemyNpcBuffs\",true],[\"enemyNpcControl\",true],[\"enemyNpcDebuffs\",true],[\"enemyPlayerAuraMode\",1],[\"enemyPlayerBuffs\",true],[\"enemyPlayerControl\",true],[\"enemyPlayerDebuffs\",true],[\"enemyQuestColor\",\"ff7e00\"],[\"enemyQuestColors\",true],[\"enemyQuestEnabled\",true],[\"enemyQuestMarker\",true],[\"enemyQuestMarkerAnchor\",5],[\"enemyQuestMarkerSize\",15],[\"enemyQuestOffsetX\",-14],[\"enemyQuestOffsetY\",0],[\"enemyRaidIcon\",true],[\"enemyRaidIconOffsetX\",0],[\"enemyRaidIconOffsetY\",0],[\"enemyRarityIcon\",1],[\"enemyRoleColors\",true],[\"enemySoftTargetOffsetX\",0],[\"enemySoftTargetOffsetY\",0],[\"enemyTankMode\",false],[\"enemyTankModeColor\",\"26d9ff\"],[\"enemyTappedColor\",\"6e6e6e\"],[\"enemyTappedEnabled\",true],[\"enemyTargetAnchor\",4],[\"enemyTargetColor\",\"ffffff\"],[\"enemyTargetDirection\",1],[\"enemyTargetHideFriendly\",true],[\"enemyTargetLayout\",2],[\"enemyTargetMarker\",true],[\"enemyTargetMarkerSize\",16],[\"enemyTargetOffsetX\",0],[\"enemyTargetOffsetY\",0],[\"enemyTargetStyle\",1],[\"enemyTextEnabled\",true],[\"enemyTextMode\",4],[\"enemyTextOutline\",4],[\"enemyTextShadow\",false],[\"enemyThreatLostColor\",\"dd6f00\"],[\"enemyThreatLostEnabled\",true],[\"enemyThreatWarningColor\",\"ffe93a\"],[\"enemyThreatWarningEnabled\",true],[\"enemyTrivialColor\",\"be301d\"],[\"enemyTrivialEnabled\",true],[\"friendlyAurasOffsetX\",0],[\"friendlyAurasOffsetY\",0],[\"friendlyBackdropAlpha\",50],[\"friendlyBackdropColor\",\"000000\"],[\"friendlyBackdropEnabled\",true],[\"friendlyBorderColor\",\"000000\"],[\"friendlyBorderEnabled\",true],[\"friendlyBorderSize\",0],[\"friendlyBuffsOffsetX\",0],[\"friendlyBuffsOffsetY\",0],[\"friendlyCastCustomFont\",true],[\"friendlyCastFont\",\"\"],[\"friendlyCastIconOffsetX\",0],[\"friendlyCastIconOffsetY\",0],[\"friendlyCastOffsetX\",0],[\"friendlyCastOffsetY\",0],[\"friendlyCastOutline\",4],[\"friendlyCastShieldOffsetX\",0],[\"friendlyCastShieldOffsetY\",0],[\"friendlyCastSize\",11],[\"friendlyCastTargetOffsetX\",0],[\"friendlyCastTargetOffsetY\",0],[\"friendlyCastTextEnabled\",false],[\"friendlyCastTextOffsetX\",0],[\"friendlyCastTextOffsetY\",0],[\"friendlyCastTextShadow\",false],[\"friendlyCastTimeEnabled\",true],[\"friendlyCastTimeOffsetX\",0],[\"friendlyCastTimeOffsetY\",0],[\"friendlyClassificationOffsetX\",0],[\"friendlyClassificationOffsetY\",0],[\"friendlyControlAuraOffsetX\",0],[\"friendlyControlAuraOffsetY\",0],[\"friendlyCustomFont\",true],[\"friendlyEliteMarker\",false],[\"friendlyEliteMarkerAnchor\",1],[\"friendlyEliteMarkerSize\",14],[\"friendlyEliteOffsetX\",-14],[\"friendlyEliteOffsetY\",0],[\"friendlyHealthHeightDelta\",0],[\"friendlyHealthOffsetX\",0],[\"friendlyHealthOffsetY\",0],[\"friendlyHealthTextOffsetX\",0],[\"friendlyHealthTextOffsetY\",0],[\"friendlyHealthWidthDelta\",0],[\"friendlyLevelEnabled\",false],[\"friendlyLevelOffsetX\",0],[\"friendlyLevelOffsetY\",0],[\"friendlyLevelSize\",0],[\"friendlyNameClassColor\",2],[\"friendlyNameFont\",\"\"],[\"friendlyNameOffsetX\",0],[\"friendlyNameOffsetY\",0],[\"friendlyNameSize\",12],[\"friendlyNamesOnly\",2],[\"friendlyNpcDebuffs\",1],[\"friendlyPlayerAuraMode\",1],[\"friendlyPlayerBuffs\",true],[\"friendlyPlayerControl\",true],[\"friendlyPlayerDebuffs\",true],[\"friendlyQuestMarker\",false],[\"friendlyQuestMarkerAnchor\",1],[\"friendlyQuestMarkerSize\",14],[\"friendlyQuestOffsetX\",-14],[\"friendlyQuestOffsetY\",0],[\"friendlyRaidIconOffsetX\",0],[\"friendlyRaidIconOffsetY\",0],[\"friendlyRealm\",1],[\"friendlySoftTargetOffsetX\",0],[\"friendlySoftTargetOffsetY\",0],[\"friendlyTextEnabled\",true],[\"friendlyTextOutline\",4],[\"friendlyTextShadow\",true],[\"levelAppearance\",1],[\"nativeSize\",3],[\"nativeStyle\",2],[\"personalPowerBorderColor\",\"000000\"],[\"personalPowerBorderSize\",1],[\"personalPowerOffsetX\",0],[\"personalPowerOffsetY\",0],[\"personalPowerSkin\",false],[\"softTargetEnemy\",1],[\"softTargetFriend\",1],[\"softTargetIconGate\",1],[\"softTargetInteract\",1],[\"threatFlash\",true],[\"threatFlashColor\",\"ffff00\"],[\"threatFlashColorEnabled\",false],[\"threatHighlight\",true],[\"threatHighlightColor\",\"ffe93a\"],[\"threatHighlightColorEnabled\",false],[\"threatSignalMode\",1]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The look presets gained the new visual keys (target/focus border, dimming, other-tank color) with values that keep Blizzard's behaviour; every earlier preset value is unchanged.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:nameplates\",\"look.presets.2\",[[\"auraClickthrough\",false],[\"auraScaleMode\",1],[\"barGeometry\",1],[\"enemyBackdropEnabled\",false],[\"enemyBorderEnabled\",false],[\"enemyBorderSize\",0],[\"enemyBossEnabled\",false],[\"enemyCastDisplay\",1],[\"enemyCastEnabled\",1],[\"enemyCastFont\",\"\"],[\"enemyCastOutline\",1],[\"enemyCastSize\",0],[\"enemyCastTextEnabled\",false],[\"enemyCasterEnabled\",false],[\"enemyColorsInDungeons\",false],[\"enemyColorsOutside\",false],[\"enemyEliteMarker\",false],[\"enemyFocusEnabled\",false],[\"enemyHealthHeightDelta\",0],[\"enemyHealthTextSize\",0],[\"enemyHealthWidthDelta\",0],[\"enemyLevelSize\",0],[\"enemyMeleeEnabled\",false],[\"enemyMinibossEnabled\",false],[\"enemyNameFont\",\"\"],[\"enemyNameSize\",0],[\"enemyNeutralEnabled\",false],[\"enemyNpcAuraMode\",1],[\"enemyPlayerAuraMode\",1],[\"enemyQuestColors\",false],[\"enemyQuestEnabled\",false],[\"enemyQuestMarker\",false],[\"enemyRoleColors\",false],[\"enemyTappedEnabled\",false],[\"enemyTargetMarker\",false],[\"enemyTargetStyle\",1],[\"enemyTextEnabled\",false],[\"enemyTextMode\",1],[\"enemyTextOutline\",1],[\"enemyThreatLostEnabled\",false],[\"enemyThreatWarningEnabled\",false],[\"enemyTrivialEnabled\",false],[\"friendlyBackdropEnabled\",false],[\"friendlyBorderEnabled\",false],[\"friendlyBorderSize\",0],[\"friendlyHealthHeightDelta\",0],[\"friendlyHealthWidthDelta\",0],[\"friendlyLevelSize\",0],[\"friendlyNameFont\",\"\"],[\"friendlyNameSize\",0],[\"friendlyNpcDebuffs\",1],[\"friendlyPlayerAuraMode\",1],[\"friendlyTextEnabled\",false],[\"friendlyTextOutline\",1],[\"levelAppearance\",2],[\"nativeSize\",1],[\"nativeStyle\",1],[\"personalPowerSkin\",false],[\"softTargetEnemy\",1],[\"softTargetFriend\",1],[\"softTargetIconGate\",1],[\"softTargetInteract\",1],[\"threatFlashColorEnabled\",false],[\"threatHighlightColorEnabled\",false],[\"threatSignalMode\",1]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The look presets gained the new visual keys (target/focus border, dimming, other-tank color) with values that keep Blizzard's behaviour; every earlier preset value is unchanged.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:nameplates\",\"look.presets.4\",[[\"auraClickthrough\",true],[\"auraScaleMode\",1],[\"auraScalePercent\",100],[\"barGeometry\",2],[\"enemyAurasOffsetX\",3],[\"enemyAurasOffsetY\",1],[\"enemyBackdropAlpha\",50],[\"enemyBackdropColor\",\"000000\"],[\"enemyBackdropEnabled\",true],[\"enemyBorderColor\",\"000000\"],[\"enemyBorderEnabled\",true],[\"enemyBorderSize\",1],[\"enemyBossColor\",\"ff00ff\"],[\"enemyBossEnabled\",true],[\"enemyBuffsOffsetX\",0],[\"enemyBuffsOffsetY\",0],[\"enemyCastCustomFont\",true],[\"enemyCastDisplay\",2],[\"enemyCastEnabled\",2],[\"enemyCastFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway ExtraBold.ttf\"],[\"enemyCastIconOffsetX\",0],[\"enemyCastIconOffsetY\",0],[\"enemyCastImportant\",true],[\"enemyCastOffsetX\",0],[\"enemyCastOffsetY\",0],[\"enemyCastOutline\",4],[\"enemyCastShieldOffsetX\",0],[\"enemyCastShieldOffsetY\",0],[\"enemyCastSize\",11],[\"enemyCastSpellIcon\",false],[\"enemyCastSpellName\",true],[\"enemyCastSpellTarget\",false],[\"enemyCastTargetHighlight\",true],[\"enemyCastTargetOffsetX\",0],[\"enemyCastTargetOffsetY\",0],[\"enemyCastTextEnabled\",true],[\"enemyCastTextOffsetX\",7],[\"enemyCastTextOffsetY\",13],[\"enemyCastTextShadow\",false],[\"enemyCastTimeEnabled\",true],[\"enemyCastTimeOffsetX\",-33],[\"enemyCastTimeOffsetY\",1],[\"enemyCasterColor\",\"00bfff\"],[\"enemyCasterEnabled\",true],[\"enemyClassificationOffsetX\",0],[\"enemyClassificationOffsetY\",0],[\"enemyColorsInDungeons\",true],[\"enemyColorsOutside\",true],[\"enemyControlAuraOffsetX\",-29],[\"enemyControlAuraOffsetY\",22],[\"enemyCustomFont\",true],[\"enemyEliteMarker\",false],[\"enemyEliteMarkerAnchor\",1],[\"enemyEliteMarkerSize\",14],[\"enemyEliteOffsetX\",-13],[\"enemyEliteOffsetY\",0],[\"enemyFocusColor\",\"ff00ff\"],[\"enemyFocusEnabled\",true],[\"enemyHealthHeightDelta\",0],[\"enemyHealthOffsetX\",0],[\"enemyHealthOffsetY\",0],[\"enemyHealthTextOffsetX\",0],[\"enemyHealthTextOffsetY\",0],[\"enemyHealthTextSize\",11],[\"enemyHealthWidthDelta\",0],[\"enemyLevelEnabled\",false],[\"enemyLevelOffsetX\",0],[\"enemyLevelOffsetY\",0],[\"enemyLevelSize\",0],[\"enemyMeleeColor\",\"be301d\"],[\"enemyMeleeEnabled\",true],[\"enemyMinibossColor\",\"9370db\"],[\"enemyMinibossEnabled\",true],[\"enemyNameFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway ExtraBold.ttf\"],[\"enemyNameOffsetX\",0],[\"enemyNameOffsetY\",0],[\"enemyNameSize\",12],[\"enemyNeutralColor\",\"e5db00\"],[\"enemyNeutralEnabled\",true],[\"enemyNpcAuraMode\",1],[\"enemyNpcBuffs\",true],[\"enemyNpcControl\",true],[\"enemyNpcDebuffs\",true],[\"enemyPlayerAuraMode\",1],[\"enemyPlayerBuffs\",true],[\"enemyPlayerControl\",true],[\"enemyPlayerDebuffs\",true],[\"enemyQuestColor\",\"ff7e00\"],[\"enemyQuestColors\",true],[\"enemyQuestEnabled\",true],[\"enemyQuestMarker\",true],[\"enemyQuestMarkerAnchor\",5],[\"enemyQuestMarkerSize\",15],[\"enemyQuestOffsetX\",-14],[\"enemyQuestOffsetY\",0],[\"enemyRaidIcon\",true],[\"enemyRaidIconOffsetX\",-20],[\"enemyRaidIconOffsetY\",0],[\"enemyRarityIcon\",1],[\"enemyRoleColors\",true],[\"enemySoftTargetOffsetX\",0],[\"enemySoftTargetOffsetY\",0],[\"enemyTankMode\",false],[\"enemyTankModeColor\",\"26d9ff\"],[\"enemyTappedColor\",\"6e6e6e\"],[\"enemyTappedEnabled\",true],[\"enemyTargetAnchor\",4],[\"enemyTargetColor\",\"ffffff\"],[\"enemyTargetDirection\",1],[\"enemyTargetHideFriendly\",true],[\"enemyTargetLayout\",2],[\"enemyTargetMarker\",true],[\"enemyTargetMarkerSize\",16],[\"enemyTargetOffsetX\",1],[\"enemyTargetOffsetY\",1],[\"enemyTargetStyle\",1],[\"enemyTextEnabled\",true],[\"enemyTextMode\",4],[\"enemyTextOutline\",4],[\"enemyTextShadow\",false],[\"enemyThreatLostColor\",\"dd6f00\"],[\"enemyThreatLostEnabled\",true],[\"enemyThreatWarningColor\",\"ffe93a\"],[\"enemyThreatWarningEnabled\",true],[\"enemyTrivialColor\",\"be301d\"],[\"enemyTrivialEnabled\",true],[\"friendlyAurasOffsetX\",0],[\"friendlyAurasOffsetY\",0],[\"friendlyBackdropAlpha\",50],[\"friendlyBackdropColor\",\"000000\"],[\"friendlyBackdropEnabled\",true],[\"friendlyBorderColor\",\"000000\"],[\"friendlyBorderEnabled\",true],[\"friendlyBorderSize\",0],[\"friendlyBuffsOffsetX\",0],[\"friendlyBuffsOffsetY\",0],[\"friendlyCastCustomFont\",true],[\"friendlyCastFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway Regular.ttf\"],[\"friendlyCastIconOffsetX\",0],[\"friendlyCastIconOffsetY\",0],[\"friendlyCastOffsetX\",0],[\"friendlyCastOffsetY\",0],[\"friendlyCastOutline\",4],[\"friendlyCastShieldOffsetX\",0],[\"friendlyCastShieldOffsetY\",0],[\"friendlyCastSize\",11],[\"friendlyCastTargetOffsetX\",0],[\"friendlyCastTargetOffsetY\",0],[\"friendlyCastTextEnabled\",false],[\"friendlyCastTextOffsetX\",0],[\"friendlyCastTextOffsetY\",0],[\"friendlyCastTextShadow\",false],[\"friendlyCastTimeEnabled\",true],[\"friendlyCastTimeOffsetX\",0],[\"friendlyCastTimeOffsetY\",0],[\"friendlyClassificationOffsetX\",0],[\"friendlyClassificationOffsetY\",0],[\"friendlyControlAuraOffsetX\",0],[\"friendlyControlAuraOffsetY\",0],[\"friendlyCustomFont\",true],[\"friendlyEliteMarker\",false],[\"friendlyEliteMarkerAnchor\",1],[\"friendlyEliteMarkerSize\",14],[\"friendlyEliteOffsetX\",-14],[\"friendlyEliteOffsetY\",0],[\"friendlyHealthHeightDelta\",0],[\"friendlyHealthOffsetX\",0],[\"friendlyHealthOffsetY\",0],[\"friendlyHealthTextOffsetX\",0],[\"friendlyHealthTextOffsetY\",0],[\"friendlyHealthWidthDelta\",0],[\"friendlyLevelEnabled\",false],[\"friendlyLevelOffsetX\",0],[\"friendlyLevelOffsetY\",0],[\"friendlyLevelSize\",0],[\"friendlyNameClassColor\",2],[\"friendlyNameFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway Regular.ttf\"],[\"friendlyNameOffsetX\",0],[\"friendlyNameOffsetY\",0],[\"friendlyNameSize\",12],[\"friendlyNamesOnly\",2],[\"friendlyNpcDebuffs\",1],[\"friendlyPlayerAuraMode\",1],[\"friendlyPlayerBuffs\",true],[\"friendlyPlayerControl\",true],[\"friendlyPlayerDebuffs\",true],[\"friendlyQuestMarker\",false],[\"friendlyQuestMarkerAnchor\",1],[\"friendlyQuestMarkerSize\",14],[\"friendlyQuestOffsetX\",-14],[\"friendlyQuestOffsetY\",0],[\"friendlyRaidIconOffsetX\",0],[\"friendlyRaidIconOffsetY\",0],[\"friendlyRealm\",3],[\"friendlySoftTargetOffsetX\",0],[\"friendlySoftTargetOffsetY\",0],[\"friendlyTextEnabled\",true],[\"friendlyTextOutline\",4],[\"friendlyTextShadow\",true],[\"levelAppearance\",1],[\"nativeSize\",3],[\"nativeStyle\",2],[\"personalPowerBorderColor\",\"000000\"],[\"personalPowerBorderSize\",1],[\"personalPowerOffsetX\",0],[\"personalPowerOffsetY\",0],[\"personalPowerSkin\",false],[\"softTargetEnemy\",1],[\"softTargetFriend\",1],[\"softTargetIconGate\",1],[\"softTargetInteract\",1],[\"threatFlash\",true],[\"threatFlashColor\",\"ffff00\"],[\"threatFlashColorEnabled\",false],[\"threatHighlight\",true],[\"threatHighlightColor\",\"ffe93a\"],[\"threatHighlightColorEnabled\",false],[\"threatSignalMode\",1]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The look presets gained the new visual keys (target/focus border, dimming, other-tank color) with values that keep Blizzard's behaviour; every earlier preset value is unchanged.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:nameplates\",\"look.visualKeys\",[[\"auraClickthrough\",true],[\"auraScaleMode\",true],[\"auraScalePercent\",true],[\"barGeometry\",true],[\"enemyAurasOffsetX\",true],[\"enemyAurasOffsetY\",true],[\"enemyBackdropAlpha\",true],[\"enemyBackdropColor\",true],[\"enemyBackdropEnabled\",true],[\"enemyBorderColor\",true],[\"enemyBorderEnabled\",true],[\"enemyBorderSize\",true],[\"enemyBossColor\",true],[\"enemyBossEnabled\",true],[\"enemyBuffsOffsetX\",true],[\"enemyBuffsOffsetY\",true],[\"enemyCastCustomFont\",true],[\"enemyCastDisplay\",true],[\"enemyCastEnabled\",true],[\"enemyCastFont\",true],[\"enemyCastIconOffsetX\",true],[\"enemyCastIconOffsetY\",true],[\"enemyCastImportant\",true],[\"enemyCastOffsetX\",true],[\"enemyCastOffsetY\",true],[\"enemyCastOutline\",true],[\"enemyCastShieldOffsetX\",true],[\"enemyCastShieldOffsetY\",true],[\"enemyCastSize\",true],[\"enemyCastSpellIcon\",true],[\"enemyCastSpellName\",true],[\"enemyCastSpellTarget\",true],[\"enemyCastTargetHighlight\",true],[\"enemyCastTargetOffsetX\",true],[\"enemyCastTargetOffsetY\",true],[\"enemyCastTextEnabled\",true],[\"enemyCastTextOffsetX\",true],[\"enemyCastTextOffsetY\",true],[\"enemyCastTextShadow\",true],[\"enemyCastTimeEnabled\",true],[\"enemyCastTimeOffsetX\",true],[\"enemyCastTimeOffsetY\",true],[\"enemyCasterColor\",true],[\"enemyCasterEnabled\",true],[\"enemyClassificationOffsetX\",true],[\"enemyClassificationOffsetY\",true],[\"enemyColorsInDungeons\",true],[\"enemyColorsOutside\",true],[\"enemyControlAuraOffsetX\",true],[\"enemyControlAuraOffsetY\",true],[\"enemyCustomFont\",true],[\"enemyEliteMarker\",true],[\"enemyEliteMarkerAnchor\",true],[\"enemyEliteMarkerSize\",true],[\"enemyEliteOffsetX\",true],[\"enemyEliteOffsetY\",true],[\"enemyFocusColor\",true],[\"enemyFocusEnabled\",true],[\"enemyHealthHeightDelta\",true],[\"enemyHealthOffsetX\",true],[\"enemyHealthOffsetY\",true],[\"enemyHealthTextOffsetX\",true],[\"enemyHealthTextOffsetY\",true],[\"enemyHealthTextSize\",true],[\"enemyHealthWidthDelta\",true],[\"enemyLevelEnabled\",true],[\"enemyLevelOffsetX\",true],[\"enemyLevelOffsetY\",true],[\"enemyLevelSize\",true],[\"enemyMeleeColor\",true],[\"enemyMeleeEnabled\",true],[\"enemyMinibossColor\",true],[\"enemyMinibossEnabled\",true],[\"enemyNameFont\",true],[\"enemyNameOffsetX\",true],[\"enemyNameOffsetY\",true],[\"enemyNameSize\",true],[\"enemyNeutralColor\",true],[\"enemyNeutralEnabled\",true],[\"enemyNpcAuraMode\",true],[\"enemyNpcBuffs\",true],[\"enemyNpcControl\",true],[\"enemyNpcDebuffs\",true],[\"enemyPlayerAuraMode\",true],[\"enemyPlayerBuffs\",true],[\"enemyPlayerControl\",true],[\"enemyPlayerDebuffs\",true],[\"enemyQuestColor\",true],[\"enemyQuestColors\",true],[\"enemyQuestEnabled\",true],[\"enemyQuestMarker\",true],[\"enemyQuestMarkerAnchor\",true],[\"enemyQuestMarkerSize\",true],[\"enemyQuestOffsetX\",true],[\"enemyQuestOffsetY\",true],[\"enemyRaidIcon\",true],[\"enemyRaidIconOffsetX\",true],[\"enemyRaidIconOffsetY\",true],[\"enemyRarityIcon\",true],[\"enemyRoleColors\",true],[\"enemySoftTargetOffsetX\",true],[\"enemySoftTargetOffsetY\",true],[\"enemyTankMode\",true],[\"enemyTankModeColor\",true],[\"enemyTappedColor\",true],[\"enemyTappedEnabled\",true],[\"enemyTargetAnchor\",true],[\"enemyTargetColor\",true],[\"enemyTargetDirection\",true],[\"enemyTargetHideFriendly\",true],[\"enemyTargetLayout\",true],[\"enemyTargetMarker\",true],[\"enemyTargetMarkerSize\",true],[\"enemyTargetOffsetX\",true],[\"enemyTargetOffsetY\",true],[\"enemyTargetStyle\",true],[\"enemyTextEnabled\",true],[\"enemyTextMode\",true],[\"enemyTextOutline\",true],[\"enemyTextShadow\",true],[\"enemyThreatLostColor\",true],[\"enemyThreatLostEnabled\",true],[\"enemyThreatWarningColor\",true],[\"enemyThreatWarningEnabled\",true],[\"enemyTrivialColor\",true],[\"enemyTrivialEnabled\",true],[\"friendlyAurasOffsetX\",true],[\"friendlyAurasOffsetY\",true],[\"friendlyBackdropAlpha\",true],[\"friendlyBackdropColor\",true],[\"friendlyBackdropEnabled\",true],[\"friendlyBorderColor\",true],[\"friendlyBorderEnabled\",true],[\"friendlyBorderSize\",true],[\"friendlyBuffsOffsetX\",true],[\"friendlyBuffsOffsetY\",true],[\"friendlyCastCustomFont\",true],[\"friendlyCastFont\",true],[\"friendlyCastIconOffsetX\",true],[\"friendlyCastIconOffsetY\",true],[\"friendlyCastOffsetX\",true],[\"friendlyCastOffsetY\",true],[\"friendlyCastOutline\",true],[\"friendlyCastShieldOffsetX\",true],[\"friendlyCastShieldOffsetY\",true],[\"friendlyCastSize\",true],[\"friendlyCastTargetOffsetX\",true],[\"friendlyCastTargetOffsetY\",true],[\"friendlyCastTextEnabled\",true],[\"friendlyCastTextOffsetX\",true],[\"friendlyCastTextOffsetY\",true],[\"friendlyCastTextShadow\",true],[\"friendlyCastTimeEnabled\",true],[\"friendlyCastTimeOffsetX\",true],[\"friendlyCastTimeOffsetY\",true],[\"friendlyClassificationOffsetX\",true],[\"friendlyClassificationOffsetY\",true],[\"friendlyControlAuraOffsetX\",true],[\"friendlyControlAuraOffsetY\",true],[\"friendlyCustomFont\",true],[\"friendlyEliteMarker\",true],[\"friendlyEliteMarkerAnchor\",true],[\"friendlyEliteMarkerSize\",true],[\"friendlyEliteOffsetX\",true],[\"friendlyEliteOffsetY\",true],[\"friendlyHealthHeightDelta\",true],[\"friendlyHealthOffsetX\",true],[\"friendlyHealthOffsetY\",true],[\"friendlyHealthTextOffsetX\",true],[\"friendlyHealthTextOffsetY\",true],[\"friendlyHealthWidthDelta\",true],[\"friendlyLevelEnabled\",true],[\"friendlyLevelOffsetX\",true],[\"friendlyLevelOffsetY\",true],[\"friendlyLevelSize\",true],[\"friendlyNameClassColor\",true],[\"friendlyNameFont\",true],[\"friendlyNameOffsetX\",true],[\"friendlyNameOffsetY\",true],[\"friendlyNameSize\",true],[\"friendlyNamesOnly\",true],[\"friendlyNpcDebuffs\",true],[\"friendlyPlayerAuraMode\",true],[\"friendlyPlayerBuffs\",true],[\"friendlyPlayerControl\",true],[\"friendlyPlayerDebuffs\",true],[\"friendlyQuestMarker\",true],[\"friendlyQuestMarkerAnchor\",true],[\"friendlyQuestMarkerSize\",true],[\"friendlyQuestOffsetX\",true],[\"friendlyQuestOffsetY\",true],[\"friendlyRaidIconOffsetX\",true],[\"friendlyRaidIconOffsetY\",true],[\"friendlyRealm\",true],[\"friendlySoftTargetOffsetX\",true],[\"friendlySoftTargetOffsetY\",true],[\"friendlyTextEnabled\",true],[\"friendlyTextOutline\",true],[\"friendlyTextShadow\",true],[\"levelAppearance\",true],[\"nativeSize\",true],[\"nativeStyle\",true],[\"personalPowerBorderColor\",true],[\"personalPowerBorderSize\",true],[\"personalPowerOffsetX\",true],[\"personalPowerOffsetY\",true],[\"personalPowerSkin\",true],[\"softTargetEnemy\",true],[\"softTargetFriend\",true],[\"softTargetIconGate\",true],[\"softTargetInteract\",true],[\"threatFlash\",true],[\"threatFlashColor\",true],[\"threatFlashColorEnabled\",true],[\"threatHighlight\",true],[\"threatHighlightColor\",true],[\"threatHighlightColorEnabled\",true],[\"threatSignalMode\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The new target/focus border, dimming and other-tank color settings are visual keys of the looks; every earlier visual key stays.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:nameplates\",\"cvars\",[[\"ShowClassColorInNameplate\",true],[\"SoftTargetIconEnemy\",true],[\"SoftTargetIconFriend\",true],[\"SoftTargetIconInteract\",true],[\"SoftTargetNameplateSize\",true],[\"UnitNamePlayerGuild\",true],[\"UnitNamePlayerPVPTitle\",true],[\"nameplateAuraScale\",true],[\"nameplateCastBarDisplay\",true],[\"nameplateEnemyNpcAuraDisplay\",true],[\"nameplateEnemyPlayerAuraDisplay\",true],[\"nameplateForceShowUnitName\",true],[\"nameplateFriendlyPlayerAuraDisplay\",true],[\"nameplateInfoDisplay\",true],[\"nameplateShowAllPersonalAuras\",true],[\"nameplateShowCastBars\",true],[\"nameplateShowClassColor\",true],[\"nameplateShowDebuffsOnFriendly\",true],[\"nameplateShowFriendlyClassColor\",true],[\"nameplateShowFriendlyNpcs\",true],[\"nameplateShowFriendlyRealmName\",true],[\"nameplateShowOnlyNameForFriendlyPlayerUnits\",true],[\"nameplateSimplifiedTypes\",true],[\"nameplateSize\",true],[\"nameplateStyle\",true],[\"nameplateThreatDisplay\",true],[\"nameplateUseClassColorForFriendlyPlayerUnitNames\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The nameplate module now also declares the visibility CVars it writes (nameplateShowAll, minions, minus, friendly minions, off-screen, stacking); every earlier CVar stays declared.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:nameplates\",\"look.presets.1\",[[\"auraClickthrough\",false],[\"auraScaleMode\",1],[\"auraScalePercent\",100],[\"barGeometry\",1],[\"enemyAurasOffsetX\",0],[\"enemyAurasOffsetY\",0],[\"enemyBackdropAlpha\",50],[\"enemyBackdropColor\",\"000000\"],[\"enemyBackdropEnabled\",true],[\"enemyBorderColor\",\"000000\"],[\"enemyBorderEnabled\",true],[\"enemyBorderSize\",1],[\"enemyBossColor\",\"ff00ff\"],[\"enemyBossEnabled\",true],[\"enemyBuffsOffsetX\",0],[\"enemyBuffsOffsetY\",0],[\"enemyCastCustomFont\",true],[\"enemyCastDisplay\",2],[\"enemyCastEnabled\",2],[\"enemyCastFont\",\"\"],[\"enemyCastIconOffsetX\",0],[\"enemyCastIconOffsetY\",0],[\"enemyCastImportant\",true],[\"enemyCastOffsetX\",0],[\"enemyCastOffsetY\",0],[\"enemyCastOutline\",4],[\"enemyCastShieldOffsetX\",0],[\"enemyCastShieldOffsetY\",0],[\"enemyCastSize\",11],[\"enemyCastSpellIcon\",false],[\"enemyCastSpellName\",true],[\"enemyCastSpellTarget\",false],[\"enemyCastTargetHighlight\",true],[\"enemyCastTargetOffsetX\",0],[\"enemyCastTargetOffsetY\",0],[\"enemyCastTextEnabled\",true],[\"enemyCastTextOffsetX\",0],[\"enemyCastTextOffsetY\",0],[\"enemyCastTextShadow\",false],[\"enemyCastTimeEnabled\",true],[\"enemyCastTimeOffsetX\",0],[\"enemyCastTimeOffsetY\",0],[\"enemyCasterColor\",\"00bfff\"],[\"enemyCasterEnabled\",true],[\"enemyClassificationOffsetX\",0],[\"enemyClassificationOffsetY\",0],[\"enemyColorsInDungeons\",true],[\"enemyColorsOutside\",true],[\"enemyControlAuraOffsetX\",0],[\"enemyControlAuraOffsetY\",0],[\"enemyCustomFont\",true],[\"enemyEliteMarker\",false],[\"enemyEliteMarkerAnchor\",1],[\"enemyEliteMarkerSize\",14],[\"enemyEliteOffsetX\",-13],[\"enemyEliteOffsetY\",0],[\"enemyFocusColor\",\"ff00ff\"],[\"enemyFocusEnabled\",true],[\"enemyHealthHeightDelta\",0],[\"enemyHealthOffsetX\",0],[\"enemyHealthOffsetY\",0],[\"enemyHealthTextOffsetX\",0],[\"enemyHealthTextOffsetY\",0],[\"enemyHealthTextSize\",11],[\"enemyHealthWidthDelta\",0],[\"enemyLevelEnabled\",false],[\"enemyLevelOffsetX\",0],[\"enemyLevelOffsetY\",0],[\"enemyLevelSize\",0],[\"enemyMeleeColor\",\"be301d\"],[\"enemyMeleeEnabled\",true],[\"enemyMinibossColor\",\"9370db\"],[\"enemyMinibossEnabled\",true],[\"enemyNameFont\",\"\"],[\"enemyNameOffsetX\",0],[\"enemyNameOffsetY\",0],[\"enemyNameSize\",12],[\"enemyNeutralColor\",\"e5db00\"],[\"enemyNeutralEnabled\",true],[\"enemyNpcAuraMode\",1],[\"enemyNpcBuffs\",true],[\"enemyNpcControl\",true],[\"enemyNpcDebuffs\",true],[\"enemyPlayerAuraMode\",1],[\"enemyPlayerBuffs\",true],[\"enemyPlayerControl\",true],[\"enemyPlayerDebuffs\",true],[\"enemyQuestColor\",\"ff7e00\"],[\"enemyQuestColors\",true],[\"enemyQuestEnabled\",true],[\"enemyQuestMarker\",true],[\"enemyQuestMarkerAnchor\",5],[\"enemyQuestMarkerSize\",15],[\"enemyQuestOffsetX\",-14],[\"enemyQuestOffsetY\",0],[\"enemyRaidIcon\",true],[\"enemyRaidIconOffsetX\",0],[\"enemyRaidIconOffsetY\",0],[\"enemyRarityIcon\",1],[\"enemyRoleColors\",true],[\"enemySoftTargetOffsetX\",0],[\"enemySoftTargetOffsetY\",0],[\"enemyTankMode\",false],[\"enemyTankModeColor\",\"26d9ff\"],[\"enemyTappedColor\",\"6e6e6e\"],[\"enemyTappedEnabled\",true],[\"enemyTargetAnchor\",4],[\"enemyTargetColor\",\"ffffff\"],[\"enemyTargetDirection\",1],[\"enemyTargetHideFriendly\",true],[\"enemyTargetLayout\",2],[\"enemyTargetMarker\",true],[\"enemyTargetMarkerSize\",16],[\"enemyTargetOffsetX\",0],[\"enemyTargetOffsetY\",0],[\"enemyTargetStyle\",1],[\"enemyTextEnabled\",true],[\"enemyTextMode\",4],[\"enemyTextOutline\",4],[\"enemyTextShadow\",false],[\"enemyThreatLostColor\",\"dd6f00\"],[\"enemyThreatLostEnabled\",true],[\"enemyThreatWarningColor\",\"ffe93a\"],[\"enemyThreatWarningEnabled\",true],[\"enemyTrivialColor\",\"be301d\"],[\"enemyTrivialEnabled\",true],[\"friendlyAurasOffsetX\",0],[\"friendlyAurasOffsetY\",0],[\"friendlyBackdropAlpha\",50],[\"friendlyBackdropColor\",\"000000\"],[\"friendlyBackdropEnabled\",true],[\"friendlyBorderColor\",\"000000\"],[\"friendlyBorderEnabled\",true],[\"friendlyBorderSize\",0],[\"friendlyBuffsOffsetX\",0],[\"friendlyBuffsOffsetY\",0],[\"friendlyCastCustomFont\",true],[\"friendlyCastFont\",\"\"],[\"friendlyCastIconOffsetX\",0],[\"friendlyCastIconOffsetY\",0],[\"friendlyCastOffsetX\",0],[\"friendlyCastOffsetY\",0],[\"friendlyCastOutline\",4],[\"friendlyCastShieldOffsetX\",0],[\"friendlyCastShieldOffsetY\",0],[\"friendlyCastSize\",11],[\"friendlyCastTargetOffsetX\",0],[\"friendlyCastTargetOffsetY\",0],[\"friendlyCastTextEnabled\",false],[\"friendlyCastTextOffsetX\",0],[\"friendlyCastTextOffsetY\",0],[\"friendlyCastTextShadow\",false],[\"friendlyCastTimeEnabled\",true],[\"friendlyCastTimeOffsetX\",0],[\"friendlyCastTimeOffsetY\",0],[\"friendlyClassificationOffsetX\",0],[\"friendlyClassificationOffsetY\",0],[\"friendlyControlAuraOffsetX\",0],[\"friendlyControlAuraOffsetY\",0],[\"friendlyCustomFont\",true],[\"friendlyEliteMarker\",false],[\"friendlyEliteMarkerAnchor\",1],[\"friendlyEliteMarkerSize\",14],[\"friendlyEliteOffsetX\",-14],[\"friendlyEliteOffsetY\",0],[\"friendlyHealthHeightDelta\",0],[\"friendlyHealthOffsetX\",0],[\"friendlyHealthOffsetY\",0],[\"friendlyHealthTextOffsetX\",0],[\"friendlyHealthTextOffsetY\",0],[\"friendlyHealthWidthDelta\",0],[\"friendlyLevelEnabled\",false],[\"friendlyLevelOffsetX\",0],[\"friendlyLevelOffsetY\",0],[\"friendlyLevelSize\",0],[\"friendlyNameClassColor\",2],[\"friendlyNameFont\",\"\"],[\"friendlyNameOffsetX\",0],[\"friendlyNameOffsetY\",0],[\"friendlyNameSize\",12],[\"friendlyNamesOnly\",2],[\"friendlyNpcDebuffs\",1],[\"friendlyPlayerAuraMode\",1],[\"friendlyPlayerBuffs\",true],[\"friendlyPlayerControl\",true],[\"friendlyPlayerDebuffs\",true],[\"friendlyQuestMarker\",false],[\"friendlyQuestMarkerAnchor\",1],[\"friendlyQuestMarkerSize\",14],[\"friendlyQuestOffsetX\",-14],[\"friendlyQuestOffsetY\",0],[\"friendlyRaidIconOffsetX\",0],[\"friendlyRaidIconOffsetY\",0],[\"friendlyRealm\",1],[\"friendlySoftTargetOffsetX\",0],[\"friendlySoftTargetOffsetY\",0],[\"friendlyTextEnabled\",true],[\"friendlyTextOutline\",4],[\"friendlyTextShadow\",true],[\"nativeSize\",3],[\"nativeStyle\",2],[\"personalPowerBorderColor\",\"000000\"],[\"personalPowerBorderSize\",1],[\"personalPowerOffsetX\",0],[\"personalPowerOffsetY\",0],[\"personalPowerSkin\",false],[\"softTargetEnemy\",1],[\"softTargetFriend\",1],[\"softTargetIconGate\",1],[\"softTargetInteract\",1],[\"threatFlash\",true],[\"threatFlashColor\",\"ffff00\"],[\"threatFlashColorEnabled\",false],[\"threatHighlight\",true],[\"threatHighlightColor\",\"ffe93a\"],[\"threatHighlightColorEnabled\",false],[\"threatSignalMode\",1]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The look presets gained the new visual keys (target/focus border, dimming, other-tank color) with values that keep Blizzard's behaviour; every earlier preset value is unchanged.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:nameplates\",\"look.presets.2\",[[\"auraClickthrough\",false],[\"auraScaleMode\",1],[\"barGeometry\",1],[\"enemyBackdropEnabled\",false],[\"enemyBorderEnabled\",false],[\"enemyBorderSize\",0],[\"enemyBossEnabled\",false],[\"enemyCastDisplay\",1],[\"enemyCastEnabled\",1],[\"enemyCastFont\",\"\"],[\"enemyCastOutline\",1],[\"enemyCastSize\",0],[\"enemyCastTextEnabled\",false],[\"enemyCasterEnabled\",false],[\"enemyColorsInDungeons\",false],[\"enemyColorsOutside\",false],[\"enemyEliteMarker\",false],[\"enemyFocusEnabled\",false],[\"enemyHealthHeightDelta\",0],[\"enemyHealthTextSize\",0],[\"enemyHealthWidthDelta\",0],[\"enemyLevelSize\",0],[\"enemyMeleeEnabled\",false],[\"enemyMinibossEnabled\",false],[\"enemyNameFont\",\"\"],[\"enemyNameSize\",0],[\"enemyNeutralEnabled\",false],[\"enemyNpcAuraMode\",1],[\"enemyPlayerAuraMode\",1],[\"enemyQuestColors\",false],[\"enemyQuestEnabled\",false],[\"enemyQuestMarker\",false],[\"enemyRoleColors\",false],[\"enemyTappedEnabled\",false],[\"enemyTargetMarker\",false],[\"enemyTargetStyle\",1],[\"enemyTextEnabled\",false],[\"enemyTextMode\",1],[\"enemyTextOutline\",1],[\"enemyThreatLostEnabled\",false],[\"enemyThreatWarningEnabled\",false],[\"enemyTrivialEnabled\",false],[\"friendlyBackdropEnabled\",false],[\"friendlyBorderEnabled\",false],[\"friendlyBorderSize\",0],[\"friendlyHealthHeightDelta\",0],[\"friendlyHealthWidthDelta\",0],[\"friendlyLevelSize\",0],[\"friendlyNameFont\",\"\"],[\"friendlyNameSize\",0],[\"friendlyNpcDebuffs\",1],[\"friendlyPlayerAuraMode\",1],[\"friendlyTextEnabled\",false],[\"friendlyTextOutline\",1],[\"nativeSize\",1],[\"nativeStyle\",1],[\"personalPowerSkin\",false],[\"softTargetEnemy\",1],[\"softTargetFriend\",1],[\"softTargetIconGate\",1],[\"softTargetInteract\",1],[\"threatFlashColorEnabled\",false],[\"threatHighlightColorEnabled\",false],[\"threatSignalMode\",1]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The look presets gained the new visual keys (target/focus border, dimming, other-tank color) with values that keep Blizzard's behaviour; every earlier preset value is unchanged.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:nameplates\",\"look.presets.4\",[[\"auraClickthrough\",true],[\"auraScaleMode\",1],[\"auraScalePercent\",100],[\"barGeometry\",2],[\"enemyAurasOffsetX\",3],[\"enemyAurasOffsetY\",1],[\"enemyBackdropAlpha\",50],[\"enemyBackdropColor\",\"000000\"],[\"enemyBackdropEnabled\",true],[\"enemyBorderColor\",\"000000\"],[\"enemyBorderEnabled\",true],[\"enemyBorderSize\",1],[\"enemyBossColor\",\"ff00ff\"],[\"enemyBossEnabled\",true],[\"enemyBuffsOffsetX\",0],[\"enemyBuffsOffsetY\",0],[\"enemyCastCustomFont\",true],[\"enemyCastDisplay\",2],[\"enemyCastEnabled\",2],[\"enemyCastFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway ExtraBold.ttf\"],[\"enemyCastIconOffsetX\",0],[\"enemyCastIconOffsetY\",0],[\"enemyCastImportant\",true],[\"enemyCastOffsetX\",0],[\"enemyCastOffsetY\",0],[\"enemyCastOutline\",4],[\"enemyCastShieldOffsetX\",0],[\"enemyCastShieldOffsetY\",0],[\"enemyCastSize\",11],[\"enemyCastSpellIcon\",false],[\"enemyCastSpellName\",true],[\"enemyCastSpellTarget\",false],[\"enemyCastTargetHighlight\",true],[\"enemyCastTargetOffsetX\",0],[\"enemyCastTargetOffsetY\",0],[\"enemyCastTextEnabled\",true],[\"enemyCastTextOffsetX\",7],[\"enemyCastTextOffsetY\",13],[\"enemyCastTextShadow\",false],[\"enemyCastTimeEnabled\",true],[\"enemyCastTimeOffsetX\",-33],[\"enemyCastTimeOffsetY\",1],[\"enemyCasterColor\",\"00bfff\"],[\"enemyCasterEnabled\",true],[\"enemyClassificationOffsetX\",0],[\"enemyClassificationOffsetY\",0],[\"enemyColorsInDungeons\",true],[\"enemyColorsOutside\",true],[\"enemyControlAuraOffsetX\",-29],[\"enemyControlAuraOffsetY\",22],[\"enemyCustomFont\",true],[\"enemyEliteMarker\",false],[\"enemyEliteMarkerAnchor\",1],[\"enemyEliteMarkerSize\",14],[\"enemyEliteOffsetX\",-13],[\"enemyEliteOffsetY\",0],[\"enemyFocusColor\",\"ff00ff\"],[\"enemyFocusEnabled\",true],[\"enemyHealthHeightDelta\",0],[\"enemyHealthOffsetX\",0],[\"enemyHealthOffsetY\",0],[\"enemyHealthTextOffsetX\",0],[\"enemyHealthTextOffsetY\",0],[\"enemyHealthTextSize\",11],[\"enemyHealthWidthDelta\",0],[\"enemyLevelEnabled\",false],[\"enemyLevelOffsetX\",0],[\"enemyLevelOffsetY\",0],[\"enemyLevelSize\",0],[\"enemyMeleeColor\",\"be301d\"],[\"enemyMeleeEnabled\",true],[\"enemyMinibossColor\",\"9370db\"],[\"enemyMinibossEnabled\",true],[\"enemyNameFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway ExtraBold.ttf\"],[\"enemyNameOffsetX\",0],[\"enemyNameOffsetY\",0],[\"enemyNameSize\",12],[\"enemyNeutralColor\",\"e5db00\"],[\"enemyNeutralEnabled\",true],[\"enemyNpcAuraMode\",1],[\"enemyNpcBuffs\",true],[\"enemyNpcControl\",true],[\"enemyNpcDebuffs\",true],[\"enemyPlayerAuraMode\",1],[\"enemyPlayerBuffs\",true],[\"enemyPlayerControl\",true],[\"enemyPlayerDebuffs\",true],[\"enemyQuestColor\",\"ff7e00\"],[\"enemyQuestColors\",true],[\"enemyQuestEnabled\",true],[\"enemyQuestMarker\",true],[\"enemyQuestMarkerAnchor\",5],[\"enemyQuestMarkerSize\",15],[\"enemyQuestOffsetX\",-14],[\"enemyQuestOffsetY\",0],[\"enemyRaidIcon\",true],[\"enemyRaidIconOffsetX\",-20],[\"enemyRaidIconOffsetY\",0],[\"enemyRarityIcon\",1],[\"enemyRoleColors\",true],[\"enemySoftTargetOffsetX\",0],[\"enemySoftTargetOffsetY\",0],[\"enemyTankMode\",false],[\"enemyTankModeColor\",\"26d9ff\"],[\"enemyTappedColor\",\"6e6e6e\"],[\"enemyTappedEnabled\",true],[\"enemyTargetAnchor\",4],[\"enemyTargetColor\",\"ffffff\"],[\"enemyTargetDirection\",1],[\"enemyTargetHideFriendly\",true],[\"enemyTargetLayout\",2],[\"enemyTargetMarker\",true],[\"enemyTargetMarkerSize\",16],[\"enemyTargetOffsetX\",1],[\"enemyTargetOffsetY\",1],[\"enemyTargetStyle\",1],[\"enemyTextEnabled\",true],[\"enemyTextMode\",4],[\"enemyTextOutline\",4],[\"enemyTextShadow\",false],[\"enemyThreatLostColor\",\"dd6f00\"],[\"enemyThreatLostEnabled\",true],[\"enemyThreatWarningColor\",\"ffe93a\"],[\"enemyThreatWarningEnabled\",true],[\"enemyTrivialColor\",\"be301d\"],[\"enemyTrivialEnabled\",true],[\"friendlyAurasOffsetX\",0],[\"friendlyAurasOffsetY\",0],[\"friendlyBackdropAlpha\",50],[\"friendlyBackdropColor\",\"000000\"],[\"friendlyBackdropEnabled\",true],[\"friendlyBorderColor\",\"000000\"],[\"friendlyBorderEnabled\",true],[\"friendlyBorderSize\",0],[\"friendlyBuffsOffsetX\",0],[\"friendlyBuffsOffsetY\",0],[\"friendlyCastCustomFont\",true],[\"friendlyCastFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway Regular.ttf\"],[\"friendlyCastIconOffsetX\",0],[\"friendlyCastIconOffsetY\",0],[\"friendlyCastOffsetX\",0],[\"friendlyCastOffsetY\",0],[\"friendlyCastOutline\",4],[\"friendlyCastShieldOffsetX\",0],[\"friendlyCastShieldOffsetY\",0],[\"friendlyCastSize\",11],[\"friendlyCastTargetOffsetX\",0],[\"friendlyCastTargetOffsetY\",0],[\"friendlyCastTextEnabled\",false],[\"friendlyCastTextOffsetX\",0],[\"friendlyCastTextOffsetY\",0],[\"friendlyCastTextShadow\",false],[\"friendlyCastTimeEnabled\",true],[\"friendlyCastTimeOffsetX\",0],[\"friendlyCastTimeOffsetY\",0],[\"friendlyClassificationOffsetX\",0],[\"friendlyClassificationOffsetY\",0],[\"friendlyControlAuraOffsetX\",0],[\"friendlyControlAuraOffsetY\",0],[\"friendlyCustomFont\",true],[\"friendlyEliteMarker\",false],[\"friendlyEliteMarkerAnchor\",1],[\"friendlyEliteMarkerSize\",14],[\"friendlyEliteOffsetX\",-14],[\"friendlyEliteOffsetY\",0],[\"friendlyHealthHeightDelta\",0],[\"friendlyHealthOffsetX\",0],[\"friendlyHealthOffsetY\",0],[\"friendlyHealthTextOffsetX\",0],[\"friendlyHealthTextOffsetY\",0],[\"friendlyHealthWidthDelta\",0],[\"friendlyLevelEnabled\",false],[\"friendlyLevelOffsetX\",0],[\"friendlyLevelOffsetY\",0],[\"friendlyLevelSize\",0],[\"friendlyNameClassColor\",2],[\"friendlyNameFont\",\"Interface\\\\AddOns\\\\MSUF_Suite_Skin\\\\Media\\\\Fonts\\\\Expressway Regular.ttf\"],[\"friendlyNameOffsetX\",0],[\"friendlyNameOffsetY\",0],[\"friendlyNameSize\",12],[\"friendlyNamesOnly\",2],[\"friendlyNpcDebuffs\",1],[\"friendlyPlayerAuraMode\",1],[\"friendlyPlayerBuffs\",true],[\"friendlyPlayerControl\",true],[\"friendlyPlayerDebuffs\",true],[\"friendlyQuestMarker\",false],[\"friendlyQuestMarkerAnchor\",1],[\"friendlyQuestMarkerSize\",14],[\"friendlyQuestOffsetX\",-14],[\"friendlyQuestOffsetY\",0],[\"friendlyRaidIconOffsetX\",0],[\"friendlyRaidIconOffsetY\",0],[\"friendlyRealm\",3],[\"friendlySoftTargetOffsetX\",0],[\"friendlySoftTargetOffsetY\",0],[\"friendlyTextEnabled\",true],[\"friendlyTextOutline\",4],[\"friendlyTextShadow\",true],[\"nativeSize\",3],[\"nativeStyle\",2],[\"personalPowerBorderColor\",\"000000\"],[\"personalPowerBorderSize\",1],[\"personalPowerOffsetX\",0],[\"personalPowerOffsetY\",0],[\"personalPowerSkin\",false],[\"softTargetEnemy\",1],[\"softTargetFriend\",1],[\"softTargetIconGate\",1],[\"softTargetInteract\",1],[\"threatFlash\",true],[\"threatFlashColor\",\"ffff00\"],[\"threatFlashColorEnabled\",false],[\"threatHighlight\",true],[\"threatHighlightColor\",\"ffe93a\"],[\"threatHighlightColorEnabled\",false],[\"threatSignalMode\",1]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The look presets gained the new visual keys (target/focus border, dimming, other-tank color) with values that keep Blizzard's behaviour; every earlier preset value is unchanged.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:nameplates\",\"look.visualKeys\",[[\"auraClickthrough\",true],[\"auraScaleMode\",true],[\"auraScalePercent\",true],[\"barGeometry\",true],[\"enemyAurasOffsetX\",true],[\"enemyAurasOffsetY\",true],[\"enemyBackdropAlpha\",true],[\"enemyBackdropColor\",true],[\"enemyBackdropEnabled\",true],[\"enemyBorderColor\",true],[\"enemyBorderEnabled\",true],[\"enemyBorderSize\",true],[\"enemyBossColor\",true],[\"enemyBossEnabled\",true],[\"enemyBuffsOffsetX\",true],[\"enemyBuffsOffsetY\",true],[\"enemyCastCustomFont\",true],[\"enemyCastDisplay\",true],[\"enemyCastEnabled\",true],[\"enemyCastFont\",true],[\"enemyCastIconOffsetX\",true],[\"enemyCastIconOffsetY\",true],[\"enemyCastImportant\",true],[\"enemyCastOffsetX\",true],[\"enemyCastOffsetY\",true],[\"enemyCastOutline\",true],[\"enemyCastShieldOffsetX\",true],[\"enemyCastShieldOffsetY\",true],[\"enemyCastSize\",true],[\"enemyCastSpellIcon\",true],[\"enemyCastSpellName\",true],[\"enemyCastSpellTarget\",true],[\"enemyCastTargetHighlight\",true],[\"enemyCastTargetOffsetX\",true],[\"enemyCastTargetOffsetY\",true],[\"enemyCastTextEnabled\",true],[\"enemyCastTextOffsetX\",true],[\"enemyCastTextOffsetY\",true],[\"enemyCastTextShadow\",true],[\"enemyCastTimeEnabled\",true],[\"enemyCastTimeOffsetX\",true],[\"enemyCastTimeOffsetY\",true],[\"enemyCasterColor\",true],[\"enemyCasterEnabled\",true],[\"enemyClassificationOffsetX\",true],[\"enemyClassificationOffsetY\",true],[\"enemyColorsInDungeons\",true],[\"enemyColorsOutside\",true],[\"enemyControlAuraOffsetX\",true],[\"enemyControlAuraOffsetY\",true],[\"enemyCustomFont\",true],[\"enemyEliteMarker\",true],[\"enemyEliteMarkerAnchor\",true],[\"enemyEliteMarkerSize\",true],[\"enemyEliteOffsetX\",true],[\"enemyEliteOffsetY\",true],[\"enemyFocusColor\",true],[\"enemyFocusEnabled\",true],[\"enemyHealthHeightDelta\",true],[\"enemyHealthOffsetX\",true],[\"enemyHealthOffsetY\",true],[\"enemyHealthTextOffsetX\",true],[\"enemyHealthTextOffsetY\",true],[\"enemyHealthTextSize\",true],[\"enemyHealthWidthDelta\",true],[\"enemyLevelEnabled\",true],[\"enemyLevelOffsetX\",true],[\"enemyLevelOffsetY\",true],[\"enemyLevelSize\",true],[\"enemyMeleeColor\",true],[\"enemyMeleeEnabled\",true],[\"enemyMinibossColor\",true],[\"enemyMinibossEnabled\",true],[\"enemyNameFont\",true],[\"enemyNameOffsetX\",true],[\"enemyNameOffsetY\",true],[\"enemyNameSize\",true],[\"enemyNeutralColor\",true],[\"enemyNeutralEnabled\",true],[\"enemyNpcAuraMode\",true],[\"enemyNpcBuffs\",true],[\"enemyNpcControl\",true],[\"enemyNpcDebuffs\",true],[\"enemyPlayerAuraMode\",true],[\"enemyPlayerBuffs\",true],[\"enemyPlayerControl\",true],[\"enemyPlayerDebuffs\",true],[\"enemyQuestColor\",true],[\"enemyQuestColors\",true],[\"enemyQuestEnabled\",true],[\"enemyQuestMarker\",true],[\"enemyQuestMarkerAnchor\",true],[\"enemyQuestMarkerSize\",true],[\"enemyQuestOffsetX\",true],[\"enemyQuestOffsetY\",true],[\"enemyRaidIcon\",true],[\"enemyRaidIconOffsetX\",true],[\"enemyRaidIconOffsetY\",true],[\"enemyRarityIcon\",true],[\"enemyRoleColors\",true],[\"enemySoftTargetOffsetX\",true],[\"enemySoftTargetOffsetY\",true],[\"enemyTankMode\",true],[\"enemyTankModeColor\",true],[\"enemyTappedColor\",true],[\"enemyTappedEnabled\",true],[\"enemyTargetAnchor\",true],[\"enemyTargetColor\",true],[\"enemyTargetDirection\",true],[\"enemyTargetHideFriendly\",true],[\"enemyTargetLayout\",true],[\"enemyTargetMarker\",true],[\"enemyTargetMarkerSize\",true],[\"enemyTargetOffsetX\",true],[\"enemyTargetOffsetY\",true],[\"enemyTargetStyle\",true],[\"enemyTextEnabled\",true],[\"enemyTextMode\",true],[\"enemyTextOutline\",true],[\"enemyTextShadow\",true],[\"enemyThreatLostColor\",true],[\"enemyThreatLostEnabled\",true],[\"enemyThreatWarningColor\",true],[\"enemyThreatWarningEnabled\",true],[\"enemyTrivialColor\",true],[\"enemyTrivialEnabled\",true],[\"friendlyAurasOffsetX\",true],[\"friendlyAurasOffsetY\",true],[\"friendlyBackdropAlpha\",true],[\"friendlyBackdropColor\",true],[\"friendlyBackdropEnabled\",true],[\"friendlyBorderColor\",true],[\"friendlyBorderEnabled\",true],[\"friendlyBorderSize\",true],[\"friendlyBuffsOffsetX\",true],[\"friendlyBuffsOffsetY\",true],[\"friendlyCastCustomFont\",true],[\"friendlyCastFont\",true],[\"friendlyCastIconOffsetX\",true],[\"friendlyCastIconOffsetY\",true],[\"friendlyCastOffsetX\",true],[\"friendlyCastOffsetY\",true],[\"friendlyCastOutline\",true],[\"friendlyCastShieldOffsetX\",true],[\"friendlyCastShieldOffsetY\",true],[\"friendlyCastSize\",true],[\"friendlyCastTargetOffsetX\",true],[\"friendlyCastTargetOffsetY\",true],[\"friendlyCastTextEnabled\",true],[\"friendlyCastTextOffsetX\",true],[\"friendlyCastTextOffsetY\",true],[\"friendlyCastTextShadow\",true],[\"friendlyCastTimeEnabled\",true],[\"friendlyCastTimeOffsetX\",true],[\"friendlyCastTimeOffsetY\",true],[\"friendlyClassificationOffsetX\",true],[\"friendlyClassificationOffsetY\",true],[\"friendlyControlAuraOffsetX\",true],[\"friendlyControlAuraOffsetY\",true],[\"friendlyCustomFont\",true],[\"friendlyEliteMarker\",true],[\"friendlyEliteMarkerAnchor\",true],[\"friendlyEliteMarkerSize\",true],[\"friendlyEliteOffsetX\",true],[\"friendlyEliteOffsetY\",true],[\"friendlyHealthHeightDelta\",true],[\"friendlyHealthOffsetX\",true],[\"friendlyHealthOffsetY\",true],[\"friendlyHealthTextOffsetX\",true],[\"friendlyHealthTextOffsetY\",true],[\"friendlyHealthWidthDelta\",true],[\"friendlyLevelEnabled\",true],[\"friendlyLevelOffsetX\",true],[\"friendlyLevelOffsetY\",true],[\"friendlyLevelSize\",true],[\"friendlyNameClassColor\",true],[\"friendlyNameFont\",true],[\"friendlyNameOffsetX\",true],[\"friendlyNameOffsetY\",true],[\"friendlyNameSize\",true],[\"friendlyNamesOnly\",true],[\"friendlyNpcDebuffs\",true],[\"friendlyPlayerAuraMode\",true],[\"friendlyPlayerBuffs\",true],[\"friendlyPlayerControl\",true],[\"friendlyPlayerDebuffs\",true],[\"friendlyQuestMarker\",true],[\"friendlyQuestMarkerAnchor\",true],[\"friendlyQuestMarkerSize\",true],[\"friendlyQuestOffsetX\",true],[\"friendlyQuestOffsetY\",true],[\"friendlyRaidIconOffsetX\",true],[\"friendlyRaidIconOffsetY\",true],[\"friendlyRealm\",true],[\"friendlySoftTargetOffsetX\",true],[\"friendlySoftTargetOffsetY\",true],[\"friendlyTextEnabled\",true],[\"friendlyTextOutline\",true],[\"friendlyTextShadow\",true],[\"nativeSize\",true],[\"nativeStyle\",true],[\"personalPowerBorderColor\",true],[\"personalPowerBorderSize\",true],[\"personalPowerOffsetX\",true],[\"personalPowerOffsetY\",true],[\"personalPowerSkin\",true],[\"softTargetEnemy\",true],[\"softTargetFriend\",true],[\"softTargetIconGate\",true],[\"softTargetInteract\",true],[\"threatFlash\",true],[\"threatFlashColor\",true],[\"threatFlashColorEnabled\",true],[\"threatHighlight\",true],[\"threatHighlightColor\",true],[\"threatHighlightColorEnabled\",true],[\"threatSignalMode\",true]]]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The new target/focus border, dimming and other-tank color settings are visual keys of the looks; every earlier visual key stays.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.enemyPreviewRole\",\"choice\",false,1,12,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The enemy preview type gained the other-tank role as a thirteenth choice; the twelve earlier choices keep their indexes.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.enemyPreviewRole\",\"choice\",false,1,12,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 (nameplate visibility package, target/focus border, other-tank color). Catalog/Nameplates.lua adds the visibility section, the selection rules and the OtherTank role; suite_nameplates_visibility_contract and suite_nameplates_contract pin the new values.",
+      "reason": "The enemy preview type gained the other-tank role as a thirteenth choice; the twelve earlier choices keep their indexes.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyBackdropAlpha\",\"Health backdrop opacity (%)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyBackdropColor\",\"Health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyBackdropEnabled\",\"Skin health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyBorderColor\",\"Health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyBorderEnabled\",\"Skin health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyBorderSize\",\"Health border (px)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetAnchor\",\"Target marker anchor (single)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetDirection\",\"Target marker direction (single)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetLayout\",\"Target marker layout\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetMarker\",\"Target arrows\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetMarkerSize\",\"Target marker size\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetOffsetX\",\"Target marker X (0 = outside left edge)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetOffsetY\",\"Target marker Y\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.enemyTargetStyle\",\"Target marker\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.friendlyBackdropAlpha\",\"Health backdrop opacity (%)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.friendlyBackdropColor\",\"Health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.friendlyBackdropEnabled\",\"Skin health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.friendlyBorderColor\",\"Health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.friendlyBorderEnabled\",\"Skin health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.friendlyBorderSize\",\"Health border (px)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.threatHighlight\",\"Progressive aggro highlight\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.threatHighlightColor\",\"Progressive highlight color\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:nameplates.threatHighlightColorEnabled\",\"Custom progressive highlight color\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyBackdropAlpha\",\"Health backdrop opacity (%)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyBackdropColor\",\"Health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyBackdropEnabled\",\"Skin health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyBorderColor\",\"Health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyBorderEnabled\",\"Skin health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyBorderSize\",\"Health border (px)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetAnchor\",\"Target marker anchor (single)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetDirection\",\"Target marker direction (single)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetLayout\",\"Target marker layout\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetMarker\",\"Target arrows\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetMarkerSize\",\"Target marker size\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetOffsetX\",\"Target marker X (0 = outside left edge)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetOffsetY\",\"Target marker Y\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.enemyTargetStyle\",\"Target marker\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.friendlyBackdropAlpha\",\"Health backdrop opacity (%)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.friendlyBackdropColor\",\"Health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.friendlyBackdropEnabled\",\"Skin health backdrop\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.friendlyBorderColor\",\"Health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.friendlyBorderEnabled\",\"Skin health border\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.friendlyBorderSize\",\"Health border (px)\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.threatHighlight\",\"Progressive aggro highlight\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.threatHighlightColor\",\"Progressive highlight color\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:nameplates.threatHighlightColorEnabled\",\"Custom progressive highlight color\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Reworded label of an unchanged nameplate setting (clearer wording; same key, default and choices).",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Blizzard elements",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Custom progressive highlight color",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Design",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Enemy nameplate tabs",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Health backdrop",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Health backdrop opacity (%)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Health border",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Health border (px)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Progressive aggro highlight",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Progressive highlight color",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Skin health backdrop",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Skin health border",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Target marker",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Target marker X (0 = outside left edge)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Target marker Y",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Target marker anchor (single)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Target marker direction (single)",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Target marker layout",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "Target marker size",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
+      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
+      "date": "2026-10-11"
+    },
+    {
+      "category": "locale",
+      "item": "The settings you change most. Attach the bar to another bar or to your player frame to keep them together; the gap is the space between them. Center keeps the first cooldown icon in the middle and adds the next icons right, left, right, left. Visible buffs stay compact; on a horizontal mixed bar, player and target buffs grow outward from the center on one row.",
+      "basis": "moved",
+      "evidence": "Owner clarification 2026-10-11: center the whole visible row like CDMC. MSUF_Suite_Options/Pages/CooldownManager.lua HELP.basics now starts with Center keeps the whole visible cooldown row centered. Catalog centerFirst retains the former first-icon mode; attachment settings and native compact buffs remain. suite_cooldown_manager_layout_contract and suite_cooldown_manager_options_contract cover both layouts and drag order; all ten locale packs verify.",
+      "reason": "Replacement of the outdated alignment help key after the requested Center semantics change; existing layout choices and settings remain available.",
+      "date": "2026-10-11"
     }
   ]
 }

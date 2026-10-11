@@ -88,7 +88,8 @@ end
 
 ------------------------------------------------------------------ namespace
 -- Suite.HostBridge: an MSUF host without the interrupt-ready engine.
-local P = { S = {}, Suite = { RGB = function() return 1, 1, 1 end, HostBridge = { KickReady = function() return nil end } },
+local P = { S = {}, Suite = { RGB = function() return 1, 1, 1 end, HostBridge = { KickReady = function() return nil end },
+    NameplateStyle = { Roles = {} } },
     SearchPreparers = {}, ChoiceGates = {} }
 P.Tr = function(text) return text end
 P.M = {
@@ -440,9 +441,17 @@ P.SectionRules = function(_, section)
 end
 P.ModuleCard, P.BuildNameplatesPreview, P.BuildNameplatesAuraColors = Noop, Noop, Noop
 P.catalog.nameplates = { rules = {} }
+P.Gates = P.Gates or {}
+-- The area header (NameplatesWorkspace.lua) needs host widgets these stubs
+-- lack: the page then shows every section, as on an older host.
+Load("Pages/NameplatesWorkspace.lua")
 Load("Pages/Nameplates.lua")
+-- Every tabbed nameplate accordion (Pages/Nameplates.lua SECTIONS) saved closed.
+local TABBED = { "enemy", "roleColors", "signals", "friendly", "auras" }
 do
-    local ctx = Ctx({ suite_nameplates_enemy = false })
+    local saved = {}
+    for _, key in ipairs(TABBED) do saved["suite_nameplates_" .. key] = false end
+    local ctx = Ctx(saved)
     Clear()
     page.build(ctx)
     Check(Count("tabs") == 0 and Count("lazy suite_nameplates_enemy") == 1, "a closed enemy section built its tabs")
@@ -451,13 +460,14 @@ do
     Check(body and body.sectionId == "suite_nameplates_enemy" and Count("tabs") == 0,
         "the enemy tab selector must return the section and build nothing in combat")
     combat = false
-    Check(P.SelectNameplatesEnemyTab("elements") == body and Count("tabs") == 1 and Count("select elements") == 1,
+    -- The old Blizzard elements tab id opens the markers tab.
+    Check(P.SelectNameplatesEnemyTab("elements") == body and Count("tabs") == 1 and Count("select markers") == 1,
         "the enemy tab selector must build the section, then select the tab")
     lazyHost = false
     Clear()
     page.build(Ctx())
-    Check(Count("tabs") == 1 and P.SelectNameplatesEnemyTab("appearance") and Count("select appearance") == 1,
-        "an old host builds the enemy tabs at once")
+    Check(Count("tabs") == #TABBED and P.SelectNameplatesEnemyTab("appearance") and Count("select bar") == 1,
+        "an old host builds the tabbed sections at once")
 end
 
 print("Suite lazy sections: shell/content split, summary before \"...\", onBuilt, lazy Colors budgets, combat refusal, module cards, skin tabs, facades and page selectors passed")

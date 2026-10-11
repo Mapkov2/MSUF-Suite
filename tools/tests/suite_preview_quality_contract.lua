@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local originalLoad, P = loadfile
 local mutations = {
-    meterText = { "Pages/DamageMeterPreview.lua", 'row.valueText, row, "suite_damageMeter_text"', 'row.valueText, row, "suite_damageMeter_bars"' },
+    meterText = { "Pages/DamageMeterPreview.lua", '"suite_damageMeter_text", "rightSize"', '"suite_damageMeter_bars", "rightSize"' },
     bank = { "Pages/BagsPreview.lua", 'ui.selected == "bank" and "suite_bags_bank" or "suite_bags_organisation"', '"suite_bags_organisation"' },
     icons = { "Pages/BagsPreview.lua", 'slot.icon:SetTexture(item[1])', 'slot.icon:SetTexture(134400)' },
     warm = { "Pages/BagsPreview.lua", 'if not changed and preview.tab == ui.selected then return end', 'if false then return end' },
@@ -49,6 +49,12 @@ P.S.DamageMeterDrawMenuPreview = function(parent)
     for i = 1, 3 do
         local row = CreateFrame("Button", nil, win.body)
         row.icon, row.nameText, row.valueText = row:CreateTexture(), row:CreateFontString(), row:CreateFontString()
+        row.rankText = row:CreateFontString()
+        row.bar, row.track = CreateFrame("StatusBar", nil, row), row:CreateTexture()
+        local fill = row.bar:CreateTexture()
+        row.bar.GetStatusBarTexture = function() return fill end
+        row.bar.gradientOverlays = false
+        row.fillBorder, row.iconBorder = false, false
         win.rows[i] = row
     end
     parent.provider = win

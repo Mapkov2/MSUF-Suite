@@ -254,9 +254,15 @@ M.PreviewSelectionBar = {
         box.selectionDeps = deps
         local bar = Widget("SelectionBar")
         bar:SetSize(785, 24)
-        bar.axisY, bar.label = Widget("AxisY"), Widget("SelectionLabel")
+        bar.axisX, bar.axisY = Widget("AxisX"), Widget("AxisY")
+        bar.label, bar.swatch = Widget("SelectionLabel"), Widget("Texture")
+        bar.axisX:SetSize(110, 22)
+        bar.axisY:SetSize(110, 22)
         bar.axisY.plusButton = Widget("YPlus")
         bar.openButton, bar.resetButton = Widget("OpenSettings"), Widget("Reset")
+        bar.openButton:SetSize(110, 18)
+        bar.resetButton:SetSize(60, 18)
+        for _, part in ipairs({ bar.axisX, bar.axisY, bar.label, bar.swatch, bar.openButton, bar.resetButton }) do part.parent = bar end
         bar.resetButton.SetPoint = function(self, ...) self.lastPoint = { ... } end
         box.selectionBar = bar
         return bar
@@ -473,7 +479,11 @@ W.SettingsRows = function(ctx, parent, spec)
     for _, row in ipairs(spec.rows) do
         local widget = Bind(ctx, Widget(row.kind), row.get, row.set, row, row.label)
         widget.rowKind, widget.row = row.kind, row
-        if ctx.key == "suite_dataTexts" then widget.parent = parent end
+        widget.parent = parent
+        if row.kind == "slider" then
+            widget._msuf2Title = Widget("FontString")
+            widget._msuf2Title.parent, widget._msuf2Title.text = parent, row.label
+        end
         controls[row.id] = widget
         y = y - 40
     end
@@ -485,6 +495,7 @@ W.RoleButton = function(parent, text, role)
     return button
 end
 W.PageBuilder = function(ctx)
+    ctx.wrapper = ctx.wrapper or Widget("Frame")
     local b = { width = ctx.width, y = -12, collapsibles = {}, layoutEntries = {} }
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
     if ctx.key == "suite_dataTexts" then
@@ -2003,9 +2014,10 @@ end
         "background pan must move only the viewport")
     Control("context").scripts.OnClick()
     assert(ui.inDungeon, "outdoor/dungeon sample control failed")
-    for role = 2, 12 do
+    -- Every color role, the twelve EQoL ones and the other tank, then back to the first.
+    for role = 2, #Suite.NameplateStyle.Roles do
         Control("role").scripts.OnClick()
-        assert(S.Config("nameplates").enemyPreviewRole == role, "preview did not reach every EQoL role")
+        assert(S.Config("nameplates").enemyPreviewRole == role, "preview did not reach every color role")
     end
     Control("role").scripts.OnClick()
     assert(S.Config("nameplates").enemyPreviewRole == 1)
@@ -2320,10 +2332,10 @@ assert(plateSections.suite_nameplates_enemy and plateSections.suite_nameplates_e
     "nameplate section lost its three-dot color shortcut")
 do
     local tabs = assert(contexts.suite_nameplates.tabControls[1], "enemy tabs missing")
-    assert(tabs.segment.value == "appearance" and tabs.frames.appearance.shown
-        and not tabs.frames.elements.shown, "enemy appearance tab did not open")
-    tabs.segment:Choose("elements")
-    assert(tabs.frames.elements.shown and not tabs.frames.appearance.shown,
+    assert(tabs.segment.value == "bar" and tabs.frames.bar.shown
+        and not tabs.frames.markers.shown, "enemy appearance tab did not open")
+    tabs.segment:Choose("markers")
+    assert(tabs.frames.markers.shown and not tabs.frames.bar.shown,
         "Blizzard elements tab did not switch")
     local elite = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Classification"])
     local raid = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.RaidIcon"])
@@ -2332,14 +2344,14 @@ do
     elite.previewUI:Paint()
     assert(not elite:IsShown() and elite.previewUI.previewRole == nil,
         "the inactive friendly renderer changed the normal enemy sample")
-    tabs.segment:Choose("appearance")
+    tabs.segment:Choose("bar")
     local eliteLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.classification"])
     local raidLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.raidIcon"])
     assert(elite.previewUI.layerRail:IsShown() and elite.previewUI.layerRail.parent == elite.previewUI.body,
         "UF/GF layer rail must stay visible below the nameplate canvas")
     eliteLayer.scripts.OnClick(eliteLayer, "RightButton")
-    assert(tabs.segment.value == "elements", "elite layer did not open Blizzard elements")
-    tabs.segment:Choose("appearance")
+    assert(tabs.segment.value == "markers", "elite layer did not open Blizzard elements")
+    tabs.segment:Choose("bar")
     local function Setting(key)
         for _, widget in ipairs(contexts.suite_nameplates.widgets) do
             if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then return widget end
@@ -2376,12 +2388,12 @@ do
     elite.scripts.OnMouseDown(elite, "LeftButton")
     elite.scripts.OnMouseUp(elite, "LeftButton")
     elite.scripts.OnClick(elite, "LeftButton")
-    assert(tabs.segment.value == "elements" and tabs.frames.elements.shown,
+    assert(tabs.segment.value == "markers" and tabs.frames.markers.shown,
         "clicking the native elite icon did not open its Blizzard settings tab")
     assert(exactSetting == "msufsuite.nameplates.enemyRarityIcon",
         "clicking the elite icon did not link its exact setting")
     M.OpenExactSettingControl = nil
-    tabs.segment:Choose("appearance")
+    tabs.segment:Choose("bar")
     current = contexts.suite_nameplates
     raritySetting.set(3)
     assert(not elite:IsShown(), "preview elite icon did not follow its Blizzard visibility setting")
@@ -2391,9 +2403,9 @@ do
     raidLayer.scripts.OnClick(raidLayer)
     assert(raid:IsShown() and not elite:IsShown(),
         "Blizzard hides the classification icon on raid-marked nameplates")
-    tabs.segment:Choose("appearance")
+    tabs.segment:Choose("bar")
     raid.previewUI.body.selectionDeps.OpenSettings(raid.previewUI.body, raid)
-    assert(tabs.segment.value == "elements", "Open settings did not route the raid icon to its switch")
+    assert(tabs.segment.value == "markers", "Open settings did not route the raid icon to its switch")
     raidSetting.set(false)
     assert(not raid:IsShown(), "preview raid icon did not follow its runtime switch")
     raidSetting.set(true)
@@ -2432,10 +2444,13 @@ do
     local spellIcon = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastIcon"])
     local spellLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.castIcon"])
     assert(not spellIcon:IsShown() and S.Config("nameplates").enemyCastSpellIcon == false)
-    tabs.segment:Choose("appearance")
+    tabs.segment:Choose("bar")
+    local focusedPlate, focus = nil, W.FocusCollapsibleSection
+    W.FocusCollapsibleSection = function(section, opts) focusedPlate = section; return focus(section, opts) end
     spellLayer.scripts.OnClick(spellLayer)
-    assert(tabs.segment.value == "elements" and S.Config("nameplates").enemyCastSpellIcon == false,
-        "a disabled Blizzard layer should open its switch without altering runtime settings")
+    W.FocusCollapsibleSection = focus
+    assert(focusedPlate == plateSections.suite_nameplates_castbar and S.Config("nameplates").enemyCastSpellIcon == false,
+        "a disabled Blizzard cast layer should open the castbar switches without altering runtime settings")
     S.Set("nameplates", "enemyCastSpellIcon", true)
     elite.previewUI:Paint()
     assert(spellIcon:IsShown(), "enabling Blizzard's spell icon did not update the preview")
@@ -2473,27 +2488,32 @@ do
     S.Set("nameplates", "enemyCastEnabled", 2)
     S.Set("nameplates", "enemyCastDisplay", 2)
     elite.previewUI:Paint()
-    for _, key in ipairs({ "enemyTextMode", "enemyRarityIcon", "enemyRaidIcon",
-        "enemyCastEnabled", "enemyCastDisplay", "enemyCastSpellName", "enemyCastSpellIcon",
-        "enemyCastSpellTarget" }) do
+    -- Blizzard's own enemy elements sit in the enemy tabs; every castbar
+    -- switch sits in the castbar accordion with its text.
+    for key, section in pairs({ enemyTextMode = "enemy", enemyRarityIcon = "enemy", enemyRaidIcon = "enemy",
+        enemyCastEnabled = "castbar", enemyCastDisplay = "castbar", enemyCastSpellName = "castbar",
+        enemyCastSpellIcon = "castbar", enemyCastSpellTarget = "castbar" }) do
         local control
         for _, widget in ipairs(contexts.suite_nameplates.widgets) do
             if widget.meta and widget.meta.settingKey == "msufsuite.nameplates." .. key then
                 control = widget; break
             end
         end
-        assert(control and control.meta.sectionId == "suite_nameplates_enemy", key .. " is absent from enemy tabs")
+        assert(control and control.meta.sectionId == "suite_nameplates_" .. section, key .. " is not in its " .. section .. " section")
     end
 end
 assert(not plateSections.suite_nameplates_general and plateSections.suite_nameplates_nameplates_module,
     "Start here must be merged into the existing Basics card")
-for _, key in ipairs({ "look", "nativeSize", "friendlyNPCs", "playerGuildNames", "playerTitles", "protectImport" }) do
+-- Basics holds the look and the skin switches; Blizzard's plate options and
+-- player names have their own accordion, friendly NPC plates the friendly one.
+for key, section in pairs({ look = "nameplates_module", protectImport = "nameplates_module", nativeSize = "native",
+    playerGuildNames = "native", playerTitles = "native", friendlyNPCs = "friendly" }) do
     local control
     for _, widget in ipairs(contexts.suite_nameplates.widgets) do
         if widget.meta and widget.meta.controlId == "menu2.suite_nameplates.nameplates." .. key then control = widget; break end
     end
     assert(control, key)
-    assert(control.meta.sectionId == "suite_nameplates_nameplates_module", key .. " escaped Basics")
+    assert(control.meta.sectionId == "suite_nameplates_" .. section, key .. " is not in its " .. section .. " section")
 end
 assert(not registeredControls["menu2.suite_nameplates.nameplates.action.colors"], "standalone color button survived")
 for section, key in pairs({ enemy = "enemyTargetColor", roleColors = "enemyCasterColor", friendly = "friendlyBorderColor" }) do
@@ -3671,7 +3691,8 @@ local dmConfig = S.Config("damageMeter")
     assert(windowPicker.get() == 3, "window search changed an active selection")
     dmConfig.windowCount = 1
     Prepare(windowType, dmConfig)
-    assert(windowPicker.get() == 1, "window search stayed on a disabled extra window")
+    assert(windowPicker.get() == 3, "exact navigation discarded an explicitly selected retained window")
+    windowPicker.set(1)
     dmConfig.windowCount = countBefore
 
     current = contexts.suite_cooldownManager

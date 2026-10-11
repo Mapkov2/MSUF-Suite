@@ -2595,6 +2595,36 @@
    "symbol": "T.SkinEditBox"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "P.M is MSUF2 (Menu/Bridge.lua). BindSegment (Shell/Menu2/MSUF_Menu2_Bindings.lua on the Classic host) registers the area selector for search and keyboard; without it the selector works unregistered.",
+   "symbol": "P.M.BindSegment"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "P.M is MSUF2 (Menu/Bridge.lua). RegisterControlMetadata (Shell/Menu2/MSUF_Menu2_ControlCatalog.lua on the Main and Classic hosts) adds search metadata to Quick Setup; without it the button works unregistered.",
+   "symbol": "P.M.RegisterControlMetadata"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "W is MSUF2's widget table. AttachStickyPageHeader (Shell/Menu2/MSUF_Menu2_Widgets_PageBuilder.lua on the Classic host) keeps the area header fixed while the page scrolls, as on Class Resources; without it the header scrolls with the page.",
+   "symbol": "W.AttachStickyPageHeader"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "W is MSUF2's widget table. RoleButton (Shell/Menu2/MSUF_Menu2_Widgets_Buttons.lua) styles Quick Setup as the green success button of Class Resources; without it Quick Setup is a plain theme button.",
+   "symbol": "W.RoleButton"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "state",
+   "reason": "NameplatesEditor.lua Editor.Create sets it only when the page builds a nameplate preview (W.FixedPreviewSection returned a section); without a preview an area switch has no sample to show.",
+   "symbol": "P.ShowNameplatesSample"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/CharacterExtras.lua",
    "kind": "addon",
    "reason": "Blizzard_InspectUI loads on demand, so InspectFrame and its gear slots exist only after the first inspect; slot icon cropping waits for its ADDON_LOADED and then crops on every InspectFrame show.",
@@ -2869,6 +2899,48 @@
    "kind": "lod",
    "reason": "The BuffReminders LoD renderer can be absent when the menu closes after a cold combat open or failed addon load; the preview lifecycle contract covers release with and without the renderer.",
    "symbol": "S.BuffRemindersReleasePreview"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "M.SetPreviewArrowBindings"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.ReleaseKeyboardCapture"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.RefreshSelectedLayerButtons"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.NotePreviewElementMoved"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.ArrowKeyDown"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "H.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "button.Refresh"
   }
  ]
 }
