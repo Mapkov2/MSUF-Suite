@@ -14,6 +14,7 @@ Each rule exists because breaking it caused a real defect.
 - **Clients:** Retail (12.1+) and WoW Forever only. Never use the combat log (`COMBAT_LOG_EVENT_UNFILTERED`) on these clients.
 - **GameTooltip:** never hook the shared `GameTooltip`'s methods, above all `hooksecurefunc(GameTooltip, "SetOwner", ...)` (owner decision 2026-10-06). It broke Blizzard callers in game twice (867x "attempt to call a nil value", gamepad taint). The MSUF core releases its `_msufUnitTooltipOwner` marker on `OnHide` only, so a tooltip reused without hiding keeps that marker until it hides; Suite visibility rules must live with that rather than add a hook.
 - **Error handling:** no `pcall`/`xpcall`. Boundaries go through `Safety.Dispatch`, which uses `securecallfunction`.
+  - Exception (owner decision 2026-10-11, raid-trace perf round): a frame's `OnEvent` script that ends with its one module callback (`RouteEvent` and `DirectEvent` in `MSUF_Suite_Modules/Runtime.lua`) is its own boundary and calls the callback directly. The client reports a raising script to the error handler (BugSack) and still delivers the next event, and nothing else shares the call. `Dispatch` stays wherever a caller must go on after a raise (`S.NewUnitRunner`, `Release`, data ticks).
   - `securecallfunction` takes a function, never a callable table. Pass `job:EventFunction()`, not the job.
   - `Context:Event` accepts a job and converts it.
 - **Secrets:** use `Suite.IsSecret` / `NS.IsSecret` first, before any compare, arithmetic, table-key lookup or truth test. Secrets only flow into C sinks.
