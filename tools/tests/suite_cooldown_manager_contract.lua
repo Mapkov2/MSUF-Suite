@@ -1253,13 +1253,18 @@ do
         assert(used<=math.floor(baseline*1.02),
             ("%s: %d instructions, budget %d (+2%%)"):format(label,used,math.floor(baseline*1.02)))
     end
+    -- 2026-10-11: 6315 -> 6245 and 1362 -> 1140 with the structure
+    -- and placement steps skipped while unmarked, Pending naming its flags
+    -- and the lockdown read only by the catalog and index units (the
+    -- 2026-10-11 raid trace: 1,097 flushes, about 14 us each in those
+    -- steps). The counts include the dispatch stub's call counter.
     Run()
     C.Flush.dirty.cooldowns=true
     C.Schedule()
-    Budget("flush: every cooldown entry",Cost(Run),6315)
+    Budget("flush: every cooldown entry",Cost(Run),6245)
     C.Flush.dirty.usable=true
     C.Schedule()
-    Budget("flush: a usability sweep",Cost(Run),1362)
+    Budget("flush: a usability sweep",Cost(Run),1140)
 end
 -- A GCD for one spell refreshes that spell's icons only: the others do not
 -- show the GCD and are not touched.
@@ -1912,6 +1917,106 @@ do
         "a failed usability batch retained native answers")
     -- The ordinary isolated-unit retry must read fresh answers too.
     C.Schedule();Run()
+end
+-- Unmarked flush steps are not entered (2026-10-11 raid trace: 1,097
+-- flushes; FlushStructure 4.0, FlushPlacement 3.3 and Pending 2.1 us each
+-- walked every bar or the whole mask with nothing marked). The guards ask
+-- the mark tables themselves, so a mark from any writer, the unit runner's
+-- retry included, still reaches its step.
+do
+    local Flush=C.Flush
+    -- The flush steps Flush.lua's FlushNow entered, by name.
+    local function Steps(fn)
+        local seen={}
+        debug.sethook(function()
+            local info=debug.getinfo(2,"nS")
+            if info.name and info.source:find("CooldownManager[/\\]Flush%.lua$") then seen[info.name]=(seen[info.name] or 0)+1 end
+        end,"c")
+        fn()
+        debug.sethook()
+        return seen
+    end
+    Run()
+    -- The combat flushes: a marked entry, a usability sweep. Neither enters
+    -- the structure or placement step, and neither reads the lockdown.
+    local lockdown,locks=InCombatLockdown,0
+    InCombatLockdown=function() locks=locks+1 return lockdown() end
+    Flush.Mark(e11,"item")
+    local seen=Steps(Run)
+    assert(seen.FlushEntries==1 and not seen.FlushStructure and not seen.FlushPlacement,"a marked entry entered an unmarked step")
+    Flush.dirty.usable=true
+    C.Schedule()
+    seen=Steps(Run)
+    assert(seen.FlushEntries==1 and not seen.FlushStructure and not seen.FlushPlacement,"a usability sweep entered an unmarked step")
+    InCombatLockdown=lockdown
+    assert(locks==0,"a flush without catalog or index work read the lockdown "..locks.." times")
+    -- Every mark of the two guarded steps, written the way its writers do.
+    ResetCalls()
+    Flush.sync.ess=true
+    C.Schedule()
+    seen=Steps(Run)
+    assert(seen.FlushStructure==1 and seen.FlushPlacement==1 and Calls("iconSync")==1 and Calls("layout")>=1,
+        "a structure mark (and the relayout it marks) was lost")
+    local style,styled=C.Icons.Style,0
+    C.Icons.Style=function(...) styled=styled+1 return style(...) end
+    Flush.style.ess=true
+    C.Schedule()
+    seen=Steps(Run)
+    C.Icons.Style=style
+    assert(seen.FlushStructure==1 and styled==1,"a style mark was lost")
+    for _,case in ipairs({{Flush.visible,"ess","vis"},{Flush.dirty,"visibility","visAll"},{Flush.dirty,"layout","layoutAll"},
+        {C.Layout.dirty,"ess","layout"}}) do
+        ResetCalls()
+        case[1][case[2]]=true
+        C.Schedule()
+        seen=Steps(Run)
+        assert(seen.FlushPlacement==1 and Calls(case[3])>=1 and not case[1][case[2]],"a placement mark ("..case[2]..") was lost")
+    end
+    -- A relayout an entry asks for inside the entry step runs in that flush.
+    local refresh=C.Time.Refresh
+    C.Time.Refresh=function(entry,reason) refresh(entry,reason) return entry==e11 end
+    ResetCalls()
+    Flush.Mark(e11,"item")
+    seen=Steps(Run)
+    C.Time.Refresh=refresh
+    assert(seen.FlushPlacement==1 and Calls("layout")==1 and not next(C.Layout.dirty) and PendingTimers()==0,
+        "a relayout asked for by the entry step waited for another flush")
+    -- A structure unit that raises gets its mark back from the runner (no
+    -- writer marks it again): the next flush still enters the step for it.
+    local sync,errors=C.Icons.Sync,#dispatch.errors
+    C.Icons.Sync=function() C.Icons.Sync=sync error("sync failed") end
+    dispatch.expect=true
+    Flush.sync.ess=true
+    C.Schedule()
+    Run()
+    dispatch.expect=false
+    assert(#dispatch.errors==errors+1 and Flush.sync.ess==true and PendingTimers()==0,"the raising structure unit kept no mark")
+    ResetCalls()
+    Flush.Mark(e11,"item")
+    seen=Steps(Run)
+    assert(seen.FlushStructure==1 and Calls("iconSync")==1 and not Flush.sync.ess,"the runner's retry mark was lost")
+    -- Pending names every flag of the mask and every mark table; every flag
+    -- a CDM file writes is one of the mask's.
+    assert(not Flush.Pending(),"work pending after a clean flush")
+    for key,value in pairs(Flush.dirty) do
+        assert(value==false,"dirty."..key.." left set")
+        Flush.dirty[key]=true
+        assert(Flush.Pending(),"Pending misses dirty."..key)
+        Flush.dirty[key]=false
+    end
+    for _,set in ipairs({Flush.sync,Flush.style,Flush.behavior,Flush.visible}) do
+        set.ess=true
+        assert(Flush.Pending(),"Pending misses a mark table")
+        set.ess=nil
+    end
+    Flush.Mark(e11,"item")
+    assert(Flush.Pending(),"Pending misses a marked entry")
+    Run()
+    for _,file in ipairs({"Flush.lua","Settings.lua","Events.lua","Controller.lua","ActionGlows.lua"}) do
+        for key in Read(root.."/"..ADDON.."/"..file):gmatch("dirty%.([%a_]+)") do
+            assert(Flush.dirty[key]~=nil,file.." uses dirty."..key..", which the mask (and Pending) does not name")
+        end
+    end
 end
 
 do

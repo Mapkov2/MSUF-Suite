@@ -22,6 +22,7 @@ C.Flush = Flush
 
 ------------------------------------------------------------------ dirty mask
 -- keysLater: keybind texts after a resolve, through the coalesced request.
+-- Pending names every key; the contract checks that.
 local dirty = { catalog = false, resolve = false, index = false, events = false, cooldowns = false, usable = false, effects = false,
     keybinds = false, keysLater = false, alerts = false, layout = false, visibility = false }
 -- Per slot: sync (structure), style, behavior (entry refresh), visible
@@ -31,6 +32,9 @@ Flush.dirty, Flush.sync, Flush.style, Flush.behavior, Flush.visible = dirty, syn
 -- Every unit of flush work runs isolated with one retry (S.NewUnitRunner,
 -- Runtime.lua).
 local Run, Settle, ResetUnits = S.NewUnitRunner()
+-- Layout requests of runtime paths (Layout.Request): the table keeps its
+-- identity (wiped in place).
+local layoutRequests = C.Layout.dirty
 -- The plan (and its generation) each bar was last synced with.
 local seenPlan, seenGen = {}, {}
 local scheduled = false
@@ -80,13 +84,12 @@ local function ResetDirty()
     wipe(marked)
     ResetUnits()
 end
+-- Every flush asks this at its end (2026-10-11 raid trace: 1,097 flushes,
+-- 2.1 us each as a pairs() walk of the mask): the flags are named, no walk.
 local function Pending()
-    for _, on in pairs(dirty) do
-        if on then
-            return true
-        end
-    end
-    return next(sync) ~= nil or next(style) ~= nil or next(behavior) ~= nil or next(visible) ~= nil or next(laid) ~= nil
+    return dirty.catalog or dirty.resolve or dirty.index or dirty.events or dirty.cooldowns or dirty.usable
+        or dirty.effects or dirty.keybinds or dirty.keysLater or dirty.alerts or dirty.layout or dirty.visibility
+        or next(sync) ~= nil or next(style) ~= nil or next(behavior) ~= nil or next(visible) ~= nil or next(laid) ~= nil
         or next(marked) ~= nil
 end
 Flush.Reset, Flush.Pending = ResetDirty, Pending
@@ -183,11 +186,13 @@ local function VisibilityAllUnit() C.Visibility.ApplyAll() end
 local function VisibilityUnit(slot) C.Visibility.Apply(slot) end
 
 ------------------------------------------------------------------ flush steps, in dependency order
--- Catalog, resolve, routing index and event registration.
-local function FlushData(locked)
+-- Catalog, resolve, routing index and event registration. Only the catalog
+-- and index units read the lockdown, so only they ask for it (the combat
+-- state cannot change inside one flush).
+local function FlushData()
     if dirty.catalog then
         dirty.catalog = false
-        Run(dirty, "catalog", true, CatalogUnit, locked)
+        Run(dirty, "catalog", true, CatalogUnit, NS.IsCombatLocked())
     end
     if dirty.resolve then
         dirty.resolve = false
@@ -195,7 +200,7 @@ local function FlushData(locked)
     end
     if dirty.index then
         dirty.index, dirty.events = false, true
-        Run(dirty, "index", true, IndexUnit, locked)
+        Run(dirty, "index", true, IndexUnit, NS.IsCombatLocked())
     end
     if dirty.events then
         dirty.events = false
@@ -303,19 +308,25 @@ end
 -- reload. Raising units get their marks back at the end (Settle); after an
 -- error only the next mark schedules a flush, so a unit that keeps raising
 -- never repeats every frame.
+-- The structure and placement steps run only while one of their own marks
+-- is there: an empty table or a clear flag would make them a no-op walk of
+-- every bar (2026-10-11 raid trace: 1,097 flushes, 4.0 and 3.3 us each).
+-- The tables themselves are asked, so no mark from any writer (the units'
+-- retry included) can be missed; the earlier steps run before each check.
 FlushNow = function()
     if not M.active then
         scheduled = false
         ResetDirty()
         return
     end
-    local locked = NS.IsCombatLocked()
-    FlushData(locked)
-    FlushStructure()
+    FlushData()
+    if next(sync) ~= nil or next(style) ~= nil then FlushStructure() end
     FlushEntries()
     FlushTextsAndSounds()
-    FlushPlacement()
+    if dirty.layout or dirty.visibility or next(laid) ~= nil or next(visible) ~= nil or next(layoutRequests) ~= nil then
+        FlushPlacement()
+    end
     scheduled = false
     if Settle() then return end
-    if Pending() or next(C.Layout.dirty) then Schedule() end
+    if Pending() or next(layoutRequests) then Schedule() end
 end
