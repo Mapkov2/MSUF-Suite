@@ -47,6 +47,12 @@ local events = {}
 -- state; range, target and show edges still paint immediately.
 local USABLE_INTERVAL = .2
 local usableNext, usableArmed = 0, false
+-- BAG_UPDATE_COOLDOWN has no payload either and arrived 19 times a second
+-- in combat (2026-10-11 raid trace: 1,701 events, 1,523 item reads, 0.30
+-- ms/s). The same leading edge and trailing refresh, at most ten item
+-- refreshes per second; bag contents (BAG_UPDATE_DELAYED) stay immediate.
+local ITEM_INTERVAL = .1
+local bagNext, bagArmed = 0, false
 
 -- Loading screens and activation: combat state is read fresh and sounds
 -- stay quiet for a moment.
@@ -155,10 +161,30 @@ end
 -- SPELL_UPDATE_USES: the count alone (Time "count"), for entries that show
 -- counts; the cooldown stays with SPELL_UPDATE_COOLDOWN.
 local function OnUses(_, _, spellID, baseSpellID) ForSpell(spellID, baseSpellID, MarkCount) end
--- Item cooldowns: items and equipment slots only. Potion and healthstone
--- entries follow their category payload in SPELL_UPDATE_COOLDOWN.
+-- Item cooldowns: items and equipment slots only (the flush marks them,
+-- dirty.bags). Potion and healthstone entries follow their category payload
+-- in SPELL_UPDATE_COOLDOWN. The first event refreshes next frame; later
+-- ones within ITEM_INTERVAL share one trailing refresh, which reads the
+-- final state. Like the usable window, a disable leaves the callback to
+-- find the module inactive.
+local function BagWindowDone()
+    bagArmed = false
+    if not M.active then return end
+    bagNext = GetTime() + ITEM_INTERVAL
+    dirty.bags = true
+    Schedule()
+end
 local function OnBag()
-    for i = 1, #bagEntries do MarkItem(bagEntries[i]) end
+    if dirty.bags or bagArmed then return end
+    local now = GetTime()
+    if now >= bagNext then
+        bagNext = now + ITEM_INTERVAL
+        dirty.bags = true
+        Schedule()
+    else
+        bagArmed = true
+        C_Timer.After(bagNext - now, BagWindowDone)
+    end
 end
 -- Bag contents changed: potion counts are recounted once, then every item
 -- and category entry refreshes.
@@ -599,7 +625,7 @@ end
 -- Disable: the poll stops, every event goes and routing work parked for the
 -- end of combat is dropped; parked driver work keeps its combat end.
 function Events.Release(context)
-    usableNext = 0
+    usableNext, bagNext = 0, 0
     StopPoll()
     assistMode = nil
     for event in pairs(events) do

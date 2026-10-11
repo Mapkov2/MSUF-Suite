@@ -22,9 +22,10 @@ C.Flush = Flush
 
 ------------------------------------------------------------------ dirty mask
 -- keysLater: keybind texts after a resolve, through the coalesced request.
--- Pending names every key; the contract checks that.
+-- bags: a capped bag cooldown refresh (Events.lua OnBag) for the item and
+-- equipment entries. Pending names every key; the contract checks that.
 local dirty = { catalog = false, resolve = false, index = false, events = false, cooldowns = false, usable = false, effects = false,
-    keybinds = false, keysLater = false, alerts = false, layout = false, visibility = false }
+    keybinds = false, keysLater = false, alerts = false, layout = false, visibility = false, bags = false }
 -- Per slot: sync (structure), style, behavior (entry refresh), visible
 -- (driver and alpha), laid (layout of that bar only).
 local sync, style, behavior, visible, laid, marked = {}, {}, {}, {}, {}, {}
@@ -32,9 +33,9 @@ Flush.dirty, Flush.sync, Flush.style, Flush.behavior, Flush.visible = dirty, syn
 -- Every unit of flush work runs isolated with one retry (S.NewUnitRunner,
 -- Runtime.lua).
 local Run, Settle, ResetUnits = S.NewUnitRunner()
--- Layout requests of runtime paths (Layout.Request): the table keeps its
--- identity (wiped in place).
-local layoutRequests = C.Layout.dirty
+-- Layout requests of runtime paths (Layout.Request) and the item entries
+-- bag cooldowns refresh: both tables keep their identity (wiped in place).
+local layoutRequests, bagEntries = C.Layout.dirty, C.Index.bags
 -- The plan (and its generation) each bar was last synced with.
 local seenPlan, seenGen = {}, {}
 local scheduled = false
@@ -89,8 +90,8 @@ end
 local function Pending()
     return dirty.catalog or dirty.resolve or dirty.index or dirty.events or dirty.cooldowns or dirty.usable
         or dirty.effects or dirty.keybinds or dirty.keysLater or dirty.alerts or dirty.layout or dirty.visibility
-        or next(sync) ~= nil or next(style) ~= nil or next(behavior) ~= nil or next(visible) ~= nil or next(laid) ~= nil
-        or next(marked) ~= nil
+        or dirty.bags or next(sync) ~= nil or next(style) ~= nil or next(behavior) ~= nil or next(visible) ~= nil
+        or next(laid) ~= nil or next(marked) ~= nil
 end
 Flush.Reset, Flush.Pending = ResetDirty, Pending
 
@@ -238,6 +239,15 @@ local function FlushEntries()
     if next(behavior) then
         MarkPlans(behavior)
         wipe(behavior)
+    end
+    -- A capped bag cooldown refresh (Events.lua OnBag) marks the item and
+    -- equipment entries as Mark would: "item" never replaces a pending mark.
+    if dirty.bags then
+        dirty.bags = false
+        for i = 1, #bagEntries do
+            local entry = bagEntries[i]
+            if marked[entry] == nil then marked[entry] = "item" end
+        end
     end
     local timeQueries = next(marked) and C.Index.hasSharedTimeSpells and C.Time.BeginQueries()
     for entry, reason in pairs(marked) do

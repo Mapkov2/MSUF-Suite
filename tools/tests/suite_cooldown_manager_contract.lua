@@ -1257,14 +1257,16 @@ do
     -- and placement steps skipped while unmarked, Pending naming its flags
     -- and the lockdown read only by the catalog and index units (the
     -- 2026-10-11 raid trace: 1,097 flushes, about 14 us each in those
-    -- steps). The counts include the dispatch stub's call counter.
+    -- steps). The counts include the dispatch stub's call counter. Then
+    -- +6 (6251, 1146) for the capped bag refresh's flag (dirty.bags), the
+    -- accepted trade for fewer item reads.
     Run()
     C.Flush.dirty.cooldowns=true
     C.Schedule()
-    Budget("flush: every cooldown entry",Cost(Run),6245)
+    Budget("flush: every cooldown entry",Cost(Run),6251)
     C.Flush.dirty.usable=true
     C.Schedule()
-    Budget("flush: a usability sweep",Cost(Run),1140)
+    Budget("flush: a usability sweep",Cost(Run),1146)
 end
 -- A GCD for one spell refreshes that spell's icons only: the others do not
 -- show the GCD and are not touched.
@@ -1277,8 +1279,11 @@ cdCalls,invCalls=0,0
 Fire("SPELL_UPDATE_COOLDOWN",nil)
 assert(cdCalls==7 and invCalls==1,"nil payload refreshes each cooldown icon once ("..cdCalls..")")
 -- The trinket on Essential reads its cooldown by equipment slot on bag
--- cooldown events, as it did on Potions and racials.
+-- cooldown events, as it did on Potions and racials. (Past the 0.1 s window
+-- the bag cooldown event above opened: the cap is pinned with the
+-- healthstones.)
 invCalls=0
+Run(.1)
 assert(Fire("BAG_UPDATE_COOLDOWN"))
 Run()
 assert(invCalls==1 and C.entries.b71.slot=="ess","item cooldowns reach the trinket on Essential ("..invCalls..")")
@@ -3538,6 +3543,59 @@ do (function()
         assert(used==0,"bag events that change nothing allocated "..used.." KB")
         assert(writes==quiet and Calls("layout")==0,"bag events that change nothing wrote "..(writes-quiet).." widgets")
     end
+    -- BAG_UPDATE_COOLDOWN has no payload (2026-10-11 raid trace: 1,701
+    -- events, 19 a second in combat; 1,523 item reads, 0.30 ms/s). The first
+    -- event refreshes the item entries next frame; a burst inside 0.1 s
+    -- shares one trailing refresh, which reads the final state. Bag contents
+    -- (BAG_UPDATE_DELAYED) stay immediate.
+    do
+        local reads,reasons,realRefresh={},{},C.Time.Refresh
+        C.Time.Refresh=function(e,reason)
+            if e==stone and reason=="item" then reads[#reads+1]=now end
+            if e==stone then reasons[#reasons+1]=reason end
+            return realRefresh(e,reason)
+        end
+        Run(1)
+        local t0=now
+        Fire("BAG_UPDATE_COOLDOWN");Fire("BAG_UPDATE_COOLDOWN")
+        assert(PendingTimers()==1,"same-frame bag cooldown events did not share one next-frame flush")
+        Run()
+        assert(#reads==1 and reads[1]==t0,"the first bag cooldown event refreshes next frame, once ("..#reads..")")
+        -- The stone is used inside the window: its swipe follows with the
+        -- trailing refresh, never before the window ends and never twice.
+        C_Item.cooldowns[5512]={now,60,true}
+        for _=1,10 do Fire("BAG_UPDATE_COOLDOWN") end
+        Run(.05)
+        assert(#reads==1 and not stone.icon.cd.running,"a burst inside the window refreshed before its end ("..#reads..")")
+        assert(PendingTimers()==1,"a burst inside the window armed no single trailing refresh")
+        Run(.06)
+        assert(#reads==2 and stone.icon.cd.running and stone.cooling==true,
+            "the trailing refresh did not show the final state")
+        Run(1)
+        assert(#reads==2 and PendingTimers()==0,"the window kept refreshing without events")
+        Fire("BAG_UPDATE_COOLDOWN");Run()
+        assert(#reads==3,"after the window the next event refreshes next frame again")
+        -- Bag contents are not capped: they refresh next frame inside a window too.
+        Fire("BAG_UPDATE_DELAYED");Run()
+        assert(#reads==4 and PendingTimers()==0,"bag contents waited for the bag cooldown window")
+        -- A disable inside the window: the trailing callback finds the module
+        -- off; nothing is marked or scheduled after it.
+        Fire("BAG_UPDATE_COOLDOWN")
+        module.active=false
+        Run(.1)
+        module.active=true
+        assert(#reads==4 and PendingTimers()==0 and not C.Flush.dirty.bags,"a trailing refresh ran for an inactive module")
+        C_Item.cooldowns[5512]=nil
+        Fire("BAG_UPDATE_COOLDOWN");Run()
+        assert(#reads==5 and stone.cooling==false and not stone.icon.cd.running,"the stone's cooldown did not clear")
+        -- The refresh merges like Mark: a pending mark that refreshes more stays.
+        Run(.1)
+        for i=#reasons,1,-1 do reasons[i]=nil end
+        C.Flush.Mark(stone,"full")
+        Fire("BAG_UPDATE_COOLDOWN");Run()
+        assert(table.concat(reasons,",")=="full","the bag cooldown refresh replaced a pending full mark ("..table.concat(reasons,",")..")")
+        C.Time.Refresh=realRefresh
+    end
     -- Used in combat: the cooldown is held until combat ends (enable false),
     -- no swipe, still cooling (no ready alert). The BAG_UPDATE_COOLDOWN that
     -- starts it arms the swipe; its end is the one ready edge.
@@ -3559,7 +3617,9 @@ do (function()
     assert(stone.cooling==true and not stone.icon.cd.running,"held until the cooldown starts")
     C_Item.cooldowns[5512]={now,60,true}
     Fire("BAG_UPDATE_COOLDOWN")
-    Run()
+    -- Inside the 0.1 s window the bag events above opened: that window's
+    -- trailing refresh starts it.
+    Run(.1)
     assert(stone.cooling==true and stone.icon.cd.running and alerts==0,"the cooldown's start arms the swipe")
     Run(61)
     stone.icon.cd.scripts.OnCooldownDone(stone.icon.cd)
