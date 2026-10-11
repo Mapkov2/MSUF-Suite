@@ -438,7 +438,10 @@ local function PotionStockChanged(self)
 end
 
 -- Whether a bag update changed one of the remembered consumable picks or
--- emptied or refilled the map potion.
+-- emptied or refilled the map potion. Item counts need no item data; a bag
+-- food's use spell does (IsFood). A food whose data has not arrived keeps
+-- the pick for now, so the compile is owed (stock.pending): a later one
+-- asks again, at the latest at combat end (Controller.lua).
 function R.StockChanged(self)
     local picks = self.stock
     for i = 1, #STOCK do
@@ -446,7 +449,9 @@ function R.StockChanged(self)
         local picked = picks[stock.key]
         if picked ~= nil and (FirstStocked(stock.items, self.config[stock.choice]) or false) ~= picked then return true end
     end
+    undecided = false
     if picks.food ~= nil and FoodPick(self.config) ~= picks.food then return true end
+    if undecided then picks.pending = true end
     return PotionStockChanged(self)
 end
 

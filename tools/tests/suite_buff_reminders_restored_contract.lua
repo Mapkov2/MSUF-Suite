@@ -557,4 +557,60 @@ do
     itemData[potion] = nil
 end
 
+-- Food looted in combat whose use spell has not arrived by combat end: the
+-- bag check keeps the old pick, and the compile it could not decide is owed
+-- (stock.pending). The next combat end picks the new food, as the full
+-- compile at every combat end did. Item counts (flask, rune, oil, map
+-- potion, Healthstone) need no item data; only a bag food's use spell does.
+do
+    local combat = false
+    NS.IsCombatLocked = function() return combat end
+    local old, new = 250101, 250110
+    itemData[old] = { spell = 1219187 }
+    bags[0][1] = old
+    module.config = Owner({ classBuff = false, autoFlask = false, autoRune = false, autoWeapon = false }).config
+    module:Enable()
+    local function Food()
+        for _, entry in ipairs(module.list.entries) do if entry.kind == "food" then return entry.id end end
+    end
+    eq(Food(), old, "the bag food was not picked")
+    local compiles, compile = 0, module.Compile
+    module.Compile = function(...) compiles = compiles + 1; return compile(...) end
+    local function Fight(inCombat)
+        events.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+        combat = true
+        if inCombat then inCombat() end
+        combat = false
+        compiles = 0
+        events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    end
+    -- A Food & Drink item whose use spell is still unknown (no item data yet).
+    itemData[new] = {}
+    Fight(function()
+        bags[0][2] = new
+        events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
+    end)
+    assert(compiles == 0 and Food() == old and module.stock.pending,
+        "food without its data did not leave the compile owed at combat end")
+    itemData[new].spell = 1233738
+    Fight()
+    assert(compiles == 1 and Food() == new and not module.stock.pending,
+        "the new food was not picked at the next combat end once its data arrived")
+    -- The same out of combat: the bag update owes the compile to combat end.
+    itemData[new], bags[0][2] = nil, nil
+    module:Refresh()
+    eq(Food(), old, "the old food did not come back")
+    itemData[250120] = {}
+    bags[0][3] = 250120
+    events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
+    assert(Food() == old and module.stock.pending, "a bag update did not owe the food it could not decide")
+    itemData[250120].spell = 1219187
+    Fight()
+    assert(compiles == 1 and Food() == 250120, "combat end did not pick the food decided after the bag update")
+    module.Compile = compile
+    module:Disable()
+    NS.IsCombatLocked = function() return false end
+    bags[0][1], bags[0][3], itemData[old], itemData[250120] = nil, nil, nil, nil
+end
+
 print("Suite buff reminders: restored campfire, map potion, bag food, demon looks, keystone and ready check options passed")
