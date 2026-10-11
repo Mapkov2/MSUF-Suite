@@ -4258,3 +4258,6 @@ T("Values: MSUF layer (-1 = Auto)", "Valeurs : couche MSUF (-1 = Auto)")
 T("Reset selected element", "Réinitialiser cet élément")
 T("Title size (0 = header text size)", "Taille du titre (0 = texte d’en-tête)")
 T("Header timer size (0 = header text size)", "Taille du chrono d’en-tête (0 = texte d’en-tête)")
+
+T("A group member died", "Un membre du groupe est mort")
+T("Large red death notices with a skull appear near the center of the screen, including during combat.", "De grandes annonces de mort rouges avec un crâne apparaissent près du centre de l’écran, y compris en combat.")

@@ -36,14 +36,15 @@ CreateFrame = function(kind)
     if kind == "MessageFrame" then
         frame.messages = {}
         for _, method in ipairs({ "SetSize", "SetPoint", "SetFrameStrata", "EnableMouse", "SetFontObject",
-            "SetJustifyH", "SetInsertMode", "SetTimeVisible", "SetFadeDuration", "SetFading" }) do
+            "SetJustifyH", "SetInsertMode", "SetTimeVisible", "SetFadeDuration", "SetFading", "SetFont",
+            "SetShadowColor", "SetShadowOffset", "SetSpacing" }) do
             frame[method] = function() end
         end
         function frame:Show() self.shown = true end
         function frame:Hide() self.shown = false end
         function frame:Clear() self.messages = {} end
         function frame:AddMessage(text, r, g, b)
-            assert(r == 1 and g == .28 and b == 0, "death warning color changed")
+            assert(r == 1 and g == .2 and b == .2, "death warning color changed")
             self.messages[#self.messages + 1] = text
         end
     end
@@ -540,7 +541,7 @@ deadUnits.raid5 = true
 death.context.frame:callback("UNIT_FLAGS", "raid5")
 death.context.frame:callback("UNIT_HEALTH", "raid5")
 assert(#deathChat == 1 and deathChat[1] == "MSUF Suite: Røxì died"
-    and #deathScreen == 1 and deathScreen[1] == "Røxì died" and deathSounds == 1,
+    and #deathScreen == 1 and deathScreen[1]:find("Røxì died", 1, true) and deathSounds == 1,
     "real runtime death event failed or duplicated chat/screen/sound")
 deadUnits.raid6 = true
 death.context.frame:callback("UNIT_HEALTH", "raid6")

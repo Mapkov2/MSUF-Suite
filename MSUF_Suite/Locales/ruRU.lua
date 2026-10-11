@@ -4252,3 +4252,6 @@ T("Values: MSUF layer (-1 = Auto)", "Значения: слой MSUF (-1 = Ав�
 T("Reset selected element", "Сбросить элемент")
 T("Title size (0 = header text size)", "Размер заголовка (0 = текст шапки)")
 T("Header timer size (0 = header text size)", "Размер таймера шапки (0 = текст шапки)")
+
+T("A group member died", "Участник группы погиб")
+T("Large red death notices with a skull appear near the center of the screen, including during combat.", "Крупные красные сообщения о смерти со значком черепа появляются рядом с центром экрана, в том числе в бою.")

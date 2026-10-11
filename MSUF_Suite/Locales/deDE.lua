@@ -4213,3 +4213,6 @@ T("Size", "Größe")
 T("Reset selected element", "Element zurücksetzen")
 T("Title size (0 = header text size)", "Titelgröße (0 = Kopfzeilen-Textgröße)")
 T("Header timer size (0 = header text size)", "Kopfzeilen-Timergröße (0 = Kopfzeilen-Textgröße)")
+
+T("A group member died", "Ein Gruppenmitglied ist gestorben")
+T("Large red death notices with a skull appear near the center of the screen, including during combat.", "Große rote Todesmeldungen mit Totenkopf erscheinen nahe der Bildschirmmitte, auch im Kampf.")

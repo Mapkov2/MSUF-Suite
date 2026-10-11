@@ -46,6 +46,7 @@ local function keyWidget()
 end
 suite.CreateFrame, suite.CreateTexture, suite.CreateFontString = keyWidget, keyWidget, keyWidget
 suite.SetStyledFont, suite.GlobalFontPath = function() end, function() return "font" end
+suite.SetFont = function(frame, path, size, flags) frame:SetFont(path or "font", size, flags) end
 IsShiftKeyDown = function() return false end
 IsInGuild = function() return true end
 -- The second click opens Blizzard's confirmation dialog, never submits it.
@@ -629,7 +630,7 @@ suite.CreateFrame = function(kind)
     assert(kind == "MessageFrame", "screen death alerts require an owned native message frame")
     local frame = keyWidget()
     function frame:AddMessage(message, r, g, b)
-        assert(r == 1 and g == .28 and b == 0, "death warning color changed")
+        assert(r == 1 and g == .2 and b == .2, "death warning color changed")
         screenNotices[#screenNotices + 1] = message
     end
     return frame

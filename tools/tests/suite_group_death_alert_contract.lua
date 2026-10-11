@@ -32,6 +32,7 @@ local suite = {
     PublicText = function(value) return type(value) == "string" and value ~= "secret" and value or nil end,
     Text = function(value) return value end,
     Print = function(value) lines[#lines + 1] = value end,
+    SetFont = function(frame, _, size, flags) frame.fontSize, frame.fontFlags = size, flags end,
     CreateFrame = function(kind, name, parent, template)
         created = created + 1
         assert(kind == "MessageFrame" and parent == UIParent and not template,
@@ -42,6 +43,9 @@ local suite = {
         function screen:SetFrameStrata(value) self.strata = value end
         function screen:EnableMouse(value) self.mouse = value end
         function screen:SetFontObject(value) self.font = value end
+        function screen:SetShadowColor(...) self.shadow = { ... } end
+        function screen:SetShadowOffset(...) self.shadowOffset = { ... } end
+        function screen:SetSpacing(value) self.spacing = value end
         function screen:SetJustifyH(value) self.justify = value end
         function screen:SetInsertMode(value) self.insert = value end
         function screen:SetTimeVisible(value) self.visibleFor = value end
@@ -60,7 +64,7 @@ local ns = { IsCombatLocked = function() return combat end,
     IsSecret = function(value) return value == "secret" end }
 ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().InCombat(root,
     function() return combat end)
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
+assert(loadfile(arg[2] or root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
 module.active, module.context, module.config = true, context, { includePlayer = false, screen = true }
@@ -82,12 +86,12 @@ assert(nativeWrites == 0 and RaidWarningFrame.messageCounter == 0,
 assert(created == 1 and screen.shown and #screen.messages == 1,
     "one death was not displayed exactly once on the owned screen frame")
 local message = screen.messages[1]
-assert(message[1] == "Alice died" and message[2] == 1 and message[3] == .28 and message[4] == 0,
+assert(message[1]:find("Alice died", 1, true) and message[2] == 1 and message[3] == .2 and message[4] == .2,
     "the screen death text or warning color changed")
-assert(screen.visibleFor == 10 and screen.fadeFor == 3 and screen.fading and screen.mouse == false,
+assert(screen.visibleFor == 6 and screen.fadeFor == 1 and screen.fading and screen.mouse == false,
     "screen messages must fade natively and leave input alone")
-assert(screen.point[2] == RaidWarningFrame and screen.point[3] == "TOP",
-    "owned death messages must stay above the native raid-warning/debuff stack")
+assert(screen.point[2] == UIParent and screen.point[3] == "CENTER",
+    "owned death messages must stay near screen center independently of native warning geometry")
 -- In an instance the dying member stays in combat: the health and flag
 -- events of that moment still read them alive, and UNIT_DIED tells the death.
 members.party3 = false

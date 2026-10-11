@@ -4252,3 +4252,6 @@ T("Values: MSUF layer (-1 = Auto)", "数值：MSUF层级（-1 = 自动）")
 T("Reset selected element", "重置所选元素")
 T("Title size (0 = header text size)", "标题大小（0 = 页眉文字大小）")
 T("Header timer size (0 = header text size)", "页眉计时器大小（0 = 页眉文字大小）")
+
+T("A group member died", "一名队友死亡")
+T("Large red death notices with a skull appear near the center of the screen, including during combat.", "醒目的红色死亡提示带有骷髅图标，显示在屏幕中央附近，战斗中也会显示。")

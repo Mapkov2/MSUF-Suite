@@ -10,7 +10,8 @@ B.Module("groupDeathAlert", {
 B.Section("groupDeathAlert", "group_death_alert", "Group death alert", {
     Bool("includePlayer", "Include your own death"),
     Bool("chat", "Show deaths in local chat", true),
-    Bool("screen", "Show deaths on screen"),
+    B.Tooltip(Bool("screen", "Show deaths on screen"),
+        "Large red death notices with a skull appear near the center of the screen, including during combat."),
     Bool("sound", "Play a sound for group deaths"),
 })
 

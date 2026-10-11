@@ -4251,3 +4251,6 @@ T("Values: MSUF layer (-1 = Auto)", "값: MSUF 계층 (-1 = 자동)")
 T("Reset selected element", "선택한 요소 초기화")
 T("Title size (0 = header text size)", "제목 크기 (0 = 머리글 글자 크기)")
 T("Header timer size (0 = header text size)", "머리글 타이머 크기 (0 = 머리글 글자 크기)")
+
+T("A group member died", "파티원이 사망했습니다")
+T("Large red death notices with a skull appear near the center of the screen, including during combat.", "전투 중에도 화면 중앙 근처에 해골 아이콘과 함께 크고 붉은 사망 알림이 표시됩니다.")

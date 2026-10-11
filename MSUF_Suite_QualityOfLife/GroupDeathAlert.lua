@@ -5,6 +5,7 @@ local IN_COMBAT = { inCombat = true }
 -- health path.
 local IsSecret = NS.IsSecret
 local M = {}
+local PENDING_DEATH = "pending"
 local PARTY, RAID = {}, {}
 for i = 1, 4 do PARTY[i] = "party" .. i end
 for i = 1, 40 do RAID[i] = "raid" .. i end
@@ -17,15 +18,18 @@ local function PrepareScreen(self)
     if self.config.screen then
         if not self.screen then
             local frame = S.CreateFrame("MessageFrame", "MSUFSuiteGroupDeathAlerts", UIParent)
-            frame:SetSize(800, 100)
-            frame:SetPoint("BOTTOM", RaidWarningFrame, "TOP", 0, 8)
+            frame:SetSize(960, 210)
+            frame:SetPoint("TOP", UIParent, "CENTER", 0, 160)
             frame:SetFrameStrata("HIGH")
             frame:EnableMouse(false)
-            frame:SetFontObject(GameFontNormalHuge)
+            S.SetFont(frame, nil, 36, "OUTLINE")
+            frame:SetShadowColor(0, 0, 0, 1)
+            frame:SetShadowOffset(2, -2)
             frame:SetJustifyH("CENTER")
             frame:SetInsertMode("TOP")
-            frame:SetTimeVisible(10)
-            frame:SetFadeDuration(3)
+            frame:SetSpacing(6)
+            frame:SetTimeVisible(6)
+            frame:SetFadeDuration(1)
             frame:SetFading(true)
             self.screen = frame
         end
@@ -67,13 +71,14 @@ local function WatchAfterDeath(self)
 end
 
 local function Announce(self, unit)
-    local name = S.PublicText(UnitName(unit))
-    if not name then return end
-    local message = string.format(S.Text("%s died"), name)
+    -- UnitDocumentation: UnitName may be identity-restricted. Keep public
+    -- roster names by GUID, never by a token that can become another member.
+    local guid = self.identities[unit]
+    local name = S.PublicText(UnitName(unit)) or (guid and self.names[guid])
+    local message = name and string.format(S.Text("%s died"), name) or S.Text("A group member died")
     if self.config.chat ~= false then S.Print(message) end
     if self.config.screen then
-        local color = ChatTypeInfo.RAID_WARNING
-        self.screen:AddMessage(message, color.r, color.g, color.b)
+        self.screen:AddMessage("|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:32|t " .. message, 1, .2, .2)
     end
     if self.config.sound then
         local now = GetTime()
@@ -98,17 +103,24 @@ local function OnHealth(self, _, unit)
     if before == nil then return end
     local dead = UnitIsDeadOrGhost(unit)
     if IsSecret(dead) or type(dead) ~= "boolean" or dead == before then return end
+    -- UNIT_DIED can precede the public dead flag. A stale alive answer is
+    -- not a resurrection; wait for dead -> alive before rearming the alert.
+    if before == PENDING_DEATH and not dead then return end
     local exists = UnitExists(unit)
     if IsSecret(exists) or exists ~= true then return end
+    if dead then
+        local feigned = UnitIsFeignDeath(unit)
+        if IsSecret(feigned) or feigned == true then return end
+    end
     states[unit] = dead
-    if dead then Announce(self, unit) end
+    if dead and before ~= PENDING_DEATH then Announce(self, unit) end
 end
 
 -- In a dungeon or raid a group member who dies stays in combat: the
 -- UNIT_HEALTH and UNIT_FLAGS of that moment can still read them alive, and
 -- the next flag change is the end of combat, so the death was told only
 -- then. The client tells the death itself with UNIT_DIED (UnitDocumentation
--- .lua, live and forever). Its GUID is readable for party and raid members
+-- .lua, live and forever). Its GUID is used only when identity is public
 -- (SecretWhenUnitIdentityRestricted); every other unit that dies near the
 -- group costs one secret test or one table miss. A death already told
 -- through OnHealth reads dead here and is not told twice.
@@ -119,24 +131,34 @@ local function OnDied(self, _, guid)
     if not unit or states[unit] ~= false then return end
     -- Feign Death is not a death.
     local feigned = UnitIsFeignDeath(unit)
-    if not IsSecret(feigned) and feigned == true then return end
-    states[unit] = true
+    if IsSecret(feigned) or feigned == true then return end
+    states[unit] = PENDING_DEATH
     Announce(self, unit)
 end
 
--- The unit list, the baseline and the GUID index are reused for every combat.
-local function Sync(self, event)
-    local afterDeath = self.afterDeath == true and not NS.InCombat(event) and PlayerDead()
-    StopWatching(self)
-    if not afterDeath and not NS.InCombat(event) then return end
-    local grouped, raid = IsInGroup(), IsInRaid()
-    if not S.Public(grouped) or grouped ~= true or not S.Public(raid) then return end
+local function PreviousStates(self)
+    local previous = self.previous or {}
+    self.previous = previous
+    for guid in pairs(previous) do previous[guid] = nil end
+    if self.dead then
+        for guid, unit in pairs(self.guids) do previous[guid] = self.dead[unit] end
+    end
+    return previous
+end
+
+-- Reuse the roster tables, preserving combat history by public GUID even
+-- when raid tokens move. Idle roster updates cache names without health
+-- listeners. A newly joined dead member remains a silent baseline.
+local function PrepareRoster(self, raid, previous)
     local units = raid and RAID or PARTY
     local watched, baseline, guids = self.watched or {}, self.baseline or {}, self.guids or {}
+    local identities, names = self.identities or {}, self.names or {}
     self.watched, self.baseline, self.guids = watched, baseline, guids
+    self.identities, self.names = identities, names
     for i = #watched, 1, -1 do watched[i] = nil end
     for unit in pairs(baseline) do baseline[unit] = nil end
     for guid in pairs(guids) do guids[guid] = nil end
+    for unit in pairs(identities) do identities[unit] = nil end
     for i = 1, #units do
         local unit = units[i]
         -- Like upstream/live CompactUnitFrame, compare identity rather than
@@ -152,17 +174,40 @@ local function Sync(self, event)
         if S.Public(exists) and exists == true then
             local dead = UnitIsDeadOrGhost(unit)
             if S.Public(dead) and type(dead) == "boolean" then
-                baseline[unit] = dead
                 local guid = S.PublicText(UnitGUID(unit))
-                if guid then guids[guid] = unit end
+                local before = guid and previous[guid]
+                if before == nil then baseline[unit] = dead else baseline[unit] = before end
+                if guid then
+                    guids[guid], identities[unit] = unit, guid
+                    names[guid] = S.PublicText(UnitName(unit)) or names[guid]
+                end
             end
         end
     end
-    self.dead = baseline
+    for guid in pairs(names) do
+        if not guids[guid] then names[guid] = nil end
+    end
+end
+
+local function Sync(self, event)
+    local afterDeath = self.afterDeath == true and not NS.InCombat(event) and PlayerDead()
+    local continuing, previous = self.dead ~= nil, PreviousStates(self)
+    -- Context:Event does not change an existing unit filter. Re-register it
+    -- after roster/includePlayer changes, while retaining the GUID history.
+    StopWatching(self)
+    local grouped, raid = IsInGroup(), IsInRaid()
+    if not S.Public(grouped) or grouped ~= true or not S.Public(raid) then return end
+    PrepareRoster(self, raid, previous)
+    if not afterDeath and not NS.InCombat(event) then return end
+    self.dead = self.baseline
+    local watched = self.watched
     self.context:Event("UNIT_HEALTH", OnHealth, IN_COMBAT, watched)
     self.context:Event("UNIT_FLAGS", OnHealth, IN_COMBAT, watched)
     self.context:Event("UNIT_DIED", OnDied, IN_COMBAT)
     if afterDeath then WatchAfterDeath(self) end
+    if continuing then
+        for i = 1, #watched do OnHealth(self, event, watched[i]) end
+    end
 end
 
 -- The player's own death ends their combat, possibly before the client told
