@@ -17,10 +17,13 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 -- 2026-10-02: combatStatsHUD steady 19 -> 20. Its stat events request a job,
 -- and Dispatch (securecallfunction) now gets the job's event function instead
 -- of the callable job table: one upvalue read per event.
+-- 2026-10-11: groupBloodlust burst (no lockout: the raid trace's Ready
+-- paints) 540 -> 441. The readability holds for the restriction epoch and an
+-- unchanged Ready writes nothing.
 local BASELINE = {
     threatMeter = { steady = 58, burst = 1314, burstKB = .198 },
     combatStatsHUD = { steady = 20, burst = 606, burstKB = .250 },
-    groupBloodlust = { steady = 25, burst = 572, burstKB = .156 },
+    groupBloodlust = { steady = 25, burst = 441, burstKB = .156 },
     observedPull = { steady = 28, burst = 532, burstKB = .156 },
 }
 

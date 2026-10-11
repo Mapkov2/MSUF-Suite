@@ -68,6 +68,21 @@ local function Readable()
     return true
 end
 
+-- That answer changes only with a restriction state, and
+-- ADDON_RESTRICTION_STATE_CHANGED fires before a restriction becomes active
+-- and after it is lifted (RestrictedActionsDocumentation.lua). self.readable
+-- keeps it for one restriction epoch: OnRestriction and OnGroup (roster,
+-- world entry, combat end, settings, Enable) forget it. The 2026-10-11 raid
+-- trace asked C_Secrets 2,548 times for 364 paints (Readable 2.7 ms incl.).
+local function ReadableNow(self)
+    local readable = self.readable
+    if readable == nil then
+        readable = Readable()
+        self.readable = readable
+    end
+    return readable
+end
+
 local function LockoutAura()
     for i = 1, #SPELLS do
         local aura = C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[i])
@@ -92,7 +107,7 @@ end
 -- A lockout seen before the restriction keeps counting down; once it has
 -- run out, the state stays unknown until the auras are readable again.
 local function PaintUnreadable(self)
-    self.lockedPainted = nil
+    self.painted = nil
     local now = GetTime()
     if self.lockedUntil and now < self.lockedUntil then
         self.host:Show()
@@ -109,23 +124,24 @@ local function PaintUnreadable(self)
     self.host:Show()
 end
 
--- In raid combat most UNIT_AURA payloads are unreadable, so a lockout that
+-- In raid combat most UNIT_AURA payloads are unreadable, so a state that
 -- did not change is painted again and again (270 paints in 60 s of the
--- 2026-10-07 raid trace). lockedPainted keeps the timed lockout this
--- function drew last; the same one again writes nothing. Every other paint
--- clears it.
+-- 2026-10-07 raid trace, 364 in 88 s on 2026-10-11, all of them Ready).
+-- self.painted names the state the last paint drew: "locked" (the timed
+-- lockout in lockedUntil and lockedLength), "ready" or "hidden"; the same
+-- state again writes nothing. Every other paint clears it.
 local function PaintLocked(self, aura)
     local duration, expiration = aura.duration, aura.expirationTime
     local timed = Finite(duration) and duration > 0 and Finite(expiration) and expiration > duration
-    if timed and self.lockedPainted and self.lockedUntil == expiration and self.lockedLength == duration then return end
+    if timed and self.painted == "locked" and self.lockedUntil == expiration and self.lockedLength == duration then return end
     self.status:SetText(S.Text("Locked"))
     self.status:SetTextColor(1, .65, .3)
     if timed then
         self.cooldown:SetCooldown(expiration - duration, duration)
-        self.lockedUntil, self.lockedLength, self.lockedPainted = expiration, duration, true
+        self.lockedUntil, self.lockedLength, self.painted = expiration, duration, "locked"
     else
         self.cooldown:Clear()
-        self.lockedUntil, self.lockedLength, self.lockedPainted = nil, nil, nil
+        self.lockedUntil, self.lockedLength, self.painted = nil, nil, nil
     end
     self.host:Show()
 end
@@ -133,7 +149,7 @@ end
 Paint = function(self)
     if not self.active then return end
     if S.editMode and not NS.IsCombatLocked() then
-        self.lockedPainted = nil
+        self.painted = nil
         self.status:SetText(S.Text("Locked"))
         self.status:SetTextColor(1, .65, .3)
         self.cooldown:Clear()
@@ -141,12 +157,12 @@ Paint = function(self)
         return
     end
     if not self.grouped then
-        self.lockedPainted = nil
+        self.painted = nil
         self.cooldown:Clear()
         self.host:Hide()
         return
     end
-    local readable = Readable()
+    local readable = ReadableNow(self)
     WatchAuras(self, readable)
     if not readable then
         PaintUnreadable(self)
@@ -157,10 +173,14 @@ Paint = function(self)
     self.unknownInstanceID = aura ~= nil and self.auraInstanceID == nil
     if aura then
         PaintLocked(self, aura)
-    else
-        self.lockedUntil, self.lockedPainted = nil, nil
+        return
+    end
+    self.lockedUntil = nil
+    local state = self.config.onlyWhenLocked and "hidden" or "ready"
+    if self.painted ~= state then
+        self.painted = state
         self.cooldown:Clear()
-        if self.config.onlyWhenLocked then
+        if state == "hidden" then
             self.host:Hide()
         else
             self.status:SetText(S.Text("Ready"))
@@ -222,6 +242,7 @@ end
 -- read now; an activating one after its dispatch, when the lockout spells
 -- may have turned secret.
 OnRestriction = function(self, _, _, state)
+    self.readable = nil
     if not IsSecret(state) and state == Enum.AddOnRestrictionState.Inactive then
         self.auraJob:Clear()
         Paint(self)
@@ -236,8 +257,10 @@ end
 
 local function OnGroup(self)
     -- Roster, settings and combat-end edges paint fresh immediately, consuming
-    -- any request whose callback is still in flight.
+    -- any request whose callback is still in flight, and read the
+    -- restriction state again: no restriction edge is heard while ungrouped.
     self.auraJob:Clear()
+    self.readable = nil
     local grouped = IsInGroup()
     self.grouped = Public(grouped) and grouped == true
     if self.grouped then
@@ -256,7 +279,7 @@ end
 
 function M:Enable()
     -- A new context holds no registration yet.
-    self.watching, self.lockedPainted = nil, nil
+    self.watching, self.painted = nil, nil
     self.auraJob = self.context:Coalesce(AURA_DELAY, PaintAuras)
     Create(self)
     Place(self)
@@ -267,6 +290,7 @@ end
 
 function M:Refresh()
     if not self.host then return end
+    self.painted = nil
     S.SetFont(self.title, nil, 11, "OUTLINE")
     S.SetFont(self.status, nil, 14, "OUTLINE")
     Place(self)
@@ -280,7 +304,7 @@ function M:Disable()
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
     self.grouped, self.auraInstanceID, self.unknownInstanceID, self.lockedUntil = nil, nil, nil, nil
-    self.watching, self.lockedPainted = nil, nil
+    self.watching, self.painted, self.readable = nil, nil, nil
     -- The context's Release drops a pending aura repaint.
     if self.host then
         self.cooldown:Clear()

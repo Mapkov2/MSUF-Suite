@@ -302,7 +302,7 @@ assert(not SlashCmdList.MSUFSUITEKEYS and not SLASH_MSUFSUITEKEYS1
     and not keys.context.events.CHAT_MSG_ADDON)
 
 -- Player aura deltas stay dormant outside a group and skip unrelated spells.
-local grouped, auraReads, auraRestricted = false, 0, false
+local grouped, auraReads, auraRestricted, secretReads = false, 0, false, 0
 local auras = {}
 local auraTimers = {}
 C_Timer = { After = function(delay, callback)
@@ -315,7 +315,10 @@ end
 -- The client under combat, encounter or keystone restrictions: the lockout
 -- auras are secret and GetPlayerAuraBySpellID returns nothing for them
 -- (RequiresNonSecretAura); it never raises.
-C_Secrets = { ShouldSpellAuraBeSecret = function() return auraRestricted end }
+C_Secrets = { ShouldSpellAuraBeSecret = function()
+    secretReads = secretReads + 1
+    return auraRestricted
+end }
 C_UnitAuras = { GetPlayerAuraBySpellID = function(id)
     auraReads = auraReads + 1
     if auraRestricted then return nil end
@@ -379,6 +382,32 @@ assert(#auraTimers == 1 and auraReads == before,
 DrainAuras()
 assert(lust.status.text == "Locked" and lust.cooldown.start == 200
     and lust.cooldown.duration == 600)
+-- The 2026-10-11 raid trace: 364 paints asked C_Secrets 2,548 times. Its
+-- answer changes only with a restriction state, and the client sends
+-- ADDON_RESTRICTION_STATE_CHANGED before a restriction is enforced and after
+-- it is lifted (RestrictedActionsDocumentation.lua): paints in between ask
+-- once. A restriction edge asks again after its dispatch, and so does a
+-- roster, world-entry, combat-end or settings edge (OnGroup).
+do
+    local callback = lust.context.events.UNIT_AURA
+    local reads = secretReads
+    for _ = 1, 3 do
+        callback(lust, "UNIT_AURA", "player", { isFullUpdate = true })
+        DrainAuras()
+    end
+    assert(secretReads == reads and lust.status.text == "Locked",
+        "paints within one restriction epoch asked C_Secrets again")
+    lust.context.events.ADDON_RESTRICTION_STATE_CHANGED(lust, "ADDON_RESTRICTION_STATE_CHANGED", 1, 1)
+    assert(secretReads == reads, "an activating restriction asked C_Secrets during its own dispatch")
+    DrainAuras()
+    assert(secretReads > reads, "a restriction edge kept the readability of the epoch before")
+    reads = secretReads
+    lust.context.events.GROUP_ROSTER_UPDATE(lust)
+    assert(secretReads > reads, "a roster edge kept the readability of the epoch before")
+    reads = secretReads
+    lust.context.events.ADDON_RESTRICTION_STATE_CHANGED(lust, "ADDON_RESTRICTION_STATE_CHANGED", 1, 0)
+    assert(secretReads > reads and lust.status.text == "Locked", "a lifted restriction did not read again")
+end
 do
     auras[57724].auraInstanceID="secret"
     local callback=lust.context.events.UNIT_AURA
@@ -427,7 +456,9 @@ DrainAuras()
 assert(lust.status.text == "Locked" and lust.cooldown.start == 300,
     "the Evoker's Exhaustion did not count as a Bloodlust lockout")
 -- Restricted: the known lockout keeps counting; no aura is read or claimed.
+-- The client announces the restriction before it is enforced.
 now = 400
+lust.context.events.ADDON_RESTRICTION_STATE_CHANGED(lust, "ADDON_RESTRICTION_STATE_CHANGED", 1, 1)
 auraRestricted = true
 ns.IsCombatLocked = function() return auraRestricted end
 local readsAtRestriction = auraReads
@@ -449,6 +480,7 @@ auras[390435] = nil
 lust.context.events.ADDON_RESTRICTION_STATE_CHANGED(lust, "ADDON_RESTRICTION_STATE_CHANGED", 1, 0)
 assert(lust.context.events.UNIT_AURA and lust.context.events.ADDON_RESTRICTION_STATE_CHANGED
     and lust.host.shown and lust.status.text == "Ready", "lockout did not resume when the restriction ended")
+lust.context.events.ADDON_RESTRICTION_STATE_CHANGED(lust, "ADDON_RESTRICTION_STATE_CHANGED", 0, 1)
 auraRestricted = true
 lust.context.events.UNIT_AURA(lust, "UNIT_AURA", "player", { isFullUpdate = true })
 DrainAuras()

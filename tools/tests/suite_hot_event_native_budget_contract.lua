@@ -39,14 +39,23 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 --       paint of the unchanged lockout) before this change 420 instr, .313 KB (the
 --       client's aura table), 25 natives, 4 widget writes and a context
 --       registration -> 361 instr, .313 KB, the same 25 natives, no widget
---       write, no context call.
+--       write, no context call. 2026-10-11 (the readability cached per
+--       restriction epoch): 361 -> 244 instr, 25 -> 11 natives (no
+--       ShouldSpellAuraBeSecret, issecretvalue 15 -> 8), .313 KB unchanged.
+--     readyPaint (2026-10-11, the raid trace's 364 Ready paints: one
+--       unreadable payload, then its paint of an unchanged Ready) base 334
+--       instr, .188 KB, 26 natives (7 ShouldSpellAuraBeSecret, 7
+--       GetPlayerAuraBySpellID, 12 issecretvalue) and 4 widget writes -> 200
+--       instr, .156 KB (the context timer), 12 natives (the 7 lockout reads
+--       stay), no widget write.
 local BASELINE = {
     groupDeathAlert = { steady = 39, steadyNatives = { issecretvalue = 2, UnitIsDeadOrGhost = 1 },
         enemyDied = 25, enemyDiedNatives = { issecretvalue = 1 } },
     groupBloodlust = { secretSteady = 93, secretSteadyNatives = { issecretvalue = 6 },
         secretBurst = 930, secretBurstNatives = { issecretvalue = 60 },
-        unreadablePaint = 361, unreadablePaintKB = .313, unreadablePaintNatives = { issecretvalue = 15,
-            ShouldSpellAuraBeSecret = 7, GetPlayerAuraBySpellID = 3 } },
+        unreadablePaint = 244, unreadablePaintKB = .313, unreadablePaintNatives = { issecretvalue = 8,
+            GetPlayerAuraBySpellID = 3 },
+        readyPaint = 200, readyPaintKB = .156, readyPaintNatives = { issecretvalue = 5, GetPlayerAuraBySpellID = 7 } },
 }
 
 ------------------------------------------------------------------ native counting
@@ -470,6 +479,45 @@ do
     Fire("UNIT_AURA", "player", { isFullUpdate = false, removedAuraInstanceIDs = { 41 } })
     Settle()
     assert(m.status.text == "Ready" and not m.auraInstanceID, "the lockout removal was missed")
+    -- The 2026-10-11 raid trace (88 s): 364 paints, every one of them Ready
+    -- (7 GetPlayerAuraBySpellID each, 2,548 in all, none found). Each also
+    -- asked C_Secrets for the 7 lockout spells (2,548 calls; Readable 2.7 ms
+    -- incl.) and wrote the Ready text, its colour, the cooldown and Show
+    -- again. The readability now holds for the restriction epoch and an
+    -- unchanged Ready writes nothing; the lockout reads stay, since only a
+    -- read sees a new lockout behind an unreadable payload.
+    do
+        local unreadable = { isFullUpdate = false, addedAuras = { Secret() } }
+        local writes = 0
+        local function Counted(widget, method)
+            local fn = widget[method]
+            widget[method] = function(...) writes = writes + 1; return fn(...) end
+        end
+        Counted(m.status, "SetText"); Counted(m.status, "SetTextColor"); Counted(m.cooldown, "SetCooldown")
+        Counted(m.cooldown, "Clear"); Counted(m.host, "Show"); Counted(m.host, "Hide")
+        local function ReadyPaint()
+            Fire("UNIT_AURA", "player", unreadable)
+            Settle()
+        end
+        ReadyPaint()
+        writes = 0
+        Budget("groupBloodlust", "readyPaint", ReadyPaint, Settle)
+        assert(writes == 0 and m.status.text == "Ready" and m.host.shown,
+            "an unchanged Ready repaint made " .. writes .. " widget writes")
+        -- Only while ready: "Show only while exhausted" hides, once.
+        m.config.onlyWhenLocked = true
+        ReadyPaint()
+        assert(writes == 2 and not m.host.shown, "the hidden state was not drawn once")
+        ReadyPaint()
+        assert(writes == 2, "an unchanged hidden repaint wrote widgets")
+        m.config.onlyWhenLocked = false
+        ReadyPaint()
+        assert(writes == 6 and m.host.shown and m.status.text == "Ready", "Ready was not drawn again")
+        for _, widget in ipairs({ m.status, m.cooldown, m.host }) do
+            widget.SetText, widget.SetTextColor, widget.SetCooldown, widget.Clear, widget.Show, widget.Hide =
+                nil, nil, nil, nil, nil, nil
+        end
+    end
     sated = true
     Fire("UNIT_AURA", "player", { isFullUpdate = false, addedAuras = { { spellId = 80354, auraInstanceID = 41 } } })
     Settle()
