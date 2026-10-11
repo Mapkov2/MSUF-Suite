@@ -16,7 +16,13 @@ Checks, from Lua 5.1's own compiler listing (luac -l) and the source:
      varargs namespace, `local x = P.Foo` aliases and paths below them).
   5. no pcall or xpcall in any Lua file of any MSUF_Suite* addon, Nameplates
      included: Suite code reports errors through Dispatch(Finish, ...)
-     (securecallfunction). This check has no allowlist.
+     (securecallfunction). This check has no allowlist. Dispatch belongs
+     where a caller must go on after a raise (loops over units, records or
+     ticks, work after the call). A frame script that ends with its one
+     callback is a boundary of its own (the client reports the raise), so
+     MSUF_Suite_Modules/Runtime.lua RouteEvent and DirectEvent call module
+     callbacks directly (2026-10-11 raid trace: 59,858 routed events,
+     one securecallfunction each); suite_runtime_owner_contract.lua pins it.
 Every finding of 2-4 needs an entry in suite_structure_allowlist.json with a
 kind and a reason; entries nothing matches fail too. With --list the gate
 prints every finding in allowlist form.

@@ -473,26 +473,35 @@ local function DeferGeometry(ctx, event)
     return true
 end
 
--- OnEvent of every context frame: hands the event to the module callback,
--- isolated (Dispatch) like every other callback a module gives the runtime.
+-- OnEvent of every context frame: hands the event to the module callback.
+-- The callback runs directly, not through Dispatch: this OnEvent is already
+-- an error boundary (the client reports a raising script to the error
+-- handler, BugSack, and calls the script again for the next event), the
+-- frame belongs to one context, and nothing runs after the one callback, so
+-- a raise here skips no other work. Dispatch stays where a caller must go on
+-- after a raise (S.NewUnitRunner run, Release, data ticks). Both calls run
+-- with the addon's own taint (addon code calls addon code). The 2026-10-11
+-- raid trace routed 59,858 events here (677 per second), one native
+-- securecallfunction each. A plain call, not a tail call, keeps RouteEvent
+-- in the error's stack.
 local function RouteEvent(frame, event, ...)
     local module = frame.module
     if not module.active then return end
     if event == "ADDON_LOADED" and module.addons and not module.addons[(...)] then return end
     if module.geometry and DeferGeometry(frame.context, event) then return end
     local callback = frame.callbacks[event]
-    if callback then Dispatch(callback, module, event, ...) end
+    if callback then callback(module, event, ...) end
 end
 
 -- OnEvent of a context's direct frame (options.direct, Context:Event): the
 -- hot events a module asked to get at the lowest cost. The 2026-10-07 raid
 -- trace delivered 22,487 DAMAGE_METER_COMBAT_SESSION_UPDATED in 60 s, and
 -- RouteEvent cost 1.7 us of Lua per event before the meter's own handler
--- ran. Here the callback runs without RouteEvent's filters and without
--- Dispatch (one native securecallfunction per event): this OnEvent is its
--- own boundary, so an error still reaches the error handler, and no other
--- callback shares the call. Context:Event refuses the cases RouteEvent
--- filters (ADDON_LOADED, unit filters, geometry deferral).
+-- ran. Here the callback runs without RouteEvent's filters (and, like
+-- RouteEvent, without Dispatch): this OnEvent is its own boundary, so an
+-- error still reaches the error handler, and no other callback shares the
+-- call. Context:Event refuses the cases RouteEvent filters (ADDON_LOADED,
+-- unit filters, geometry deferral).
 local function DirectEvent(frame, event, ...)
     local module = frame.module
     if not module.active then return end

@@ -1,9 +1,11 @@
 local root = assert(arg[1], "repository root required")
 local Suite, frames, skinReleases = {}, {}, 0
 -- The client's securecallfunction reports an error to the error handler and
--- returns nothing; this harness models exactly that.
-local reported = {}
+-- returns nothing; this harness models exactly that. dispatched counts the
+-- calls (in game each is one native call).
+local reported, dispatched = {}, 0
 securecallfunction = function(callback, ...)
+    dispatched = dispatched + 1
     local results = { pcall(callback, ...) }
     if not results[1] then
         reported[#reported + 1] = tostring(results[2])
@@ -151,13 +153,53 @@ assert(context.frame.events.UNIT_FLAGS == "player" and context.combatEvents.UNIT
     "a unit event was registered for every unit or lost its named option")
 context:RemoveEvent("UNIT_FLAGS")
 assert(context.frame.unregistrations == 2, "removing an absent event repeated a native call")
--- A raising module callback is reported (Dispatch) and never raises out of
--- the routing frame's OnEvent, like every other callback the runtime runs.
-context:Event("RAISING_EVENT", function() error("module callback raised") end)
-local reportedBefore = #reported
-assert(pcall(context.frame.callback, context.frame, "RAISING_EVENT"), "a module callback raised out of OnEvent")
-assert(#reported == reportedBefore + 1, "a raising module callback was not reported")
-context:RemoveEvent("RAISING_EVENT")
+-- Dispatch at boundaries, the documented rule (2026-10-11; the owner
+-- asked for the most the raid trace allows). A callback goes through
+-- Dispatch (securecallfunction) where its caller must go on after a raise:
+-- a loop over units, records or ticks (S.NewUnitRunner run, Context:Release,
+-- data ticks), or more work after the call. A frame script that ends with
+-- its one callback is a boundary of its own: the client reports a raising
+-- script to the error handler (BugSack) and runs the script again for the
+-- next event. Taint is the same either way: addon code calls addon code,
+-- and securecallfunction only restores the caller's own (addon) taint.
+-- So RouteEvent, the OnEvent of every context frame, and DirectEvent call
+-- the module callback directly, as a plain call (not a tail call, so
+-- RouteEvent stays in the error's stack). The 2026-10-11 raid trace routed
+-- 59,858 events through RouteEvent (677 per second), one native
+-- securecallfunction each. A raising module callback therefore raises out
+-- of OnEvent, where the client reports it, and the next event still
+-- reaches the module.
+do
+    local heard, caller = 0, nil
+    context:Event("RAISING_EVENT", function(self, event, fail)
+        assert(self == module and event == "RAISING_EVENT")
+        heard, caller = heard + 1, debug.getinfo(2, "f").func
+        if fail then error("module callback raised") end
+    end)
+    local reportedBefore, dispatchedBefore = #reported, dispatched
+    local ok, message = pcall(context.frame.callback, context.frame, "RAISING_EVENT", true)
+    assert(not ok and tostring(message):find("module callback raised", 1, true),
+        "a raising module callback did not raise out of OnEvent for the client to report")
+    assert(#reported == reportedBefore and dispatched == dispatchedBefore,
+        "RouteEvent ran the module callback through Dispatch")
+    assert(caller == context.frame.callback, "RouteEvent left the error's stack (a tail call or a wrapper)")
+    assert(pcall(context.frame.callback, context.frame, "RAISING_EVENT", false) and heard == 2
+        and dispatched == dispatchedBefore, "the event after a raise did not reach the module directly")
+    context:RemoveEvent("RAISING_EVENT")
+end
+-- S.NewUnitRunner keeps Dispatch: its pass must go on after a raising unit.
+do
+    local run, settle = Suite.Suite.NewUnitRunner()
+    local set, ran = { a = true, b = true }, {}
+    local reportedBefore, dispatchedBefore = #reported, dispatched
+    set.a = nil
+    run(set, "a", true, function() error("unit raised") end)
+    set.b = nil
+    run(set, "b", true, function() ran[#ran + 1] = "b" end)
+    assert(#reported == reportedBefore + 1 and dispatched == dispatchedBefore + 2 and ran[1] == "b",
+        "a raising unit was not reported through Dispatch or stopped the pass")
+    assert(settle() == true and set.a == true and not set.b, "a raising unit did not get its mark back")
+end
 -- options.direct: a hot event on the context's own direct frame, called
 -- without Dispatch (the damage meter's session storm, 22,487 events in 60 s
 -- of the 2026-10-07 raid trace). Its OnEvent is the boundary: a raising
@@ -174,7 +216,7 @@ do
     assert(pixelVisits == 2, "the direct frame skipped S.CreateFrame")
     assert(frame.events.HOT_EVENT and not context.frame.events.HOT_EVENT and context.frame.registrations == routed
         and context.combatEvents.HOT_EVENT, "a direct event was registered on the routing frame")
-    local dispatched = #reported
+    local reportedBefore, dispatchedBefore = #reported, dispatched
     frame:callback("HOT_EVENT", 1, 2)
     assert(hot == 1, "the direct frame did not run its callback")
     module.active = false
@@ -183,7 +225,8 @@ do
     assert(hot == 1, "a stopped module heard a direct event")
     context:Event("HOT_EVENT", function() error("direct callback raised") end, direct)
     assert(frame.registrations == 1, "a re-registered direct event repeated the native registration")
-    assert(not pcall(frame.callback, frame, "HOT_EVENT", 1, 2) and #reported == dispatched,
+    assert(not pcall(frame.callback, frame, "HOT_EVENT", 1, 2) and #reported == reportedBefore
+        and dispatched == dispatchedBefore,
         "a direct callback went through Dispatch")
     context:RemoveEvent("HOT_EVENT")
     assert(not frame.events.HOT_EVENT and context.callbacks.HOT_EVENT == nil and frame.unregistrations == 1
