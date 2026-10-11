@@ -124,8 +124,12 @@ local function RestoreTexture(region, state)
     return true
 end
 
-local function FadeExact(button, region)
-    if not region or not CanControl(button) then return false end
+-- FadeExact for a caller that already checked CanControl(button) in this
+-- pass: nothing in a synchronous pass changes combat lockdown or the
+-- button's protection, so the per-region check would only repeat it (a
+-- clean button fades up to eleven regions on every native state hook).
+local function FadeControlled(button, region)
+    if not region then return false end
     local current = Read(region, "GetAlpha")
     if type(current) ~= "number" then return false end
     local state = alphaStates[region]
@@ -148,6 +152,11 @@ local function FadeExact(button, region)
         alphaStates[region] = state
     end
     return true
+end
+
+local function FadeExact(button, region)
+    if not region or not CanControl(button) then return false end
+    return FadeControlled(button, region)
 end
 
 local function RestoreAlpha(region, state)
@@ -290,6 +299,7 @@ end
 
 States.BorderValue, States.CanControl = BorderValue, CanControl
 States.ApplyTextureTint, States.FadeExact = ApplyTextureTint, FadeExact
+States.FadeControlled = FadeControlled
 States.RestoreButtonTextures, States.RestoreButtonAlphas = RestoreButtonTextures, RestoreButtonAlphas
 States.ApplySurface, States.RestoreSurface = ApplySurface, RestoreSurface
 States.ShowsAppliedPlate = ShowsAppliedPlate

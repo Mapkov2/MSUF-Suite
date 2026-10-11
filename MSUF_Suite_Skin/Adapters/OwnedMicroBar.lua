@@ -374,6 +374,26 @@ ScheduleReapply = function()
     NS.CombatGate.RunOrDefer(REAPPLY_KEY, Reapply)
 end
 
+-- Combat end. Every in-combat change that moves, scales, hides or hands over
+-- the menu defers Reapply under REAPPLY_KEY (native reset, override, layout
+-- and scale hooks, drags, zone, housing and Gamepad UI signals); while that
+-- is pending, or while the bar does not hold the menu, the full pass runs as
+-- before. Otherwise the bar is still placed as it was, and only what combat
+-- itself held back comes back: the skin's quiet button hooks and button set
+-- (MicroMenuSkin.RefreshAfterCombat), the portrait (UNIT_PORTRAIT_UPDATE
+-- skips it in combat) and the mover hidden at combat start.
+local function OnCombatEnded()
+    if not desired then return end
+    local settings = Settings()
+    if NS.CombatGate.IsPending(REAPPLY_KEY) or not OwnedMicroBar.active
+        or not HoldsMenu(settings) or not NS.MicroMenuSkin.RefreshAfterCombat() then
+        ScheduleReapply()
+        return
+    end
+    if portraitEnabled then SetPortraitTexture(portrait, "player") end
+    SetMoverVisible(settings.locked == false)
+end
+
 local function OnNativeReset(root)
     if desired and OwnedMicroBar.active and root == activeRoot then
         ScheduleReapply()
@@ -559,6 +579,8 @@ eventFrame:SetScript("OnEvent", function(_, event)
         if EnsureEditRegistration() then StopAddonListening() end
     elseif event == "PLAYER_REGEN_DISABLED" then
         SetMoverVisible(false)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        OnCombatEnded()
     elseif event == "INPUT_DEVICE_INTERFACE_TRANSITION" then
         -- Blizzard's own listener hides MicroMenu for WoW Forever's Gamepad UI
         -- (MainActionBar_InitializeGamepad) and shows it for mouse and keyboard;

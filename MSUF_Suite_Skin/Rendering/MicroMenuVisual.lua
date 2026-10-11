@@ -415,12 +415,66 @@ local function PaintPlate(state, settings)
     state.plate:SetShown(state.visible and decorated)
 end
 
--- Paints the overlay for a clean (line or bold) icon style.
-local function RefreshState(state, settings, stateName)
-    stateName = VISUAL_STATES[stateName] or "normal"
-    if stateName == "hover" and settings.hoverStyle == "off" then
-        stateName = "normal"
+-- Overlay paint memo. A native state hook (SetNormal, SetPushed, enable,
+-- hover; UpdateMicroButtons walks every button, often several times in one
+-- frame) keeps the overlay paint while everything it was made from is
+-- unchanged: the visual state, the settings table and the values
+-- PAINT_SETTINGS lists, the button's name and performance bar, and the
+-- skin's look (theme, colours, geometry, profile: every Registry
+-- notification starts a new generation). The overlay regions are this
+-- file's own and sit at fixed sizes on the button's centre, so no native
+-- call and no button size changes them; HideOverlay forgets the paint. What
+-- Blizzard's state calls do rewrite (the state texture a mask sits on, the
+-- borrowed performance bar) is checked again on every repaint.
+local PAINT_SETTINGS = {
+    "buttonSize", "iconSize", "radius", "buttonBorder", "shape", "hoverStyle", "buttonBackground",
+    "barMaterial", "iconStyle", "tint", "normalOpacity", "hoverOpacity", "pressedOpacity", "disabledOpacity",
+}
+local paintGeneration = 0
+
+local function NextPaintGeneration()
+    paintGeneration = paintGeneration + 1
+end
+NS.Registry.AddListener(MicroMenuVisual, NextPaintGeneration)
+
+-- LayoutOverlay's test for the bar beside the glyph.
+local function HasPerformanceBar(state)
+    if state.buttonName ~= PERFORMANCE_BUTTON then return false end
+    return Safety.Field(state.button, PERFORMANCE_BAR) and true or false
+end
+
+local function PaintCurrent(state, settings, stateName)
+    local paint = state.paint
+    if not paint or not paint.current or paint.stateName ~= stateName or paint.settings ~= settings
+        or paint.generation ~= paintGeneration or paint.buttonName ~= state.buttonName
+        or paint.performanceBar ~= HasPerformanceBar(state) then
+        return false
     end
+    local values = paint.values
+    for index = 1, #PAINT_SETTINGS do
+        if values[index] ~= settings[PAINT_SETTINGS[index]] then return false end
+    end
+    return true
+end
+
+-- Reuses the button's memo table: state hooks repaint without allocating.
+local function RememberPaint(state, settings, stateName, visualSize)
+    local paint = state.paint
+    if not paint then
+        paint = { values = {} }
+        state.paint = paint
+    end
+    paint.current, paint.stateName, paint.settings = true, stateName, settings
+    paint.generation, paint.buttonName = paintGeneration, state.buttonName
+    paint.performanceBar, paint.visualSize = HasPerformanceBar(state), visualSize
+    local values = paint.values
+    for index = 1, #PAINT_SETTINGS do
+        values[index] = settings[PAINT_SETTINGS[index]]
+    end
+end
+
+-- Lays out and paints the overlay layers; returns the button size.
+local function PaintOverlay(state, settings, stateName)
     local visualSize = LayoutOverlay(state, settings)
     state.geometrySpec = GeometrySpec(settings, state.geometrySpec)
     local geometry = NS.Geometry.Resolve(state.geometrySpec, state.geometry)
@@ -434,6 +488,23 @@ local function RefreshState(state, settings, stateName)
     state.edge:SetShown(showEdge and state.visible)
     PaintPlate(state, settings)
     state.icon:SetShown(state.visible)
+    return visualSize
+end
+
+-- Paints the overlay for a clean (line or bold) icon style. stateOnly: a
+-- native state hook, which keeps a current paint (see PAINT_SETTINGS).
+local function RefreshState(state, settings, stateName, stateOnly)
+    stateName = VISUAL_STATES[stateName] or "normal"
+    if stateName == "hover" and settings.hoverStyle == "off" then
+        stateName = "normal"
+    end
+    local visualSize
+    if stateOnly and PaintCurrent(state, settings, stateName) then
+        visualSize = state.paint.visualSize
+    else
+        visualSize = PaintOverlay(state, settings, stateName)
+        RememberPaint(state, settings, stateName, visualSize)
+    end
     local performanceOk = ApplyPerformanceRegion(state, visualSize)
     local masksOk = ApplyNativeStateMasks(state)
     state.currentState = stateName
@@ -441,6 +512,7 @@ local function RefreshState(state, settings, stateName)
 end
 
 local function HideOverlay(state)
+    if state.paint then state.paint.current = false end
     state.visible = false
     state.fill:Hide()
     state.edge:Hide()
@@ -468,7 +540,8 @@ function MicroMenuVisual.Prepare(button, buttonName, settings)
     return state.masksReady
 end
 
-function MicroMenuVisual.Apply(button, buttonName, settings, stateName)
+-- stateOnly: a native state hook repaints (MicroMenu.lua ApplyCleanButton).
+function MicroMenuVisual.Apply(button, buttonName, settings, stateName, stateOnly)
     if not button or not settings then return false, "invalid" end
     if NATIVE_ICON_STYLES[settings.iconStyle] then
         MicroMenuVisual.Restore(button)
@@ -477,7 +550,7 @@ function MicroMenuVisual.Apply(button, buttonName, settings, stateName)
     local state = EnsureState(button, buttonName, settings.iconStyle)
     if not state then return false, "unavailable" end
     state.visible = true
-    return RefreshState(state, settings, stateName), "applied"
+    return RefreshState(state, settings, stateName, stateOnly), "applied"
 end
 
 function MicroMenuVisual.Refresh(button, settings, stateName)

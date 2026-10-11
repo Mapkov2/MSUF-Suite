@@ -24,6 +24,7 @@ local Kit = NS.AdapterKit
 local States = NS.MicroMenuStates
 local BorderValue, CanControl = States.BorderValue, States.CanControl
 local ApplyTextureTint, FadeExact = States.ApplyTextureTint, States.FadeExact
+local FadeControlled = States.FadeControlled
 local RestoreButtonTextures, RestoreButtonAlphas = States.RestoreButtonTextures, States.RestoreButtonAlphas
 local ApplySurface, RestoreSurface = States.ApplySurface, States.RestoreSurface
 local ShowsAppliedPlate = States.ShowsAppliedPlate
@@ -134,22 +135,24 @@ end
 
 -- stateOnly (a native state hook): the last full pass already undid what
 -- another icon style or plate setting had changed, so only the art Blizzard
--- rewrites with each state is refreshed.
+-- rewrites with each state is refreshed, and the overlay keeps its paint
+-- while its inputs are unchanged (MicroMenuVisual.Apply). ApplyButton
+-- checked CanControl(button) for this pass.
 local function ApplyCleanButton(button, buttonName, settings, stateOnly)
     local success = true
     if not stateOnly then success = RestoreButtonTextures(button) end
     for index = 1, #CLEAN_HIDDEN_MEMBERS do
         local region = Field(button, CLEAN_HIDDEN_MEMBERS[index])
         if region then
-            success = FadeExact(button, region) and success
+            success = FadeControlled(button, region) and success
         end
     end
     for index = 1, #TEXTURE_STATES do
         local region = Call(button, TEXTURE_STATES[index].getter)
-        if region then success = FadeExact(button, region) and success end
+        if region then success = FadeControlled(button, region) and success end
     end
     if not stateOnly then success = RestoreSurface(button) and success end
-    return NS.MicroMenuVisual.Apply(button, buttonName, settings, ResolveVisualState(button))
+    return NS.MicroMenuVisual.Apply(button, buttonName, settings, ResolveVisualState(button), stateOnly)
         and success
 end
 
@@ -218,9 +221,27 @@ end
 
 -- Hooks ----------------------------------------------------------------------------------
 
+-- Quiet for a reason other than combat: a Blizzard override, this adapter's
+-- own transition, or no active skin.
+local function SkinQuiet()
+    return visualSuspended or transitionInProgress or not MicroMenuSkin.active
+end
+
 local function HooksQuiet()
-    return NS.IsCombatLocked() or visualSuspended or transitionInProgress
-        or not MicroMenuSkin.active
+    return NS.IsCombatLocked() or SkinQuiet()
+end
+
+-- Buttons whose state hook fired while combat kept the hooks quiet: their
+-- native art may have changed since their last repaint
+-- (MicroMenuSkin.RefreshAfterCombat). A full pass repaints every button and
+-- empties the set.
+local staleButtons = setmetatable({}, { __mode = "k" })
+-- A MicroButton was shown or hidden while combat kept OnContainerLayout quiet.
+local layoutChangedInCombat = false
+
+local function ForgetCombatChanges()
+    for button in pairs(staleButtons) do staleButtons[button] = nil end
+    layoutChangedInCombat = false
 end
 
 -- Repaints the state-dependent art of one skinned button.
@@ -234,7 +255,11 @@ end
 -- button; OnEnter/OnLeave run the button's own scripts first), so the
 -- repaint and the bar's mouseover reveal are each their own error boundary.
 local function OnButtonVisualLifecycle(button)
-    if not HooksQuiet() then Dispatch(RefreshButtonState, button) end
+    if NS.IsCombatLocked() then
+        staleButtons[button] = true
+    elseif not SkinQuiet() then
+        Dispatch(RefreshButtonState, button)
+    end
 end
 
 local function OnButtonEnter(button)
@@ -252,6 +277,7 @@ end
 -- are quiet (combat, a Blizzard override, a transition or no active skin).
 function MicroMenuSkin.RefreshButtonStates()
     if HooksQuiet() then return false end
+    for button in pairs(staleButtons) do staleButtons[button] = nil end
     for button in pairs(activeButtons) do
         Dispatch(RefreshButtonState, button)
     end
@@ -286,12 +312,14 @@ end
 
 -- Every MicroButton's OnShow/OnHide calls MicroMenuContainer:Layout() (all
 -- clients), so one hook on the container sees each visibility change. Repeated
--- signals within a frame collapse into one deferred check.
+-- signals within a frame collapse into one deferred check; a signal in combat
+-- is checked when combat ends (MicroMenuSkin.RefreshAfterCombat).
 local function OnContainerLayout()
-    if NS.IsCombatLocked() or visualSuspended or transitionInProgress
-        or not MicroMenuSkin.active or layoutRefreshPending then
+    if NS.IsCombatLocked() then
+        layoutChangedInCombat = true
         return
     end
+    if SkinQuiet() or layoutRefreshPending then return end
     layoutRefreshPending = true
     C_Timer.After(0, FlushButtonLayout)
 end
@@ -488,6 +516,8 @@ ApplyNow = function(requestedRoot, owner)
     if not root then return false, reason end
     local settings = Settings()
     if not settings then return false, "settings" end
+    -- The full pass repaints every button and places the grid again.
+    ForgetCombatChanges()
     return RunTransition(ApplyResolved, root, owner, settings)
 end
 
@@ -501,6 +531,7 @@ local function DisableResolved()
 
     activeButtons = setmetatable({}, { __mode = "k" })
     activeRoot, activeOwner = nil, nil
+    ForgetCombatChanges()
     MicroMenuSkin.active = false
     visualSuspended = false
     desiredActive, desiredRoot, desiredOwner = false, nil, nil
@@ -546,6 +577,26 @@ local function RefreshLayout()
     if mask == shownButtons then return true, "unchanged" end
     shownButtons = mask
     return NS.OwnedMicroBar.Relayout(activeRoot), "layout"
+end
+
+-- Combat end, for OwnedMicroBar when nothing deferred its full pass: combat
+-- kept the hooks quiet, so the buttons whose state hooks fired repaint now,
+-- and a MicroButton shown or hidden meanwhile gets the owned grid placed
+-- again. Buttons whose hooks stayed silent still show the art of their last
+-- repaint. False when the hooks are quiet for another reason (a Blizzard
+-- override, a transition or no active skin); the caller then runs its full
+-- pass.
+function MicroMenuSkin.RefreshAfterCombat()
+    if HooksQuiet() then return false end
+    if layoutChangedInCombat then
+        layoutChangedInCombat = false
+        RefreshLayout()
+    end
+    for button in pairs(staleButtons) do
+        staleButtons[button] = nil
+        Dispatch(RefreshButtonState, button)
+    end
+    return true
 end
 
 function MicroMenuSkin.RefreshActive(layoutOnly)

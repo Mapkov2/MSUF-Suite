@@ -227,6 +227,8 @@ NS = {
             return true
         end,
         Cancel = function() end,
+        -- This gate never keeps a job for later.
+        IsPending = function() return false end,
     },
     Surface = {
         Attach = function(target, spec)
@@ -2299,16 +2301,21 @@ Section("owned micro bar", function()
     buttons[1]:SetPushed()
     Expect(attaches == 0, "a Micro Bar state hook built and attached a new button plate")
 
-    -- Combat end, a loading screen or a pet battle only place the bar again.
+    -- Combat end with nothing deferred keeps the bar where it is: combat
+    -- moved nothing (suite_skin_micro_bar_combat_end_contract.lua).
     attaches, prepares = 0, 0
     for widget in pairs(placements) do placements[widget] = nil end
-    for _, event in ipairs({ "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "PET_BATTLE_CLOSE" }) do
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+    Expect(prepares == 0 and attaches == 0 and next(placements) == nil,
+        "combat end with nothing deferred placed or re-skinned the owned Micro Bar")
+    -- A loading screen or a pet battle only place the bar again.
+    for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "PET_BATTLE_CLOSE" }) do
         eventFrame.scripts.OnEvent(eventFrame, event)
     end
     Expect(prepares == 0 and attaches == 0,
-        "combat end re-skinned the owned Micro Bar instead of placing it again")
+        "a loading screen re-skinned the owned Micro Bar instead of placing it again")
     Expect((placements[bar] or 0) > 0 and (placements[root] or 0) > 0,
-        "combat end did not place the owned Micro Bar again")
+        "a loading screen did not place the owned Micro Bar again")
     -- Once Blizzard has taken the menu back, the bar takes it and skins it again.
     root.parent = container
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
