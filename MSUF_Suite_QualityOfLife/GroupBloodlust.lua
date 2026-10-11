@@ -76,8 +76,12 @@ local function LockoutAura()
 end
 
 -- While the auras are unreadable, aura events carry nothing usable; the
--- end of the restriction (OnRestriction) reads again.
+-- end of the restriction (OnRestriction) reads again. self.watching keeps
+-- the registration this module made, so a repaint that keeps it calls no
+-- context method (every path that drops UNIT_AURA clears it).
 local function WatchAuras(self, readable)
+    if self.watching == readable then return end
+    self.watching = readable
     if readable then
         self.context:Event("UNIT_AURA", OnAura, IN_COMBAT, "player")
     else
@@ -88,6 +92,7 @@ end
 -- A lockout seen before the restriction keeps counting down; once it has
 -- run out, the state stays unknown until the auras are readable again.
 local function PaintUnreadable(self)
+    self.lockedPainted = nil
     local now = GetTime()
     if self.lockedUntil and now < self.lockedUntil then
         self.host:Show()
@@ -104,17 +109,23 @@ local function PaintUnreadable(self)
     self.host:Show()
 end
 
+-- In raid combat most UNIT_AURA payloads are unreadable, so a lockout that
+-- did not change is painted again and again (270 paints in 60 s of the
+-- 2026-10-07 raid trace). lockedPainted keeps the timed lockout this
+-- function drew last; the same one again writes nothing. Every other paint
+-- clears it.
 local function PaintLocked(self, aura)
+    local duration, expiration = aura.duration, aura.expirationTime
+    local timed = Finite(duration) and duration > 0 and Finite(expiration) and expiration > duration
+    if timed and self.lockedPainted and self.lockedUntil == expiration and self.lockedLength == duration then return end
     self.status:SetText(S.Text("Locked"))
     self.status:SetTextColor(1, .65, .3)
-    local duration, expiration = aura.duration, aura.expirationTime
-    if Finite(duration) and duration > 0 and Finite(expiration)
-        and expiration > duration then
+    if timed then
         self.cooldown:SetCooldown(expiration - duration, duration)
-        self.lockedUntil = expiration
+        self.lockedUntil, self.lockedLength, self.lockedPainted = expiration, duration, true
     else
         self.cooldown:Clear()
-        self.lockedUntil = nil
+        self.lockedUntil, self.lockedLength, self.lockedPainted = nil, nil, nil
     end
     self.host:Show()
 end
@@ -122,6 +133,7 @@ end
 Paint = function(self)
     if not self.active then return end
     if S.editMode and not NS.IsCombatLocked() then
+        self.lockedPainted = nil
         self.status:SetText(S.Text("Locked"))
         self.status:SetTextColor(1, .65, .3)
         self.cooldown:Clear()
@@ -129,6 +141,7 @@ Paint = function(self)
         return
     end
     if not self.grouped then
+        self.lockedPainted = nil
         self.cooldown:Clear()
         self.host:Hide()
         return
@@ -145,7 +158,7 @@ Paint = function(self)
     if aura then
         PaintLocked(self, aura)
     else
-        self.lockedUntil = nil
+        self.lockedUntil, self.lockedPainted = nil, nil
         self.cooldown:Clear()
         if self.config.onlyWhenLocked then
             self.host:Hide()
@@ -236,11 +249,14 @@ local function OnGroup(self)
         self.context:RemoveEvent("ADDON_RESTRICTION_STATE_CHANGED")
         self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
         self.auraInstanceID, self.unknownInstanceID, self.lockedUntil = nil, nil, nil
+        self.watching = nil
     end
     Paint(self)
 end
 
 function M:Enable()
+    -- A new context holds no registration yet.
+    self.watching, self.lockedPainted = nil, nil
     self.auraJob = self.context:Coalesce(AURA_DELAY, PaintAuras)
     Create(self)
     Place(self)
@@ -264,6 +280,7 @@ function M:Disable()
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
     self.grouped, self.auraInstanceID, self.unknownInstanceID, self.lockedUntil = nil, nil, nil, nil
+    self.watching, self.lockedPainted = nil, nil
     -- The context's Release drops a pending aura repaint.
     if self.host then
         self.cooldown:Clear()

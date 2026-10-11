@@ -35,11 +35,18 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 --       1.9 KB in the trace) -> 930 instr, 0 KB, 60 issecretvalue. The trade:
 --       +140 VM instructions per ten events for no lockout read at all; at
 --       the trace's 2.2 events per read that is 205 instead of about 800.
+--     unreadablePaint (2026-10-07: one unreadable payload, then its
+--       paint of the unchanged lockout) before this change 420 instr, .313 KB (the
+--       client's aura table), 25 natives, 4 widget writes and a context
+--       registration -> 361 instr, .313 KB, the same 25 natives, no widget
+--       write, no context call.
 local BASELINE = {
     groupDeathAlert = { steady = 39, steadyNatives = { issecretvalue = 2, UnitIsDeadOrGhost = 1 },
         enemyDied = 25, enemyDiedNatives = { issecretvalue = 1 } },
     groupBloodlust = { secretSteady = 93, secretSteadyNatives = { issecretvalue = 6 },
-        secretBurst = 930, secretBurstNatives = { issecretvalue = 60 } },
+        secretBurst = 930, secretBurstNatives = { issecretvalue = 60 },
+        unreadablePaint = 361, unreadablePaintKB = .313, unreadablePaintNatives = { issecretvalue = 15,
+            ShouldSpellAuraBeSecret = 7, GetPlayerAuraBySpellID = 3 } },
 }
 
 ------------------------------------------------------------------ native counting
@@ -392,9 +399,11 @@ do
     Enum.AddOnRestrictionState = { Inactive = 0, Activating = 1, Active = 2 }
     C_Spell = { GetSpellTexture = function() return 1 end }
     C_Secrets = { ShouldSpellAuraBeSecret = Native("ShouldSpellAuraBeSecret", function() return restricted end) }
+    -- An applied aura keeps its expiration; the client builds a new table per read.
+    local lockoutEnd = clock.now + 500
     C_UnitAuras = { GetPlayerAuraBySpellID = Native("GetPlayerAuraBySpellID", function(id)
         if restricted or not sated or id ~= 80354 then return nil end
-        return { auraInstanceID = 41, spellId = 80354, duration = 600, expirationTime = clock.now + 500 }
+        return { auraInstanceID = 41, spellId = 80354, duration = 600, expirationTime = lockoutEnd }
     end) }
     IsInGroup = Native("IsInGroup", function() return true end)
     local config = Defaults("groupBloodlust", "QualityOfLifeGroup")
@@ -412,6 +421,50 @@ do
         Settle()
     end, Settle)
     assert(m.status.text == "Locked", "secret buffs changed the lockout")
+    -- The 2026-10-07 raid trace: Relevant ran 270 times in 60 s, TouchesLockout
+    -- twice. The payloads' added auras were unreadable, so each one asked for
+    -- a paint of the unchanged lockout (270 paints, PaintLocked 2.8 ms,
+    -- WatchAuras 1.5 ms). Such a paint still reads every lockout spell (the
+    -- payload cannot exclude a change) but writes no widget and calls no
+    -- context method when the lockout is the one already shown.
+    do
+        local unreadable = { isFullUpdate = false, addedAuras = { Secret() } }
+        local writes, registrations = 0, 0
+        local function Counted(widget, method)
+            local fn = widget[method]
+            widget[method] = function(...) writes = writes + 1; return fn(...) end
+        end
+        Counted(m.status, "SetText"); Counted(m.status, "SetTextColor"); Counted(m.cooldown, "SetCooldown")
+        Counted(m.cooldown, "Clear"); Counted(m.host, "Show"); Counted(m.host, "Hide")
+        local event, remove = m.context.Event, m.context.RemoveEvent
+        m.context.Event = function(...) registrations = registrations + 1; return event(...) end
+        m.context.RemoveEvent = function(...) registrations = registrations + 1; return remove(...) end
+        local function UnreadablePaint()
+            Fire("UNIT_AURA", "player", unreadable)
+            Settle()
+        end
+        UnreadablePaint()
+        writes, registrations = 0, 0
+        Budget("groupBloodlust", "unreadablePaint", UnreadablePaint, Settle)
+        assert(writes == 0 and registrations == 0, "an unchanged lockout repaint made " .. writes
+            .. " widget writes and " .. registrations .. " context calls")
+        -- A changed lockout (a new expiration) is still drawn.
+        local read = C_UnitAuras.GetPlayerAuraBySpellID
+        C_UnitAuras.GetPlayerAuraBySpellID = function(id)
+            local aura = read(id)
+            if aura then aura.expirationTime = aura.expirationTime + 30 end
+            return aura
+        end
+        UnreadablePaint()
+        assert(writes > 0 and m.lockedUntil == lockoutEnd + 30, "a changed lockout was not drawn")
+        C_UnitAuras.GetPlayerAuraBySpellID = read
+        UnreadablePaint()
+        m.context.Event, m.context.RemoveEvent = nil, nil
+        for _, widget in ipairs({ m.status, m.cooldown, m.host }) do
+            widget.SetText, widget.SetTextColor, widget.SetCooldown, widget.Clear, widget.Show, widget.Hide =
+                nil, nil, nil, nil, nil, nil
+        end
+    end
     -- The lockout itself still counts: its removal and a new lockout repaint.
     sated = false
     Fire("UNIT_AURA", "player", { isFullUpdate = false, removedAuraInstanceIDs = { 41 } })
