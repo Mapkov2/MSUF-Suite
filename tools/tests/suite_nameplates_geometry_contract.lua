@@ -35,7 +35,7 @@ local function Frame()
     return f
 end
 hooksecurefunc = function(uf, method, callback) uf.hook = callback end
-local module = { active = true, levelLabels = {}, castTimes = {} }
+local module = { active = true, levelLabels = {}, castTimes = {}, pendingPlates = {} }
 private.Layout.Bind(module)
 local setup
 local function Native(uf)
@@ -109,7 +109,9 @@ for _, forever in ipairs({ false, true }) do
             config.look = 3
             private.Layout.Configure(config); private.Layout.Apply(uf, "enemy", config); Check()
             combat = true; private.Layout.Restore(uf)
-            assert(module.needsRefresh and health.height ~= setup.healthBarHeight)
+            -- Held back for this plate only (Skin.lua OnCombatEnded applies it again).
+            assert(module.pendingPlates[uf] and not module.needsRefresh and health.height ~= setup.healthBarHeight)
+            module.pendingPlates[uf] = nil
             combat = false; private.Layout.Restore(uf)
             Near(health.height, setup.healthBarHeight)
             Near(cast.castBar.height, setup.castBarHeight)

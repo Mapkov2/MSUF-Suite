@@ -537,7 +537,7 @@ end
 local function Has(header, call)
     assert(Body(header):find(call, 1, true), header .. " must call " .. call)
 end
-Has("local function Paint(uf)", "KickReady.Paint(cast, prefix, M.units[health])")
+Has("local function Paint(uf)", "KickReady.Paint(cast, prefix, unit)")
 Has("local function RestorePlate(uf)", "KickReady.Restore(cast)")
 Has("local function OnCastChanged(module, event, unit)", "KickReady.OnCast(cast, unit, event)")
 Has("local function RepaintCasts()", "KickReady.Paint(cast, Prefix(uf), M.units[health])")

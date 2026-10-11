@@ -97,7 +97,9 @@ local function Create(cast)
     return { label = label, binding = binding }
 end
 
-function CastTime.Paint(cast, prefix, unit)
+-- uf: the plate of this castbar; a label combat holds back is made when the
+-- end of combat applies that plate again (Skin.lua OnCombatEnded).
+function CastTime.Paint(cast, prefix, unit, uf)
     if not Safe(cast) then return end
     if not prefix or M.config.look == LOOK_BLIZZARD or M.config.enemyCastEnabled == HIDE or not M.config[prefix]
         or M.config[Key[prefix].CastTimeEnabled] == false or not unit then
@@ -107,7 +109,7 @@ function CastTime.Paint(cast, prefix, unit)
     local state = M.castTimes[cast]
     if not state then
         if NS.IsCombatLocked() then
-            M.needsRefresh = true
+            M.pendingPlates[uf] = true
             return
         end
         state = Create(cast)

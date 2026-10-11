@@ -438,6 +438,17 @@ for _, file in ipairs(toc) do
     end
 end
 local module = assert(installed)
+-- Work held back for the end of combat (Skin.lua OnCombatEnded): the plates
+-- a write named (pendingPlates) or a write no plate owns (needsRefresh).
+local function Deferred() return module.needsRefresh or next(module.pendingPlates) ~= nil end
+local function ClearDeferred()
+    module.needsRefresh = false
+    for key in pairs(module.pendingPlates) do module.pendingPlates[key] = nil end
+end
+-- Only this plate's own write is held back, never every plate.
+local function DeferredPlate(frame)
+    return module.pendingPlates[frame] == true and not module.needsRefresh
+end
 -- The shipped context timers (MSUF_Suite_Modules/Timers.lua) on the stub context.
 NS.Dispatch = function(callback, ...) return callback(...) end
 module.context = support.ModuleTimers(root, S, NS)("nameplates", module, context)
@@ -659,10 +670,10 @@ events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
 assert(scans == 1, "combat exit scanned plates without deferred work")
 combat = true
 module:Refresh()
-assert(not module.needsRefresh and scans == 2, "safe font/texture styling should work in combat")
+assert(not Deferred() and scans == 2, "safe font/texture styling should work in combat")
 combat = false
 events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
-assert(not module.needsRefresh and scans == 2, "combat exit should not redo cosmetic work")
+assert(not Deferred() and scans == 2, "combat exit should not redo cosmetic work")
 
 events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
 assert(scans == 2 and name.points[1][1] == "CENTER", "event performed a scan or changed native anchors")
@@ -671,7 +682,8 @@ assert(scans == 2 and name.points[1][1] == "CENTER", "event performed a scan or 
 -- before existing unit frames were covered by the plate hooks, 1817 after,
 -- 1831 with the cast time and level labels; 1792 with the setting keys read
 -- from per-prefix key tables (private.Key) instead of concatenated per paint.
--- The budget is that baseline +2 %.
+-- The budget is that baseline +2 %. 2026-10-11: 1828, then 1824 with the
+-- plate's unit read once per paint and the plate passed to CastTime.Paint.
 -- The threat budget (2026-10-02: 114, +2 %) counts one
 -- UNIT_THREAT_SITUATION_UPDATE of that plate the same way; 100 of them must
 -- not allocate with the GC stopped.
@@ -894,8 +906,9 @@ do
     combat = true
     local writes = auraButton.mouseWrites
     events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
-    assert(auraButton.mouseWrites == writes and auraButton.mouseClickEnabled == true and module.needsRefresh,
+    assert(auraButton.mouseWrites == writes and auraButton.mouseClickEnabled == true,
         "protected aura button changed its clicks in combat")
+    assert(DeferredPlate(uf), "a protected aura button held back more than its own plate")
     combat = false
     events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
     assert(auraButton.mouseClickEnabled == false, "protected aura button stayed clickable after combat")
@@ -919,7 +932,7 @@ do
     events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
     combat = false
     assert(auraButton.mouseClickEnabled == true, "unprotected aura button kept click-through")
-    module.needsRefresh = false
+    ClearDeferred()
     scans = auraScans
 end
 -- Pool walks follow new buttons only (Auras.lua peaks): the 2026-10-07 raid
@@ -975,7 +988,8 @@ do
     created[4].protected = true
     combat = true
     Show(4)
-    assert(created[4].mouseClickEnabled ~= false and module.needsRefresh, "a protected button changed in combat")
+    assert(created[4].mouseClickEnabled ~= false, "a protected button changed in combat")
+    assert(DeferredPlate(uf), "a protected pooled button held back more than its own plate")
     Show(4)
     assert(nexts == 5 and reads == 4, "an unfinished pool was not walked again")
     combat = false
@@ -994,7 +1008,7 @@ do
     created[4].protected = nil
     module.config.auraClickthrough = false
     events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
-    module.needsRefresh = false
+    ClearDeferred()
     aura.auraItemFramePool = saved
 end
 module.config.enemyRaidIcon = false
@@ -1673,10 +1687,10 @@ do
     assert(aura.BuffListFrame.points[1][4] == 335
         and aura.CrowdControlListFrame.points[1][5] == -360,
         "Blizzard anchor rebuild lost the saved aura positions")
-    module.needsRefresh = false
+    ClearDeferred()
     combat = true
     layoutHook(uf)
-    assert(module.needsRefresh and aura.BuffListFrame.points[1][4] == 335,
+    assert(DeferredPlate(uf) and aura.BuffListFrame.points[1][4] == 335,
         "aura anchor rebuild attempted a protected edit in combat")
     combat = false
     events.PLAYER_REGEN_ENABLED(module)
@@ -1840,10 +1854,11 @@ do
     NamesOnlyUnit(false)
     NamePlateSetupOptions.playerLevelDiffWidth = 32
     NativeAnchors()
-    combat, module.needsRefresh = true, false
+    combat = true
+    ClearDeferred()
     layoutHook(uf)
     Check(42, 0, "Forever CC hook changed protected anchors in combat")
-    assert(module.needsRefresh, "Forever CC combat refresh was not deferred")
+    assert(DeferredPlate(uf), "Forever CC combat refresh was not deferred for its plate")
     combat = false
     private.Layout.Reapply(uf, "enemy", config)
     Check(55, -7, "Forever CC layout did not recover after combat")
@@ -2285,7 +2300,7 @@ do
     module:Refresh()
     colors.SetEditMode = setEditMode
     for _, event in ipairs(catalogEvents) do assert(events[event] == nil, "disabled DoT colors kept " .. event) end
-    module.needsRefresh = false
+    ClearDeferred()
     local beforeCalls, beforeScans, beforeApplied = calls, scans, applied
     events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
     assert(calls == beforeCalls and scans == beforeScans and applied == beforeApplied,
@@ -2294,3 +2309,121 @@ do
     colors.Configure, colors.Apply = configure, apply
 end
 print("Suite nameplates: optional catalog listeners, readiness and disabled combat-exit budget passed")
+
+-- The end of combat applies only the plates a held-back write named
+-- (Skin.lua pendingPlates); a write no plate owns (needsRefresh, Power.lua)
+-- and quests to read again still take every shown plate. The 2026-10-11 raid
+-- trace: one module-wide flag repainted every shown plate, 0.27-1.05 ms per
+-- combat end. Each writer names its own plate.
+do
+    module.active = true
+    module:Enable()
+    ClearDeferred()
+    local castTime, label, badge = module.castTimes[cast], module.levelLabels[uf], uf.PlayerLevelDiffFrame
+    local levelOn, classicBar = module.config.enemyLevelEnabled, NamePlateSetupOptions.useClassicHealthBar
+    combat = true
+    module.castTimes[cast] = nil
+    private.CastTime.Paint(cast, "enemy", "nameplate1", uf)
+    assert(DeferredPlate(uf) and module.castTimes[cast] == nil, "a cast time label in combat held back no plate")
+    ClearDeferred()
+    module.levelLabels[uf], uf.PlayerLevelDiffFrame = nil, nil
+    module.config.enemyLevelEnabled, NamePlateSetupOptions.useClassicHealthBar = true, false
+    private.Level.Paint(uf, "enemy", "nameplate1")
+    assert(DeferredPlate(uf) and module.levelLabels[uf] == nil, "a level label in combat held back no plate")
+    ClearDeferred()
+    -- Forever hides Blizzard's level frames under the Suite's number.
+    local alphas = module.nativeLevelAlphas
+    local frameAlpha = alphas[uf.LevelFrame]
+    NS.Client.isForever, uf.PlayerLevelDiffFrame = true, Region()
+    private.Level.PaintNative(uf, "enemy")
+    assert(DeferredPlate(uf) and uf.PlayerLevelDiffFrame:GetAlpha() == 1,
+        "a native level alpha in combat changed or held back no plate")
+    alphas[uf.PlayerLevelDiffFrame], alphas[uf.LevelFrame] = nil, frameAlpha
+    NS.Client.isForever, uf.PlayerLevelDiffFrame = false, nil
+
+    -- Two shown plates: plate (nameplate1) and one whose unit frame has
+    -- nothing to paint. A plate pass (ApplyPlate) reads its unitToken.
+    local applied = {}
+    local function Probe(name, target)
+        return setmetatable({}, { __index = function(_, key)
+            if key == "unitToken" then applied[name] = (applied[name] or 0) + 1 end
+            return target[key]
+        end })
+    end
+    local first, second = Probe("first", plate), Probe("second", { UnitFrame = {} })
+    local getPlates = C_NamePlate.GetNamePlates
+    C_NamePlate.GetNamePlates = function() scans = scans + 1; return { first, second } end
+    local function CombatEnd()
+        for key in pairs(applied) do applied[key] = nil end
+        local before = scans
+        events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+        return scans - before
+    end
+    -- The cast time and level labels held back above: only their plate.
+    -- The personal power bars are written again as before (Power.Reapply).
+    private.CastTime.Paint(cast, "enemy", "nameplate1", uf)
+    private.Level.Paint(uf, "enemy", "nameplate1")
+    combat = false
+    local driver, powerReads = NamePlateDriverFrame, 0
+    local getMana = driver.GetClassNameplateManaBar
+    driver.GetClassNameplateManaBar = function(...) powerReads = powerReads + 1; return getMana(...) end
+    module.config.personalPowerOffsetX = 2
+    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == nil,
+        "the end of combat applied a plate no write held back")
+    assert(module.castTimes[cast] and module.levelLabels[uf] and not Deferred(),
+        "the held-back plate did not get its labels after combat")
+    assert(powerReads == 1, "the plate pass skipped the personal power bars")
+    module.config.personalPowerOffsetX = 0
+    private.Power.Refresh()
+    driver.GetClassNameplateManaBar = getMana
+    assert(CombatEnd() == 0 and next(applied) == nil, "the end of combat applied plates with nothing held back")
+    -- A held-back plate no longer shown has nothing to apply.
+    module.pendingPlates[{}] = true
+    assert(CombatEnd() == 1 and next(applied) == nil and not Deferred(), "a plate no longer shown was applied")
+
+    -- Blizzard's anchor rebuild in combat holds back its plate (Layout.lua
+    -- OnAnchors); a write no plate owns then takes every plate.
+    combat = true
+    layoutHook(uf)
+    assert(DeferredPlate(uf), "a combat anchor rebuild held back more than its plate")
+    module.needsRefresh = true
+    combat = false
+    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == 1 and not Deferred(),
+        "a write no plate owns did not apply every plate once")
+    -- Quests to read again with a plate held back: every plate as well.
+    combat = true
+    layoutHook(uf)
+    combat = false
+    private.Roles.pendingQuests.nameplate1 = true
+    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == 1 and not Deferred(),
+        "quests to read again with a held-back plate did not apply every plate")
+    -- Quests alone repaint the active units without a plate scan.
+    private.Roles.pendingQuests.nameplate1 = true
+    assert(CombatEnd() == 0 and next(applied) == nil, "quests alone scanned or applied plates")
+
+    -- A write the pass itself cannot make (an inaccessible debuff list)
+    -- waits for the next end of combat.
+    module.config.enemyAurasOffsetX = 7
+    module:Refresh()
+    combat = true
+    layoutHook(uf)
+    combat = false
+    local isForbidden = NS.Safety.IsForbidden
+    NS.Safety.IsForbidden = function(region) return region == aura.DebuffListFrame end
+    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == nil and DeferredPlate(uf),
+        "a write held back during the pass was lost or applied every plate")
+    NS.Safety.IsForbidden = isForbidden
+    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == nil and not Deferred(),
+        "the plate held back during the pass was not applied at the next end of combat")
+
+    module.config.enemyAurasOffsetX = 0
+    module:Refresh()
+    C_NamePlate.GetNamePlates = getPlates
+    module.castTimes[cast] = module.castTimes[cast] or castTime
+    module.levelLabels[uf], uf.PlayerLevelDiffFrame = module.levelLabels[uf] or label, badge
+    module.config.enemyLevelEnabled, NamePlateSetupOptions.useClassicHealthBar = levelOn, classicBar
+    module.active = false
+    module:Disable()
+    ClearDeferred()
+end
+print("Suite nameplates: per-plate combat-end pass, module-wide fallback and held-back writers passed")

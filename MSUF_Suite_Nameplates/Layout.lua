@@ -14,6 +14,12 @@ local function Accessible(region)
     return region and not NS.Safety.IsForbidden(region)
 end
 
+-- A write this plate could not make now: the end of combat applies the
+-- plate again (Skin.lua OnCombatEnded).
+local function Defer(uf)
+    module.pendingPlates[uf] = true
+end
+
 -- Restricted nameplate regions cannot be measured, even outside combat.
 -- SetPointsOffset changes their displacement without reading/replacing native
 -- anchors. We store only our own offsets, never GetPoint/GetRect results.
@@ -48,10 +54,10 @@ end
 -- anchor from Blizzard's XML, which UpdateAnchors never rebuilds (OnAnchors
 -- restores it before the offsets are applied again).
 local NATIVE_FIXED = true
-local function AuraAnchor(state, region, point, owner, relative, x, y, dx, dy, nativeFixed)
+local function AuraAnchor(state, uf, region, point, owner, relative, x, y, dx, dy, nativeFixed)
     if dx == 0 and dy == 0 then return end
     if not Accessible(region) or not owner then
-        module.needsRefresh = true
+        Defer(uf)
         return
     end
     local link = { region, point, owner, relative, x, y }
@@ -60,14 +66,14 @@ local function AuraAnchor(state, region, point, owner, relative, x, y, dx, dy, n
     Point(region, point, owner, relative, x + dx, y + dy)
 end
 
-local function RestoreLinks(state)
+local function RestoreLinks(state, uf)
     for i = #state.links, 1, -1 do
         local link = state.links[i]
         if Accessible(link[1]) then
             Point(unpack(link))
             table.remove(state.links, i)
         else
-            module.needsRefresh = true
+            Defer(uf)
         end
     end
 end
@@ -81,7 +87,7 @@ local function HealthSize(state, uf, setup, width, height, force, baseHeight)
     local container, cast = uf.HealthBarsContainer, uf.CastBarsContainer
     local spacing, nativeHeight = setup.castBarToHealthBarSpacing, baseHeight or setup.healthBarHeight
     if not Accessible(container) or not cast or not NS.Finite(spacing) or not NS.Finite(nativeHeight) then
-        module.needsRefresh = true
+        Defer(uf)
         return
     end
     if not force and previous and previous[1] == width and previous[2] == height
@@ -99,7 +105,7 @@ local function RestoreHealthSize(state, uf)
     local spacing = setup.castBarToHealthBarSpacing or previous[3]
     local height = setup.healthBarHeight or previous[4]
     if not Accessible(container) or not cast or not NS.Finite(spacing) or not NS.Finite(height) then
-        module.needsRefresh = true
+        Defer(uf)
         return
     end
     Point(container, "BOTTOMLEFT", cast, "TOPLEFT", 0, spacing)
@@ -111,18 +117,18 @@ function Layout.Restore(uf)
     local state = states[uf]
     if not state then return end
     if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
-        module.needsRefresh = true
+        Defer(uf)
         return
     end
-    RestoreLinks(state)
+    RestoreLinks(state, uf)
     RestoreHealthSize(state, uf)
-    if not Geometry.Restore(state, uf, NamePlateSetupOptions) then module.needsRefresh = true end
+    if not Geometry.Restore(state, uf, NamePlateSetupOptions) then Defer(uf) end
     for region in pairs(state.offsets) do
         if Accessible(region) then
             region:SetPointsOffset(0, 0)
             state.offsets[region] = nil
         else
-            module.needsRefresh = true
+            Defer(uf)
         end
     end
     if not next(state.offsets) and #state.links == 0 and not state.healthSize and not state.geometry then states[uf] = nil end
@@ -143,7 +149,7 @@ local function OnAnchors(uf)
                 elseif Accessible(link[1]) then
                     Point(unpack(link))
                 else
-                    module.needsRefresh = true
+                    Defer(uf)
                 end
             end
         end
@@ -152,7 +158,7 @@ local function OnAnchors(uf)
         state.nativeReset = true
     end
     if locked then
-        module.needsRefresh = true
+        Defer(uf)
         return
     end
     if not module.active then
@@ -248,24 +254,24 @@ local function ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
         end
     end
     if not baseX then
-        if control[1] ~= 0 or control[2] ~= 0 then module.needsRefresh = true end
+        if control[1] ~= 0 or control[2] ~= 0 then Defer(uf) end
         return
     end
     local correction = config.barGeometry == Mode.SAME_GEOMETRY and baseX - 5 or 0
     local nativeFixed = not NS.Client.isForever
-    AuraAnchor(state, auraFrame and auraFrame.CrowdControlListFrame, "LEFT", container,
+    AuraAnchor(state, uf, auraFrame and auraFrame.CrowdControlListFrame, "LEFT", container,
         "RIGHT", baseX, 0, control[1] - correction, control[2], nativeFixed)
-    AuraAnchor(state, auraFrame and auraFrame.LossOfControlFrame, "LEFT", container,
+    AuraAnchor(state, uf, auraFrame and auraFrame.LossOfControlFrame, "LEFT", container,
         "RIGHT", baseX, 0, control[1] - correction, control[2], nativeFixed)
 end
 
 -- The debuff and buff lists at their fixed native anchors.
 local function AuraAnchors(state, uf, plan)
     local auras, auraFrame = plan.Auras, uf.AurasFrame
-    AuraAnchor(state, auraFrame and auraFrame.DebuffListFrame, "LEFT", uf.HealthBarsContainer, "LEFT",
+    AuraAnchor(state, uf, auraFrame and auraFrame.DebuffListFrame, "LEFT", uf.HealthBarsContainer, "LEFT",
         0, 0, auras[1], auras[2], NATIVE_FIXED)
     local buff = plan.Buffs
-    AuraAnchor(state, auraFrame and auraFrame.BuffListFrame, "RIGHT", uf.ClassificationFrame,
+    AuraAnchor(state, uf, auraFrame and auraFrame.BuffListFrame, "RIGHT", uf.ClassificationFrame,
         "LEFT", -5, 0, buff[1], buff[2], NATIVE_FIXED)
 end
 
@@ -280,9 +286,10 @@ local function DebuffPaddingAnchor(state, uf, plan, setup)
     local padding = GetCVarNumberOrDefault(NamePlateConstants.DEBUFF_PADDING_CVAR)
     if NS.Finite(padding) then
         local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
-        AuraAnchor(state, debuffs, "BOTTOM", anchor == 1 and health or uf.name, "TOP", 0, padding, debuffX, debuffY)
+        AuraAnchor(state, uf, debuffs, "BOTTOM", anchor == 1 and health or uf.name, "TOP", 0, padding,
+            debuffX, debuffY)
     else
-        module.needsRefresh = true
+        Defer(uf)
     end
 end
 
@@ -310,7 +317,7 @@ local function Apply(uf, prefix, config, force)
         return
     end
     if NS.IsCombatLocked() or NS.Safety.IsForbidden(uf) then
-        module.needsRefresh = true
+        Defer(uf)
         return
     end
     if state and state.generation == generation and state.prefix == prefix and not force then return end
@@ -320,11 +327,11 @@ local function Apply(uf, prefix, config, force)
     state = state or { offsets = {}, links = {} }
     states[uf] = state
     force = force or state.nativeReset
-    RestoreLinks(state)
+    RestoreLinks(state, uf)
     local geometryChanged = (config.barGeometry == Mode.SAME_GEOMETRY) ~= (state.geometry ~= nil)
     local baseHeight = Geometry.Apply(state, uf, setup, config, force)
     if not baseHeight then
-        module.needsRefresh = true
+        Defer(uf)
         return
     end
     local keys = Key[prefix]

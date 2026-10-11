@@ -23,6 +23,10 @@ local M = {
     kicks = setmetatable({}, { __mode = "k" }),
     levelLabels = setmetatable({}, { __mode = "k" }),
     nativeLevelAlphas = setmetatable({}, { __mode = "k" }),
+    -- Unit frames whose plate a write held back (Layout, Level, CastTime,
+    -- Auras): the end of combat applies those plates again. needsRefresh is
+    -- for a write no plate owns (Power): every plate then (OnCombatEnded).
+    pendingPlates = setmetatable({}, { __mode = "k" }),
 }
 
 local function Safe(frame)
@@ -301,14 +305,14 @@ local function Paint(uf)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
-    local prefix = Prefix(uf)
-    CastTime.Paint(cast, prefix, M.units[health])
-    KickReady.Paint(cast, prefix, M.units[health])
+    local prefix, unit = Prefix(uf), M.units[health]
+    CastTime.Paint(cast, prefix, unit, uf)
+    KickReady.Paint(cast, prefix, unit)
     Threat.Apply(uf)
     FilterFriendlyName(uf, prefix)
     PaintRaidIcon(uf, prefix)
     Level.PaintNative(uf, prefix)
-    Level.Paint(uf, prefix, M.units[health])
+    Level.Paint(uf, prefix, unit)
     Layout.Apply(uf, prefix, M.config)
     if M.config.look == LOOK_BLIZZARD or not prefix or not M.config[prefix] then
         if M.targetUF == uf then M.targetUF = nil end
@@ -324,7 +328,7 @@ local function Paint(uf)
     end
     -- Last: the role tint, arrows and fonts come first whatever the DoT
     -- colors do (AuraColors.lua).
-    AuraColors.Apply(uf, M.units[health], prefix == "enemy")
+    AuraColors.Apply(uf, unit, prefix == "enemy")
 end
 
 local function RestorePlate(uf)
@@ -615,19 +619,50 @@ local function OnFrameOptions(uf)
     Paint(uf)
 end
 
+-- The shown plates whose unit frame a held-back write named, in Blizzard's
+-- plate order. The set empties before the pass, so a write the pass itself
+-- has to hold back waits for the next end of combat (needsRefresh too).
+local due = {}
+local function ApplyPending(pending)
+    local plates, count = C_NamePlate.GetNamePlates(), 0
+    for i = 1, #plates do
+        local plate = plates[i]
+        if Safe(plate) and pending[plate.UnitFrame] then
+            count = count + 1
+            due[count] = plate
+        end
+    end
+    for uf in pairs(pending) do pending[uf] = nil end
+    for i = 1, count do
+        ApplyPlate(due[i])
+        due[i] = nil
+    end
+end
+
+-- Only the plates a write held back are applied again: every other plate is
+-- current, so its pass changed nothing. The 2026-10-11 raid trace measured
+-- one module-wide flag repainting every shown plate, 0.27-1.05 ms per end of
+-- combat (about 0.2 ms per plate). A write no plate owns (needsRefresh) and
+-- quests to read again (Roles.RetryQuests) still take every plate.
 local function OnCombatEnded(module)
     -- CVar writes held back for combat (CVars.Apply).
     if module.cvarsPending then CVars.Apply(module) end
     local retryQuests = Roles.RetryQuests()
-    if not module.needsRefresh then
+    local pending = module.pendingPlates
+    if not module.needsRefresh and not next(pending) then
         if retryQuests then
             CancelQuestRefresh(module)
             RefreshActive(module)
         end
         return
     end
-    module.needsRefresh = false
-    EachPlate(ApplyPlate)
+    if module.needsRefresh or retryQuests then
+        module.needsRefresh = false
+        for uf in pairs(pending) do pending[uf] = nil end
+        EachPlate(ApplyPlate)
+    else
+        ApplyPending(pending)
+    end
     Power.Reapply()
 end
 

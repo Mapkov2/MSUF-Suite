@@ -20,7 +20,9 @@ function Level.Hide(uf)
     if Safe(label) then label:Hide() end
 end
 
-local function NativeAlpha(frame, hide)
+-- uf: the plate the frame belongs to; a write combat holds back applies
+-- that plate again at the end of combat (Skin.lua OnCombatEnded).
+local function NativeAlpha(uf, frame, hide)
     if not Safe(frame) then return end
     local previous = M.nativeLevelAlphas[frame]
     if hide then
@@ -31,13 +33,13 @@ local function NativeAlpha(frame, hide)
             M.nativeLevelAlphas[frame] = previous
         end
         if NS.IsCombatLocked() then
-            M.needsRefresh = true
+            M.pendingPlates[uf] = true
             return
         end
         frame:SetAlpha(0)
     elseif previous ~= nil then
         if NS.IsCombatLocked() then
-            M.needsRefresh = true
+            M.pendingPlates[uf] = true
             return
         end
         frame:SetAlpha(previous)
@@ -49,10 +51,10 @@ function Level.PaintNative(uf, prefix)
     if not NS.Client.isForever then return end
     local hide = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix]
         and (M.config[Key[prefix].LevelEnabled] == false or M.config.levelAppearance ~= LEVEL_BADGE)
-    NativeAlpha(uf.PlayerLevelDiffFrame, hide)
+    NativeAlpha(uf, uf.PlayerLevelDiffFrame, hide)
     -- Camelot already draws its own badge in Classic style. Keep its legacy
     -- LevelFrame out of the Suite look so the level is never duplicated.
-    NativeAlpha(uf.LevelFrame, hide or prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix])
+    NativeAlpha(uf, uf.LevelFrame, hide or prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix])
 end
 
 function Level.RestoreNative()
@@ -92,7 +94,7 @@ local function Label(uf)
     local label = M.levelLabels[uf]
     if label then return label end
     if NS.IsCombatLocked() or not Safe(uf) then
-        M.needsRefresh = true
+        M.pendingPlates[uf] = true
         return
     end
     local container = uf.HealthBarsContainer
@@ -114,7 +116,7 @@ function Level.Paint(uf, prefix, unit)
     local label = Label(uf)
     if not label then return end
     if not Safe(label) then
-        M.needsRefresh = true
+        M.pendingPlates[uf] = true
         return
     end
     local customHeight = M.config[Key[prefix].LevelSize]

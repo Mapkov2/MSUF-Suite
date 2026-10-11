@@ -61,14 +61,17 @@ function Auras.Restore()
 end
 
 -- True when the button needs nothing more: click-through now, or forbidden
--- (never touched).
-local function SetClickthrough(button)
+-- (never touched). A protected button in combat waits for the end of
+-- combat, which applies its plate again (Skin.lua OnCombatEnded):
+-- M.auraHooks maps the plate's aura frame (auras) to its unit frame, a pair
+-- Blizzard keeps for the session.
+local function SetClickthrough(button, auras)
     if not Safe(button) then return true end
     local current = button:IsMouseClickEnabled()
     if not S.Public(current) then return false end
     if current ~= true then return true end
     if not CanChange(button) then
-        M.needsRefresh = true
+        M.pendingPlates[M.auraHooks[auras]] = true
         return false
     end
     if M.auraButtons[button] == nil then M.auraButtons[button] = current end
@@ -79,7 +82,7 @@ end
 -- GetNextActive (Blizzard_SharedXMLBase Pools.lua, both clients) visits the
 -- active buttons without the iterator closure EnumerateActive allocates;
 -- GetNumActive is on the same pool proxy (ObjectPoolProxyMixin, both clients).
-local function ApplyPool(pool)
+local function ApplyPool(pool, auras)
     if not M.active or not M.config.auraClickthrough or not pool then return end
     local count = pool:GetNumActive()
     if not S.Public(count) or type(count) ~= "number" then count = nil end
@@ -88,7 +91,7 @@ local function ApplyPool(pool)
     local done = count ~= nil
     local button = pool:GetNextActive()
     while button do
-        if not SetClickthrough(button) then done = false end
+        if not SetClickthrough(button, auras) then done = false end
         button = pool:GetNextActive(button)
     end
     peaks[pool] = done and count or nil
@@ -99,13 +102,13 @@ local function LossOfControlItem(auras)
 end
 
 local function OnRefreshAuras(auras)
-    ApplyPool(auras.auraItemFramePool)
+    ApplyPool(auras.auraItemFramePool, auras)
 end
 
 local function OnRefreshLossOfControl(auras)
     if not M.active or not M.config.auraClickthrough then return end
     local item = LossOfControlItem(auras)
-    if item then SetClickthrough(item) end
+    if item then SetClickthrough(item, auras) end
 end
 
 function Auras.Apply(uf)
@@ -118,9 +121,9 @@ function Auras.Apply(uf)
     if not M.auraHooks[auras] then
         hooksecurefunc(auras, "RefreshAuras", OnRefreshAuras)
         hooksecurefunc(auras, "RefreshLossOfControl", OnRefreshLossOfControl)
-        M.auraHooks[auras] = true
+        M.auraHooks[auras] = uf
     end
-    ApplyPool(auras.auraItemFramePool)
+    ApplyPool(auras.auraItemFramePool, auras)
     local item = LossOfControlItem(auras)
-    if item then SetClickthrough(item) end
+    if item then SetClickthrough(item, auras) end
 end
