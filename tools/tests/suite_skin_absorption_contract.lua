@@ -11,6 +11,9 @@ local contract = [=[
 -- The skin's Safety reads issecretvalue at load; the secret cases below
 -- assign it later.
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SecretValues()
+-- Every client frame counts its regions as GetRegions returns them
+-- (GetNumRegions; recycled ScrollBox rows compare it).
+function Frame:GetNumRegions() return select("#", self:GetRegions()) end
 -- The skin's profile names follow the Suite's rule (MSUF_Suite/Core/Database.lua).
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(arg[1])
 -- The chat adapter keeps its colour ledger in the Suite core's skin boundary.

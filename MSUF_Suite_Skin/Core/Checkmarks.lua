@@ -398,17 +398,52 @@ end
 -- TrackButton reads its fields directly for the same reason.
 local ButtonGetter = CheckedCall
 
-function Checkmarks.TrackButton(button, owner)
-    if not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() or not CanTrack(button) then
-        return false
+-- Most buttons in a pooled row show no art TrackButton knows, and Blizzard
+-- initializes the row again on every scroll. AssetRole and DetectAction see
+-- nothing of the ten art slots (the six getters, then the four fields) but
+-- each slot's value and, for a texture that is not forbidden, its atlas, file
+-- path and texture strings (ReadString: missing or secret as nil). A button
+-- whose last pass found no role keeps those readings; while they read the
+-- same, the next pass would find no role either and is skipped. False marks
+-- one such pass, so only buttons visited again keep readings. The getters
+-- return no secrets (no secret aspect in the 12.1 API documentation).
+local buttonArt = setmetatable({}, { __mode = "k" })
+local GETTER_SLOTS = #buttonTextureGetters
+local ART_SLOTS = GETTER_SLOTS + #buttonTextureFields
+
+-- record: store the button's readings in art (four per slot). Otherwise:
+-- true when they all equal the stored ones. ReadString, inlined.
+local function ReadArt(button, art, record)
+    local Public = Safety.Public
+    for slot = 1, ART_SLOTS do
+        local value
+        if slot <= GETTER_SLOTS then
+            value = ButtonGetter(button, buttonTextureGetters[slot])
+        else
+            value = button[buttonTextureFields[slot - GETTER_SLOTS]]
+        end
+        local atlas, path, file
+        if value and type(value) == "table" and not Safety.IsForbidden(value) then
+            atlas = CheckedCall(value, "GetAtlas")
+            path = CheckedCall(value, "GetTextureFilePath")
+            file = CheckedCall(value, "GetTexture")
+            if not Public(atlas) or type(atlas) ~= "string" then atlas = nil end
+            if not Public(path) or type(path) ~= "string" then path = nil end
+            if not Public(file) or type(file) ~= "string" then file = nil end
+        end
+        local base = slot * 4
+        if record then
+            art[base], art[base + 1], art[base + 2], art[base + 3] = value, atlas, path, file
+        elseif art[base] ~= value or art[base + 1] ~= atlas or art[base + 2] ~= path or art[base + 3] ~= file then
+            return false
+        end
     end
-    local changed = false
-    local recognized = false
-    local normal = ButtonGetter(button, "GetNormalTexture")
-    local actionKind = DetectAction(button, ButtonGetter, normal)
-    if not actionKind and NS.WindowActionSkin.HasOwnedStates(button) then
-        actionKind = NS.WindowActionSkin.GetKind(button)
-    end
+    return true
+end
+
+-- Applies the role of each slot's texture; changed, and whether any slot had one.
+local function ApplyArtRoles(button, owner, normal)
+    local changed, recognized = false, false
     local normalRole = AssetRole(normal)
     local highlightRole
     if normalRole == "blizzardExpand" then
@@ -434,6 +469,45 @@ function Checkmarks.TrackButton(button, owner)
             recognized = true
             changed = ApplyTexture(texture, owner, role) or changed
         end
+    end
+    return changed, recognized
+end
+
+-- After a full pass: keep the readings of a button that had no role (from
+-- its second such pass on), drop them once it has one.
+local function RememberArt(button, art, noRole)
+    if not noRole then
+        buttonArt[button] = nil
+    elseif art == nil then
+        buttonArt[button] = false
+    else
+        if not art then
+            art = {}
+            buttonArt[button] = art
+        end
+        ReadArt(button, art, true)
+    end
+end
+
+function Checkmarks.TrackButton(button, owner)
+    if not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() or not CanTrack(button) then
+        return false
+    end
+    local art = buttonArt[button]
+    local scan = not (art and ReadArt(button, art, false))
+    local normal, actionKind
+    if scan then
+        normal = ButtonGetter(button, "GetNormalTexture")
+        actionKind = DetectAction(button, ButtonGetter, normal)
+    end
+    local detected = actionKind ~= nil
+    if not actionKind and NS.WindowActionSkin.HasOwnedStates(button) then
+        actionKind = NS.WindowActionSkin.GetKind(button)
+    end
+    local changed, recognized = false, false
+    if scan then
+        changed, recognized = ApplyArtRoles(button, owner, normal)
+        RememberArt(button, art, not detected and not recognized)
     end
     if actionKind then
         local action = NS.WindowActionSkin.Track(button, owner, actionKind)

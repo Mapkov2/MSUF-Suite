@@ -15,8 +15,9 @@ local BlizzardYellow = {
 NS.BlizzardYellow = BlizzardYellow
 
 local Safety = NS.Safety
-local SameColor, ColorMatches = Safety.SameColor, Safety.ColorMatches
-local COLOR_OWN = Safety.COLOR_OWN
+local ColorMatches, ReadColor, IsForbidden = Safety.ColorMatches, Safety.ReadColor, Safety.IsForbidden
+local COLOR_OWN, COLOR_NATIVE = Safety.COLOR_OWN, Safety.COLOR_NATIVE
+local abs = math.abs
 
 -- Native GameFontNormal-family gold.
 local NATIVE_R, NATIVE_G, NATIVE_B = 1.000, 0.820, 0.000
@@ -29,9 +30,13 @@ local function RefreshDesiredColor()
     desired[1], desired[2], desired[3], desired[4] = NS.Theme.GetColor("blizzardYellow")
 end
 
--- Classifies Blizzard's own gold; its alpha does not matter.
+-- Classifies Blizzard's own gold; its alpha does not matter. r, g, b come
+-- from ReadTextColor, which returns only readable numbers, so this is
+-- Safety.SameColor without its secret and type checks (one call per text on
+-- every pooled row refresh).
 local function IsNativeYellow(r, g, b)
-    return SameColor(r, g, b, nil, NATIVE_R, NATIVE_G, NATIVE_B, nil, Safety.COLOR_NATIVE)
+    return abs(r - NATIVE_R) <= COLOR_NATIVE and abs(g - NATIVE_G) <= COLOR_NATIVE
+        and abs(b - NATIVE_B) <= COLOR_NATIVE
 end
 
 local function CopyColor(target, source)
@@ -47,7 +52,7 @@ end
 -- never compared or tracked.
 local function ReadTextColor(object)
     if type(object) ~= "table" or type(object.SetTextColor) ~= "function" then return nil end
-    return Safety.ReadColor(object, "GetTextColor")
+    return ReadColor(object, "GetTextColor")
 end
 
 -- A region's object type never changes. Surfaces rescan their regions on
@@ -156,22 +161,27 @@ end
 
 local function CanTrack(frame)
     return NS.DB and NS.DB.enabled and not NS.IsCombatLocked()
-        and type(frame) == "table" and not Safety.IsForbidden(frame)
+        and type(frame) == "table" and not IsForbidden(frame)
 end
 
 -- 12.1 can return secret regions (Hierarchy aspect); they are skipped before
 -- any comparison or lookup. Every node of a window pass comes here with all
--- its regions, so Safety.Public and IsFontString's cache are inlined.
-local function TrackRegions(...)
+-- its regions, so Safety.Public and IsFontString's cache are inlined. With a
+-- record (TrackNode), the FontStrings are also appended to it, and a secret
+-- region leaves it unusable (record.regions = false).
+local function TrackRegions(record, ...)
     local count = 0
     local isSecret, known = issecretvalue, fontStringRegions
     for index = 1, select("#", ...) do
         local region = select(index, ...)
-        if (isSecret == nil or not isSecret(region)) and type(region) == "table" then
+        if isSecret ~= nil and isSecret(region) then
+            if record then record.regions = false end
+        elseif type(region) == "table" then
             local fontString = known[region]
             if fontString == nil then fontString = IsFontString(region) end
-            if fontString and ApplyObject(region, BlizzardYellow.directStates) then
-                count = count + 1
+            if fontString then
+                if record then record[#record + 1] = region end
+                if ApplyObject(region, BlizzardYellow.directStates) then count = count + 1 end
             end
         end
     end
@@ -185,7 +195,40 @@ end
 function BlizzardYellow.TrackFrame(frame)
     if not CanTrack(frame) or type(frame.GetRegions) ~= "function" then return 0 end
     RefreshDesiredColor()
-    return TrackRegions(frame:GetRegions())
+    return TrackRegions(nil, frame:GetRegions())
+end
+
+-- Blizzard initializes a pooled row again on every scroll, and its nodes keep
+-- their regions. Each node's FontStrings are recorded with its region count
+-- and revisited directly while the count stays. A region is never destroyed,
+-- so the set changes only by a new region (the count grows) or a reparented
+-- one; row templates create theirs once. A secret count or region (Hierarchy
+-- aspect) is never recorded: that node takes the full pass, as before.
+local nodeFontStrings = setmetatable({}, { __mode = "k" })
+
+local function TrackNode(frame)
+    local regions = frame:GetNumRegions()
+    local isSecret = issecretvalue
+    if isSecret ~= nil and isSecret(regions) or type(regions) ~= "number" then
+        nodeFontStrings[frame] = nil
+        return TrackRegions(nil, frame:GetRegions())
+    end
+    local record = nodeFontStrings[frame]
+    if record and record.regions == regions then
+        local count = 0
+        for index = 1, #record do
+            if ApplyObject(record[index], BlizzardYellow.directStates) then count = count + 1 end
+        end
+        return count
+    end
+    if record then
+        for index = #record, 1, -1 do record[index] = nil end
+    else
+        record = {}
+        nodeFontStrings[frame] = record
+    end
+    record.regions = regions
+    return TrackRegions(record, frame:GetRegions())
 end
 
 -- TrackFrame over frames[1..count] (a pooled row's subtree): the enable and
@@ -196,8 +239,8 @@ function BlizzardYellow.TrackFrames(frames, count)
     local tracked = 0
     for index = 1, count do
         local frame = frames[index]
-        if type(frame) == "table" and not Safety.IsForbidden(frame) and type(frame.GetRegions) == "function" then
-            tracked = tracked + TrackRegions(frame:GetRegions())
+        if type(frame) == "table" and not IsForbidden(frame) and type(frame.GetRegions) == "function" then
+            tracked = tracked + TrackNode(frame)
         end
     end
     return tracked
