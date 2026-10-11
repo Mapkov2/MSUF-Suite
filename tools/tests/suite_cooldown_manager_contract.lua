@@ -33,8 +33,9 @@ local function Plain(value,what) if IsSecret(value) then error("secret value rea
 -- The client's securecallfunction reports an error to the error handler and
 -- returns nothing; the caller goes on. Here errors still raise unless a test
 -- expects one.
-local dispatch={expect=false,errors={}}
+local dispatch={expect=false,errors={},calls=0}
 securecallfunction=function(fn,...)
+    dispatch.calls=dispatch.calls+1
     if not dispatch.expect then return fn(...) end
     local results={pcall(fn,...)}
     if results[1] then return unpack(results,2,table.maxn(results)) end
@@ -807,15 +808,20 @@ end
 C.EMPTY.probe=true
 assert(C.EMPTY.probe==nil and next(C.EMPTY)==nil,"EMPTY must stay empty")
 
+-- The payload storms live on the context's direct frame (Runtime.lua
+-- DirectEvent); every other event on the routing frame. (No helper local:
+-- the main chunk is at Lua 5.1's 200-local limit.)
+local function Registered(event)
+    local direct=module.context.directFrame
+    local frame=direct and direct.events[event] and direct or module.context.frame
+    return frame~=nil and frame.events[event]==true
+end
 local function Fire(event,...)
-    local frame=module.context.frame
+    local direct=module.context.directFrame
+    local frame=direct and direct.events[event] and direct or module.context.frame
     if not (frame and frame.events[event]) then return false end
     frame.scripts.OnEvent(frame,event,...)
     return true
-end
-local function Registered(event)
-    local frame=module.context.frame
-    return frame~=nil and frame.events[event]==true
 end
 local function NoOnUpdate()
     for i=1,#all do assert(not all[i].scripts.OnUpdate,"an OnUpdate script is set") end
@@ -1111,6 +1117,23 @@ local function Budget(label,event,...)
     assert(writes==before,label.." wrote widgets")
     assert(PendingTimers()==0,label.." scheduled work")
 end
+-- The 2026-10-07 raid trace (60 s): SPELL_UPDATE_COOLDOWN 1,596,
+-- SPELL_UPDATE_USABLE 1,291 and BAG_UPDATE_COOLDOWN 686 events reached the
+-- cooldown manager through RouteEvent (1.7 us self each) and a Dispatch.
+-- They arrive on the context's direct frame: no Dispatch per event.
+do
+    for _,event in ipairs({"SPELL_UPDATE_COOLDOWN","SPELL_UPDATE_USABLE","BAG_UPDATE_COOLDOWN"}) do
+        assert(Registered(event) and module.context.directFrame.events[event] and not module.context.frame.events[event],
+            event.." is not on the direct frame")
+    end
+    -- SPELL_UPDATE_USABLE is checked with the usability sweep below: firing it
+    -- here would arm that sweep's throttle window.
+    local calls=dispatch.calls
+    Fire("SPELL_UPDATE_COOLDOWN",999999)
+    Fire("BAG_UPDATE_COOLDOWN")
+    assert(dispatch.calls==calls,"a payload storm event ran "..(dispatch.calls-calls).." Dispatch calls")
+    Run()
+end
 Budget("a cooldown event without a match","SPELL_UPDATE_COOLDOWN",999999,nil,nil,nil,nil)
 Budget("a GCD start without a match","SPELL_UPDATE_COOLDOWN",999999,999998,nil,133,nil)
 Budget("a use count without a match","SPELL_UPDATE_USES",999999,999998)
@@ -1357,7 +1380,9 @@ Fire("SPELL_UPDATE_COOLDOWN",101)
 assert(e11.icon.chargeCd.running and e11.icon.chargeSet==true,"charge recharge edge")
 usable[201]=false
 assert(C.Index.usableInterval==.2,"ordinary usability did not select the 200ms budget")
+dispatch.before=dispatch.calls
 assert(Fire("SPELL_UPDATE_USABLE"))
+assert(dispatch.calls==dispatch.before,"SPELL_UPDATE_USABLE went through Dispatch (2026-10-07 trace: 1,291 events)")
 Run()
 assert(e21.icon.tex.vc and e21.icon.tex.vc[1]==.4,"unusable tint")
 usable.stormReads=usable.calls[201] or 0
@@ -3472,7 +3497,7 @@ assert(cvars.cooldownViewerEnabled=="1","the CVar is restored")
 for _,slot in ipairs({"ess","uti","def","ext","buf","bar","c1","c2"}) do
     assert(not bars[slot].frame.shown,slot.." still shown after disable")
 end
-assert(not next(module.context.frame.events),"events left registered")
+assert(not next(module.context.frame.events) and not next(module.context.directFrame.events),"events left registered")
 assert(DriverCount()==0,"visibility drivers left registered")
 assert(not registry["CooldownViewerSettings.OnPendingChanges"] and not registry["AssistedCombatManager.OnAssistedHighlightSpellChange"],
     "registry callbacks left registered")

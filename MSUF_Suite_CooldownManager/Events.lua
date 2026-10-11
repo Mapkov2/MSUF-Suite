@@ -471,12 +471,19 @@ end
 ------------------------------------------------------------------ event map
 -- Context:Event's named option: the handler also runs in combat.
 local IN_COMBAT = { inCombat = true }
+-- The payload storms of the 2026-10-07 raid trace (60 s) reach their
+-- handlers straight from the context's direct frame (Runtime.lua
+-- DirectEvent), without RouteEvent and a Dispatch each: SPELL_UPDATE_COOLDOWN
+-- 1,596, SPELL_UPDATE_USABLE 1,291 (the usability sweep's trigger) and
+-- BAG_UPDATE_COOLDOWN 686 (the item refresh's trigger) events.
+local DIRECT = { inCombat = true, direct = true }
+local EVENT_OPTIONS = { SPELL_UPDATE_COOLDOWN = DIRECT, SPELL_UPDATE_USABLE = DIRECT, BAG_UPDATE_COOLDOWN = DIRECT }
 local function Want(event, on, handler, unit)
     on = on and true or false
     if (events[event] == true) == on then return end
     events[event] = on or nil
     if on then
-        M.context:Event(event, handler, IN_COMBAT, unit)
+        M.context:Event(event, handler, EVENT_OPTIONS[event] or IN_COMBAT, unit)
     else
         M.context:RemoveEvent(event)
     end
