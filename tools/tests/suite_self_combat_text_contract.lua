@@ -2,6 +2,8 @@
 -- native animation lifetime, fixed pool, Edit Mode and state restoration.
 local root = assert(arg[1], "repository root required")
 local created, fontCount, reads, writes = 0, 0, 0, 0
+-- Native calls the paint path may skip: animation Stop, frame SetAlpha, Dispatch.
+local stops, alphas, dispatches = 0, 0, 0
 local duringEvent, vehicle, validEvent, locked = false, false, true, false
 local activeUnit, cvar = "target", "1"
 local secret = setmetatable({}, {
@@ -40,7 +42,7 @@ Widget = function()
     function w:SetTextColor(r, g, b) self.r, self.g, self.b = r, g, b end
     -- A C sink may receive a secret without any Lua coercion.
     function w:SetFormattedText(format, value) self.format, self.value = format, value end
-    function w:SetAlpha(value) self.alpha = value end
+    function w:SetAlpha(value) self.alpha = value; alphas = alphas + 1 end
     function w:IsShown() return self.shown end
     function w:SetShown(value) self.shown = value end
     function w:IsForbidden() return false end
@@ -50,7 +52,7 @@ Widget = function()
     function w:CreateAnimationGroup()
         local animation = Widget()
         function animation:SetLooping(value) assert(value == "NONE") end
-        function animation:Stop() self.playing = false end
+        function animation:Stop() self.playing = false; stops = stops + 1 end
         function animation:Play() self.playing = true end
         function animation:CreateAnimation(kind)
             assert(kind == "Translation" or kind == "Alpha")
@@ -89,7 +91,7 @@ C_CVar = {
         cvar, writes = value, writes + 1
     end,
 }
-local function Dispatch(callback, ...) return callback(...) end
+local function Dispatch(callback, ...) dispatches = dispatches + 1; return callback(...) end
 local NS = {
     Public = function(value) return not rawequal(value, secret) and not rawequal(value, healSecret) end,
     Client = { SupportsEvent = function() return validEvent end },
@@ -134,14 +136,21 @@ M.context, M.active = S.NewContext("selfCombatText"), true
 M:Enable()
 M:RegisterMovers()
 assert(mover.getFrame() == M.host and mover.xKey == "x" and mover.yKey == "y")
+-- COMBAT_TEXT_UPDATE lives on the context's direct frame (Runtime.lua).
+local function Holder(event)
+    local direct = M.context.directFrame
+    if direct and direct.events[event] then return direct end
+    return M.context.frame
+end
 local function Event(event, ...)
-    local frame = M.context.frame
+    local frame = Holder(event)
     assert(frame.events[event], event .. " is not registered")
     duringEvent = event == "COMBAT_TEXT_UPDATE"
     frame.scripts.OnEvent(frame, event, ...)
     duringEvent = false
 end
-assert(created == 22 and fontCount == 20 and #M.slots == 20)
+-- Host, 20 slots, the routing frame and the direct frame (COMBAT_TEXT_UPDATE).
+assert(created == 23 and fontCount == 20 and #M.slots == 20)
 assert(cvar == "0" and activeUnit == "player" and not CombatText.shown)
 assert(not M.context.frame.events.ADDON_LOADED, "loaded native UI left an addon listener")
 local frames, fonts = created, fontCount
@@ -186,6 +195,30 @@ assert(created == frames and fontCount == fonts and M.cursor <= 3, "burst grew t
 local slot = M.slots[M.cursor]
 slot.animation.scripts.OnFinished(slot.animation)
 assert(not slot.frame.shown, "finished animation left text visible")
+-- The 2026-10-07 raid trace: 1,061 COMBAT_TEXT_UPDATE in 60 s (CombatText
+-- 9.6 ms self), 417 paints (6.6 ms self). Each event came through a
+-- Dispatch; each paint stopped the slot's animation and reset the frame's
+-- alpha. Now: no Dispatch, a Stop only for a slot whose message still
+-- moves, no SetAlpha (the fade is an animation; the frame's alpha stays 1).
+do
+    M.config.maxMessages = 20
+    for i = 1, 20 do Event("COMBAT_TEXT_UPDATE", "SPELL_DAMAGE") end
+    for i = 1, 20 do
+        local each = M.slots[i]
+        if each.animation.playing then each.animation.scripts.OnFinished(each.animation) end
+    end
+    stops, alphas, dispatches = 0, 0, 0
+    for i = 1, 20 do Event("COMBAT_TEXT_UPDATE", "SPELL_DAMAGE") end
+    assert(stops == 0 and alphas == 0 and dispatches == 0, ("finished slots cost %d Stop, %d SetAlpha and %d Dispatch")
+        :format(stops, alphas, dispatches))
+    for i = 1, 20 do assert(M.slots[i].animation.playing and M.slots[i].frame.shown, "a reused slot did not play") end
+    for i = 1, 20 do Event("COMBAT_TEXT_UPDATE", "SPELL_DAMAGE") end
+    assert(stops == 20, "a slot whose message still moves was not restarted")
+    for i = 1, 20 do assert(M.slots[i].frame.alpha ~= 0, "a slot frame kept a zero alpha") end
+    Event("COMBAT_TEXT_UPDATE", "SPELL_AURA_START")
+    assert(dispatches == 0, "an unpainted message type went through Dispatch")
+    M.config.maxMessages = 3
+end
 vehicle = true
 Event("UNIT_ENTERED_VEHICLE", "player")
 assert(activeUnit == "vehicle")
@@ -218,7 +251,8 @@ assert(allocated < 1, "combat-text burst allocated " .. allocated .. " KB")
 M.active = false
 M:Disable()
 M.context:Release()
-assert(cvar == "1" and activeUnit == "target" and not next(M.context.frame.events) and CombatText.shown)
+assert(cvar == "1" and activeUnit == "target" and not next(M.context.frame.events) and CombatText.shown
+    and not next(M.context.directFrame.events), "release kept combat text events")
 before = reads
 duringEvent = true
 callback(M, "COMBAT_TEXT_UPDATE", "DAMAGE")

@@ -3,6 +3,11 @@ local NS, S = P.NS, P.Suite
 local ID, CAPACITY = "selfCombatText", 20
 local POINTS = NS.AnchorPoints
 local IN_COMBAT = { inCombat = true }
+-- COMBAT_TEXT_UPDATE reaches CombatText straight from the context's direct
+-- frame (Runtime.lua DirectEvent): 1,061 events in 60 s of the 2026-10-07
+-- raid trace, 644 of them for message types this display never paints, each
+-- with a Dispatch before.
+local DIRECT = { inCombat = true, direct = true }
 local M = {}
 
 -- Blizzard_CombatText/Shared/CombatText.lua on live and forever reads this
@@ -16,7 +21,10 @@ local KINDS = {
     HEAL_CRIT = 4, PERIODIC_HEAL_CRIT = 4, HEAL_CRIT_ABSORB = 4,
 }
 
+-- slot.playing: Play started the slot's animation and neither OnFinished
+-- nor Stop ended it. A slot reused after its message finished needs no Stop.
 local function Finished(animation)
+    animation.slot.playing = false
     animation.owner:Hide()
 end
 
@@ -25,6 +33,7 @@ local function Clear(self)
     for i = 1, CAPACITY do
         local slot = self.slots[i]
         slot.animation:Stop()
+        slot.playing = false
         slot.frame:Hide()
     end
     self.cursor = 0
@@ -55,6 +64,7 @@ local function Create(self)
         fade:SetFromAlpha(1)
         fade:SetToAlpha(0)
         self.slots[i] = { frame = frame, text = text, animation = animation, move = move, fade = fade }
+        animation.slot = self.slots[i]
         frame:Hide()
     end
     host:Hide()
@@ -108,8 +118,10 @@ local function Paint(self, slot, kind, amount)
     end
     -- No comparisons, concatenation, tonumber, arithmetic or Lua formatting
     -- on amount. SetFormattedText accepts secret arguments even when tainted.
+    -- The frame's own alpha is never anything but 1: the fade is an Alpha
+    -- animation (no final alpha kept), which leaves it when the animation
+    -- stops or finishes.
     slot.text:SetFormattedText(heal and "+%s" or "-%s", amount)
-    slot.frame:SetAlpha(1)
     slot.frame:Show()
 end
 
@@ -130,9 +142,10 @@ local function CombatText(self, _, messageType)
     end
     self.cursor = self.cursor % self.config.maxMessages + 1
     local slot = self.slots[self.cursor]
-    slot.animation:Stop()
+    if slot.playing then slot.animation:Stop() end
     if heal then Paint(self, slot, kind, second) else Paint(self, slot, kind, first) end
     slot.animation:Play()
+    slot.playing = true
 end
 
 local function SelectUnit(self)
@@ -180,7 +193,7 @@ function M:Enable()
     self.context:CVar("enableFloatingCombatText", 0)
     if not HideBlizzard(self) then self.context:Event("ADDON_LOADED", NativeLoaded, IN_COMBAT) end
     SelectUnit(self)
-    self.context:Event("COMBAT_TEXT_UPDATE", CombatText, IN_COMBAT)
+    self.context:Event("COMBAT_TEXT_UPDATE", CombatText, DIRECT)
     self.context:Event("PLAYER_ENTERING_WORLD", UnitChanged, IN_COMBAT)
     self.context:Event("UNIT_ENTERED_VEHICLE", UnitChanged, IN_COMBAT, "player")
     self.context:Event("UNIT_EXITING_VEHICLE", UnitChanged, IN_COMBAT, "player")
