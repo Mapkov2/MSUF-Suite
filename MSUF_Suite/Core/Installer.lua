@@ -13,7 +13,7 @@ local scale = 1
 local scalePreset = "custom"
 local page = 1
 local frame
-local moduleOverrides = { suite = {}, classic = {}, forever = {} }
+local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {} }
 -- Above MSUF menu popups (DIALOG level 400); see CreateWindow.
 local INSTALLER_FRAME_LEVEL = 500
 
@@ -55,8 +55,8 @@ local function PlayerCooldownAnchor()
 end
 
 local function FrameProfileName()
-    return type(_G.MSUF_ActiveProfile) == "string" and _G.MSUF_ActiveProfile ~= ""
-        and _G.MSUF_ActiveProfile or DB.GetActiveProfileName()
+    return type(Suite.HostBridge.ActiveFrameProfileName()) == "string" and Suite.HostBridge.ActiveFrameProfileName() ~= ""
+        and Suite.HostBridge.ActiveFrameProfileName() or DB.GetActiveProfileName()
 end
 
 local function DefaultLook()
@@ -69,6 +69,7 @@ local function AppliedLook()
 end
 
 local function SkinPreset()
+    if selected == "modernDark" then return Suite.ModernDarkSkinCompact end
     if selected == "classic" then return Suite.RetailProfileSkinCompact end
     return (selected == "forever" or Suite.Client.isForever)
         and Suite.ForeverFactorySkinCompact or Suite.RetailFactorySkinCompact
@@ -83,6 +84,7 @@ local function FactoryProfile(layout, authored)
     local compact = layout == "classic" and Suite.RetailProfileModuleCompact
         or (Suite.Client.isForever or layout == "forever")
             and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
+    if layout == "modernDark" then compact = Suite.ModernDarkModuleCompact end
     local cacheKey = layout .. (look or "authored") .. compact
     local profile = decodedFactories[cacheKey]
     if profile then return profile end
@@ -190,8 +192,7 @@ end
 local function NextFactoryName(base)
     local name = base
     local index = 2
-    while DB.GetProfile(name) or (_G.MSUF_GlobalDB and _G.MSUF_GlobalDB.profiles
-        and _G.MSUF_GlobalDB.profiles[name]) or Suite.SuiteProfiles.SkinProfileExists(name) do
+    while DB.GetProfile(name) or Suite.HostBridge.FrameProfile(name) or Suite.SuiteProfiles.SkinProfileExists(name) do
         name = base .. " " .. index
         index = index + 1
     end
@@ -199,24 +200,18 @@ local function NextFactoryName(base)
 end
 
 local function ApplyClassic(profile, finish)
-    local msuf = _G.MSUF_NS
-    local frames = not Suite.Client.isForever and msuf
-        and msuf.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
-        or Suite.ClassicFactoryFramesCompact
+    local frames = Suite.HostBridge.FactoryFrameCompact(false)
     if type(frames) ~= "string" or type(profile) ~= "table" then
         return false, "Classic MSUF factory profile unavailable"
     end
     local skinEnabled = Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName("Modern MSUF Suite"),
         frames, profile, skinEnabled and SkinPreset() or nil, AppliedLook(), finish,
-        { screenHeight = false, preserveSkinLayout = true })
+        { screenHeight = false, preserveSkinLayout = true, frameColors = Suite.InstallerFrameColors.Choices() })
 end
 
 local function ApplyForever(profile, finish)
-    local msuf = _G.MSUF_NS
-    local frames = Suite.Client.isForever and msuf
-        and msuf.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
-        or Suite.ForeverFactoryFramesCompact
+    local frames = Suite.HostBridge.FactoryFrameCompact(true)
     local skin = Suite.ForeverFactorySkinCompact
     if type(frames) ~= "string" or type(profile) ~= "table" then
         return false, "Forever factory profile unavailable"
@@ -227,7 +222,15 @@ local function ApplyForever(profile, finish)
     -- would scale positions MSUF has already adapted.
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName("MSUF Suite Forever"), frames, profile,
         skinEnabled and skin or nil, AppliedLook(), finish,
-        { screenHeight = false, preserveSkinLayout = true })
+        { screenHeight = false, preserveSkinLayout = true, frameColors = Suite.InstallerFrameColors.Choices() })
+end
+
+local function ApplyModernDark(profile, finish)
+    local frames = Suite.HostBridge.ModernDarkFrameCompact()
+    return Suite.SuiteProfiles.InstallFactory(NextFactoryName("Modern Dark"), frames, profile,
+        Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and SkinPreset() or nil,
+        AppliedLook(), finish, { screenHeight = false, preserveSkinLayout = true,
+            frameColors = Suite.InstallerFrameColors.Choices() })
 end
 
 -- The scale the installer applies, decided once before anything commits:
@@ -235,8 +238,8 @@ end
 -- (the pixel preset takes the screen's current pixel-perfect scale).
 local function ScaleSpec()
     if not useScale then return { msufScale = 1 } end
-    if scalePreset == "pixel" and type(_G.MSUF_GetPixelPerfectScale) == "function" then
-        scale = tonumber(_G.MSUF_GetPixelPerfectScale()) or scale
+    if scalePreset == "pixel" and type(Suite.HostBridge.Profiles.GetPixelPerfectScale) == "function" then
+        scale = tonumber(Suite.HostBridge.Profiles.GetPixelPerfectScale()) or scale
     end
     return { msufScale = 1, global = { preset = scalePreset, scale = scale } }
 end
@@ -260,6 +263,8 @@ function Installer.Apply()
     local ok
     if keepFrames then
         ok, reason = ApplySuiteOnly(profile, ApplyScale)
+    elseif selected == "modernDark" then
+        ok, reason = ApplyModernDark(profile, ApplyScale)
     elseif selected == "forever" then
         ok, reason = ApplyForever(profile, ApplyScale)
     elseif selected == "classic" then
@@ -269,16 +274,17 @@ function Installer.Apply()
     end
     if not ok then return false, reason end
     local previous = Suite.RootDB.installation
-    local getDefault = _G.MSUF_GetDefaultProfileForNewCharacters
+    local getDefault = Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters
     local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
         and type(getDefault) == "function" and getDefault() == previous.frameProfileName
     Suite.RootDB.installation = {
         revision = 4, status = "complete", profile = keepFrames and "suite" or selected,
         layout = selected == "forever" and "forever" or "retail",
         look = chosenLook or DefaultLook(), keepFrames = keepFrames,
+        frameColors = not keepFrames and Suite.InstallerFrameColors.Choices() or nil,
         modernMeterMenuRevision = selected ~= "suite" and 2 or nil,
         modernPanelAnchorRevision = selected ~= "forever" and 1 or nil,
-        resourceStackRevision = selected == "classic" and 1 or nil,
+        resourceStackRevision = (selected == "classic" or selected == "modernDark") and 1 or nil,
         frameProfileName = FrameProfileName(),
         moduleOverrides = moduleOverrides[selected],
         raidEssentials = RetailCooldowns() and useRaidEssentials,
@@ -286,13 +292,13 @@ function Installer.Apply()
         uiScalePreset = useScale and scalePreset or nil,
         foreverAnchorRevision = RetailCooldowns() and selected == "forever" and 1 or nil,
     }
-    if carriedDefault and type(_G.MSUF_SetDefaultProfileForNewCharacters) == "function"
-        and _G.MSUF_SetDefaultProfileForNewCharacters(FrameProfileName()) == true then
+    if carriedDefault and type(Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters) == "function"
+        and Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters(FrameProfileName()) == true then
         Suite.RootDB.installation.newCharacterProfileRevision = 1
         Suite.RootDB.installation.newCharacterProfileOwned = true
     end
     Suite.SuiteProfiles.EnsureNewCharacterProfile()
-    if selected ~= "classic" then Suite.SuiteProfiles.EnsureRetailResourceStack(true) end
+    if selected ~= "classic" and selected ~= "modernDark" then Suite.SuiteProfiles.EnsureRetailResourceStack(true) end
     NotifyInstallerFinished()
     return true
 end
@@ -341,7 +347,7 @@ end
 -- stacking and layout stay unchanged.
 local function CreateWindow()
     local window = CreateFrame("Frame", "MSUFSuiteInstallFrame", _G.UIParent, "BackdropTemplate")
-    window:SetSize(580, 470)
+    window:SetSize(580, 500)
     window:SetPoint("CENTER")
     window:SetFrameStrata("DIALOG")
     -- MSUF's menu shares DIALOG strata (window level 10, its popups 400), and
@@ -386,7 +392,7 @@ end
 local function BuildProfileSteps(window)
     window.intro = {
         InfoCard(window, 36, 231, Text("1. Choose a Suite layout"),
-            Text("Both Suite layouts work in Retail and Forever. Choose the layout first, then its colors.")),
+            Text("Suite layouts work in Retail and Forever. Choose the layout first, then its colors.")),
         InfoCard(window, 36, 157, Text("2. Select modules"),
             Text("Keep the profile defaults or switch individual Suite modules on or off.")),
         InfoCard(window, 36, 83, Text("3. Set UI scale"),
@@ -401,10 +407,10 @@ local function BuildProfileSteps(window)
             chosenLook = look
             Installer.Refresh()
         end, function(layout) return FactoryProfile(layout, true) end)
-    local cooldowns = Panel(window, 36, 50, 508, 42, true)
-    cooldowns.title = Label(cooldowns, "GameFontNormal", 14, -7, 360, 17)
-    cooldowns.detail = Label(cooldowns, "GameFontHighlightSmall", 14, -24, 460, 15)
-    cooldowns.mark = Label(cooldowns, "GameFontNormalSmall", 388, -7, 105, 18)
+    local cooldowns = Panel(window, 36, 50, 508, 52, true)
+    cooldowns.title = Label(cooldowns, "GameFontNormal", 14, -3, 360, 15)
+    cooldowns.detail = Label(cooldowns, "GameFontHighlightSmall", 14, -20, 460, 30)
+    cooldowns.mark = Label(cooldowns, "GameFontNormalSmall", 388, -3, 105, 18)
     cooldowns.mark:SetJustifyH("RIGHT")
     cooldowns:SetScript("OnClick", function()
         useRaidEssentials = not useRaidEssentials
@@ -416,8 +422,8 @@ end
 
 local SCALE_PRESETS = {
     { "Pixel perfect", function()
-        local pixel = type(_G.MSUF_GetPixelPerfectScale) == "function"
-            and _G.MSUF_GetPixelPerfectScale() or 1
+        local pixel = type(Suite.HostBridge.Profiles.GetPixelPerfectScale) == "function"
+            and Suite.HostBridge.Profiles.GetPixelPerfectScale() or 1
         return tonumber(pixel) or 1
     end },
     { "Small", function() return 0.6 end },
@@ -529,7 +535,8 @@ local function Build()
     BuildHeader(frame)
     BuildProfileSteps(frame)
     Suite.InstallerPreview.Build(frame, function()
-        return FactoryProfile(), moduleOverrides[selected], { keepFrames = keepFrames, useScale = useScale, scale = scale }
+        return FactoryProfile(), moduleOverrides[selected], { keepFrames = keepFrames, useScale = useScale,
+            scale = scale, frameColorsStep = page == 4, layoutStep = page == 2 }
     end, Suite.HostBridge.FactoryFramePreview, function(id)
         page = id == "frames" and 4 or 3
         if id and id ~= "frames" then Suite.InstallerModules.Focus(frame, id) end
@@ -550,6 +557,9 @@ end
 -- 4 scaling, 5 review, 6 done) and updates progress and navigation.
 local function ShowPage(f)
     local complete, scaling = page == 6, page == 4
+    f.body:SetHeight(page == 2 and 32 or 57)
+    f.status:ClearAllPoints()
+    f.status:SetPoint("TOPLEFT", f, "TOPLEFT", 36, page == 2 and -143 or -403)
     f.step:SetText(complete and Text("DONE") or ("%d / 5"):format(page))
     Appearance.Progress(f, page)
     SetShownAll(f.intro, page == 1)
@@ -597,7 +607,7 @@ local function PaintWelcome(f)
 end
 
 local function PaintProfiles(f)
-    SetPageText(f, "Choose a Suite layout", "Both Suite layouts work in Retail and Forever. Choose the layout first, then its colors.")
+    SetPageText(f, "Choose a Suite layout", "Suite layouts work in Retail and Forever. Choose the layout first, then its colors.")
     f.cooldowns.title:SetText(Text("MSUF spec cooldown profiles"))
     f.cooldowns.detail:SetText(Text("Raid essentials, utility and buffs for your spec; turn off to follow Blizzard's CDM."))
     f.cooldowns.mark:SetText(useRaidEssentials and Text("ON") or Text("OFF"))
@@ -652,7 +662,8 @@ local function PaintReview(f)
     local profile = PreviewProfile(f)
     f.review[1].title:SetText(Text("Profile"))
     f.review[1].detail:SetText(Text("%s · Colors: %s · %s"):format(
-        selected == "forever" and Text("MSUF Suite Forever") or Text("Modern MSUF Suite"),
+        selected == "modernDark" and Text("Modern Dark")
+            or selected == "forever" and Text("MSUF Suite Forever") or Text("Modern MSUF Suite"),
         Suite.InstallerProfiles.LookLabel(chosenLook),
         keepFrames and Text("Current MSUF frames") or Text("Factory MSUF frames")))
     f.review[2].title:SetText(Text("Modules"))
@@ -683,12 +694,13 @@ function Installer.Open()
     if Suite.InCombat() then return false, "combat" end
     selected = Suite.Client.isForever and "forever" or "classic"
     chosenLook, keepFrames = nil, false
+    Suite.InstallerFrameColors.Reset()
     local active = DB.GetProfile(DB.GetActiveProfileName())
     local current = active and active.suite and active.suite.modules
         and active.suite.modules.cooldownManager
     useScale, scale, scalePreset, page = false, 1, "custom", 1
     useRaidEssentials = not (current and current.raidEssentials == false)
-    moduleOverrides = { suite = {}, classic = {}, forever = {} }
+    moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {} }
     Build().moduleTab = "modules"
     frame.moduleFocus, frame.moduleFocusPending, frame.layoutPreview.selectedModule = nil, nil, nil
     -- A reopened window still shows the last session's slider position.
@@ -704,9 +716,7 @@ end
 -- The host hands off with MaybeShow(); /msufsuite opens setup at any time.
 local function HostFirstRunPending()
     if Suite.Host.build ~= "Classic" then return false end
-    local firstLoad = _G.MSUF_NS.FirstLoad6
-    return type(firstLoad) == "table" and type(firstLoad.IsFirstRunPending) == "function"
-        and firstLoad:IsFirstRunPending() == true
+    return Suite.HostBridge.FirstRunPending()
 end
 
 function Installer.MaybeShow(reason)

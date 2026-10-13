@@ -176,6 +176,38 @@ function P.EnsureModernPanelLayout()
     return ok
 end
 
+-- Update only the original tooltip settings of the installed Modern Dark
+-- profile. Personal anchors and every other profile keep their positions.
+local function OriginalModernDarkTooltip(profile)
+    local modules = profile and profile.suite and profile.suite.modules
+    local config, meter = modules and modules.tooltipDetails, modules and modules.damageMeter
+    return config and config.enabled == false and config.anchor == 1
+        and config.growth == 1 and config.fixedX == -24 and config.fixedY == 24
+        and meter and meter.w1Y == 32 and meter.w1Height == 250 and meter.headerOutside == true
+end
+
+function P.EnsureModernDarkTooltips()
+    local installation = Suite.RootDB and Suite.RootDB.installation
+    local name = DB.GetActiveProfileName()
+    if Suite.InCombat() or Suite.Client.isForever or not installation
+        or installation.status ~= "complete" or installation.profile ~= "modernDark"
+        or installation.frameProfileName ~= name or installation.modernDarkTooltipRevision == 1 then return false end
+    local profile = Suite.ProfileVariants.BaseProfile(name)
+    if not profile then return false end
+    if not OriginalModernDarkTooltip(profile) then
+        installation.modernDarkTooltipRevision = 1
+        return false
+    end
+    if not Suite.ProfileVariants.BeforeMutation(name) then return false end
+    local original = OriginalModernDarkTooltip(DB.GetProfile(name))
+    local ok = original and Suite.Suite.SetMany("tooltipDetails", {
+        enabled = true, anchor = 3, growth = 1, fixedX = -12, fixedY = 340,
+    }) == true or false
+    Suite.ProfileVariants.AfterMutation(name)
+    if ok or not original then installation.modernDarkTooltipRevision = 1 end
+    return ok
+end
+
 -- MSUF resolves a new character's frame profile before Suite starts. Install
 -- the chosen Suite profile as MSUF's new-character default once, and repair
 -- this login if MSUF already assigned its historical "Default" fallback.
@@ -185,12 +217,10 @@ function P.EnsureNewCharacterProfile()
     if type(installation) ~= "table" or installation.status ~= "complete"
         or installation.newCharacterProfileRevision == 1 then return false end
     local name = installation.frameProfileName or DB.GetActiveProfileName()
-    local profiles = _G.MSUF_GlobalDB and _G.MSUF_GlobalDB.profiles
-    if not DB.IsProfileName(name) or type(profiles) ~= "table"
-        or type(profiles[name]) ~= "table" then return false end
+    if not DB.IsProfileName(name) or type(Suite.HostBridge.FrameProfile(name)) ~= "table" then return false end
     if not installation.frameProfileName then installation.frameProfileName = name end
-    local get = _G.MSUF_GetDefaultProfileForNewCharacters
-    local set = _G.MSUF_SetDefaultProfileForNewCharacters
+    local get = Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters
+    local set = Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters
     if type(get) ~= "function" or type(set) ~= "function" then return false end
     local chosen = get()
     if chosen then
@@ -200,9 +230,9 @@ function P.EnsureNewCharacterProfile()
     if set(name) ~= true then return false end
     installation.newCharacterProfileRevision = 1
     installation.newCharacterProfileOwned = true
-    if _G.MSUF_ProfileWasUnboundAtLogin == true and _G.MSUF_ActiveProfile ~= name
-        and type(_G.MSUF_SwitchProfile) == "function" and not Suite.IsCombatLocked() then
-        return _G.MSUF_SwitchProfile(name) == true
+    if Suite.HostBridge.ProfileWasUnboundAtLogin() and Suite.HostBridge.ActiveFrameProfileName() ~= name
+        and type(Suite.HostBridge.Profiles.SwitchProfile) == "function" and not Suite.IsCombatLocked() then
+        return Suite.HostBridge.Profiles.SwitchProfile(name) == true
     end
     return true
 end
@@ -221,14 +251,8 @@ function P.EnsureRetailResourceStack(force)
         or type(module) ~= "table"
         or module.enabled == false then return false end
     if not force and installation.resourceStackRevision == 1 then return false end
-    local db = _G.MSUF_DB
-    if type(db) ~= "table" then return false end
-    local bars, player = db.bars, db.player
-    if type(bars) ~= "table" or type(player) ~= "table" then return false end
-    local migrate = force or (bars.classPowerAnchorToCooldown ~= true
-        and (player.powerBarDetached == true
-            and player.detachedPowerBarAnchorToClassPower == true
-            or installation.profile == "forever" and bars.classPowerOffsetY == -41))
+    local migrate = Suite.HostBridge.ResourceStackNeedsRepair(installation.profile, force)
+    if migrate == nil then return false end
     installation.resourceStackRevision = 1
     if not migrate then return false end
     -- MSUF writes the stack (Suite.HostBridge: its host API, or the
@@ -332,13 +356,13 @@ function Lifecycle.rename(source, target, skin)
     -- old settings behind, and the renamed profile never activates another
     -- profile's. Older MSUF builds rename first and ignore the answer; they
     -- keep the previous best-effort move.
-    local frames = MSUF_GlobalDB and MSUF_GlobalDB.profiles
-    if frames and frames[source] and (DB.GetProfile(target) or skin and skin.Database.GetProfile(target)) then
+    if Suite.HostBridge.FrameProfile(source) and (DB.GetProfile(target) or skin and skin.Database.GetProfile(target)) then
         return false, "profile-exists"
     end
     if original and not DB.GetProfile(target) then
         Suite.RootDB.profiles[target] = original
         Suite.RootDB.profiles[source] = nil
+        DB.RenameRuntimeData(source, target)
         if DB.GetActiveProfileName() == source then
             -- The active profile keeps its settings under the new name,
             -- also when the activation below is refused.
@@ -390,35 +414,24 @@ Suite.OnMSUFProfileLifecycle = P.OnLifecycle
 -- it under a new profile name without touching the active profile, so the
 -- switch happens only after the import succeeded.
 local function CanImportFrames()
-    return type(_G.MSUF_Profiles_ImportIntoNewProfile) == "function"
-        or type(_G.MSUF_Profiles_ImportExternal) == "function"
+    return type(Suite.HostBridge.Profiles.Profiles_ImportIntoNewProfile) == "function"
+        or type(Suite.HostBridge.Profiles.Profiles_ImportExternal) == "function"
 end
 
 local function ImportFramesIntoNewProfile(name, frames)
-    local native = _G.MSUF_Profiles_ImportIntoNewProfile
-    if type(native) == "function" then return native(name, frames) end
-    local profiles = _G.MSUF_GlobalDB.profiles
-    local ok, why = _G.MSUF_Profiles_ImportExternal(frames, name)
-    if ok ~= true or type(profiles[name]) ~= "table" then
-        if profiles[name] ~= nil then _G.MSUF_DeleteProfile(name) end
-        return false, why or "Frame profile import failed"
-    end
-    if _G.MSUF_SwitchProfile(name) == true and _G.MSUF_ActiveProfile == name then return true end
-    if _G.MSUF_ActiveProfile ~= name then _G.MSUF_DeleteProfile(name) end
-    return false, "Frame profile could not be activated"
+    return Suite.HostBridge.ImportFrameProfile(name, frames)
 end
 
 function P.Available()
-    return Suite.RootDB ~= nil and type(_G.MSUF_GlobalDB) == "table"
-        and type(_G.MSUF_GlobalDB.profiles) == "table"
-        and type(_G.MSUF_Profiles_ExportSelectionToString) == "function"
+    return Suite.RootDB ~= nil and Suite.HostBridge.HasFrameProfiles()
+        and type(Suite.HostBridge.Profiles.Profiles_ExportSelectionToString) == "function"
         and CanImportFrames()
-        and type(_G.MSUF_SwitchProfile) == "function"
-        and type(_G.MSUF_DeleteProfile) == "function"
+        and type(Suite.HostBridge.Profiles.SwitchProfile) == "function"
+        and type(Suite.HostBridge.Profiles.DeleteProfile) == "function"
 end
 
 function P.Active()
-    local frames = _G.MSUF_ActiveProfile or "Default"
+    local frames = Suite.HostBridge.ActiveFrameProfileName() or "Default"
     local modules = DB.GetActiveProfileName()
     return frames == modules and frames or nil, frames, modules
 end
@@ -426,7 +439,7 @@ end
 function P.Names()
     local result = {}
     if P.Available() then
-        for name in pairs(_G.MSUF_GlobalDB.profiles) do
+        for _, name in ipairs(Suite.HostBridge.FrameProfileNames()) do
             if DB.GetProfile(name) then result[#result + 1] = name end
         end
         table.sort(result)
@@ -445,30 +458,30 @@ local function NewName(name)
     if not ready then return nil, reason end
     name = type(name) == "string" and name:match("^%s*(.-)%s*$") or nil
     if not DB.IsProfileName(name) then return nil, "Enter a new profile name" end
-    if DB.GetProfile(name) or _G.MSUF_GlobalDB.profiles[name] then
+    if DB.GetProfile(name) or Suite.HostBridge.FrameProfile(name) then
         return nil, "Profile name already exists"
     end
     return name
 end
 
 local function Restore(frames, modules)
-    if _G.MSUF_ActiveProfile ~= frames then _G.MSUF_SwitchProfile(frames) end
+    if Suite.HostBridge.ActiveFrameProfileName() ~= frames then Suite.HostBridge.Profiles.SwitchProfile(frames) end
     if DB.GetActiveProfileName() ~= modules then DB.Activate(modules) end
-    return _G.MSUF_ActiveProfile == frames and DB.GetActiveProfileName() == modules
+    return Suite.HostBridge.ActiveFrameProfileName() == frames and DB.GetActiveProfileName() == modules
 end
 
 function P.Activate(name)
     local ready, reason = Ready()
     if not ready then return false, reason end
-    if not DB.IsProfileName(name) or not DB.GetProfile(name) or not _G.MSUF_GlobalDB.profiles[name] then
+    if not DB.IsProfileName(name) or not DB.GetProfile(name) or not Suite.HostBridge.FrameProfile(name) then
         return false, "Choose a profile that exists in both parts of the suite"
     end
     local _, frames, modules = P.Active()
-    local ok, why = _G.MSUF_SwitchProfile(name)
-    if ok and _G.MSUF_ActiveProfile == name and DB.GetActiveProfileName() ~= name then
+    local ok, why = Suite.HostBridge.Profiles.SwitchProfile(name)
+    if ok and Suite.HostBridge.ActiveFrameProfileName() == name and DB.GetActiveProfileName() ~= name then
         ok, why = DB.Activate(name)
     end
-    if ok and _G.MSUF_ActiveProfile == name and DB.GetActiveProfileName() == name then return true, name end
+    if ok and Suite.HostBridge.ActiveFrameProfileName() == name and DB.GetActiveProfileName() == name then return true, name end
     if not Restore(frames, modules) then return false, "Profile switch failed; restore the previous profiles manually" end
     return false, why or "Profile switch failed"
 end
@@ -479,7 +492,7 @@ end
 function P.Export(options)
     local ready, reason = Ready()
     if not ready then return nil, reason end
-    local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
+    local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return nil, "Frame profile export failed" end
     local modules, why = IO.ExportProfile(nil, options)
     if not modules then return nil, why end
@@ -506,8 +519,8 @@ end
 
 -- The steps after MSUF created the frame profile.
 local function PublishCreated(name, profile, skin, skinProfile, screenHeight)
-    if screenHeight and type(_G.MSUF_SetCurrentProfileScreenReferenceHeight) == "function"
-        and not _G.MSUF_SetCurrentProfileScreenReferenceHeight(screenHeight) then
+    if screenHeight and type(Suite.HostBridge.Profiles.SetCurrentProfileScreenReferenceHeight) == "function"
+        and not Suite.HostBridge.Profiles.SetCurrentProfileScreenReferenceHeight(screenHeight) then
         return false, "Frame positions could not be adapted"
     end
     local ok, reason = DB.CreateFromProfile(name, profile)
@@ -536,7 +549,7 @@ local function Create(name, frames, profile, skinProfile, screenHeight, finish)
     if finished and ok then
         finished, ok, reason = Dispatch(Finish, PublishCreated, name, profile, skin, skinProfile, screenHeight)
     end
-    local active = finished and ok and _G.MSUF_ActiveProfile == name and DB.GetActiveProfileName() == name
+    local active = finished and ok and Suite.HostBridge.ActiveFrameProfileName() == name and DB.GetActiveProfileName() == name
     if active and finish then
         local done, finishedOk, why = Dispatch(Finish, finish)
         active = done and finishedOk == true
@@ -550,9 +563,9 @@ local function Create(name, frames, profile, skinProfile, screenHeight, finish)
     if not Restore(previousFrames, previousModules) then
         return false, "Profile import failed; restore the previous profiles manually"
     end
-    if _G.MSUF_GlobalDB.profiles[name] then _G.MSUF_DeleteProfile(name) end
+    if Suite.HostBridge.FrameProfile(name) then Suite.HostBridge.Profiles.DeleteProfile(name) end
     if DB.GetProfile(name) then DB.Delete(name) end
-    if _G.MSUF_GlobalDB.profiles[name] or DB.GetProfile(name) then
+    if Suite.HostBridge.FrameProfile(name) or DB.GetProfile(name) then
         return false, "Profile import failed; the incomplete profile could not be removed"
     end
     return false, reason or "Profile import failed"
@@ -583,7 +596,7 @@ function P.SaveAs(name)
     if not clean then return false, reason end
     local profile, why = PrepareActive()
     if not profile then return false, why end
-    local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
+    local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return false, "Frame profile export failed" end
     local skin = SkinEngine()
     local skinProfile = skin and Suite.CopyValue(skin.Database.GetProfile(skin.Database.GetActiveProfileName()))
@@ -631,6 +644,8 @@ function P.InstallFactory(name, frames, modules, skinText, lookName, finish, opt
     if type(frames) ~= "string" or not frames:match("^MSUF[234]:") then
         return false, "Factory frame profile unavailable"
     end
+    frames = Suite.HostBridge.StyleFrameFactory(frames, options and options.frameColors)
+    if not frames then return false, "Factory frame profile unavailable" end
     local profile, why = IO.PrepareTable(modules, false)
     if not profile then return false, why end
     DB.PrepareFactory(profile)
@@ -719,7 +734,7 @@ function P.ImportModule(text)
         if not skin then return false, "Skin engine unavailable" end
         local profile, reason = skin.ProfileIO.PrepareProfile(text)
         if not profile then return false, reason end
-        local name = _G.MSUF_ActiveProfile or skin.Database.GetActiveProfileName()
+        local name = Suite.HostBridge.ActiveFrameProfileName() or skin.Database.GetActiveProfileName()
         local ok
         ok, reason = skin.Database.SetProfile(name, profile)
         if not ok then return false, reason end
@@ -744,7 +759,7 @@ function P.ImportModuleIntoNew(name, text)
         local skinProfile
         skinProfile, reason = skin.ProfileIO.PrepareProfile(text)
         if not skinProfile then return false, reason end
-        local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
+        local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
         if type(frames) ~= "string" then return false, "Frame profile export failed" end
         local profile, why = PrepareActive()
         if not profile then return false, why end
@@ -752,7 +767,7 @@ function P.ImportModuleIntoNew(name, text)
     end
     local id, settings, why = IO.PrepareModuleProfile(text, true)
     if not id then return false, why end
-    local frames = _G.MSUF_Profiles_ExportSelectionToString("all")
+    local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return false, "Frame profile export failed" end
     local profile
     profile, why = PrepareActive()

@@ -33,7 +33,8 @@ local function Add(scene, key, label, x, y, width, height, kind, config)
     scene[key] = scene[#scene]
     local module = key:match("^bar%d") and "actionbars" or key:match("^data%d") and "dataTexts"
         or key:match("^w%d") and "damageMeter" or key == "quests" and "objectives"
-        or key == "cooldowns" and "cooldownManager" or key == "minimap" and "minimap" or "frames"
+        or key == "cooldowns" and "cooldownManager" or key == "minimap" and "minimap"
+        or key == "chat" and "chat" or "frames"
     scene[#scene].module = module
     return scene[#scene]
 end
@@ -63,22 +64,50 @@ local function Frames(scene, frames)
     local playerRect
     for _, entry in ipairs(FRAMES) do
         local config = frames[entry[1]]
-        if config and config.enabled ~= false and ScreenAnchor(config, frames.general) then
+        local cooldown = scene.cooldowns
+        local cooldownAnchor = config and not scene.keepFrames and cooldown
+            and config.anchorFrameName == "EssentialCooldownViewer"
+            and (entry[1] == "player" or entry[1] == "target")
+        local owner = config and scene[config.anchorToUnitframe]
+        local unitAnchor = type(owner) == "table" and not scene.keepFrames
+            and (not config.anchorFrameName or config.anchorFrameName == "")
+        if config and config.enabled ~= false and (cooldownAnchor or unitAnchor or ScreenAnchor(config, frames.general)) then
             local reference = Number(config.screenPositionHeight, 0)
             local factor = config.screenPositionMode == "relativeHeight" and not config.anchorToUnitframe
                 and reference >= 400 and reference <= 10000 and scene.height >= 400 and scene.height <= 10000
                 and math.abs(scene.height - reference) > .01 and scene.height / reference or 1
             local width, height = Number(config.width or config.frameWidth, 275), Number(config.height or config.frameHeight, 40)
             local point, relative = POINT_INDEX[config.point] or 5, POINT_INDEX[config.relativePoint or config.point] or 5
+            local originX, originY, originWidth, originHeight, dx = 0, 0, scene.width, scene.height, 0
+            if cooldownAnchor then
+                -- UF_Config.CooldownAnchorRule: an explicitly named Essential
+                -- anchor uses the physical RIGHT/LEFT edge and 20-unit gap.
+                point, relative = entry[1] == "player" and 6 or 4, entry[1] == "player" and 4 or 6
+                if config.cooldownAnchorFrameTop then
+                    point, relative = entry[1] == "player" and 3 or 1, entry[1] == "player" and 1 or 3
+                end
+                dx = entry[1] == "player" and -20 or 20
+                originX, originY, originWidth, originHeight = cooldown.x, cooldown.y, cooldown.width, cooldown.height
+            elseif unitAnchor then
+                originX, originY, originWidth, originHeight = owner.x, owner.y, owner.width, owner.height
+            end
             local anchor, origin = POINTS[point], POINTS[relative]
-            local rect = Add(scene, entry[1], entry[2], origin[1] * scene.width - anchor[1] * width
-                + Number(config.offsetX or config.x, 0) * factor,
-                origin[2] * scene.height - anchor[2] * height - Number(config.offsetY or config.y, 0) * factor,
+            local rect = Add(scene, entry[1], entry[2], originX + origin[1] * originWidth - anchor[1] * width
+                + (Number(config.offsetX or config.x, 0) + dx) * factor,
+                originY + origin[2] * originHeight - anchor[2] * height - Number(config.offsetY or config.y, 0) * factor,
                 width, height, "bar", config)
+            rect.fillColor = Suite.InstallerFrameColors.HealthFill(frames, "unit", config)
             if entry[1] == "player" then playerRect = rect end
         elseif config and config.enabled ~= false then
             scene.externalFrames = true
         end
+    end
+    local target, companion = scene.target, frames.targettarget
+    if target and not scene.keepFrames and companion and companion.enabled ~= false and companion.anchorToUnitframe == "target" then
+        local rect = Add(scene, "targettarget", "Target of Target", target.x + target.width - Number(companion.width, 138),
+            target.y + target.height - Number(companion.offsetY, -68), Number(companion.width, 138),
+            Number(companion.height, 16), "bar", companion)
+        rect.fillColor = Suite.InstallerFrameColors.HealthFill(frames, "unit", companion)
     end
     local bars = frames.bars
     -- Retained class resources may follow a live external CDM provider. The
@@ -102,23 +131,33 @@ end
 
 local function ActionBars(scene, config)
     if not config or config.enabled == false then return end
-    for _, index in ipairs({ 1, 2, 3, 5 }) do
+    for _, index in ipairs({ 1, 2, 3, 4, 5 }) do
         local prefix = "bar" .. index
         if config[prefix .. "Visibility"] ~= Suite.ActionBarEnum.VISIBILITY.NEVER then
             local count = max(1, Number(config[prefix .. "Buttons"], 12))
             local columns, rows = Suite.ActionBarGrid(count, Number(config[prefix .. "Rows"], 1),
                 config[prefix .. "Vertical"])
             local size, gap = Number(config[prefix .. "Size"], 40), Number(config[prefix .. "Spacing"], 2)
-            local width, height = columns * size + (columns - 1) * gap, rows * size + (rows - 1) * gap
+            local buttonHeight = config.buttonShape == Suite.ActionBarEnum.BUTTON_SHAPE.SQUARE
+                and math.floor(size * Number(config[prefix .. "HeightPercent"], 100) / 100 + .5) or size
+            local width, height = columns * size + (columns - 1) * gap, rows * buttonHeight + (rows - 1) * gap
             local item = Place(scene, prefix, "Action bars", config[prefix .. "Point"] or 8,
                 Number(config[prefix .. "X"], 0), Number(config[prefix .. "Y"], 0), width, height, "icons", config)
             item.columns, item.rows, item.count = columns, rows, count
+            item.iconWidth, item.iconHeight, item.gap = size, buttonHeight, gap
         end
     end
 end
 
 local function Panels(scene, modules)
     local map, meter, texts, tracker = modules.minimap, modules.damageMeter, modules.dataTexts, modules.objectives
+    local chat = modules.chat
+    if chat and chat.enabled ~= false and chat.lockWindowPosition and chat.lockWindowSize then
+        local padding = Number(chat.padding, 0)
+        local top = chat.tabPanel == false and not chat.hideTabArt and padding or 0
+        Place(scene, "chat", "Chat", 7, Number(chat.windowX, 12) - padding, Number(chat.windowY, 12) - padding,
+            Number(chat.windowWidth, 420) + padding * 2, Number(chat.windowHeight, 180) + padding + top, "list", chat)
+    end
     if map and map.enabled ~= false then
         Place(scene, "minimap", "Minimap", map.point, Number(map.x, 0), Number(map.y, 0),
             Number(map.size, 198), Number(map.size, 198), "map", map)
@@ -153,20 +192,21 @@ local function Cooldowns(scene, modules)
     if not config or config.enabled == false then return end
     if config.ess_on == false then return end
     local size, gap = Number(config.ess_size, 40), Number(config.ess_spacing, 0)
-    local count = min(6, max(1, Number(config.ess_perRow, 6)))
+    local count = min(scene.layout == "modernDark" and 8 or 6, max(1, Number(config.ess_perRow, 6)))
     local width, height = count * size + (count - 1) * gap, size
     -- The supplied Essential rows grow down from a TOP point on screen
     -- CENTER (CDM Grid.Point/Layout). Icon count stays an explicit sample.
     local item = Add(scene, "cooldowns", "Cooldowns", scene.width / 2 + Number(config.ess_x, 0) - width / 2,
         scene.height / 2 - Number(config.ess_y, -218), width, height, "icons", config)
     item.columns, item.rows, item.count = count, 1, count
+    item.iconWidth, item.iconHeight, item.gap = size, size, gap
 end
 
 local function PreviewModules(profile, layout, overrides)
     local source = profile and profile.suite and profile.suite.modules
     if not source then return nil end
     local modules = {}
-    for _, id in ipairs({ "minimap", "damageMeter", "dataTexts", "objectives", "actionbars", "cooldownManager" }) do
+    for _, id in ipairs({ "minimap", "damageMeter", "dataTexts", "objectives", "actionbars", "cooldownManager", "chat" }) do
         local config = source[id]
         if config then
             if id == "actionbars" or id == "dataTexts" or overrides and overrides[id] ~= nil then
@@ -186,24 +226,26 @@ local function PreviewModules(profile, layout, overrides)
 end
 
 function Model.Build(profile, frames, layout, overrides, viewport)
-    local scene = { width = viewport and viewport.width or WIDTH, height = viewport and viewport.height or HEIGHT,
+    local scene = { width = viewport and viewport.width or WIDTH, height = viewport and viewport.height or HEIGHT, layout = layout,
         keepFrames = viewport and viewport.keepFrames }
     scene.frameSettingsAvailable = frames ~= nil and (frames.player ~= nil or frames.target ~= nil or frames.focus ~= nil)
     local modules = PreviewModules(profile, layout, overrides)
     if not modules then return scene end
+    if layout == "modernDark" then Cooldowns(scene, modules) end
     Frames(scene, frames)
     ActionBars(scene, modules.actionbars)
     Panels(scene, modules)
-    Cooldowns(scene, modules)
+    if layout ~= "modernDark" then Cooldowns(scene, modules) end
     local resource, cooldown = scene.resource, scene.cooldowns
-    if resource and cooldown and layout == "forever" and not Suite.Client.isForever then
+    if resource and cooldown and ((layout == "forever" and not Suite.Client.isForever) or layout == "modernDark") then
         -- Profiles.EnsureRetailResourceStack(true) is the installer's final
         -- Retail step. CP_AboveCooldownGap reserves attached power + 4 and
         -- a four-unit gap above Essential. Resolve this on the sample only.
         local player = frames.player
         local powerHeight = Number(player.detachedPowerBarHeight, 6)
-        resource.width = cooldown.width
-        resource.x = cooldown.x
+        resource.width = layout == "modernDark" and frames.bars.classPowerWidthMode == "custom"
+            and Number(frames.bars.classPowerWidth, cooldown.width) or cooldown.width
+        resource.x = cooldown.x + (cooldown.width - resource.width) / 2
         resource.y = cooldown.y - 8 - powerHeight - resource.height
         Add(scene, "playerPower", "Resources", resource.x, resource.y + resource.height + 4,
             resource.width, powerHeight, "resource", player)

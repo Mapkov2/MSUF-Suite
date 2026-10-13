@@ -146,6 +146,7 @@ assert(target.dataTexts.bar123Name==nil and target.dataTexts.bar99Name=="Custom"
 -- On an older core the optional adapter stays inactive and existing APIs work.
 MSUF_NS={}
 local old={SuiteCatalog=Suite.SuiteCatalog,Suite=Suite.Suite,Database=Suite.Database,CopyValue=Suite.CopyValue}
+assert(loadfile(root.."/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite",old)
 assert(loadfile(root.."/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite",old)
 assert(not old.ProfileVariants.Register() and old.ProfileVariants.CanMutate())
 print("suite_profile_variants_contract: OK")

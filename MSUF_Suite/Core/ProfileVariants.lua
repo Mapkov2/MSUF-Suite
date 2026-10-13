@@ -6,7 +6,7 @@
 local _, Suite = ...
 local P = {}
 Suite.ProfileVariants = P
-local core, F, V, S
+local runtime, F, V, S
 local hadOverlay = false
 
 local function Allowed(id)
@@ -21,8 +21,7 @@ local function VariantRule(id, key)
 end
 
 local function FrameProfile(name)
-    local profiles = _G.MSUF_GlobalDB and _G.MSUF_GlobalDB.profiles
-    return profiles and profiles[name]
+    return Suite.HostBridge.FrameProfile(name)
 end
 
 local function HasVariants(db)
@@ -45,7 +44,7 @@ end
 -- Suite profile of that name can hold variant values instead of its own.
 local function Overlaid(name)
     local frames = FrameProfile(name)
-    return V ~= nil and frames ~= nil and frames == _G.MSUF_DB and V.HasExternalOverlay("suiteModules")
+    return V ~= nil and frames ~= nil and frames == Suite.HostBridge.CurrentFrameProfile() and V.HasExternalOverlay("suiteModules")
 end
 
 -- Puts the base values the core keeps for the overlaid settings into
@@ -161,7 +160,7 @@ local function Restore(target, source)
 end
 
 local function Apply(reason)
-    if Suite.suppressProfileSync or Suite.Database.GetActiveProfileName() ~= _G.MSUF_ActiveProfile then return end
+    if Suite.suppressProfileSync or Suite.Database.GetActiveProfileName() ~= Suite.HostBridge.ActiveFrameProfileName() then return end
     local overlay = V.HasExternalOverlay("suiteModules")
     local relevant = overlay or hadOverlay or V.IsRecording()
         or (type(reason) == "string" and reason:match("^PROFILE_VARIANT_EDIT_"))
@@ -176,13 +175,12 @@ local function CoreReady()
     return F and F.RegisterExternal and V and V.BaseSnapshot and V.HasExternalOverlay
         and V.IsRecording and V.IsMaterialized and V.Restore and V.ResolveCurrent
         and S and S.RegisterModule and S.RebaseExternal
-        and core.ProfileRuntime and core.ProfileRuntime.Apply and Suite.Suite.CheckProfileValue
+        and runtime and runtime.Apply and Suite.Suite.CheckProfileValue
 end
 
 function P.Register()
     if V then return true end
-    core = _G.MSUF_NS
-    F, V, S = core.ProfileFields, core.ProfileVariants, core.ProfileSync
+    F, V, S, runtime = Suite.HostBridge.ProfileVariantServices()
     if not CoreReady() then
         V = nil
         return false
@@ -213,13 +211,13 @@ end
 function P.BeforeMutation(name)
     local ok, why = P.CanMutate()
     if not ok then return false, why end
-    if V and name == _G.MSUF_ActiveProfile then V.Restore() end
+    if V and name == Suite.HostBridge.ActiveFrameProfileName() then V.Restore() end
     return true
 end
 
 function P.AfterMutation(name)
-    if V and name == _G.MSUF_ActiveProfile and not Suite.suppressProfileSync then
-        core.ProfileRuntime.Apply("SUITE_PROFILE_VARIANT_MUTATE", false)
+    if V and name == Suite.HostBridge.ActiveFrameProfileName() and not Suite.suppressProfileSync then
+        runtime.Apply("SUITE_PROFILE_VARIANT_MUTATE", false)
     end
 end
 
@@ -238,13 +236,13 @@ end
 
 function P.OnActivated(name)
     if Suite.suppressProfileSync or not P.Register() then return end
-    if name ~= _G.MSUF_ActiveProfile then return end
-    if HasVariants(FrameProfile(name)) or V.IsMaterialized(_G.MSUF_DB) then
+    if name ~= Suite.HostBridge.ActiveFrameProfileName() then return end
+    if HasVariants(FrameProfile(name)) or V.IsMaterialized(Suite.HostBridge.CurrentFrameProfile()) then
         -- Migrations and repairs belong to the stored settings: lift the
         -- overlay, normalize the base, then let the core lay it again.
         V.Restore()
         Suite.Suite.Normalize(Suite.Database.GetProfile(name))
-        core.ProfileRuntime.Apply("SUITE_PROFILE_VARIANT_ACTIVATE", false)
+        runtime.Apply("SUITE_PROFILE_VARIANT_ACTIVATE", false)
     end
     S.RebaseExternal("suiteModules")
 end

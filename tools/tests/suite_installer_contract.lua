@@ -6,6 +6,7 @@ local Suite = {
     RootDB = { profiles = { Default = {} } },
     RetailFactoryModuleCompact = "MSUFM1:MSUF3:retail",
     RetailProfileModuleCompact = "MSUFM1:MSUF3:modern-retail",
+    ModernDarkModuleCompact = "MSUFM1:MSUF3:modern-dark",
     RetailProfileSkinCompact = "MSKIN1:modern-retail",
     ForeverFactoryScreenHeight = 1440,
     RetailFactorySkinCompact = "MSKIN1:modern",
@@ -112,7 +113,8 @@ Suite.ProfileIO = {
     PrepareProfile = function(text, shared)
         decodes = decodes + 1
         assert(shared == false, "installer factory was sanitized as an external import")
-        assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact or text == Suite.RetailProfileModuleCompact)
+        assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact
+            or text == Suite.RetailProfileModuleCompact or text == Suite.ModernDarkModuleCompact)
         local modules = {}
         for _, id in ipairs(Suite.SuiteOrder) do modules[id] = { enabled = true } end
         modules.damageMeter = { enabled = true, bgColor = "101010", bgAlpha = 82,
@@ -286,6 +288,7 @@ local function FakeFrame()
         CreateFontString = function() return FakeFrame() end,
         CreateTexture = function() return FakeFrame() end,
         SetSize = function(self, width, height) self.width, self.height = width, height end,
+        SetHeight = function(self, height) self.height = height end,
         SetWidth = function(self, width) self.width = width end,
         SetPoint = function(self, anchor, _, _, x, y)
             if type(x) == "number" then self.x, self.y = x, y end
@@ -343,7 +346,9 @@ assert(loadfile(root .. "/MSUF_Suite/Core/InstallerLayout.lua"))("MSUF_Suite", S
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerAppearance.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerFrameColors.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreviewModel.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerScreenshot.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreview.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
 local installerFinished = 0
@@ -446,7 +451,7 @@ Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 copies = 0
 local function CheckLayout()
-    local panels = { window.classic, window.forever, window.cooldowns, window.scaleToggle, window.keepFrames,
+    local panels = { window.classic, window.forever, window.modernDark, window.cooldowns, window.scaleToggle, window.keepFrames,
         window.back, window.close, window.next, window.scaleSlider }
     for _, color in ipairs(window.colors) do panels[#panels + 1] = color end
     if rawget(window, "moduleScroll") then
@@ -482,6 +487,8 @@ assert(window.colors[1].shown and window.classic.shown and window.forever.shown 
 assert(window.classic.mark.text == "SELECTED" and window.colorChoice == "authored"
     and window.forever.mark.text == "CHOOSE", "Retail must default to Modern MSUF Suite with its authored colors")
 assert(window.classic.y > window.forever.y, "Retail default must be the first profile card")
+assert(window.cooldowns.detail.height >= 30 and window.cooldowns.title.height >= 15,
+    "cooldown choice must fit a title and two translated description lines")
 CheckLayout()
 assert(window.close.x + window.close.width < window.next.x)
 window.forever.scripts.OnClick() -- Retail can choose the full Forever factory
@@ -531,9 +538,9 @@ assert(window.review[1].shown and window.next.caption.text == "Install")
 CheckLayout()
 window.next.scripts.OnClick() -- install
 assert(factoryCalls == 1 and Suite.RootDB.installation.profile == "forever")
--- The legacy initial profile plus two authored card profiles decode once each.
+-- The legacy initial profile plus three authored card profiles decode once each.
 -- Module clicks, palette swatches and repeated page paints reuse the cache.
-assert(decodes == 3, "the installer decoded a factory profile " .. decodes .. " times")
+assert(decodes == 4, "the installer decoded a factory profile " .. decodes .. " times")
 -- The install copies the cached factory; nameplates are already bundled.
 assert(copies == 1, "the installer copied the factory profile " .. copies .. " times")
 assert(Suite.RootDB.installation.raidEssentials == true
@@ -744,7 +751,9 @@ local function OpenLocalized(locale, L)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerAppearance.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerFrameColors.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreviewModel.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InstallerScreenshot.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreview.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
     Suite.Installer.Open()

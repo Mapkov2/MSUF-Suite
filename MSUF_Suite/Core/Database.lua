@@ -17,6 +17,9 @@ Database.PROFILE_SETTINGS = { "schema", "revision", "globalLook", "moduleLooks",
 -- detached minimap addon buttons): undo and Edit Mode Cancel restore it
 -- with the settings. Other module state is runtime data and never rides.
 Database.PROFILE_LAYOUT_STATE = { minimap = { "detachedButtons" } }
+-- These root caches belong to a profile name. They never enter settings
+-- exports or undo, but a rename moves them and deletion releases them.
+local PROFILE_RUNTIME_ROOTS = { "cdmEditorCatalog" }
 
 local function Copy(value, seen)
     if type(value) ~= "table" then return value end
@@ -238,10 +241,23 @@ function Database.CreateFromProfile(name, profile)
     return true
 end
 
+function Database.RenameRuntimeData(source, target)
+    for _, key in ipairs(PROFILE_RUNTIME_ROOTS) do
+        local records = Suite.RootDB[key]
+        if type(records) == "table" and records[source] ~= nil then
+            records[target], records[source] = records[source], nil
+        end
+    end
+end
+
 function Database.Delete(name)
     if Suite.IsCombatLocked() then return false, "combat" end
     if not Database.GetProfile(name) then return false, "missing-profile" end
     if Database.GetActiveProfileName() == name then return false, "active-profile" end
     Suite.RootDB.profiles[name] = nil
+    for _, key in ipairs(PROFILE_RUNTIME_ROOTS) do
+        local records = Suite.RootDB[key]
+        if type(records) == "table" then records[name] = nil end
+    end
     return true
 end

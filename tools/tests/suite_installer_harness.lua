@@ -36,6 +36,7 @@ local function Widget(kind)
     function methods:SetVertexColor(...) self.color = { ... } end
     function methods:SetColorTexture(...) self.color = { ... } end
     function methods:SetTexture(value) self.texture = value end
+    function methods:SetTexCoord(...) self.texCoords = { ... } end
     function methods:SetPoint(...) self.point = { ... } end
     function methods:ClearAllPoints() self.point = nil end
     function methods:SetText(text) self.text = text end

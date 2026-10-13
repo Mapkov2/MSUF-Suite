@@ -418,10 +418,48 @@ function HostBridge.CurrentFramePreview()
     return type(frames) == "table" and frames or nil
 end
 
+function HostBridge.ModernDarkFrameCompact()
+    local host = HostNamespace()
+    return host and host.MSUF_MODERN_DARK_PROFILE_COMPACT or Suite.ModernDarkFramesCompact
+end
+
+local function FrameEnvelope(compact)
+    local decode = _G.MSUF_TryDecodeCompactString
+    if type(decode) ~= "function" then return nil end
+    local envelope = Suite.Dispatch(decode, compact)
+    local host = HostNamespace()
+    local policy = host and host.ProfilePolicy
+    if policy and type(policy.SelectSupportedDecodedProfile) == "function" then
+        return Suite.Dispatch(policy.SelectSupportedDecodedProfile, envelope)
+    end
+    -- Older hosts also prefer the full snapshot carried by Wago exports.
+    local full = type(envelope) == "table" and envelope.msuf6
+    if type(full) == "table" and type(full.payload) == "table" then
+        return { addon = envelope.addon, fmt = envelope.fmt, schema = full.schema,
+            kind = full.kind or envelope.kind, profile = full.profile or envelope.profile, payload = full.payload }
+    end
+    return envelope
+end
+
+function HostBridge.StyleFrameFactory(compact, modes)
+    if not modes then return compact end
+    local envelope = FrameEnvelope(compact)
+    local encode = _G.MSUF_EncodeCompactTable
+    if type(envelope) ~= "table" or envelope.kind ~= "all" or type(encode) ~= "function" then return nil end
+    local frames = Suite.InstallerFrameColors.Apply(envelope.payload, modes)
+    if not frames then return nil end
+    local copy = Suite.CopyValue(envelope)
+    copy.payload = frames
+    local encoded = Suite.Dispatch(encode, copy, "MSUF3")
+    return type(encoded) == "string" and encoded:match("^MSUF3:") and encoded or nil
+end
+
 function HostBridge.FactoryFramePreview(layout)
     local host = HostNamespace()
     local compact
-    if layout == "forever" then
+    if layout == "modernDark" then
+        compact = HostBridge.ModernDarkFrameCompact()
+    elseif layout == "forever" then
         compact = Suite.Client.isForever and host and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
             or Suite.ForeverFactoryFramesCompact
     else
@@ -430,9 +468,7 @@ function HostBridge.FactoryFramePreview(layout)
     end
     if type(compact) ~= "string" then return nil end
     if framePreviews[compact] then return framePreviews[compact] end
-    local decode = _G.MSUF_TryDecodeCompactString
-    if type(decode) ~= "function" then return nil end
-    local envelope = Suite.Dispatch(decode, compact)
+    local envelope = FrameEnvelope(compact)
     local frames = type(envelope) == "table" and envelope.payload
     if type(frames) ~= "table" then return nil end
     framePreviews[compact] = frames
@@ -467,6 +503,118 @@ function HostBridge.SuppressEditElement(owner, key, claim)
     suppressed[key] = suppressed[key] or {}
     suppressed[key][owner] = claim and true or nil
     if claim then HostBridge.RefreshSuppressedEditElements() end
+end
+
+-- Profile references are read-only outside the host's variant adapter. Host
+-- profile operations remain the host's own entry points on every generation.
+local function FrameProfiles()
+    local root = _G.MSUF_GlobalDB
+    return type(root) == "table" and type(root.profiles) == "table" and root.profiles or nil
+end
+
+function HostBridge.FrameProfile(name)
+    local profiles = FrameProfiles()
+    return profiles and profiles[name]
+end
+
+function HostBridge.HasFrameProfiles()
+    return FrameProfiles() ~= nil
+end
+
+function HostBridge.FrameProfileNames()
+    local names = {}
+    for name in pairs(FrameProfiles() or {}) do names[#names + 1] = name end
+    return names
+end
+
+function HostBridge.CurrentFrameProfile()
+    return _G.MSUF_DB
+end
+
+function HostBridge.ImportFrameProfile(name, frames)
+    local native = _G.MSUF_Profiles_ImportIntoNewProfile
+    if type(native) == "function" then return native(name, frames) end
+    local profiles = FrameProfiles()
+    local ok, why = _G.MSUF_Profiles_ImportExternal(frames, name)
+    if ok ~= true or type(profiles[name]) ~= "table" then
+        if profiles[name] ~= nil then _G.MSUF_DeleteProfile(name) end
+        return false, why or "Frame profile import failed"
+    end
+    if _G.MSUF_SwitchProfile(name) == true and _G.MSUF_ActiveProfile == name then return true end
+    if _G.MSUF_ActiveProfile ~= name then _G.MSUF_DeleteProfile(name) end
+    return false, "Frame profile could not be activated"
+end
+
+function HostBridge.ProfileVariantServices()
+    local host = HostNamespace()
+    return host.ProfileFields, host.ProfileVariants, host.ProfileSync, host.ProfileRuntime
+end
+
+function HostBridge.GroupFrames()
+    return HostNamespace().GF
+end
+
+function HostBridge.FirstRunPending()
+    local firstLoad = HostNamespace().FirstLoad6
+    return type(firstLoad) == "table" and type(firstLoad.IsFirstRunPending) == "function"
+        and firstLoad:IsFirstRunPending() == true
+end
+
+function HostBridge.FactoryFrameCompact(forever)
+    local host = HostNamespace()
+    if forever then
+        return Suite.Client.isForever and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT
+            or Suite.ForeverFactoryFramesCompact
+    end
+    return not Suite.Client.isForever and host.MSUF_FACTORY_DEFAULT_PROFILE_COMPACT
+        or Suite.ClassicFactoryFramesCompact
+end
+
+function HostBridge.ResourceStackNeedsRepair(profile, force)
+    local db = _G.MSUF_DB
+    if type(db) ~= "table" or type(db.bars) ~= "table" or type(db.player) ~= "table" then return nil end
+    local bars, player = db.bars, db.player
+    return force or (bars.classPowerAnchorToCooldown ~= true
+        and (player.powerBarDetached == true and player.detachedPowerBarAnchorToClassPower == true
+            or profile == "forever" and bars.classPowerOffsetY == -41))
+end
+
+function HostBridge.CooldownAnchor()
+    local db = _G.MSUF_DB
+    local general = type(db) == "table" and db.general or nil
+    local wants = type(general) == "table" and general.anchorToCooldown == true
+    return wants, wants and type(_G.MSUF_GetSuiteCooldownAnchor) == "function"
+end
+
+-- Late-resolved legacy profile operations. These hosts publish no versioned
+-- profile-operation API yet; keep their exact entry points behind this finite
+-- adapter, including capability checks and late provider replacement.
+local PROFILE_METHODS = {
+    DeleteProfile = "MSUF_DeleteProfile",
+    GetDefaultProfileForNewCharacters = "MSUF_GetDefaultProfileForNewCharacters",
+    GetPixelPerfectScale = "MSUF_GetPixelPerfectScale",
+    Profiles_ExportSelectionToString = "MSUF_Profiles_ExportSelectionToString",
+    Profiles_ImportExternal = "MSUF_Profiles_ImportExternal",
+    Profiles_ImportIntoNewProfile = "MSUF_Profiles_ImportIntoNewProfile",
+    SetCurrentProfileScreenReferenceHeight = "MSUF_SetCurrentProfileScreenReferenceHeight",
+    SetDefaultProfileForNewCharacters = "MSUF_SetDefaultProfileForNewCharacters",
+    SwitchProfile = "MSUF_SwitchProfile",
+}
+HostBridge.Profiles = setmetatable({}, { __index = function(_, operation)
+    local name = PROFILE_METHODS[operation]
+    return name and _G[name] or nil
+end })
+
+function HostBridge.ActiveFrameProfileName()
+    return _G.MSUF_ActiveProfile
+end
+
+function HostBridge.ProfileWasUnboundAtLogin()
+    return _G.MSUF_ProfileWasUnboundAtLogin == true
+end
+
+function HostBridge.BossTargetIndicator()
+    return _G.MSUF_NS.BossTargetIndicator
 end
 
 return HostBridge

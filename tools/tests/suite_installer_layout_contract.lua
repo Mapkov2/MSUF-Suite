@@ -6,6 +6,7 @@ local function Copy(value)
     return result
 end
 local Suite = {}
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/InstallerLayout.lua"))("MSUF_Suite", Suite)
 local Layout = Suite.InstallerLayout
 local authored = { dataTexts = { bar1Point = 8, bar1X = 1020, bar1Y = 170, bar1Width = 521 }, actionbars = {} }

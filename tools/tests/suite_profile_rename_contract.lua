@@ -93,6 +93,7 @@ local skin = {
 skin.Database.SanitizeProfile = function(profile) return type(profile) == "table" and suite.CopyValue(profile) or nil end
 MapkoSkin = skin
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DatabaseProfiles.lua"))("MSUF_Suite_Skin", skin)
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/Profiles.lua"))("MSUF_Suite", suite)
 -- The Suite API (MSUFSuite.API) the host's link prefers.
 assert(loadfile(root .. "/MSUF_Suite/Core/API.lua"))("MSUF_Suite", suite)

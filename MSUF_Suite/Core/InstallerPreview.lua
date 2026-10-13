@@ -49,15 +49,27 @@ local function Details(region, item, color)
             if icons then
                 local columns, lines = item.columns or rows, item.rows or 1
                 local cellW, cellH = width / columns, height / lines
-                local size = min(cellW, cellH)
+                local iconWidth = item.iconWidth and item.iconWidth * width / item.width or min(cellW, cellH)
+                local iconHeight = item.iconHeight and item.iconHeight * height / item.height or min(cellW, cellH)
+                local stepX = item.iconWidth and (item.iconWidth + item.gap) * width / item.width or cellW
+                local stepY = item.iconHeight and (item.iconHeight + item.gap) * height / item.height or cellH
+                iconWidth, iconHeight = max(1, iconWidth - 1), max(1, iconHeight - 1)
+                local x, y = .06, .06
+                if iconWidth > iconHeight then
+                    y = .5 - .88 * iconHeight / iconWidth / 2
+                elseif iconHeight > iconWidth then
+                    x = .5 - .88 * iconWidth / iconHeight / 2
+                end
                 texture:SetTexture(ICONS[(index - 1) % #ICONS + 1])
-                texture:SetSize(max(1, size - 1), max(1, size - 1))
-                texture:SetPoint("TOPLEFT", region, "TOPLEFT", ((index - 1) % columns) * cellW,
-                    -math.floor((index - 1) / columns) * cellH)
+                texture:SetSize(iconWidth, iconHeight)
+                texture:SetTexCoord(x, 1 - x, y, 1 - y)
+                texture:SetPoint("TOPLEFT", region, "TOPLEFT", ((index - 1) % columns) * stepX,
+                    -math.floor((index - 1) / columns) * stepY)
                 texture:SetVertexColor(1, 1, 1, 1)
                 texture:SetAlpha(1)
             else
                 texture:SetTexture(WHITE)
+                texture:SetTexCoord(0, 1, 0, 1)
                 texture:SetSize(max(1, width * (1 - (index - 1) * .07) - 4), max(1, height / (rows + 2) - 1))
                 texture:SetPoint("TOPLEFT", region, "TOPLEFT", 2, -2 - (index - 1) * height / (rows + 1))
                 Tint(texture, color, .8)
@@ -88,6 +100,8 @@ function Preview.Build(window, profile, frames, navigate)
     panel.navigate = navigate
     window.layoutPreview = panel
     panel.profile, panel.frames = profile, frames
+    Suite.InstallerFrameColors.Build(panel)
+    Suite.InstallerScreenshot.Build(panel, function() Suite.Installer.Refresh() end, window)
     panel:Hide()
     return panel
 end
@@ -112,7 +126,7 @@ local function Paint(panel, profile, frames, layout, overrides, viewport)
         region:SetPoint("TOPLEFT", panel.canvas, "TOPLEFT", item.x * scale, -item.y * scale)
         region:SetSize(max(2, item.width * scale), max(2, item.height * scale))
         Tint(region.edge, panel.selectedModule == item.module and color or border)
-        Tint(region.fill, (item.kind == "bar" or item.kind == "resource") and color or background)
+        Tint(region.fill, item.fillColor or ((item.kind == "bar" or item.kind == "resource") and color or background))
         -- A minimap sample has its own art, independent of the menu theme.
         region.fill:SetTexture(item.kind == "map" and "Interface\\Minimap\\UI-Minimap-Background" or WHITE)
         Details(region, item, color)
@@ -157,6 +171,9 @@ function Preview.Show(window, shown, layout)
     local viewport = Suite.InstallerPreviewModel.Viewport(options)
     local frames = options and options.keepFrames and Suite.HostBridge.CurrentFramePreview() or nil
     if not (options and options.keepFrames) then frames = panel.frames(layout) end
+    frames = Suite.InstallerFrameColors.Preview(frames, options and options.keepFrames)
     local scene = Paint(panel, profile, frames, layout, overrides, viewport)
     Context(panel, profile, overrides, options, viewport, scene)
+    Suite.InstallerFrameColors.Show(panel, options and options.frameColorsStep, options and options.keepFrames, frames)
+    Suite.InstallerScreenshot.Show(panel, layout, options)
 end

@@ -27,6 +27,7 @@ Core\ClassicFramesFactory.lua
 Core\RetailFactory.lua
 Core\RetailSkinFactory.lua
 Core\RetailProfile.lua
+Core\ModernDarkFactory.lua
 Core\Database.lua
 Core\SessionGold.lua
 Core\CharacterData.lua
@@ -63,9 +64,12 @@ Core\ProfileIO.lua
 Core\InstallerLayout.lua
 Core\Profiles.lua
 Core\ProfileVariants.lua
+Core\ModernDarkMinimap.lua
 Core\InstallerProfiles.lua
 Core\InstallerModules.lua
 Core\InstallerAppearance.lua
+Core\InstallerFrameColors.lua
+Core\InstallerScreenshot.lua
 Core\InstallerPreviewModel.lua
 Core\InstallerPreview.lua
 Core\Installer.lua

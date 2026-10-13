@@ -5,6 +5,7 @@ MSUF_NS = {}
 local Suite = { Client = { isForever = false }, OnProfileChanged = function() end,
     Suite = { MigrationRevision = 0, Normalize = function() end, StyleProfile = function() end } }
 assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", Suite)
 local DB, checks = Suite.Database, 0
 local function Check(value, message)

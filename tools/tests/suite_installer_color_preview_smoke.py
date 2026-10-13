@@ -12,16 +12,20 @@ from pathlib import Path
 from suite_factory_profile_smoke import HARNESS as SETUP, LUA, lua_literal
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from build_forever_factory_preview import decode
+from build_modern_dark_factory import literal
 
 
 CHECK = r"""
 local profiles = {}
 MSUF_TryDecodeCompactString = function(text)
     decodes = decodes + 1
-    return Copy(text == Suite.RetailProfileModuleCompact:sub(8) and MODERN or FOREVER)
+    return Copy(text == Suite.RetailProfileModuleCompact:sub(8) and MODERN
+        or text == Suite.ModernDarkModuleCompact:sub(8) and DARK or FOREVER)
 end
+Suite.ModernDarkModuleCompact = "MSUFM1:MSUF3:dark"
 profiles.classic = assert(Suite.ProfileIO.PrepareProfile(Suite.RetailProfileModuleCompact, false))
 profiles.forever = assert(Suite.ProfileIO.PrepareProfile(Suite.ForeverFactoryModuleCompact, false))
+profiles.modernDark = assert(Suite.ProfileIO.PrepareProfile(Suite.ModernDarkModuleCompact, false))
 local originals = Copy(profiles)
 local function Equal(a, b)
     if type(a) ~= type(b) then return false end
@@ -33,6 +37,7 @@ end
 local function Frame(parent)
     local frame = { parent = parent, shown = true, scripts = {} }
     function frame:SetSize(w, h) self.width, self.height = w, h end
+    function frame:SetHeight(h) self.height = h end
     function frame:SetPoint(...) self.point = { ... } end
     function frame:ClearAllPoints() self.point = nil end
     function frame:SetAllPoints(owner) self.allPoints = owner end
@@ -100,11 +105,12 @@ end
 local looks = { "authored", "midnight", "midnightDark", "foreverGlass", "cleanModern", "classColor" }
 local slots = { "bgColor", "borderColor", "barColor", "leftColor" }
 local paints = 0
-for _, layout in ipairs({ "classic", "forever" }) do
+for _, layout in ipairs({ "classic", "forever", "modernDark" }) do
     for _, look in ipairs(looks) do
         Suite.InstallerProfiles.Show(window, true, layout, look)
         CheckCard("classic", look)
         CheckCard("forever", look)
+        CheckCard("modernDark", look)
         assert(window[layout].selected, "layout highlight lost")
         for index, control in ipairs(window.colors) do
             local expected = Expected(layout, looks[index])
@@ -126,8 +132,8 @@ for _, layout in ipairs({ "classic", "forever" }) do
             "preview visible outside the profile page")
     end
 end
-assert(reads == paints * 2, "hidden pages or palettes request extra factory profiles")
-assert(decodes == 2, "painting redecoded full profiles")
+assert(reads == paints * 3, "hidden pages or palettes request extra factory profiles")
+assert(decodes == 3, "painting redecoded full profiles")
 assert(Equal(originals, profiles), "preview modified the authored profiles")
 assert(Suite.DB == nil and MSUF_DB == nil and MSUFSuiteDB == nil, "preview initialized saved settings")
 assert(#reported == 0, tostring(reported[1]))
@@ -150,6 +156,7 @@ def main():
     forever_compact = re.search(r"Suite.ForeverFactoryModuleCompact = \[\[(.*?)\]\]",
         forever_source, re.S).group(1)
     modern, forever = [decode(text, "MSUFM1:MSUF3:") for text in (modern_compact, forever_compact)]
+    dark = decode(literal(core / "ModernDarkFactory.lua", "Suite.ModernDarkModuleCompact"), "MSUFM1:MSUF3:")
     setup = SETUP.split("local S, defaults")[0].replace("ENVELOPE", lua_literal(modern), 1)
     for client in ("retail", "forever"):
         for character in ("WARLOCK", "PALADIN"):
@@ -159,6 +166,7 @@ def main():
             fixture += color + " } end }\n"
             script = fixture + setup + CHECK.replace("MODERN", lua_literal(modern), 1)
             script = script.replace("FOREVER", lua_literal(forever), 1)
+            script = script.replace("DARK", lua_literal(dark), 1)
             run = subprocess.run([LUA, "-", str(root), client, "RetailProfile.lua"], input=script,
                 text=True, capture_output=True, errors="replace", cwd=root)
             if run.returncode:
