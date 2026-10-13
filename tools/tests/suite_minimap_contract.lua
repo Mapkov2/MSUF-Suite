@@ -1109,7 +1109,9 @@ do
         local source = file:read("*a")
         file:close()
         for guarded in source:gmatch("type%(([^)]*)%)%s*[~=]=%s*\"function\"") do
-            check(guarded == "stub.GetLibrary" or guarded:find("^lib%.") or guarded:find("^library%."),
+            local clientOpener = name == "DungeonShortcut" and guarded == "ToggleGroupFinderFrame"
+                and source:find('if P.NS.Client.isForever and type(ToggleGroupFinderFrame)', 1, true)
+            check(clientOpener or guarded == "stub.GetLibrary" or guarded:find("^lib%.") or guarded:find("^library%."),
                 name .. ".lua guards " .. guarded .. " as if a client lacked it")
         end
         for namespace in source:gmatch("(C_%w+) and C_%w+%.") do

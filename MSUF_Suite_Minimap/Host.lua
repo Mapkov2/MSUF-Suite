@@ -330,9 +330,14 @@ function MM.EnsureFrames()
     park:SetSize(1, 1)
     park:SetPoint("CENTER", host, "CENTER")
     park:Hide()
+    MM.outerEdges = {}
+    for i = 1, 4 do MM.outerEdges[i] = S.CreateTexture(border, nil, "BORDER") end
+    MM.outerDisc = S.CreateTexture(border, nil, "BACKGROUND", nil, -3)
+    MM.outerDisc:SetTexture(MEDIA .. "Circle.tga")
+    MM.outerDisc:SetPoint("CENTER", host, "CENTER")
     MM.host, MM.borderFrame, MM.edges, MM.disc, MM.clip, MM.park = host, border, edges, disc, clip, park
     MM.mapLevel = level + 3
-    if NS.MinimapStyle then MM.style = NS.MinimapStyle.Create(host, level + 1, level + 8) end
+    if NS.MinimapStyle then MM.style = NS.MinimapStyle.Create(host, level, level + 8) end
     return host
 end
 
@@ -461,9 +466,13 @@ function MM.ApplyBorder()
     local r, g, b = BorderRGB()
     local round = c.shape == SHAPE.CIRCLE
     PlaceRing(MM.edges, MM.disc, 0, thickness, r, g, b, c.borderAlpha / 100, thickness > 0, round)
+    local outerSize = (c.outerBorderSize or 0) * MM.Pixel()
+    local inner = thickness + (c.outerBorderGap or 4) * MM.Pixel()
+    local or_, og, ob = S.RGB(c.outerBorderColor or "000000")
+    PlaceRing(MM.outerEdges, MM.outerDisc, inner, inner + outerSize, or_, og, ob, 1, outerSize > 0, round)
     local shadow = c.shadowSize * MM.Pixel()
     ApplyShadows(c, thickness, shadow, round)
-    local outer = ClampOutside(c, thickness + shadow)
+    local outer = ClampOutside(c, math.max(thickness + shadow, outerSize > 0 and inner + outerSize or 0))
     MM.host:SetClampRectInsets(-outer, outer, outer, -outer)
 end
 
@@ -485,6 +494,11 @@ function MM.ApplyHybrid()
     local hybrid = _G.HybridMinimap
     if not Usable(hybrid) then return end
     local mask = hybrid.CircleMask
+    if not Usable(mask) then return end
+    if MM.hybridMask ~= mask then
+        MM.ReleaseHybrid()
+        MM.hybridMask = mask
+    end
     if MM.hybridTexture == nil then
         local current = mask:GetTexture()
         MM.hybridTexture = S.Public(current) and current or HYBRID_MASK
@@ -497,11 +511,11 @@ function MM.ApplyHybrid()
 end
 
 function MM.ReleaseHybrid()
-    local hybrid = _G.HybridMinimap
-    if MM.hybridShaped and Usable(hybrid) then
-        hybrid.CircleMask:SetTexture(MM.hybridTexture or HYBRID_MASK, WRAP, WRAP)
+    local mask = MM.hybridMask
+    if MM.hybridShaped and Usable(mask) then
+        mask:SetTexture(MM.hybridTexture or HYBRID_MASK, WRAP, WRAP)
     end
-    MM.hybridShaped = nil
+    MM.hybridShaped, MM.hybridTexture, MM.hybridMask = nil, nil, nil
 end
 
 local function WriteMap(map, size)

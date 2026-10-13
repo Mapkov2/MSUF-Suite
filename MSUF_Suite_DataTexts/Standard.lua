@@ -15,10 +15,10 @@ P.DataTextStandard = Standard
 Standard.SOURCES = {
     gold = true, sessionGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
-    date = true, fpsLatency = true,
+    date = true, fpsLatency = true, memory = true,
 }
-Standard.SAMPLED = { clock = true, fps = true, latency = true, coordinates = true, date = true, fpsLatency = true }
-Standard.INTERVAL = { fps = 2, latency = 5, coordinates = 0.5, fpsLatency = 2 }
+Standard.SAMPLED = { clock = true, fps = true, latency = true, coordinates = true, date = true, fpsLatency = true, memory = true }
+Standard.INTERVAL = { fps = 2, latency = 5, coordinates = 0.5, fpsLatency = 2, memory = 30 }
 -- Displays that read another shared data source.
 Standard.READER = { clock = "clockTime", sessionGold = "gold" }
 Standard.EVENT_SOURCES = {
@@ -42,7 +42,7 @@ local LABELS = {
     gold = S.Text("Gold"), sessionGold = S.Text("Session"), bags = S.Text("Bags"),
     durability = S.Text("Durability"), clock = S.Text("Time"), fps = S.Text("FPS"),
     latency = S.Text("World"), coordinates = S.Text("Coords"), location = S.Text("Zone"), xp = S.Text("XP"),
-    date = S.Text("Date"), fpsLatency = S.Text("FPS / World"),
+    date = S.Text("Date"), fpsLatency = S.Text("FPS / World"), memory = S.Text("Addon memory"),
 }
 Standard.LABELS = LABELS
 local TEXT = {
@@ -71,6 +71,9 @@ local SessionBaseline = NS.SessionGoldBaseline
 -- Each formatter returns the display value (nil when unknown) and an
 -- optional "bad" severity from the raw values of its shared data source.
 local FORMATTERS = {
+    memory = function(value)
+        if Finite(value) then return string.format("%.2f MB", value) end
+    end,
     -- Blizzard's localized gold symbol (GOLD_AMOUNT_SYMBOL, "g" on enUS).
     gold = function(amount)
         if Finite(amount) then return floor(amount / 10000) .. GOLD_AMOUNT_SYMBOL end
@@ -151,6 +154,8 @@ function Standard.TooltipLines(tooltip, button, config)
         if Finite(home) and Finite(world) then
             tooltip:AddDoubleLine(TEXT.homeWorld, floor(home + .5) .. " / " .. Milliseconds(world))
         end
+    elseif key == "memory" then
+        P.MemoryTooltip(tooltip)
     elseif key == "xp" then
         local level, current, maximum = S.ReadInfoSource("xp")
         if Finite(level) and Finite(current) and Finite(maximum) then

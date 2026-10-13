@@ -330,6 +330,7 @@ function MM.LayoutElements()
         end
     end
     for i = count + 1, #items do items[i] = nil end
+    MM.ApplyDungeonShortcut()
     LayoutDiel(c)
     MM.LayoutRow(c.elementRow, items, count, size, c.elementSpacing, c.elementDistance, 0, "elements")
     if MM.rowCount ~= count then

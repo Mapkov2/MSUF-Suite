@@ -143,7 +143,17 @@ end
 
 -- Square border edges or a round disc, plus three shadow rings of each.
 local function BuildFrame(art, canvas)
+    local border = CreateFrame("Frame", nil, canvas)
+    border:SetAllPoints(canvas)
+    border:SetFrameLevel(canvas:GetFrameLevel() + 1)
+    border:EnableMouse(false)
+    art.borderSurface = border
+    canvas = border
     art.edges = EdgeSet(canvas, "BORDER", 0)
+    art.outerEdges = EdgeSet(canvas, "BORDER", 0)
+    art.outerDisc = Texture(canvas, "BACKGROUND", -3)
+    art.outerDisc:SetTexture(CIRCLE)
+    art.outerDisc:SetPoint("CENTER", art.map, "CENTER")
     art.disc = Texture(canvas, "BACKGROUND", -2)
     art.disc:SetTexture(CIRCLE)
     art.disc:SetPoint("CENTER", art.map, "CENTER")
@@ -202,7 +212,15 @@ local function PaintBorder(art, config, scale, width, height, round, shown)
     art.disc:SetSize(width + border * 2, height + border * 2)
     art.disc:SetVertexColor(r, g, b, alpha)
     art.disc:SetShown(shown and round and border > 0 and alpha > 0)
-    return border
+    local outerSize = (config.outerBorderSize or 0) * scale
+    local inner = border + (config.outerBorderGap or 0) * scale
+    local outer = inner + outerSize
+    local or_, og, ob = P.RGB(config.outerBorderColor or "000000")
+    PaintEdges(art.outerEdges, art.map, inner, outer, or_, og, ob, 1, shown and not round)
+    art.outerDisc:SetSize(width + outer * 2, height + outer * 2)
+    art.outerDisc:SetVertexColor(or_, og, ob, 1)
+    art.outerDisc:SetShown(shown and round and outerSize > 0)
+    return outerSize > 0 and outer or border
 end
 
 local function PaintShadow(art, config, scale, width, height, round, border, shown)
@@ -252,6 +270,6 @@ function P.CreateMinimapPreviewArt(canvas)
     BuildMap(art, canvas, canvasLevel)
     BuildFrame(art, canvas)
     art.terrain = ReadTerrain()
-    art.style = Suite.MinimapStyle.Create(canvas, canvasLevel + 1, canvasLevel + 4)
+    art.style = Suite.MinimapStyle.Create(canvas, canvasLevel, canvasLevel + 4)
     return art
 end

@@ -17,6 +17,13 @@ local P={Suite=NS,S=S,Tr=function(v) return v end,RegisterPage=function(v) page=
     Get=function(_,key) return config[key] end,SetMany=function(_,values) for key,value in pairs(values) do config[key]=value end end,
     -- Bridge.lua P.ContextMenu: Blizzard's menu outside WoW Forever's Gamepad UI.
     ContextMenu=function(owner,generator,...) return MenuUtil.CreateContextMenu(owner,generator,...) end}
+NS.SuiteCatalog, NS.SuiteOrder, NS.Database, NS.HostBridge = {}, {}, {}, {Menu2=function() return {} end}
+NS.InCombat=function() return false end
+NS.Registry={AddListener=function() end}
+MSUFSuite, MSUF2 = NS, {Widgets={},Theme={}}
+local bridge = {}
+assert(loadfile(root..'/MSUF_Suite_Options/Menu/Bridge.lua'))('Options',bridge)
+P.ProfileGuard = bridge.ProfileGuard
 assert(loadfile(root..'/MSUF_Suite_Options/Pages/DataTexts.lua'))('Options',P)
 local function Upvalue(callback,wanted)
  for i=1,50 do

@@ -157,7 +157,7 @@ end
 function Actions.Refresh()
     local button = overlay and overlay.owner
     if not button or Locked() then return end
-    if not Actions.Attach(button, true) then Actions.Detach() end
+    if not button:IsVisible() or not Actions.Attach(button, true) then Actions.Detach() end
 end
 
 ------------------------------------------------------------------ secure popup

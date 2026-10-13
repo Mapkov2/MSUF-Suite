@@ -33,7 +33,7 @@ end
 H.Float32 = Float32
 
 -- Runtime files in load order across the shared and minimap AddOns.
-H.MODULES = { "Bootstrap", "Host", "Input", "MicroMenu", "Elements", "Drawer",
+H.MODULES = { "Bootstrap", "Host", "Input", "MicroMenu", "DungeonShortcut", "Elements", "Drawer",
     "InfoInput", "Info", "Tooltips", "Specialization", "Controller" }
 
 function H.New(root, client, options)
@@ -467,6 +467,10 @@ function H.New(root, client, options)
                 if word == "SecureActionButtonTemplate" then
                     frame.protected = true
                     frame.scripts.OnClick = SecureActionClick
+                elseif word == "InsecureActionButtonTemplate" then
+                    -- Same action handler, without SecureFrameTemplate's
+                    -- protection: Blizzard's movable quest rows use it too.
+                    frame.scripts.OnClick = SecureActionClick
                 elseif options.clientSecurity and word:sub(1, 6) == "Secure" then
                     -- Every Secure* template inherits SecureFrameTemplate (protected).
                     frame.protected = true
@@ -561,6 +565,10 @@ function H.New(root, client, options)
     G.GetPhysicalScreenSize = function() return 1024, 768 end
     G.GetInventoryItemDurability = function() end
     G.GetZoneText, G.GetSubZoneText = function() return "" end, function() return "" end
+    G.GetMinimapZoneText = function() return "" end
+    G.C_Texture = { GetAtlasInfo = function()
+        return { leftTexCoord = 0, rightTexCoord = 1, topTexCoord = 0, bottomTexCoord = 1 }
+    end }
     G.C_Map = { GetBestMapForUnit = function() end, GetPlayerMapPosition = function() end }
     G.GetMoney = function() return 0 end
     G.IsInInstance = function() return false end
@@ -733,6 +741,7 @@ function H.New(root, client, options)
     if options.beforeModules then options.beforeModules(W) end
     -- Blizzard builds its shared font objects at startup on every client.
     G.GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+    Load("MSUF_Suite/Core/FontBridge.lua", "MSUF_Suite", W.Suite)
     for _, file in ipairs({ "Surfaces", "Runtime", "Timers", "Dialogs", "MicroMenu", "DataSources", "EditMode" }) do
         Load("MSUF_Suite_Modules/" .. file .. ".lua", "MSUF_Suite_Modules", W.private)
     end

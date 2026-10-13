@@ -18,6 +18,7 @@ C_AddOns = { IsAddOnLoaded = function() return false end, DoesAddOnExist = funct
     GetAddOnEnableState = function() return 0 end, LoadAddOn = function() end }
 local Suite = {}
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", Suite)
 local S = Suite.Suite
 Suite.RootDB = { schema = 1, profiles = {} }

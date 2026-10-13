@@ -15,6 +15,62 @@ local WEATHER, ICONS, SHAPE = NS.MinimapWeatherDisplay, NS.MinimapWeatherIcons, 
 local ART, PLACEMENT, BLEND = NS.MinimapStyleTexture, NS.MinimapStylePlacement, NS.MinimapStyleBlend
 local RULES = NS.SuiteCatalog.minimap.rules
 
+-- Native location values are public text only; Custom retains older profiles.
+function Style.LocationContent(c, zone, subzone, minimap)
+    zone, subzone, minimap = NS.PublicText(zone) or "", NS.PublicText(subzone) or "", NS.PublicText(minimap) or ""
+    local source = c.infoLocationSource or 1
+    if source == 2 then return zone ~= "" and zone or "--" end
+    if source == 3 then return subzone ~= "" and subzone or zone ~= "" and zone or "--" end
+    if source == 4 then
+        return minimap ~= "" and minimap or subzone ~= "" and subzone or zone ~= "" and zone or "--"
+    end
+    zone = (source == 5 or c.infoLocationZone) and zone or ""
+    subzone = (source == 5 or c.infoLocationSubzone) and subzone or ""
+    if subzone == zone then subzone = "" end
+    return zone ~= "" and subzone ~= "" and zone .. (c.infoLocationBelow and "\n" or " - ") .. subzone
+        or zone ~= "" and zone or subzone ~= "" and subzone or "--"
+end
+
+function Style.LocationLines(c)
+    local source = c.infoLocationSource or 1
+    return c.infoLocationBelow and (source == 5 or source == 1 and c.infoLocationZone and c.infoLocationSubzone) and 2 or 1
+end
+
+-- The native queue-eye atlas is a subrectangle, not a whole texture file.
+-- Crop inside that rectangle so runtime and preview show the same iris.
+function Style.PaintDungeonButton(button, icon, style, scale)
+    local modern = style == 2
+    local band, inner = rawget(button, "dungeonBand"), rawget(button, "dungeonInner")
+    if modern and not band then
+        band = button:CreateTexture(nil, "BACKGROUND", nil, 1)
+        inner = button:CreateTexture(nil, "BACKGROUND", nil, 2)
+        button.dungeonBand, button.dungeonInner = band, inner
+        band:SetColorTexture(22 / 255, 25 / 255, 27 / 255, 1)
+        inner:SetColorTexture(0, 0, 0, 1)
+    end
+    if band then
+        band:ClearAllPoints()
+        band:SetPoint("TOPLEFT", button, "TOPLEFT", 2 * scale, -2 * scale)
+        band:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2 * scale, 2 * scale)
+        inner:ClearAllPoints()
+        inner:SetPoint("TOPLEFT", button, "TOPLEFT", 4 * scale, -4 * scale)
+        inner:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4 * scale, 4 * scale)
+        band:SetShown(modern)
+        inner:SetShown(modern)
+    end
+    local inset = (modern and 5 or 2) * scale
+    icon:ClearAllPoints()
+    icon:SetPoint("TOPLEFT", button, "TOPLEFT", inset, -inset)
+    icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
+    icon:SetAtlas("groupfinder-eye-single")
+    local info = C_Texture.GetAtlasInfo("groupfinder-eye-single")
+    if not NS.Public(info) or type(info) ~= "table" then return end
+    local l, r, t, b = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+    if not (NS.Finite(l) and NS.Finite(r) and NS.Finite(t) and NS.Finite(b)) then return end
+    local x, y = modern and .30 or .16, modern and .36 or .30
+    icon:SetTexCoord(l + (r - l) * x, r - (r - l) * x, t + (b - t) * y, b - (b - t) * y)
+end
+
 -- Shared by the live weather entry and the options preview. WeatherType and
 -- Blizzard's weather auras come from upstream/forever WeatherConstantsDocumentation
 -- and Blizzard_PetBattleUI/Shared/Blizzard_PetBattleUI.lua respectively.

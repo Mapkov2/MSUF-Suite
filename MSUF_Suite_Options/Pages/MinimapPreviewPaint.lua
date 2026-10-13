@@ -19,10 +19,11 @@ local TEXTS = {
     { "Clock", "12:34", "clock" }, { "FPS", "60 FPS", "fps" }, { "Latency", "23 ms", "latency" },
     { "Coordinates", "42.1, 56.7", "coordinates" }, { "Durability", "100%", "durability" },
     { "Location", "Current zone", "location" }, { "Weather", "Clear", "weather" },
-    { "Difficulty", "5H", "difficulty" },
+    { "Difficulty", "5H", "difficulty" }, { "CalendarDay", "12", "calendarDay" },
 }
 -- { key, label, section, visibility setting (false: native state), layer, atlas, file }
 local ICONS = {
+    { "dungeon", "Group finder", "dungeon", "dungeonButton", "blizzard", "groupfinder-eye-single" },
     { "tracking", "Tracking", "elements", "showTracking", "blizzard", "ui-hud-minimap-tracking-up", "Interface\\Minimap\\Tracking\\None" },
     { "calendar", "Calendar", "elements", "showCalendar", "blizzard", "ui-hud-minimap-calendar-up", "Interface\\Calendar\\UI-Calendar-Button" },
     { "mail", "Mail", "elements", "showMail", "blizzard", "ui-hud-minimap-mail-up", "Interface\\Minimap\\Tracking\\Mailbox" },
@@ -46,6 +47,7 @@ local LAYERS = {
     { "clock", "Clock" }, { "fps", "FPS" }, { "latency", "Latency" },
     { "coordinates", "Coordinates" }, { "durability", "Durability" }, { "location", "Location" },
     { "weather", "Weather" }, { "difficultyText", "Difficulty text" },
+    { "calendarDay", "Calendar day" }, { "dungeon", "Group finder" },
     { "tracking", "Tracking" }, { "calendar", "Calendar" }, { "mail", "Mail" },
     { "crafting", "Crafting" }, { "compartment", "Compartment" }, { "difficulty", "Difficulty" },
     { "zoom", "Zoom buttons" }, { "compass", "Compass" },
@@ -85,7 +87,8 @@ local function Sample(name, config)
         return "12:34"
     end
     if name == "Location" then
-        return Suite.PublicText(GetZoneText()) or Tr("Current zone")
+        local text = Suite.MinimapStyle.LocationContent(config, GetZoneText(), GetSubZoneText(), GetMinimapZoneText())
+        return text ~= "--" and text or Suite.Text("Current zone")
     end
     if name == "Durability" then
         return (config.infoDurabilityIcon and "|TInterface\\Durability\\UI-Durability-Icons:12:10|t " or "") .. "100%"
@@ -221,6 +224,7 @@ local function OffsetPrefix(key)
     if not key then return nil end
     if key:find("^info") then return key end
     if key == "folio" then return "landing" end
+    if key == "dungeon" then return "dungeon" end
     if key == "specialization" then return "spec" end
     if key == "difficulty" then return "difficultyButton" end
     if key == "drawer" or key == "zoomIn" or key == "zoomOut" then return key end
@@ -245,14 +249,15 @@ local function PaintText(ui, config, item)
     if not shown then return end
     local scale = ui.art.scale
     local size = config[prefix .. "Size"] or 12
-    local path = Suite.ResolveFont(config[prefix .. "Font"] or "") or STANDARD_TEXT_FONT
+    local path = Suite.ResolveFont(config[prefix .. "Font"] or "")
     P.StylePreviewFont(item.label, path, math.max(8, size * scale), OUTLINES[config[prefix .. "Outline"]] or "OUTLINE",
         config[prefix .. "Rendering"], config[prefix .. "Shadow"],
         config[prefix .. "ShadowOpacity"], config[prefix .. "ShadowDistance"])
     local sample, _, texture = Sample(name, config)
     item.label:SetText(sample)
     -- The hit area hugs the rendered text, up to the configured field width.
-    local contentHeight = name == "Weather" and Suite.MinimapStyle.WeatherHeight(config) or size
+    local contentHeight = name == "Weather" and Suite.MinimapStyle.WeatherHeight(config)
+        or name == "Location" and size * Suite.MinimapStyle.LocationLines(config) or size
     local fieldWidth = config[prefix .. "Width"] or 100
     if name == "Weather" and config.infoWeatherDisplay ~= WEATHER.TEXT then
         local iconSize = config.infoWeatherIconSize or RULES.infoWeatherIconSize.default
@@ -394,6 +399,12 @@ local function PaintIcons(ui, config)
                 if PublicNumber(texture) then icon = texture end
             end
             button.previewIcon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        elseif key == "dungeon" then
+            Suite.MinimapStyle.PaintDungeonButton(button, button.previewIcon, config.dungeonStyle, scale)
+            button:SetSize(config.dungeonWidth * scale, config.dungeonHeight * scale)
+            button:ClearAllPoints()
+            local anchor = Suite.MinimapDungeonAnchors[config.dungeonAnchor]
+            button:SetPoint(anchor[1], ui.map, anchor[2], config.dungeonX * scale, config.dungeonY * scale)
         elseif key == "folio" then
             PaintFolio(ui, config, button, size)
         elseif key == "difficulty" then
@@ -411,8 +422,13 @@ local function PaintIcons(ui, config)
             Tint(item.edge, 0.28, 0.74, 1, 1)
             Tint(item.backdrop, 0.11, 0.3, 0.43, 0.9)
         else
-            Tint(item.edge, 0.6, 0.74, 0.83, 0.65)
-            Tint(item.backdrop, 0.025, 0.035, 0.045, 0.9)
+            if key == "dungeon" then
+                Tint(item.edge, 0, 0, 0, 1)
+                Tint(item.backdrop, 0, 0, 0, 1)
+            else
+                Tint(item.edge, 0.6, 0.74, 0.83, 0.65)
+            end
+            if key ~= "dungeon" then Tint(item.backdrop, 0.025, 0.035, 0.045, 0.9) end
         end
     end
 end

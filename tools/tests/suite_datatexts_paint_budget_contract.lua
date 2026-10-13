@@ -28,7 +28,10 @@ local BUDGETS = {
     { name = "gold", instructions = 3025, kilobytes = 2.68 },
     { name = "bag space", instructions = 1410, kilobytes = 0.91 },
     { name = "durability", instructions = 4856, kilobytes = 2.71 },
-    { name = "sampled FPS tick", instructions = 3531, kilobytes = 2.90 },
+    -- Collected-task cancellation needs a generation check (+24 VM
+    -- instructions per two-owner cycle); native timer and allocation counts
+    -- are unchanged. This bound accepts that specific correctness cost.
+    { name = "sampled FPS tick", instructions = 3555, kilobytes = 2.90 },
     -- The account total (trackAltGold) also records this character's gold.
     { name = "gold with account total", instructions = 3168, kilobytes = 2.75, altGold = true },
     -- A bar shown only below full health follows every player health event

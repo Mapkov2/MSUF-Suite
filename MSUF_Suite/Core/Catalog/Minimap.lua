@@ -59,6 +59,10 @@ NS.MinimapTextAnchorLabels = { "Above the map", "Below the map" }
 for i = #NS.AnchorLabels, 1, -1 do table.insert(NS.MinimapTextAnchorLabels, 1, NS.AnchorLabels[i]) end
 -- The choice values of the settings below (each is its label's position
 -- there); the minimap runtime names its modes through these.
+NS.MinimapDungeonAnchors = {
+    { "TOPRIGHT", "BOTTOMRIGHT" }, { "TOPLEFT", "BOTTOMLEFT" },
+    { "BOTTOMRIGHT", "TOPRIGHT" }, { "BOTTOMLEFT", "TOPLEFT" },
+}
 NS.MinimapTextAnchor = { ABOVE = #NS.AnchorLabels + 1, BELOW = #NS.AnchorLabels + 2 }
 NS.MinimapShape = { SQUARE = 1, CIRCLE = 2, WIDE = 3 }
 NS.MinimapStyleTexture = { NONE = 1, ARCANE_RING = 2, EMBER_RING = 3, ASTRAL_RING = 4, STEEL_FRAME = 5,
@@ -90,6 +94,15 @@ B.Section(id, "layout", "Size and position", {
     Number("y", "Vertical position", -20, -3000, 3000),
     Bool("captured", "Blizzard layout imported", false),
 })
+B.Section(id, "dungeon", "Group finder", {
+    Bool("dungeonButton", "Group finder", false),
+    Choice("dungeonStyle", "Style", 1, { "Default", "Modern Dark" }),
+    Number("dungeonWidth", "Width", 52, 20, 100),
+    Number("dungeonHeight", "Height", 26, 16, 60),
+    Choice("dungeonAnchor", "Anchor", 1, { "Bottom right", "Bottom left", "Top right", "Top left" }),
+    Number("dungeonX", "Horizontal offset", 0, -600, 600),
+    Number("dungeonY", "Vertical offset", -12, -600, 600),
+})
 B.Section(id, "hover_size", "Mouseover size", {
     Bool("hoverResize", "Resize on mouseover", false),
     Number("hoverWidth", "Mouseover width", 300, 100, 600),
@@ -100,6 +113,9 @@ B.Section(id, "shape", "Shape, border and shadow", {
     Number("borderSize", "Border thickness", 1, 0, 4),
     Color("borderColor", "Border color", "000000"),
     Bool("borderClassColor", "Class-colored border", false),
+    Number("outerBorderSize", "Outer border size", 0, 0, 6),
+    Number("outerBorderGap", "Outer border gap", 4, 0, 20),
+    Color("outerBorderColor", "Outer border color", "000000"),
     Number("borderAlpha", "Border opacity (percent)", 100, 0, 100, 5),
     Number("shadowSize", "Outer shadow size", 0, 0, 24),
     Color("shadowColor", "Outer shadow color", "000000"),
@@ -114,6 +130,7 @@ NS.MinimapStylePresetNames = { "Custom", "Clean", "Arcane", "Ember", "Astral", "
     "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map", "Clean Modern", "Class Style" }
 local clean = {
     shape = NS.MinimapShape.SQUARE, borderSize = 1, borderColor = "000000", borderClassColor = false, borderAlpha = 100,
+    outerBorderSize = 0, outerBorderGap = 4, outerBorderColor = "000000",
     shadowSize = 0, shadowColor = "000000", shadowAlpha = 45,
     styleTexture = NS.MinimapStyleTexture.NONE, styleTexturePath = "", styleColor = "ffffff", styleAlpha = 100,
     styleScale = 100, styleX = 0, styleY = 0, stylePlacement = NS.MinimapStylePlacement.ABOVE,
@@ -272,6 +289,7 @@ B.Section(id, "addons", "Addon buttons", {
 local infoFields = { { "Clock", 2, 0, -4, 120, "Show clock" }, { "FPS", 7, 4, 4, 100, "Show FPS" },
     { "Latency", 9, -4, 4, 110, "Show latency" }, { "Coordinates", 1, 4, -4, 100, "Show coordinates" },
     { "Durability", 3, -4, -4, 110, "Show durability" }, { "Location", 8, 0, 4, 220, "Show location" },
+    { "CalendarDay", 3, -24, -30, 60, "Calendar day" },
     { "Weather", 11, 0, -4, 120, "Show weather" } }
 NS.MinimapInfoFields = {}
 for _, field in ipairs(infoFields) do
@@ -351,6 +369,9 @@ for _, spec in ipairs({
     InfoOption("Durability", Color("infoDurability" .. spec[1] .. "Color", spec[2], spec[3])).enableKey =
         "infoDurabilityStatusColors"
 end
+NS.MinimapLocationSource = { CUSTOM = 1, ZONE = 2, SUBZONE = 3, MINIMAP = 4, BOTH = 5 }
+InfoOption("Location", Choice("infoLocationSource", "Location source", 1,
+    { "Custom", "Zone", "Subzone", "Minimap zone", "Zone + subzone" }))
 InfoOption("Location", Bool("infoLocationZone", "Show zone", true))
 InfoOption("Location", Bool("infoLocationSubzone", "Show subzone", false))
 InfoOption("Location", Bool("infoLocationBelow", "Show subzone below zone"))
@@ -430,7 +451,10 @@ rules.zoomResetSeconds.enableKey = "scrollZoom"
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
 for _, key in ipairs({ "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover" }) do rules[key].enableKey = "collectButtons" end
 for _, key in ipairs({ "infoGoodColor", "infoWarningColor", "infoBadColor" }) do rules[key].enableKey = "infoStatusColors" end
-rules.infoLocationBelow.enableKey = "infoLocationSubzone"
+for _, key in ipairs({ "infoLocationZone", "infoLocationSubzone" }) do
+    rules[key].requiresChoice = { key = "infoLocationSource", values = { [1] = true } }
+end
+rules.infoLocationBelow.requiresChoice = { key = "infoLocationSource", values = { [1] = true, [5] = true } }
 local ART = NS.MinimapStyleTexture
 rules.styleTexturePath.requiresChoice = { key = "styleTexture", values = { [ART.CUSTOM] = true } }
 for _, key in ipairs({ "styleGlowColor", "styleGlowAlpha", "styleGlowScale" }) do rules[key].enableKey = "styleGlow" end

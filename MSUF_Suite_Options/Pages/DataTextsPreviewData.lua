@@ -10,7 +10,7 @@ local SAMPLES = {
     bags = { "Bags", "38/96" }, durability = { "Durability", "100%" },
     clock = { "Time", "20:45" }, fps = { "FPS", "120" }, latency = { "World", "24 ms" },
     coordinates = { "Coords", "48.2, 61.7" }, location = { "Zone", "Location" },
-    xp = { "XP", "64%" }, date = { "Date", "04/10" }, fpsLatency = { "FPS / World", "120 / 24 ms" },
+    memory = { "Addon memory", "14.59 MB" }, xp = { "XP", "64%" }, date = { "Date", "04/10" }, fpsLatency = { "FPS / World", "120 / 24 ms" },
     broker = { "Broker", "124" }, currency = { "Currency", "850" }, crests = { "Crests", "90 / 120" },
     itemLevel = { "Item level", "275.5" }, professions = { "Professions", "100 / 100" },
     specialization = { "Specialization", "Specialization" }, audio = { "Volume", "75%" },
@@ -40,6 +40,12 @@ end
 
 function Data.Text(source, style, config, block)
     local name, value = Data.Sample(source, style, config, block)
+    if source == "fpsLatency" and style.performanceLabels then
+        return "|cff" .. style.labelColor .. Tr("FPS") .. ": |r|cff" .. style.valueColor .. "120|r |cff"
+            .. style.labelColor .. Tr("MS") .. ": |r|cff" .. style.valueColor .. "24|r"
+    elseif source == "memory" and style.colorMemoryUnit then
+        value = value:gsub(" MB$", " |cff" .. style.memoryUnitColor .. "MB|r")
+    end
     local prefix = name ~= "" and ("|cff" .. style.labelColor .. name .. (style.labelColon and ": " or " ") .. "|r") or ""
     return prefix .. "|cff" .. style.valueColor .. value .. "|r"
 end

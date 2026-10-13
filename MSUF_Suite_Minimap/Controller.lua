@@ -18,7 +18,7 @@ local CATEGORIES = {
         extra = { "size" } },
     { name = "input", sections = { "behavior" }, extra = { "hoverResize", "showLanding", "collectButtons",
         "drawerMouseover", "infoCoordinates", "infoCoordinatesMode" } },
-    { name = "elements", sections = { "elements", "landing" }, extra = { "infoDifficulty", "borderSize" } },
+    { name = "elements", sections = { "elements", "landing", "dungeon" }, extra = { "infoDifficulty", "borderSize" } },
     { name = "drawer", sections = { "addons" }, extra = { "elementRow", "elementSize", "elementSpacing",
         "elementDistance", "borderSize", "borderColor", "borderClassColor" } },
     { name = "specialization", sections = { "specialization" }, extra = { "borderColor", "borderClassColor" } },

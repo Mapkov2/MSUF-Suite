@@ -11,6 +11,7 @@
 Bootstrap.lua
 Appearance.lua
 GoldLedger.lua
+Memory.lua
 Standard.lua
 Sources.lua
 Actions.lua

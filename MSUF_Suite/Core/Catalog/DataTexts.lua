@@ -16,7 +16,7 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     { "Item level", "itemLevel" }, { "Professions", "professions" }, { "Specialization", "specialization" },
     { "Audio volume", "audio" }, { "Hearthstone", "hearth" }, { "XP / reputation", "progress" },
     { "Dungeon portals", "portals" }, { "Micro menu", "microMenu" },
-    { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" } }) do
+    { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" }, { "Addon memory", "memory" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
@@ -143,6 +143,9 @@ local textStyle = {
     Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Choice("textAlign", "Text alignment", 2, { "Left", "Center", "Right" }),
     Bool("showLabels", "Show data names", true),
+    Bool("performanceLabels", "Separate FPS and latency labels", false),
+    Bool("colorMemoryUnit", "Use a separate memory unit color", false),
+    Color("memoryUnitColor", "Memory unit color", "28a6a1"),
     Bool("labelColon", "Colon after data names", true),
     Bool("clockLabel", "Show Time before clock", true),
     Bool("bagsPercent", "Show used bag space as percent", false),
@@ -642,5 +645,7 @@ function NS.DataTextEffectiveStyle(config, bar)
         labelColon = Value("labelColon"), clockLabel = Value("clockLabel"), bagsPercent = Value("bagsPercent"),
         labelColor = ColorValue("label"), valueColor = ColorValue("value"), warningColor = ColorValue("warning"),
         valueClassColor = Value("valueClassColor"),
+        performanceLabels = Value("performanceLabels"), colorMemoryUnit = Value("colorMemoryUnit"),
+        memoryUnitColor = Value("memoryUnitColor"),
     }
 end

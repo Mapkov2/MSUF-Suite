@@ -4,6 +4,8 @@ local PAGE, ID = "suite_dataTexts", "dataTexts"
 -- The choice values of the crest and source settings (Core/Catalog/DataTexts.lua).
 local CREST_MODE = P.Suite.DataTextCrestMode
 local function CrestCurrencyMenu(anchor)
+    local current = P.ProfileGuard()
+    local baseline = P.Get(ID, "crestCurrencyIDs")
     local suite=P.Suite
     local selected,order,seen={},{},{}
     for value in (P.Get(ID,'crestCurrencyIDs') or ''):sub(1,4096):gmatch('%d+') do
@@ -20,6 +22,7 @@ local function CrestCurrencyMenu(anchor)
         local label=info.name..' ('..id..')'
         if suite.Finite(info.iconFileID) then label='|T'..info.iconFileID..':16|t '..label end
         menu:CreateCheckbox(label,function() return selected[id]==true end,function()
+            if not current() or P.Get(ID, "crestCurrencyIDs") ~= baseline then return end
             local values={}
             for _,value in ipairs(order) do if value~=id then values[#values+1]=value end end
             if not selected[id] and #values<32 then values[#values+1]=id end
@@ -31,7 +34,11 @@ local function CrestCurrencyMenu(anchor)
         menu:SetScrollMode(420)
         menu:CreateTitle(Tr('Select your current-season crests from the native currency list.'))
         menu:CreateTitle(Tr('Selection order is display order. Remove and select again to move a currency last.'))
-        menu:CreateButton(Tr('Clear selection'),function() P.SetMany(ID,{crestMode=CREST_MODE.SELECTED,crestCurrencyIDs=''}) end)
+        menu:CreateButton(Tr('Clear selection'),function()
+            if current() and P.Get(ID, "crestCurrencyIDs") == baseline then
+                P.SetMany(ID,{crestMode=CREST_MODE.SELECTED,crestCurrencyIDs=''})
+            end
+        end)
         for _,id in ipairs(order) do Add(menu,id,C_CurrencyInfo.GetCurrencyInfo(id)) end
         menu:CreateDivider()
         for index=1,C_CurrencyInfo.GetCurrencyListSize() do
@@ -41,6 +48,7 @@ local function CrestCurrencyMenu(anchor)
                     local row=index
                     local expanded=suite.Public(info.isHeaderExpanded) and info.isHeaderExpanded==true
                     local header=menu:CreateButton(info.name..(expanded and ' -' or ' +'),function()
+                        if not current() then return end
                         C_CurrencyInfo.ExpandCurrencyList(row,not expanded)
                         CrestCurrencyMenu(anchor)
                     end)
@@ -66,15 +74,19 @@ local function StageSelected(order)
     return false
 end
 local function SeasonStagesMenu(anchor)
+    local current = P.ProfileGuard()
     local sources = S.DataTextExtraSources
     local choices = sources and sources.CrestChoices() or {}
     P.ContextMenu(anchor, function(_, menu)
-        menu:CreateButton(Tr("Show all observed stages"), function() P.SetMany(ID, { crestMode = CREST_MODE.OBSERVED, crestCurrencies = "" }) end)
+        menu:CreateButton(Tr("Show all observed stages"), function()
+            if current() then P.SetMany(ID, { crestMode = CREST_MODE.OBSERVED, crestCurrencies = "" }) end
+        end)
         for _, cost in ipairs(choices) do
             local order = cost.order
             local info = cost.currencyID and C_CurrencyInfo.GetCurrencyInfo(cost.currencyID)
             local name = info and info.name or cost.itemID and C_Item.GetItemInfo(cost.itemID) or tostring(order)
-            menu:CreateCheckbox(tostring(order) .. ": " .. name, function() return StageSelected(order) end, function()
+            menu:CreateCheckbox(tostring(order) .. ": " .. name, function() return current() and StageSelected(order) end, function()
+                if not current() then return end
                 local values = {}
                 for value in (P.Get(ID, "crestCurrencies") or ""):gmatch("%d+") do
                     if tonumber(value) ~= order then values[#values + 1] = value end

@@ -9,7 +9,7 @@ local TEXT_ANCHOR, BOX = NS.MinimapTextAnchor, NS.MinimapTextBox
 -- calendar invite mark are event-driven. Hidden texts do no work and only
 -- remember that they are stale; coordinates stop sampling while no position
 -- exists and resume on the next zone change.
-local keys = { "Clock", "FPS", "Latency", "Coordinates", "Durability", "Location", "Weather" }
+local keys = { "CalendarDay", "Clock", "FPS", "Latency", "Coordinates", "Durability", "Location", "Weather" }
 local eventFields = { Durability = true, Location = true, Weather = true }
 local DURABILITY_EVENTS = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_EQUIPMENT_CHANGED" }
 local ZONE_EVENTS = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA" }
@@ -194,14 +194,11 @@ end
 
 local function Location(entry)
     local c = M.config
-    local rawZone, rawSubzone = S.ReadInfoSource("location")
-    local zone = c.infoLocationZone and (rawZone or "") or ""
-    local subzone = c.infoLocationSubzone and (rawSubzone or "") or ""
-    if subzone == zone then subzone = "" end
-    if zone ~= entry.lastZone or subzone ~= entry.lastSubzone then
-        entry.lastZone, entry.lastSubzone = zone, subzone
-        entry.locationText = zone ~= "" and subzone ~= "" and zone .. entry.separator .. subzone
-            or zone ~= "" and zone or subzone ~= "" and subzone or "--"
+    local zone, subzone, minimap = S.ReadInfoSource("location")
+    if zone ~= entry.lastZone or subzone ~= entry.lastSubzone or minimap ~= entry.lastMinimap
+        or not entry.locationText then
+        entry.lastZone, entry.lastSubzone, entry.lastMinimap = zone, subzone, minimap
+        entry.locationText = NS.MinimapStyle.LocationContent(c, zone, subzone, minimap)
     end
     local color
     if entry.useZoneColor then
@@ -220,6 +217,7 @@ local function Weather(entry)
     return text
 end
 local readers = {
+    CalendarDay = function() return date("%d"), 60 end,
     Clock = Clock, FPS = FPS, Latency = Latency, Coordinates = Coordinates,
     Durability = Durability, Location = Location, Weather = Weather,
 }
@@ -514,15 +512,14 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
                 .. math.floor(c.infoDurabilitySize * 18 / 22) .. ":0:0:128:128:0:18:0:22|t "
             or ""
     elseif key == "Location" then
-        entry.lastZone, entry.lastSubzone = nil, nil
-        entry.separator = c.infoLocationBelow and "\n" or " - "
+        entry.lastZone, entry.lastSubzone, entry.lastMinimap, entry.locationText = nil, nil, nil, nil
         entry.useZoneColor = c.infoLocationZoneColor and not (c.infoLocationClassColor and classColor)
     end
     local size = c[prefix .. "Size"]
     S.SetStyledFont(entry.label, S.ResolveFont(c[prefix .. "Font"]), size,
         outlines[c[prefix .. "Outline"]], c[prefix .. "Rendering"],
         c[prefix .. "Shadow"], c[prefix .. "ShadowOpacity"], c[prefix .. "ShadowDistance"])
-    local lines = key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2
+    local lines = key == "Location" and NS.MinimapStyle.LocationLines(c)
         or key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2 or 1
     local height = key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or size * lines
     local width = c[prefix .. "Width"]
@@ -619,7 +616,7 @@ local function LayoutEntries(c, hideCoordinates)
             Style(entry, key, c, classColor, boxR, boxG, boxB)
             local anchor = c[prefix .. "Anchor"]
             local lines = key == "Clock" and c.infoClockDate and c.infoClockDatePosition ~= DATE.BESIDE and 2
-                or key == "Location" and c.infoLocationBelow and c.infoLocationZone and c.infoLocationSubzone and 2 or 1
+                or key == "Location" and NS.MinimapStyle.LocationLines(c) or 1
             local height = (key == "Weather" and NS.MinimapStyle.WeatherHeight(c) or c[prefix .. "Size"] * lines) + 8
             if anchor == TEXT_ANCHOR.ABOVE then above = math.max(above, c[prefix .. "Y"] + height) end
             if anchor == TEXT_ANCHOR.BELOW then below = math.max(below, height - c[prefix .. "Y"]) end

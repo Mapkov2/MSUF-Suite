@@ -11,6 +11,7 @@ local M = P.DataTexts
 local Bars, BarKeys = P.DataTextBars, P.DataTextBarKeys
 local ID = "dataTexts"
 local IN_COMBAT = { inCombat = true }
+local FPS_LABEL, MS_LABEL = S.Text("FPS"), S.Text("MS")
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local Snap, ApplyColor = Appearance.Snap, Appearance.Color
@@ -44,6 +45,16 @@ end
 local function Display(label, value, severity, style, key, alternate)
     if key == "bags" and style.bagsPercent then value = alternate or NO_VALUE end
     local valueColor = severity == "bad" and style.warningColor or style.valueColor
+    if key == "fpsLatency" and style.performanceLabels then
+        local fps, latency = value:match("^(%d+) / (%d+)")
+        if fps then
+            local plain = FPS_LABEL .. ": " .. fps .. " " .. MS_LABEL .. ": " .. latency
+            return plain, "|cff" .. style.labelColor .. FPS_LABEL .. ": |r|cff" .. valueColor .. fps
+                .. "|r |cff" .. style.labelColor .. MS_LABEL .. ": |r|cff" .. valueColor .. latency .. "|r"
+        end
+    elseif key == "memory" and style.colorMemoryUnit then
+        value = value:gsub(" MB$", " |cff" .. style.memoryUnitColor .. "MB|r")
+    end
     if style.showLabels and (key ~= "clock" or style.clockLabel) then
         local separator = style.labelColon and ": " or " "
         return label .. separator .. value,
@@ -407,6 +418,8 @@ function M:Refresh()
         S.Queue(ID)
         return
     end
+    -- Popup rows describe the old binding; they cannot survive a rebind.
+    Actions.ClosePopup()
     if self.config.trackAltGold then GoldLedger.Capture() end
     self.styling = true
     Clear(self.values)
@@ -430,7 +443,8 @@ function M:Refresh()
     end
     self.styling = false
     self:UpdateVisibility()
-    Extra.PrepareHearths()
+    -- Every source can change while its secure overlay still holds the pointer.
+    if not Extra.PrepareHearths() then Actions.Refresh() end
     NativeBagBar.Sync()
 end
 

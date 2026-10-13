@@ -32,13 +32,14 @@ local TITLES = {
     Durability = { "DURABILITY", "Durability" },
     Location = { "ZONE", "Location" },
     Weather = { false, "Weather" },
+    CalendarDay = { false, "Calendar day" },
 }
 local overlay
 
 local function OpensWindow(button)
     local key = button.infoKey
     return key == "Coordinates" or key == "Durability" or key == "Location" and M.config.infoLocationClick == true
-        or key == "Clock" and S.GamepadUI()
+        or (key == "Clock" or key == "CalendarDay") and S.GamepadUI()
 end
 
 -- The Clock text's windows: the left click's, then the right click's.
@@ -49,11 +50,13 @@ end
 
 local function Click(button, mouseButton)
     if not M.active or NS.IsCombatLocked() then return end
-    if button.infoKey == "Clock" and not S.GamepadUI() then
+    if button.infoKey == "CalendarDay" and not S.GamepadUI() then
+        ToggleCalendar()
+    elseif button.infoKey == "Clock" and not S.GamepadUI() then
         local calendar = M.config.infoClockClick == CLOCK_CLICK.CALENDAR
         if mouseButton == "RightButton" then calendar = not calendar end
         if calendar then ToggleCalendar() else ToggleTimeManager() end
-    elseif OpensWindow(button) then
+    elseif PANELS[button.infoKey] and OpensWindow(button) then
         S.TogglePanel(PANELS[button.infoKey])
     end
 end
@@ -111,7 +114,10 @@ end
 local function Attach(button)
     if S.editMode or NS.IsCombatLocked() or not OpensWindow(button) then return end
     local target, left, right
-    if button.infoKey == "Clock" then
+    if button.infoKey == "CalendarDay" then
+        target = S.PanelButton("calendar")
+        if not target then return end
+    elseif button.infoKey == "Clock" then
         local leftPanel, rightPanel = ClockPanels()
         left, right = S.PanelButton(leftPanel), S.PanelButton(rightPanel)
         if not (left or right) then return end

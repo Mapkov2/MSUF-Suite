@@ -141,7 +141,7 @@ local function Build(ctx)
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
     })
     sections.style_presets = BuildStylePresets(ctx, b)
-    for _, section in ipairs({ "layout", "hover_size", "landing", "shape", "behavior", "elements", "addons" }) do
+    for _, section in ipairs({ "layout", "hover_size", "landing", "shape", "behavior", "elements", "dungeon", "addons" }) do
         local rules = P.SectionRules(ID, section)
         sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = section == "layout" })

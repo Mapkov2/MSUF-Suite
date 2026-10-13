@@ -38,6 +38,11 @@ end
 
 function Movers.Register(module)
     S.UnregisterEditElements(ID)
+    -- Imported profiles can replace bar IDs indefinitely. Only the present
+    -- profile's IDs own cached closures; its catalog already bounds their count.
+    for index in pairs(specs) do
+        if not module.presentIDs[index] then specs[index] = nil end
+    end
     for _, i in ipairs(module.barIDs) do
         if module.bars[i] then
             local spec = Spec(module, i)

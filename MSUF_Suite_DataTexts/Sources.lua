@@ -522,6 +522,7 @@ function Sources.PrepareHearths()
     end
     Refresh("hearth")
     P.DataTextActions.Refresh()
+    return true -- The controller need not rebind the same overlay twice.
 end
 
 -- Bag and toy updates choose again only when the owned Hearthstones changed:

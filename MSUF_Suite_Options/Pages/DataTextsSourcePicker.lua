@@ -5,13 +5,32 @@ P.DataTextsSourcePicker = Picker
 local ID, PAGE = "dataTexts", "suite_dataTexts"
 local WIDTH, HEIGHT = 430, 468
 local popup
+local epoch, detailSession = 0
+
+local function Session(block)
+    local config = P.S.Config(ID)
+    return { config = config, profile = Suite.DB, epoch = epoch, block = block,
+        source = P.Get(ID, block), barIds = config.barIds }
+end
+
+local function Current(session)
+    return session and session.epoch == epoch and session.profile == Suite.DB
+        and session.config == P.S.Config(ID) and session.barIds == session.config.barIds
+        and session.source == P.Get(ID, session.block) and not P.Combat()
+end
+
+Suite.Registry.AddListener(Picker, function(_, domain)
+    if domain ~= "profile" then return end
+    epoch, detailSession = epoch + 1, nil
+    if popup then popup:Hide() end
+end)
 local hookedAnchors = setmetatable({}, { __mode = "k" })
 local GROUPS = {
     { "Everyday", { "clock", "date", "gold", "sessionGold", "bags", "durability", "location", "coordinates" } },
     { "Character", { "xp", "progress", "itemLevel", "specialization", "specLoot", "professions" } },
     { "Travel and menus", { "travel", "hearth", "portals", "microMenu" } },
     { "Currencies", { "currency", "crests" } },
-    { "System", { "fps", "latency", "fpsLatency", "audio" } },
+    { "System", { "fps", "latency", "fpsLatency", "memory", "audio" } },
     { "Addons", { "broker" } },
 }
 local CATEGORIES = {}
@@ -46,7 +65,7 @@ function Picker.Choices(query)
 end
 
 local function Pick(entry)
-    if not popup or P.Combat() or not Available(entry.key) then return end
+    if not popup or not popup:IsShown() or not Current(popup.session) or not Available(entry.key) then return end
     local bar, slot, changed = popup.bar, popup.slot, popup.onChanged
     if P.Set(ID, "bar" .. bar .. "Slot" .. slot, entry.index) then
         popup:Hide()
@@ -109,6 +128,7 @@ local function Lifecycle(frame)
         frame:RegisterEvent("GLOBAL_MOUSE_DOWN")
     end)
     frame:HookScript("OnHide", function()
+        frame.session = nil
         frame:UnregisterAllEvents()
         frame.search:ClearFocus()
         if frame:IsShown() then frame:Hide() end
@@ -182,6 +202,7 @@ function Picker.Open(anchor, bar, slot, onChanged)
         anchor:HookScript("OnHide", function() if frame.anchor == anchor then frame:Hide() end end)
     end
     frame.anchor, frame.bar, frame.slot, frame.onChanged = anchor, bar, slot, onChanged
+    frame.session = Session("bar" .. bar .. "Slot" .. slot)
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -5)
     if M.ApplyPopupFramePriority then M.ApplyPopupFramePriority(frame) end
@@ -197,6 +218,8 @@ local function PublicString(value)
 end
 
 local function BrokerMenu(anchor, block)
+    local session = Session(block)
+    detailSession = session
     local stub = Suite.Safety.Field(_G, "LibStub")
     local lib = stub and stub:GetLibrary("LibDataBroker-1.1", true)
     local names = {}
@@ -212,13 +235,15 @@ local function BrokerMenu(anchor, block)
         menu:CreateTitle(Tr("Choose loaded broker"))
         if #names == 0 then menu:CreateTitle(Tr("No broker plugins are loaded. You can enter a name below.")) end
         for _, name in ipairs(names) do
-            menu:CreateRadio(name, function() return P.Get(ID, block .. "Broker") == name end,
-                function() P.Set(ID, block .. "Broker", name) end)
+            menu:CreateRadio(name, function() return detailSession == session and Current(session) and P.Get(ID, block .. "Broker") == name end,
+                function() if detailSession == session and Current(session) then P.Set(ID, block .. "Broker", name) end end)
         end
     end)
 end
 
 local function CurrencyMenu(anchor, block)
+    local session = Session(block)
+    detailSession = session
     P.ContextMenu(anchor, function(_, menu)
         menu:SetScrollMode(340)
         menu:CreateTitle(Tr("Choose discovered currency"))
@@ -230,6 +255,7 @@ local function CurrencyMenu(anchor, block)
                     local row = index
                     local expanded = not Suite.IsSecret(info.isHeaderExpanded) and info.isHeaderExpanded == true
                     menu:CreateButton(info.name .. (expanded and " -" or " +"), function()
+                        if detailSession ~= session or not Current(session) then return end
                         C_CurrencyInfo.ExpandCurrencyList(row, not expanded)
                         CurrencyMenu(anchor, block)
                     end)
@@ -238,8 +264,10 @@ local function CurrencyMenu(anchor, block)
                     local id = PublicString(link) and C_CurrencyInfo.GetCurrencyIDFromLink(link)
                     if Suite.Finite(id) and id > 0 then
                         found = true
-                        menu:CreateRadio(info.name, function() return P.Get(ID, block .. "Currency") == id end,
-                            function() P.Set(ID, block .. "Currency", id) end)
+                        menu:CreateRadio(info.name, function()
+                return detailSession == session and Current(session) and P.Get(ID, block .. "Currency") == id
+            end,
+                            function() if detailSession == session and Current(session) then P.Set(ID, block .. "Currency", id) end end)
                     end
                 end
             end
