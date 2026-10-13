@@ -2,6 +2,18 @@ local _, P = ...
 local S, M = P.Suite, P.BagsModule
 local selected, order, seen, options, opened = {}, {}, {}, {}, {}
 local MAX_DEPTH = 6
+local session
+P.CurrencyPicker = {}
+
+function P.CurrencyPicker.Close()
+    session = nil
+end
+
+-- Menu callbacks can outlive a profile, a disable or a newer picker.
+local function Current(owner)
+    return owner == session and M.active and not P.NS.InCombat()
+        and M.config == owner.config and P.NS.DB == owner.profile
+end
 
 local function ReadSelected()
     for key in pairs(selected) do selected[key] = nil end
@@ -14,7 +26,9 @@ local function ReadSelected()
     end
 end
 
-local function Toggle(id)
+local function Toggle(owner, id)
+    if not Current(owner) then return end
+    ReadSelected()
     if selected[id] then
         selected[id] = nil
         for i = #order, 1, -1 do
@@ -27,13 +41,18 @@ local function Toggle(id)
         order[#order + 1], selected[id] = id, true
     end
     S.Set("bags", "currencyIDs", table.concat(order, ","))
+    ReadSelected()
     for currencyID, option in pairs(options) do option:SetEnabled(selected[currencyID] or #order < 8) end
 end
 
-local function AddCurrency(root, id, name)
+local function AddCurrency(root, owner, id, name)
     if not S.Finite(id) or id <= 0 or seen[id] or not S.Public(name) or type(name) ~= "string" then return end
     seen[id] = true
-    local option = root:CreateCheckbox(name, function() return selected[id] == true end, function() Toggle(id) end)
+    local option = root:CreateCheckbox(name, function()
+        if not Current(owner) then return false end
+        ReadSelected()
+        return selected[id] == true
+    end, function() Toggle(owner, id) end)
     option:SetEnabled(selected[id] or #order < 8)
     options[id] = option
 end
@@ -99,7 +118,7 @@ local function RestoreExpansion()
     for key in pairs(opened) do opened[key] = nil end
 end
 
-local function AddList(root)
+local function AddList(root, owner)
     ExpandAll()
     for index = 1, C_CurrencyInfo.GetCurrencyListSize() do
         local info = C_CurrencyInfo.GetCurrencyListInfo(index)
@@ -109,7 +128,7 @@ local function AddList(root)
             else
                 local link = C_CurrencyInfo.GetCurrencyListLink(index)
                 if S.Public(link) and type(link) == "string" then
-                    AddCurrency(root, C_CurrencyInfo.GetCurrencyIDFromLink(link), info.name)
+                    AddCurrency(root, owner, C_CurrencyInfo.GetCurrencyIDFromLink(link), info.name)
                 end
             end
         end
@@ -118,22 +137,29 @@ local function AddList(root)
 end
 
 function S.BagCurrencyMenu(anchor)
-    if not M.active then return false end
+    if not M.active or P.NS.InCombat() then return false end
+    local owner = { config = M.config, profile = P.NS.DB }
+    session = owner
     ReadSelected()
     -- Blizzard's context menu, or the Suite's list under WoW Forever's
     -- Gamepad UI (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
     S.ContextMenu(anchor or UIParent, function(_, root)
+        if not Current(owner) then return end
         for id in pairs(seen) do seen[id], options[id] = nil, nil end
         root:SetScrollMode(420)
         root:CreateTitle(S.Text("Choose currencies"))
         root:CreateTitle(S.Text("Select up to eight currencies."))
         for i = 1, #order do
             local info = C_CurrencyInfo.GetCurrencyInfo(order[i])
-            if S.Public(info) and type(info) == "table" then AddCurrency(root, order[i], info.name) end
+            if S.Public(info) and type(info) == "table" then AddCurrency(root, owner, order[i], info.name) end
         end
-        root:CreateButton(S.Text("Clear selection"), function() S.Set("bags", "currencyIDs", "") end)
+        root:CreateButton(S.Text("Clear selection"), function()
+            if not Current(owner) then return end
+            S.Set("bags", "currencyIDs", "")
+            ReadSelected()
+        end)
         root:CreateDivider()
-        AddList(root)
+        AddList(root, owner)
     end)
     return true
 end

@@ -230,11 +230,13 @@ end
 
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetFrameStrata("MEDIUM")
-    host:EnableMouse(true)
-    host:SetScript("OnEnter", HostEnter)
-    host:SetScript("OnLeave", HostLeave)
+    local host = S.CreateFrame("Frame", nil, self.previewParent or UIParent)
+    if not self.previewParent then host:SetFrameStrata("MEDIUM") end
+    host:EnableMouse(not self.previewParent)
+    if not self.previewParent then
+        host:SetScript("OnEnter", HostEnter)
+        host:SetScript("OnLeave", HostLeave)
+    end
     local panel = S.CreateTexture(host, nil, "BACKGROUND")
     panel:SetAllPoints(host)
     local bar = S.CreateFrame("Frame", nil, host)
@@ -292,11 +294,13 @@ local MIDNIGHT_DARK, MSUF_FOREVER, CUSTOM, CLASS_STYLE = 2, 3, 4, 6
 local custom = {}
 local function CustomLook(c)
     local key = c.customFill .. c.customRested .. c.customPanel .. c.customBorder
+        .. (c.separateTextColor and c.customText or "")
     if custom.key ~= key then
         custom.key = key
         custom.panel, custom.track, custom.border = c.customPanel, c.customPanel, c.customBorder
         custom.accent, custom.rested = c.customFill, c.customRested
-        custom.text, custom.muted = c.customBorder, c.customBorder
+        custom.text, custom.muted = c.separateTextColor and c.customText or c.customBorder,
+            c.separateTextColor and c.customText or c.customBorder
     end
     return custom
 end
@@ -321,7 +325,7 @@ local function ApplyLook(self)
     Tint(self.fill, accent, 0.98)
     Tint(self.rested, look.rested, 0.78)
     Paint(self.restedMarker, look.rested, 1)
-    Paint(self.edges[1], accent, 0.88)
+    Paint(self.edges[1], index == CUSTOM and border or accent, 0.88)
     for edge = 2, 4 do Paint(self.edges[edge], border, 0.86) end
     Paint(self.detailRule, border, 0.48)
     for _, divider in ipairs(self.segments) do Paint(divider, text, 0.34) end
@@ -333,42 +337,70 @@ local function ApplyLook(self)
     self.appliedLook = index
     self.appliedClassRevision = classRevision
     self.appliedCustom = customKey
+    self.trackColor, self.dividerColor = look.track, text
 end
 
 local function ApplyFont(self)
     local path, epoch = S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
-    if self.fontPath == path and self.fontEpoch == epoch then return end
+    local minimal = self.config.displayStyle == 2
+    if self.fontPath == path and self.fontEpoch == epoch and self.fontMinimal == minimal then return end
     S.SetFont(self.levelText, path, 11, "OUTLINE")
-    S.SetFont(self.percentText, path, 11, "OUTLINE")
+    S.SetFont(self.percentText, path, minimal and 20 or 11, "OUTLINE")
     S.SetFont(self.details, path, 11, "")
-    self.fontPath, self.fontEpoch = path, epoch
+    self.fontPath, self.fontEpoch, self.fontMinimal = path, epoch, minimal
 end
 
 -- Geometry and style: settings, scale and Edit Mode changes only.
 local function Layout(self)
     Create(self)
-    local restored = S.ApplyOwnedLayer(self.host, self.config.layer)
-    S.ApplyOwnedChildLayer(self.bar, self.host, self.config.layer, 1, restored)
-    ApplyLook(self)
+    if not self.previewParent then
+        local restored = S.ApplyOwnedLayer(self.host, self.config.layer)
+        S.ApplyOwnedChildLayer(self.bar, self.host, self.config.layer, 1, restored)
+    end
     ApplyFont(self)
     local c, host, bar = self.config, self.host, self.bar
     host:SetSize(c.width, c.height + 23)
-    S.PlaceHost(host, c, "BOTTOM")
+    if not self.previewParent then S.PlaceHost(host, c, "BOTTOM") end
     bar:SetSize(c.width, c.height)
+    local framed, segmented = (c.displayStyle or 1) == 1, c.displayStyle == 3
+    self.levelText:SetShown(c.displayStyle ~= 2)
+    self.percentText:ClearAllPoints()
+    self.percentText:SetPoint(c.displayStyle == 2 and "CENTER" or "RIGHT", bar,
+        c.displayStyle == 2 and "CENTER" or "RIGHT", c.displayStyle == 2 and 0 or -6, 0)
+    self.panel:SetShown(framed)
+    self.detailRule:SetShown(framed)
+    local outline = framed and host or bar
+    for index, edge in ipairs(self.edges) do
+        edge:ClearAllPoints()
+        local first = index == 2 and "BOTTOMLEFT" or index == 4 and "TOPRIGHT" or "TOPLEFT"
+        local last = index == 1 and "TOPRIGHT" or "BOTTOMRIGHT"
+        if index == 3 then last = "BOTTOMLEFT" end
+        edge:SetPoint(first, outline, first)
+        edge:SetPoint(last, outline, last)
+    end
+    local texture = S.ResolveTexture(framed and "MSUF Lucent" or "Solid", MSUF_BAR)
+    if self.appliedTexture ~= texture then
+        self.fill:SetTexture(texture)
+        self.rested:SetTexture(texture)
+        self.appliedTexture, self.appliedLook = texture, nil
+    end
+    ApplyLook(self)
     local effectiveScale = bar:GetEffectiveScale()
     local pixel = Finite(effectiveScale) and effectiveScale > 0 and 1 / effectiveScale or 1
     self.pixel = pixel
-    self.edges[1]:SetHeight(pixel)
-    self.edges[2]:SetHeight(pixel)
-    self.edges[3]:SetWidth(pixel)
-    self.edges[4]:SetWidth(pixel)
+    local outlinePixel = pixel * (c.borderSize or 1)
+    self.edges[1]:SetHeight(outlinePixel)
+    self.edges[2]:SetHeight(outlinePixel)
+    self.edges[3]:SetWidth(outlinePixel)
+    self.edges[4]:SetWidth(outlinePixel)
     self.detailRule:SetHeight(pixel)
     for index, divider in ipairs(self.segments) do
         divider:ClearAllPoints()
         local x = floor((c.width * index / SEGMENT_COUNT) / pixel + 0.5) * pixel
         divider:SetPoint("LEFT", bar, "LEFT", x, 0)
-        divider:SetSize(pixel, c.height)
-        divider:SetShown(c.showSegments == true)
+        divider:SetSize(segmented and pixel * 2 or pixel, c.height)
+        Paint(divider, segmented and self.trackColor or self.dividerColor, segmented and 1 or .34)
+        divider:SetShown(segmented or c.showSegments == true)
     end
     self.details:SetWidth(c.width)
 end
@@ -413,9 +445,9 @@ local function AtEffectiveMaxLevel(self, level)
     return self.capped
 end
 
-local function PaintRested(self, fraction, maximum, capped)
+local function PaintRested(self, fraction, maximum, capped, sampleRested)
     local c, pixel = self.config, self.pixel
-    local rested = c.showRested and Rested() or 0
+    local rested = c.showRested and (sampleRested or Rested()) or 0
     local restedFraction = max(0, min(1 - fraction, rested / maximum))
     self.rested:ClearAllPoints()
     self.rested:SetPoint("LEFT", self.bar, "LEFT", c.width * fraction, 0)
@@ -428,13 +460,13 @@ local function PaintRested(self, fraction, maximum, capped)
     self.restedMarker:SetShown(restedFraction > 0 and restedEnd > 0.01 and restedEnd < 0.99 and not capped)
 end
 
-local function DetailsText(self, current, maximum)
+local function DetailsText(self, current, maximum, sampleGain, sampleRate)
     local c = self.config
-    local rate = Rate(self)
+    local rate = sampleRate or Rate(self)
     local count = 0
     if c.showSession then
         count = count + 1
-        detailParts[count] = TEXT.session:format(Compact(self.session and self.session.gained or 0))
+        detailParts[count] = TEXT.session:format(Compact(sampleGain or self.session and self.session.gained or 0))
     end
     if c.showRate then
         count = count + 1
@@ -468,7 +500,7 @@ PaintValues = function(self)
     self.fill:SetShown(fraction > 0)
     PaintRested(self, fraction, maximum, capped)
     self.levelText:SetText(TEXT.short:format(level, Compact(current), Compact(maximum)))
-    self.percentText:SetText(("%.1f%%"):format(fraction * 100))
+    self.percentText:SetText((c.displayStyle == 2 and "%.0f%%" or "%.1f%%"):format(fraction * 100))
     self.details:SetText(DetailsText(self, current, maximum))
     -- An open tooltip follows the new values.
     if GameTooltip:IsOwned(host) then Tooltip(self) end
@@ -547,6 +579,32 @@ function M:RegisterMovers()
         historyKeys = { "width", "height", "scale" },
         sizeKeys = { "width", "height", "scale" },
     })
+end
+
+-- The menu owns this separate host. Samples share the live renderer but never
+-- read XP, track a session, hide Blizzard's bar or schedule a refresh.
+function S.DrawExperienceBarPreview(parent, config, sample, viewport)
+    local view = parent.suiteXPPreview
+    if not view then
+        view = { previewParent = parent }
+        parent.suiteXPPreview = view
+    end
+    view.config = config
+    if viewport then
+        Create(view)
+        local scale = viewport.scale
+        view.host:SetScale(scale * min(1, viewport.width / (config.width * scale),
+            viewport.height / ((config.height + 23) * scale)))
+    end
+    Layout(view)
+    local fraction = sample.xp / 100
+    view.fill:SetSize(max(.01, config.width * fraction), config.height)
+    view.fill:SetShown(fraction > 0)
+    PaintRested(view, fraction, 100, false, sample.rested)
+    view.levelText:SetText(TEXT.short:format(42, Compact(sample.xp * 1000), Compact(100000)))
+    view.percentText:SetText((config.displayStyle == 2 and "%.0f%%" or "%.1f%%"):format(sample.xp))
+    view.details:SetText(DetailsText(view, sample.xp * 1000, 100000, 12000, 24000))
+    return view.host, config.width, config.height + 23
 end
 
 function S.ResetXPSession()

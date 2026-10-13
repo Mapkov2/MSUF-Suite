@@ -1130,6 +1130,7 @@ function H.New(root, options)
     local runtime = {}
     assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", runtime)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Timers.lua"))("MSUF_Suite_Modules", runtime)
+    assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
     W.S = S
 

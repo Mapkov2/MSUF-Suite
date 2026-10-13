@@ -34,7 +34,7 @@ C_CurrencyInfo = {
 -- S.ContextMenu: Blizzard's context menu outside WoW Forever's Gamepad UI
 -- (MSUF_Suite_Modules/Dialogs.lua).
 assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = S })
-assert(loadfile(root .. "/MSUF_Suite_Bags/CurrencyPicker.lua"))("Bags", { Suite = S, BagsModule = module })
+assert(loadfile(root .. "/MSUF_Suite_Bags/CurrencyPicker.lua"))("Bags", { Suite = S, BagsModule = module, NS = { DB = {}, InCombat = function() return false end } })
 assert(queries == 0, "currency chooser does not enumerate currencies in the background")
 S.BagCurrencyMenu({})
 local eight, nine = menu.entries["Currency 8"], menu.entries["Currency 9"]

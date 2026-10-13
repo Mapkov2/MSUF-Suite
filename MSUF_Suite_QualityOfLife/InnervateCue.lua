@@ -85,7 +85,7 @@ local function Ready(self)
 end
 
 local function GroupAPI()
-    return _G.MSUF_NS.GF
+    return P.NS.HostBridge.GroupFrames()
 end
 
 local function MatchUnit(wanted)

@@ -25,7 +25,7 @@ local TEXT = {
     thrillSpeed = S.Text("THRILL SPEED"),
 }
 
-local function ContentTop(c) return -max(29, c.fontSize + 17) end
+local function ContentTop(c) return c.displayStyle == 2 and -4 or -max(29, c.fontSize + 17) end
 local function BarHeight(c, kind)
     local height = c[kind .. "Height"]
     return height and height > 0 and height or c.barHeight
@@ -171,8 +171,8 @@ end
 
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetFrameStrata("MEDIUM")
+    local host = S.CreateFrame("Frame", nil, self.previewParent or UIParent)
+    if not self.previewParent then host:SetFrameStrata("MEDIUM") end
     local panel = S.CreateTexture(host, nil, "BACKGROUND")
     panel:SetAllPoints(host)
     local divider = S.CreateTexture(host, nil, "ARTWORK")
@@ -206,6 +206,12 @@ local function Style(self)
     local font = S.ResolveFont(c.font) or S.GlobalFontPath()
     local flags = OUTLINES[c.fontOutline] or ""
     Paint(self.panel, c.panelColor, c.panelOpacity / 100)
+    local framed = c.displayStyle ~= 2
+    self.panel:SetShown(framed)
+    self.divider:SetShown(framed)
+    self.title:SetShown(framed)
+    self.state:SetShown(framed)
+    for _, edge in ipairs(self.edges) do edge:SetShown(framed) end
     for _, edge in ipairs(self.edges) do Paint(edge, c.borderColor, c.borderSize > 0 and 1 or 0) end
     Paint(self.divider, c.borderColor, c.borderSize > 0 and 0.6 or 0)
     Paint(self.surgeTrack, c.trackColor, c.trackOpacity / 100)
@@ -291,19 +297,24 @@ local function LayoutSpeed(self, contentWidth, y)
     self.speedValue:SetSize(68, c.fontSize + 2)
 end
 
-local function Layout(self)
-    Create(self)
-    local c, host = self.config, self.host
+local function DisplayHeight(c)
     local contentTop = ContentTop(c)
     local surgeHeight = max(49, c.fontSize + SurgeSize(c) + 10)
     local y = contentTop
     if c.showSecondWind then y = y - RowHeight(c, "wind") end
     if c.showVigor then y = y - RowHeight(c, "vigor") end
     if c.showSpeed then y = y - RowHeight(c, "speed") end
-    local height = max(-y + 10, c.showWhirlingSurge and (-contentTop + surgeHeight + 10) or 0)
+    return max(-y + 10, c.showWhirlingSurge and (-contentTop + surgeHeight + 10) or 0)
+end
+
+local function Layout(self)
+    Create(self)
+    local c, host = self.config, self.host
+    local contentTop = ContentTop(c)
+    local surgeHeight = max(49, c.fontSize + SurgeSize(c) + 10)
     local contentWidth = ContentWidth(c)
-    host:SetSize(c.width, height)
-    S.PlaceHost(host, c)
+    host:SetSize(c.width, DisplayHeight(c))
+    if not self.previewParent then S.PlaceHost(host, c) end
     local pixel = 1 / max(0.1, host:GetEffectiveScale() or 1)
     local border = max(pixel, c.borderSize * pixel)
     self.edges[1]:SetHeight(border)
@@ -317,7 +328,7 @@ local function Layout(self)
     local headerWidth = c.width - PADDING * 2
     self.title:SetSize(headerWidth / 2 - 4, c.fontSize + 2)
     self.state:SetSize(headerWidth / 2 - 4, c.fontSize + 2)
-    y = contentTop
+    local y = contentTop
     self.wind:SetShown(c.showSecondWind)
     if c.showSecondWind then
         LayoutRow(self.wind, contentWidth, y, self.windCount or 3, c)
@@ -374,6 +385,9 @@ local function DrawRow(self, row, preview, maxPips, now)
     if preview then
         maximum = fallback
         current, progress = maximum - 1, 0.5
+        if self.sample and row == self.vigor then
+            current, progress = floor(self.sample.vigor), self.sample.vigor % 1
+        end
     else
         if row.dirty then ReadCharges(row) end
         current, maximum = row.current, row.maximum
@@ -411,7 +425,7 @@ end
 
 local function DrawSpeed(self, flying, speed, preview)
     local c = self.config
-    local percent = preview and 760 or (speed and speed / RUN_SPEED * 100)
+    local percent = preview and (self.sample and self.sample.speed or 760) or (speed and speed / RUN_SPEED * 100)
     if not flying and not preview then percent = 0 end
     local fraction = percent and max(0, min(1, percent / c.speedMax)) or 0
     if self.speedFraction ~= fraction then
@@ -547,6 +561,29 @@ end
 local function GlideChanged()
     MarkSpellsDirty(M)
     Update(M)
+end
+
+-- A menu-owned instance with no live spell subscriptions, sound or flight tick.
+function S.DrawSkyridingPreview(parent, config, sample, viewport)
+    local view = parent.suiteFlightPreview
+    if not view then
+        view = { previewParent = parent }
+        parent.suiteFlightPreview = view
+    end
+    view.config, view.sample = config, sample
+    if viewport then
+        Create(view)
+        local scale = viewport.scale
+        view.host:SetScale(scale * min(1, viewport.width / (config.width * scale),
+            viewport.height / (DisplayHeight(config) * scale)))
+    end
+    Layout(view)
+    if config.showSecondWind then DrawRow(view, view.wind, true, 4, 0) end
+    if config.showVigor then DrawRow(view, view.vigor, true, 8, 0) end
+    if config.showSpeed then DrawSpeed(view, true, nil, true) end
+    if config.showWhirlingSurge then DrawSurge(view, true, 0) end
+    SetText(view.state, TEXT.preview)
+    return view.host, config.width, view.host:GetHeight()
 end
 
 function M:Enable()

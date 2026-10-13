@@ -268,6 +268,7 @@ Flush = function()
     BankInventory.active = M.config.bankView ~= BANK_VIEW.TABS
     M.organizedBankActive = BankInventory.active
     if not BankInventory.active then
+        P.BankActions.Cancel()
         BankInventory.frame:Hide()
         M:UpdateBank()
         return
@@ -340,6 +341,7 @@ end
 
 function BankInventory.Disable()
     BankInventory.enabled, BankInventory.active, M.organizedBankActive = false, false, false
+    P.BankActions.Cancel()
     Index.Reset(BankInventory.index)
     if BankInventory.events then BankInventory.events:UnregisterAllEvents() end
     if BankInventory.frame then

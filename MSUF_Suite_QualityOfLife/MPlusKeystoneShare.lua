@@ -124,7 +124,8 @@ local function OnAddonMessage(self, _, prefix, payload, channel, sender)
     local ownName, ownRealm = UnitFullName("player")
     if S.PublicText(ownName) and (sender == ownName
         or (S.PublicText(ownRealm) and sender == ownName .. "-" .. ownRealm)) then return end
-    local current = channel == "GUILD" and GuildChannel() or GroupChannel()
+    local current
+    if channel == "GUILD" then current = GuildChannel() else current = GroupChannel() end
     if not current or channel ~= current then return end
     local now = GetTime()
     if not S.Finite(now) then return end
@@ -152,30 +153,39 @@ local function OnAddonMessage(self, _, prefix, payload, channel, sender)
     S.Print(string.format(S.Text("%s: %s +%d"), sender, name, level))
 end
 
+local function RequestKeys(mode)
+    local channel
+    if mode == "guild" then channel = GuildChannel() else channel = GroupChannel() end
+    if not channel then
+        if mode == "guild" then
+            S.Print(S.Text("Join a guild to request Suite keystones"))
+        else
+            S.Print(S.Text("Join a group to request Suite keystones"))
+        end
+        return
+    end
+    local now = GetTime()
+    if not S.Finite(now) or (M.lastRequestAt and now - M.lastRequestAt < 2) then return end
+    M.lastRequestAt, M.requestExpiresAt, M.seen = now, now + 5, {}
+    M.requestChannel, M.rows, M.rowCount, M.page = channel, {}, 0, 1
+    AddOwn(M)
+    ShowWindow(M)
+    local own = OwnKeystone()
+    if own then S.Print(own) end
+    -- Addon messages report a lockdown or throttle as a result; nothing raises.
+    local sent = C_ChatInfo.SendAddonMessage(PREFIX, "Q", channel)
+    if not S.Public(sent) or sent ~= Enum.SendAddonMessageResult.Success then
+        M.requestExpiresAt = nil
+        S.Print(S.Text("Keystone requests cannot be sent right now; the window lists only your own key."))
+    end
+end
+
 Command = function(message)
     if not M.active then return end
     if not S.Public(message) or type(message) ~= "string" then return end
     local mode = message:lower():match("^%s*(.-)%s*$")
     if mode == "group" or mode == "guild" then
-        local channel = mode == "guild" and GuildChannel() or GroupChannel()
-        if not channel then
-            S.Print(S.Text("Join a group to request Suite keystones"))
-            return
-        end
-        local now = GetTime()
-        if not S.Finite(now) or (M.lastRequestAt and now - M.lastRequestAt < 2) then return end
-        M.lastRequestAt, M.requestExpiresAt, M.seen = now, now + 5, {}
-        M.requestChannel, M.rows, M.rowCount, M.page = channel, {}, 0, 1
-        AddOwn(M)
-        ShowWindow(M)
-        local own = OwnKeystone()
-        if own then S.Print(own) end
-        -- Addon messages report a lockdown or throttle as a result; nothing raises.
-        local sent = C_ChatInfo.SendAddonMessage(PREFIX, "Q", channel)
-        if not S.Public(sent) or sent ~= Enum.SendAddonMessageResult.Success then
-            M.requestExpiresAt = nil
-            S.Print(S.Text("Keystone requests cannot be sent right now; the window lists only your own key."))
-        end
+        RequestKeys(mode)
         return
     end
     if mode == "" or mode == "window" then

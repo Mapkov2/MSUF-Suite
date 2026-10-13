@@ -1,8 +1,8 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local Native = { enabled = false }
+local Native = { enabled = false, all = false }
 P.NativeExperienceBar = Native
-local states = {}
+local states, managerAlpha = {}, {}
 local cleanupFrame, cleanupOwner
 
 local function CancelCleanup()
@@ -49,7 +49,7 @@ end
 
 local function Chrome(state, layoutChanged)
     local container = state.container
-    local hidden = Native.enabled and container:GetShownBar() == state.xp
+    local hidden = Native.enabled and (Native.all or container:GetShownBar() == state.xp)
     if hidden then
         if state.chromeHidden and not layoutChanged then return end
         Fade(container.BarFrameTexture, state.chrome)
@@ -77,7 +77,7 @@ end
 local function Adopt(container, xp)
     local state = states[container]
     if state then return state end
-    state = { container = container, xp = xp, chrome = {} }
+    state = { container = container, xp = xp, chrome = {}, bars = {} }
     states[container] = state
     -- XP:OnShow runs before shownBarIndex changes. This post-hook observes
     -- the final assignment, including a swap deferred by a native fade.
@@ -97,22 +97,26 @@ local function RestoreMouse(saved)
     saved.frame:SetMouseMotionEnabled(saved.motion)
 end
 
-local function HideXP(state)
-    if state.saved then return end
-    local xp, tick = state.xp, state.xp.ExhaustionTick
-    local saved = { alpha = xp:GetAlpha(), mouse = HideMouse(xp) }
-    if tick then saved.tickMouse = HideMouse(tick) end
-    state.saved = saved
-    xp:SetAlpha(0)
+local function SetBarHidden(state, bar, hidden)
+    local saved = state.bars[bar]
+    if hidden and not saved then
+        saved = { alpha = bar:GetAlpha(), mouse = HideMouse(bar) }
+        local tick = bar.ExhaustionTick or bar.Tick
+        if tick then saved.tickMouse = HideMouse(tick) end
+        state.bars[bar] = saved
+        bar:SetAlpha(0)
+    elseif not hidden and saved then
+        bar:SetAlpha(saved.alpha)
+        RestoreMouse(saved.mouse)
+        if saved.tickMouse then RestoreMouse(saved.tickMouse) end
+        state.bars[bar] = nil
+    end
 end
 
-local function RestoreXP(state)
-    local saved = state.saved
-    if not saved then return end
-    state.xp:SetAlpha(saved.alpha)
-    RestoreMouse(saved.mouse)
-    if saved.tickMouse then RestoreMouse(saved.tickMouse) end
-    state.saved = nil
+local function SyncBars(state)
+    for _, bar in pairs(state.container.bars) do
+        SetBarHidden(state, bar, Native.enabled and (Native.all or bar == state.xp))
+    end
 end
 
 function Native.Sync(self, enabled, event)
@@ -125,21 +129,24 @@ function Native.Sync(self, enabled, event)
         return
     end
     CancelCleanup()
-    Native.enabled = enabled == true and self.config.hideBlizzard == true
+    Native.all = enabled == true and self.config.hideBlizzardTracking == true
+    Native.enabled = enabled == true and (self.config.hideBlizzard == true or Native.all)
+    if not Native.all then Restore(managerAlpha) end
     if Native.enabled then
         local manager, info = _G.StatusTrackingBarManager, _G.StatusTrackingBarInfo
         if not manager or not info then return end
+        if Native.all then Fade(manager, managerAlpha) end
         for _, container in ipairs(manager.barContainers) do
             local xp = container.bars[info.BarsEnum.Experience]
             if xp then
                 local state = Adopt(container, xp)
-                HideXP(state)
+                SyncBars(state)
                 Chrome(state)
             end
         end
     else
         for _, state in pairs(states) do
-            RestoreXP(state)
+            SyncBars(state)
             Chrome(state)
         end
     end

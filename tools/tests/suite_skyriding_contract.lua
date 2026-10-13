@@ -11,7 +11,7 @@ local function Widget(parent)
     function w:CreateTexture() return Widget(self) end
     function w:CreateFontString() return Widget(self) end
     function w:GetParent() return self.parent end
-    function w:SetFrameStrata() end
+    function w:SetFrameStrata(value) self.strata = value end
     function w:SetStatusBarTexture(texture) self.texture = texture end
     function w:SetMinMaxValues(min, max) self.min, self.max = min, max end
     function w:SetStatusBarColor(...) self.barColor = { ... } end
@@ -24,10 +24,11 @@ local function Widget(parent)
     function w:SetPoint(...) self.point = { ... } end
     function w:ClearAllPoints() end
     function w:SetScale(value) self.scale = value end
-    function w:GetEffectiveScale() return self.scale or 1 end
+    function w:GetEffectiveScale() return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1) end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetWidth(width) self.width = width end
     function w:SetHeight(height) self.height = height end
+    function w:GetHeight() return self.height end
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
     function w:Hide() self.shown = false end
@@ -350,4 +351,34 @@ for _, name in ipairs({ "Skyriding" }) do
     local guarded = source:match("type%(([^)]*)%)%s*[~=]=%s*\"function\"") or source:match("(C_%w+) and C_%w+%.")
     assert(not guarded, name .. ".lua guards " .. tostring(guarded) .. " as if a client lacked it")
 end
+-- A disabled live module still supplies the same renderer to the menu. Sample
+-- charge/speed sliders read no spell values and start no flight tick or sound.
+local config = {}
+for key, value in pairs(module.config) do config[key] = value end
+local parent, sample = Widget(), { vigor = 2.25, speed = 1000 }
+local readCount, cooldownCount, soundCount = chargeReads, cooldownReads, sounds
+for style = 1, 2 do
+    config.displayStyle = style
+    for appearance = 1, 2 do
+        config.vigorDisplay = appearance
+        local host, width, height = S.DrawSkyridingPreview(parent, config, sample)
+        local view = parent.suiteFlightPreview
+        assert(host ~= module.host and width == config.width and height > 0)
+        assert(host.strata == nil and module.host.strata == "MEDIUM", "menu sample must inherit menu strata")
+        assert(view.panel:IsShown() == (style == 1) and view.title:IsShown() == (style == 1))
+        assert(view.vigor.count.text == "2/6" and view.vigor.pips[3].value == .25)
+        assert(view.speedValue.text == "1000%" and view.speedThrill)
+        assert(not host.OnUpdate, "menu sample started a live flight tick")
+    end
+end
+sample.vigor, sample.speed = 6, 0
+S.DrawSkyridingPreview(parent, config, sample)
+assert(parent.suiteFlightPreview.vigor.count.text == "6/6" and not parent.suiteFlightPreview.speedThrill)
+assert(chargeReads == readCount and cooldownReads == cooldownCount and sounds == soundCount)
+assert(not module.host:IsShown(), "preview enabled the disabled live HUD")
+parent:SetScale(2)
+S.DrawSkyridingPreview(parent, config, sample, { scale = .5, width = 200, height = 90 })
+local view = parent.suiteFlightPreview
+assert(math.abs(view.edges[1].height * view.host:GetEffectiveScale() - config.borderSize) < .001,
+    "first fitted flight paint used stale scale for edges")
 print("suite_skyriding_contract: OK")

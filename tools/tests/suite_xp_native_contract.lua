@@ -104,7 +104,8 @@ local function Load(forever)
     local main, xp, rep, tick = Container(forever)
     local secondary, xp2, rep2 = Container(forever)
     data[secondary].shown = rep2
-    StatusTrackingBarManager = { barContainers = { main, secondary } }
+    StatusTrackingBarManager = Widget(1, false, false)
+    data[StatusTrackingBarManager].barContainers = { main, secondary }
     StatusTrackingBarInfo = { BarsEnum = { Experience = 4 } }
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NativeExperienceBar.lua"))("MSUF_Suite_QualityOfLife", private)
     return private.NativeExperienceBar, module, main, xp, rep, tick, secondary, xp2, rep2
@@ -126,6 +127,38 @@ for _, forever in ipairs({ false, true }) do
         main:UpdateDividers(9)
         for divider in pairs(data[main].active) do assert(divider:GetAlpha() == 0, "layout restored XP dividers") end
     end
+
+    local artifact, artifactTick = Widget(.67, true, false), Widget(.53, false, true)
+    data[artifact].Tick = artifactTick
+    data[main].bars[3] = artifact
+    module.config.hideBlizzardTracking = true
+    native.Sync(module, true)
+    assert(xp:GetAlpha()==0 and rep:GetAlpha()==0 and artifact:GetAlpha()==0 and xp2:GetAlpha()==0 and rep2:GetAlpha()==0,
+        'all-progress mode did not hide all native bars')
+    assert(secondary.BarFrameTexture:GetAlpha()==0 and not rep:IsMouseClickEnabled()
+        and not artifactTick:IsMouseMotionEnabled(),'all-progress mode retained chrome/mouse')
+    if forever then
+        for divider in pairs(data[secondary].active)do assert(divider:GetAlpha()==0,'all-progress secondary divider visible')end
+    end
+    assert(StatusTrackingBarManager:GetAlpha() == 0, "all-progress manager left native frame artwork visible")
+    -- Child animation/skinning can repaint chrome; the ancestor still hides it.
+    main.BarFrameTexture:SetAlpha(1)
+    assert(StatusTrackingBarManager:GetAlpha() == 0, "child repaint exposed native progress chrome")
+    main.BarFrameTexture:SetAlpha(0)
+    module.config.hideBlizzardTracking=false
+    native.Sync(module,true)
+    assert(StatusTrackingBarManager:GetAlpha() == 1, "all-to-XP retained the hidden manager")
+    assert(xp:GetAlpha()==0 and xp2:GetAlpha()==0 and rep:GetAlpha()==.9 and rep2:GetAlpha()==.9
+        and artifact:GetAlpha()==.67,'all to XP-only failed to restore non-XP bars')
+    assert(not artifact:IsMouseMotionEnabled() and artifact:IsMouseClickEnabled()
+        and artifactTick:IsMouseMotionEnabled() and not artifactTick:IsMouseClickEnabled(),
+        'all to XP-only lost split mouse state')
+    assert(main.BarFrameTexture:GetAlpha()==0 and secondary.BarFrameTexture:GetAlpha()==secret,
+        'all to XP-only restored wrong container chrome')
+    if forever then
+        for divider in pairs(data[secondary].active)do assert(divider:GetAlpha()==.6,'all to XP-only lost secondary divider state')end
+    end
+
     local a, m, p, h = alphaWrites, mouseWrites, poolWalks, hooks
     for _ = 1, 100 do native.Sync(module, true) end
     assert(alphaWrites == a and mouseWrites == m and poolWalks == p and hooks == h,
@@ -165,7 +198,8 @@ for _, forever in ipairs({ false, true }) do
     StatusTrackingBarManager = nil
     StatusTrackingBarInfo = nil
     native.Sync(module, true)
-    StatusTrackingBarManager = { barContainers = { main, secondary } }
+    StatusTrackingBarManager = Widget(1, false, false)
+    data[StatusTrackingBarManager].barContainers = { main, secondary }
     StatusTrackingBarInfo = { BarsEnum = { Experience = 4 } }
     native.AddonLoaded(module, "ADDON_LOADED", "OtherAddon")
     assert(xp:GetAlpha() == .8, "unrelated addon load suppressed XP")

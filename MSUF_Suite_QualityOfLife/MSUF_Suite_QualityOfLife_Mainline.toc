@@ -39,6 +39,7 @@ UIErrorFilter.lua
 GroupDeathAlert.lua
 ReleaseProtection.lua
 GroupFinderDoubleClick.lua
+GroupFinderApplicantView.lua
 GroupFinderApplicantSort.lua
 GroupFinderExitReminder.lua
 TrustedPartyInvites.lua
@@ -63,6 +64,7 @@ Loot.lua
 LootContainers.lua
 LootVendorRules.lua
 CombatLog.lua
+PlayerAuras.lua
 NativeExperienceBar.lua
 ExperienceBar.lua
 ActionTracker.lua

@@ -21,11 +21,14 @@ function S.QoLParseIDs(value, limit)
 end
 
 -- The GUID of the item in a bag slot, nil while it is unreadable.
-function S.QoLItemGUID(bag, slot)
-    local location = ItemLocation:CreateFromBagAndSlot(bag, slot)
+function S.QoLLocationGUID(location)
     if not S.Public(location) or not location then return nil end
     local guid = C_Item.GetItemGUID(location)
     return S.Public(guid) and type(guid) == "string" and guid ~= "" and guid or nil
+end
+
+function S.QoLItemGUID(bag, slot)
+    return S.QoLLocationGUID(ItemLocation:CreateFromBagAndSlot(bag, slot))
 end
 
 -- Item data asked for once per visit (a merchant window, for example).

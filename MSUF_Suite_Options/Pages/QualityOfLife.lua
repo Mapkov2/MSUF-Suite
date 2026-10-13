@@ -116,6 +116,8 @@ local GROUPS = {
     { id = "dailyComfort", title = "Daily UI comforts", switch = "enabled", sections = { "daily_comfort", "daily_cvars" } },
     { id = "delveSolePower", title = "Delve single power (Retail)", switch = "enabled",
         sections = { "delve_sole_power" } },
+    { id = "playerAuras", title = "Player aura layout", switch = "enabled", sections = { "player_auras" },
+        aliases = { "player buffs", "minimap auras" } },
     { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" },
         aliases = { "exp bar", "erfahrungsleiste" } },
     { id = "mapLandingShortcuts", title = "Expansion shortcuts (Retail)", switch = "enabled",
@@ -215,7 +217,7 @@ local CATEGORIES = {
     } },
     { id = "characterGear", title = "Character & Gear", tabs = {
         { id = "character", title = "Character", keys = {
-            "chatProfileLinks.enabled", "xpBar.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled",
+            "chatProfileLinks.enabled", "xpBar.enabled", "playerAuras.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled",
             "targetDistance.enabled", "characterExtras.enabled",
         } },
         { id = "gear", title = "Gear", keys = {
@@ -474,7 +476,7 @@ local function BuildFeatureDetails(ctx, panel, group, sectionId, width, sections
     heading:SetWordWrap(false)
     details.title = heading
     AddFeatureHelp(details, group, sections)
-    local y = -42
+    local y = P.BuildQoLIndicatorPreview(ctx, details, group.id, width, -42)
     for _, section in ipairs(sections) do
         if #sections > 1 and section.source[1] then
             local subtitle = P.Text(details, section.source[1].sectionTitle, 16, y, width - 32, P.T.colors.text)
@@ -710,9 +712,7 @@ local function BuildCategoryPanel(ctx, builder, body, entry, category, tab, widt
     P.M.TrackRefresh(ctx, Layout)
 end
 
--- A lazy host builds a category's feature rows when it first opens
--- (P.LazySection). Its header keeps the enabled count, and the page resolver
--- finds the category of each feature route (owners) to build it first.
+-- Lazy category headers count enabled features; routes build their owner first.
 local function CategoryShell(ctx, body, category, featureOrder, owners)
     for _, tab in ipairs(category.tabs or { category }) do
         for _, group in ipairs(tab.features) do
@@ -798,9 +798,10 @@ local function Build(ctx)
     for _, category in ipairs(CATEGORIES) do
         BuildCategory(ctx, builder, category, rows, order, owners)
     end
+    P.BuildGraphicsPerformance(ctx, builder)
 end
 
-P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, icon = { 7, 1 },
+P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, notice = P.BuildGraphicsNotice, icon = { 7, 1 },
     nav = "general", navOrder = 1,
     aliases = { "qol", "qualityoflife", "quality_of_life", "actiontracker", "actions", "casts", "merchant",
         "itemlevel", "vault", "lootspec", "tooltipids", "loot", "quests", "combatlog", "logging", "comfort",

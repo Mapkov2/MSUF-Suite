@@ -306,6 +306,7 @@ GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12
 local shared = { Suite = {} }
 MSUFSuite = shared
 GOLD_AMOUNT_SYMBOL, SILVER_AMOUNT_SYMBOL, COPPER_AMOUNT_SYMBOL = "g", "s", "c"
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
 MSUFSuite = nil
 local moneyTexts = 0
@@ -329,7 +330,7 @@ state.Text = function(text) return text end
 for _, file in ipairs({ "SuiteCatalog", "Catalog/Bags" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", state)
 end
-for _, file in ipairs({ "SlotCache", "ItemLoads", "Bags" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "Bags", "CurrencyPicker" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", bagsPrivate)
 end
 -- The sub-modules (their own files, not loaded here) run in Bags.lua's list

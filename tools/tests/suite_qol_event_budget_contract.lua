@@ -128,6 +128,7 @@ C_Timer.After = function(seconds, callback)
     waits = waits + 1
     return NativeAfter(seconds, callback)
 end
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
 for _, file in ipairs(Support.TocFiles(root, "MSUF_Suite_Modules")) do
     if file == "Surfaces.lua" or file == "Runtime.lua" or file == "Timers.lua" then

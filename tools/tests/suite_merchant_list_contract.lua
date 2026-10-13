@@ -191,6 +191,7 @@ S.CreateFontString = S.CreateTexture
 S.Install = function(id, module) modules[id] = module end
 local combat = false
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return combat end,
+    InCombat = function() return combat end,
     Print = function(text) printed[#printed + 1] = text end, Dispatch = S.Dispatch }
 -- S.Debounce and the context timers (MSUF_Suite_Modules/Timers.lua).
 local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)
@@ -361,6 +362,7 @@ modifier, chatLink = nil, false
 -- as Blizzard's merchant window does.
 local purchase, refunds, cleared, cursorItem = nil, {}, 0, nil
 C_Cursor = { GetCursorItem = function() return cursorItem end }
+C_Item.GetItemGUID = function(location) return location and "Item-test" end
 C_Container = {
     GetContainerItemPurchaseInfo = function() return purchase end,
     GetContainerItemLink = function() return "bagitem" end,

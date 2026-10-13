@@ -20,11 +20,16 @@ NS.SuiteCatalog.xpBar.look = { key = "look", global = true }
 B.Section("xpBar", "xp_bar", "Experience bar", {
     Choice("look", "MSUF style", NS.Client.isForever and 3 or 2,
         { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
+    Choice("displayStyle", "Bar layout", 1, { "Framed", "Minimal", "Segmented" }),
     Number("width", "Bar width", 400, 220, 800, 5),
     Number("height", "Bar height", 18, 8, 40),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Number("layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
     Bool("hideBlizzard", "Hide Blizzard experience bar", true),
+    Bool("hideBlizzardTracking", "Hide all Blizzard progress bars", false),
+    Number("borderSize", "Outline thickness", 1, 0, 4),
+    Bool("separateTextColor", "Use a separate XP text color", false),
+    B.Color("customText", "XP text color", "ffffff"),
     Bool("showSegments", "Show XP bar divisions", true),
     Bool("showRested", "Show rested XP", true),
     Bool("showSession", "Show session XP", true),
@@ -39,6 +44,27 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     B.Color("customRested", "Custom style: rested color", "6c8fd6"),
     B.Color("customPanel", "Custom style: background color", "111820"),
     B.Color("customBorder", "Custom style: border and text color", "aab8c4"),
+})
+
+-- The native player aura buttons keep Blizzard ownership and interactions.
+B.Module("playerAuras", {
+    title = "Player aura layout", description = "Style native player buffs and debuffs beside the minimap.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("playerAuras", "player_auras", "Player aura layout", {
+    Number("iconWidth", "Icon width", 52, 16, 100),
+    Number("iconHeight", "Icon height", 26, 12, 100),
+    Number("perRow", "Icons per row", 12, 1, 32),
+    Number("spacing", "Icon spacing", 4, 0, 30),
+    Number("rowSpacing", "Row spacing", 8, 0, 40),
+    Number("x", "Horizontal position", -12, -2000, 2000),
+    Number("y", "Vertical position", 0, -2000, 2000),
+    Number("debuffOffset", "Debuff row offset", 80, 0, 600),
+    Bool("showDuration", "Show aura duration", true),
+    Number("borderSize", "Outline thickness", 2, 0, 4),
+    B.Color("borderColor", "Outline color", "000000"),
+    B.Font("font", "Font"),
+    Number("fontSize", "Text size", 16, 8, 30),
 })
 
 -- Incoming whispers are only a cue: chat text can be secret in combat, so
@@ -149,6 +175,7 @@ NS.SuiteCatalog.skyriding.look = {
 local initialSky = NS.SkyridingLookPresets[1]
 B.Section("skyriding", "flight_hud", "Skyriding HUD", {
     Choice("look", "MSUF style", 1, { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
+    Choice("displayStyle", "HUD layout", 1, { "Framed", "Minimal" }),
     Number("width", "HUD width", 350, 220, 600, 5),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Bool("airborneOnly", "Show only while airborne"),

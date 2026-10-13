@@ -52,7 +52,7 @@ groupFinder.personalExport = "exportNote"
 
 B.Module("groupFinderApplicantSort", {
     title = "Mythic+ applicant score sorting",
-    description = "Sort Mythic+ applications by average member dungeon score when every score is available.",
+    description = "Show a separate Mythic+ applicant list ordered by average member dungeon score when every score is available.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
         if NS.Client.isForever then return false, "Applicant score sorting is available only in Retail" end

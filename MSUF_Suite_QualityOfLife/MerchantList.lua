@@ -169,12 +169,12 @@ end
 -- The bag or equipment slot of the item on the cursor (C_Cursor.GetCursorItem).
 local function CursorSlot()
     local location = C_Cursor.GetCursorItem()
-    if not location then return end
+    if not S.Public(location) or not location then return end
     if location:IsBagAndSlot() then
         local bag, slot = location:GetBagAndSlot()
-        return bag, slot, false
+        return bag, slot, false, S.QoLLocationGUID(location)
     end
-    if location:IsEquipmentSlot() then return 0, location:GetEquipmentSlot(), true end
+    if location:IsEquipmentSlot() then return 0, location:GetEquipmentSlot(), true, S.QoLLocationGUID(location) end
 end
 
 -- An item still refundable, the way ContainerFrame_GetExtendedPriceString
@@ -187,8 +187,26 @@ local function Refundable(bag, slot, equipped)
 end
 
 -- Declining keeps the item, as Blizzard's dialog does: it leaves the cursor.
-local function Declined()
-    ClearCursor()
+local function SameRefundCursor(question)
+    if GetCursorInfo() ~= "item" then return false end
+    local bag, slot, equipped, guid = CursorSlot()
+    return guid ~= nil and guid == question.guid and bag == question.bag
+        and slot == question.slot and equipped == question.equipped
+end
+
+local function Declined(question)
+    if M.refundQuestion ~= question then return end
+    M.refundQuestion = nil
+    if SameRefundCursor(question) then ClearCursor() end
+end
+
+local function RefundAccepted(question)
+    if M.refundQuestion ~= question then return end
+    M.refundQuestion = nil
+    if not Showing(M) or NS.InCombat() or M.config ~= question.config or NS.DB ~= question.profile then return end
+    if SameRefundCursor(question) and Refundable(question.bag, question.slot, question.equipped) then
+        C_Container.ContainerRefundItemPurchase(question.bag, question.slot, question.equipped)
+    end
 end
 
 -- An item dropped or clicked onto the list is sold, as on Blizzard's rows
@@ -197,25 +215,25 @@ end
 -- choice Blizzard's own merchant window offers.
 local function SellCursorItem()
     if not Showing(M) or GetCursorInfo() ~= "item" then return end
-    local bag, slot, equipped = CursorSlot()
+    local bag, slot, equipped, guid = CursorSlot()
     if not slot or not Refundable(bag, slot, equipped) then
         PickupMerchantItem(0)
         return
     end
+    if not guid or NS.InCombat() then return end
+    local question = { bag = bag, slot = slot, equipped = equipped, guid = guid, config = M.config, profile = NS.DB }
+    M.refundQuestion = question
     local link = equipped and GetInventoryItemLink("player", slot) or C_Container.GetContainerItemLink(bag, slot)
     S.Confirm(REFUND, {
         text = S.Text("Refund %s for its purchase price?"), text_arg1 = S.PublicText(link) or "",
         acceptText = S.BlizzardText("YES", "Yes"), cancelText = S.BlizzardText("NO", "No"),
-        callback = function()
-            if M.active and MerchantFrame:IsShown() then
-                C_Container.ContainerRefundItemPurchase(bag, slot, equipped)
-            end
-        end,
-        cancelCallback = Declined,
+        callback = function() RefundAccepted(question) end,
+        cancelCallback = function() Declined(question) end,
     })
 end
 
 local function HidePopups()
+    M.refundQuestion = nil
     S.HideQuestion(CONFIRM)
     S.HideQuestion(QUANTITY)
     S.HideQuestion(REFUND)

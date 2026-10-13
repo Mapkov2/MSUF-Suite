@@ -547,6 +547,7 @@ end
 
 
 function M:Disable()
+    Private.CurrencyPicker.Close()
     self:CancelWindowDrag()
     self.combinedBagConfigured = nil
     self.appliedVisual = nil

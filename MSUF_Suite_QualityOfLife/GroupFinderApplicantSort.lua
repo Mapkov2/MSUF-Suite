@@ -1,10 +1,11 @@
 local _, P = ...
-local S = P.Suite
-local M = {}
+local NS, S = P.NS, P.Suite
+local View = P.ApplicantView
+local M = { entries = {}, pool = {} }
 
 -- Blizzard_GroupFinder/Mainline/LFGList.lua (upstream/live) sorts
 -- ApplicationViewer.applicants before UpdateResults builds the ScrollBox.
--- Keep its array and its order intact unless every member has a public score.
+-- Read its array without changing it; only the Suite's companion view sorts.
 -- Group Finder loads with the Retail UI at startup; this module is Retail-only.
 local function MythicPlusListing()
     local entry = C_LFGList.GetActiveEntryInfo()
@@ -26,15 +27,16 @@ local function ApplicantAverage(applicantID)
     if not S.Public(info) or type(info) ~= "table" then return nil end
     local count = info.numMembers
     if not S.Finite(count) or count < 1 or count > 5 or count ~= math.floor(count) then return nil end
-    local total = 0
+    local total, name = 0, nil
     for member = 1, count do
         local _name, _class, _localizedClass, _level, _itemLevel, _honorLevel, _tank,
             _healer, _damage, _assignedRole, _relationship, score =
             C_LFGList.GetApplicantMemberInfo(applicantID, member)
         if not S.Finite(score) or score < 0 then return nil end
         total = total + score
+        if member == 1 then name = S.PublicText(_name) end
     end
-    return total / count
+    return total / count, name or UNKNOWN, count
 end
 
 local function VisibleViewer(viewer)
@@ -45,23 +47,48 @@ local function VisibleViewer(viewer)
     return S.Public(shown) and shown == true
 end
 
-local function SortAfterNative(viewer)
-    if not M.active or not VisibleViewer(viewer) or not MythicPlusListing() then return end
-    local applicants = viewer.applicants
-    if not S.Public(applicants) or type(applicants) ~= "table" or #applicants < 2 then return end
+function M:CanAct()
+    return VisibleViewer(LFGListFrame.ApplicationViewer) and MythicPlusListing()
+end
 
-    local scores, nativeIndex = {}, {}
+local function HigherScore(left, right)
+    if left.score ~= right.score then return left.score > right.score end
+    return left.nativeIndex < right.nativeIndex
+end
+
+local function SortAfterNative(viewer)
+    if not M.active or NS.InCombat() or not VisibleViewer(viewer) or not MythicPlusListing() then
+        View.Hide()
+        return
+    end
+    local applicants = viewer.applicants
+    if not S.Public(applicants) or type(applicants) ~= "table" or #applicants < 2 then
+        View.Hide()
+        return
+    end
+    local entries, seen = M.entries, {}
     for index = 1, #applicants do
         local id = applicants[index]
-        if not S.Finite(id) or nativeIndex[id] then return end
-        local score = ApplicantAverage(id)
-        if score == nil then return end
-        scores[id], nativeIndex[id] = score, index
+        if not S.Finite(id) or seen[id] then
+            View.Hide()
+            return
+        end
+        local score, name, count = ApplicantAverage(id)
+        if score == nil then
+            View.Hide()
+            return
+        end
+        local entry = M.pool[index]
+        if not entry then
+            entry = {}
+            M.pool[index] = entry
+        end
+        entry.id, entry.score, entry.name, entry.nativeIndex = id, score, string.format("%s (%d)", name, count), index
+        entries[index], seen[id] = entry, true
     end
-    table.sort(applicants, function(left, right)
-        if scores[left] ~= scores[right] then return scores[left] > scores[right] end
-        return nativeIndex[left] < nativeIndex[right]
-    end)
+    for index = #entries, #applicants + 1, -1 do entries[index] = nil end
+    table.sort(entries, HigherScore)
+    View.Show(M, entries)
 end
 
 local function RefreshViewer()
@@ -73,20 +100,39 @@ local function RefreshViewer()
     C_LFGList.RefreshApplicants()
 end
 
+local function UpdateView()
+    SortAfterNative(LFGListFrame.ApplicationViewer)
+end
+
+local function QueueView()
+    if M.active then M.refreshJob:Request() end
+end
+
 function M:Enable()
+    local update = self.context:Coalesce(0, UpdateView)
+    self.refreshJob = update
     if not self.hooked then
         hooksecurefunc("LFGListApplicationViewer_UpdateResultList", SortAfterNative)
+        LFGListFrame.ApplicationViewer:HookScript("OnHide", View.Hide)
+        LFGListFrame.ApplicationViewer:HookScript("OnShow", QueueView)
         self.hooked = true
     end
+    self.context:Event("LFG_LIST_APPLICANT_UPDATED", update)
+    self.context:Event("LFG_LIST_ACTIVE_ENTRY_UPDATE", update)
+    self.context:Event("GROUP_ROSTER_UPDATE", update)
+    self.context:Event("PLAYER_REGEN_DISABLED", View.Hide)
+    self.context:Event("PLAYER_REGEN_ENABLED", update)
     RefreshViewer()
+    SortAfterNative(LFGListFrame.ApplicationViewer)
 end
 
 function M:Refresh()
     RefreshViewer()
+    SortAfterNative(LFGListFrame.ApplicationViewer)
 end
 
 function M:Disable()
-    RefreshViewer()
+    View.Hide()
 end
 
 S.Install("groupFinderApplicantSort", M)

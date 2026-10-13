@@ -33,12 +33,19 @@ local function ConfirmButton(frame, text, x, callback)
 end
 
 local confirm
-local function Accept()
+local function CloseConfirm()
     local record, guid = confirm.record, confirm.guid
+    confirm.record, confirm.guid = nil, nil
     confirm:Hide()
+    return record, guid
+end
+
+local function Accept()
+    local record, guid = CloseConfirm()
     local location = C_Cursor.GetCursorItem()
     -- The cursor still holds the item the player was asked about.
-    if not record or not location or C_Item.GetItemGUID(location) ~= guid or not BankFrame:IsShown()
+    if not record or not guid or not P.BagsModule.active or not P.BankInventory.active
+        or not location or C_Item.GetItemGUID(location) ~= guid or not BankFrame:IsShown()
         or NS.IsCombatLocked() or not C_Bank.CanUseBank(ACCOUNT) then
         return
     end
@@ -46,8 +53,10 @@ local function Accept()
 end
 
 local function Cancel()
-    confirm:Hide()
-    ClearCursor()
+    local _, guid = CloseConfirm()
+    local location = C_Cursor.GetCursorItem()
+    -- The player may have replaced the cursor item while the question was open.
+    if guid and location and C_Item.GetItemGUID(location) == guid then ClearCursor() end
 end
 
 local function Confirm(record, location)

@@ -3,9 +3,9 @@ local now, level, xp, maximum, rested = 100000, 10, 100, 1000, 300
 local timers = {}
 local nativeSyncCalls = 0
 
-local function Widget()
-    local w = { shown = true }
-    function w:SetFrameStrata() end
+local function Widget(parent)
+    local w = { shown = true, parent = parent }
+    function w:SetFrameStrata(value) self.strata = value end
     function w:EnableMouse() end
     function w:SetScript(key, callback) self[key] = callback end
     function w:CreateTexture() return Widget() end
@@ -17,7 +17,7 @@ local function Widget()
     function w:SetTexture(value) self.texture = value end
     function w:SetAllPoints() end
     function w:SetScale(value) self.scale = value end
-    function w:GetEffectiveScale() return 1 end
+    function w:GetEffectiveScale() return (self.scale or 1) * (self.parent and self.parent:GetEffectiveScale() or 1) end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
@@ -33,7 +33,7 @@ local function Widget()
 end
 
 UIParent = Widget()
-CreateFrame = function() return Widget() end
+CreateFrame = function(_, _, parent) return Widget(parent) end
 GetServerTime = function() return now end
 UnitLevel = function() return level end
 UnitXP = function() return xp end
@@ -341,4 +341,62 @@ for _, name in ipairs({ "ExperienceBar" }) do
         or source:match("(GameTooltip) and") or source:match("not (GameTooltip) then")
     assert(not guarded, name .. ".lua guards " .. tostring(guarded) .. " as if a client lacked it")
 end
+-- Menu samples reuse all three live layouts without reading XP or touching the
+-- active host, session, native visibility owner or refresh timer.
+local config = {}
+for key, value in pairs(nextLogin.config) do config[key] = value end
+local parent, sample = Widget(), { xp = 62, rested = 25 }
+local timerCount, nativeCount = #timers, nativeSyncCalls
+UnitXP, UnitXPMax, GetXPExhaustion = function() error("preview read live XP") end,
+    function() error("preview read live XP cap") end, function() error("preview read rested XP") end
+for style = 1, 3 do
+    config.displayStyle = style
+    local host, width, height = nextRuntime.DrawExperienceBarPreview(parent, config, sample)
+    local view = parent.suiteXPPreview
+    assert(host ~= nextLogin.host and width == config.width and height == config.height + 23)
+    assert(host.strata == nil and nextLogin.host.strata == "MEDIUM", "menu sample must inherit menu strata")
+    assert(view.fill.width == config.width * .62 and view.rested.width == config.width * .25)
+    assert(view.panel:IsShown() == (style == 1) and view.detailRule:IsShown() == (style == 1))
+    assert(view.levelText:IsShown() == (style ~= 2)
+        and view.percentText.point[1] == (style == 2 and "CENTER" or "RIGHT")
+        and view.percentText.font[2] == (style == 2 and 20 or 11), "minimal XP header does not match the centered reference")
+    assert(view.segments[1].width == (style == 3 and 2 or 1), "segmented layout lost its gaps")
+    assert(not host.OnEnter and not host.OnUpdate, "menu sample took live tooltip/tick ownership")
+end
+config.displayStyle = 1
+nextRuntime.DrawExperienceBarPreview(parent, config, sample)
+assert(parent.suiteXPPreview.levelText:IsShown() and parent.suiteXPPreview.percentText.font[2] == 11,
+    "leaving Minimal XP did not restore the ordinary labels")
+config.showSession, config.showRate, config.showETA = false, false, false
+nextRuntime.DrawExperienceBarPreview(parent, config, sample)
+assert(parent.suiteXPPreview.details.text == "", "sample ignored hidden XP details")
+config.showSession, config.showRate, config.showETA = true, true, false
+nextRuntime.DrawExperienceBarPreview(parent, config, sample)
+assert(parent.suiteXPPreview.details.text:find("Session +12k", 1, true)
+    and parent.suiteXPPreview.details.text:find("XP/h 24k", 1, true)
+    and not parent.suiteXPPreview.details.text:find("To level", 1, true), "sample ignored XP detail choices")
+sample.xp, sample.rested = 100, 100
+nextRuntime.DrawExperienceBarPreview(parent, config, sample)
+assert(not parent.suiteXPPreview.rested:IsShown() and not parent.suiteXPPreview.restedMarker:IsShown())
+assert(#timers == timerCount and nativeSyncCalls == nativeCount, "preview scheduled work or hid Blizzard XP")
+parent:SetScale(2)
+nextRuntime.DrawExperienceBarPreview(parent, config, sample, { scale = .5, width = 200, height = 90 })
+local view = parent.suiteXPPreview
+assert(math.abs(view.edges[1].height * view.host:GetEffectiveScale() - 1) < .001,
+    "first fitted paint used stale scale for pixel-sized edges")
+
+for _,style in ipairs({1,2,3})do
+ config.displayStyle=style
+ config.borderSize=0
+ config.showSegments=false
+ nextRuntime.DrawExperienceBarPreview(parent, config, sample)
+ assert(parent.suiteXPPreview.edges[1].height==0,'zero outline was not honored')
+ for _,divider in ipairs(parent.suiteXPPreview.segments)do
+  local x=divider.point[4]
+  assert(x==x and x<math.huge and x>-math.huge,'invalid segment position')
+ end
+end
+print('all XP display styles, zero outline, finite segment geometry: OK')
+
+
 print("suite_xp_bar_contract: OK")
