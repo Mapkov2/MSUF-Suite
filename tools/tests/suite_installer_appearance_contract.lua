@@ -1,7 +1,7 @@
 -- Real Suite installer plus the actually loaded Classic shared UI/skin
 -- bridge: cold fallback, provider transitions, late Menu2 and view-only paint.
 local root = assert(arg[1], "Suite root required")
-local classic = root .. "/../MidnightSimpleUnitFrames-Classic"
+local classic = root .. "/../MidnightSimpleUnitFrames"
 local H = dofile(root .. "/tools/tests/suite_installer_harness.lua")
 local checks = 0
 local function Check(value, message)

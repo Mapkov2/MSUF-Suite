@@ -14,6 +14,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
+MSUF_MAIN = BRANCH / "MidnightSimpleUnitFrames"
+MSUF_LEGACY = BRANCH / "_repo_backups" / "6.22"
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua",
            "suite_installer_harness.lua", "suite_bh3_state_support.lua",
@@ -33,19 +35,18 @@ EXTRA = {
     "suite_meter_icon_layout_contract.lua": [[], ["Forever"]],
     "suite_preview_quality_contract.lua": [[], ["Forever"]],
     "suite_preview_interaction_contract.lua": [[], ["Forever"]],
-    "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(BRANCH / "MidnightSimpleUnitFrames")]],
+    "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(MSUF_LEGACY)]],
     "suite_search_findability_contract.lua": [
         [flavor, locale] for flavor in FLAVORS
         for locale in ("enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW")
     ],
-    "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(BRANCH / "MidnightSimpleUnitFrames")],
+    "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(MSUF_LEGACY)],
                                            [str(BRANCH / "MapkoSkin"), "Forever"]],
-    "suite_skin_msuf_bridge_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames"),
-                                             str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
+    "suite_skin_msuf_bridge_contract.lua": [[str(MSUF_LEGACY), str(MSUF_MAIN)]],
     # MSUF's real profile store renames with the Suite and skin stores.
-    "suite_profile_rename_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
-    # Host API v2: the real Classic Menu2 protocol and Suite link files.
-    "suite_host_api_v2_contract.lua": [[str(BRANCH / "MidnightSimpleUnitFrames-Classic")]],
+    "suite_profile_rename_contract.lua": [[str(MSUF_MAIN)]],
+    # Host API v2: the current multi-client Menu2 protocol and Suite link files.
+    "suite_host_api_v2_contract.lua": [[str(MSUF_MAIN)]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_security_contract.lua": [[flavor] for flavor in FLAVORS],

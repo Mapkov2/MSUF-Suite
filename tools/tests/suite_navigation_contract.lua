@@ -131,7 +131,7 @@ C_AddOns = {
 -- Main MSUF host shape (no MSUF.Client); the locale table returns English.
 local L = setmetatable({}, { __index = function(_, k) return k end })
 MSUF_NS = { L = L, GetEffectiveLocale = function() return "enUS" end }
-assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
+assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
 
 -- Menu2 public surface
 local M, W, T = {}, {}, {}

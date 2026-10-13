@@ -14,7 +14,7 @@
 -- refreshes only when the provider registers again).
 -- An MSUF build without the hook gets no rows and no error.
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
-local classic = root .. "/../MidnightSimpleUnitFrames-Classic"
+local classic = root .. "/../MidnightSimpleUnitFrames"
 local searchHost = (arg[3] or classic):gsub("\\", "/"):gsub("/$", "")
 
 local function Check(condition, message)

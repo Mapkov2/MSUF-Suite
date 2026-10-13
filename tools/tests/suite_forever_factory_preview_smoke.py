@@ -29,7 +29,7 @@ skin_text = literal(factory, "ForeverFactorySkinCompact")
 frames_text = literal(root / "MSUF_Suite" / "Core" / "ForeverFrames.lua",
                       "ForeverFactoryFramesCompact")
 reference = os.environ.get("MSUF_CLASSIC_REFERENCE_ROOT")
-classic_root = Path(reference) if reference is not None else root.parent / "MidnightSimpleUnitFrames-Classic"
+classic_root = Path(reference) if reference is not None else root.parent / "MidnightSimpleUnitFrames"
 if reference is not None:
     assert reference and classic_root.is_dir(), "MSUF_CLASSIC_REFERENCE_ROOT must name an existing directory"
 classic_frames = (classic_root / "MidnightSimpleUnitFrames" / "State" / "Defaults" /

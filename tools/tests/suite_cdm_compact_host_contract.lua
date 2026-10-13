@@ -100,12 +100,12 @@ local function Build(width, host, mode)
     fixed:Deactivate()
     print('CDM compact lifecycle',host,mode,width,'passed')
 end
-for _,host in ipairs({'MidnightSimpleUnitFrames','MidnightSimpleUnitFrames-Classic'}) do
+for _,host in ipairs({'_repo_backups/6.22','MidnightSimpleUnitFrames'}) do
     LoadHost(host)
     for _,mode in ipairs({'legacy','host'}) do
         P.M.HOST_API_VERSION=nil
         if mode=='host' then
-            assert(loadfile(root..'/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_HostProtocol.lua'))('MSUF',{MSUF2=P.M})
+            assert(loadfile(root..'/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_HostProtocol.lua'))('MSUF',{MSUF2=P.M})
         end
         local suite={HostBridge={}}
         assert(loadfile(root..'/MSUF_Suite/Core/HostBridgeMenu.lua'))('MSUF_Suite',suite)

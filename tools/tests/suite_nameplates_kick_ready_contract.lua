@@ -11,7 +11,7 @@
 -- a Lua read of a secret raises here, and a compare or truth test on one in
 -- KickReady.lua is recorded.
 local root = assert(arg[1], "repository root required")
-local classic = root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames"
+local classic = root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames"
 
 ------------------------------------------------------------------ secrets
 -- Classic MSUF's strict helper: type() answers a secret's kind,

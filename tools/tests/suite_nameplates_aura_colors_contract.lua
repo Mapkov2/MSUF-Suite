@@ -641,7 +641,7 @@ print("Native DoT masks, curated host IDs, spec/profile/combat lifecycle and war
 
 -- Use each real host's bindings, whose normal callbacks refuse combat.
 -- Feature-owned callbacks must reach the draft without touching the DB.
-for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Classic" }) do
+for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
     GetNumSpecializations = function() return 2 end
     C_Spell = { GetSpellName = function(id) return "Spell " .. id end, GetSpellTexture = function() return 1 end }
     local controls, metas, fonts = {}, {}, {}
@@ -705,7 +705,7 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Cl
     local W = { _Shared = {} }
     M.Widgets = W
     M.Theme.Button = Widget
-    local widgetsFile = host == "MidnightSimpleUnitFrames" and "MSUF_Menu2_Widgets.lua" or "MSUF_Menu2_Widgets_ContextColors.lua"
+    local widgetsFile = host == "_repo_backups/6.22" and "MSUF_Menu2_Widgets.lua" or "MSUF_Menu2_Widgets_ContextColors.lua"
     assert(loadfile(root .. "/../" .. host .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/" .. widgetsFile))(
         "MSUF_Options", { MSUF2 = M })
     function W.SettingsRows(ctx, _, spec)

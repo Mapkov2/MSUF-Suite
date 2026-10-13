@@ -206,7 +206,7 @@ end
 
 CreateFrame = function(_, _, parent) local frame = Region(); frame.parent = parent; return frame end
 MSUF_NS = {}
-assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
+assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua"))("MidnightSimpleUnitFrames", MSUF_NS)
 
 local bar, cast, name, aura = Region(), Region(), Region(), Region()
 local raidFrame, raidIcon = Region(), Region()

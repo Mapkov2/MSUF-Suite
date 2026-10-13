@@ -16,7 +16,7 @@ local M = D.M
 assert(originalLoad(root .. "/MSUF_Suite_DamageMeter/Preview.lua"))("MSUF_Suite_DamageMeter", private)
 -- Execute the shared host implementation instead of reproducing its formula.
 local hostLayers = {}
-assert(originalLoad(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames/Libs/MSUFUnitFrames/MSUF_UF_Layers.lua"))("MSUF", hostLayers)
+assert(originalLoad(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/Libs/MSUFUnitFrames/MSUF_UF_Layers.lua"))("MSUF", hostLayers)
 MSUF_NS.UF = hostLayers.UF
 local Host = MSUF_NS.UF.Layers
 M:Disable()

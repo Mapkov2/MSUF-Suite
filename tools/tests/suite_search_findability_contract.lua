@@ -15,7 +15,7 @@
 --     consumables of Buff Reminders, the Mythic+ run history).
 --   lua suite_search_findability_contract.lua <suiteRoot> [Mainline|Forever] [locale] [hostRoot]
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
-local classic = arg[4] or (root .. "/../MidnightSimpleUnitFrames-Classic")
+local classic = arg[4] or (root .. "/../MidnightSimpleUnitFrames")
 local flavor = arg[2] or "Mainline"
 local locale = arg[3] or "enUS"
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")

@@ -123,7 +123,7 @@ local function CheckAbove(upper, lower, gap, message)
     assert(ub >= lt + gap, message)
 end
 
-for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-Classic" }) do
+for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
     local shared = { Fallbacks = { Identity = function(v) return v end } }
     assert(loadfile(root .. "/../" .. host
         .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/MSUF_Menu2_PreviewHelpers.lua"))("MSUF", {

@@ -1,3 +1,19 @@
+# Canonical MSUF workflow after the folder move (2026-10-13)
+
+The sole active MSUF source for all supported clients is
+`C:/MSUF Beta Branch/MidnightSimpleUnitFrames`, branch `main`.
+The former Classic checkout moved here with all local changes.
+The frozen, unpublished `6.22` checkout is now
+`C:/MSUF Beta Branch/_repo_backups/6.22`; use it only as an explicit
+legacy test/reference fixture. Never edit, sync or publish from it.
+Suite remains solely at `C:/MSUF Beta Branch/MSUF-Suite`.
+Retail-to-Classic mirroring and release-review automation are retired.
+These owner instructions supersede pre-cutover path, branch and source
+ownership directions below. The historical parity manifests remain
+enforced against their frozen reference; do not weaken them.
+Preserve unrelated open work. Commit, push and release require their
+own owner instruction. Local agent files stay untracked.
+
 # MSUF Suite Workflow
 
 - This directory, `C:\MSUF Beta Branch\MSUF-Suite`, is the sole active Suite source and publication checkout on this host.

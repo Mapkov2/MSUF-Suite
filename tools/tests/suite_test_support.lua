@@ -606,7 +606,7 @@ function Support.SuitePack(root, locale)
     local pack = {}
     local host = MSUF_NS
     MSUF_NS = { LOCALE = locale, RegisterLocale = function(requested) return requested == locale and pack or {} end }
-    assert(loadfile(root .. "/../MidnightSimpleUnitFrames-Classic/MidnightSimpleUnitFrames/Locales/" .. locale .. ".lua"))(
+    assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/Locales/" .. locale .. ".lua"))(
         "MidnightSimpleUnitFrames", {})
     assert(loadfile(root .. "/MSUF_Suite/Locales/" .. locale .. ".lua"))("MSUF_Suite", {})
     MSUF_NS = host

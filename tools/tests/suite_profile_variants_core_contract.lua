@@ -14,7 +14,7 @@
 -- client. The stand-in keeps the variant steps of the real one (resolve the
 -- overlay, then apply the external providers).
 local root = assert(arg[1], "repository root required"):gsub("\\", "/"):gsub("/$", "")
-local classic = root .. "/../MidnightSimpleUnitFrames-Classic"
+local classic = root .. "/../MidnightSimpleUnitFrames"
 
 local function Check(condition, message)
     if not condition then error("suite_profile_variants_core_contract: " .. message, 2) end

@@ -1,5 +1,5 @@
 -- The Suite's half of MSUF host API v2, in both directions, against the real
--- Classic host files (MidnightSimpleUnitFrames-Classic, arg 2):
+-- Classic host files (MidnightSimpleUnitFrames, arg 2):
 --
 -- Menu2 widget protocol (MSUF_Suite/Core/HostBridgeMenu.lua):
 --   * new host + new Suite: on Menu2 with MSUF_Menu2_HostProtocol.lua the

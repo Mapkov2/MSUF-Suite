@@ -53,8 +53,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
-HOST_CLASSIC = BRANCH / "MidnightSimpleUnitFrames-Classic"
-HOST_MAIN = BRANCH / "MidnightSimpleUnitFrames"
+HOST_CLASSIC = BRANCH / "MidnightSimpleUnitFrames"
+HOST_MAIN = BRANCH / "_repo_backups" / "6.22"
 LOCALE_DIR = ROOT / "MSUF_Suite" / "Locales"
 DEFAULT_OUT = ROOT / "_local_workflows" / "locale" / "suite_strings.tsv"
 LOCALES = ("deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW")
@@ -1171,7 +1171,7 @@ def pack_entries(source):
 
 def host_pack_source(host, locale):
     """A host pack as latin-1 text: the Classic checkout's file, or the Main
-    (Retail) repository's committed file, read with `git show` only."""
+    (frozen 6.22) repository's committed file, read with `git show` only."""
     rel = "MidnightSimpleUnitFrames/Locales/%s.lua" % locale
     if host == "classic":
         path = HOST_CLASSIC / rel

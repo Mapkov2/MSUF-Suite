@@ -1,5 +1,5 @@
 local root = assert(arg[1]):gsub("\\", "/")
-local host = root .. "/../MidnightSimpleUnitFrames-Classic"
+local host = root .. "/../MidnightSimpleUnitFrames"
 local flavor = arg[2] or "Mainline"
 local MenuWorld = assert(loadfile(host .. "/tools/tests/menu_core_world.lua"))()
 local mw = MenuWorld.Open(host, flavor, { locale = "deDE" })
