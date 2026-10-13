@@ -5,3 +5,8 @@ __pycache__/
 dist/
 .env
 .env.*
+AGENTS.md
+CLAUDE.md
+.claude/
+.agents/
+_local_antique_inspect.png
