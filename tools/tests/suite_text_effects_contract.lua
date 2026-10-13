@@ -9,6 +9,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", MSUF
 GameFontHighlightSmall = { GetFont = function() return "Native.ttf", 12, "" end }
 local scaleFlags
 MSUF_ApplyFontScaleAnimationMode = function(_, flags) scaleFlags = flags end
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
 
 local font = { calls = {} }

@@ -2943,6 +2943,238 @@
       "evidence": "Owner clarification 2026-10-11: center the whole visible row like CDMC. MSUF_Suite_Options/Pages/CooldownManager.lua HELP.basics now starts with Center keeps the whole visible cooldown row centered. Catalog centerFirst retains the former first-icon mode; attachment settings and native compact buffs remain. suite_cooldown_manager_layout_contract and suite_cooldown_manager_options_contract cover both layouts and drag order; all ten locale packs verify.",
       "reason": "Replacement of the outdated alignment help key after the requested Center semantics change; existing layout choices and settings remain available.",
       "date": "2026-10-11"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.10\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"000000\"],[\"borderSize\",0],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",false],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"090c14\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"7963bf\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",10],[\"styleRotation\",0],[\"styleScale\",130],[\"styleTexture\",7],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.11\",[[\"borderAlpha\",95],[\"borderClassColor\",false],[\"borderColor\",\"333333\"],[\"borderSize\",1],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",82],[\"styleBackdropColor\",\"101010\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"7963bf\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",11],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.12\",[[\"borderAlpha\",95],[\"borderClassColor\",false],[\"borderColor\",\"737679\"],[\"borderSize\",1],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",82],[\"styleBackdropColor\",\"101010\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"e6ecf2\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",12],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.2\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"000000\"],[\"borderSize\",1],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",false],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"090c14\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"7963bf\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",2],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.3\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"352458\"],[\"borderSize\",2],[\"shadowAlpha\",60],[\"shadowColor\",\"6146b7\"],[\"shadowSize\",8],[\"shape\",2],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"0b071b\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"b7a4ff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",70],[\"styleGlowColor\",\"7151d5\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",3],[\"styleRotation\",0],[\"styleScale\",124],[\"styleTexture\",2],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.4\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"6d2b16\"],[\"borderSize\",2],[\"shadowAlpha\",55],[\"shadowColor\",\"e45d23\"],[\"shadowSize\",9],[\"shape\",2],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"1c0b08\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffc078\"],[\"styleGlow\",true],[\"styleGlowAlpha\",64],[\"styleGlowColor\",\"ff691c\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",4],[\"styleRotation\",0],[\"styleScale\",125],[\"styleTexture\",3],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.5\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"1d506e\"],[\"borderSize\",1],[\"shadowAlpha\",52],[\"shadowColor\",\"2686aa\"],[\"shadowSize\",10],[\"shape\",2],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"06131e\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"a7e8ff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",70],[\"styleGlowColor\",\"4ac1e9\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",5],[\"styleRotation\",6],[\"styleScale\",125],[\"styleTexture\",4],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.6\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"30424d\"],[\"borderSize\",2],[\"shadowAlpha\",55],[\"shadowColor\",\"172a39\"],[\"shadowSize\",7],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"0c151b\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"c1d6df\"],[\"styleGlow\",true],[\"styleGlowAlpha\",36],[\"styleGlowColor\",\"5a9eb8\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",6],[\"styleRotation\",0],[\"styleScale\",118],[\"styleTexture\",5],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.7\",[[\"borderAlpha\",58],[\"borderClassColor\",false],[\"borderColor\",\"9f8960\"],[\"borderSize\",1],[\"shadowAlpha\",55],[\"shadowColor\",\"14181b\"],[\"shadowSize\",8],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",false],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"090c14\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",20],[\"styleGlowColor\",\"d8b66a\"],[\"styleGlowScale\",115],[\"stylePlacement\",1],[\"stylePreset\",7],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.8\",[[\"borderAlpha\",78],[\"borderClassColor\",false],[\"borderColor\",\"41627a\"],[\"borderSize\",1],[\"shadowAlpha\",54],[\"shadowColor\",\"0a1522\"],[\"shadowSize\",8],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",78],[\"styleBackdropColor\",\"0a1522\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",18],[\"styleGlowColor\",\"57c7df\"],[\"styleGlowScale\",115],[\"stylePlacement\",1],[\"stylePreset\",8],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.presets.9\",[[\"borderAlpha\",78],[\"borderClassColor\",false],[\"borderColor\",\"575b58\"],[\"borderSize\",1],[\"shadowAlpha\",52],[\"shadowColor\",\"111315\"],[\"shadowSize\",8],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",80],[\"styleBackdropColor\",\"151719\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",13],[\"styleGlowColor\",\"b9ab86\"],[\"styleGlowScale\",115],[\"stylePlacement\",1],[\"stylePreset\",9],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"look.visualKeys\",[[\"borderAlpha\",true],[\"borderClassColor\",true],[\"borderColor\",true],[\"borderSize\",true],[\"shadowAlpha\",true],[\"shadowColor\",true],[\"shadowSize\",true],[\"shape\",true],[\"styleAlpha\",true],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",true],[\"styleBackdropColor\",true],[\"styleBackdropPadding\",true],[\"styleBlend\",true],[\"styleColor\",true],[\"styleGlow\",true],[\"styleGlowAlpha\",true],[\"styleGlowColor\",true],[\"styleGlowScale\",true],[\"stylePlacement\",true],[\"styleRotation\",true],[\"styleScale\",true],[\"styleTexture\",true],[\"styleTexturePath\",true],[\"styleX\",true],[\"styleY\",true]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.10\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"000000\"],[\"borderSize\",0],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",false],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"090c14\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"7963bf\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",10],[\"styleRotation\",0],[\"styleScale\",130],[\"styleTexture\",7],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.11\",[[\"borderAlpha\",95],[\"borderClassColor\",false],[\"borderColor\",\"333333\"],[\"borderSize\",1],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",82],[\"styleBackdropColor\",\"101010\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"7963bf\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",11],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.12\",[[\"borderAlpha\",95],[\"borderClassColor\",false],[\"borderColor\",\"737679\"],[\"borderSize\",1],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",82],[\"styleBackdropColor\",\"101010\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"e6ecf2\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",12],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.2\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"000000\"],[\"borderSize\",1],[\"shadowAlpha\",45],[\"shadowColor\",\"000000\"],[\"shadowSize\",0],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",false],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"090c14\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",false],[\"styleGlowAlpha\",50],[\"styleGlowColor\",\"7963bf\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",2],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.3\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"352458\"],[\"borderSize\",2],[\"shadowAlpha\",60],[\"shadowColor\",\"6146b7\"],[\"shadowSize\",8],[\"shape\",2],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"0b071b\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"b7a4ff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",70],[\"styleGlowColor\",\"7151d5\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",3],[\"styleRotation\",0],[\"styleScale\",124],[\"styleTexture\",2],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.4\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"6d2b16\"],[\"borderSize\",2],[\"shadowAlpha\",55],[\"shadowColor\",\"e45d23\"],[\"shadowSize\",9],[\"shape\",2],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"1c0b08\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffc078\"],[\"styleGlow\",true],[\"styleGlowAlpha\",64],[\"styleGlowColor\",\"ff691c\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",4],[\"styleRotation\",0],[\"styleScale\",125],[\"styleTexture\",3],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.5\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"1d506e\"],[\"borderSize\",1],[\"shadowAlpha\",52],[\"shadowColor\",\"2686aa\"],[\"shadowSize\",10],[\"shape\",2],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"06131e\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"a7e8ff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",70],[\"styleGlowColor\",\"4ac1e9\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",5],[\"styleRotation\",6],[\"styleScale\",125],[\"styleTexture\",4],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.6\",[[\"borderAlpha\",100],[\"borderClassColor\",false],[\"borderColor\",\"30424d\"],[\"borderSize\",2],[\"shadowAlpha\",55],[\"shadowColor\",\"172a39\"],[\"shadowSize\",7],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"0c151b\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"c1d6df\"],[\"styleGlow\",true],[\"styleGlowAlpha\",36],[\"styleGlowColor\",\"5a9eb8\"],[\"styleGlowScale\",145],[\"stylePlacement\",1],[\"stylePreset\",6],[\"styleRotation\",0],[\"styleScale\",118],[\"styleTexture\",5],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.7\",[[\"borderAlpha\",58],[\"borderClassColor\",false],[\"borderColor\",\"9f8960\"],[\"borderSize\",1],[\"shadowAlpha\",55],[\"shadowColor\",\"14181b\"],[\"shadowSize\",8],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",false],[\"styleBackdropAlpha\",85],[\"styleBackdropColor\",\"090c14\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",20],[\"styleGlowColor\",\"d8b66a\"],[\"styleGlowScale\",115],[\"stylePlacement\",1],[\"stylePreset\",7],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.8\",[[\"borderAlpha\",78],[\"borderClassColor\",false],[\"borderColor\",\"41627a\"],[\"borderSize\",1],[\"shadowAlpha\",54],[\"shadowColor\",\"0a1522\"],[\"shadowSize\",8],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",78],[\"styleBackdropColor\",\"0a1522\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",18],[\"styleGlowColor\",\"57c7df\"],[\"styleGlowScale\",115],[\"stylePlacement\",1],[\"stylePreset\",8],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.presets.9\",[[\"borderAlpha\",78],[\"borderClassColor\",false],[\"borderColor\",\"575b58\"],[\"borderSize\",1],[\"shadowAlpha\",52],[\"shadowColor\",\"111315\"],[\"shadowSize\",8],[\"shape\",1],[\"styleAlpha\",100],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",80],[\"styleBackdropColor\",\"151719\"],[\"styleBackdropPadding\",4],[\"styleBlend\",1],[\"styleColor\",\"ffffff\"],[\"styleGlow\",true],[\"styleGlowAlpha\",13],[\"styleGlowColor\",\"b9ab86\"],[\"styleGlowScale\",115],[\"stylePlacement\",1],[\"stylePreset\",9],[\"styleRotation\",0],[\"styleScale\",100],[\"styleTexture\",1],[\"styleTexturePath\",\"\"],[\"styleX\",0],[\"styleY\",0]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"look.visualKeys\",[[\"borderAlpha\",true],[\"borderClassColor\",true],[\"borderColor\",true],[\"borderSize\",true],[\"shadowAlpha\",true],[\"shadowColor\",true],[\"shadowSize\",true],[\"shape\",true],[\"styleAlpha\",true],[\"styleBackdrop\",true],[\"styleBackdropAlpha\",true],[\"styleBackdropColor\",true],[\"styleBackdropPadding\",true],[\"styleBlend\",true],[\"styleColor\",true],[\"styleGlow\",true],[\"styleGlowAlpha\",true],[\"styleGlowColor\",true],[\"styleGlowScale\",true],[\"stylePlacement\",true],[\"styleRotation\",true],[\"styleScale\",true],[\"styleTexture\",true],[\"styleTexturePath\",true],[\"styleX\",true],[\"styleY\",true]]]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua clean and MinimapStyleVisualKeys; original look keys retained, outerBorderSize=0 outerBorderGap=4 outerBorderColor=000000 added.",
+      "reason": "Existing minimap looks explicitly clear the newly optional outer border; all previous values and controls remain.",
+      "date": "2026-10-12"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:minimap.infoLocationBelow\",\"enableKey\",\"infoLocationSubzone\"]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua infoLocationBelow now requires infoLocationSource Custom(1) or Zone+subzone(5); suite_minimap_feel_style_contract.lua and suite_minimap_feel_preview_contract.lua check combined text/line height and unchanged custom settings.",
+      "reason": "The new explicit combined source must allow two-line layout independently of the legacy Custom subzone checkbox. All three original switches remain available under Custom; no location feature was removed.",
+      "date": "2026-10-13"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:minimap.infoLocationBelow\",\"enableKey\",\"infoLocationSubzone\"]",
+      "basis": "migration",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua infoLocationBelow now requires infoLocationSource Custom(1) or Zone+subzone(5); suite_minimap_feel_style_contract.lua and suite_minimap_feel_preview_contract.lua check combined text/line height and unchanged custom settings.",
+      "reason": "The new explicit combined source must allow two-line layout independently of the legacy Custom subzone checkbox. All three original switches remain available under Custom; no location feature was removed.",
+      "date": "2026-10-13"
+    },
+    {
+      "category": "locale",
+      "item": "Sort Mythic+ applications by average member dungeon score when every score is available.",
+      "basis": "moved",
+      "date": "2026-10-13",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLifeGroup.lua retains groupFinderApplicantSort, enabled setting and page. GroupFinderApplicantSort.lua and GroupFinderApplicantView.lua sort only owned entries; suite_group_finder_applicant_sort_contract.lua covers native array preservation, sorting, paging and actions. All10 locale packs use the replacement complete sentence: Show a separate Mythic+ applicant list ordered by average member dungeon score when every score is available.",
+      "reason": "The same opt-in module, settings and average-score ordering remain. Ordering moves to a separate owned view; Blizzard's array retains Blizzard's own order. Native invite/decline controls remain available, and the own view uses fresh validated native requests. The changed visible presentation is stated in the replacement description."
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:groupFinderApplicantSort\",\"description\",\"Sort Mythic+ applications by average member dungeon score when every score is available.\"]",
+      "basis": "moved",
+      "date": "2026-10-13",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLifeGroup.lua retains groupFinderApplicantSort, enabled setting and page. GroupFinderApplicantSort.lua and GroupFinderApplicantView.lua sort only owned entries; suite_group_finder_applicant_sort_contract.lua covers native array preservation, sorting, paging and actions. All10 locale packs use the replacement complete sentence: Show a separate Mythic+ applicant list ordered by average member dungeon score when every score is available.",
+      "reason": "The same opt-in module, settings and average-score ordering remain. Ordering moves to a separate owned view; Blizzard's array retains Blizzard's own order. Native invite/decline controls remain available, and the own view uses fresh validated native requests. The changed visible presentation is stated in the replacement description."
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:groupFinderApplicantSort\",\"description\",\"Sort Mythic+ applications by average member dungeon score when every score is available.\"]",
+      "basis": "moved",
+      "date": "2026-10-13",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLifeGroup.lua retains groupFinderApplicantSort, enabled setting and page. GroupFinderApplicantSort.lua and GroupFinderApplicantView.lua sort only owned entries; suite_group_finder_applicant_sort_contract.lua covers native array preservation, sorting, paging and actions. All10 locale packs use the replacement complete sentence: Show a separate Mythic+ applicant list ordered by average member dungeon score when every score is available.",
+      "reason": "The same opt-in module, settings and average-score ordering remain. Ordering moves to a separate owned view; Blizzard's array retains Blizzard's own order. Native invite/decline controls remain available, and the own view uses fresh validated native requests. The changed visible presentation is stated in the replacement description."
     }
   ]
 }

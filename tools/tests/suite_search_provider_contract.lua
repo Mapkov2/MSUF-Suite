@@ -1032,6 +1032,66 @@ do
         Check(Suite.Suite.Set("qol", "enabled", true), "could not reenable visited aggregate module")
         Check(FindSetting("msufsuite.qol.junkReport"), "visited reenabled aggregate detail did not return")
     end
+    -- Options owns graphics recovery even with every QoL AddOn disabled.
+    -- Resolve actual cold/warm targets through the host, without applying CVars.
+    do
+        local savedDisabled, writes = {}, 0
+        for name, value in pairs(disabled) do savedDisabled[name] = value end
+        local originalSet = env.C_CVar.SetCVar
+        env.C_CVar.SetCVar = function(...)
+            writes = writes + 1
+            return originalSet(...)
+        end
+        for _, addonOff in ipairs({ false, true }) do
+            for _, entry in pairs(Suite.SuiteCatalog) do
+                if entry.page == "suite_qualityOfLife" then disabled[entry.addon] = addonOff end
+            end
+            M.InvalidatePage("suite_qualityOfLife")
+            P.Refresh()
+            for stage = 1, 2 do
+                for _, query in ipairs({ "optimize fps", "FPS verbessern", "graphics",
+                    "Restore previous graphics settings" }) do
+                    local action = query == "Restore previous graphics settings" and "restore" or "apply"
+                    local wanted = P.Meta("suite_qualityOfLife", "graphicsPerformance", action, "action",
+                        "suite_qualityOfLife_graphics_performance").controlId
+                    local target
+                    for _, record in ipairs(Search(query)) do
+                        if (record.exactTarget and record.exactTarget.controlId == wanted)
+                            or (not M.InvalidateSearchProvider and record.key == "suite_qualityOfLife"
+                                and record.label == (action == "apply" and "Apply graphics preset" or "Restore previous graphics settings")) then
+                            target = record
+                            break
+                        end
+                    end
+                    Check(target, "graphics query missing: " .. query)
+                    -- Old IndexQuery carries the cold accordion route but no
+                    -- action control IDs or warm accordion routes. Its warm
+                    -- coverage is aliases and real controls, not exact routing.
+                    if M.InvalidateSearchProvider or (stage == 1 and query == "optimize fps") then
+                        local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
+                            target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+                        world.widgets:RunTimers(80)
+                        local page = M.cache.suite_qualityOfLife
+                        local section = page and page.sections and page.sections.suite_qualityOfLife_graphics_performance
+                        Check(selected and (not M.InvalidateSearchProvider or (anchored and exact))
+                            and section and section._msuf2CollapsibleEntry.open,
+                            "graphics target failed route: " .. query .. " addonOff=" .. tostring(addonOff))
+                        section._msuf2CollapsibleEntry.open = false
+                        section._msuf2CollapsibleEntry.builder:RelayoutCollapsibles()
+                    end
+                    local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_qualityOfLife", { controlId = wanted })
+                    Check(widget, "graphics result has no real action control: " .. query)
+                end
+            end
+        end
+        Check(writes == 0, "graphics search applied CVars")
+        env.C_CVar.SetCVar = originalSet
+        for name in pairs(disabled) do disabled[name] = nil end
+        for name, value in pairs(savedDisabled) do disabled[name] = value end
+        M.InvalidatePage("suite_qualityOfLife")
+        P.Refresh()
+    end
+
 end
 
 -- The Retail hook isolates a broken optional provider from the menu search.
@@ -1217,17 +1277,19 @@ end
 
 -- With every Suite module off, search keeps supported settings discoverable
 -- along with pages, FAQ answers, switches and Quality of Life categories.
--- Skinning's two maintenance actions need no Skin addon. With
--- their AddOns off it keeps nothing of the Suite but those two. The Main host
+-- Skinning maintenance and graphics recovery need no owning module AddOn. With
+-- their AddOns off it keeps these four Suite actions. The Main host
 -- cannot filter widgets of pages already visited (it has no availability
 -- hook), so the visited-cache checks need that hook.
 local MAINTENANCE_LABELS = { [M.Tr("Save setup as\226\128\166")] = true, [M.Tr("Restore chat colors")] = true }
+local GRAPHICS_LABELS = { [M.Tr("Apply graphics preset")] = true, [M.Tr("Restore previous graphics settings")] = true }
 local function MaintenanceRows(rows)
     local found = 0
     for _, row in ipairs(rows) do
         if row.suiteAlways then
-            Check(row.pageKey == "suite_skin" and row.kind == "button" and MAINTENANCE_LABELS[row.label],
-                "an always-found Suite row is not a Skinning maintenance action: " .. tostring(row.label))
+            Check(row.kind == "button" and ((row.pageKey == "suite_skin" and MAINTENANCE_LABELS[row.label])
+                or (row.pageKey == "suite_qualityOfLife" and GRAPHICS_LABELS[row.label])),
+                "an always-found Suite row is not a maintenance or graphics action: " .. tostring(row.label))
             found = found + 1
         end
     end
@@ -1245,7 +1307,7 @@ do
     P.Refresh()
     local offRows = P.SearchRows()
     Check(#offRows > 0, "modules that are off lost their pages and switches")
-    Check(MaintenanceRows(offRows) == 2, "Save setup as or Restore chat colors is not found without the Skin addon")
+    Check(MaintenanceRows(offRows) == 4, "maintenance or graphics action is missing without its module AddOn")
     local details = 0
     for _, row in ipairs(offRows) do
         if row.kind ~= "page" and row.kind ~= "faq" and not row.suiteAlways then
@@ -1272,7 +1334,7 @@ do
     for _, id in ipairs(Suite.SuiteOrder) do disabled[catalog[id].addon] = true end
     disabled.MSUF_Suite_Skin = true
     local addonOffRows = P.SearchRows()
-    Check(#addonOffRows == 2 and MaintenanceRows(addonOffRows) == 2, "Suite AddOns that are off still provided rows")
+    Check(#addonOffRows == 4 and MaintenanceRows(addonOffRows) == 4, "Suite AddOns that are off still provided module rows")
     if M.RegisterSearchAvailability then
         Search("suite")
         local maintenance = 0
@@ -1281,7 +1343,7 @@ do
             if always then maintenance = maintenance + 1 end
             Check(not row.key:match("^suite_") or always, "AddOn-off cache retained " .. row.kind .. " on " .. row.key)
         end
-        Check(maintenance == 2, "search does not find Save setup as and Restore chat colors without the Skin addon")
+        Check(maintenance == 4, "search does not find maintenance and graphics actions without their module AddOns")
     end
     for name in pairs(disabled) do disabled[name] = nil end
     for name, value in pairs(savedDisabled) do disabled[name] = value end

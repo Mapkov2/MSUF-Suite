@@ -15,16 +15,34 @@
  },
  "allowed": [
   {
-   "file": "MSUF_Suite_QualityOfLife/NativeExperienceBar.lua",
-   "kind": "addon",
-   "reason": "Blizzard_ActionBar or Blizzard_StatusTrackingBar owns the native containers; wait for its ADDON_LOADED before adopting them. suite_xp_native_contract covers late loading on Retail and Forever.",
-   "symbol": "manager (= StatusTrackingBarManager)"
+   "file": "MSUF_Suite/Core/API.lua",
+   "kind": "lod",
+   "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
+   "symbol": "Suite.CooldownManager"
   },
   {
-   "file": "MSUF_Suite_QualityOfLife/NativeExperienceBar.lua",
+   "file": "MSUF_Suite/Core/API.lua",
+   "kind": "lod",
+   "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
+   "symbol": "Suite.Options"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
    "kind": "addon",
-   "reason": "The same native Blizzard addon defines the experience-bar enumeration together with its manager. suite_xp_native_contract covers late loading without either global.",
-   "symbol": "info (= StatusTrackingBarInfo)"
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_EncodeCompactTable"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_TryDecodeCompactString"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "encode (= MSUF_EncodeCompactTable)"
   },
   {
    "file": "MSUF_Suite/Core/Catalog/QualityOfLifeCombatText.lua",
@@ -51,172 +69,244 @@
    "symbol": "api.SetActiveUnit (= C_CombatText)"
   },
   {
-   "file": "MSUF_Suite_CooldownManager/Time.lua",
+   "file": "MSUF_Suite/Core/Database.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_TryDecodeCompactString"
+  },
+  {
+   "file": "MSUF_Suite/Core/FontBridge.lua",
+   "kind": "lod",
+   "reason": "The embedded skin is load-on-demand; the font bridge checks that its typography engine is available before forwarding a full MSUF font change",
+   "symbol": "typography.ApplyConfigured"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.RefreshToolbarPageReset"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
+   "symbol": "M.RegisterPageResetProvider"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 history export (HOST_API_SPEC section E); menus without a history session lack it, so the legacy wrap checks it before use",
+   "symbol": "M.SyncExternalHistoryState"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF core export (Runtime/MSUF_UIScaleRuntime.lua) that re-applies the profile's global UI scale; the legacy rollback falls back to MSUF's scale setters on hosts without it",
+   "symbol": "MSUF_ApplyCurrentProfileGlobalUiScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ApplyMsufScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ApplyPowerBarEmbedLayout_ForUnitKey"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ClassPower_Apply"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_EnsureCooldownWidthObservers"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "Legacy/current host capability deciding whether MSUF follows the Suite Essential bar. Moved unchanged from CDM Layout.lua; layout/native/capture contracts exercise both ownership paths with unchanged native and VM budgets.",
+   "symbol": "MSUF_GetSuiteCooldownAnchor"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ResetGlobalUiScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_SetGlobalUiScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_UFCore_NotifyConfigChanged"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
+   "symbol": "api.ApplyUIScaleProfile"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
+   "symbol": "api.SetResourceStack"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "Read-only installer factory preview uses foreign MSUF factory/codec exports, which older hosts can omit. Late availability and missing exports are covered by suite_installer_preview_contract.",
+   "symbol": "decode (= MSUF_TryDecodeCompactString)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "symbol": "em (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "symbol": "encode (= MSUF_EncodeCompactTable)",
+   "reason": "Foreign MSUF codec and optional current profile policy are checked at the sole host boundary. Frame-color setup refuses before writes when unavailable; installer_frame_colors_contract covers both clients and canonical Wago snapshot selection."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "symbol": "external.GetRecord",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "Optional first-run handoff exported by newer MSUF hosts. Moved unchanged from Installer.lua into the host boundary; older hosts have no FirstLoad6 provider. Installer/startup contracts retain both paths.",
+   "symbol": "firstLoad.IsFirstRunPending"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "native (= MSUF_Profiles_ImportIntoNewProfile)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "addon",
+   "symbol": "policy.SelectSupportedDecodedProfile",
+   "reason": "Foreign MSUF codec and optional current profile policy are checked at the sole host boundary. Frame-color setup refuses before writes when unavailable; installer_frame_colors_contract covers both clients and canonical Wago snapshot selection."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "state",
+   "reason": "Read-only host profile root at the sole host boundary. SavedVariables or the profiles table may be absent before host initialization; callers refuse without a fallback write. Replaces the previous distributed root guards.",
+   "symbol": "root (= MSUF_GlobalDB)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridge.lua",
+   "kind": "state",
+   "reason": "Read-only host profile root at the sole host boundary. SavedVariables or the profiles table may be absent before host initialization; callers refuse without a fallback write. Replaces the previous distributed root guards.",
+   "symbol": "root.profiles (= MSUF_GlobalDB)"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "api.OnAppearanceChanged",
+   "kind": "addon",
+   "reason": "The optional skin exposes this notification in public API v2.1. The adapter hooks it once per owner and API; the installer appearance contract covers provider transitions and coalesced palette refresh. Older providers use the v1 listener."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "api.OnThemeChanged",
+   "kind": "addon",
+   "reason": "Legacy standalone MapkoSkin exposes this public API v1 listener instead of v2.1 appearance notifications. The installer appearance contract covers one registration per owner and repeated ADDON_LOADED events."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "skin.GetAPI",
+   "kind": "addon",
+   "reason": "MapkoSkin is the public export of the optional Suite skin or legacy standalone addon. The appearance adapter reads its API only when already loaded; the installer appearance contract covers absence and late attachment."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "ui (= MSUF_UI)",
+   "kind": "addon",
+   "reason": "MSUF core shared UI is available before Options on current hosts; older hosts may lack it. The installer appearance contract covers cold core UI, an absent provider, partial older renderers and late Menu2 without loading Options."
+  },
+  {
+   "file": "MSUF_Suite/Core/Installer.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.GetPixelPerfectScale"
+  },
+  {
+   "file": "MSUF_Suite/Core/Installer.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters"
+  },
+  {
+   "file": "MSUF_Suite/Core/Installer.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "getDefault (= Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Installer.lua",
    "kind": "client",
-   "reason": "Forever 1.60.1.70170 prefers C_Spell.GetItemCooldown for the last category item. Older Forever, Mainline and Classic builds may lack this reader; the guarded path retains the cover-spell fallback.",
-   "symbol": "GetCategoryCooldown (= C_Spell.GetItemCooldown)"
+   "reason": "Retail and Forever: FrameXML EventRegistry broadcasts completion after setup. Standalone host fixtures may omit the registry.",
+   "symbol": "registry (= EventRegistry)"
   },
   {
-   "file": "MSUF_Suite_Modules/Surfaces.lua",
+   "file": "MSUF_Suite/Core/Menu.lua",
    "kind": "addon",
-   "reason": "The external MSUF font setter answers the client's SetFont result on Retail and Forever; a refused font falls back to the native font unless the string shows the requested file anyway. Older hosts without this export set the font natively with the same fallback; suite_text_effects_contract exercises both paths.",
-   "symbol": "checked (= MSUF_SetFontChecked)"
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "open (= MSUF2_Open)"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "file": "MSUF_Suite/Core/NameplateStyle.lua",
    "kind": "addon",
-   "reason": "Preview text uses the external MSUF font setter when available and falls back to the standard font when it reports a refused font the label does not show. Older hosts retain their native fallback; suite_options_menu_contract checks both answers.",
-   "symbol": "checked (= MSUF_SetFontChecked)"
+   "reason": "MSUF publishes the global font flags through ExportPublic in Castbars/MSUF_Castbars_Core.lua (Main and Classic hosts). The 'MSUF outline' choice uses them; an MSUF build without that export gets the Suite outline table.",
+   "symbol": "MSUF_GetFontFlags"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "file": "MSUF_Suite/Core/NameplateStyle.lua",
    "kind": "addon",
-   "reason": "P.W is the external MSUF Menu2 widget API. Newer hosts support separate summaries and full help; older hosts receive the complete original paragraph. suite_options_menu_contract covers both versions.",
-   "symbol": "P.W.DescriptionDetails"
+   "reason": "MSUF publishes the global font path through ExportPublic in Castbars/MSUF_Castbars_Core.lua (Main and Classic hosts). An empty nameplate font key follows it; an MSUF build without that export resolves the key through the Suite font registry.",
+   "symbol": "MSUF_GetFontPath"
   },
   {
-   "file": "MSUF_Suite/Locales/deDE.lua",
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "client",
+   "reason": "Forever pointer API is used only after the Forever client gate",
+   "symbol": "CanAutoSetGamePadCursorControl"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "client",
+   "reason": "Forever-only interface style API is absent on Retail",
+   "symbol": "InputUtil.IsGamepadUIEnabled"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
    "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
+   "reason": "MSUF export: only Classic MSUF publishes its client model; Main MSUF has none, so the Suite derives the same facts itself",
+   "symbol": "MSUF.Client (= MSUF_NS)"
   },
   {
-   "file": "MSUF_Suite/Locales/deDE.lua",
+   "file": "MSUF_Suite/Core/Platform.lua",
    "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/esES.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/esES.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/esMX.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/esMX.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/frFR.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/frFR.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/itIT.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/itIT.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/koKR.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/koKR.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/ptBR.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/ptBR.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/ruRU.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/ruRU.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/zhCN.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/zhCN.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Locales/zhTW.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
-   "symbol": "MSUF.RegisterLocale"
-  },
-  {
-   "file": "MSUF_Suite/Locales/zhTW.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
-   "symbol": "MSUF_NS"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_ActiveProfile"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_GlobalDB"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export: only the Classic MSUF build has the first-load lifecycle; Main MSUF has none",
-   "symbol": "firstLoad (= MSUF_NS.FirstLoad6)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export: only the Classic MSUF build has the first-load lifecycle; Main MSUF has none",
-   "symbol": "firstLoad.IsFirstRunPending (= MSUF_NS.FirstLoad6)"
+   "reason": "MSUF's locale table, which Main and Classic MSUF both publish; an older build without it leaves the Suite with English text",
+   "symbol": "MSUF.L (= MSUF_NS)"
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
@@ -227,26 +317,32 @@
   {
    "file": "MSUF_Suite/Core/Platform.lua",
    "kind": "addon",
-   "reason": "The shared layer helper is provided by Classic MSUF and checked before use",
-   "symbol": "layers.ApplyOwnedSurface"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "addon",
-   "reason": "The shared layer calculator is provided by MSUF and checked before use",
-   "symbol": "layers.ElementLevel"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "addon",
    "reason": "MSUF font export may be unavailable during startup; Suite uses its bundled fallback until MSUF publishes it",
    "symbol": "MSUF_GetFontPath"
   },
   {
-   "file": "MSUF_Suite/Core/FontBridge.lua",
-   "kind": "lod",
-   "reason": "The embedded skin is load-on-demand; the font bridge checks that its typography engine is available before forwarding a full MSUF font change",
-   "symbol": "typography.ApplyConfigured"
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "addon",
+   "reason": "Classic MSUF exports the Forever pad navigation; the Retail-only MSUF and older Classic hosts have none",
+   "symbol": "MSUF_PadNavigation"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_ResolveFontKeyPath"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "client",
+   "reason": "Forever pointer API is used only after the Forever client gate",
+   "symbol": "SetGamePadCursorControl"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "client",
+   "reason": "Forever only: Blizzard_GamepadSmartNavigation's SmartNavigation frame and its activePanels list (Retail 12.1.0 and 12.1.5 do not ship it); read only, type-checked, behind NS.Client.isForever",
+   "symbol": "SmartNavigation"
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
@@ -274,12 +370,6 @@
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "client",
-   "reason": "Forever only: Blizzard_GamepadSmartNavigation's SmartNavigation frame and its activePanels list (Retail 12.1.0 and 12.1.5 do not ship it); read only, type-checked, behind NS.Client.isForever",
-   "symbol": "SmartNavigation"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
    "kind": "addon",
    "reason": "Classic MSUF's Client export; the Retail (Main) MSUF has none",
    "symbol": "host.SupportsEvent"
@@ -287,8 +377,26 @@
   {
    "file": "MSUF_Suite/Core/Platform.lua",
    "kind": "client",
+   "reason": "Forever-only interface style method is checked before use",
+   "symbol": "input.IsGamepadUIEnabled (= InputUtil)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "client",
    "reason": "secret-value probe: 12.1.0, 12.1.5 and WoW Forever have issecretvalue (NS.Client.hasSecrets records it)",
    "symbol": "issecretvalue"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "addon",
+   "reason": "The shared layer helper is provided by Classic MSUF and checked before use",
+   "symbol": "layers.ApplyOwnedSurface"
+  },
+  {
+   "file": "MSUF_Suite/Core/Platform.lua",
+   "kind": "addon",
+   "reason": "The shared layer calculator is provided by MSUF and checked before use",
+   "symbol": "layers.ElementLevel"
   },
   {
    "file": "MSUF_Suite/Core/Platform.lua",
@@ -303,28 +411,64 @@
    "symbol": "stub.GetLibrary (= LibStub)"
   },
   {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_ActiveProfile"
+   "file": "MSUF_Suite/Core/ProfileIO.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_EncodeCompactTable"
+  },
+  {
+   "file": "MSUF_Suite/Core/ProfileIO.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "MSUF_TryDecodeCompactString"
   },
   {
    "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_GlobalDB"
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.DeleteProfile"
   },
   {
    "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_GlobalDB.profiles"
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.Profiles_ExportSelectionToString"
   },
   {
    "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "db (= MSUF_DB)"
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.Profiles_ImportExternal"
+  },
+  {
+   "file": "MSUF_Suite/Core/Profiles.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.Profiles_ImportIntoNewProfile"
+  },
+  {
+   "file": "MSUF_Suite/Core/Profiles.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.SetCurrentProfileScreenReferenceHeight"
+  },
+  {
+   "file": "MSUF_Suite/Core/Profiles.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "Suite.HostBridge.Profiles.SwitchProfile"
+  },
+  {
+   "file": "MSUF_Suite/Core/Profiles.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "get (= Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Profiles.lua",
+   "kind": "addon",
+   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
+   "symbol": "set (= Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters)"
   },
   {
    "file": "MSUF_Suite/Core/Profiles.lua",
@@ -367,12 +511,6 @@
    "kind": "state",
    "reason": "saved variables: nil until their addon has loaded them",
    "symbol": "MSUFSuiteDB"
-  },
-  {
-   "file": "MSUF_Suite/Core/Startup.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "MSUF_ActiveProfile"
   },
   {
    "file": "MSUF_Suite/Core/Startup.lua",
@@ -453,6 +591,162 @@
    "symbol": "provider.MountOptions"
   },
   {
+   "file": "MSUF_Suite/Locales/deDE.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/deDE.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esES.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esES.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esMX.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/esMX.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/frFR.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/frFR.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/itIT.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/itIT.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/koKR.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/koKR.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ptBR.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ptBR.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ruRU.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/ruRU.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhCN.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhCN.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhTW.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds provide RegisterLocale; an older MSUF without it gets MSUF.L, written only while the active locale matches",
+   "symbol": "MSUF.RegisterLocale"
+  },
+  {
+   "file": "MSUF_Suite/Locales/zhTW.lua",
+   "kind": "addon",
+   "reason": "MSUF export: the pack finds MSUF the way MSUF's own packs do (_G.MSUF_NS or _G.MSUF) and returns before any work when MSUF or its locale does not match",
+   "symbol": "MSUF_NS"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/Visibility.lua",
+   "kind": "client",
+   "reason": "12.1.0 and 12.1.5 have InputUtil without IsGamepadUIEnabled (upstream/forever Blizzard_SharedXML/Mainline/InputUtil.lua defines it); the gamepad bar rule runs after the Forever client gate.",
+   "symbol": "InputUtil.IsGamepadUIEnabled"
+  },
+  {
+   "file": "MSUF_Suite_ActionBars/Visibility.lua",
+   "kind": "addon",
+   "reason": "Retail spellbook belongs to Blizzard_PlayerSpells; its frame is absent before that native load-on-demand addon loads.",
+   "symbol": "PlayerSpellsFrame"
+  },
+  {
+   "file": "MSUF_Suite_Bags/BagWindow.lua",
+   "kind": "state",
+   "reason": "Blizzard's cache of open bags (ContainerFrameSettingsManager:GetBagsShown, upstream/live and forever ContainerFrame.lua) is nil while stale; the Suite runs Blizzard's anchor pass only while it holds, so the list is never rebuilt from addon code. suite_bags_view_client_contract opens the bags with a stale list.",
+   "symbol": "ContainerFrameSettingsManager.bagsShown"
+  },
+  {
+   "file": "MSUF_Suite_Bags/SplitInventory.lua",
+   "kind": "addon",
+   "reason": "Native StackSplitFrame accepts merchant, guild bank, bank and container owners; only native container owners expose GetBagID.",
+   "symbol": "owner.GetBagID"
+  },
+  {
+   "file": "MSUF_Suite_Bags/StackSplitter.lua",
+   "kind": "state",
+   "reason": "The shared native stack-split window has no item owner when closed or used without an inventory slot.",
+   "symbol": "owner (= StackSplitFrame.owner)"
+  },
+  {
+   "file": "MSUF_Suite_BuffReminders/Special.lua",
+   "kind": "state",
+   "reason": "the addon's own SavedVariables table of learned demon looks: nil until the first look is learned (saved variables arrive after the files ran); suite_buff_reminders_restored_contract covers the empty start",
+   "symbol": "looks (= MSUFSuiteDemonLooks)"
+  },
+  {
    "file": "MSUF_Suite_Chat/Shared.lua",
    "kind": "state",
    "reason": "Blizzard chat's current selection; nil until the chat UI selects a frame",
@@ -483,16 +777,16 @@
    "symbol": "container.SetEditModePreviewEnabled"
   },
   {
-   "file": "MSUF_Suite_CooldownManager/Layout.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
-   "symbol": "MSUF_GetSuiteCooldownAnchor"
+   "file": "MSUF_Suite_CooldownManager/Time.lua",
+   "kind": "client",
+   "reason": "Forever 1.60.1.70170 prefers C_Spell.GetItemCooldown for the last category item. Older Forever, Mainline and Classic builds may lack this reader; the guarded path retains the cover-spell fallback.",
+   "symbol": "GetCategoryCooldown (= C_Spell.GetItemCooldown)"
   },
   {
-   "file": "MSUF_Suite_CooldownManager/Layout.lua",
-   "kind": "state",
-   "reason": "saved variables: nil until their addon has loaded them",
-   "symbol": "db (= MSUF_DB)"
+   "file": "MSUF_Suite_DamageMeter/Controller.lua",
+   "kind": "lod",
+   "reason": "Recent actions belongs to the optional QualityOfLife addon and is not required by the native damage meter.",
+   "symbol": "S.SetActionTrackerSessionHidden"
   },
   {
    "file": "MSUF_Suite_DamageMeter/Window.lua",
@@ -501,16 +795,58 @@
    "symbol": "notice (= DAMAGE_METER_AVOIDABLE_DAMAGE_NOT_ACTIVE)"
   },
   {
-   "file": "MSUF_Suite_DataTexts/NativeBagBar.lua",
+   "file": "MSUF_Suite_DataTexts/Actions.lua",
+   "kind": "lod",
+   "reason": "LearnedDungeonPortals is exported by the optional, load-on-demand QualityOfLife addon (DungeonPortals.lua). The portal place requests that addon and opens nothing while the export is missing; suite_datatexts_security_contract covers the missing export and the secure portal rows.",
+   "symbol": "S.LearnedDungeonPortals"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/Actions.lua",
    "kind": "addon",
-   "reason": "BagsBar belongs to Blizzard's Blizzard_MainMenuBarBagButtons; the bag bar option waits for it and syncs again on its ADDON_LOADED (suite_datatexts_contract hides and restores it).",
-   "symbol": "frame (= BagsBar)"
+   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnClick handler is optional in the LDB spec; it runs through S.Dispatch. suite_datatexts_sources_contract clicks a plugin with OnClick (also in combat).",
+   "symbol": "object.OnClick"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/Actions.lua",
+   "kind": "addon",
+   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnEnter handler is optional in the LDB spec; a plugin with it shows its own tooltip (suite_datatexts_sources_contract).",
+   "symbol": "object.OnEnter"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/Actions.lua",
+   "kind": "addon",
+   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnLeave handler is optional in the LDB spec (suite_datatexts_sources_contract).",
+   "symbol": "object.OnLeave"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/Actions.lua",
+   "kind": "addon",
+   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnTooltipShow handler is optional in the LDB spec; with it the plugin fills the Suite's GameTooltip, without it the Suite shows the place's own lines (suite_datatexts_sources_contract).",
+   "symbol": "object.OnTooltipShow"
   },
   {
    "file": "MSUF_Suite_DataTexts/NativeBagBar.lua",
    "kind": "client",
    "reason": "only WoW Forever defines MainActionBar_InitializeMKB (its keyboard action bar setup shows the bag bar); 12.1.0 and 12.1.5 lack it",
    "symbol": "MainActionBar_InitializeMKB"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/NativeBagBar.lua",
+   "kind": "addon",
+   "reason": "BagsBar belongs to Blizzard's Blizzard_MainMenuBarBagButtons; the bag bar option waits for it and syncs again on its ADDON_LOADED (suite_datatexts_contract hides and restores it).",
+   "symbol": "frame (= BagsBar)"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/Sources.lua",
+   "kind": "client",
+   "reason": "Forever has no C_ItemUpgrade (no modern equipment upgrades); Retail 12.1.0 and 12.1.5 read upgradeCostTypesForSeason (upstream/live ItemUpgradeDocumentation.lua) only after a native upgrade item was observed. suite_datatexts_sources_contract formats the Crests place without C_ItemUpgrade (unknown season) and with it.",
+   "symbol": "C_ItemUpgrade"
+  },
+  {
+   "file": "MSUF_Suite_DataTexts/Sources.lua",
+   "kind": "addon",
+   "reason": "LibDataBroker-1.1 is another addon's library, reached through LibStub when some addon loaded it; the Suite bundles neither. suite_datatexts_sources_contract covers plugins and callbacks with the library and, without LibStub, an empty plugin list, no callback registration and the configured name with the placeholder.",
+   "symbol": "LibStub"
   },
   {
    "file": "MSUF_Suite_Minimap/Controller.lua",
@@ -553,6 +889,12 @@
    "kind": "addon",
    "reason": "optional library from another addon (LibStub, LibDBIcon)",
    "symbol": "stub.GetLibrary (= LibStub)"
+  },
+  {
+   "file": "MSUF_Suite_Minimap/DungeonShortcut.lua",
+   "kind": "client",
+   "symbol": "ToggleGroupFinderFrame",
+   "reason": "Forever-only opener, absent on Retail. Explicit Forever branch and function guard satisfy the cross-client API gate. upstream/forever Blizzard_Game/Shared/Game.lua defines the native function; Retail uses PVEFrame_ToggleFrame. suite_modern_dark_lifecycle_contract checks both openers and combat refusal."
   },
   {
    "file": "MSUF_Suite_Minimap/Host.lua",
@@ -640,6 +982,24 @@
   },
   {
    "file": "MSUF_Suite_Modules/EditMode.lua",
+   "kind": "addon",
+   "symbol": "em (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite_Modules/EditMode.lua",
+   "kind": "addon",
+   "symbol": "em.State (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite_Modules/EditMode.lua",
+   "kind": "addon",
+   "symbol": "em.State.Enter (= MSUF_EM2)",
+   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
+  },
+  {
+   "file": "MSUF_Suite_Modules/EditMode.lua",
    "kind": "state",
    "reason": "optional module hook: only modules with movers define RegisterMovers",
    "symbol": "instance.RegisterMovers"
@@ -669,6 +1029,60 @@
    "symbol": "stageButton (= ScenarioObjectiveTracker.StageBlock.findGroupButton)"
   },
   {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "BigWigs is optional; current stage is read only when its core is loaded",
+   "symbol": "bigWigs (= BigWigs)"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "BigWigs is optional; its active module iterator is read once at encounter start when available",
+   "symbol": "bigWigs.IterateBossModules (= BigWigs)"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "DBM is optional; its current stage API is read once at encounter start when available",
+   "symbol": "dbm.GetStage"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "DBM is optional and its public phase callback API must be checked before registration",
+   "symbol": "dbm.RegisterCallback"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "BigWigs is an optional boss mod; its message loader may be absent",
+   "symbol": "loader (= BigWigsLoader)"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "BigWigs is optional and its public stage message API must be checked before registration",
+   "symbol": "loader.RegisterMessage (= BigWigsLoader)"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "BigWigs' optional stage message is removed when the raid HUD stops",
+   "symbol": "view.bigWigs.UnregisterMessage"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Raid.lua",
+   "kind": "addon",
+   "reason": "DBM's optional callback is removed when the raid HUD stops",
+   "symbol": "view.dbm.UnregisterCallback"
+  },
+  {
+   "file": "MSUF_Suite_Modules/RunSummary.lua",
+   "kind": "lod",
+   "reason": "DamageMeter is independently load-on-demand; dungeon summaries omit unavailable native overall-meter deltas.",
+   "symbol": "S.ReadDamageMeterTotals"
+  },
+  {
    "file": "MSUF_Suite_Modules/Surfaces.lua",
    "kind": "addon",
    "reason": "class color addons (for example !ClassColors) define CUSTOM_CLASS_COLORS",
@@ -681,10 +1095,64 @@
    "symbol": "MSUF_PixelLayoutRegion"
   },
   {
-   "file": "MSUF_Suite_Modules/Surfaces.lua",
+   "file": "MSUF_Suite/Core/FontBridge.lua",
    "kind": "addon",
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
    "symbol": "applyScaleMode (= MSUF_ApplyFontScaleAnimationMode)"
+  },
+  {
+   "file": "MSUF_Suite/Core/FontBridge.lua",
+   "kind": "addon",
+   "reason": "The external MSUF font setter answers the client's SetFont result on Retail and Forever; a refused font falls back to the native font unless the string shows the requested file anyway. Older hosts without this export set the font natively with the same fallback; suite_text_effects_contract exercises both paths.",
+   "symbol": "checked (= MSUF_SetFontChecked)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ControlMeta (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.RegisterControlMetadata (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.RequestRefresh (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.RunWithHistory (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ShowStatusFeedback (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.Tr (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 window, which Main and Classic MSUF both create when the menu first opens; Edit Mode actions only close it when it exists",
+   "symbol": "M.frame (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 window, which Main and Classic MSUF both create when the menu first opens; Edit Mode actions only close it when it exists",
+   "symbol": "M.frame.Hide (= MSUF2)"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",
@@ -694,9 +1162,15 @@
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "client",
-   "reason": "not in the UI source: GlobalStrings (STANDARD_TEXT_FONT) are absent from the mirror, so a fallback path stays",
-   "symbol": "STANDARD_TEXT_FONT"
+   "kind": "addon",
+   "reason": "P.W is the external MSUF Menu2 widget API. Newer hosts support separate summaries and full help; older hosts receive the complete original paragraph. suite_options_menu_contract covers both versions.",
+   "symbol": "P.W.DescriptionDetails"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export: Classic MSUF has T.SetTranslatedText, the Retail (Main) MSUF menu not yet; there the font string's raw setter (_msuf2RawSetText) takes translated text. suite_locale_sites_smoke keeps the options pages on this path.",
+   "symbol": "T.SetTranslatedText"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",
@@ -729,24 +1203,6 @@
    "symbol": "skin.Theme.ApplyLook"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
-   "symbol": "W.StyleSectionActionButton"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export (widgets, preview helpers, menu timer); the Retail (Main) and Classic MSUF menus do not provide the same ones",
-   "symbol": "input.SetMaxBytes"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
-   "kind": "state",
-   "reason": "page UI built lazily: the preview or popup part exists only after its section was opened",
-   "symbol": "popup.RefreshTargets"
-  },
-  {
    "file": "MSUF_Suite_Options/Menu/Colors.lua",
    "kind": "lod",
    "reason": "export of MSUF_Suite_Skin, which loads on demand",
@@ -755,8 +1211,128 @@
   {
    "file": "MSUF_Suite_Options/Menu/Controls.lua",
    "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.StatusBarTextureItems"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "kind": "addon",
    "reason": "MSUF Menu2 lazy-accordion export (MSUF_Menu2_Widgets_PageBuilder.lua, with b:LazyCollapsibleSection); older MSUF menus build every section at once, so there is nothing to build",
    "symbol": "W.EnsureSectionContent"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Controls.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export (widgets, preview helpers, menu timer); the Retail (Main) and Classic MSUF menus do not provide the same ones",
+   "symbol": "input.SetMaxBytes"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
+   "symbol": "P.M.AddTooltip"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
+   "symbol": "chrome (= P.M.PreviewHelpers)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
+   "symbol": "chrome.ApplyPreviewChrome (= P.M.PreviewHelpers)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Register.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.RegisterHistoryProvider"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Register.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus have no layer overview, so the Suite adds no layer rows there",
+   "symbol": "M.RegisterLayerOverviewProvider"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Register.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ShowStatusFeedback"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Search.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export: only the Classic MSUF menu filters records of visited pages through availability hooks; Main MSUF has none, so the Suite filters its own provider rows there.",
+   "symbol": "M.RegisterSearchAvailability"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Search.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export: Main and Classic MSUF both register search providers; an older MSUF menu without the hook gets no Suite rows and no error.",
+   "symbol": "M.RegisterSearchProvider"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.AddTooltip"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ApplyPopupFramePriority"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ShowStatusFeedback"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.TrackRefresh"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
+   "symbol": "W.StyleSectionActionButton"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
+   "kind": "state",
+   "reason": "page UI built lazily: the preview or popup part exists only after its section was opened",
+   "symbol": "popup.RefreshTargets"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
+   "kind": "addon",
+   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
+   "symbol": "M.RelayoutPageHeaderHost"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
+   "kind": "addon",
+   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
+   "symbol": "W.FixedPreviewSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
+   "kind": "addon",
+   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
+   "symbol": "W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 dock export; older hosts without fixed preview headers use the normal scrolling section and have no header to relayout. The native dock height override is covered by suite_options_menu_contract.",
+   "symbol": "M.RelayoutPageHeaderHost"
   },
   {
    "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
@@ -775,6 +1351,30 @@
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
    "symbol": "W.RoleButton"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreview.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Bars.lua exports availability only when the runtime addon is loaded. Preview remains available to configure a disabled module without loading or enabling it.",
+   "symbol": "S.ActionBarAvailable"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that scrolls to and highlights an accordion. Older hosts still select the corresponding actionbar category without this optional focus helper.",
+   "symbol": "W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Bars.lua exports the current owned-button slot only when its runtime is loaded. Disabled-module preview instead reads the native action button or the shared default slot map.",
+   "symbol": "S.ActionBarPreviewSlot"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Bindings.lua exports the live compact binding formatter only when the runtime is loaded. Disabled-module preview uses Blizzard GetBindingText instead.",
+   "symbol": "S.KeyText"
   },
   {
    "file": "MSUF_Suite_Options/Pages/Appearance.lua",
@@ -817,6 +1417,30 @@
    "kind": "lod",
    "reason": "export of MSUF_Suite_Skin, which loads on demand",
    "symbol": "skin.Theme"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Bags.lua",
+   "kind": "lod",
+   "reason": "The native currency picker is exported only after the optional Bags addon has loaded.",
+   "symbol": "S.BagCurrencyMenu"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Bags.lua",
+   "kind": "lod",
+   "reason": "export of MSUF_Suite_Modules (Dialogs.lua), which loads on demand; the options addon does not depend on it",
+   "symbol": "S.GamepadUI"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Bags.lua",
+   "kind": "lod",
+   "reason": "The existing category editor is exported by MSUF_Suite_Bags, which loads on demand and is not an options dependency; the button is disabled until its editor is available.",
+   "symbol": "S.OpenBagCategoryEditor"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/BuffRemindersPreview.lua",
+   "kind": "lod",
+   "reason": "The BuffReminders LoD renderer can be absent when the menu closes after a cold combat open or failed addon load; the preview lifecycle contract covers release with and without the renderer.",
+   "symbol": "S.BuffRemindersReleasePreview"
   },
   {
    "file": "MSUF_Suite_Options/Pages/CooldownManager.lua",
@@ -933,12 +1557,6 @@
    "symbol": "T.SkinEditBox"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/CooldownManagerSounds.lua",
-   "kind": "addon",
-   "reason": "LibSharedMedia, an optional library from another addon",
-   "symbol": "lsm.List"
-  },
-  {
    "file": "MSUF_Suite_Options/Pages/CooldownManagerPreview.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
@@ -997,6 +1615,12 @@
    "kind": "addon",
    "reason": "MSUF Menu2 export (widgets, preview helpers, menu timer); the Retail (Main) and Classic MSUF menus do not provide the same ones",
    "symbol": "ui.selectionBar.Refresh"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/CooldownManagerSounds.lua",
+   "kind": "addon",
+   "reason": "LibSharedMedia, an optional library from another addon",
+   "symbol": "lsm.List"
   },
   {
    "file": "MSUF_Suite_Options/Pages/CooldownManagerWidgets.lua",
@@ -1071,6 +1695,96 @@
    "symbol": "picker.SetValue"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "M.SetPreviewArrowBindings"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.ArrowKeyDown"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.NotePreviewElementMoved"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.RefreshSelectedLayerButtons"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "chrome.ReleaseKeyboardCapture"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "H.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
+   "kind": "addon",
+   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
+   "symbol": "button.Refresh"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsPreview.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_Modules/Surfaces.lua exports PixelUnit only after runtime loads. A disabled-module preview remains available with a one-unit fallback without loading gameplay modules.",
+   "symbol": "S.PixelUnit"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsPreview.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 preview theme is optional on older MSUF hosts. The owned preview canvas and information remain usable without this decorative background.",
+   "symbol": "chrome.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ApplyPopupFramePriority"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 expose a skinned menu panel; older hosts use the owned fallback popup frame and preserve source selection.",
+   "symbol": "M.CreateMenuPopupPanel"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 theme may skin the native search edit box. Older hosts keep the functional native input without this cosmetic helper.",
+   "symbol": "T.SkinEditBox"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 theme may style the native scroll frame. Older hosts retain its native scroll behavior without this cosmetic helper.",
+   "symbol": "T.StyleScrollFrame"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsWorkspace.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 cache export discards hidden or unrebuildable pages after a bar-list change; no cache mutation is attempted on older hosts without the export.",
+   "symbol": "M.InvalidatePage"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/DataTextsWorkspace.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 navigation export rebuilds an active page after its effective bar list changes, including undo. Older hosts invalidate it for the next visit instead.",
+   "symbol": "M.RebuildPageKeepingScroll"
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/HUD.lua",
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
@@ -1095,10 +1809,34 @@
    "symbol": "P.W.FocusCollapsibleSection"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/HUDPreview.lua",
+   "symbol": "P.W.FocusCollapsibleSection",
+   "kind": "addon",
+   "reason": "Retail/Forever Menu2 exports this focus helper; older hosts retain preview and manually opened appearance accordions."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/HUDPreview.lua",
+   "symbol": "provider.GetAPI",
+   "kind": "addon",
+   "reason": "The optional Suite skin or legacy MapkoSkin provider may be unloaded. Preview reads its public palette only when available and never loads or activates it."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/HUDWorkspace.lua",
+   "symbol": "M.RelayoutPageHeaderHost",
+   "kind": "addon",
+   "reason": "Retail/Forever current Menu2 can refresh the preview dock layout; older hosts use the normal page builder layout."
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/Minimap.lua",
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
    "symbol": "S.CanShapeMinimap"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Minimap.lua",
+   "kind": "lod",
+   "reason": "The direct button-position menu is exported only after the optional Minimap addon has loaded.",
+   "symbol": "S.MinimapButtonLayoutMenu"
   },
   {
    "file": "MSUF_Suite_Options/Pages/Minimap.lua",
@@ -1111,6 +1849,12 @@
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
    "symbol": "S.MinimapRescanButtons"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
+   "symbol": "H.ApplyPreviewChrome"
   },
   {
    "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
@@ -1135,6 +1879,18 @@
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
    "symbol": "W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
+   "symbol": "button.Refresh"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
+   "kind": "addon",
+   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
+   "symbol": "chrome.RefreshSelectedLayerButtons"
   },
   {
    "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
@@ -1173,10 +1929,262 @@
    "symbol": "S.MinimapElementPreviewShown"
   },
   {
+   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
+   "kind": "addon",
+   "reason": "P.M is MSUF2 (Menu/Bridge.lua). RegisterControlMetadata (Shell/Menu2/MSUF_Menu2_ControlCatalog.lua on the Main and Classic hosts) adds search and keyboard metadata to the enemy tabs; without it the tabs work unregistered.",
+   "symbol": "P.M.RegisterControlMetadata"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
+   "kind": "state",
+   "reason": "NameplatesEditor.lua Editor.Create sets it only when the page builds a nameplate preview (W.FixedPreviewSection returned a section); the Blizzard elements tab also opens without a preview to switch.",
+   "symbol": "P.ShowNameplatesElementsSample"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
+   "kind": "addon",
+   "reason": "P.W is MSUF2's widget table. SegmentTabs is a Menu2 widget (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts); an MSUF build without it gets the enemy design and the Blizzard elements as two ordinary sections.",
+   "symbol": "P.W.SegmentTabs"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "H is MSUF2.PreviewHelpers (Shell/Menu2/MSUF_Menu2_PreviewHelpers.lua on the Main and Classic hosts, {} without it). ApplyPreviewChrome gives the canvas the shared preview frame; without it the canvas stays plain.",
+   "symbol": "H.ApplyPreviewChrome"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts). Arrow nudges stop while a menu text input has focus; without it the GetCurrentKeyBoardFocus EditBox check below still applies.",
+   "symbol": "H.IsTextInputFocused"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) that tells the host preview history about a drag; without it the move is only saved.",
+   "symbol": "H.NotePreviewElementMoved"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) with the host's nudge step; without it the editor uses Ctrl 10, Shift 5, otherwise 1 pixel.",
+   "symbol": "H.NudgeStep"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) paired with FocusKeyboardTarget; without the pair no keyboard capture exists to release.",
+   "symbol": "H.ReleaseKeyboardCapture"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) that drops a key repeat delivered twice by the host bindings; without it every delivery nudges.",
+   "symbol": "H.ShouldSkipDuplicateNudge"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2 export (Shell/Menu2/MSUF_Menu2_Support.lua on the Main and Classic hosts) that routes arrow keys to the selected preview; without it the body's own OnKeyDown handles them.",
+   "symbol": "M.SetPreviewArrowBindings"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2 theme export (Shell/Menu2/MSUF_Menu2_Theme.lua on the Main and Classic hosts); without it the toolbar labels keep the theme button's alignment.",
+   "symbol": "T.CenterButtonLabel"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "MSUF2 widget export (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts) that opens and flashes a section; without it a right-click only opens the setting.",
+   "symbol": "W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "addon",
+   "reason": "Layer chips made by MSUF2.PreviewHelpers.CreateLayerButton (Main and Classic hosts) repaint themselves through Refresh; the plain T.Button fallback for an MSUF build without that helper has none and is dimmed by alpha.",
+   "symbol": "button.Refresh"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
+   "kind": "state",
+   "reason": "NameplatesSize.Build adds it only when MSUF2's PreviewSelectionBar exists (BuildSelection); without that bar there is no size row to refresh.",
+   "symbol": "self.RefreshSizeSelection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua",
+   "kind": "addon",
+   "reason": "MSUF2 export (Shell/Menu2/MSUF_Menu2_API.lua on the Main and Classic hosts) that scrolls to one setting row; without it a handle click selects the element without opening its setting.",
+   "symbol": "M.OpenExactSettingControl"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesPreview.lua",
+   "kind": "client",
+   "reason": "not in the UI source: GlobalStrings (STANDARD_TEXT_FONT) are absent from the mirror, so the preview keeps Blizzard's default face as its fallback path",
+   "symbol": "STANDARD_TEXT_FONT"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
+   "kind": "addon",
+   "reason": "MSUF2 widget export (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts) that asks whether a docked preview opens expanded; without it the preview keeps its fixed size when the page activates.",
+   "symbol": "M.ShouldExpandFixedPreview"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewSelectionBar (Shell/Menu2/MSUF_Menu2_PreviewSelectionBar.lua on the Main and Classic hosts); without it the preview has no selection bar to show or hide.",
+   "symbol": "SB (= P.M.PreviewSelectionBar)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesSize.lua",
+   "kind": "addon",
+   "reason": "MSUF2 theme export (Shell/Menu2/MSUF_Menu2_Theme.lua on the Main and Classic hosts); without it the size fields keep the default edit box look.",
+   "symbol": "T.SkinEditBox"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "P.M is MSUF2 (Menu/Bridge.lua). BindSegment (Shell/Menu2/MSUF_Menu2_Bindings.lua on the Classic host) registers the area selector for search and keyboard; without it the selector works unregistered.",
+   "symbol": "P.M.BindSegment"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "P.M is MSUF2 (Menu/Bridge.lua). RegisterControlMetadata (Shell/Menu2/MSUF_Menu2_ControlCatalog.lua on the Main and Classic hosts) adds search metadata to Quick Setup; without it the button works unregistered.",
+   "symbol": "P.M.RegisterControlMetadata"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "state",
+   "reason": "NameplatesEditor.lua Editor.Create sets it only when the page builds a nameplate preview (W.FixedPreviewSection returned a section); without a preview an area switch has no sample to show.",
+   "symbol": "P.ShowNameplatesSample"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "W is MSUF2's widget table. AttachStickyPageHeader (Shell/Menu2/MSUF_Menu2_Widgets_PageBuilder.lua on the Classic host) keeps the area header fixed while the page scrolls, as on Class Resources; without it the header scrolls with the page.",
+   "symbol": "W.AttachStickyPageHeader"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
+   "kind": "addon",
+   "reason": "W is MSUF2's widget table. RoleButton (Shell/Menu2/MSUF_Menu2_Widgets_Buttons.lua) styles Quick Setup as the green success button of Class Resources; without it Quick Setup is a plain theme button.",
+   "symbol": "W.RoleButton"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/QualityOfLife.lua",
+   "kind": "addon",
+   "reason": "P.W is the external MSUF Menu2 widget API. New hosts provide the shared framed help button; older hosts retain a readable clickable fallback. suite_help_controls_contract exercises both host versions.",
+   "symbol": "P.W.HelpButton"
+  },
+  {
    "file": "MSUF_Suite_Options/Pages/QualityOfLife.lua",
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
    "symbol": "S.ResetXPSession"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/CharacterExtras.lua",
+   "kind": "addon",
+   "reason": "Blizzard_InspectUI loads on demand, so InspectFrame and its gear slots exist only after the first inspect; slot icon cropping waits for its ADDON_LOADED and then crops on every InspectFrame show.",
+   "symbol": "InspectFrame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/CharacterUpgradeWindow.lua",
+   "kind": "addon",
+   "reason": "Blizzard_ItemUpgradeUI is load on demand; ItemUpgradeFrame exists only after it loads, so the helper waits for its ADDON_LOADED.",
+   "symbol": "ItemUpgradeFrame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
+   "kind": "addon",
+   "reason": "Blizzard_AuctionHouseUI loads on demand, so AuctionHouseFrame exists only after the first auction house visit; the filter hint waits for its ADDON_LOADED.",
+   "symbol": "AuctionHouseFrame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupRaidShortcuts.lua",
+   "kind": "addon",
+   "reason": "The native Raid Manager can be absent until Blizzard raid UI is loaded or enabled",
+   "symbol": "frame (= CompactRaidFrameManager)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
+   "kind": "addon",
+   "reason": "MSUF group-frame registry is an optional integration; its direct unit lookup is used only when exported",
+   "symbol": "gf.FrameForUnit"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
+   "kind": "addon",
+   "reason": "MSUF group-frame registry is an optional integration; its observer is used only when exported",
+   "symbol": "gf.RegisterFrameRegistryObserver"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
+   "kind": "addon",
+   "reason": "MSUF group-frame registry is an optional integration; an MSUF build without the observer leave call is left alone",
+   "symbol": "gf.UnregisterFrameRegistryObserver"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MPlusKeystoneShare.lua",
+   "kind": "addon",
+   "reason": "ChallengesKeystoneFrame belongs to native Blizzard_ChallengesUI, which may not be loaded until the player opens the pedestal.",
+   "symbol": "frame (= ChallengesKeystoneFrame)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+   "kind": "addon",
+   "reason": "The Retail expansion landing button is created by a LoadOnDemand Blizzard addon",
+   "symbol": "ExpansionLandingPageMinimapButton"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
+   "kind": "addon",
+   "reason": "The Retail expansion landing button may not exist until its Blizzard addon loads",
+   "symbol": "native (= ExpansionLandingPageMinimapButton)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NativeExperienceBar.lua",
+   "kind": "addon",
+   "reason": "The same native Blizzard addon defines the experience-bar enumeration together with its manager. suite_xp_native_contract covers late loading without either global.",
+   "symbol": "info (= StatusTrackingBarInfo)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/NativeExperienceBar.lua",
+   "kind": "addon",
+   "reason": "Blizzard_ActionBar or Blizzard_StatusTrackingBar owns the native containers; wait for its ADDON_LOADED before adopting them. suite_xp_native_contract covers late loading on Retail and Forever.",
+   "symbol": "manager (= StatusTrackingBarManager)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/SocketGemSuggestions.lua",
+   "kind": "addon",
+   "reason": "Blizzard creates the socketing frame only after its UI addon loads",
+   "symbol": "owner (= ItemSocketingFrame)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TargetDistance.lua",
+   "kind": "addon",
+   "reason": "The MSUF target frame may be disabled or not yet constructed; the optional anchor falls back to the native TargetFrame.",
+   "symbol": "MSUF_target"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipDetails.lua",
+   "kind": "addon",
+   "reason": "Blizzard_InspectUI loads on demand, so InspectFrame exists only after the first inspect. The tooltip shows the open window's unit level after its INSPECT_READY, and the separate inspectHovered opt-in sends its own requests only while this window is closed and idle.",
+   "symbol": "InspectFrame"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipDetails.lua",
+   "kind": "addon",
+   "reason": "Blizzard_PlayerSpells loads on demand; while it shows another player's talents (IsInspecting) the shared inspect buffer is busy and the opt-in hover request waits.",
+   "symbol": "spells (= PlayerSpellsFrame)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipVisibility.lua",
+   "kind": "addon",
+   "reason": "MSUF's unit and group frame tooltip mode marks GameTooltip with this field while it owns the tooltip (MidnightSimpleUnitFrames Runtime/MSUF_UnitTooltips.lua) and clears it on hide or the next SetOwner; MSUF's own visibility setting then wins.",
+   "symbol": "tooltip._msufUnitTooltipOwner (= GameTooltip)"
   },
   {
    "file": "MSUF_Suite_Skin/Adapters/AdapterKit.lua",
@@ -1201,6 +2209,12 @@
    "kind": "addon",
    "reason": "foreign object (a Blizzard or other addon's frame, pool or color); per the Suite's safety rule a method is checked with type(obj.Method) before it is called on a foreign object",
    "symbol": "pool.EnumerateActive"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Adapters/ChatFrames.lua",
+   "kind": "addon",
+   "reason": "Blizzard UI addon Blizzard_ColorPickerFrame (live 78282522 and forever 9a789c07 both define the frame); probed so a missing picker only loses the colour picker session rule",
+   "symbol": "frame (= ColorPickerFrame)"
   },
   {
    "file": "MSUF_Suite_Skin/Adapters/Commerce.lua",
@@ -1467,6 +2481,12 @@
    "symbol": "root.UpdateQueueStatusAnchors"
   },
   {
+   "file": "MSUF_Suite_Skin/Adapters/OwnedMicroBarVisibility.lua",
+   "kind": "client",
+   "symbol": "nativeRegistry (= EventRegistry)",
+   "reason": "Native EditMode.Enter/Exit callbacks are available on Retail and Forever (Blizzard_EditMode/Shared/EditModeManager.lua). Model-only clients may omit the registry; suite_skin_micro_edit_visibility_contract checks reveal, overlap, cold sync, disable and combat replay."
+  },
+  {
    "file": "MSUF_Suite_Skin/Adapters/PlayerSpells.lua",
    "kind": "addon",
    "reason": "Blizzard load-on-demand UI (Blizzard_PlayerSpells); the frame exists only after that addon loads",
@@ -1595,12 +2615,6 @@
   {
    "file": "MSUF_Suite_Skin/Core/DatabaseProfiles.lua",
    "kind": "state",
-   "reason": "Suite-owned saved variables: the skin addon can load before the Suite database is ready",
-   "symbol": "suiteRoot (= MSUFSuiteDB)"
-  },
-  {
-   "file": "MSUF_Suite_Skin/Core/DatabaseProfiles.lua",
-   "kind": "state",
    "reason": "saved variables: nil until their addon has loaded them",
    "symbol": "stored (= MSUFSuiteSkinDB)"
   },
@@ -1609,6 +2623,12 @@
    "kind": "state",
    "reason": "saved variables: nil until their addon has loaded them",
    "symbol": "stored.profiles (= MSUFSuiteSkinDB)"
+  },
+  {
+   "file": "MSUF_Suite_Skin/Core/DatabaseProfiles.lua",
+   "kind": "state",
+   "reason": "Suite-owned saved variables: the skin addon can load before the Suite database is ready",
+   "symbol": "suiteRoot (= MSUFSuiteDB)"
   },
   {
    "file": "MSUF_Suite_Skin/Core/Safety.lua",
@@ -1851,6 +2871,18 @@
    "symbol": "view.Refresh"
   },
   {
+   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
+   "kind": "addon",
+   "reason": "an older MSUF options build may not publish the Forever controller navigation bridge",
+   "symbol": "menu (= MSUF2)"
+  },
+  {
+   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
+   "kind": "addon",
+   "reason": "the Forever navigation bridge is supplied by the current Classic MSUF options build",
+   "symbol": "menu.ResumeForeverPadNavigation (= MSUF2)"
+  },
+  {
    "file": "MSUF_Suite_Skin_Options/Shell/WidgetsColor.lua",
    "kind": "addon",
    "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
@@ -1867,1080 +2899,6 @@
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
    "symbol": "widgets.OpenContextColors"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "DBM is optional; its current stage API is read once at encounter start when available",
-   "symbol": "dbm.GetStage"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "DBM is optional and its public phase callback API must be checked before registration",
-   "symbol": "dbm.RegisterCallback"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "BigWigs is an optional boss mod; its message loader may be absent",
-   "symbol": "loader (= BigWigsLoader)"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "BigWigs is optional and its public stage message API must be checked before registration",
-   "symbol": "loader.RegisterMessage (= BigWigsLoader)"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "DBM's optional callback is removed when the raid HUD stops",
-   "symbol": "view.dbm.UnregisterCallback"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "BigWigs' optional stage message is removed when the raid HUD stops",
-   "symbol": "view.bigWigs.UnregisterMessage"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "BigWigs is optional; current stage is read only when its core is loaded",
-   "symbol": "bigWigs (= BigWigs)"
-  },
-  {
-   "file": "MSUF_Suite_Modules/Raid.lua",
-   "kind": "addon",
-   "reason": "BigWigs is optional; its active module iterator is read once at encounter start when available",
-   "symbol": "bigWigs.IterateBossModules (= BigWigs)"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
-   "kind": "addon",
-   "reason": "MSUF group-frame registry is an optional integration; its direct unit lookup is used only when exported",
-   "symbol": "gf.FrameForUnit"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
-   "kind": "addon",
-   "reason": "MSUF group-frame registry is an optional integration; its observer is used only when exported",
-   "symbol": "gf.RegisterFrameRegistryObserver"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/InnervateCue.lua",
-   "kind": "addon",
-   "reason": "MSUF group-frame registry is an optional integration; an MSUF build without the observer leave call is left alone",
-   "symbol": "gf.UnregisterFrameRegistryObserver"
-  },
-  {
-   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
-   "kind": "addon",
-   "reason": "an older MSUF options build may not publish the Forever controller navigation bridge",
-   "symbol": "menu (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Skin_Options/Shell/Embedded.lua",
-   "kind": "addon",
-   "reason": "the Forever navigation bridge is supplied by the current Classic MSUF options build",
-   "symbol": "menu.ResumeForeverPadNavigation (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "client",
-   "reason": "Forever pointer API is used only after the Forever client gate",
-   "symbol": "CanAutoSetGamePadCursorControl"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "addon",
-   "reason": "Classic MSUF exports the Forever pad navigation; the Retail-only MSUF and older Classic hosts have none",
-   "symbol": "MSUF_PadNavigation"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "client",
-   "reason": "Forever-only interface style API is absent on Retail",
-   "symbol": "InputUtil.IsGamepadUIEnabled"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "client",
-   "reason": "Forever pointer API is used only after the Forever client gate",
-   "symbol": "SetGamePadCursorControl"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "client",
-   "reason": "Forever-only interface style method is checked before use",
-   "symbol": "input.IsGamepadUIEnabled (= InputUtil)"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
-   "kind": "addon",
-   "reason": "The Retail expansion landing button may not exist until its Blizzard addon loads",
-   "symbol": "native (= ExpansionLandingPageMinimapButton)"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
-   "kind": "addon",
-   "reason": "The Retail expansion landing button is created by a LoadOnDemand Blizzard addon",
-   "symbol": "ExpansionLandingPageMinimapButton"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/SocketGemSuggestions.lua",
-   "kind": "addon",
-   "reason": "Blizzard creates the socketing frame only after its UI addon loads",
-   "symbol": "owner (= ItemSocketingFrame)"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/GroupRaidShortcuts.lua",
-   "kind": "addon",
-   "reason": "The native Raid Manager can be absent until Blizzard raid UI is loaded or enabled",
-   "symbol": "frame (= CompactRaidFrameManager)"
-  },
-  {
-   "file": "MSUF_Suite_ActionBars/Visibility.lua",
-   "kind": "addon",
-   "reason": "Retail spellbook belongs to Blizzard_PlayerSpells; its frame is absent before that native load-on-demand addon loads.",
-   "symbol": "PlayerSpellsFrame"
-  },
-  {
-   "file": "MSUF_Suite_Bags/BagWindow.lua",
-   "kind": "state",
-   "reason": "Blizzard's cache of open bags (ContainerFrameSettingsManager:GetBagsShown, upstream/live and forever ContainerFrame.lua) is nil while stale; the Suite runs Blizzard's anchor pass only while it holds, so the list is never rebuilt from addon code. suite_bags_view_client_contract opens the bags with a stale list.",
-   "symbol": "ContainerFrameSettingsManager.bagsShown"
-  },
-  {
-   "file": "MSUF_Suite_Bags/SplitInventory.lua",
-   "kind": "addon",
-   "reason": "Native StackSplitFrame accepts merchant, guild bank, bank and container owners; only native container owners expose GetBagID.",
-   "symbol": "owner.GetBagID"
-  },
-  {
-   "file": "MSUF_Suite_DamageMeter/Controller.lua",
-   "kind": "lod",
-   "reason": "Recent actions belongs to the optional QualityOfLife addon and is not required by the native damage meter.",
-   "symbol": "S.SetActionTrackerSessionHidden"
-  },
-  {
-   "file": "MSUF_Suite_Modules/RunSummary.lua",
-   "kind": "lod",
-   "reason": "DamageMeter is independently load-on-demand; dungeon summaries omit unavailable native overall-meter deltas.",
-   "symbol": "S.ReadDamageMeterTotals"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Minimap.lua",
-   "kind": "lod",
-   "reason": "The direct button-position menu is exported only after the optional Minimap addon has loaded.",
-   "symbol": "S.MinimapButtonLayoutMenu"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/MPlusKeystoneShare.lua",
-   "kind": "addon",
-   "reason": "ChallengesKeystoneFrame belongs to native Blizzard_ChallengesUI, which may not be loaded until the player opens the pedestal.",
-   "symbol": "frame (= ChallengesKeystoneFrame)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Bags.lua",
-   "kind": "lod",
-   "reason": "The native currency picker is exported only after the optional Bags addon has loaded.",
-   "symbol": "S.BagCurrencyMenu"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/TargetDistance.lua",
-   "kind": "addon",
-   "reason": "The MSUF target frame may be disabled or not yet constructed; the optional anchor falls back to the native TargetFrame.",
-   "symbol": "MSUF_target"
-  },
-  {
-   "file": "MSUF_Suite/Core/ProfileVariants.lua",
-   "kind": "addon",
-   "reason": "The main MSUF State profile owner publishes MSUF_GlobalDB.profiles; this adapter only references the named Core metadata profile when the global exists. Suite module tables remain owned by Suite.Database and copied through explicit external snapshot callbacks.",
-   "symbol": "MSUF_GlobalDB"
-  },
-  {
-   "file": "MSUF_Suite_ActionBars/Visibility.lua",
-   "kind": "client",
-   "reason": "12.1.0 and 12.1.5 have InputUtil without IsGamepadUIEnabled (upstream/forever Blizzard_SharedXML/Mainline/InputUtil.lua defines it); the gamepad bar rule runs after the Forever client gate.",
-   "symbol": "InputUtil.IsGamepadUIEnabled"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Search.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export: only the Classic MSUF menu filters records of visited pages through availability hooks; Main MSUF has none, so the Suite filters its own provider rows there.",
-   "symbol": "M.RegisterSearchAvailability"
-  },
-  {
-   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_EncodeCompactTable"
-  },
-  {
-   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_TryDecodeCompactString"
-  },
-  {
-   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "encode (= MSUF_EncodeCompactTable)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Database.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_TryDecodeCompactString"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_GetPixelPerfectScale"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_SetDefaultProfileForNewCharacters"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "getDefault (= MSUF_GetDefaultProfileForNewCharacters)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Menu.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "open (= MSUF2_Open)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "addon",
-   "reason": "MSUF export: only Classic MSUF publishes its client model; Main MSUF has none, so the Suite derives the same facts itself",
-   "symbol": "MSUF.Client (= MSUF_NS)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "addon",
-   "reason": "MSUF's locale table, which Main and Classic MSUF both publish; an older build without it leaves the Suite with English text",
-   "symbol": "MSUF.L (= MSUF_NS)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Platform.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ResolveFontKeyPath"
-  },
-  {
-   "file": "MSUF_Suite/Core/ProfileIO.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_EncodeCompactTable"
-  },
-  {
-   "file": "MSUF_Suite/Core/ProfileIO.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_TryDecodeCompactString"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_DeleteProfile"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_Profiles_ExportSelectionToString"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_Profiles_ImportExternal"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export: only Classic MSUF has the transactional import into a new profile; Main MSUF imports through MSUF_Profiles_ImportExternal",
-   "symbol": "MSUF_Profiles_ImportIntoNewProfile"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_SetCurrentProfileScreenReferenceHeight"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_SwitchProfile"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "get (= MSUF_GetDefaultProfileForNewCharacters)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export: only Classic MSUF has the transactional import into a new profile; Main MSUF imports through MSUF_Profiles_ImportExternal",
-   "symbol": "native (= MSUF_Profiles_ImportIntoNewProfile)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Profiles.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "set (= MSUF_SetDefaultProfileForNewCharacters)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.ControlMeta (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.RegisterControlMetadata (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.RequestRefresh (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.RunWithHistory (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.Tr (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 window, which Main and Classic MSUF both create when the menu first opens; Edit Mode actions only close it when it exists",
-   "symbol": "M.frame (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 window, which Main and Classic MSUF both create when the menu first opens; Edit Mode actions only close it when it exists",
-   "symbol": "M.frame.Hide (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export: Classic MSUF has T.SetTranslatedText, the Retail (Main) MSUF menu not yet; there the font string's raw setter (_msuf2RawSetText) takes translated text. suite_locale_sites_smoke keeps the options pages on this path.",
-   "symbol": "T.SetTranslatedText"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.ShowStatusFeedback (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.AddTooltip"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.ApplyPopupFramePriority"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.ShowStatusFeedback"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Controls.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.StatusBarTextureItems"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.TrackRefresh"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ApplyMsufScale"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ResetGlobalUiScale"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_SetGlobalUiScale"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ApplyPowerBarEmbedLayout_ForUnitKey"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_ClassPower_Apply"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_EnsureCooldownWidthObservers"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
-   "symbol": "MSUF_UFCore_NotifyConfigChanged"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.RefreshToolbarPageReset"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
-   "symbol": "M.RegisterPageResetProvider"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
-   "symbol": "api.ApplyUIScaleProfile"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF host API v1 export (owner-approved spec): older MSUF hosts lack it, so the bridge keeps the Suite's previous code for them",
-   "symbol": "api.SetResourceStack"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 history export (HOST_API_SPEC section E); menus without a history session lack it, so the legacy wrap checks it before use",
-   "symbol": "M.SyncExternalHistoryState"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "MSUF core export (Runtime/MSUF_UIScaleRuntime.lua) that re-applies the profile's global UI scale; the legacy rollback falls back to MSUF's scale setters on hosts without it",
-   "symbol": "MSUF_ApplyCurrentProfileGlobalUiScale"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Register.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.RegisterHistoryProvider"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Register.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus have no layer overview, so the Suite adds no layer rows there",
-   "symbol": "M.RegisterLayerOverviewProvider"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Register.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.ShowStatusFeedback"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Search.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export: Main and Classic MSUF both register search providers; an older MSUF menu without the hook gets no Suite rows and no error.",
-   "symbol": "M.RegisterSearchProvider"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/CharacterUpgradeWindow.lua",
-   "kind": "addon",
-   "reason": "Blizzard_ItemUpgradeUI is load on demand; ItemUpgradeFrame exists only after it loads, so the helper waits for its ADDON_LOADED.",
-   "symbol": "ItemUpgradeFrame"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/TooltipVisibility.lua",
-   "kind": "addon",
-   "reason": "MSUF's unit and group frame tooltip mode marks GameTooltip with this field while it owns the tooltip (MidnightSimpleUnitFrames Runtime/MSUF_UnitTooltips.lua) and clears it on hide or the next SetOwner; MSUF's own visibility setting then wins.",
-   "symbol": "tooltip._msufUnitTooltipOwner (= GameTooltip)"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/TooltipDetails.lua",
-   "kind": "addon",
-   "reason": "Blizzard_PlayerSpells loads on demand; while it shows another player's talents (IsInspecting) the shared inspect buffer is busy and the opt-in hover request waits.",
-   "symbol": "spells (= PlayerSpellsFrame)"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/TooltipDetails.lua",
-   "kind": "addon",
-   "reason": "Blizzard_InspectUI loads on demand, so InspectFrame exists only after the first inspect. The tooltip shows the open window's unit level after its INSPECT_READY, and the separate inspectHovered opt-in sends its own requests only while this window is closed and idle.",
-   "symbol": "InspectFrame"
-  },
-  {
-   "file": "MSUF_Suite_Bags/StackSplitter.lua",
-   "kind": "state",
-   "reason": "The shared native stack-split window has no item owner when closed or used without an inventory slot.",
-   "symbol": "owner (= StackSplitFrame.owner)"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Sources.lua",
-   "kind": "client",
-   "reason": "Forever has no C_ItemUpgrade (no modern equipment upgrades); Retail 12.1.0 and 12.1.5 read upgradeCostTypesForSeason (upstream/live ItemUpgradeDocumentation.lua) only after a native upgrade item was observed. suite_datatexts_sources_contract formats the Crests place without C_ItemUpgrade (unknown season) and with it.",
-   "symbol": "C_ItemUpgrade"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Sources.lua",
-   "kind": "addon",
-   "reason": "LibDataBroker-1.1 is another addon's library, reached through LibStub when some addon loaded it; the Suite bundles neither. suite_datatexts_sources_contract covers plugins and callbacks with the library and, without LibStub, an empty plugin list, no callback registration and the configured name with the placeholder.",
-   "symbol": "LibStub"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Actions.lua",
-   "kind": "lod",
-   "reason": "LearnedDungeonPortals is exported by the optional, load-on-demand QualityOfLife addon (DungeonPortals.lua). The portal place requests that addon and opens nothing while the export is missing; suite_datatexts_security_contract covers the missing export and the secure portal rows.",
-   "symbol": "S.LearnedDungeonPortals"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Actions.lua",
-   "kind": "addon",
-   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnClick handler is optional in the LDB spec; it runs through S.Dispatch. suite_datatexts_sources_contract clicks a plugin with OnClick (also in combat).",
-   "symbol": "object.OnClick"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Actions.lua",
-   "kind": "addon",
-   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnEnter handler is optional in the LDB spec; a plugin with it shows its own tooltip (suite_datatexts_sources_contract).",
-   "symbol": "object.OnEnter"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Actions.lua",
-   "kind": "addon",
-   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnLeave handler is optional in the LDB spec (suite_datatexts_sources_contract).",
-   "symbol": "object.OnLeave"
-  },
-  {
-   "file": "MSUF_Suite_DataTexts/Actions.lua",
-   "kind": "addon",
-   "reason": "A LibDataBroker-1.1 data object belongs to another addon and its OnTooltipShow handler is optional in the LDB spec; with it the plugin fills the Suite's GameTooltip, without it the Suite shows the place's own lines (suite_datatexts_sources_contract).",
-   "symbol": "object.OnTooltipShow"
-  },
-  {
-   "file": "MSUF_Suite/Core/NameplateStyle.lua",
-   "kind": "addon",
-   "reason": "MSUF publishes the global font flags through ExportPublic in Castbars/MSUF_Castbars_Core.lua (Main and Classic hosts). The 'MSUF outline' choice uses them; an MSUF build without that export gets the Suite outline table.",
-   "symbol": "MSUF_GetFontFlags"
-  },
-  {
-   "file": "MSUF_Suite/Core/NameplateStyle.lua",
-   "kind": "addon",
-   "reason": "MSUF publishes the global font path through ExportPublic in Castbars/MSUF_Castbars_Core.lua (Main and Classic hosts). An empty nameplate font key follows it; an MSUF build without that export resolves the key through the Suite font registry.",
-   "symbol": "MSUF_GetFontPath"
-  },
-  {
-   "file": "MSUF_Suite/Core/NameplateStyle.lua",
-   "kind": "addon",
-   "reason": "MSUF's boss target renderer (UnitFrames/Engine/Elements/MSUF_UF_BossTargetIndicator.lua on the Main and Classic hosts) draws the nameplate target arrows and their preview; an MSUF build without it shows no arrows. suite_nameplates_contract and suite_options_menu_contract load the real renderer.",
-   "symbol": "indicator (= MSUF_NS.BossTargetIndicator)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
-   "kind": "addon",
-   "reason": "P.M is MSUF2 (Menu/Bridge.lua). RegisterControlMetadata (Shell/Menu2/MSUF_Menu2_ControlCatalog.lua on the Main and Classic hosts) adds search and keyboard metadata to the enemy tabs; without it the tabs work unregistered.",
-   "symbol": "P.M.RegisterControlMetadata"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
-   "kind": "state",
-   "reason": "NameplatesEditor.lua Editor.Create sets it only when the page builds a nameplate preview (W.FixedPreviewSection returned a section); the Blizzard elements tab also opens without a preview to switch.",
-   "symbol": "P.ShowNameplatesElementsSample"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
-   "kind": "addon",
-   "reason": "P.W is MSUF2's widget table. SegmentTabs is a Menu2 widget (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts); an MSUF build without it gets the enemy design and the Blizzard elements as two ordinary sections.",
-   "symbol": "P.W.SegmentTabs"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "H is MSUF2.PreviewHelpers (Shell/Menu2/MSUF_Menu2_PreviewHelpers.lua on the Main and Classic hosts, {} without it). ApplyPreviewChrome gives the canvas the shared preview frame; without it the canvas stays plain.",
-   "symbol": "H.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts). Arrow nudges stop while a menu text input has focus; without it the GetCurrentKeyBoardFocus EditBox check below still applies.",
-   "symbol": "H.IsTextInputFocused"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) that tells the host preview history about a drag; without it the move is only saved.",
-   "symbol": "H.NotePreviewElementMoved"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) with the host's nudge step; without it the editor uses Ctrl 10, Shift 5, otherwise 1 pixel.",
-   "symbol": "H.NudgeStep"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) paired with FocusKeyboardTarget; without the pair no keyboard capture exists to release.",
-   "symbol": "H.ReleaseKeyboardCapture"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) that drops a key repeat delivered twice by the host bindings; without it every delivery nudges.",
-   "symbol": "H.ShouldSkipDuplicateNudge"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua",
-   "kind": "addon",
-   "reason": "MSUF2 export (Shell/Menu2/MSUF_Menu2_API.lua on the Main and Classic hosts) that scrolls to one setting row; without it a handle click selects the element without opening its setting.",
-   "symbol": "M.OpenExactSettingControl"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2 export (Shell/Menu2/MSUF_Menu2_Support.lua on the Main and Classic hosts) that routes arrow keys to the selected preview; without it the body's own OnKeyDown handles them.",
-   "symbol": "M.SetPreviewArrowBindings"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2 theme export (Shell/Menu2/MSUF_Menu2_Theme.lua on the Main and Classic hosts); without it the toolbar labels keep the theme button's alignment.",
-   "symbol": "T.CenterButtonLabel"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2 widget export (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts) that opens and flashes a section; without it a right-click only opens the setting.",
-   "symbol": "W.FocusCollapsibleSection"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "Layer chips made by MSUF2.PreviewHelpers.CreateLayerButton (Main and Classic hosts) repaint themselves through Refresh; the plain T.Button fallback for an MSUF build without that helper has none and is dimmed by alpha.",
-   "symbol": "button.Refresh"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "state",
-   "reason": "NameplatesSize.Build adds it only when MSUF2's PreviewSelectionBar exists (BuildSelection); without that bar there is no size row to refresh.",
-   "symbol": "self.RefreshSizeSelection"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesPreview.lua",
-   "kind": "client",
-   "reason": "not in the UI source: GlobalStrings (STANDARD_TEXT_FONT) are absent from the mirror, so the preview keeps Blizzard's default face as its fallback path",
-   "symbol": "STANDARD_TEXT_FONT"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
-   "kind": "addon",
-   "reason": "MSUF2 widget export (Shell/Menu2/MSUF_Menu2_Widgets.lua on the Main and Classic hosts) that asks whether a docked preview opens expanded; without it the preview keeps its fixed size when the page activates.",
-   "symbol": "M.ShouldExpandFixedPreview"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewSelectionBar (Shell/Menu2/MSUF_Menu2_PreviewSelectionBar.lua on the Main and Classic hosts); without it the preview has no selection bar to show or hide.",
-   "symbol": "SB (= P.M.PreviewSelectionBar)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesSize.lua",
-   "kind": "addon",
-   "reason": "MSUF2 theme export (Shell/Menu2/MSUF_Menu2_Theme.lua on the Main and Classic hosts); without it the size fields keep the default edit box look.",
-   "symbol": "T.SkinEditBox"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "addon",
-   "reason": "P.M is MSUF2 (Menu/Bridge.lua). BindSegment (Shell/Menu2/MSUF_Menu2_Bindings.lua on the Classic host) registers the area selector for search and keyboard; without it the selector works unregistered.",
-   "symbol": "P.M.BindSegment"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "addon",
-   "reason": "P.M is MSUF2 (Menu/Bridge.lua). RegisterControlMetadata (Shell/Menu2/MSUF_Menu2_ControlCatalog.lua on the Main and Classic hosts) adds search metadata to Quick Setup; without it the button works unregistered.",
-   "symbol": "P.M.RegisterControlMetadata"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "addon",
-   "reason": "W is MSUF2's widget table. AttachStickyPageHeader (Shell/Menu2/MSUF_Menu2_Widgets_PageBuilder.lua on the Classic host) keeps the area header fixed while the page scrolls, as on Class Resources; without it the header scrolls with the page.",
-   "symbol": "W.AttachStickyPageHeader"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "addon",
-   "reason": "W is MSUF2's widget table. RoleButton (Shell/Menu2/MSUF_Menu2_Widgets_Buttons.lua) styles Quick Setup as the green success button of Class Resources; without it Quick Setup is a plain theme button.",
-   "symbol": "W.RoleButton"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesWorkspace.lua",
-   "kind": "state",
-   "reason": "NameplatesEditor.lua Editor.Create sets it only when the page builds a nameplate preview (W.FixedPreviewSection returned a section); without a preview an area switch has no sample to show.",
-   "symbol": "P.ShowNameplatesSample"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/CharacterExtras.lua",
-   "kind": "addon",
-   "reason": "Blizzard_InspectUI loads on demand, so InspectFrame and its gear slots exist only after the first inspect; slot icon cropping waits for its ADDON_LOADED and then crops on every InspectFrame show.",
-   "symbol": "InspectFrame"
-  },
-  {
-   "file": "MSUF_Suite_QualityOfLife/DailyComfort.lua",
-   "kind": "addon",
-   "reason": "Blizzard_AuctionHouseUI loads on demand, so AuctionHouseFrame exists only after the first auction house visit; the filter hint waits for its ADDON_LOADED.",
-   "symbol": "AuctionHouseFrame"
-  },
-  {
-   "file": "MSUF_Suite_BuffReminders/Special.lua",
-   "kind": "state",
-   "reason": "the addon's own SavedVariables table of learned demon looks: nil until the first look is learned (saved variables arrive after the files ran); suite_buff_reminders_restored_contract covers the empty start",
-   "symbol": "looks (= MSUFSuiteDemonLooks)"
-  },
-  {
-   "file": "MSUF_Suite_Skin/Adapters/ChatFrames.lua",
-   "kind": "addon",
-   "reason": "Blizzard UI addon Blizzard_ColorPickerFrame (live 78282522 and forever 9a789c07 both define the frame); probed so a missing picker only loses the colour picker session rule",
-   "symbol": "frame (= ColorPickerFrame)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "client",
-   "reason": "Retail and Forever: FrameXML EventRegistry broadcasts completion after setup. Standalone host fixtures may omit the registry.",
-   "symbol": "registry (= EventRegistry)"
-  },
-  {
-   "file": "MSUF_Suite/Core/API.lua",
-   "kind": "lod",
-   "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
-   "symbol": "Suite.CooldownManager"
-  },
-  {
-   "file": "MSUF_Suite/Core/API.lua",
-   "kind": "lod",
-   "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
-   "symbol": "Suite.Options"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 dock export; older hosts without fixed preview headers use the normal scrolling section and have no header to relayout. The native dock height override is covered by suite_options_menu_contract.",
-   "symbol": "M.RelayoutPageHeaderHost"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/ActionBarsPreview.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that scrolls to and highlights an accordion. Older hosts still select the corresponding actionbar category without this optional focus helper.",
-   "symbol": "W.FocusCollapsibleSection"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/ActionBarsPreview.lua",
-   "kind": "lod",
-   "reason": "MSUF_Suite_ActionBars/Bars.lua exports availability only when the runtime addon is loaded. Preview remains available to configure a disabled module without loading or enabling it.",
-   "symbol": "S.ActionBarAvailable"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
-   "kind": "lod",
-   "reason": "MSUF_Suite_ActionBars/Bars.lua exports the current owned-button slot only when its runtime is loaded. Disabled-module preview instead reads the native action button or the shared default slot map.",
-   "symbol": "S.ActionBarPreviewSlot"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
-   "kind": "lod",
-   "reason": "MSUF_Suite_ActionBars/Bindings.lua exports the live compact binding formatter only when the runtime is loaded. Disabled-module preview uses Blizzard GetBindingText instead.",
-   "symbol": "S.KeyText"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsWorkspace.lua",
-   "kind": "addon",
-   "reason": "Retail and Forever Menu2 navigation export rebuilds an active page after its effective bar list changes, including undo. Older hosts invalidate it for the next visit instead.",
-   "symbol": "M.RebuildPageKeepingScroll"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsWorkspace.lua",
-   "kind": "addon",
-   "reason": "Retail and Forever Menu2 cache export discards hidden or unrebuildable pages after a bar-list change; no cache mutation is attempted on older hosts without the export.",
-   "symbol": "M.InvalidatePage"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsPreview.lua",
-   "kind": "lod",
-   "reason": "MSUF_Suite_Modules/Surfaces.lua exports PixelUnit only after runtime loads. A disabled-module preview remains available with a one-unit fallback without loading gameplay modules.",
-   "symbol": "S.PixelUnit"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsPreview.lua",
-   "kind": "addon",
-   "reason": "Retail and Forever Menu2 preview theme is optional on older MSUF hosts. The owned preview canvas and information remain usable without this decorative background.",
-   "symbol": "chrome.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
-   "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.ApplyPopupFramePriority"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
-   "kind": "addon",
-   "reason": "Retail and Forever Menu2 expose a skinned menu panel; older hosts use the owned fallback popup frame and preserve source selection.",
-   "symbol": "M.CreateMenuPopupPanel"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
-   "kind": "addon",
-   "reason": "Retail and Forever Menu2 theme may skin the native search edit box. Older hosts keep the functional native input without this cosmetic helper.",
-   "symbol": "T.SkinEditBox"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DataTextsSourcePicker.lua",
-   "kind": "addon",
-   "reason": "Retail and Forever Menu2 theme may style the native scroll frame. Older hosts retain its native scroll behavior without this cosmetic helper.",
-   "symbol": "T.StyleScrollFrame"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/HUDPreview.lua",
-   "symbol": "P.W.FocusCollapsibleSection",
-   "kind": "addon",
-   "reason": "Retail/Forever Menu2 exports this focus helper; older hosts retain preview and manually opened appearance accordions."
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/HUDPreview.lua",
-   "symbol": "provider.GetAPI",
-   "kind": "addon",
-   "reason": "The optional Suite skin or legacy MapkoSkin provider may be unloaded. Preview reads its public palette only when available and never loads or activates it."
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/HUDWorkspace.lua",
-   "symbol": "M.RelayoutPageHeaderHost",
-   "kind": "addon",
-   "reason": "Retail/Forever current Menu2 can refresh the preview dock layout; older hosts use the normal page builder layout."
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
-   "symbol": "ui (= MSUF_UI)",
-   "kind": "addon",
-   "reason": "MSUF core shared UI is available before Options on current hosts; older hosts may lack it. The installer appearance contract covers cold core UI, an absent provider, partial older renderers and late Menu2 without loading Options."
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
-   "symbol": "skin.GetAPI",
-   "kind": "addon",
-   "reason": "MapkoSkin is the public export of the optional Suite skin or legacy standalone addon. The appearance adapter reads its API only when already loaded; the installer appearance contract covers absence and late attachment."
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
-   "symbol": "api.OnAppearanceChanged",
-   "kind": "addon",
-   "reason": "The optional skin exposes this notification in public API v2.1. The adapter hooks it once per owner and API; the installer appearance contract covers provider transitions and coalesced palette refresh. Older providers use the v1 listener."
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
-   "symbol": "api.OnThemeChanged",
-   "kind": "addon",
-   "reason": "Legacy standalone MapkoSkin exposes this public API v1 listener instead of v2.1 appearance notifications. The installer appearance contract covers one registration per owner and repeated ADDON_LOADED events."
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "reason": "Read-only installer factory preview uses foreign MSUF factory/codec exports, which older hosts can omit. Late availability and missing exports are covered by suite_installer_preview_contract.",
-   "symbol": "decode (= MSUF_TryDecodeCompactString)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
-   "kind": "addon",
-   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
-   "symbol": "chrome (= P.M.PreviewHelpers)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
-   "kind": "addon",
-   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
-   "symbol": "chrome.ApplyPreviewChrome (= P.M.PreviewHelpers)"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
-   "kind": "addon",
-   "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
-   "symbol": "P.M.AddTooltip"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "symbol": "em (= MSUF_EM2)",
-   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
-   "symbol": "external.GetRecord",
-   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
-  },
-  {
-   "file": "MSUF_Suite_Modules/EditMode.lua",
-   "kind": "addon",
-   "symbol": "em (= MSUF_EM2)",
-   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
-  },
-  {
-   "file": "MSUF_Suite_Modules/EditMode.lua",
-   "kind": "addon",
-   "symbol": "em.State (= MSUF_EM2)",
-   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
-  },
-  {
-   "file": "MSUF_Suite_Modules/EditMode.lua",
-   "kind": "addon",
-   "symbol": "em.State.Enter (= MSUF_EM2)",
-   "reason": "Foreign MSUF Edit Mode API: older hosts can omit MSUF_EM2, State.Enter or ExternalElements.GetRecord. HostBridge now owns suppression claims so Minimap and Damage Meter can initialize before optional Modules. suite_runtime_owner_contract covers early claims, late native records and release."
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/QualityOfLife.lua",
-   "kind": "addon",
-   "reason": "P.W is the external MSUF Menu2 widget API. New hosts provide the shared framed help button; older hosts retain a readable clickable fallback. suite_help_controls_contract exercises both host versions.",
-   "symbol": "P.W.HelpButton"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Bags.lua",
-   "kind": "lod",
-   "reason": "export of MSUF_Suite_Modules (Dialogs.lua), which loads on demand; the options addon does not depend on it",
-   "symbol": "S.GamepadUI"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
-   "kind": "addon",
-   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
-   "symbol": "H.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
-   "kind": "addon",
-   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
-   "symbol": "button.Refresh"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/MinimapPreview.lua",
-   "kind": "addon",
-   "reason": "MSUF host preview helpers vary by host version; keep the existing plain-button fallback and optional selection/chrome support for older hosts. The minimap preview layer contract exercises the legacy host.",
-   "symbol": "chrome.RefreshSelectedLayerButtons"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
-   "kind": "addon",
-   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
-   "symbol": "W.FixedPreviewSection"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
-   "kind": "addon",
-   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
-   "symbol": "W.FocusCollapsibleSection"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
-   "kind": "addon",
-   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
-   "symbol": "M.RelayoutPageHeaderHost"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/Bags.lua",
-   "kind": "lod",
-   "reason": "The existing category editor is exported by MSUF_Suite_Bags, which loads on demand and is not an options dependency; the button is disabled until its editor is available.",
-   "symbol": "S.OpenBagCategoryEditor"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/BuffRemindersPreview.lua",
-   "kind": "lod",
-   "reason": "The BuffReminders LoD renderer can be absent when the menu closes after a cold combat open or failed addon load; the preview lifecycle contract covers release with and without the renderer.",
-   "symbol": "S.BuffRemindersReleasePreview"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "M.SetPreviewArrowBindings"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "chrome.ReleaseKeyboardCapture"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "chrome.RefreshSelectedLayerButtons"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "chrome.NotePreviewElementMoved"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "chrome.ArrowKeyDown"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "H.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "button.Refresh"
   }
  ]
 }

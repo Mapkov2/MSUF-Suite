@@ -85,7 +85,7 @@ local function Paint(ui, preview)
         slot.level:SetTextColor(r, g, b)
         r, g, b = C_Item.GetItemQualityColor(ITEMS[i][2])
         slot.border:SetColorTexture(r, g, b, 1)
-        P.StylePreviewFont(slot.count, c.font, c.itemCountSize or 12, "OUTLINE", c.fontRendering)
+        P.StylePreviewFont(slot.count, P.Suite.ResolveFont(c.font), c.itemCountSize or 12, "OUTLINE", c.fontRendering)
     end
     P.SetTranslatedText(preview.footer, Tr("Sample values. Click an element to open its settings."))
     P.MenuWorkspace.FitHeader(ui, 344 + math.ceil(preview.footer:GetStringHeight() or 14))

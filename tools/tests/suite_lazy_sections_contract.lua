@@ -88,7 +88,7 @@ end
 
 ------------------------------------------------------------------ namespace
 -- Suite.HostBridge: an MSUF host without the interrupt-ready engine.
-local P = { S = {}, Suite = { RGB = function() return 1, 1, 1 end, HostBridge = { KickReady = function() return nil end },
+local P = { S = {}, Suite = { Registry = { AddListener = function() end }, RGB = function() return 1, 1, 1 end, HostBridge = { KickReady = function() return nil end },
     NameplateStyle = { Roles = {} } },
     SearchPreparers = {}, ChoiceGates = {} }
 P.Tr = function(text) return text end

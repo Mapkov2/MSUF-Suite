@@ -210,7 +210,7 @@ end
 do
     local dictionary = { ["Icon size"] = "SYMBOLGROESSE", Top = "OBEN" }
     local refresh, summary
-    local P = { S = {}, M = {}, W = {}, T = {}, Suite = {}, catalog = {} }
+    local P = { S = {}, M = {}, W = {}, T = {}, Suite = { Registry = { AddListener = function() end } }, catalog = {} }
     local bridge = { HostBridge = {} }
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
     P.HM = bridge.HostBridge.Menu2(P.M)

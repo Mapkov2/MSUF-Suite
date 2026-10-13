@@ -197,6 +197,7 @@ do
     NS.FontRendering = core.FontRendering
 end
 local clock = Support.Clock()
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 local private = { NS = NS, Suite = S }
 for _, file in ipairs(Support.TocFiles(root, "MSUF_Suite_Modules")) do
     if file == "Surfaces.lua" or file == "Runtime.lua" or file == "Timers.lua" then

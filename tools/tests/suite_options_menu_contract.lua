@@ -32,6 +32,7 @@ local function Widget(kind)
     end
     function w:SetText(t) self.text = t end
     function w:GetText() return self.text end
+    function w:SetJustifyH(value) self.justifyH = value end
     function w:SetWidth(v) self.width = v end
     function w:GetWidth() return self.width end
     function w:SetHeight(v) self.height = v end
@@ -95,7 +96,12 @@ local function Widget(kind)
     function w:Clear() self.durationObject, self.cooldown = nil, nil end
     function w:SetColorTexture(...) self.color = { ... } end
     function w:CreateTexture() return Widget("Texture") end
-    function w:CreateFontString() return Widget("FontString") end
+    function w:CreateFontString()
+        local font = Widget("FontString")
+        self.fontStrings = rawget(self, "fontStrings") or {}
+        self.fontStrings[#self.fontStrings + 1] = font
+        return font
+    end
     function w:SetValue(v) self.value = v end
     function w:SetMinMaxValues(lo, hi) self.minValue, self.maxValue = lo, hi end
     function w:SetStatusBarTexture(path)
@@ -103,6 +109,11 @@ local function Widget(kind)
         self.statusTexture:SetTexture(path)
     end
     function w:GetStatusBarTexture() return self.statusTexture end
+    function w:SetThumbTexture(path)
+        self.thumbTexture = rawget(self, "thumbTexture") or Widget("Texture")
+        self.thumbTexture:SetTexture(path)
+    end
+    function w:GetThumbTexture() return rawget(self, "thumbTexture") end
     function w:SetStatusBarColor(...) self.barColor = { ... } end
     return w
 end
@@ -124,6 +135,8 @@ GetInventoryItemLink = function() return "|Hitem:1|h[Preview item]|h" end
 UnitClass = function() return nil end
 UnitIsPlayer = function() return false end
 GetZoneText = function() return "" end
+GetSubZoneText = function() return "" end
+GetMinimapZoneText = function() return "" end
 GetGameTime = function() return 12, 34 end
 GetCVarBool = function() return false end
 IsInInstance = function() return false, "none" end
@@ -179,7 +192,7 @@ end
 WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 -- Forever loads the Mainline TOCs; Blizzard's camelot marker tells it apart.
 GameEvent = flavor == "Forever" and { RegisterCamelotEvents = function() end } or nil
-GameFontHighlightSmall = {}
+GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
 local loaded = { MidnightSimpleUnitFrames = true, MidnightSimpleUnitFrames_Options = true }
 local optionsNS
 local function LoadTOC(addon, ns)
@@ -283,7 +296,8 @@ M.ShouldExpandFixedPreview = function() return true end
 M.pages, M.bound = {}, {}
 M.Tr = function(text) return L[text] end
 T.colors = { muted = {}, text = {}, dim = {}, panel = { .08, .09, .1, 1 },
-    panel2 = { .1, .11, .12, 1 }, pillHover = { .13, .14, .15, 1 } }
+    panel2 = { .1, .11, .12, 1 }, pillHover = { .13, .14, .15, 1 },
+    accent = { .23, .51, .96, 1 }, border = { .1, .17, .26, .86 } }
 T.navIconGrid = { home = { 0, 0 }, gameplay = { 7, 1 } }
 T.navIconColors = { home = { 1 }, gameplay = { 2 }, profiles = { 3 } }
 T.Font = function(parent, template, text) local fs = Widget("FontString"); fs.text = text; return fs end
@@ -448,6 +462,13 @@ W.SegmentTabs = function(ctx, parent, opts)
     ctx.tabControls[#ctx.tabControls + 1] = { segment = segment, frames = opts.frames }
     M.TrackRefresh(ctx, Refresh)
     return segment, Refresh, function() return opts.get() end, function(tab) segment:Choose(tab) end
+end
+W.BoolAt = function(parent, label, x, y, width)
+    local widget = Widget("CheckButton")
+    widget.parent, widget.label = parent, label
+    widget:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    widget:SetWidth(width)
+    return widget
 end
 W.ControlCard = function() return Widget("Card") end
 W.SectionSwitch = function(section, label)
@@ -948,6 +969,14 @@ do
             "preview lost live key bindings or the native cooldown duration")
         assert(tile.width == 42 and tile.icon.texCoords[1] == .12 and ui.tiles[7].points[1][5] == -45,
             "preview did not repaint size, icon crop and row layout")
+        c.bar1Size, c.bar1HeightPercent = 48, 67
+        ui.Paint()
+        assert(tile.width == 48 and tile.height == 32 and ui.tiles[7].points[1][5] == -35
+            and tile.icon.texCoords[1] < tile.icon.texCoords[3], "flat action bar preview differs from runtime")
+        c.buttonShape = 2;ui.Paint()
+        assert(tile.height == 48, "circle preview inherited flat geometry")
+        c.buttonShape, c.bar1HeightPercent, c.bar1Size = 1, 100, 42
+        ui.Paint()
         local initialScale = ui.canvas.scale
         c.bar1KeybindY = 80
         ui.Paint()
@@ -2441,6 +2470,23 @@ do
     valueLayer.scripts.OnClick(valueLayer)
     assert(nameHandle:IsShown() and not valueHandle:IsShown(), "health text layer also hid the name")
     valueLayer.scripts.OnClick(valueLayer)
+    do
+        local plates, setup = S.Config("nameplates"), NamePlateSetupOptions
+        local mode, anchor, look = plates.enemyTextMode, setup.unitNameAnchorStyle, plates.look
+        local nameFont, valueFont = nameHandle.fontStrings[1], valueHandle.fontStrings[1]
+        plates.look, plates.enemyTextMode, plates.enemyMirrorHeader, setup.unitNameAnchorStyle = 3, 2, true, 2
+        nameHandle.previewUI:Paint()
+        assert(valueHandle.points[1][1] == "BOTTOMLEFT" and valueHandle.points[1][3] == "TOPLEFT"
+            and nameHandle.points[1][2] == valueHandle and nameHandle.points[2][3] == "TOPRIGHT"
+            and nameFont.justifyH == "RIGHT" and valueFont.justifyH == "LEFT",
+            "mirrored native header preview lost percent-left/name-right anchors")
+        plates.enemyMirrorHeader = false
+        nameHandle.previewUI:Paint()
+        assert(nameHandle.points[1][2] ~= valueHandle and nameFont.justifyH == "LEFT"
+            and valueFont.justifyH == "RIGHT", "mirrored header leaked after switching it off")
+        plates.enemyTextMode, setup.unitNameAnchorStyle, plates.look = mode, anchor, look
+        nameHandle.previewUI:Paint()
+    end
     local spellIcon = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastIcon"])
     local spellLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.castIcon"])
     assert(not spellIcon:IsShown() and S.Config("nameplates").enemyCastSpellIcon == false)
@@ -2454,6 +2500,51 @@ do
     S.Set("nameplates", "enemyCastSpellIcon", true)
     elite.previewUI:Paint()
     assert(spellIcon:IsShown(), "enabling Blizzard's spell icon did not update the preview")
+    do
+        local plates, ui = S.Config("nameplates"), elite.previewUI
+        local original = Suite.CopyValue(plates)
+        local setup, get, blocked = NamePlateSetupOptions, C_CVar.GetCVar, ui.uninterruptible
+        NamePlateSetupOptions = { horizontalScale = 1.25, verticalScale = 1.25,
+            useClassicHealthBar = false, useClassicCastBar = false, spellNameInsideCastBar = false }
+        C_CVar.GetCVar = function(key) if key == "nameplateStyle" then return "5" end return get(key) end
+        plates.look, plates.barGeometry, plates.nativeStyle, plates.nativeSize = 3, 2, 7, 4
+        plates.enemyCastEnabled, plates.enemyCastDisplay, plates.enemyCastSpellIcon = 2, 2, true
+        plates.enemyCastIconOffsetX, plates.enemyCastIconOffsetY = 260, 14
+        plates.enemyCastShieldOffsetX, plates.enemyCastShieldOffsetY = 260, 14
+        plates.enemyCastTextOffsetX, plates.enemyCastTextOffsetY = -13, 14
+        ui.uninterruptible = false
+        ui:Paint()
+        local text = registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastText"]
+        local shield = registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastShield"]
+        assert(spellIcon.width == 15 and spellIcon.height == 15 and spellIcon.points[1][1] == "TOPLEFT"
+            and spellIcon.points[1][4] == 260 and spellIcon.points[1][5] == 14,
+            "Legacy preview lost effective native icon size or right-icon anchor")
+        assert(text.points[1][1] == "LEFT" and text.points[1][3] == "BOTTOMLEFT"
+            and text.points[1][4] == 4 and text.points[1][5] == 6.5,
+            "Legacy preview spell name does not use the native icon-relative baseline")
+        ui.uninterruptible = true
+        ui:Paint()
+        assert(not spellIcon:IsShown() and shield:IsShown(), "Legacy uninterruptible cast showed icon beside shield")
+        NamePlateSetupOptions.spellNameInsideCastBar = true
+        ui.uninterruptible = false
+        ui:Paint()
+        assert(spellIcon.points[1][1] == "LEFT" and text.points[1][3] == "LEFT"
+            and text.points[1][4] == 4 and text.points[1][5] == 14,
+            "inside cast preview retained the outside cast baseline")
+        NamePlateSetupOptions.spellNameInsideCastBar = false
+        plates.enemyCastHeight, plates.enemyCastIconSize, plates.enemyCastTimeFormat = 28, 40, 2
+        plates.enemyCastIconOffsetX, plates.enemyCastIconOffsetY = 262, 34
+        plates.enemyCastTextOffsetX, plates.enemyCastTextOffsetY = -38, 34
+        ui:Paint()
+        local customCast = registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Cast"]
+        local customTime = registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastTime"]
+        assert(customCast.height == 28 and spellIcon.width == 40 and spellIcon.height == 40
+            and text.points[1][4] == 4 and text.points[1][5] == 14 and customTime.width == 90,
+            "reference cast dimensions, centered name or elapsed/total preview diverged")
+        NamePlateSetupOptions, C_CVar.GetCVar, ui.uninterruptible = setup, get, blocked
+        for key, value in pairs(original) do plates[key] = value end
+        ui:Paint()
+    end
     S.Set("nameplates", "enemyCastSpellIcon", false)
     S.Set("nameplates", "enemyPreviewRole", 1)
     elite.previewUI:Paint()
@@ -2787,8 +2878,8 @@ assert(timestampWidget and timestampWidget.rowKind == "dropdown"
 local nativeTimestamp = "none"
 C_CVar = {
     GetCVar = function(key)
-        if key == "combinedBags" then return nil end
-        assert(key == "showTimestamps")
+        -- Other optional client settings are unavailable in this timestamp fixture.
+        if key ~= "showTimestamps" then return nil end
         return nativeTimestamp
     end,
     SetCVar = function(key, value) assert(key == "showTimestamps"); nativeTimestamp = value end,
@@ -2843,7 +2934,7 @@ local qolFeaturesByCategory = {
     },
     characterGear = {
         "chatProfileLinks_profile_links", "characterUpgradeWindow_upgrade_equipment",
-        "xpBar_xp_bar", "socketGemSuggestions_socket_gems", "loadoutReminder_loadout_reminder",
+        "xpBar_xp_bar", "playerAuras_player_auras", "socketGemSuggestions_socket_gems", "loadoutReminder_loadout_reminder",
         "durabilityAlert_durability_warning", "professionAppearance_profession_outfits",
         "combatStatsHUD_secondary_stats",
         "targetDistance_target_distance", "characterExtras_character_extras",
@@ -2882,9 +2973,12 @@ local qolRows = assert(qolPage.qualityOfLifeFeatureRows
     or (qolPage.entry and qolPage.entry.qualityOfLifeFeatureRows),
     "Quality of Life feature rows were not exposed to direct navigation")
 assert(qolRows.suite_qualityOfLife_partyEffects_party_effects == nil, "Celebrations row is still visible")
-assert(#qolPage.sections == 9, "Quality of Life should have nine category accordions")
+assert(#qolPage.sections == 10, "Quality of Life should have nine categories and the graphics actions")
+assert(qolPage.sections[10].sectionId == "suite_qualityOfLife_graphics_performance",
+    "graphics actions must have their own exact accordion")
 local categoriesSeen = {}
-for i, section in ipairs(qolPage.sections) do
+for i = 1, 9 do
+    local section = qolPage.sections[i]
     local category = section.sectionId:match("^suite_qualityOfLife_category_(.+)$")
     assert(category and qolFeaturesByCategory[category] and not categoriesSeen[category],
         "unexpected or duplicate Quality of Life category accordion: " .. tostring(section.sectionId))
@@ -2947,7 +3041,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 63 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 64 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated")
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")
@@ -3279,6 +3373,13 @@ skin.Database = {
     SetActiveProfile = function() return true end,
     DeleteProfile = function() return true end,
 }
+do
+    -- This fixed-profile fixture uses the real Skin epoch provider; profile
+    -- replacement and ABA behavior are exercised by longterm_skin_colors.lua.
+    local provider = { Database = {} }
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DatabaseProfiles.lua"))("MSUF_Suite_Skin", provider)
+    skin.Database.GetHistoryEpoch = provider.Database.GetHistoryEpoch
+end
 skin.ProfileIO = {
     maxEncodedBytes = 1024 * 1024,
     ExportProfile = function() return "MSKIN1:profile" end,

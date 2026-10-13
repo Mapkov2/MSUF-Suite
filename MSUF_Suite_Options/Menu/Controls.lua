@@ -1,5 +1,10 @@
 local _, P = ...
 local S, M, W, T, Tr, HM = P.S, P.M, P.W, P.T, P.Tr, P.HM
+local colorEpoch = 0
+local colorOwner = {}
+P.Suite.Registry.AddListener(colorOwner, function(_, domain)
+    if domain == "profile" then colorEpoch = colorEpoch + 1 end
+end)
 
 -- The Skinning declarations feed the cold search index and visible controls.
 -- Collection reads metadata only: callbacks and widget builders never run.
@@ -27,6 +32,25 @@ function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, m
 end
 
 -- The skin section's three-dot menu edits its color rows.
+function P.SkinColorTarget(skin, row)
+    local profile, epoch = skin.DB, skin.Database.GetHistoryEpoch()
+    local r, g, b, a = row.get()
+    local function Current()
+        return skin.DB == profile and skin.Database.GetHistoryEpoch() == epoch and not P.Combat()
+    end
+    local function Get()
+        if Current() then return row.get() end
+        return r, g, b, a
+    end
+    return { label = row.label, get = Get,
+        set = function(...)
+            if Current() then return row.set(...) end
+            return false
+        end,
+        settingKey = row.settingKey, hasOpacity = true,
+        getOpacity = function() return select(4, Get()) end }
+end
+
 function P.AttachSkinColors(body, title, rows)
     local colorRows = {}
     for _, row in ipairs(rows) do
@@ -39,14 +63,7 @@ function P.AttachSkinColors(body, title, rows)
         getTargets = function()
             local targets = {}
             for _, row in ipairs(colorRows) do
-                targets[#targets + 1] = {
-                    label = row.label,
-                    get = row.get,
-                    set = row.set,
-                    settingKey = row.settingKey,
-                    hasOpacity = true,
-                    getOpacity = function() return select(4, row.get()) end,
-                }
+                targets[#targets + 1] = P.SkinColorTarget(P.SkinPageKit.Engine(), row)
             end
             return targets
         end,
@@ -432,14 +449,23 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
         getTargets = function()
             local targets = {}
             for _, rule in ipairs(colors) do
-                local function Key() return keyFn and keyFn(rule.key) or rule.key end
+                local key = keyFn and keyFn(rule.key) or rule.key
+                local config, profile, epoch = S.Config(id), P.Suite.DB, colorEpoch
+                local barIds = config.barIds
+                local function Current()
+                    return epoch == colorEpoch and profile == P.Suite.DB and config == S.Config(id)
+                        and barIds == config.barIds and (not keyFn or keyFn(rule.key) == key)
+                end
                 targets[#targets + 1] = {
                     label = Tr(rule.label),
                     sourceSettingKey = "msufsuite." .. id .. "." .. rule.key,
-                    settingKey = "msufsuite." .. id .. "." .. Key(),
+                    settingKey = "msufsuite." .. id .. "." .. key,
                     isEnabled = isRelevant and function() return isRelevant(rule) end or nil,
-                    get = function() return P.RGB(P.Get(id, Key())) end,
-                    set = function(r, g, b) P.Set(id, Key(), Hex(r, g, b)) end,
+                    get = function()
+                        if Current() then return P.RGB(P.Get(id, key)) end
+                        return P.RGB(config[key])
+                    end,
+                    set = function(r, g, b) if Current() then P.Set(id, key, Hex(r, g, b)) end end,
                 }
             end
             return targets

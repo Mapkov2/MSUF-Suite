@@ -39,6 +39,9 @@ Pages\DataTextsSourcePicker.lua
 Pages\DataTextsPresets.lua
 Pages\DataTextsEditor.lua
 Pages\DataTexts.lua
+Pages\QualityOfLifePreview.lua
+Menu\GraphicsPerformance.lua
+Pages\GraphicsPerformance.lua
 Pages\QualityOfLife.lua
 Pages\HUDWorkspace.lua
 Pages\HUDPreview.lua

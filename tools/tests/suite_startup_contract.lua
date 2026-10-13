@@ -31,7 +31,7 @@ local settled = 0
 local function Settle() settled = settled + 1 end
 local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing, combatBeforeDeferred)
     local frame, loginFrame, starts, messages = nil, nil, 0, 0
-    local afterWorldEntry, opened, fighting = {}, 0, false
+    local afterWorldEntry, opened, fighting, tooltipRepairs, minimapRepairs = {}, 0, false, 0, 0
     C_Timer = { After = function(delay, callback)
         assert(delay == 0, "first login must defer once to the next frame")
         afterWorldEntry[#afterWorldEntry + 1] = callback
@@ -68,6 +68,14 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         Skin = { LoadLegacyDatabase = function() return false end, EnsureEngine = Noop, SetEnabled = Noop,
             SettleChatColors = Settle },
         SuiteProfiles = { EnsureNewCharacterProfile = Noop, SyncActive = Noop,
+            EnsureModernDarkTooltips = function()
+                assert(starts == 1, "tooltip repair ran before module startup")
+                tooltipRepairs = tooltipRepairs + 1
+            end,
+            EnsureModernDarkMinimap = function()
+                assert(starts == 1, "minimap repair ran before module startup")
+                minimapRepairs = minimapRepairs + 1
+            end,
             EnsureRetailForeverCooldownLayout = Noop, EnsureModernPanelLayout = Noop, EnsureRetailResourceStack = Noop },
         Menu = { Watch = Noop },
         Installer = { MaybeShow = Noop },
@@ -95,6 +103,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     end
     assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", owner)
     SlashCmdList = {}
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", owner)
@@ -144,6 +153,8 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         assert(opened == 1 and starts == 1, "combat retry failed or restarted the Suite modules")
     end
     assert(#afterWorldEntry <= 1, "startup queued repeated automatic setup attempts")
+    assert(tooltipRepairs == starts, "tooltip repair did not run exactly once after module startup")
+    assert(minimapRepairs == starts, "minimap repair did not run exactly once after module startup")
     owner.autoOpened = opened
     assert(not next(frame.events), "startup left idle events registered")
     return owner, starts, messages

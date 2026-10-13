@@ -3,7 +3,7 @@ local W, Tr, HM = P.W, P.Tr, P.HM
 
 local function SkinColorRow(skin, entry)
     local key = entry[1]
-    return {
+    local row = {
         id = "skin." .. key,
         kind = "color",
         label = Tr(skin.SourceText(entry[2]) or key),
@@ -18,6 +18,8 @@ local function SkinColorRow(skin, entry)
         settingKey = "msufsuite.skin." .. key,
         sectionId = "colors_suite_skin",
     }
+    row.getColorTargets = function() return { P.SkinColorTarget(skin, row) } end
+    return row
 end
 
 -- Loading the skin engine and its palette belongs to opening that section.
@@ -40,6 +42,13 @@ function P.BuildSkinColors(ctx, b)
             local rows = {}
             for _, entry in ipairs(skin.ColorOrder) do rows[#rows + 1] = SkinColorRow(skin, entry) end
             local grid = W.SettingsRows(ctx, section, { x = 16, y = -18, width = width, columns = 2, rows = rows })
+            for _, row in ipairs(rows) do
+                local widget = grid.controls[row.id]
+                widget:SetScript("OnClick", function()
+                    if not P.Combat() then W.OpenContextColors(widget, { title = row.label, getTargets = row.getColorTargets }) end
+                end)
+            end
+            P.AttachSkinColors(section, "Suite skin", rows)
             return grid.bottomY
         end,
         shell = function(section)

@@ -194,6 +194,12 @@ local function Bind(ctx, widget, get, set, meta, label)
     return widget
 end
 M.BindBoolWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
+M.BindDropdownAt = function(ctx, _, label, _, _, _, _, get, set, meta)
+    return Bind(ctx, Widget("Dropdown"), get, set, meta, label)
+end
+M.BindSwitchAt = function(ctx, _, label, _, _, _, get, set, meta)
+    return Bind(ctx, Widget("Switch"), get, set, meta, label)
+end
 M.BindTextInputAt = function(ctx, _, label, _, _, _, get, set, _, meta) return Bind(ctx, Widget("EditBox"), get, set, meta, label) end
 W.SectionSwitch = function(section, label) local s = Widget("Switch"); s.label = label; section.headerSwitch = s; return s end
 W.SetControlEnabled = function(widget, enabled) widget.enabled = enabled and true or false end
@@ -207,8 +213,8 @@ W.SettingsRows = function(ctx, parent, spec)
     end
     return { controls = list, bottomY = y }
 end
-W.PageBuilder = function(ctx)
-    local b = { width = ctx.width }
+W.PageBuilder = function(ctx, opts)
+    local b = { width = ctx.width, y = -12 - (opts and opts.topInset or 0) }
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
     function b:CollapsibleSection(id, title, _, open)
         local body = Widget("Section")
@@ -216,6 +222,7 @@ W.PageBuilder = function(ctx)
         body._msuf2Width = ctx.width
         body._msuf2CollapsibleEntry = {}
         ctx.sections[#ctx.sections + 1] = body
+        b.y = b.y - 40
         return body
     end
     function b:FinishSection(body) body.finished = true end
@@ -268,19 +275,31 @@ do
             local ctx = { key = key, width = 720, wrapper = Widget("Page"), refreshers = {}, widgets = {}, sections = {} }
             function ctx:SetContentHeight(value) self.height = value end
             M.pages[key].build(ctx)
-            -- Skinning keeps its two maintenance actions under the notice:
-            -- "Save setup as..." and "Restore chat colors" need no Skin addon.
-            local actions = key == "suite_skin" and 2 or 0
-            assert(ctx.height == (actions > 0 and 122 or 62), key .. ": notice has no content height: "
-                .. tostring(ctx.height))
+            -- Skinning maintenance and graphics recovery need no module AddOn.
+            local graphics = key == "suite_qualityOfLife"
+            local actions = (key == "suite_skin" or graphics) and 2 or 0
+            if graphics then
+                assert(ctx.height > 62 and #ctx.sections == 1
+                    and ctx.sections[1].sectionId == "suite_qualityOfLife_graphics_performance",
+                    "disabled QoL lost its graphics recovery accordion")
+            else
+                assert(ctx.height == (actions > 0 and 122 or 62), key .. ": notice has no content height: "
+                    .. tostring(ctx.height))
+            end
             assert(fonts[before + 1] and fonts[before + 1].text == notice and fonts[before + 1].parent == ctx.wrapper,
                 key .. ": unavailable page must show the AddOn notice first")
             assert(#buttons - buttonsBefore == actions, key .. ": unavailable page shows the wrong actions")
             for index = buttonsBefore + 1, #buttons do
-                assert(buttons[index].parent == ctx.wrapper and (buttons[index].label == "Save setup as\226\128\166"
-                    or buttons[index].label == "Restore chat colors"), key .. ": unavailable page shows another action")
+                if graphics then
+                    assert(buttons[index].parent == ctx.sections[1] and (buttons[index].label == "Apply graphics preset"
+                        or buttons[index].label == "Restore previous graphics settings"), "disabled QoL shows another action")
+                else
+                    assert(buttons[index].parent == ctx.wrapper and (buttons[index].label == "Save setup as\226\128\166"
+                        or buttons[index].label == "Restore chat colors"), key .. ": unavailable page shows another action")
+                end
             end
-            assert(#ctx.widgets == 0 and #ctx.sections == 0, key .. ": unavailable page built settings")
+            assert((graphics and #ctx.widgets == 4) or (#ctx.widgets == 0 and #ctx.sections == 0),
+                key .. ": unavailable page built module settings")
             assert(not M.PageHasReset(key) and not M.ResetPageToDefaults(key), key .. ": unavailable page can reset settings")
             state[addon] = nil
         end

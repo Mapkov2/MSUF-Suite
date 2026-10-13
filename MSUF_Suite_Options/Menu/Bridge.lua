@@ -5,7 +5,7 @@ local _, P = ...
 -- S.* functions of a load-on-demand module addon exist only once it loaded.
 local Suite = assert(_G.MSUFSuite, "MSUF_Suite is required")
 local M = assert(_G.MSUF2, "MSUF options are required")
-P.Suite, P.S, P.M, P.host = Suite, Suite.Suite, M, _G.MSUF_NS
+P.Suite, P.S, P.M = Suite, Suite.Suite, M
 P.W, P.T = M.Widgets, M.Theme
 -- Menu2's widget protocol (MSUF_Suite/Core/HostBridgeMenu.lua): the pages set
 -- and read Menu2's per-widget state only through these functions.
@@ -20,36 +20,8 @@ function P.Tr(text)
 end
 local Tr = P.Tr
 
--- Previews must work before the optional runtime addon loads Surfaces.lua.
--- rendering is a "Font rendering" choice (MSUFSuite.FontRendering).
-local RENDERING = Suite.FontRendering
-function P.StylePreviewFont(label, path, size, outline, rendering, shadow, opacity, distance)
-    if S.SetStyledFont then
-        return S.SetStyledFont(label, path, size, outline, rendering, shadow, opacity, distance)
-    end
-    local flags = outline or ""
-    if rendering == RENDERING.SLUG then
-        flags = flags == "" and "SLUG" or "OUTLINE,SLUG"
-    elseif rendering == RENDERING.SHARP and not flags:find("MONOCHROME", 1, true) then
-        flags = flags == "" and "MONOCHROME" or flags .. ",MONOCHROME"
-    end
-    local fallback = _G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-    -- MSUF's setter answers false for a font the client refused (as
-    -- S.SetFont): fall back unless the label shows the requested file anyway.
-    local requested = path or fallback
-    local checked = _G.MSUF_SetFontChecked
-    local applied
-    if type(checked) == "function" then
-        applied = checked(label, requested, size, flags) ~= false or Suite.FontFileApplied(label, requested)
-    else
-        applied = label:SetFont(requested, size, flags) ~= false
-    end
-    if not applied then label:SetFont(fallback, size, "") end
-    local shown = shadow == true and rendering ~= RENDERING.SLUG
-    label:SetShadowColor(0, 0, 0, shown and (opacity or 100) / 100 or 0)
-    local offset = shown and (distance or 1) or 0
-    label:SetShadowOffset(offset, -offset)
-end
+-- The core painter is available before optional module runtimes load.
+P.StylePreviewFont = S.SetStyledFont
 
 -- One MSUF history entry owns a complete Suite gesture, including edits made
 -- from the preview and Edit Mode. MSUF calls every provider on every tracked
@@ -368,6 +340,25 @@ function P.Combat() return Suite.InCombat() end
 -- there the pages use the runtime only once a module loaded it, as before.
 local GENERIC_CONFIRMATION, GENERIC_INPUT_BOX = "GENERIC_CONFIRMATION", "GENERIC_INPUT_BOX"
 local questions = {}
+local answerSessions, questionEpoch = {}, 0
+Suite.Registry.AddListener(questions, function(_, domain)
+    if domain == "profile" then answerSessions, questionEpoch = {}, questionEpoch + 1 end
+end)
+
+function P.ProfileGuard()
+    local profile, epoch = Suite.DB, questionEpoch
+    return function() return profile == Suite.DB and epoch == questionEpoch and not P.Combat() end
+end
+
+local function BoundAnswer(key, onAccept)
+    local session = { profile = Suite.DB, epoch = questionEpoch }
+    answerSessions[key] = session
+    return function(...)
+        if answerSessions[key] ~= session or session.profile ~= Suite.DB or session.epoch ~= questionEpoch or P.Combat() then return end
+        answerSessions[key] = nil
+        return onAccept(...)
+    end
+end
 local function SuiteDialogs()
     if not S.Confirm and Suite.Client.isForever and not P.Combat() then C_AddOns.LoadAddOn("MSUF_Suite_Modules") end
     return S.Confirm ~= nil
@@ -380,7 +371,7 @@ local function CloseQuestion(key)
 end
 function P.Confirm(key, text, onAccept)
     CloseQuestion(key)
-    local data = { text = "%s", text_arg1 = text, callback = onAccept }
+    local data = { text = "%s", text_arg1 = text, callback = BoundAnswer(key, onAccept) }
     if SuiteDialogs() then return S.Confirm("options:" .. key, data) end
     questions[key] = { which = GENERIC_CONFIRMATION, data = data }
     StaticPopup_ShowCustomGenericConfirmation(data)
@@ -397,7 +388,7 @@ end
 -- does with SetNumeric).
 function P.AskText(key, text, onAccept, maxLetters, maxBytes)
     CloseQuestion(key)
-    local data = { text = "%s", text_arg1 = text, callback = onAccept, maxLetters = maxLetters }
+    local data = { text = "%s", text_arg1 = text, callback = BoundAnswer(key, onAccept), maxLetters = maxLetters }
     local previousBytes
     local function Hidden(dialog)
         if previousBytes then dialog:GetEditBox():SetMaxBytes(previousBytes) end
@@ -588,9 +579,10 @@ function P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta)
         P.Refresh()
     end)
     if meta and M.RegisterControlMetadata then M.RegisterControlMetadata(button, meta, label, "button") end
-    if enabled then
-        M.TrackRefresh(ctx, function() button:SetEnabled(enabled() and not P.Combat() and true or false) end)
-    end
+    M.TrackRefresh(ctx, function()
+        button:SetEnabled((not enabled or enabled()) and not P.Combat() and true or false)
+        P.ReconcileSecure(button)
+    end)
     return button
 end
 
@@ -605,7 +597,7 @@ end
 -- button set up by P.SecureClick.
 local secure
 local function SecureDetach()
-    if not secure or P.Combat() then return end
+    if not secure or InCombatLockdown() then return end
     secure.owner = nil
     secure:Hide()
     secure:ClearAllPoints()
@@ -651,12 +643,20 @@ local function SecureOverlay()
     return secure
 end
 local function SecureAttach(button)
-    if P.Combat() or secure and secure.combat or not button.secureReady() then return end
+    if P.Combat() or secure and secure.combat then return end
+    if not button:IsVisible() or not button.secureReady() then
+        if secure and secure.owner == button then SecureDetach() end
+        return
+    end
     local target = button.secureClick and button.secureClick()
-    if not (target or button.secureMacro) then return end
+    local macro = not target and button.secureMacro or nil
+    if not (target or macro) then
+        if secure and secure.owner == button then SecureDetach() end
+        return
+    end
     local overlay = SecureOverlay()
-    if overlay.owner == button and overlay:IsShown() then return end
-    overlay.owner = button
+    if overlay.owner == button and overlay:IsShown() and overlay.target == target and overlay.macro == macro then return end
+    overlay.owner, overlay.target, overlay.macro = button, target, macro
     overlay:SetAttribute("type1", target and "click" or "macro")
     overlay:SetAttribute("clickbutton1", target)
     overlay:SetAttribute("macrotext1", not target and button.secureMacro or nil)
@@ -666,6 +666,10 @@ local function SecureAttach(button)
     overlay:SetAllPoints(button)
     overlay:Show()
 end
+function P.ReconcileSecure(button)
+    if secure and secure.owner == button then SecureAttach(button) end
+end
+
 function P.SecureMacroButton(ctx, parent, label, x, y, width, macro, enabled, meta)
     local button = T.Button(parent, label, width or 180, 26)
     button:SetPoint("TOPLEFT", x, y)
@@ -676,7 +680,10 @@ function P.SecureMacroButton(ctx, parent, label, x, y, width, macro, enabled, me
         if secure and secure.owner == self then SecureDetach() end
     end)
     if meta and M.RegisterControlMetadata then M.RegisterControlMetadata(button, meta, label, "button") end
-    M.TrackRefresh(ctx, function() button:SetEnabled(button.secureReady() and not P.Combat()) end)
+    M.TrackRefresh(ctx, function()
+        button:SetEnabled(button.secureReady() and not P.Combat())
+        P.ReconcileSecure(button)
+    end)
     return button
 end
 

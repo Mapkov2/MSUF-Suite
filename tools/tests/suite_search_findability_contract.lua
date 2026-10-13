@@ -42,6 +42,14 @@ local failure = world:FirstFailure()
 assert(failure == nil, "MSUF did not boot: " .. tostring(failure and failure.file) .. " " .. tostring(failure and failure.message))
 assert(world.core.FinalizeLocale() == locale, "requested locale was not selected")
 local env = world.env
+-- Native slider methods used by the menu's independent sample controls.
+local sliderMethods = getmetatable(env.UIParent).__index
+function sliderMethods:SetObeyStepOnDrag(value) self.obeyStep = value end
+function sliderMethods:SetThumbTexture(path)
+    self.thumbTexture = self.thumbTexture or self:CreateTexture()
+    self.thumbTexture:SetTexture(path)
+end
+function sliderMethods:GetThumbTexture() return self.thumbTexture end
 local M = world.core.MSUF2
 M.frame = { IsShown = function() return true end }
 env.InCombatLockdown = function() return false end

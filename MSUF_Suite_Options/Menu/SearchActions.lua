@@ -223,4 +223,5 @@ function P.AppendSearchActionRows(rows, pagesByKey)
     end
     AddQualityOfLifeRows(Add)
     AddSpellOptionRows(rows, pagesByKey)
+    P.AppendGraphicsSearchRows(rows)
 end
