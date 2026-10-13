@@ -342,12 +342,24 @@ local function ToggleClassification(ui, key)
     ui:Paint()
 end
 
+-- Click routing and its hint share the same live-setting classification.
+local LAYER_ACTION = {
+    level = "level", target = "target", backdrop = "skin", border = "skin", roleFill = "skin",
+    threatFlash = "live", threatHighlight = "live", softTarget = "live", power = "live",
+    eliteMarker = "marker", questMarker = "marker",
+}
+local function LayerAction(key)
+    if AURA_KIND[key] then return "live" end
+    return LAYER_ACTION[key]
+end
+
 local function ToggleLayer(ui, key)
-    if key == "level" then
+    local action = LayerAction(key)
+    if action == "level" then
         ToggleLevel(ui, key)
         return
     end
-    if key == "target" then
+    if action == "target" then
         Markers.ToggleTarget(ui, OpenSetting)
         return
     end
@@ -362,12 +374,11 @@ local function ToggleLayer(ui, key)
         FocusLayer(ui, section, key)
         return
     end
-    if key == "backdrop" or key == "border" or key == "roleFill" then
+    if action == "skin" then
         ToggleSkinLayer(ui, key)
         return
     end
-    if AURA_KIND[key] or key == "threatFlash" or key == "threatHighlight"
-        or key == "softTarget" or key == "power" then
+    if action == "live" then
         ToggleLive(ui, key)
         return
     end
@@ -380,7 +391,7 @@ local function ToggleLayer(ui, key)
         ui.raidIndex = ui.raidMarked and 8 or 0
     elseif key == "castShield" then
         ui.uninterruptible, ui.layers[key] = not ui.uninterruptible, true
-    elseif key == "eliteMarker" or key == "questMarker" then
+    elseif action == "marker" then
         Markers.ToggleMarker(ui, key)
     else
         ui.layers[key] = not ui:LayerOn(key)
@@ -393,10 +404,7 @@ end
 
 -- The hint a layer button shows: live layers change a real setting, the others only the preview.
 local function LayerHelp(key)
-    local live = AURA_KIND[key] or key == "target" or key == "threatFlash" or key == "threatHighlight"
-        or key == "softTarget" or key == "power" or key == "eliteMarker" or key == "questMarker"
-        or key == "backdrop" or key == "border" or key == "roleFill"
-    return live and "Click: change live setting; right-click: settings"
+    return LayerAction(key) and "Click: change live setting; right-click: settings"
         or key == "guides" and "Click: show or hide preview guides"
         or "Click: show or hide preview; right-click: settings"
 end

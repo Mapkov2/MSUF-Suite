@@ -9,6 +9,7 @@ local CastTime = {}
 private.CastTime = CastTime
 local M
 local formatter
+local elapsedComponents
 
 function CastTime.Bind(module) M = module end
 
@@ -24,6 +25,27 @@ local function Formatter()
     formatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
     formatter:SetMillisecondsThreshold(60)
     return formatter
+end
+
+-- DurationTextBinding and NumericRuleFormatter (upstream/ptr and forever)
+-- format elapsed/total entirely in the engine, including secret contents.
+local function ApplyFormat(state, choice)
+    local elapsed = choice == 2
+    if state.elapsed == elapsed then return end
+    state.elapsed = elapsed
+    if elapsed then
+        if not elapsedComponents then
+            local seconds = C_StringUtil.CreateNumericRuleFormatter()
+            seconds:AddBreakpoint({ threshold = 0, format = "%.1fs" })
+            elapsedComponents = {
+                { property = Enum.DurationTextBindingProperty.ElapsedDuration, formatter = seconds },
+                { property = Enum.DurationTextBindingProperty.TotalDuration, formatter = seconds },
+            }
+        end
+        state.binding:SetTextFormat("{}/{}", elapsedComponents)
+    else
+        state.binding:SetFormatter(Formatter())
+    end
 end
 
 function CastTime.Restore(cast)
@@ -100,7 +122,7 @@ end
 -- uf: the plate of this castbar; a label combat holds back is made when the
 -- end of combat applies that plate again (Skin.lua OnCombatEnded).
 function CastTime.Paint(cast, prefix, unit, uf)
-    if not Safe(cast) then return end
+    if not cast or NS.Safety.IsForbidden(cast) then return end
     if not prefix or M.config.look == LOOK_BLIZZARD or M.config.enemyCastEnabled == HIDE or not M.config[prefix]
         or M.config[Key[prefix].CastTimeEnabled] == false or not unit then
         CastTime.Restore(cast)
@@ -114,6 +136,9 @@ function CastTime.Paint(cast, prefix, unit, uf)
         end
         state = Create(cast)
         M.castTimes[cast] = state
+    end
+    if M.config.enemyCastTimeFormat == 2 or state.elapsed then
+        ApplyFormat(state, prefix == "enemy" and M.config.enemyCastTimeFormat or 1)
     end
     if state.unit ~= unit then
         state.unit = unit

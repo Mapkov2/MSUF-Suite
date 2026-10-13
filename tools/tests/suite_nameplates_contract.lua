@@ -103,6 +103,7 @@ Enum = {
     TooltipDataLineType = { QuestTitle = 1, QuestPlayer = 2, QuestObjective = 3 },
     SecondsFormatterInterval = { Seconds = 1 },
     SecondsFormatterAbbreviation = { OneLetter = 2 },
+    DurationTextBindingProperty = { ElapsedDuration = 2, TotalDuration = 4 },
 }
 PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
 NamePlateConstants = { DEBUFF_PADDING_CVAR = "nameplateDebuffPadding", NAMEPLATE_WIDTH = 230,
@@ -256,7 +257,12 @@ UnitCastingDuration = function(unit) assert(unit == "nameplate1"); return castDu
 UnitChannelDuration = function(unit) assert(unit == "nameplate1"); return channelDuration end
 -- An empowered cast's own duration, with the hold at its top stage.
 UnitEmpoweredChannelDuration = function(unit) assert(unit == "nameplate1"); return empoweredDuration end
-C_StringUtil = { CreateSecondsFormatter = function()
+C_StringUtil = { CreateNumericRuleFormatter = function()
+    return { AddBreakpoint = function(self, rule)
+        assert(rule.threshold == 0 and rule.format == "%.1fs")
+        self.rule = rule
+    end }
+end, CreateSecondsFormatter = function()
     return { SetMillisecondsThreshold = function(self, threshold) self.threshold = threshold end,
         SetMaxInterval = function(self, interval) self.interval = interval end,
         SetDefaultAbbreviation = function(self, abbreviation) self.abbreviation = abbreviation end }
@@ -264,7 +270,10 @@ end }
 C_DurationUtil = { CreateDurationTextBinding = function()
     local binding = {}
     function binding:SetFontString(label) self.label = label end
-    function binding:SetFormatter(formatter) self.formatter = formatter end
+    function binding:SetFormatter(formatter) self.formatter = formatter; self.format, self.components = nil, nil end
+    function binding:SetTextFormat(format, components)
+        self.format, self.components = format, components
+    end
     function binding:SetUpdateInterval(interval) self.interval = interval end
     function binding:SetZeroDurationText(text) self.zero = text end
     function binding:SetExpiredText(text) self.expired = text end
@@ -421,6 +430,8 @@ NS.InCombat = function() return combat end
 NS.RGB, NS.Public, NS.Finite, NS.ResolveFont = S.RGB, S.Public, S.Finite, S.ResolveFont
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraColors.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
+NS.HostBridge.KickReady = function() return nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
 -- No runtime file needs a protected call: every API both clients have is
@@ -2108,6 +2119,21 @@ do
     assert(state.binding.duration == castDuration and state.binding.enabled and label:IsShown()
         and label.text == "2.3s" and cast.CastTimeText == nil,
         "cast duration did not reach the engine text binding")
+    module.config.enemyCastTimeFormat = 2
+    module:Refresh()
+    local components = state.binding.components
+    assert(state.binding.format == "{}/{}" and #components == 2
+        and components[1].property == Enum.DurationTextBindingProperty.ElapsedDuration
+        and components[2].property == Enum.DurationTextBindingProperty.TotalDuration
+        and components[1].formatter == components[2].formatter
+        and components[1].formatter.rule.format == "%.1fs",
+        "elapsed/total cast time did not use the engine format binding")
+    module:Refresh()
+    assert(state.binding.components == components, "unchanged cast time format allocated new components")
+    module.config.enemyCastTimeFormat = 1
+    module:Refresh()
+    assert(state.binding.format == nil and state.binding.formatter.threshold == 60,
+        "remaining time did not restore its native seconds formatter")
     castDuration = "secret"
     events.UNIT_SPELLCAST_NOT_INTERRUPTIBLE(module, "UNIT_SPELLCAST_NOT_INTERRUPTIBLE", "nameplate1")
     assert(state.binding.duration == opaqueCast and state.binding.enabled and label:IsShown(),
@@ -2231,7 +2257,7 @@ do
     function engine.SelectColor(ready, notReady) if engine.ready then return ready end return notReady end
     function engine.SlotCount() return 1 end
     function engine.Cooldown() return nil end
-    NS.HostBridge = { KickReady = function() return engine end }
+    NS.HostBridge.KickReady = function() return engine end
     UnitCastingInfo = function() return "Bolt", "", 1, 0, 1, false, 7, false, 1 end
     UnitChannelInfo = function() return nil end
     local bans = { CreateTexture = cast.CreateTexture, GetStatusBarTexture = cast.GetStatusBarTexture }

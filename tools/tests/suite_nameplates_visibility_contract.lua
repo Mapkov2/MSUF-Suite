@@ -303,7 +303,7 @@ assert(P.applied.look == 4 and P.applied.enabled and P.applied.enemy and P.appli
 local resetValues
 P.S = { ResetKeys = function(_, values) resetValues = values; return true end }
 P.T, P.WithHistory, P.Refresh = {}, function(_, _, fn) return fn() end, function() end
-P.Suite = { RGB = NS.RGB }
+P.Suite = { RGB = NS.RGB, Registry = { AddListener = function() end } }
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Controls.lua"))("MSUF_Suite_Options", P)
 options.look = 1
 local jundies = spec.look.presets[1]

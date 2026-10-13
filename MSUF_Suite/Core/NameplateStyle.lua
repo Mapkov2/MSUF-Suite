@@ -88,6 +88,29 @@ function Style.BarDimensions(mode, choice, horizontal, vertical)
     return (classic and 152 or 230) * horizontal, health * vertical,
         cast * vertical, (classic and 14 or 12) * vertical
 end
+
+-- Explicit dimensions are opt-in. Old profiles keep their portable native
+-- bases; the same overrides drive the real cast and its options preview.
+function Style.CastDimensions(mode, height, icon, castHeight, iconHeight)
+    if mode == 2 then
+        if type(height) == "number" and height > 0 then castHeight = height end
+        if type(icon) == "number" and icon > 0 then iconHeight = icon end
+    end
+    return castHeight, iconHeight
+end
+-- The native percent-only header can be mirrored without reading its text.
+function Style.MirrorHeader(enabled, mode, anchor, namesOnly)
+    return enabled == true and mode == 2 and anchor == 2 and namesOnly == false
+end
+
+function Style.PlaceMirroredHeader(name, value, health, container, spacing, nx, ny, hx, hy, point)
+    name:ClearAllPoints()
+    value:ClearAllPoints()
+    point(value, "BOTTOMLEFT", health, "TOPLEFT", 4 + hx, 2 + hy)
+    point(name, "BOTTOMLEFT", value, "BOTTOMRIGHT", 2 + nx - hx, ny - hy)
+    point(name, "BOTTOMRIGHT", container, "TOPRIGHT", -4 + nx, spacing + ny)
+end
+
 function Style.RepairGeometry(modules)
     local plates = modules.nameplates
     -- Recognize the supplied pre-geometry Mapko export too, so importing that
@@ -232,7 +255,7 @@ function Style.PaintTarget(visual, owner, visible, cfg, parent, rightLevelGap, l
         return
     end
     -- MSUF's boss target renderer; Platform.lua asserts the MSUF namespace.
-    local indicator = MSUF_NS.BossTargetIndicator
+    local indicator = NS.HostBridge.BossTargetIndicator()
     if not indicator then return end
     local host = visual.targetHost
     if not host then

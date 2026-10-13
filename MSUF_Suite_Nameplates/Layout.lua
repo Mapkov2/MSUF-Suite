@@ -113,6 +113,79 @@ local function RestoreHealthSize(state, uf)
     state.healthSize = nil
 end
 
+-- Native UpdateAnchors on upstream/ptr and upstream/forever rebuilds these
+-- points from public setup constants. Capture those constants, never restricted
+-- GetPoint/GetWidth results, so turning the optional mirror off is reversible.
+local function RestoreHeader(state, uf)
+    local h = state.header
+    if not h then return true end
+    if not Accessible(h.name) or not Accessible(h.value) then
+        Defer(uf)
+        return false
+    end
+    h.name:ClearAllPoints()
+    h.value:ClearAllPoints()
+    h.name:SetJustifyH(h.justify)
+    if h.inside then
+        Point(h.value, "RIGHT", h.health.RightText, "LEFT", 2, 0)
+    else
+        Point(h.value, "BOTTOMRIGHT", h.health.RightText, "BOTTOMLEFT", 2, 0)
+    end
+    Point(h.name, "BOTTOMLEFT", h.container, "TOPLEFT", h.forever and 0 or 4, h.spacing)
+    if not h.forever then
+        Point(h.name, "BOTTOMRIGHT", h.health.Text, "BOTTOMLEFT", -2, 0)
+    elseif h.badge then
+        Point(h.name, "RIGHT", uf.PlayerLevelDiffFrame, "RIGHT", 0, 0)
+    elseif h.inside then
+        Point(h.name, "RIGHT", h.container, "RIGHT", 0, 0)
+    else
+        Point(h.name, "RIGHT", h.health.Text, "LEFT", -2, 0)
+    end
+    state.offsets[h.name], state.offsets[h.value] = nil, nil
+    state.header = nil
+    return true
+end
+
+local function MirrorHeader(state, uf, prefix, plan, setup, config)
+    local style = NS.NameplateStyle
+    if prefix ~= "enemy" or not style.MirrorHeader(config.enemyMirrorHeader,
+        config.enemyTextMode, setup.unitNameAnchorStyle, uf.showOnlyName) then return false end
+    local container, name = uf.HealthBarsContainer, uf.name
+    local health = container and container.healthBar
+    -- TextStatusBar's percent-only mode displays TextString (= Text). The
+    -- LeftText/RightText regions are hidden and only own the native chain.
+    local value = health and health.Text
+    local spacing = setup.healthBarToNameAboveSpacing
+    if not Accessible(container) or not Accessible(health) or not Accessible(name)
+        or not Accessible(value) or not NS.Finite(spacing) then
+        Defer(uf)
+        return nil
+    end
+    local forever, inside, justify, badge = NS.Client.isForever, false, "LEFT", false
+    if forever then
+        inside, justify = setup.healthTextInsideBarWhenNameAboveHealthBar, setup.nameJustificationWhenAboveHealthBar
+        if not NS.Public(inside) or not NS.Public(justify) or type(inside) ~= "boolean"
+            or type(justify) ~= "string" then
+            Defer(uf)
+            return nil
+        end
+        badge = Geometry.LevelBadgeShown(uf, uf.unit)
+        if badge == nil then
+            Defer(uf)
+            return nil
+        end
+    end
+    state.header = { name = name, value = value, health = health, container = container,
+        forever = forever, inside = inside, justify = justify, badge = badge, spacing = spacing }
+    name:SetPointsOffset(0, 0)
+    value:SetPointsOffset(0, 0)
+    state.offsets[name], state.offsets[value] = nil, nil
+    style.PlaceMirroredHeader(name, value, health, container, spacing,
+        plan.Name[1], plan.Name[2], plan.HealthText[1], plan.HealthText[2], Point)
+    name:SetJustifyH("RIGHT")
+    return true
+end
+
 function Layout.Restore(uf)
     local state = states[uf]
     if not state then return end
@@ -120,6 +193,7 @@ function Layout.Restore(uf)
         Defer(uf)
         return
     end
+    if not RestoreHeader(state, uf) then return end
     RestoreLinks(state, uf)
     RestoreHealthSize(state, uf)
     if not Geometry.Restore(state, uf, NamePlateSetupOptions) then Defer(uf) end
@@ -154,6 +228,7 @@ local function OnAnchors(uf)
             end
         end
         state.links = pending
+        state.header = nil -- Blizzard rebuilt both header regions and name justification.
         state.generation = nil
         state.nativeReset = true
     end
@@ -327,9 +402,10 @@ local function Apply(uf, prefix, config, force)
     state = state or { offsets = {}, links = {} }
     states[uf] = state
     force = force or state.nativeReset
+    if not RestoreHeader(state, uf) then return end
     RestoreLinks(state, uf)
     local geometryChanged = (config.barGeometry == Mode.SAME_GEOMETRY) ~= (state.geometry ~= nil)
-    local baseHeight = Geometry.Apply(state, uf, setup, config, force)
+    local baseHeight = Geometry.Apply(state, uf, setup, config, force, prefix)
     if not baseHeight then
         Defer(uf)
         return
@@ -339,7 +415,9 @@ local function Apply(uf, prefix, config, force)
         config[keys.HealthHeightDelta] or 0, force or geometryChanged, baseHeight)
     ElementOffsets(state, uf, plan, force)
     local badgeShown = LevelOffsets(state, uf, prefix, plan, setup, config, force)
-    NameLink(state, uf, plan, setup, badgeShown)
+    local mirrored = MirrorHeader(state, uf, prefix, plan, setup, config)
+    if mirrored == nil then return end
+    if not mirrored then NameLink(state, uf, plan, setup, badgeShown) end
     AuraAnchors(state, uf, plan)
     ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
     DebuffPaddingAnchor(state, uf, plan, setup)
@@ -368,7 +446,8 @@ end
 function Layout.Configure(config)
     generation = generation + 1
     for _, prefix in ipairs({ "enemy", "friendly" }) do
-        local plan = { active = config.barGeometry == Mode.SAME_GEOMETRY }
+        local plan = { active = config.barGeometry == Mode.SAME_GEOMETRY
+            or prefix == "enemy" and config.enemyMirrorHeader == true }
         for i = 1, #elements do
             local element = elements[i]
             local key = prefix .. element.key .. "Offset"

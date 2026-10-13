@@ -87,7 +87,7 @@ function G.Restore(state, uf, setup)
     return true
 end
 
-function G.Apply(state, uf, setup, config, force)
+function G.Apply(state, uf, setup, config, force, prefix)
     if config.barGeometry ~= SAME_GEOMETRY then
         return G.Restore(state, uf, setup) and setup.healthBarHeight or nil
     end
@@ -95,6 +95,10 @@ function G.Apply(state, uf, setup, config, force)
     if not container then return end
     local totalWidth, healthHeight, castHeight, iconHeight = NS.NameplateStyle.BarDimensions(
         config.barGeometry, config.nativeStyle, setup.horizontalScale, setup.verticalScale)
+    if prefix == "enemy" then
+        castHeight, iconHeight = NS.NameplateStyle.CastDimensions(config.barGeometry,
+            config.enemyCastHeight, config.enemyCastIconSize, castHeight, iconHeight)
+    end
     local nativeWidth = NativeWidth(setup.useClassicHealthBar == true)
     if not NS.Finite(nativeWidth) then return end
     local inset = setup.insetWidth + (nativeWidth * setup.horizontalScale - totalWidth) / 2
@@ -104,7 +108,7 @@ function G.Apply(state, uf, setup, config, force)
         G.Point(container, "BOTTOMRIGHT", uf, "BOTTOMRIGHT", -inset, 0)
         -- The level badge remains a separate element and cannot shrink the bar.
         G.Point(health, "BOTTOMRIGHT", container, "TOPRIGHT", 0, setup.castBarToHealthBarSpacing)
-        health:SetHeight(healthHeight)
+        if force or not old or old[2] ~= healthHeight then health:SetHeight(healthHeight) end
         container:SetHeight(castHeight + (setup.spellNameInsideCastBar and 0 or iconHeight))
         cast:SetHeight(castHeight)
         cast.Icon:SetSize(iconHeight, iconHeight)

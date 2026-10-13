@@ -123,6 +123,7 @@ local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Choice("enemyTextMode", "Enemy names and health text", 4,
         { "Keep Blizzard settings", "Always show name + percent", "Always show name + value",
           "Always show name + value and percent" })
+    appearance[#appearance + 1] = B.Bool("enemyMirrorHeader", "Show percent left and name right above the health bar", false)
     appearance[#appearance + 1] = B.Choice("enemyRarityIcon", "Blizzard elite / rare icon (all nameplates)", 1,
         { "Keep Blizzard setting", "Show", "Hide" })
     appearance[#appearance + 1] = B.Bool("enemyRaidIcon", "Blizzard raid target icon on enemy plates", true)
@@ -320,6 +321,9 @@ local castRules = {
     B.Bool("enemyCastTargetHighlight", "Highlight casts targeting you", true),
     B.Bool("enemyCastTextEnabled", "Customize cast text", true),
     B.Bool("enemyCastTimeEnabled", "Show cast time", true),
+    B.Choice("enemyCastTimeFormat", "Cast time format", 1, { "Remaining time", "Elapsed / total" }),
+    B.Number("enemyCastHeight", "Castbar height (0 = automatic)", 0, 0, 48),
+    B.Number("enemyCastIconSize", "Spell icon size (0 = automatic)", 0, 0, 72),
     B.Bool("enemyCastCustomFont", "Override Blizzard cast font (empty font = MSUF)", true),
     B.Bool("enemyCastTextShadow", "Cast text shadow", false),
     B.Number("enemyCastSize", "Cast text size (0 = Blizzard)", 11, 0, 32),
@@ -399,6 +403,8 @@ for _, side in ipairs({ "enemy", "friendly" }) do
     Requires({ side .. "CastTextEnabled", side .. "CastTimeEnabled" }, "enemyCastEnabled", { [1] = true, [2] = true })
 end
 EnabledBy({ "enemyHealthTextSize" }, "enemyTextEnabled")
+EnabledBy({ "enemyCastTimeFormat" }, "enemyCastTimeEnabled")
+Requires({ "enemyCastHeight", "enemyCastIconSize" }, "barGeometry")
 EnabledBy({ "enemyTargetHideFriendly", "enemyTargetStyle", "enemyTargetLayout", "enemyTargetAnchor",
     "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetColor" }, "enemyTargetMarker")
 EnabledBy({ "enemyColorsInDungeons", "enemyColorsOutside", "enemyQuestColors", "enemyTankMode" }, "enemyRoleColors")

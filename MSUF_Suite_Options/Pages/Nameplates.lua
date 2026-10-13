@@ -50,7 +50,7 @@ local SECTIONS = {
       colors = { "enemyBorderColor", "enemyBackdropColor", "enemyTargetColor" }, tabs = {
         { id = "bar", label = "Bar", help = "enemy", keys = { "enemyHealthWidthDelta", "enemyHealthHeightDelta",
             "enemyBackdropEnabled", "enemyBackdropAlpha", "enemyBorderEnabled", "enemyBorderSize" } },
-        { id = "text", label = "Text", keys = { "enemyTextMode", "enemyTextEnabled", "enemyCustomFont", "enemyNameFont",
+        { id = "text", label = "Text", keys = { "enemyTextMode", "enemyMirrorHeader", "enemyTextEnabled", "enemyCustomFont", "enemyNameFont",
             "enemyNameSize", "enemyHealthTextSize", "enemyTextOutline", "enemyTextShadow", "enemyLevelEnabled", "enemyLevelSize" } },
         { id = "markers", label = "Markers", help = "elements", keys = { "enemyEliteMarker", "enemyEliteMarkerAnchor",
             "enemyEliteMarkerSize", "enemyQuestMarker", "enemyQuestMarkerAnchor", "enemyQuestMarkerSize",

@@ -54,7 +54,8 @@ for _, forever in ipairs({ false, true }) do
     local spec = ns.SuiteCatalog.nameplates
     -- Settings added after export revision 17 keep Blizzard's behaviour by
     -- default (the other-tank color follows tank mode, which stays off).
-    local newer = { plateShowAll = 1, plateStackEnemy = 1, plateStackFriendly = 1, plateEnemyMinions = 1,
+    local newer = { enemyCastHeight = 0, enemyCastIconSize = 0, enemyCastTimeFormat = 1,
+        enemyMirrorHeader = false, plateShowAll = 1, plateStackEnemy = 1, plateStackFriendly = 1, plateEnemyMinions = 1,
         plateEnemyMinus = 1, plateFriendlyMinions = 1, plateOffscreen = 1, plateSimpleMinion = 1,
         plateSimpleMinus = 1, plateSimpleFriendlyPlayer = 1, plateSimpleFriendlyNpc = 1,
         selectionBorder = 1, selectionTargetColor = "ffffff", selectionFocusColor = "ff66ff",

@@ -756,6 +756,8 @@ function M:Disable()
     Threat.Disable()
     self.rarityBefore = nil
     self.infoTextApplied = nil
+    -- Keep choices in a new activation use its own native starting flags.
+    self.flagsBefore = {}
     Layout.RestoreAll()
     self.targetUF, self.focusUF = nil, nil
     Roles.ClearQuest()

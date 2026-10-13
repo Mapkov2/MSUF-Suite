@@ -108,6 +108,15 @@ for _, forever in ipairs({ false, true }) do
             -- Dragging changes the preset label, never the saved size basis.
             config.look = 3
             private.Layout.Configure(config); private.Layout.Apply(uf, "enemy", config); Check()
+            config.enemyCastHeight, config.enemyCastIconSize = 28, 40
+            private.Layout.Configure(config); private.Layout.Apply(uf, "enemy", config)
+            Near(cast.castBar.height, 28); Near(cast.castBar.Icon.width, 40); Near(cast.castBar.Icon.height, 40)
+            Near(health.height, (largeHealth and 20 or 10) * scale + 7)
+            local customWrites = calls
+            private.Layout.Apply(uf, "enemy", config)
+            assert(calls == customWrites, "unchanged custom cast dimensions repeated writes")
+            Native(uf); uf.hook(uf)
+            Near(cast.castBar.height, 28); Near(cast.castBar.Icon.height, 40)
             combat = true; private.Layout.Restore(uf)
             -- Held back for this plate only (Skin.lua OnCombatEnded applies it again).
             assert(module.pendingPlates[uf] and not module.needsRefresh and health.height ~= setup.healthBarHeight)

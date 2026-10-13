@@ -4,6 +4,7 @@ local Style = P.Suite.NameplateStyle
 local NativeBit = Style.NativeBit
 local ID, PAGE = "nameplates", "suite_nameplates"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
+local SAMPLE_CAST_TIME = "1.3s" .. "/" .. "2.0s"
 -- Static samples shared with the GF preview. These never query live auras.
 local AURA_SAMPLES = {
     debuffs = { "Interface\\Icons\\Spell_Shadow_CurseOfTounges",
@@ -54,6 +55,12 @@ local function SetupNumber(key, fallback)
 end
 
 -- Blizzard_SharedXMLBase/CvarUtil.lua; the runtime reads the same padding.
+local function SetupToggle(key, fallback)
+    local value = NamePlateSetupOptions[key]
+    if P.Suite.Public(value) and type(value) == "boolean" then return value end
+    return fallback
+end
+
 local function DebuffPadding()
     local value = GetCVarNumberOrDefault(NamePlateConstants.DEBUFF_PADDING_CVAR)
     if P.Suite.Public(value) and type(value) == "number" and value == value then return value end
@@ -357,7 +364,11 @@ local function Metrics(editor, s, m)
     m.reserve = m.nativeLevel and m.nativeLevelWidth + 5 or 0
     local contentWidth = (m.classic and 152 or m.forever and 190 or 230) * m.horizontal - 2 * inset
     local geometry = P.Get(ID, "look") ~= 2 and P.Get(ID, prefix) and P.Get(ID, "barGeometry") or 1
-    local totalWidth, uniformHealth, uniformCast = Style.BarDimensions(geometry, selectedStyle, m.horizontal, m.vertical)
+    local totalWidth, uniformHealth, uniformCast, uniformIcon = Style.BarDimensions(geometry, selectedStyle, m.horizontal, m.vertical)
+    if prefix == "enemy" and uniformCast then
+        uniformCast, uniformIcon = Style.CastDimensions(geometry, P.Get(ID, "enemyCastHeight"),
+            P.Get(ID, "enemyCastIconSize"), uniformCast, uniformIcon)
+    end
     if totalWidth then contentWidth, m.reserve = totalWidth - 2 * inset, 0 end
     m.classicInset = m.classic and 24.25 * m.horizontal or 0
     m.widthDelta = P.Get(ID, prefix .. "HealthWidthDelta") or 0
@@ -371,6 +382,10 @@ local function Metrics(editor, s, m)
     m.nativeBarHeight = uniformHealth or SetupNumber("healthBarHeight", healthHeight * m.vertical)
     local nativeCastHeight = (style == 2 or style == 4) and 16 or m.classic and 10 or m.forever and 6 or 10
     m.castHeight = uniformCast or SetupNumber("castBarHeight", nativeCastHeight * m.vertical)
+    m.iconHeight = uniformIcon or SetupNumber("castIconHeight", (m.classic and 14 or 12) * m.vertical)
+    m.iconWidth = uniformIcon or SetupNumber("castIconWidth", m.iconHeight)
+    m.classicCast = SetupToggle("useClassicCastBar", m.classic)
+    m.castInside = SetupToggle("spellNameInsideCastBar", style == 2 or style == 4)
     local fallbackAnchor = m.classic and 3 or (style == 0 or style == 2) and 1 or 2
     m.nameAnchor = SetupNumber("unitNameAnchorStyle", fallbackAnchor)
     m.nameSpacing = SetupNumber("healthBarToNameAboveSpacing", (m.classic and 4 or 2) * m.vertical)
@@ -508,6 +523,8 @@ end
 
 local function RenderHealth(editor, s, m)
     local prefix = s.prefix
+    s.healthText:SetWidth(78)
+    s.value:SetJustifyH("RIGHT")
     Place(s, s.healthText, "RIGHT", s.bar, "RIGHT", -4, 0, "HealthText")
     s.healthText:SetShown(not m.namesOnly and editor:LayerOn("healthText"))
     Tint(s.back, P.Get(ID, prefix .. "BackdropColor"), (P.Get(ID, prefix .. "BackdropAlpha") or 100) / 100)
@@ -597,13 +614,28 @@ local function RenderFonts(s, m)
     end
 end
 
+local function CastText(s, m)
+    local cast, text = s.cast, s.castName
+    if m.classicCast then
+        Place(s, text, "TOPLEFT", cast, "TOPLEFT", 0, -m.vertical, "CastText")
+        text:SetPoint("BOTTOMRIGHT", cast, "BOTTOMRIGHT", P.Get(ID, s.prefix .. "CastTextOffsetX"),
+            -m.vertical + P.Get(ID, s.prefix .. "CastTextOffsetY"))
+    else
+        Place(s, text, "LEFT", cast, m.castInside and "LEFT" or "BOTTOMLEFT",
+            m.iconWidth + 2, m.castInside and 0 or -m.iconHeight / 2, "CastText")
+    end
+end
+
 local function RenderCastAndAuras(editor, s, m)
     local prefix, cast = s.prefix, s.cast
     s.castName:SetShown(m.showCast and editor:LayerOn("castText") and NativeCastDetail("enemyCastSpellName", 1, true))
     -- Blizzard anchors the castbar to the plate, not the movable health container.
     Place(s, cast, "TOP", s.cell, "CENTER", m.castX, -4 - m.nativeBarHeight / 2 - m.castSpacing, "Cast")
-    Place(s, s.castName, "TOPLEFT", cast, "BOTTOMLEFT", 0, -1, "CastText")
+    CastText(s, m)
     Place(s, s.castTime, "LEFT", cast, "RIGHT", 4, 0, "CastTime")
+    local elapsed = prefix == "enemy" and P.Get(ID, "enemyCastTimeFormat") == 2
+    s.castTime:SetWidth(elapsed and 90 or 38)
+    s.castTimeText:SetText(elapsed and SAMPLE_CAST_TIME or "2.3s")
     s.castTime:SetShown(m.showCast and P.Get(ID, "look") ~= 2
         and P.Get(ID, prefix .. "CastTimeEnabled") and editor:LayerOn("castTime"))
     -- Blizzard's DebuffListFrame starts at HealthBarsContainer.LEFT, not
@@ -661,14 +693,43 @@ end
 
 local function RenderCastDetails(editor, s, m)
     local cast = s.cast
-    Place(s, s.castIcon, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastIcon")
-    Place(s, s.shield, "LEFT", cast, "BOTTOMLEFT", 0, -7, "CastShield")
+    s.castIcon:SetSize(m.iconWidth, m.iconHeight)
+    if m.classicCast then
+        local border = SetupNumber("castBarBorderWidth", 128 * m.horizontal)
+        Place(s, s.castIcon, "CENTER", cast, "LEFT", (m.castWidth - border) / 2 + 2.875 * m.horizontal,
+            -.5 * m.vertical, "CastIcon")
+        s.shield:SetSize(0, 0)
+        Place(s, s.shield, "TOPLEFT", cast, "TOPLEFT", -20 * m.horizontal, 11 * m.vertical, "CastShield")
+        s.shield:SetPoint("BOTTOMRIGHT", cast, "BOTTOMRIGHT", 13 * m.horizontal + P.Get(ID, s.prefix .. "CastShieldOffsetX"),
+            -13 * m.vertical + P.Get(ID, s.prefix .. "CastShieldOffsetY"))
+    else
+        local relative = m.castInside and "LEFT" or "BOTTOMLEFT"
+        Place(s, s.castIcon, m.castInside and "LEFT" or "TOPLEFT", cast, relative, 0, 0, "CastIcon")
+        s.shield:SetSize(SetupNumber("castBarShieldWidth", m.iconWidth), SetupNumber("castBarShieldHeight", m.iconHeight))
+        Place(s, s.shield, "RIGHT", cast, relative, m.iconWidth, m.castInside and 0 or -m.iconHeight / 2, "CastShield")
+    end
     s.shield:SetShown(editor.uninterruptible and m.showCast and editor:LayerOn("castShield"))
-    local classicCast = P.Get(ID, "nativeStyle") == 7 or P.Get(ID, "nativeStyle") == 8
-    s.castIcon:SetShown(m.showCast and editor:LayerOn("castIcon") and (not editor.uninterruptible or classicCast)
+    s.castIcon:SetShown(m.showCast and editor:LayerOn("castIcon") and (not editor.uninterruptible or m.classicCast)
         and NativeCastDetail("enemyCastSpellIcon", 2, false))
     Place(s, s.castTarget, "TOPRIGHT", cast, "BOTTOMRIGHT", 0, -1, "CastTarget")
     s.castTarget:SetShown(m.showCast and editor:LayerOn("castTarget") and NativeCastDetail("enemyCastSpellTarget", 3, false))
+end
+
+local function HeaderPoint(region, ...)
+    region:SetPoint(...)
+end
+
+local function RenderMirroredHeader(s, m)
+    if s.prefix ~= "enemy" or not Style.MirrorHeader(P.Get(ID, "enemyMirrorHeader"),
+        P.Get(ID, "enemyTextMode"), m.nameAnchor, m.namesOnly) or P.Get(ID, "look") == 2 then return end
+    s.healthText:SetWidth(math.max(1, s.value:GetStringWidth()))
+    Style.PlaceMirroredHeader(s.name, s.healthText, s.bar, s.bar, m.nameSpacing,
+        P.Get(ID, "enemyNameOffsetX"), P.Get(ID, "enemyNameOffsetY"),
+        P.Get(ID, "enemyHealthTextOffsetX"), P.Get(ID, "enemyHealthTextOffsetY"),
+        HeaderPoint)
+    s.nameText:SetWidth(math.max(1, s.name:GetWidth()))
+    s.nameText:SetJustifyH("RIGHT")
+    s.value:SetJustifyH("LEFT")
 end
 
 local function Render(editor, s)
@@ -684,6 +745,7 @@ local function Render(editor, s)
     RenderTarget(s, m)
     RenderMarkers(editor, s, m)
     RenderFonts(s, m)
+    RenderMirroredHeader(s, m)
     RenderCastAndAuras(editor, s, m)
     RenderRaid(editor, s, m)
     RenderCastDetails(editor, s, m)

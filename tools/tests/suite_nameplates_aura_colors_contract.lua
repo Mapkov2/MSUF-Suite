@@ -734,7 +734,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
     P.Description = Widget
     -- Use the real Suite text bridge and host theme, including numeric C sinks.
     MSUF2 = M
-    MSUFSuite = { Suite = P.S, FontRendering = {}, Database = {},
+    MSUFSuite = { Suite = P.S, FontRendering = {}, Database = {}, Registry = {AddListener=function() end},
         HostBridge = { Menu2 = function() return P.HM end } }
     local textBridge = {}
     assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Bridge.lua"))("MSUF_Suite_Options", textBridge)
