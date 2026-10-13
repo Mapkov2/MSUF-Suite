@@ -1,33 +1,36 @@
 # MSUF Suite
 
-**MSUF Suite 0.1 Alpha** adds modular interface tools to World of Warcraft Retail and WoW Forever. Configure the Suite through the MSUF menu with `/msuf` and choose the modules that suit your layout.
+**MSUF Suite 0.1 Alpha** brings modular interface tools to World of Warcraft Retail and WoW Forever. Open `/msuf` to configure the Suite and choose the modules for your layout.
 
-**Midnight Simple Unit Frames (MSUF) is required and must be installed separately. This Suite alpha is compatible with MSUF 6.5 (release 6.50).** Download MSUF from [CurseForge](https://www.curseforge.com/wow/addons/midnightsimpleunitframes), [Wago](https://addons.wago.io/addons/midnightsimpleunitframes), or [GitHub](https://github.com/Mapkov2/MidnightSimpleUnitFrames/releases/tag/v6.50).
+**Midnight Simple Unit Frames (MSUF) is required. This Suite alpha is compatible with MSUF 6.5 (release 6.50).** MSUF is configured as a Required Dependency on CurseForge and is installed automatically with the Suite. When using Wago, install MSUF through the Wago client as well.
 
-## Included modules
+## Modules
 
-- Action bars, Cooldown Manager tools, and buff and consumable reminders.
-- Bags and bank views, chat styling and history, minimap layouts, and configurable data texts.
-- Damage Meter tools, native Blizzard nameplate styling, and interface window skins.
-- Quality of life tools, group and dungeon utilities, encounter information, and reminders.
-- Shared profiles, setup presets, and previews in the MSUF options menu.
+- **Action Bars** - Layout and appearance settings for your action bars.
+- **Cooldown Manager** - Cooldown, buff, and buff bar displays.
+- **Buff Reminders** - Reminders for missing buffs and consumables.
+- **Bags & Bank** - Inventory and bank views.
+- **Chat** - Chat styling, history, fading, and unread tab indicators.
+- **Minimap** - Minimap layouts, appearance, and shortcuts.
+- **DataTexts** - Configurable information bars.
+- **Damage Meter** - Damage Meter windows, display options, and previews.
+- **Nameplates** - Styling for Blizzard's native nameplates.
+- **Quality of Life** - Group and dungeon tools, encounter information, death alerts, incoming combat text, and reminders.
+- **Skinning** - Interface window appearance and controls.
 
-Individual Suite modules can be enabled or disabled. The Suite package includes its core, module addons, options, and Skinning module.
+Modules can be enabled individually. The Suite includes shared profiles, setup presets, and previews in the MSUF options menu.
 
 ## Install
 
 Supported clients: **WoW Retail 12.1.5** and **WoW Forever 1.60.1**.
 
-1. Install MSUF 6.5 (6.50), including its Options addon, for your client.
-2. Download the [Suite Alpha ZIP](https://github.com/Mapkov2/MSUF-Suite/releases/latest).
-3. Extract all `MSUF_Suite*` folders directly into your client's `Interface/AddOns` folder.
-4. Enable MSUF and the desired Suite modules, then open `/msuf`.
+1. Install **MSUF Suite** through the **CurseForge client** or **Wago client**. Choose **Beta** for the CurseForge client build or **Alpha** in Wago. The Suite itself remains in Alpha.
+2. CurseForge installs **MSUF** automatically as a required dependency. In Wago, install **MSUF 6.5 (6.50)** as well.
+3. Enable the desired modules and open `/msuf` in the game.
 
 ## Alpha feedback
 
 The Suite is in its **Alpha phase**. Features and layouts may change, and bugs are possible. Please report the client and build, MSUF and Suite versions, steps to reproduce, and any Lua errors in the [Suite issue tracker](https://github.com/Mapkov2/MSUF-Suite/issues). Screenshots help with visual issues.
-
-Offline contracts cover Retail, WoW Forever, and MSUF host integration. Live gameplay, combat, controller, and visual behavior require testing in the game.
 
 ## Copyright
 

@@ -9,6 +9,7 @@ Run the full local gate, then build the tracked addon files:
 ```text
 python tools/run_suite_tests.py
 python tools/build_suite_release.py
+python tools/build_suite_release.py --curseforge-client-beta --output dist/curseforge-client
 ```
 
 `dist/alpha` contains the ZIP, public project description, release notes,
@@ -19,13 +20,20 @@ and the MSUF host are excluded from the ZIP.
 | Platform | Version / channel | Required MSUF dependency |
 | --- | --- | --- |
 | GitHub | Regular release, tag `v0.1-alpha`, title `MSUF Suite 0.1 Alpha` | State that MSUF 6.5 (6.50) must be installed separately |
-| CurseForge | Alpha | `midnightsimpleunitframes`, project `1384660`, **Required Dependency** |
+| CurseForge | Alpha plus an additional Beta file for initial app listing | `midnightsimpleunitframes`, project `1384660`, **Required Dependency**, installed automatically by the client |
 | Wago | Alpha | Required by the addon TOC; public info links the MSUF project `XKq9aoKy` |
 
 Use `PROJECT_DESCRIPTION.md` as the normal project info text and
 `RELEASE_NOTES.md` for this version. The Alpha designation remains visible in
 the title, tag, addon version and description even though GitHub uses a regular
-release. Do not mark the CurseForge file as Release or the Wago version as Stable.
+release. Do not mark a CurseForge file as Release or the Wago version as Stable.
+
+The owner also authorized a CurseForge client Beta file: new Alpha-only projects
+do not initially appear in the CurseForge app. Its addon runtime is byte-identical
+to the Alpha ZIP; only the public module/install README is added inside the core
+folder. This variant is for CurseForge only. It uses the Beta distribution channel
+while the addon version and product description remain **0.1 Alpha**. Wago remains
+Alpha. A new project and its files still require CurseForge moderation.
 
 The Suite upload destinations are CurseForge project **1743628**
 ([project](https://www.curseforge.com/wow/addons/msuf-suite)) and Wago project
@@ -35,7 +43,10 @@ Tokens belong in GitHub secrets or the local environment, never in source or
 release assets. API automation needs platform tokens; browser uploads use the
 existing developer sign-in. Both project IDs are declared in the core TOC.
 
-Upload the same ZIP to all three platforms. CurseForge accepts the generated
+Upload the original Alpha ZIP to all three platforms, and the additional client
+Beta ZIP to CurseForge only. Users install through the CurseForge client (Beta)
+or Wago client (Alpha). CurseForge installs MSUF automatically; Wago users also
+install MSUF in their client. CurseForge accepts the generated
 `CURSEFORGE_METADATA.json` as the `metadata` multipart field and the ZIP as
 `file`; authenticate using `X-Api-Token` at
 `https://wow.curseforge.com/api/projects/1743628/upload-file`.

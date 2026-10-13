@@ -74,4 +74,24 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
     assert wago["stability"] == "alpha"
     assert wago["supported_retail_patches"] == ["12.1.5"]
     assert wago["supported_forever_patches"] == ["1.60.1"]
+    client = builder.build(root, scratch / "client-beta", curseforge_client_beta=True)
+    client_manifest = json.loads((client.parent / "RELEASE_MANIFEST.json").read_text(encoding="utf-8"))
+    assert client_manifest["version"] == manifest["version"]
+    assert client_manifest["curseforgeReleaseType"] == "beta"
+    assert client_manifest["publishTargets"] == ["curseforge"]
+    assert not (client.parent / "WAGO_METADATA.json").exists()
+    assert set(client_manifest["files"]) == set(manifest["files"]) | {"MSUF_Suite/README.md"}
+    assert all(client_manifest["files"][name] == digest for name, digest in manifest["files"].items())
+    with zipfile.ZipFile(client) as package:
+        assert package.read("MSUF_Suite/README.md") == (root / "README.md").read_bytes()
+        assert all(hashlib.sha256(package.read(name)).hexdigest() == digest
+                   for name, digest in client_manifest["files"].items())
+    client_metadata = json.loads((client.parent / "CURSEFORGE_METADATA.json").read_text(encoding="utf-8"))
+    assert client_metadata["releaseType"] == "beta"
+    assert client_metadata["relations"] == curseforge["relations"]
+    for output, beta in ((first.parent, True), (client.parent, False)):
+        before = {path.name: path.read_bytes() for path in output.iterdir() if path.is_file()}
+        rejects(lambda: builder.build(root, output, curseforge_client_beta=beta), "Mixed output variants were accepted")
+        after = {path.name: path.read_bytes() for path in output.iterdir() if path.is_file()}
+        assert before == after, "Rejected variant switch overwrote a published artifact or metadata"
 print("suite_release_package_contract: ok")

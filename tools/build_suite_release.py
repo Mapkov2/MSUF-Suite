@@ -67,7 +67,7 @@ def validate_payload(payload):
         parts = Path(path).parts
         if any(part.startswith(".") or part.lower() in {"tests", "tools", "savedvariables", "perfy", "dist"} for part in parts):
             raise ValueError(f"Local or private artifact in addon payload: {path}")
-        if Path(path).suffix.lower() not in extensions and Path(path).name not in notices:
+        if Path(path).suffix.lower() not in extensions and Path(path).name not in notices and path != "MSUF_Suite/README.md":
             raise ValueError(f"Unreviewed release payload type: {path}")
         if Path(path).name.lower() in {"perfy.lua", "!!!perfy.lua"}:
             raise ValueError(f"Local diagnostic artifact in addon payload: {path}")
@@ -87,7 +87,15 @@ def validate_payload(payload):
                 raise ValueError(f"Missing packaged load reference: {path} -> {reference}")
 
 
-def build(root, output):
+def build(root, output, curseforge_client_beta=False):
+    release_type = "beta" if curseforge_client_beta else "alpha"
+    existing_manifest = output / "RELEASE_MANIFEST.json"
+    if existing_manifest.exists():
+        previous_type = json.loads(existing_manifest.read_text(encoding="utf-8"))["curseforgeReleaseType"]
+        if previous_type != release_type:
+            raise ValueError("Use separate output directories for the Alpha and CurseForge client Beta packages")
+    if curseforge_client_beta and (output / "WAGO_METADATA.json").exists():
+        raise ValueError("Refusing a client Beta output directory containing Wago upload metadata")
     files = tracked_files(root)
     core_toc = (root / "MSUF_Suite/MSUF_Suite_Mainline.toc").read_text(encoding="utf-8-sig")
     version = field(core_toc, "Version")
@@ -103,14 +111,17 @@ def build(root, output):
     if heading != release_name:
         raise ValueError("Latest changelog does not match the release version")
     requirements = ("**Alpha build. Requires Midnight Simple Unit Frames (MSUF); compatible with MSUF 6.5 "
-                    "(release 6.50). MSUF must be installed separately.**\n\n"
+                    "(release 6.50). CurseForge installs MSUF as a required dependency.**\n\n"
                     "Supported clients: WoW Retail 12.1.5 and WoW Forever 1.60.1.\n")
     notes = "# " + title + "\n\n" + requirements + "\n## " + entry + "\n"
     output.mkdir(parents=True, exist_ok=True)
     payload = {path: (root / path).read_bytes() for path in files if path.split("/")[0] in addons}
     payload["MSUF_Suite/LICENSE.txt"] = (root / "LICENSE.txt").read_bytes()
+    if curseforge_client_beta:
+        payload["MSUF_Suite/README.md"] = (root / "README.md").read_bytes()
     validate_payload(payload)
-    archive = output / f"MSUF-Suite-{version}.zip"
+    suffix = "-curseforge-client" if curseforge_client_beta else ""
+    archive = output / f"MSUF-Suite-{version}{suffix}.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as package:
         for path, content in sorted(payload.items()):
             info = zipfile.ZipInfo(path, date_time=(2026, 1, 1, 0, 0, 0))
@@ -119,7 +130,8 @@ def build(root, output):
             package.writestr(info, content)
     metadata = {
         "CURSEFORGE_METADATA.json": {
-            "displayName": title, "releaseType": "alpha", "changelogType": "markdown", "changelog": notes,
+            "displayName": title + (" (CurseForge Client)" if curseforge_client_beta else ""),
+            "releaseType": release_type, "changelogType": "markdown", "changelog": notes,
             "gameVersionNames": ["12.1.5", "1.60.1"],
             "relations": {"projects": [{"slug": "midnightsimpleunitframes", "projectID": "1384660",
                                          "type": "requiredDependency"}]},
@@ -130,26 +142,34 @@ def build(root, output):
         },
         "RELEASE_MANIFEST.json": {
             "version": version, "tag": "v" + version, "title": title, "githubPrerelease": False,
-            "curseforgeReleaseType": "alpha", "wagoStability": "alpha", "requiredHost": "MSUF 6.5 (6.50)",
+            "curseforgeReleaseType": release_type,
+            "publishTargets": ["curseforge"] if curseforge_client_beta else ["github", "curseforge", "wago"],
+            "wagoStability": "alpha", "requiredHost": "MSUF 6.5 (6.50)",
             "addons": addons, "archive": archive.name, "bytes": archive.stat().st_size,
             "projects": {"curseforge": field(core_toc, "X-Curse-Project-ID"), "wago": field(core_toc, "X-Wago-ID")},
             "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
             "files": {path: hashlib.sha256(content).hexdigest() for path, content in sorted(payload.items())},
         },
     }
+    if curseforge_client_beta:
+        del metadata["WAGO_METADATA.json"]
     for name, value in metadata.items():
         (output / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     (output / "RELEASE_NOTES.md").write_text(notes, encoding="utf-8", newline="\n")
     (output / "PROJECT_DESCRIPTION.md").write_bytes((root / "README.md").read_bytes())
-    print(f"Built {archive.name}: {len(addons)} addons, {len(payload)} files; CurseForge/Wago Alpha, MSUF required")
+    channel = "CurseForge client Beta" if curseforge_client_beta else "CurseForge/Wago Alpha"
+    print(f"Built {archive.name}: {len(addons)} addons, {len(payload)} files; {channel}, MSUF required")
     return archive
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "dist" / "alpha")
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--curseforge-client-beta", action="store_true",
+                        help="Additional CurseForge Beta file for initial client listing; Suite version remains Alpha")
     args = parser.parse_args()
-    build(ROOT, args.output)
+    output = args.output or ROOT / "dist" / ("curseforge-client" if args.curseforge_client_beta else "alpha")
+    build(ROOT, output, args.curseforge_client_beta)
 
 
 if __name__ == "__main__":
