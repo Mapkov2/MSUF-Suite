@@ -3,7 +3,7 @@ local _, NS = ...
 -- Mainline 12.1 Blizzard window catalog.
 --
 -- The addon and global names below are intentionally explicit. They were
--- verified against Gethe/wow-ui-source upstream/live at
+-- initially inventoried against Gethe/wow-ui-source upstream/live at
 -- 78282522143e25c3540583734fd192c3d69be910. This file is data only: it does
 -- not load addons, scan UIParent, hook scripts, or register events. The
 -- Glass review at the end is checked by CatalogGlass.lua.
@@ -1924,8 +1924,8 @@ if NS.Client.isForever then
     }
 end
 
--- Glass coverage is a reviewed contract for the exact Retail source snapshot
--- named at the top of this file. The fingerprint covers entry order, ids,
+-- Glass coverage is a reviewed contract for REVIEWED_SOURCE_REVISION below;
+-- the top comment records the initial inventory provenance. The fingerprint covers entry order, ids,
 -- categories, addon owners, skip flags, and ordered root names. Any new,
 -- renamed, reordered, or re-owned root fails the review contract in
 -- tools/tests/suite_skin_generic_windows_contract.lua until this review and

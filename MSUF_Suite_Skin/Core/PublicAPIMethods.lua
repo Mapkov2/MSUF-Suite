@@ -11,6 +11,7 @@ local API = PublicAPI.API
 local Shared = NS.PublicAPIShared
 NS.PublicAPIShared = nil
 local clients = Shared.clients
+local GuardedCall = Shared.GuardedCall
 local clientRecords = Shared.clientRecords
 local scopeRecords = Shared.scopeRecords
 local WeakSet = Shared.WeakSet
@@ -577,7 +578,7 @@ local function OnRegistryChanged(_, domain, key)
     -- First, so the client syncs below record the new settings.
     NextSettingsGeneration()
     if domain == "profile" or (domain == "adapter" and key == "master") then
-        for _, record in pairs(clients) do QueueClientSync(record) end
+        for _, record in pairs(clients) do NS.Safety.Dispatch(QueueClientSync, record) end
     end
     QueueAppearanceSignal(domain, key)
 end
@@ -595,15 +596,18 @@ end
 function PublicAPI.OnPlayerLogin()
     PublicAPI.databaseReady = true
     PublicAPI.playerReady = true
-    for _, record in pairs(clients) do QueueClientSync(record) end
-    API:OnAppearanceChanged("ready")
+    for _, record in pairs(clients) do NS.Safety.Dispatch(QueueClientSync, record) end
+    NS.Safety.Dispatch(API.OnAppearanceChanged, API, "ready")
 end
 
 local function RefreshAllNow()
+    local success, reason = true, "applied"
     for _, record in pairs(clients) do
         record.mainScope.suspended = not RuntimeEnabled()
-        QueueScopeOperation(record.mainScope, "refresh")
+        local applied, detail = GuardedCall(QueueScopeOperation, record.mainScope, "refresh")
+        if not applied then success, reason = false, detail end
     end
+    return success, reason
 end
 
 function PublicAPI.RefreshAll()
@@ -612,8 +616,7 @@ function PublicAPI.RefreshAll()
         NS.CombatGate.RunOrDefer("public:refresh-all", RefreshAllNow)
         return true, "deferred"
     end
-    RefreshAllNow()
-    return true, "applied"
+    return RefreshAllNow()
 end
 
 return PublicAPI

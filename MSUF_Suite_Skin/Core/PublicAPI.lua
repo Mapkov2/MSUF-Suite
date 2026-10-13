@@ -221,7 +221,19 @@ local function ValidateEntry(entry)
     return true
 end
 
-local function CleanupEntry(entry)
+-- Entry failures are reported while other targets keep their work. The
+-- completion flag distinguishes an error from a callback's normal refusal.
+local function FinishCall(callback, ...)
+    return true, callback(...)
+end
+
+local function GuardedCall(callback, ...)
+    local finished, ok, reason = NS.Safety.Dispatch(FinishCall, callback, ...)
+    if not finished then return false, "error" end
+    return ok, reason
+end
+
+local function CleanupNow(entry)
     local safe, reason = ValidateEntry(entry)
     if not safe then return false, reason end
     ControlSkin.DisableOwner(entry.owner)
@@ -234,6 +246,10 @@ local function CleanupEntry(entry)
     end
     entry.applied = false
     return true
+end
+
+local function CleanupEntry(entry)
+    return GuardedCall(CleanupNow, entry)
 end
 
 local function DropEntry(scope, target, entry)
@@ -298,7 +314,7 @@ local function FailEntry(scope, target, entry, reason)
     return false, reason
 end
 
-local function ReconcileEntry(scope, target, entry)
+local function ReconcileNow(scope, target, entry)
     if scope.released or scope.client.released or scope.client.unregisterPending
         or entry.release then
         return ReleaseEntry(scope, target, entry)
@@ -310,6 +326,9 @@ local function ReconcileEntry(scope, target, entry)
         return cleaned, cleaned and "suspended" or cleanReason
     end
 
+    -- Attach/control painters can change native state before they finish.
+    -- Retain this owner after a partial failure until cleanup really succeeds.
+    entry.applied = true
     if entry.surface then
         local surface
         surface, reason = NS.Surface.Attach(target, entry.surface)
@@ -336,6 +355,10 @@ local function ReconcileEntry(scope, target, entry)
     entry.applied = true
     entry.appliedControl, entry.appliedFor = entry.control, settingsGeneration
     return true, "applied"
+end
+
+local function ReconcileEntry(scope, target, entry)
+    return GuardedCall(ReconcileNow, scope, target, entry)
 end
 
 local function QueueEntry(scope, target, entry)
@@ -387,6 +410,7 @@ end
 -- off NS again.
 NS.PublicAPIShared = {
     clients = clients,
+    GuardedCall = GuardedCall,
     clientRecords = clientRecords,
     scopeRecords = scopeRecords,
     WeakSet = WeakSet,

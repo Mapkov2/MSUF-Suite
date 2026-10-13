@@ -18,6 +18,10 @@ end
 -- this frame. The Suite can need profiles during that gap.
 NS.EnsureDatabaseReady = InitializeDatabase
 
+-- True until the login pass below has run (Database.ApplyActiveSettings
+-- leaves the adapter pass to it).
+NS.Database.loginPassPending = true
+
 -- A Suite user can enable skinning after PLAYER_LOGIN. The same startup
 -- path must work whether the load-on-demand engine starts early or late.
 -- Each stage is its own boundary: login runs once, so a stage that raises
@@ -26,6 +30,7 @@ local function ApplyLogin()
     if loginApplied then return end
     InitializeDatabase()
     loginApplied = true
+    NS.Database.loginPassPending = false
     local dispatch = NS.Safety.Dispatch
     dispatch(NS.Theme.RefreshDynamicLook)
     dispatch(NS.BlizzardYellow.Apply)

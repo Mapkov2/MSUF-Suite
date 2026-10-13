@@ -1,10 +1,8 @@
 local _, NS = ...
 
--- DecompressString takes no output limit and Deflate expands up to about
--- 1:1032, so the compressed payload cap bounds what an import can inflate.
--- One fully customized profile compresses to under 8 KB; the cap leaves room
--- for an "export all" of well over a dozen of them. Exports keep to the same
--- caps, so every string the skin writes can be read back.
+-- Bound both the input and its DEFLATE output before native inflation.
+-- Exports use the same preflight so every emitted compressed string passes
+-- the import limit. Plain CBOR remains compatible with older exports.
 local ProfileIO = {
     prefix = "MSKIN1:",
     maxCompressedBytes = 128 * 1024,
@@ -23,7 +21,8 @@ local function Encode(envelope)
     end
     local payload = serialized
     local compressed = codec.CompressString(serialized, Enum.CompressionMethod.Deflate)
-    if type(compressed) == "string" and #compressed < #serialized then
+    if type(compressed) == "string" and #compressed <= ProfileIO.maxCompressedBytes and #compressed < #serialized
+        and NS.DeflateSize(compressed, ProfileIO.maxDecodedBytes) then
         payload = compressed
     end
     if #payload > ProfileIO.maxCompressedBytes then return nil, "export-too-large" end
@@ -47,8 +46,12 @@ local function Decode(text)
     if type(decoded) ~= "string" then return nil, "decode-failed" end
     if #decoded > ProfileIO.maxCompressedBytes then return nil, "import-too-large" end
     local payload = decoded
-    local inflated = codec.DecompressString(decoded, Enum.CompressionMethod.Deflate)
-    if type(inflated) == "string" then payload = inflated end
+    local size, reason = NS.DeflateSize(decoded, ProfileIO.maxDecodedBytes)
+    if reason == "import-too-large" then return nil, reason end
+    if size then
+        local inflated = codec.DecompressString(decoded, Enum.CompressionMethod.Deflate)
+        if type(inflated) == "string" then payload = inflated end
+    end
     if #payload > ProfileIO.maxDecodedBytes then return nil, "import-too-large" end
     -- DeserializeCBOR declares a nilable result (EncodingUtilDocumentation).
     -- It runs as its own boundary: should it raise for malformed CBOR, the
@@ -73,6 +76,8 @@ end
 function ProfileIO.ExportAll()
     local root = NS.Database.GetRoot()
     if not root then return nil, "uninitialized" end
+    local allowed, reason = NS.Database.CheckArchiveSize(root.profiles)
+    if not allowed then return nil, reason end
     return Encode({ addon = "MapkoSkin", format = 1, kind = "database",
         activeProfile = root.activeProfile, payload = NS.CopyValue(root.profiles) })
 end

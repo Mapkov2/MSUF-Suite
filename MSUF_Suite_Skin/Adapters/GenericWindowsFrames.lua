@@ -323,7 +323,8 @@ local function StoreFrameState(frame, owner, mode, metrics, previousState, rootS
     for index = 1, #metricWorkingSets do
         metrics[metricWorkingSets[index]] = nil
     end
-    state.metrics = metrics
+    -- The pass metrics are not kept: nothing reads them from the frame state,
+    -- and their table keeps the hash size of the pass (~1.3 KB per frame).
     frameStates[frame] = state
 end
 

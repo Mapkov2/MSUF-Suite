@@ -45,8 +45,10 @@ Suite.Database = {
     GetActiveProfileName = function() return "mapko final" end,
 }
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/Profiles.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", Suite)
+assert(loadfile(root .. "/MSUF_Suite/Core/ModernDarkMinimap.lua"))("MSUF_Suite", Suite)
 
 local skinFrame, provider
 C_AddOns = { LoadAddOn = function(name)

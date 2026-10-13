@@ -275,8 +275,8 @@ local function ShowWindowPage(state, key, focusLabel)
     if not page then
         page = CreateFrame("Frame", nil, state.pageHost)
         page:SetAllPoints()
+        if not O.BuildPage(page, state.window, definition.builder) then return false end
         state.pageFrames[key] = page
-        O.BuildPage(page, state.window, definition.builder)
     end
     page:Show()
     state.activePage = key
@@ -285,6 +285,7 @@ local function ShowWindowPage(state, key, focusLabel)
     state.pageContext:SetText(focusLabel and L["FOUND: %s"]:format(string.upper(focusLabel)) or "")
     O.SetButtonActive(state.navButtons[key], true)
     O.RefreshAll()
+    return true
 end
 
 -- Guided mode hides the expert-only pages; group headings follow the pages.

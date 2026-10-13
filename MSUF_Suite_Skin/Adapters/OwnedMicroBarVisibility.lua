@@ -26,6 +26,8 @@ local INJURED_OVERRIDES = {
 
 local owner, bar, healthGate, healthCurve
 local visibilityDriver, editSession, hoverTimer
+local nativeEditSession, nativeCallbacks = false, false
+local nativeRegistry = EventRegistry
 local hoverButtons = setmetatable({}, { __mode = "k" })
 -- Reused for every driver built below; the result is a string.
 local driverRules = {}
@@ -57,7 +59,7 @@ end
 
 local function MouseoverActive()
     local settings = Settings()
-    return bar ~= nil and owner.active and not owner.suspended and not editSession
+    return bar ~= nil and owner.active and not owner.suspended and not editSession and not nativeEditSession
         and settings and settings.visibility == "mouseover"
 end
 
@@ -103,7 +105,7 @@ end
 
 function Visibility.RefreshHealthGate(settings)
     if not healthGate then return end
-    if editSession or not (settings and settings.loadShowWhenInjured) then
+    if editSession or nativeEditSession or not (settings and settings.loadShowWhenInjured) then
         healthGate:SetAlpha(1)
         return
     end
@@ -149,13 +151,35 @@ local function ConditionalDriver(settings, mode)
     return table.concat(rules, "; ")
 end
 
+local function ReplayEditVisibility()
+    if owner and owner.active and not owner.suspended then Visibility.Apply(Settings()) end
+end
+
+local function NativeSession(enabled)
+    nativeEditSession = enabled
+    NS.CombatGate.RunOrDefer("micro-menu:edit-visibility", ReplayEditVisibility)
+end
+local function NativeEnter() NativeSession(true) end
+local function NativeExit() NativeSession(false) end
+
+local function WatchNativeEditMode()
+    if nativeCallbacks or not nativeRegistry then return end
+    -- Both upstream/ptr and upstream/forever EditModeManager emit these.
+    nativeRegistry:RegisterCallback("EditMode.Enter", NativeEnter, Visibility)
+    nativeRegistry:RegisterCallback("EditMode.Exit", NativeExit, Visibility)
+    nativeCallbacks = true
+    nativeEditSession = IsTrue(Call(EditModeManagerFrame, "IsEditModeActive"))
+end
+
 function Visibility.Apply(settings)
     if not bar or NS.IsCombatLocked() then return false end
+    WatchNativeEditMode()
     CancelHoverTimer()
-    local mode = editSession and "always" or (settings and settings.visibility) or "always"
-    local blocked = not editSession and (MenuHiddenByBlizzard() or settings and (settings.loadHideInInstance
+    local editing = editSession or nativeEditSession
+    local mode = editing and "always" or (settings and settings.visibility) or "always"
+    local blocked = not editing and (MenuHiddenByBlizzard() or settings and (settings.loadHideInInstance
         and InInstance() or settings.loadHideInHousing and InHousing()))
-    local driver = mode ~= "never" and not editSession and ConditionalDriver(settings, mode) or nil
+    local driver = mode ~= "never" and not editing and ConditionalDriver(settings, mode) or nil
     if blocked and driver then driver = "hide" end
     if visibilityDriver ~= driver then
         Visibility.ClearDriver()
@@ -178,6 +202,9 @@ end
 -- MSUF Edit Mode shows the bar with no driver while a session runs.
 function Visibility.SetEditSession(enabled)
     editSession = enabled == true
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer("micro-menu:edit-visibility", ReplayEditVisibility)
+    end
 end
 
 -- Drops the hover timer, the driver, the Edit Mode session and the tracked
@@ -186,6 +213,12 @@ function Visibility.Reset()
     CancelHoverTimer()
     Visibility.ClearDriver()
     editSession = false
+    nativeEditSession = false
+    if nativeCallbacks then
+        nativeRegistry:UnregisterCallback("EditMode.Enter", Visibility)
+        nativeRegistry:UnregisterCallback("EditMode.Exit", Visibility)
+        nativeCallbacks = false
+    end
     hoverButtons = setmetatable({}, { __mode = "k" })
 end
 

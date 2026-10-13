@@ -3,6 +3,7 @@ local _, NS = ...
 -- The skin's saved root and its named profiles (MSUFSuiteSkinDB). The
 -- profile schema, its migrations and SanitizeProfile live in Database.lua.
 local Database = NS.Database
+local MAX_ARCHIVE_PROFILES = 64
 local historyEpoch, historyTarget, previousHistoryEpoch = 0
 
 function Database.GetHistoryEpoch() return historyEpoch end
@@ -190,7 +191,12 @@ function Database.ApplyActiveSettings(reason, domain)
     local dispatch = NS.Safety.Dispatch
     dispatch(NS.Theme.RefreshDynamicLook)
     dispatch(NS.Typography.ApplyConfigured)
-    dispatch(NS.Adapters.ApplyAll)
+    -- The login pass (Lifecycle) applies every adapter with the profile that
+    -- is active when it runs. A profile the Suite activates earlier in the
+    -- same PLAYER_LOGIN would otherwise walk every window twice.
+    if not Database.loginPassPending then
+        dispatch(NS.Adapters.ApplyAll)
+    end
     dispatch(NS.Registry.RefreshAll)
     NS.Registry.NotifyListeners(domain or "profile", reason or "changed")
 end
@@ -257,15 +263,23 @@ function Database.DeleteProfile(name)
     return true, wasActive and NS.RootDB.activeProfile or name
 end
 
+function Database.CheckArchiveSize(profiles)
+    local count = 0
+    for _ in pairs(profiles) do
+        count = count + 1
+        if count > MAX_ARCHIVE_PROFILES then return false, "too-many-profiles" end
+    end
+    return true
+end
+
 function Database.ReplaceProfiles(profiles, activeName)
     if NS.IsCombatLocked() then return false, "combat" end
     if type(profiles) ~= "table" then return false, "invalid-profiles" end
     if not NS.RootDB then return false, "database-not-ready" end
+    local allowed, reason = Database.CheckArchiveSize(profiles)
+    if not allowed then return false, reason end
     local clean = {}
-    local count = 0
     for rawName, profile in pairs(profiles) do
-        count = count + 1
-        if count > 64 then return false, "too-many-profiles" end
         local name = Database.NormalizeProfileName(rawName)
         if name and type(profile) == "table" then clean[name] = Database.SanitizeProfile(profile) end
     end

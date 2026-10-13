@@ -21,6 +21,7 @@ Core\DefaultsLooks.lua
 Core\Database.lua
 Core\DatabaseProfiles.lua
 Core\SharedMedia.lua
+Core\DeflateSize.lua
 Core\ProfileIO.lua
 Core\Safety.lua
 Core\Registry.lua

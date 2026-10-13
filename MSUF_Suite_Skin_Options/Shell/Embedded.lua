@@ -18,8 +18,8 @@ local function ShowEmbeddedPage(host, key)
     if not page then
         page = CreateFrame("Frame", nil, host.content)
         page:SetAllPoints(host.content)
+        if not O.BuildPage(page, host, definition.builder) then return false end
         host.pages[key] = page
-        O.BuildPage(page, host, definition.builder)
     end
     host.key = key
     O.ui.lastPage = key

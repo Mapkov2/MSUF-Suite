@@ -38,14 +38,33 @@ function O.TrackRefresh(callback)
     return callback
 end
 
--- Builds one page of a host (standalone window or embedded rail) and binds
--- the refreshers its widgets register to that page.
+local function RunBuilder(entry, builder)
+    builder(entry.page)
+    return true
+end
+
+local function DiscardCallbacks(list, seen)
+    for index = 1, #list do seen[list[index]] = nil end
+end
+
+-- Register a page's callbacks only after its builder finishes. An abandoned
+-- page must not capture shell refreshers or retain mode listeners on retry.
 function O.BuildPage(page, host, builder)
-    local entry = { page = page, host = host }
-    pageRefreshers[#pageRefreshers + 1] = entry
+    local entry = { page = page, host = host, modes = {} }
+    local previous = buildingPage
     buildingPage = entry
-    builder(page)
-    buildingPage = nil
+    local completed = NS.Safety.Dispatch(RunBuilder, entry, builder) == true
+    buildingPage = previous
+    if not completed then
+        DiscardCallbacks(entry, registered)
+        DiscardCallbacks(entry.modes, modeRegistered)
+        page:Hide()
+        return false
+    end
+    pageRefreshers[#pageRefreshers + 1] = entry
+    for index = 1, #entry.modes do modeListeners[#modeListeners + 1] = entry.modes[index] end
+    entry.modes = nil
+    return true
 end
 
 local function RunList(list)
@@ -102,7 +121,8 @@ end
 function O.TrackMode(callback)
     if type(callback) == "function" and not modeRegistered[callback] then
         modeRegistered[callback] = true
-        modeListeners[#modeListeners + 1] = callback
+        local list = buildingPage and buildingPage.modes or modeListeners
+        list[#list + 1] = callback
     end
     return callback
 end

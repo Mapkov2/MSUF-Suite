@@ -487,7 +487,10 @@ local function RestoreModelColors(model)
     local colors = modelColors[model]
     if not colors then return end
     for region, color in pairs(colors) do
-        region:SetVertexColor(unpack(color))
+        local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
+        if Safety.SameColor(r, g, b, a, 0.36, 0.44, 0.54, color[4]) then
+            region:SetVertexColor(unpack(color))
+        end
     end
     modelColors[model] = nil
 end
@@ -507,10 +510,13 @@ local function SkinModel(state)
             if region and NS.Safety.CanDecorate(region, true)
                 and HasMethod(region, "GetVertexColor") and HasMethod(region, "SetVertexColor") then
                 NS.Cosmetics.Restore(region, state.owner)
-                if not saved[region] then
-                    saved[region] = { region:GetVertexColor() }
+                local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
+                local previous = saved[region]
+                if r and (not previous or not Safety.SameColor(r, g, b, a, 0.36, 0.44, 0.54, previous[4])) then
+                    previous = { r, g, b, a }
+                    saved[region] = previous
                 end
-                region:SetVertexColor(0.36, 0.44, 0.54, saved[region][4] or 1)
+                if r and previous then region:SetVertexColor(0.36, 0.44, 0.54, previous[4]) end
             end
         end
     else

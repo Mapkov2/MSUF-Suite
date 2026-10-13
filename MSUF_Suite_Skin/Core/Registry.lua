@@ -54,7 +54,7 @@ end
 local function RefreshTarget(target)
     local state = Registry.surfaces[target]
     if state and type(state.refresh) == "function" then
-        state.refresh(state)
+        NS.Safety.Dispatch(state.refresh, state)
     end
 end
 

@@ -527,6 +527,7 @@ NS.WindowActionSkin = {
     end,
     IsApplied = function(button) return appliedActions[button] == true end,
 }
+assert(loadfile("MSUF_Suite_Skin/Adapters/MicroMenuStates.lua"))("MSUF_Suite_Skin", NS)
 NS.MicroMenuVisual = { ApplyIcon = function() end }
 NS.MicroMenuSkin = { GetIconColor = function() return 1, 1, 1, 1 end }
 NS.IconSkin = { AnchorLines = function() end }

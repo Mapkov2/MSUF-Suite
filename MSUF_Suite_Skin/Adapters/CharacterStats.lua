@@ -184,11 +184,22 @@ local function CaptureFont(font)
     }
 end
 
+local function OwnPoint(saved)
+    local font = saved.font
+    if Read(font.GetNumPoints, font) ~= 1 then return false end
+    local point, relativeTo, relativePoint, x, y = Read(font.GetPoint, font, 1)
+    return point == saved.point and relativeTo == saved.relativeTo and relativePoint == saved.relativePoint
+        and x == saved.x and y == saved.y
+end
+
 -- A font is re-anchored only once its native anchors are held (MovePoints),
 -- so only a moved font is put back.
 local function MovePoints(saved)
-    if not saved.points then saved.points = PublicPoints(saved.font) end
-    if not saved.points then return false end
+    if not saved.points or saved.moved and not OwnPoint(saved) then
+        local points = PublicPoints(saved.font)
+        if not points then return false end
+        saved.points = points
+    end
     saved.moved = true
     saved.font:ClearAllPoints()
     return true
@@ -196,9 +207,39 @@ end
 
 local function RestorePoints(saved)
     if not saved or not saved.moved then return end
+    local owned = OwnPoint(saved)
     saved.moved = nil
+    if not owned then return end
     saved.font:ClearAllPoints()
     for _, point in ipairs(saved.points) do saved.font:SetPoint(unpack(point)) end
+end
+
+local function PlaceFont(saved, point, relativeTo, relativePoint, x, y)
+    if not MovePoints(saved) then return end
+    saved.font:SetPoint(point, relativeTo, relativePoint, x, y)
+    saved.point, saved.relativeTo, saved.relativePoint = point, relativeTo, relativePoint
+    saved.x, saved.y = x, y
+end
+
+local function RebaseFont(saved)
+    local font = saved.font
+    local path, size, flags = Read(font.GetFont, font)
+    if type(path) ~= "string" or not Number(size) then return false end
+    if saved.appliedPath and (path ~= saved.appliedPath or size ~= saved.appliedSize or (flags or "") ~= saved.flags) then
+        saved.path, saved.size, saved.flags = path, size, flags or ""
+        saved.object = Read(font.GetFontObject, font)
+    end
+    return true
+end
+
+local function RebaseColor(saved)
+    if not saved.tinted then return true end
+    local r, g, b, a = NS.Safety.ReadColor(saved.font, "GetTextColor")
+    if not r then return false end
+    if not NS.Safety.SameColor(r, g, b, a, saved.r, saved.g, saved.b, saved.a) then
+        saved.color[1], saved.color[2], saved.color[3], saved.color[4] = r, g, b, a
+    end
+    return true
 end
 
 local function Font(v, font, size, token)
@@ -210,14 +251,15 @@ local function Font(v, font, size, token)
     end
     if not saved then return end
     size = math.max(saved.size, size)
-    if saved.appliedPath ~= v.path or saved.appliedSize ~= size then
+    if (saved.appliedPath ~= v.path or saved.appliedSize ~= size) and RebaseFont(saved) then
+        size = math.max(saved.size, size)
         font:SetFont(v.path, size, saved.flags)
         saved.appliedPath, saved.appliedSize = v.path, size
     end
     if token and saved.color then
-        saved.tinted = true
         local r, g, b, a = NS.Theme.GetColor(token)
-        if saved.r ~= r or saved.g ~= g or saved.b ~= b or saved.a ~= a then
+        if (saved.r ~= r or saved.g ~= g or saved.b ~= b or saved.a ~= a) and RebaseColor(saved) then
+            saved.tinted = true
             font:SetTextColor(r, g, b, a)
             saved.r, saved.g, saved.b, saved.a = r, g, b, a
         end
@@ -330,22 +372,28 @@ local function HideMetadata(v)
     HideHelpTooltip(v)
 end
 
+local function RestoreFont(font, saved)
+    local path, size, flags = Read(font.GetFont, font)
+    local r, g, b, a = Read(font.GetTextColor, font)
+    if path == saved.appliedPath and size == saved.appliedSize and (flags or "") == saved.flags then
+        if saved.object then font:SetFontObject(saved.object)
+        else font:SetFont(saved.path, saved.size, saved.flags) end
+    end
+    if saved.tinted and NS.Safety.SameColor(r, g, b, a, saved.r, saved.g, saved.b, saved.a) then
+        font:SetTextColor(unpack(saved.color))
+    elseif r and g and b and a then
+        font:SetTextColor(r, g, b, a)
+    end
+    RestorePoints(saved)
+    if saved.appliedJustify and Read(font.GetJustifyH, font) == saved.appliedJustify then
+        font:SetJustifyH(saved.justify)
+    end
+end
+
 local function RestoreNativeStyle(v)
     if NS.IsCombatLocked() then return end
     for font, saved in pairs(v.fonts) do
-        local r, g, b, a = Read(font.GetTextColor, font)
-        if saved.object and font.SetFontObject then
-            font:SetFontObject(saved.object)
-        else
-            font:SetFont(saved.path, saved.size, saved.flags)
-        end
-        if saved.tinted and saved.color then
-            font:SetTextColor(unpack(saved.color))
-        elseif r and g and b and a then
-            font:SetTextColor(r, g, b, a)
-        end
-        RestorePoints(saved)
-        if saved.justify then font:SetJustifyH(saved.justify) end
+        RestoreFont(font, saved)
         v.fonts[font] = nil
     end
     for frame, saved in pairs(v.heights) do
@@ -530,8 +578,11 @@ local function StyleHeaders(v, itemLevel)
         local category = v.pane[field]
         local saved = category and v.fonts[category.Title]
         if saved then
-            if MovePoints(saved) then category.Title:SetPoint("LEFT", category, "LEFT", 11, 0) end
+            PlaceFont(saved, "LEFT", category, "LEFT", 11, 0)
+            local justify = Read(category.Title.GetJustifyH, category.Title)
+            if saved.appliedJustify and justify and justify ~= saved.appliedJustify then saved.justify = justify end
             category.Title:SetJustifyH("LEFT")
+            saved.appliedJustify = "LEFT"
             NS.Surface.Ensure(category, v.headerSpec)
         end
     end
@@ -557,10 +608,8 @@ local function StyleRow(v, record, detailed, wide, base, detailHeight)
         if saved then
             if detailed then
                 local label = field == "Label"
-                if MovePoints(saved) then
-                    row[field]:SetPoint(label and "TOPLEFT" or "TOPRIGHT", row,
-                        label and "TOPLEFT" or "TOPRIGHT", label and 11 or -8, wide and -7 or -4)
-                end
+                PlaceFont(saved, label and "TOPLEFT" or "TOPRIGHT", row,
+                    label and "TOPLEFT" or "TOPRIGHT", label and 11 or -8, wide and -7 or -4)
             else
                 RestorePoints(saved)
             end

@@ -52,6 +52,12 @@ end
 
 -- Reversible texture and alpha states ---------------------------------------------------
 
+-- Shared with the options preview; unknown native state stays unknown.
+local function Desaturation(settings, original)
+    if settings.tint == "monochrome" and original ~= nil then return true end
+    return original
+end
+
 -- settings: the Micro Menu settings of this pass (monochrome desaturates).
 local function ApplyTextureTint(button, region, stateName, settings)
     if not region or not CanControl(button) then return false end
@@ -81,10 +87,7 @@ local function ApplyTextureTint(button, region, stateName, settings)
     end
 
     local r, g, b, a = NS.MicroMenuSkin.GetIconColor(stateName, state.original)
-    local desiredDesaturated = state.originalDesaturated
-    if settings.tint == "monochrome" and desiredDesaturated ~= nil then
-        desiredDesaturated = true
-    end
+    local desiredDesaturated = Desaturation(settings, state.originalDesaturated)
     if not Safety.SameColor(currentR, currentG, currentB, currentA, r, g, b, a, COLOR_OWN) then
         region:SetVertexColor(r, g, b, a)
     end
@@ -298,6 +301,7 @@ function States.RestoreSurfaces()
 end
 
 States.BorderValue, States.CanControl = BorderValue, CanControl
+States.Desaturation = Desaturation
 States.ApplyTextureTint, States.FadeExact = ApplyTextureTint, FadeExact
 States.FadeControlled = FadeControlled
 States.RestoreButtonTextures, States.RestoreButtonAlphas = RestoreButtonTextures, RestoreButtonAlphas

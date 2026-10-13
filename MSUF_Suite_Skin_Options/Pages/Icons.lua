@@ -529,7 +529,7 @@ local function PaintButton(item, settings, shape, radius)
     end
     local r, g, b, a = NS.MicroMenuSkin.GetIconColor(item.info.key)
     icon:SetVertexColor(tonumber(r) or 1, tonumber(g) or 1, tonumber(b) or 1, tonumber(a) or 1)
-    icon:SetDesaturated(settings.iconStyle == "blizzard" and settings.tint == "monochrome")
+    icon:SetDesaturated(NS.MicroMenuStates.Desaturation(settings, false))
 end
 
 local function PaintStatus(view, settings, enabled)

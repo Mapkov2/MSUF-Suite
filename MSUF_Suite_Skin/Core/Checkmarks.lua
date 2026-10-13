@@ -260,11 +260,13 @@ local function RestoreTexture(texture, state)
     state = state or Checkmarks.states[texture]
     if not state then return false end
     local r, g, b, a = ReadVertex(texture)
+    -- Color and desaturation are separate properties. A foreign color edit
+    -- does not transfer the desaturation this owner applied.
+    if r and state.appliedDesaturated ~= nil and type(texture.SetDesaturated) == "function"
+        and ReadDesaturated(texture) == state.appliedDesaturated then
+        texture:SetDesaturated(state.originalDesaturated == true)
+    end
     if r and ColorMatches(state.applied, r, g, b, a, COLOR_OWN) then
-        if state.appliedDesaturated ~= nil and type(texture.SetDesaturated) == "function"
-            and ReadDesaturated(texture) == state.appliedDesaturated then
-            texture:SetDesaturated(state.originalDesaturated == true)
-        end
         local original = state.original
         texture:SetVertexColor(original[1], original[2], original[3], original[4])
     end
