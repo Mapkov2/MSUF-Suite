@@ -1,9 +1,11 @@
 ## Interface: 120100, 120105, 16001
 ## Title: MSUF Suite
-## Notes: Optional interface modules in the MSUF menu.
+## Notes: Alpha interface modules for MSUF. Requires MSUF; compatible with 6.5 (6.50).
 ## Author: Mapko
 ## Category: MSUF
-## Version: 1.0-alpha1
+## Version: 0.1-alpha
+## X-Wago-ID: YK9xrV6L
+## X-Curse-Project-ID: 1743628
 ## Dependencies: MidnightSimpleUnitFrames
 ## OptionalDeps: MapkoSkin
 ## SavedVariables: MSUFSuiteDB
