@@ -42,7 +42,7 @@ AB.NATIVE_BUTTONS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBotto
 -- Every per-bar catalog rule has its suffix here (the action bar contract
 -- checks it against Core/Catalog/ActionBars.lua).
 local SUFFIXES = { "Visibility", "HideGamepad", "ResumeVisibility", "Layer",
-    "Alpha", "FadeAlpha", "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty",
+    "Alpha", "FadeAlpha", "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty",
     "ClickThrough", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize",
     "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX",
     "CountY", "CooldownPoint", "CooldownX", "CooldownY",
@@ -328,8 +328,10 @@ function AB.LayoutBar(bar)
     local vertical, start = config[keys.Vertical], config[keys.Start]
     local columns, rows, r = AB.Grid(max(count, 1), config[keys.Rows], vertical)
     local size, spacing = AB.Snap(config[keys.Size]), AB.Snap(config[keys.Spacing])
+    local height = bar.owned and config.buttonShape == NS.ActionBarEnum.BUTTON_SHAPE.SQUARE
+        and AB.Snap(config[keys.Size] * (config[keys.HeightPercent] or 100) / 100) or size
     local step = size + spacing
-    header:SetSize(columns * size + (columns - 1) * spacing, rows * size + (rows - 1) * spacing)
+    header:SetSize(columns * size + (columns - 1) * spacing, rows * height + (rows - 1) * spacing)
     local point = NS.ActionBarAnchorPoints[config[keys.Point]] or "CENTER"
     header:ClearAllPoints()
     header:SetPoint(point, UIParent, point, AB.Snap(config[keys.X]), AB.Snap(config[keys.Y]))
@@ -337,11 +339,11 @@ function AB.LayoutBar(bar)
         local button = bar.buttons[i].button
         local col, row = AB.Cell(i - 1, columns, rows, r, vertical, start)
         button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", header, "TOPLEFT", col * step, -row * step)
-        button:SetSize(size, size)
+        button:SetPoint("TOPLEFT", header, "TOPLEFT", col * step, -row * (height + spacing))
+        button:SetSize(size, height)
     end
     if bar.index == BAR.STANCE then AB.LayoutStanceSlots(bar, count, size, columns, rows, r, step) end
-    bar.count, bar.size = count, size
+    bar.count, bar.size, bar.height = count, size, height
     local mouse = not config[keys.ClickThrough]
     if bar.owned then
         local direction = FlyoutDirection(header, columns, rows)

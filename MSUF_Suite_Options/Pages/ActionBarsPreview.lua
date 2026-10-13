@@ -112,12 +112,12 @@ local function StyleText(tile, c, p, bar, size)
         c[p .. "MacroSize"], c.macroColor, bar <= 10 and c[p .. "Macro"], tile)
     tile.key:SetWidth(math.max(1, size - 2))
     tile.name:SetWidth(math.max(1, size - 2))
-    tile.textHit:SetHeight(math.min(size / 2, c[p .. "KeybindSize"] + 5))
+    tile.textHit:SetHeight(math.min(tile:GetHeight() / 2, c[p .. "KeybindSize"] + 5))
     for _, cooldown in ipairs({ tile.cooldown, tile.chargeCooldown }) do
         local text = cooldown:GetCountdownFontString()
         if text then
             local fontSize = math.max(6, c[p .. "CooldownSize"] - nativeFont)
-            if c[p .. "CooldownAutoSize"] then fontSize = math.min(fontSize, math.max(6, math.floor(size * .42))) end
+            if c[p .. "CooldownAutoSize"] then fontSize = math.min(fontSize, math.max(6, math.floor(math.min(size, tile:GetHeight()) * .42))) end
             Font(text, c, p, "Cooldown", "CENTER", 0, 0, fontSize, c.cooldownColor, c.cooldownNumbers, tile)
         end
     end
@@ -136,13 +136,15 @@ local function BorderColor(c)
     end
     return c.borderColor
 end
-local function StyleTile(tile, c, p, bar, size, color)
+local function StyleTile(tile, c, p, bar, size, height, color)
     local border, zoom = c.borderSize, c.iconZoom / 100
-    tile:SetSize(size, size)
+    tile:SetSize(size, height)
     tile.icon:ClearAllPoints()
     tile.icon:SetPoint("TOPLEFT", border, -border)
     tile.icon:SetPoint("BOTTOMRIGHT", -border, border)
-    tile.icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
+    local x, y = zoom, zoom
+    if size > height then y = .5 - (1 - zoom * 2) * math.max(1, height - border * 2) / math.max(1, size - border * 2) / 2 end
+    tile.icon:SetTexCoord(x, 1 - x, y, 1 - y)
     tile.fill:SetAllPoints(tile.icon)
     local r, g, b = P.RGB(c.slotColor)
     tile.fill:SetColorTexture(r, g, b, c.slotAlpha / 100)
@@ -164,7 +166,7 @@ local function StyleTile(tile, c, p, bar, size, color)
         tile.art:ClearAllPoints()
         tile.art:SetPoint("CENTER")
         local extent = (size + c.borderExpansion * 2) * c.borderScale / 100
-        tile.art:SetSize(extent, extent)
+        tile.art:SetSize(extent, extent * height / size)
     end
     StyleText(tile, c, p, bar, size)
 end
@@ -212,7 +214,7 @@ end
 
 -- Fit the whole decorated bar, including asymmetric offsets, inside the
 -- canvas. Large padding or endcaps must not overlap the header controls.
-local function Bounds(c, p, width, height, size)
+local function Bounds(c, p, width, height, size, buttonHeight)
     local edge = math.max(0, ((size + c.borderExpansion * 2) * c.borderScale / 100 - size) / 2)
     local padX, padY = edge, edge
     for _, group in ipairs({ "Keybind", "Count", "Macro", "Cooldown" }) do
@@ -221,7 +223,7 @@ local function Bounds(c, p, width, height, size)
         if shown then
             local overhang = math.max(0, c[p .. group .. "Size"] - size)
             padX = math.max(padX, math.abs(c[p .. group .. "X"]) + overhang)
-            padY = math.max(padY, math.abs(c[p .. group .. "Y"]) + overhang)
+            padY = math.max(padY, math.abs(c[p .. group .. "Y"]) + math.max(0, c[p .. group .. "Size"] - buttonHeight))
         end
     end
     local left, right, bottom, top = -width / 2 - padX, width / 2 + padX, -height / 2 - padY, height / 2 + padY
@@ -266,9 +268,11 @@ local function Paint(ui)
     local bar, c = ui.selected(), S.Config(ID)
     local p = "bar" .. bar
     local count, size, gap = c[p .. "Buttons"], c[p .. "Size"], c[p .. "Spacing"]
+    local buttonHeight = bar <= 10 and c.buttonShape == Suite.ActionBarEnum.BUTTON_SHAPE.SQUARE
+        and math.floor(size * (c[p .. "HeightPercent"] or 100) / 100 + .5) or size
     local columns, rows, r = Suite.ActionBarGrid(count, c[p .. "Rows"], c[p .. "Vertical"])
-    local width, height = columns * size + (columns - 1) * gap, rows * size + (rows - 1) * gap
-    local left, right, bottom, top = Bounds(c, p, width, height, size)
+    local width, height = columns * size + (columns - 1) * gap, rows * buttonHeight + (rows - 1) * gap
+    local left, right, bottom, top = Bounds(c, p, width, height, size, buttonHeight)
     local fit = math.min(1, ui.width / (right - left), (ui.height - 44) / (top - bottom))
     ui.canvas:SetSize(width, height)
     ui.canvas:SetScale(fit)
@@ -282,10 +286,10 @@ local function Paint(ui)
         local shown = i <= count
         if shown then
             Preview.Read(tile, bar, i, c)
-            StyleTile(tile, c, p, bar, size, color)
+            StyleTile(tile, c, p, bar, size, buttonHeight, color)
             local col, row = Suite.ActionBarCell(i - 1, columns, rows, r, c[p .. "Vertical"], c[p .. "Start"])
             tile:ClearAllPoints()
-            tile:SetPoint("TOPLEFT", ui.canvas, "TOPLEFT", col * (size + gap), -row * (size + gap))
+            tile:SetPoint("TOPLEFT", ui.canvas, "TOPLEFT", col * (size + gap), -row * (buttonHeight + gap))
             shown = tile.filled or c[p .. "ShowEmpty"]
         end
         tile:SetShown(shown)

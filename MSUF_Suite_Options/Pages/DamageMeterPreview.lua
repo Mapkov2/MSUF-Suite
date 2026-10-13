@@ -95,6 +95,7 @@ function P.BuildMeterMenuPreview(ui, selected, setSelected)
         if not preview.targets then preview.targets = Hits(ui, win) end
         local native = UIParent:GetEffectiveScale() / ui.header:GetEffectiveScale()
         local w, h = win.frame:GetWidth(), win.frame:GetHeight()
+        if P.Get("damageMeter", "headerOutside") then h = h + P.Get("damageMeter", "headerHeight") end
         local fit = math.min(1, preview.availableWidth / (w * native), 250 / (h * native))
         local scale, height = native * fit, h * native * fit
         if preview.scale ~= scale or preview.height ~= height or preview.width ~= w then

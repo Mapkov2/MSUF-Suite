@@ -62,6 +62,7 @@ C_AddOns = {
     end,
 }
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", Suite)
 for _, id in ipairs({ "cursorEffects", "mapLandingShortcuts",
     "combatStatsHUD", "combatPetStatus", "combatMovementCue", "burningRushCue",
@@ -175,7 +176,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
-        and id ~= "cursorEffects"
+        and id ~= "cursorEffects" and id ~= "playerAuras"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower" and id ~= "selfCombatText"
         and id ~= "enemyCastStack" and id ~= "dungeonPortals" and id ~= "targetDistance"
         and id ~= "mythicResetReminder" and id ~= "combatPetStatus"

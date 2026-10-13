@@ -163,6 +163,8 @@ B.Section(id, "window", "Window and header", {
     Number("bgAlpha", "Background opacity (percent)", initial.bgAlpha, 0, 100, 5),
     Number("borderSize", "Border thickness", initial.borderSize, 0, 4),
     Color("borderColor", "Border color", initial.borderColor),
+    Bool("headerOutside", "Place header above the window", false),
+    Bool("headerSelectors", "Show session and meter selectors", true),
     Number("headerHeight", "Header height", 22, 14, 40),
     Color("headerColor", "Header color", initial.headerColor),
     Number("headerAlpha", "Header opacity (percent)", initial.headerAlpha, 0, 100, 5),

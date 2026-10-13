@@ -189,7 +189,7 @@ local SWIPES = { "cooldown", "chargeCooldown", "lossOfControlCooldown" }
 local function PlaceArt(texture, button, extent, circle)
     texture:ClearAllPoints()
     texture:SetPoint("CENTER", button, "CENTER", 0, 0)
-    texture:SetSize(extent, extent)
+    texture:SetSize(extent, extent * button:GetHeight() / button:GetWidth())
     Art(texture, circle)
 end
 function AB.StyleDecoration(rec, size)
@@ -265,13 +265,15 @@ end
 local function LayoutAssist(rec, holder)
     local c = M.config
     local size = (rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
+    local height = (rec.bar.height or rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
     local circle = c.buttonShape == SHAPE.CIRCLE
-    if holder.size == size and holder.x == c.assistX and holder.y == c.assistY and holder.circle == circle
+    if holder.size == size and holder.height == height and holder.x == c.assistX and holder.y == c.assistY and holder.circle == circle
         and holder.color == c.assistColor and holder.alpha == c.assistAlpha and holder.style == c.assistStyle then return end
     holder.size, holder.x, holder.y, holder.circle = size, c.assistX, c.assistY, circle
+    holder.height = height
     holder.color, holder.alpha, holder.style = c.assistColor, c.assistAlpha, c.assistStyle
     holder:ClearAllPoints()
-    holder:SetSize(size, size)
+    holder:SetSize(size, height)
     holder:SetPoint("CENTER", rec.button, "CENTER", c.assistX, c.assistY)
     holder.ring:SetAllPoints(holder)
     Art(holder.ring, circle)

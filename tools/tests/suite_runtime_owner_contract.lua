@@ -61,6 +61,7 @@ GetRealmName = function() return "Realm" end
 InCombatLockdown = function() return false end
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
 assert(Suite.Database.Initialize(nil))
 local retiredCelebrations = { enabled = true, onLust = true }
@@ -88,7 +89,7 @@ for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 62 and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
+assert(count == 63 and Suite.Suite.instances.playerAuras and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
     and Suite.Suite.instances.itemCounts and Suite.Suite.instances.loadoutReminder
@@ -522,7 +523,7 @@ IsInGroup, IsInRaid = function() return true end, function() return true end
 UnitExists = function(unit) return deadUnits[unit] ~= nil end
 UnitIsDeadOrGhost = function(unit) return deadUnits[unit] end
 UnitIsUnit = function(unit, other) return unit == "raid1" and other == "player" end
-UnitName = function(unit) return unit == "raid5" and "Røxì" or "Teammate" end
+UnitName = function(unit) return unit == "raid5" and "RÃ¸xÃ¬" or "Teammate" end
 UnitGUID = function(unit) return deadUnits[unit] ~= nil and "Player-1-" .. unit or nil end
 UnitIsFeignDeath = function() return false end
 DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) deathChat[#deathChat + 1] = text end }
@@ -540,8 +541,8 @@ deathScreen = assert(death.screen.messages, "screen deaths did not use an owned 
 deadUnits.raid5 = true
 death.context.frame:callback("UNIT_FLAGS", "raid5")
 death.context.frame:callback("UNIT_HEALTH", "raid5")
-assert(#deathChat == 1 and deathChat[1] == "MSUF Suite: Røxì died"
-    and #deathScreen == 1 and deathScreen[1]:find("Røxì died", 1, true) and deathSounds == 1,
+assert(#deathChat == 1 and deathChat[1] == "MSUF Suite: RÃ¸xÃ¬ died"
+    and #deathScreen == 1 and deathScreen[1]:find("RÃ¸xÃ¬ died", 1, true) and deathSounds == 1,
     "real runtime death event failed or duplicated chat/screen/sound")
 deadUnits.raid6 = true
 death.context.frame:callback("UNIT_HEALTH", "raid6")
@@ -553,7 +554,7 @@ assert(#deathChat == 2, "resurrection emitted a death message")
 -- The client's own death event reaches the module through the real runtime.
 assert(death.context.frame.events.UNIT_DIED == true, "the death event was not registered in combat")
 death.context.frame:callback("UNIT_DIED", "Player-1-raid5")
-assert(#deathChat == 3 and deathChat[3] == "MSUF Suite: Røxì died", "the runtime lost the client's death event")
+assert(#deathChat == 3 and deathChat[3] == "MSUF Suite: RÃ¸xÃ¬ died", "the runtime lost the client's death event")
 inCombat = false
 death.context.frame:callback("PLAYER_REGEN_ENABLED")
 assert(not death.dead and not death.context.callbacks.UNIT_HEALTH

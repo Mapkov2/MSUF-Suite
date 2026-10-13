@@ -497,11 +497,17 @@ local function MythicResult(self)
     return result
 end
 
+local function EndRun(self)
+    self.lastRunKey, self.lastRunTime, self.lastHistoryID = nil, nil, nil
+    self.lootPending, self.lootResult, self.lootStartedAt = nil, nil, nil
+    self.observedLoot, self.lootLines, self.partyStart = nil, nil, nil
+    self.meterStart, self.meterFinish, self.meterCaptured, self.meterInvalid = nil, nil, nil, nil
+end
+
 local function StartRun(self)
-    self.lastRunKey, self.lastHistoryID, self.lootPending = nil, nil, nil
-    self.observedLoot, self.lootLines, self.lootResult, self.lootStartedAt = {}, {}, nil, nil
-    self.partyStart, self.meterStart, self.meterInvalid, self.meterFinish = PartySnapshot(), ReadMeters(), nil, nil
-    self.meterCaptured = nil
+    EndRun(self)
+    self.observedLoot, self.lootLines = {}, {}
+    self.partyStart, self.meterStart = PartySnapshot(), ReadMeters()
 end
 
 local function MythicEvent(self, event)
@@ -654,6 +660,11 @@ local function SyncEvents(self)
         self.pull = nil
     end
     local mythic = not NS.Client.isForever and self.config.showMythicPlus
+    if not mythic then
+        EndRun(self)
+        if self.pending and self.pending.kind == "mythic" then self.pending = nil end
+        if self.current and self.current.kind == "mythic" and not S.editMode then self:Close() end
+    end
     for _, event in ipairs(MYTHIC_EVENTS) do
         if mythic then context:Event(event, OnEvent, IN_COMBAT) else context:RemoveEvent(event) end
     end
@@ -696,13 +707,14 @@ function M:Refresh()
     end
 end
 
--- An armed delete ends with the module: its window is cancelled with the
--- context, and a re-enabled module must ask again.
+-- Disable ends this activation's run, loot and meter observations. Character
+-- history stays available; an unobserved interval cannot extend an old run.
+-- The delete arm and automatic card close with their context-owned windows.
 function M:Disable()
-    self.lootPending = nil
     Disarm(self)
     self:Close()
-    self.pull, self.current, self.lastRunKey = nil, nil, nil
+    self.pull, self.current = nil, nil
+    EndRun(self)
 end
 
 function M:RegisterMovers()

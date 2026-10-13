@@ -144,6 +144,19 @@ end
 
 -- Icon crop, hidden template art and the empty-slot fill behind the icon
 -- (filled slots cover it).
+local function CropIcon(icon, bar, border)
+    local zoom = AB.style.zoom
+    local size = bar.size or M.config[bar.key.Size]
+    local width, height = max(1, size - border * 2), max(1, (bar.height or size) - border * 2)
+    local x, y = zoom, zoom
+    if width > height then
+        y = .5 - (1 - zoom * 2) * height / width / 2
+    elseif height > width then
+        x = .5 - (1 - zoom * 2) * width / height / 2
+    end
+    icon:SetTexCoord(x, 1 - x, y, 1 - y)
+end
+
 local function StyleIcon(rec, border)
     local button, style = rec.button, AB.style
     local icon = button.icon
@@ -155,7 +168,7 @@ local function StyleIcon(rec, border)
         icon:ClearAllPoints()
         icon:SetPoint("TOPLEFT", button, "TOPLEFT", border, -border)
         icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -border, border)
-        icon:SetTexCoord(style.zoom, 1 - style.zoom, style.zoom, 1 - style.zoom)
+        CropIcon(icon, rec.bar, border)
     end
     Hide(button:GetNormalTexture())
     Hide(button.SlotArt)
@@ -296,14 +309,14 @@ function AB.StyleButton(rec)
     StyleIcon(rec, border)
     StyleInteractions(rec, size, border)
     StyleTexts(rec, size, border, fontScale)
-    StyleCooldowns(rec, size, fontScale)
+    StyleCooldowns(rec, math.min(size, bar.height or size), fontScale)
     AB.StyleDecoration(rec, size)
     if rec.owned and button.Border then
         button.Border:ClearAllPoints()
         button.Border:SetAllPoints(button)
     end
     local alert = button.SpellActivationAlert
-    if alert and rec.owned then alert:SetSize(size * 1.4, size * 1.4) end
+    if alert and rec.owned then alert:SetSize(size * 1.4, (bar.height or size) * 1.4) end
     if rec.native then AB.SetNativeAlertAlpha(button, M.config.procGlow == PROC_BLIZZARD and 1 or 0) end
     -- A showing pixel glow takes the new interaction color.
     AB.RecolorGlow(rec)

@@ -12,6 +12,7 @@ local objectiveContent = {
     B.Bool("hideInRaid", "Hide tracker throughout raid instances", false),
     B.Bool("hideDuringBoss", "Hide tracker during raid boss encounters", false),
     B.Bool("showHeader", "Show tracker heading", true),
+    B.Bool("groupUnderlines", "Underline tracker group headings", false),
     B.Choice("questIconStyle", "Quest type symbols", 1, { "Off", "Suite symbols", "Blizzard symbols" }),
     B.Bool("showAchievements", "Tracked achievements", true),
     B.Bool("showScenario", "Scenario and delve steps", true),

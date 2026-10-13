@@ -20,7 +20,7 @@ local HELP = {
 local GROUPS = {
     { id = "visibility", title = "When the selected bar appears", suffixes = { "Visibility", "HideGamepad", "Alpha", "FadeAlpha", "ClickThrough" } },
     { id = "layout", title = "Layout for the selected bar",
-        suffixes = { "Buttons", "Rows", "Size", "Spacing", "Vertical", "Start", "ShowEmpty", "Layer", "Point", "X", "Y" } },
+        suffixes = { "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty", "Layer", "Point", "X", "Y" } },
     { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize",
         "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint",
         "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY" } },
@@ -32,7 +32,7 @@ local GROUPS = {
 }
 local POSITION = { Point = true, X = true, Y = true }
 local ESSENTIAL = {
-    layout = { Buttons = true, Rows = true, Size = true, Spacing = true, Vertical = true, ShowEmpty = true },
+    layout = { Buttons = true, Rows = true, Size = true, HeightPercent = true, Spacing = true, Vertical = true, ShowEmpty = true },
     text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
         CountSize = true, CooldownSize = true, CooldownAutoSize = true },
     visibility = { Visibility = true, Alpha = true, FadeAlpha = true },

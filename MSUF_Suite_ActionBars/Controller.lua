@@ -58,11 +58,32 @@ end
 
 -- Settings are written after the current apply finished (S.SetMany re-runs
 -- Refresh); a combat start in between retries on the next refresh.
+local captureConfig, captureGeneration, captureRetry = nil, 0, nil
+local function SyncCapture(config)
+    if captureConfig == config then return end
+    captureConfig, captureRetry = config, nil
+    captureGeneration = captureGeneration + 1
+    AB.importQueued = nil
+end
+
 local function QueueImport(values)
-    AB.importQueued = true
+    SyncCapture(M.config)
+    captureGeneration = captureGeneration + 1
+    local config, generation = M.config, captureGeneration
+    AB.importQueued = generation
     local function Write()
-        if not M.active or M.config.imported then return end
-        if not S.SetMany("actionbars", values) then AB.importQueued = nil end
+        if AB.importQueued ~= generation or captureGeneration ~= generation then return end
+        if not M.active or M.config ~= config or S.Config("actionbars") ~= config or config.imported then
+            AB.importQueued = nil
+            return
+        end
+        if NS.InCombat() then
+            captureRetry = Write
+            S.Queue("actionbars")
+            return
+        end
+        AB.importQueued = nil
+        S.SetMany("actionbars", values)
     end
     C_Timer.After(0, Write)
 end
@@ -89,7 +110,8 @@ Global({ "iconZoom", "borderSize", "borderColor", "borderClassColor", "slotColor
     "pushedStyle", "interactionColor", "interactionClassColor", "swipeColor", "swipeAlpha", "cooldownNumbers",
     "rechargeNumbers", "font", "fontOutline", "fontRendering", "fontShadow", "fontShadowOpacity",
     "fontShadowDistance", "keybindColor", "macroColor", "countColor", "cooldownColor" }, { style = true })
-Global({ "buttonShape", "borderArt", "borderScale", "borderExpansion" }, { style = true })
+Global({ "borderArt", "borderScale", "borderExpansion" }, { style = true })
+Global({ "buttonShape" }, { style = true, allLayout = true, allGeometry = true })
 -- Endcaps and bar background borders wear the resolved border color too.
 Global({ "borderColor", "borderClassColor" }, { style = true, allLayout = true })
 Global({ "assistStyle", "assistColor", "assistAlpha", "assistExpansion", "assistX", "assistY" }, { assist = true })
@@ -112,6 +134,7 @@ local BAR_WORK = {
     Layer = { layout = true },
     Buttons = { layout = true, paint = true },
     Size = { layout = true, style = true },
+    HeightPercent = { layout = true, style = true },
     ClickThrough = { layout = true, visible = true },
     Visibility = { visible = true },
     HideGamepad = { visible = true, events = true },
@@ -230,7 +253,7 @@ end
 local function ApplyLayout()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
-        if bar and barWork[index].layout then
+        if bar and (work.allGeometry or barWork[index].layout) then
             if index >= BAR.STANCE then AB.Adopt(index) end
             AB.LayoutBar(bar)
             if index == BAR.STANCE then bar.forms, bar.formCount = AB.HasForms() end
@@ -329,12 +352,18 @@ function M:Enable()
 end
 
 function M:Refresh()
+    local config = self.config
+    SyncCapture(config)
     if NS.IsCombatLocked() then
         S.Queue("actionbars")
         return
     end
-    local config = self.config
     ApplyPickupModifier(config)
+    if captureRetry then
+        local retry = captureRetry
+        captureRetry = nil
+        C_Timer.After(0, retry)
+    end
     if not config.imported and not AB.importQueued then QueueImport(AB.BuildImport(AB.ReadBlizzard())) end
     AB.ReparentLeaveButton()
     Collect(config)
@@ -374,7 +403,7 @@ function M:Disable()
     Dispatch(AB.StopPaging)
     Dispatch(AB.StopVisibility)
     Dispatch(AB.ClearRouting)
-    AB.importQueued = nil
+    SyncCapture(nil)
     for key in pairs(applied) do applied[key] = nil end
     rebuild, appliedUnit, appliedEditMode = true, nil, nil
     if AB.disposed then S.states.actionbars.reloadRequired = AB.RELOAD_MESSAGE end

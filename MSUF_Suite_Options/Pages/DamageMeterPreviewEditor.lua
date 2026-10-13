@@ -150,8 +150,13 @@ local function Start(handle, button)
     local offsetX, offsetY = Read(preview, handle)
     local x, y = GetCursorPosition()
     handle.drag = { cursorX = x, cursorY = y, x = offsetX, y = offsetY,
-        window = preview.selected(), scale = preview.stage:GetEffectiveScale() }
+        window = preview.selected(), scale = preview.stage:GetEffectiveScale(),
+        config = P.S.Config(ID), current = P.ProfileGuard() }
     handle:StartMoving()
+end
+
+local function DragCurrent(drag, preview)
+    return drag.window == preview.selected() and drag.current() and drag.config == P.S.Config(ID)
 end
 
 local function Stop(handle, button)
@@ -160,7 +165,7 @@ local function Stop(handle, button)
     if not drag then return end
     local x, y = GetCursorPosition()
     Cancel(handle)
-    if drag.window ~= preview.selected() or preview.inCombat or P.Combat() then return end
+    if not DragCurrent(drag, preview) or preview.inCombat or P.Combat() then return end
     local scale = math.max(.001, drag.scale)
     local dx, dy = (x - drag.cursorX) / scale, (y - drag.cursorY) / scale
     if math.abs(dx) + math.abs(dy) >= 2 then
@@ -306,7 +311,7 @@ end
 
 function E.Refresh(preview)
     for _, handle in ipairs(preview.handles) do
-        if handle.drag and (handle.drag.window ~= preview.selected() or not handle:IsVisible()) then Cancel(handle) end
+        if handle.drag and (not DragCurrent(handle.drag, preview) or not handle:IsVisible()) then Cancel(handle) end
         if not handle.drag then Anchor(handle) end
     end
     local selected = preview.viewport._selectedHandle

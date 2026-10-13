@@ -311,6 +311,7 @@ local files={"Data","IconLayout","Rows","Window","Breakdown","Menus","Timer","Co
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode","Dialogs","MicroMenu"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
@@ -1584,5 +1585,19 @@ do
     local fresh={suite={schema=1,modules={}}}
     S.Normalize(fresh)
     assert(fresh.suite.modules.damageMeter.refreshRate==1.5,"a new profile did not get the 1.5 s default")
+end
+do
+    local c = M.config
+    c.headerOutside, c.headerSelectors, c.headerHeight = true, false, 38
+    D.StyleWindowLayout(win)
+    assert(win.header.points[1][1] == "BOTTOMLEFT", "external header still inside the body")
+    assert(win.buttons.settings.shown and win.buttons.reset.shown and not win.buttons.session.shown
+        and not win.buttons.type.shown, "two-symbol header has extra selectors")
+    local capacity = D.Capacity(c[D.KEYS[win.index].Height])
+    c.headerOutside, c.headerSelectors = false, true
+    D.StyleWindowLayout(win)
+    assert(win.header.points[1][1] == "TOPLEFT" and win.buttons.session.shown and win.buttons.type.shown,
+        "header setting did not restore the original layout")
+    assert(capacity >= win.capacity, "external header incorrectly consumes body rows")
 end
 print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, damage and healing targets, combat spell unit labels, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

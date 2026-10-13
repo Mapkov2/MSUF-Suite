@@ -765,12 +765,16 @@ for _,file in ipairs(coreFiles) do
                 return spec
             end
         end
-        if file=="Core/Suite.lua" then break end
+        if file=="Core/Suite.lua" then
+            assert(loadfile(root.."/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite",Suite)
+            break
+        end
     end
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 local S=Suite.Suite
+assert(loadfile(root.."/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite",Suite)
 assert(loadfile(root.."/MSUF_Suite/Core/SpellRange.lua"))("MSUF_Suite",Suite)
 S.Normalize(Suite.DB)
 -- The legacy runtime assertions below exercise Blizzard's uncurated list.

@@ -169,6 +169,7 @@ assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
 GameFontHighlightSmall={GetFont=function() return "Fonts\\FRIZQT__.TTF",12,"" end}
 local private={}
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 for _,file in ipairs({"Surfaces","Runtime","Timers","EditMode","Dialogs","MicroMenu"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end

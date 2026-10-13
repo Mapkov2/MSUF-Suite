@@ -226,7 +226,12 @@ local function CooldownFeedback(rec, active)
         button:SetAlpha(1)
         return
     end
-    button.icon:SetDesaturation(desaturate and object:EvaluateRemainingDuration(AB.desatCurve) or 0)
+    -- A curve result can be secret: even `or 0` would test it before the sink.
+    if desaturate then
+        button.icon:SetDesaturation(object:EvaluateRemainingDuration(AB.desatCurve))
+    else
+        button.icon:SetDesaturation(0)
+    end
     if alpha then
         button:SetAlpha(object:EvaluateRemainingDuration(AB.alphaCurve))
     else
@@ -370,8 +375,7 @@ local function ShowAlert(button)
         button.SpellActivationAlert = alert
         alert:SetPoint("CENTER", button, "CENTER", 0, 0)
     end
-    local size = button:GetWidth()
-    alert:SetSize(size * 1.4, size * 1.4)
+    alert:SetSize(button:GetWidth() * 1.4, button:GetHeight() * 1.4)
     alert:Show()
     alert.ProcStartAnim:Play()
 end

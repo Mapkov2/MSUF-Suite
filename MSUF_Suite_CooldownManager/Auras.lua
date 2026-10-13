@@ -158,7 +158,7 @@ local function Needs(entries, aura, view)
     local isKit = C.Alerts.IsKit
     for i = 1, #entries do
         local entry = entries[i]
-        if aura and entry.timer and C.AuraTimers.Wants(entry, view) then need.timers = need.timers .. i .. "=" .. entry.key .. ":" end
+        if aura and entry.timer and C.AuraTimers.Wants(entry, view) then need.timers = need.timers .. i .. ":" end
         local ov = entry.ov
         if ov and ov ~= EMPTY and entry.src ~= "p" then
             if ov.timeText == YES then need.text = true end

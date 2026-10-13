@@ -287,12 +287,7 @@ end
 -- (MSUF_GetSuiteCooldownAnchor): then MSUF follows our Essential bar itself,
 -- and without it MSUF stays attached to Blizzard's invisible one. The one
 -- place that reads either; Native.lua asks it too. Returns wants, follows.
-local function MSUFAnchor()
-    local db = _G.MSUF_DB
-    local general = type(db) == "table" and db.general or nil
-    local wants = type(general) == "table" and general.anchorToCooldown == true
-    return wants, wants and type(_G.MSUF_GetSuiteCooldownAnchor) == "function"
-end
+local MSUFAnchor = NS.HostBridge.CooldownAnchor
 Layout.MSUFAnchor = MSUFAnchor
 -- MSUF places its unit frames by our Essential bar when it follows the
 -- cooldown bars; then the Essential bar and every bar it attaches to stay

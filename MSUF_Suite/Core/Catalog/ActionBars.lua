@@ -230,6 +230,7 @@ for i = 1, BAR_COUNT do
         Number(p .. "Buttons", "Buttons", maxButtons, 1, maxButtons),
         Number(p .. "Rows", "Rows", d[3] > 1 and d[3] or 1, 1, maxButtons),
         Number(p .. "Size", "Button size", special and 30 or 40, 16, 80),
+        Number(p .. "HeightPercent", "Button height (percent)", 100, 40, 100),
         Number(p .. "Spacing", "Button spacing", 2, -10, 20),
         Bool(p .. "Vertical", "Fill columns first", d[3] > 1),
         Choice(p .. "Start", "First button corner", ENUM.START.TOP_LEFT, { "Top left", "Top right", "Bottom left", "Bottom right" }),
@@ -299,6 +300,8 @@ rules.pageArrowSide.enableKey = "pageArrows"
 for i = 1, BAR_COUNT do
     local p = "bar" .. i
     rules[p .. "ResumeVisibility"].hidden = true
+    rules[p .. "HeightPercent"].hidden = i > ENUM.BAR.LAST_ACTION or nil
+    rules[p .. "HeightPercent"].requiresChoice = { key = "buttonShape", values = { [ENUM.BUTTON_SHAPE.SQUARE] = true } }
     -- Only Forever has a gamepad interface to hide bars for
     -- (InputUtil.IsGamepadUIEnabled); Retail never applies the option.
     rules[p .. "HideGamepad"].hidden = not NS.Client.isForever or nil

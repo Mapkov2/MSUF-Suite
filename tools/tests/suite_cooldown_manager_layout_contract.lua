@@ -161,7 +161,7 @@ INVSLOT_TRINKET1,INVSLOT_TRINKET2=13,14
 MSUF_EncodeCompactTable=function() return "" end
 MSUF_TryDecodeCompactString=function() return nil end
 local NS={}
-for _,file in ipairs({"Core/Platform.lua","Core/Database.lua","Core/SuiteCatalog.lua"}) do
+for _,file in ipairs({"Core/Platform.lua","Core/Database.lua","Core/SuiteCatalog.lua","Core/HostBridge.lua"}) do
     assert(loadfile(root.."/MSUF_Suite/"..file))("MSUF_Suite",NS)
 end
 -- moduleAddons lacks the module until integration; register it locally.
@@ -201,6 +201,7 @@ NS.Suite=S
 MSUFSuite=NS
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 local config={}
 for key,rule in pairs(rules) do config[key]=rule.default end

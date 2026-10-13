@@ -29,6 +29,7 @@ assert(Suite.Database.Initialize(nil));Suite.Suite.Normalize(Suite.DB)
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end

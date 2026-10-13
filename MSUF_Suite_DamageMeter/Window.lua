@@ -175,7 +175,7 @@ end
 
 function D.Capacity(height)
     local style = M.style
-    local capacity = floor((height - M.config.headerHeight - 2 + style.spacing) / (style.barHeight + style.spacing))
+    local capacity = floor((height - (M.config.headerOutside and 0 or M.config.headerHeight) - 2 + style.spacing) / (style.barHeight + style.spacing))
     return capacity < 0 and 0 or capacity > 40 and 40 or capacity
 end
 
@@ -184,8 +184,10 @@ function D.StyleHeader(win)
     local size = min(c.headerIconSize, c.headerHeight)
     local r, g, b = S.RGB(c.titleColor)
     local previous
+    local slots = c.headerSelectors == false and 2 or #ORDER
     for index, kind in ipairs(ORDER) do
         local button = win.buttons[kind]
+        button:SetShown(index <= slots)
         button:ClearAllPoints()
         local elementSize = c[kind .. "Size"] > 0 and c[kind .. "Size"] or size
         button:SetSize(elementSize, elementSize)
@@ -218,7 +220,7 @@ function D.StyleHeader(win)
     win.timer:SetTextColor(r, g, b)
     win.title:ClearAllPoints()
     win.timer:ClearAllPoints()
-    local timerRight = -3 - #ORDER * (size + 2) - 2
+    local timerRight = -3 - slots * (size + 2) - 2
     win.timer:SetPoint("RIGHT", win.header, "RIGHT", timerRight + c.headerTimerOffsetX, M.style.baseline + c.headerTimerOffsetY)
     win.title:SetPoint("LEFT", win.header, "LEFT", 6 + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
     win.title:SetPoint("RIGHT", win.header, "RIGHT", timerRight - c.headerFontSize * 3 - 4 + c.titleOffsetX, M.style.baseline + c.titleOffsetY)
@@ -247,8 +249,9 @@ function D.StyleWindowLayout(win)
     local height = c[keys.Height]
     frame:SetSize(c[keys.Width], height)
     header:ClearAllPoints()
-    header:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    local headerPoint = c.headerOutside and "BOTTOM" or "TOP"
+    header:SetPoint(headerPoint .. "LEFT", frame, "TOPLEFT", 0, 0)
+    header:SetPoint(headerPoint .. "RIGHT", frame, "TOPRIGHT", 0, 0)
     header:SetHeight(c.headerHeight)
     local r, g, b = S.RGB(c.headerColor)
     win.headerBg:SetColorTexture(r, g, b, c.headerAlpha / 100)

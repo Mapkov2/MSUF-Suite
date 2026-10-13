@@ -235,6 +235,7 @@ assert(loadfile(root.."/MSUF_Suite/Core/SpellRange.lua"))("MSUF_Suite",NS)
 MSUFSuite=NS
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 S.Public=function(value) return not IsSecret(value) end
 -- Runtime.lua is not loaded here: its S.Dispatch is Platform's NS.Dispatch.

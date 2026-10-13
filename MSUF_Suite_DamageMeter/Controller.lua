@@ -172,8 +172,15 @@ function D.PaintDirty()
                     end
                 end
             end
-            if previous then D.Paint(win, previous.session, true) else D.Paint(win) end
-            if not win.bd.open then win.paintBatch = batch end
+            -- Only a completed window can lend its snapshot to later windows.
+            -- A broken paint is reported without cancelling their work.
+            local painted
+            if previous then
+                painted = S.Dispatch(NS.Finish, D.Paint, win, previous.session, true)
+            else
+                painted = S.Dispatch(NS.Finish, D.Paint, win)
+            end
+            if painted and not win.bd.open then win.paintBatch = batch end
         end
     end
     D.UpdateTimers()

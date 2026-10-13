@@ -7,7 +7,7 @@ local Dispatch, Finite, PublicText = S.Dispatch, S.Finite, S.PublicText
 -- This is not ctx:After (Timers.lua): the owners are plain strings that need no
 -- module context, and every due task rides on one native timer, where a wait
 -- per context would arm one C_Timer per display and tick.
-local tasks, taskPool, ready = {}, {}, {}
+local tasks, taskPool, ready, readyGenerations = {}, {}, {}, {}
 local timer, timerDue, dispatching = nil, nil, false
 
 
@@ -19,7 +19,8 @@ local function FireTimer()
         if task.due <= now + 0.001 then
             tasks[owner] = nil
             readyCount = readyCount + 1
-            ready[readyCount] = task.callback
+            ready[readyCount] = task
+            readyGenerations[readyCount] = task.generation
         end
     end
     -- Callbacks usually schedule their next tick. Arm once afterwards. Each
@@ -27,9 +28,9 @@ local function FireTimer()
     -- the timer is armed again.
     dispatching = true
     for i = 1, readyCount do
-        local callback = ready[i]
-        ready[i] = nil
-        Dispatch(callback)
+        local task, generation = ready[i], readyGenerations[i]
+        ready[i], readyGenerations[i] = nil, nil
+        if task.generation == generation then Dispatch(task.callback) end
     end
     dispatching = false
     Arm()
@@ -51,6 +52,7 @@ Arm = function()
 end
 
 local function CancelTask(task)
+    task.generation = task.generation + 1
     local owner = task.owner
     if tasks[owner] == task then
         tasks[owner] = nil
@@ -65,9 +67,10 @@ function S.ScheduleDataTick(owner, delay, callback)
     if type(owner) ~= "string" or type(callback) ~= "function" or type(delay) ~= "number" then return nil end
     local task = taskPool[owner]
     if not task then
-        task = { owner = owner, Cancel = CancelTask }
+        task = { owner = owner, Cancel = CancelTask, generation = 0 }
         taskPool[owner] = task
     end
+    task.generation = task.generation + 1
     task.due = GetTime() + math.max(0.05, delay)
     task.callback = callback
     tasks[owner] = task
@@ -116,7 +119,21 @@ end
 
 -- The readers call client APIs Retail and Forever both have; results that
 -- are secret or out of range read as nil.
+local function AddonMemory()
+    if not (GetAddOnMemoryUsage and UpdateAddOnMemoryUsage) then return nil end
+    UpdateAddOnMemoryUsage()
+    local total, count = 0, C_AddOns.GetNumAddOns()
+    if not Finite(count) then return nil end
+    for index = 1, count do
+        local usage = GetAddOnMemoryUsage(index)
+        if not Finite(usage) or usage < 0 then return nil end
+        total = total + usage
+    end
+    return total / 1024
+end
+
 local readers = {
+    memory = AddonMemory,
     fps = function()
         local value = GetFramerate()
         return Finite(value) and value >= 0 and value or nil
@@ -159,7 +176,7 @@ local readers = {
         return low, total, maximumTotal
     end,
     location = function()
-        return PublicText(GetZoneText()) or "", PublicText(GetSubZoneText()) or ""
+        return PublicText(GetZoneText()) or "", PublicText(GetSubZoneText()) or "", PublicText(GetMinimapZoneText()) or ""
     end,
     gold = function()
         local value = GetMoney()
@@ -168,7 +185,8 @@ local readers = {
     bags = function()
         local slots, freeSlots = C_Container.GetContainerNumSlots, C_Container.GetContainerNumFreeSlots
         local free, total = 0, 0
-        for bag = 0, 4 do
+        local lastBag = NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
+        for bag = 0, lastBag do
             local capacity, available = slots(bag), freeSlots(bag)
             if not Finite(capacity) or not Finite(available) then return nil end
             total, free = total + capacity, free + available
@@ -185,5 +203,5 @@ local readers = {
 function S.ReadInfoSource(key)
     local reader = readers[key]
     if not reader then return nil end
-    return S.ReadSharedData(key, .05, reader)
+    return S.ReadSharedData(key, key == "memory" and 30 or .05, reader)
 end

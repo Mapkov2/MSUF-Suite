@@ -67,7 +67,7 @@ function S.DamageMeterDrawMenuPreview(parent, index)
         win.overall = c[keys.Session] == D.SESSION.OVERALL
         D.StyleWindowLayout(win)
         win.frame:ClearAllPoints()
-        win.frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+        win.frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, c.headerOutside and -c.headerHeight or 0)
         if win.meterType == D.THREAT then
             win.title:SetText(D.TypeName(win.meterType))
             win.buttons.session.label:SetText(S.BlizzardText("DAMAGE_METER_CURRENT_SESSION_SHORT", "C"))

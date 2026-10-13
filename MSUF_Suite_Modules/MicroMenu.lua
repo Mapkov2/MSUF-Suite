@@ -89,6 +89,7 @@ local WINDOW_TABS = { currency = true }
 --   questLog    QuestLogMicroButton: ToggleQuestLog, the world map with its
 --               quest log (Blizzard_WorldMap);
 --   journal     EJMicroButton: ToggleEncounterJournal;
+--   groupFinder LFDMicroButton: native group finder toggle;
 --   currency    CharacterMicroButton: Forever has no currency tab button
 --               (above), so the character window opens on its paper doll;
 --   worldMap    QuestLogMicroButton while the zone text button is missing.
@@ -100,6 +101,7 @@ local GAMEPAD_BUTTONS = {
     professions = function() return ProfessionMicroButton end,
     questLog = QuestLogButton,
     journal = function() return EJMicroButton end,
+    groupFinder = function() return LFDMicroButton end,
     currency = function() return CharacterMicroButton end,
     worldMap = QuestLogButton,
 }

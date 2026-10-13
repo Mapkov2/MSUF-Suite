@@ -555,7 +555,7 @@ local store={}
 MSUF_EncodeCompactTable=function(t,prefix) store[#store+1]=t;return prefix..":"..#store end
 MSUF_TryDecodeCompactString=function(s) local n=tonumber(s:match("^MSUF3:(%d+)$"));return n and store[n] or nil end
 local NS={}
-for _,file in ipairs({"Core/Platform.lua","Core/Database.lua","Core/SuiteCatalog.lua"}) do
+for _,file in ipairs({"Core/Platform.lua","Core/Database.lua","Core/SuiteCatalog.lua","Core/HostBridge.lua"}) do
     assert(loadfile(root.."/MSUF_Suite/"..file))("MSUF_Suite",NS)
 end
 -- moduleAddons gains the module only at integration: register it locally.
@@ -585,6 +585,7 @@ function S.Text(value) return value end
 MSUFSuite=NS
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 assert(loadfile(root.."/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules",{})
 
 ------------------------------------------------------------------ CDM private table

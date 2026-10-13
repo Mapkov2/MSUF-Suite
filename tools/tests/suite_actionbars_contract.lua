@@ -896,6 +896,7 @@ assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Su
 assert(Suite.Database.Initialize(nil));Suite.Suite.Normalize(Suite.DB)
 local private={}
 local before=created
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
@@ -965,6 +966,14 @@ assert(S.catalog.actionbars.available==nil and S.Availability("actionbars"),
 Suite.Client.isForever=false
 local M=AB.M
 local c=S.Config("actionbars")
+if arg[3]=="capture" then
+    assert(loadfile(root.."/tools/tests/actionbars_capture_cases.lua"))()({
+        Suite=Suite,S=S,AB=AB,M=M,MainBar=MainBar,RunTimers=RunTimers,mode=arg[2],
+        SetCombat=function(value) combat=value end,
+        GetCombat=function() return combat end,
+    },assert(arg[4],"capture scenario required"))
+    return
+end
 assert(Suite.Client.hasSecrets,"harness must model a secret client")
 -- The cooldown and state storms live on the context's direct frame
 -- (Runtime.lua DirectEvent); every other event on the routing frame.
@@ -1218,7 +1227,42 @@ assert(EffectiveAlpha(Button(2,1).button.Count)==0 and not Bar(2).header.mouse a
     "click-through changed zero fade or disabled hover motion")
 assert(S.Set("actionbars","bar2ClickThrough",false))
 
+-- Flat buttons use cropped icons; the same settings work on both reuse paths.
+do
+    local before={bar1Size=c.bar1Size,bar1HeightPercent=c.bar1HeightPercent,bar1Rows=c.bar1Rows,
+        bar1Spacing=c.bar1Spacing,bar1CooldownSize=c.bar1CooldownSize,bar1CooldownAutoSize=c.bar1CooldownAutoSize}
+    assert(S.SetMany("actionbars",{bar1Size=48,bar1HeightPercent=67,bar1Rows=2,bar1Spacing=4,
+        bar1CooldownSize=30,bar1CooldownAutoSize=true}))
+    local button=Button(1,1).button
+    assert(button.width==48 and button.height==32 and Bar(1).header.height==68,
+        "flat action button geometry did not reach the owned bar")
+    local coords=button.icon.coords
+    assert(coords[1]<coords[3] and math.abs((coords[2]-coords[1])/(coords[4]-coords[3])-46/30)<.001,
+        "flat icons were stretched instead of cropped")
+    assert(button.cooldown:GetCountdownFontString().font[2]==13
+        and button.chargeCooldown:GetCountdownFontString().font[2]==13,"flat button countdown escaped its height")
+    assert(S.Set("actionbars","buttonShape",2) and button.height==48,"circle inherited the flat-button height")
+    assert(S.Set("actionbars","buttonShape",1) and button.height==32,"square did not restore the configured height")
+    combat=true
+    assert(not S.Set("actionbars","bar1HeightPercent",100) and c.bar1HeightPercent==67 and button.height==32,
+        "editing flat buttons was not refused during combat")
+    c.bar1HeightPercent=100;M:Refresh()
+    assert(button.height==32,"a deferred refresh changed protected geometry during combat")
+    combat=false;Broadcast("PLAYER_REGEN_ENABLED");RunTimers()
+    assert(S.Set("actionbars","bar1HeightPercent",100) and button.height==48
+        and button.icon.coords[1]==button.icon.coords[3],"square action button crop did not recover")
+    assert(S.SetMany("actionbars",before))
+end
+
 if nativeReuse then
+    do
+        local before={bar2Size=c.bar2Size,bar2HeightPercent=c.bar2HeightPercent}
+        assert(S.SetMany("actionbars",{bar2Size=48,bar2HeightPercent=67}))
+        local button=Button(2,1).button
+        assert(button.width==48 and button.height==32 and button.icon.coords[1]<button.icon.coords[3],
+            "adopted native buttons lost the flat geometry or crop")
+        assert(S.SetMany("actionbars",before))
+    end
     assert(not Bar(1).native and not Bar(9).native and not Bar(10).native,
         "custom paging and extra bars lost their suite buttons")
     for index=2,8 do
@@ -2209,11 +2253,17 @@ for index=1,10 do
     end
 end
 local reads=infoReads
+assert(S.Set("actionbars","bar2HeightPercent",67))
 Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
 assert(infoReads-reads==flyouts,"a proc glow event read action info for spell buttons: "..(infoReads-reads))
 local alert=b61.SpellActivationAlert
 assert(alert and alert.shown and alert.ProcStartAnim.playing and alert.width==b61.width*1.4,
     "Blizzard spell alert on the matching button")
+assert(alert.height==b61.height*1.4 and alert.width> alert.height, "proc glow retained square geometry")
+assert(S.Set("actionbars","bar2HeightPercent",50) and alert.height==b61.height*1.4 and alert.width> alert.height,
+    "existing proc glow ignored another flat button height")
+assert(S.Set("actionbars","bar2HeightPercent",100) and alert.height==b61.height*1.4,
+    "existing proc glow did not follow the button height change")
 -- A proc glow pair on the Blizzard alert (instructions, GC stopped).
 Budget("actionbars: a proc glow pair, Blizzard alert",Cost(function()
     Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61);Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
@@ -2339,6 +2389,7 @@ end
 
 -- Explicit anchors and independent offsets affect text only; the cooldown
 -- clamp responds to actual button size, including charge countdowns.
+
 do
     assert(S.SetMany("actionbars", { bar2Size=16, bar2CooldownSize=30, bar2CooldownPoint=3,
         bar2CooldownX=4, bar2CooldownY=-5, bar2KeybindPoint=8, bar2KeybindX=7 }))

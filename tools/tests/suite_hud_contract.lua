@@ -381,6 +381,7 @@ do
     suite.Public, suite.Finite, suite.Number = S.Public, S.Finite, S.Number
     suite.RGB, suite.ResolveFont, suite.GlobalFontPath = S.RGB, S.ResolveFont, S.GlobalFontPath
     MSUFSuite = suite
+    assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
     for key, value in pairs(stubs) do S[key] = value end
 end
@@ -793,6 +794,15 @@ assert(math.abs(tracker.background.color[1] - 34 / 255) < .001
     and tracker.rows["entry:quests:42"].text.fontSize == 18,
     "tracker custom colors must reach its owned frame")
 local sectionRow, entryRow = tracker.rows["section:quests"], tracker.rows["entry:quests:42"]
+for _, underlines in ipairs({ true, false, true, false }) do
+    tracker.config.groupUnderlines = underlines
+    tracker:Refresh()
+    assert(sectionRow.stripe.point[1] == (underlines and "BOTTOMRIGHT" or "BOTTOMLEFT")
+        and sectionRow.stripe:IsShown() and entryRow.stripe:IsShown() == not underlines,
+        "tracker group underline toggle lost its geometry or leaked onto quest rows")
+    assert(not underlines or math.abs(sectionRow.stripe.color[1] - 187 / 255) < .001,
+        "tracker underline ignored its authored divider color")
+end
 local sectionPoints, entryPoints = sectionRow.pointCalls, entryRow.pointCalls
 C_QuestLog.GetQuestObjectives = function()
     return { { text = "Collect 4 items", type = "monster", finished = false } }

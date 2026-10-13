@@ -192,9 +192,6 @@ local function NewRow(self, key, kind)
     row:SetScript("OnEnter", OnRowEnter)
     row:SetScript("OnLeave", OnOwnedLeave)
     local stripe = S.CreateTexture(row, nil, "ARTWORK")
-    stripe:SetPoint("TOPLEFT", 2, -3)
-    stripe:SetPoint("BOTTOMLEFT", 2, 3)
-    stripe:SetWidth(2)
     local text = S.CreateFontString(row, nil, "OVERLAY")
     text:SetPoint("LEFT", 12, 0)
     text:SetPoint("RIGHT", -4, 0)
@@ -642,7 +639,20 @@ local function PaintRow(self, row, item, c, width, y)
     row:ClearAllPoints()
     row:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -y)
     row:SetWidth(width)
-    row.stripe:SetColorTexture(color[1], color[2], color[3], item.kind == "line" and .35 or .95)
+    local underline = c.groupUnderlines == true
+    if row.underline ~= underline then
+        row.underline = underline
+        row.stripe:ClearAllPoints()
+        row.stripe:SetPoint(underline and "BOTTOMLEFT" or "TOPLEFT", 2, underline and 1 or -3)
+        row.stripe:SetPoint(underline and "BOTTOMRIGHT" or "BOTTOMLEFT", underline and -4 or 2, underline and 1 or 3)
+        row.stripe:SetSize(2, 4)
+    end
+    row.stripe:SetShown(not underline or item.kind == "section")
+    if underline then
+        row.stripe:SetColorTexture(S.RGB(c.dividerColor))
+    else
+        row.stripe:SetColorTexture(color[1], color[2], color[3], item.kind == "line" and .35 or .95)
+    end
     local size = item.kind == "section" and (c.sectionSize or 14)
         or item.kind == "entry" and (c.entrySize or 15) or (c.objectiveSize or 13)
     if row.cachedSize ~= size or row.cachedFont ~= self.font then

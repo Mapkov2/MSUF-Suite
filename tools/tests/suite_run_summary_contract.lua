@@ -64,6 +64,7 @@ S.PublicText = function(value) return S.Public(value) and type(value) == "string
 S.Text = function(value) return value end
 -- The shared module helpers (S.ClockText, S.PublicField) come from the real file.
 MSUFSuite = NS
+assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
 assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
 S.CreateFrame = CreateFrame
 S.CreateTexture = function(parent) return parent:CreateTexture() end
