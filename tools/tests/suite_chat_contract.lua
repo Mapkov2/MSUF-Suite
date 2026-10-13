@@ -176,6 +176,7 @@ ChatFrame1.buttonFrame = Frame("ChatFrame1ButtonFrame")
 ChatFrame1ButtonFrameBackground = Texture()
 ChatFrame1Tab = Frame("ChatFrame1Tab")
 ChatFrame1Tab.Left = Texture()
+ChatFrame1Tab.ActiveLeft = Texture()
 ChatFrame1Tab.noMouseAlpha = 0.4
 ChatFrame1Tab.mouseOverAlpha = 1
 ChatFrame1Tab.Text = ChatFrame1Tab:CreateFontString()
@@ -311,7 +312,7 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
 NS.ChatBubbleSources = catalogNS.ChatBubbleSources
 local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "Fade.lua",
-    "Messages.lua", "Window.lua", "Bubbles.lua", "Controller.lua" }
+    "Messages.lua", "CompleteMessages.lua", "Window.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
 for i = 1, #CHAT_FILES do
@@ -426,6 +427,27 @@ for key, value in pairs(chatDefaults) do
     if module.config[key] == nil then module.config[key] = value end
 end
 module:Enable()
+-- Modern Dark's panel geometry must not depend on a previous native layout.
+local nativeChatPoints, otherChatPoints = ChatFrame1.points, ChatFrame1Tab.points
+module.config.lockWindowPosition, module.config.windowX, module.config.windowY = true, 12, 12
+module:Refresh()
+local placed = ChatFrame1.points[1]
+assert(placed[1] == "BOTTOMLEFT" and placed[2] == UIParent and placed[3] == "BOTTOMLEFT"
+    and placed[4] == 12 and placed[5] == 12, "profile did not anchor the main chat at the reference's screen margin")
+assert(ChatFrame1Tab.points == otherChatPoints, "anchoring the main chat moved another window")
+local anchorQueued, anchorQueue = {}, S.Queue
+S.Queue = function(id) anchorQueued[#anchorQueued + 1] = id end
+lockdown, module.config.windowX = true, 48
+module:Refresh()
+assert(ChatFrame1.points[1][4] == 12, "profile anchor changed during combat")
+lockdown = false
+module:Refresh()
+assert(ChatFrame1.points[1][4] == 48, "deferred profile anchor did not refresh after combat")
+module.config.lockWindowPosition = false
+module:Refresh()
+assert(ChatFrame1.points == nativeChatPoints, "leaving the profile anchor lost the native chat layout")
+assert(#anchorQueued == 1 and anchorQueued[1] == "chat", "combat did not queue the profile anchor once")
+S.Queue = anchorQueue
 -- Chat moves frames (a geometry module), so its window listeners wait for
 -- the end of combat; the friend count is plain text and also updates in
 -- combat (the context's allowCombat). The message and bubble contracts
@@ -560,6 +582,41 @@ module.config.tabPanel = false
 module:Refresh()
 assert(not sidebar.tabFill.shown, "disabled tab strip kept its individual panel")
 for _, edge in ipairs(sidebar.tabEdges) do assert(not edge.shown, "disabled tab strip kept its tab border") end
+module.config.hideTabArt = true
+module.config.tabClassColor = true
+UnitClass = function() return "Evoker", "EVOKER" end
+S.ClassRGB = function(class) assert(class == "EVOKER"); return .2, .58, .5 end
+module:Refresh()
+tabColorsHook(ChatFrame1Tab, true)
+assert(ChatFrame1Tab.Left.alpha == 0 and ChatFrame1Tab.ActiveLeft.alpha == 0
+    and not sidebar.tabFill.shown and sidebar.tabLabel.color[1] == .2,
+    "floating chat tabs retained native boxes or lost class color")
+local savedPanelAlpha, savedMinimalChrome = module.config.panelAlpha, module.config.minimalChrome
+module.config.panelAlpha, module.config.minimalChrome = 0, false
+module:Refresh()
+assert(ChatFrame1Tab.Left.alpha == 0 and ChatFrame1Tab.ActiveLeft.alpha == 0,
+    "explicit native tab art hiding depended on panel opacity")
+module.config.hideTabArt = false
+module:Refresh()
+local nativeBody, nativeInput = ChatFrame1.Background.shown, ChatFrame1EditBox.Left.alpha
+assert(nativeBody, "transparent chat did not restore its native message background")
+module.config.hideTabArt = true
+module:Refresh()
+assert(ChatFrame1.Background.shown == nativeBody and ChatFrame1EditBox.Left.alpha == nativeInput,
+    "hiding tab art also claimed the message or input background")
+module.config.panelAlpha, module.config.minimalChrome = savedPanelAlpha, savedMinimalChrome
+assert(private.Chat.HeaderTop(module.config, ChatFrame1) == 0
+    and sidebar.panel.points[1][5] == 0 and sidebar.edges[1].points[1][5] == 0,
+    "floating native tab titles overlap the chat backdrop or top border")
+local previousTabFont = module.config.tabFontSize
+module.config.tabFontSize = 20
+module:Refresh()
+-- Native PTR/Forever dock Y=3, tab H=32, title center Y=-6.
+local titleBottom = 3 + ChatFrame1Tab:GetHeight() / 2 - 6 - ChatFrame1Tab.Text.font[2] / 2
+assert(titleBottom > sidebar.panel.points[1][5] + module.config.borderSize,
+    "20px native chat title intersects the floating body border")
+module.config.tabFontSize = previousTabFont
+module.config.hideTabArt, module.config.tabClassColor = false, false
 module.config.tabPanel = true
 module.config.tabIndividualPanels = false
 module.config.tabBorderSize = 0
@@ -1220,6 +1277,14 @@ module.config.idleSeconds, module.config.messageFading, module.config.coloredUnr
 module.active = true
 module:Enable()
 local minimal = module.visuals[ChatFrame1]
+module.config.hideNativeButtons = true
+module:Refresh()
+assert(QuickJoinToastButton.alpha == 0 and not QuickJoinToastButton.mouse and not sidebar.sidebarFrame.shown,
+    "minimal chat kept the native buttons or created an unwanted sidebar")
+module.config.hideNativeButtons = false
+module:Refresh()
+assert(QuickJoinToastButton.alpha == 1 and QuickJoinToastButton.mouse,
+    "chat button toggle did not restore native ownership")
 assert(not minimal.headerRule.shown, "minimal chat retained the full-width separator")
 assert(minimal.tabLine.points[1][1] == "TOPLEFT" and minimal.tabLine.height == 1,
     "minimal selected-tab marker is not above its native tab")

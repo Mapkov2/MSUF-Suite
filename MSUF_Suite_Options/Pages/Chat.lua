@@ -84,6 +84,11 @@ local function RefreshSampleText(parts, fonts)
         P.S.ChatStylePreviewFonts(parts, fonts, P.S.Config(ID))
     end
     local ar, ag, ab = P.RGB(P.Get(ID, "tabActiveColor"))
+    if P.Get(ID, "tabClassColor") then
+        local _, class = UnitClass("player")
+        local cr, cg, cb = P.S.ClassRGB(class)
+        if cr then ar, ag, ab = cr, cg, cb end
+    end
     local ir, ig, ib = P.RGB(P.Get(ID, "tabInactiveColor"))
     label:SetTextColor(ar, ag, ab)
     otherTab:SetTextColor(ir, ig, ib)
@@ -164,9 +169,14 @@ local function PlaceSample(parts, minimal)
     local sample = parts.sample
     local x = P.Get(ID, "sidebarPanel") and 38 or 10
     parts.label:ClearAllPoints()
-    parts.label:SetPoint("TOPLEFT", sample, "TOPLEFT", x, -8)
+    local floating = P.Get(ID, "hideTabArt") and not P.Get(ID, "tabPanel")
+    if floating then
+        parts.label:SetPoint("BOTTOMLEFT", sample, "TOPLEFT", x, 3)
+    else
+        parts.label:SetPoint("TOPLEFT", sample, "TOPLEFT", x, -8)
+    end
     parts.lines:ClearAllPoints()
-    parts.lines:SetPoint("TOPLEFT", sample, "TOPLEFT", x + 1, -43)
+    parts.lines:SetPoint("TOPLEFT", sample, "TOPLEFT", x + 1, floating and -4 or -43)
     parts.lines:SetWidth(parts.width - x - 12)
     parts.input:ClearAllPoints()
     parts.input:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", x - 2, 8)

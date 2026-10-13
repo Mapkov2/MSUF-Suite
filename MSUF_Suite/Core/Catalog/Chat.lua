@@ -102,6 +102,9 @@ B.Section(id, "window", "Chat window", {
     B.Bool("lockWindowSize", "Keep the main chat window at a fixed size", false),
     B.Number("windowWidth", "Locked width", 420, 200, 1200),
     B.Number("windowHeight", "Locked height", 180, 80, 800),
+    B.Bool("lockWindowPosition", "Anchor the main chat window to the bottom left", false),
+    B.Number("windowX", "Horizontal position", 12, -4000, 4000),
+    B.Number("windowY", "Vertical position", 12, -3000, 3000),
     B.Number("idleSeconds", "Fade after inactivity (seconds; 0 disables)", 0, 0, 300),
     B.Number("idleAlpha", "Idle panel opacity (percent)", 20, 0, 100),
     B.Number("idleFadeDuration", "Idle fade duration (seconds; 0 is instant)", 0, 0, 2, 0.05),
@@ -127,11 +130,13 @@ B.Section(id, "tabs", "Tabs and accent", {
     B.Number("tabBorderSize", "Tab border thickness", 0, 0, 4),
     B.Color("tabActiveBorder", "Active tab border", initial.accentColor),
     B.Color("tabInactiveBorder", "Inactive tab border", initial.borderColor),
+    B.Bool("hideTabArt", "Hide Blizzard tab backgrounds", false),
     B.Bool("tabPanel", "Dark tab strip", initial.tabPanel),
     B.Bool("tabAccent", "Underline chat tabs", initial.tabAccent),
     B.Bool("coloredUnreadTabs", "Color unread tabs by message type", false),
     B.Font("tabFont", "Font"),
     B.Number("tabFontSize", "Font size", 0, 0, 24),
+    B.Bool("tabClassColor", "Class-colored active tab", false),
     B.Color("tabActiveColor", "Active tab text", initial.tabActiveColor),
     B.Color("tabInactiveColor", "Other tab text", initial.tabInactiveColor),
     B.Color("accentColor", "Accent color", initial.accentColor),
@@ -144,6 +149,7 @@ B.Section(id, "sidebar", "Button sidebar", {
     B.Number("sidebarGap", "Sidebar button spacing", 2, 0, 20),
     B.Choice("scrollButtonPlace", "Newest message button", 1, {"Sidebar", "Chat panel"}),
     B.Bool("sidebarPanel", "Use MSUF chat icons and button sidebar", initial.sidebarPanel),
+    B.Bool("hideNativeButtons", "Hide Blizzard chat buttons", false),
     B.Number("sidebarWidth", "Sidebar width", initial.sidebarWidth, 20, 48),
     B.Bool("sidebarClassColor", "Use class color for sidebar icons", false),
 })
@@ -184,6 +190,7 @@ B.Section(id, "tools", "Chat tools", {
     B.Bool("colorMentionNames", "Class colors for group names in message text", false),
     B.Number("whisperSoundKit", "Whisper sound kit ID (0 disables)", 0, 0, 1000000),
     B.String("whisperSound", "Custom whisper sound file", "", 240),
+    B.Bool("completeMessages", "Show only complete messages", false),
     B.Bool("copyMessages", "Show Copy button for chat messages", false),
     B.Number("copyButtonX", "Copy button X", 0, -200, 200),
     B.Number("copyButtonY", "Copy button Y", 0, -200, 200),
@@ -240,6 +247,8 @@ for _, source in ipairs(NS.ChatBubbleSources) do
     end
 end
 local textRules = NS.SuiteCatalog[id].rules
+textRules.windowX.enableKey = "lockWindowPosition"
+textRules.windowY.enableKey = "lockWindowPosition"
 textRules.messageTimeVisible.enableKey = "messageFading"
 textRules.messageFadeDuration.enableKey = "messageFading"
 textRules.font.defaultLabel = "MSUF global font (default)"

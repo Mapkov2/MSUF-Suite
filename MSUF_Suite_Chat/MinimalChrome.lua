@@ -4,7 +4,7 @@ local C = P.Chat
 local M = C.M
 
 function C.HasTabStyle(config)
-    return config.tabPanel and (config.panelAlpha > 0 or config.minimalChrome)
+    return config.hideTabArt or config.tabPanel and (config.panelAlpha > 0 or config.minimalChrome)
 end
 
 -- Compact native tabs retain their titles and click/drag targets. Only our

@@ -82,18 +82,18 @@ local function OwnTab(context, tab, name, own)
 end
 
 -- enabled: the Suite panel shows, so its parts replace Blizzard's chrome.
-local function SetNativeChrome(self, frame, tab, input, enabled)
+local function SetNativeChrome(self, frame, tab, input, enabled, ownTabArt)
     local context, c = self.context, self.config
     local name = frame:GetName()
     -- Keep Blizzard's own FontString for every tab. Static and dynamic titles
     -- can change after this call, while whisper targets may be secret.
-    local ownArt = enabled and c.tabPanel
+    local ownArt = (enabled or ownTabArt) and (c.tabPanel or c.hideTabArt)
     OwnBorderedParts(context, frame, enabled)
     OwnTab(context, tab, name, ownArt)
     OwnAlpha(context, input, INPUT_CHROME, name .. "EditBox", enabled and c.inputPanel)
     local quickTexture = CombatLogBar(frame) and _G.CombatLogQuickButtonFrame_CustomTexture
     if quickTexture then
-        if enabled and c.tabPanel then
+        if ownArt then
             context:Alpha(quickTexture, 0)
         else
             context:RestoreProperty(quickTexture, "SetAlpha")
@@ -111,6 +111,11 @@ function C.ColorTab(self, visual, selected)
     local c = self.config
     if C.HasTabStyle(c) then
         local r, g, b = RGB(selected and c.tabActiveColor or c.tabInactiveColor)
+        if selected and c.tabClassColor then
+            local _, class = UnitClass("player")
+            local cr, cg, cb = S.ClassRGB(class)
+            if cr then r, g, b = cr, cg, cb end
+        end
         self.context:TextColor(visual.tabLabel, r, g, b, 1)
     else
         self.context:RestoreTuple(visual.tabLabel, "SetTextColor")
@@ -283,7 +288,7 @@ local function ApplyPanel(self, visual, frame, top)
     visual.panel:ClearAllPoints()
     -- The chat body's backdrop ends at the frame edge. Any texture extending
     -- into the dock row can cover native dynamic tabs in Retail.
-    visual.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, 0)
+    visual.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, c.tabPanel and 0 or top)
     visual.panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", c.padding, -c.padding)
     Tint(visual.panel, c.panelColor, c.panelAlpha)
     if c.panelTexture and c.panelTexture ~= "" then
@@ -413,9 +418,9 @@ local function ApplyFont(self, frame, chosenFont)
 end
 
 -- lockWindowSize keeps the primary window at the chosen size.
-local function ApplySizeLock(self, visual, frame)
+local function ApplySizeLock(self, visual, frame, primary)
     local c, context = self.config, self.context
-    if frame == _G.ChatFrame1 and c.lockWindowSize then
+    if primary and c.lockWindowSize then
         context:Property(frame, "GetWidth", "SetWidth", c.windowWidth or 420)
         context:Property(frame, "GetHeight", "SetHeight", c.windowHeight or 180)
         context:Property(frame, "IsResizable", "SetResizable", false)
@@ -428,25 +433,42 @@ local function ApplySizeLock(self, visual, frame)
     end
 end
 
+-- The optional profile anchor uses the shared reversible geometry owner.
+-- Mainline FloatingChatFrame leaves ChatFrame1 placement to Edit Mode; never
+-- save over its native layout. Other chat windows retain their own positions.
+local function ApplyPositionLock(self, visual, frame, primary)
+    if not primary then return end
+    local c = self.config
+    if c.lockWindowPosition then
+        self.context:Anchor(frame, "BOTTOMLEFT", _G.UIParent, "BOTTOMLEFT", c.windowX or 12, c.windowY or 12)
+        visual.positionLocked = true
+    elseif visual.positionLocked then
+        self.context:RestorePoints(frame)
+        visual.positionLocked = nil
+    end
+end
+
 -- Every chat window is a ChatFrameN from Blizzard's floating chat frame
 -- template: a ChatFrameNTab tab (created with it) and an editBox parent key.
 function C.ApplyWindow(self, frame)
     if not frame or NS.Safety.IsForbidden(frame) then return end
-    local c = self.config
+    local c, primary = self.config, frame == _G.ChatFrame1
     local visual = M.visuals[frame] or CreateVisual(frame)
     local top = HeaderTop(c, frame)
     ApplyPanel(self, visual, frame, top)
     local tab, input = _G[frame:GetName() .. "Tab"], frame.editBox
     local tabFont, messageFont = ChosenFont(c.tabFont), ChosenFont(c.font)
-    SetNativeChrome(self, frame, tab, input, c.panelAlpha > 0 or c.minimalChrome)
+    SetNativeChrome(self, frame, tab, input, c.panelAlpha > 0 or c.minimalChrome, c.hideTabArt)
     ApplyTabVisual(self, visual, tab, TabSelected(frame, _G.SELECTED_CHAT_FRAME, DockSelection()), tabFont)
     C.ApplyUnread(visual, tab)
     KeepTabVisible(self, frame)
-    if frame == _G.ChatFrame1 then ApplySidebar(self, visual, frame) end
+    if primary then ApplySidebar(self, visual, frame) end
     ApplyCopyButton(self, visual, frame, top)
     ApplyInput(self, visual, frame, input)
     ApplyFont(self, frame, messageFont)
-    ApplySizeLock(self, visual, frame)
+    ApplySizeLock(self, visual, frame, primary)
+    ApplyPositionLock(self, visual, frame, primary)
+    C.ApplyCompleteMessages(self, frame)
     C.ApplyMessages(self, frame)
     C.ApplyMessageFade(visual, c)
     C.ApplyInactivity(self, visual)
@@ -475,6 +497,7 @@ end
 
 -- Hides the suite layers of one window and hands its chrome back.
 function C.ReleaseWindow(self, visual)
+    C.ReleaseCompleteMessages(visual.frame)
     HideVisual(visual)
     local frame = visual.frame
     local tab = _G[frame:GetName() .. "Tab"]

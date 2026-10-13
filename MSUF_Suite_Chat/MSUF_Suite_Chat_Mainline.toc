@@ -20,6 +20,7 @@ Copy.lua
 History.lua
 Fade.lua
 Messages.lua
+CompleteMessages.lua
 Window.lua
 Bubbles.lua
 Controller.lua

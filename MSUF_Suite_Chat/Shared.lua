@@ -89,7 +89,7 @@ C.CombatLogBar = CombatLogBar
 
 -- Height of the tab strip above a window: the combat log filter row joins it.
 function C.HeaderTop(config, frame)
-    if not config.tabPanel then return config.padding end
+    if not config.tabPanel then return config.hideTabArt and 0 or config.padding end
     local top = (config.tabHeight or 24) + (config.tabPanelGap or 0)
     local quickBar = CombatLogBar(frame)
     if quickBar then
