@@ -231,25 +231,47 @@ local function NewStack(button, level)
     host:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
     local glow = NewGlow(button, host, level)
     glow.frame:Show()
-    return { gate = gate, bar = bar, host = host, glow = glow }
+    return { gate = gate, bar = bar, host = host, glow = glow, owner = button }
 end
 
 -- Gate, bar and host for threshold n and the button's size. The bar's
 -- range is Blizzard's: every apply sets it to 0..maxApplications.
-local function Placed(s, n, lk, cap) return s.n == n and s.cap == cap and s.w == lk.w and s.h == lk.h and s.px == lk.px end
-local function PlaceStack(s, n, lk, cap)
-    if Placed(s, n, lk, cap) then return end
+local function Placed(s, n, lk, cap, lower)
+    return s.n == n and s.cap == cap and s.lower == lower and s.w == lk.w and s.h == lk.h and s.px == lk.px
+end
+local function PlaceStack(s, n, lk, cap, lower)
+    if Placed(s, n, lk, cap, lower) then return end
     local w, h, px = lk.w, lk.h, lk.px
-    s.n, s.cap, s.w, s.h, s.px = n, cap, w, h, px
+    local wasLower = s.lower
+    s.n, s.cap, s.lower, s.w, s.h, s.px = n, cap, lower, w, h, px
     local grow = (REACH - 1) * min(w, h) + 2 * px
     local gw, gh = w + grow, h + grow
     local travel = max(gw, gh) + 2 * px
-    s.gate:SetSize(gw, gh)
-    s.host:SetSize(w, h)
-    local bar = s.bar
+    local gate, host, bar = s.gate, s.host, s.bar
+    host:SetSize(w, h)
     bar:SetSize(travel * cap, px)
     bar:ClearAllPoints()
-    bar:SetPoint("LEFT", s.gate, "CENTER", -travel * n, 0)
+    if lower then
+        -- The fixed glow fits inside this moving window for every count
+        -- 0..n. At n+1 its left clip edge is one travel past the glow.
+        gate:SetSize(gw + travel * n, gh)
+        gate:ClearAllPoints()
+        gate:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", -travel * n / 2, 0)
+        if not wasLower then
+            host:ClearAllPoints()
+            host:SetPoint("CENTER", s.owner, "CENTER", 0, 0)
+        end
+        bar:SetPoint("LEFT", s.owner, "CENTER", 0, 0)
+    else
+        gate:SetSize(gw, gh)
+        if wasLower then
+            gate:ClearAllPoints()
+            gate:SetPoint("CENTER", s.owner, "CENTER", 0, 0)
+            host:ClearAllPoints()
+            host:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
+        end
+        bar:SetPoint("LEFT", gate, "CENTER", -travel * n, 0)
+    end
 end
 
 -- Glow while active: shown and painted per entry.
@@ -274,17 +296,25 @@ local function ApplyGlow(rec, part, ov, dry)
     return false
 end
 
--- Stack glow from N applications: gate shown, bar and glow placed for N.
+-- One rule shared with the preview; lower comparisons accept 0..n.
+function AuraGlows.StackRule(ov)
+    local n = ov.stackGlow
+    if type(n) ~= "number" or n < 1 then return 0, 1, false end
+    n = floor(n)
+    local op = ov.stackGlowOp
+    if op == STACK_OP.MORE_THAN then n = n + 1 end
+    if op == STACK_OP.BELOW then n = n - 1 end
+    local lower = op == STACK_OP.BELOW or op == STACK_OP.AT_MOST
+    local cap = (lower or op == STACK_OP.EXACTLY) and n + 1 or n
+    return n, cap, lower
+end
+
+-- Stack glow: gate shown, native bar and glow placed for the selected rule.
 -- A bound bar is rebound when N changes (a setter replaces its element).
 local function ApplyStack(rec, part, ov, dry)
     local s = part.stack
-    local n = ov.stackGlow
-    if type(n) ~= "number" or n < 1 then
-        n = 0
-    else
-        n = floor(n)
-    end
-    if n == 0 then
+    local n, cap, lower = AuraGlows.StackRule(ov)
+    if n == 0 and not lower then
         if not s.on then return false end
         if dry then return true end
         s.on = false
@@ -292,15 +322,10 @@ local function ApplyStack(rec, part, ov, dry)
         return false
     end
     local lk = rec.lk
-    -- Equal uses one extra native range step: counts above N move the
-    -- glow beyond the right clip edge instead of clamping at the center.
-    local op = ov.stackGlowOp
-    if op == STACK_OP.MORE_THAN then n = n + 1 end
-    local cap = op == STACK_OP.EXACTLY and n + 1 or n
     local style, r, gg, b = GlowSpec(rec, ov)
-    if s.on and Placed(s, n, lk, cap) and Painted(s.glow, style, r, gg, b, lk) and (s.bound == cap or not part.bound) then return false end
+    if s.on and Placed(s, n, lk, cap, lower) and Painted(s.glow, style, r, gg, b, lk) and (s.bound == cap or not part.bound) then return false end
     if dry then return true end
-    PlaceStack(s, n, lk, cap)
+    PlaceStack(s, n, lk, cap, lower)
     PaintGlow(s.glow, style, r, gg, b, lk)
     if part.bound and s.bound ~= cap then
         s.bound = cap

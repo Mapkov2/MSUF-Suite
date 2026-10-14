@@ -25,10 +25,24 @@ local LAYER_COLORS = {
     target = { 0.95, 0.72, 0.18 }, eliteMarker = { 0.95, 0.72, 0.18 }, questMarker = { 0.95, 0.72, 0.18 },
     threatFlash = { 0.90, 0.20, 0.22 }, threatHighlight = { 0.90, 0.20, 0.22 }, softTarget = { 0.25, 0.72, 1.00 },
 }
+local DECOR_LAYERS = {
+    outerFrame = "OuterFrame", shadow = "ShadowEnabled", glow = "GlowEnabled",
+    focusMarker = "enemyFocusMarker", threshold = "enemyThresholdEnabled", fillTexture = "TextureEnabled",
+    targetScale = "targetScaleEnabled",
+}
+local function DecorSetting(ui, key)
+    local suffix = DECOR_LAYERS[key]
+    return suffix and (suffix:match("^[A-Z]") and ui.sampleKind .. suffix or suffix)
+end
+for key in pairs(DECOR_LAYERS) do LAYER_COLORS[key] = LAYER_COLORS.border end
 local LAYERS = {
     { "guides", "Guides", "enemy" }, { "health", "Blizzard health", "enemy" },
     { "backdrop", "Skin backdrop", "enemy" }, { "border", "Skin border", "enemy" },
     { "roleFill", "Role fill", "roleColors" },
+    { "outerFrame", "Outer frame", "enemy" }, { "shadow", "Shadow", "enemy" },
+    { "glow", "Glow", "enemy" }, { "fillTexture", "Texture", "enemy" },
+    { "threshold", "Threshold", "enemy" }, { "focusMarker", "Focus diamond", "enemy" },
+    { "targetScale", "Target size", "native" },
     { "name", "Name", "elements" }, { "level", "Level", "elements" },
     { "healthText", "HP text", "elements" },
     { "cast", "Castbar", "castbar" },
@@ -126,6 +140,9 @@ function Layers.On(ui, key) return ui.layers[key] ~= false end
 
 function Layers.Available(ui, key)
     local skinned = P.Get(ID, "look") ~= 2
+    if key == "threshold" or key == "focusMarker" then return skinned and ui.sampleKind == "enemy" end
+    if key == "targetScale" then return not ui.personal end
+    if DECOR_LAYERS[key] then return skinned end
     if key == "target" then return skinned end
     if key == "backdrop" or key == "border" then return skinned end
     if key == "roleFill" then return skinned and ui.sampleKind == "enemy" end
@@ -156,6 +173,11 @@ end
 
 function Layers.Active(ui, key)
     if not ui:LayerOn(key) or not ui:LayerAvailable(key) then return false end
+    local setting = DecorSetting(ui, key)
+    if setting then
+        local value = P.Get(ID, setting)
+        return value == true
+    end
     if key == "backdrop" then
         return P.Get(ID, ui.sampleKind .. "BackdropEnabled")
             and P.Get(ID, ui.sampleKind .. "BackdropAlpha") > 0
@@ -216,7 +238,7 @@ local function FocusLayer(ui, section, key)
     if target and W.FocusCollapsibleSection then
         W.FocusCollapsibleSection(target, { persist = true, flash = true })
     end
-    local setting = LAYER_SETTING[key]
+    local setting = DecorSetting(ui, key) or LAYER_SETTING[key]
     if key == "castTime" then
         setting = ui.sampleKind .. "CastTimeEnabled"
     elseif key == "backdrop" or key == "border" then
@@ -349,12 +371,27 @@ local LAYER_ACTION = {
     eliteMarker = "marker", questMarker = "marker",
 }
 local function LayerAction(key)
+    if DECOR_LAYERS[key] then return "decor" end
     if AURA_KIND[key] then return "live" end
     return LAYER_ACTION[key]
 end
 
 local function ToggleLayer(ui, key)
     local action = LayerAction(key)
+    if action == "decor" and not ui:LayerAvailable(key) then
+        FocusLayer(ui, key == "targetScale" and "native" or "enemy", key)
+        return
+    end
+    if action == "decor" then
+        local setting = DecorSetting(ui, key)
+        local on = ui:LayerActive(key)
+        P.Set(ID, setting, not on)
+        ui.layers[key] = true
+        if key == "focusMarker" or key == "glow" then ui.focusSample = true end
+        if key == "targetScale" then ui.targetSample = true end
+        ui:Paint()
+        return
+    end
     if action == "level" then
         ToggleLevel(ui, key)
         return

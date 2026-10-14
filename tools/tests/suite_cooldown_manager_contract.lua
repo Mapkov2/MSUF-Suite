@@ -51,7 +51,7 @@ local function Read(path)
 end
 AuraContainerSortMethod={ExpirationOnly=5}
 local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","EntryFill.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
-    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua","Alerts.lua","Grid.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
+    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua","ActionUsableGlows.lua","Alerts.lua","Grid.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
     "Flush.lua","Settings.lua","Events.lua","Controller.lua","Editor.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
@@ -3913,7 +3913,152 @@ end
     local actual = S.CooldownManagerRenderPreview(barStage, "bar", 400, 200)
     assert(not actual.classSample, "returning to character retained another class")
 end)()
+-- The optional bridge consumes Time's existing main-cooldown answer,
+-- before recharge presentation can hold entry.cooling. Native readers are
+-- counted: enabling the bridge must not add a second cooldown query.
+;(function()
+    local entry
+    for _, candidate in pairs(C.entries) do
+        if candidate.icon and candidate.spell and (candidate.src=="b" or candidate.src=="s")
+            and not candidate.equipSlot and not candidate.spellCategory then entry=candidate;break end
+    end
+    assert(entry,"a real spell entry for action-glow timing")
+    local ov,charges,cd,charge=entry.ov,entry.charges,cdState[entry.spell],chargeState[entry.spell]
+    local combatPolicy=C.state.readyGlowCombat
+    C.state.readyGlowCombat=false
+    local visit,bars,actionInfo,usableAction=S.ForEachActionBarButtonForSpell,S.states.actionbars,GetActionInfo,C_ActionBar.IsUsableAction
+    local button=CreateFrame("Button",nil,UIParent)
+    button.action=51
+    function button:GetSize() return 36,36 end
+    button:SetSize(36,36)
+    S.states.actionbars={active=true}
+    S.ForEachActionBarButtonForSpell=function(spell,callback)
+        assert(spell==(entry.base or entry.spell),"action slot follows the base spell")
+        callback(button)
+    end
+    GetActionInfo=function(slot) if slot==51 then return "spell",entry.base or entry.spell,"spell" end end
+    C_ActionBar.IsUsableAction=function(slot) assert(slot==51);return true,false end
+    entry.ov,entry.charges={actionUsableGlow=true},true
+    entry.actionGlowCooling=nil
+    local prepare,ownedHost=C.Effects.PrepareGlow
+    C.Effects.PrepareGlow=function(host) ownedHost=host;prepare(host) end
+    C.ActionGlows.Refresh()
+    C.Effects.PrepareGlow=prepare
+    assert(ownedHost and ownedHost.glow and not ownedHost.glow:IsShown(),
+        "owned feedback art must be built hidden on cold binding")
+    local preparedGlow=ownedHost.glow
+    cdState[entry.spell]={start=now,length=12}
+    local before=cdCalls
+    C.Time.Refresh(entry,"cooldown")
+    assert(cdCalls==before+1 and entry.actionGlowCooling==true,"optional glow repeated/missed the shared cooldown read")
+    chargeState[entry.spell]={isActive=true}
+    cdState[entry.spell]=nil
+    before=cdCalls
+    C.Time.Refresh(entry,"cooldown")
+    assert(cdCalls==before+1 and entry.cooling==true and entry.actionGlowCooling==false,
+        "recharge presentation suppressed a usable charge or queried its cooldown again")
+    assert(ownedHost.glow==preparedGlow and preparedGlow:IsShown(),"first usability edge recreated the prepared glow")
+    entry.cooling=false
+    cdState[entry.spell]={start=now,length=12}
+    chargeState[entry.spell]=nil
+    combat=true
+    C.Time.Refresh(entry,"full")
+    assert(entry.actionGlowCooling==true,"approximate old readiness enabled a glow during secret cooldown timing")
+    combat=false
+    C.ActionUsableGlows.Release()
+    entry.ov,entry.charges=ov,charges
+    C.state.readyGlowCombat=combatPolicy
+    cdState[entry.spell],chargeState[entry.spell]=cd,charge
+    S.ForEachActionBarButtonForSpell,S.states.actionbars,GetActionInfo,C_ActionBar.IsUsableAction=visit,bars,actionInfo,usableAction
+    -- A target bridge alone must own the real target-event subscription.
+    local aura,overlay,ranged=C.Index.aura,C.Index.overlay,{unpack(C.Index.ranged)}
+    C.Index.aura,C.Index.overlay={},{}
+    wipe(C.Index.ranged)
+    local targetWanted,targetCallback=C.ActionGlows.targetWanted,C.ActionGlows.TargetChanged
+    local targetCalls=0
+    C.ActionGlows.targetWanted=true
+    C.ActionGlows.TargetChanged=function() targetCalls=targetCalls+1 end
+    C.Flush.dirty.events=true;C.Schedule();Run()
+    Fire("PLAYER_TARGET_CHANGED")
+    assert(targetCalls==1,"target-only action bridge missed the real target identity handler")
+    C.ActionGlows.targetWanted=false
+    C.Flush.dirty.events=true;C.Schedule();Run()
+    Fire("PLAYER_TARGET_CHANGED")
+    assert(targetCalls==1,"unused target action bridge retained its identity subscription")
+    C.ActionGlows.targetWanted,C.ActionGlows.TargetChanged=targetWanted,targetCallback
+    C.Index.aura,C.Index.overlay=aura,overlay
+    for i=1,#ranged do C.Index.ranged[i]=ranged[i] end
+end)()
 S.CooldownManagerReleasePreview(barStage)
+do (function()
+    -- Actual registered override event -> flush -> native aura bindings.
+    local oldList,oldInfo=sets[2],infos[105493]
+    local oldLists,oldSpells,oldBuf,oldBar=config.listsData,config.spellsData,config.buf_on,config.bar_on
+    local oldAssist,oldForever=UnitCanAssist,Suite.Client.isForever
+    UnitCanAssist=function() return false end
+    Suite.Client.isForever=false
+    sets[2]={unpack(oldList)};sets[2][#sets[2]+1]=105493
+    Info(105493,32645,2,{overrideSpellID=32645})
+    C_Spell.harmful[32645],C_Spell.harmful[2147483001],C_Spell.harmful[2147483002]=true,true,true
+    local function Tracks(slot,unit,spell)
+        local bar=C.bars[slot]
+        local host=bar.auraHost or bar.frame
+        for _,widget in ipairs(all) do
+            if widget.kind=="AuraContainer" and widget.enabled and widget.shown and widget.unit==unit
+                and (widget.parent==host or widget.parent==bar.frame) and widget:Tracks(spell) then return true end
+        end
+        return false
+    end
+    for _,slot in ipairs({"buf","bar"}) do
+        config.buf_on,config.bar_on=slot=="buf",slot=="bar"
+        config.listsData=assert(Codec.EncodeLists({specs={[C.state.specID]={[slot]={"b105493"}}}}))
+        C.Flush.dirty.catalog=true
+        for _,choice in ipairs({1,2,3,4}) do
+            config.spellsData=assert(Codec.EncodeSpells({v=1,e={b105493={auraUnit=choice}}}))
+            module:Refresh();Run()
+            local entry=assert(C.entries.b105493)
+            local wanted=({"player","player","target","both"})[choice]
+            assert(entry.unit==wanted and entry.auraHelpful,"native override setup")
+            assert(Fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",32645,2147483001))
+            assert(C.Flush.dirty.alerts,"override failed to refresh native aura sound identities")
+            Run()
+            local unit=choice==1 and "target" or wanted
+            assert(entry.unit==unit and not entry.auraHelpful,"registered override retained stale aura route")
+            assert(Tracks(slot,"player",2147483001)==(unit~="target")
+                and Tracks(slot,"target",2147483001)==(unit~="player"),"native override bound the wrong unit")
+            Fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",32645,2147483002);Run()
+            assert(not Tracks(slot,"player",2147483001) and not Tracks(slot,"target",2147483001),"old native override ID survived")
+            Fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",32645,nil);Run()
+            assert(entry.unit==wanted and entry.auraHelpful and not entry.auraIDs[2147483002],"native override removal failed")
+            assert(Tracks(slot,"player",32645)==(wanted~="target")
+                and Tracks(slot,"target",32645)==(wanted~="player"),"native player identity was not restored")
+        end
+    end
+    -- Timer demand and cast subscriptions follow override eligibility in combat too.
+    config.buf_on,config.bar_on=false,true
+    config.listsData=assert(Codec.EncodeLists({specs={[C.state.specID]={bar={"b105493"}}}}))
+    config.spellsData=assert(Codec.EncodeSpells({v=1,e={b105493={auraUnit=1,timerDuration=10}}}))
+    for _,locked in ipairs({false,true}) do
+        Info(105493,32645,2,{overrideSpellID=2147483001})
+        C.Flush.dirty.catalog=true;module:Refresh();Run()
+        local entry=assert(C.entries.b105493)
+        assert(not entry.timer and not C.plans.bar.hasTimers and not Registered("UNIT_SPELLCAST_SUCCEEDED"),"timer setup")
+        if locked then combat=true;Fire("PLAYER_REGEN_DISABLED");Run() end
+        Fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",32645,nil)
+        assert(C.Flush.dirty.events,"aura override missed timer subscription refresh")
+        Run()
+        assert(entry.timer and C.plans.bar.hasTimers and Registered("UNIT_SPELLCAST_SUCCEEDED")
+            and Registered("PLAYER_TOTEM_UPDATE"),"override gained timer without native cast subscriptions")
+        Fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",32645,2147483001);Run()
+        assert(not entry.timer and not C.plans.bar.hasTimers and not Registered("UNIT_SPELLCAST_SUCCEEDED")
+            and not Registered("PLAYER_TOTEM_UPDATE"),"override lost timer but retained native cast subscriptions")
+        if locked then combat=false;Fire("PLAYER_REGEN_ENABLED");Run() end
+    end
+    sets[2],infos[105493]=oldList,oldInfo
+    config.listsData,config.spellsData,config.buf_on,config.bar_on=oldLists,oldSpells,oldBuf,oldBar
+    UnitCanAssist,Suite.Client.isForever=oldAssist,oldForever
+    C.Flush.dirty.catalog=true;module:Refresh();Run()
+end)() end
 Deactivate()
 for key in pairs(_G) do assert(globalsBefore[key] or key=="MSUF_DB","runtime created the global "..tostring(key)) end
 

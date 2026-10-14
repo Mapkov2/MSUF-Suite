@@ -144,6 +144,12 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             Create = function(body)
                 local bar = Frame(body); bar:SetHeight(24); body.selection = bar; return bar
             end,
+            CreatePicker = function(body, tools)
+                local picker = Frame(tools)
+                picker:SetSize(152, 20)
+                body.picker = picker
+                return picker
+            end,
             SetShown = function(body, shown) body.selection:SetShown(shown) end,
             Refresh = Noop,
         }
@@ -167,8 +173,11 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             ClassicNativePlate = function() return false end,
             AuraCVar = {}, AuraBits = {},
         }
+        local values, writes = {}, 0
         local P = { M = M, W = W, T = T, Tr = function(v) return v end,
-            Get = function() return 1 end, Combat = function() return false end,
+            Get = function(_, key) if values[key] ~= nil then return values[key] end; return 1 end,
+            Set = function(_, key, value) values[key] = value; writes = writes + 1 end,
+            Combat = function() return false end,
             Suite = { NameplateStyle = style, Client = {}, Public = function() return true end },
             NameplatesEditorMarkers = { TargetActive = function() return false end },
             NameplatesSize = { Build = Noop },
@@ -181,7 +190,33 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         local ui = P.NameplatesEditor.Create(ctx, builder, {})
+        assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", P)
+        local sample = { cell = Frame(ui.stage), bar = Frame(ui.stage), cast = Frame(ui.stage), progress = Frame(ui.stage) }
+        P.NameplatesPreviewDecor.Build(ui, sample)
         local body, section = ui.body, ui.body.parent
+        local function Layer(key)
+            for _, button in ipairs(ui.layerButtons) do if button.layerKey == key then return button end end
+            error("missing layer " .. key)
+        end
+        values.look, ui.sampleKind = 4, "enemy"
+        values.enemyGlowMode, values.enemyGlowEnabled = 2, true
+        values.enemyFillTexture, values.enemyTextureEnabled = 2, true
+        for _, key in ipairs({ "glow", "fillTexture" }) do
+            local button = Layer(key)
+            button.scripts.OnClick(button, "LeftButton")
+            button.scripts.OnClick(button, "LeftButton")
+        end
+        assert(values.enemyGlowMode == 2 and values.enemyFillTexture == 2,
+            "live layer toggle replaced selected glow or texture mode")
+        assert(values.enemyGlowEnabled and values.enemyTextureEnabled)
+        ui.sampleKind = "friendly"
+        local before = writes
+        for _, key in ipairs({ "focusMarker", "threshold" }) do
+            local button = Layer(key)
+            button.scripts.OnClick(button, "LeftButton")
+        end
+        assert(writes == before, "unavailable friendly sample changed enemy settings")
+        ui.sampleKind = "enemy"
         -- Combat start drops the selection only while the preview shows: with
         -- the menu closed the event stays unregistered, and no pull repaints.
         assert(not body.events.PLAYER_REGEN_DISABLED == not body:IsVisible(),
@@ -214,7 +249,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         assert(select(4, Rect(section)) == anchorY, "scrolling the settings moved the preview")
         M.SetFixedPreviewExpandedPreference(true)
         fixed.onActivate()
-        assert(expander.expanded and section:GetHeight() == 416 and not ui.compact,
+        assert(expander.expanded and section:GetHeight() == 526 and not ui.compact,
             "page activation did not expand the fixed header")
         local originalWidths = {}
         for i, button in ipairs(ui.layerButtons) do originalWidths[i] = button:GetWidth() end
@@ -237,6 +272,12 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
                 CheckAbove(ui.tools, ui.selection, 5, "zoom tools overlap selection")
                 CheckAbove(ui.canvas, ui.tools, 4, "canvas overlaps toolbar")
                 assert(ui.canvas:GetHeight() > 80, "layer flow left no usable canvas")
+                for _, control in ipairs({ ui.targetStateButton, ui.focusStateButton, body.picker, ui.contextButton }) do
+                    CheckInside(control, ui.tools, "preview toolbar child clipped")
+                end
+                local _, fbottom, _, ftop = Rect(ui.focusStateButton)
+                local _, pbottom = Rect(body.picker)
+                assert(ftop <= pbottom, "sample controls overlap the element picker")
                 for _, button in ipairs(ui.layerButtons) do
                     CheckInside(button, ui.layerRail, "layer button escapes its rail: " .. button.layerKey)
                     CheckInside(button, body, "layer button is clipped by the preview: " .. button.layerKey)

@@ -2571,6 +2571,45 @@ sg.ov={stackGlow=3,stackGlowOp=3,glowStyle=4}
 A.Sync("c4")
 assert(bind.appOpts.maxApplications==4 and Near(R[sbar].points[1][4]+Args(sbar,"SetSize")[1],0),
     "strict greater uses the next integer threshold and clamps there")
+-- Lower comparisons move a clipping window around a fixed glow. Native
+-- values never enter addon Lua; this verifies anchors and clamp geometry.
+do
+    local function CheckLow(op, threshold)
+        sg.ov={stackGlow=threshold,stackGlowOp=op,glowStyle=4}
+        A.Sync("c4")
+        local limit=op==4 and threshold-1 or threshold
+        local cap=bind.appOpts.maxApplications
+        local gatePoint=R[gate].points[1]
+        local gateWidth=Args(gate,"SetSize")[1]
+        local barWidth=Args(sbar,"SetSize")[1]
+        local hostPoint=R[host].points[1]
+        assert(cap==limit+1 and gatePoint[2]==R[sbar].fill and gatePoint[3]=="RIGHT",
+            "lower comparison needs a native zero-based moving clip window")
+        assert(hostPoint[2]==gb and hostPoint[3]=="CENTER" and R[sbar].points[1][2]==gb,
+            "lower comparison must keep the glow and bar on the aura button")
+        for _,apps in ipairs({0,1,threshold-1,threshold,threshold+1,999}) do
+            local center=barWidth*math.min(apps,cap)/cap+gatePoint[4]
+            local lo,hi=center-gateWidth/2,center+gateWidth/2
+            if apps<=limit then
+                assert(lo<=-fw/2 and hi>=fw/2,"accepted low stacks clipped the glow")
+            else
+                assert(lo>fw/2,"rejected high stacks left part of the glow visible")
+            end
+        end
+        local calls=tally.writes
+        A.Sync("c4")
+        assert(tally.writes==calls,"unchanged lower stacks wrote widgets")
+    end
+    CheckLow(4,1)
+    CheckLow(4,3)
+    CheckLow(5,3)
+    CheckLow(5,99)
+    -- Same range, different geometry: AT_MOST 3 and EXACTLY 3 both cap4.
+    CheckLow(5,3)
+    sg.ov={stackGlow=3,stackGlowOp=2,glowStyle=4}; A.Sync("c4")
+    assert(R[gate].points[1][2]==gb and R[sbar].points[1][2]==gate,
+        "switching back to equality retained the lower-comparison anchors")
+end
 sg.ov={stackGlow=3,glowStyle=4}; A.Sync("c4")
 -- Blizzard writes secret counts into every bound region; restyles and
 -- threshold changes never read them
@@ -3002,6 +3041,7 @@ OwnAnchors("every container")
 -- in combat only records whose button no longer shows their spell go off.
 do
     LoadRuntime("ActionGlows.lua")
+    LoadRuntime("ActionUsableGlows.lua")
     local bridge=C.ActionGlows
     local action,paged=New("Button",UIParent),New("Button",UIParent)
     function Methods:GetSize() return 36,36 end
@@ -3116,6 +3156,60 @@ do
     C.entries.third=nil
     bridge.Refresh()
     pad.Finish(NS.Client)
+    -- Native B outer / A inner hierarchy implements A AND B without addon
+    -- aura getters. The stack threshold still belongs to A, not to B.
+    C_Timer.GlowAnd={mark=#containers}
+    C.entries.other.ov.actionGlowRequireSpell=321
+    bridge.Refresh()
+    assert(#containers==C_Timer.GlowAnd.mark+4,"conditional bridge did not build two levels per action")
+    C_Timer.GlowAnd.outer,C_Timer.GlowAnd.inner=containers[C_Timer.GlowAnd.mark+1],containers[C_Timer.GlowAnd.mark+2]
+    C_Timer.GlowAnd.gate=R[C_Timer.GlowAnd.outer].slots.glow.buttons[1]
+    C_Timer.GlowAnd.main=R[C_Timer.GlowAnd.inner].slots.glow.buttons[1]
+    assert(R[C_Timer.GlowAnd.inner].parent==C_Timer.GlowAnd.gate and R[C_Timer.GlowAnd.main].parent==C_Timer.GlowAnd.inner and R[C_Timer.GlowAnd.outer].slots.glow.cand.includeSpellIDs[321]
+        and R[C_Timer.GlowAnd.inner].slots.glow.cand.includeSpellIDs[789],"native AND topology/filters wrong")
+    assert(R[C_Timer.GlowAnd.main].bind.appOpts.maxApplications==2,"secondary buff replaced the primary stack condition")
+    C.entries.other.ov.actionGlowRequireSpell=654
+    bridge.Refresh()
+    assert(#containers==C_Timer.GlowAnd.mark+4 and R[C_Timer.GlowAnd.outer].slots.glow.cand.includeSpellIDs[654]
+        and not R[C_Timer.GlowAnd.outer].slots.glow.cand.includeSpellIDs[321],"secondary edit leaked an old filter or allocated containers")
+    COMBAT,ACCESS,AURAS_SECRET=true,false,true
+    C.entries.other.ov.actionGlowRequireSpell=987
+    bridge.Refresh()
+    assert(bridge.pending and R[C_Timer.GlowAnd.outer].slots.glow.cand.includeSpellIDs[654],"secret edit touched sealed hierarchy")
+    bridge.Release()
+    assert(not R[C_Timer.GlowAnd.outer].enabled,"restricted release left the C_Timer.GlowAnd.outer C_Timer.GlowAnd.gate active")
+    COMBAT,ACCESS,AURAS_SECRET=false,true,false
+    bridge.Refresh()
+    assert(R[C_Timer.GlowAnd.outer].enabled and R[C_Timer.GlowAnd.outer].slots.glow.cand.includeSpellIDs[987],"safe refresh lost pending secondary choice")
+    -- The additional buff remains on the player, primary harmful aura on
+    -- target. Unit/filter changes take a separate sealed native record.
+    C.entries.other.ov.actionGlowUnit=2
+    C_Timer.GlowAnd.targetMark=#containers
+    bridge.Refresh()
+    C_Timer.GlowAnd.targetOuter=containers[C_Timer.GlowAnd.targetMark+1]
+    C_Timer.GlowAnd.targetInner=containers[C_Timer.GlowAnd.targetMark+2]
+    assert(R[C_Timer.GlowAnd.targetOuter].unit=="player"
+        and R[C_Timer.GlowAnd.targetOuter].slots.glow.filter=="HELPFUL"
+        and R[C_Timer.GlowAnd.targetInner].unit=="target"
+        and R[C_Timer.GlowAnd.targetInner].slots.glow.filter=="HARMFUL|PLAYER",
+        "target AND bridge changed the secondary unit or lost own-debuff filtering")
+    assert(bridge.targetWanted,"target-only bridge must request target identity events")
+    COMBAT,ACCESS,AURAS_SECRET=true,false,true
+    C_Timer.GlowAnd.outerUpdates=R[C_Timer.GlowAnd.targetOuter].updates
+    C_Timer.GlowAnd.innerUpdates=R[C_Timer.GlowAnd.targetInner].updates
+    bridge.TargetChanged()
+    assert(R[C_Timer.GlowAnd.targetOuter].updates==C_Timer.GlowAnd.outerUpdates+1
+        and R[C_Timer.GlowAnd.targetInner].updates==C_Timer.GlowAnd.innerUpdates,
+        "retarget must rebuild the outer assignment without calling the sealed inner target")
+    COMBAT,ACCESS,AURAS_SECRET=false,true,false
+    C.entries.other.ov.actionGlowUnit=nil
+    bridge.Refresh()
+    assert(not R[C_Timer.GlowAnd.targetOuter].enabled and R[C_Timer.GlowAnd.outer].enabled,
+        "switching aura source left the old target record running")
+    assert(not bridge.targetWanted,"clearing target source left a target identity watcher")
+    C.entries.other.ov.actionGlowRequireSpell=nil
+    bridge.Refresh()
+    assert(not R[C_Timer.GlowAnd.outer].enabled and R[stacked].enabled,"clearing the extra condition failed to restore the single-buff record")
     C.entries.other=nil
     bridge.Refresh()
     assert(not R[stacked].enabled and not bridge.wanted,"removed entry releases its glow")
@@ -3827,5 +3921,73 @@ do (function()
     local second=R[Acquired(transferred.frame,transferred.keys[2])].bind
     assert(not first.bar and not first.text and second.bar and second.text,"moving the duration option restores only the correct native clock")
     A.ReleaseAll()
+end)() end
+do (function()
+    -- Bridge the real entry resolver into native containers: a harmful cast
+    -- may provide a helpful player buff (Envenom, saved viewer ID 105493).
+    local previousForever=NS.Client.isForever
+    NS.Client.isForever=false
+    local oldHarmful=C_Spell.IsSpellHarmful
+    C_Spell.IsSpellHarmful=function(id) return id==32645 or id==385627 end
+    local catalog={records={
+        [105493]={id=105493,spell=32645,override=32645,family=2,linked={},known=true,selfAura=false,hasAura=false},
+        [105403]={id=105403,spell=385627,override=385627,family=2,linked={},known=true,hasAura=true},
+    },Num=function(v) return v end,
+        RecordTexture=function(rec) return rec.spell end,
+        RecordName=function(rec) return rec.spell==32645 and "Envenom" or "Kingsbane" end}
+    local private={NS=NS,Suite=S,CDM={Const=C.Const,EMPTY=C.EMPTY,wipe=wipe,Catalog=catalog,Presets={CONSUMABLES={}}}}
+    assert(loadfile(root.."/MSUF_Suite_CooldownManager/EntryFill.lua"))("MSUF_Suite_CooldownManager",private)
+    local envenom,kingsbane={key="b105493",ov={}},{key="b105403",ov={}}
+    assert(private.CDM.EntryFill.Fill(envenom,envenom.key))
+    assert(private.CDM.EntryFill.Fill(kingsbane,kingsbane.key))
+    local function KeyFor(rec,entry)
+        for k,e in pairs(rec.entry) do if e==entry and rec.on[k] then return rec.keys[k] end end
+        error("entry has no active native binding")
+    end
+    COMBAT,ACCESS,AURAS_SECRET,FRIENDLY=false,true,false,false
+    C.state.preview=false
+    for _,version in ipairs({true,false}) do
+        V125=version
+        for _,kind in ipairs({2,3}) do
+            local slot=kind==2 and "buf" or "bar"
+            for _,fixed in ipairs({false,true}) do
+                A.ReleaseAll()
+                C.views[slot]=View(slot,kind)
+                C.views[slot].keepSlots=fixed
+                C.views[slot].cdText,C.views[slot].barTime=true,true
+                C.views[slot].barStacks=false
+                envenom.slot,kingsbane.slot=slot,slot
+                Plan(slot,kind,{envenom,kingsbane})
+                A.Sync(slot)
+                local player=assert(Live(slot,"player"),"Envenom must bind a native player container")
+                local target=assert(Live(slot,"target"),"Kingsbane must bind a native target container")
+                local playerRec=C.AuraContainers.live[slot].aura.player
+                local targetRec=C.AuraContainers.live[slot].aura.target
+                local ps,ts=R[player],R[target]
+                local pk,tk=KeyFor(playerRec,envenom),KeyFor(targetRec,kingsbane)
+                local pg=(ps.groups[pk] or ps.slots[pk])
+                local tg=(ts.groups[tk] or ts.slots[tk])
+                assert(pg.filter=="HELPFUL|PLAYER" and pg.cand.includeSpellIDs[32645],"Envenom matches its own buff")
+                assert(tg.filter=="HARMFUL|PLAYER" and tg.cand.includeSpellIDs[385627],"Kingsbane keeps its DoT binding")
+                local bind=R[Acquired(player,pk)].bind
+                assert(bind.text and (kind==2 and bind.cooldown or kind==3 and bind.bar),
+                    "native Envenom owns duration text and the icon swipe or bar fill")
+                FRIENDLY=true
+                A.TargetChanged()
+                assert(R[player].enabled and not R[target].enabled,"friendly targets cannot disable the player buff")
+                FRIENDLY=false
+                A.TargetChanged()
+                local made,timers=tally.made,timerCount
+                COMBAT,ACCESS,AURAS_SECRET=true,false,true
+                A.Sync(slot)
+                assert(Live(slot,"player")==player and tally.made==made and timerCount==timers,
+                    "unchanged restricted combat keeps the native binding without new widgets or timers")
+                COMBAT,ACCESS,AURAS_SECRET=false,true,false
+            end
+        end
+    end
+    A.ReleaseAll()
+    C_Spell.IsSpellHarmful=oldHarmful
+    NS.Client.isForever=previousForever
 end)() end
 print("suite_cooldown_manager_auras_contract: ok")

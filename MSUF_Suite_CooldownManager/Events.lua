@@ -261,6 +261,7 @@ end
 local function OnTarget()
     for i = 1, #rangedEntries do ReadRange(rangedEntries[i]) end
     C.Auras.TargetChanged()
+    if C.ActionGlows.targetWanted then C.ActionGlows.TargetChanged() end
 end
 -- The target's disposition can flip without a retarget (a duel, a charm):
 -- target aura containers pause while it is friendly. Other units: one compare.
@@ -289,7 +290,10 @@ end
 local function Overridden(entry)
     if entry.src ~= "b" and entry.src ~= "s" then return end
     if entry.icon then Mark(entry, "full") end
-    if entry.auraIDs and entry.slot then sync[entry.slot] = true end
+    if entry.auraIDs and entry.slot then
+        sync[entry.slot] = true
+        dirty.alerts, dirty.events = true, true
+    end
     AddSpell(entry, entry.override)
 end
 local function OnOverride(_, _, base, override)
@@ -458,6 +462,7 @@ end
 local function OnCombatStart()
     local state = C.state
     state.inCombat = true
+    C.ActionUsableGlows.Repaint()
     C.Preview.Simulate(false)
     C.Effects.CombatChanged(true)
     C.Visibility.CombatChanged()
@@ -468,6 +473,7 @@ end
 -- and category seeds combat held back.
 local function OnCombatEnd()
     C.state.inCombat = false
+    C.ActionUsableGlows.Repaint()
     if C.Resolve.ResumeConditions() then
         dirty.resolve = true
         Schedule()
@@ -560,21 +566,25 @@ local function UpdateEvents()
     Want("BAG_UPDATE_COOLDOWN", #Index.bags > 0, OnBag)
     Want("BAG_UPDATE_DELAYED", #Index.items > 0, OnBagContents)
     Want("SPELL_UPDATE_USABLE", #Index.usable > 0, OnUsable)
+    Want("ACTION_USABLE_CHANGED", C.ActionUsableGlows.wanted, C.ActionUsableGlows.Changed)
+    Want("ACTIONBAR_UPDATE_USABLE", C.ActionUsableGlows.wanted, C.ActionUsableGlows.Queue)
+    Want("PLAYER_MOUNT_DISPLAY_CHANGED", C.ActionUsableGlows.wanted, C.ActionUsableGlows.Queue)
     Want("SPELL_RANGE_CHECK_UPDATE", #Index.ranged > 0, OnRange)
     local proc = #Index.proc > 0
     Want("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW", proc, OnGlowShow)
     Want("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", proc, OnGlowHide)
     Want("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", cooldown or #Index.aura > 0, OnOverride)
-    local target = TargetWatch()
+    local target = TargetWatch() or C.ActionGlows.targetWanted
     Want("PLAYER_TARGET_CHANGED", #Index.ranged > 0 or target, OnTarget)
     Want("UNIT_FACTION", target, OnFaction)
     Want("ADDON_RESTRICTION_STATE_CHANGED", #Index.aura > 0 or #Index.overlay > 0 or C.ActionGlows.wanted, OnRestriction)
     Want("PLAYER_EQUIPMENT_CHANGED", EquipWatch(), OnEquipment)
     local keys = KeybindWatch()
+    local actionGlows = C.ActionGlows.wanted or C.ActionUsableGlows.wanted
     Want("UPDATE_BINDINGS", keys, OnBindings)
-    Want("ACTIONBAR_SLOT_CHANGED", keys or C.ActionGlows.wanted, OnBindings)
-    Want("ACTIONBAR_PAGE_CHANGED", keys and C.state.keybindStable == false or C.ActionGlows.wanted, OnActionPage)
-    Want("UPDATE_SHAPESHIFT_FORM", keys and C.state.keybindStable == false or C.ActionGlows.wanted, OnActionPage)
+    Want("ACTIONBAR_SLOT_CHANGED", keys or actionGlows, OnBindings)
+    Want("ACTIONBAR_PAGE_CHANGED", keys and C.state.keybindStable == false or actionGlows, OnActionPage)
+    Want("UPDATE_SHAPESHIFT_FORM", keys and C.state.keybindStable == false or actionGlows, OnActionPage)
 end
 -- Catalog, combat, scale and loading-screen events while the module runs.
 local CATALOG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",

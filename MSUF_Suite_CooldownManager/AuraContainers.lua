@@ -68,8 +68,8 @@ local function Ids(entry)
     if type(map) == "table" and next(map) ~= nil then return map end
 end
 
--- The unit Resolve gave the entry (harmful IDs: target, else player; a
--- per-spell "Track on" choice wins). "both": the player and the target
+-- The unit Resolve gave the entry (native aura identities, else cast polarity;
+-- a per-spell "Track on" choice wins). "both": the player and the target
 -- container.
 local function UnitOf(entry) return entry.unit or "player" end
 local function OnUnit(entry, unit)

@@ -110,7 +110,8 @@ end
 
 -- The unit a Blizzard aura entry is looked for on: the target when any of its
 -- aura IDs is a harmful spell (a DoT, Deathstalker's Mark), else the player
--- (a buff). Blizzard's selfAura flag is not used for aura lookups by
+-- (a buff). Mixed damage/buff spells need their aura unit explicitly.
+-- Blizzard's selfAura flag is not used for aura lookups by
 -- Blizzard itself. Cold: cached per spell ID.
 local harmfulCache = {}
 local function Harmful(id)
@@ -122,7 +123,12 @@ local function Harmful(id)
     harmfulCache[id] = known
     return known
 end
-local function AuraUnit(base, override, tooltip, linked)
+local function AuraUnit(base, override, tooltip, linked, recordID, ids)
+    -- A cast can damage enemies while every aura it supplies is on its caster.
+    -- Apply audited native metadata only while the complete identity set agrees;
+    -- a changed override, tooltip or linked alias falls back to the normal route.
+    local player = C.Const.PLAYER_AURA_IDS[recordID]
+    if not NS.Client.isForever and player and C.Const.SameSet(player, ids) then return "player" end
     if Harmful(base) or Harmful(override) or Harmful(tooltip) then return "target" end
     for i = 1, #(linked or EMPTY) do
         if Harmful(linked[i]) then
@@ -133,6 +139,14 @@ local function AuraUnit(base, override, tooltip, linked)
 end
 -- Per-spell "Track on" (auraUnit): 2 me, 3 target, 4 both.
 local AURA_UNIT = { nil, "player", "target", "both" }
+
+local function RefreshAuraUnit(entry, choices)
+    entry.auraIDs = AuraSet(entry.auraIDs, entry.base, entry.override, entry.tooltip, entry.linked)
+    local unit = AuraUnit(entry.base, entry.override, entry.tooltip, entry.linked, entry.id, entry.auraIDs)
+    entry.auraHelpful = unit == "player"
+    entry.unit = choices and AURA_UNIT[(entry.ov or EMPTY).auraUnit] or unit
+    if not entry.unit then entry.unit = unit end
+end
 
 local function FillBlizzard(entry, rec)
     local base, override, family = rec.spell, rec.override, rec.family
@@ -145,9 +159,7 @@ local function FillBlizzard(entry, rec)
     entry.hasRange = family == COOLDOWN_FAMILY and base ~= nil and HasRange(base)
     entry.texture, entry.name = Catalog.RecordTexture(rec), Catalog.RecordName(rec)
     if family == AURA_FAMILY or rec.hasAura then
-        entry.auraIDs = AuraSet(entry.auraIDs, base, override, rec.tooltip, rec.linked)
-        entry.unit = AuraUnit(base, override, rec.tooltip, rec.linked)
-        entry.auraHelpful = entry.unit == "player"
+        RefreshAuraUnit(entry, false)
     else
         entry.auraIDs = nil
     end
@@ -221,3 +233,4 @@ end
 
 EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell = Parse, FamilyOf, Known, BaseSpell
 EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.AURA_UNIT = Fill, Clear, SetOverride, AURA_UNIT
+EntryFill.RefreshAuraUnit = RefreshAuraUnit

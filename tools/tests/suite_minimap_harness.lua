@@ -711,6 +711,9 @@ function H.New(root, client, options)
     W.gameRules = {}
     G.C_GameRules = { IsGameRuleActive = function(rule) return W.gameRules[rule] == true end }
     G.Enum = { GameRule = { WorldMapDisabled = 1, CharacterPanelDisabled = 2 } }
+    -- The shared native namespace exists even when a contract does not model
+    -- Forever's optional rank APIs. Catalog availability may inspect it.
+    G.C_SpellBook = {}
 
     local function Load(path, addon, namespace)
         local chunk = assert(loadfile(root .. "/" .. path))

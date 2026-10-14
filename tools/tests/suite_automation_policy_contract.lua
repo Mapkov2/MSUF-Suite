@@ -41,10 +41,10 @@ end
 -- Kept here on purpose: dropping a flag from the catalog fails this list, and
 -- an automation API call in an unflagged module fails the source scan.
 local MODULES = { "qol", "quests", "combatLog", "lootContainers", "trustedPartyInvites", "delveSolePower",
-    "professionAppearance", "collectionNewMarkers" }
+    "professionAppearance", "collectionNewMarkers", "autoUprank" }
 local SWITCHES = { "qol.repair", "qol.autoJunk", "loot.quickLoot", "dailyComfort.autoSkipCinematic",
     "groupRaidShortcuts.autoMarkTank", "groupRaidShortcuts.autoMarkHealer", "groupFinderDoubleClick.quickApply",
-    "mythicKeyShare.insertKey", "mythicResetReminder.announceReset", "tooltipDetails.inspectHovered" }
+    "mythicKeyShare.insertKey", "mythicResetReminder.announceReset", "tooltipDetails.inspectHovered", "autoUprank.replaceLowerRanks" }
 local expected = {}
 for _, id in ipairs(MODULES) do
     Check(catalog[id] and catalog[id].automation == true, "automation module is not flagged: " .. id)

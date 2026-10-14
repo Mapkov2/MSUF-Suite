@@ -1463,7 +1463,7 @@ def verify(records, quiet=False):
             else:
                 seen[english] = line
         head = HEADER.format(name=LOCALE_NAMES[locale], locale=locale).encode("utf-8")
-        if not raw.startswith(head):
+        if not raw.replace(b"\r\n", b"\n").startswith(head):
             problems.append("%s: the header (namespace, locale guard, T helper) differs from the tool's" % locale)
         entries = read_locale(locale)
         for english, text in sorted(entries.items()):

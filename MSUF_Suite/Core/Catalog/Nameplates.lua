@@ -13,6 +13,7 @@ B.Module("nameplates", {
     conflicts = { "Plater", "Platynator", "ElvUI", "EllesmereUINameplates" },
     cvars = {
         nameplateStyle = true,
+        nameplateSelectedScale = true,
         nameplateSize = true,
         nameplateForceShowUnitName = true,
         nameplateSimplifiedTypes = true,
@@ -95,6 +96,8 @@ for _, role in ipairs(roles) do
     if role.key ~= "TankMode" then native["enemy" .. role.key .. "Enabled"] = false end
 end
 local generalRules = {
+    B.Bool("targetScaleEnabled", "Enlarge current target", false),
+    B.Number("targetScalePercent", "Current target size (%)", 120, 100, 160, 5),
     B.Choice("look", "Look", 4, { "Jundies", "Blizzard", "Custom", "Mapko" }),
     B.Choice("barGeometry", "Bar dimensions", 1, { "Client default", "Same on Retail and Forever" }),
     B.Bool("enemy", "Skin enemy nameplates", true),
@@ -159,12 +162,30 @@ local function AddFriendlyRules(appearance)
     }) do appearance[#appearance + 1] = rule end
 end
 
+local function AddDecorRules(appearance, prefix)
+    local extra = {
+        B.Choice(prefix .. "BorderStyle", "Border style", 1, { "Single", "Double" }),
+        B.Bool(prefix .. "ShadowEnabled", "Show frame shadow", false),
+        B.Bool(prefix .. "GlowEnabled", "Show frame glow", false),
+        B.Choice(prefix .. "GlowMode", "Frame glow", 1, { "Always", "Current target", "Focus" }),
+        B.Color(prefix .. "GlowColor", "Frame glow color", "ffffff"),
+        B.Number(prefix .. "EffectSize", "Shadow / glow spread (px)", 4, 2, 8),
+        B.Bool(prefix .. "OuterFrame", "Frame around health and cast bars", false),
+        B.Number(prefix .. "OuterFrameSize", "Outer frame thickness (px)", 1, 1, 6),
+        B.Color(prefix .. "OuterFrameColor", "Outer frame color", "000000"),
+        B.Bool(prefix .. "TextureEnabled", "Use texture finish", false),
+        B.Choice(prefix .. "FillTexture", "Health bar texture finish", 1,
+            { "Soft gradient", "Fine stripes" }),
+    }
+    for i = 1, #extra do appearance[#appearance + 1] = extra[i] end
+end
+
 local function Side(prefix, title, size)
     local font = B.Font(prefix .. "NameFont", "Name font")
     local appearance = {
         B.Bool(prefix .. "BackdropEnabled", "Show backdrop", true),
         B.Bool(prefix .. "BorderEnabled", "Show border", true),
-        B.Number(prefix .. "BorderSize", "Border size (px)", prefix == "enemy" and 1 or 0, 0, 3),
+        B.Number(prefix .. "BorderSize", "Border size (px)", prefix == "enemy" and 1 or 0, 0, 6),
         B.Color(prefix .. "BorderColor", "Border color", "000000"),
         B.Color(prefix .. "BackdropColor", "Backdrop color", "000000"),
         B.Number(prefix .. "BackdropAlpha", "Backdrop opacity (%)", 50, 0, 100, 5),
@@ -183,8 +204,17 @@ local function Side(prefix, title, size)
         "Health bar height change (px; 0 = Blizzard)", 0, -4, 24))
     table.insert(appearance, 1, B.Number(prefix .. "HealthWidthDelta",
         "Health bar width change (px; 0 = Blizzard)", 0, -30, 160))
+    AddDecorRules(appearance, prefix)
     if prefix == "enemy" then
         AddEnemyNativeRules(appearance)
+        appearance[#appearance + 1] = B.Bool("enemyThresholdEnabled", "Show health threshold line", false)
+        appearance[#appearance + 1] = B.Number("enemyThresholdPercent", "Health threshold (%)", 20, 1, 99)
+        appearance[#appearance + 1] = B.Color("enemyThresholdColor", "Health threshold line color", "ffffff")
+        appearance[#appearance + 1] = B.Bool("enemyFocusMarker", "Show focus diamond", false)
+        appearance[#appearance + 1] = B.Number("enemyFocusMarkerSize", "Focus diamond size (px)", 12, 8, 24)
+        appearance[#appearance + 1] = B.Color("enemyFocusMarkerColor", "Focus diamond color", "ff66ff")
+        appearance[#appearance + 1] = B.Number("enemyFocusMarkerX", "Focus diamond X", -56, -100, 100)
+        appearance[#appearance + 1] = B.Number("enemyFocusMarkerY", "Focus diamond Y", 0, -100, 100)
         appearance[#appearance + 1] = B.Bool("enemyRoleColors", "Color enemy health fill by type", true)
         appearance[#appearance + 1] = B.Bool("enemyColorsInDungeons", "Role colors in dungeons and raids", true)
         appearance[#appearance + 1] = B.Bool("enemyColorsOutside", "Role colors outdoors", true)
@@ -388,7 +418,10 @@ local SIDE_SWITCHES = {
     { "TextEnabled", "CustomFont", "TextShadow", "NameSize", "TextOutline" },
     { "CustomFont", "NameFont" },
     { "LevelEnabled", "LevelSize" },
-    { "BorderEnabled", "BorderSize", "BorderColor" },
+    { "BorderEnabled", "BorderSize", "BorderColor", "BorderStyle" },
+    { "OuterFrame", "OuterFrameSize", "OuterFrameColor" },
+    { "GlowEnabled", "GlowMode", "GlowColor" },
+    { "TextureEnabled", "FillTexture" },
     { "BackdropEnabled", "BackdropColor", "BackdropAlpha" },
     { "EliteMarker", "EliteMarkerAnchor", "EliteMarkerSize" },
     { "QuestMarker", "QuestMarkerAnchor", "QuestMarkerSize" },
@@ -428,3 +461,7 @@ EnabledBy({ "threatHighlightColor" }, "threatHighlightColorEnabled")
 Requires({ "selectionTargetColor", "selectionFocusColor" }, "selectionBorder")
 Requires({ "selectionDimPercent" }, "selectionDim")
 EnabledBy({ "personalPowerBorderSize", "personalPowerBorderColor" }, "personalPowerSkin")
+
+EnabledBy({ "targetScalePercent" }, "targetScaleEnabled")
+EnabledBy({ "enemyThresholdPercent", "enemyThresholdColor" }, "enemyThresholdEnabled")
+EnabledBy({ "enemyFocusMarkerSize", "enemyFocusMarkerColor", "enemyFocusMarkerX", "enemyFocusMarkerY" }, "enemyFocusMarker")

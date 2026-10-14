@@ -2,7 +2,7 @@ local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
 assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
-    .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,Skin.lua",
+    .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,Decor.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
 local installed, events = nil, {}
 local scans = 0
@@ -2500,3 +2500,36 @@ do
     ClearDeferred()
 end
 print("Suite nameplates: per-plate combat-end pass, module-wide fallback and held-back writers passed")
+
+-- Native target scaling uses the same leased CVar and combat replay as size.
+do
+    local c = module.config
+    local enabled, percent, look = c.targetScaleEnabled, c.targetScalePercent, c.look
+    local restore = S.RestoreCVar
+    S.RestoreCVar = function(id, key)
+        restore(id, key)
+        if key == "nameplateSelectedScale" then liveCVars[key] = "1.1" end
+    end
+    liveCVars.nameplateSelectedScale = "1.1"
+    c.targetScaleEnabled, c.targetScalePercent, c.look = true, 130, 2
+    private.CVars.Apply(module)
+    assert(cvars.nameplateSelectedScale == "1.3", "native selected size was not applied")
+    c.targetScaleEnabled = false
+    private.CVars.Apply(module)
+    assert(liveCVars.nameplateSelectedScale == "1.1" and restored.nameplateSelectedScale,
+        "turning selected size off did not return native ownership")
+    combat = true
+    c.targetScaleEnabled, c.targetScalePercent = true, 140
+    private.CVars.Apply(module)
+    assert(module.cvarsPending and liveCVars.nameplateSelectedScale == "1.1",
+        "selected size wrote its CVar during combat")
+    combat = false
+    private.CVars.Apply(module)
+    assert(not module.cvarsPending and liveCVars.nameplateSelectedScale == "1.4",
+        "held selected size did not apply after combat")
+    c.targetScaleEnabled = false
+    private.CVars.Apply(module)
+    c.targetScaleEnabled, c.targetScalePercent, c.look = enabled, percent, look
+    S.RestoreCVar = restore
+end
+print("Suite nameplates: native target scale apply, restore and combat replay passed")

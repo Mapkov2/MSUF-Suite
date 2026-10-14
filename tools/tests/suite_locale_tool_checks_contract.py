@@ -59,11 +59,27 @@ with tempfile.TemporaryDirectory() as folder:
         head = tool.HEADER.format(name=tool.LOCALE_NAMES["deDE"], locale="deDE").encode("utf-8")
         body = 'T("Loot: ", "Beute: ")\nT("Loot: ", "Zweite: ")\nT("Bag", "Tasche \xff")\n'.encode("latin-1")
         (Path(folder) / "deDE.lua").write_bytes(head + body)
+        for ending in (b"\n", b"\r\n"):
+            (Path(folder) / "deDE.lua").write_bytes(head.replace(b"\n", ending))
+            found = " | ".join(tool.verify([], quiet=True))
+            check("the header" not in found, "a correct LF/CRLF locale header was rejected")
+        (Path(folder) / "deDE.lua").write_bytes(head.replace(b"MSUF Suite", b"Broken namespace", 1))
+        found = " | ".join(tool.verify([], quiet=True))
+        check("the header" in found, "a changed namespace header was accepted")
+        (Path(folder) / "deDE.lua").write_bytes(head + body)
         entries = tool.read_locale("deDE")
         check(entries.get("Loot: ") == "Beute: ", "the first entry of a key must win, like the runtime's T()")
         found = " | ".join(tool.verify([], quiet=True))
         check("listed again" in found, "a duplicate key was not reported")
         check("invalid UTF-8" in found, "invalid UTF-8 was not reported")
+        for newline in (b"\n", b"\r\n"):
+            canonical = head.replace(b"\n", newline)
+            (Path(folder) / "deDE.lua").write_bytes(canonical)
+            check(not tool.verify([], quiet=True), "canonical LF/CRLF header rejected")
+            changed = canonical.replace(b"_G.MSUF_NS", b"_G.OTHER_NS", 1)
+            (Path(folder) / "deDE.lua").write_bytes(changed)
+            found = " | ".join(tool.verify([], quiet=True))
+            check("header" in found, "changed namespace accepted after newline normalization")
     finally:
         tool.LOCALE_DIR, tool.LOCALES = saved
 

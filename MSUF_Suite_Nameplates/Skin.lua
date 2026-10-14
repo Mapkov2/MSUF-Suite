@@ -7,6 +7,7 @@ local Border = Style.PaintBorder
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
 local Level, CastTime, CVars, Auras = private.Level, private.CastTime, private.CVars, private.Auras
 local KickReady, Selection, AuraColors = private.KickReady, private.Selection, private.AuraColors
+local Decor = private.Decor
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local IN_COMBAT = { inCombat = true }
 local M = {
@@ -326,6 +327,7 @@ local function Paint(uf)
         PaintFonts(uf, health, cast, prefix)
         if Selection.inUse then Selection.Apply(health, true) end
     end
+    if Decor.inUse then Decor.Paint(uf, health, cast, prefix, unit) end
     -- Last: the role tint, arrows and fonts come first whatever the DoT
     -- colors do (AuraColors.lua).
     AuraColors.Apply(uf, unit, prefix == "enemy")
@@ -344,6 +346,7 @@ local function RestorePlate(uf)
     KickReady.Restore(cast)
     local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
     if not Safe(health) then return end
+    Decor.Restore(health)
     M.roles[health], M.units[health] = nil, nil
     if M.facts[health] then Facts(health) end
     HideVisual(M.visuals[health])
@@ -465,6 +468,9 @@ local function RefreshTarget(uf)
         return
     end
     PaintTarget(uf, health, visual, prefix)
+    if Decor.inUse then
+        Decor.Paint(uf, health, uf.CastBarsContainer and uf.CastBarsContainer.castBar, prefix, M.units[health])
+    end
 end
 
 local function CancelQuestRefresh(module)
@@ -510,6 +516,7 @@ local function OnTargetChanged(self)
     local previous = self.targetUF
     local plate = C_NamePlate.GetNamePlateForUnit("target")
     local current = Safe(plate) and plate.UnitFrame
+    if Decor.inUse then Decor.TargetChanged(current) end
     if Safe(previous) then RefreshTarget(previous) end
     if Safe(current) and current ~= previous then RefreshTarget(current) end
 end
@@ -722,6 +729,7 @@ end
 
 function M:Refresh()
     CancelQuestRefresh(self)
+    Decor.Configure(self)
     Layout.Configure(self.config)
     Roles.Configure(self.config)
     Text.Configure(self.config)
@@ -752,6 +760,7 @@ function M:Disable()
     CancelQuestRefresh(self)
     self.active = false
     self.auraSpellsListening = nil
+    Decor.Disable()
     Power.Disable()
     Threat.Disable()
     self.rarityBefore = nil

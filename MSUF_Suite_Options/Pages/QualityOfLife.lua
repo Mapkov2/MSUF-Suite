@@ -1,8 +1,8 @@
 local _, P = ...
 local S, Tr, HM = P.S, P.Tr, P.HM
 local PAGE = "suite_qualityOfLife"
-
 local HELP = {
+    auto_uprank = "Updates newly learned ranks after combat with an empty cursor. Lower ranks and macros are preserved by default.",
     self_combat_text = "Shows incoming damage and healing for you or your vehicle. Blizzard's own combat text is hidden while enabled and restored when disabled. Move the display in MSUF Edit Mode. During heavy bursts the oldest of the visible messages is replaced. The game may keep amounts private, so messages are never combined or filtered by their value.",
     character_extras = "A small summary sits beside the Character tab of your character sheet and leaves with it. It lists your gear with gem sockets and how many are filled, open ones in amber (click a line to open socketing), the total durability of your gear and, if you like, your PvP item level. Its buttons open the Great Vault and the current expansion page. It updates while the sheet is open, at most once per frame.",
     character_model = "Shows the total durability of your gear on the character model, moved by the two offsets, and crops the edges of the gear slot icons on your character sheet and in the Inspect window.",
@@ -86,7 +86,6 @@ local HELP = {
     flight_typography = "Choose an MSUF or SharedMedia font and bar texture. Font size, outline, shadow, Smooth/Sharp/Slug rendering, bar height and spacing update the HUD immediately. Slug has no shadow.",
     flight_colors = "Pick a preset above or use the three color dots in this header for your own colors. Changing a color marks the look as Custom. Panel opacity and empty bar opacity are separate.",
 }
-
 -- Aliases name feature switches; keywords also describe their detail controls.
 local GROUPS = {
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
@@ -145,6 +144,7 @@ local GROUPS = {
     { id = "chatProfileLinks", title = "Character profile links (Retail)", switch = "enabled", sections = { "profile_links" } },
     { id = "mythicKeyShare", title = "Keystone command (Retail)", switch = "enabled",
         sections = { "keystone_command" } },
+    { id = "autoUprank", title = "Auto-uprank (Forever)", switch = "enabled", sections = { "auto_uprank" } },
     { id = "trainerLearnAll", title = "Learn all at trainer (Retail)", switch = "enabled",
         sections = { "trainer_all" } },
     { id = "characterUpgradeWindow", title = "Equipment window at upgrades (Retail)", switch = "enabled",
@@ -198,13 +198,12 @@ local GROUPS = {
     { id = "waypoints", title = "Waypoint command", switch = "enabled", sections = { "waypoint_command" } },
 }
 table.sort(GROUPS, function(a, b) return Tr(a.title) < Tr(b.title) end)
-
 -- One visible home per feature. The module/settings identities above remain
 -- unchanged, including the two switches owned by each of `loot` and `qol`.
 local CATEGORIES = {
     { id = "everydayAutomation", title = "Everyday & Automation", keys = {
         "collectionNewMarkers.enabled", "dailyComfort.enabled", "delveSolePower.enabled",
-        "trainerLearnAll.enabled", "quests.enabled",
+        "trainerLearnAll.enabled", "autoUprank.enabled", "quests.enabled",
     } },
     { id = "lootMerchants", title = "Loot & Merchants", tabs = {
         { id = "loot", title = "Loot", keys = {

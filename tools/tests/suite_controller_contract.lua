@@ -173,7 +173,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "merchantLevel" and id ~= "vaultSpec" and id ~= "tooltipIDs"
         and id ~= "itemCounts" and id ~= "loadoutReminder" and id ~= "quietPopups"
         and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "groupDeathAlert" and id ~= "releaseProtection"
-        and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
+        and id ~= "autoUprank" and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
         and id ~= "cursorEffects" and id ~= "playerAuras"

@@ -18,6 +18,7 @@ function Layout.Apply(self)
         return
     end
     self:LayoutLayerRail()
+    if self.LayoutDecorTools then self:LayoutDecorTools() end
     -- Anchor each row above the actual wrapped rail, leaving all remaining
     -- height to the canvas. Width changes therefore need no guessed row count.
     local anchor = rail
@@ -57,7 +58,7 @@ function Layout.Attach(ui, section, toolbar, record)
         expander = W.AttachFixedPreviewExpander(section, toolbar, body, {
             pageKey = ctx.key, wrapper = ctx.wrapper,
             compactHeight = 116, compactTop = -38,
-            expandedHeight = 370, expandedTop = -38, expandedSectionHeight = 416,
+            expandedHeight = 480, expandedTop = -38, expandedSectionHeight = 526,
             refreshPreview = Refresh,
         })
     end

@@ -64,6 +64,15 @@ for _, forever in ipairs({ false, true }) do
         assert(expected[key] == nil, "the export already holds " .. key)
         assert(spec.rules[key] and spec.rules[key].default == value, "newer setting default changed: " .. key)
     end
+    newer.targetScaleEnabled, newer.targetScalePercent = false, 120
+    for _, side in ipairs({ "enemy", "friendly" }) do
+        for key, value in pairs({ BorderStyle = 1, ShadowEnabled = false, GlowMode = 1,
+            GlowColor = "ffffff", GlowEnabled = false, TextureEnabled = false, EffectSize = 4, OuterFrame = false, OuterFrameSize = 1,
+            OuterFrameColor = "000000", FillTexture = 1 }) do newer[side .. key] = value end
+    end
+    newer.enemyThresholdEnabled, newer.enemyThresholdPercent, newer.enemyThresholdColor = false, 20, "ffffff"
+    newer.enemyFocusMarker, newer.enemyFocusMarkerSize, newer.enemyFocusMarkerColor = false, 12, "ff66ff"
+    newer.enemyFocusMarkerX, newer.enemyFocusMarkerY = -56, 0
     for key, rule in pairs(spec.rules) do
         if not key:match("^auraColors") and newer[key] == nil then
             assert(rule.default == expected[key], "Mapko catalog default differs from export: " .. key)

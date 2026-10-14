@@ -84,6 +84,11 @@ local function Toggle(module, mode, key)
 end
 
 local function Size(module, c)
+    if c.targetScaleEnabled then
+        module.context:CVar("nameplateSelectedScale", tostring(Style.Decor.TargetScale(c)))
+    else
+        Restore("nameplateSelectedScale")
+    end
     if c.nativeStyle == KEEP then
         Restore("nameplateStyle")
     elseif c.nativeStyle then

@@ -576,7 +576,10 @@ local function Override(entry, base, override)
     entry.prevOverride = entry.override
     entry.override = override
     entry.spell = override or base
-    if entry.auraIDs and override then entry.auraIDs[override] = true end
+    if entry.auraIDs then
+        C.EntryFill.RefreshAuraUnit(entry, true)
+        C.AuraTimers.Reclassify(entry)
+    end
     local rec = entry.src == "b" and Catalog.records[entry.id]
     if rec then
         entry.texture = Catalog.RecordTexture(rec) or entry.texture

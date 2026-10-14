@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Quality of Life
 ## Notes: Optional combat, quest, merchant, vault, tooltip and experience helpers for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1-alpha
+## Version: 0.1.1-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -15,6 +15,7 @@ TooltipLines.lua
 MerchantWatch.lua
 Merchant.lua
 TrainerLearnAll.lua
+AutoUprank.lua
 CharacterUpgradeWindow.lua
 ProfessionAppearance.lua
 SharedItems.lua

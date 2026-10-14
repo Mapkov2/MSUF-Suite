@@ -265,6 +265,7 @@ local function SpellState(entry, icon, spell, reason)
     local cooling, exact = false, true
     if reason == "recharge" and icon.cdSet == true then reason = "charges" end
     if reason == "expired" then
+        if entry.ov.actionUsableGlow then C.ActionUsableGlows.Cooldown(entry, false) end
         ClearMain(icon)
         Feedback(icon, nil)
     elseif reason == "recharge" then
@@ -295,6 +296,8 @@ local function SpellState(entry, icon, spell, reason)
             ClearMain(icon)
             Feedback(icon, nil)
         end
+        -- Share the main answer before recharge presentation can hold it.
+        if entry.ov.actionUsableGlow then C.ActionUsableGlows.Timing(entry, info, active, cooling, exact) end
     end
     cooling = ChargeState(entry, icon, spell, cooling, exact)
     -- Potion and healthstone entries show their bag count (CategoryCount).

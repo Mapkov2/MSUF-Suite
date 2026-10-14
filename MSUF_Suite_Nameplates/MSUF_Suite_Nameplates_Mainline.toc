@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Nameplates
 ## Notes: Optional styling for Blizzard's native nameplates.
 ## Author: Mapko
-## Version: 0.1-alpha
+## Version: 0.1.1-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -23,4 +23,5 @@ CVars.lua
 Auras.lua
 AuraColors.lua
 Selection.lua
+Decor.lua
 Skin.lua

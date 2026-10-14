@@ -3175,6 +3175,54 @@
       "date": "2026-10-13",
       "evidence": "MSUF_Suite/Core/Catalog/QualityOfLifeGroup.lua retains groupFinderApplicantSort, enabled setting and page. GroupFinderApplicantSort.lua and GroupFinderApplicantView.lua sort only owned entries; suite_group_finder_applicant_sort_contract.lua covers native array preservation, sorting, paging and actions. All10 locale packs use the replacement complete sentence: Show a separate Mythic+ applicant list ordered by average member dungeon score when every score is available.",
       "reason": "The same opt-in module, settings and average-score ordering remain. Ordering moves to a separate owned view; Blizzard's array retains Blizzard's own order. Native invite/decline controls remain available, and the own view uses fresh validated native requests. The changed visible presentation is stated in the replacement description."
+    },
+    {
+      "category": "locale",
+      "item": "Buff present",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/CooldownManagerPopover.lua retains actionGlowMode=1 and actionGlowSpell; Aura present and unit-aware help replace player-buff-only wording.",
+      "reason": "Same saved glow behavior and controls; text now covers the optional own target debuff source.",
+      "date": "2026-10-14"
+    },
+    {
+      "category": "locale",
+      "item": "Enter a spell name or ID on MSUF action bars. Its buttons glow from this buff on you. A page change in combat pauses the glow until combat ends.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/CooldownManagerPopover.lua retains actionGlowMode=1 and actionGlowSpell; Aura present and unit-aware help replace player-buff-only wording.",
+      "reason": "Same saved glow behavior and controls; text now covers the optional own target debuff source.",
+      "date": "2026-10-14"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.enemyBorderSize\",\"number\",false,0,3,1,\"\"]",
+      "basis": "migration",
+      "date": "2026-10-14",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua retains the same BorderSize key, default 1, minimum 0 and step 1; maximum extends from 3 to 6. Existing 0..3 settings and the native/preview border painter are preserved.",
+      "reason": "User-requested thicker nameplate frames extend the existing slider range; no prior value or control is removed."
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:nameplates.friendlyBorderSize\",\"number\",false,0,3,1,\"\"]",
+      "basis": "migration",
+      "date": "2026-10-14",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua retains the same BorderSize key, default 0, minimum 0 and step 1; maximum extends from 3 to 6. Existing 0..3 settings and the native/preview border painter are preserved.",
+      "reason": "User-requested thicker nameplate frames extend the existing slider range; no prior value or control is removed."
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.enemyBorderSize\",\"number\",false,0,3,1,\"\"]",
+      "basis": "migration",
+      "date": "2026-10-14",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua retains the same BorderSize key, default 1, minimum 0 and step 1; maximum extends from 3 to 6. Existing 0..3 settings and the native/preview border painter are preserved.",
+      "reason": "User-requested thicker nameplate frames extend the existing slider range; no prior value or control is removed."
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:nameplates.friendlyBorderSize\",\"number\",false,0,3,1,\"\"]",
+      "basis": "migration",
+      "date": "2026-10-14",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua retains the same BorderSize key, default 0, minimum 0 and step 1; maximum extends from 3 to 6. Existing 0..3 settings and the native/preview border painter are preserved.",
+      "reason": "User-requested thicker nameplate frames extend the existing slider range; no prior value or control is removed."
     }
   ]
 }

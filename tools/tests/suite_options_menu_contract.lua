@@ -2925,7 +2925,7 @@ do
 local qolFeaturesByCategory = {
     everydayAutomation = {
         "collectionNewMarkers_collection_markers", "dailyComfort_daily_comfort",
-        "delveSolePower_delve_sole_power", "trainerLearnAll_trainer_all", "quests_automation",
+        "delveSolePower_delve_sole_power", "trainerLearnAll_trainer_all", "autoUprank_auto_uprank", "quests_automation",
     },
     lootMerchants = {
         "loot_collection", "lootToastFilter_filtered_loot", "vaultSpec_vault_spec",
@@ -3041,7 +3041,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 64 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 65 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated")
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")

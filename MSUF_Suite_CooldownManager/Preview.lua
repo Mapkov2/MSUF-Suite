@@ -141,11 +141,8 @@ end
 
 -- The count a stack glow waits for, its comparison included; nil without one.
 local function StackGoal(ov)
-    local n = ov.stackGlow
-    if type(n) ~= "number" or n < 1 then return nil end
-    n = math.floor(n)
-    if ov.stackGlowOp == K.STACK_OP.MORE_THAN then n = n + 1 end
-    return n
+    if type(ov.stackGlow) ~= "number" or ov.stackGlow < 1 then return nil end
+    return C.AuraGlows.StackRule(ov)
 end
 
 -- The glows of a simulated icon: its sample state through its choices.

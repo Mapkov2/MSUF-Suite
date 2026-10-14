@@ -19,7 +19,7 @@ local C = P.CDM
 --  * Containers cannot be freed. A button keeps its records; one that no
 --    entry placed in a pass is switched off and taken by the next entry
 --    with the same glow mode on that button.
-local ActionGlows = { wanted = false, pending = false }
+local ActionGlows = { wanted = false, pending = false, targetWanted = false }
 C.ActionGlows = ActionGlows
 local AuraButtons, K = C.AuraButtons, C.Const
 local ACTION_GLOW = K.ACTION_GLOW
@@ -68,7 +68,7 @@ end
 ------------------------------------------------------------------ records
 -- Action-bar bridges bind their own native aura slot, without exporting
 -- aura presence or stack counts to the action-bar controller.
-local function InitBridge(rec, button)
+local function InitPrimary(rec, button)
     Overlay(button, rec.button)
     local level = button:GetFrameLevel() + 1
     local part = { button = button, pos = 1, rec = rec }
@@ -83,8 +83,31 @@ local function InitBridge(rec, button)
     end
 end
 
+-- B is the outer native visibility gate; the original A/stack presentation
+-- stays inside it. Hidden containers unregister their native aura listeners
+-- and refresh on show. Construct both levels during initializeFrame, before
+-- Blizzard seals the outer button (AuraContainerFrameProviders.lua).
+local function InitBridge(rec, button)
+    if not rec.conditional then return InitPrimary(rec, button) end
+    Overlay(button, rec.button)
+    rec.conditionButton = button
+    local inner = CreateFrame("AuraContainer", nil, button, "CustomAuraContainerTemplate")
+    NS.Client.RealAurasOnly(inner)
+    inner:SetAllPoints(button)
+    inner:SetUnit(rec.unit)
+    rec.primary = inner
+    inner:AddAuraSlot("glow", rec.filter, { candidateFilters = { includeSpellIDs = rec.ids },
+        initializeFrame = function(auraButton) InitPrimary(rec, auraButton) end })
+    inner:SetEnabled(true)
+    inner:Show()
+end
+
 local function StyleBridge(rec)
     if not AuraButtons.Mutable(rec) then return false end
+    if rec.conditionButton then
+        local open = rec.conditionButton:CanBeAccessedInContext()
+        if not Public(open) or open ~= true then return false end
+    end
     local part = rec.parts[1]
     if not part then return true end
     if part.glow then
@@ -100,14 +123,14 @@ end
 
 -- The record of this entry on the button: its own from the last pass,
 -- else one that no entry placed last pass, with the same mode.
-local function Take(list, key, mode)
+local function Take(list, key, mode, conditional, unit)
     for i = 1, #list do
         local rec = list[i]
-        if rec.key == key and rec.mode == mode then return rec end
+        if rec.key == key and rec.mode == mode and rec.conditional == conditional and rec.unit == unit then return rec end
     end
     for i = 1, #list do
         local rec = list[i]
-        if rec.free and rec.mode == mode then return rec end
+        if rec.free and rec.mode == mode and rec.conditional == conditional and rec.unit == unit then return rec end
     end
 end
 
@@ -128,14 +151,19 @@ local function Visit(button)
         list = {}
         records[button] = list
     end
-    local rec = Take(list, entry.key, mode)
+    local secondary = ov.actionGlowRequireSpell
+    local conditional = secondary ~= nil
+    local unit = ov.actionGlowUnit == 2 and "target" or "player"
+    local filter = unit == "target" and "HARMFUL|PLAYER" or "HELPFUL"
+    local rec = Take(list, entry.key, mode, conditional, unit)
     if not rec then
         local frame = CreateFrame("AuraContainer", nil, button, "CustomAuraContainerTemplate")
         -- No Edit Mode samples on the action buttons (MSUF_Suite/Core/Platform.lua).
         NS.Client.RealAurasOnly(frame)
         frame:SetAllPoints(button)
-        frame:SetUnit("player")
-        rec = { frame = frame, parts = {}, lk = {}, mode = mode, ov = {}, ids = {}, button = button }
+        frame:SetUnit(conditional and "player" or unit)
+        rec = { frame = frame, parts = {}, lk = {}, mode = mode, ov = {}, ids = {}, button = button,
+            conditional = conditional, secondaryIDs = {}, unit = unit, filter = filter }
         list[#list + 1] = rec
     end
     rec.stamp, rec.free, rec.key, rec.spell = stamp, false, entry.key, ov.actionGlowSpell
@@ -144,16 +172,27 @@ local function Visit(button)
     rec.ov.auraGlow = true
     rec.ov.glowStyle, rec.ov.glowColor = ov.glowStyle, ov.glowColor
     rec.ov.stackGlow, rec.ov.stackGlowOp = ov.stackGlow, ov.stackGlowOp
+    if rec.bound and not StyleBridge(rec) then
+        ActionGlows.pending = true
+        return
+    end
     local ids = entry.auraIDs
     local different = not K.SameSet(rec.ids, ids)
     if different then K.CopySet(rec.ids, ids) end
+    local secondChanged = rec.secondarySpell ~= secondary
+    if secondChanged then
+        C.wipe(rec.secondaryIDs)
+        rec.secondaryIDs[secondary] = true
+        rec.secondarySpell = secondary
+    end
     if not rec.bound then
-        rec.frame:AddAuraSlot("glow", "HELPFUL", { candidateFilters = { includeSpellIDs = rec.ids },
+        rec.frame:AddAuraSlot("glow", conditional and "HELPFUL" or rec.filter, {
+            candidateFilters = { includeSpellIDs = conditional and rec.secondaryIDs or rec.ids },
             initializeFrame = function(auraButton) InitBridge(rec, auraButton) end })
         rec.bound = true
     else
-        if different then rec.frame:SetAuraSlotCandidateFilters("glow", { includeSpellIDs = rec.ids }) end
-        if not StyleBridge(rec) then ActionGlows.pending = true end
+        if different then (rec.primary or rec.frame):SetAuraSlotCandidateFilters("glow", { includeSpellIDs = rec.ids }) end
+        if secondChanged then rec.frame:SetAuraSlotCandidateFilters("glow", { includeSpellIDs = rec.secondaryIDs }) end
     end
     Switch(rec, true)
     rec.frame:Show()
@@ -193,6 +232,7 @@ end
 -- In combat or while auras are secret: a placed record stays on only while
 -- its button still shows its spell.
 local function Follow()
+    C.ActionUsableGlows.Follow()
     for _, list in pairs(records) do
         for i = 1, #list do
             local rec = list[i]
@@ -204,21 +244,34 @@ local function Follow()
     end
 end
 
+-- A same-token retarget need not deliver UNIT_AURA. FullAuraRebuild resets
+-- native slot assignments even when B is unchanged; its Hide/Show reseeds
+-- the sealed inner target container without any addon call into that child.
+function ActionGlows.TargetChanged()
+    for _, list in pairs(records) do
+        for i = 1, #list do
+            local rec = list[i]
+            if not rec.free and rec.on and rec.unit == "target" then rec.frame:UpdateAllAuras() end
+        end
+    end
+end
+
 ------------------------------------------------------------------ passes
 function ActionGlows.Refresh()
+    C.ActionUsableGlows.Refresh()
     local visit = C.M.active and Visitor() or nil
-    local wanted = false
+    local wanted, targetWanted = false, false
     if visit then
         for _, entry in pairs(C.entries) do
             if Wants(entry) then
                 wanted = true
-                break
+                if entry.ov.actionGlowUnit == 2 then targetWanted = true end
             end
         end
     end
     -- The slot, page and form events follow what is wanted (Events).
-    if ActionGlows.wanted ~= wanted then
-        ActionGlows.wanted = wanted
+    if ActionGlows.wanted ~= wanted or ActionGlows.targetWanted ~= targetWanted then
+        ActionGlows.wanted, ActionGlows.targetWanted = wanted, targetWanted
         C.Flush.dirty.events = true
         C.Schedule()
     end
@@ -260,14 +313,18 @@ end
 -- A slot, page, form or binding event: one trailing pass for the storm.
 -- always: the action bars started or stopped (what is wanted may change).
 function ActionGlows.RouteChanged(always)
-    if armed or not (ActionGlows.wanted or always) then return end
+    if armed or not (ActionGlows.wanted or C.ActionUsableGlows.wanted or always) then return end
     armed = true
     C_Timer.After(DELAY, Fire)
 end
 
 function ActionGlows.Release()
+    C.ActionUsableGlows.Release()
     for _, list in pairs(records) do
         for i = 1, #list do Free(list[i]) end
     end
-    ActionGlows.wanted, ActionGlows.pending = false, false
+    ActionGlows.wanted, ActionGlows.pending, ActionGlows.targetWanted = false, false, false
 end
+
+-- Public action routes are shared with the separate usability-glow owner.
+ActionGlows.Visitor, ActionGlows.ButtonSlot, ActionGlows.SlotSpell = Visitor, ButtonSlot, SlotSpell

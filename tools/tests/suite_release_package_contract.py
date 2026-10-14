@@ -89,6 +89,19 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
     client_metadata = json.loads((client.parent / "CURSEFORGE_METADATA.json").read_text(encoding="utf-8"))
     assert client_metadata["releaseType"] == "beta"
     assert client_metadata["relations"] == curseforge["relations"]
+    beta = builder.build(root, scratch / "beta", release_channel="beta")
+    beta_manifest = json.loads((beta.parent / "RELEASE_MANIFEST.json").read_text(encoding="utf-8"))
+    assert beta_manifest["version"] == manifest["version"]
+    assert beta_manifest["title"] == manifest["title"] and beta_manifest["githubPrerelease"] is False
+    assert beta_manifest["publishTargets"] == ["github", "curseforge", "wago"]
+    assert beta_manifest["curseforgeReleaseType"] == beta_manifest["wagoStability"] == "beta"
+    assert beta_manifest["files"] == client_manifest["files"]
+    for name, field in (("CURSEFORGE_METADATA.json", "releaseType"), ("WAGO_METADATA.json", "stability")):
+        assert json.loads((beta.parent / name).read_text(encoding="utf-8"))[field] == "beta"
+    assert builder.build(root, scratch / "beta-second", release_channel="beta").read_bytes() == beta.read_bytes()
+    rejects(lambda: builder.build(root, beta.parent), "Beta output was overwritten by Alpha metadata")
+    rejects(lambda: builder.build(root, client.parent, release_channel="beta"), "Client-only output accepted Wago metadata")
+    rejects(lambda: builder.build(root, scratch / "invalid", release_channel="release"), "Unknown channel accepted")
     for output, beta in ((first.parent, True), (client.parent, False)):
         before = {path.name: path.read_bytes() for path in output.iterdir() if path.is_file()}
         rejects(lambda: builder.build(root, output, curseforge_client_beta=beta), "Mixed output variants were accepted")

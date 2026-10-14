@@ -59,6 +59,22 @@ function Timers.Classify(entry)
         and (Summon(entry) ~= nil or ((entry.ov or C.EMPTY).timerDuration or 0) > 0)
 end
 
+function Timers.Reclassify(entry)
+    local before = entry.timer
+    Timers.Classify(entry)
+    local plan = C.plans[entry.slot]
+    if not plan or before == entry.timer then return end
+    plan.hasTimers = entry.timer == true
+    if not plan.hasTimers then
+        for i = 1, #plan.entries do
+            if plan.entries[i].timer then
+                plan.hasTimers = true
+                return
+            end
+        end
+    end
+end
+
 function Timers.Wants(entry, view)
     return entry.timer == true and view.kind == K.KIND.AURA_BAR and view.barStacks ~= true
 end

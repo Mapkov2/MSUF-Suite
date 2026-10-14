@@ -2899,6 +2899,42 @@
    "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
    "symbol": "widgets.OpenContextColors"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/QualityOfLife.lua",
+   "symbol": "C_SpellBook.IsSpellBookItemLowRank",
+   "kind": "client",
+   "reason": "Forever-only auto-uprank is gated by catalog availability; Retail lacks rank filtering and ActionBarSet. Verified upstream/forever 735496de: loaded PlayerSpells spellbook rank filter and ActionButtonUtil gamepad lookup. Enum resolution is deferred until Forever Enable; Retail boot is regression-tested."
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/QualityOfLife.lua",
+   "symbol": "Enum.ActionBarSet",
+   "kind": "client",
+   "reason": "Forever-only auto-uprank is gated by catalog availability; Retail lacks rank filtering and ActionBarSet. Verified upstream/forever 735496de: loaded PlayerSpells spellbook rank filter and ActionButtonUtil gamepad lookup. Enum resolution is deferred until Forever Enable; Retail boot is regression-tested."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/AutoUprank.lua",
+   "symbol": "C_SpellBook.IsSpellBookItemLowRank",
+   "kind": "client",
+   "reason": "Forever-only auto-uprank is gated by catalog availability; Retail lacks rank filtering and ActionBarSet. Verified upstream/forever 735496de: loaded PlayerSpells spellbook rank filter and ActionButtonUtil gamepad lookup. Enum resolution is deferred until Forever Enable; Retail boot is regression-tested."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/AutoUprank.lua",
+   "symbol": "Enum.ActionBarSet.All",
+   "kind": "client",
+   "reason": "Forever-only auto-uprank is gated by catalog availability; Retail lacks rank filtering and ActionBarSet. Verified upstream/forever 735496de: loaded PlayerSpells spellbook rank filter and ActionButtonUtil gamepad lookup. Enum resolution is deferred until Forever Enable; Retail boot is regression-tested."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/AutoUprank.lua",
+   "symbol": "Enum.ActionBarSet",
+   "kind": "client",
+   "reason": "Forever-only enum absent on Retail; Enable refuses missing enum before reading All. Shared TOC load with no ActionBarSet is regression-tested."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua",
+   "kind": "state",
+   "reason": "Owned preview layout callback is absent during Editor.Create initial layout and installed later by NameplatesPreviewDecor.Build; no native or host method fallback. Current/legacy expanded layout contracts exercise both cold and installed callback states.",
+   "symbol": "self.LayoutDecorTools"
   }
  ]
 }

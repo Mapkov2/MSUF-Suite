@@ -755,6 +755,7 @@ local P = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", P)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", P)
 for _, name in ipairs({ "Layout", "Roles", "Text", "Power", "Threat", "Level", "CastTime", "Auras", "KickReady", "Selection", "AuraColors", "Geometry" }) do P[name] = helper() end
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/Decor.lua"))("MSUF_Suite_Nameplates", P)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Skin.lua"))("MSUF_Suite_Nameplates", P)
 module.context = { CVar = function(_, key, value)
     if saved[key] == nil then saved[key] = live[key] end

@@ -269,7 +269,8 @@ end
 local function Button(ui, parent, key, label, width, x, action)
     local button = T.Button(parent, label, width, 20)
     if T.CenterButtonLabel then T.CenterButtonLabel(button) end
-    button:SetPoint("LEFT", parent, "LEFT", x, 0)
+    if parent == ui.tools then button:SetPoint("TOPLEFT", parent, "TOPLEFT", x, 0)
+    else button:SetPoint("LEFT", parent, "LEFT", x, 0) end
     button:SetScript("OnClick", action)
     Register(button, key, label)
     return button
@@ -280,7 +281,8 @@ local function BuildZoomTools(ui)
     local tools = CreateFrame("Frame", nil, body)
     tools:SetPoint("TOPLEFT", canvas, "BOTTOMLEFT", 0, -4)
     tools:SetPoint("TOPRIGHT", canvas, "BOTTOMRIGHT", 0, -4)
-    tools:SetHeight(22)
+    ui.tools = tools
+    tools:SetHeight(46)
     Button(ui, tools, "fit", "Fit", 36, 0, function()
         ui.panX, ui.panY = 0, 0
         ui.zoom = Clamp((canvas:GetWidth() - 40) / 600, 0.5, 1)
@@ -295,7 +297,7 @@ local function BuildZoomTools(ui)
         ui:Paint()
     end)
     ui.zoomLabel = T.Font(tools, "GameFontDisableSmall", "100%", T.colors.text)
-    ui.zoomLabel:SetPoint("LEFT", tools, "LEFT", 112, 0)
+    ui.zoomLabel:SetPoint("TOPLEFT", tools, "TOPLEFT", 112, -4)
     Button(ui, tools, "zoomIn", "+", 24, 156, function()
         ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2)
         ui:Paint()
@@ -458,7 +460,7 @@ local function BuildSelection(ui)
         P.NameplatesSize.Build(ui, bar, body)
         if SB.CreatePicker then
             local picker = SB.CreatePicker(body, tools)
-            picker:SetPoint("RIGHT", tools, "RIGHT", 0, 0)
+            picker:SetPoint("TOPRIGHT", tools, "TOPRIGHT", 0, 0)
             picker:SetWidth(152)
         end
         ui.selection = bar

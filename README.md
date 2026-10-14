@@ -1,6 +1,6 @@
 # MSUF Suite
 
-**MSUF Suite 0.1 Alpha** brings modular interface tools to World of Warcraft Retail and WoW Forever. Open `/msuf` to configure the Suite and choose the modules for your layout.
+**MSUF Suite 0.1.1 Alpha** brings modular interface tools to World of Warcraft Retail and WoW Forever. Open `/msuf` to configure the Suite and choose the modules for your layout.
 
 **Midnight Simple Unit Frames (MSUF) is required. This Suite alpha is compatible with MSUF 6.5 (release 6.50).** MSUF is configured as a Required Dependency on CurseForge and is installed automatically with the Suite. When using Wago, install MSUF through the Wago client as well.
 
@@ -24,7 +24,7 @@ Modules can be enabled individually. The Suite includes shared profiles, setup p
 
 Supported clients: **WoW Retail 12.1.5** and **WoW Forever 1.60.1**.
 
-1. Install **MSUF Suite** through the **CurseForge client** or **Wago client**. Choose **Beta** for the CurseForge client build or **Alpha** in Wago. The Suite itself remains in Alpha.
+1. Install **MSUF Suite** through the **CurseForge client** or **Wago client**. Choose **Beta** in CurseForge and Wago for this release. The Suite itself remains in Alpha.
 2. CurseForge installs **MSUF** automatically as a required dependency. In Wago, install **MSUF 6.5 (6.50)** as well.
 3. Enable the desired modules and open `/msuf` in the game.
 

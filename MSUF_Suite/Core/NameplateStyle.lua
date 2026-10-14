@@ -373,3 +373,235 @@ function Style.PaintMarker(texture, kind, size, color, variant)
         texture._msufMarkerColor = color
     end
 end
+
+-- Optional decoration. Geometry follows native anchors; health never enters Lua.
+local Decor = {}
+Style.Decor = Decor
+local DECOR_MEDIA = "Interface\\AddOns\\MSUF_Suite\\Media\\Nameplates\\"
+local TEXTURES = { DECOR_MEDIA .. "Soft.tga", DECOR_MEDIA .. "Stripes.tga" }
+
+local function Joined(c, prefix)
+    if NS.Client.isForever and c.barGeometry ~= 2 then return false end
+    for _, suffix in ipairs({ "HealthWidthDelta", "HealthOffsetX", "HealthOffsetY",
+        "CastOffsetX", "CastOffsetY", "CastIconOffsetX", "CastIconOffsetY" }) do
+        if (c[prefix .. suffix] or 0) ~= 0 then return false end
+    end
+    return true
+end
+
+function Decor.Plan(c, prefix)
+    local enabled = c.look ~= 2 and c[prefix] ~= false
+    local p = {
+        joined = Joined(c, prefix),
+        border = enabled and c[prefix .. "BorderEnabled"] ~= false and c[prefix .. "BorderStyle"] == 2,
+        borderSize = c[prefix .. "BorderSize"] or 1, borderColor = c[prefix .. "BorderColor"] or "000000",
+        shadow = enabled and c[prefix .. "ShadowEnabled"] == true,
+        glow = enabled and c[prefix .. "GlowEnabled"] and ((c[prefix .. "GlowMode"] or 1) + 1) or 1,
+        glowColor = c[prefix .. "GlowColor"] or "ffffff", effectSize = c[prefix .. "EffectSize"] or 4,
+        outer = enabled and c[prefix .. "OuterFrame"] == true,
+        outerSize = c[prefix .. "OuterFrameSize"] or 1, outerColor = c[prefix .. "OuterFrameColor"] or "000000",
+        texture = enabled and c[prefix .. "TextureEnabled"] and TEXTURES[c[prefix .. "FillTexture"] or 1] or nil,
+        threshold = enabled and prefix == "enemy" and c.enemyThresholdEnabled == true,
+        percent = (c.enemyThresholdPercent or 20) / 100, thresholdColor = c.enemyThresholdColor or "ffffff",
+        focus = enabled and prefix == "enemy" and c.enemyFocusMarker == true,
+        focusSize = c.enemyFocusMarkerSize or 12, focusColor = c.enemyFocusMarkerColor or "ff66ff",
+        focusX = c.enemyFocusMarkerX or -56, focusY = c.enemyFocusMarkerY or 0,
+    }
+    p.active = p.border or p.shadow or p.glow ~= 1 or p.outer or p.texture ~= nil or p.threshold or p.focus
+    return p
+end
+
+function Decor.TargetScale(c, fallback)
+    return c.targetScaleEnabled and (c.targetScalePercent or 120) / 100 or fallback or 1
+end
+
+local function Shown(region, on)
+    if region._npDecorShown == on or NS.Safety.IsForbidden(region) then return end
+    region._npDecorShown = on
+    region:SetShown(on)
+end
+
+local function Ring(state, key, owner)
+    local ring = state[key]
+    if ring then return ring end
+    local host = CreateFrame("Frame", nil, state.health)
+    ring = { host = host, border = Style.CreateBorder(host) }
+    state[key] = ring
+    return ring
+end
+
+local function AnchorRing(ring, first, last, inset)
+    local host = ring.host
+    if ring.first == first and ring.last == last and ring.inset == inset then return end
+    host:ClearAllPoints()
+    host:SetPoint("TOPLEFT", first, "TOPLEFT", -inset, inset)
+    host:SetPoint("BOTTOMRIGHT", last, "BOTTOMRIGHT", inset, -inset)
+    ring.first, ring.last, ring.inset = first, last, inset
+end
+
+local function PaintRing(state, key, first, last, inset, size, color, alpha, on)
+    local ring = state[key]
+    if not on and not ring then return end
+    ring = ring or Ring(state, key)
+    if on or ring.first == nil then
+        AnchorRing(ring, first, last, inset)
+        if ring.size ~= size or ring.color ~= color then
+            Style.PaintBorder(ring.border, ring.host, size, color)
+            ring.size, ring.color = size, color
+        end
+        if ring.alpha ~= alpha then
+            ring.host:SetAlpha(alpha)
+            ring.alpha = alpha
+        end
+    end
+    Shown(ring.host, on)
+end
+
+local function Effects(state, p, last, target, focus, visible)
+    local glow = p.glow == 2 or p.glow == 3 and target or p.glow == 4 and focus
+    local size = p.effectSize
+    if p.shadow then
+        Ring(state, "shadow")
+        Ring(state, "shadowSoft")
+    end
+    if p.outer then Ring(state, "outer") end
+    if p.border then Ring(state, "double") end
+    if p.glow ~= 1 then
+        Ring(state, "glow")
+        Ring(state, "glowSoft")
+    end
+    PaintRing(state, "shadow", state.health, last, size, 2, "000000", 0.35, p.shadow and visible)
+    PaintRing(state, "shadowSoft", state.health, last, size + 2, 2, "000000", 0.12, p.shadow and visible)
+    PaintRing(state, "glow", state.health, last, 1, size, p.glowColor, 0.25, glow and visible)
+    PaintRing(state, "glowSoft", state.health, last, size + 1, 2, p.glowColor, 0.1, glow and visible)
+    PaintRing(state, "double", state.health, state.health, p.borderSize + 2, 1,
+        p.borderColor, 1, p.border and p.borderSize > 0 and visible)
+    PaintRing(state, "outer", state.health, last, 1, p.outerSize, p.outerColor, 1, p.outer and visible)
+end
+
+local function FillFinish(state, p)
+    local texture = state.finish
+    if not p.texture then
+        if texture then Shown(texture, false) end
+        return
+    end
+    local native = state.fillSource or state.health:GetStatusBarTexture()
+    if not native or NS.Safety.IsForbidden(native) then
+        if texture then Shown(texture, false) end
+        return
+    end
+    if not texture then
+        texture = state.health:CreateTexture(nil, "OVERLAY", nil, 0)
+        texture:SetBlendMode("MOD")
+        state.finish = texture
+    end
+    if state.fill ~= native then
+        texture:ClearAllPoints()
+        texture:SetAllPoints(native)
+        state.fill = native
+    end
+    if state.texture ~= p.texture then
+        texture:SetTexture(p.texture)
+        state.texture = p.texture
+    end
+    Shown(texture, true)
+end
+
+local function Threshold(state, p)
+    local line = state.threshold
+    if not p.threshold then
+        if line then Shown(line, false) end
+        return
+    end
+    if not line then
+        local host = CreateFrame("Frame", nil, state.health)
+        host:SetPoint("TOPLEFT", state.health, "TOPLEFT", 0, 0)
+        host:SetPoint("BOTTOMRIGHT", state.health, "BOTTOMRIGHT", 0, 0)
+        local marker = CreateFrame("StatusBar", nil, host)
+        marker:SetAllPoints(host)
+        marker:SetMinMaxValues(0, 1)
+        marker:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        marker:SetAlpha(0)
+        line = host:CreateTexture(nil, "OVERLAY")
+        line:SetWidth(1)
+        line:SetPoint("TOP", marker:GetStatusBarTexture(), "TOPRIGHT", 0, 0)
+        line:SetPoint("BOTTOM", marker:GetStatusBarTexture(), "BOTTOMRIGHT", 0, 0)
+        state.threshold, state.thresholdBar = line, marker
+    end
+    if state.percent ~= p.percent then
+        state.thresholdBar:SetValue(p.percent)
+        state.percent = p.percent
+    end
+    if state.thresholdColor ~= p.thresholdColor then
+        line:SetColorTexture(NS.RGB(p.thresholdColor))
+        state.thresholdColor = p.thresholdColor
+    end
+    Shown(line, true)
+end
+
+local function FocusMarker(state, p, focus)
+    local marker = state.focusMarker
+    if not p.focus then
+        if marker then Shown(marker, false) end
+        return
+    end
+    if not marker then
+        marker = state.health:CreateTexture(nil, "OVERLAY", nil, 7)
+        marker:SetTexture(DECOR_MEDIA .. "Focus.tga")
+
+        state.focusMarker = marker
+    end
+    if state.focusX ~= p.focusX or state.focusY ~= p.focusY then
+        marker:ClearAllPoints()
+        marker:SetPoint("CENTER", state.health, "LEFT", p.focusX, p.focusY)
+        state.focusX, state.focusY = p.focusX, p.focusY
+    end
+    if state.focusSize ~= p.focusSize then
+        marker:SetSize(p.focusSize, p.focusSize)
+        state.focusSize = p.focusSize
+    end
+    if state.focusColor ~= p.focusColor then
+        marker:SetVertexColor(NS.RGB(p.focusColor))
+        state.focusColor = p.focusColor
+    end
+    Shown(marker, focus)
+end
+
+function Decor.Paint(state, p, target, focus, castShown)
+    if not state.single then
+        state.single = { parent = state.parent, health = state.health }
+        state.combined = { parent = state.parent, health = state.health }
+    end
+    local joined = p.joined and not state.separate and not Style.ClassicNativePlate()
+    local combined = p.outer and joined and castShown and state.cast ~= nil
+    Effects(state.single, p, state.health, target, focus, not combined)
+    if p.outer and joined and state.cast then
+        Effects(state.combined, p, state.cast, target, focus, combined)
+    else
+        Decor.Hide(state.combined)
+    end
+    if p.outer and not joined and state.cast then
+        if not state.castOnly then state.castOnly = { parent = state.parent, health = state.cast } end
+        Effects(state.castOnly, p, state.cast, target, focus, castShown)
+    else
+        Decor.Hide(state.castOnly)
+    end
+    FillFinish(state, p)
+    Threshold(state, p)
+    FocusMarker(state, p, focus)
+end
+
+local RINGS = { "shadow", "shadowSoft", "glow", "glowSoft", "double", "outer" }
+function Decor.Hide(state)
+    if not state then return end
+    if state.single then Decor.Hide(state.single) end
+    if state.combined then Decor.Hide(state.combined) end
+    if state.castOnly then Decor.Hide(state.castOnly) end
+    for i = 1, #RINGS do
+        local ring = state[RINGS[i]]
+        if ring then Shown(ring.host, false) end
+    end
+    if state.finish then Shown(state.finish, false) end
+    if state.threshold then Shown(state.threshold, false) end
+    if state.focusMarker then Shown(state.focusMarker, false) end
+end

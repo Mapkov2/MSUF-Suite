@@ -623,6 +623,20 @@ B.Section("lootToastFilter", "filtered_loot", "Filtered loot notice", {
     toastIDs,
 })
 
+B.Module("autoUprank", {
+    title = "Auto-uprank (Forever)",
+    description = "Update action slots when you learn a higher spell rank. Deliberately lower ranks are preserved by default.",
+    optIn = true, automation = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if not NS.Client.isForever then return false, "Auto-uprank is available only in Forever" end
+        return C_SpellBook.IsSpellBookItemLowRank ~= nil and Enum.ActionBarSet ~= nil
+    end,
+})
+B.Section("autoUprank", "auto_uprank", "New spell ranks", {
+    B.Automation(Bool("replaceLowerRanks", "Also replace deliberately lower ranks", false)),
+    Bool("report", "Report updated action slots", true),
+})
+
 B.Module("trainerLearnAll", {
     title = "Learn all at trainer",
     description = "Review the total cost, then learn available non-profession abilities at a trainer.",

@@ -736,6 +736,7 @@ local function Render(editor, s)
     s.cell:SetShown(editor.sampleKind == s.prefix)
     s.title:SetShown(editor:LayerOn("guides"))
     local m = Metrics(editor, s, s.metrics)
+    s.state.target = editor.targetSample == true or s.prefix == "enemy" and editor.targetSample ~= false
     RenderFrames(editor, s, m)
     RenderTitle(editor, s, m)
     RenderVisibility(editor, s, m)
@@ -749,6 +750,7 @@ local function Render(editor, s)
     RenderCastAndAuras(editor, s, m)
     RenderRaid(editor, s, m)
     RenderCastDetails(editor, s, m)
+    P.NameplatesPreviewDecor.Paint(editor, s, m)
 end
 
 local function Sample(editor, prefix, x)
@@ -767,6 +769,7 @@ local function Sample(editor, prefix, x)
     BuildCast(s, cell)
     BuildAurasAndPower(s, cell)
     BuildRaidAndDetails(s, cell)
+    P.NameplatesPreviewDecor.Build(editor, s)
     BindElements(editor, s)
     editor.renderers[#editor.renderers + 1] = function() Render(editor, s) end
 end

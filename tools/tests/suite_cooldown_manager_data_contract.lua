@@ -1511,4 +1511,45 @@ do
     C.state.specID=259;C.views.c1.shareContents=false;plans=Resolve.Build()
     assert(plans.c1.entries[1].key=="s697","disabling shared contents did not restore the preserved spec list")
 end
+do
+    -- Retail Envenom snapshot: the tracked bar uses the harmful cast's ID,
+    -- with no linked IDs and hasAura=false. Its helpful effect is on player.
+    names[32645],textures[32645],harmful[32645]="Envenom",{132287,132287},true
+    names[385627],textures[385627],harmful[385627]="Kingsbane",{1259291,1259291},true
+    infos[105493]=Info(105493,3,32645,{overrideSpellID=32645})
+    infos[105403]=Info(105403,3,385627,{hasAura=true})
+    infos[30853]=Info(30853,0,32645)
+    sets[3][#sets[3]+1],sets[3][#sets[3]+2]=105493,105403
+    sets[0][#sets[0]+1]=30853
+    C.state.specID,C.state.preview,C.state.raidEssentials=259,false,false
+    C.views.buf.on,C.views.bar.on=true,true
+    C.views.buf.kind,C.views.bar.kind=2,3
+    Catalog.Rebuild()
+    for _,slot in ipairs({"buf","bar"}) do
+        C.lists=CDM.CleanLists({specs={[259]={[slot]={"b105493","b105403","a32645","d32645"}}},
+            replace={[259]={[slot]=true}}})
+        for _,choice in ipairs({1,2,3,4}) do
+            C.spells=CDM.CleanSpells({v=1,e={b105493={auraUnit=choice}}})
+            plans=Resolve.Build()
+            local entry=assert(E.b105493,"Envenom must materialize")
+            local unit=({"player","player","target","both"})[choice]
+            assert(entry.slot==slot and entry.unit==unit,
+                "Envenom "..slot.." choice "..choice..": expected "..unit..", got "..tostring(entry.unit))
+            assert(entry.auraHelpful and entry.auraIDs[32645] and not entry.hasAura,
+                "Envenom's native helpful binding must survive hasAura=false")
+            assert(E.b105403.unit=="target" and not E.b105403.auraHelpful,
+                "Kingsbane remains a harmful target aura")
+            assert(E.a32645.unit=="player" and E.a32645.auraHelpful,
+                "explicit helpful Envenom retains player tracking")
+            assert(E.d32645.unit=="target" and not E.d32645.auraHelpful,
+                "explicit harmful entries keep their requested identity")
+            local _,changed=Resolve.Build()
+            assert(not changed and not next(Resolve.auraTouched),"settled Envenom must not churn bindings")
+        end
+    end
+    local described=assert(Resolve.Describe("b105493"))
+    assert(described.unit=="player" and described.auraHelpful,"options and runtime share Envenom's default")
+    described=assert(Resolve.Describe("b30853"))
+    assert(not described.auraIDs and not described.unit,"Envenom's ordinary cooldown remains a cooldown")
+end
 print("cooldown manager data contract ok: "..#Catalog.order.." records, "..#Index.cooldown.." cooldown entries")

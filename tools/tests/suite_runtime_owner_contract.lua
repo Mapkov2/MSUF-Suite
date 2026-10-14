@@ -68,6 +68,9 @@ local retiredCelebrations = { enabled = true, onLust = true }
 Suite.DB.suite.modules.partyEffects = retiredCelebrations
 Suite.Suite.Normalize(Suite.DB)
 assert(Suite.DB.suite.modules.partyEffects == retiredCelebrations, "normalization changed legacy profile data")
+-- Native spellbook enums/namespaces exist even while the new opt-in helper is off.
+Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } }
+C_SpellBook = {}
 local private = {}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
@@ -89,7 +92,7 @@ for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 63 and Suite.Suite.instances.playerAuras and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
+assert(count == 64 and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
     and Suite.Suite.instances.itemCounts and Suite.Suite.instances.loadoutReminder

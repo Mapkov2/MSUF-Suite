@@ -87,12 +87,17 @@ def validate_payload(payload):
                 raise ValueError(f"Missing packaged load reference: {path} -> {reference}")
 
 
-def build(root, output, curseforge_client_beta=False):
-    release_type = "beta" if curseforge_client_beta else "alpha"
+def build(root, output, curseforge_client_beta=False, release_channel="alpha"):
+    if release_channel not in ("alpha", "beta"):
+        raise ValueError("Unsupported release channel")
+    if curseforge_client_beta and release_channel != "alpha":
+        raise ValueError("Use the normal Beta package for publishing to all platforms")
+    release_type = "beta" if curseforge_client_beta else release_channel
+    targets = ["curseforge"] if curseforge_client_beta else ["github", "curseforge", "wago"]
     existing_manifest = output / "RELEASE_MANIFEST.json"
     if existing_manifest.exists():
-        previous_type = json.loads(existing_manifest.read_text(encoding="utf-8"))["curseforgeReleaseType"]
-        if previous_type != release_type:
+        previous = json.loads(existing_manifest.read_text(encoding="utf-8"))
+        if previous["curseforgeReleaseType"] != release_type or previous["publishTargets"] != targets:
             raise ValueError("Use separate output directories for the Alpha and CurseForge client Beta packages")
     if curseforge_client_beta and (output / "WAGO_METADATA.json").exists():
         raise ValueError("Refusing a client Beta output directory containing Wago upload metadata")
@@ -117,7 +122,7 @@ def build(root, output, curseforge_client_beta=False):
     output.mkdir(parents=True, exist_ok=True)
     payload = {path: (root / path).read_bytes() for path in files if path.split("/")[0] in addons}
     payload["MSUF_Suite/LICENSE.txt"] = (root / "LICENSE.txt").read_bytes()
-    if curseforge_client_beta:
+    if curseforge_client_beta or release_channel == "beta":
         payload["MSUF_Suite/README.md"] = (root / "README.md").read_bytes()
     validate_payload(payload)
     suffix = "-curseforge-client" if curseforge_client_beta else ""
@@ -137,14 +142,14 @@ def build(root, output, curseforge_client_beta=False):
                                          "type": "requiredDependency"}]},
         },
         "WAGO_METADATA.json": {
-            "label": title, "stability": "alpha", "changelog": notes,
+            "label": title, "stability": release_channel, "changelog": notes,
             "supported_retail_patches": ["12.1.5"], "supported_forever_patches": ["1.60.1"],
         },
         "RELEASE_MANIFEST.json": {
             "version": version, "tag": "v" + version, "title": title, "githubPrerelease": False,
             "curseforgeReleaseType": release_type,
-            "publishTargets": ["curseforge"] if curseforge_client_beta else ["github", "curseforge", "wago"],
-            "wagoStability": "alpha", "requiredHost": "MSUF 6.5 (6.50)",
+            "publishTargets": targets,
+            "wagoStability": release_channel, "requiredHost": "MSUF 6.5 (6.50)",
             "addons": addons, "archive": archive.name, "bytes": archive.stat().st_size,
             "projects": {"curseforge": field(core_toc, "X-Curse-Project-ID"), "wago": field(core_toc, "X-Wago-ID")},
             "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
@@ -157,7 +162,7 @@ def build(root, output, curseforge_client_beta=False):
         (output / name).write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     (output / "RELEASE_NOTES.md").write_text(notes, encoding="utf-8", newline="\n")
     (output / "PROJECT_DESCRIPTION.md").write_bytes((root / "README.md").read_bytes())
-    channel = "CurseForge client Beta" if curseforge_client_beta else "CurseForge/Wago Alpha"
+    channel = "CurseForge client Beta" if curseforge_client_beta else "CurseForge/Wago " + release_channel.title()
     print(f"Built {archive.name}: {len(addons)} addons, {len(payload)} files; {channel}, MSUF required")
     return archive
 
@@ -167,9 +172,11 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--curseforge-client-beta", action="store_true",
                         help="Additional CurseForge Beta file for initial client listing; Suite version remains Alpha")
+    parser.add_argument("--release-channel", choices=("alpha", "beta"), default="alpha",
+                        help="Distribution channel; the Suite Alpha version name is retained")
     args = parser.parse_args()
-    output = args.output or ROOT / "dist" / ("curseforge-client" if args.curseforge_client_beta else "alpha")
-    build(ROOT, output, args.curseforge_client_beta)
+    output = args.output or ROOT / "dist" / ("curseforge-client" if args.curseforge_client_beta else args.release_channel)
+    build(ROOT, output, args.curseforge_client_beta, args.release_channel)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@ GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12
 securecallfunction = function(callback, ...) return callback(...) end
 assert(flavor == "Mainline" or flavor == "Forever", "the Suite supports Retail and WoW Forever only")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+-- Shared native spellbook enums exist on both clients; ActionBarSet is Forever-only.
+Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } }
+C_SpellBook = {}
 local frames, loads, featureLoads, optionLoads, loaded = {}, 0, 0, 0, {}
 SlashCmdList = {}
 MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil

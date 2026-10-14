@@ -1,5 +1,16 @@
 # MSUF Suite Changelog
 
+## 0.1.1 Alpha - 2026-10-14
+
+- Fixed Envenom buff tracking and the same cast-target versus buff-target mismatch across native Retail Cooldown Manager entries.
+- Fixed aura identities, sounds and timer subscriptions after spell overrides, including changes during combat.
+- Added action-bar glows for usable spells and configurable aura glow sources, with matching previews.
+- Expanded native nameplate styling with target scaling, borders, static shadow/glow, focus markers, texture finishes and a health threshold indicator.
+- Added an optional WoW Forever helper that updates action-bar spells to their highest learned rank, with a separate option for deliberately lower ranks.
+- Fixed native Delve header sizing and widget stacking in the objective tracker.
+- Updated translations, option previews and regression coverage.
+- Distributed through the Beta channel on CurseForge and Wago. The Suite remains in Alpha and requires Midnight Simple Unit Frames.
+
 ## 0.1 Alpha - 2026-10-13
 
 - Requires Midnight Simple Unit Frames (MSUF), installed separately. Compatible with MSUF 6.5 (release 6.50) on Retail 12.1.5 and WoW Forever 1.60.1. The Suite remains in Alpha.

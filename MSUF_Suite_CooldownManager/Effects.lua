@@ -218,6 +218,15 @@ local function Paint(glow, icon, spec, style, r, g, b, w, h)
     end
 end
 
+-- Prepare optional action feedback on its cold binding path, so the first
+-- usable/cooldown event creates no frames, regions or animation groups.
+function Effects.PrepareGlow(icon)
+    local entry = icon.entry
+    local view = entry and C.views[entry.slot] or EMPTY
+    local style, r, g, b = GlowSpec(entry, view)
+    Paint(EnsureGlow(icon), icon, K.GLOW[style], style, r, g, b, icon.w, icon.h)
+end
+
 local function ShowGlow(icon, style, r, g, b)
     local glow = EnsureGlow(icon)
     local spec = K.GLOW[style]

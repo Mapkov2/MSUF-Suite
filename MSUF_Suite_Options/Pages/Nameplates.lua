@@ -18,6 +18,8 @@ local HELP = {
         "Blizzard owns the aura icons and updates. Choose Keep Blizzard setting or Customize for each unit type. Buffs, debuffs and control effects can be selected and dragged separately in the preview. Aura size uses Blizzard's own setting."),
     signals = P.Help("Blizzard's aggro, target, focus and soft target signals.",
         "Blizzard owns aggro flashes, progressive highlights and soft target icons. Optional colors tint Blizzard's existing threat textures; its health bar threat color stays under the role-color overlay. Soft target icons also need the nameplate icon switch enabled and a matching soft target in game."),
+    decor = P.Help("Frame styling and clear target highlights.",
+        "Frames join aligned bars; detached bars keep separate frames. Effects are static. Threshold marks a fixed percentage. Preview switches apply live."),
     personal = P.Help("Border of Blizzard's personal power bar.",
         "Skin only Blizzard's own personal mana and alternate-power status bars. Blizzard still owns their values, fill and visibility. Class-specific resource points retain Blizzard's layout. Select and drag the power bar in the personal preview."),
     native = P.Help("Blizzard's own plate style and size, and player names in the world."),
@@ -43,18 +45,24 @@ end
 local MODULE_KEYS = { "look", "enemy", "friendly", "protectImport" }
 local SECTIONS = {
     { key = "native", area = "general", title = "Blizzard plates",
-      keys = { "nativeStyle", "nativeSize", "barGeometry", "levelAppearance", "classColors", "playerGuildNames", "playerTitles" } },
+      keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
+            "classColors", "playerGuildNames", "playerTitles" } },
     { key = "visibility", area = "general", catalog = "visibility" },
     { key = "personal", area = "general", catalog = "personal", positions = "personal" },
     { key = "enemy", area = "enemies", title = "Enemy appearance", open = true, positions = "enemy",
-      colors = { "enemyBorderColor", "enemyBackdropColor", "enemyTargetColor" }, tabs = {
+      colors = { "enemyBorderColor", "enemyBackdropColor", "enemyOuterFrameColor", "enemyGlowColor", "enemyTargetColor",
+            "enemyFocusMarkerColor", "enemyThresholdColor" }, tabs = {
         { id = "bar", label = "Bar", help = "enemy", keys = { "enemyHealthWidthDelta", "enemyHealthHeightDelta",
-            "enemyBackdropEnabled", "enemyBackdropAlpha", "enemyBorderEnabled", "enemyBorderSize" } },
+            "enemyBackdropEnabled", "enemyBackdropAlpha", "enemyBorderEnabled", "enemyBorderSize", "enemyBorderStyle",
+            "enemyTextureEnabled", "enemyFillTexture" } },
+        { id = "frame", label = "Frame and highlights", help = "decor", keys = {
+            "enemyOuterFrame", "enemyOuterFrameSize", "enemyShadowEnabled", "enemyGlowEnabled", "enemyGlowMode", "enemyEffectSize" } },
         { id = "text", label = "Text", keys = { "enemyTextMode", "enemyMirrorHeader", "enemyTextEnabled", "enemyCustomFont", "enemyNameFont",
             "enemyNameSize", "enemyHealthTextSize", "enemyTextOutline", "enemyTextShadow", "enemyLevelEnabled", "enemyLevelSize" } },
         { id = "markers", label = "Markers", help = "elements", keys = { "enemyEliteMarker", "enemyEliteMarkerAnchor",
             "enemyEliteMarkerSize", "enemyQuestMarker", "enemyQuestMarkerAnchor", "enemyQuestMarkerSize",
-            "enemyRarityIcon", "enemyRaidIcon" } },
+            "enemyRarityIcon", "enemyRaidIcon", "enemyFocusMarker", "enemyFocusMarkerSize", "enemyFocusMarkerX", "enemyFocusMarkerY",
+            "enemyThresholdEnabled", "enemyThresholdPercent" } },
         { id = "target", label = "Target arrows", keys = { "enemyTargetMarker", "enemyTargetStyle", "enemyTargetLayout",
             "enemyTargetAnchor", "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetHideFriendly" } },
     } },
@@ -74,11 +82,14 @@ local SECTIONS = {
     } },
     { key = "auraColors", area = "colors" },
     { key = "friendly", area = "friendly", title = "Friendly appearance", open = true, positions = "friendly",
-      colors = { "friendlyBorderColor", "friendlyBackdropColor" }, tabs = {
+      colors = { "friendlyBorderColor", "friendlyBackdropColor", "friendlyOuterFrameColor", "friendlyGlowColor" }, tabs = {
         { id = "display", label = "Display", help = "friendly", keys = { "friendlyNamesOnly", "friendlyNameClassColor",
             "friendlyRealm", "friendlyNPCs" } },
         { id = "bar", label = "Bar", keys = { "friendlyHealthWidthDelta", "friendlyHealthHeightDelta",
-            "friendlyBackdropEnabled", "friendlyBackdropAlpha", "friendlyBorderEnabled", "friendlyBorderSize" } },
+            "friendlyBackdropEnabled", "friendlyBackdropAlpha", "friendlyBorderEnabled", "friendlyBorderSize",
+            "friendlyBorderStyle", "friendlyTextureEnabled", "friendlyFillTexture" } },
+        { id = "frame", label = "Frame and highlights", help = "decor", keys = {
+            "friendlyOuterFrame", "friendlyOuterFrameSize", "friendlyShadowEnabled", "friendlyGlowEnabled", "friendlyGlowMode", "friendlyEffectSize" } },
         { id = "text", label = "Text", keys = { "friendlyTextEnabled", "friendlyCustomFont", "friendlyNameFont",
             "friendlyNameSize", "friendlyTextOutline", "friendlyTextShadow", "friendlyLevelEnabled", "friendlyLevelSize" } },
         { id = "markers", label = "Markers", keys = { "friendlyEliteMarker", "friendlyEliteMarkerAnchor",

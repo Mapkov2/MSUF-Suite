@@ -6,7 +6,7 @@ local marker='local body, section = ui.body, ui.body.parent'
 local at=assert(source:find(marker,1,true))
 local probe=[=[
 local changed,enabled=false,true
-local previousGet=P.Get
+local previousGet,previousSet=P.Get,P.Set
 P.Get=function(id,key)
     if key=='enemyLevelEnabled' then return enabled end
     return previousGet(id,key)
@@ -27,5 +27,6 @@ assert(changed and enabled==false,'real level chip did not change live setting')
 print('level tooltip:',hint,'live enemyLevelEnabled after click:',enabled)
 assert(hint:find('change live setting',1,true),
     'level chip says preview-only although it changes the live level setting')
+P.Get,P.Set=previousGet,previousSet
 ]=]
 assert(loadstring(source:sub(1,at-1)..probe..source:sub(at),'@nameplate-level-help-probe'))()

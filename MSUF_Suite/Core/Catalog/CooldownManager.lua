@@ -396,11 +396,11 @@ end
 -- 3 countdown on top (K.Choice reads 2 as yes and 3 as no).
 CDM.CHOICE = { BAR = 1, YES = 2, NO = 3 }
 -- desat: 2 never, 3 always. swipe: 1 normal, 2 reversed, 3 hidden.
--- stackGlowOp: 1 at least, 2 exactly, 3 more than the stackGlow count.
+-- stackGlowOp: at least, exactly, more than, below or at most the stackGlow count.
 -- actionGlowMode: 1 while the buff is present, 2 the stack comparison.
 CDM.DESAT = { NEVER = 2, ALWAYS = 3 }
 CDM.SWIPE = { NORMAL = 1, REVERSED = 2, HIDDEN = 3 }
-CDM.STACK_OP = { AT_LEAST = 1, EXACTLY = 2, MORE_THAN = 3 }
+CDM.STACK_OP = { AT_LEAST = 1, EXACTLY = 2, MORE_THAN = 3, BELOW = 4, AT_MOST = 5 }
 CDM.ACTION_GLOW = { PRESENT = 1, STACKS = 2 }
 -- glowStyle (1 Blizzard alert, 2 Marching ants, 3 Pulse, 4 Border) and
 -- glowColor style every glow of the entry: ready, spell alert, "glow while
@@ -413,15 +413,16 @@ CDM.SPELL_FIELDS = {
     desat = Range(1, 3), hideReady = Bool01, hideAvailableCharges = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
     showAura = Bool01, swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
     threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01,
-    stackGlow = Range(0, 99), stackGlowOp = Range(1, 3), stackColorAt = Range(0, 99), stackColor = Hex,
-    -- Where a buff-bar aura is looked for: 1 automatic (harmful spells on the
-    -- target, the rest on the player), 2 the player, 3 the target, 4 both.
+    stackGlow = Range(0, 99), stackGlowOp = Range(1, 5), stackColorAt = Range(0, 99), stackColor = Hex,
+    -- Where a buff-bar aura is looked for: 1 automatic (audited native aura
+    -- identities, then cast polarity), 2 the player, 3 the target, 4 both.
     auraUnit = Range(1, 4),
     timerDuration = Range(0, 600), timerSpell = Range(1, 2147483647),
     -- Countdown and charge/stack text: 1 the bar's setting, 2 show, 3 hide.
     -- textTop: 1 the bar's setting, 2 stacks on top, 3 countdown on top.
     timeText = Range(1, 3), stackText = Range(1, 3), textTop = Range(1, 3),
     showGCD = Bool01, actionGlowSpell = Range(1, 2147483647), actionGlowMode = Range(1, 2),
+    actionGlowRequireSpell = Range(1, 2147483647), actionGlowUnit = Range(1, 2), actionUsableGlow = Bool01,
     requireSpell1 = Range(1, 2147483647), requireSpell2 = Range(1, 2147483647), requireSpell3 = Range(1, 2147483647),
     excludeSpell1 = Range(1, 2147483647), excludeSpell2 = Range(1, 2147483647), excludeSpell3 = Range(1, 2147483647),
 }
