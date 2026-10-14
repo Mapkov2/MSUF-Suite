@@ -35,7 +35,7 @@ function O.PaintScenarioHeader(row, item, width)
     end
     if not header then
         header = S.CreateFrame("Frame", nil, row, "UIWidgetContainerTemplate")
-        header.verticalAnchorPoint, header.verticalRelativePoint = "TOPLEFT", "TOPLEFT"
+        header.verticalAnchorPoint, header.verticalRelativePoint = "TOPLEFT", "BOTTOMLEFT"
         header:SetPoint("TOPLEFT", row, "TOPLEFT", 12, -3)
         header:HookScript("OnShow", ScenarioHeaderShown)
         header:HookScript("OnHide", ScenarioHeaderHidden)
