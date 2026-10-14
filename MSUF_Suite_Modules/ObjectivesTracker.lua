@@ -673,12 +673,13 @@ local function PaintRow(self, row, item, c, width, y)
     -- measure the wrap of the previous width.
     row.text:SetWidth(math.max(1, width - leftInset - rightInset - 2))
     local textHeight = row.text:GetStringHeight()
-    local height = math.max(item.height, Finite(textHeight) and textHeight + 10 or 0,
-        O.PaintScenarioHeader(row, item, width))
+    local height = math.max(item.height, Finite(textHeight) and textHeight + 10 or 0)
+    height = math.max(height, O.PaintScenarioHeader(row, item, width, height))
+    -- Native size/OnShow hooks may invalidate this cache during either setter.
+    row.layoutY, row.layoutWidth, row.layoutHeight = y, width, height
     row:SetHeight(height)
     PaintRowState(self, row, item, color)
     row:Show()
-    row.layoutY, row.layoutWidth, row.layoutHeight = y, width, height
     return height
 end
 

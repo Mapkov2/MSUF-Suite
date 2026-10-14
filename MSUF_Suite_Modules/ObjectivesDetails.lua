@@ -8,6 +8,7 @@ local function ScenarioHeaderShown(header)
 end
 
 local function ScenarioHeaderHidden(header)
+    header.layoutRetry = nil
     header:RegisterForWidgetSet(nil)
 end
 
@@ -21,7 +22,7 @@ end
 -- Keep Blizzard's Delve header: its tier, lives, rewards and spell tooltips
 -- carry data that the scenario criteria do not expose (e.g. Nemesis groups).
 -- The native container owns widget updates; Suite only reacts to size changes.
-function O.PaintScenarioHeader(row, item, width)
+function O.PaintScenarioHeader(row, item, width, rowHeight)
     local setID = item.scenarioHeaderSetID
     local header = row.scenarioHeader
     if not setID then
@@ -35,23 +36,40 @@ function O.PaintScenarioHeader(row, item, width)
     end
     if not header then
         header = S.CreateFrame("Frame", nil, row, "UIWidgetContainerTemplate")
-        header.verticalAnchorPoint, header.verticalRelativePoint = "TOPLEFT", "BOTTOMLEFT"
+        -- Match the native StageBlock: stage-set widgets share the same corner.
+        header.verticalAnchorPoint, header.verticalRelativePoint = "TOPLEFT", "TOPLEFT"
         header:SetPoint("TOPLEFT", row, "TOPLEFT", 12, -3)
         header:HookScript("OnShow", ScenarioHeaderShown)
         header:HookScript("OnHide", ScenarioHeaderHidden)
         header:HookScript("OnSizeChanged", ScenarioHeaderSizeChanged)
         row.scenarioHeader = header
     end
+    if header.desiredSetID ~= setID then header.layoutRetry = nil end
     header.desiredSetID = setID
+    if rowHeight then
+        -- Native ResizeLayout needs a sized, shown row before reading its rect.
+        row:SetHeight(rowHeight)
+        row:Show()
+    end
     header:RegisterForWidgetSet(setID)
+    header:Show()
     local headerWidth, headerHeight = header:GetWidth(), header:GetHeight()
-    if headerWidth <= 0 or headerHeight <= 0 or not header:HasAnyWidgetsShowing() then
+    local hasWidgets = header:HasAnyWidgetsShowing()
+    -- ResizeLayout returns 1x1 while GetScaledRect is unresolved. Keep its
+    -- children transparent until one deferred native layout has valid extents.
+    if headerWidth <= 1 or headerHeight <= 1 or not hasWidgets then
+        header:SetAlpha(0)
+        if hasWidgets and not header.layoutRetry then
+            header.layoutRetry = true
+            header:MarkDirty()
+        end
         row.text:Show()
         return 0
     end
+    header.layoutRetry = nil
+    header:SetAlpha(1)
     local scale = math.min(1, math.max(1, width - 42) / headerWidth)
     header:SetScale(scale)
-    header:Show()
     row.text:Hide()
     row.collapse:ClearAllPoints()
     row.collapse:SetPoint("TOPRIGHT", row, "TOPRIGHT", -4, -3)
