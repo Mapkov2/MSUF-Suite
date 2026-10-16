@@ -51,10 +51,10 @@ local function DragCurrent(token, preview)
     return token.window == preview.selected() and token.current() and token.config == P.S.Config(ID)
 end
 
-local function Write(preview, handle, x, y)
-    local token = handle.dragToken
-    handle.dragToken = nil
-    if token and not DragCurrent(token, preview) then return false end
+-- dragged: the commit of a drag, which must still belong to the window, profile
+-- and settings it began under. Arrows and the X/Y fields carry no such claim.
+local function Write(preview, handle, x, y, dragged)
+    if dragged and not (handle.dragToken and DragCurrent(handle.dragToken, preview)) then return false end
     if preview.inCombat or P.Combat() or not preview.viewport:IsVisible() or not handle:IsVisible() then return false end
     local xKey, yKey = Keys(preview, handle)
     if not xKey then return false end
@@ -124,13 +124,15 @@ end
 -- A drag that starts selects its element and remembers which window and
 -- profile it began under; when it ends the handle goes back on its region.
 local function Dragged(preview, handle, phase)
-    if phase == "start" then
-        E.Select(preview, handle)
+    if phase == "press" then
+        -- Before the drag exists, as the old code did; the claim first, so the
+        -- repaint a selection asks for finds it.
         handle.dragToken = { window = preview.selected(), config = P.S.Config(ID), current = P.ProfileGuard() }
+        E.Select(preview, handle)
         return
     end
-    if phase == "cancel" then handle.dragToken = nil end
-    Anchor(handle, true)
+    if phase == "done" or phase == "cancel" then handle.dragToken = nil end
+    if phase == "stop" or phase == "cancel" then Anchor(handle, true) end
 end
 
 function E.Handle(preview, handle, region, prefix, label, layer, section, controlKey)
@@ -146,7 +148,7 @@ function E.Handle(preview, handle, region, prefix, label, layer, section, contro
     handle:SetFrameLevel(preview.viewport:GetFrameLevel() + top - base + 32 + priority)
     Anchor(handle, true)
     preview.kit:Add(handle, handle, function() return Read(preview, handle) end,
-        handle.canMove and function(x, y) return Write(preview, handle, x, y) end or nil,
+        handle.canMove and function(x, y, dragged) return Write(preview, handle, x, y, dragged) end or nil,
         { select = false, scale = function() return preview.stage:GetEffectiveScale() end })
     HM.SkipHistoryCheckpoint(handle)
 end

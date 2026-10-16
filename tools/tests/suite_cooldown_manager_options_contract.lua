@@ -2353,6 +2353,43 @@ assert(Config().ess_x == x and Page.noteError and Page.note:find("Blizzard's Edi
     "dragging a bar that cannot move must say why")
 S.CooldownManagerMovable = nil
 M.RequestRefresh()
+-- Order, as the old code did it: the drag flag and the follow are gone before the write, the click opens
+-- Basics on release and not on press, and a repaint in the middle of a drag leaves the drawing under the cursor.
+do
+    Config().ess_anchor = 1
+    M.RequestRefresh()
+    local log = {}
+    local setMany = P.SetMany
+    P.SetMany = function(id, values)
+        log[#log + 1] = "write"
+        log[#log + 1] = handle.dragging and "dragging" or "idle"
+        log[#log + 1] = handle.scripts.OnUpdate and "following" or "still"
+        return setMany(id, values)
+    end
+    local x0 = Config().ess_x
+    focused = nil
+    cursorX, cursorY = 100, 100
+    Fire(handle, "OnMouseDown", "LeftButton")
+    assert(focused == nil and #log == 0, "pressing the bar opened Basics or wrote")
+    cursorX = 130
+    Fire(handle, "OnUpdate", 0.01)
+    local baseX = handle.baseX
+    assert(runtime.frame.points[1][4] == baseX + 30, "the drawing did not follow the cursor")
+    M.RequestRefresh()
+    assert(runtime.frame.points[1][4] == baseX + 30, "a repaint in the middle of the drag took the drawing from the cursor")
+    Fire(handle, "OnMouseUp", "LeftButton")
+    assert(table.concat(log, " ") == "write idle still", "the write came before the drag flag and the follow were gone: " .. table.concat(log, " "))
+    assert(Config().ess_x == x0 + 30 and focused == nil, "a drag opened Basics or lost its offset")
+    -- A click opens Basics on release, and writes nothing.
+    log = {}
+    cursorX, cursorY = 100, 100
+    Fire(handle, "OnMouseDown", "LeftButton")
+    assert(focused == nil, "pressing the bar opened Basics")
+    Fire(handle, "OnMouseUp", "LeftButton")
+    assert(focused == PAGE .. "_basics" and #log == 0, "a click did not open Basics, or wrote")
+    P.SetMany = setMany
+    Config().ess_x = x0
+end
 
 ------------------------------------------------------------------ simulation and preview mode
 -- Simulate is offered only while the module runs; the toggle shows what the

@@ -108,7 +108,8 @@ local function AddHandle(ui, button, key)
     local xKey, yKey = OffsetKeys(key)
     ui.kit:Add(key, button, function() return P.Get(ID, xKey), P.Get(ID, yKey) end,
         function(x, y) return WriteOffsets(key, x, y) end,
-        { select = false, scale = function() return button:GetEffectiveScale() * (ui.art.scale or 1) end })
+        { select = false, clicks = { "LeftButtonUp" },
+            scale = function() return button:GetEffectiveScale() * (ui.art.scale or 1) end })
 end
 
 -- A clickable preview element that selects `key` and opens `section`.
@@ -187,14 +188,17 @@ local function BuildKeyboard(ui)
         click = function(handle) Focus(ui, handle.previewSection, handle.previewKey, handle) end,
         drag = function(handle, phase)
             -- The map is drawn at the canvas center whatever its stored position.
-            if handle == ui.map and phase ~= "start" then
+            if handle == ui.map and (phase == "done" or phase == "cancel") then
                 handle:ClearAllPoints()
                 handle:SetPoint("CENTER", handle:GetParent(), "CENTER", 0, 0)
             end
-            if phase == "stop" then Focus(ui, handle.previewSection, handle.previewKey, handle) end
+            -- After the write and the moved note: the cue it shows reads that note.
+            if phase == "done" then Focus(ui, handle.previewSection, handle.previewKey, handle) end
+        end,
+        selecting = function(handle)
+            if chrome and chrome.RefreshSelectedLayerButtons then chrome.RefreshSelectedLayerButtons(ui, handle) end
         end,
         select = function(handle)
-            if chrome and chrome.RefreshSelectedLayerButtons then chrome.RefreshSelectedLayerButtons(ui, handle) end
             for _, target in ipairs(ui.handles) do P.PreviewInteraction.Outline(target, target == handle) end
             if M.PreviewSelectionBar and M.PreviewSelectionBar.Refresh then M.PreviewSelectionBar.Refresh(body) end
             UpdateHint(ui)

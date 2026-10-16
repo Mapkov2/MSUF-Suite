@@ -157,8 +157,13 @@ Handles.__index = Handles
 --   dedupe(owner, dx, dy)   true when this key press was already applied
 --   mark(region, selected)  selection look; tip(region, entering)  hover
 --   focus(owner, region, active)  the page's keyboard capture
---   select(region, previous), click(region, button, moved), tab(shift),
---   moved(region)  after a drag wrote, drag(region, phase, moved)  hooks.
+--   selecting(region, previous)  right after the selection changed, before the
+--   keyboard moves; select(region, previous) after it; click(region, button,
+--   moved); tab(shift); moved(region) after a drag wrote.
+--   drag(region, phase, moved): press (before the drag exists: select here),
+--   start (a followed drag passed the threshold; a native one began), stop
+--   (before the write), done (after the write and moved), cancel.
+--   write(x, y, dragged) gets dragged = true for the commit of a drag.
 function Kit.Handles(host, opts)
     opts = opts or EMPTY
     local owner = opts.owner or host.frame
@@ -212,6 +217,7 @@ function Handles:Select(target)
     if previous and previous ~= region then previous:EnableKeyboard(false) end
     self.selected = region
     if owner then owner[self.field] = region end
+    if opts.selecting then opts.selecting(region, previous) end
     local active = entry ~= nil and Movable(entry) and region:IsShown() and not self:Blocked()
         and (not owner or owner:IsShown()) or false
     if region then region:EnableKeyboard(active) end
@@ -231,9 +237,10 @@ function Handles:Nudge(dx, dy)
     return self:Commit(entry, x + dx, y + dy)
 end
 
--- Every write goes here: refused in combat, repainted either way.
-function Handles:Commit(entry, x, y)
-    local ok = not self:Blocked() and entry.write(x, y) ~= false
+-- Every write goes here: refused in combat, repainted either way. A drag's
+-- commit says so to the page's write (dragged), which may refuse a stale one.
+function Handles:Commit(entry, x, y, dragged)
+    local ok = not self:Blocked() and entry.write(x, y, dragged) ~= false
     self.host:Paint("commit")
     return ok
 end
@@ -314,11 +321,13 @@ local function Down(entry, button)
     entry.moved = false
     if entry.select then controller:Select(region) end
     if not entry.write then return end
+    local blocked = not Movable(entry)
+    if not blocked and controller.opts.drag then controller.opts.drag(region, "press") end
     local x, y, scale = Cursor(entry)
     local ox, oy = entry.read()
     if not x or not (Readable(ox) and Readable(oy)) then return end
     local drag = { entry = entry, x = x, y = y, scale = scale, ox = ox, oy = oy, native = not entry.follow,
-        blocked = not Movable(entry) }
+        blocked = blocked }
     controller.drag = drag
     if drag.blocked then return end
     if entry.follow then
@@ -340,10 +349,11 @@ local function Up(entry, button)
     local moved = drag.moving or math.abs(dx) + math.abs(dy) >= controller.threshold
     entry.moved = moved
     if controller.opts.drag then controller.opts.drag(entry.region, "stop", moved) end
-    local ok = moved and not drag.blocked and controller:Commit(entry, drag.ox + dx, drag.oy + dy)
+    local ok = moved and not drag.blocked and controller:Commit(entry, drag.ox + dx, drag.oy + dy, true)
     if not ok then Restore(drag) end
     if ok and controller.opts.moved then controller.opts.moved(entry.region) end
     if not ok then controller.host:Paint("drag") end
+    if controller.opts.drag then controller.opts.drag(entry.region, "done", moved) end
 end
 
 -- Ends a drag in progress without writing: the region goes back to `read`.

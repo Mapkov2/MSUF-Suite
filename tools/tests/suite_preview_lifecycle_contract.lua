@@ -1,5 +1,6 @@
--- The HUD preview's lifecycle on the real options page fixture: the AFK example listens to
--- character events only while shown, hiding drops them, and a burst of events repaints.
+-- The HUD and ActionBars previews' lifecycle on the real options page fixture: the AFK example
+-- listens to character events only while shown, hiding drops them, a burst of events repaints, and
+-- a shown action bar preview listens before it paints.
 local root = assert(arg[1], "repository root required")
 local originalLoad, P = loadfile
 loadfile = function(path)
@@ -58,5 +59,36 @@ host.scripts.OnHide(host)
 assert(next(host.events) == nil and not ui.playing, "hiding left subscriptions or a playing preview")
 host.scripts.OnShow(host)
 assert(host.events.UNIT_MODEL_CHANGED, "showing the preview again did not listen again")
+
+-- ActionBars: every event is registered before the paint that a show makes, so none slips between
+-- them; hiding drops them all, and an event that is still queued then paints nothing.
+do
+    local actionCtx = { key = "suite_actionbars", refreshers = {}, widgets = {} }
+    P.ActionBarPreview.Build(actionCtx, parent, -20, 520, 200, function() return 1 end)
+    local bars = actionCtx._msufSuiteActionBarPreview
+    local barHost, log = bars.host, {}
+    barHost.events = {}
+    function barHost:RegisterEvent(event) self.events[event] = true; log[#log + 1] = "register" end
+    function barHost:UnregisterAllEvents() self.events = {}; log[#log + 1] = "unregister" end
+    local paint = bars.Paint
+    bars.Paint = function(...) log[#log + 1] = "paint"; return paint(...) end
+    barHost.scripts.OnHide(barHost)
+    log = {}
+    barHost.scripts.OnShow(barHost)
+    local lastRegister, firstPaint
+    for index, entry in ipairs(log) do
+        if entry == "register" then lastRegister = index end
+        if entry == "paint" and not firstPaint then firstPaint = index end
+    end
+    assert(lastRegister and firstPaint and lastRegister < firstPaint, "the action bar preview painted before it listened: "
+        .. table.concat(log, " "))
+    assert(barHost.events.ACTIONBAR_SLOT_CHANGED and barHost.events.UNIT_PET, "showing did not listen to the action bar events")
+    log = {}
+    barHost.scripts.OnEvent(barHost, "SPELL_UPDATE_ICON")
+    barHost.scripts.OnHide(barHost)
+    assert(next(barHost.events) == nil, "hiding kept the action bar events")
+    Flush()
+    for _, entry in ipairs(log) do assert(entry ~= "paint", "a hidden action bar preview painted") end
+end
 C_Timer = previous
-print("HUD preview lifecycle: events only while shown, ignored foreign units, repaint and hide checks passed")
+print("preview lifecycle: HUD events only while shown, ignored foreign units, repaint, hide, and the action bar order passed")

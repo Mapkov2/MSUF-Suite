@@ -268,7 +268,13 @@ region.points = { { "CENTER", body, "CENTER", 10, -4 } }
 Drag(1, 1)
 assert(#writes == 2, "a press that barely moves writes nothing")
 assert(region.points[1][4] == 10 and region.points[1][5] == -4, "and the repaint puts the region back on its anchors")
-assert(hooks[#hooks][1] == "drag" and hooks[#hooks][3] == "stop" and hooks[#hooks][4] == false, "drag hook")
+local function Phase(phase)
+    for index = #hooks, 1, -1 do
+        if hooks[index][1] == "drag" and hooks[index][3] == phase then return hooks[index] end
+    end
+end
+assert(Phase("stop") and Phase("stop")[4] == false and Phase("done") and Phase("done")[4] == false
+    and hooks[#hooks][3] == "done", "drag hook")
 Write = function(x, y) writes[#writes + 1] = { x, y }; return false end
 handles.entries.bar.write = Write
 region.points = { { "CENTER", body, "CENTER", 10, -4 } }
@@ -319,6 +325,55 @@ hooks = {}
 region.scripts.OnClick(region, "RightButton")
 assert(hooks[#hooks][1] == "click" and hooks[#hooks][3] == "RightButton" and hooks[#hooks][4] == false, "click hook")
 
+-- Order: what the kit does around the page's hooks is part of the contract. A selection updates the
+-- state before the keyboard moves, a press tells the page before the drag exists, the release says
+-- stop, writes (told it is a drag), notes the move and only then says done.
+do
+    local events, ordered = {}, nil
+    local function Log(entry) events[#events + 1] = entry end
+    local function Took()
+        local out = table.concat(events, " ")
+        events = {}
+        return out
+    end
+    ordered = Controller({
+        selecting = function() Log("selecting") end,
+        focus = function(_, _, active) Log("focus:" .. tostring(active)) end,
+        select = function() Log("select") end,
+        moved = function() Log("moved") end,
+        drag = function(_, phase, moved)
+            Log(phase .. (ordered.drag and "*" or "") .. (moved ~= nil and (":" .. tostring(moved)) or ""))
+        end,
+    }, true)
+    local one = Frame(ordered.owner)
+    local base = one.EnableKeyboard
+    one.EnableKeyboard = function(self, on) Log("keyboard:" .. tostring(on)); return base(self, on) end
+    ordered:Add("one", one, Read, function(x, y, dragged) Log("write:" .. tostring(dragged)); return Write(x, y) end,
+        { select = false })
+    Took()
+    ordered:Select("one")
+    assert(Took() == "selecting keyboard:true focus:true select", "a selection: state, keyboard, capture, then the page")
+    cursorX, cursorY = 100, 100
+    one.scripts.OnMouseDown(one, "LeftButton")
+    assert(Took() == "press start*", "a press tells the page before the drag exists; a native drag starts after")
+    cursorX = 130
+    one.scripts.OnMouseUp(one, "LeftButton")
+    assert(Took() == "stop:true write:true moved done:true", "a release: stop, write as a drag, moved, done")
+    one.scripts.OnMouseDown(one, "LeftButton")
+    Took()
+    one.scripts.OnMouseUp(one, "LeftButton")
+    assert(Took() == "stop:false done:false", "a click writes nothing and still says done")
+    one.scripts.OnMouseDown(one, "LeftButton")
+    Took()
+    ordered:Cancel()
+    assert(Took() == "cancel", "a cancel says cancel and nothing else")
+    ordered:Nudge(1, 1)
+    assert(Took() == "write:nil", "an arrow writes without claiming to be a drag")
+    ordered:Select(nil)
+    Took()
+    store.x, store.y = 10, -4
+end
+
 -- keep: the selection outlives its region hiding; keydown replaces the key handler; the
 -- owner's field is the truth, so a page that clears it clears the selection.
 do
@@ -350,7 +405,7 @@ followRegion.scripts.OnMouseDown(followRegion, "LeftButton")
 assert(followRegion.scripts.OnUpdate == nil, "an attached bar starts no follow")
 cursorX = 80
 followRegion.scripts.OnMouseUp(followRegion, "LeftButton")
-assert(hooks[#hooks][1] == "drag" and hooks[#hooks][3] == "stop" and hooks[#hooks][4] == true,
+assert(Phase("stop") and Phase("stop")[4] == true and hooks[#hooks][3] == "done",
     "a refused drag still reports that it moved")
 canMove, writes = true, {}
 cursorX = 50

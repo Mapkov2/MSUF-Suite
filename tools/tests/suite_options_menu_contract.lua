@@ -2023,6 +2023,79 @@ end
     name.scripts.OnLeave(name)
     assert(ui.hint.text == ui.help, "leaving must bring the preview's own help back")
     assert(ui.kit and ui.host and ui.handles == ui.kit.list, "the nameplate preview runs on the kit")
+    -- Order, not count: what a selection, a press, a repaint, a release, Escape and an arrow do to the
+    -- keyboard, the selection bar and the settings, as the old code did them (it is the oracle).
+    do
+        local order = {}
+        local function Log(entry) order[#order + 1] = entry end
+        local setBindings, sbRefresh, setMany = M.SetPreviewArrowBindings, M.PreviewSelectionBar.Refresh, optionsNS.SetMany
+        M.SetPreviewArrowBindings = function(box, enabled, spec) Log("bindings:" .. tostring(enabled)); return setBindings(box, enabled, spec) end
+        M.PreviewSelectionBar.Refresh = function(box) Log("sb"); return sbRefresh(box) end
+        optionsNS.SetMany = function(id, values) Log("write"); return setMany(id, values) end
+        for _, element in ipairs(ui.handles) do
+            local keyboard = element.EnableKeyboard
+            element.EnableKeyboard = function(self, on) Log("keyboard:" .. self._key .. ":" .. tostring(on)); return keyboard(self, on) end
+        end
+        local startMoving, stopMoving = name.StartMoving, name.StopMovingOrSizing
+        name.StartMoving = function(self) Log("startMoving"); return startMoving(self) end
+        name.StopMovingOrSizing = function(self) Log("stopMoving"); return stopMoving(self) end
+        local function Took()
+            local out = order
+            order = {}
+            return out
+        end
+        local function InOrder(entries, ...)
+            local at = 1
+            for _, want in ipairs({ ... }) do
+                local found
+                for i = at, #entries do
+                    if entries[i] == want then found = i; break end
+                end
+                assert(found, "'" .. want .. "' missing or out of order in: " .. table.concat(entries, " "))
+                at = found + 1
+            end
+        end
+        ui:Select(nil)
+        Took()
+        ui:Select(name)
+        InOrder(Took(), "keyboard:enemy.Name:true", "bindings:true", "sb")
+        ui:Select(cast)
+        InOrder(Took(), "keyboard:enemy.Name:false", "keyboard:enemy.Cast:true", "bindings:true", "sb")
+        ui:Select(nil)
+        Took()
+        local x0 = S.Config("nameplates").enemyNameOffsetX
+        cx, cy = 100, 200
+        name.scripts.OnMouseDown(name, "LeftButton")
+        InOrder(Took(), "keyboard:enemy.Name:true", "bindings:true", "sb", "startMoving")
+        -- A repaint in the middle of a drag leaves the drag alone.
+        ui:Paint()
+        Took()
+        cx = cx + 12
+        name.scripts.OnMouseUp(name, "LeftButton")
+        InOrder(Took(), "stopMoving", "write")
+        assert(S.Config("nameplates").enemyNameOffsetX == x0 + math.floor(12 / name:GetEffectiveScale() + .5),
+            "a repaint during the drag took the drag away")
+        -- Escape ends a drag without writing.
+        local x1 = S.Config("nameplates").enemyNameOffsetX
+        name.scripts.OnMouseDown(name, "LeftButton")
+        Took()
+        cx = cx + 30
+        name.scripts.OnKeyDown(name, "ESCAPE")
+        local escaped = Took()
+        InOrder(escaped, "stopMoving")
+        name.scripts.OnMouseUp(name, "LeftButton")
+        for _, entry in ipairs(escaped) do assert(entry ~= "write", "Escape wrote the drag") end
+        assert(S.Config("nameplates").enemyNameOffsetX == x1 and ui.body._selectedHandle == nil, "Escape kept the drag or the selection")
+        ui:Select(name)
+        Took()
+        name.scripts.OnKeyDown(name, "RIGHT")
+        local nudged = Took()
+        InOrder(nudged, "write")
+        for _, entry in ipairs(nudged) do assert(entry ~= "startMoving" and entry ~= "stopMoving", "an arrow moved the element by hand") end
+        M.SetPreviewArrowBindings, M.PreviewSelectionBar.Refresh, optionsNS.SetMany = setBindings, sbRefresh, setMany
+        name.StartMoving, name.StopMovingOrSizing = nil, nil
+        ui:Select(nil)
+    end
     ui.body.selectionDeps.ResetOffsets(ui.body, name)
     assert(S.Config("nameplates").enemyNameOffsetX == 0, "selected-element reset failed")
     local previousSampleKind, previousPersonal = ui.sampleKind, ui.personal

@@ -83,6 +83,17 @@ mw:RunTimers()
 local ctx = assert(M.cache.suite_damageMeter)
 local preview = assert(ui and ui.meterPreview, "page did not build its preview")
 local E, targets = P.MeterPreviewEditor, preview.targets
+-- The real capture state: the arrow bindings the menu set for this preview and the keyboard of each
+-- element (the kit keeps no memo flag of its own).
+local nudgeBox = "MSUF_SuiteMeterPreview_ActiveNudgeBox"
+for _, element in ipairs(preview.handles) do
+    element.EnableKeyboard = function(self, on) self.keyboardOn = on == true end
+end
+local function Capturing()
+    if env[nudgeBox] ~= nil then return true end
+    for _, element in ipairs(preview.handles) do if element.keyboardOn then return true end end
+    return false
+end
 assert(targets and preview.selection and #preview.layerButtons == 9, "interactive preview did not build")
 assert(preview.selected() == 1 and paints > 0, "initial window 1 preview required a picker change")
 local priorPaints = paints
@@ -172,6 +183,109 @@ assert(c.nameOffsetY == -9, "an up arrow must raise the element by 1: " .. tostr
 handle:GetScript("OnKeyDown")(handle, "DOWN")
 assert(c.nameOffsetY == -10 and preview.kit and preview.handles == preview.kit.list,
     "the meter preview runs on the kit")
+-- A drag that begins while another element is selected: the selection the press makes repaints the
+-- preview, and that repaint must neither cancel the drag nor lose its claim on the window.
+for _, other in ipairs({ targets.body, targets.header, targets.title }) do
+    E.Select(preview, other)
+    c.nameOffsetX, c.nameOffsetY = 20, -10
+    x, y = 100, 100
+    handle:GetScript("OnMouseDown")(handle, "LeftButton")
+    assert(preview.kit.drag and preview.kit.drag.entry.region == handle,
+        "pressing an element while " .. other._label .. " was selected lost the drag")
+    x = 120
+    handle:GetScript("OnMouseUp")(handle, "LeftButton")
+    assert(c.nameOffsetX == 60 and c.nameOffsetY == -10,
+        "a drag begun from " .. other._label .. " did not move the element: " .. tostring(c.nameOffsetX))
+end
+-- The claim belongs to its drag: a click, or a commit refused in combat, leaves nothing behind for
+-- the next arrow or X/Y write, which are not drags.
+E.Select(preview, handle)
+c.nameOffsetX, c.nameOffsetY = 20, -10
+x, y = 100, 100
+handle:GetScript("OnMouseDown")(handle, "LeftButton")
+handle:GetScript("OnMouseUp")(handle, "LeftButton")
+assert(handle.dragToken == nil, "a click left its drag claim behind")
+preview.selected = function() return 2 end
+handle:GetScript("OnKeyDown")(handle, "RIGHT")
+assert(c.nameOffsetX == 21, "an arrow after a click was refused as a stale drag: " .. tostring(c.nameOffsetX))
+preview.selected = function() return 1 end
+handle:GetScript("OnMouseDown")(handle, "LeftButton")
+x = 140
+preview.inCombat = true
+handle:GetScript("OnMouseUp")(handle, "LeftButton")
+preview.inCombat = false
+assert(c.nameOffsetX == 21 and handle.dragToken == nil, "combat did not refuse the commit, or left its claim behind")
+world.widgets:AdvanceTime(1)
+preview.selected = function() return 2 end
+handle:GetScript("OnKeyDown")(handle, "RIGHT")
+assert(c.nameOffsetX == 22, "an arrow after a refused drag commit was refused as a stale drag: " .. tostring(c.nameOffsetX))
+preview.selected = function() return 1 end
+c.nameOffsetX, c.nameOffsetY = 16, -10
+E.Select(preview, handle)
+-- Order, not count: what a selection, a press, a release, a repaint and an arrow do to the keyboard,
+-- the panels and the settings, as the old code did them (it is the oracle for these sequences).
+do
+    local log = {}
+    local function Log(entry) log[#log + 1] = entry end
+    local setBindings, sbRefresh, setMany = M.SetPreviewArrowBindings, M.PreviewSelectionBar.Refresh, P.SetMany
+    M.SetPreviewArrowBindings = function(box, enabled, spec) Log("bindings:" .. tostring(enabled)); return setBindings(box, enabled, spec) end
+    M.PreviewSelectionBar.Refresh = function(box) Log("sb"); return sbRefresh(box) end
+    P.SetMany = function(id, values) Log("write"); return setMany(id, values) end
+    local propsRefresh = P.MeterPreviewProperties.Refresh
+    P.MeterPreviewProperties.Refresh = function(p) Log("properties"); return propsRefresh(p) end
+    local startMoving, stopMoving = handle.StartMoving, handle.StopMovingOrSizing
+    handle.StartMoving = function(self) Log("startMoving"); return startMoving(self) end
+    handle.StopMovingOrSizing = function(self) Log("stopMoving"); return stopMoving(self) end
+    for _, element in ipairs(preview.handles) do
+        local base = element.EnableKeyboard
+        element.EnableKeyboard = function(self, on) Log("kbd:" .. tostring(self._label) .. ":" .. tostring(on)); return base(self, on) end
+    end
+    local function Took()
+        local out = log
+        log = {}
+        return out
+    end
+    local function InOrder(entries, ...)
+        local at = 1
+        for _, want in ipairs({ ... }) do
+            local found
+            for i = at, #entries do
+                if entries[i] == want then found = i; break end
+            end
+            assert(found, "'" .. want .. "' missing or out of order in: " .. table.concat(entries, " "))
+            at = found + 1
+        end
+    end
+    E.Select(preview, nil)
+    Took()
+    E.Select(preview, handle)
+    InOrder(Took(), "kbd:Name:true", "bindings:true", "sb", "properties")
+    E.Select(preview, targets.title)
+    InOrder(Took(), "kbd:Name:false", "kbd:Title:true", "bindings:true", "sb", "properties")
+    E.Select(preview, nil)
+    Took()
+    local before = c.nameOffsetX
+    x, y = 100, 100
+    handle:GetScript("OnMouseDown")(handle, "LeftButton")
+    InOrder(Took(), "kbd:Name:true", "bindings:true", "sb", "properties", "startMoving")
+    -- A repaint of the preview in the middle of a drag leaves the drag alone.
+    ui.refreshPreview()
+    Took()
+    x = 120
+    handle:GetScript("OnMouseUp")(handle, "LeftButton")
+    InOrder(Took(), "stopMoving", "write")
+    assert(c.nameOffsetX == before + 40, "a repaint during the drag took the drag away: " .. tostring(c.nameOffsetX))
+    world.widgets:AdvanceTime(1)
+    handle:GetScript("OnKeyDown")(handle, "RIGHT")
+    local nudged = Took()
+    InOrder(nudged, "write")
+    for _, entry in ipairs(nudged) do assert(entry ~= "startMoving" and entry ~= "stopMoving", "an arrow moved the element by hand") end
+    M.SetPreviewArrowBindings, M.PreviewSelectionBar.Refresh, P.SetMany = setBindings, sbRefresh, setMany
+    P.MeterPreviewProperties.Refresh = propsRefresh
+    handle.StartMoving, handle.StopMovingOrSizing = nil, nil
+    c.nameOffsetX, c.nameOffsetY = 16, -10
+    E.Select(preview, handle)
+end
 assert(P.M.PreviewSelectionBar, "exact offset editor missing")
 local deps = owner._msuf2SelectionDeps
 assert(deps.WriteOffsets(owner, handle, 33, -8))
@@ -193,7 +307,7 @@ targets.body:GetScript("OnMouseDown")(targets.body, "LeftButton")
 x = x + 5
 targets.body:GetScript("OnMouseUp")(targets.body, "LeftButton")
 assert(c.w1X == prior and c.w2X == P.catalog.damageMeter.rules.w2X.default, "preview background moved a live window")
-assert(not targets.body.drag and not targets.header.canMove, "window/header retained an Edit Mode drag")
+assert(not preview.kit.drag and not targets.header.canMove, "window/header retained an Edit Mode drag")
 for _, button in ipairs(preview.layerButtons) do
     local key = button.key
     button:GetScript("OnClick")(button, "LeftButton")
@@ -243,7 +357,7 @@ assert(preview.properties.label:GetText() == P.Tr("Applies to all windows"), "he
 ui.refreshPreview()
 assert(preview.scope == P.Tr("Applies to all windows") and preview.hint == P.Tr("Sample values. Click an element to open its settings."),
     "static header hint advertises live window movement")
-assert(not preview.selection:IsShown() and not preview.keyboardActive, "header surface retained a window offset editor")
+assert(not preview.selection:IsShown() and not Capturing(), "header surface retained a window offset editor")
 local savedWindowX, savedWindowY = c.w1X, c.w1Y
 c.w1X, c.w1Y = savedWindowX + 37, savedWindowY - 29
 local windowX, windowY = c.w1X, c.w1Y
@@ -407,12 +521,13 @@ owner:GetScript("OnEvent")(owner, "PLAYER_REGEN_ENABLED")
 E.Select(preview, handle)
 world.widgets:AdvanceTime(1)
 owner:GetScript("OnEvent")(owner, "PLAYER_REGEN_DISABLED")
-assert(not preview.keyboardActive, "combat retained keyboard capture")
+assert(not Capturing(), "combat retained keyboard capture")
 handle:GetScript("OnKeyDown")(handle, "RIGHT")
 assert(c.nameOffsetX == beforeX, "combat nudge changed settings")
 owner:GetScript("OnEvent")(owner, "PLAYER_REGEN_ENABLED")
 handle:GetScript("OnMouseDown")(handle, "LeftButton")
+assert(preview.kit.drag and Capturing(), "a press on a selected element did not start a drag with the keyboard")
 owner:GetScript("OnHide")(owner)
-assert(not handle.drag and not preview.keyboardActive, "hidden preview retained a drag or keyboard capture")
+assert(not preview.kit.drag and not Capturing(), "hidden preview retained a drag or keyboard capture")
 for _, target in ipairs(preview.handles) do assert(not target:GetScript("OnUpdate"), "preview introduced polling") end
 print("meter preview editor: exact controls/highlights, lazy tabs, drag/scale, windows, layers and lifecycle passed (" .. flavor .. ")")

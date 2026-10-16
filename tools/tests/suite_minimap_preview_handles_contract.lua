@@ -3,6 +3,15 @@
 -- check of its move onto the Suite preview kit.
 local root = assert(arg[1])
 local original, ui, P = loadfile
+-- What the page and the host's helpers do, in the order they do it; the helpers are the host's
+-- (the fixture has none), so spies stand in while the page builds.
+local order = {}
+local function Log(entry) order[#order + 1] = entry end
+local spies = {
+    NotePreviewElementMoved = function() Log("note") end,
+    ShowPreviewMoveCue = function() Log("cue") end,
+    RefreshSelectedLayerButtons = function() Log("chips") end,
+}
 loadfile = function(path)
     local chunk = assert(original(path))
     if path:match("/Pages/MinimapPreview%.lua$") then
@@ -14,6 +23,19 @@ loadfile = function(path)
                 return register(widget, ...)
             end
             chunk(addon, namespace)
+            local build = P.BuildMinimapPreview
+            P.BuildMinimapPreview = function(...)
+                local previous, create = P.M.PreviewHelpers, CreateFrame
+                P.M.PreviewHelpers = spies
+                CreateFrame = function(...)
+                    local frame = create(...)
+                    frame.RegisterForClicks = function(self, ...) self.clicksRegistered = { ... } end
+                    return frame
+                end
+                local first, second = build(...)
+                P.M.PreviewHelpers, CreateFrame = previous, create
+                return first, second
+            end
         end
     end
     return chunk
@@ -143,4 +165,62 @@ local mx, my = config.x, config.y
 Press(map, 10, 0)
 assert(config.x ~= mx or config.y ~= my, "dragging the map writes its position")
 assert(ui.body._selectedHandle == map, "dragging the map selects it")
-print("minimap preview handles: drag, threshold, combat, keyboard steps, hover, selection and hide checks passed")
+
+------------------------------------------------------------------ clicks and order
+-- Only the left button clicks a preview element: a right click selects nothing.
+for _, element in ipairs(ui.handles) do
+    assert(element.clicksRegistered and #element.clicksRegistered == 1 and element.clicksRegistered[1] == "LeftButtonUp",
+        "a movable element takes more than the left button: " .. tostring(element._label))
+end
+-- Order, as the old code did it: a press moves nothing in the panels; a release stops the move, writes,
+-- and only then selects the element and shows its cue (the cue reads the note that it moved); a selection
+-- refreshes the layer chips before the keyboard moves.
+local setMany, setBindings, helpers = P.SetMany, P.M.SetPreviewArrowBindings, P.M.PreviewHelpers
+P.M.PreviewHelpers = spies
+P.SetMany = function(id, values) Log("write"); return setMany(id, values) end
+P.M.SetPreviewArrowBindings = function(_, enabled) Log("bindings:" .. tostring(enabled)) end
+local startMoving, stopMoving, keyboard = clock.StartMoving, clock.StopMovingOrSizing, clock.EnableKeyboard
+clock.StartMoving = function(self) Log("startMoving"); return startMoving(self) end
+clock.StopMovingOrSizing = function(self) Log("stopMoving"); return stopMoving(self) end
+clock.EnableKeyboard = function(self, on) Log("keyboard:" .. tostring(on)); return keyboard(self, on) end
+local function Took()
+    local out = order
+    order = {}
+    return out
+end
+local function InOrder(entries, ...)
+    local at = 1
+    for _, want in ipairs({ ... }) do
+        local found
+        for i = at, #entries do
+            if entries[i] == want then found = i; break end
+        end
+        assert(found, "'" .. want .. "' missing or out of order in: " .. table.concat(entries, " "))
+        at = found + 1
+    end
+end
+Script(ui.compass, "OnClick", "LeftButton")
+Took()
+cx, cy = 100, 100
+Script(clock, "OnMouseDown", "LeftButton")
+local pressed = Took()
+InOrder(pressed, "startMoving")
+for _, entry in ipairs(pressed) do
+    assert(entry ~= "chips" and entry ~= "cue" and entry ~= "write" and entry:sub(1, 8) ~= "keyboard",
+        "pressing an element selected it or wrote: " .. entry)
+end
+cx = 130
+Script(clock, "OnMouseUp", "LeftButton")
+local released = Took()
+InOrder(released, "stopMoving", "write", "chips", "keyboard:true", "bindings:true", "cue")
+InOrder(released, "note", "cue")
+-- A click that did not move still selects and shows the cue, and writes nothing.
+Script(clock, "OnMouseDown", "LeftButton")
+Took()
+Script(clock, "OnMouseUp", "LeftButton")
+local clicked = Took()
+InOrder(clicked, "stopMoving", "chips", "cue")
+for _, entry in ipairs(clicked) do assert(entry ~= "write" and entry ~= "note", "a click wrote or noted a move") end
+P.SetMany, P.M.SetPreviewArrowBindings, P.M.PreviewHelpers = setMany, setBindings, helpers
+clock.StartMoving, clock.StopMovingOrSizing, clock.EnableKeyboard = nil, nil, nil
+print("minimap preview handles: drag, threshold, combat, keyboard steps, hover, selection, hide, click buttons and order checks passed")

@@ -20,7 +20,7 @@ cases = [
      "    pool.on[index] = true\n    object:Show()", "a warm repaint made widget calls"),
     ("local moved = drag.moving or math.abs(dx) + math.abs(dy) >= controller.threshold",
      "local moved = drag.moving or math.abs(dx) + math.abs(dy) >= 0", "a press that barely moves writes nothing"),
-    ("local ok = not self:Blocked() and entry.write(x, y) ~= false", "local ok = entry.write(x, y) ~= false",
+    ("local ok = not self:Blocked() and entry.write(x, y, dragged) ~= false", "local ok = entry.write(x, y, dragged) ~= false",
      "combat during a drag refuses the commit"),
     ("    Restore(drag)\n    if self.opts.drag then self.opts.drag(drag.entry.region, \"cancel\") end\n    self.host:Paint(\"cancel\")",
      "    Restore(drag)\n    if self.opts.drag then self.opts.drag(drag.entry.region, \"cancel\") end",
@@ -47,6 +47,13 @@ cases = [
      "    if controller:Selected() == entry.region then", "a kept selection must outlive its region hiding"),
     ("    if opts.keydown then return opts.keydown(frame, key) end\n", "", "keydown must replace the key handler"),
     ("    if owner then return owner[self.field] or nil end\n", "", "clearing the owner's field clears the selection"),
+    ("    if not blocked and controller.opts.drag then controller.opts.drag(region, \"press\") end\n", "",
+     "a press tells the page before the drag exists"),
+    ("    if opts.selecting then opts.selecting(region, previous) end\n", "",
+     "a selection: state, keyboard, capture, then the page"),
+    ("entry.write(x, y, dragged)", "entry.write(x, y)", "a release: stop, write as a drag, moved, done"),
+    ("    if controller.opts.drag then controller.opts.drag(entry.region, \"done\", moved) end\n", "",
+     "drag hook"),
 ]
 failed = []
 with tempfile.TemporaryDirectory() as scratch:

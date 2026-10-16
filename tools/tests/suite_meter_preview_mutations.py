@@ -15,7 +15,7 @@ cases = [
      "suite_meter_preview_editor_contract.lua", "preview painted before its owning page was shown"),
     ("DamageMeterPreviewEditor.lua", 'handle.canMove = prefix ~= "window"',
      'handle.canMove = true; if prefix == "window" then handle.offsetPrefix = "w" .. preview.selected() end',
-     "suite_meter_preview_editor_contract.lua", "window/header retained an Edit Mode drag"),
+     "suite_meter_preview_editor_contract.lua", "preview background moved a live window"),
     ("DamageMeterPreviewEditor.lua", 'window = 0, header = 1, bars = 2', 'window = 0, header = 7, bars = 2',
      "suite_meter_preview_editor_contract.lua", "header surface can intercept an element hit"),
     ("DamageMeterPreviewEditor.lua", 'previousHeight ~= preview.propertiesHeight or selectionChanged', 'previousHeight ~= preview.propertiesHeight',
@@ -93,6 +93,22 @@ cases = [
     ("Rows.lua", 'value:SetPoint("RIGHT", bar, "RIGHT", -3 + vx, style.baseline + vy)',
      'value:SetPoint("RIGHT", bar, "RIGHT", -3, style.baseline)',
      "suite_meter_menu_preview_contract.lua", "value offset did not reach native rows"),
+    ("DamageMeterPreviewEditor.lua",
+     'if phase == "press" then\n        -- Before the drag exists, as the old code did; the claim first, so the\n'
+     '        -- repaint a selection asks for finds it.\n'
+     '        handle.dragToken = { window = preview.selected(), config = P.S.Config(ID), current = P.ProfileGuard() }\n'
+     '        E.Select(preview, handle)\n',
+     'if phase == "start" then\n'
+     '        E.Select(preview, handle)\n'
+     '        handle.dragToken = { window = preview.selected(), config = P.S.Config(ID), current = P.ProfileGuard() }\n',
+     "suite_meter_preview_editor_contract.lua", "was selected lost the drag"),
+    ("DamageMeterPreviewEditor.lua", 'if phase == "done" or phase == "cancel" then handle.dragToken = nil end',
+     'if phase == "cancel" then handle.dragToken = nil end',
+     "suite_meter_preview_editor_contract.lua", "a click left its drag claim behind"),
+    ("DamageMeterPreviewEditor.lua",
+     "if dragged and not (handle.dragToken and DragCurrent(handle.dragToken, preview)) then return false end",
+     "",
+     "suite_meter_preview_editor_contract.lua", "window switch committed a stale drag"),
 ]
 for filename, before, after, test, expected in cases:
     folder = "Menu" if filename in ("Workspace.lua", "PreviewCanvas.lua") else "Pages"

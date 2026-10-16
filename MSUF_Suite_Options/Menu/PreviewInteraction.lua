@@ -54,8 +54,9 @@ local STEPS = { shift = 5, ctrl = 10 }
 local SELECTED = { selectedField = "_selectedHandle" }
 function Interaction.Handles(host, opts)
     local helpers = P.M.PreviewHelpers or {}
-    opts.steps, opts.combat = opts.steps or STEPS, P.Combat
-    opts.dedupe, opts.moved = helpers.ShouldSkipDuplicateNudge, helpers.NotePreviewElementMoved
+    opts.steps, opts.combat = opts.steps or STEPS, opts.combat or P.Combat
+    opts.dedupe = opts.dedupe or helpers.ShouldSkipDuplicateNudge
+    opts.moved = opts.moved or helpers.NotePreviewElementMoved
     opts.focus = opts.focus or function(owner, region, active)
         if P.M.SetPreviewArrowBindings then P.M.SetPreviewArrowBindings(owner, active, opts.bindings) end
         if active and helpers.FocusKeyboardTarget then helpers.FocusKeyboardTarget(owner, region, false, SELECTED)
