@@ -2096,6 +2096,23 @@ end
         name.StartMoving, name.StopMovingOrSizing = nil, nil
         ui:Select(nil)
     end
+    -- The drag threshold counts raw screen pixels, whatever the UI scale: 2 pixels never drag, 3 always do.
+    for _, scale in ipairs({ 0.5, 2 }) do
+        name.GetEffectiveScale = function() return scale end
+        ui:Select(nil)
+        local before = S.Config("nameplates").enemyNameOffsetX
+        cx, cy = 100, 200
+        name.scripts.OnMouseDown(name, "LeftButton")
+        cx = cx + 2
+        name.scripts.OnMouseUp(name, "LeftButton")
+        assert(S.Config("nameplates").enemyNameOffsetX == before, "two pixels dragged at UI scale " .. scale)
+        name.scripts.OnMouseDown(name, "LeftButton")
+        cx = cx + 3
+        name.scripts.OnMouseUp(name, "LeftButton")
+        assert(S.Config("nameplates").enemyNameOffsetX == math.floor(before + 3 / scale + .5),
+            "three pixels did not drag at UI scale " .. scale)
+    end
+    name.GetEffectiveScale = function() return 0.75 end
     ui.body.selectionDeps.ResetOffsets(ui.body, name)
     assert(S.Config("nameplates").enemyNameOffsetX == 0, "selected-element reset failed")
     local previousSampleKind, previousPersonal = ui.sampleKind, ui.personal

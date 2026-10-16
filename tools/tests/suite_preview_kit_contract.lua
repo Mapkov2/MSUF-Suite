@@ -374,6 +374,23 @@ do
     store.x, store.y = 10, -4
 end
 
+-- threshold: counted in the drag's scale by default; pixels = true counts raw screen pixels at any scale.
+for _, pixels in ipairs({ false, true }) do
+    local moves = 0
+    local counted = Controller({ pixels = pixels }, true)
+    local scaled = Frame(counted.owner)
+    scaled.scale = 2
+    counted:Add("scaled", scaled, Read, function() moves = moves + 1; return true end, { select = false })
+    Drag(2, 0, scaled)
+    assert(moves == 0, "two pixels dragged")
+    Drag(3, 0, scaled)
+    assert(moves == (pixels and 1 or 0), "three pixels at scale 2 count as " .. (pixels and "three" or "one and a half"))
+    Drag(6, 0, scaled)
+    assert(moves == (pixels and 2 or 1), "six pixels at scale 2 did not drag")
+    counted:Clear()
+end
+store.x, store.y = 10, -4
+
 -- keep: the selection outlives its region hiding; keydown replaces the key handler; the
 -- owner's field is the truth, so a page that clears it clears the selection.
 do

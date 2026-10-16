@@ -151,7 +151,8 @@ Handles.__index = Handles
 --   keys       false: no arrow keys; keydown(frame, key) replaces the key handler
 --   keep       a selected region that hides stays selected (the page clears it)
 --   steps      { shift = 10, ctrl = n, alt = n } arrow step multipliers
---   threshold  distance a press must travel to be a drag (default 3)
+--   threshold  distance a press must travel to be a drag (default 3), in units
+--              of the drag's scale; pixels = true counts raw screen pixels
 --   escape()   Escape is consumed and calls this (the page's release)
 --   combat()   refusal test (default: the Suite's combat flag)
 --   dedupe(owner, dx, dy)   true when this key press was already applied
@@ -297,6 +298,12 @@ local function Restore(drag)
     if entry.follow and not drag.blocked then entry.follow(entry.region, 0, 0) end
 end
 
+-- How far the cursor went since the press, in the unit the threshold counts.
+local function Travel(controller, drag, x, y, scale)
+    if controller.opts.pixels then return math.abs(x - drag.x) + math.abs(y - drag.y) end
+    return (math.abs(x - drag.x) + math.abs(y - drag.y)) / scale
+end
+
 local function Follow(entry)
     local controller, drag = entry.controller, entry.controller.drag
     if not drag or drag.entry ~= entry then return end
@@ -308,7 +315,7 @@ local function Follow(entry)
     if not x then return end
     local dx, dy = (x - drag.x) / scale, (y - drag.y) / scale
     if not drag.moving then
-        if math.abs(dx) + math.abs(dy) < controller.threshold then return end
+        if Travel(controller, drag, x, y, scale) < controller.threshold then return end
         drag.moving = true
         if controller.opts.drag then controller.opts.drag(entry.region, "start") end
     end
@@ -346,7 +353,7 @@ local function Up(entry, button)
     Stop(drag)
     local x, y, scale = Cursor(entry)
     local dx, dy = x and (x - drag.x) / scale or 0, y and (y - drag.y) / scale or 0
-    local moved = drag.moving or math.abs(dx) + math.abs(dy) >= controller.threshold
+    local moved = drag.moving or x ~= nil and Travel(controller, drag, x, y, scale) >= controller.threshold
     entry.moved = moved
     if controller.opts.drag then controller.opts.drag(entry.region, "stop", moved) end
     local ok = moved and not drag.blocked and controller:Commit(entry, drag.ox + dx, drag.oy + dy, true)

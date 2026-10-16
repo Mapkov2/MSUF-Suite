@@ -424,7 +424,7 @@ local function BuildKit(ui)
     ui.bindings = { ownerName = "MSUF_SuiteNameplatesPreview_NudgeOwner", activeName = "MSUF_SuiteNameplatesPreview_ActiveNudgeBox",
         buttonPrefix = "MSUF_SuiteNameplatesPreview_Nudge" }
     ui.kit = P.PreviewInteraction.Handles(ui.host, {
-        owner = body, bindings = ui.bindings,
+        owner = body, bindings = ui.bindings, pixels = true,
         escape = function()
             ui:CancelDrag()
             ui:Select(nil)
