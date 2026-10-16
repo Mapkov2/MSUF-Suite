@@ -89,7 +89,9 @@ function Preview.Build(window, profile, frames, navigate)
     local background = Texture(panel.canvas, "BACKGROUND")
     background:SetAllPoints(panel.canvas)
     background:SetColorTexture(.025, .035, .045, 1)
-    panel.regions = {}
+    panel.kit = Suite.PreviewKit.NewHost(nil, { frame = panel,
+        pools = { region = function() return Region(panel.canvas) end } })
+    panel.regions = panel.kit:List("region")
     panel.viewport = Appearance.Label(panel, "GameFontHighlightSmall", 14, -226, 312, 18)
     panel.frameSource = Appearance.Label(panel, "GameFontHighlightSmall", 14, -248, 312, 18)
     panel.info = Appearance.Label(panel, "GameFontHighlightSmall", 14, -274, 312, 18, "section")
@@ -116,11 +118,7 @@ local function Paint(panel, profile, frames, layout, overrides, viewport)
     panel.canvas:ClearAllPoints()
     panel.canvas:SetPoint("TOPLEFT", panel, "TOPLEFT", 14 + (312 - width) / 2, -44 - (175.5 - height) / 2)
     for index, item in ipairs(scene) do
-        local region = panel.regions[index]
-        if not region then
-            region = Region(panel.canvas)
-            panel.regions[index] = region
-        end
+        local region = panel.kit:Acquire("region", index)
         region.panel, region.label, region.module = panel, item.label, item.module
         region:ClearAllPoints()
         region:SetPoint("TOPLEFT", panel.canvas, "TOPLEFT", item.x * scale, -item.y * scale)
@@ -130,9 +128,8 @@ local function Paint(panel, profile, frames, layout, overrides, viewport)
         -- A minimap sample has its own art, independent of the menu theme.
         region.fill:SetTexture(item.kind == "map" and "Interface\\Minimap\\UI-Minimap-Background" or WHITE)
         Details(region, item, color)
-        region:Show()
     end
-    for index = #scene + 1, #panel.regions do panel.regions[index]:Hide() end
+    panel.kit:ReleaseAll("region", #scene + 1)
     return scene
 end
 

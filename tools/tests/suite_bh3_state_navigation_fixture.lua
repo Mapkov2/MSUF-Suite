@@ -17,9 +17,13 @@ P.Combat = function() return false end
 P.Get = function() return nil end
 P.Meta = function() return {} end
 P.SetTranslatedText = noop
+-- The preview kit, from the shipped file, on the namespace it needs.
+local core = { IsSecret = function() return false end, Number = function(v) return type(v) == "number" end,
+  InCombat = function() return false end }
+assert(loadfile(arg[1] .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", core)
 P.Suite = { Client = { isForever = false }, NameplateStyle = { NativeBit = function() return false end,
-  CreateBorder = function() return {} end, PaintBorder = noop } }
-P.PreviewInteraction = { Outline = noop }
+  CreateBorder = function() return {} end, PaintBorder = noop }, PreviewKit = core.PreviewKit }
+P.PreviewInteraction = { Outline = noop, Handles = function(host, opts) return core.PreviewKit.Handles(host, opts) end }
 P.NameplatesEditorMarkers = {}
 P.NameplatesPreviewLayout = { Apply = noop }
 assert(loadfile(ROOT .. "NameplatesEditorLayers.lua"))("MSUF_Suite_Options", P)
@@ -34,10 +38,12 @@ local function Handle()
   function h:IsShown() return true end
   return h
 end
-local ui = setmetatable({ handles = {}, sampleKind = "enemy",
-  body = { IsShown = function() return true end },
+local ui = setmetatable({ sampleKind = "enemy",
+  body = { IsShown = function() return true end, EnableKeyboard = noop, SetPropagateKeyboardInput = noop,
+    SetScript = noop },
   sections = { enemy = "SECTION:enemy", auras = "SECTION:auras", signals = "SECTION:signals" } },
   { __index = Editor })
+Editor.BuildKit(ui)
 
 for _, case in ipairs({
   { "enemy.Auras", "enemy", "enemyNpcDebuffs" },

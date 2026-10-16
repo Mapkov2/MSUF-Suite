@@ -349,6 +349,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/InstallerModules.lua"))("MSUF_Suite", 
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerFrameColors.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreviewModel.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerScreenshot.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreview.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
 local installerFinished = 0
@@ -754,6 +755,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite",
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerFrameColors.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreviewModel.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerScreenshot.lua"))("MSUF_Suite", Suite)
+    assert(loadfile(root .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerPreview.lua"))("MSUF_Suite", Suite)
     assert(loadfile(root .. "/MSUF_Suite/Core/Installer.lua"))("MSUF_Suite", Suite)
     Suite.Installer.Open()

@@ -39,7 +39,7 @@ cases = [
      "end", "hiding a region ends its drag and selection"),
     ("    region:SetScript(\"OnUpdate\", nil)\n    if drag.native", "    if drag.native",
      "release ends the follow and writes"),
-    ("if (handles and handles.drag and handles.drag.native) or (opts.busy and opts.busy(self)) then return false end", "",
+    ("if handles and handles.drag and handles.drag.native then return false end", "",
      "a native drag holds the paint"),
     ("    if ok and controller.opts.moved then controller.opts.moved(entry.region) end\n", "",
      "moved hook"),

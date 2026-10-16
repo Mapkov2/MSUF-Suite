@@ -325,7 +325,7 @@ function Preview.Build(ctx, parent, y, width, height, selected)
     ui.selection = P.PreviewInteraction.Bar(ctx, host, width, "Click the preview to open the matching settings.")
     ui.selection:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
     ui.Paint = function() Paint(ui) end
-    M.TrackRefresh(ctx, function() if ui.active or host:IsVisible() then ui.Paint() end end)
+    M.TrackRefresh(ctx, function() if ui.kit.active or host:IsVisible() then ui.Paint() end end)
     Preview.Watch(ui)
     ui.Paint()
     return height

@@ -11,7 +11,7 @@ local DEFAULT_HINT = "Click to select; drag or use arrow keys; edit exact X/Y be
 local Data = P.MinimapPreviewData
 local TEXTS, ICONS, LAYERS, ORNAMENT_EDGES = Data.TEXTS, Data.ICONS, Data.LAYERS, Data.ORNAMENT_EDGES
 local Clamp, Tint, SetIcon = Data.Clamp, Data.Tint, Data.SetIcon
-local OffsetPrefix, OffsetKeys, PaintElements = Data.OffsetPrefix, Data.OffsetKeys, Data.PaintElements
+local OffsetKeys, PaintElements = Data.OffsetKeys, Data.PaintElements
 local Kit = Suite.PreviewKit
 
 -- Right-clicking a layer chip opens the accordion that styles it.

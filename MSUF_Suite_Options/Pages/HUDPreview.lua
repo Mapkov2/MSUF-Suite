@@ -193,15 +193,20 @@ function Preview.Build(ctx, parent, width)
     local height = 326
     HM.SetFixedPreviewHeight(parent, height)
     parent:SetHeight(height)
-    host:SetScript("OnShow", function() if ui.id then Select(ui, ui.id) end end)
-    host:SetScript("OnHide", function()
-        host:UnregisterAllEvents()
-        Preview.Stop(ui)
-    end)
+    -- The kit host opens with the preview; the AFK events repaint once a frame.
+    ui.kit = Suite.PreviewKit.NewHost(nil, { frame = host, paint = function() Paint(ui) end,
+        activate = function() if ui.id then Select(ui, ui.id) end end,
+        deactivate = function()
+            host:UnregisterAllEvents()
+            Preview.Stop(ui)
+        end })
+    host:SetScript("OnShow", function() ui.kit:Activate() end)
+    host:SetScript("OnHide", function() ui.kit:Deactivate() end)
     host:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_MODEL_CHANGED" and (Suite.IsSecret(unit) or unit ~= "player") then return end
-        Paint(ui)
+        ui.kit:Request("event")
     end)
+    if host:IsVisible() then ui.kit:Activate() end
     M.TrackRefresh(ctx, function() Paint(ui) end)
     return ui
 end

@@ -25,7 +25,7 @@ Host.__index = Host
 -- opts: frame (a frame the page's layout already owns; else one is made),
 -- build(host) once, activate/deactivate(host), paint(host, reason),
 -- pools = { kind = create(host, index) }, animate(host) with interval for
--- SetAnimate, busy(host) true while the page holds its canvas.
+-- SetAnimate.
 function Kit.NewHost(parent, opts)
     opts = opts or EMPTY
     local host = setmetatable({ opts = opts, frame = opts.frame, pools = {} }, Host)
@@ -39,16 +39,9 @@ function Kit.NewHost(parent, opts)
     return host
 end
 
--- Opens and closes with the frame, for a frame the page's layout shows.
-function Host:Follow()
-    self.frame:HookScript("OnShow", function() self:Activate() end)
-    self.frame:HookScript("OnHide", function() self:Deactivate() end)
-    if self.frame:IsVisible() then self:Activate() end
-    return self
-end
-
+-- Opens the host. What was built stays built; the activate hook runs on every
+-- call (it is the page's "now shown" work, so it must be safe to repeat).
 function Host:Activate()
-    if self.active then return self end
     self.active = true
     if not self.built then
         self.built = true
@@ -70,14 +63,13 @@ function Host:Deactivate()
     return self
 end
 
--- Paints now. A native drag or a page that is busy defers the paint to the
--- end of the gesture.
+-- Paints now. A native drag defers the paint to the end of the gesture.
 function Host:Paint(reason)
-    local opts, handles = self.opts, self.handles
+    local handles = self.handles
     self.reason = reason or self.reason or true
-    if (handles and handles.drag and handles.drag.native) or (opts.busy and opts.busy(self)) then return false end
+    if handles and handles.drag and handles.drag.native then return false end
     reason, self.reason, self.queued = self.reason, nil, false
-    if opts.paint then opts.paint(self, reason) end
+    if self.opts.paint then self.opts.paint(self, reason) end
     return true
 end
 
@@ -149,11 +141,6 @@ function Host:List(kind)
     return pool.list
 end
 
-function Host:Count(kind)
-    local pool = self.pools[kind]
-    return pool and pool.used or 0
-end
-
 ------------------------------------------------------------------ handles
 local Handles = {}
 Handles.__index = Handles
@@ -167,7 +154,6 @@ Handles.__index = Handles
 --   threshold  distance a press must travel to be a drag (default 3)
 --   escape()   Escape is consumed and calls this (the page's release)
 --   combat()   refusal test (default: the Suite's combat flag)
---   typing()   true while a text box owns the keyboard
 --   dedupe(owner, dx, dy)   true when this key press was already applied
 --   mark(region, selected)  selection look; tip(region, entering)  hover
 --   focus(owner, region, active)  the page's keyboard capture
@@ -193,7 +179,6 @@ function Handles:Blocked()
 end
 
 function Handles:Typing()
-    if self.opts.typing then return self.opts.typing() end
     local focus = GetCurrentKeyBoardFocus()
     return focus ~= nil and focus:IsObjectType("EditBox")
 end

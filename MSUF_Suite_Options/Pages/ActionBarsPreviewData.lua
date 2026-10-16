@@ -94,25 +94,21 @@ local EVENTS = { "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BON
     "UPDATE_SHAPESHIFT_FORMS", "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_COOLDOWN",
     "PET_BAR_UPDATE", "PET_UI_UPDATE", "PET_BAR_UPDATE_COOLDOWN", "UNIT_PET",
     "MODIFIER_STATE_CHANGED", "PLAYER_TARGET_CHANGED", "PLAYER_ENTERING_WORLD" }
+-- The kit host registers the events while the preview shows and repaints once
+-- a frame however many arrive; the events themselves stay here.
 function Preview.Watch(ui)
     local host = ui.host
+    ui.kit = Suite.PreviewKit.NewHost(nil, { frame = host, paint = function() ui.Paint() end,
+        activate = function(kit)
+            for _, event in ipairs(EVENTS) do host:RegisterEvent(event) end
+            kit:Paint("show")
+        end,
+        deactivate = function() host:UnregisterAllEvents() end })
     host:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_PET" and (IsSecret(unit) or unit ~= "player") then return end
-        if ui.pending then return end
-        ui.pending = true
-        C_Timer.After(0, function()
-            ui.pending = false
-            if ui.active then ui.Paint() end
-        end)
+        ui.kit:Request("event")
     end)
-    host:SetScript("OnShow", function()
-        ui.active = true
-        for _, event in ipairs(EVENTS) do host:RegisterEvent(event) end
-        ui.Paint()
-    end)
-    host:SetScript("OnHide", function()
-        ui.active = false
-        host:UnregisterAllEvents()
-    end)
-    if host:IsVisible() then host:GetScript("OnShow")() end
+    host:SetScript("OnShow", function() ui.kit:Activate() end)
+    host:SetScript("OnHide", function() ui.kit:Deactivate() end)
+    if host:IsVisible() then ui.kit:Activate() end
 end

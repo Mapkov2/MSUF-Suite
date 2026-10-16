@@ -97,7 +97,8 @@ host:SetAnimate(true)
 assert(#timers.after == 0 and timers.tickers == 0, "a closed host holds a timer or queued work")
 host:Activate()
 host:Activate()
-assert(builds == 1 and activations == 1 and host.frame:IsShown(), "activation builds once and shows the frame")
+assert(builds == 1 and activations == 2 and host.frame:IsShown(),
+    "activation builds once, runs its hook on every call and shows the frame")
 host:Request("a")
 host:Request("b")
 host:Request("c")
@@ -114,18 +115,16 @@ Flush()
 assert(paints[#paints] ~= "late", "a request outlived the closing of its host")
 assert(not host:SetAnimate(true) and timers.tickers == 0, "a closed host started a ticker")
 host:Activate()
-assert(builds == 1 and activations == 2, "reopening reuses what was built")
+assert(builds == 1 and activations == 3, "reopening reuses what was built")
 host:Deactivate()
 
--- A frame the page's layout shows opens and closes the host.
+-- A frame the page's layout owns is never shown or hidden by its host.
 local adopted = Frame()
 adopted:Hide()
-local followed = Kit.NewHost(nil, { frame = adopted, paint = function() end }):Follow()
-assert(not followed.active and not followed.owned, "an adopted frame is not forced open")
-adopted:Show()
-assert(followed.active, "showing the frame did not open the host")
-adopted:Hide()
-assert(not followed.active, "hiding the frame did not close the host")
+local own = Kit.NewHost(nil, { frame = adopted, paint = function() end }):Activate()
+assert(own.active and not own.owned and not adopted:IsShown(), "an adopted frame is not forced open")
+own:Deactivate()
+assert(not own.active and not adopted:IsShown(), "closing an adopted frame shows nothing")
 
 ------------------------------------------------------------------ pools
 local made = {}
@@ -136,7 +135,7 @@ local pooled = Kit.NewHost(nil, { pools = { hit = function(_, index)
     return hit
 end } })
 local first, second = pooled:Acquire("hit"), pooled:Acquire("hit")
-assert(first ~= second and #made == 2 and first:IsShown() and pooled:Count("hit") == 2, "sequential acquire")
+assert(first ~= second and #made == 2 and first:IsShown() and second:IsShown(), "sequential acquire")
 assert(pooled:Acquire("hit", 1) == first and #made == 2, "an index returns the same object")
 calls.show, calls.hide = 0, 0
 pooled:Acquire("hit", 1)
@@ -144,10 +143,11 @@ pooled:Acquire("hit", 2)
 pooled:ReleaseAll("hit", 3)
 assert(calls.show == 0 and calls.hide == 0, "a warm repaint made widget calls")
 pooled:ReleaseAll("hit", 2)
-assert(first:IsShown() and not second:IsShown() and pooled:Count("hit") == 1 and pooled:List("hit")[2] == second,
+assert(first:IsShown() and not second:IsShown() and pooled:List("hit")[2] == second,
     "release hides from the given place on")
 pooled:ReleaseAll("hit")
-assert(not first:IsShown() and pooled:Count("hit") == 0, "release without a place hides all")
+assert(not first:IsShown(), "release without a place hides all")
+assert(pooled:Acquire("hit") == first, "a released pool hands out its first object again")
 
 ------------------------------------------------------------------ handles
 local writes, store, painted, hooks = {}, { x = 10, y = -4 }, 0, {}
@@ -157,7 +157,7 @@ local main = Kit.NewHost(nil, { frame = body, paint = function()
     painted = painted + 1
     if placed then placed.points = { { "CENTER", body, "CENTER", store.x, store.y } } end
 end })
-main:Follow()
+main:Activate()
 local handles
 local function Controller(extra, own)
     local opts = { escape = function() handles:Release() end, steps = { shift = 5, ctrl = 10 },
@@ -311,9 +311,9 @@ region:Hide()
 assert(not handles.drag and handles.selected == nil, "hiding a region ends its drag and selection")
 region:Show()
 handles:Select("bar")
-body:Hide()
-assert(handles.selected == nil and not main.active, "closing the host drops the selection")
-body:Show()
+main:Deactivate()
+assert(handles:Selected() == nil and not main.active, "closing the host drops the selection")
+main:Activate()
 -- A click carries whether the press moved.
 hooks = {}
 region.scripts.OnClick(region, "RightButton")

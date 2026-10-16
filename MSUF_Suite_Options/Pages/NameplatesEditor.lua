@@ -451,6 +451,7 @@ local function BuildKit(ui)
     })
     ui.handles, body._handleList = ui.kit.list, ui.kit.list
 end
+Editor.BuildKit = BuildKit
 
 function Editor.Create(ctx, builder, sections)
     local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 162, gap = 8 })
