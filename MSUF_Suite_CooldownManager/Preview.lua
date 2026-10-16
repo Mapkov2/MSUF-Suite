@@ -106,7 +106,6 @@ end
 local durations = setmetatable({}, { __mode = "k" })
 local touched = {}   -- entry -> true while simulated
 local canvases = {}  -- canvas holders by parent
-local ticker
 local tick = 0
 -- Timer-bar charge segments of a canvas icon at rest.
 local SAMPLE_CHARGES = { maxCharges = 3, currentCharges = 2, isActive = false }
@@ -303,6 +302,14 @@ local function Step()
     tick = (tick + 1) % SIM_LOOP
 end
 
+-- The preview kit's host owns the one ticker. It is open while the options
+-- page runs the preview, so no timer exists with the page closed.
+local host
+local function Host()
+    host = host or NS.PreviewKit.NewHost(nil, { animate = Step, interval = SIM_STEP })
+    return host
+end
+
 -- Starts the loop over: every icon ready, the first casts at once.
 local function Restart()
     StopAll()
@@ -317,14 +324,11 @@ function Preview.Simulate(on)
     if on and (Preview.mode ~= "options" or NS.IsCombatLocked() or not C.M.active) then on = false end
     if on == Preview.sim then return on end
     Preview.sim = on
-    if ticker then
-        ticker:Cancel()
-        ticker = nil
-    end
     if on then
-        ticker = C_Timer.NewTicker(SIM_STEP, Step)
+        Host():Activate():SetAnimate(true)
         Restart()
     else
+        Host():Deactivate()
         StopAll()
     end
     return on

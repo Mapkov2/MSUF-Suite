@@ -14,8 +14,9 @@ local COMPACT, EXPANDED, STRIP_ROW = 300, 460, 24
 -- and the rim around it that still drags the whole bar.
 local LINE, RIM = 42, 6
 local PLUS, PLUS_GAP = Page.PREVIEW_PLUS, Page.PREVIEW_PLUS_GAP
-local max, min, floor, abs, format = math.max, math.min, math.floor, math.abs, string.format
-local BuildDrag, DragCancel = Page.BuildPreviewIcons, Page.CancelPreviewDrag
+local max, min, floor, format = math.max, math.min, math.floor, string.format
+local Kit = P.Suite.PreviewKit
+local BuildDrag, DragCancel, NewHit = Page.BuildPreviewIcons, Page.CancelPreviewDrag, Page.NewPreviewHit
 local PaintHits, PaintMarks, FollowPopover = Page.PaintPreviewIcons, Page.PaintPreviewMarks, Page.FollowPreviewPopover
 -- English source text, each one translated as a whole (T.Font translates the
 -- hint line, the tip goes through Tr), so every language orders its parts.
@@ -196,20 +197,11 @@ local function PaintStrip(ui, width)
 end
 
 ------------------------------------------------------------------ preview
-local function HandleEnter(self)
-    if P.Combat() then return end
-    self.hover:Show()
-    local slot = Page.selected
-    Page.ShowTip(self, Page.BarName(slot), Page.Movable(slot) and Tr("Drag the bar's edge to move it on screen.")
-        or Page.AttachedText(slot),
-        Tr("Click to open its Basics: size and attachment."))
-end
-local function HandleLeave(self)
-    self.hover:Hide()
-    Page.HideTip(self)
-end
 -- The drawing sits left of center by half the + tile beside it (stage
--- units, counted in the drawing's own scale), so both stay centered.
+-- units, counted in the drawing's own scale), so both stay centered. The
+-- drawn bar follows the cursor while the button is held (the only per-frame
+-- work, cleared on release, hide and combat); the release writes the new
+-- offset and the next paint centers the drawing again.
 local function Place(self, dx, dy)
     local frame = self.target
     if not frame then return end
@@ -218,64 +210,32 @@ local function Place(self, dx, dy)
     frame:ClearAllPoints()
     frame:SetPoint("CENTER", self.stage, "CENTER", ((self.baseX or 0) + dx) / own, dy / own)
 end
--- The drawn bar follows the cursor while the button is held (the only
--- per-frame work, cleared on release, hide and combat); the release writes
--- the new offset and the next paint centers the drawing again.
-local function Recenter(self) Place(self, 0, 0) end
-local function StopDrag(self)
-    self:SetScript("OnUpdate", nil)
-    self.dragging = nil
-end
-local function HandleDrag(self)
-    if P.Combat() or not self.downX then
-        self.downX, self.downY = nil, nil
-        StopDrag(self)
-        Recenter(self)
-        return
-    end
-    local x, y = Page.Cursor()
-    if not x then return end
-    local scale = Page.Scale(_G.UIParent)
-    local dx, dy = (x - self.downX) / scale, (y - self.downY) / scale
-    if not self.dragging then
-        if abs(dx) + abs(dy) < 3 then return end
-        self.dragging = true
+local function HandleTip(self, entering)
+    if not entering then
+        self.hover:Hide()
         Page.HideTip(self)
-    end
-    Place(self, dx, dy)
-end
-local function HandleDown(self, button)
-    if button ~= "LeftButton" or P.Combat() then return end
-    self.downX, self.downY = Page.Cursor()
-    if self.downX and Page.Movable(Page.selected) then self:SetScript("OnUpdate", HandleDrag) end
-end
-local function HandleUp(self, button)
-    if button ~= "LeftButton" or not self.downX then return end
-    local startX, startY = self.downX, self.downY
-    local dragged = self.dragging
-    self.downX, self.downY = nil, nil
-    StopDrag(self)
-    local x, y = Page.Cursor()
-    if not x or P.Combat() then
-        Recenter(self)
         return
     end
-    local scale = Page.Scale(_G.UIParent)
-    local dx, dy = (x - startX) / scale, (y - startY) / scale
-    if not dragged and abs(dx) + abs(dy) < 3 then
-        Page.FocusSection("basics")
-        return
-    end
+    if P.Combat() then return end
+    self.hover:Show()
     local slot = Page.selected
-    if not Page.Movable(slot) then
-        Page.Note(Page.AttachedText(slot), nil, true)
-        return
-    end
-    if not Page.WriteOffsets(P.Get(ID, Page.Key("x")) + dx, P.Get(ID, Page.Key("y")) + dy) then Recenter(self) end
+    Page.ShowTip(self, Page.BarName(slot), Page.Movable(slot) and Tr("Drag the bar's edge to move it on screen.")
+        or Page.AttachedText(slot),
+        Tr("Click to open its Basics: size and attachment."))
 end
-local function HandleHide(self)
-    self.downX, self.downY = nil, nil
-    StopDrag(self)
+-- A drag that starts hides the tip. A release that did not move is a click
+-- (Basics opens); one that moved a bar that cannot move says why.
+local function HandleDrag(self, phase, moved)
+    self.dragging = phase == "start" or nil
+    if phase == "start" then
+        Page.HideTip(self)
+    elseif phase == "stop" and not P.Combat() then
+        if not moved then
+            Page.FocusSection("basics")
+        elseif not Page.Movable(Page.selected) then
+            Page.Note(Page.AttachedText(Page.selected), nil, true)
+        end
+    end
 end
 
 -- Spec, the bar's place (so a drag or nudge shows its result) and the
@@ -371,6 +331,7 @@ local function BuildCanvas(ui, body)
 end
 
 -- The rim around the drawing: hover, click for Basics, drag to move.
+local function ReadOffsets() return P.Get(ID, Page.Key("x")), P.Get(ID, Page.Key("y")) end
 local function BuildHandle(ui)
     local canvas = ui.canvas
     local handle = CreateFrame("Button", nil, canvas)
@@ -382,17 +343,15 @@ local function BuildHandle(ui)
     handle.hover:SetColorTexture(r, g, b, 0.14)
     handle.hover:Hide()
     handle._key, handle._color = "bar", { r, g, b }
-    handle:SetScript("OnEnter", HandleEnter)
-    handle:SetScript("OnLeave", HandleLeave)
-    handle:SetScript("OnMouseDown", HandleDown)
-    handle:SetScript("OnMouseUp", HandleUp)
-    handle:SetScript("OnHide", HandleHide)
     handle.stage = ui.stage
     handle:Hide()
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(handle, P.Meta(PAGE, ID, "preview.bar", "action", SECTION), "Selected bar", "button")
     end
     ui.handle = handle
+    ui.kit:Add("bar", handle, ReadOffsets, Page.WriteOffsets, { select = false, clicks = { "LeftButtonUp" },
+        follow = Place, can = function() return Page.Movable(Page.selected) end,
+        scale = function() return Page.Scale(_G.UIParent) end })
 end
 
 -- One line under the canvas: the hint, or the last note with its Undo.
@@ -422,7 +381,6 @@ end
 
 -- Menu2's selection bar (expanded preview): nudges and resets the selected
 -- bar's x/y; its settings button opens Basics.
-local function ReadOffsets() return P.Get(ID, Page.Key("x")), P.Get(ID, Page.Key("y")) end
 local function BuildSelection(ui, body)
     local bar = M.PreviewSelectionBar
     if not (bar and bar.Create) then return end
@@ -475,7 +433,7 @@ local function Render(ui)
     handle.target = frame
     if frame then
         -- A drag in progress keeps the drawing under the cursor.
-        if not handle.dragging then Recenter(handle) end
+        if not handle.dragging then Place(handle, 0, 0) end
         -- The rim around the icons still drags the whole bar.
         if handle.frame ~= frame then
             handle.frame = frame
@@ -540,6 +498,13 @@ local function BuildBody(section, ui)
     body:SetHeight(ui.compactHeight)
     body:SetClipsChildren(true)
     body._cdmUI, ui.previewBody = ui, body
+    ui.host = Kit.NewHost(nil, { frame = body, paint = function() Paint(ui) end, activate = Page.Activate,
+        pools = { hit = function(_, index) return NewHit(ui, index) end },
+        deactivate = function()
+            DragCancel(ui.drag)
+            Page.Deactivate(ui)
+        end })
+    ui.kit = Kit.Handles(ui.host, { owner = body, keys = false, combat = P.Combat, tip = HandleTip, drag = HandleDrag })
     Page.BuildTargetPicker(ui, body)
     BuildStrip(ui, body)
     BuildCanvas(ui, body)
@@ -555,10 +520,7 @@ local function BuildBody(section, ui)
     ui.PaintPreview = function() Paint(ui) end
     ui.PaintHitMarks = function() PaintMarks(ui) end
     body.ApplyCompactPreviewPresentation = ApplyCompact
-    body:SetScript("OnHide", function()
-        DragCancel(ui.drag)
-        Page.Deactivate(ui)
-    end)
+    body:SetScript("OnHide", function() ui.host:Deactivate() end)
     return body
 end
 
@@ -601,11 +563,11 @@ function Page.BuildPreview(ctx, b, ui)
             Page.ui = ui
             ui.live = true
             if ui.grid then ui.grid.valid = false end
-            Page.Activate()
+            ui.host:Activate()
             if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview() then
                 expander:Open("SUITE_COOLDOWN_MANAGER_PREVIEW_ACTIVE")
             end
-            Paint(ui)
+            ui.host:Paint("activate")
             -- The runtime may have loaded just now: repaint tiles and gates.
             P.Refresh()
         end

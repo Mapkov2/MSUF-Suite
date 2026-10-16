@@ -297,7 +297,6 @@ local function NewHit(ui, index)
     hit:SetScript("OnMouseUp", HitUp)
     hit:SetScript("OnClick", HitClick)
     hit:SetScript("OnHide", HitHide)
-    ui.hits[index] = hit
     return hit
 end
 
@@ -374,7 +373,7 @@ local function PaintHits(ui, frame, editable)
     for i = 1, count do
         local region = items[i]
         if not region then break end
-        local hit = ui.hits[i] or NewHit(ui, i)
+        local hit = ui.host:Acquire("hit", i)
         if hit.region ~= region then
             hit.region = region
             hit:ClearAllPoints()
@@ -388,20 +387,10 @@ local function PaintHits(ui, frame, editable)
             hit.dimmed = dim
             hit.dim:SetShown(dim)
         end
-        if not hit.pvShown then
-            hit.pvShown = true
-            hit:Show()
-        end
         shown = i
     end
-    for i = shown + 1, #ui.hits do
-        local hit = ui.hits[i]
-        hit.key = nil
-        if hit.pvShown ~= false then
-            hit.pvShown = false
-            hit:Hide()
-        end
-    end
+    for i = shown + 1, #ui.hits do ui.hits[i].key = nil end
+    ui.host:ReleaseAll("hit", shown + 1)
     ui.hitCount, ui.kind = shown, frame and frame.kind or KIND.COOLDOWN
     local plus, show = ui.plus, editable and frame ~= nil
     if show then
@@ -448,7 +437,7 @@ end
 -- (its OnUpdate runs only during a drag) are made once per layout.
 local function BuildDrag(ui)
     local canvas = ui.canvas
-    ui.hits, ui.hitCount = {}, 0
+    ui.hits, ui.hitCount = ui.host:List("hit"), 0
     ui.plus = NewPlus(ui)
     local drag = {}
     drag.host = CreateFrame("Frame", nil, canvas)
@@ -466,6 +455,7 @@ end
 
 
 -- Exports for the preview (CooldownManagerPreview.lua).
+Page.NewPreviewHit = NewHit
 Page.BuildPreviewIcons = BuildDrag
 Page.PaintPreviewIcons = PaintHits
 Page.PaintPreviewMarks = PaintMarks

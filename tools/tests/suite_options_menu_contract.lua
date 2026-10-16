@@ -1995,6 +1995,34 @@ end
     assert(historyWrites == historyBefore, "selection-only click wrote a profile/history entry")
     name.scripts.OnKeyDown(name, "RIGHT")
     assert(S.Config("nameplates").enemyNameOffsetX == 21, "arrow key did not nudge selected name")
+    -- The preview kit's handle controller keeps the menu's steps (Shift 5, Ctrl 10), eats
+    -- Escape, and ends hover and drag on the element exactly as the preview's own code did.
+    IsShiftKeyDown = function() return true end
+    name.scripts.OnKeyDown(name, "RIGHT")
+    IsShiftKeyDown = function() return false end
+    assert(S.Config("nameplates").enemyNameOffsetX == 26, "Shift must step a preview element by 5")
+    IsControlKeyDown = function() return true end
+    name.scripts.OnKeyDown(name, "LEFT")
+    IsControlKeyDown = function() return false end
+    assert(S.Config("nameplates").enemyNameOffsetX == 16, "Ctrl must step a preview element by 10")
+    name.scripts.OnKeyDown(name, "UP")
+    assert(S.Config("nameplates").enemyNameOffsetY == -7 and name.propagateKeyboard == false,
+        "a nudged arrow must not reach the game")
+    name.scripts.OnKeyDown(name, "DOWN")
+    assert(S.Config("nameplates").enemyNameOffsetY == -8, "down must undo up")
+    ui:Select(nil)
+    name.scripts.OnKeyDown(name, "RIGHT")
+    assert(S.Config("nameplates").enemyNameOffsetX == 16 and name.propagateKeyboard == true,
+        "an arrow with nothing selected must go on to the game")
+    ui.body.scripts.OnKeyDown(ui.body, "ESCAPE")
+    assert(ui.body.propagateKeyboard == false and not ui.body._selectedHandle, "Escape is the preview's own key")
+    ui:Select(name)
+    assert(name.keyboardEnabled == true and ui.body._selectedHandle == name, "selecting hands the element the keyboard")
+    name.scripts.OnEnter(name)
+    assert(ui.hint.text:find("Drag to move", 1, true), "hovering an element must say how to move it")
+    name.scripts.OnLeave(name)
+    assert(ui.hint.text == ui.help, "leaving must bring the preview's own help back")
+    assert(ui.kit and ui.host and ui.handles == ui.kit.list, "the nameplate preview runs on the kit")
     ui.body.selectionDeps.ResetOffsets(ui.body, name)
     assert(S.Config("nameplates").enemyNameOffsetX == 0, "selected-element reset failed")
     local previousSampleKind, previousPersonal = ui.sampleKind, ui.personal

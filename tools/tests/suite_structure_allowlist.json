@@ -1235,6 +1235,12 @@
   {
    "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
    "kind": "addon",
+   "reason": "P.M is the public MSUF Menu2 export. SetPreviewArrowBindings (Shell/Menu2/MSUF_Menu2_Support.lua on the Main and Classic hosts) routes arrow keys to the selected preview; without it the owner's and the region's own OnKeyDown handle them.",
+   "symbol": "P.M.SetPreviewArrowBindings"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
    "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
    "symbol": "chrome (= P.M.PreviewHelpers)"
   },
@@ -1243,6 +1249,18 @@
    "kind": "addon",
    "reason": "P.M is the public MSUF Menu2 export, not a Suite-owned module. Older hosts may lack preview chrome or AddTooltip; selection and navigation still work without either helper. suite_preview_interaction_contract covers both hosts.",
    "symbol": "chrome.ApplyPreviewChrome (= P.M.PreviewHelpers)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) that gives the selected region the keyboard; without it the kit's own key scripts still take the arrows.",
+   "symbol": "helpers.FocusKeyboardTarget"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
+   "kind": "addon",
+   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) paired with FocusKeyboardTarget; without the pair no keyboard capture exists to release.",
+   "symbol": "helpers.ReleaseKeyboardCapture"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Register.lua",
@@ -1951,42 +1969,6 @@
    "kind": "addon",
    "reason": "H is MSUF2.PreviewHelpers (Shell/Menu2/MSUF_Menu2_PreviewHelpers.lua on the Main and Classic hosts, {} without it). ApplyPreviewChrome gives the canvas the shared preview frame; without it the canvas stays plain.",
    "symbol": "H.ApplyPreviewChrome"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts). Arrow nudges stop while a menu text input has focus; without it the GetCurrentKeyBoardFocus EditBox check below still applies.",
-   "symbol": "H.IsTextInputFocused"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) that tells the host preview history about a drag; without it the move is only saved.",
-   "symbol": "H.NotePreviewElementMoved"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) with the host's nudge step; without it the editor uses Ctrl 10, Shift 5, otherwise 1 pixel.",
-   "symbol": "H.NudgeStep"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) paired with FocusKeyboardTarget; without the pair no keyboard capture exists to release.",
-   "symbol": "H.ReleaseKeyboardCapture"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2.PreviewHelpers export (MSUF_Menu2_PreviewHelpers.lua, Main and Classic hosts) that drops a key repeat delivered twice by the host bindings; without it every delivery nudges.",
-   "symbol": "H.ShouldSkipDuplicateNudge"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",
-   "kind": "addon",
-   "reason": "MSUF2 export (Shell/Menu2/MSUF_Menu2_Support.lua on the Main and Classic hosts) that routes arrow keys to the selected preview; without it the body's own OnKeyDown handles them.",
-   "symbol": "M.SetPreviewArrowBindings"
   },
   {
    "file": "MSUF_Suite_Options/Pages/NameplatesEditor.lua",

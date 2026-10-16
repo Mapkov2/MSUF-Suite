@@ -45,6 +45,25 @@ function Interaction.Outline(handle, selected, thickness)
     end
 end
 
+-- The Suite's preview kit (MSUF_Suite/Core/PreviewKit.lua) with this menu's
+-- host helpers wired in: secure arrow bindings (opts.bindings), keyboard
+-- capture, the duplicate-key filter and the moved cue. The kit itself names
+-- none of them, so an older host without a helper just loses that helper.
+-- Arrow steps stay Shift 5 and Ctrl 10 in every Suite preview.
+local STEPS = { shift = 5, ctrl = 10 }
+local SELECTED = { selectedField = "_selectedHandle" }
+function Interaction.Handles(host, opts)
+    local helpers = P.M.PreviewHelpers or {}
+    opts.steps, opts.combat = opts.steps or STEPS, P.Combat
+    opts.dedupe, opts.moved = helpers.ShouldSkipDuplicateNudge, helpers.NotePreviewElementMoved
+    opts.focus = opts.focus or function(owner, region, active)
+        if P.M.SetPreviewArrowBindings then P.M.SetPreviewArrowBindings(owner, active, opts.bindings) end
+        if active and helpers.FocusKeyboardTarget then helpers.FocusKeyboardTarget(owner, region, false, SELECTED)
+        elseif not active and helpers.ReleaseKeyboardCapture then helpers.ReleaseKeyboardCapture(owner) end
+    end
+    return P.Suite.PreviewKit.Handles(host, opts)
+end
+
 function Interaction.SetHint(label, selectedLabel, movable)
     local hint = movable and MOVE_HINT or HINT
     P.SetTranslatedText(label, selectedLabel and Tr("%s - %s"):format(Tr(selectedLabel), Tr(hint)) or Tr(hint))

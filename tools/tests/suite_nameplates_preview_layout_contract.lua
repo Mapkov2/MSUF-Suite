@@ -174,11 +174,16 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             AuraCVar = {}, AuraBits = {},
         }
         local values, writes = {}, 0
+        -- The Suite's preview kit, from the shipped file, on the core namespace it needs.
+        local core = { IsSecret = function() return false end, Number = function(v) return type(v) == "number" end,
+            InCombat = function() return false end }
+        assert(loadfile(root .. "/MSUF_Suite/Core/PreviewKit.lua"))("MSUF_Suite", core)
         local P = { M = M, W = W, T = T, Tr = function(v) return v end,
             Get = function(_, key) if values[key] ~= nil then return values[key] end; return 1 end,
             Set = function(_, key, value) values[key] = value; writes = writes + 1 end,
             Combat = function() return false end,
-            Suite = { NameplateStyle = style, Client = {}, Public = function() return true end },
+            Suite = { NameplateStyle = style, Client = {}, Public = function() return true end,
+                PreviewKit = core.PreviewKit },
             NameplatesEditorMarkers = { TargetActive = function() return false end },
             NameplatesSize = { Build = Noop },
         }

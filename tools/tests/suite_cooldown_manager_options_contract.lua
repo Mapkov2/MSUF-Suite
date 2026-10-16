@@ -1749,6 +1749,19 @@ do
     M.RequestRefresh()
     ui.stage.SetScale, ui.canvas.SetHeight, ui.strip.SetHeight = nil, nil, nil
     assert(writesSeen == 0 and ui.chips.ess.points == chipPoints, "a repaint of the same preview wrote layout")
+    -- The preview buttons are the kit host's pool: a warm repaint shows and hides nothing, and the
+    -- bar's handle is the kit's, with a drag and no keys.
+    local shown, hidden = 0, 0
+    for _, hit in ipairs(hits) do
+        local show, hide = hit.Show, hit.Hide
+        hit.Show = function(self, ...) shown = shown + 1; return show(self, ...) end
+        hit.Hide = function(self, ...) hidden = hidden + 1; return hide(self, ...) end
+    end
+    M.RequestRefresh()
+    for _, hit in ipairs(hits) do hit.Show, hit.Hide = nil, nil end
+    assert(shown == 0 and hidden == 0, "a warm repaint showed or hid pooled preview buttons")
+    assert(ui.host:List("hit") == hits and ui.kit.entries.bar.region == ui.handle, "the preview runs on the kit")
+    assert(ui.handle.scripts.OnKeyDown == nil and ui.previewBody.scripts.OnKeyDown == nil, "the bar handle took the keys")
 
     -- Hover: outline and a short tooltip, allocation-free.
     Fire(hits[2], "OnEnter")

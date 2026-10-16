@@ -6,12 +6,12 @@ local Layers = P.NameplatesEditorLayers
 local AURA_KIND, AuraGroup = Layers.AURA_KIND, Layers.AuraGroup
 local AURA_ELEMENT = Layers.AuraElement
 local Register, OpenSetting = Layers.Register, Layers.OpenSetting
+local Kit = P.Suite.PreviewKit
 local Editor = {}
 P.NameplatesEditor = Editor
 Editor.Layout = P.NameplatesPreviewLayout.Apply
 -- The layer rules of NameplatesEditorLayers.lua, as methods of the preview.
 Editor.LayerOn, Editor.LayerAvailable, Editor.LayerActive = Layers.On, Layers.Available, Layers.Active
-local DELTA = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
 local RAID_MARK_NAMES = { [0] = "Off", [1] = "Star", [2] = "Circle", [3] = "Diamond",
     [4] = "Triangle", [5] = "Moon", [6] = "Blue square", [7] = "Cross", [8] = "Skull" }
 local ENEMY_ELEMENT_SETTINGS = { Name = true, Level = true, HealthText = true, Classification = true,
@@ -50,25 +50,12 @@ local function Write(ui, handle, x, y)
     local rules = P.catalog[ID].rules
     local xr, yr = rules[handle.keyX], rules[handle.keyY]
     if not xr or not yr then return false end
-    local ok = P.SetMany(ID, { [handle.keyX] = Clamp(Round(x), xr.min, xr.max),
-        [handle.keyY] = Clamp(Round(y), yr.min, yr.max) })
-    ui:Paint()
-    return ok ~= false
+    return P.SetMany(ID, { [handle.keyX] = Clamp(Round(x), xr.min, xr.max),
+        [handle.keyY] = Clamp(Round(y), yr.min, yr.max) }) ~= false
 end
 local function Read(handle) return P.Get(ID, handle.keyX), P.Get(ID, handle.keyY) end
 
-function Editor:Select(handle)
-    local previous = self.body._selectedHandle
-    if previous and previous ~= handle then previous:EnableKeyboard(false) end
-    self.body._selectedHandle = handle
-    local active = handle and handle:IsShown() and not P.Combat() and self.body:IsShown() or false
-    if handle then handle:EnableKeyboard(active) end
-    if M.SetPreviewArrowBindings then M.SetPreviewArrowBindings(self.body, active, self.bindings) end
-    if active and H.FocusKeyboardTarget then
-        H.FocusKeyboardTarget(self.body, handle, false, { selectedField = "_selectedHandle" })
-    elseif not active and H.ReleaseKeyboardCapture then H.ReleaseKeyboardCapture(self.body) end
-    self:RefreshSelection()
-end
+function Editor:Select(handle) self.kit:Select(handle) end
 
 function Editor:RefreshSelection()
     local selected = self.body._selectedHandle
@@ -80,75 +67,13 @@ function Editor:RefreshSelection()
     if self.RefreshSizeSelection then self:RefreshSizeSelection() end
 end
 
-local function Nudge(ui, dx, dy)
-    local handle = ui.body._selectedHandle
-    if P.Combat() or not ui.body:IsShown() or not handle or not handle:IsShown() then return false end
-    if H.IsTextInputFocused and H.IsTextInputFocused() then return false end
-    local focus = GetCurrentKeyBoardFocus()
-    if focus and focus:IsObjectType("EditBox") then return false end
-    local step = H.NudgeStep and H.NudgeStep() or (IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1)
-    if H.ShouldSkipDuplicateNudge and H.ShouldSkipDuplicateNudge(ui.body, dx * step, dy * step) then return true end
-    local x, y = Read(handle)
-    return Write(ui, handle, x + dx * step, y + dy * step)
-end
-
-local function Key(self, key)
-    local ui = self.previewUI
-    if key == "ESCAPE" then
-        ui:CancelDrag()
-        ui:Select(nil)
-        self:SetPropagateKeyboardInput(false)
-    elseif key == "TAB" and SB and SB.CycleHandle then
-        self:SetPropagateKeyboardInput(not SB.CycleHandle(ui.body, IsShiftKeyDown()))
-    else
-        local d = DELTA[key]
-        self:SetPropagateKeyboardInput(not (d and Nudge(ui, d[1], d[2])))
-    end
-end
-
 function Editor:CancelDrag()
-    local handle = self.dragging
-    if handle then
-        handle:StopMovingOrSizing()
-        handle._npDrag = nil
-        self.dragging = nil
-    end
+    self.kit:Cancel()
     if self.panning then
         self.stage:StopMovingOrSizing()
         self.panning = nil
     end
     self:Paint()
-end
-
-local function Start(self, button)
-    if button and button ~= "LeftButton" then return end
-    local ui = self.previewUI
-    if P.Combat() or self._npDrag then return end
-    ui:Select(self)
-    self._npDragged = false
-    local x, y = GetCursorPosition()
-    local ox, oy = Read(self)
-    self._npDrag = { x = x, y = y, ox = ox, oy = oy, scale = self:GetEffectiveScale() }
-    ui.dragging = self
-    self:StartMoving()
-end
-
-local function Stop(self, button)
-    if button and button ~= "LeftButton" then return end
-    local ui, drag = self.previewUI, self._npDrag
-    if not drag then return end
-    self:StopMovingOrSizing()
-    self._npDrag, ui.dragging = nil, nil
-    local x, y = GetCursorPosition()
-    local dx, dy = x - drag.x, y - drag.y
-    local moved = math.abs(dx) + math.abs(dy) >= 3
-    self._npDragged = moved
-    if not P.Combat() and moved then
-        Write(ui, self, drag.ox + dx / drag.scale, drag.oy + dy / drag.scale)
-        if H.NotePreviewElementMoved then H.NotePreviewElementMoved() end
-    else
-        ui:Paint()
-    end
 end
 
 -- Which Blizzard setting a preview element opens when it is clicked.
@@ -189,45 +114,12 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     BindSetting(handle, id)
     local border = P.Suite.NameplateStyle.CreateBorder(handle)
     handle.outline = function(size, color) P.Suite.NameplateStyle.PaintBorder(border, handle, size, color) end
-    handle:EnableMouse(true)
-    handle:SetMovable(true)
-    handle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    handle:RegisterForDrag("LeftButton")
     handle:EnableMouseWheel(true)
     handle:SetScript("OnMouseWheel", function(_, delta)
         self.zoom = Clamp(self.zoom + delta * 0.1, 0.5, 2)
         self:Paint()
     end)
-    handle:SetScript("OnMouseDown", Start)
-    handle:SetScript("OnMouseUp", Stop)
-    handle:SetScript("OnDragStart", Start)
-    handle:SetScript("OnDragStop", Stop)
-    handle:SetScript("OnClick", function(_, button)
-        self:Select(handle)
-        if button == "RightButton" or button == "LeftButton"
-            and (handle._npSettingsTab or handle._npSettingKey) and not handle._npDragged then
-            Focus(self, handle)
-        end
-    end)
-    handle:SetScript("OnEnter", function()
-        handle.outline(1, "4ebaff")
-        P.SetTranslatedText(self.hint, Tr(label) .. " · " .. Tr(handle._npSettingsTab
-            and "Drag to move; click for Blizzard settings" or "Drag to move; right-click for settings"))
-    end)
-    handle:SetScript("OnLeave", function()
-        self:RefreshSelection()
-        P.SetTranslatedText(self.hint, Tr(self.help))
-    end)
-    handle:SetScript("OnKeyDown", Key)
-    handle:SetScript("OnHide", function()
-        if handle._npDrag then
-            handle:StopMovingOrSizing()
-            handle._npDrag = nil
-            self.dragging = nil
-        end
-        if self.body._selectedHandle == handle then self:Select(nil) end
-    end)
-    self.handles[#self.handles + 1] = handle
+    self.kit:Add(id, handle, function() return Read(handle) end, function(x, y) return Write(self, handle, x, y) end)
     Register(handle, id, label)
 end
 
@@ -431,7 +323,11 @@ local function BuildSelection(ui)
             HandleLabel = function(handle) return handle._label end,
             IsPlaced = function(handle) return handle:IsShown() end,
             ReadOffsets = function(_, handle) return Read(handle) end,
-            WriteOffsets = function(_, handle, x, y) return Write(ui, handle, x, y) end,
+            WriteOffsets = function(_, handle, x, y)
+                local ok = Write(ui, handle, x, y)
+                ui:Paint()
+                return ok
+            end,
             SelectHandle = function(_, handle)
                 ui:Select(handle)
                 return true
@@ -447,12 +343,7 @@ local function BuildSelection(ui)
                 ui:Paint()
                 return ok ~= false
             end,
-            NudgeDelta = function(_, dx, dy)
-                local handle = body._selectedHandle
-                if not handle then return false end
-                local x, y = Read(handle)
-                return Write(ui, handle, x + dx, y + dy)
-            end,
+            NudgeDelta = function(_, dx, dy) return ui.kit:Nudge(dx, dy) end,
             OpenSettings = function(_, handle) Focus(ui, handle) end,
         })
         bar:SetPoint("TOPLEFT", tools, "BOTTOMLEFT", 0, -5)
@@ -469,11 +360,7 @@ end
 
 local function BuildInput(ui)
     local body, canvas, stage = ui.body, ui.canvas, ui.stage
-    ui.bindings = { ownerName = "MSUF_SuiteNameplatesPreview_NudgeOwner", activeName = "MSUF_SuiteNameplatesPreview_ActiveNudgeBox",
-        buttonPrefix = "MSUF_SuiteNameplatesPreview_Nudge", onClick = function(_, dx, dy) return Nudge(ui, dx, dy) end }
-    body:EnableKeyboard(true)
-    body:SetPropagateKeyboardInput(true)
-    body:SetScript("OnKeyDown", Key)
+    ui.bindings.onClick = function(_, dx, dy) return ui.kit:Arrow(dx, dy) end
     canvas:SetScript("OnMouseWheel", function(_, delta)
         ui.zoom = Clamp(ui.zoom + delta * 0.1, 0.5, 2)
         ui:Paint()
@@ -503,6 +390,7 @@ local function BuildInput(ui)
     body:SetScript("OnHide", function(self)
         self:UnregisterEvent("PLAYER_REGEN_DISABLED")
         Release()
+        ui.host:Deactivate()
     end)
     body:SetScript("OnEvent", Release)
 end
@@ -510,8 +398,14 @@ end
 -- After P.NameplatesPreviewLayout.Attach, which owns the body's OnShow script.
 local function TrackCombat(ui)
     local body = ui.body
-    body:HookScript("OnShow", function(self) self:RegisterEvent("PLAYER_REGEN_DISABLED") end)
-    if body:IsVisible() then body:RegisterEvent("PLAYER_REGEN_DISABLED") end
+    body:HookScript("OnShow", function(self)
+        self:RegisterEvent("PLAYER_REGEN_DISABLED")
+        ui.host:Activate()
+    end)
+    if body:IsVisible() then
+        body:RegisterEvent("PLAYER_REGEN_DISABLED")
+        ui.host:Activate()
+    end
 end
 
 -- The page's area header shows the matching sample (NameplatesWorkspace.lua).
@@ -523,13 +417,48 @@ function Editor:ShowSample(kind, personal)
     self:Paint()
 end
 
+-- The kit host and its handles: lifecycle and drag, select, nudge and commit.
+local function BuildKit(ui)
+    local body = ui.body
+    ui.host = Kit.NewHost(nil, { frame = body, paint = function() ui:Paint() end })
+    ui.bindings = { ownerName = "MSUF_SuiteNameplatesPreview_NudgeOwner", activeName = "MSUF_SuiteNameplatesPreview_ActiveNudgeBox",
+        buttonPrefix = "MSUF_SuiteNameplatesPreview_Nudge" }
+    ui.kit = P.PreviewInteraction.Handles(ui.host, {
+        owner = body, bindings = ui.bindings,
+        escape = function()
+            ui:CancelDrag()
+            ui:Select(nil)
+        end,
+        tab = SB and SB.CycleHandle and function(shift) return SB.CycleHandle(body, shift) end or nil,
+        select = function() ui:RefreshSelection() end,
+        drag = function(handle, phase) ui.dragging = phase == "start" and handle or nil end,
+        tip = function(handle, entering)
+            if entering then
+                handle.outline(1, "4ebaff")
+                P.SetTranslatedText(ui.hint, Tr(handle._label) .. " · " .. Tr(handle._npSettingsTab
+                    and "Drag to move; click for Blizzard settings" or "Drag to move; right-click for settings"))
+            else
+                ui:RefreshSelection()
+                P.SetTranslatedText(ui.hint, Tr(ui.help))
+            end
+        end,
+        click = function(handle, button, moved)
+            if button == "RightButton" or button == "LeftButton"
+                and (handle._npSettingsTab or handle._npSettingKey) and not moved then
+                Focus(ui, handle)
+            end
+        end,
+    })
+    ui.handles, body._handleList = ui.kit.list, ui.kit.list
+end
+
 function Editor.Create(ctx, builder, sections)
     local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 162, gap = 8 })
     if not section then return end
     local inInstance, instanceType = _G.IsInInstance()
     local inDungeon = P.Suite.Public(instanceType) and P.Suite.Public(inInstance)
         and inInstance == true and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
-    local ui = setmetatable({ ctx = ctx, sections = sections, handles = {}, renderers = {}, layers = {},
+    local ui = setmetatable({ ctx = ctx, sections = sections, renderers = {}, layers = {},
         sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true,
         softTargetSample = true, aggroSample = true,
         layoutWidth = math.max(640, (HM.GetSectionWidth(section) or builder.width or 720) - 28),
@@ -548,7 +477,8 @@ function Editor.Create(ctx, builder, sections)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 14, -38)
     body:SetPoint("TOPRIGHT", section, "TOPRIGHT", -14, -38)
     body:SetHeight(116)
-    ui.body, body.previewUI, body._handleList = body, ui, ui.handles
+    ui.body, body.previewUI = body, ui
+    BuildKit(ui)
     local canvas = CreateFrame("Frame", nil, body, "BackdropTemplate")
     canvas:SetPoint("TOPLEFT", body, "TOPLEFT", 0, 0)
     canvas:SetPoint("TOPRIGHT", body, "TOPRIGHT", 0, 0)
