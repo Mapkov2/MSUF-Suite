@@ -161,7 +161,8 @@ Handles.__index = Handles
 -- opts (all optional):
 --   owner      keyboard owner and holder of the selection (default host.frame)
 --   field      the owner's selection field (default "_selectedHandle")
---   keys       false: no arrow keys
+--   keys       false: no arrow keys; keydown(frame, key) replaces the key handler
+--   keep       a selected region that hides stays selected (the page clears it)
 --   steps      { shift = 10, ctrl = n, alt = n } arrow step multipliers
 --   threshold  distance a press must travel to be a drag (default 3)
 --   escape()   Escape is consumed and calls this (the page's release)
@@ -210,11 +211,19 @@ local function Movable(entry)
     return entry.write ~= nil and (not entry.can or entry.can(entry.region) ~= false)
 end
 
+-- The selected region. The owner's field is the truth where there is an owner:
+-- the host's selection bar and the page read it, and a page may clear it.
+function Handles:Selected()
+    local owner = self.owner
+    if owner then return owner[self.field] or nil end
+    return self.selected
+end
+
 -- Selects a region by key or region; nil clears. Keyboard goes to a shown,
 -- movable selection out of combat.
 function Handles:Select(target)
-    local entry = target and self.entries[target]
-    local region, opts, owner, previous = entry and entry.region, self.opts, self.owner, self.selected
+    local entry = target and self.entries[target] or nil
+    local region, opts, owner, previous = entry and entry.region, self.opts, self.owner, self:Selected()
     if previous and previous ~= region then previous:EnableKeyboard(false) end
     self.selected = region
     if owner then owner[self.field] = region end
@@ -230,7 +239,7 @@ end
 
 -- Writes the selected region's value moved by (dx, dy).
 function Handles:Nudge(dx, dy)
-    local entry = self.selected and self.entries[self.selected]
+    local entry = self.entries[self:Selected()]
     if not entry or not Movable(entry) or not entry.region:IsShown() or self:Blocked() then return false end
     local x, y = entry.read()
     if not (Readable(x) and Readable(y)) then return false end
@@ -247,7 +256,7 @@ end
 -- An arrow press (unit offsets) steps by the modifier held. True when the
 -- press was applied; the page's duplicate filter may also consume it.
 function Handles:Arrow(dx, dy)
-    local entry, owner = self.selected and self.entries[self.selected], self.owner
+    local entry, owner = self.entries[self:Selected()], self.owner
     if not entry or not Movable(entry) or not entry.region:IsShown() or (owner and not owner:IsShown()) then return false end
     if self:Blocked() or self:Typing() then return false end
     local step = self:Step()
@@ -260,6 +269,7 @@ end
 -- asks for them; every other key goes on to the game.
 function Handles:Key(frame, key)
     local opts, delta = self.opts, DELTAS[key]
+    if opts.keydown then return opts.keydown(frame, key) end
     local consumed = false
     if key == "ESCAPE" and opts.escape then
         opts.escape()
@@ -365,7 +375,7 @@ end
 -- Drops a drag and the selection (combat, closing the preview).
 function Handles:Release()
     self:Cancel()
-    if self.selected then self:Select(nil) end
+    if self:Selected() then self:Select(nil) end
 end
 
 ------------------------------------------------------------------ regions
@@ -379,7 +389,7 @@ end
 local function Hide(entry)
     local controller = entry.controller
     if controller.drag and controller.drag.entry == entry then controller:Cancel() end
-    if controller.selected == entry.region then controller:Select(nil) end
+    if controller:Selected() == entry.region and not controller.opts.keep then controller:Select(nil) end
 end
 
 -- Adds a region. read() returns its stored x, y; write(x, y) stores them and

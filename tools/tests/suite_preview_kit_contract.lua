@@ -168,6 +168,7 @@ local function Controller(extra, own)
         moved = function(region) hooks[#hooks + 1] = { "moved", region } end,
         drag = function(region, phase, moved) hooks[#hooks + 1] = { "drag", region, phase, moved } end }
     for key, value in pairs(extra or {}) do opts[key] = value end
+    if own then opts.owner = Frame(body) end
     return Kit.Handles(own and Kit.NewHost(nil, { frame = body }):Activate() or main, opts)
 end
 handles = Controller()
@@ -317,6 +318,24 @@ body:Show()
 hooks = {}
 region.scripts.OnClick(region, "RightButton")
 assert(hooks[#hooks][1] == "click" and hooks[#hooks][3] == "RightButton" and hooks[#hooks][4] == false, "click hook")
+
+-- keep: the selection outlives its region hiding; keydown replaces the key handler; the
+-- owner's field is the truth, so a page that clears it clears the selection.
+do
+    local keys = {}
+    local kept = Controller({ keep = true, keydown = function(_, key) keys[#keys + 1] = key; return true end }, true)
+    local one = Frame(kept.owner)
+    kept:Add("one", one, Read, Write)
+    kept:Select("one")
+    one:Hide()
+    assert(kept:Selected() == one, "a kept selection must outlive its region hiding")
+    one:Show()
+    one.scripts.OnKeyDown(one, "RIGHT")
+    kept.owner.scripts.OnKeyDown(kept.owner, "Q")
+    assert(#keys == 2 and keys[1] == "RIGHT" and keys[2] == "Q", "keydown must replace the key handler")
+    kept.owner._selectedHandle = nil
+    assert(kept:Selected() == nil and not kept:Nudge(1, 1), "clearing the owner's field clears the selection")
+end
 
 -- A followed drawing: one script only while the button is held.
 local followRegion, shifted = Frame(body), { 0, 0 }

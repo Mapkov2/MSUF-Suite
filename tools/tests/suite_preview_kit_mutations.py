@@ -35,7 +35,7 @@ cases = [
      "typing keeps the arrows"),
     ("if self.opts.dedupe and self.opts.dedupe(owner, dx, dy) then return true end", "",
      "a repeated key press is consumed once"),
-    ("    if controller.selected == entry.region then controller:Select(nil) end\nend",
+    ("    if controller:Selected() == entry.region and not controller.opts.keep then controller:Select(nil) end\nend",
      "end", "hiding a region ends its drag and selection"),
     ("    region:SetScript(\"OnUpdate\", nil)\n    if drag.native", "    if drag.native",
      "release ends the follow and writes"),
@@ -43,6 +43,10 @@ cases = [
      "a native drag holds the paint"),
     ("    if ok and controller.opts.moved then controller.opts.moved(entry.region) end\n", "",
      "moved hook"),
+    ("    if controller:Selected() == entry.region and not controller.opts.keep then",
+     "    if controller:Selected() == entry.region then", "a kept selection must outlive its region hiding"),
+    ("    if opts.keydown then return opts.keydown(frame, key) end\n", "", "keydown must replace the key handler"),
+    ("    if owner then return owner[self.field] or nil end\n", "", "clearing the owner's field clears the selection"),
 ]
 failed = []
 with tempfile.TemporaryDirectory() as scratch:

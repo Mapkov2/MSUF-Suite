@@ -61,7 +61,14 @@ function Interaction.Handles(host, opts)
         if active and helpers.FocusKeyboardTarget then helpers.FocusKeyboardTarget(owner, region, false, SELECTED)
         elseif not active and helpers.ReleaseKeyboardCapture then helpers.ReleaseKeyboardCapture(owner) end
     end
-    return P.Suite.PreviewKit.Handles(host, opts)
+    local controller = P.Suite.PreviewKit.Handles(host, opts)
+    -- rekey: the host's own arrow handler, which gives the keyboard back after a nudge.
+    if opts.rekey and helpers.ArrowKeyDown then
+        local spec = { owner = function() return controller.owner end, selectedField = "_selectedHandle",
+            nudge = function(_, dx, dy) return controller:Arrow(dx, dy) end }
+        opts.keydown = function(frame, key) return helpers.ArrowKeyDown(frame, key, spec) end
+    end
+    return controller
 end
 
 function Interaction.SetHint(label, selectedLabel, movable)

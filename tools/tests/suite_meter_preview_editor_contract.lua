@@ -158,6 +158,20 @@ assert(c.nameOffsetX == 20 and c.nameOffsetY == -10, "scaled drag did not persis
 handle:GetScript("OnKeyDown")(handle, "RIGHT")
 assert(c.nameOffsetX == 21, "arrow key did not nudge the selected element: " .. tostring(c.nameOffsetX)
     .. " selected=" .. tostring(owner._selectedHandle == handle) .. " visible=" .. tostring(handle:IsVisible()))
+-- The preview kit's handle controller keeps the menu's steps: Shift 5, Ctrl 10.
+env.IsShiftKeyDown = function() return true end
+handle:GetScript("OnKeyDown")(handle, "RIGHT")
+env.IsShiftKeyDown = function() return false end
+assert(c.nameOffsetX == 26, "Shift must nudge a preview element by 5: " .. tostring(c.nameOffsetX))
+env.IsControlKeyDown = function() return true end
+handle:GetScript("OnKeyDown")(handle, "LEFT")
+env.IsControlKeyDown = function() return false end
+assert(c.nameOffsetX == 16, "Ctrl must nudge a preview element by 10: " .. tostring(c.nameOffsetX))
+handle:GetScript("OnKeyDown")(handle, "UP")
+assert(c.nameOffsetY == -9, "an up arrow must raise the element by 1: " .. tostring(c.nameOffsetY))
+handle:GetScript("OnKeyDown")(handle, "DOWN")
+assert(c.nameOffsetY == -10 and preview.kit and preview.handles == preview.kit.list,
+    "the meter preview runs on the kit")
 assert(P.M.PreviewSelectionBar, "exact offset editor missing")
 local deps = owner._msuf2SelectionDeps
 assert(deps.WriteOffsets(owner, handle, 33, -8))

@@ -1716,31 +1716,7 @@
    "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
    "kind": "addon",
    "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "M.SetPreviewArrowBindings"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "chrome.ArrowKeyDown"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "chrome.NotePreviewElementMoved"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
    "symbol": "chrome.RefreshSelectedLayerButtons"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewEditor.lua",
-   "kind": "addon",
-   "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
-   "symbol": "chrome.ReleaseKeyboardCapture"
   },
   {
    "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",

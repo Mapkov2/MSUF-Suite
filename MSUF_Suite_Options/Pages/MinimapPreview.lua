@@ -12,6 +12,7 @@ local Data = P.MinimapPreviewData
 local TEXTS, ICONS, LAYERS, ORNAMENT_EDGES = Data.TEXTS, Data.ICONS, Data.LAYERS, Data.ORNAMENT_EDGES
 local Clamp, Tint, SetIcon = Data.Clamp, Data.Tint, Data.SetIcon
 local OffsetPrefix, OffsetKeys, PaintElements = Data.OffsetPrefix, Data.OffsetKeys, Data.PaintElements
+local Kit = Suite.PreviewKit
 
 -- Right-clicking a layer chip opens the accordion that styles it.
 local LAYER_SECTIONS = { map = "layout", border = "shape", shadow = "shape", ornament = "style_art",
@@ -34,12 +35,6 @@ local function WriteOffsets(key, x, y)
     return P.SetMany(ID, { [xKey] = x, [yKey] = y }) ~= false
 end
 
-local function NudgeHandle(handle, dx, dy)
-    local xKey, yKey = OffsetKeys(handle._key)
-    if not xKey then return false end
-    return WriteOffsets(handle._key, P.Get(ID, xKey) + dx, P.Get(ID, yKey) + dy)
-end
-
 ------------------------------------------------------------------ selection and focus
 local function UpdateHint(ui)
     local handle = ui.hovered or ui.body._selectedHandle
@@ -54,25 +49,6 @@ local function SetArrowBindings(ui, enabled)
     if M.SetPreviewArrowBindings then M.SetPreviewArrowBindings(ui.body, enabled, ui.arrowBindings) end
 end
 
-local function Select(ui, handle)
-    local body, chrome = ui.body, ui.chrome
-    local previous = body._selectedHandle
-    if previous and previous ~= handle then previous:EnableKeyboard(false) end
-    body._selectedHandle = handle
-    if chrome and chrome.RefreshSelectedLayerButtons then chrome.RefreshSelectedLayerButtons(ui, handle) end
-    local active = handle and handle:IsShown() and body:IsShown() and not P.Combat() and true or false
-    if handle then handle:EnableKeyboard(active) end
-    SetArrowBindings(ui, active)
-    if active and chrome and chrome.FocusKeyboardTarget then
-        chrome.FocusKeyboardTarget(body, handle, false, { selectedField = "_selectedHandle" })
-    elseif not active and chrome and chrome.ReleaseKeyboardCapture then
-        chrome.ReleaseKeyboardCapture(body)
-    end
-    for _, target in ipairs(ui.handles) do P.PreviewInteraction.Outline(target, target == handle) end
-    if M.PreviewSelectionBar and M.PreviewSelectionBar.Refresh then M.PreviewSelectionBar.Refresh(body) end
-    UpdateHint(ui)
-end
-
 local function FocusSection(ui, section)
     local target = ui.sections[section]
     if target and W.FocusCollapsibleSection then W.FocusCollapsibleSection(target, { persist = true, flash = true }) end
@@ -81,40 +57,10 @@ end
 -- Selects a preview element and opens the accordion that edits it.
 local function Focus(ui, section, key, handle)
     ui.state.selected = { key = key, section = section }
-    Select(ui, handle)
+    ui.kit:Select(handle)
     if handle and ui.chrome and ui.chrome.ShowPreviewMoveCue then ui.chrome.ShowPreviewMoveCue(ui.body, handle) end
     ui.Paint()
     FocusSection(ui, section)
-end
-
-local function NudgeSelected(ui, owner, dx, dy)
-    local body, chrome = ui.body, ui.chrome
-    if owner ~= body or P.Combat() or not body:IsShown() then return false end
-    if chrome and chrome.IsTextInputFocused and chrome.IsTextInputFocused() then return false end
-    local keyboardFocus = GetCurrentKeyBoardFocus()
-    if keyboardFocus and keyboardFocus:IsObjectType("EditBox") then return false end
-    local handle = body._selectedHandle
-    if not handle or not handle:IsShown() or not OffsetKeys(handle._key) then return false end
-    local step = chrome and chrome.NudgeStep and chrome.NudgeStep()
-        or (IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1)
-    dx, dy = dx * step, dy * step
-    if chrome and chrome.ShouldSkipDuplicateNudge and chrome.ShouldSkipDuplicateNudge(body, dx, dy) then return true end
-    return NudgeHandle(handle, dx, dy)
-end
-
-local ARROW_DELTAS = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
-
--- Shared by the preview body and every handle (self.previewUI).
-local function HandleKeyDown(self, key)
-    local ui = self.previewUI
-    local chrome = ui.chrome
-    if chrome and chrome.ArrowKeyDown then
-        return chrome.ArrowKeyDown(self, key, ui.arrowKeySpec)
-    end
-    local delta = ARROW_DELTAS[key]
-    local moved = delta and NudgeSelected(ui, ui.body, delta[1], delta[2]) or false
-    self:SetPropagateKeyboardInput(not moved)
-    return moved
 end
 
 ------------------------------------------------------------------ handles
@@ -137,75 +83,6 @@ local function HandleLeave(self)
     if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
 end
 
--- Drags move the element's offsets; a click without movement selects it.
--- MouseDown/Up mirrors the UF/GF handles. OnDragStart/Stop remain as a
--- fallback on clients that deliver only the drag events to a Button.
-local function StartDrag(self, mouseButton)
-    if mouseButton and mouseButton ~= "LeftButton" then return end
-    if type(self.dragX) == "number" or P.Combat() then return end
-    self.dragX, self.dragY = GetCursorPosition()
-    self:StartMoving()
-end
-
-local function CommitDrag(self, dx, dy)
-    local kind = self.dragKind
-    local rules = Suite.SuiteCatalog[ID].rules
-    if kind == "map" then
-        local x = Clamp(math.floor((P.Get(ID, "x") or 0) + dx + 0.5), rules.x.min, rules.x.max)
-        local y = Clamp(math.floor((P.Get(ID, "y") or 0) + dy + 0.5), rules.y.min, rules.y.max)
-        P.SetMany(ID, { x = x, y = y })
-        self:ClearAllPoints()
-        self:SetPoint("CENTER", self:GetParent(), "CENTER", 0, 0)
-    else
-        local key = self.dragConfigKey
-        local xRule, yRule = rules[key .. "X"], rules[key .. "Y"]
-        local x = Clamp(math.floor((P.Get(ID, key .. "X") or 0) + dx + 0.5), xRule.min, xRule.max)
-        local y = Clamp(math.floor((P.Get(ID, key .. "Y") or 0) + dy + 0.5), yRule.min, yRule.max)
-        P.SetMany(ID, { [key .. "X"] = x, [key .. "Y"] = y })
-    end
-end
-
-local function StopDrag(self, mouseButton)
-    if mouseButton and mouseButton ~= "LeftButton" then return end
-    if type(self.dragX) ~= "number" then return end
-    self:StopMovingOrSizing()
-    local ui = self.previewUI
-    local cx, cy = GetCursorPosition()
-    local uiScale = self:GetEffectiveScale()
-    if uiScale <= 0 then uiScale = 1 end
-    local scale = ui.art.scale or 1
-    local dx, dy = (cx - self.dragX) / uiScale / scale, (cy - self.dragY) / uiScale / scale
-    self.dragX, self.dragY = nil, nil
-    if not P.Combat() and math.abs(dx) + math.abs(dy) >= 2 then
-        if M.PreviewHelpers and M.PreviewHelpers.NotePreviewElementMoved then
-            M.PreviewHelpers.NotePreviewElementMoved()
-        end
-        CommitDrag(self, dx, dy)
-    end
-    Focus(ui, self.previewSection, self.previewKey, self)
-end
-
-local function DragHide(self)
-    if type(self.dragX) == "number" then
-        self:StopMovingOrSizing()
-        self.dragX, self.dragY = nil, nil
-    end
-end
-
--- kind: "map" moves the map; "offset" moves `configKey`X/Y.
-local function MakeDraggable(button, kind, configKey)
-    button.dragKind, button.dragConfigKey = kind, configKey
-    button:SetMovable(true)
-    button:EnableMouse(true)
-    button:RegisterForClicks("LeftButtonUp")
-    button:RegisterForDrag("LeftButton")
-    button:SetScript("OnMouseDown", StartDrag)
-    button:SetScript("OnMouseUp", StopDrag)
-    button:SetScript("OnDragStart", StartDrag)
-    button:SetScript("OnDragStop", StopDrag)
-    button:SetScript("OnHide", DragHide)
-end
-
 local function BindHandle(ui, button, key, label, section)
     button.previewUI = ui
     button.previewKey, button.previewSection = key, section
@@ -220,10 +97,18 @@ local function BindHandle(ui, button, key, label, section)
     end
     button:SetScript("OnEnter", HandleEnter)
     button:SetScript("OnLeave", HandleLeave)
-    button:SetScript("OnKeyDown", HandleKeyDown)
     if M.RegisterControlMetadata then
         M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "preview." .. key, "action", PREVIEW_SECTION), label, "button")
     end
+end
+
+-- A movable element is a region of the kit: its offsets are read and written
+-- through the minimap settings, and a drag counts in preview units.
+local function AddHandle(ui, button, key)
+    local xKey, yKey = OffsetKeys(key)
+    ui.kit:Add(key, button, function() return P.Get(ID, xKey), P.Get(ID, yKey) end,
+        function(x, y) return WriteOffsets(key, x, y) end,
+        { select = false, scale = function() return button:GetEffectiveScale() * (ui.art.scale or 1) end })
 end
 
 -- A clickable preview element that selects `key` and opens `section`.
@@ -240,11 +125,11 @@ local function Target(ui, key, label, section, w, h)
     hover:Hide()
     button._hoverFill = hover
     BindHandle(ui, button, key, label, section)
-    local movable = OffsetKeys(key) ~= nil
-    if movable then ui.handles[#ui.handles + 1] = button end
-    button:SetScript("OnClick", function(self)
-        Focus(ui, section, key, movable and self or nil)
-    end)
+    if OffsetKeys(key) then
+        AddHandle(ui, button, key)
+    else
+        button:SetScript("OnClick", function() Focus(ui, section, key, nil) end)
+    end
     return button
 end
 
@@ -267,7 +152,6 @@ local function BuildCanvas(ui, ctx, b)
     body:SetHeight(132)
     body:SetClipsChildren(true)
     body.previewUI = ui
-    body._handleList = ui.handles
     ui.body = body
 
     local canvas = CreateFrame("Frame", nil, body)
@@ -284,22 +168,39 @@ local function BuildCanvas(ui, ctx, b)
     return true
 end
 
+-- The kit host and its handle controller, then the body's hide and show: the
+-- selection survives them, only the keyboard follows.
 local function BuildKeyboard(ui)
     local body, chrome = ui.body, ui.chrome
+    ui.host = Kit.NewHost(nil, { frame = body, paint = ui.Paint })
     ui.arrowBindings = {
         ownerName = "MSUF_SuiteMinimapPreview_NudgeOwner",
         activeName = "MSUF_SuiteMinimapPreview_ActiveNudgeBox",
         buttonPrefix = "MSUF_SuiteMinimapPreview_Nudge",
-        onClick = function(owner, dx, dy) return NudgeSelected(ui, owner, dx, dy) end,
+        onClick = function(_, dx, dy) return ui.kit:Arrow(dx, dy) end,
     }
-    ui.arrowKeySpec = {
-        owner = function() return body end,
-        selectedField = "_selectedHandle",
-        nudge = ui.arrowBindings.onClick,
-    }
-    body:EnableKeyboard(true)
-    body:SetPropagateKeyboardInput(true)
-    body:SetScript("OnKeyDown", HandleKeyDown)
+    ui.kit = P.PreviewInteraction.Handles(ui.host, {
+        owner = body, threshold = 2, keep = true, rekey = true, bindings = ui.arrowBindings,
+        tip = function(handle, entering)
+            if entering then HandleEnter(handle) else HandleLeave(handle) end
+        end,
+        click = function(handle) Focus(ui, handle.previewSection, handle.previewKey, handle) end,
+        drag = function(handle, phase)
+            -- The map is drawn at the canvas center whatever its stored position.
+            if handle == ui.map and phase ~= "start" then
+                handle:ClearAllPoints()
+                handle:SetPoint("CENTER", handle:GetParent(), "CENTER", 0, 0)
+            end
+            if phase == "stop" then Focus(ui, handle.previewSection, handle.previewKey, handle) end
+        end,
+        select = function(handle)
+            if chrome and chrome.RefreshSelectedLayerButtons then chrome.RefreshSelectedLayerButtons(ui, handle) end
+            for _, target in ipairs(ui.handles) do P.PreviewInteraction.Outline(target, target == handle) end
+            if M.PreviewSelectionBar and M.PreviewSelectionBar.Refresh then M.PreviewSelectionBar.Refresh(body) end
+            UpdateHint(ui)
+        end,
+    })
+    ui.handles, body._handleList = ui.kit.list, ui.kit.list
     body:SetScript("OnHide", function(self)
         SetArrowBindings(ui, false)
         if chrome and chrome.ReleaseKeyboardCapture then
@@ -326,9 +227,7 @@ end
 local function BuildMapTargets(ui)
     local map = ui.map
     BindHandle(ui, map, "map", "Minimap", "layout")
-    ui.handles[#ui.handles + 1] = map
-    map:SetScript("OnClick", function(self) Focus(ui, "layout", "map", self) end)
-    MakeDraggable(map, "map")
+    AddHandle(ui, map, "map")
 
     -- Selectable map and border use separate hit areas; texts and icons sit above them.
     ui.style = Target(ui, "style", "Shape, border and shadow", "shape", 1, 8)
@@ -341,7 +240,6 @@ local function BuildMapTargets(ui)
         local key = index == 1 and "ornament" or ("ornament_" .. point:lower())
         local edge = Target(ui, key, "Decorative border", "style_art", index == 1 and 1 or 16, 16)
         edge:SetPoint("CENTER", map, point)
-        MakeDraggable(edge, "offset", "style")
         ui.ornamentEdges[index] = edge
     end
 end
@@ -363,7 +261,6 @@ local function BuildTextTargets(ui)
         -- only a few glyphs. Keep its click target on the rendered text so it
         -- cannot steal FPS/latency clicks, or be stolen by their wide fields.
         if name == "Location" then button:SetFrameLevel(canvasLevel + 7) end
-        MakeDraggable(button, "offset", key)
         local icon = name == "Weather" and button:CreateTexture(nil, "ARTWORK") or nil
         ui.textItems[#ui.textItems + 1] = { spec = spec, button = button, box = box, label = label, icon = icon }
     end
@@ -438,8 +335,6 @@ local function IconTarget(ui, spec)
     edge:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT")
     edge:SetHeight(2)
     Tint(edge, 0.6, 0.74, 0.83, 0.65)
-    local prefix = OffsetPrefix(key)
-    if prefix then MakeDraggable(button, "offset", prefix) end
     return { spec = spec, button = button, backdrop = backdrop, edge = edge }
 end
 
@@ -456,7 +351,6 @@ local function BuildIconTargets(ui)
         Tint(back, 0.035, 0.05, 0.065, 0.9)
         local sign = T.Font(button, "GameFontHighlightSmall", spec[3], T.colors.text)
         sign:SetPoint("CENTER", button, "CENTER")
-        MakeDraggable(button, "offset", spec[1])
         ui.zoomItems[#ui.zoomItems + 1] = button
     end
     ui.compass = Target(ui, "compass", "Compass and rotation", "behavior", 17, 17)
@@ -512,11 +406,7 @@ local function BuildSelectionBar(ui)
             return xKey and P.Get(ID, xKey) or 0, yKey and P.Get(ID, yKey) or 0
         end,
         WriteOffsets = function(_, handle, x, y) return WriteOffsets(handle._key, x, y) end,
-        NudgeDelta = function(_, dx, dy)
-            local handle = body._selectedHandle
-            if not handle then return false end
-            return NudgeHandle(handle, dx, dy)
-        end,
+        NudgeDelta = function(_, dx, dy) return ui.kit:Nudge(dx, dy) end,
         ResetOffsets = function(_, handle)
             local xKey, yKey = OffsetKeys(handle._key)
             if not xKey then return false end
@@ -633,7 +523,7 @@ local function Paint(ui)
         if button.Refresh then button:Refresh() else button:SetAlpha(ui.LayerOn(button.key) and 1 or 0.42) end
     end
     local selected = ui.body._selectedHandle
-    if selected and not selected:IsShown() then Select(ui, nil) end
+    if selected and not selected:IsShown() then ui.kit:Select(nil) end
     M.PreviewSelectionBar.Refresh(ui.body)
 end
 
@@ -683,7 +573,7 @@ end
 -- The docked minimap preview: a static canvas with selectable, draggable
 -- elements whose offsets write the minimap settings.
 function P.BuildMinimapPreview(ctx, b, sections)
-    local ui = { sections = sections, handles = {} }
+    local ui = { sections = sections }
     if not BuildCanvas(ui, ctx, b) then return end
     local initialSize = math.max(100, P.Get(ID, "size") or P.catalog[ID].rules.size.default)
     ui.state = {

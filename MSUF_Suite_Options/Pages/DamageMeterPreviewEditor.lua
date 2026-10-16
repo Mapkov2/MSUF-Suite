@@ -5,7 +5,6 @@ local E, ID = {}, "damageMeter"
 P.MeterPreviewEditor = E
 local M, HM, Tr = P.M, P.HM, P.Tr
 local Properties = P.MeterPreviewProperties
-local ARROWS = { LEFT = { -1, 0 }, RIGHT = { 1, 0 }, UP = { 0, 1 }, DOWN = { 0, -1 } }
 local TEXT_ANCHORS = { leftSize = "LEFT", rightSize = "RIGHT", rank = "LEFT", titleSize = "LEFT", headerTimerSize = "RIGHT" }
 local HIT_ORDER = { window = 0, header = 1, bars = 2, name = 4, value = 4, title = 5, timer = 5, buttons = 6, icon = 6 }
 
@@ -48,7 +47,14 @@ local function Keys(preview, handle)
     return prefix .. "X", prefix .. "Y"
 end
 
+local function DragCurrent(token, preview)
+    return token.window == preview.selected() and token.current() and token.config == P.S.Config(ID)
+end
+
 local function Write(preview, handle, x, y)
+    local token = handle.dragToken
+    handle.dragToken = nil
+    if token and not DragCurrent(token, preview) then return false end
     if preview.inCombat or P.Combat() or not preview.viewport:IsVisible() or not handle:IsVisible() then return false end
     local xKey, yKey = Keys(preview, handle)
     if not xKey then return false end
@@ -63,23 +69,6 @@ local function Read(preview, handle)
     local xKey, yKey = Keys(preview, handle)
     if not xKey then return 0, 0 end
     return P.Get(ID, xKey), P.Get(ID, yKey)
-end
-
-local function Nudge(preview, dx, dy)
-    local handle = preview.viewport._selectedHandle
-    if not handle then return false end
-    local x, y = Read(preview, handle)
-    return Write(preview, handle, x + dx, y + dy)
-end
-
-local function Keyboard(preview, active)
-    if preview.keyboardActive == active then return end
-    preview.keyboardActive = active
-    if M.SetPreviewArrowBindings then M.SetPreviewArrowBindings(preview.viewport, active, preview.arrowBindings) end
-    local chrome = M.PreviewHelpers
-    if active and chrome and chrome.FocusKeyboardTarget then
-        chrome.FocusKeyboardTarget(preview.viewport, preview.viewport._selectedHandle, false, { selectedField = "_selectedHandle" })
-    elseif chrome and chrome.ReleaseKeyboardCapture then chrome.ReleaseKeyboardCapture(preview.viewport) end
 end
 
 local function SelectionLayout(preview)
@@ -108,16 +97,9 @@ local function SelectionLayout(preview)
     end
 end
 
-function E.Select(preview, handle, focus)
-    local owner, previous = preview.viewport, preview.viewport._selectedHandle
-    if previous and previous ~= handle then
-        previous:EnableKeyboard(false)
-        Keyboard(preview, false)
-    end
-    owner._selectedHandle = handle or false
-    local active = handle and handle.canMove and handle:IsVisible() and owner:IsVisible() and not preview.inCombat and not P.Combat() and true or false
-    if handle then handle:EnableKeyboard(active) end
-    Keyboard(preview, active)
+-- What a selection changes besides the keyboard, which the kit hands over.
+local function Selected(preview, handle)
+    local owner = preview.viewport
     local chrome = M.PreviewHelpers
     if chrome and chrome.RefreshSelectedLayerButtons then chrome.RefreshSelectedLayerButtons(preview, handle) end
     for _, target in ipairs(preview.handles) do
@@ -132,61 +114,23 @@ function E.Select(preview, handle, focus)
     Properties.Refresh(preview)
     local selectionChanged = previousSelectionHeight ~= preview.selectionHeight
     if (previousHeight ~= preview.propertiesHeight or selectionChanged) and preview.ui.refreshPreview then preview.ui.refreshPreview() end
+end
+
+function E.Select(preview, handle, focus)
+    preview.kit:Select(handle)
     if focus and handle then E.Open(preview, handle) end
 end
 
-local function Cancel(handle)
-    if not handle.drag then return end
-    handle:StopMovingOrSizing()
-    handle.drag = false
+-- A drag that starts selects its element and remembers which window and
+-- profile it began under; when it ends the handle goes back on its region.
+local function Dragged(preview, handle, phase)
+    if phase == "start" then
+        E.Select(preview, handle)
+        handle.dragToken = { window = preview.selected(), config = P.S.Config(ID), current = P.ProfileGuard() }
+        return
+    end
+    if phase == "cancel" then handle.dragToken = nil end
     Anchor(handle, true)
-end
-
-local function Start(handle, button)
-    if button and button ~= "LeftButton" then return end
-    local preview = handle.meterPreview
-    if not handle.canMove or handle.drag or preview.inCombat or P.Combat() or not handle:IsVisible() then return end
-    E.Select(preview, handle)
-    local offsetX, offsetY = Read(preview, handle)
-    local x, y = GetCursorPosition()
-    handle.drag = { cursorX = x, cursorY = y, x = offsetX, y = offsetY,
-        window = preview.selected(), scale = preview.stage:GetEffectiveScale(),
-        config = P.S.Config(ID), current = P.ProfileGuard() }
-    handle:StartMoving()
-end
-
-local function DragCurrent(drag, preview)
-    return drag.window == preview.selected() and drag.current() and drag.config == P.S.Config(ID)
-end
-
-local function Stop(handle, button)
-    if button and button ~= "LeftButton" then return end
-    local drag, preview = handle.drag, handle.meterPreview
-    if not drag then return end
-    local x, y = GetCursorPosition()
-    Cancel(handle)
-    if not DragCurrent(drag, preview) or preview.inCombat or P.Combat() then return end
-    local scale = math.max(.001, drag.scale)
-    local dx, dy = (x - drag.cursorX) / scale, (y - drag.cursorY) / scale
-    if math.abs(dx) + math.abs(dy) >= 2 then
-        Write(preview, handle, drag.x + dx, drag.y + dy)
-        local chrome = M.PreviewHelpers
-        if chrome and chrome.NotePreviewElementMoved then chrome.NotePreviewElementMoved() end
-    end
-end
-
-local function KeyDown(handle, key)
-    local preview = handle.meterPreview
-    local chrome = M.PreviewHelpers
-    if chrome and chrome.ArrowKeyDown then return chrome.ArrowKeyDown(handle, key, preview.arrowKeySpec) end
-    local delta, focus = ARROWS[key], GetCurrentKeyBoardFocus()
-    local moved = false
-    if delta and not (focus and focus:IsObjectType("EditBox")) then
-        local step = IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1
-        moved = Nudge(preview, delta[1] * step, delta[2] * step)
-    end
-    handle:SetPropagateKeyboardInput(not moved)
-    return moved
 end
 
 function E.Handle(preview, handle, region, prefix, label, layer, section, controlKey)
@@ -196,36 +140,15 @@ function E.Handle(preview, handle, region, prefix, label, layer, section, contro
     handle.previewSection = section
     handle.controlKey = controlKey
     handle.sizeSetting, handle.widthSetting, handle.heightSetting, handle.layerSetting, handle.defaultSizeSetting = false, false, false, false, false
-    handle.drag = false
     handle.textAnchor = TEXT_ANCHORS[controlKey]
     local priority = HIT_ORDER[layer]
     local top, base = P.S.OwnedElementLevel(30, 31) or 1120, P.S.OwnedElementLevel(0, 0) or 0
     handle:SetFrameLevel(preview.viewport:GetFrameLevel() + top - base + 32 + priority)
     Anchor(handle, true)
-    handle:SetMovable(handle.canMove)
-    handle:EnableMouse(true)
-    handle:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    if handle.canMove then handle:RegisterForDrag("LeftButton") end
-    handle:SetScript("OnMouseDown", Start)
-    handle:SetScript("OnMouseUp", Stop)
-    handle:SetScript("OnDragStart", Start)
-    handle:SetScript("OnDragStop", Stop)
-    handle:SetScript("OnHide", function(self)
-        Cancel(self)
-        if preview.viewport._selectedHandle == self then E.Select(preview, nil) end
-    end)
-    handle:SetScript("OnClick", function(_, button)
-        if button == "RightButton" then E.Open(preview, handle)
-        else E.Select(preview, handle, true) end
-    end)
-    handle:SetScript("OnEnter", function() P.PreviewInteraction.Outline(handle, true) end)
-    handle:SetScript("OnLeave", function()
-        P.PreviewInteraction.Outline(handle, preview.viewport._selectedHandle == handle)
-    end)
-    handle:SetScript("OnKeyDown", KeyDown)
-    handle:EnableKeyboard(false)
+    preview.kit:Add(handle, handle, function() return Read(preview, handle) end,
+        handle.canMove and function(x, y) return Write(preview, handle, x, y) end or nil,
+        { select = false, scale = function() return preview.stage:GetEffectiveScale() end })
     HM.SkipHistoryCheckpoint(handle)
-    preview.handles[#preview.handles + 1] = handle
 end
 
 local function SelectionBar(preview)
@@ -241,7 +164,7 @@ local function SelectionBar(preview)
             return Read(preview, handle)
         end,
         WriteOffsets = function(_, handle, x, y) return Write(preview, handle, x, y) end,
-        NudgeDelta = function(_, dx, dy) return Nudge(preview, dx, dy) end,
+        NudgeDelta = function(_, dx, dy) return preview.kit:Nudge(dx, dy) end,
         ResetOffsets = function(_, handle)
             local xKey, yKey = Keys(preview, handle)
             if not xKey then return false end
@@ -259,27 +182,24 @@ local function SelectionBar(preview)
 end
 
 function E.Build(preview)
-    preview.handles = {}
     local owner = preview.viewport
-    preview.arrowBindings = {
-        ownerName = "MSUF_SuiteMeterPreview_NudgeOwner", activeName = "MSUF_SuiteMeterPreview_ActiveNudgeBox",
-        buttonPrefix = "MSUF_SuiteMeterPreview_Nudge",
-        onClick = function(box, dx, dy)
-            if box ~= owner or P.Combat() or not owner:IsVisible() then return false end
-            local chrome, focus = M.PreviewHelpers, GetCurrentKeyBoardFocus()
-            if chrome and chrome.IsTextInputFocused and chrome.IsTextInputFocused() then return false end
-            if focus and focus:IsObjectType("EditBox") then return false end
-            local step = chrome and chrome.NudgeStep and chrome.NudgeStep()
-                or (IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1)
-            if chrome and chrome.ShouldSkipDuplicateNudge and chrome.ShouldSkipDuplicateNudge(owner, dx * step, dy * step) then return true end
-            return Nudge(preview, dx * step, dy * step)
-        end,
-    }
-    preview.arrowKeySpec = { owner = function() return owner end, selectedField = "_selectedHandle", nudge = preview.arrowBindings.onClick }
     owner.meterPreview = preview
-    owner:EnableKeyboard(true)
-    owner:SetPropagateKeyboardInput(true)
-    owner:SetScript("OnKeyDown", KeyDown)
+    preview.host = P.Suite.PreviewKit.NewHost(nil, { frame = owner })
+    preview.arrowBindings = { ownerName = "MSUF_SuiteMeterPreview_NudgeOwner", activeName = "MSUF_SuiteMeterPreview_ActiveNudgeBox",
+        buttonPrefix = "MSUF_SuiteMeterPreview_Nudge", onClick = function(_, dx, dy) return preview.kit:Arrow(dx, dy) end }
+    preview.kit = P.PreviewInteraction.Handles(preview.host, {
+        owner = owner, threshold = 2, rekey = true, bindings = preview.arrowBindings,
+        combat = function() return preview.inCombat or P.Combat() end,
+        tip = function(handle, entering)
+            P.PreviewInteraction.Outline(handle, entering or owner._selectedHandle == handle)
+        end,
+        click = function(handle, button)
+            if button == "RightButton" then E.Open(preview, handle) else E.Select(preview, handle, true) end
+        end,
+        drag = function(handle, phase) Dragged(preview, handle, phase) end,
+        select = function(handle) Selected(preview, handle) end,
+    })
+    preview.handles = preview.kit.list
     owner:SetScript("OnHide", function()
         owner:UnregisterAllEvents()
         E.Suspend(preview)
@@ -301,18 +221,21 @@ function E.Build(preview)
 end
 
 function E.Suspend(preview)
-    for _, handle in ipairs(preview.handles) do
-        Cancel(handle)
-        handle:EnableKeyboard(false)
-    end
-    Keyboard(preview, false)
+    preview.kit:Cancel()
+    for _, handle in ipairs(preview.handles) do handle:EnableKeyboard(false) end
+    preview.kit.opts.focus(preview.viewport, nil, false)
     Properties.Refresh(preview)
 end
 
 function E.Refresh(preview)
+    local drag = preview.kit.drag
+    local active = drag and drag.entry.region
+    if active and not (active.dragToken and DragCurrent(active.dragToken, preview) and active:IsVisible()) then
+        preview.kit:Cancel()
+        active = nil
+    end
     for _, handle in ipairs(preview.handles) do
-        if handle.drag and (not DragCurrent(handle.drag, preview) or not handle:IsVisible()) then Cancel(handle) end
-        if not handle.drag then Anchor(handle) end
+        if handle ~= active then Anchor(handle) end
     end
     local selected = preview.viewport._selectedHandle
     E.Select(preview, selected and selected:IsVisible() and selected or nil)
