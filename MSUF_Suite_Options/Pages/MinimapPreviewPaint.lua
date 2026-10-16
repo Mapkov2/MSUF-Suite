@@ -13,6 +13,7 @@ local TEXT_ANCHOR, WEATHER, BOX = Suite.MinimapTextAnchor, Suite.MinimapWeatherD
 local LANDING, LANDING_ICON, ZOOM = Suite.MinimapLanding, Suite.MinimapLandingIcon, Suite.MinimapZoomButtons
 local ROTATE, ART = Suite.MinimapRotate, Suite.MinimapStyleTexture
 local RULES = P.catalog.minimap.rules
+local Native = Suite.MinimapElements
 
 -- { name, sample text, key } of every info text.
 local TEXTS = {
@@ -29,6 +30,7 @@ local ICONS = {
     { "mail", "Mail", "elements", "showMail", "blizzard", "ui-hud-minimap-mail-up", "Interface\\Minimap\\Tracking\\Mailbox" },
     { "crafting", "Crafting", "elements", "showCrafting", "blizzard", "UI-HUD-Minimap-CraftingOrder-Up", "Interface\\Icons\\INV_Hammer_20" },
     { "compartment", "Compartment", "elements", "showCompartment", "blizzard", "ui-hud-minimap-button", "Interface\\Buttons\\UI-OptionsButton" },
+    { "externalEvent", "External event", "elements", false, "blizzard", nil, "Interface\\Icons\\Spell_nature_timestop", "ExternalEvent" },
     { "difficulty", "Difficulty", "elements", "showDifficulty", "blizzard", nil, "Interface\\GroupFrame\\UI-Group-LeaderIcon" },
     { "folio", "Omnium Folio", "landing", "showLanding", "folio", "GarrLanding-MinimapIcon-Alliance-Up", "Interface\\Icons\\INV_Misc_Book_09" },
     { "drawer", "Addon drawer", "addons", "collectButtons", "addons", nil, "Interface\\Buttons\\UI-OptionsButton" },
@@ -49,7 +51,7 @@ local LAYERS = {
     { "weather", "Weather" }, { "difficultyText", "Difficulty text" },
     { "calendarDay", "Calendar day" }, { "dungeon", "Group finder" },
     { "tracking", "Tracking" }, { "calendar", "Calendar" }, { "mail", "Mail" },
-    { "crafting", "Crafting" }, { "compartment", "Compartment" }, { "difficulty", "Difficulty" },
+    { "crafting", "Crafting" }, { "compartment", "Compartment" }, { "externalEvent", "External event" }, { "difficulty", "Difficulty" },
     { "zoom", "Zoom buttons" }, { "compass", "Compass" },
     { "guides", "Guides" }, { "hidden", "Hidden" },
 }
@@ -196,10 +198,12 @@ local function RowPosition(button, map, rowIndex, index, config, scale, prefix)
     local row = ROWS[rowIndex] or ROWS[1]
     local distance = ((config.elementDistance or 0) + (config.borderSize or 0)) * scale
     local step = ((config.elementSize or RULES.elementSize.default) + (config.elementSpacing or 0)) * scale
+    local x = prefix and config[prefix .. "X"] or 0
+    local y = prefix and config[prefix .. "Y"] or 0
     button:ClearAllPoints()
     button:SetPoint(row[1], map, row[2],
-        row[3] * distance + row[5] * index * step + (config[prefix .. "X"] or 0) * scale,
-        row[4] * distance + row[6] * index * step + (config[prefix .. "Y"] or 0) * scale)
+        row[3] * distance + row[5] * index * step + (x or 0) * scale,
+        row[4] * distance + row[6] * index * step + (y or 0) * scale)
 end
 
 -- The anchors Above and Below sit outside the map; returns the text justify.
@@ -221,7 +225,7 @@ end
 ------------------------------------------------------------------ offsets
 -- Setting prefix of a preview element's X/Y offsets (nil: not movable).
 local function OffsetPrefix(key)
-    if not key then return nil end
+    if not key or key == "externalEvent" then return nil end
     if key:find("^info") then return key end
     if key == "folio" then return "landing" end
     if key == "dungeon" then return "dungeon" end
@@ -302,6 +306,11 @@ end
 -- S.Minimap* come with the minimap addon; before it loads, the settings decide.
 local function IconWanted(config, spec)
     local key = spec[1]
+    local nativeKey = spec[8] or spec[2]
+    if spec[3] == "elements" then
+        if S.MinimapElementAvailable and not S.MinimapElementAvailable(nativeKey) then return false end
+        if not S.MinimapElementAvailable and Native.Ready() and not Native.Available(nativeKey) then return false end
+    end
     if key == "specialization" then return config.specButton and (config.specShowSpec or config.specShowLoot) end
     if key == "difficulty" then
         local wanted = config.showDifficulty and not config.infoDifficulty
@@ -312,9 +321,11 @@ local function IconWanted(config, spec)
     local wanted = key == "folio" and config.showLanding ~= LANDING.NEVER or spec[4] and config[spec[4]] == true
     if key == "drawer" and Suite.Client.IsAddOnLoaded("MinimapButtonButton") then wanted = false end
     if spec[4] == false then
-        wanted = S.MinimapElementPreviewShown and S.MinimapElementPreviewShown(spec[2]) == true or false
+        local frame = Native.Frame(nativeKey)
+        local shown = frame and frame:IsShown()
+        wanted = Public(shown) and shown == true
     end
-    if spec[3] == "elements" and S.MinimapElementPreviewShown and S.MinimapElementPreviewShown(spec[2]) == false then
+    if spec[3] == "elements" and S.MinimapElementPreviewShown and S.MinimapElementPreviewShown(nativeKey) == false then
         wanted = false
     end
     return wanted
@@ -373,6 +384,37 @@ local function PaintFolio(ui, config, button, size)
         (2 + (config.landingY or 0)) * scale)
 end
 
+-- Mirror the same native regions the runtime borrows, including the additive
+-- hover/pressed layer. Older builds use normal textures. Samples stay usable
+-- when Blizzard has not created a frame or resolved its geometry yet.
+local function PaintNativeIcon(ui, config, item)
+    local spec, button = item.spec, item.button
+    local frame, source, add, border = Native.Source(spec[8] or spec[2])
+    local parts = button.previewNative
+    local scale = ui.art.scale
+    local width, height = frame and frame:GetWidth(), frame and frame:GetHeight()
+    if frame and PublicNumber(width) and PublicNumber(height) and math.max(width, height) > 0 then
+        local fit = (config.elementSize or RULES.elementSize.default) / math.max(width, height)
+        if CopyNativeTexture(button.previewIcon, source, frame, scale, fit) then
+            if spec[1] == "externalEvent" then button.previewIconMask:SetSize(width * fit * scale, height * fit * scale) end
+            CopyNativeTexture(parts.add, add, frame, scale, fit)
+            CopyNativeTexture(parts.border, border, frame, scale, fit)
+            return
+        end
+    end
+    parts.add:Hide()
+    parts.border:Hide()
+    button.previewIcon:ClearAllPoints()
+    button.previewIcon:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+    button.previewIcon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+    if spec[1] == "externalEvent" then button.previewIconMask:SetSize(button:GetWidth() - 4, button:GetHeight() - 4) end
+    button.previewIcon:SetVertexColor(1, 1, 1, 1)
+    button.previewIcon:SetAlpha(1)
+    button.previewIcon:SetTexCoord(0, 1, 0, 1)
+    SetIcon(button.previewIcon, spec[6], spec[7])
+    button.previewIcon:Show()
+end
+
 local function PaintIcons(ui, config)
     local rowCount = 0
     local scale = ui.art.scale
@@ -413,6 +455,7 @@ local function PaintIcons(ui, config)
             local index = config.drawerRow == config.elementRow and rowCount or 0
             RowPosition(button, ui.map, config.drawerRow, index, config, scale, "drawer")
         else
+            PaintNativeIcon(ui, config, item)
             RowPosition(button, ui.map, config.elementRow, rowCount, config, scale, OffsetPrefix(key))
             if wanted then rowCount = rowCount + 1 end
         end

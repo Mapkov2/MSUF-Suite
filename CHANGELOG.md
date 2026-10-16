@@ -1,5 +1,14 @@
 # MSUF Suite Changelog
 
+## 0.1.2 Alpha - 2026-10-16
+
+- Updated WoW Forever minimap integration for build 1.60.1.70425, including native button textures and removed widgets.
+- Integrated Blizzard's conditional external-event button into the minimap row while preserving its native visibility and click behavior.
+- Fixed the day/night ring to keep a constant visible size and restore Blizzard's current scale and position when the module is disabled.
+- Matched minimap previews to native textures, hover layers and circular event masking, including compact preview sizes.
+- Updated translations and regression coverage for Retail, WoW Forever, module cleanup and combat deferral.
+- Distributed through the Beta channel on CurseForge and Wago. The Suite remains in Alpha and requires Midnight Simple Unit Frames.
+
 ## 0.1.1 Alpha - 2026-10-14
 
 - Fixed Envenom buff tracking and the same cast-target versus buff-target mismatch across native Retail Cooldown Manager entries.

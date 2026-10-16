@@ -4,6 +4,7 @@ local MM = P.Minimap
 local M = MM.M
 local LANDING, LANDING_ICON = NS.MinimapLanding, NS.MinimapLandingIcon
 local SHAPE = NS.MinimapShape
+local Native = NS.MinimapElements
 -- Blizzard's own minimap buttons, moved into suite slots around the map.
 -- Missing buttons are skipped. Blizzard keeps deciding when each button is
 -- shown (nothing here force-shows a button): a hidden button keeps an empty
@@ -15,44 +16,33 @@ local slots, items = {}, {}
 local BASE_SIZE = 21
 local landingBadge, landingButton
 
-local function Cluster(first, second)
-    local frame = _G.MinimapCluster
-    frame = MM.Usable(frame) and frame[first]
-    if second then frame = MM.Usable(frame) and frame[second] end
-    return MM.Usable(frame) and frame or nil
-end
-local function Global(name)
-    local frame = _G[name]
-    return MM.Usable(frame) and frame or nil
-end
 -- Retail and WoW Forever share these names: MinimapCluster's parent keys
 -- and a few globals.
 local DIFFICULTY = {
     key = "Difficulty",
     toggle = "showDifficulty",
     corner = "TOPRIGHT",
-    frame = function() return Cluster("InstanceDifficulty") end,
+    frame = Native.Difficulty,
 }
 -- Row order, then the two corner buttons.
 local SPECS = {
-    { key = "Tracking", toggle = "showTracking", frame = function() return Cluster("Tracking") end },
-    { key = "Calendar", toggle = "showCalendar", frame = function() return Global("GameTimeFrame") end },
-    { key = "Mail", toggle = "showMail", frame = function() return Cluster("IndicatorFrame", "MailFrame") end },
+    { key = "Tracking", toggle = "showTracking", frame = Native.Tracking },
+    { key = "Calendar", toggle = "showCalendar", frame = Native.Calendar },
+    { key = "Mail", toggle = "showMail", frame = Native.Mail },
     {
         key = "Crafting",
         toggle = "showCrafting",
-        frame = function() return Cluster("IndicatorFrame", "CraftingOrderFrame") end,
+        frame = Native.Crafting,
     },
-    { key = "Compartment", toggle = "showCompartment", frame = function() return Global("AddonCompartmentFrame") end },
+    { key = "Compartment", toggle = "showCompartment", frame = Native.Compartment },
+    { key = "ExternalEvent", frame = Native.ExternalEvent },
     DIFFICULTY,
     -- WoW Forever's landing refresh path fails with foreign placement; left alone there.
     {
         key = "Landing",
         toggle = "showLanding",
         corner = "BOTTOMLEFT",
-        frame = function()
-            if not NS.Client.isForever then return Global("ExpansionLandingPageMinimapButton") end
-        end,
+        frame = Native.Landing,
     },
 }
 
@@ -104,6 +94,7 @@ function S.MinimapElementPreviewShown(key)
 end
 
 local function Wanted(spec, c)
+    if not spec.toggle then return true end -- Native conditional visibility.
     local value = c[spec.toggle]
     if spec.key == "Landing" then return value ~= LANDING.NEVER end
     -- The difficulty text replaces Blizzard's flag.
@@ -131,7 +122,7 @@ local function Slot(key)
     slot:EnableMouse(false)
     slot:SetSize(1, 1)
     -- Settings prefix of the row offsets (MM.LayoutRow).
-    slot.minimapOffsetKey = "button" .. key
+    if key ~= "ExternalEvent" then slot.minimapOffsetKey = "button" .. key end
     -- Blizzard's mail and crafting indicators call their parent's Layout().
     slot.Layout = RowsChanged
     slots[key] = slot
@@ -197,15 +188,13 @@ local function StyleLanding(button, c)
     landingBadge:Show()
 end
 
--- WoW Forever's day/night ring (Camelot/Diel.lua) is a child of MinimapCluster
--- and fades with it. When enabled it moves onto the suite map's border, at the spot
--- Blizzard gives it on its default map (198 wide): 53 right of and 87 above
--- the map centre, on the rim of the circle. Beyond the circle the same
--- direction meets the rectangle's edge. Retail has no such frame.
-local DIEL_MAP, DIEL_X, DIEL_Y = 198, 53, 87
+-- Forever 70425's Diel ring belongs to MinimapContainer and keeps its visible
+-- size when the map scales. Place it on our rim in Blizzard's 55/86 direction;
+-- on rectangular maps the same direction meets the nearest edge.
+local DIEL_X, DIEL_Y = 55, 86
 local DIEL_LENGTH = math.sqrt(DIEL_X * DIEL_X + DIEL_Y * DIEL_Y)
 local function LayoutDiel(c)
-    local ring, width, height = Cluster("DielFrame"), MM.width, MM.height
+    local ring, width, height = Native.DayNight(), MM.width, MM.height
     if not ring or not width or not height then return end
     if not c.showDayNight then
         Park(ring)
@@ -213,8 +202,10 @@ local function LayoutDiel(c)
     end
     local ux, uy = DIEL_X / DIEL_LENGTH, DIEL_Y / DIEL_LENGTH
     local reach = c.shape == SHAPE.CIRCLE and width / 2 or math.min(width / 2 / ux, height / 2 / uy)
-    -- Blizzard never shrinks the ring below its own size (Diel.lua).
-    Own(ring, MM.host, "CENTER", MM.host, "CENTER", MM.Snap(ux * reach), MM.Snap(uy * reach), math.max(1, width / DIEL_MAP))
+    -- Cancel only the Suite host's scale, like Blizzard cancels its container.
+    local scale, uiScale = MM.host:GetEffectiveScale(), UIParent:GetEffectiveScale()
+    if not Finite(scale) or scale <= 0 or not Finite(uiScale) or uiScale <= 0 then return end
+    Own(ring, MM.host, "CENTER", MM.host, "CENTER", MM.Snap(ux * reach), MM.Snap(uy * reach), uiScale / scale)
 end
 
 -- Eight row modes: corner of the map, growth direction, and the outward side.
@@ -352,10 +343,27 @@ function MM.ReassertElements()
     RowsChanged()
 end
 
+-- Blizzard may change its container scale while the ring is borrowed. 70425
+-- cancels that current scale, so the original snapshot would restore stale
+-- size/coordinates. Keep older cluster-parented rings and foreign owners intact.
+local function ReleaseDiel(ring)
+    local record = MM.owned[ring]
+    local parent = record and record.parent
+    local restore = record and record.want and ring:GetParent() == record.want.parent
+    MM.Release(ring)
+    if not restore or parent ~= Native.DayNightContainer() then return end
+    local scale = parent:GetScale()
+    if not Finite(scale) or scale <= 0 then return end
+    ring:SetScale(1 / scale)
+    ring:ClearAllPoints()
+    ring:SetPoint("CENTER", parent, "CENTER", DIEL_X * scale, DIEL_Y * scale)
+end
+
 function MM.ReleaseElements()
     if landingBadge then landingBadge:Hide() end
+    local ring = Native.DayNight()
     for frame in pairs(mine) do
-        MM.Release(frame)
+        if frame == ring then ReleaseDiel(frame) else MM.Release(frame) end
         mine[frame] = nil
     end
     for _, slot in pairs(slots) do slot:Hide() end

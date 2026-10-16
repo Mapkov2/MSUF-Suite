@@ -975,15 +975,15 @@ do
     local radius, x, y = Rim()
     check(H.Near(radius, MM.width / 2, 1), "the ring is not on the rim of the round map: " .. radius)
     check(x > 0 and y > x, "the ring is not up and to the right of the map centre, as Blizzard places it")
-    check(H.Near(x / radius, 53 / math.sqrt(53 * 53 + 87 * 87), .02), "the ring left Blizzard's direction")
+    check(H.Near(x / radius, 55 / math.sqrt(55 * 55 + 86 * 86), .02), "the ring left Blizzard's direction")
     -- Blizzard's own scale write follows its SetPoint: both must be put back.
     W.Blizzard(function() ring:SetScale(1); ring:SetPoint("CENTER", 63, 72) end)
     W.Step()
     check(ring:GetParent() == MM.host and H.Near(Rim(), MM.width / 2, 1), "Blizzard's SetPoint moved the ring off the rim")
-    -- A larger map moves the ring out and grows it as Blizzard's scale rule does.
+    -- A larger map moves the ring out while retaining 70425's visible size.
     assert(S.Set("minimap", "size", 300))
     W.Step()
-    check(H.Near(Rim(), 150, 1) and ring:GetScale() > 1.5, "the ring did not follow a larger map")
+    check(H.Near(Rim(), 150, 1) and ring:GetScale() == 1, "the ring did not follow a larger map")
     -- A square map: the same direction meets the top edge.
     assert(S.Set("minimap", "shape", 1))
     W.Step()

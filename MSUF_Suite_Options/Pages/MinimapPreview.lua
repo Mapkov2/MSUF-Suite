@@ -419,12 +419,27 @@ local function IconTarget(ui, spec)
             text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"),
         }
     end
+    if spec[3] == "elements" and key ~= "difficulty" then
+        button.previewNative = {
+            add = button:CreateTexture(nil, "OVERLAY"),
+            border = button:CreateTexture(nil, "OVERLAY"),
+        }
+        button.previewNative.add:SetBlendMode("ADD")
+    end
+    if key == "externalEvent" then
+        local mask = button:CreateMaskTexture(nil, "ARTWORK")
+        mask:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetPoint("CENTER", button, "CENTER")
+        icon:AddMaskTexture(mask)
+        button.previewIconMask = mask
+    end
     local edge = button:CreateTexture(nil, "OVERLAY")
     edge:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT")
     edge:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT")
     edge:SetHeight(2)
     Tint(edge, 0.6, 0.74, 0.83, 0.65)
-    MakeDraggable(button, "offset", OffsetPrefix(key))
+    local prefix = OffsetPrefix(key)
+    if prefix then MakeDraggable(button, "offset", prefix) end
     return { spec = spec, button = button, backdrop = backdrop, edge = edge }
 end
 

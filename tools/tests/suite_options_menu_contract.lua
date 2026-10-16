@@ -52,6 +52,7 @@ local function Widget(kind)
     function w:GetStringWidth() return 0 end
     function w:GetUnboundedStringWidth() return #self.text * 7 end
     function w:CreateMaskTexture() return Widget("MaskTexture") end
+    function w:AddMaskTexture(mask) self.appliedMask = mask end
     function w:GetEffectiveScale() return 1 end
     function w:SetScript(name, fn) self.scripts[name] = fn end
     function w:GetScript(name) return self.scripts[name] end

@@ -97,3 +97,99 @@ for _, width in ipairs({ 420, 720, 1200 }) do
     end
 end
 print("suite_minimap_preview_layers_contract: passed")
+
+-- The common painter must match 70425 even before the optional runtime loads.
+-- Widget absence differs from a hidden native widget and from an unbuilt root.
+do
+    local oldCluster, oldCalendar, oldCompartment = MinimapCluster, GameTimeFrame, AddonCompartmentFrame
+    local oldBackdrop = MinimapBackdrop
+    local available, shown = P.S.MinimapElementAvailable, P.S.MinimapElementPreviewShown
+    P.S.MinimapElementAvailable, P.S.MinimapElementPreviewShown = nil, nil
+    local function Frame(width, height)
+        return {
+            GetWidth=function() return width end, GetHeight=function() return height end,
+            GetCenter=function() return 0,0 end, IsShown=function() return true end,
+            GetNormalTexture=function(self) return self.normal end,
+        }
+    end
+    local function Texture(atlas, width, height)
+        return {
+            atlas=atlas, IsShown=function() return true end,
+            GetAtlas=function(self) return self.atlas end, GetTexture=function() return nil end,
+            GetTexCoord=function() return 0,1,0,1 end, GetVertexColor=function() return 1,1,1,1 end,
+            GetAlpha=function() return 1 end, GetSize=function() return width,height end,
+            GetCenter=function() return 0,0 end,
+        }
+    end
+    local tracking, calendar, mail, compartment = Frame(23,23), Frame(23,23), Frame(32,24), Frame(23,22)
+    tracking.Button = Frame(23,23)
+    tracking.Button.StateTexture = Texture("ui-hud-minimap-tracking-button",23,23)
+    tracking.Button.AddTexture = Texture("ui-hud-minimap-tracking-button",23,23)
+    calendar.StateTexture = Texture("ui-hud-minimap-calendar-button",23,23)
+    mail.MailIcon = Texture("ui-hud-minimap-mail-icon",32,24)
+    compartment.StateTexture = Texture("ui-hud-minimap-addon-indicator",23,22)
+    MinimapCluster = { Tracking=tracking, IndicatorFrame={ MailFrame=mail } }
+    GameTimeFrame, AddonCompartmentFrame = calendar, compartment
+    local external = Frame(32,32)
+    external.visible = false
+    external.IsShown = function(self) return self.visible end
+    external.Icon,external.Border = Texture(nil,34,34),Texture(nil,42,42)
+    external.Icon.GetTexture = function() return "Interface\\Icons\\Spell_nature_timestop" end
+    external.Border.GetTexture = function() return "Interface\\Common\\RingBorder" end
+    MinimapBackdrop = { ExternalEventURLButton = external }
+    ui.state.layers.externalEvent = true
+    config.showTracking, config.showCalendar, config.showMail, config.showCompartment = true,true,true,true
+    config.showCrafting, config.showDifficulty, config.infoDifficulty = true,true,false
+    ui.state.layers.hidden = false
+    for _,key in ipairs({"blizzard","tracking","calendar","mail","compartment","crafting","difficulty"}) do
+        ui.state.layers[key] = true
+    end
+    ui.Paint()
+    local icons = {}
+    for _,item in ipairs(ui.iconItems) do icons[item.spec[1]] = item end
+    assert(not icons.crafting.button:IsShown(), "70425 absent Crafting widget still occupies a preview slot")
+    assert(not icons.difficulty.button:IsShown(), "70425 absent difficulty widget still appears")
+    for key, atlas in pairs({tracking="ui-hud-minimap-tracking-button",calendar="ui-hud-minimap-calendar-button",
+        mail="ui-hud-minimap-mail-icon",compartment="ui-hud-minimap-addon-indicator"}) do
+        assert(icons[key].button.previewIcon.atlas == atlas, "preview must mirror native " .. key .. " texture")
+    end
+    assert(icons.tracking.button.previewNative.add:IsShown(), "native additive hover layer is missing")
+    assert(not icons.externalEvent.button:IsShown(), "native hidden event button appeared in preview")
+    external.visible = true
+    ui.Paint()
+    local eventButton = icons.externalEvent.button
+    assert(eventButton:IsShown() and eventButton.previewNative.border:IsShown(), "native event visibility/border not mirrored")
+    assert(eventButton.previewIcon.appliedMask == eventButton.previewIconMask, "native event circular mask missing")
+    for _, mapSize in ipairs({100,300,600}) do
+        config.size = mapSize
+        ui.Paint()
+        local maskSize = config.elementSize * ui.art.scale
+        assert(math.abs(eventButton.previewIconMask:GetWidth() - maskSize) < 0.001, "event mask follows hitbox instead of native artwork")
+        assert(math.abs(eventButton.previewIcon:GetWidth() - maskSize * 34 / 32) < 0.001, "native event icon/frame ratio lost")
+    end
+    external.GetWidth = function() return {} end
+    ui.Paint()
+    assert(eventButton.previewIconMask:GetWidth() == eventButton:GetWidth() - 4, "fallback event mask does not match sample artwork")
+    external.GetWidth = function() return 32 end
+    assert(P.MinimapPreviewData.OffsetKeys("externalEvent") == nil, "event preview introduced unregistered offsets")
+    tracking.Button.StateTexture.atlas = "native-tracking-refreshed"
+    ui.Paint()
+    assert(icons.tracking.button.previewIcon.atlas == "native-tracking-refreshed", "native texture cached across refresh")
+    tracking.Button.normal = Texture("legacy-tracking",13,14)
+    tracking.Button.StateTexture,tracking.Button.AddTexture = nil,nil
+    ui.Paint()
+    assert(icons.tracking.button.previewIcon.atlas == "legacy-tracking", "legacy normal texture path broken")
+    assert(not icons.tracking.button.previewNative.add:IsShown(), "legacy path retained modern hover overlay")
+    -- A restricted geometry result must only choose the fallback, never arithmetic.
+    local secret = {}
+    tracking.GetWidth = function() return secret end
+    ui.Paint()
+    assert(icons.tracking.button.previewIcon:IsShown(), "unresolved native geometry lost its sample")
+    MinimapCluster,GameTimeFrame,AddonCompartmentFrame = nil,nil,nil
+    ui.Paint()
+    assert(icons.crafting.button:IsShown(), "unbuilt native root must retain the editable cold sample")
+    MinimapCluster,GameTimeFrame,AddonCompartmentFrame = oldCluster,oldCalendar,oldCompartment
+    MinimapBackdrop = oldBackdrop
+    P.S.MinimapElementAvailable,P.S.MinimapElementPreviewShown = available,shown
+end
+print("suite_minimap_preview_layers_contract: native 70425 sources and absence passed")
