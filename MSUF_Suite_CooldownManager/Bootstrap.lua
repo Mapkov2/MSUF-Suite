@@ -20,3 +20,29 @@ P.CDM = {
     lists = CDM.CleanLists(nil),
     spells = CDM.CleanSpells(nil),
 }
+
+-- Wakes: the trailing refresh of a throttle window, one fixed callback
+-- behind its caller's own armed flag. On Retail 12.1.5 and WoW Forever a
+-- wake is a key of one C-side timed signal map (C_Timer.NewTimedSignalMap),
+-- so arming a window makes no timer object; 12.1.0 has none and a wake is a
+-- C_Timer.After. Either way a disable leaves a wake to fire: its callback
+-- drops the armed flag and finds the module inactive, so no window stays
+-- armed without a wake behind it. The first wake picks the way (the map is
+-- made then); each wake on the map runs isolated, so one that raises never
+-- keeps another of its pass from running.
+local C = P.CDM
+local wakeFns, wakes = {}, nil
+local function Woke(key) P.Suite.Dispatch(wakeFns[key]) end
+-- A number for fn, registered once at load.
+function C.NewWake(fn)
+    wakeFns[#wakeFns + 1] = fn
+    return #wakeFns
+end
+local function SignalWake(key, delay) wakes:SignalAfter(key, delay) end
+local function AfterWake(key, delay) C_Timer.After(delay, wakeFns[key]) end
+function C.Wake(key, delay)
+    local NewTimedSignalMap = C_Timer.NewTimedSignalMap
+    if NewTimedSignalMap then wakes = NewTimedSignalMap(Woke) end
+    C.Wake = wakes and SignalWake or AfterWake
+    return C.Wake(key, delay)
+end

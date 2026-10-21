@@ -9,6 +9,8 @@ local WindowActionSkin = {
     owners = {},
 }
 NS.WindowActionSkin = WindowActionSkin
+local AnimateGlyphs, StopGlyphs = function() end, function() end
+function WindowActionSkin.SetMotionProvider(refresh, stop) AnimateGlyphs, StopGlyphs = refresh, stop end
 
 -- A combat-delayed visual request must not outlive an owner-wide disable. The
 -- generation invalidates older requests; the blocked state rejects later
@@ -167,6 +169,7 @@ local function RestoreExtraRegions(state)
 end
 
 local function RestoreNative(button, state)
+    StopGlyphs(button)
     if not state.nativeCaptured then return end
     for index = 1, #specialTextures do
         local definition = specialTextures[index]
@@ -363,15 +366,14 @@ local function RefreshExtraRegions(button, state)
     end
 end
 
--- One spec serves every action surface: all of them follow the same
--- settings, and every refresh rewrites it before the surface reads it.
-local surfaceSpec = {
-    role = "button",
-    pillHeight = 24,
-    allowImplicitProtected = true,
-}
-
-local function SurfaceSpec(settings)
+-- Appearance settings are shared; the declarative motion policy belongs to
+-- the individual action and must never leak through a shared mutable spec.
+local function SurfaceSpec(settings, state)
+    local surfaceSpec = state.surfaceSpec
+    if not surfaceSpec then
+        surfaceSpec = { role = "button", pillHeight = 24, allowImplicitProtected = true }
+        state.surfaceSpec = surfaceSpec
+    end
     local shape = settings.surfaceShape
     surfaceSpec.useControlShape = shape == "global"
     surfaceSpec.shape = shape ~= "global" and shape or nil
@@ -379,6 +381,7 @@ local function SurfaceSpec(settings)
     surfaceSpec.inset = tonumber(settings.surfaceInset) or 2
     surfaceSpec.border = settings.style == "outline" and 1 or 0
     surfaceSpec.fillVisible = settings.style == "soft"
+    surfaceSpec.motion = state.motionPolicy
     return surfaceSpec
 end
 
@@ -387,7 +390,7 @@ local function RefreshSurface(button, settings)
         if NS.Registry.GetSurface(button) then NS.Surface.SetVisible(button, false) end
         return true
     end
-    local surface = NS.Surface.Attach(button, SurfaceSpec(settings))
+    local surface = NS.Surface.Attach(button, SurfaceSpec(settings, WindowActionSkin.states[button]))
     if not surface then return false end
     NS.Surface.SetVisible(button, true)
     return true
@@ -405,7 +408,7 @@ function WindowActionSkin.HasOwnedStates(button)
     return true
 end
 
-local function ApplyNow(button, owner, kind)
+local function ApplyNow(button, owner, kind, motion)
     if not CanApply(button) then return nil, "protected control" end
     if not validKinds[kind] then return nil, "unknown action" end
 
@@ -433,6 +436,7 @@ local function ApplyNow(button, owner, kind)
         end
     end
     state.kind = kind
+    if motion ~= nil then state.motionPolicy = motion end
 
     local settings = Settings()
     state.style = settings.style
@@ -461,19 +465,21 @@ local function ApplyNow(button, owner, kind)
     end
     RefreshExtraRegions(button, state)
     state.visible = true
+    AnimateGlyphs(button, state,
+        state.kind == "close" and settings.closeGlyphSize or settings.glyphSize, settings.glyphMode)
     return state
 end
 
-function WindowActionSkin.Apply(button, owner, kind)
+function WindowActionSkin.Apply(button, owner, kind, motion)
     if not button then return nil, "invalid control" end
     BeginOwnerRequest(owner)
     if NS.IsCombatLocked() then
         local _, reason = DeferOwnerRequest("window-action:" .. tostring(button), owner, function()
-            ApplyNow(button, owner, kind)
+            ApplyNow(button, owner, kind, motion)
         end)
         return nil, reason or "combat"
     end
-    return ApplyNow(button, owner, kind)
+    return ApplyNow(button, owner, kind, motion)
 end
 
 function WindowActionSkin.Track(button, owner, kind)
@@ -563,6 +569,7 @@ local function DisableNow(button, state)
     -- WoW cannot delete regions; dropping this weak state would allocate four
     -- more textures on every disable/enable or profile cycle.
     state.owner = nil
+    state.motionPolicy = nil
     return true
 end
 

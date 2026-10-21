@@ -57,6 +57,20 @@ def validate_addons(root, files, version):
         unknown = seen.difference(addons, {"MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames_Options"})
         if unknown:
             raise ValueError(f"Missing required addon dependencies: {sorted(unknown)}")
+    # Catalogs stay canonical in the core folder; each is reachable through
+    # exactly one host-dependent LoD companion, including a selected custom language.
+    for locale in ("deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW"):
+        catalog = f"MSUF_Suite/Locales/{locale}.lua"
+        if catalog not in files:
+            raise ValueError(f"Missing canonical Suite locale catalog: {locale}")
+        addon = "MSUF_Suite_Locale_" + locale
+        manifest = f"{addon}/{addon}_Mainline.toc"
+        if manifest not in files or dependencies.get(addon) != ["MidnightSimpleUnitFrames"]:
+            raise ValueError(f"Missing or unsafe Suite locale companion: {locale}")
+        content = (root / manifest).read_text(encoding="utf-8-sig")
+        entries = [line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")]
+        if field(content, "LoadOnDemand") != "1" or entries != [f"..\\MSUF_Suite\\Locales\\{locale}.lua"]:
+            raise ValueError(f"Suite locale companion must load only its canonical catalog: {locale}")
     return addons
 
 

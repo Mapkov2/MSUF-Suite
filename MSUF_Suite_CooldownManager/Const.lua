@@ -367,6 +367,91 @@ end
 -- Four edges inside owner's rect (shared with the action bars).
 K.PlaceEdges = S.PlaceEdges
 
+-- MSUF's ring art per shape ({ ring, desaturate } or false), read once out
+-- of combat (the settings read's K.ShapeOf and a shape's decoration ask
+-- first; a new bridge reads again): placing rings later, a glow's repaint in
+-- combat too, asks MSUF nothing.
+local ringArt, ringAsk = {}, nil
+function K.RingArt(shape)
+    local ask = NS.HostBridge.IconShapeArt
+    if ask ~= ringAsk then ringArt, ringAsk = {}, ask end
+    local art = ringArt[shape]
+    if art == nil then
+        local ring, _, _, desaturate = ask(shape)
+        art = ring and { ring, desaturate == true } or false
+        ringArt[shape] = art
+    end
+    return art
+end
+
+-- MSUF's icon shape of a bar (the iconShape choice): MSUF's id, RECTANGLE
+-- when square or on a host without shapes (the bar keeps its square border).
+K.SQUARE = "RECTANGLE"
+function K.ShapeOf(view)
+    local shape = NS.IconShapeIds[view.iconShape or 1] or K.SQUARE
+    if shape ~= K.SQUARE and not K.RingArt(shape) then shape = K.SQUARE end
+    return shape
+end
+
+-- A timer bar without its icon ("Display cooldowns as timer bars", icon off)
+-- has nothing to skin or shape: it keeps its square border.
+function K.Iconless(view)
+    return view.cooldownDuration and view.kind == COOLDOWN and view.barIcon == false
+end
+
+-- What MSUF draws on a cooldown bar's icons (view.decor), made by the
+-- settings read: { skin, shape (nil when square), view: with a skin, the view
+-- for the plain icon style with no border (the skin draws it), base: the view
+-- it was made for }, or false for nothing, so the icon style of a bar without
+-- a skin or shape is the plain one. The table stays while the look does (a
+-- settings read that changes something else keeps it): an icon decorated
+-- with it is up to date (Icons.lua's StyleDecorated).
+function K.Decor(view)
+    local skin, shape = view.skin, view.shape
+    if shape == K.SQUARE then shape = nil end
+    if K.Iconless(view) or not (skin or shape) then
+        view.decor = false
+        return
+    end
+    local decor = rawget(view, "decor")
+    if decor and decor.base == view and decor.shape == shape
+        and (decor.skin and decor.skin.signature) == (skin and skin.signature) then return end
+    view.decor = { skin = skin, shape = shape, base = view,
+        view = skin and setmetatable({ border = 0 }, { __index = view }) or nil }
+end
+
+-- A set's ring textures up to `count`, hidden: made out of combat (a shaped
+-- icon's decoration), so placing them later makes none.
+function K.EnsureRings(set, owner, count)
+    for i = #set + 1, count do
+        local texture = S.CreateTexture(owner, nil, "BORDER", nil, -1)
+        texture:Hide()
+        set[i] = texture
+    end
+end
+
+-- The border of a shaped icon: `count` rings of the shape's art one pixel
+-- apart around `anchor`, on owner's BORDER layer under the icon art (STAR's
+-- filled silhouette then shows as an outline). A square shape, no host art or
+-- count 0 hides them; `set` is the owner's own list.
+function K.PlaceRings(set, owner, anchor, shape, count, r, g, b)
+    local art = shape and shape ~= K.SQUARE and K.RingArt(shape)
+    if not art then count = 0 end
+    K.EnsureRings(set, owner, count)
+    local px = K.Px()
+    for i = 1, count do
+        local texture = set[i]
+        texture:SetTexture(art[1])
+        texture:SetDesaturated(art[2])
+        texture:ClearAllPoints()
+        texture:SetPoint("TOPLEFT", anchor, "TOPLEFT", -i * px, i * px)
+        texture:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", i * px, -i * px)
+        texture:SetVertexColor(r, g, b, 1)
+        texture:Show()
+    end
+    for i = count + 1, #set do set[i]:Hide() end
+end
+
 -- A frame inside an aura button, or inside one of ours there, made with its
 -- parent in the one CreateFrame call. The client refuses to SetParent a
 -- frame into an aura button later ("Reparenting disallowed as child object

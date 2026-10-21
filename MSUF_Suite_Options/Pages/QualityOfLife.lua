@@ -117,6 +117,7 @@ local GROUPS = {
         sections = { "delve_sole_power" } },
     { id = "playerAuras", title = "Player aura layout", switch = "enabled", sections = { "player_auras" },
         aliases = { "player buffs", "minimap auras" } },
+    { id = "playerAuraSkins", title = "Player aura skins", switch = "enabled", sections = { "player_aura_skins" }, aliases = { "buff skins" } },
     { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" },
         aliases = { "exp bar", "erfahrungsleiste" } },
     { id = "mapLandingShortcuts", title = "Expansion shortcuts (Retail)", switch = "enabled",
@@ -216,7 +217,7 @@ local CATEGORIES = {
     } },
     { id = "characterGear", title = "Character & Gear", tabs = {
         { id = "character", title = "Character", keys = {
-            "chatProfileLinks.enabled", "xpBar.enabled", "playerAuras.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled",
+            "chatProfileLinks.enabled", "xpBar.enabled", "playerAuras.enabled", "playerAuraSkins.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled",
             "targetDistance.enabled", "characterExtras.enabled",
         } },
         { id = "gear", title = "Gear", keys = {

@@ -396,7 +396,7 @@ do
     EventRegistry = Registry()
     ScrollBoxListMixin = { Event = { OnInitializedFrame = "OnInitializedFrame" } }
     ButtonGroupBaseMixin = { Event = { Selected = "Selected" } }
-    DropdownButtonMixin = { Event = { OnMenuOpen = "OnMenuOpen" } }
+    DropdownButtonMixin = { Event = { OnMenuOpen = "OnMenuOpen", OnMenuClose = "OnMenuClose" } }
     local refreshedTabs, released, actionRestores = {}, {}, 0
     local function NoAction() return false end
     local NS = {
@@ -438,7 +438,7 @@ do
     local dropdown = Registry()
     dropdown.IsMenuOpen = NoAction
     function dropdown:GetMenuDescription() end
-    Check(Checkmarks.TrackDropdown(dropdown, "dropdowns") and dropdown:Count() == 1,
+    Check(Checkmarks.TrackDropdown(dropdown, "dropdowns") and dropdown:Count() == 2,
         "a dropdown was not tracked")
     Checkmarks.RegisterLegacyDropdowns()
     Check(EventRegistry:Count() == 2 and categoryList.ScrollBox:Count() == 1,

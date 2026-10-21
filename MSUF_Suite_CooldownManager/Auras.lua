@@ -140,19 +140,21 @@ local function Debounced()
     debounced = false
     Auras.FlushPending()
 end
+local DEBOUNCE_WAKE = C.NewWake(Debounced)
 -- Buttons that refuse a restyle while auras are plain get a new container,
 -- batched so slider drags do not leak one per tick.
 local function Debounce()
     if debounced then return end
     debounced = true
-    C_Timer.After(.5, Debounced)
+    C.Wake(DEBOUNCE_WAKE, .5)
 end
 
 -- What a bar's entries ask of its buttons (need, read by Ensure): countdown
 -- regions (the bar shows the countdown or a spell asks for it), a glow while
--- active, a stack glow, a sensor for kit sounds (aura bars only).
+-- active, a stack glow, the pandemic window (aura bars and overlays), a
+-- sensor for kit sounds (aura bars only).
 local function Needs(entries, aura, view)
-    need.glow, need.stack, need.kit = false, false, false
+    need.glow, need.stack, need.kit, need.pandemic = false, false, false, false
     need.text = K.BarTime(view)
     need.timers = ""
     local isKit = C.Alerts.IsKit
@@ -164,6 +166,7 @@ local function Needs(entries, aura, view)
             if ov.timeText == YES then need.text = true end
             local n = ov.stackGlow
             if type(n) == "number" and n >= 1 then need.stack = true end
+            if ov.pandemic == true then need.pandemic = true end
             if aura then
                 if ov.auraGlow == true then need.glow = true end
                 if isKit(ov.sound) or isKit(ov.lossSound) then need.kit = true end

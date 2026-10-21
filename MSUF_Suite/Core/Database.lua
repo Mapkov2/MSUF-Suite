@@ -21,16 +21,21 @@ Database.PROFILE_LAYOUT_STATE = { minimap = { "detachedButtons" } }
 -- exports or undo, but a rename moves them and deletion releases them.
 local PROFILE_RUNTIME_ROOTS = { "cdmEditorCatalog" }
 
-local function Copy(value, seen)
-    if type(value) ~= "table" then return value end
-    seen = seen or {}
+local function CopyTable(value, seen)
     if seen[value] then return seen[value] end
     local result = {}
     seen[value] = result
     for key, item in pairs(value) do
-        result[Copy(key, seen)] = Copy(item, seen)
+        if type(key) == "table" then key = CopyTable(key, seen) end
+        if type(item) == "table" then item = CopyTable(item, seen) end
+        result[key] = item
     end
     return result
+end
+
+local function Copy(value, seen)
+    if type(value) ~= "table" then return value end
+    return CopyTable(value, seen or {})
 end
 Suite.CopyValue = Copy
 

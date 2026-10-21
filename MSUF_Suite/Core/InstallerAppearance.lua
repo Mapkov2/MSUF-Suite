@@ -179,6 +179,8 @@ function A.Window(frame)
     panels[frame], panelOrder[#panelOrder + 1] = record, record
     PaintPanel(record)
     frame:HookScript("OnShow", A.Refresh)
+    frame:HookScript("OnShow", function() Suite.Skin.RegisterMenu(frame, "installerMotion") end)
+    Suite.Skin.RegisterMenu(frame, "installerMotion")
     Bridge.WatchMenuAppearance(A, AppearanceChanged)
     events = CreateFrame("Frame")
     events:RegisterEvent("ADDON_LOADED")

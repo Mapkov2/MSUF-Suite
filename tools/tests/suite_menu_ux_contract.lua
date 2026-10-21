@@ -57,6 +57,8 @@ loadfile = function(path)
 end
 assert(originalLoad(root .. "/tools/tests/suite_options_menu_contract.lua"))()
 loadfile = originalLoad
+-- This renderer fixture omits the optional LoD skin; motion has its own real-provider contracts.
+MSUFSuite.Skin.RegisterMenu = function() end
 assert(P and P.MenuWorkspace and P.ReminderEditor and P.ReminderVisibility)
 C_Spell = { GetSpellName = function(id) return "Spell " .. id end,
     GetSpellTexture = function(id) return id end, GetSpellInfo = function() end }

@@ -65,6 +65,20 @@ B.Section("playerAuras", "player_auras", "Player aura layout", {
     B.Color("borderColor", "Outline color", "000000"),
     B.Font("font", "Font"),
     Number("fontSize", "Text size", 16, 8, 30),
+    -- MSUF's icon skins of the Icon Skins page rows "Buffs" and "Debuffs".
+    String("buffSkin", "Icon skin", "DEFAULT", 64),
+    String("debuffSkin", "Icon skin", "DEFAULT", 64),
+})
+NS.SuiteCatalog.playerAuras.rules.buffSkin.hidden = true
+NS.SuiteCatalog.playerAuras.rules.debuffSkin.hidden = true
+
+-- MSUF's icon skins on Blizzard's player buffs and debuffs at Blizzard's own
+-- size and layout. The choices stay Player aura layout's (that module paints
+-- them while on), so this one applies right after it (follows).
+B.Module("playerAuraSkins", {
+    title = "Player aura skins",
+    description = "MSUF's icon skins on Blizzard's player buffs and debuffs, at Blizzard's size and layout.",
+    optIn = true, page = "suite_qualityOfLife", follows = "playerAuras",
 })
 
 -- Incoming whispers are only a cue: chat text can be secret in combat, so

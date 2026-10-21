@@ -18,6 +18,26 @@ local GenericWindows = {
     maxNodes = 480,
 }
 NS.GenericWindows = GenericWindows
+local TrackScrollMotion, ReleaseScrollMotion = function() end, function() end
+function GenericWindows.SetScrollMotionProvider(track, release)
+    TrackScrollMotion, ReleaseScrollMotion = track, release
+end
+local TrackCollapseMotion, ReleaseCollapseMotion = function() end, function() end
+function GenericWindows.SetCollapseMotionProvider(track, release) TrackCollapseMotion, ReleaseCollapseMotion = track, release end
+function GenericWindows.TrackCollapseMotion(target, owner) TrackCollapseMotion(target, owner) end
+local TrackMenuMotion, ReleaseMenuMotion = function() end, function() end
+function GenericWindows.SetMenuMotionProvider(track, release)
+    TrackMenuMotion, ReleaseMenuMotion = track, release
+end
+function GenericWindows.TrackMenuMotion(target, owner) return TrackMenuMotion(target, owner) end
+local TrackContentMotion, ReleaseContentMotion = function() end, function() end
+function GenericWindows.SetContentMotionProvider(track, release)
+    TrackContentMotion, ReleaseContentMotion = track, release
+end
+function GenericWindows.TrackScrollMotion(target, owner)
+    TrackContentMotion(target, owner)
+    return TrackScrollMotion(target, owner)
+end
 
 local Safety = NS.Safety
 local Field = Safety.Field
@@ -276,6 +296,10 @@ end
 -- Shared ControlSkin, IconSkin, Checkmarks, ScrollBarSkin and Cosmetics
 -- state of this owner, restored exactly once per disable.
 local function RestoreOwnerSkins(owner)
+    ReleaseScrollMotion(owner)
+    ReleaseCollapseMotion(owner)
+    ReleaseContentMotion(owner)
+    ReleaseMenuMotion(owner)
     NS.IconSkin.DisableOwner(owner)
     NS.ControlSkin.DisableOwner(owner)
     NS.Checkmarks.UntrackOwner(owner)

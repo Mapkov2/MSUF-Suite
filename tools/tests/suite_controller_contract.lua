@@ -345,6 +345,59 @@ for i, id in ipairs(S.order) do
     assert(appliedOrder[i] == id, "the combat queue applied modules out of catalog order")
 end
 
+-- A module's followers (catalog spec.follows, here linked through
+-- S.Followers) apply right after it: at once out of combat; in combat both
+-- wait for the queue; a follower still queued when its leader applies is left
+-- to the queue, which applies it after its leader in either catalog order.
+do
+    local followers, log = S.Followers, {}
+    local function Track(instance, name)
+        instance.Refresh = function(self)
+            self.refreshes = (self.refreshes or 0) + 1
+            log[#log + 1] = name
+        end
+    end
+    Track(module, "minimap")
+    Track(texts, "dataTexts")
+    local textsOn = texts.active == true
+    assert(S.Set("dataTexts", "enabled", true) and texts.active and module.active)
+    for _, pair in ipairs({ { "minimap", "dataTexts" }, { "dataTexts", "minimap" } }) do
+        local lead, follower = pair[1], pair[2]
+        S.Followers = function(id)
+            if id == lead then return { follower } end
+            return followers(id)
+        end
+        log = {}
+        S.Apply(lead)
+        assert(#log == 2 and log[1] == lead and log[2] == follower, "a module's follower applies right after it")
+        log = {}
+        combat = true
+        S.Apply(lead)
+        combat = false
+        assert(#log == 0 and S.Status(lead) == "Waiting for combat to end" and S.Status(follower) == "Waiting for combat to end",
+            "in combat a module and its follower wait for the combat end")
+        S.Apply(lead)
+        assert(#log == 1 and log[1] == lead and S.Status(follower) == "Waiting for combat to end"
+            and queue.events.PLAYER_REGEN_ENABLED, "a follower still queued is left to the combat queue")
+        queue:callback()
+        assert(#log == 2 and log[2] == follower and not queue.events.PLAYER_REGEN_ENABLED,
+            "the combat queue applies the follower left to it")
+        log = {}
+        combat = true
+        S.Apply(lead)
+        combat = false
+        queue:callback()
+        local leadAt
+        for i, name in ipairs(log) do if name == lead then leadAt = i end end
+        assert(leadAt and leadAt < #log and log[#log] == follower and #log <= 3 and not queue.events.PLAYER_REGEN_ENABLED,
+            "the combat queue applies a follower after its leader in either catalog order")
+    end
+    S.Followers = followers
+    local plain = function(self) self.refreshes = (self.refreshes or 0) + 1 end
+    module.Refresh, texts.Refresh = plain, plain
+    assert(S.Set("dataTexts", "enabled", textsOn) and (texts.active == true) == textsOn)
+end
+
 -- The Bags catalog reads combinedBags through C_CVar like every other file;
 -- the global GetCVar/SetCVar are not needed (and not stubbed here).
 ContainerFrameCombinedBags = { EnumerateValidItems = function() end, UpdateItems = function() end }

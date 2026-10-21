@@ -2,7 +2,8 @@ local _, P = ...
 local NS, S, AB = P.NS, P.Suite, P.ActionBars
 local M = AB.M
 local ENUM = AB.ENUM
-local ENDCAP, SHAPE, BORDER_ART, ASSIST = ENUM.ENDCAP, ENUM.BUTTON_SHAPE, ENUM.BORDER_ART, ENUM.ASSIST_STYLE
+local ENDCAP, BORDER_ART, ASSIST = ENUM.ENDCAP, ENUM.BORDER_ART, ENUM.ASSIST_STYLE
+local PROC_PIXEL = ENUM.PROC_GLOW.PIXEL
 
 -- Optional static ornaments use only small colored regions owned by Suite.
 -- Nothing follows combat events, timers or the cursor. They take the
@@ -136,21 +137,42 @@ function AB.DecorationHost(rec)
     AB.RaiseDecoration(rec)
     return rec.edgeHost
 end
-local function Art(texture, circle)
-    if circle then
-        texture:SetTexture(RING)
+-- Button shapes: MSUF's aura icon shapes (MSUF 7.0, HostBridge.ApplyIconShape
+-- with MSUF's ring and silhouette art); an older host draws only the Suite's
+-- own circle, and every other shape square. Resolved once per style pass into
+-- AB.style: shape (MSUF's id or RECTANGLE), round (any other shape), ring,
+-- fill, legacyCircle. AB.ButtonShape is the one resolution (the refresh's
+-- skin check asks for the look of that shape too); a square button asks
+-- MSUF nothing.
+function AB.ButtonShape(config)
+    local shape = ENUM.BUTTON_SHAPE_IDS[config.buttonShape] or "RECTANGLE"
+    if shape == "RECTANGLE" then return shape end
+    local ring, fill = NS.HostBridge.IconShapeArt(shape)
+    if ring then return shape, ring, fill, false end
+    if shape == "CIRCLE" then return shape, RING, CIRCLE, true end
+    return "RECTANGLE"
+end
+function AB.ResolveShape(style, config)
+    local shape, ring, fill, legacy = AB.ButtonShape(config)
+    style.shape, style.round, style.ring, style.fill, style.legacyCircle = shape, shape ~= "RECTANGLE", ring, fill, legacy == true
+end
+local function Art(texture, ring)
+    if ring then
+        texture:SetTexture(ring)
     else
         texture:SetAtlas("UI-HUD-ActionBar-IconFrame")
     end
 end
--- Round buttons get round interaction art: the ring of their frame, in the
+-- Shaped buttons get shaped interaction art: the ring of their shape, in the
 -- interaction color, for the mouseover border (HIGHLIGHT layer of the button)
 -- and the pixel proc glow (on the decoration host).
+-- The ring's art is set where it is made and by the style pass (a new shape:
+-- StyleDecoration), so showing a proc glow only places and shows it.
 local function Ring(rec, key, owner, layer, size)
     local ring = rec[key]
     if not ring then
         ring = S.CreateTexture(owner, nil, layer, nil, 7)
-        ring:SetTexture(RING)
+        ring:SetTexture(AB.style.ring or RING)
         rec[key] = ring
     end
     ring:ClearAllPoints()
@@ -186,15 +208,15 @@ local function ShapeMask(texture, rec, circle)
     end
 end
 local SWIPES = { "cooldown", "chargeCooldown", "lossOfControlCooldown" }
-local function PlaceArt(texture, button, extent, circle)
+local function PlaceArt(texture, button, extent, ring)
     texture:ClearAllPoints()
     texture:SetPoint("CENTER", button, "CENTER", 0, 0)
     texture:SetSize(extent, extent * button:GetHeight() / button:GetWidth())
-    Art(texture, circle)
+    Art(texture, ring)
 end
-function AB.StyleDecoration(rec, size)
-    local c, button = M.config, rec.button
-    local circle = c.buttonShape == SHAPE.CIRCLE
+-- An older host: the Suite's own circle mask over the button's textures.
+local function LegacyCircle(rec, circle)
+    local button = rec.button
     if circle and not rec.shapeMask then
         rec.shapeMask = button:CreateMaskTexture()
         rec.shapeMask:SetTexture(CIRCLE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
@@ -208,11 +230,52 @@ function AB.StyleDecoration(rec, size)
         ShapeMask(button:GetCheckedTexture(), rec, circle)
         rec.circleMasked = circle
     end
-    for i = 1, #SWIPES do
-        local cooldown = button[SWIPES[i]]
-        if cooldown then cooldown:SetSwipeTexture(circle and CIRCLE or WHITE) end
+end
+-- MSUF's shape over every texture that shows the icon area (Blizzard's flash
+-- and highlights too) and over the swipes; set in the style pass only, so it
+-- looks the same in and out of combat.
+local function HostShape(rec, style)
+    local button = rec.button
+    if not rec.cooldowns then
+        local list = {}
+        for i = 1, #SWIPES do list[#list + 1] = button[SWIPES[i]] end
+        rec.cooldowns = list
     end
-    local fancy = circle or c.borderArt == BORDER_ART.BLIZZARD
+    NS.HostBridge.ApplyIconShape(button, style.shape, button.icon, rec.cooldowns, button.icon, rec.slotTexture,
+        button:GetHighlightTexture(), button:GetPushedTexture(), button:GetCheckedTexture(), button.Flash,
+        button.NewActionTexture, button.SpellHighlightTexture)
+    rec.hostShaped = style.round or nil
+end
+function AB.StyleDecoration(rec, size)
+    local c, button, style = M.config, rec.button, AB.style
+    local circle, round = style.legacyCircle, style.round
+    local ringArt = style.ring or RING
+    if rec.hoverRing then rec.hoverRing:SetTexture(ringArt) end
+    -- A shaped button's pixel proc glow ring is made here, hidden, so a first
+    -- proc (also in combat) only places and shows it (AB.GlowRing); any other
+    -- button parks its ring, so its glow paths stay Suite main's.
+    local pixelRing = round and c.procGlow == PROC_PIXEL
+    if pixelRing and not rec.glowRing then
+        rec.glowRing = rec.parkedGlowRing or S.CreateTexture(AB.DecorationHost(rec), nil, "OVERLAY", nil, 7)
+        rec.parkedGlowRing = nil
+        rec.glowRing:Hide()
+    elseif not pixelRing and rec.glowRing then
+        rec.glowRing:Hide()
+        rec.parkedGlowRing, rec.glowRing = rec.glowRing, nil
+    end
+    if rec.glowRing then rec.glowRing:SetTexture(ringArt) end
+    if circle or rec.circleMasked then LegacyCircle(rec, circle) end
+    if not circle and (round or rec.hostShaped) then HostShape(rec, style) end
+    if not round or circle then
+        for i = 1, #SWIPES do
+            local cooldown = button[SWIPES[i]]
+            if cooldown then cooldown:SetSwipeTexture(circle and CIRCLE or WHITE) end
+        end
+    end
+    -- An icon skin replaces Blizzard's frame art on square buttons and the
+    -- ring of shaped ones (their state art stays: it shows pressed and checked).
+    local skin = style.skin
+    local fancy = round or (c.borderArt == BORDER_ART.BLIZZARD and not skin)
     rec.decorFancy = fancy
     if fancy then
         local host = AB.DecorationHost(rec)
@@ -221,12 +284,12 @@ function AB.StyleDecoration(rec, size)
             rec.stateArt = S.CreateTexture(host, nil, "OVERLAY", nil, 6)
         end
         local extent = (size + c.borderExpansion * 2) * c.borderScale / 100
-        PlaceArt(rec.borderArt, button, extent, circle)
-        PlaceArt(rec.stateArt, button, extent, circle)
+        PlaceArt(rec.borderArt, button, extent, round and style.ring)
+        PlaceArt(rec.stateArt, button, extent, round and style.ring)
         rec.borderArt:SetVertexColor(AB.style.br, AB.style.bg, AB.style.bb, 1)
         rec.stateArt:SetVertexColor(AB.style.ir, AB.style.ig, AB.style.ib, 1)
         rec.stateArt:SetBlendMode("ADD")
-        rec.borderArt:SetShown(c.borderSize > 0)
+        rec.borderArt:SetShown(c.borderSize > 0 and not skin)
         AB.ShowEdges(rec.borderEdges, false)
         rec.pressBorder = false
         AB.ShowEdges(rec.pressEdges, false)
@@ -266,19 +329,20 @@ local function LayoutAssist(rec, holder)
     local c = M.config
     local size = (rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
     local height = (rec.bar.height or rec.bar.size or c[rec.bar.key.Size]) + c.assistExpansion * 2
-    local circle = c.buttonShape == SHAPE.CIRCLE
-    if holder.size == size and holder.height == height and holder.x == c.assistX and holder.y == c.assistY and holder.circle == circle
+    local shape = AB.style.shape
+    if holder.size == size and holder.height == height and holder.x == c.assistX and holder.y == c.assistY and holder.shape == shape
         and holder.color == c.assistColor and holder.alpha == c.assistAlpha and holder.style == c.assistStyle then return end
-    holder.size, holder.x, holder.y, holder.circle = size, c.assistX, c.assistY, circle
+    holder.size, holder.x, holder.y, holder.shape = size, c.assistX, c.assistY, shape
     holder.height = height
     holder.color, holder.alpha, holder.style = c.assistColor, c.assistAlpha, c.assistStyle
     holder:ClearAllPoints()
     holder:SetSize(size, height)
     holder:SetPoint("CENTER", rec.button, "CENTER", c.assistX, c.assistY)
     holder.ring:SetAllPoints(holder)
-    Art(holder.ring, circle)
+    local round = AB.style.round
+    Art(holder.ring, round and AB.style.ring)
     holder.fill:SetAllPoints(rec.button.icon)
-    holder.fill:SetTexture(circle and CIRCLE or WHITE)
+    holder.fill:SetTexture(round and AB.style.fill or WHITE)
     local r, g, b = S.RGB(c.assistColor)
     holder.ring:SetVertexColor(r, g, b, c.assistAlpha / 100)
     holder.fill:SetVertexColor(r, g, b, c.assistAlpha / 100 * .35)

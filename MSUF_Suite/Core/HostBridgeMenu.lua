@@ -159,6 +159,43 @@ function HostBridge.Menu2(M)
     return adapter
 end
 
+-- MSUF's Icon Skins page (Style > Icon Skins, MSUF 7.0: M.IconSkinsPage)
+-- lists the Suite's icon areas under "Where It Applies" (Page.RegisterArea;
+-- spec fields in MSUF_Menu2_IconSkins.lua). Older hosts have no page, and a
+-- host with the page but without the painter the Suite draws with
+-- (HostBridge.IconSkins) gets no areas either: nothing there could show the
+-- skin. Returns how many areas the page took.
+function HostBridge.RegisterIconSkinAreas(M, specs)
+    local page = M and M.IconSkinsPage
+    local register = page and page.RegisterArea
+    if not register or not HostBridge.IconSkins() then return 0 end
+    local added = 0
+    for i = 1, #specs do
+        if register(specs[i]) then added = added + 1 end
+    end
+    return added
+end
+
+-- The row MSUF's Icon Skins page offers module pages (Page.StatusRow): the
+-- skin an area shows, a hint and the button to the page; skins are chosen
+-- only there. `key` is an area key. Returns the row's height, or 0 where the
+-- host offers none (also without the painter: the row would name a skin no
+-- Suite icon shows).
+function HostBridge.IconSkinStatusRow(M, ctx, parent, x, y, width, key)
+    local page = M and M.IconSkinsPage
+    local row = page and page.StatusRow
+    if not row or not HostBridge.IconSkins() then return 0 end
+    return row(ctx, parent, x, y, width, key) or 0
+end
+
+-- The same for a page with a bar selector: keyFn returns the selected bar's
+-- area key; only hosts that mark Page.STATUS_ROW_KEY_FUNCTION take one.
+function HostBridge.IconSkinStatusRowFor(M, ctx, parent, x, y, width, keyFn)
+    local page = M and M.IconSkinsPage
+    if not (page and page.STATUS_ROW_KEY_FUNCTION) then return 0 end
+    return HostBridge.IconSkinStatusRow(M, ctx, parent, x, y, width, keyFn)
+end
+
 -- Installer chrome can open before the load-on-demand options. Resolve at
 -- paint time: caching an absent Menu2 would miss the menu loaded later.
 function HostBridge.MenuAppearance()
@@ -243,6 +280,45 @@ function HostBridge.WatchMenuAppearance(owner, callback)
         api.OnThemeChanged(owner, callback)
         watched[api] = true
     end
+end
+
+-- Install once on the already loaded Menu2. Pending search skeletons never
+-- fade; the completed renderer signal follows the final result paint.
+local contentWatchers = setmetatable({}, { __mode = "k" })
+function HostBridge.WatchMenuContent(menu, callback, register)
+    if contentWatchers[menu] or not AppearanceAction(menu, "SelectPage") then return end
+    local serial, lastPage, lastResults = 0
+    local function Painted()
+        local key = menu.activeKey
+        local entry = menu.cache and menu.cache[key]
+        if not entry then return end
+        local target, token = entry.wrapper, entry
+        if key == "search" then
+            local view = entry._msuf2SearchView
+            target, token = view and view.results, menu.searchResults
+            if menu.searchResultsPending then
+                if target then callback(target, false) end
+                return
+            end
+            if token == lastResults and key == lastPage then return end
+            lastResults = token
+        elseif key == lastPage then return end
+        if not target then return end
+        lastPage, serial = key, serial + 1
+        callback(target, serial)
+    end
+    hooksecurefunc(menu, "SelectPage", Painted)
+    local widgets = menu.Widgets
+    if register and AppearanceAction(widgets, "SegmentTabs") then
+        hooksecurefunc(widgets, "SegmentTabs", function(_, _, options)
+            for _, frame in pairs(options and options.frames or {}) do register(frame) end
+        end)
+    end
+    local render = menu.Search and menu.Search._Render
+    if AppearanceAction(render, "ShowSearchPage") then
+        hooksecurefunc(render, "ShowSearchPage", Painted)
+    end
+    contentWatchers[menu] = true
 end
 
 return HostBridge

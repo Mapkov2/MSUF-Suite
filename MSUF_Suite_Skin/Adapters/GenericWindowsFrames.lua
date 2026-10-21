@@ -440,7 +440,11 @@ local function ApplyFrameNow(frame, owner, mode)
     end
 
     StoreFrameState(frame, owner, mode, metrics, previousState, rootSurfaceAttached)
+    if ModeValue(mode, "listItem", false) ~= true then GenericWindows.TrackCollapseMotion(frame, owner) end
     ownerState.frames[frame] = true
+    if wantsRootSurface and not metrics.accentOnly and not metrics.fullscreenGuarded then
+        GenericWindows.TrackMenuMotion(frame, owner)
+    end
     NS.WindowControls.Attach(frame, owner)
     return true, "applied", metrics
 end
@@ -521,6 +525,7 @@ local function OnRowInitialized(registration, row)
 end
 
 RegisterDynamicScrollBox = function(scrollBox, owner, allowImplicitProtected, menuPopup)
+    GenericWindows.TrackScrollMotion(scrollBox, owner)
     local ownerState = OwnerState(owner)
     if ownerState.scrollBoxes[scrollBox] then return false end
     local registration = {

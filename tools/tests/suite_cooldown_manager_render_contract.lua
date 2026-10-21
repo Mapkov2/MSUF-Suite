@@ -77,7 +77,11 @@ Record("SetCooldownFromDurationObject",function(self,duration) assert(getmetatab
 Record("SetTimerDuration",function(self,duration) assert(getmetatable(duration)==_G.DurationMT,"not a duration object");self.running=true end)
 Record("Clear",function(self) self.running=false end)
 Record("SetCountdownFormatter",function(self,formatter) Plain(formatter,"SetCountdownFormatter");self.formatter=formatter end)
-Record("Play",function(self) self.playing=true end)
+Record("Play",function(self)
+    self.playing=true
+    local onPlay=self.scripts.OnPlay
+    if onPlay then onPlay(self) end
+end)
 Record("Stop",function(self) self.playing=false end)
 function Widget:GetFrameLevel() return self.level end
 function Widget:GetWidth() return self.w end
@@ -87,6 +91,8 @@ function Widget:GetStatusBarTexture()
     return self.fill
 end
 function Widget:IsShown() return self.shown end
+function Widget:GetParent() return self.parent end
+Record("SetParent",function(self,parent) self.parent=parent end)
 function Widget:CreateTexture() return New("Texture",self) end
 function Widget:CreateFontString() return New("FontString",self) end
 function Widget:CreateAnimationGroup() return New("AnimationGroup",self) end
@@ -207,6 +213,9 @@ UnitClass=function() return "Mage","MAGE" end
 
 ------------------------------------------------------------------ core catalog (moduleAddons patched locally)
 MSUF_NS={Client={Family="Mainline",Flavor="Mainline",IsRetail=true,SupportsEvent=function() return true end}}
+-- Not in combat lockdown here (C.state.inCombat drives the effects): the icon
+-- decoration's combat guard (Icons.lua) asks the client.
+InCombatLockdown=function() return false end
 WOW_PROJECT_ID,WOW_PROJECT_MAINLINE=1,1
 C_CooldownViewer={GetCooldownViewerCategorySet=function() return {} end,GetCooldownViewerCooldownInfo=function() end}
 MSUF_EncodeCompactTable=function() return "" end
@@ -1140,11 +1149,14 @@ do
         collectgarbage("collect")
         return collectgarbage("count")
     end
+    -- The interpreter's own string table grows once with the drag's hex
+    -- strings (a jump of its size, wherever the count crosses it): a long drag
+    -- warms it up, an equally long one after it must keep no more.
     local start=Drag(0,0)
-    local warm=Drag(1,4*limit)
-    local long=Drag(4*limit+1,20*limit)
+    local warm=Drag(1,20*limit)
+    local long=Drag(20*limit+1,20*limit)
     assert(long-warm<(warm-start)/2,
-        string.format("a color drag kept its decoded colors: %.0f KB after warm-up, %.0f KB more after a longer drag",warm-start,long-warm))
+        string.format("a color drag kept its decoded colors: %.0f KB after warm-up, %.0f KB more after as long a drag",warm-start,long-warm))
 end
 
 ------------------------------------------------------------------ Effects: usable and range tint
@@ -1234,6 +1246,220 @@ do
     E.Update(b1)
     assert(glow.shown and edge.last.SetHeight==height*.5,"edge glow keeps the old pixel width")
     C.state.px=1
+    -- MSUF's icon shape through the real style pass (Icons.StyleIcon: Shape
+    -- drops the glow's paint memo and marks it, then Effects.Refit): a running
+    -- edge glow repaints as rings of the shape, a hidden glow takes the shape
+    -- there too, so showing it paints nothing; the glow events stay plain.
+    local bridge=NS.HostBridge
+    local arts=0
+    NS.HostBridge={IconShapeArt=function(shape) arts=arts+1 if shape~="RECTANGLE" then return "ring:"..shape,"fill:"..shape,shape=="STAR",shape=="STAR" end end,
+        ApplyIconShape=function(_,shape) return shape end,PaintIconSkin=function(_,skin) return skin~=nil end}
+    local function Reshape(shape)
+        ess.shape=shape or "RECTANGLE";ess.styleGen=ess.styleGen+1
+        K.Decor(ess)
+        I.Decorations(ess.decor~=false)
+        I.StyleIcon(icon,ess)
+    end
+    E.Update(b1)
+    Reshape("CIRCLE")
+    assert(icon.shape=="CIRCLE" and glow.shown and glow.rings and glow.rings[1].shown and glow.rings[1].last.SetTexture=="ring:CIRCLE"
+        and not glow.edges[1].shown,"a shape change must repaint a running glow with rings")
+    -- A relayout (a later row's own size, also in combat) shows the glow again
+    -- at the new size; its rings follow the icon texture: nothing is placed and
+    -- MSUF is not asked.
+    local placed,asked=Calls(glow.rings[1],"SetTexture"),arts
+    I.StyleIcon(icon,ess,30,30)
+    assert(icon.w==30 and glow.shown and glow.rings[1].shown and Calls(glow.rings[1],"SetTexture")==placed and arts==asked,
+        "a relayout must not place the glow's rings again")
+    I.StyleIcon(icon,ess)
+    -- Another icon of the shaped bar: the decoration makes and paints its glow,
+    -- so its first glow (in combat) places nothing and asks MSUF nothing.
+    local other=b2.icon
+    E.SetGlow(other,"proc",false);E.SetGlow(other,"ready",false);E.SetGlow(other,"aura",false)
+    I.StyleIcon(other,ess)
+    assert(other.shape=="CIRCLE" and other.glow and other.glow.ringsOn and other.glow.rings[1].last.SetTexture=="ring:CIRCLE",
+        "a shaped icon's glow must be made with its decoration")
+    local otherPlaced,otherAsked=Calls(other.glow.rings[1],"SetTexture"),arts
+    E.SetGlow(other,"proc",true)
+    assert(other.glow.shown and Calls(other.glow.rings[1],"SetTexture")==otherPlaced and arts==otherAsked,
+        "a shaped icon's first glow in combat must place nothing")
+    -- A pixel grid change (OnScale restyles every bar: a new style generation)
+    -- places the rings of a running and of a hidden glow again, also when the
+    -- icon keeps its size.
+    E.SetGlow(other,"proc",false)
+    local running,hidden=Calls(glow.rings[1],"SetTexture"),Calls(other.glow.rings[1],"SetTexture")
+    C.state.px=.5;ess.styleGen=ess.styleGen+1
+    I.StyleIcon(icon,ess);I.StyleIcon(other,ess)
+    assert(Calls(glow.rings[1],"SetTexture")>running and Calls(other.glow.rings[1],"SetTexture")>hidden,
+        "a pixel grid change must place the glows' rings again")
+    C.state.px=1;ess.styleGen=ess.styleGen+1
+    I.StyleIcon(icon,ess);I.StyleIcon(other,ess)
+    -- A glow setting edited out of combat (the settings reader marks behavior
+    -- and restyle: no new style generation) with the glow hidden, then its
+    -- first glow in combat: the rings are placed then, as main places its
+    -- edges then, from the art read out of combat into the textures the
+    -- decoration made: MSUF is not asked and nothing is made.
+    local style0=ess.glowStyle
+    ess.glowStyle=1;ess.styleGen=ess.styleGen+1
+    I.StyleIcon(other,ess)
+    local made,unasked=#other.glow.rings,arts
+    ess.glowStyle=4;ess.behaviorGen=ess.behaviorGen+1
+    E.Update(b2)
+    E.SetGlow(other,"proc",true)
+    assert(made>=2 and other.glow.shown and other.glow.rings[1].shown and #other.glow.rings==made and arts==unasked,
+        "a shaped glow's first show after a glow setting edit must make nothing and ask MSUF nothing")
+    E.SetGlow(other,"proc",false)
+    ess.glowStyle=style0;ess.behaviorGen=ess.behaviorGen+1;ess.styleGen=ess.styleGen+1
+    I.StyleIcon(other,ess)
+    -- A fresh icon of a skinned, shaped bar decorated while the alert style is
+    -- chosen (no ring drawn: the skin draws the border, the alert keeps its
+    -- art), with a new bridge (no ring art read yet); then its style set to
+    -- Border the way the settings reader does and its first proc in combat:
+    -- the decoration read the art and made the rings, so the proc asks MSUF
+    -- nothing and makes nothing.
+    do
+        local shapeBridge,asks,made,masked=NS.HostBridge,0,0,{}
+        NS.HostBridge={IconShapeArt=function(shape) asks=asks+1 return "ring:"..shape,"fill:"..shape,false,false end,
+            ApplyIconShape=function(owner,shape,_,_,...) masked[owner]={...} return shape end,
+            PaintIconSkin=function(_,skin) return skin~=nil end}
+        -- An icon first pressed while square (Suite main's Press makes its
+        -- flash) and shaped later: the shape's mask takes that flash too.
+        local early=I.CreateStandalone(CreateFrame("Frame",nil,nil))
+        E.Press({icon=early,slot=b1.slot})
+        local flash=assert(early.pressPulse,"a square icon's first press makes its flash")
+        local create=S.CreateTexture
+        S.CreateTexture=function(...) made=made+1 return create(...) end
+        local saved={ess.skin,ess.shape,ess.glowStyle}
+        ess.skin,ess.shape,ess.glowStyle={signature="K:RENDER"},"HEXAGON",1
+        ess.styleGen=ess.styleGen+1
+        K.Decor(ess);I.Decorations(true)
+        local fresh=I.CreateStandalone(CreateFrame("Frame",nil,nil))
+        fresh.entry=b2
+        I.StyleIcon(fresh,ess)
+        assert(fresh.shape=="HEXAGON" and fresh.skinned and fresh.glow and not fresh.glow.ringsOn,"the alert keeps its art under a skin")
+        -- Its press flash and charge swipe were made by the decoration, so a first
+        -- press in combat makes and shapes nothing.
+        assert(fresh.pressPulse and fresh.chargeCd and fresh.chargeSet==false
+            and masked[fresh][2]==fresh.pressPulse:GetParent(),
+            "a shaped icon's decoration makes its press flash and charge swipe, under the mask")
+        I.StyleIcon(early,ess)
+        assert(early.pressPulse==flash and masked[early] and masked[early][2]==flash:GetParent(),
+            "the flash a square first press made must take the icon's later shape")
+        E.ResetIcon(early)
+        local asked,textures=asks,made
+        ess.glowStyle=4;ess.behaviorGen=ess.behaviorGen+1
+        E.SetGlow(fresh,"proc",true)
+        assert(fresh.glow.shown and fresh.glow.ringsOn and fresh.glow.rings[1].shown and asks==asked and made==textures,
+            "a skinned shaped glow's first Border show in combat must ask MSUF nothing and make nothing")
+        E.SetGlow(fresh,"proc",false)
+        S.CreateTexture,NS.HostBridge=create,shapeBridge
+        ess.skin,ess.shape,ess.glowStyle=saved[1],saved[2],saved[3]
+        ess.behaviorGen,ess.styleGen=ess.behaviorGen+1,ess.styleGen+1
+        K.Decor(ess);I.Decorations(true)
+    end
+    ess.readyGlow=false;ess.behaviorGen=7
+    E.Update(b1)
+    assert(not glow.shown)
+    Reshape("DIAMOND")
+    assert(glow.rings[1].last.SetTexture=="ring:DIAMOND","a hidden glow takes a new shape in the style pass")
+    local rings=Calls(glow.rings[1],"SetTexture")
+    ess.readyGlow=true;ess.behaviorGen=8
+    E.Update(b1)
+    assert(glow.shown and Calls(glow.rings[1],"SetTexture")==rings,"showing a glow repainted its shape")
+    -- No bar decorates any more: the settings read clears every decorated
+    -- icon at once (a pooled one too), without waiting for its next style.
+    ess.shape="RECTANGLE";K.Decor(ess)
+    I.Decorations(false)
+    assert(not icon.shape and not icon.decorated and glow.edges[1].shown and not glow.rings[1].shown,"square again: edges, no rings")
+    -- The last shaped icon cleared (the paint is the plain one then): the
+    -- decoration's glow refresh hides its rings itself.
+    Reshape("CIRCLE")
+    assert(glow.shown and glow.rings[1].shown,"a running glow with rings again")
+    ess.shape="RECTANGLE";K.Decor(ess)
+    I.Decorations(false)
+    assert(not glow.rings[1].shown and glow.edges[1].shown,"clearing the last shaped icon must hide its glow's rings")
+    -- A relayout after the shape is gone runs the plain paint: the hidden rings
+    -- are left alone.
+    local touched=Calls(glow.rings[1],"SetShown")+Calls(glow.rings[1],"Hide")+Calls(glow.rings[1],"SetTexture")
+    I.StyleIcon(icon,ess,30,30)
+    assert(glow.shown and Calls(glow.rings[1],"SetShown")+Calls(glow.rings[1],"Hide")+Calls(glow.rings[1],"SetTexture")==touched,
+        "a relayout after the shape is gone must not touch its rings")
+    I.StyleIcon(icon,ess)
+    -- Removing the shape parks what only the shape made: a non-charge icon's
+    -- charge swipe and a glow it never showed, so a relayout sets no level on
+    -- them and no glow path or combat edge visits them, as on Suite main; a new
+    -- shape takes them back. A charge spell keeps its swipe (main makes it). A
+    -- glow the icon did show stays, its plain paint memo painted in the style
+    -- pass, so its next show (in combat) is a memo hit.
+    do
+        local bare,charged=I.CreateStandalone(CreateFrame("Frame",nil,nil)),I.CreateStandalone(CreateFrame("Frame",nil,nil))
+        bare.entry,charged.entry=b1,b2
+        Reshape("CIRCLE")
+        I.StyleIcon(bare,ess);I.StyleIcon(charged,ess)
+        local swipe,fx,gate,flash=bare.chargeCd,bare.glow,bare.effectGate,bare.pressPulse
+        assert(swipe and fx and gate and flash and charged.chargeCd,"a shaped icon's decoration makes its charge swipe, glow and flash")
+        E.Press({icon=charged,slot=b2.slot})
+        local played=charged.pressPulse
+        Reshape(nil)
+        assert(not bare.shape and bare.chargeCd==nil and bare.glow==nil and bare.effectGate==nil and not fx.shown
+            and bare.pressPulse==nil,"removing the shape must park the swipe, glow and flash only the shape made")
+        assert(charged.pressPulse==played,"a flash a press played stays")
+        E.ResetIcon(charged)
+        local stops=Calls(flash,"Stop")
+        E.ResetIcon(bare)
+        assert(Calls(flash,"Stop")==stops,"the recycle path must not stop a parked flash")
+        assert(charged.chargeCd,"a charge spell's icon keeps its charge swipe")
+        local levels=Calls(swipe,"SetFrameLevel")+Calls(fx,"SetFrameLevel")
+        I.StyleIcon(bare,ess,30,30)
+        assert(Calls(swipe,"SetFrameLevel")+Calls(fx,"SetFrameLevel")==levels,"a relayout must not set levels on parked frames")
+        Reshape("CIRCLE")
+        I.StyleIcon(bare,ess)
+        assert(bare.shape=="CIRCLE" and bare.chargeCd==swipe and bare.glow==fx and bare.effectGate==gate and fx.parent==gate
+            and bare.pressPulse==flash,"a new shape must take the parked swipe, glow and flash back")
+        local style1=ess.glowStyle
+        ess.glowStyle=4;ess.behaviorGen=ess.behaviorGen+1
+        E.SetGlow(bare,"proc",true);E.SetGlow(bare,"proc",false)
+        Reshape(nil)
+        assert(bare.glow==fx and fx.pStyle~=nil,"a glow the icon showed stays, its plain memo painted")
+        local edge=fx.edges[1]
+        local placed=Calls(edge,"SetPoint")+Calls(edge,"SetHeight")+Calls(edge,"SetWidth")
+        C.state.inCombat=true
+        E.SetGlow(bare,"proc",true)
+        assert(fx.shown and Calls(edge,"SetPoint")+Calls(edge,"SetHeight")+Calls(edge,"SetWidth")==placed,
+            "a shown glow's next show after the shape went must be a plain memo hit")
+        E.SetGlow(bare,"proc",false)
+        C.state.inCombat=false
+        ess.glowStyle=style1;ess.behaviorGen=ess.behaviorGen+1
+    end
+    -- The lost shape alone: a shaped icon under the alert glow style (its glow
+    -- places no rings) that never showed its glow. Taking the last shape off
+    -- parks that glow too, as it parks one with rings.
+    do
+        local style2=ess.glowStyle
+        ess.glowStyle=1
+        local alert=I.CreateStandalone(CreateFrame("Frame",nil,nil))
+        alert.entry=b1
+        Reshape("CIRCLE")
+        I.StyleIcon(alert,ess)
+        local fx=alert.glow
+        assert(alert.shape=="CIRCLE" and fx and not fx.ringsOn and not fx.shown,
+            "a shaped icon's alert-style glow: made by the decoration, no rings, never shown")
+        Reshape(nil)
+        assert(not alert.shape and alert.glow==nil and alert.parkedGlow==fx and not fx.shown,
+            "removing the last shape must park a never-shown glow without rings too")
+        ess.glowStyle=style2
+    end
+    NS.HostBridge=bridge
+    -- No bar draws a skin or shape and no icon still shows one: the icon style
+    -- is the plain one again (Suite main's StyleIcon, also for relayouts).
+    local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/Icons.lua","rb"))
+    local plainLine,n=0,0
+    for line in handle:read("*a"):gsub("\r\n","\n"):gmatch("([^\n]*)\n") do
+        n=n+1
+        if line:find("^local function StylePlain%(") then plainLine=n end
+    end
+    handle:close()
+    assert(plainLine>0 and debug.getinfo(I.StyleIcon,"S").linedefined==plainLine,"without skins or shapes the icon style must be the plain one")
     ess.glowStyle=1;ess.readyGlow=false;ess.behaviorGen=6
     E.Update(b1)
     assert(not glow.shown and not glow.pulse.playing and not glow.flipAnim.playing)

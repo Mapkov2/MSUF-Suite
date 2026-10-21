@@ -8,6 +8,15 @@ local root = assert(arg[1], "repository root required")
 -- The client's securecallfunction reports an error and returns nothing;
 -- this stand-in lets errors raise, so a failing callback fails the test.
 securecallfunction = function(callback, ...) return callback(...) end
+-- Native posthooks preserve the original function's results.
+hooksecurefunc = function(target, name, callback)
+    local original = assert(target[name])
+    target[name] = function(...)
+        local results = { original(...) }
+        callback(...)
+        return unpack(results)
+    end
+end
 local flavor = arg[2] or "Mainline"
 C_PetBattles = { GetAbilityInfoByID = function() return nil end }
 StaticPopup_ShowCustomGenericConfirmation = function() end
@@ -1560,6 +1569,206 @@ local legacyShape = "home@nil #frames uf_player@frames"
 assert(NavShape(M.navItems) == legacyShape, "suite navigation on a legacy host: " .. NavShape(M.navItems))
 M.navItems = hostItems
 
+-- MSUF's Icon Skins page (MSUF 7.0) lists the Suite's areas (Register.lua):
+-- a row per built-in cooldown manager bar, one for the custom bars and one
+-- for the action bars, each reading and writing its hidden skin rule and its
+-- shape setting with the Suite's own setters. Older hosts have no page.
+do
+    local areas = {}
+    M.IconSkinsPage = { RegisterArea = function(spec) areas[#areas + 1] = spec return true end }
+    -- MSUF's painter (GetIconSkins); ShapeOf answers the shape a pick
+    -- matches as the page's MatchShape does (nil: no skin to match).
+    local HB = Suite.HostBridge
+    local iconSkins = HB.IconSkins
+    local SHAPE_OF = { SHADOW1 = "RECTANGLE", DARK2 = "RECTANGLE", ROUND1 = "CIRCLE" }
+    local defaultShape, defaultSkin -- MSUF's default skin and its shape (nil: no skin)
+    HB.IconSkins = function()
+        return { ShapeOf = function(choice)
+            if choice == "DEFAULT" then return defaultShape, defaultSkin end
+            return SHAPE_OF[choice], SHAPE_OF[choice] and choice or nil
+        end }
+    end
+    -- The hook that writes the shapes waiting for MSUF's committed default.
+    local hooks, onChanged = {}, HB.OnIconSkinsChanged
+    HB.OnIconSkinsChanged = function(key, fn) hooks[key] = fn end
+    -- Writes counted (one SetMany is one module apply); labels translated
+    -- through the Suite's own Tr while the areas register.
+    local sets, loading = 0, true
+    local function Counted(fn) return function(...) sets = sets + 1 return fn(...) end end
+    local function Tr(text)
+        if loading and type(text) == "string" then return "T:" .. text end
+        return M.Tr(text)
+    end
+    Suite.Menu.attached = false
+    local registerNS = {
+        Suite = Suite, M = M, T = T, HM = optionsNS.HM, pages = optionsNS.pages, Tr = Tr, host = MSUF_NS,
+        Refresh = function() end,
+        BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
+        ForgetAvailability = optionsNS.ForgetAvailability,
+        S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
+        Get = optionsNS.Get, Set = Counted(optionsNS.Set), SetMany = Counted(optionsNS.SetMany),
+        StatusText = optionsNS.StatusText,
+    }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", registerNS)
+    loading = false
+    HB.OnIconSkinsChanged = onChanged
+    M.IconSkinsPage = nil
+    M.navItems = hostItems
+    local keys, byKey = {}, {}
+    for i, spec in ipairs(areas) do keys[i], byKey[spec.key] = spec.key, spec end
+    assert(table.concat(keys, " ") == "suite_cdm_ess suite_cdm_uti suite_cdm_def suite_cdm_ext suite_cdm_buf suite_cdm_bar "
+        .. "suite_cdm_custom suite_actionbars suite_playerauras_buffs suite_playerauras_debuffs",
+        "icon skin areas: " .. table.concat(keys, " "))
+    local GROUPS = { suite_actionbars = "Action bars", suite_playerauras_buffs = "Player aura layout",
+        suite_playerauras_debuffs = "Player aura layout" }
+    for _, spec in ipairs(areas) do
+        assert(spec.group == "T:" .. (GROUPS[spec.key] or "Cooldown manager") and spec.label:sub(1, 2) == "T:",
+            spec.key .. ": the Suite translates its own group and row labels")
+        assert(spec.read() == "DEFAULT" and (not spec.shape or spec.shape() == "RECTANGLE"),
+            spec.key .. ": an area must start Like default and square")
+    end
+    -- Each row says whether its icons are drawn now (Page.RegisterArea
+    -- `available`): while its module is off (Buffs and Debuffs: Player aura
+    -- skins and Player aura layout), false and a translated reason naming it.
+    local MODULES = { suite_actionbars = { "actionbars" }, suite_playerauras_buffs = { "playerAuraSkins", "playerAuras" },
+        suite_playerauras_debuffs = { "playerAuraSkins", "playerAuras" } }
+    -- The rows read `enabled` through the Get of the namespace Register.lua
+    -- was loaded with (S.Config hands out a copy without an active profile):
+    -- the cases set it there. Reasons are translated when a row is asked: Tr
+    -- marks them again meanwhile.
+    local get, enabled = registerNS.Get, {}
+    registerNS.Get = function(id, key)
+        if key == "enabled" and enabled[id] ~= nil then return enabled[id] end
+        return get(id, key)
+    end
+    loading = true
+    for _, spec in ipairs(areas) do
+        local ids = MODULES[spec.key] or { "cooldownManager" }
+        assert(type(spec.available) == "function", spec.key .. ": the row must say whether its icons are drawn")
+        -- Each module's running state and controller error (the fixture's
+        -- loader leaves runtime modules with a load error) are set per case.
+        local active, errors = {}, {}
+        for i, id in ipairs(ids) do
+            active[i], errors[i] = S.states[id].active, S.states[id].error
+            enabled[id], S.states[id].active, S.states[id].error = false, false, nil
+        end
+        local ok, turnOn = spec.available()
+        assert(ok == false and type(turnOn) == "string" and turnOn:sub(1, 2) == "T:",
+            spec.key .. ": off: false and a translated reason")
+        S.states[ids[1]].active = true
+        assert(spec.available() == true, spec.key .. ": running: the row is available")
+        if ids[2] then
+            S.states[ids[1]].active, S.states[ids[2]].active = false, true
+            assert(spec.available() == true, spec.key .. ": its other module running alone: the row is available")
+            S.states[ids[2]].active = false
+        end
+        -- Enabled but not running (its addon off in the AddOns list, failed):
+        -- the controller's own reason, not "turn on".
+        enabled[ids[1]], S.states[ids[1]].active = true, false
+        S.states[ids[1]].error = "Enable the module's addon in the AddOns list"
+        local why
+        ok, why = spec.available()
+        assert(ok == false and why == optionsNS.StatusText(ids[1]) and why ~= turnOn,
+            spec.key .. ": an enabled module that does not run shows the controller's reason")
+        for i, id in ipairs(ids) do
+            enabled[id], S.states[id].active, S.states[id].error = nil, active[i], errors[i]
+        end
+    end
+    loading = false
+    registerNS.Get = get
+    -- Blizzard's player buffs and debuffs are square only: no shape to read
+    -- or set, so the page offers those rows only square skins.
+    local auras = S.Config("playerAuras")
+    for _, key in ipairs({ "suite_playerauras_buffs", "suite_playerauras_debuffs" }) do
+        assert(not byKey[key].shape and not byKey[key].setShape, key .. ": a square-only row has no shape")
+    end
+    assert(byKey.suite_playerauras_debuffs.write("DARK2") and auras.debuffSkin == "DARK2" and auras.buffSkin == "DEFAULT",
+        "the Debuffs row writes only the debuff skin")
+    assert(optionsNS.Set("playerAuras", "debuffSkin", "DEFAULT"))
+    local cdm, bars = S.Config("cooldownManager"), S.Config("actionbars")
+    assert(byKey.suite_cdm_ess.write("SHADOW1") and cdm.ess_iconSkin == "SHADOW1" and cdm.uti_iconSkin == "DEFAULT",
+        "a bar's row writes only that bar's skin")
+    -- A new default skin (Page.SelectDefault) marks the areas whose shape it
+    -- does not fit; the mark is settled in that page action: by MSUF's report
+    -- (the hook, one write per module, recorded in `refreshed`) or by the
+    -- area's refresh after the apply. A report without a pick (an undo, a
+    -- profile switch, a look edit) moves nothing; in combat nothing is marked.
+    assert(byKey.suite_cdm_ess.write("DEFAULT") and cdm.ess_iconSkin == "DEFAULT")
+    assert(not byKey.suite_actionbars.setShape("STAR"), "the action bars have no star")
+    local report = hooks["MSUF_Suite_Options.shapes"]
+    defaultShape, defaultSkin = "HEXAGON", "HEX1"
+    sets = 0
+    assert(byKey.suite_cdm_ess.setShape("HEXAGON") and byKey.suite_cdm_def.setShape("HEXAGON")
+        and byKey.suite_actionbars.setShape("HEXAGON") and sets == 0 and cdm.ess_iconShape == 1,
+        "setShape only marks the area")
+    local refreshed = {}
+    report(refreshed, "apply")
+    assert(cdm.ess_iconShape == 5 and cdm.def_iconShape == 5 and bars.buttonShape == 5 and cdm.uti_iconShape == 1,
+        "the report gives the marked areas the new default's shape")
+    assert(sets == 2 and refreshed.cooldownManager and refreshed.actionbars, "one write per module")
+    -- An undo restores the old default with no pick: the report moves nothing.
+    defaultShape, defaultSkin = "RECTANGLE", "SQ1"
+    sets = 0
+    report({}, "apply")
+    byKey.suite_cdm_ess.refresh()
+    assert(sets == 0 and cdm.ess_iconShape == 5, "a report without a pick (an undo) must not move a shape")
+    -- No report (the default's look was unchanged): the area's refresh settles the mark.
+    assert(byKey.suite_cdm_ess.setShape("RECTANGLE"))
+    byKey.suite_cdm_ess.refresh()
+    assert(cdm.ess_iconShape == 1 and cdm.def_iconShape == 5, "the page's refresh settles the marked area")
+    -- In combat the Suite refuses writes: nothing is marked, nothing waits.
+    local lockdown = InCombatLockdown
+    InCombatLockdown = function() return true end
+    assert(not byKey.suite_cdm_def.setShape("RECTANGLE"), "no mark in combat")
+    InCombatLockdown = lockdown
+    sets = 0
+    report({}, "combat")
+    assert(sets == 0 and cdm.def_iconShape == 5, "a pick made in combat moves no shape later")
+    assert(optionsNS.SetMany("cooldownManager", { def_iconShape = 1 }) and optionsNS.Set("actionbars", "buttonShape", 1))
+    defaultShape, defaultSkin = nil, nil
+    -- A custom bar row writes every custom bar, and a skin picked for bars
+    -- of different shapes brings its shape to all of them in that write.
+    assert(optionsNS.Set("cooldownManager", "c2_iconShape", 2) and byKey.suite_cdm_custom.shape() == "MIXED",
+        "custom bars with different shapes must not answer the first bar's shape")
+    assert(byKey.suite_cdm_custom.write("DARK2"), "the custom bars' row")
+    for i = 1, 6 do assert(cdm["c" .. i .. "_iconSkin"] == "DARK2", "custom bar " .. i .. " did not follow its row") end
+    assert(cdm.c2_iconShape == 1 and byKey.suite_cdm_custom.shape() == "RECTANGLE",
+        "a skin picked for the custom bars sets every bar's shape")
+    assert(byKey.suite_cdm_custom.write("SHADOW1"), "the custom bars' row, shapes matching")
+    for i = 1, 6 do assert(cdm["c" .. i .. "_iconSkin"] == "SHADOW1", "custom bar " .. i .. " did not follow its row's skin") end
+    -- A skin made for another shape comes with its shape in one write (the
+    -- page's MatchShape then finds it matching): one module apply.
+    sets = 0
+    assert(byKey.suite_cdm_uti.write("ROUND1") and sets == 1 and cdm.uti_iconSkin == "ROUND1"
+        and byKey.suite_cdm_uti.shape() == "CIRCLE", "a round skin and its shape in one write")
+    sets = 0
+    assert(byKey.suite_cdm_uti.write("DEFAULT") and sets == 1 and cdm.uti_iconShape == 2,
+        "a pick with no skin to match leaves the shape")
+    -- A new default moves only the custom bars that follow it: after a reset
+    -- of c2 (c1 keeps its own skin) the row reads Like default, so the page's
+    -- SelectDefault (MatchShape for every row that reads DEFAULT) reaches it,
+    -- and only c2 takes the new shape; the others keep their round skin.
+    assert(byKey.suite_cdm_custom.write("ROUND1"), "the custom bars take a round skin")
+    for i = 1, 6 do assert(cdm["c" .. i .. "_iconShape"] == 2, "custom bar " .. i .. " takes the round skin's shape") end
+    assert(byKey.suite_cdm_custom.read() == "ROUND1", "the row reads the bars' own skin")
+    assert(optionsNS.SetMany("cooldownManager", { c2_iconSkin = "DEFAULT", c2_iconShape = 1 }), "one custom bar reset")
+    assert(byKey.suite_cdm_custom.read() == "DEFAULT", "a custom bar that follows the default makes its row read Like default")
+    defaultShape, defaultSkin = "HEXAGON", "HEX1"
+    -- Page.SelectDefault matches the shape of a row that reads DEFAULT.
+    if byKey.suite_cdm_custom.read() == "DEFAULT" then assert(byKey.suite_cdm_custom.setShape("HEXAGON")) end
+    report({}, "apply")
+    assert(cdm.c2_iconShape == 5, "the custom bar that follows the default takes its shape")
+    for _, i in ipairs({ 1, 3, 4, 5, 6 }) do
+        assert(cdm["c" .. i .. "_iconShape"] == 2 and cdm["c" .. i .. "_iconSkin"] == "ROUND1",
+            "custom bar " .. i .. " with its own skin must keep its shape")
+    end
+    defaultShape, defaultSkin = nil, nil
+    local reset = { ess_iconSkin = "DEFAULT", ess_iconShape = 1, uti_iconSkin = "DEFAULT", uti_iconShape = 1, def_iconShape = 1 }
+    for i = 1, 6 do reset["c" .. i .. "_iconSkin"], reset["c" .. i .. "_iconShape"] = "DEFAULT", 1 end
+    assert(optionsNS.SetMany("cooldownManager", reset) and optionsNS.Set("actionbars", "buttonShape", 1))
+    HB.IconSkins = iconSkins
+end
+
 -- The suite ships English pages and never writes into MSUF's locale table.
 assert(rawget(L, "Interface") == nil, "suite wrote a translation into MSUF's locale table")
 assert(rawget(L, "Enable module") == "MSUF-eigene Übersetzung", "suite changed an MSUF translation")
@@ -3053,7 +3262,8 @@ local qolFeaturesByCategory = {
     },
     characterGear = {
         "chatProfileLinks_profile_links", "characterUpgradeWindow_upgrade_equipment",
-        "xpBar_xp_bar", "playerAuras_player_auras", "socketGemSuggestions_socket_gems", "loadoutReminder_loadout_reminder",
+        "xpBar_xp_bar", "playerAuras_player_auras", "playerAuraSkins_player_aura_skins",
+        "socketGemSuggestions_socket_gems", "loadoutReminder_loadout_reminder",
         "durabilityAlert_durability_warning", "professionAppearance_profession_outfits",
         "combatStatsHUD_secondary_stats",
         "targetDistance_target_distance", "characterExtras_character_extras",
@@ -3160,7 +3370,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 65 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 66 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated")
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")
@@ -3430,7 +3640,7 @@ MapkoSkin = nil
 -- The primary Skinning page owns native MSUF controls and a fixed preview;
 -- it must not mount the old second navigation rail or require its options addon.
 -- Core/Client.lua loads before Core/Defaults.lua in the skin's TOC.
-local skin = { addonName = "MSUF_Suite_Skin", Client = { isMainline = true, isForever = false },
+local skin = { GetAPI = function() return nil end, addonName = "MSUF_Suite_Skin", Client = { isMainline = true, isForever = false },
     L = setmetatable({}, { __index = function(_, key) return key end }), SourceText = function(key) return key end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", skin)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", skin)

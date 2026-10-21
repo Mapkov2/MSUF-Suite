@@ -60,6 +60,8 @@ function M:Enable()
     -- paging): glows on its buttons may describe the previous page.
     self.context:Callback("MSUFSuite.ActionBars.ActionsChanged", Events.OnActionPage)
     self.context:Callback("AssistedCombatManager.OnSetUseAssistedHighlight", Events.OnAssistPolicyChanged)
+    -- MSUF's default icon skin changed: Refresh reads every bar's look again.
+    NS.HostBridge.WatchIconSkins("cooldownManager", true)
     self:Refresh()
 end
 
@@ -68,8 +70,12 @@ function M:Refresh()
     Settings.BeginCapture(config)
     local all = first
     first = false
-    local text = ReadGlobals(config, all)
-    ReadViews(config, all, text)
+    -- Values still waiting to be written (Settings.Source) stay on screen.
+    local source = Settings.Source(config)
+    local text = ReadGlobals(source, all)
+    ReadViews(source, all, text)
+    -- MSUF's Width mode bars measure the anchored bars with their skin.
+    Events.WatchScale(C.Layout.FitAnchors())
     DecodeData(config)
     if all then dirty.catalog, dirty.resolve, dirty.layout, dirty.visibility, dirty.events, dirty.keybinds = true, true, true, true, true, true end
     C.PressBridge()
@@ -78,6 +84,9 @@ function M:Refresh()
     if not Settings.CaptureWaiting() then
         C.Native.Apply()
         Settings.SyncViewerOffset()
+        -- An activation reads its specialization in the catalog pass
+        -- (Events.lua CatalogUnit), which places the bars for it.
+        if not all then Settings.SpecPositions() end
     end
     if S.editMode then
         C.Layout.ForgetAnchors()
@@ -117,6 +126,8 @@ function M:Disable()
     Dispatch(C.Keybinds.Clear)
     Dispatch(Events.Release, self.context)
     Dispatch(ForgetState)
+    NS.HostBridge.WatchIconSkins("cooldownManager", false)
+    Events.WatchScale(false)
     first = true
 end
 

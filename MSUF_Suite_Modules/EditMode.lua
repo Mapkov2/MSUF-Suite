@@ -18,6 +18,14 @@ local function Epoch()
     return epoch
 end
 
+-- A module that rewrote the positions under captured states (the cooldown
+-- manager's layout per specialization) invalidates them too: their undo or
+-- discard would write the other layout back.
+function S.InvalidateEditStates()
+    Epoch()
+    epoch = epoch + 1
+end
+
 local Finite = S.Finite
 
 local function API()

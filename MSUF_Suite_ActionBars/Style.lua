@@ -13,7 +13,7 @@ local max, floor = math.max, math.floor
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
 -- Highlight and pressed choices (the fourth, none, draws nothing).
 local STYLE_BORDER, STYLE_FILL, STYLE_BLIZZARD = AB.ENUM.HIGHLIGHT.BORDER, AB.ENUM.HIGHLIGHT.FILL, AB.ENUM.HIGHLIGHT.BLIZZARD
-local CIRCLE_SHAPE, PROC_BLIZZARD = AB.ENUM.BUTTON_SHAPE.CIRCLE, AB.ENUM.PROC_GLOW.BLIZZARD
+local PROC_BLIZZARD = AB.ENUM.PROC_GLOW.BLIZZARD
 -- Cooldown frames beside the main swipe that follow the icon.
 local EXTRA_COOLDOWNS = { "chargeCooldown", "lossOfControlCooldown" }
 AB.styleGen = 0
@@ -33,7 +33,11 @@ function AB.BuildStyle()
     style.rendering, style.shadow = config.fontRendering, config.fontShadow
     style.shadowOpacity, style.shadowDistance = config.fontShadowOpacity, config.fontShadowDistance
     style.zoom = config.iconZoom / 100
-    style.border = config.borderSize
+    AB.ResolveShape(style, config)
+    -- MSUF's icon skin for the button shape (a shaped button takes skins of
+    -- its shape over its mask) draws the border in place of the Suite's own.
+    style.skin = NS.HostBridge.IconSkinLook(config.iconSkin, style.shape)
+    style.border = style.skin and 0 or config.borderSize
     local classR, classG, classB = S.ClassRGB(Class())
     if config.borderClassColor and classR then
         style.br, style.bg, style.bb = classR, classG, classB
@@ -196,7 +200,7 @@ local function StyleInteractions(rec, size, border)
     local button, style = rec.button, AB.style
     PlaceEdges(Edges(rec, "borderEdges", "OVERLAY", 6), button, border, style.br, style.bg, style.bb, 1)
     -- A round button's mouseover border is a ring (Decorations.lua).
-    local circle = M.config.buttonShape == CIRCLE_SHAPE
+    local circle = style.round
     local hoverWidth = style.highlight == STYLE_BORDER and not circle and max(1, floor(size / 20 + .5)) or 0
     PlaceEdges(Edges(rec, "hoverEdges", "HIGHLIGHT", 7), button, hoverWidth, style.ir, style.ig, style.ib, 1)
     AB.HoverRing(rec, size, circle and style.highlight == STYLE_BORDER)
@@ -310,6 +314,11 @@ function AB.StyleButton(rec)
     StyleInteractions(rec, size, border)
     StyleTexts(rec, size, border, fontScale)
     StyleCooldowns(rec, math.min(size, bar.height or size), fontScale)
+    -- The skin's layers are textures of the button around its icon, under
+    -- the cooldown swipe and texts; drawn here only (out of combat, like the
+    -- whole style pass), never by a paint or an event.
+    local skin = AB.style.skin
+    if skin or rec.skinned then rec.skinned = NS.HostBridge.PaintIconSkin(button, skin, size, bar.height or size) or nil end
     AB.StyleDecoration(rec, size)
     if rec.owned and button.Border then
         button.Border:ClearAllPoints()

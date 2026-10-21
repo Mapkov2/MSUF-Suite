@@ -211,6 +211,8 @@ function Page.FilterPicker()
     picker.content:SetHeight(max(1, shown * 24))
     SetRaw(picker.empty, any and "" or Tr("Nothing matches. Try a spell ID below."))
     picker.empty:SetShown(not any)
+    P.Suite.Skin.RegisterMenu(picker, "cdmMenuMotion")
+    P.Suite.Skin.AnimateContent(picker.content, query, "cdmMenuMotion")
 end
 
 -- Blizzard's catalog entries for the bar's family, sorted for the picker

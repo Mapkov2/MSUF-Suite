@@ -371,6 +371,13 @@ end
 
 local function Style(row, entry, view)
     local ov = entry.ov or C.EMPTY
+    -- Over its entry's held stand-in the row clips its skin to its icon, as
+    -- the slots do (AuraButtons.lua's Clipped); a change restyles it.
+    local rec = row.frame.rec
+    if rec.held ~= row.held then
+        rec.held = row.held
+        row.frame.sampleStyle = nil
+    end
     local seconds = ov.timerDuration or 0
     local cast = ov.timerSpell or Summon(entry) or entry.base
     if row.cast ~= cast or row.seconds ~= seconds then Stop(row) end
@@ -414,6 +421,7 @@ function Timers.Sync(slot, view, plan)
     slots[slot] = nil
     local cap = view.maxIcons
     if type(cap) ~= "number" or cap <= 0 then cap = #plan.entries end
+    local fixed = C.Layout.FixedAuras(view, plan.entries) == true
     for i = 1, math.min(cap, #plan.entries) do
         local entry = plan.entries[i]
         if Timers.Wants(entry, view) then
@@ -449,6 +457,7 @@ function Timers.Sync(slot, view, plan)
             row.key = entry.key
             rows[entry.key] = row
             row.mark = serial
+            row.held = fixed and C.AuraButtons.Held(entry, view, false) or false
             Style(row, entry, view)
         end
     end

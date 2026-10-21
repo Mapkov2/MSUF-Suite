@@ -28,6 +28,8 @@ local Public = S.Public
 local EMPTY = C.EMPTY
 
 local STRATA = K.STRATA
+-- The pandemic window's default color (the catalog's pandemicColor).
+local PAN_R, PAN_G, PAN_B = K.HexRGB("ff4d26")
 local HELP_MINE, HELP_ANY, HARM_MINE = "HELPFUL|PLAYER", "HELPFUL", "HARMFUL|PLAYER"
 local HELP_TARGET = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 -- No aura passes this (maxDuration also drops permanent auras): 12.1.0
@@ -206,12 +208,27 @@ local function Refit(rec, look)
     return true
 end
 
--- Bar-level glow and text choices behind the per-spell ones.
+-- The bar's pandemic window switch and look (style, color, thickness).
+-- rec.pGen moves when one of them changes: a button painted for the current
+-- pGen and its spell's choice makes no call (ApplyEntry; a new button size
+-- restyles, and Style drops the button's stamp), so an unchanged sync costs
+-- two compares per button. The color's channels come from its hex
+-- (Settings COLOR), so the hex stands for all three.
+local function PandemicChoices(rec, view)
+    local all, style, edge, hex = view.pandemic == true, view.pandemicStyle, view.pandemicSize, view.pandemicColor
+    if rec.panAll == all and rec.pStyle == style and rec.pEdge == edge and rec.pHex == hex then return end
+    rec.panAll, rec.pStyle, rec.pEdge, rec.pHex = all, style, edge, hex
+    rec.pR, rec.pG, rec.pB = view.pandemicR or PAN_R, view.pandemicG or PAN_G, view.pandemicB or PAN_B
+    rec.pGen = (rec.pGen or 0) + 1
+end
+
+-- Bar-level glow, pandemic window and text choices behind the per-spell ones.
 local function BarChoices(rec, view)
     rec.view = view
     rec.glowAll = view.auraGlow == true
     rec.gStyle, rec.gTint = view.glowStyle, view.glowTint == true
     rec.gR, rec.gG, rec.gB = view.glowR or 1, view.glowG or 1, view.glowB or 1
+    PandemicChoices(rec, view)
     rec.timeBar, rec.stackBar, rec.topBar = K.BarTime(view), K.BarStacks(view, false), K.BarStacksTop(view)
     rec.colorAt, rec.colorHex = view.barStackColorAt or 0, view.barStackColor or "ff6633"
 end
@@ -380,7 +397,10 @@ local function RegionSet(fam, role, fixed, view)
     local text, name, fill = need.text == true, false, DRAIN
     if role == "bar" then name, fill = view.barName ~= false, view.barFill == FILL and FILL or DRAIN end
     local aura = fam == "aura"
-    local pan = aura and view.pandemic == true
+    -- The pandemic window also on cooldown icons' aura overlays, as
+    -- Blizzard's Cooldown Manager shows it on its items (CooldownViewer.lua
+    -- CheckPandemicTimeDisplay).
+    local pan = view.pandemic == true or need.pandemic == true
     local glow = aura and (view.auraGlow == true or need.glow == true)
     local stack, kit = need.stack == true, aura and need.kit == true
     local stackFill = role == "bar" and view.barStacks == true
@@ -391,7 +411,7 @@ local function RegionSet(fam, role, fixed, view)
     want.stack, want.kit, want.stackFill, want.stackExtra, want.color = stack, kit, stackFill, stackExtra, color
     return (fixed and "s" or "g") .. role .. (text and 1 or 0) .. (name and 1 or 0) .. (pan and 1 or 0) .. (glow and 1 or 0)
         .. (stack and 1 or 0) .. (kit and 1 or 0) .. fill .. (stackFill and 1 or 0) .. (color and 1 or 0) .. (stackExtra and 1 or 0)
-        .. (need.timers or "")
+        .. (need.timers or "") .. (view.shape and view.shape ~= K.SQUARE and view.shape or "")
 end
 
 -- A new container for one bar, family and unit with the region set in `want`.

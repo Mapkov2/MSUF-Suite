@@ -1,6 +1,7 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local Suite = {
+    Skin = { RegisterMenu = function() end, AnimateContent = function() end },
     Client = { isForever = false, isMainline = true },
     Host = { build = "Classic" },
     RootDB = { profiles = { Default = {} } },

@@ -15,7 +15,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = ROOT.parent
 MSUF_MAIN = BRANCH / "MidnightSimpleUnitFrames"
+MSUF_PREVIEW = BRANCH / "MidnightSimpleUnitFrames-7.0"
 MSUF_LEGACY = BRANCH / "_repo_backups" / "6.22"
+# MSUF 7.0: the host with icon skins (MSUF_HostAPI.GetIconSkins).
+MSUF_70 = BRANCH / "MidnightSimpleUnitFrames-7.0"
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua",
            "suite_installer_harness.lua", "suite_bh3_state_support.lua",
@@ -24,6 +27,11 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_skin_collapse_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_motion_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_menu_coverage_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_menu_transitions_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_scroll_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_nameplates_aura_colors_contract.lua": [[], ["secret"]],
     "suite_forever_character_contract.lua": [[], ["secret"]],
     "suite_hud_contract.lua": [[], ["Forever"]],
@@ -36,13 +44,15 @@ EXTRA = {
     "suite_preview_quality_contract.lua": [[], ["Forever"]],
     "suite_preview_interaction_contract.lua": [[], ["Forever"]],
     "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(MSUF_LEGACY)]],
+    # The pandemic window search in German (default) and English.
+    "suite_cdm_pandemic_search_contract.lua": [[], ["Mainline", "enUS"]],
     "suite_search_findability_contract.lua": [
         [flavor, locale] for flavor in FLAVORS
         for locale in ("enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW")
     ],
     "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(MSUF_LEGACY)],
                                            [str(BRANCH / "MapkoSkin"), "Forever"]],
-    "suite_skin_msuf_bridge_contract.lua": [[str(MSUF_LEGACY), str(MSUF_MAIN)]],
+    "suite_skin_msuf_bridge_contract.lua": [[str(MSUF_LEGACY), str(MSUF_MAIN), str(MSUF_PREVIEW)]],
     # MSUF's real profile store renames with the Suite and skin stores.
     "suite_profile_rename_contract.lua": [[str(MSUF_MAIN)]],
     # Host API v2: the current multi-client Menu2 protocol and Suite link files.
@@ -52,6 +62,8 @@ EXTRA = {
     "suite_datatexts_security_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_load_conditions_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_actionbars_contract.lua": [[], ["native"]],
+    # Icon skins: a recording host, then MSUF 7.0's real skin engine.
+    "suite_icon_skins_contract.lua": [[], [str(MSUF_70)]],
     # The locale contract reads the live extraction through the same Python.
     "suite_locale_contract.lua": [[sys.executable]],
 }

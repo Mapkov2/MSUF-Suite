@@ -133,6 +133,11 @@ function H.Setup(options)
         IsAddOnLoaded = function(name) return H.loaded[name] or false end,
         GetAddOnMetadata = function() return "1.0" end,
         LoadAddOn = function(name)
+            local support = dofile(options.root .. "/tools/tests/suite_test_support.lua")
+            if support.LoadLocaleAddon(options.root, name) then
+                H.loaded[name] = true
+                return true
+            end
             if name == "MSUF_Suite_Skin" and H.addons[name] and H.skin then
                 _G.MapkoSkin = H.skin
                 H.loaded[name] = true

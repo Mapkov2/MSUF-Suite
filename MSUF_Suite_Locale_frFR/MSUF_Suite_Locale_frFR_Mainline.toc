@@ -1,0 +1,11 @@
+## Interface: 120100, 120105, 16001
+## Title: MSUF Suite - frFR
+## Notes: Menu language for MSUF Suite, loaded when selected in MSUF.
+## Author: Mapko
+## Category: MSUF
+## Version: 0.1.3-alpha
+## Dependencies: MidnightSimpleUnitFrames
+## LoadOnDemand: 1
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
+
+..\MSUF_Suite\Locales\frFR.lua

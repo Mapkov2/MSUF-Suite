@@ -771,6 +771,8 @@ for _,file in ipairs(coreFiles) do
         end
     end
 end
+-- This real core provider loads after Suite.lua in the client TOC.
+assert(loadfile(root.."/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite",Suite)
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 local S=Suite.Suite
@@ -839,7 +841,7 @@ local function Count(owner,name,label)
     owner[name]=function(...) calls[label]=(calls[label] or 0)+1;return original(...) end
 end
 Count(C.Icons,"Sync","iconSync");Count(C.Auras,"Sync","auraSync");Count(C.Index,"Rebuild","index")
-Count(C.Layout,"ApplyAll","layoutAll");Count(C.Layout,"Apply","layout")
+Count(C.Layout,"ApplyAll","layoutAll");Count(C.Layout,"Apply","layout");Count(C.Layout,"FitAnchor","fit")
 Count(C.Visibility,"ApplyAll","visAll");Count(C.Visibility,"Apply","vis")
 Count(C.Keybinds,"Rebuild","keysRebuild");Count(C.Keybinds,"Refresh","keysRefresh");Count(C.Keybinds,"Request","keysRequest")
 Count(C.Catalog,"Rebuild","catalog");Count(C.Resolve,"Build","resolve")
@@ -1062,11 +1064,17 @@ assert(Suite.CooldownManager.GetAnchorFrame("BuffBarCooldownViewer")==nil)
 assert(AnchorEvents()==1,"MSUF hears once that the Essential bar appeared")
 
 ------------------------------------------------------------------ MSUF anchor notifications
--- MSUF follows our Essential bar: one EventRegistry event, a frame after
--- that bar shows or hides; everything else stays silent.
+-- MSUF follows our anchored bars (Essential, Utility, Buffs): one
+-- EventRegistry event, a frame after one of them shows or hides; everything
+-- else stays silent.
 local anchorCount=AnchorEvents()
 C.Layout.Hide("uti")
 C.Layout.Apply("uti")
+Run()
+assert(AnchorEvents()==anchorCount+1 and PendingTimers()==0,"the Utility bar going and coming back notifies MSUF once")
+anchorCount=AnchorEvents()
+C.Layout.Hide("bar")
+C.Layout.Apply("bar")
 Run()
 assert(AnchorEvents()==anchorCount and PendingTimers()==0,"other bars showing or hiding notify nothing")
 C.Layout.Hide("ess")
@@ -1966,6 +1974,10 @@ do
     seen=Steps(Run)
     assert(seen.FlushStructure==1 and seen.FlushPlacement==1 and Calls("iconSync")==1 and Calls("layout")>=1,
         "a structure mark (and the relayout it marks) was lost")
+    -- The flush units run Suite main's code (also in combat): the MSUF anchor
+    -- footprint is the settings read's, a scale change's and a new bar's.
+    assert(Calls("fit")==0,"a structure sync must not settle the anchor footprint")
+    ResetCalls()
     local style,styled=C.Icons.Style,0
     C.Icons.Style=function(...) styled=styled+1 return style(...) end
     Flush.style.ess=true
@@ -1973,6 +1985,11 @@ do
     seen=Steps(Run)
     C.Icons.Style=style
     assert(seen.FlushStructure==1 and styled==1,"a style mark was lost")
+    assert(Calls("fit")==0,"a style pass must not settle the anchor footprint")
+    ResetCalls()
+    module:Refresh()
+    assert(Calls("fit")==3,"a settings read settles the anchored bars' footprints (ess, uti, buf)")
+    Run()
     for _,case in ipairs({{Flush.visible,"ess","vis"},{Flush.dirty,"visibility","visAll"},{Flush.dirty,"layout","layoutAll"},
         {C.Layout.dirty,"ess","layout"}}) do
         ResetCalls()
@@ -2890,7 +2907,10 @@ assert(Calls("catalog")==2)
 
 ------------------------------------------------------------------ pixel scale
 physical[2]=864
+ResetCalls()
 assert(Fire("UI_SCALE_CHANGED"))
+assert(Calls("fit")==0 and not C.Events.WatchingScale(),
+    "without a skin a pixel scale change runs Suite main's handler alone (no footprint work, no listener)")
 Run()
 local px=768/864
 assert(math.abs(C.state.px-px)<1e-9,"pixel scale recomputed")

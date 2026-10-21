@@ -83,6 +83,10 @@ Load('MSUF_Suite_Skin','Core/DefaultsLooks.lua',NS)
 NS.DB=NS.CopyValue(NS.Defaults)
 Load('MSUF_Suite_Skin_Options','MSKIN_OptionsBootstrap.lua',private)
 local O=NS.Options
+-- Native motion providers are separate from this isolated builder transaction.
+NS.LegacyScrollMotion={Track=Void}
+NS.MenuMotion={Track=Void}
+NS.ContentMotion={Play=Void}
 local priorShellRuns,priorModeRuns=0,0
 priorShell=function() priorShellRuns=priorShellRuns+1 end
 priorMode=function() priorModeRuns=priorModeRuns+1 end

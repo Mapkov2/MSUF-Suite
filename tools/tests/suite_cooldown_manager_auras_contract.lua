@@ -90,7 +90,7 @@ UnregisterStateDriver=function(frame, state)
 end
 local Methods,ContainerMethods,ButtonMethods={},{},{}
 local V125_ONLY={SetAuraGroupEnabled=true,SetAuraSlotEnabled=true,SetEditModePreviewEnabled=true,
-    IsEditModePreviewEnabled=true,GetAuraSlotFrame=true,AddAuraShownAnimation=true}
+    IsEditModePreviewEnabled=true,GetAuraSlotFrame=true,AddAuraShownAnimation=true,AddPandemicActiveAnimation=true}
 local function Sealed(obj)
     local s=R[obj]
     while s do
@@ -425,11 +425,33 @@ function ButtonMethods:AddAuraShownAnimation(group)
 end
 function ButtonMethods:SetDurationBar(bar,opts) Descendant(bar,self,"StatusBar");R[self].bind.bar,R[self].bind.barOpts=bar,SecureCopy(opts) end
 function ButtonMethods:SetSpellName(fs) Descendant(fs,self,"FontString");R[self].bind.name=fs end
-function ButtonMethods:AddPandemicRegion(region)
-    Descendant(region,self)
+-- A bound pandemic region carries a secret Shown aspect
+-- (Blizzard_CustomAuraButton.lua AddPandemicRegion): only Blizzard shows
+-- and hides it; Lua shows the glow inside it. The bound region gets its
+-- own lookup, so no other widget call pays for the check (a block: the
+-- main chunk is at the local limit).
+do
+    local function Refuse() error("Lua showed or hid a bound pandemic region (Blizzard owns its Shown aspect)",2) end
+    local SecretShown={__index=function(obj,key)
+        if key=="Show" or key=="Hide" or key=="SetShown" then return Refuse end
+        return Index(obj,key)
+    end}
+    function ButtonMethods:AddPandemicRegion(region)
+        Descendant(region,self)
+        local b=R[self].bind
+        b.pandemic,b.panRegion=(b.pandemic or 0)+1,region
+        R[region].secretShown=true
+        setmetatable(region,SecretShown)
+        if not R[R[self].parent].v125 then return b.pandemic end
+    end
+end
+-- 12.1.5 and Forever: Blizzard plays these while the aura is inside its
+-- pandemic window and stops them when it leaves (EnterPandemicWindow).
+function ButtonMethods:AddPandemicActiveAnimation(group)
+    Descendant(group,self,"AnimationGroup")
     local b=R[self].bind
-    b.pandemic=(b.pandemic or 0)+1
-    if not R[R[self].parent].v125 then return b.pandemic end
+    b.panAnims=(b.panAnims or 0)+1
+    R[group].panAnim=true
 end
 local ANCHORS={ANCHOR_LEFT=true,ANCHOR_RIGHT=true,ANCHOR_BOTTOMLEFT=true,ANCHOR_BOTTOM=true,ANCHOR_BOTTOMRIGHT=true,
     ANCHOR_TOPLEFT=true,ANCHOR_TOP=true,ANCHOR_TOPRIGHT=true,ANCHOR_CURSOR=true,ANCHOR_NONE=true}
@@ -593,6 +615,12 @@ local C={M={},EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},spell
 C.state={config={},px=1,fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,threshold=0,
     thR=1,thG=.35,thB=.24,muteSounds=false,soundChannel="Master",soundQuietUntil=0,inCombat=false,preview=false}
 local P={NS=NS,Suite=S,CDM=C}
+-- Bootstrap.lua's wakes, on C_Timer.After as on 12.1.0 (suite_signal_timers_
+-- contract runs the real ones on the signal map). Fields, not locals: the main
+-- chunk is at the local limit.
+C.wakeFns={}
+function C.NewWake(fn) C.wakeFns[#C.wakeFns+1]=fn;return #C.wakeFns end
+function C.Wake(key,delay) C_Timer.After(delay,C.wakeFns[key]) end
 local function LoadRuntime(file,private)
     local path=file=="Alerts.lua" and os.getenv("MSUF_TEST_ALERTS_FILE")
     if file=="AuraTimers.lua" then path=os.getenv("MSUF_TEST_AURA_TIMERS_FILE") end
@@ -972,6 +1000,71 @@ assert(Args(cd,"SetDrawSwipe")[1]==false,"per-spell hidden swipe")
 assert(b1.bind.textBinds==2 and b1.bind.textOpts~=shared,"per-spell threshold rebinds the text")
 local points=b1.bind.textOpts.binding.calls.SetFormatter.points
 assert(points[1].format:find("|cff",1,true) and points[2].threshold==4,"threshold breakpoints")
+-- MSUF's icon skin (view.skin from Settings.ReadViews, painted through
+-- HostBridge): part of the look, so it restyles the open buttons in place
+-- with no new container (it is not part of RegionSet); the button is the
+-- owner and an icon fills it (no anchor, no border edges); an unchanged
+-- restyle and a button that never showed a skin never call MSUF.
+do
+    local HB=NS.HostBridge
+    local paint=HB.PaintIconSkin
+    local painted={}
+    HB.PaintIconSkin=function(owner,look,w,h,anchor,clip)
+        painted[#painted+1]={owner=owner,look=look,w=w,h=h,anchor=anchor,clip=clip}
+        return look~=nil
+    end
+    local count=#containers
+    A.Restyle("buf")
+    assert(#painted==0,"buttons without a skin called MSUF")
+    local skin={signature="K:SHADOW1"}
+    buf.skin=skin;buf.styleGen=buf.styleGen+1
+    A.Restyle("buf")
+    assert(#containers==count,"a skin must restyle in place, never build a container")
+    assert(#painted>0,"the open buttons did not take the skin")
+    for _,call in ipairs(painted) do
+        assert(R[call.owner] and R[call.owner].button and call.look==skin and call.anchor==nil and call.w>0 and call.h>0,
+            "the skin goes on the aura button, which its icon fills")
+        assert(not call.clip,"a button over an empty cell draws its whole skin")
+    end
+    -- The icon fills the button: Style placed it with no inset (bw 0).
+    local points=R[icon1].points
+    local point=points[#points]
+    assert(point and point[4]==0 and point[5]==0,"under a skin the icon fills the button")
+    local before=#painted
+    A.Restyle("buf")
+    assert(#painted==before,"an unchanged restyle repainted the skin")
+    buf.skin=nil;buf.styleGen=buf.styleGen+1
+    A.Restyle("buf")
+    assert(#painted>before and painted[#painted].look==nil,"No skin hides it once")
+    before=#painted
+    buf.styleGen=buf.styleGen+1
+    A.Restyle("buf")
+    assert(#painted==before,"a hidden skin is not asked again")
+    HB.PaintIconSkin=paint
+    -- MSUF's icon shape: a mask is part of a button's regions, so a shape
+    -- builds its own containers and their buttons take it at creation, over
+    -- the icon and the swipe; a square bar never asks MSUF.
+    local apply=HB.ApplyIconShape
+    local shapes={}
+    HB.ApplyIconShape=function(owner,shape,anchor,cooldowns,...)
+        shapes[#shapes+1]={owner=owner,shape=shape,anchor=anchor,cooldowns=cooldowns,first=(...)}
+        return shape
+    end
+    local built=#containers
+    buf.shape="CIRCLE";buf.styleGen=buf.styleGen+1
+    A.Sync("buf")
+    RunTimers()
+    assert(#containers>built,"a shape must build its own containers")
+    assert(#shapes>0,"the new buttons did not take the shape")
+    for _,call in ipairs(shapes) do
+        assert(call.shape=="CIRCLE" and R[call.owner].button and call.anchor==call.first and call.cooldowns
+            and call.cooldowns[1],"the shape goes over the icon and the swipe of an aura button")
+    end
+    buf.shape=nil;buf.styleGen=buf.styleGen+1
+    A.Sync("buf")
+    RunTimers()
+    HB.ApplyIconShape=apply
+end
 -- sealed buttons (auras secret): no touch, replaced after the debounce
 ACCESS=Secret()
 buf.zoom=24;buf.styleGen=3
@@ -1056,14 +1149,178 @@ buf.showMissing=true
 A.Sync("buf")
 local ph=Holder(C.bars.buf.cells[2])
 assert(ph and Args(ph,"SetDesaturated")[1]==true and Args(ph,"SetTexture")[1]==e2c.texture,"dimmed placeholder")
+-- The stand-in rule (static, settings only): a fixed slot clips its skin to
+-- its icon exactly while its stand-in is held (showMissing), and the held
+-- stand-in draws the bar's skin around its own icon (the shadow and frame
+-- outside the slot's icon, once). Showing or hiding a stand-in, also in
+-- combat, shows or hides its Suite frame and asks MSUF nothing.
+do
+    local HB=NS.HostBridge
+    local paint=HB.PaintIconSkin
+    local clips,looks,paints,calls={},{},{},0
+    HB.PaintIconSkin=function(owner,look,w,h,anchor,clip)
+        calls=calls+1
+        paints[owner]=(paints[owner] or 0)+1
+        clips[owner],looks[owner]=clip==true,look
+        return look~=nil
+    end
+    -- The stand-in's skin: the shown frame over its cell that MSUF painted.
+    local function StandIn(c)
+        for owner,look in pairs(looks) do
+            if look and R[owner] and R[owner].parent==c and R[owner].shown then return look end
+        end
+    end
+    local function Painted(c)
+        local n=0
+        for owner,k in pairs(paints) do if R[owner] and R[owner].parent==c then n=n+k end end
+        return n
+    end
+    buf.skin={signature="K:SHADOW1"};buf.styleGen=buf.styleGen+1
+    C.AuraButtons.StandIns(true) -- the settings read: a bar decorates
+    A.Sync("buf")
+    local slot=Acquired(fp,"s1")
+    local cell=L.Cell("buf",1)
+    assert(clips[slot]==true and StandIn(cell)~=nil,"a slot over a held stand-in must clip its skin; the stand-in draws the rest")
+    buf.showMissing=false
+    A.Sync("buf")
+    assert(clips[slot]==false,"without a stand-in the slot draws its whole skin")
+    assert(StandIn(cell)==nil,"an unheld stand-in draws no skin")
+    -- The preview's samples under the slots do not clip them (closing the
+    -- preview then has nothing to undo, also while sealed buttons refuse).
+    ACCESS=Secret()
+    A.SetPreview(true)
+    assert(clips[slot]==false and not A.pending.buf,"the preview must not clip a slot")
+    ACCESS=true
+    A.Sync("buf")
+    assert(clips[slot]==false and not A.pending.buf,"a sync in the preview must not clip a slot either")
+    ACCESS=Secret()
+    A.SetPreview(false)
+    ACCESS=true
+    assert(clips[slot]==false and not A.pending.buf,"closing the preview has nothing to undo")
+    -- The preview closed in combat hides the samples' skins without MSUF
+    -- (their frames hide).
+    A.SetPreview(true)
+    assert(StandIn(cell)~=nil,"a sample under a skinned slot shows the bar's skin")
+    local asked=calls
+    COMBAT=true
+    A.SetPreview(false)
+    COMBAT=false
+    assert(calls==asked and StandIn(cell)==nil,"closing the preview in combat must hide the samples' skins without MSUF")
+    local repainted=Painted(cell)
+    buf.showMissing=true
+    A.Sync("buf")
+    assert(clips[slot]==true,"the stand-in again")
+    assert(StandIn(cell)~=nil and Painted(cell)==repainted,"a stand-in shown again must show its skin without a repaint")
+    -- The documented limit (owner, 2026-10-18): while auras are secret (M+,
+    -- PvP) sealed slots restyle only when auras open, and the stand-ins follow
+    -- the rule at once. showMissing off: the stand-in's outer skin goes now,
+    -- the sealed slot keeps its clipped skin until auras open.
+    ACCESS=Secret()
+    buf.showMissing=false
+    A.Sync("buf")
+    assert(A.pending.buf and clips[slot]==true and StandIn(cell)==nil,
+        "the documented limit: a sealed slot keeps its clipped skin while its stand-in already follows the rule")
+    ACCESS=true
+    A.FlushPending()
+    assert(not A.pending.buf and clips[slot]==false and StandIn(cell)==nil,"auras open: the slot draws its whole skin")
+    -- A new look while sealed: the new outer skin around the old inner skin
+    -- until auras open, then one look again.
+    buf.showMissing=true
+    A.Sync("buf")
+    assert(clips[slot]==true and StandIn(cell)~=nil,"the stand-in again")
+    local old,new=buf.skin,{signature="K:DARK2"}
+    ACCESS=Secret()
+    buf.skin=new;buf.styleGen=buf.styleGen+1
+    A.Sync("buf")
+    assert(A.pending.buf and looks[slot]==old and StandIn(cell)==new,
+        "the documented limit: the new outer skin around the sealed slot's old inner skin")
+    ACCESS=true
+    A.FlushPending()
+    assert(not A.pending.buf and looks[slot]==new and clips[slot]==true and StandIn(cell)==new,"auras open: one look again")
+    -- No bar decorates any more: the stand-ins' skin frames are parked and
+    -- Suite main's Hold and Unhold run, so the preview's samples (also closed
+    -- in combat) touch no skin frame.
+    local frame
+    for owner in pairs(looks) do if R[owner] and R[owner].parent==cell then frame=owner end end
+    buf.skin=nil;buf.styleGen=buf.styleGen+1
+    C.AuraButtons.StandIns(false)
+    A.Sync("buf")
+    assert(frame and not R[frame].shown,"a parked stand-in skin frame is hidden")
+    local touched=Calls(frame,"Hide")+Calls(frame,"Show")+Calls(frame,"SetShown")
+    A.SetPreview(true)
+    COMBAT=true
+    A.SetPreview(false)
+    COMBAT=false
+    assert(Calls(frame,"Hide")+Calls(frame,"Show")+Calls(frame,"SetShown")==touched and not R[frame].shown,
+        "without a skin the stand-ins must not touch their parked skin frames")
+    -- Suite main's Hold and Unhold run then, never the skinned ones (a call
+    -- hook names the functions by their line in AuraPlaceholders.lua).
+    local kinds={}
+    do
+        local handle=assert(io.open(root.."/MSUF_Suite_CooldownManager/AuraPlaceholders.lua","rb"))
+        local n=0
+        for line in handle:read("*a"):gsub("\r\n","\n"):gmatch("([^\n]*)\n") do
+            n=n+1
+            if line:find("^local function HoldPlain%(") or line:find("^local function UnholdPlain%(") then
+                kinds[n]="plain"
+            elseif line:find("^local function HoldSkinned%(") or line:find("^local function UnholdSkinned%(") then
+                kinds[n]="skinned"
+            end
+        end
+        handle:close()
+    end
+    local ran={plain=0,skinned=0}
+    debug.sethook(function()
+        local info=debug.getinfo(2,"S")
+        local kind=info and info.source:find("AuraPlaceholders.lua",1,true) and kinds[info.linedefined]
+        if kind then ran[kind]=ran[kind]+1 end
+    end,"c")
+    A.Sync("buf")
+    A.SetPreview(true)
+    A.SetPreview(false)
+    debug.sethook()
+    assert(ran.plain>0 and ran.skinned==0,"without a skin on any bar the stand-ins must run Suite main's Hold and Unhold")
+    -- A parked frame stays parked: once a bar decorates again (this one keeps
+    -- no skin and no shape), its stand-in asks MSUF nothing.
+    C.AuraButtons.StandIns(true)
+    local asked=Painted(cell)
+    A.Sync("buf")
+    A.SetPreview(true)
+    A.SetPreview(false)
+    assert(Painted(cell)==asked,"a skinless bar's stand-in must not ask MSUF for its parked frame")
+    C.AuraButtons.StandIns(false)
+    HB.PaintIconSkin=paint
+end
 -- entry leaves a fixed bar: 12.1.5 switches its slot off
 Plan("buf",2,{e1,e2c,e3,e4})
 A.Sync("buf")
 assert(fs.slots.s3.enabled==false,"slot switched off")
--- back to compact: the pooled compact containers come back
-buf.keepSlots,buf.showMissing=false,false
-count=#containers
-A.Sync("buf")
+-- back to compact: the pooled compact containers come back; no stand-in is
+-- held then, so none draws a skin
+do
+    local HB=NS.HostBridge
+    local paint,skins=HB.PaintIconSkin,{}
+    HB.PaintIconSkin=function(owner,look) skins[owner]=look return look~=nil end
+    C.AuraButtons.StandIns(true)
+    local function StandIn(c)
+        for owner,look in pairs(skins) do
+            if look and R[owner] and R[owner].parent==c and R[owner].shown then return look end
+        end
+    end
+    buf.skin={signature="K:SHADOW1"};buf.styleGen=buf.styleGen+1
+    A.Sync("buf")
+    local kept=0
+    for _,cell in ipairs(C.bars.buf.cells) do if StandIn(cell) then kept=kept+1 end end
+    assert(kept>0,"a held stand-in under a skinned slot draws its skin")
+    buf.keepSlots,buf.showMissing=false,false
+    count=#containers
+    A.Sync("buf")
+    for _,cell in ipairs(C.bars.buf.cells) do assert(StandIn(cell)==nil,"no stand-in is held on a compact bar") end
+    buf.skin=nil;buf.styleGen=buf.styleGen+1
+    A.Sync("buf")
+    C.AuraButtons.StandIns(false)
+    HB.PaintIconSkin=paint
+end
 assert(#containers==count,"compact containers reused from the pool")
 assert(R[compactP].enabled and R[compactP].shown and R[compactT].enabled,"reused containers enabled and shown")
 assert(R[fp].enabled==false,"fixed containers retired")
@@ -1372,7 +1629,11 @@ assert(ob.allPoints==o1.icon,"overlay covers its cooldown icon")
 local ocd=ob.bind.cooldown
 local swipe=Args(ocd,"SetSwipeColor")
 assert(swipe[1]==1 and math.abs(swipe[2]-.82)<1e-9 and swipe[4]==.55 and Args(ocd,"SetReverse")[1]==true,"gold reverse swipe")
-assert(ob.bind.text and ob.bind.icon and not ob.bind.pandemic,"full-cover icon and duration text")
+-- Overlays mark the pandemic window like aura bars (owner request
+-- 2026-10-20; Blizzard's Cooldown Manager marks it on its items).
+assert(CDM.KEYS.ess.pandemic and rules[CDM.KEYS.ess.pandemic].default==true and ess.pandemic==true,
+    "cooldown bars carry the pandemic switch, on by default")
+assert(ob.bind.text and ob.bind.icon and ob.bind.pandemic==1,"full-cover icon, duration text and the pandemic window")
 assert(os.level==R[o1.icon].level+C.Const.LEVEL.cd and os.level>R[o1.icon].level,"above the icon, at its swipe")
 -- An overlay has no stack colour or markers: its swipe, countdown and
 -- stacks keep their levels over its own button (+1, +3, +4), so they never
@@ -1384,6 +1645,20 @@ do
         ("overlay swipe %d, countdown %d, stacks %d over button %d"):format(swipeLevel,textLevel,stackLevel,ob.level))
     assert(stackLevel<=R[o1.icon].level+C.Const.LEVEL.top,"overlay stacks stay under the icon's countdown on top")
 end
+-- An overlay covers its cooldown icon, which shows the bar's skin: the
+-- overlay clips its own skin to the icon, so the shadow outside draws once.
+do
+    local HB=NS.HostBridge
+    local paint=HB.PaintIconSkin
+    local clips={}
+    HB.PaintIconSkin=function(owner,look,w,h,anchor,clip) clips[owner]=clip==true return look~=nil end
+    ess.skin={signature="K:SHADOW1"};ess.styleGen=(ess.styleGen or 0)+1
+    A.Sync("ess")
+    assert(clips[Acquired(oc,"s1")]==true,"an overlay must clip its skin to the icon it covers")
+    ess.skin=nil;ess.styleGen=ess.styleGen+1
+    A.Sync("ess")
+    HB.PaintIconSkin=paint
+end
 -- icon frame changed: new slot on the new icon, old slot off
 o1.icon=Icon()
 A.SyncOverlays("ess")
@@ -1393,6 +1668,33 @@ local tu=R[ot].updates
 A.TargetChanged()
 RunTimers()
 assert(R[ot].updates==tu+1)
+-- The bar's pandemic switch: Blizzard makes a button's regions with it, so
+-- the overlays get containers without the window and the pooled ones back.
+do
+    ess.pandemic=false
+    A.SyncOverlays("ess")
+    local plain=Live("ess","player",true)
+    local rec=C.AuraContainers.live.ess.over.player
+    assert(plain~=oc and rec.frame==plain and rec.pandemic==false,"the switch off builds overlays without the window")
+    for key in pairs(R[plain].slots) do
+        local button=Acquired(plain,key)
+        assert(button and not R[button].bind.pandemic,"no pandemic region on overlay "..key)
+    end
+    ess.pandemic=true
+    A.SyncOverlays("ess")
+    assert(Live("ess","player",true)==oc and Live("ess","target",true)==ot and C.AuraContainers.live.ess.over.player.pandemic==true,
+        "the switch on takes the pooled overlays with the window back")
+    -- A cooldown's own choice: with the bar's switch off, a spell that asks
+    -- for the window keeps it on the overlays (need.pandemic).
+    ess.pandemic=false
+    o1.ov={pandemic=true}
+    A.SyncOverlays("ess")
+    assert(Live("ess","player",true)==oc and Live("ess","target",true)==ot and C.AuraContainers.live.ess.over.player.pandemic==true,
+        "a cooldown's pandemic on keeps the window on the overlays with the bar's switch off")
+    o1.ov=C.EMPTY
+    ess.pandemic=true
+    A.SyncOverlays("ess")
+end
 ess.showAura=false
 A.Sync("ess")
 assert(R[oc].enabled==false and R[ot].enabled==false,"overlays off with the bar setting")
@@ -2311,17 +2613,32 @@ local function Gated(obj,root)
     end
     return false
 end
--- The "glow while active" parts of one aura button.
-local function AuraGlow(button)
-    local flips=Find(button,function(obj,s) return IsFlip(obj,s) and not Gated(obj,button) end)
-    assert(#flips==1,"one aura glow per button")
-    local flip=flips[1]
+-- The parts of one glow, from its flipbook texture.
+local function GlowParts(flip)
     local frame=R[flip].parent
     local ring=Child(frame,"Frame")
     local pulse=Child(ring,"AnimationGroup")
     local edges=Find(ring,function(_,s) return s.kind=="Texture" end)
     return {frame=frame,flip=flip,ring=ring,pulse=pulse,fade=Child(pulse,"Alpha"),edges=edges,
         loop=Child(flip,"AnimationGroup")}
+end
+-- The "glow while active" parts of one aura button (not its pandemic glow).
+local function AuraGlow(button)
+    local pan=R[button].bind.panRegion
+    local flips=Find(button,function(obj,s) return IsFlip(obj,s) and not Gated(obj,button) and not (pan and Under(obj,pan)) end)
+    assert(#flips==1,"one aura glow per button")
+    return GlowParts(flips[1])
+end
+-- The pandemic window of one aura button: the bound region and the glow
+-- inside it.
+local function PandemicGlow(button)
+    local region=R[button].bind.panRegion
+    assert(region and R[region].parent==button,"the pandemic region is bound and sits in its button")
+    local flips=Find(region,IsFlip)
+    assert(#flips==1,"one pandemic glow per button")
+    local g=GlowParts(flips[1])
+    g.region=region
+    return g
 end
 local function Near(a,b) return math.abs(a-b)<1e-6 end
 local function CountFormatters()
@@ -2705,6 +3022,142 @@ gv.auraGlow=true
 g5.ov={auraGlow=false}
 A.Sync("c5")
 assert(R[GlowOf("g6").frame].shown and not R[gw5.frame].shown,"bar switch and per-spell exception")
+
+-- A shaped bar (containers built per shape) glows with rings of its shape
+-- around the icon in place of the square edges; the alert keeps its art.
+do
+    local HB=NS.HostBridge
+    local art,apply=HB.IconShapeArt,HB.ApplyIconShape
+    HB.IconShapeArt=function(shape) if shape~="RECTANGLE" then return "ring:"..shape,"fill:"..shape,false,false end end
+    HB.ApplyIconShape=function(_,shape) return shape end
+    gv.shape="CIRCLE";gv.styleGen=(gv.styleGen or 0)+1
+    A.Sync("c5")
+    RunTimers()
+    local round=Live("c5","player")
+    assert(round~=gc,"a shape builds its own containers")
+    local button=Acquired(round,"g4")
+    local rings,edges,anchored=0,0,true
+    for _,tex in ipairs(AuraGlow(button).edges) do
+        if R[tex].shown and (Args(tex,"SetTexture") or {})[1]=="ring:CIRCLE" then
+            rings=rings+1
+            for _,p in ipairs(R[tex].points or {}) do if p[2]~=R[button].bind.icon then anchored=false end end
+        elseif R[tex].shown then
+            edges=edges+1
+        end
+    end
+    assert(rings>=1 and edges==0,("a round bar's edge glow must be rings of its shape (%d rings, %d edges)"):format(rings,edges))
+    assert(anchored,"the glow rings go around the icon")
+    gv.shape=nil;gv.styleGen=gv.styleGen+1
+    A.Sync("c5")
+    RunTimers()
+    HB.IconShapeArt,HB.ApplyIconShape=art,apply
+end
+
+------------------------------------------------------------------ pandemic window style
+-- The pandemic window (owner request 2026-10-20) in one of the glow styles,
+-- a color and a thickness per bar, switched per spell. Blizzard shows its
+-- region while the aura is inside the window (AddPandemicRegion: a secret
+-- Shown aspect, so the fakes refuse any Lua show or hide once it is bound)
+-- and plays its loops (AddPandemicActiveAnimation on 12.1.5 and Forever);
+-- Lua paints the glow inside at build and restyle time and shows it per
+-- entry. A look change restyles in place, never a new container.
+do
+    local made=#containers
+    local function Pan(key) return PandemicGlow(Acquired(gc,key)) end
+    local function Thickness(g)
+        local out
+        for _,e in ipairs(g.edges) do
+            local size=(Args(e,"SetHeight") or Args(e,"SetWidth"))[1]
+            assert(out==nil or out==size,"the four edges share one thickness")
+            out=size
+        end
+        return out
+    end
+    local function Edge(g) return Args(g.edges[1],"SetColorTexture") end
+    local function InPlace(label) assert(Live("c5","player")==gc and #containers==made,label) end
+    -- Settings writes the hex and its channels together (COLOR).
+    local function Color(hex) gv.pandemicColor=hex;gv.pandemicR,gv.pandemicG,gv.pandemicB=S.RGB(hex) end
+    -- Defaults: a still 2 px border in ff4d26 on every entry.
+    local p6=Pan("g6")
+    local bind=R[Acquired(gc,"g6")].bind
+    assert(bind.pandemic==1 and R[p6.frame].shown and R[p6.ring].shown and not R[p6.flip].shown
+        and Args(p6.fade,"SetToAlpha")[1]==1 and Thickness(p6)==2,"default pandemic window: a still 2 px border")
+    local edge=Edge(p6)
+    assert(edge[1]==1 and Near(edge[2],0x4d/255) and Near(edge[3],0x26/255),"default pandemic color ff4d26")
+    -- Blizzard plays the loops while the aura is inside its window, never
+    -- with the button (the aura glow's two loops are the shown ones).
+    assert(bind.panAnims==2 and R[p6.loop].panAnim and R[p6.pulse].panAnim and not R[p6.loop].playing
+        and not R[p6.pulse].playing and bind.shownAnims==2,"the pandemic loops are pandemic active animations")
+    -- Styles 1 and 2: the flipbook in the pandemic color; 3 and 4: the
+    -- edges at the bar's thickness. The aura glow keeps the glow look.
+    gv.pandemicStyle=1
+    A.Sync("c5")
+    InPlace("a pandemic style change restyles in place")
+    assert(R[p6.flip].shown and not R[p6.ring].shown and Args(p6.flip,"SetAtlas")[1]=="UI-HUD-ActionBar-Proc-Loop-Flipbook"
+        and Args(p6.flip,"SetDesaturated")[1]==true and Near(Args(p6.flip,"SetVertexColor")[2],0x4d/255),
+        "style 1: the alert flipbook in the pandemic color")
+    -- A new button size restyles the buttons and repaints the glow inside.
+    local size0=gv.size
+    gv.size=size0+4;gv.styleGen=gv.styleGen+1
+    A.Sync("c5")
+    local bw6,bh6=Args(Acquired(gc,"g6"),"SetSize")[1],Args(Acquired(gc,"g6"),"SetSize")[2]
+    assert(bw6==size0+4 and Near(Args(p6.flip,"SetSize")[1],bw6+.4*math.min(bw6,bh6)),"a new button size repaints the pandemic glow")
+    gv.size=size0;gv.styleGen=gv.styleGen+1
+    gv.pandemicStyle=2
+    A.Sync("c5")
+    assert(R[p6.flip].shown and Args(p6.flip,"SetAtlas")[1]=="rotationhelper_ants_flipbook","style 2: marching ants")
+    gv.pandemicStyle,gv.pandemicSize=3,5
+    Color("1a334d")
+    A.Sync("c5")
+    InPlace("a pandemic color and thickness change restyles in place")
+    edge=Edge(p6)
+    assert(R[p6.ring].shown and not R[p6.flip].shown and Near(Args(p6.fade,"SetToAlpha")[1],.25) and Thickness(p6)==5
+        and Near(edge[1],0x1a/255) and Near(edge[2],0x33/255) and Near(edge[3],0x4d/255),"style 3: pulsing edges, 5 px, the bar's color")
+    gv.pandemicStyle,gv.pandemicSize=4,7
+    A.Sync("c5")
+    InPlace("a pandemic thickness change restyles in place")
+    assert(Args(p6.fade,"SetToAlpha")[1]==1 and Thickness(p6)==7,"style 4: still edges at the bar's thickness")
+    gv.pandemicSize=3
+    A.Sync("c5")
+    InPlace("a thickness change alone restyles in place")
+    assert(Thickness(p6)==3,"a thickness change alone repaints the edges")
+    local aura6=GlowOf("g6")
+    assert(R[aura6.ring].shown and Near(Args(aura6.fade,"SetToAlpha")[1],.25),"the pandemic look leaves the aura glow alone")
+    -- A spell's pandemic off hides its glow only; the region stays Blizzard's.
+    g6.ov={pandemic=false}
+    A.Sync("c5")
+    local p4=Pan("g4")
+    InPlace("a spell's pandemic choice restyles in place")
+    assert(not R[p6.frame].shown and R[p4.frame].shown and R[p6.region].secretShown,"a spell's pandemic off")
+    -- The bar off and one spell on: every button keeps the region
+    -- (need.pandemic) and only that spell's glow shows.
+    gv.pandemic=false
+    g4.ov={auraGlow=true,glowStyle=4,pandemic=true}
+    A.Sync("c5")
+    InPlace("a spell's pandemic on keeps the region with the bar's switch off")
+    assert(C.AuraContainers.live.c5.aura.player.pandemic==true and R[p4.frame].shown and not R[Pan("g1").frame].shown
+        and not R[p6.frame].shown and Thickness(p4)==3,"only the spell that asks shows the pandemic window")
+    -- Nobody asks: a new region set, buttons without the region.
+    g4.ov={auraGlow=true,glowStyle=4}
+    A.Sync("c5")
+    local bare=Live("c5","player")
+    assert(bare~=gc and C.AuraContainers.live.c5.aura.player.pandemic==false and not R[Acquired(bare,"g1")].bind.panRegion,
+        "no pandemic window asked for: buttons without the region")
+    -- 12.1.0 has no AddPandemicActiveAnimation: Lua starts both loops (the
+    -- region stays hidden outside the window).
+    V125=false
+    gv.pandemic,gv.keepSlots=true,true
+    A.Sync("c5")
+    local old=R[Acquired(Live("c5","player"),"s1")]
+    local p0=PandemicGlow(Acquired(Live("c5","player"),"s1"))
+    assert(old.bind.panRegion and old.bind.panAnims==nil and R[p0.loop].playing and R[p0.pulse].playing,
+        "12.1.0: the pandemic loops are started by Lua")
+    V125=true
+    g6.ov,gv.keepSlots,gv.pandemicStyle,gv.pandemicSize=C.EMPTY,false,4,2
+    Color("ff4d26")
+    A.Sync("c5")
+    assert(Live("c5","player")==gc and R[p6.frame].shown and Thickness(p6)==2,"the pooled container comes back")
+end
 
 ------------------------------------------------------------------ overlays: stack glow and color
 -- Aura overlays on cooldown icons carry the same per-spell stack choices;
@@ -3247,7 +3700,10 @@ do
     for i=1,4 do rows[i]=Aura("c6","a"..(6300+i),"a","player",Set(6300+i)) end
     Plan("c6",3,rows)
     A.Sync("c6")
-    Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),3857)
+    -- 2026-10-17 icon skins and shapes and 2026-10-20 the pandemic window's
+    -- style and per-spell switch (accepted trades, merged test build): 3987
+    -- for the skins plus 39 for the pandemic stamps.
+    Budget("aura sync: an unchanged buff bar",Cost(A.Sync,"c6"),3987+39)
     -- A look change restyles every button of the compact bar (a baseline
     -- measured on 2026-10-02 at q11/merge, before the named modes of wave 3).
     do
@@ -3271,6 +3727,12 @@ end
 -- 2321 objects, 7204 writes to build, 4480 to restyle, 230 per choice;
 -- stack bars 2201, 6404, 3560, 250 and 81 aura containers (two sensor
 -- containers in each of the forty buttons).
+-- Accepted trade (2026-10-20): every button with the pandemic window builds
+-- its glow with both looks (flipbook and edges, so a style change restyles
+-- in place) inside the region Blizzard shows: +8 objects and +19 writes per
+-- button to build (icons 385 -> 449 and 724 -> 876, bars 297 -> 329 and
+-- 644 -> 720); a restyle no longer redraws fixed edges: -20 writes per
+-- button (icons 448 -> 288, bars 356 -> 276).
 do
     local function Budget(kind,entries,setup,choiceOv)
         C.views.c6=View("c6",kind)
@@ -3297,12 +3759,12 @@ do
     local icons={}
     for i=1,8 do icons[i]=Aura("c6","a"..(6100+i),"a","player",Set(6100+i),{ov={auraGlow=true}}) end
     local b,bw,r,c,n=Budget(2,icons,function(view) view.pandemic=true end,{auraGlow=true,swipe=2,glowStyle=3,timeText=3})
-    assert(b<=385 and bw<=724 and r<=448 and c<=23 and n==1,
+    assert(b<=449 and bw<=876 and r<=288 and c<=23 and n==1,
         ("eight glowing icons: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
     local bars={}
     for i=1,4 do bars[i]=Aura("c6","a"..(6200+i),"a","player",Set(6200+i),{ov={stackGlow=3}}) end
     b,bw,r,c,n=Budget(3,bars,function(view) view.barStacks,view.barStackColorAt=true,4 end,{stackGlow=5,glowStyle=3,timeText=3})
-    assert(b<=297 and bw<=644 and r<=356 and c<=25 and n==9,
+    assert(b<=329 and bw<=720 and r<=276 and c<=25 and n==9,
         ("four stack bars: %d objects, %d writes to build, %d to restyle, %d per choice, %d containers"):format(b,bw,r,c,n))
     -- Should Blizzard show a bare button after all, it is built a frame
     -- later; in combat or while auras are secret, once they open again.
@@ -3990,4 +4452,80 @@ do (function()
     C_Spell.IsSpellHarmful=oldHarmful
     NS.Client.isForever=previousForever
 end)() end
+-- After the contract's timer setup: the cases with live timer rows.
+-- A bar's sample row in the preview hides a skinned stand-in's skin without
+-- forgetting it: closing the preview in combat shows the stand-in's skin
+-- again and asks MSUF nothing.
+do
+    local HB=NS.HostBridge
+    local paint,calls,clips=HB.PaintIconSkin,0,{}
+    HB.PaintIconSkin=function(owner,look,w,h,anchor,clip) calls=calls+1 clips[owner]=clip==true return look~=nil end
+    C.AuraButtons.StandIns(true)
+    C.views.c4=View("c4",3)
+    local v=C.views.c4
+    v.keepSlots,v.showMissing,v.skin=true,true,{signature="K:SHADOW1"}
+    -- The second entry has a timer: its live row (AuraTimers) over its held
+    -- stand-in clips its skin to its icon, as a slot does.
+    local timed=Aura("c4","b96","b","player",Set(9601),{ov={timerDuration=7}})
+    Plan("c4",3,{Aura("c4","b95","b","player",Set(9501)),timed})
+    A.Sync("c4")
+    assert(calls>0,"the bar's stand-in draws its skin")
+    local timerCell,rowClip=L.Cell("c4",2),nil
+    for owner,clip in pairs(clips) do
+        if R[owner] and R[owner].parent==timerCell and owner.rec then rowClip=clip end
+    end
+    assert(rowClip==true,"a live timer row over its held stand-in must clip its skin")
+    A.SetPreview(true)
+    -- A settings change in the preview (a cold pass): the hidden stand-ins
+    -- take the new size there, not when the preview closes.
+    v.barHeight=(v.barHeight or 20)+4;v.styleGen=v.styleGen+1
+    A.Sync("c4")
+    local asked=calls
+    COMBAT=true
+    A.SetPreview(false)
+    COMBAT=false
+    assert(calls==asked,"closing the preview in combat must show a bar stand-in's skin again without MSUF")
+    v.on=false
+    A.Sync("c4")
+    C.views.c4,C.plans.c4=nil,nil
+    C.AuraButtons.StandIns(false)
+    HB.PaintIconSkin=paint
+end
+-- The second documented limit (owner, 2026-10-18), pinned as it is: two live
+-- surfaces over one cell without a held stand-in each draw their whole skin
+-- (only translucent layers darken where both show), never a missing outer
+-- skin: a timer row over its own aura's slot, and a both entry's player and
+-- target slots.
+do
+    local HB=NS.HostBridge
+    local paint,clips=HB.PaintIconSkin,{}
+    HB.PaintIconSkin=function(owner,look,w,h,anchor,clip) clips[owner]=clip==true return look~=nil end
+    C.AuraButtons.StandIns(true)
+    C.views.c5=View("c5",3)
+    local v=C.views.c5
+    v.keepSlots,v.showMissing,v.skin=true,false,{signature="K:SHADOW1"}
+    Plan("c5",3,{Aura("c5","b97","b","player",Set(9701),{ov={timerDuration=7}})})
+    A.Sync("c5")
+    local cell,rowClip=L.Cell("c5",1),nil
+    for owner,clip in pairs(clips) do
+        if R[owner] and R[owner].parent==cell and owner.rec then rowClip=clip end
+    end
+    local slot=Acquired(Live("c5","player"),"s1")
+    assert(rowClip==false and clips[slot]==false,
+        "documented limit: a timer row and its own aura's slot each draw their whole skin")
+    C.views.c6=View("c6",2)
+    local w=C.views.c6
+    w.keepSlots,w.showMissing,w.skin=true,false,{signature="K:SHADOW1"}
+    Plan("c6",2,{Aura("c6","b98","b","both",Set(9801),{selfAura=true})})
+    A.Sync("c6")
+    local ps,ts=Acquired(Live("c6","player"),"s1"),Acquired(Live("c6","target"),"s1")
+    assert(clips[ps]==false and clips[ts]==false,
+        "documented limit: a both entry's player and target slots each draw their whole skin")
+    v.on,w.on=false,false
+    A.Sync("c5")
+    A.Sync("c6")
+    C.views.c5,C.plans.c5,C.views.c6,C.plans.c6=nil,nil,nil,nil
+    C.AuraButtons.StandIns(false)
+    HB.PaintIconSkin=paint
+end
 print("suite_cooldown_manager_auras_contract: ok")

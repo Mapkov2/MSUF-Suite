@@ -6,9 +6,13 @@ local Dispatch, Finite, PublicText = S.Dispatch, S.Finite, S.PublicText
 -- reusable task per owner key; the native timer exists only while a task is due.
 -- This is not ctx:After (Timers.lua): the owners are plain strings that need no
 -- module context, and every due task rides on one native timer, where a wait
--- per context would arm one C_Timer per display and tick.
+-- per context would arm one C_Timer per display and tick. On Retail 12.1.5 and
+-- WoW Forever that timer is a C-side timed signal map (C_Timer.NewTimedSignalMap)
+-- with one key per task, so a tick makes no timer object; 12.1.0 keeps the
+-- shared C_Timer.NewTimer. The first arm picks the way for the session.
 local tasks, taskPool, ready, readyGenerations = {}, {}, {}, {}
 local timer, timerDue, dispatching = nil, nil, false
+local signals, taskOfKey = nil, {}
 
 
 local Arm
@@ -36,7 +40,7 @@ local function FireTimer()
     Arm()
 end
 
-Arm = function()
+local function ArmTimer()
     local due
     for _, task in pairs(tasks) do
         if not due or task.due < due then due = task.due end
@@ -49,6 +53,47 @@ Arm = function()
     if not due then return end
     timerDue = due
     timer = C_Timer.NewTimer(math.max(0.05, due - GetTime()), FireTimer)
+end
+
+-- The signal map runs a due task alone (isolated, like FireTimer's batch).
+-- A key the map took for a pass before a callback earlier in it moved the
+-- task's deadline comes early: it signals again for the rest.
+local function TaskDue(key)
+    local task = taskOfKey[key]
+    if not task or tasks[task.owner] ~= task then return end
+    local due = task.due
+    if due > GetTime() + 0.001 then return signals:SignalAt(key, due) end
+    tasks[task.owner], task.signalAt = nil, nil
+    Dispatch(task.callback)
+end
+-- Every due task holds its own deadline under its key (signalAt). Only a
+-- deadline that moved is set again and only a task that went is dropped, so
+-- a display's tick costs one native call.
+local function ArmSignals()
+    for _, task in pairs(tasks) do
+        local key, due = task.key, task.due
+        if not key then
+            key = #taskOfKey + 1
+            task.key, taskOfKey[key] = key, task
+        end
+        if task.signalAt ~= due then
+            task.signalAt = due
+            signals:SignalAt(key, due)
+        end
+    end
+    for key = 1, #taskOfKey do
+        local task = taskOfKey[key]
+        if task.signalAt and tasks[task.owner] ~= task then
+            task.signalAt = nil
+            signals:CancelSignal(key)
+        end
+    end
+end
+Arm = function()
+    local NewTimedSignalMap = C_Timer.NewTimedSignalMap
+    if NewTimedSignalMap then signals = NewTimedSignalMap(TaskDue) end
+    Arm = signals and ArmSignals or ArmTimer
+    return Arm()
 end
 
 local function CancelTask(task)

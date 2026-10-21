@@ -110,7 +110,7 @@ Global({ "iconZoom", "borderSize", "borderColor", "borderClassColor", "slotColor
     "pushedStyle", "interactionColor", "interactionClassColor", "swipeColor", "swipeAlpha", "cooldownNumbers",
     "rechargeNumbers", "font", "fontOutline", "fontRendering", "fontShadow", "fontShadowOpacity",
     "fontShadowDistance", "keybindColor", "macroColor", "countColor", "cooldownColor" }, { style = true })
-Global({ "borderArt", "borderScale", "borderExpansion" }, { style = true })
+Global({ "borderArt", "borderScale", "borderExpansion", "iconSkin" }, { style = true })
 Global({ "buttonShape" }, { style = true, allLayout = true, allGeometry = true })
 -- Endcaps and bar background borders wear the resolved border color too.
 Global({ "borderColor", "borderClassColor" }, { style = true, allLayout = true })
@@ -228,6 +228,15 @@ local function Collect(config)
         applied.__fontPath, applied.__fontEpoch = fontPath, fontEpoch
         work.style = true
     end
+    -- MSUF's icon skin follows the choice and MSUF's default skin
+    -- (HostBridge.IconSkinLook keeps one table per look until MSUF reports
+    -- a change), so a new look restyles every button; a recompiled look with
+    -- the same signature paints the same pixels and restyles nothing.
+    local skin, was = NS.HostBridge.IconSkinLook(config.iconSkin, (AB.ButtonShape(config))), applied.__skin
+    if was ~= skin then
+        applied.__skin = skin
+        if (skin and skin.signature) ~= (was and was.signature) then work.style = true end
+    end
     -- A new pixel grid moves and restyles every bar.
     local unit = S.PixelUnit()
     if unit ~= appliedUnit then
@@ -339,6 +348,8 @@ local function BindingsChanged()
 end
 
 function M:Enable()
+    -- MSUF's default icon skin changed: Refresh compares the look again.
+    NS.HostBridge.WatchIconSkins("actionbars", true)
     AB.ResolveAPI()
     AB.Build()
     local state = not self.config.imported and AB.ReadBlizzard() or nil
@@ -407,6 +418,7 @@ function M:Disable()
     for key in pairs(applied) do applied[key] = nil end
     rebuild, appliedUnit, appliedEditMode = true, nil, nil
     if AB.disposed then S.states.actionbars.reloadRequired = AB.RELOAD_MESSAGE end
+    NS.HostBridge.WatchIconSkins("actionbars", false)
     Dispatch(BindingsChanged)
 end
 

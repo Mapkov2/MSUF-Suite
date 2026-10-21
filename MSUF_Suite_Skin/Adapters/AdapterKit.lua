@@ -17,6 +17,8 @@ local COLOR_OWN = Safety.COLOR_OWN
 -- every spec passed here is marked allowImplicitProtected.
 local AdapterKit = {}
 NS.AdapterKit = AdapterKit
+local TrackMotionTarget, WatchContent = function() end, function() end
+function AdapterKit.SetMotionProvider(track, watch) TrackMotionTarget, WatchContent = track, watch end
 
 local WEAK_KEYS = { __mode = "k" }
 
@@ -165,6 +167,7 @@ function AdapterKit.RegisterRowCallback(scrollBox, callback, owner)
     if Safety.IsForbidden(scrollBox) or type((Field(scrollBox, "RegisterCallback"))) ~= "function" then
         return nil
     end
+    TrackMotionTarget(scrollBox, owner)
     local event = ScrollBoxListMixin.Event.OnInitializedFrame
     scrollBox:RegisterCallback(event, callback, owner)
     return event
@@ -461,6 +464,7 @@ function AdapterKit.SelectionIndicator(context, indicators, button, panel, match
     if NS.IsCombatLocked() or not button or not panel or not Safety.CanDecorate(panel, true) then
         return false
     end
+    WatchContent(panel, context.owner)
     local indicator = indicators[button]
     if not indicator then
         indicator = Safety.CreateChildFrame("Frame", panel)

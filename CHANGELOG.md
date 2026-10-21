@@ -1,5 +1,38 @@
 # MSUF Suite Changelog
 
+## 0.1.3 Alpha - 2026-10-21
+
+### Cooldown Manager
+
+- Automatically save and restore bar layouts for each specialization, including positions, attachments, growth, rows, spacing and sizes. Specializations without a saved layout start from the current layout; shared layouts remain available.
+- Preserve profile variant overrides while switching specialization layouts, editing bars, resetting settings and importing profiles.
+- Added configurable pandemic-window highlights to buff icons, buff bars and cooldown icons displaying an aura, with glow style, color, border thickness and per-spell overrides.
+- Improved native aura-container rendering, inactive placeholders, glow attachment and cleanup, including spell overrides and combat updates.
+- Added MSUF icon skins and icon shapes to Cooldown Manager bars, with host-compatible fallbacks.
+
+### Action Bars and player auras
+
+- Added MSUF icon-skin selection and Rounded, Diamond, Hexagon and Blizzard portrait button shapes alongside Square and Circle on supported hosts.
+- Added optional MSUF icon skins for Blizzard's player buffs and debuffs while retaining Blizzard's native size and layout.
+- Improved player-aura skin refreshes so only artwork reset by Blizzard is repainted.
+- Updated factory profiles and appearance setup to preserve the selected icon styles.
+
+### Skinning and menu motion
+
+- Added short hover, click, focus, selection, tab, disclosure and content transitions to Suite-owned interface artwork, plus blended palette changes.
+- Added animated AddOn-list groups and search/filter result transitions, with cleanup for hidden or reused rows.
+- Added optional smooth scrolling for supported native ScrollBoxes, modern scrollbars and legacy ScrollFrames; scrollbar dragging remains immediate.
+- Added dropdown background dimming and shared transition support for Blizzard Settings, native tabs, Suite dialogs and supported AceGUI/AceConfig menus.
+- Added Menu animations, Smooth scrolling, Reduced motion and Dim background for dropdowns controls, shared with the connected MSUF 7.0 menu where supported.
+
+### Previews, loading and compatibility
+
+- Unified interactive previews for Action Bars, Cooldown Manager, Nameplates, Minimap, Damage Meter, HUD and setup, including drag-hook ordering and corrected nameplate drag thresholds.
+- Load only the language pack selected in MSUF instead of compiling every translation catalog at startup. Keep all bundled addon folders together when updating.
+- Improved stored-profile copying and use native timed signal maps on supported clients, retaining the existing timer fallback and next-frame behavior.
+- Updated translated controls, search labels, profile migrations, packaging validation and regression coverage for Retail, WoW Forever and supported MSUF hosts.
+- Distributed through the Beta channel on CurseForge and Wago. The Suite remains in Alpha and requires Midnight Simple Unit Frames. New host icon skins and shapes require MSUF 7.0; older hosts retain compatible rendering.
+
 ## 0.1.2 Alpha - 2026-10-16
 
 - Updated WoW Forever minimap integration for build 1.60.1.70425, including native button textures and removed widgets.

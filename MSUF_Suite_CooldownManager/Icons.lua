@@ -111,6 +111,29 @@ local function CreateIcon(parent, pingable)
     return icon
 end
 
+-- MSUF's icon shape (icon.shape, nil when square): one mask over the icon
+-- art, the swipes and the press flash, set by the decoration, which makes the
+-- flash and the charge swipe of a shaped icon first (so none is made later in
+-- combat). While an icon has a shape the glows paint rings (Effects.Shapes);
+-- the decoration repaints the icon's glow (StyleDecorated: Effects.Reshaped).
+local shaped = setmetatable({}, { __mode = "k" }) -- icons with a shape (their glows paint rings)
+local function Shape(icon, shape)
+    local cooldowns = icon.cooldowns
+    if not cooldowns then
+        cooldowns = {}
+        icon.cooldowns = cooldowns
+    end
+    cooldowns[1], cooldowns[2] = icon.cd, icon.chargeCd
+    local pulse = icon.pressPulse
+    local drawn = NS.HostBridge.ApplyIconShape(icon, shape, icon.tex, cooldowns, icon.tex, pulse and pulse:GetParent())
+    drawn = drawn ~= K.SQUARE and drawn or nil
+    if drawn == icon.shape then return end
+    icon.shape = drawn
+    if drawn then K.RingArt(drawn) end
+    shaped[icon] = drawn and true or nil
+    C.Effects.Shapes(next(shaped) ~= nil)
+end
+
 -- Recharge edge (charge spells): swipe off, edge on, no numbers.
 function Icons.StyleCharge(icon)
     local cooldown, entry = icon.chargeCd, icon.entry
@@ -218,7 +241,7 @@ local function Texts(icon, view, ov)
 end
 
 -- Full style pass; callers gate it on view.styleGen (the preview calls it directly).
-function Icons.StyleIcon(icon, view, width, height)
+local function StylePlain(icon, view, width, height)
     local state = C.state
     local w, h = K.IconSize(view)
     if width and height then w, h = width, height end
@@ -257,6 +280,153 @@ function Icons.StyleIcon(icon, view, width, height)
     icon.styleGen, icon.styleView = view.styleGen, view
     if icon.glow or icon.ants then C.Effects.Refit(icon) end
 end
+
+-- A shaped icon's square edges: the plain style keeps placing icon.edges (its
+-- code stays Suite main's), so they go to a set on a hidden holder while the
+-- shape's rings show; the icon's own set, hidden, comes back when it is
+-- square again, and the plain style that follows places it.
+local function SinkEdges(icon, shaped)
+    local own = icon.ownEdges
+    if shaped and not own then
+        icon.ownEdges = icon.edges
+        K.PlaceEdges(icon.edges, icon, 0)
+        if not icon.edgeSink then
+            local sink = S.CreateFrame("Frame", nil, icon)
+            sink:Hide()
+            icon.edgeSink, icon.sunkEdges = sink, K.NewEdges(sink, 7)
+        end
+        icon.edges = icon.sunkEdges
+    elseif own and not shaped then
+        icon.edges, icon.ownEdges = own, nil
+    end
+end
+
+-- MSUF's skin and shape on an icon (view.decor, K.Decor): skin layers are
+-- textures of the icon frame around its texture (a timer bar's square icon
+-- too), under the swipe and texts, drawn at the bar's size on every row (the
+-- aura overlay above an icon is styled for the bar: AuraButtons.lua); a
+-- shape masks the icon and its swipes and draws rings of its shape.
+local decorated = setmetatable({}, { __mode = "k" }) -- icons MSUF draws on
+-- A shaped icon's charge swipe is made by its decoration (out of combat, so
+-- the mask takes it). When the shape goes, one Suite main would not have (the
+-- decoration made it, nothing drew a charge on it, its spell has no charges)
+-- is parked, so the plain paths cost what they cost on main; a new shape
+-- takes it back.
+local function ShapeCharge(icon)
+    if icon.chargeCd then return end
+    local parked = icon.parkedChargeCd
+    if parked then
+        icon.chargeCd, icon.parkedChargeCd = parked, nil
+        parked:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.charge)
+        Icons.StyleCharge(icon)
+    else
+        Icons.ChargeCooldown(icon)
+    end
+    icon.chargeSet, icon.shapeCharge = false, true
+end
+local function ParkCharge(icon)
+    local cooldown = icon.chargeCd
+    if not (cooldown and icon.shapeCharge) then return end
+    icon.shapeCharge = nil
+    if icon.chargeSet ~= false or (icon.entry and icon.entry.charges) then return end
+    icon.chargeCd, icon.parkedChargeCd = nil, cooldown
+end
+-- Returns whether the icon lost its shape (Effects.Reshaped follows then).
+local function Decorate(icon, view, decor)
+    local skin, shape, tex = decor and decor.skin or nil, decor and decor.shape or nil, icon.tex
+    if skin or icon.skinned then
+        local w, h = K.IconSize(view)
+        if view.kind == KIND.COOLDOWN and view.cooldownDuration then w = h end
+        icon.skinned = NS.HostBridge.PaintIconSkin(icon, skin, w, h, tex) or nil
+    end
+    if shape then
+        ShapeCharge(icon)
+        C.Effects.PreparePulse(icon)
+    end
+    local had = icon.shape
+    if shape or had then Shape(icon, shape or K.SQUARE) end
+    local lost = had ~= nil and icon.shape == nil
+    if lost then
+        ParkCharge(icon)
+        C.Effects.ParkPulse(icon)
+    end
+    SinkEdges(icon, icon.shape ~= nil)
+    if icon.shape or icon.rings then
+        local r, g, b = view.borderR or 0, view.borderG or 0, view.borderB or 0
+        if view.borderClass then
+            local cr, cg, cb = K.ClassRGB()
+            if cr then r, g, b = cr, cg, cb end
+        end
+        icon.rings = icon.rings or {}
+        K.PlaceRings(icon.rings, icon, tex, not skin and icon.shape, math.floor(view.border or 0), r, g, b)
+    end
+    icon.decorated = (icon.skinned or icon.shape) and true or nil
+    icon.decorRef, icon.decorGen = decor, view.styleGen
+    decorated[icon] = icon.decorated
+    return lost
+end
+
+-- The style while MSUF decorates a bar or an icon still shows a decoration
+-- (Icons.Decorations): the decoration when the look changed (a new style
+-- generation or view: settings, scale, a new icon), never when a relayout
+-- only gives an icon another row's size (also in combat: the layers, the mask
+-- and the rings follow its texture natively), then the plain style, a skinned
+-- bar's through its border-0 view (K.Decor: the skin draws the border).
+local deferred = setmetatable({}, { __mode = "k" }) -- icons whose decoration waits for the combat end
+local function StyleDecorated(icon, view, width, height)
+    local decor = view.decor
+    local fresh = (decor or icon.decorated) and (icon.styleGen ~= view.styleGen or icon.styleView ~= view)
+    -- A decorated icon's look change in combat (a pixel grid change: same
+    -- view and decoration, decorated since the bar's last settings change:
+    -- decor.gen) asks MSUF nothing then: its decoration follows at the combat
+    -- end (Icons.CombatEnded). A new icon, a pooled one another bar takes, or
+    -- one its bar takes back after a settings change is a new button: it
+    -- takes its bar's current look at once, as does an icon whose bar's
+    -- decoration went (decorRef: a settings change that takes it off).
+    if fresh and icon.decorated and icon.styleView == view and icon.decorRef == decor
+        and (icon.decorGen or -1) >= (decor and decor.gen or 0) and NS.IsCombatLocked() then
+        fresh, deferred[icon] = false, true
+    end
+    local lost = fresh and Decorate(icon, view, decor)
+    StylePlain(icon, decor and decor.view or view, width, height)
+    icon.styleGen, icon.styleView = view.styleGen, view
+    -- The glow follows a new decoration at the icon's new size (a shape, the
+    -- pixel grid) or a shape that went: a shaped icon's glow is made and
+    -- painted now.
+    if fresh and (icon.shape or lost or (icon.glow and icon.glow.ringsOn)) then C.Effects.Reshaped(icon, view) end
+end
+
+-- The combat end: the decorations a look change in combat deferred.
+function Icons.CombatEnded()
+    for icon in pairs(deferred) do
+        deferred[icon] = nil
+        local view = icon.styleView
+        if view then
+            local lost = Decorate(icon, view, view.decor)
+            if icon.shape or lost or (icon.glow and icon.glow.ringsOn) then C.Effects.Reshaped(icon, view) end
+        end
+    end
+end
+
+-- The settings read: whether any bar has a skin or a shape. Without one,
+-- every icon still showing a decoration (a pooled one too) drops it now, so
+-- every icon style is the plain one.
+local decoratedMode = false
+function Icons.Decorations(any)
+    if not any then
+        for icon in pairs(decorated) do
+            local view = icon.styleView or EMPTY
+            local lost = Decorate(icon, view, false)
+            if lost or (icon.glow and icon.glow.ringsOn) then C.Effects.Reshaped(icon, view) end
+        end
+    end
+    local mode = (any or next(decorated)) and true or false
+    if mode ~= decoratedMode then
+        decoratedMode = mode
+        Icons.StyleIcon = mode and StyleDecorated or StylePlain
+    end
+end
+Icons.StyleIcon = StylePlain
 
 -- A style pass styles an icon at the size its row takes: later rows of a
 -- cooldown bar may have their own (Layout.Footprint by the icon's place),

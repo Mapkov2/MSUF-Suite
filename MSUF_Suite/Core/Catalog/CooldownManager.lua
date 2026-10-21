@@ -106,6 +106,8 @@ CDM.ANCHOR_LABELS = ANCHOR_LABELS
 CDM.FRAME_ANCHORS = { [PLAYER_ANCHOR] = "player", [TARGET_ANCHOR] = "target" }
 
 ------------------------------------------------------------------ module rules
+local SPEC_LAYOUT_TIP =
+    "Each specialization keeps its own bar layout: positions, attachments, growth, rows, spacing and sizes. Until it has its own, it uses the current one."
 B.Section(id, "general", "General", {
     Choice("blizzard", "Blizzard's cooldown bars", CDM.BLIZZARD.OFF, { "Turn off (fastest)", "Keep running invisibly" }),
     Bool("raidEssentials", "Use MSUF cooldown profiles by specialization", true),
@@ -123,6 +125,7 @@ B.Section(id, "general", "General", {
     Number("assistIconY", "Assisted icon vertical offset", -180, -3000, 3000),
     Bool("muteSounds", "Mute cooldown manager sounds", false),
     Choice("soundChannel", "Sound channel", 1, { "Master", "Sound effects", "Dialog" }),
+    B.Tooltip(Bool("specPositions", "Save bar layout per specialization", true), SPEC_LAYOUT_TIP),
 })
 B.TextSection(id, {
     Color("cdColor", "Countdown color", "ffffff"),
@@ -137,6 +140,7 @@ B.Section(id, "data", "Data", {
     Bool("captured", "Blizzard layout captured", false),
     Number("defaultsVersion", "Defaults version", 0, 0, 1000),
     Bool("essOnViewer", "Essential bar x/y are an offset from Blizzard's bar", false),
+    String("positionsData", "Bar layouts by specialization", "", 60000),
 })
 -- Saved settings older than this are migrated once, because stored values
 -- never follow a changed default on their own. 1: every bar setting takes
@@ -144,9 +148,11 @@ B.Section(id, "data", "Data", {
 -- attached bars became offsets from their anchor, so they start at zero.
 -- 3: free bars count from the screen center instead of the same UIParent
 -- point (converted in place; unused custom bars start in the middle).
+-- A new version that changes what x/y mean converts or drops the layouts
+-- positionsData keeps for the other specializations as well.
 CDM.DEFAULTS_VERSION = 3
 CDM.DEFAULTS_KEEP = { enabled = true, raidEssentials = true, listsData = true, spellsData = true, captured = true, defaultsVersion = true,
-    essOnViewer = true }
+    essOnViewer = true, specPositions = true }
 
 ------------------------------------------------------------------ per-slot rules
 -- Defaults per slot: one centered stack (Essential, Utility under it, Buffs
@@ -189,6 +195,8 @@ end
 
 CDM.KEYS = {}
 CDM.SUFFIXES = {}
+-- The glow styles (K.GLOW): of the glows and of the pandemic window.
+local GLOW_STYLES = { "Blizzard alert", "Marching ants", "Pulse", "Border" }
 -- Per-bar rules by group, in menu order. Add(rule, suffix) appends to the
 -- bar's list; p is the bar's key prefix and d its defaults.
 local function CommonRules(Add, p, d, slot)
@@ -209,6 +217,12 @@ local function CommonRules(Add, p, d, slot)
     Add(Bool(p .. "tooltips", "Show tooltips", false), "tooltips")
     Add(Choice(p .. "strata", "Frame layer", 3, { "Background", "Low", "Medium", "High" }), "strata")
     Add(Number(p .. "layer", "MSUF layer (-1 = Auto)", -1, -1, 30), "layer")
+    -- MSUF's icon skin of the bar's icons (a buff bar: its icon), chosen on
+    -- MSUF's Icon Skins page: DEFAULT follows its default skin, CUSTOM keeps
+    -- the bar's own border, anything else names a skin.
+    Add(String(p .. "iconSkin", "Icon skin", "DEFAULT", 64), "iconSkin")
+    -- MSUF's aura icon shapes (MSUF 7.0; older hosts draw every icon square).
+    Add(Choice(p .. "iconShape", "Icon shape", 1, NS.IconShapeLabels), "iconShape")
 end
 local function IconRules(Add, p, d)
     Add(Number(p .. "size", "Icon size", d.size, 12, 96), "size")
@@ -248,7 +262,7 @@ local function CooldownRules(Add, p, d)
     Add(Bool(p .. "readyGlow", "Glow when ready", false), "readyGlow")
     Add(Bool(p .. "readyResources", "Ready glow requires enough resources", false), "readyResources")
     Add(Bool(p .. "fullChargeGlow", "Glow when all charges are ready", false), "fullChargeGlow")
-    Add(Choice(p .. "glowStyle", "Glow style", 1, { "Blizzard alert", "Marching ants", "Pulse", "Border" }), "glowStyle")
+    Add(Choice(p .. "glowStyle", "Glow style", 1, GLOW_STYLES), "glowStyle")
     Add(Bool(p .. "glowTint", "Tint glows", false), "glowTint")
     Add(Color(p .. "glowColor", "Glow color", "ffd200"), "glowColor")
     Add(Bool(p .. "usable", "Color unusable spells", d.usable ~= false), "usable")
@@ -268,11 +282,22 @@ local function CooldownRules(Add, p, d)
     Add(Bool(p .. "assist", "Highlight the assisted combat suggestion", false), "assist")
     Add(Bool(p .. "bling", "Flash when ready", false), "bling")
 end
-local function AuraRules(Add, p)
-    Add(Bool(p .. "showMissing", "Show missing buffs dimmed", false), "showMissing")
-    Add(Bool(p .. "keepSlots", "Keep buffs in fixed places", false), "keepSlots")
-    Add(Bool(p .. "auraGlow", "Glow while active", false), "auraGlow")
-    Add(Bool(p .. "pandemic", "Highlight the refresh window", true), "pandemic")
+-- Every bar marks the pandemic window: aura bars on their auras, cooldown
+-- bars on the aura their icons show, as Blizzard's Cooldown Manager does.
+-- Its look: one of the glow styles (4, a still border, by default), a color
+-- and the border's thickness (Pulse and Border) in pixels.
+local PANDEMIC_TIP =
+    "Marks a buff or debuff in its pandemic window, where refreshing it keeps the remaining time. Cooldown icons show it with their aura."
+local function AuraRules(Add, p, slot)
+    if Has(slot, "aura") then
+        Add(Bool(p .. "showMissing", "Show missing buffs dimmed", false), "showMissing")
+        Add(Bool(p .. "keepSlots", "Keep buffs in fixed places", false), "keepSlots")
+        Add(Bool(p .. "auraGlow", "Glow while active", false), "auraGlow")
+    end
+    Add(B.Tooltip(Bool(p .. "pandemic", "Highlight the pandemic window", true), PANDEMIC_TIP), "pandemic")
+    Add(Choice(p .. "pandemicStyle", "Pandemic window style", 4, GLOW_STYLES), "pandemicStyle")
+    Add(Color(p .. "pandemicColor", "Pandemic window color", "ff4d26"), "pandemicColor")
+    Add(Number(p .. "pandemicSize", "Pandemic window thickness", 2, 1, 8), "pandemicSize")
 end
 local function BarRules(Add, p, d, slot)
     if not Has(slot, "icon") then
@@ -315,7 +340,7 @@ local function Rules(slot)
     if slot.custom then Add(Bool(p .. "shareContents", "Share this group's contents across specializations", false), "shareContents") end
     if Has(slot, "icon") then IconRules(Add, p, d) end
     if Has(slot, "cooldown") then CooldownRules(Add, p, d) end
-    if Has(slot, "aura") then AuraRules(Add, p) end
+    AuraRules(Add, p, slot)
     if Has(slot, "bar") or Has(slot, "cooldown") then BarRules(Add, p, d, slot) end
     return list
 end
@@ -333,7 +358,9 @@ end
 
 ------------------------------------------------------------------ presentation metadata
 local rules = NS.SuiteCatalog[id].rules
-for _, key in ipairs({ "listsData", "spellsData", "captured", "defaultsVersion", "essOnViewer" }) do rules[key].hidden = true end
+for _, key in ipairs({ "listsData", "spellsData", "captured", "defaultsVersion", "essOnViewer", "positionsData" }) do
+    rules[key].hidden = true
+end
 for _, slot in ipairs(CDM.SLOTS) do
     local k = CDM.KEYS[slot.key]
     local function Set(suffix, field, value) if k[suffix] then rules[k[suffix]][field] = value end end
@@ -341,6 +368,7 @@ for _, slot in ipairs(CDM.SLOTS) do
         Set("name", "hidden", true)
         Set("kind", "hidden", true)
     end
+    Set("iconSkin", "hidden", true)
     Set("x", "category", "advanced")
     Set("y", "category", "advanced")
     Set("cdSize", "enableKey", k.cdText)
@@ -350,6 +378,8 @@ for _, slot in ipairs(CDM.SLOTS) do
     Set("glowColor", "enableKey", k.glowTint)
     Set("borderColor", "disabledBy", k.borderClass)
     Set("barColor", "disabledBy", k.barClass)
+    -- The thickness belongs to the border styles (Pulse, Border).
+    rules[k.pandemicSize].requiresChoice = { key = k.pandemicStyle, values = { [3] = true, [4] = true } }
     if k.side then
         rules[k.side].requiresChoice = { key = k.anchor, values = {} }
         rules[k.gap].requiresChoice = rules[k.side].requiresChoice
@@ -409,7 +439,7 @@ CDM.ACTION_GLOW = { PRESENT = 1, STACKS = 2 }
 -- stackColorAt: stack text in stackColor from N applications (0 = off).
 CDM.SPELL_FIELDS = {
     procGlow = Bool01, readyGlow = Bool01, readyResources = Bool01, fullChargeGlow = Bool01,
-    chargeSwipe = Bool01, chargeEdge = Bool01, auraGlow = Bool01, glowStyle = Range(1, 4), glowColor = Hex,
+    chargeSwipe = Bool01, chargeEdge = Bool01, auraGlow = Bool01, pandemic = Bool01, glowStyle = Range(1, 4), glowColor = Hex,
     desat = Range(1, 3), hideReady = Bool01, hideAvailableCharges = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
     showAura = Bool01, swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
     threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01,
@@ -589,20 +619,66 @@ function CDM.EffectiveSpells(data, spec)
     return out
 end
 
+-- "Save bar layout per specialization" (runtime Settings.lua): spec is the
+-- specialization the flat settings hold now, specs[id] every other one's
+-- layout per bar, by setting suffix ("assist": the assisted icon's x/y).
+-- The layout is where a bar sits and how it is arranged: attachment,
+-- growth, rows, spacing and size. r marks Essential x/y saved as an offset
+-- from Blizzard's bar (essOnViewer). Places of the first format (x, y and
+-- the attach target as a) read as that part of the layout.
+CDM.LAYOUT_SUFFIXES = { "x", "y", "anchor", "side", "gap", "align", "grow", "vertical", "perRow", "spacing", "size",
+    "height", "centerFirst", "laterPerRow", "laterSize", "barWidth", "barHeight" }
+CDM.PLACE_KEYS = { assist = { x = "assistIconX", y = "assistIconY" } }
+for _, slot in ipairs(CDM.SLOTS) do
+    local keys, place = CDM.KEYS[slot.key], {}
+    for _, suffix in ipairs(CDM.LAYOUT_SUFFIXES) do place[suffix] = keys[suffix] end
+    CDM.PLACE_KEYS[slot.key] = place
+end
+local function Valid(rule, value)
+    if type(rule.default) == "boolean" then return type(value) == "boolean" end
+    return type(value) == "number" and value >= rule.min and value <= rule.max and math.floor(value) == value
+end
+local function CleanPlace(place, keys)
+    if type(place) ~= "table" then return nil end
+    local clean, any = {}, false
+    for suffix, key in pairs(keys) do
+        local value = place[suffix]
+        if value == nil and suffix == "anchor" then value = place.a end
+        if value ~= nil and Valid(rules[key], value) then clean[suffix], any = value, true end
+    end
+    if not any then return nil end
+    if keys.anchor then clean.r = place.r == true or nil end
+    return clean
+end
+function CDM.CleanPositions(data)
+    local out = { v = 2, specs = {} }
+    if type(data) ~= "table" then return out end
+    if ValidSpec(data.spec) then out.spec = data.spec end
+    if type(data.specs) ~= "table" then return out end
+    local count = 0
+    for spec, places in pairs(data.specs) do
+        if count >= CDM.LIMITS.specs then break end
+        if ValidSpec(spec) and type(places) == "table" then
+            local clean = {}
+            for slot, keys in pairs(CDM.PLACE_KEYS) do clean[slot] = CleanPlace(places[slot], keys) end
+            if next(clean) then out.specs[spec], count = clean, count + 1 end
+        end
+    end
+    return out
+end
+
 local Codec = {}
 CDM.Codec = Codec
 -- Empty strings mean "no customization". Decoding never raises; a damaged
 -- string yields the empty structure.
-function Codec.DecodeLists(text)
-    if type(text) ~= "string" or text == "" then return CDM.CleanLists(nil) end
+local function Decode(text, Clean)
+    if type(text) ~= "string" or text == "" then return Clean(nil) end
     local decode = _G.MSUF_TryDecodeCompactString
-    return CDM.CleanLists(type(decode) == "function" and decode(text) or nil)
+    return Clean(type(decode) == "function" and decode(text) or nil)
 end
-function Codec.DecodeSpells(text)
-    if type(text) ~= "string" or text == "" then return CDM.CleanSpells(nil) end
-    local decode = _G.MSUF_TryDecodeCompactString
-    return CDM.CleanSpells(type(decode) == "function" and decode(text) or nil)
-end
+function Codec.DecodeLists(text) return Decode(text, CDM.CleanLists) end
+function Codec.DecodeSpells(text) return Decode(text, CDM.CleanSpells) end
+function Codec.DecodePositions(text) return Decode(text, CDM.CleanPositions) end
 local function Empty(tbl)
     for _, value in pairs(tbl) do
         if type(value) ~= "table" or next(value) ~= nil then return false end
@@ -625,4 +701,8 @@ end
 function Codec.EncodeSpells(data)
     local clean = CDM.CleanSpells(data)
     return Encode(clean, next(clean.e) == nil and next(clean.s) == nil)
+end
+function Codec.EncodePositions(data)
+    local clean = CDM.CleanPositions(data)
+    return Encode(clean, clean.spec == nil and next(clean.specs) == nil)
 end

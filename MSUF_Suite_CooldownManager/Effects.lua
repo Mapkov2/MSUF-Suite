@@ -118,6 +118,43 @@ function Effects.Recommendation()
         Effects.RecommendationGCD()
     end
 end
+-- The press flash: a white overlay over the icon texture that fades out,
+-- made at the first press (Effects.Press, Suite main's code) or, for a shaped
+-- icon, by its decoration out of combat, so the shape's mask takes it then
+-- (Icons.lua's Shape masks the flash animation's parent, either one). One
+-- the decoration made and nothing played yet (unplayed) goes with the shape
+-- (Effects.ParkPulse), so the recycle path stops none, as on Suite main; its
+-- first play clears that mark once.
+local unplayed = setmetatable({}, { __mode = "k" })
+local function Played(flash)
+    flash:SetScript("OnPlay", nil)
+    unplayed[flash] = nil
+end
+function Effects.ParkPulse(icon)
+    local flash = icon.pressPulse
+    if flash and unplayed[flash] then icon.pressPulse, icon.parkedPulse = nil, flash end
+end
+function Effects.PreparePulse(icon)
+    if icon.pressPulse then return end
+    local parked = icon.parkedPulse
+    if parked then
+        icon.pressPulse, icon.parkedPulse = parked, nil
+        return
+    end
+    local overlay = S.CreateTexture(icon.over, nil, "OVERLAY")
+    overlay:SetAllPoints(icon.tex)
+    overlay:SetColorTexture(1, 1, 1, 1)
+    overlay:SetAlpha(0)
+    local flash = overlay:CreateAnimationGroup()
+    local alpha = flash:CreateAnimation("Alpha")
+    alpha:SetFromAlpha(.35)
+    alpha:SetToAlpha(0)
+    alpha:SetDuration(.18)
+    unplayed[flash] = true
+    flash:SetScript("OnPlay", Played)
+    icon.pressPulse = flash
+end
+
 function Effects.Press(entry)
     local icon = entry.icon
     local bar = C.bars[entry.slot]
@@ -181,7 +218,7 @@ end
 
 -- The painted look (atlas or edges, size, tint) stays on the glow frame
 -- while it is hidden: showing the same look again only shows and plays.
-local function Paint(glow, icon, spec, style, r, g, b, w, h)
+local function PaintPlain(glow, icon, spec, style, r, g, b, w, h)
     local px = K.Px()
     if glow.pStyle == style and glow.pR == r and glow.pG == g and glow.pB == b and glow.pW == w and glow.pH == h and glow.pPx == px then return end
     glow.pStyle, glow.pR, glow.pG, glow.pB, glow.pW, glow.pH, glow.pPx = style, r, g, b, w, h, px
@@ -217,6 +254,46 @@ local function Paint(glow, icon, spec, style, r, g, b, w, h)
         end
     end
 end
+
+-- A shaped icon's edge glow: rings of its shape around the icon texture (the
+-- bars offer no STAR, whose ring only works behind the icon: SuiteCatalog.lua)
+-- in place of the square edges, placed when the glow's look changes (style,
+-- color, pixel grid, shape); a new size moves them with the texture, so a
+-- relayout places nothing. The Blizzard alert keeps its square art.
+local function PaintShaped(glow, icon, spec, style, r, g, b, w, h)
+    local shape = icon.shape
+    if not shape or spec.atlas then
+        if glow.ringsOn then
+            glow.ringsOn = false
+            K.PlaceRings(glow.rings, glow, icon.tex, nil, 0)
+        end
+        return PaintPlain(glow, icon, spec, style, r, g, b, w, h)
+    end
+    local px = K.Px()
+    if glow.ringsOn and glow.rStyle == style and glow.rR == r and glow.rG == g and glow.rB == b and glow.rPx == px
+        and glow.rShape == shape then return end
+    glow.rStyle, glow.rR, glow.rG, glow.rB, glow.rPx, glow.rShape = style, r, g, b, px, shape
+    glow.pStyle = nil
+    K.PlaceEdges(glow.edges, icon, 0)
+    glow.edgesOn = false
+    if glow.flipOn then
+        glow.flipOn = false
+        glow.flip:Hide()
+    end
+    local gold = K.GLOW_GOLD
+    glow.rings = glow.rings or {}
+    K.PlaceRings(glow.rings, glow, icon.tex, shape, math.max(1, math.floor(spec.edge + .5)), r or gold[1], g or gold[2], b or gold[3])
+    glow.ringsOn = true
+end
+-- The most rings an edge glow style draws (PaintShaped: one per edge pixel).
+local MAX_RINGS = 1
+for _, spec in pairs(K.GLOW) do
+    if spec.edge then MAX_RINGS = math.max(MAX_RINGS, math.floor(spec.edge + .5)) end
+end
+-- ShowGlow and PrepareGlow paint through this: Suite main's PaintPlain while
+-- no icon has a shape (Icons.lua's Shape tells: Effects.Shapes).
+local Paint = PaintPlain
+function Effects.Shapes(any) Paint = any and PaintShaped or PaintPlain end
 
 -- Prepare optional action feedback on its cold binding path, so the first
 -- usable/cooldown event creates no frames, regions or animation groups.
@@ -612,6 +689,68 @@ function Effects.Refit(icon)
     local view = entry and C.views[entry.slot] or EMPTY
     Restyle(icon, entry, view)
     if icon.antsOn then SizeAnts(icon) end
+end
+
+-- A glow only a shape made (the icon never showed one: icon.gW, which
+-- ShowGlow sets) is parked when the shape goes, with its gate unless assist
+-- ants share it, so no glow path or combat edge visits it, as on Suite main;
+-- a new shape takes it back.
+local function ParkGlow(icon, glow)
+    glow:Hide()
+    icon.glow, icon.parkedGlow = nil, glow
+    if icon.ants then return end
+    fxIcons[icon] = nil
+    icon.effectGate, icon.parkedGate, icon.effectsAllowed = nil, icon.effectGate, nil
+end
+local function UnparkGlow(icon)
+    local glow, gate = icon.parkedGlow, icon.effectGate
+    icon.parkedGlow = nil
+    if gate then
+        glow:SetParent(gate)
+    else
+        gate = icon.parkedGate
+        icon.effectGate = gate
+        gate:SetShown(GlowsAllowed() == true)
+    end
+    icon.parkedGate = nil
+    glow:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.glow)
+    icon.glow, fxIcons[icon] = glow, true
+end
+
+-- A shaped icon's new decoration (a new shape, pixel grid or look: Icons.lua's
+-- StyleDecorated, out of combat) or one that lost its shape: the glow's paint
+-- memos, which leave the shape out of the plain one and the size out of the
+-- shaped one, are dropped; a running glow shows again, a hidden one is
+-- painted now (also once the shape went: its plain memo) and a shaped icon's
+-- missing one made, so its first show (also in combat) paints and makes
+-- nothing.
+function Effects.Reshaped(icon, view)
+    local glow = icon.glow
+    if glow then
+        glow.pStyle, glow.rStyle = nil, nil
+        if glow.ringsOn and not icon.shape then
+            glow.ringsOn = false
+            K.PlaceRings(glow.rings, glow, icon.tex, nil, 0)
+        end
+        if not icon.shape and icon.gW == nil and icon.gStyle == nil then return ParkGlow(icon, glow) end
+    elseif icon.shape and icon.parkedGlow then
+        UnparkGlow(icon)
+    end
+    local style, r, g, b = GlowSpec(icon.entry, view)
+    if icon.gStyle ~= nil then
+        HideGlow(icon)
+        ShowGlow(icon, style, r, g, b)
+    elseif icon.shape or icon.glow then
+        Paint(EnsureGlow(icon), icon, K.GLOW[style], style, r, g, b, icon.w, icon.h)
+    end
+    -- Every edge glow style's rings exist now (also while the alert style is
+    -- chosen), so a glow setting edited later and shown first in combat
+    -- places its rings without making any.
+    if icon.shape then
+        glow = icon.glow
+        glow.rings = glow.rings or {}
+        K.EnsureRings(glow.rings, glow, MAX_RINGS)
+    end
 end
 
 -- Stops every visual on a recycled icon; the next Update re-seeds.

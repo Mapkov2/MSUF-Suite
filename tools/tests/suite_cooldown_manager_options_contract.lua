@@ -678,7 +678,10 @@ for _, section in ipairs(Page.SECTIONS) do
         suffixes[suffix] = section.id
     end
 end
-for suffix in pairs(CDM.KEYS.c1) do assert(suffixes[suffix], "no section for " .. suffix) end
+-- A hidden rule (the icon skin, chosen on MSUF's Icon Skins page) has no
+-- control and so no section.
+local cdmRules = Suite.SuiteCatalog.cooldownManager.rules
+for suffix, key in pairs(CDM.KEYS.c1) do assert(suffixes[suffix] or cdmRules[key].hidden, "no section for " .. suffix) end
 assert(suffixes.stackText == "text" and suffixes.textTop == "text" and suffixes.cdText == "text",
     "the text switches and Text on top belong to Text")
 -- Every rule has exactly one control on the page (Basics takes its rules
@@ -936,19 +939,27 @@ M.RequestRefresh()
 assert(runtime.vertical == "ess" and Config().ess_vertical and Config().ess_x == 17, "orientation change did not keep the bar in place")
 assert(Control("grow").row.values[2].text == "Left", "vertical bars grow left or right")
 -- "Reset section" resets the selected bar's own keys only. The built-in Buff
--- bars row has no icon look and Essential cooldowns no buff rules: their
--- resets must leave custom bar 1's template keys alone.
+-- bars row has no icon look and Essential cooldowns only the pandemic window
+-- of the buff rules: their resets must leave custom bar 1's template keys
+-- alone. The pandemic window's look sits right under its switch in Buffs.
 do
+    local listed
+    for _, spec in ipairs(Page.SECTIONS) do if spec.id == "buffs" then listed = table.concat(spec.suffixes, ",") end end
+    assert(listed and listed:find("pandemic,pandemicStyle,pandemicColor,pandemicSize", 1, true),
+        "the pandemic window's style, color and thickness follow its switch in Buffs: " .. tostring(listed))
     local look, buffs = ctx.sections[6], ctx.sections[9]
     assert(look.title == "Look" and buffs.title == "Buffs", "unexpected section order for the reset check")
     Config().c1_zoom, Config().c1_border, Config().c1_pandemic = 20, 3, false
-    Config().bar_strata, Config().ess_pandemic = 1, false
+    Config().bar_strata, Config().ess_pandemic, Config().ess_pandemicStyle, Config().ess_pandemicSize = 1, false, 1, 6
     picker.set("bar")
     assert(look._msufSuiteSectionReset(), "the Look reset of the Buff bars row wrote nothing")
     assert(Config().c1_zoom == 20 and Config().c1_border == 3, "a Buff bars section reset reset custom bar 1")
     assert(Config().bar_strata == catalog.rules.bar_strata.default, "the Buff bars row's own Look setting was not reset")
     picker.set("ess")
-    assert(buffs._msufSuiteSectionReset() == false, "Essential cooldowns own no buff rules, so the reset writes nothing")
+    assert(buffs._msufSuiteSectionReset() and Config().ess_pandemic == catalog.rules.ess_pandemic.default
+        and Config().ess_pandemicStyle == catalog.rules.ess_pandemicStyle.default
+        and Config().ess_pandemicSize == catalog.rules.ess_pandemicSize.default,
+        "Essential cooldowns reset their own pandemic window switch and look, their buff rules")
     assert(Config().c1_pandemic == false, "an Essential cooldowns section reset reset custom bar 1")
     picker.set("c1")
     assert(look._msufSuiteSectionReset() and Config().c1_zoom == catalog.rules.c1_zoom.default
@@ -1444,6 +1455,25 @@ assert(trackOn and trackOn.shown and trackOn.label.text == "Track on" and trackO
 assert(trackOn.points[1][5] == pop.rows.showAura.points[1][5] - 26 and stackGlow.points[1][5] == trackOn.points[1][5] - 26,
     "Track on sits under Show active buff duration, right before Glow at stacks")
 assert(Page.POP_X + trackOn.choice.width <= resetLeft, "the Track on choice runs under the reset button")
+-- The pandemic window per spell (owner request 2026-10-20): the last stack
+-- row (buffs, and cooldowns that show their buff), On or Off against the
+-- bar's switch; reset follows the bar again.
+do
+    local pan, index = pop.rows.pandemic, nil
+    assert(pan and pan.shown and pan.label.text == "Pandemic window" and pan.hint.text == "Bar: On" and not pan.reset.shown,
+        "a cooldown that shows its buff offers the pandemic window, following the bar")
+    for i, field in ipairs(Page.FIELDS) do if field.key == "pandemic" then index = i end end
+    local field = Page.FIELDS[index]
+    assert(Page.FIELDS[index - 1].key == "stackColorAt" and field.stack and field.bar == "pandemic" and field.kind == "bool",
+        "the pandemic window is the last stack row and follows the bar's switch")
+    writes = historyWrites
+    Fire(pan.off, "OnClick")
+    assert(Page.SpellField("b1", "pandemic") == false and historyWrites == writes + 1 and pan.reset.shown
+        and CDM.Codec.DecodeSpells(Config().spellsData).e.b1.pandemic == false, "a spell's pandemic window off")
+    Fire(pan.reset, "OnClick")
+    assert(Page.SpellField("b1", "pandemic") == nil and not pan.reset.shown and pan.hint.text == "Bar: On",
+        "the pandemic row follows the bar again")
+end
 do
     local field, index
     for i, candidate in ipairs(Page.FIELDS) do if candidate.key == "auraUnit" then field, index = candidate, i end end

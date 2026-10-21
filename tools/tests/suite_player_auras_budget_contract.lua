@@ -419,8 +419,11 @@ S.Queue = function(id) queued[id] = true end
 S.Install = function(_, instance) module = instance end
 -- NS.IsCombatLocked is InCombatLockdown() (MSUF_Suite_Skin/Core/Bootstrap.lua).
 local NS = { IsSecret = issecretvalue, IsCombatLocked = Native("InCombatLockdown", function() return combat end),
-    MSUFMedia = { font = "msuf.ttf" } }
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuras.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
+    MSUFMedia = { font = "msuf.ttf" },
+    -- No MSUF host here: no icon skin look, nothing paints.
+    HostBridge = { IconSkinLook = function() end, PaintIconSkin = function() return false end, WatchIconSkins = function() end } }
+assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/PlayerAuras.lua"))("MSUF_Suite_QualityOfLife",
+    { NS = NS, Suite = S, PlayerAuraSkins = { Yield = function() end } })
 
 local catalogNS = { Client = { isForever = false }, Text = function(text) return text end }
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", catalogNS)

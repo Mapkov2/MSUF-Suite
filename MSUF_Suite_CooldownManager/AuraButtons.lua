@@ -15,7 +15,7 @@ local C = P.CDM
 --    (swipe, glows, stack text, countdown, text on top); Mutable says
 --    whether sealed buttons accept that now;
 --  * kit sensors hear a button show or hide (unknown kit sounds only);
---  * the glows and their combat gates are AuraGlows.lua's;
+--  * the glows, their combat gates and the pandemic window are AuraGlows.lua's;
 --  * placeholders: a dimmed icon for missing buffs (showMissing) and the
 --    sample icon in the preview, on the cell under the slot button.
 local K = C.Const
@@ -50,12 +50,11 @@ local BAR_OPTS = { [K.BAR_FILL.DRAIN] = { direction = TIMER.RemainingTime, inter
     [K.BAR_FILL.FILL] = { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
 local GOLD = K.GLOW_GOLD
 local BAR_LEVEL, ICON_LEVEL = K.AURA_LEVEL, K.AURA_ICON_LEVEL
-local PANDEMIC = { 1, .3, .15 }
 local STACK_COLOR = NS.CDM.SPELL_DEFAULTS.stackColor
 -- Every field Look writes: the signature changes exactly when a button needs restyling.
 local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font", "flags", "rendering", "shadow", "shadowOpacity",
     "shadowDistance", "cs", "ss", "sp", "cr", "cg", "cb", "sr", "sg", "sb", "swipe", "edge", "tip", "tex", "fr", "fg", "fb", "bgA", "icon", "side",
-    "smax", "marks" }
+    "smax", "marks", "skinSig", "shape" }
 local NO_MARKS = {}
 
 local sig = {}
@@ -77,6 +76,7 @@ local ClassRGB = K.ClassRGB
 local Glows = C.AuraGlows
 local Edges, NewGlow, NewStack, BindStack = Glows.Edges, Glows.NewGlow, Glows.NewStack, Glows.BindStack
 local ApplyGlow, ApplyStack, ApplyCombatGate = Glows.ApplyGlow, Glows.ApplyStack, Glows.ApplyCombatGate
+local NewPandemic, ApplyPandemic = Glows.NewPandemic, Glows.ApplyPandemic
 
 -- Duration text options per (threshold, warning color): a binding template
 -- that Blizzard copies into each button, around the shared countdown
@@ -141,7 +141,13 @@ local function Look(rec, view)
         local size = view.size or 36
         w, h = max(px, Snap(size, px)), max(px, Snap(size * (view.height or 100) / 100, px))
     end
-    local bw = floor(view.border or (bar and 1 or 0)) * px
+    -- MSUF's icon skin draws an icon button's border (a bar keeps its own
+    -- frame; the skin goes around its icon). The look itself is the record's
+    -- (rec.skinLook); its signature is part of the look.
+    local skin = view.skin
+    rec.skinLook = skin
+    lk.skinSig, lk.shape = skin and skin.signature or false, view.shape or K.SQUARE
+    local bw = (skin and not bar) and 0 or floor(view.border or (bar and 1 or 0)) * px
     lk.w, lk.h, lk.px, lk.bw = w, h, px, bw
     local r, g, b
     if view.borderClass then r, g, b = ClassRGB() end
@@ -180,7 +186,8 @@ local function Look(rec, view)
         lk.smax = max(1, min(99, floor(view.barStackMax or 10)))
         lk.marks = view.barStackEach ~= false and "each" or (view.barStackMarks or "")
     end
-    for i = 1, #LOOK do
+    local count = #LOOK
+    for i = 1, count - 2 do
         local v = lk[LOOK[i]]
         if v == true then
             v = 1
@@ -189,7 +196,10 @@ local function Look(rec, view)
         end
         sig[i] = v
     end
-    return tconcat(sig, "\031", 1, #LOOK)
+    -- These final owned fields are a signature string (or false) and a
+    -- normalized shape id; they need none of the generic boolean conversion.
+    sig[count - 1], sig[count] = lk.skinSig or 0, lk.shape
+    return tconcat(sig, "\031", 1, count)
 end
 
 -- Unknown kit sounds of aura entries (AddAuraSound takes files only): a
@@ -382,12 +392,55 @@ local function StyleIcon(rec, part, lk, b, icon)
     end
 end
 
+-- MSUF's icon skin (rec.skinLook): textures of the button around the button
+-- (an icon fills it) or a bar's icon, painted with the look only (creation,
+-- restyle while writable); a button never skinned never calls MSUF. Clipped:
+-- an overlay over its cooldown icon, and a fixed slot exactly while its
+-- missing buff's stand-in is held (AuraButtons.Held: the same static rule
+-- holds the stand-in, which draws the rest; not the preview's samples), draw
+-- only the part over the icon. While auras are secret a sealed slot keeps
+-- its skin until auras open; two live surfaces over one cell each draw their
+-- whole skin (both documented limits, AuraPlaceholders.lua).
+local function Clipped(rec, part)
+    if rec.role == "over" then return true end
+    if rec.held ~= nil then return rec.held or nil end -- a live timer row (AuraTimers.Sync)
+    local entry = rec.fixed and AuraButtons.Held and rec.on[part.pos] and rec.entry[part.pos]
+    return entry and AuraButtons.Held(entry, rec.view or EMPTY, false) or nil
+end
+local function PaintSkin(rec, part, lk, b, icon)
+    part.clip = Clipped(rec, part)
+    local skin, w, h, anchor = rec.skinLook, lk.w, lk.h, nil
+    if rec.role == "bar" then
+        if not lk.icon then skin = nil end
+        w, anchor = lk.h - 2 * lk.bw, icon
+        h = w
+    end
+    part.skinned = NS.HostBridge.PaintIconSkin(b, skin, w, h, anchor, part.clip) or nil
+end
+
+-- MSUF's icon shape (lk.shape): one mask over the icon and the swipe, made
+-- with the button (its container is built per shape: RegionSet), and an
+-- icon's border as rings of the shape. A square button never calls MSUF.
+local function PaintShape(rec, part, lk, b, icon)
+    if part.cd and not part.cooldowns then part.cooldowns = { part.cd } end
+    local drawn = NS.HostBridge.ApplyIconShape(b, lk.shape, icon, part.cooldowns, icon)
+    part.shaped = drawn ~= K.SQUARE or nil
+    if rec.role ~= "bar" and (part.shaped or part.rings) then
+        part.rings = part.rings or {}
+        local ring = not rec.skinLook and part.shaped and lk.shape
+        K.PlaceRings(part.rings, b, icon, ring, math.floor(lk.bw / lk.px + .5), lk.er, lk.eg, lk.eb)
+    end
+end
+
 -- Every region of one button from rec.lk; idempotent (init and restyle).
 local function Style(rec, part)
     local lk, b = rec.lk, part.button
     local bw, px = lk.bw, lk.px
     if not rec.fixed then b:SetSize(lk.w, lk.h) end
-    K.PlaceEdges(part.edges, b, bw, lk.er, lk.eg, lk.eb, 1)
+    -- A shaped icon keeps its inset; rings of the shape replace its square
+    -- edges (PaintShape). A buff bar keeps the edges of its row.
+    local edge = (rec.role ~= "bar" and lk.shape ~= K.SQUARE) and 0 or bw
+    K.PlaceEdges(part.edges, b, edge, lk.er, lk.eg, lk.eb, 1)
     local icon = part.icon
     icon:ClearAllPoints()
     if rec.role == "bar" then
@@ -402,8 +455,12 @@ local function Style(rec, part)
     count:ClearAllPoints()
     count:SetPoint(point, icon, point, K.POINT_X[pos] * inset, K.POINT_Y[pos] * inset)
     count:SetJustifyH(K.JUSTIFY[pos])
-    if part.pan then K.PlaceEdges(part.panEdges, part.pan, max(2 * px, bw), PANDEMIC[1], PANDEMIC[2], PANDEMIC[3], 1) end
+    -- A new size repaints the pandemic glow (ApplyEntry follows).
+    part.pGen = nil
     b:SetMouseMotionEnabled(lk.tip)
+    if rec.skinLook or part.skinned then PaintSkin(rec, part, lk, b, icon) end
+    if lk.shape ~= K.SQUARE or part.shaped then PaintShape(rec, part, lk, b, icon) end
+    Glows.Reshape(part, lk.shape)
 end
 
 -- Text on top: the two text frames trade levels (both stay above the glows).
@@ -420,13 +477,18 @@ local function Layer(part, top)
     end
 end
 
--- Per-spell choices on one button: swipe mode, glows, stack text (shown,
--- color), countdown (shown, warning threshold) and which is on top. With
--- dry set it only reports whether a write is needed. Unbound
--- (initializeFrame) it prepares what the binding takes. Hidden text is
--- never bound: a bound one is cleared, then hidden by hand.
+-- Per-spell choices on one button: swipe mode, glows, pandemic window,
+-- stack text (shown, color), countdown (shown, warning threshold) and which
+-- is on top. With dry set it only reports whether a write is needed.
+-- Unbound (initializeFrame) it prepares what the binding takes. Hidden text
+-- is never bound: a bound one is cleared, then hidden by hand.
 local function ApplyEntry(rec, part, entry, dry)
     if C.StackColors.Apply(rec, part, entry, dry) then return true end
+    -- A stand-in came or went under a skinned slot (showMissing).
+    if part.skinned and part.clip ~= Clipped(rec, part) then
+        if dry then return true end
+        PaintSkin(rec, part, rec.lk, part.button, part.icon)
+    end
     local ov = entry.ov or EMPTY
     local cd = part.cd
     if cd and rec.role == "icon" then
@@ -443,6 +505,8 @@ local function ApplyEntry(rec, part, entry, dry)
     if part.glow and ApplyCombatGate(part.glow, part.gOn, dry) then return true end
     if part.stack and ApplyStack(rec, part, ov, dry) then return true end
     if part.stack and ApplyCombatGate(part.stack.glow, part.stack.on, dry) then return true end
+    -- The pandemic window: only a new bar look (pGen) or spell choice writes.
+    if part.pan and (part.pGen ~= rec.pGen or part.pWant ~= ov.pandemic) and ApplyPandemic(rec, part, ov, dry) then return true end
     local b = part.button
     local stacks = Choice(ov.stackText, rec.stackBar)
     local count = stacks and CountOpts(ov) or nil
@@ -527,14 +591,8 @@ local function NewPart(rec, button, k)
     lower:SetFrameLevel(base + LEVEL.fill)
     -- Glows over the icon, fill, colour and markers; text above the glows.
     local level = base + LEVEL.glow
-    if rec.pandemic then
-        local pan = Child("Frame", button)
-        pan:SetAllPoints(button)
-        pan:SetFrameLevel(level)
-        pan:Hide()
-        part.pan, part.panEdges = pan, Edges(pan)
-    end
-    if rec.glow then part.glow = NewGlow(button, button, level) end
+    if rec.pandemic then part.pan = NewPandemic(button, level, part.icon) end
+    if rec.glow then part.glow = NewGlow(button, button, level, part.icon) end
     if rec.stack then part.stack = NewStack(button, level) end
     -- Stacks and countdown (with the name) on two frames above the glows,
     -- stacks on top until the entry's Text on top says otherwise.
@@ -590,7 +648,7 @@ local function Bind(rec, part, k)
     if part.countOn then button:SetApplicationCount(part.count, part.countOpts) end
     if part.stack then BindStack(button, part.stack) end
     -- 12.1.5 and Forever return nothing here; the result is never used.
-    if part.pan then button:AddPandemicRegion(part.pan) end
+    if part.pan then button:AddPandemicRegion(part.pan.region) end
     part.bound = true
 end
 
@@ -739,5 +797,6 @@ local function Init(rec, button, k)
 end
 
 AuraButtons.TextOpts, AuraButtons.Look, AuraButtons.Hush, AuraButtons.Quiet, AuraButtons.Mutable = TextOpts, Look, Hush, Quiet, Mutable
+
 AuraButtons.Blocked = Blocked
 AuraButtons.Style, AuraButtons.ApplyEntry, AuraButtons.Init = Style, ApplyEntry, Init

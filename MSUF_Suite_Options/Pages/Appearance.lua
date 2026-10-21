@@ -379,6 +379,22 @@ local function BuildShape(ctx, b, skin)
         nil, nil, nil, skin.Theme.SetAppearance)
     ConfigRow(skin, shape, "shape", "Hover strength", "theme", "hoverIntensity", "slider", nil,
         0, 1, 0.05, skin.Theme.SetAppearance)
+    shape[#shape + 1] = Row("toggle", "Menu animations", "theme.menuAnimations", "shape",
+        function() return skin.DB.theme.menuAnimations ~= false end,
+        function(value) Change(skin, "Menu animations", "theme.menuAnimations",
+            function() return skin.Theme.SetAppearance("menuAnimations", value) end) end)
+    shape[#shape + 1] = Row("toggle", "Dim background for dropdowns", "theme.dropdownDimming", "shape",
+        function() return skin.DB.theme.dropdownDimming ~= false end,
+        function(value) Change(skin, "Dim background for dropdowns", "theme.dropdownDimming",
+            function() return skin.Theme.SetAppearance("dropdownDimming", value) end) end)
+    shape[#shape + 1] = Row("toggle", "Smooth scrolling", "theme.smoothScrolling", "shape",
+        function() return skin.DB.theme.smoothScrolling ~= false end,
+        function(value) Change(skin, "Smooth scrolling", "theme.smoothScrolling",
+            function() return skin.Theme.SetAppearance("smoothScrolling", value) end) end)
+    shape[#shape + 1] = Row("toggle", "Reduced motion", "theme.reduceMotion", "shape",
+        function() return skin.DB.theme.reduceMotion == true end,
+        function(value) Change(skin, "Reduced motion", "theme.reduceMotion",
+            function() return skin.Theme.SetAppearance("reduceMotion", value) end) end)
     Section(ctx, b, "shape", "Corners and hover", "Window shape, button shape, outlines and mouseover feedback.", shape, false)
 end
 

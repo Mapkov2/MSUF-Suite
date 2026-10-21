@@ -88,7 +88,11 @@ env.C_AddOns = {
     IsAddOnLoaded = function(name) return loaded[name] == true, loaded[name] == true end,
     DoesAddOnExist = function(name) return name:find("^MSUF_Suite") ~= nil and not missing[name] end,
     GetAddOnEnableState = function(name) return disabled[name] and 0 or 2 end,
-    LoadAddOn = function() return false, "MISSING" end,
+    LoadAddOn = function(name)
+        local support = dofile(root .. "/tools/tests/suite_test_support.lua")
+        if support.LoadLocaleAddon(root, name, env) then loaded[name] = true; return true end
+        return false, "MISSING"
+    end,
     GetNumAddOns = function() return 0 end,
 }
 local function LoadAddOn(addon, namespace)

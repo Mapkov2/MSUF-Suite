@@ -2,6 +2,10 @@ local _, NS = ...
 
 local Surface = {}
 NS.Surface = Surface
+local OnPainted = function() end
+function Surface.SetMotionProvider(callback) OnPainted = callback end
+local OnPalettePainted = function() end
+function Surface.SetPaletteMotionProvider(callback) OnPalettePainted = callback end
 
 local BlizzardYellow = NS.BlizzardYellow
 
@@ -246,6 +250,7 @@ local function HoverStyle(geometry, scale)
     end
     return asset, scale
 end
+Surface.HoverStyle = HoverStyle
 
 local function RefreshButtonState(state, geometry)
     if state.kind ~= "button" then
@@ -279,6 +284,7 @@ local function RefreshInteractiveHover(state, geometry)
         overlay:Hide()
     end
 end
+Surface.RefreshInteractiveHover = RefreshInteractiveHover
 
 -- Shared by every interactive surface; the state comes from the Registry.
 local function OnHoverEnter(button)
@@ -381,6 +387,8 @@ local function RefreshState(state)
         state.fill:Show()
     end
     state.paintGeneration = paintGeneration
+    OnPainted(state)
+    OnPalettePainted(state, material)
     return true
 end
 

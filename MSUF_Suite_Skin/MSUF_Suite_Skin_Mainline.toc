@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Skinning
 ## Notes: Suite-owned MapkoSkin skin engine.
 ## Author: Mapko
-## Version: 0.1.2-alpha
+## Version: 0.1.3-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -35,7 +35,12 @@ Core\CheckmarksMenus.lua
 Core\Typography.lua
 Rendering\Geometry.lua
 Rendering\Surface.lua
+Rendering\Motion.lua
+Rendering\SurfaceMotion.lua
+Rendering\PaletteMotion.lua
 Rendering\WindowActionSkin.lua
+Rendering\GlyphMotion.lua
+Rendering\FocusVeil.lua
 Rendering\WindowActionSettings.lua
 Rendering\WindowControlChrome.lua
 Rendering\WindowControls.lua
@@ -54,6 +59,7 @@ Adapters\GenericWindows.lua
 Adapters\GenericWindowsNodes.lua
 Adapters\GenericWindowsFrames.lua
 Adapters\GenericWindowsCatalog.lua
+Rendering\ScrollMotion.lua
 Adapters\QuestText.lua
 Adapters\MacroWindow.lua
 Adapters\DeepWindows.lua
@@ -90,9 +96,20 @@ Adapters\OwnedMicroBar.lua
 Adapters\MicroMenuStates.lua
 Adapters\MicroMenu.lua
 Adapters\MicroMenuSettings.lua
+Rendering\CollapseRows.lua
+Adapters\AddonListMotion.lua
+Adapters\AddonListGhosts.lua
 Adapters\Blizzard.lua
 Core\PublicAPI.lua
 Core\PublicAPIMethods.lua
+Rendering\ContentMotion.lua
+Rendering\ResultMotion.lua
+Rendering\LegacyScrollMotion.lua
+Rendering\CollapseCollectionRows.lua
+Rendering\CollapseCollections.lua
+Rendering\MenuMotion.lua
+Rendering\TabMotion.lua
+Adapters\AddonMenus.lua
 Shell\OptionsLoader.lua
 Core\Lifecycle.lua
 Core\Finalize.lua

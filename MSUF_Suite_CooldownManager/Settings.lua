@@ -65,8 +65,16 @@ Work({ "range", "usable", "procGlow", "readyGlow", "readyResources", "fullCharge
 Work({ "chargeSwipe", "chargeEdge" }, { style = true, behavior = true })
 Work({ "showAura" }, { behavior = true, index = true, overlay = true })
 Work({ "showMissing", "keepSlots", "auraGlow", "pandemic" }, { behavior = true, aura = true })
+-- Cooldown bars mark the pandemic window on their icons' aura overlays. Its
+-- look restyles the aura buttons in place, like the glow look.
+Work({ "pandemic" }, { overlay = true })
+Work({ "pandemicStyle", "pandemicColor", "pandemicSize" }, { restyle = true })
 Work({ "vis", "hideMounted", "hideVehicle", "alpha", "oocAlpha" }, { visible = true })
 Work({ "tooltips" }, { restyle = true })
+Work({ "iconSkin" }, { style = true })
+-- A shape restyles icons and builds the aura containers again (a mask is part
+-- of a button's regions; Blizzard seals them after initializeFrame).
+Work({ "iconShape" }, { style = true, aura = true, overlay = true })
 Work({ "strata" }, { restyle = true, visible = true })
 Work({ "layer" }, { layout = true, aura = true, restyle = true })
 Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
@@ -84,7 +92,8 @@ for _, work in pairs(WORK) do
     for flag in pairs(work) do EVERYTHING[flag] = true end
 end
 local COLOR = { borderColor = { "borderR", "borderG", "borderB" }, glowColor = { "glowR", "glowG", "glowB" },
-    rangeColor = { "rangeR", "rangeG", "rangeB" }, barColor = { "barR", "barG", "barB" } }
+    rangeColor = { "rangeR", "rangeG", "rangeB" }, barColor = { "barR", "barG", "barB" },
+    pandemicColor = { "pandemicR", "pandemicG", "pandemicB" } }
 local OUTLINE = { "OUTLINE", "THICKOUTLINE", "" }
 -- Globals whose change re-registers events (the assisted icon's sources and
 -- the keybind watch); its size and place only repaint it (Refresh does).
@@ -180,11 +189,24 @@ function Settings.ReadGlobals(config, all)
     return text
 end
 
+-- MSUF's icon shape and skin of a bar (view.shape, view.skin): the skin's
+-- look follows the bar's choice, its shape and MSUF's default skin
+-- (HostBridge.IconSkinLook keeps one table per look), so a new look restyles
+-- the bar like any style setting. nil: no skin.
+local function ReadSkin(view)
+    view.shape = K.ShapeOf(view)
+    local skin = NS.HostBridge.IconSkinLook(view.iconSkin, view.shape)
+    local changed = skin ~= view.skin and (skin and skin.signature) ~= (view.skin and view.skin.signature)
+    view.skin = skin
+    return changed
+end
+
 -- Views are rebuilt in place. Each changed setting adds its work (WORK) to
 -- the slot's hit set; the set then bumps generations and marks work once.
 -- A position drag or an opacity slider never syncs structure, a behavior
 -- tick rebuilds the routing index only when membership can change.
 function Settings.ReadViews(config, all, text)
+    local decor = false
     for i = 1, #SLOTS do
         local def = SLOTS[i]
         local slot = def.key
@@ -210,6 +232,7 @@ function Settings.ReadViews(config, all, text)
                 hit[key] = true
             end
         end
+        if ReadSkin(view) then hit.style = true end
         if text then hit.style = true end
         if not def.builtin then
             local kind = view.kind
@@ -221,6 +244,9 @@ function Settings.ReadViews(config, all, text)
                 view.title = type(name) == "string" and name ~= "" and name or S.Text(def.title)
             end
         end
+        -- What MSUF draws on its icons, once the kind is settled (K.Decor).
+        K.Decor(view)
+        decor = decor or view.decor ~= false
         if next(hit) ~= nil then
             local aura = AURA_KINDS[view.kind] == true
             if hit.layout then
@@ -228,6 +254,9 @@ function Settings.ReadViews(config, all, text)
                 dirty.layout = true
             end
             if hit.style then view.styleGen = view.styleGen + 1 end
+            -- The settings' look generation of MSUF's decoration (Icons.lua's
+            -- StyleDecorated defers only icons decorated since).
+            if hit.style and view.decor then view.decor.gen = view.styleGen end
             if hit.style or hit.restyle then style[slot] = true end
             if hit.behavior then
                 view.behaviorGen = view.behaviorGen + 1
@@ -243,6 +272,8 @@ function Settings.ReadViews(config, all, text)
             wipe(hit)
         end
     end
+    C.Icons.Decorations(decor)
+    C.AuraButtons.StandIns(decor)
 end
 
 -- The data strings are decoded only when they changed. Per-spell choices
@@ -386,6 +417,116 @@ function Settings.SyncViewerOffset()
     values.essOnViewer = on
     pendingCapture = values
     Reposition(values[keys.x], values[keys.y])
+    C_Timer.After(0, PersistCapture)
+end
+
+------------------------------------------------------------------ layout per specialization
+-- "Save bar layout per specialization" (CDM.CleanPositions): the flat
+-- settings hold the current specialization's bar layout, positionsData the
+-- other ones. A spec change stores the outgoing layout and brings back the
+-- incoming one: every bar's attachment, growth, rows and sizes together
+-- with its x/y, so they always count from the same place. A specialization
+-- without a saved layout keeps the current one. The views take it at once
+-- (ReadViews through the pending values), the settings follow a frame
+-- later with the capture. Switched off, the data forgets whose layout the
+-- settings hold, so switching it on again claims the layout as it is then.
+local PLACES = CDM.PLACE_KEYS
+local seenPlaces, placesSpec
+-- A setting as it will be once the pending capture is written.
+local function Upcoming(config, key)
+    local value = pendingCapture and pendingCapture[key]
+    if value == nil then value = config[key] end
+    return value
+end
+-- The settings as they will be, for ReadViews (proxied: the module config).
+local proxied
+local upcoming = setmetatable({}, { __index = function(_, key) return Upcoming(proxied, key) end })
+-- A bar's layout as it is now; r: its x/y count from Blizzard's bar.
+local function LayoutOf(config, slot, keys)
+    local layout = {}
+    for suffix, key in pairs(keys) do layout[suffix] = Upcoming(config, key) end
+    if slot == "ess" and Upcoming(config, "essOnViewer") == true then layout.r = true end
+    return layout
+end
+local function Held(held, keys)
+    for _, key in pairs(keys) do
+        if held[key] then return true end
+    end
+    return false
+end
+-- The settings Refresh reads: while values still wait to be written (a
+-- capture, a layout swap held by combat) the views keep showing them.
+function Settings.Source(config)
+    if not pendingCapture then return config end
+    proxied = config
+    return upcoming
+end
+-- Stores the outgoing specialization's layout in data and puts the incoming
+-- one into values; the Essential ride flag comes back with its x/y, so
+-- SyncViewerOffset converts them if the ride changed since. A bar with a
+-- setting an MSUF profile variant sets is left to the variant layer: its
+-- saved layouts wait in the data. Returns the incoming ones that wait.
+local function Swap(config, data, from, to, values)
+    local held = NS.ProfileVariants.VariantKeys(ID)
+    local incoming, waiting, outgoing, keep = data.specs[to], data.specs[from], {}, nil
+    for slot, keys in pairs(PLACES) do
+        local saved = incoming and incoming[slot]
+        if Held(held, keys) then
+            outgoing[slot] = waiting and waiting[slot]
+            if saved then
+                keep = keep or {}
+                keep[slot] = saved
+            end
+        else
+            outgoing[slot] = LayoutOf(config, slot, keys)
+            if saved then
+                for suffix, key in pairs(keys) do
+                    if saved[suffix] ~= nil then values[key] = saved[suffix] end
+                end
+                if slot == "ess" then values.essOnViewer = saved.r == true end
+            end
+        end
+    end
+    data.specs[from] = outgoing
+    return keep
+end
+-- Runs on settings changes and catalog passes (a spec change); a no-op
+-- unless the switch or the specialization moved.
+function Settings.SpecPositions()
+    local config = M.config
+    if type(config) ~= "table" or captureWait then return end
+    local text = Upcoming(config, "positionsData")
+    if text ~= seenPlaces then seenPlaces, placesSpec = text, CDM.Codec.DecodePositions(text).spec end
+    local spec = C.state.specID
+    if config.specPositions ~= true then
+        spec = nil
+    elseif spec == nil then
+        return
+    end
+    if placesSpec == spec then return end
+    local swap = spec ~= nil and placesSpec ~= nil
+    -- A conversion of the Essential x/y still to be written (SyncViewerOffset):
+    -- the swap follows on the Refresh that write brings.
+    if swap and pendingCapture and pendingCapture.essOnViewer ~= nil then return end
+    local data, values, keep = CDM.Codec.DecodePositions(text), {}, nil
+    if swap then keep = Swap(config, data, placesSpec, spec, values) end
+    if spec ~= nil then data.specs[spec] = keep end
+    data.spec = spec
+    local encoded = CDM.Codec.EncodePositions(data)
+    if not encoded then return end
+    local moved = next(values) ~= nil
+    values.positionsData, seenPlaces, placesSpec = encoded, encoded, spec
+    pendingCapture = pendingCapture or {}
+    for key, value in pairs(values) do pendingCapture[key] = value end
+    if moved then
+        -- The bars and the assisted icon take the layout at once (their
+        -- settings may wait for the end of combat). MSUF Edit Mode's captured
+        -- states held the other layout: their undo would write it here.
+        Settings.ReadViews(Settings.Source(config), false, false)
+        C.state.assistIconX, C.state.assistIconY = Upcoming(config, "assistIconX"), Upcoming(config, "assistIconY")
+        C.Effects.Recommendation()
+        S.InvalidateEditStates()
+    end
     C_Timer.After(0, PersistCapture)
 end
 -- Blizzard's bar positions become ours once, before the takeover hides

@@ -25,7 +25,12 @@ NS.ActionBarCommands = { "ACTIONBUTTON", "MULTIACTIONBAR1BUTTON", "MULTIACTIONBA
 local ENUM = {
     VISIBILITY = { ALWAYS = 1, COMBAT = 2, OUT_OF_COMBAT = 3, MOUSEOVER = 4, MOUSEOVER_OR_COMBAT = 5, NEVER = 6 },
     PROC_GLOW = { BLIZZARD = 1, PIXEL = 2, NONE = 3 },
-    BUTTON_SHAPE = { SQUARE = 1, CIRCLE = 2 },
+    -- MSUF's icon shapes from ROUNDED on (MSUF 7.0; older hosts draw them
+    -- square). STAR is left out: its ring is a silhouette that only works
+    -- behind the icon, and the buttons draw their frame, hover, pressed and
+    -- glow art above it.
+    BUTTON_SHAPE = { SQUARE = 1, CIRCLE = 2, ROUNDED = 3, DIAMOND = 4, HEXAGON = 5, BLIZZARD = 6 },
+    BUTTON_SHAPE_IDS = { "RECTANGLE", "CIRCLE", "ROUNDED", "DIAMOND", "HEXAGON", "BLIZZARD" },
     BORDER_ART = { PIXEL = 1, BLIZZARD = 2 },
     ASSIST_STYLE = { BLIZZARD = 1, RING = 2, FILL = 3, RING_AND_FILL = 4 },
     -- "Mouseover highlight" and "Pressed highlight".
@@ -133,7 +138,8 @@ B.Section(id, "look", "Choose a look", {
         { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
 })
 B.Section(id, "appearance", "Button appearance", {
-    Choice("buttonShape", "Button shape", ENUM.BUTTON_SHAPE.SQUARE, { "Square", "Circle" }),
+    Choice("buttonShape", "Button shape", ENUM.BUTTON_SHAPE.SQUARE,
+        { "Square", "Circle", "Rounded", "Diamond", "Hexagon", "Blizzard portrait" }),
     Choice("borderArt", "Button frame style", ENUM.BORDER_ART.PIXEL, { "Pixel border", "Blizzard frame" }),
     Number("borderScale", "Button frame scale (percent)", 100, 70, 160, 5),
     Number("borderExpansion", "Button frame expansion", 0, -8, 20),
@@ -157,6 +163,9 @@ B.Section(id, "appearance", "Button appearance", {
     Bool("interactionClassColor", "Class-colored highlights", initial.interactionClassColor),
     Bool("castHighlight", "Highlight the spell being cast", true),
     Choice("procGlow", "Spell alert glow", ENUM.PROC_GLOW.BLIZZARD, { "Blizzard glow", "Pixel border", "None" }),
+    -- MSUF's icon skin of every button, chosen on MSUF's Icon Skins page:
+    -- DEFAULT follows its default skin, CUSTOM keeps the look above.
+    B.String("iconSkin", "Icon skin", "DEFAULT", 64),
 })
 B.Section(id, "cooldowns", "Cooldowns and states", {
     Bool("cooldownNumbers", "Show cooldown numbers", true),
@@ -280,6 +289,7 @@ end
 
 local rules = NS.SuiteCatalog.actionbars.rules
 rules.imported.hidden = true
+rules.iconSkin.hidden = true
 rules.disableSkyridingPaging.hidden = NS.Client.isForever or nil
 rules.borderColor.disabledBy = "borderClassColor"
 rules.interactionColor.disabledBy = "interactionClassColor"

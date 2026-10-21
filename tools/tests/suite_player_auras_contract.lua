@@ -65,7 +65,8 @@ function frame:RefreshConsolidationFrameVisibility()end
 frame.UpdateAuraButtons=NativeBuffUpdate
 function frame:UpdateGridLayout()for _,b in ipairs(self.auraFrames)do b:SetSize(30,40)end end
 _G.BuffFrame=frame
-local P={NS={IsCombatLocked=function()return false end,IsSecret=function()return false end},Suite={}}
+local P={NS={IsCombatLocked=function()return false end,IsSecret=function()return false end,
+ HostBridge={IconSkinLook=function()end,PaintIconSkin=function()return false end,WatchIconSkins=function()end}},Suite={}}
 local S=P.Suite
 S.CreateFrame=function()return Region()end
 S.CreateTexture=function()return Region()end
@@ -75,6 +76,7 @@ S.ResolveFont=function()return 'modern.ttf' end
 S.Queue=function()end
 S.Install=function(id,m)captured=m end
 hooksecurefunc=function(obj,key,callback)local old=obj[key];obj[key]=function(self,...)local out={old(self,...)};callback(self,...);return unpack(out)end end
+P.PlayerAuraSkins={Yield=function()end} -- the skin-only piece (PlayerAuraSkins.lua)
 assert(loadfile(root .. '/MSUF_Suite_QualityOfLife/PlayerAuras.lua'))('MSUF_Suite_QualityOfLife',P)
 captured.config={iconWidth=52,iconHeight=26,perRow=12,spacing=4,rowSpacing=8,x=-12,y=0,debuffOffset=80,borderColor='000000',borderSize=2,font='x',fontSize=16,showDuration=true}
 captured.context={Event=function()end}

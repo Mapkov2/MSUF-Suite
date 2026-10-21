@@ -35,15 +35,16 @@ local SECTIONS = {
         "alpha", "cooldownDuration", "shareContents" } },
     { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "centerFirst", "overflow",
         "laterPerRow", "laterSize", "vertical", "grow", "x", "y" } },
-    { id = "look", title = "Look", suffixes = { "zoom", "border", "borderColor", "borderClass", "swipeAlpha", "edge",
-        "strata", "layer" } },
+    { id = "look", title = "Look", suffixes = { "iconShape", "zoom", "border", "borderColor", "borderClass", "swipeAlpha",
+        "edge", "strata", "layer" } },
     { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
         "stackPos", "keybind", "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding" } },
     { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",
         "readyGlow", "readyResources", "fullChargeGlow", "glowStyle", "glowTint", "glowColor", "usable", "range",
         "rangeColor", "showAura", "charges", "chargeSwipe", "chargeEdge",
         "assist", "bling" } },
-    { id = "buffs", title = "Buffs", suffixes = { "showMissing", "keepSlots", "auraGlow", "pandemic" } },
+    { id = "buffs", title = "Buffs", suffixes = { "showMissing", "keepSlots", "auraGlow", "pandemic", "pandemicStyle",
+        "pandemicColor", "pandemicSize" } },
     { id = "barstyle", title = "Timer bar style", suffixes = { "barWidth", "barHeight", "barTexture", "barColor",
         "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
         "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" } },
@@ -65,7 +66,8 @@ do
         if spec.id == "effects" then effects = spec end
     end
     for _, rule in ipairs(P.SectionRules(ID, "c1")) do
-        if rule.suffix and not listed[rule.suffix] then
+        -- A hidden rule (the icon skin, chosen on MSUF's Icon Skins page) has no control here.
+        if rule.suffix and not rule.hidden and not listed[rule.suffix] then
             effects.suffixes[#effects.suffixes + 1], listed[rule.suffix] = rule.suffix, true
         end
     end
@@ -286,6 +288,14 @@ local function ResetAnchor(values)
         for setting, value in pairs(moved or {}) do values[setting] = value end
     end
 end
+-- The icon skin of the selected bar is chosen on MSUF's Icon Skins page; the
+-- Look section shows which one applies and opens that page.
+local function SkinKey() return P.IconSkinKey(Page.selected or SLOTS[1].key) end
+local function SkinStatus(ctx, body, y, width)
+    local height = Suite.HostBridge.IconSkinStatusRowFor(M, ctx, body, 16, y, width, SkinKey)
+    if height > 0 then return y - height - 8 end
+    return y
+end
 local function BuildSection(ctx, b, ui, spec)
     local sectionId = "suite_cooldownManager_" .. spec.id
     local own, rules = {}, {}
@@ -297,6 +307,7 @@ local function BuildSection(ctx, b, ui, spec)
         local y = Help(body, HELP[spec.id], -18, width)
         local unused = P.Text(body, "", 16, y, width, T.colors.dim or T.colors.muted)
         y = y - 20
+        if spec.id == "look" then y = SkinStatus(ctx, body, y, width) end
         y = RuleGrid(ctx, body, own, y, width, sectionId)
         if spec.module then
             P.Text(body, "These apply to every bar:", 16, y - 6, width, T.colors.text)

@@ -7,6 +7,8 @@ local Adapters = {
     waiting = {},
 }
 NS.Adapters = Adapters
+local TrackMenuMotion, ReleaseMenuMotion = function() end, function() end
+function Adapters.SetMenuMotionProvider(track, release) TrackMenuMotion, ReleaseMenuMotion = track, release end
 
 local function IsValidDefinition(definition)
     return type(definition) == "table" and type(definition.id) == "string"
@@ -73,6 +75,7 @@ end
 
 local function DisableDefinition(definition, frame)
     local id = definition.id
+    ReleaseMenuMotion(id)
     NS.WindowControls.DisableOwner(id)
     if type(definition.disable) == "function" then
         local disabled, reason = RunCallback(definition.disable, frame, id)
@@ -156,6 +159,7 @@ local function ApplyDefinition(definition)
     if definition.trackIconTree == true then
         NS.Checkmarks.TrackControlTree(frame, id, definition.iconTreeOptions)
     end
+    if definition.menuMotion ~= false then TrackMenuMotion(frame, id) end
     NS.WindowControls.Attach(frame, id)
     return true
 end
@@ -352,6 +356,7 @@ end
 
 Adapters.Register({
     id = "blizzardWindows",
+    menuMotion = false,
     labelKey = "SKIN_BLIZZARD_WINDOWS",
     resolve = function() return NS.BlizzardCatalog end,
     apply = function(_, owner)
@@ -415,9 +420,12 @@ Adapters.Register({
     resolve = function() return _G.AddonList end,
     -- AddonDialog is glue-only: AddonList's OnLoad clears it in game.
     apply = function(frame, owner)
-        return NS.GenericWindows.ApplyFrame(frame, owner, "window")
+        local applied, reason = NS.GenericWindows.ApplyFrame(frame, owner, "window")
+        if applied then NS.AddonListMotion.Attach(frame, owner) end
+        return applied, reason
     end,
     disable = function(_, owner)
+        NS.AddonListMotion.DisableOwner(owner)
         return NS.GenericWindows.Disable(owner)
     end,
 })
@@ -480,6 +488,7 @@ Adapters.Register({
 
 Adapters.Register({
     id = "chatFrames",
+    menuMotion = false,
     labelKey = "SKIN_CHAT_FRAMES",
     allowImplicitProtected = true,
     resolve = function() return _G.ChatFrame1 end,
@@ -493,6 +502,7 @@ Adapters.Register({
 
 Adapters.Register({
     id = "damageMeter",
+    menuMotion = false,
     labelKey = "SKIN_DAMAGE_METER",
     -- The Suite damage meter turns Blizzard's meter off while it runs.
     suiteSurface = "damageMeter",
@@ -538,6 +548,7 @@ Adapters.Register({
 
 Adapters.Register({
     id = "microMenu",
+    menuMotion = false,
     labelKey = "SKIN_MICRO_MENU",
     loadAddon = "Blizzard_MicroMenu",
     allowImplicitProtected = true,

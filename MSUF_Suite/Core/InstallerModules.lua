@@ -44,6 +44,7 @@ function List.Show(window, shown)
     end
     local group = window.moduleGroups[window.moduleTab]
     local perColumn = math.ceil(#group / 2)
+    Suite.Skin.RegisterMenu(scroll, "installerMotion")
     local content = scroll:GetScrollChild()
     content:SetSize(508, math.max(172, perColumn * 25))
     for _, row in ipairs(window.moduleRows) do
@@ -61,6 +62,7 @@ function List.Show(window, shown)
             window.moduleFocusPending = nil
         end
     end
+    if shown then Suite.Skin.AnimateContent(content, window.moduleTab, "installerMotion") end
 end
 
 function List.Focus(window, id)

@@ -8,6 +8,9 @@ local at = assert(source:find(marker, 1, true), "MapkoSkin smoke fixture changed
 -- Reuse MapkoSkin's mature WoW API fixture, then boot the Suite-owned TOC.
 local fixture = source:sub(1, at - 1)
 local contract = [=[
+-- SharedXML legacy tab functions are present on both supported clients.
+PanelTemplates_SelectTab = function() end
+PanelTemplates_DeselectTab = function() end
 -- The skin's Safety reads issecretvalue at load; the secret cases below
 -- assign it later.
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SecretValues()

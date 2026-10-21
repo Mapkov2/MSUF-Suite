@@ -1,6 +1,20 @@
 local _, Suite = ...
 local MSUF = assert(_G.MSUF_NS, "MSUF_Suite requires MSUF")
 
+-- MSUF has finalized its saved menu language before this dependent addon runs.
+-- Load its one unchanged catalog before any Suite title or binding is captured.
+-- Locale companions depend on MSUF alone, avoiding a cycle while Suite loads.
+local localeAddonName, localeAddonReason
+do
+    local translated = { deDE = true, esES = true, esMX = true, frFR = true, itIT = true,
+        koKR = true, ptBR = true, ruRU = true, zhCN = true, zhTW = true }
+    if translated[MSUF.LOCALE or ""] then
+        localeAddonName = "MSUF_Suite_Locale_" .. MSUF.LOCALE
+        local loaded
+        loaded, localeAddonReason = C_AddOns.LoadAddOn(localeAddonName)
+    end
+end
+
 -- Only Suite-owned surfaces use the shared 0..30 MSUF layer slots. Auto (-1)
 -- preserves their existing levels, including older profiles and clients.
 function Suite.ApplyOwnedLayer(frame, layer, detail)
@@ -500,4 +514,11 @@ function Suite.Registry.NotifyListeners(domain, reason)
 end
 function Suite.OnProfileChanged(name)
     Suite.Registry.NotifyListeners("profile", name)
+end
+
+-- A missing translation must not suppress setup or any enabled module. On
+-- Forever the completed registration, rather than LoadAddOn's result, wins.
+if localeAddonName and not Suite.Client.IsAddOnLoaded(localeAddonName) then
+    Suite.Print(Suite.Text("Cannot load %s: %s"):format(localeAddonName,
+        Suite.Client.LoadReasonText(localeAddonReason, Suite.Text("not installed"))))
 end

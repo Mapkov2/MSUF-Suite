@@ -13,7 +13,6 @@ local AB = P.ActionBars
 local M = AB.M
 local ENUM = AB.ENUM
 local PROC_BLIZZARD, PROC_PIXEL, PROC_NONE = ENUM.PROC_GLOW.BLIZZARD, ENUM.PROC_GLOW.PIXEL, ENUM.PROC_GLOW.NONE
-local CIRCLE_SHAPE = ENUM.BUTTON_SHAPE.CIRCLE
 local USABLE, USABLE_TINT = S.USABLE, S.USABLE_TINT
 local USABLE_OK, NO_POWER, UNUSABLE, OUT_OF_RANGE = USABLE.USABLE, USABLE.NO_POWER, USABLE.UNUSABLE, USABLE.OUT_OF_RANGE
 local UNUSABLE_TINT = USABLE_TINT[UNUSABLE]
@@ -387,10 +386,10 @@ local function HideAlert(button)
     alert.ProcStartAnim:Stop()
 end
 
--- The pixel border glow in the current interaction color; a round button
--- glows with a ring.
+-- The pixel border glow in the current interaction color; a shaped button
+-- glows with the ring of its shape.
 local function PixelGlow(rec)
-    if M.config.buttonShape == CIRCLE_SHAPE then
+    if AB.style.round then
         AB.ShowEdges(rec.glowEdges, false)
         AB.GlowRing(rec, true)
         return
@@ -403,7 +402,9 @@ end
 -- SetGlow skips unchanged glows, so the style pass redraws a showing pixel
 -- glow when the interaction color changes.
 function AB.RecolorGlow(rec)
-    if rec.glow and rec.glowMode == PROC_PIXEL then PixelGlow(rec) end
+    -- A switch away from the pixel glow repaints that glow right after
+    -- (SetGlow); its ring was parked in this style pass (Decorations.lua).
+    if rec.glow and rec.glowMode == PROC_PIXEL and M.config.procGlow == PROC_PIXEL then PixelGlow(rec) end
 end
 
 local function SetGlow(rec, show)

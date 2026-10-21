@@ -484,6 +484,13 @@ end
 function Theme.SetAppearance(key, value)
     if NS.IsCombatLocked() then return false end
     if key == "gradient" then return Theme.SetGradient(value) end
+    if key == "menuAnimations" or key == "reduceMotion" or key == "dropdownDimming" or key == "smoothScrolling" then
+        if type(value) ~= "boolean" then return false end
+        NS.DB.theme[key] = value
+        NS.Registry.NotifyListeners("motion", key)
+        NS.Registry.QueueRefresh()
+        return true
+    end
     local listName = appearanceChoices[key]
     if listName then
         if not IsListed(NS[listName], value) then return false end

@@ -42,6 +42,12 @@
    "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
+   "symbol": "decode (= MSUF_TryDecodeCompactString)"
+  },
+  {
+   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
+   "kind": "addon",
+   "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "encode (= MSUF_EncodeCompactTable)"
   },
   {
@@ -2893,6 +2899,60 @@
    "kind": "state",
    "reason": "Owned preview layout callback is absent during Editor.Create initial layout and installed later by NameplatesPreviewDecor.Build; no native or host method fallback. Current/legacy expanded layout contracts exercise both cold and installed callback states.",
    "symbol": "self.LayoutDecorTools"
+  },
+  {
+   "file": "MSUF_Suite_CooldownManager/Bootstrap.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.5 and WoW Forever have C_Timer.NewTimedSignalMap (UITimerDocumentation.lua, upstream/live 70448 and upstream/forever 70450); Retail 12.1.0 lacks it. The file keeps its C_Timer.After/NewTimer path there; suite_signal_timers_contract runs the signal map path, the older timer, data scheduler and cooldown manager contracts the C_Timer path.",
+   "symbol": "C_Timer.NewTimedSignalMap"
+  },
+  {
+   "file": "MSUF_Suite_CooldownManager/Bootstrap.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.5 and WoW Forever have C_Timer.NewTimedSignalMap (UITimerDocumentation.lua, upstream/live 70448 and upstream/forever 70450); Retail 12.1.0 lacks it. The file keeps its C_Timer.After/NewTimer path there; suite_signal_timers_contract runs the signal map path, the older timer, data scheduler and cooldown manager contracts the C_Timer path.",
+   "symbol": "NewTimedSignalMap (= C_Timer.NewTimedSignalMap)"
+  },
+  {
+   "file": "MSUF_Suite_Modules/DataSources.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.5 and WoW Forever have C_Timer.NewTimedSignalMap (UITimerDocumentation.lua, upstream/live 70448 and upstream/forever 70450); Retail 12.1.0 lacks it. The file keeps its C_Timer.After/NewTimer path there; suite_signal_timers_contract runs the signal map path, the older timer, data scheduler and cooldown manager contracts the C_Timer path.",
+   "symbol": "C_Timer.NewTimedSignalMap"
+  },
+  {
+   "file": "MSUF_Suite_Modules/DataSources.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.5 and WoW Forever have C_Timer.NewTimedSignalMap (UITimerDocumentation.lua, upstream/live 70448 and upstream/forever 70450); Retail 12.1.0 lacks it. The file keeps its C_Timer.After/NewTimer path there; suite_signal_timers_contract runs the signal map path, the older timer, data scheduler and cooldown manager contracts the C_Timer path.",
+   "symbol": "NewTimedSignalMap (= C_Timer.NewTimedSignalMap)"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Timers.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.5 and WoW Forever have C_Timer.NewTimedSignalMap (UITimerDocumentation.lua, upstream/live 70448 and upstream/forever 70450); Retail 12.1.0 lacks it. The file keeps its C_Timer.After/NewTimer path there; suite_signal_timers_contract runs the signal map path, the older timer, data scheduler and cooldown manager contracts the C_Timer path.",
+   "symbol": "C_Timer.NewTimedSignalMap"
+  },
+  {
+   "file": "MSUF_Suite_Modules/Timers.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.5 and WoW Forever have C_Timer.NewTimedSignalMap (UITimerDocumentation.lua, upstream/live 70448 and upstream/forever 70450); Retail 12.1.0 lacks it. The file keeps its C_Timer.After/NewTimer path there; suite_signal_timers_contract runs the signal map path, the older timer, data scheduler and cooldown manager contracts the C_Timer path.",
+   "symbol": "NewTimedSignalMap (= C_Timer.NewTimedSignalMap)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Menu/Register.lua",
+   "kind": "addon",
+   "reason": "Optional public MapkoSkin integration: legacy standalone API v2 and older embedded skin builds omit AnimateContent. The guard keeps those already-running providers compatible; current providers receive the explicit completed page/search content signal. Legacy options and native content lifecycle contracts cover both paths.",
+   "symbol": "client.AnimateContent"
+  },
+  {
+   "file": "MSUF_Suite/Integrations/MapkoSkin.lua",
+   "kind": "addon",
+   "reason": "Optional public skin extension: older standalone MapkoSkin and embedded builds omit this motion command. The integration remains compatible with an already-running old provider; motion and menu coverage contracts exercise absent and current commands.",
+   "symbol": "client.RegisterMenu"
+  },
+  {
+   "file": "MSUF_Suite/Integrations/MapkoSkin.lua",
+   "kind": "addon",
+   "reason": "Optional public skin extension: older standalone MapkoSkin and embedded builds omit this motion command. The integration remains compatible with an already-running old provider; motion and menu coverage contracts exercise absent and current commands.",
+   "symbol": "client.AnimateContent"
   }
  ]
 }

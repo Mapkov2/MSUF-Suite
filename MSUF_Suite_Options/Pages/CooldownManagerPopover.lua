@@ -98,6 +98,8 @@ local ALL_FIELDS = {
       help = "The action-bar glow also requires this buff on you. Clear the field to use only the original buff or stack condition." },
     { key = "stackColorAt", label = "Color stacks from", kind = "number", stack = true, off = true, step = 1, max = 99,
       color = "stackColor", help = "From this many stacks the number shows in the color on the right." },
+    { key = "pandemic", label = "Pandemic window", kind = "bool", stack = true, bar = "pandemic",
+      help = "Highlight this buff or debuff while refreshing it keeps the remaining time." },
     { key = "swipe", label = "Swipe", kind = "choice", cd = true, aura = true,
       values = { { 0, "Normal" }, { 2, "Reversed" }, { 3, "Hidden" } },
       help = "The dark sweep over the icon while it counts down." },
@@ -688,6 +690,8 @@ function Page.TogglePopover(tile, anchor)
     pop.scroll:SetVerticalScroll(0)
     Page.PaintPopover()
     pop:Show()
+    P.Suite.Skin.RegisterMenu(pop, "cdmMenuMotion")
+    P.Suite.Skin.AnimateContent(pop.content, pop.key, "cdmMenuMotion")
     Light(anchor, true)
     return true
 end

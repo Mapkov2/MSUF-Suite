@@ -93,6 +93,136 @@ function HostBridge.KickReady()
     return kickReady
 end
 
+------------------------------------------------------------------ icon skins
+-- MSUF's icon skins for the cooldown manager and action bars: the interface
+-- MSUF 7.0 hands out through MSUF_HostAPI.GetIconSkins() (its own version 1,
+-- Auras3/MSUF_Auras3_IconSkins_Host.lua; HOST_API_SPEC.md, icon skin addendum
+-- of 2026-10-17). nil on older hosts: every icon keeps the Suite's own border,
+-- as before. Resolved at the first use, like the core API.
+-- A choice is "DEFAULT" (the Icon Skins page's default skin), "CUSTOM" (no
+-- skin) or a skin id. Looks are compiled once per choice and kept until MSUF
+-- reports that its default changed; MSUF reports that only out of combat (a
+-- default edited in combat waits for the combat end there, as for its auras),
+-- and the Suite's own choices change only out of combat, so every icon made
+-- in a fight, also after a reload in combat, gets the look the others show.
+local ICON_SKINS_VERSION = 1
+local SQUARE = "RECTANGLE"
+local skinsResolved, iconSkins = false, nil
+local skinLooks = { [SQUARE] = {} } -- icon shape -> choice -> look, or false for no skin
+local skinWatchers = {}   -- module id -> true while it draws skins
+local skinHooks = {}      -- key -> fn, run before the watchers refresh
+local refreshed = {}      -- module id -> true when a hook refreshed it already
+
+local function IconSkinsChanged(reason)
+    for _, looks in pairs(skinLooks) do
+        for choice in pairs(looks) do looks[choice] = nil end
+    end
+    -- Settings that wait for MSUF's new default (Register.lua: shapes the
+    -- Icon Skins page set for it) are written first, so each module
+    -- refreshes once, with the new look and its shape; a hook names the
+    -- modules its writes refreshed in `refreshed`.
+    for id in pairs(refreshed) do refreshed[id] = nil end
+    for _, fn in pairs(skinHooks) do fn(refreshed, reason) end
+    -- Suite.Suite: the module controller (Core/Suite.lua); out of combat here.
+    for id in pairs(skinWatchers) do
+        if not refreshed[id] then Suite.Suite.Apply(id) end
+    end
+end
+
+function HostBridge.IconSkins()
+    if not skinsResolved then
+        skinsResolved = true
+        local api = HostTable()
+        local get = api and api.GetIconSkins
+        local skins = get and get() or nil
+        if type(skins) == "table" and type(skins.version) == "number" and skins.version >= ICON_SKINS_VERSION then
+            iconSkins = skins
+            skins.Subscribe("MSUF_Suite", IconSkinsChanged)
+        end
+    end
+    return iconSkins
+end
+
+-- The look of a choice for icons of `shape` (square when nil; "CIRCLE" for
+-- round action buttons), or nil when no skin draws: an older host, CUSTOM,
+-- an unknown id or a skin made for another shape. Equal looks are the same
+-- table until MSUF reports a change.
+function HostBridge.IconSkinLook(choice, shape)
+    local skins = HostBridge.IconSkins()
+    if not skins then return nil end
+    if choice == nil then choice = skins.DEFAULT end
+    shape = shape or SQUARE
+    local looks = skinLooks[shape]
+    if not looks then
+        looks = {}
+        skinLooks[shape] = looks
+    end
+    local look = looks[choice]
+    if look == nil then
+        look = skins.Compile(choice, shape) or false
+        looks[choice] = look
+    end
+    return look or nil
+end
+
+-- Draws `look` on `owner` around `anchor` (see the interface); a nil look
+-- hides an earlier one. clip: only the parts over the anchor draw (a look
+-- over an icon that already shows it there). Returns whether a skin draws
+-- the icon's look.
+function HostBridge.PaintIconSkin(owner, look, width, height, anchor, clip)
+    local skins = HostBridge.IconSkins()
+    if not skins then return false end
+    return skins.Paint(owner, look, width, height, anchor, clip) == true
+end
+
+-- How far a look's frame reaches past an icon of that size on each side
+-- (x, y); 0, 0 for no look or a host without it.
+function HostBridge.IconSkinOutset(look, width, height)
+    local skins = look and HostBridge.IconSkins()
+    if not (skins and skins.Outset) then return 0, 0 end
+    return skins.Outset(look, width, height)
+end
+
+-- The icon shape a picked skin is made for, as MSUF's Icon Skins page
+-- matches it, and the skin id it resolved (DEFAULT: the default skin); nil
+-- for no skin, or on a host without icon skins.
+function HostBridge.IconSkinShape(choice)
+    local skins = HostBridge.IconSkins()
+    if not (skins and skins.ShapeOf) then return nil end
+    return skins.ShapeOf(choice)
+end
+
+-- MSUF's icon shapes (the same interface): `shape` is MSUF's id
+-- (NS.IconShapeIds). Masks the textures in `...` and the regions of each
+-- cooldown in `cooldowns` over `anchor`, and gives the cooldowns the shape's
+-- swipe; returns the shape drawn ("RECTANGLE" on a host without shapes).
+function HostBridge.ApplyIconShape(owner, shape, anchor, cooldowns, ...)
+    local skins = HostBridge.IconSkins()
+    if not (skins and skins.ApplyShape) then return SQUARE end
+    return skins.ApplyShape(owner, shape, anchor, cooldowns, ...)
+end
+
+-- Ring and silhouette textures of a shape for the Suite's own shaped art,
+-- and whether the ring only works behind the icon; nil without shapes.
+function HostBridge.IconShapeArt(shape)
+    local skins = HostBridge.IconSkins()
+    if not (skins and skins.ShapeArt) then return nil end
+    return skins.ShapeArt(shape)
+end
+
+-- A module that draws skins refreshes when MSUF's default skin changed.
+function HostBridge.WatchIconSkins(id, on)
+    skinWatchers[id] = on == true or nil
+end
+
+-- fn(refreshed, reason) runs when MSUF reports a new default skin (reason:
+-- "apply", "combat" or "profile"), before the modules refresh (out of
+-- combat: MSUF reports only then); it sets refreshed[id] for each module
+-- its own writes refreshed. One per key.
+function HostBridge.OnIconSkinsChanged(key, fn)
+    skinHooks[key] = fn
+end
+
 ------------------------------------------------------------------ target DoT suggestions
 -- Read the host's curated aura IDs without sharing its mutable data or
 -- changing the unit-frame DoT selection. Older hosts can omit this catalog.

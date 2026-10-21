@@ -94,6 +94,7 @@ local MIGRATIONS = {
     { run = NS.MigrateBagsInventoryView },
     { run = NS.MoveRunRecordsToCharacter },
     { run = Steps.RecordModuleLooks },
+    { run = Steps.CooldownSpecLayouts },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {
@@ -444,7 +445,7 @@ local function ApplyModule(id)
     S.RefreshEditMover(id)
 end
 
-function S.Apply(id)
+local function ApplyOne(id)
     if not S.started or not S.catalog[id] then return end
     if NS.IsCombatLocked() then
         S.Queue(id)
@@ -462,6 +463,34 @@ function S.Apply(id)
     if surface then Dispatch(NS.Skin.SurfacesChanged, "before") end
     if not Dispatch(Finish, ApplyModule, id) then Fail(id) end
     if surface then Dispatch(NS.Skin.SurfacesChanged, "after") end
+end
+function S.Apply(id)
+    ApplyOne(id)
+    -- A module that reads this one's settings (spec.follows) applies after it,
+    -- so a write, an undo or a profile change reaches it too; one still queued
+    -- for the combat end is left to the queue (catalog order).
+    local followers = S.Followers(id)
+    for i = 1, #followers do
+        if not pending[followers[i]] then ApplyOne(followers[i]) end
+    end
+end
+
+-- The ids of the modules that follow `id` (catalog spec.follows), in module order.
+local followersOf
+local NONE = {}
+function S.Followers(id)
+    if not followersOf then
+        followersOf = {}
+        for i = 1, #S.order do
+            local other = S.order[i]
+            local lead = S.catalog[other].follows
+            if lead then
+                followersOf[lead] = followersOf[lead] or {}
+                table.insert(followersOf[lead], other)
+            end
+        end
+    end
+    return followersOf[id] or NONE
 end
 
 function S.ApplyAll()

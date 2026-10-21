@@ -69,6 +69,7 @@ function O.CreateScrollContainer(parent, contentHeight, contentWidth)
         track:SetColorTexture(NS.Theme.GetColor("ink"))
         thumb:SetVertexColor(NS.Theme.GetColor("accent"))
     end)
+    NS.LegacyScrollMotion.Track(scroll, O, bar)
     return scroll, child
 end
 
@@ -285,6 +286,8 @@ local function ShowWindowPage(state, key, focusLabel)
     state.pageContext:SetText(focusLabel and L["FOUND: %s"]:format(string.upper(focusLabel)) or "")
     O.SetButtonActive(state.navButtons[key], true)
     O.RefreshAll()
+    NS.MenuMotion.Track(page, O)
+    NS.ContentMotion.Play(page, O, key)
     return true
 end
 

@@ -241,6 +241,14 @@ end
 AddIcons()
 RegisterPages()
 
+Suite.HostBridge.WatchMenuContent(M, function(frame, token)
+    local client = Suite.Skin.Acquire("menuContent")
+    Suite.Skin.RegisterMenu(frame, "menuContent")
+    if client and client.AnimateContent then client:AnimateContent(frame, token) end
+end, function(frame)
+    Suite.Skin.RegisterMenu(frame, "menuContent")
+end)
+
 -- Menu2 asks for rows only while its layer overview is open. Keep Suite
 -- settings in the Suite profile and use its validated/history-aware setter.
 local function SetSuiteLayer(edit, value)
@@ -292,7 +300,173 @@ local function RegisterSuiteLayers()
         Add("Suite Quality of Life", "Experience", "Experience bar", "xpBar", "layer", xp.enabled)
     end)
 end
+-- MSUF's Icon Skins page (Style > Icon Skins) is the one place where skins
+-- are chosen: "Where It Applies" gets a row per built-in cooldown manager bar,
+-- one for the custom bars and one for all action bars, each the hidden
+-- iconSkin rule of its bars written with history like every Suite setting.
+-- The page reads the area's icon shape and sets it when a skin for another
+-- shape is picked (the shape itself is chosen on the module page). A few rows
+-- add a sample to the page's "Your Icons" strip. The module pages show the
+-- area's skin through P.IconSkinKey and HostBridge.IconSkinStatusRow.
+local SKIN_SAMPLES = { ess = "Interface\\Icons\\Spell_Nature_Lightning", buf = "Interface\\Icons\\Spell_Holy_WordFortitude" }
+local CUSTOM_SLOT = {}
+for _, slot in ipairs(Suite.CDM.SLOTS) do CUSTOM_SLOT[slot.key] = slot.custom == true end
+function P.IconSkinKey(slot)
+    if slot == "actionbars" then return "suite_actionbars" end
+    return "suite_cdm_" .. (CUSTOM_SLOT[slot] and "custom" or slot)
+end
+local function IndexOf(list, value)
+    for i = 1, #list do
+        if list[i] == value then return i end
+    end
+end
+-- The shape of an area's bars. Custom bars with different shapes answer
+-- MIXED, which fits no skin: a skin picked for them sets every bar's shape.
+local function SharedShape(id, keys, ids)
+    local value = P.Get(id, keys[1])
+    for i = 2, #keys do
+        if P.Get(id, keys[i]) ~= value then return "MIXED" end
+    end
+    return ids[value] or "RECTANGLE"
+end
+-- Writes one value to every key in `keys` (custom bars share a row).
+local function WriteAll(id, keys, value)
+    if #keys == 1 then return P.Set(id, keys[1], value) end
+    local values = {}
+    for i = 1, #keys do values[keys[i]] = value end
+    return P.SetMany(id, values)
+end
+-- A skin made for another shape is written with that shape in one step, as
+-- the page's MatchShape would set it right after: the page then finds the
+-- shape matching, and the module restyles once. No skin (also a Like default
+-- whose default is none, as after the page's reset) leaves the shape alone.
+local function WriteSkin(id, skinKeys, shapeKeys, ids, value)
+    local wanted = Suite.HostBridge.IconSkinShape(value)
+    local index = wanted and wanted ~= SharedShape(id, shapeKeys, ids) and IndexOf(ids, wanted)
+    if not index then return WriteAll(id, skinKeys, value) end
+    local values = {}
+    for i = 1, #skinKeys do values[skinKeys[i]] = value end
+    for i = 1, #shapeKeys do values[shapeKeys[i]] = index end
+    return P.SetMany(id, values)
+end
+-- The page sets an area's shape when a new default skin wants another one
+-- (Page.SelectDefault: after writing the default, before applying it).
+-- Written then, the module would restyle with the new shape and the old
+-- committed skin, so the area is only marked, and the mark is settled within
+-- that page action: by MSUF's report of the committed default (this hook runs
+-- before the modules refresh: one write per module, which that refresh then
+-- skips, `refreshed`), or by the area's refresh right after the apply when no
+-- report comes. Nothing outlives the page action, so an undo, a profile
+-- switch or a look edit never moves a shape. The Suite refuses writes in
+-- combat: a default picked in a fight leaves the shapes alone (no mark).
+local marked, areaWrites, batches = {}, {}, {} -- area key -> true; area key -> its record
+local function FlushShapes(refreshed)
+    if not next(marked) then return end
+    if not Suite.InCombat() then
+        -- Each bar on its own (the custom bars share a row but can differ
+        -- after a bar reset): only a bar that follows the default (DEFAULT,
+        -- the catalog rules' default) takes its shape; a bar with its own
+        -- skin keeps its shape.
+        for key in pairs(marked) do
+            local a = areaWrites[key]
+            for i = 1, #a.shapeKeys do
+                local skinKey, shapeKey = a.skinKeys[i] or a.skinKeys[1], a.shapeKeys[i]
+                local wanted = P.Get(a.id, skinKey) == "DEFAULT" and Suite.HostBridge.IconSkinShape("DEFAULT")
+                local index = wanted and IndexOf(a.ids, wanted)
+                if index and index ~= P.Get(a.id, shapeKey) then
+                    local values = batches[a.id] or {}
+                    batches[a.id] = values
+                    values[shapeKey] = index
+                end
+            end
+        end
+        for id, values in pairs(batches) do
+            batches[id] = nil
+            if P.SetMany(id, values) and refreshed then refreshed[id] = true end
+        end
+    end
+    for key in pairs(marked) do marked[key] = nil end
+end
+Suite.HostBridge.OnIconSkinsChanged("MSUF_Suite_Options.shapes", FlushShapes)
+local function SkinArea(key, group, label, order, id, skinKeys, shapeKeys, ids, icon)
+    areaWrites[key] = { id = id, skinKeys = skinKeys, shapeKeys = shapeKeys, ids = ids }
+    return {
+        key = key, group = P.Tr(group), label = P.Tr(label), order = order, icon = icon, module = id,
+        -- The custom bars' row reads Like default while any of them follows the
+        -- default (a bar reset), so a new default reaches it: Page.SelectDefault
+        -- matches only rows that read DEFAULT, and FlushShapes then moves only
+        -- the bars that follow it.
+        read = function()
+            for i = 2, #skinKeys do
+                if P.Get(id, skinKeys[i]) == "DEFAULT" then return "DEFAULT" end
+            end
+            return P.Get(id, skinKeys[1])
+        end,
+        write = function(value) return WriteSkin(id, skinKeys, shapeKeys, ids, value) end,
+        shape = function() return SharedShape(id, shapeKeys, ids) end,
+        setShape = function(shape)
+            if not IndexOf(ids, shape) or Suite.InCombat() then return false end
+            marked[key] = true
+            return true
+        end,
+        refresh = function() FlushShapes() end,
+    }
+end
+-- An area drawn square only (no shape setting): the page offers it only the
+-- square skins.
+local function SquareArea(key, group, label, order, id, skinKey, icon)
+    return {
+        key = key, group = P.Tr(group), label = P.Tr(label), order = order, icon = icon, module = id,
+        read = function() return P.Get(id, skinKey) end,
+        write = function(value) return P.Set(id, skinKey, value) end,
+    }
+end
+-- Whether a row's icons are drawn now (Page.RegisterArea `available`): while
+-- one of `ids` runs (the controller's state). Otherwise the page dims the row
+-- and shows why: the module's own status when it is enabled but does not run
+-- (its addon off in the AddOns list, failed, not on this client), else
+-- `reason`, which names the module to turn on.
+local function Running(ids, reason)
+    return function()
+        for i = 1, #ids do
+            local state = S.states[ids[i]]
+            if state and state.active and not state.error then return true end
+        end
+        if P.Get(ids[1], "enabled") == true then return false, P.StatusText(ids[1]) end
+        return false, P.Tr(reason)
+    end
+end
+local function RegisterIconSkinAreas()
+    local CDM, specs, customSkins, customShapes = Suite.CDM, {}, {}, {}
+    for i, slot in ipairs(CDM.SLOTS) do
+        local keys = CDM.KEYS[slot.key]
+        if slot.custom then
+            customSkins[#customSkins + 1], customShapes[#customShapes + 1] = keys.iconSkin, keys.iconShape
+        else
+            specs[#specs + 1] = SkinArea(P.IconSkinKey(slot.key), "Cooldown manager", slot.title, i, "cooldownManager",
+                { keys.iconSkin }, { keys.iconShape }, Suite.IconShapeIds, SKIN_SAMPLES[slot.key])
+        end
+    end
+    specs[#specs + 1] = SkinArea(P.IconSkinKey("c1"), "Cooldown manager", "Custom bars", #CDM.SLOTS, "cooldownManager",
+        customSkins, customShapes, Suite.IconShapeIds)
+    specs[#specs + 1] = SkinArea(P.IconSkinKey("actionbars"), "Action bars", "All action bars", 1, "actionbars",
+        { "iconSkin" }, { "buttonShape" }, Suite.ActionBarEnum.BUTTON_SHAPE_IDS, "Interface\\Icons\\Ability_Warrior_Charge")
+    -- Blizzard's own player buffs and debuffs beside the minimap, as the
+    -- Player aura layout module draws them.
+    specs[#specs + 1] = SquareArea("suite_playerauras_buffs", "Player aura layout", "Buffs", 1, "playerAuras", "buffSkin")
+    specs[#specs + 1] = SquareArea("suite_playerauras_debuffs", "Player aura layout", "Debuffs", 2, "playerAuras", "debuffSkin")
+    local running = {
+        cooldownManager = Running({ "cooldownManager" }, "Turn on the Cooldown manager to skin these icons."),
+        actionbars = Running({ "actionbars" }, "Turn on Action bars to skin these buttons."),
+        playerAuras = Running({ "playerAuraSkins", "playerAuras" },
+            "Turn on Player aura skins (Quality of Life) to skin these icons."),
+    }
+    for _, spec in ipairs(specs) do spec.available = running[spec.module] end
+    Suite.HostBridge.RegisterIconSkinAreas(M, specs)
+end
+
 RegisterSuiteLayers()
+RegisterIconSkinAreas()
 InstallPageResets()
 local added = AddNavigation()
 -- Menu2 builds its navigation once per session. If the window already exists

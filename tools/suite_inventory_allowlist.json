@@ -3223,6 +3223,38 @@
       "date": "2026-10-14",
       "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua retains the same BorderSize key, default 0, minimum 0 and step 1; maximum extends from 3 to 6. Existing 0..3 settings and the native/preview border painter are preserved.",
       "reason": "User-requested thicker nameplate frames extend the existing slider range; no prior value or control is removed."
+    },
+    {
+      "category": "labels",
+      "item": "[\"*:cooldownManager.*_pandemic\",\"Highlight the refresh window\"]",
+      "basis": "owner",
+      "date": "2026-10-20",
+      "evidence": "Owner request 2026-10-20 (make the pandemic window findable by name): MSUF_Suite/Core/Catalog/CooldownManager.lua keeps every <slot>_pandemic key with its default and control; only its label became 'Highlight the pandemic window', translated in all ten packs, with a tooltip. Cooldown bars gained the same switch.",
+      "reason": "Same switch under the name players search for (pandemic); the old wording 'refresh window' was not findable."
+    },
+    {
+      "category": "locale",
+      "item": "Highlight the refresh window",
+      "basis": "owner",
+      "date": "2026-10-20",
+      "evidence": "Owner request 2026-10-20 (make the pandemic window findable by name): MSUF_Suite/Core/Catalog/CooldownManager.lua keeps every <slot>_pandemic key with its default and control; only its label became 'Highlight the pandemic window', translated in all ten packs, with a tooltip. Cooldown bars gained the same switch.",
+      "reason": "The retired label's translations went with it; the new label is translated in every pack."
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.buttonShape\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "migration",
+      "date": "2026-10-17",
+      "evidence": "MSUF_Suite/Core/Catalog/ActionBars.lua keeps the buttonShape key and default 1, and values 1 (Square) and 2 (Circle) keep their meaning (AB.ButtonShape, Decorations.lua); the choice extends from 2 to 6 values with MSUF's aura icon shapes Rounded, Diamond, Hexagon and Blizzard portrait (HostBridge.ApplyIconShape). On a host without MSUF's shapes, 3 to 6 draw square and 2 keeps the Suite's own circle.",
+      "reason": "Owner request 2026-10-17: MSUF's aura icon shapes on the action bars extend the existing Button shape choice; no prior value or control is removed."
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.buttonShape\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "migration",
+      "date": "2026-10-17",
+      "evidence": "MSUF_Suite/Core/Catalog/ActionBars.lua keeps the buttonShape key and default 1, and values 1 (Square) and 2 (Circle) keep their meaning (AB.ButtonShape, Decorations.lua); the choice extends from 2 to 6 values with MSUF's aura icon shapes Rounded, Diamond, Hexagon and Blizzard portrait (HostBridge.ApplyIconShape). On a host without MSUF's shapes, 3 to 6 draw square and 2 keeps the Suite's own circle.",
+      "reason": "Owner request 2026-10-17: MSUF's aura icon shapes on the action bars extend the existing Button shape choice; no prior value or control is removed."
     }
   ]
 }

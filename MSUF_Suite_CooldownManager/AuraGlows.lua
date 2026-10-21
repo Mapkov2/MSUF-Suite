@@ -3,8 +3,9 @@ local NS, S = P.NS, P.Suite
 local C = P.CDM
 -- Glows inside Blizzard's aura buttons: the glow while an aura is active,
 -- the stack glow that an application bar Blizzard fills places (no Lua
--- reads a count), and the native combat gate behind "All glows only in
--- combat". The aura buttons (AuraButtons.lua), their stack sensors
+-- reads a count), the pandemic window that Blizzard shows and animates,
+-- and the native combat gate behind "All glows only in combat". The aura
+-- buttons (AuraButtons.lua), their stack sensors
 -- (StackColors.lua) and the action-bar bridge (ActionGlows.lua) build and
 -- style them through this file; the loops run in C and are styled by
 -- widget writes only.
@@ -51,12 +52,19 @@ end
 -- its loop lifts it, so a stopped loop never shows the whole sheet. 12.1.5
 -- and Forever play the loops each time the button shows and stop them when
 -- it hides (AddAuraShownAnimation); 12.1.0 has only the start given here.
-local function NewGlow(button, parent, level)
+-- anchor: the region its shaped rings go around (an aura button's icon).
+-- pandemic: the pandemic window's glow (NewPandemic), without a combat
+-- gate; 12.1.5 and Forever play its loops while the aura is inside its
+-- window (AddPandemicActiveAnimation), 12.1.0 gets the start.
+local function NewGlow(button, parent, level, anchor, pandemic)
     -- This independent native visibility gate never reads aura state and
     -- never requires a Lua mutation of protected descendants in combat.
-    local combatGate = Child("Frame", parent)
-    combatGate:SetAllPoints(parent)
-    local frame = Child("Frame", combatGate)
+    local combatGate
+    if not pandemic then
+        combatGate = Child("Frame", parent)
+        combatGate:SetAllPoints(parent)
+    end
+    local frame = Child("Frame", combatGate or parent)
     frame:SetAllPoints(parent)
     frame:SetFrameLevel(level)
     frame:Hide()
@@ -90,14 +98,34 @@ local function NewGlow(button, parent, level)
     fade:SetToAlpha(1)
     fade:SetDuration(PULSE)
     local g = { frame = frame, flip = flip, ring = ring, edges = Edges(ring), fade = fade,
-        combatGate = combatGate, combatOnly = false, button = button }
-    -- 12.1.0 lacks AddAuraShownAnimation: the loops play without it.
-    if button.AddAuraShownAnimation then
+        combatGate = combatGate, combatOnly = false, button = button, anchor = anchor }
+    if pandemic and button.AddPandemicActiveAnimation then
+        button:AddPandemicActiveAnimation(loop)
+        button:AddPandemicActiveAnimation(pulse)
+        return g
+    end
+    -- 12.1.0 lacks AddAuraShownAnimation and AddPandemicActiveAnimation:
+    -- the loops play without them.
+    if not pandemic and button.AddAuraShownAnimation then
         button:AddAuraShownAnimation(loop)
         button:AddAuraShownAnimation(pulse)
     end
     loop:Play()
     pulse:Play()
+    return g
+end
+
+-- The pandemic window, built in initializeFrame: a region Blizzard shows
+-- while the aura is inside its window (AddPandemicRegion, bound last, gives
+-- it a secret Shown aspect: Lua never shows or hides it once bound) and the
+-- glow inside it, which Lua shows per entry (ApplyPandemic).
+local function NewPandemic(button, level, anchor)
+    local region = Child("Frame", button)
+    region:SetAllPoints(button)
+    region:SetFrameLevel(level)
+    region:Hide()
+    local g = NewGlow(button, region, level, anchor, true)
+    g.region = region
     return g
 end
 
@@ -169,15 +197,29 @@ function AuraGlows.FlushGates()
 end
 function AuraGlows.HasParkedGates() return next(parkedGates) ~= nil end
 
--- Style, color (nil: the art's own gold) and the size of what the glow
--- surrounds. Same input: no call.
-local function Painted(g, style, r, gg, b, lk)
-    return g.st == style and g.cr == r and g.cg == gg and g.cb == b and g.w == lk.w and g.h == lk.h and g.px == lk.px
+-- A shaped button's edge glow is rings of its shape (g.shape, nil when
+-- square) around its icon (g.anchor; a stack glow's own frame); the Blizzard
+-- alert keeps its art. Rings of an earlier shape go when it is square again.
+local function RingEdges(g, edge, px, r, gg, b)
+    local shape = g.shape
+    K.PlaceEdges(g.edges, g.ring, shape and 0 or edge * px, r, gg, b, 1)
+    g.rings = g.rings or {}
+    K.PlaceRings(g.rings, g.ring, g.anchor or g.ring, shape, shape and max(1, floor(edge + .5)) or 0, r, gg, b)
 end
-local function PaintGlow(g, style, r, gg, b, lk)
-    if Painted(g, style, r, gg, b, lk) then return end
+
+-- Style, color (nil: the art's own gold), the size of what the glow
+-- surrounds and the edge thickness in pixels of styles 3 and 4 (nil: the
+-- style's own). Same input: no call. The icon shape (g.shape) is set by
+-- the button's style pass, which drops this memo when it changes, so the
+-- glow events run the plain code.
+local function Painted(g, style, r, gg, b, lk, edge)
+    return g.st == style and g.cr == r and g.cg == gg and g.cb == b and g.w == lk.w and g.h == lk.h and g.px == lk.px
+        and g.edge == edge
+end
+local function PaintGlow(g, style, r, gg, b, lk, edge)
+    if Painted(g, style, r, gg, b, lk, edge) then return end
     local w, h, px = lk.w, lk.h, lk.px
-    g.st, g.cr, g.cg, g.cb, g.w, g.h, g.px = style, r, gg, b, w, h, px
+    g.st, g.cr, g.cg, g.cb, g.w, g.h, g.px, g.edge = style, r, gg, b, w, h, px, edge
     local spec = GLOW[style] or FLIP
     if spec.atlas then
         -- Same margin on every side: bars get a band, not a stretched art.
@@ -195,7 +237,12 @@ local function PaintGlow(g, style, r, gg, b, lk)
         flip:Show()
         g.ring:Hide()
     else
-        K.PlaceEdges(g.edges, g.ring, (spec.edge or 2) * px, r or GOLD[1], gg or GOLD[2], b or GOLD[3], 1)
+        local thick = edge or spec.edge or 2
+        if g.shape or g.rings then
+            RingEdges(g, thick, px, r or GOLD[1], gg or GOLD[2], b or GOLD[3])
+        else
+            K.PlaceEdges(g.edges, g.ring, thick * px, r or GOLD[1], gg or GOLD[2], b or GOLD[3], 1)
+        end
         g.fade:SetToAlpha(spec.pulse and PULSE_LOW or 1)
         g.ring:Show()
         g.flip:Hide()
@@ -274,25 +321,48 @@ local function PlaceStack(s, n, lk, cap, lower)
     end
 end
 
+-- One glow of a part painted and shown (on) or hidden; part[flag] says
+-- whether it shows now. With dry set it only reports whether a write is
+-- needed.
+local function Lit(part, flag, g, on, style, r, gg, b, lk, edge, dry)
+    local shown = part[flag]
+    if not on then
+        if not shown then return false end
+        if dry then return true end
+        part[flag] = false
+        g.frame:Hide()
+        return false
+    end
+    if shown and Painted(g, style, r, gg, b, lk, edge) then return false end
+    if dry then return true end
+    PaintGlow(g, style, r, gg, b, lk, edge)
+    if not shown then
+        part[flag] = true
+        g.frame:Show()
+    end
+    return false
+end
+
 -- Glow while active: shown and painted per entry.
 local function ApplyGlow(rec, part, ov, dry)
-    local g = part.glow
     local on = ov.auraGlow
     if on == nil then on = rec.glowAll end
-    if on == true then
-        local style, r, gg, b = GlowSpec(rec, ov)
-        if part.gOn and Painted(g, style, r, gg, b, rec.lk) then return false end
-        if dry then return true end
-        PaintGlow(g, style, r, gg, b, rec.lk)
-        if not part.gOn then
-            part.gOn = true
-            g.frame:Show()
-        end
-    elseif part.gOn then
-        if dry then return true end
-        part.gOn = false
-        g.frame:Hide()
-    end
+    if on ~= true then return Lit(part, "gOn", part.glow, false, nil, nil, nil, nil, nil, nil, dry) end
+    local style, r, gg, b = GlowSpec(rec, ov)
+    return Lit(part, "gOn", part.glow, true, style, r, gg, b, rec.lk, nil, dry)
+end
+
+-- Pandemic window: Blizzard shows the region while the aura is inside its
+-- window and plays the loops. The glow inside shows per entry (per-spell
+-- choice, else the bar's switch) in the bar's style, color and thickness
+-- (Build copies them to the record and stamps them, rec.pGen). A part
+-- that is current keeps the stamp and the choice it was painted for.
+local function ApplyPandemic(rec, part, ov, dry)
+    local want = ov.pandemic
+    local on = want
+    if on == nil then on = rec.panAll end
+    if Lit(part, "pOn", part.pan, on == true, rec.pStyle, rec.pR, rec.pG, rec.pB, rec.lk, rec.pEdge, dry) then return true end
+    part.pGen, part.pWant = rec.pGen, want
     return false
 end
 
@@ -364,6 +434,21 @@ local function BridgeStack(rec, part, ov, level)
     part.bound = true
 end
 
-AuraGlows.Edges, AuraGlows.NewGlow, AuraGlows.NewStack = Edges, NewGlow, NewStack
+AuraGlows.Edges, AuraGlows.NewGlow, AuraGlows.NewStack, AuraGlows.NewPandemic = Edges, NewGlow, NewStack, NewPandemic
 AuraGlows.ApplyGlow, AuraGlows.ApplyStack, AuraGlows.ApplyCombatGate = ApplyGlow, ApplyStack, ApplyCombatGate
+
+-- A button's icon shape for its glows (lk.shape, from its style pass): the
+-- paint memo leaves it out (Painted), so a new one drops the memo and they
+-- repaint with their next apply; the glow events stay the plain code.
+function AuraGlows.Reshape(part, shape)
+    if shape == K.SQUARE then shape = nil end
+    if shape then K.RingArt(shape) end
+    local g = part.glow
+    if g and g.shape ~= shape then g.shape, g.st = shape, nil end
+    g = part.stack and part.stack.glow
+    if g and g.shape ~= shape then g.shape, g.st = shape, nil end
+    g = part.pan
+    if g and g.shape ~= shape then g.shape, g.st = shape, nil end
+end
+AuraGlows.ApplyPandemic = ApplyPandemic
 AuraGlows.BindStack, AuraGlows.Overlay, AuraGlows.BridgeStack = BindStack, Overlay, BridgeStack

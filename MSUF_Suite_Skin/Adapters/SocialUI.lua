@@ -22,6 +22,9 @@ local Kit = NS.AdapterKit
 
 local DEFAULT_OWNER = "socialUI"
 local TAB_LIMIT = 64
+local TrackMotion, ReleaseMotion = function() end, function() end
+function SocialUISkin.SetMotionProvider(track, release) TrackMotion, ReleaseMotion = track, release end
+
 
 -- SocialUIFrameMixin:InitializeTabDefinitions creates these exact parentKeys.
 -- The list is fixed deliberately; supported content is never discovered by
@@ -177,6 +180,7 @@ local function OnFriendCardInitialized(state, card)
 end
 
 local function RegisterFriendCards(state)
+    TrackMotion(Kit.Path(state.frame, "RecentAlliesList", "ScrollBox"), state)
     local scrollBox = Kit.Path(state.frame, "FriendsList", "ScrollBox")
     if not scrollBox then return false end
     if not state.scrollBoxes[scrollBox] then
@@ -314,6 +318,7 @@ end
 local function DisableNow(state)
     if not state then return true end
     state.active = false
+    ReleaseMotion(state)
     Kit.CancelDeferred(state)
 
     for scrollBox, event in pairs(state.scrollBoxes) do

@@ -11,6 +11,8 @@ local ControlSkin = {
 }
 NS.ControlSkin = ControlSkin
 
+local TrackTabMotion = function() end
+function ControlSkin.SetTabMotionProvider(track) TrackTabMotion = track end
 local Safety = NS.Safety
 local Checkmarks = NS.Checkmarks
 local WindowActionSkin = NS.WindowActionSkin
@@ -288,6 +290,7 @@ end
 local function DefaultButtonSpec(kind, spec, target)
     local copy = CopySpec(spec, target)
     local isTab = kind == "minimalTab" or kind == "panelTab"
+    copy.motionGroup = copy.motionGroup or (isTab and "tabs" or nil)
     copy.role = copy.role or (isTab and "navigation" or "button")
     copy.activeRole = copy.activeRole or (isTab and "navigationActive" or "buttonPrimary")
     if copy.useControlShape == nil then
@@ -311,6 +314,7 @@ end
 
 local function SkinButtonSurface(button, state, active)
     local isTab = state.kind == "minimalTab" or state.kind == "panelTab"
+    if isTab then TrackTabMotion(button, state) end
     if active == nil then active = state.requestedActive end
     if active == nil and isTab then active = DetectSelected(button) end
     return NS.Surface.SkinOwnedButton(button, state.spec, active == true,

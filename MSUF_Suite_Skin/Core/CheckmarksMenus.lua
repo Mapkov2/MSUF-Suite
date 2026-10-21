@@ -16,6 +16,11 @@ local Getter = Shared.Getter
 local CanTrack = Shared.CanTrack
 local OwnerSet = Shared.OwnerSet
 local WalkControlTree = Shared.WalkControlTree
+local FocusOpen, FocusClose, FocusRelease = function() end, function() end, function() end
+local focusSerial = 0
+function Checkmarks.SetMenuFocusProvider(open, close, release)
+    FocusOpen, FocusClose, FocusRelease = open, close, release
+end
 
 local function LooksLikeDropdown(button)
     return button and type(button.RegisterCallback) == "function"
@@ -49,6 +54,8 @@ local function OnMenuOpen(state, dropdown)
     dropdown = dropdown or state.button
     BlizzardYellow.TrackDropdown(dropdown)
     local menu = Field(dropdown, "menu")
+    focusSerial = focusSerial + 1
+    FocusOpen(state, dropdown, menu)
     if not menu or not Safety.CanDecorate(menu, true) then return end
     -- Modern Blizzard_Menu proxies are compositor-managed: existing
     -- check/text regions remain safe to tint, but owned Surface creation is
@@ -59,11 +66,17 @@ local function OnMenuOpen(state, dropdown)
     Checkmarks.TrackFrame(menu, state.menuOwner)
 end
 
+local function OnMenuClose(state, _, menu)
+    FocusClose(state, menu)
+end
+
 function Checkmarks.UntrackDropdown(button)
     local state = Checkmarks.dropdowns[button]
     if not state then return false end
+    FocusRelease(state)
     if type(button.UnregisterCallback) == "function" then
         button:UnregisterCallback(state.event, state)
+        button:UnregisterCallback(state.closeEvent, state)
     end
     Checkmarks.dropdowns[button] = nil
     local ownerSet = Checkmarks.owners[state.owner]
@@ -80,6 +93,7 @@ function Checkmarks.TrackDropdown(button, owner)
     end
     -- Blizzard_Menu (DropdownButton.lua) loads first on Retail and Forever.
     local event = DropdownButtonMixin.Event.OnMenuOpen
+    local closeEvent = DropdownButtonMixin.Event.OnMenuClose
     BlizzardYellow.TrackDropdown(button)
     local existing = Checkmarks.dropdowns[button]
     if existing and existing.owner == owner and existing.event == event then
@@ -87,8 +101,9 @@ function Checkmarks.TrackDropdown(button, owner)
     end
     if existing then Checkmarks.UntrackDropdown(button) end
 
-    local state = { owner = owner, event = event, menuOwner = DROPDOWN_MENU_OWNER, button = button }
+    local state = { owner = owner, event = event, closeEvent = closeEvent, menuOwner = DROPDOWN_MENU_OWNER, button = button }
     button:RegisterCallback(event, OnMenuOpen, state)
+    button:RegisterCallback(closeEvent, OnMenuClose, state)
     Checkmarks.dropdowns[button] = state
     local ownerSet = OwnerSet(owner)
     if ownerSet then ownerSet[button] = true end
@@ -196,14 +211,20 @@ local function RefreshSettingsTabs(state)
     return changed
 end
 
+local SettingsMotion, ReleaseSettingsMotion = function() end, function() end
+function Checkmarks.SetSettingsMotionProvider(changed, release)
+    SettingsMotion, ReleaseSettingsMotion = changed, release
+end
+
 -- Callback registries pass the registration owner (the state) first.
-local function OnCategoryChanged(state)
+local function OnCategoryChanged(state, category)
     RefreshSettingsCategories(state)
     -- Blizzard finishes DisplayCategory (including ScrollBox row
     -- initialization) before this event. Revisit the active rows so the
     -- very first Settings open receives the selected theme colors.
     RefreshSettingsControls(state)
     RefreshSettingsTabs(state)
+    if category ~= nil then SettingsMotion(state, category) end
 end
 
 local function OnTabSelected(state)
@@ -230,6 +251,7 @@ end
 function Checkmarks.UntrackSettingsCategories(categoryList)
     local state = Checkmarks.settingsCategoryLists[categoryList]
     if not state then return false end
+    ReleaseSettingsMotion(state)
     state.active = false
     EventRegistry:UnregisterCallback(SETTINGS_CATEGORY_EVENT, state)
     if state.scrollRegistered and CanUnregister(state.scrollBox) then
@@ -312,6 +334,49 @@ end
 ------------------------------------------------------------------ legacy dropdowns
 local LEGACY_DROPDOWN_OWNER = "legacy-dropdown-menu"
 local LEGACY_DROPDOWN_EVENT = "UIDropDownMenu.Show"
+local legacyFocus = setmetatable({}, { __mode = "k" })
+
+local function LegacyHidden(listFrame)
+    local state = legacyFocus[listFrame]
+    if not state then return end
+    state.active = false
+    FocusClose(state, listFrame)
+end
+
+local function OpenLegacyFocus()
+    for listFrame, state in pairs(legacyFocus) do
+        if state.pending then
+            state.pending = false
+            local dropdown = Field(listFrame, "dropdown")
+            -- ToggleDropDownMenu sets the final strata after OnShow. Recheck
+            -- the pooled owner after that native call has finished.
+            if state.active and state.serial == focusSerial and Checkmarks.legacyRegistered
+                and Safety.Read(listFrame, "IsShown") == true
+                and Safety.Public(dropdown) and dropdown == state.dropdown then
+                FocusOpen(state, state.dropdown, listFrame)
+            end
+        end
+    end
+end
+
+local function TrackLegacyFocus(listFrame)
+    if Safety.Read(listFrame, "GetID") ~= 1 then return end
+    local dropdown = Field(listFrame, "dropdown")
+    if not Safety.Public(dropdown) or type(dropdown) ~= "table" then return end
+    local state = legacyFocus[listFrame]
+    if not state then
+        state = {}
+        legacyFocus[listFrame] = state
+        listFrame:HookScript("OnHide", LegacyHidden)
+    end
+    state.active, state.dropdown = true, dropdown
+    focusSerial = focusSerial + 1
+    state.serial = focusSerial
+    if not state.pending then
+        state.pending = true
+        C_Timer.After(0, OpenLegacyFocus)
+    end
+end
 
 local LEGACY_DROPDOWN_SPEC = {
     role = "popup",
@@ -329,6 +394,7 @@ function Checkmarks:OnLegacyDropdownShown(listFrame)
     if NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled or not listFrame then return end
     NS.GenericWindows.ApplyFrame(listFrame, LEGACY_DROPDOWN_OWNER, LEGACY_DROPDOWN_SPEC)
     Checkmarks.TrackFrame(listFrame, LEGACY_DROPDOWN_OWNER)
+    TrackLegacyFocus(listFrame)
 end
 
 function Checkmarks.RegisterLegacyDropdowns()
@@ -347,6 +413,7 @@ end
 -- Releases every dropdown, every Settings list and the legacy dropdown skin
 -- (part of Checkmarks.Restore).
 function Checkmarks.ReleaseMenus()
+    focusSerial = focusSerial + 1
     local dropdowns = Keys(Checkmarks.dropdowns)
     for index = 1, #dropdowns do Checkmarks.UntrackDropdown(dropdowns[index]) end
     local categoryLists = Keys(Checkmarks.settingsCategoryLists)
@@ -355,6 +422,10 @@ function Checkmarks.ReleaseMenus()
     end
     if Checkmarks.legacyRegistered then
         EventRegistry:UnregisterCallback(LEGACY_DROPDOWN_EVENT, Checkmarks)
+    end
+    for _, state in pairs(legacyFocus) do
+        state.active, state.pending = false, false
+        FocusRelease(state)
     end
     Checkmarks.legacyRegistered = false
     NS.GenericWindows.Disable(LEGACY_DROPDOWN_OWNER)

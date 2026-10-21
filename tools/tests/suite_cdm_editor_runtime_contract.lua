@@ -57,5 +57,37 @@ S.ClassRGB = function() return .8, .2, .4 end
 S.CooldownManagerRenderPreview(stage, "ess", 600, 200, colored)
 assert(styles == canvas.count and view.borderR == .8, "changed class palette did not restyle the foreign preview")
 C.Icons.StyleIcon, S.ClassRGB = style, color
+-- A skinned bar's editor preview: the border-0 view of the skinned icon
+-- style is built from the editor's own view (selected-class colors, its own
+-- style generation), so a warm render restyles nothing.
+do
+    local HB = NS.HostBridge
+    local look, paint = HB.IconSkinLook, HB.PaintIconSkin
+    local LOOK = { signature = "K:EDITOR", skin = {} }
+    HB.IconSkinLook = function(choice) if choice == "DEFAULT" then return LOOK end end
+    HB.PaintIconSkin = function(_, skin) return skin ~= nil end
+    S.ClassRGB = function(token) if token == "WARLOCK" then return .4, .2, .8 end return .9, .9, .9 end
+    local keys = CDM.KEYS.ess
+    local saved = { config[keys.iconSkin], config[keys.cooldownDuration], config[keys.barClass] }
+    config[keys.iconSkin], config[keys.cooldownDuration], config[keys.barClass] = "DEFAULT", true, true
+    C.Cold()
+    local skinned = S.CooldownManagerEditorContext(266, 9, "WARLOCK")
+    local painted = S.CooldownManagerRenderPreview(stage, "ess", 600, 200, skinned)
+    local icon = painted.icons[1]
+    local editorView = icon.styleView
+    assert(editorView ~= C.views.ess and editorView.decor and editorView.decor.skin == LOOK and icon.border == 0,
+        "a skinned bar's foreign preview draws the skin")
+    assert(icon.timerBar and icon.timerBar.r == .4 and icon.timerBar.g == .2 and icon.timerBar.b == .8,
+        "the skinned foreign preview must use the selected class's colors")
+    assert(icon.styleGen == editorView.styleGen, "the skinned foreign preview keeps the editor view's style generation")
+    local restyles, inner = 0, C.Icons.StyleIcon
+    C.Icons.StyleIcon = function(...) restyles = restyles + 1; return inner(...) end
+    S.CooldownManagerRenderPreview(stage, "ess", 600, 200, skinned)
+    C.Icons.StyleIcon = inner
+    assert(restyles == 0, "a warm skinned foreign preview restyled " .. restyles .. " icons")
+    config[keys.iconSkin], config[keys.cooldownDuration], config[keys.barClass] = saved[1], saved[2], saved[3]
+    HB.IconSkinLook, HB.PaintIconSkin, S.ClassRGB = look, paint, color
+    C.Cold()
+end
 S.CooldownManagerReleasePreview(stage)
 print("CDM foreign runtime preview: saved order, aura family, selected overrides, isolation and warm cache passed")

@@ -579,7 +579,10 @@ L.ApplyAll()
 local essBar=C.bars.ess
 assert(essBar and essBar.frame and essBar.frame.parent==UIParent and essBar.frame.clamped,"bar frame is a clamped UIParent child")
 assert(essBar.frame.shown and essBar.shown,"applied bar is shown")
-assert(anchorChanges==1,"showing the Essential bar notifies MSUF once, got "..anchorChanges)
+-- MSUF resolves and follows the three anchored bars (ess, uti, buf): each one
+-- that appears tells it once (the real C.AnchorChanged merges a frame's calls
+-- into one event); the other bars never do.
+assert(anchorChanges==3,"showing the three anchored bars notifies MSUF once each, got "..anchorChanges)
 -- 40 units at 90 percent height: 36 units tall, 2 units apart
 assert(essBar.frame.w==208 and essBar.frame.h==36,"ess content size "..tostring(essBar.frame.w).."x"..tostring(essBar.frame.h))
 CheckPoint(essBar.frame,"TOP",UIParent,"CENTER",0,ESS_Y,"free ess bar: top edge from the screen center")
@@ -602,6 +605,89 @@ for _,slot in ipairs({"ess","uti","buf"}) do
     assert(record.anchorFrame and record.anchorFrame.parent==record.frame and record.anchorFrame.allPoints==record.frame,"anchor frame for "..slot)
 end
 assert(C.bars.bar.anchorFrame==nil and C.bars.ext.anchorFrame==nil,"no anchor frame for bar/ext")
+-- MSUF measures its Width mode bars on the anchor frame: while a skin draws on
+-- the bar, the anchor grows by the skin's outset (HostBridge.IconSkinOutset)
+-- where it draws and MSUF hears of it once; without a skin it is the bar again.
+-- Its own name: Layout.Footprint stays the grid's cell size by place.
+do
+    assert(C.Layout.Footprint~=C.Layout.FitAnchor,"the anchor fit must not replace the grid footprint")
+    local HB=NS.HostBridge
+    local outset=HB.IconSkinOutset
+    local asked
+    HB.IconSkinOutset=function(look,w,h) asked={look,w,h};if look then return 3,2 end;return 0,0 end
+    local essView,anchor=C.views.ess,essBar.anchorFrame
+    local changes=anchorChanges
+    local function Points(l,t,r,b,label)
+        local tl,br=anchor.points[1],anchor.points[2]
+        assert(tl and tl[1]=="TOPLEFT" and tl[2]==essBar.frame and tl[4]==l and tl[5]==t
+            and br and br[1]=="BOTTOMRIGHT" and br[2]==essBar.frame and br[4]==r and br[5]==b,label)
+    end
+    C.Layout.FitAnchor("ess")
+    assert(anchorChanges==changes and anchor.allPoints==essBar.frame,"no skin: the anchor stays the bar")
+    local look={signature="K:FRAME"}
+    essView.skin=look
+    C.Layout.FitAnchor("ess")
+    local w,h=C.Const.IconSize(essView)
+    assert(asked[1]==look and asked[2]==w and asked[3]==h,"the outset is asked for the bar's skin at its icon size")
+    Points(-3,2,3,-2,"a skinned bar's anchor must take the skin's frame")
+    assert(anchorChanges==changes+1,"MSUF hears of the new footprint once")
+    C.Layout.FitAnchor("ess")
+    assert(anchorChanges==changes+1,"an unchanged footprint writes nothing")
+    -- Timer bars: the skin sits on the square side icon, so the anchor grows
+    -- above, below and on that side only; a timer bar without its icon draws
+    -- no skin (the painter's K.Iconless) and keeps the bar's rectangle.
+    essView.cooldownDuration=true
+    C.Layout.FitAnchor("ess")
+    w,h=C.Const.IconSize(essView)
+    assert(asked[1]==look and asked[2]==h and asked[3]==h,"a timer bar's skin is measured on its square icon")
+    Points(-3,2,0,-2,"a left-icon timer bar reaches past its left edge only")
+    essView.barIconSide=C.Const.BAR_ICON_SIDE.RIGHT
+    C.Layout.FitAnchor("ess")
+    Points(0,2,3,-2,"a right-icon timer bar reaches past its right edge only")
+    essView.barIcon=false
+    C.Layout.FitAnchor("ess")
+    assert(asked[1]==nil and anchor.allPoints==essBar.frame and #anchor.points==0,"a timer bar without its icon draws no skin")
+    essView.cooldownDuration,essView.barIconSide,essView.barIcon=nil,nil,nil
+    C.Layout.FitAnchor("ess")
+    Points(-3,2,3,-2,"an icon grid reaches past every side")
+    -- In combat (a new bar, a scale change) MSUF is not asked: the footprint
+    -- follows at the combat end (Layout.SettleAnchors).
+    essView.skin=look
+    local changesBefore=anchorChanges
+    essBar.outsetL,essBar.outsetR,essBar.outsetY=nil,nil,nil
+    asked=nil
+    combat=true
+    C.Layout.FitAnchor("ess")
+    assert(asked==nil and anchorChanges==changesBefore,"in combat the footprint must not ask MSUF or move the anchor")
+    combat=false
+    C.Layout.SettleAnchors()
+    Points(-3,2,3,-2,"the combat end settles the skinned footprint")
+    local before=anchorChanges
+    essView.skin=nil
+    C.Layout.FitAnchor("ess")
+    assert(anchor.allPoints==essBar.frame and #anchor.points==0 and anchorChanges==before+1,"no skin: the bar's rectangle again")
+    -- A bar made after its flush (a deferred first aura build: the flush's
+    -- FitAnchor found no bar) starts at its footprint when it is made.
+    local kept,bufView=C.bars.buf,C.views.buf
+    local bufSkin=bufView.skin
+    C.bars.buf,bufView.skin=nil,look
+    C.Layout.FitAnchor("buf")
+    local fresh=C.Layout.EnsureBar("buf")
+    local tl,br=fresh.anchorFrame.points[1],fresh.anchorFrame.points[2]
+    assert(fresh~=kept and tl and tl[4]==-3 and tl[5]==2 and br and br[4]==3 and br[5]==-2,
+        "a bar made with a saved skin must start at its footprint")
+    C.bars.buf,bufView.skin=kept,bufSkin
+    -- The scale listener (Events.WatchScale) is wanted only while an anchored
+    -- bar draws a skin.
+    essView.skin=nil
+    assert(C.Layout.FitAnchors()==false,"without a skin no scale listener is wanted")
+    essView.skin=look
+    assert(C.Layout.FitAnchors()==true,"a skinned anchored bar wants the scale listener")
+    essView.skin=nil
+    C.Layout.FitAnchors()
+    HB.IconSkinOutset=outset
+    anchorChanges=changes -- the show/hide counts below go on from before these checks
+end
 assert(C.bars.def==nil,"a bar without a plan creates no frame")
 -- one centered stack: uti below ess, buf below uti, bar below buf
 CheckPoint(C.bars.uti.frame,"TOP",essBar.frame,"BOTTOM",0,-2,"uti below ess")
@@ -1163,7 +1249,7 @@ L.ApplyAll()
 assert(Writes()==0,"repeat ApplyAll wrote "..Writes().." times")
 L.Apply("ess"); L.Apply("buf"); L.Apply("bar")
 assert(Writes()==0,"repeat Apply wrote")
-assert(anchorChanges==1,"repeat passes do not notify MSUF")
+assert(anchorChanges==3,"repeat passes do not notify MSUF")
 -- no allocation, no widget call and no overlay edge on unchanged passes
 Clear(overlayLog)
 collectgarbage("collect"); collectgarbage("stop")
@@ -1418,7 +1504,7 @@ ess.on=false; Touch("ess")
 C.plans.ess=nil
 L.Apply("ess")
 assert(not essBar.frame.shown and not essBar.shown,"off bar hides")
-assert(anchorChanges==2,"hiding the Essential bar notifies MSUF")
+assert(anchorChanges==4,"hiding the Essential bar notifies MSUF")
 CheckPoint(C.bars.uti.frame,"TOP",UIParent,"CENTER",ess.x,ess.y,"orphaned uti takes the Essential bar's place")
 -- a stand-in is placed by the off bar's x/y: neither free nor draggable
 assert(not L.Free("uti") and not L.Movable("uti") and not L.DragPlace("uti",1,1),"stand-in placement")
@@ -1426,15 +1512,16 @@ CheckPoint(C.bars.uti.frame,"TOP",UIParent,"CENTER",ess.x,ess.y,"a refused drag 
 CheckPoint(C.bars.buf.frame,"TOP",C.bars.uti.frame,"BOTTOM",0,-4,"buf stays below uti")
 uti.on=false; Touch("uti")
 L.Apply("uti")
-assert(anchorChanges==2,"other bars do not notify MSUF")
+assert(anchorChanges==5,"hiding the Utility bar notifies MSUF too")
 CheckPoint(C.bars.buf.frame,"TOP",UIParent,"CENTER",ess.x,ess.y,"with uti off too, buf skips it and takes the Essential bar's place")
 CheckPoint(C.bars.bar.frame,"TOP",C.bars.buf.frame,"BOTTOM",0,-4,"bar stays below the free buf")
 uti.on=true; Touch("uti")
 L.Apply("uti")
+assert(anchorChanges==6,"a Utility bar switched on later notifies MSUF")
 ess.on=true; Touch("ess")
 Plan("ess",essEntries)
 L.Apply("ess")
-assert(anchorChanges==3,"showing the Essential bar again notifies MSUF")
+assert(anchorChanges==7,"showing the Essential bar again notifies MSUF")
 CheckPoint(C.bars.uti.frame,"TOP",essBar.frame,"BOTTOM",0,-2,"uti re-attached")
 CheckPoint(C.bars.buf.frame,"TOP",C.bars.uti.frame,"BOTTOM",0,-4,"buf re-attached")
 for _,slot in ipairs({"c1","c2","c3","c4"}) do C.views[slot].on=false; Touch(slot) end
@@ -1443,7 +1530,7 @@ assert(not C.bars.c1.frame.shown and not C.bars.c4.frame.shown,"custom bars off"
 ResetCalls()
 L.ApplyAll()
 assert(Writes()==0,"repeat after chain edits wrote")
-assert(anchorChanges==3,"no notification without an Essential show or hide")
+assert(anchorChanges==7,"custom bars showing or hiding never notify MSUF")
 -- kind switch hides cooldown-only content: cells of a custom bar that turned into a cooldown bar hide
 c1.on,c1.kind,c1.anchor=true,2,1; Touch("c1")
 Plan("c1",{Entry("player"),Entry("player")})
@@ -1700,7 +1787,7 @@ for _,slot in ipairs({"ess","c1","c2"}) do Touch(slot) end
 L.ApplyAll()
 CheckPoint(essBar.frame,"TOP",UIParent,"CENTER",0,ESS_Y,"ess free again")
 CheckPoint(C.bars.uti.frame,"TOP",essBar.frame,"BOTTOM",0,-2,"stack intact")
-assert(anchorChanges==3,"frame anchors never hid or showed the Essential bar")
+assert(anchorChanges==7,"frame anchors never hid or showed an anchored bar")
 ResetCalls()
 L.ApplyAll()
 assert(Writes()==0,"repeat after frame anchors wrote "..Writes().." times")
@@ -1712,9 +1799,9 @@ L.Flush(Direct)
 assert(not L.dirty.ess,"flush clears dirty")
 L.HideAll()
 for _,slot in ipairs({"ess","uti","def","ext","buf","bar"}) do assert(not C.bars[slot].frame.shown,"HideAll "..slot) end
-assert(anchorChanges==4,"HideAll notifies MSUF once")
+assert(anchorChanges==10,"HideAll notifies MSUF once per anchored bar")
 L.ApplyAll()
-assert(anchorChanges==5,"ApplyAll after HideAll notifies MSUF once")
+assert(anchorChanges==13,"ApplyAll after HideAll notifies MSUF once per anchored bar")
 
 ------------------------------------------------------------------ visibility
 -- Sources: "Always" follows a few rare events and costs no state driver,

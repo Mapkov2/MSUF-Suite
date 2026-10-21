@@ -108,6 +108,18 @@ local GEOMETRY_CHOICES = {
     { "family", "GeometryFamilies" },
     { "controlShape", "ControlShapes" },
 }
+local OPTIONAL_MOTION_KEYS = { "menuAnimations", "reduceMotion", "dropdownDimming", "smoothScrolling" }
+
+-- Optional booleans stay absent in older profiles and retain explicit false
+-- through sanitization, copy and import without adding factory defaults.
+local function CopyMotionOptions(source, target)
+    for index = 1, #OPTIONAL_MOTION_KEYS do
+        local key = OPTIONAL_MOTION_KEYS[index]
+        local value
+        if type(source) == "table" then value = source[key] end
+        if type(value) == "boolean" then target[key] = value else target[key] = nil end
+    end
+end
 
 local WINDOW_ACTION_CHOICES = {
     { "style", "WindowActionStyles" },
@@ -603,6 +615,7 @@ function Database.Normalize(db)
     db.enabled = db.enabled ~= false
     NormalizeCharacter(db, classicOptOut)
     NormalizeTheme(db.theme, revision)
+    CopyMotionOptions(db.theme, db.theme)
     MigrateRetiredForeverLook(db, revision)
     NormalizeColors(db.theme.colors)
     MigrateColors(db, revision)
@@ -671,6 +684,7 @@ end
 function Database.SanitizeProfile(profile)
     if type(profile) ~= "table" then return nil end
     local safe = SanitizeValue(profile, NS.Defaults)
+    CopyMotionOptions(profile.theme, safe.theme)
     CopyAdapterSwitches(profile.skins, safe.skins)
     local windowControls = profile.windowControls
     if type(windowControls) == "table" then

@@ -322,10 +322,11 @@ local function QuietOver()
     armed = false
     if not Alerts.released then Alerts.SyncAuraSounds() end
 end
+local QUIET_WAKE = C.NewWake(QuietOver)
 local function Arm(wait)
     if armed then return end
     armed = true
-    C_Timer.After(wait + .05, QuietOver)
+    C.Wake(QUIET_WAKE, wait + .05)
 end
 
 -- Cold: after resolve, spell choices, mute/channel changes and loading

@@ -42,6 +42,7 @@ local nineSlicePieces = {
 }
 
 local capabilities = {
+    menuMotion = true,
     windowActions = true,
     appearanceSignal = true,
     combatCoalescing = true,
@@ -85,6 +86,12 @@ local function GetClient(facade)
     return record
 end
 
+local function VisualSpec(facade, options)
+    local spec, scope = SanitizeSpec(options), GetScope(facade)
+    if scope and scope.client.name == "MidnightSimpleUnitFrames" and spec.motion == nil then spec.motion = false end
+    return spec
+end
+
 local function NewScope(client, key)
     local facade = setmetatable({}, { __index = ScopeMethods })
     local scope = {
@@ -119,11 +126,47 @@ local function RequestVisual(facade, target, aspect, value, needsRegions)
     return QueueEntry(scope, target, entry)
 end
 
+local function ContentOwner(scope, frame)
+    local ownEntry = scope.targets[frame]
+    for _ = 1, 16 do
+        local entry = scope.targets[frame]
+        if entry and entry.menu then return entry.owner end
+        frame = NS.Safety.Read(frame, "GetParent")
+        if not frame then break end
+    end
+    return ownEntry and ownEntry.owner or scope
+end
+
+-- An explicit completed-content signal; never observes typing or row reuse.
+function ScopeMethods:AnimateContent(frame, token)
+    local scope, reason = GetScope(self)
+    if not scope then return false, reason end
+    local safe
+    safe, reason = SafeTarget(frame, true)
+    if not safe then return false, reason end
+    if not HasMethod(frame, "CreateAnimationGroup") or not HasMethod(frame, "HookScript") then
+        return false, "unsupported-frame"
+    end
+    if not NS.Safety.Public(token) or token == nil then return false, "invalid-token" end
+    local owner = ContentOwner(scope, frame)
+    if token == false then PublicAPI.StopContent(owner, frame) return true end
+    if not RuntimeEnabled() or scope.suspended then return false, "inactive" end
+    return PublicAPI.PlayContent(frame, owner, token)
+end
+
+-- A menu boundary and its native lists; no global frame discovery.
+function ScopeMethods:RegisterMenu(frame)
+    if not HasMethod(frame, "HookScript") or not HasMethod(frame, "GetObjectType") then
+        return false, "unsupported-frame"
+    end
+    return RequestVisual(self, frame, "menu", true, true)
+end
+
 function ScopeMethods:SkinFrame(frame, options)
     local safe, reason = SafeTarget(frame, true)
     if not safe then return false, reason end
     if not HasMethod(frame, "CreateTexture") then return false, "unsupported-frame" end
-    return RequestVisual(self, frame, "surface", SanitizeSpec(options), true)
+    return RequestVisual(self, frame, "surface", VisualSpec(self, options), true)
 end
 
 function ScopeMethods:SkinButton(button, options)
@@ -133,7 +176,7 @@ function ScopeMethods:SkinButton(button, options)
         or not HasMethod(button, "SetPushedTexture") then
         return false, "unsupported-control"
     end
-    local spec = SanitizeSpec(options)
+    local spec = VisualSpec(self, options)
     local scope = GetScope(self)
     -- MSUF's sidebar uses the ordinary dark menu selection. Normalize older
     -- MSUF callers too, so a separately installed frame addon cannot bring
@@ -148,7 +191,7 @@ function ScopeMethods:SkinButton(button, options)
 end
 
 -- Explicit role for authored addon buttons; never guess from names or scripts.
-function ScopeMethods:SkinWindowAction(button, kind)
+function ScopeMethods:SkinWindowAction(button, kind, options)
     local safe, reason = SafeTarget(button, true)
     if not safe then return false, reason end
     if kind ~= "close" and kind ~= "minimize" and kind ~= "maximize"
@@ -156,7 +199,9 @@ function ScopeMethods:SkinWindowAction(button, kind)
     for index = 1, #windowActionSetters do
         if not HasMethod(button, windowActionSetters[index]) then return false, "unsupported-control" end
     end
-    return RequestVisual(self, button, "control", { kind = "windowAction", action = kind }, true)
+    return RequestVisual(self, button, "control", {
+        kind = "windowAction", action = kind, motion = VisualSpec(self, options).motion,
+    }, true)
 end
 
 function ScopeMethods:SkinThreeSliceButton(button, options)
@@ -167,7 +212,7 @@ function ScopeMethods:SkinThreeSliceButton(button, options)
         return false, "unsupported-control"
     end
     return RequestVisual(self, button, "control", {
-        kind = "threeSlice", spec = SanitizeSpec(options),
+        kind = "threeSlice", spec = VisualSpec(self, options),
     }, true)
 end
 
@@ -179,7 +224,7 @@ function ScopeMethods:SkinTab(tab, options)
         return false, "unsupported-control"
     end
     return RequestVisual(self, tab, "control", {
-        kind = "tab", spec = SanitizeSpec(options),
+        kind = "tab", spec = VisualSpec(self, options),
     }, true)
 end
 
@@ -188,7 +233,7 @@ function ScopeMethods:SkinSearchBox(searchBox, options)
     if not safe then return false, reason end
     if not HasMethod(searchBox, "CreateTexture") then return false, "unsupported-control" end
     return RequestVisual(self, searchBox, "control", {
-        kind = "searchBox", spec = SanitizeSpec(options),
+        kind = "searchBox", spec = VisualSpec(self, options),
     }, true)
 end
 
@@ -288,8 +333,9 @@ end
 function ScopeMethods:Release(target)
     local scope, reason = GetScope(self)
     if not scope then return false, reason end
+    local content = PublicAPI.StopContent(ContentOwner(scope, target), target)
     local entry = scope.targets[target]
-    if not entry then return false, "unknown-target" end
+    if not entry then return content, content and "released" or "unknown-target" end
     entry.release = true
     entry.keepEpoch = nil
     return QueueEntry(scope, target, entry)
@@ -297,6 +343,7 @@ end
 
 local function RunScopeOperation(scope)
     local operation = scope.pendingOperation
+    if operation == "release" then PublicAPI.StopContent(scope) end
     local epoch = scope.pendingEpoch
     scope.pendingOperation = nil
     scope.pendingEpoch = nil
@@ -371,6 +418,7 @@ end
 
 local function SuspendScopeNow(scope)
     scope.suspended = true
+    PublicAPI.StopContent(scope)
     for _, entry in pairs(scope.targets) do CleanupEntry(entry) end
 end
 
@@ -504,6 +552,9 @@ function API:GetAppearanceSnapshot()
     local theme = NS.DB and NS.DB.theme or {}
     local geometry = NS.DB and NS.DB.geometry or {}
     return {
+        menuAnimations = theme.menuAnimations,
+        reduceMotion = theme.reduceMotion,
+        smoothScrolling = theme.smoothScrolling,
         gradient = theme.gradient,
         gradientDirection = theme.gradientDirection,
         gradientStrength = theme.gradientStrength,

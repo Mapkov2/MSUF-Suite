@@ -1,6 +1,15 @@
 local _, P = ...
 local Suite, S, M, W, T, Tr, HM = P.Suite, P.S, P.M, P.W, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_actionbars", "actionbars"
+-- The icon skin of every button is chosen on MSUF's Icon Skins page; the
+-- Button appearance section shows which one applies and opens that page.
+local function SkinStatus(ctx)
+    return function(body, y, width)
+        local height = Suite.HostBridge.IconSkinStatusRow(M, ctx, body, 16, y - 8, width, P.IconSkinKey(ID))
+        if height > 0 then return y - 8 - height end
+        return y
+    end
+end
 local COUNT = Suite.ActionBarCount
 local NEVER = Suite.ActionBarEnum.VISIBILITY.NEVER
 
@@ -498,7 +507,7 @@ local function Build(ctx)
     for _, section in ipairs({ "appearance", "cooldowns", "text", "behavior" }) do
         local rules = P.SectionRules(ID, section)
         P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,
-            { help = HELP[section], open = false })
+            { help = HELP[section], open = false, extra = section == "appearance" and SkinStatus(ctx) or nil })
     end
     P.ActionBarMenu.Finish(ctx)
 end

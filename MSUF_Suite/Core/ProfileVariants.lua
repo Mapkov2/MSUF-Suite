@@ -24,20 +24,37 @@ local function FrameProfile(name)
     return Suite.HostBridge.FrameProfile(name)
 end
 
-local function HasVariants(db)
+-- Calls visit(path) for each variant patch of the MSUF profile db that sets
+-- a Suite module setting; true as soon as one visit returns true.
+local function SuitePatches(db, visit)
     local schema = type(db) == "table" and db.profileVariants
     local entries = type(schema) == "table" and schema.entries
     if type(entries) ~= "table" then return false end
     for _, entry in ipairs(entries) do
         if type(entry) == "table" and type(entry.patch) == "table" then
             for _, field in ipairs(entry.patch) do
-                if type(field) == "table" and type(field.path) == "table" and field.path[1] == "suiteModules" then
-                    return true
-                end
+                local path = type(field) == "table" and field.path
+                if type(path) == "table" and path[1] == "suiteModules" and visit(path) then return true end
             end
         end
     end
     return false
+end
+local function Any() return true end
+local function HasVariants(db)
+    return SuitePatches(db, Any)
+end
+
+-- The settings of module id a variant of the active profile sets, as
+-- { [key] = true }: a runtime write leaves them to the variant layer.
+-- Only the Suite profile named like MSUF's active profile carries variants.
+function P.VariantKeys(id)
+    local keys, name = {}, Suite.Database.GetActiveProfileName()
+    if name ~= Suite.HostBridge.ActiveFrameProfileName() then return keys end
+    SuitePatches(FrameProfile(name), function(path)
+        if path[2] == id and type(path[3]) == "string" then keys[path[3]] = true end
+    end)
+    return keys
 end
 
 -- The core journals the overlay of the active MSUF profile only, so only the

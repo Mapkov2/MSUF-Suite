@@ -12,7 +12,12 @@ local cleanup, trayHooked
 --                       layout; anchored: the container's anchor and size
 --                       hold; framed: the frame sits beside the minimap
 --   styled   button -> the style generation its artwork and fonts carry
+--   looks    parent -> MSUF's icon skin look of the buttons it holds (an aura
+--                       frame's AuraContainer and the frame itself; nil: none)
+--   skinned  button -> { look, w, h } while that skin draws on it
+--   lifted   region -> the Duration's draw layer before a skin lifted it
 local saved, borders, hooked, debuffs, laid, styled = {}, {}, {}, {}, {}, {}
+local looks, skinned, lifted = {}, {}, {}
 local generation, fontPath = 0, nil
 local unpack, select, floor, ceil, max = unpack, select, math.floor, math.ceil, math.max
 -- The client's secret test (Platform.lua), called directly on the aura path.
@@ -105,6 +110,14 @@ local function Restore()
         saved[region] = nil
     end
     for _, border in pairs(borders) do border:Hide() end
+    for button in pairs(skinned) do
+        NS.HostBridge.PaintIconSkin(button, nil)
+        skinned[button] = nil
+    end
+    for region, layer in pairs(lifted) do
+        if layer then Put(region, "SetDrawLayer", layer) end
+        lifted[region] = nil
+    end
 end
 
 -- Forget every placement and style: the next sync of each frame paints all.
@@ -140,6 +153,20 @@ local function Border(button, icon, c)
     local r, g, b = S.RGB(c.borderColor)
     S.PlaceEdges(border.edges, border, c.borderSize, r, g, b, 1)
     border:SetShown(c.borderSize > 0)
+end
+
+-- The template keeps Duration on BACKGROUND, under a skin's layers: while a
+-- skin draws it moves to OVERLAY (the Count's layer). Its own layer, read once,
+-- comes back when the skin goes or the module stops.
+local function Lift(region, on)
+    if not (region and region.SetDrawLayer) then return end
+    if on then
+        if lifted[region] == nil then lifted[region] = Readable(region:GetDrawLayer()) or false end
+        region:SetDrawLayer("OVERLAY", 0)
+    elseif lifted[region] ~= nil then
+        if lifted[region] then Put(region, "SetDrawLayer", lifted[region]) end
+        lifted[region] = nil
+    end
 end
 
 local function Font(region, c)
@@ -187,6 +214,35 @@ local function Style(button, icon, c)
     if button.Duration and button.Duration.SetFont then button.Duration:SetAlpha(c.showDuration and 1 or 0) end
 end
 
+-- MSUF's icon skin on a button Style just styled, run in Style's stead
+-- (Place's `style`, chosen by ResolveLooks on the settings path) only while
+-- a row has a look: the aura updates of a player without skins run Style
+-- alone. Once per style generation and when Blizzard shows a button the pool
+-- hands out, also in combat, so every button shows the same look: its row's,
+-- found by the button's parent (that frame's AuraContainer). Its layers are
+-- textures of the button around its Icon (ARTWORK 5-7, gloss OVERLAY -1: the
+-- debuff type border and Count, OVERLAY, stay above); it replaces the
+-- module's outline while it draws. Style made that outline with the icon's
+-- texture coordinates: without it the icon is not styled and takes no skin.
+local style = Style
+local function StyleSkinned(button, icon, c)
+    Style(button, icon, c)
+    local border = borders[button]
+    if not border then return end
+    local look, shown = looks[button:GetParent()], skinned[button]
+    if not (look or shown) then return end
+    -- The look it shows at this size (a restyle of the same buttons, also an
+    -- adoption in combat) is kept: Style only showed the outline again.
+    if shown and shown.look == look and shown.w == c.iconWidth and shown.h == c.iconHeight then
+        border:Hide()
+        return
+    end
+    local skin = NS.HostBridge.PaintIconSkin(button, look, c.iconWidth, c.iconHeight, icon)
+    skinned[button] = skin and { look = look, w = c.iconWidth, h = c.iconHeight } or nil
+    Lift(button.Duration, skin)
+    if skin then border:Hide() end
+end
+
 -- Native layout owns these: UpdateGridLayout resets them on each laid-out button.
 local function Place(button, icon, slot, container, c)
     if not saved[button] then Remember(button, BUTTON) end
@@ -203,7 +259,7 @@ local function Place(button, icon, slot, container, c)
     icon:ClearAllPoints()
     icon:SetAllPoints(button)
     Pin(button.Duration, button, "BOTTOMLEFT")
-    if styled[button] ~= generation then Style(button, icon, c) end
+    if styled[button] ~= generation then style(button, icon, c) end
 end
 
 -- The container that holds the rows, and the frame beside the minimap. The
@@ -322,6 +378,39 @@ local function Hook(frame, debuff)
     if frame.ApplySystemAnchor then hooksecurefunc(frame, "ApplySystemAnchor", Moved) end
 end
 
+-- The square look of a frame's Icon Skins page row, for the buttons its
+-- AuraContainer holds and those on the frame itself (BuffFrame's consolidated
+-- buffs button, Sync's slot 0). HostBridge keeps one table per look until
+-- MSUF reports a change: WatchIconSkins refreshes then.
+local function SetLook(name, choice)
+    local frame = _G[name]
+    if not frame then return end
+    local look = NS.HostBridge.IconSkinLook(choice)
+    looks[frame] = look
+    local container = frame.AuraContainer
+    if container then looks[container] = look end
+end
+
+-- The rows' looks and the style they need, on the settings path (Enable,
+-- Refresh: also MSUF's reports, WatchIconSkins): an adoption (a zone, the
+-- combat end, an addon loading, also in combat) stays Suite main's code.
+local function ResolveLooks()
+    local c = M.config
+    SetLook("BuffFrame", c.buffSkin)
+    SetLook("DebuffFrame", c.debuffSkin)
+    -- A button whose row has no look any more drops its skin now, a hidden one
+    -- too (an adoption restyles only shown buttons), so No skin on both rows
+    -- selects Style at once.
+    for button in pairs(skinned) do
+        if not looks[button:GetParent()] then
+            NS.HostBridge.PaintIconSkin(button, nil)
+            skinned[button] = nil
+            Lift(button.Duration, false)
+        end
+    end
+    style = next(looks) and StyleSkinned or Style
+end
+
 local function Adopt()
     local buffs, debuffFrame = _G.BuffFrame, _G.DebuffFrame
     fontPath = S.ResolveFont(M.config.font) or NS.MSUFMedia.font
@@ -341,23 +430,32 @@ local function FinishCleanup()
     if cleanup then cleanup:UnregisterEvent("PLAYER_REGEN_ENABLED") end
     Restore()
     for frame in pairs(hooked) do frame:UpdateGridLayout() end
+    -- The skin-only piece paints the buttons again (if it runs).
+    P.PlayerAuraSkins.Yield(false)
 end
 
 function M:Enable()
     if cleanup then cleanup:UnregisterEvent("PLAYER_REGEN_ENABLED") end
     self.active = true
+    -- The skin-only piece (PlayerAuraSkins.lua) lets go of the buttons first.
+    P.PlayerAuraSkins.Yield(true)
+    -- MSUF's default icon skin changed: Refresh resolves the looks again.
+    NS.HostBridge.WatchIconSkins("playerAuras", true)
     self.context:Event("PLAYER_ENTERING_WORLD", Adopt)
     self.context:Event("PLAYER_REGEN_ENABLED", Adopt)
     self.context:Event("ADDON_LOADED", Adopt)
+    ResolveLooks()
     Adopt()
 end
 
 function M:Refresh()
+    ResolveLooks()
     Adopt()
 end
 
 function M:Disable()
     self.active = false
+    NS.HostBridge.WatchIconSkins("playerAuras", false)
     if NS.IsCombatLocked() then
         if not cleanup then
             cleanup = S.CreateFrame("Frame")

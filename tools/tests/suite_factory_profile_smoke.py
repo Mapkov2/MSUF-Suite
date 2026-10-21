@@ -78,6 +78,7 @@ for key in pairs(data) do
 end
 local function Check(profile, how)
     local m = profile.suite.modules
+    assert(m.cooldownManager.specPositions == true, how .. ": cooldown layouts do not save automatically")
     assert(profile.suite.revision == S.MigrationRevision, how .. ": the profile revision is not current")
     assert(m.bags.inventoryView == defaults.bags.inventoryView, how .. ": Bags start with view "
         .. tostring(m.bags.inventoryView) .. ", the catalog's is " .. tostring(defaults.bags.inventoryView))

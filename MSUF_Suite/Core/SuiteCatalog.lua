@@ -64,6 +64,15 @@ end
 -- never changes.
 NS.AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
 NS.AnchorLabels = { "Top left", "Top", "Top right", "Left", "Center", "Right", "Bottom left", "Bottom", "Bottom right" }
+-- MSUF's aura icon shapes on the Suite's icons (drawn by MSUF 7.0 through
+-- HostBridge.ApplyIconShape; older hosts draw every icon square): MSUF's id
+-- per choice and the choice label. Saved settings store the index, so this
+-- order never changes.
+-- STAR is left out, as on the action bars: MSUF's star ring is a filled
+-- silhouette that only works behind the icon, and the Border and Pulse glows
+-- and the press flash draw above it, so they could not follow the shape.
+NS.IconShapeIds = { "RECTANGLE", "CIRCLE", "ROUNDED", "DIAMOND", "HEXAGON", "BLIZZARD" }
+NS.IconShapeLabels = { "Square", "Circle", "Rounded", "Diamond", "Hexagon", "Blizzard portrait" }
 
 function Build.Number(key, label, value, min, max, step)
     return { key=key, label=label, default=value, min=min, max=max, step=step or 1 }
@@ -105,7 +114,8 @@ end
 
 -- spec fields: title, description, conflicts, core (enabled by the core preset),
 -- defaultEnabled, optIn (never enabled by presets), automation (the module acts for
--- the player as a whole, see Build.Automation), page (menu page key), available() -> ok, reason.
+-- the player as a whole, see Build.Automation), page (menu page key), available() -> ok, reason,
+-- follows (the id of a module whose settings this one reads: it applies right after that one).
 -- cvars: { [name] = true } CVars the runtime may set through its context; the
 -- controller hands them back even while the module addon is disabled.
 -- look (optional), shared by the controller and the menu:

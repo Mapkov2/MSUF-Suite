@@ -189,12 +189,13 @@ local function Fire()
         Keybinds.Refresh()
     end
 end
+local FIRE_WAKE = C.NewWake(Fire)
 
 function Keybinds.Request(bindings)
     if bindings then stale = true end
     if armed then return end
     armed = true
-    C_Timer.After(DELAY, Fire)
+    C.Wake(FIRE_WAKE, DELAY)
 end
 
 function Keybinds.Clear()

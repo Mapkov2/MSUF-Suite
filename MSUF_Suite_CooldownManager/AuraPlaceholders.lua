@@ -72,8 +72,66 @@ end
 
 ------------------------------------------------------------------ placeholders
 -- Addon-owned regions on the cell, under the slot button: a dimmed icon
--- for missing buffs (showMissing) and the sample icon in the preview.
-local function Unhold(cell)
+-- for missing buffs (showMissing) and the sample icon in the preview. The
+-- bar's icon skin (barMeta.skinLook) frames the dimmed icon as on the live
+-- buttons, from its own frame over the cell (SkinHeld), so showing or hiding
+-- a stand-in, also in combat (a buff that drops, the preview's end), shows or
+-- hides that frame and asks MSUF nothing.
+--
+-- The rule is static (settings only): a fixed slot clips its skin to its icon
+-- exactly while its stand-in is held (AuraButtons.Held, AuraButtons.lua's
+-- Clipped), and the held stand-in draws the skin around its icon, so the
+-- shadow and frame outside the slot's icon are drawn once. Documented limit
+-- (owner, 2026-10-18): a skin, border or showMissing change while auras are
+-- secret (M+, PvP: sealed slots that restyle when auras open) shows the new
+-- outer skin around the old inner skin until then. Second documented limit
+-- (owner, 2026-10-18): where two live surfaces overlap in one cell without a
+-- held stand-in (a running summon or manual timer row over its own active
+-- aura's slot; a both entry's player and target slots with both auras up),
+-- each draws its whole skin, so translucent layers (the soft shadow) darken
+-- there; opaque frame layers look the same, in and out of combat alike.
+local function HideSkin(h)
+    if h.skinFrame then h.skinFrame:Hide() end
+end
+local skinnedMode = false -- a bar decorates (AuraButtons.StandIns)
+-- The frame hides and waits for a later skin; the mask comes off.
+local function Park(cell, h)
+    local frame = h.skinFrame
+    if frame then
+        frame:Hide()
+        h.skinFrame, h.parkedSkin = nil, frame
+        h.skinLook, h.skinW, h.skinH, h.skinned = nil, nil, nil, nil
+    end
+    if h.shapeOf then
+        h.shapeOf = nil
+        NS.HostBridge.ApplyIconShape(cell, K.SQUARE, h.icon, nil, h.icon)
+    end
+end
+-- The stand-in's skin frame in `look` at its size around its icon: MSUF
+-- paints only when the look or the size changed; showing or hiding the frame
+-- asks it nothing.
+local function Draw(cell, h, look, w, height)
+    local frame = h.skinFrame
+    if look and not frame then
+        frame = h.parkedSkin or S.CreateFrame("Frame", nil, cell)
+        frame:SetAllPoints(cell)
+        h.skinFrame, h.parkedSkin = frame, nil
+    end
+    if not frame then return end
+    if h.skinLook ~= look or h.skinW ~= w or h.skinH ~= height then
+        h.skinLook, h.skinW, h.skinH = look, w, height
+        h.skinned = NS.HostBridge.PaintIconSkin(frame, look, w, height, h.icon) or nil
+    end
+    frame:SetShown(h.skinned == true)
+end
+-- What a stand-in's cell shows: (no bar decorating: parked) the bar's own
+-- skin while the stand-in is held, else nothing.
+local function Settle(cell, h)
+    if not skinnedMode then return Park(cell, h) end
+    if h.shown then return Draw(cell, h, h.ownLook, h.ownW, h.ownH) end
+    HideSkin(h)
+end
+local function UnholdPlain(cell)
     local h = cell and holders[cell]
     if h and h.shown then
         h.shown = false
@@ -83,14 +141,30 @@ local function Unhold(cell)
         if h.sample then h.sample:Hide() end
     end
 end
-local function Unholds(slot)
-    local bar = C.bars[slot]
-    if not bar or not bar.cells then return end
-    local cells = bar.cells
-    for i = 1, #cells do Unhold(cells[i]) end
+local function UnholdSkinned(cell)
+    UnholdPlain(cell)
+    local h = cell and holders[cell]
+    if h then Settle(cell, h) end
 end
 
-local function Hold(cell, entry, barMeta, dim, view)
+-- The bar's own skin of a held stand-in (Settle draws it) and its shape when
+-- that changed (a style pass); a stand-in shown again only shows the skin's
+-- frame.
+local function SkinHeld(cell, h, lk, bar, look)
+    local skin, w, height = look, lk.w - 2 * lk.bw, lk.h - 2 * lk.bw
+    if bar then
+        if not lk.icon then skin = nil end
+        w = height
+    end
+    h.ownLook, h.ownW, h.ownH = skin, w, height
+    Settle(cell, h)
+    local shape = lk.shape ~= K.SQUARE and lk.shape or nil
+    if h.shapeOf ~= shape then
+        h.shapeOf = shape
+        NS.HostBridge.ApplyIconShape(cell, lk.shape, h.icon, nil, h.icon)
+    end
+end
+local function HoldPlain(cell, entry, barMeta, dim, view)
     local h = holders[cell]
     if not h then
         h = { bg = S.CreateTexture(cell, nil, "BACKGROUND", nil, 0), icon = S.CreateTexture(cell, nil, "BACKGROUND", nil, 1),
@@ -148,6 +222,52 @@ local function Hold(cell, entry, barMeta, dim, view)
         h.name:Hide()
     end
 end
+-- Suite main's Hold, then the skin: none under a bar's sample row (its own
+-- look), else the bar's skin and shape (SkinHeld).
+local function HoldSkinned(cell, entry, barMeta, dim, view)
+    HoldPlain(cell, entry, barMeta, dim, view)
+    local h, lk, look = holders[cell], barMeta.lk, barMeta.skinLook
+    -- A bar's sample row: its own look. The stand-in's skin, size and mask
+    -- stay current (a settings change in the preview) and its frame hidden,
+    -- so the stand-in coming back (the preview closed in combat) only shows it.
+    if h.e == nil then
+        if look or h.skinFrame or lk.shape ~= K.SQUARE or h.shapeOf then SkinHeld(cell, h, lk, true, look) end
+        return HideSkin(h)
+    end
+    if look or h.skinFrame or lk.shape ~= K.SQUARE or h.shapeOf then SkinHeld(cell, h, lk, barMeta.role == "bar", look) end
+end
+
+-- Without a skin or shape on any bar (the settings read, beside
+-- Icons.Decorations), stand-ins run Suite main's Hold and Unhold; each
+-- stand-in's skin frame is parked and its mask taken off then (out of
+-- combat), and a later skin takes the frame back.
+local Hold, Unhold = HoldPlain, UnholdPlain
+function AuraButtons.StandIns(any)
+    any = any == true
+    if any == skinnedMode then return end
+    skinnedMode = any
+    Hold, Unhold = any and HoldSkinned or HoldPlain, any and UnholdSkinned or UnholdPlain
+    if any then return end
+    for cell, h in pairs(holders) do Park(cell, h) end
+end
+local function Unholds(slot)
+    local bar = C.bars[slot]
+    if not bar or not bar.cells then return end
+    local cells = bar.cells
+    for i = 1, #cells do Unhold(cells[i]) end
+end
+
+-- Whether a fixed slot's cell holds a stand-in under its button: in the
+-- preview every entry's sample, else a missing buff the entry or its bar
+-- shows (AuraButtons.lua clips the slot button's skin over it).
+local function Held(entry, view, preview)
+    if preview then return true end
+    if entry.src == "p" then return false end
+    local show = (entry.ov or EMPTY).showMissing
+    if show == nil then show = view.showMissing == true end
+    return show and true or false
+end
+AuraButtons.Held = Held
 
 -- preview: the aura layer's preview state (every entry shows its sample).
 local function Placeholders(slot, view, plan, barMeta, preview)

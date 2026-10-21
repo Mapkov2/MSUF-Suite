@@ -888,8 +888,9 @@ MSUFSuite=Suite
 MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() return true end}}
 SlashCmdList={}
 MSUF_PixelLayoutRegion=function(frame) return frame end
+-- HostBridge: the bars ask it for MSUF's icon skin (none here: no MSUF_HostAPI).
 for _,file in ipairs({"Platform","Database","SuiteCatalog","Catalog/ActionBars","Bindings",
-    "Catalog/DataTexts","NameplateStyle","SuiteMigrations","Suite"}) do
+    "Catalog/DataTexts","NameplateStyle","SuiteMigrations","Suite","HostBridge"}) do
     assert(loadfile(root.."/MSUF_Suite/Core/"..file..".lua"))("MSUF_Suite",Suite)
 end
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
@@ -2695,6 +2696,139 @@ do
 end
 AB.StyleButton,AB.LayoutBar=styleButton,layoutBar
 assert(S.SetMany("actionbars",restore))
+
+------------------------------------------------------------------ icon skins
+-- MSUF's icon skin (HostBridge, no MSUF_HostAPI here: none so far). With a
+-- host the look is asked once per choice and button shape in the refresh,
+-- painted on every button in the style pass only (the button is the owner,
+-- no anchor), and replaces the border edges and Blizzard's frame art; a round
+-- button asks for a round look and keeps its state art. An unchanged refresh
+-- paints nothing, and a button that never showed a skin never calls MSUF.
+do
+    local HB=Suite.HostBridge
+    for _,rec in pairs(AB.records) do assert(not rec.skinned,"a button painted a skin without MSUF") end
+    local look,paint=HB.IconSkinLook,HB.PaintIconSkin
+    local looks={RECTANGLE={signature="square"},CIRCLE={signature="round"}}
+    local asked,painted={},{}
+    HB.IconSkinLook=function(choice,shape)
+        asked[#asked+1]=(choice or "nil").."/"..(shape or "RECTANGLE")
+        if choice=="CUSTOM" then return nil end
+        return looks[shape or "RECTANGLE"]
+    end
+    HB.PaintIconSkin=function(owner,skin,w,h,anchor)
+        painted[#painted+1]={owner=owner,look=skin,w=w,h=h,anchor=anchor}
+        return skin~=nil
+    end
+    local buttons=#AB.owned+#AB.adopted
+    M:Refresh()
+    assert(#painted==buttons,"a new look must paint every button once ("..#painted.." of "..buttons..")")
+    for _,call in ipairs(painted) do
+        local rec=AB.records[call.owner]
+        assert(rec and call.look==looks.RECTANGLE and call.anchor==nil and call.w==(rec.bar.size or c[rec.bar.key.Size])
+            and call.h==(rec.bar.height or call.w),"the skin goes on the button at its size")
+        assert(rec.skinned and not rec.borderEdges[1].shown,"a skin replaces the border edges")
+    end
+    painted={}
+    M:Refresh()
+    assert(#painted==0,"an unchanged refresh repainted the skin")
+    -- MSUF recompiled an equal look (a new table, the same signature).
+    looks.RECTANGLE={signature="square"}
+    M:Refresh()
+    assert(#painted==0,"an equal recompiled look restyled the buttons")
+    assert(S.Set("actionbars","borderArt",2))
+    for _,rec in pairs(AB.records) do
+        assert(not (rec.borderArt and rec.borderArt.shown),"Blizzard's frame art showed under a skin")
+    end
+    painted,asked={},{}
+    assert(S.Set("actionbars","buttonShape",2))
+    assert(asked[#asked]=="DEFAULT/CIRCLE" and #painted==buttons and painted[1].look==looks.CIRCLE,
+        "a round button asks for a round look")
+    for _,rec in pairs(AB.records) do
+        assert(rec.borderArt and not rec.borderArt.shown and rec.stateArt,"a round skin replaces the ring, not the state art")
+    end
+    assert(S.SetMany("actionbars",{buttonShape=1,borderArt=1}))
+    -- A painter without shape art and a saved shape it cannot draw: the bars
+    -- draw square, and the refresh asks for that same square look, so a new
+    -- square default still restyles them.
+    painted,asked={},{}
+    assert(S.Set("actionbars","buttonShape",3))
+    assert(asked[#asked]=="DEFAULT/RECTANGLE","a shape the host cannot draw must ask for the square look")
+    painted={}
+    looks.RECTANGLE={signature="square2"}
+    M:Refresh()
+    assert(#painted==buttons and painted[1].look==looks.RECTANGLE,"a new square default must restyle those buttons")
+    assert(S.Set("actionbars","buttonShape",1))
+    painted={}
+    assert(S.Set("actionbars","iconSkin","CUSTOM"))
+    assert(#painted==buttons and painted[1].look==nil,"No skin hides the skin once on every button")
+    for _,rec in pairs(AB.records) do
+        assert(not rec.skinned and (c.borderSize==0 or rec.borderEdges[1].shown),"No skin brings the border back")
+    end
+    painted={}
+    M:Refresh()
+    assert(S.Set("actionbars","iconSkin","DEFAULT") and #painted==buttons,"Like default paints again")
+    -- MSUF's button shapes: one mask over the icon and every highlight and
+    -- flash texture, the swipes, and shape-ring frame, hover and state art.
+    local art,apply=HB.IconShapeArt,HB.ApplyIconShape
+    local shaped={}
+    local squareAsks=0
+    HB.IconShapeArt=function(shape)
+        if shape=="RECTANGLE" then squareAsks=squareAsks+1 return nil end
+        return "ring:"..shape,"fill:"..shape
+    end
+    HB.ApplyIconShape=function(owner,shape,anchor,cooldowns,...)
+        shaped[#shaped+1]={owner=owner,shape=shape,anchor=anchor,cooldowns=cooldowns,n=select("#",...),first=(...)}
+        return shape
+    end
+    assert(S.SetMany("actionbars",{iconSkin="CUSTOM",buttonShape=3}))
+    assert(#shaped==buttons,"every button takes the rounded shape once")
+    for _,call in ipairs(shaped) do
+        local rec=AB.records[call.owner]
+        assert(rec and call.shape=="ROUNDED" and call.anchor==call.owner.icon and call.first==call.owner.icon and call.n==8
+            and #call.cooldowns>=1,"the shape goes over the icon, its highlights, flash and swipes")
+        assert(rec.borderArt and rec.borderArt.texture=="ring:ROUNDED" and rec.stateArt.texture=="ring:ROUNDED",
+            "the frame and state art take the shape's ring")
+        -- Its proc glow ring is made, hidden, by the style pass: a first proc
+        -- (also in combat) makes no texture.
+        assert(rec.glowRing and not rec.glowRing.shown and rec.glowRing.texture=="ring:ROUNDED",
+            "a shaped button's proc glow ring must be made by its style pass")
+    end
+    -- In Blizzard's proc alert mode a shaped button holds no glow ring: its
+    -- glow paths stay Suite main's; a pixel glow running at the switch keeps
+    -- the ring it showed parked and makes no other.
+    local procRec=Button(1,1) -- the button of spell 1001
+    overlayed[1001]=true;Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",1001)
+    local running=procRec.glowRing
+    assert(running and running.shown,"a shaped button's pixel glow shows its ring")
+    assert(S.Set("actionbars","procGlow",1))
+    assert(not procRec.glowRing and procRec.parkedGlowRing==running and not running.shown,
+        "a switch to Blizzard's alert must park the running ring and make no other")
+    overlayed[1001]=nil;Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",1001)
+    for _,rec in pairs(AB.records) do assert(not rec.glowRing,"a shaped button in Blizzard's alert mode kept a glow ring") end
+    assert(S.Set("actionbars","procGlow",2))
+    shaped={}
+    M:Refresh()
+    assert(#shaped==0,"an unchanged refresh reshaped buttons")
+    assert(S.Set("actionbars","buttonShape",1))
+    assert(#shaped==buttons and shaped[1].shape=="RECTANGLE","square again takes the shape off once")
+    for _,rec in pairs(AB.records) do
+        assert(not rec.glowRing and rec.parkedGlowRing and not rec.parkedGlowRing.shown,
+            "a square button parks its glow ring: its glow paths stay Suite main's")
+    end
+    shaped={}
+    M:Refresh()
+    -- A real style pass (another border size) over the square buttons.
+    local border=c.borderSize
+    assert(S.Set("actionbars","borderSize",border+1) and #shaped==0,"a square button that is not shaped is not asked")
+    assert(S.Set("actionbars","borderSize",border))
+    assert(squareAsks==0,"square buttons must not ask MSUF for shape art")
+    HB.IconShapeArt,HB.ApplyIconShape=art,apply
+    assert(S.Set("actionbars","iconSkin","DEFAULT"))
+    HB.IconSkinLook,HB.PaintIconSkin=look,paint
+    painted={}
+    M:Refresh()
+    for _,rec in pairs(AB.records) do assert(not rec.skinned,"without MSUF the skin must go") end
+end
 -- Mover specs are built once per bar, not on every refresh.
 local specs={}
 local register=S.RegisterOwnedMover

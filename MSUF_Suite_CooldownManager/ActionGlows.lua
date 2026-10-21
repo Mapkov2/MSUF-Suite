@@ -309,13 +309,14 @@ local function Fire()
     end
     ActionGlows.Refresh()
 end
+local FIRE_WAKE = C.NewWake(Fire)
 
 -- A slot, page, form or binding event: one trailing pass for the storm.
 -- always: the action bars started or stopped (what is wanted may change).
 function ActionGlows.RouteChanged(always)
     if armed or not (ActionGlows.wanted or C.ActionUsableGlows.wanted or always) then return end
     armed = true
-    C_Timer.After(DELAY, Fire)
+    C.Wake(FIRE_WAKE, DELAY)
 end
 
 function ActionGlows.Release()

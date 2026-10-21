@@ -79,6 +79,20 @@ function Skin.Acquire(moduleID)
     return client
 end
 
+-- Explicitly authored menu roots can be registered before the optional
+-- engine loads. The factory calls this again on show or after rendering.
+function Skin.RegisterMenu(frame, moduleID)
+    local client = Skin.Acquire(moduleID or "menuContent")
+    if client and client.RegisterMenu then return client:RegisterMenu(frame) end
+    return false
+end
+
+function Skin.AnimateContent(frame, token, moduleID)
+    local client = Skin.Acquire(moduleID or "menuContent")
+    if client and client.AnimateContent then return client:AnimateContent(frame, token) end
+    return false
+end
+
 -- The client stays cached: ReleaseAll drops its targets but the skin keeps
 -- the name registered, so the module's next Acquire reuses this client.
 function Skin.Release(moduleID)

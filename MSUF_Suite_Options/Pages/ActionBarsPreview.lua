@@ -101,9 +101,10 @@ local function Font(label, config, prefix, group, default, x, y, size, color, sh
     label:SetWordWrap(false)
     label:SetShown(shown)
 end
-local function StyleText(tile, c, p, bar, size)
+-- `border`: the border the tile draws (none under an icon skin, as on the
+-- bars: Style.lua's StyleTexts gets AB.style.border).
+local function StyleText(tile, c, p, bar, size, border)
     local nativeFont = bar >= 11 and 2 or 0
-    local border = c.borderSize
     Font(tile.key, c, p, "Keybind", "TOPRIGHT", -1 - border, -2 - border,
         c[p .. "KeybindSize"] - nativeFont, c.keybindColor, c[p .. "Keybind"], tile)
     Font(tile.count, c, p, "Count", "BOTTOMRIGHT", -1 - border, 2 + border,
@@ -136,8 +137,49 @@ local function BorderColor(c)
     end
     return c.borderColor
 end
-local function StyleTile(tile, c, p, bar, size, height, color)
-    local border, zoom = c.borderSize, c.iconZoom / 100
+-- The button shape as the bars resolve it (AB.ResolveShape, Decorations.lua):
+-- MSUF's shape with its ring art, or on an older host the Suite's own circle.
+local function TileShape(c)
+    local shape = Suite.ActionBarEnum.BUTTON_SHAPE_IDS[c.buttonShape] or "RECTANGLE"
+    if shape == "RECTANGLE" then return shape, nil, false end
+    local ring = Suite.HostBridge.IconShapeArt(shape)
+    local legacy = not ring and shape == "CIRCLE"
+    if legacy then ring = RING elseif not ring then shape = "RECTANGLE" end
+    return shape, ring, legacy
+end
+local function ShapeTile(tile, shape, legacy)
+    local circle = legacy == true
+    if circle ~= (tile.masked == true) then
+        local method = circle and "AddMaskTexture" or "RemoveMaskTexture"
+        tile.icon[method](tile.icon, tile.mask)
+        tile.fill[method](tile.fill, tile.mask)
+        tile.masked = circle
+    end
+    local round = shape ~= "RECTANGLE"
+    if not legacy and (round or tile.shaped) then
+        tile.cooldowns = tile.cooldowns or { tile.cooldown, tile.chargeCooldown }
+        Suite.HostBridge.ApplyIconShape(tile, shape, tile.icon, tile.cooldowns, tile.icon, tile.fill)
+        tile.shaped = round or nil
+    end
+    if not round or legacy then
+        tile.cooldown:SetSwipeTexture(circle and CIRCLE or WHITE)
+        tile.chargeCooldown:SetSwipeTexture(circle and CIRCLE or WHITE)
+    end
+end
+-- The shape and the icon skin every tile of one preview pass shows.
+local form = {}
+local function TileForm(c)
+    form.shape, form.ring, form.legacy = TileShape(c)
+    form.skin = Suite.HostBridge.IconSkinLook(c.iconSkin, form.shape)
+    return form
+end
+local function StyleTile(tile, c, p, bar, size, height, color, look)
+    local shape, ring, legacy = look.shape, look.ring, look.legacy
+    local round = shape ~= "RECTANGLE"
+    -- MSUF's icon skin as the bars draw it (Style.lua, Decorations.lua), in
+    -- place of the border, the frame art and a shaped button's ring.
+    local skin = look.skin
+    local border, zoom = skin and 0 or c.borderSize, c.iconZoom / 100
     tile:SetSize(size, height)
     tile.icon:ClearAllPoints()
     tile.icon:SetPoint("TOPLEFT", border, -border)
@@ -148,27 +190,20 @@ local function StyleTile(tile, c, p, bar, size, height, color)
     tile.fill:SetAllPoints(tile.icon)
     local r, g, b = P.RGB(c.slotColor)
     tile.fill:SetColorTexture(r, g, b, c.slotAlpha / 100)
-    local circle = c.buttonShape == Suite.ActionBarEnum.BUTTON_SHAPE.CIRCLE
-    if circle ~= tile.masked then
-        local method = circle and "AddMaskTexture" or "RemoveMaskTexture"
-        tile.icon[method](tile.icon, tile.mask)
-        tile.fill[method](tile.fill, tile.mask)
-        tile.masked = circle
-    end
-    tile.cooldown:SetSwipeTexture(circle and CIRCLE or WHITE)
-    tile.chargeCooldown:SetSwipeTexture(circle and CIRCLE or WHITE)
-    local fancy = circle or c.borderArt == Suite.ActionBarEnum.BORDER_ART.BLIZZARD
+    ShapeTile(tile, shape, legacy)
+    local fancy = round or (c.borderArt == Suite.ActionBarEnum.BORDER_ART.BLIZZARD and not skin)
     Border(tile.edges, tile, border, color, not fancy)
-    tile.art:SetShown(fancy and border > 0)
+    if skin or tile.skinned then tile.skinned = Suite.HostBridge.PaintIconSkin(tile, skin, size, height) or nil end
+    tile.art:SetShown(fancy and border > 0 and not skin)
     if fancy then
-        if circle then tile.art:SetTexture(RING) else tile.art:SetAtlas("UI-HUD-ActionBar-IconFrame") end
+        if round then tile.art:SetTexture(ring) else tile.art:SetAtlas("UI-HUD-ActionBar-IconFrame") end
         tile.art:SetVertexColor(P.RGB(color))
         tile.art:ClearAllPoints()
         tile.art:SetPoint("CENTER")
         local extent = (size + c.borderExpansion * 2) * c.borderScale / 100
         tile.art:SetSize(extent, extent * height / size)
     end
-    StyleText(tile, c, p, bar, size)
+    StyleText(tile, c, p, bar, size, border)
 end
 
 local function Endcap(ui, c, p, side, color)
@@ -282,11 +317,12 @@ local function Paint(ui)
     ui.canvas:SetAlpha(math.max(.1, c[p .. "Alpha"] / 100))
     local color = BorderColor(c)
     Background(ui, c, p, width, height, color)
+    local look = TileForm(c)
     for i, tile in ipairs(ui.tiles) do
         local shown = i <= count
         if shown then
             Preview.Read(tile, bar, i, c)
-            StyleTile(tile, c, p, bar, size, buttonHeight, color)
+            StyleTile(tile, c, p, bar, size, buttonHeight, color, look)
             local col, row = Suite.ActionBarCell(i - 1, columns, rows, r, c[p .. "Vertical"], c[p .. "Start"])
             tile:ClearAllPoints()
             tile:SetPoint("TOPLEFT", ui.canvas, "TOPLEFT", col * (size + gap), -row * (buttonHeight + gap))

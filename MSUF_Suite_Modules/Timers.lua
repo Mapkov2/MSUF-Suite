@@ -28,13 +28,21 @@ local Dispatch = NS.Dispatch
 -- Callbacks run isolated (Dispatch) and only while the module is active. They
 -- run in combat too: work that needs the lockdown over checks it itself.
 --
--- C_Timer.After cannot be cancelled. Every wait therefore hands C_Timer a
--- tick of its own; a tick that was replaced finds itself stale and does
--- nothing. Steady use allocates nothing, and so does a cancel followed by a
--- restart: a cancelled deadline keeps its tick in flight for the next start,
--- and a cancelled job serves its next request with its second tick. A tick
--- is made again only when a restart moves a deadline before its tick or a
--- cancel finds both of a job's ticks in flight.
+-- Retail 12.1.5 and WoW Forever keep the waits in one C-side timed signal
+-- map (C_Timer.NewTimedSignalMap, UITimerDocumentation.lua): a wait is a
+-- number key, a restart moves its time, a cancel drops it, and one callback
+-- hands each due key to its wait. Nothing goes stale and nothing is
+-- allocated. A delay of 0 stays on C_Timer.After: the next frame is what
+-- only it promises. The first wait picks the way for the session (Resolve),
+-- so the other way costs nothing.
+--
+-- 12.1.0 has no signal map, and C_Timer.After cannot be cancelled. Every
+-- wait therefore hands C_Timer a tick of its own; a tick that was replaced
+-- finds itself stale and does nothing. Steady use allocates nothing, and so
+-- does a cancel followed by a restart: a cancelled deadline keeps its tick in
+-- flight for the next start, and a cancelled job serves its next request
+-- with its second tick. A tick is made again only when a restart moves a
+-- deadline before its tick or a cancel finds both of a job's ticks in flight.
 local Context = Private.Context
 
 ------------------------------------------------------------------ ticks
@@ -74,7 +82,7 @@ end
 local Deadline = {}
 Deadline.__index = Deadline
 
-function Deadline:Start(delay)
+local function TickStart(self, delay)
     local due = GetTime() + delay
     self.due = due
     if self.armed and self.firesAt <= due then return end
@@ -100,9 +108,10 @@ end
 
 -- A tick in flight stays armed: it finds no deadline and does nothing,
 -- unless a later Start reuses it.
-function Deadline:Cancel()
+local function TickCancel(self)
     self.due = nil
 end
+Deadline.Cancel = TickCancel
 
 function Deadline:Pending()
     return self.due ~= nil
@@ -119,6 +128,16 @@ end
 ------------------------------------------------------------------ coalesced jobs
 local Job = {}
 Job.__index = Job
+
+-- The window is over (its signal fired): one run for every request it
+-- collected. The tick below keeps its own copy of this run.
+function Job:Fire()
+    self.armed, self.signaled = false, false
+    if not self.pending then return end
+    self.pending = false
+    local module = self.module
+    if module.active then Dispatch(self.fn, module, self.keys) end
+end
 
 -- A job's tick runs the job itself: the per-window path stays one call. A
 -- stale tick that was the job's second one frees it (Job:Cancel).
@@ -141,7 +160,7 @@ local function NewJobTick(job)
 end
 
 -- Per-event code calls this: the wait is armed inline.
-function Job:Request()
+local function TickRequest(self)
     if self.pending then return end
     self.pending = true
     if self.armed then return end
@@ -163,7 +182,7 @@ end
 -- Forgets the request and makes a wait in flight stale: the next request
 -- waits the full delay. The stale tick becomes the job's second one; the
 -- earlier second tick, once its own wait is over, serves the next request.
-function Job:Cancel()
+local function TickJobCancel(self)
     self.pending = false
     if not self.armed then return end
     self.armed = false
@@ -171,6 +190,7 @@ function Job:Cancel()
     self.tick = not self.spareBusy and self.spare or nil
     self.spare, self.spareBusy = stale, true
 end
+Job.Cancel = TickJobCancel
 
 function Job:Pending()
     return self.pending == true
@@ -190,6 +210,91 @@ function Job:EventFunction()
         self.eventFunction = fn
     end
     return fn
+end
+
+------------------------------------------------------------------ the signal map
+-- waitOf holds a wait only while its signal is set, so a wait nobody keeps
+-- can go; a wait's key is made once and kept.
+local signals, waitOf, keys = nil, {}, 0
+local function Signal(wait, time)
+    local key = wait.key
+    if not key then
+        keys = keys + 1
+        key = keys
+        wait.key = key
+    end
+    waitOf[key], wait.signalAt = wait, time
+    signals:SignalAt(key, time)
+end
+local function Unsignal(wait)
+    local key = wait.key
+    if not key or waitOf[key] ~= wait then return end
+    waitOf[key], wait.signalAt = nil, nil
+    signals:CancelSignal(key)
+end
+-- A key can come early for its wait: a restart that extended a deadline kept
+-- the earlier signal (SignalStart), and a key the map took for a pass before
+-- a callback earlier in that pass set it again may still come with it. Such
+-- a wait signals again for the rest (a deadline's time is its due, a job's
+-- its signal).
+local function SignalFired(key)
+    local wait = waitOf[key]
+    if not wait then return end
+    local at = wait.due or wait.signalAt
+    if at > GetTime() then return Signal(wait, at) end
+    waitOf[key], wait.signalAt = nil, nil
+    -- Fire never raises: the callbacks run through Dispatch.
+    wait:Fire()
+end
+
+-- A signal set no later than the new deadline stays (SignalFired signals
+-- again for the rest), so restarts that extend the wait cost no native call.
+local function SignalStart(self, delay)
+    if delay <= 0 then
+        if self.signalAt then Unsignal(self) end
+        return TickStart(self, delay)
+    end
+    local due = GetTime() + delay
+    self.due = due
+    local at = self.signalAt
+    if at and at <= due then return end
+    Signal(self, due)
+end
+local function SignalCancel(self)
+    self.due = nil
+    if self.signalAt then Unsignal(self) end
+end
+local function SignalRequest(self)
+    if self.pending then return end
+    local delay = self.delay
+    if delay <= 0 then return TickRequest(self) end
+    self.pending = true
+    if self.armed then return end
+    self.armed, self.signaled = true, true
+    Signal(self, GetTime() + delay)
+end
+local function SignalJobCancel(self)
+    if not self.signaled then return TickJobCancel(self) end
+    self.pending, self.armed, self.signaled = false, false, false
+    Unsignal(self)
+end
+
+-- The first Start or Request: the client's way for every later wait.
+local function Resolve()
+    local NewTimedSignalMap = C_Timer.NewTimedSignalMap
+    if NewTimedSignalMap then signals = NewTimedSignalMap(SignalFired) end
+    Deadline.Start = signals and SignalStart or TickStart
+    Deadline.Cancel = signals and SignalCancel or TickCancel
+    Job.Request = signals and SignalRequest or TickRequest
+    Job.Cancel = signals and SignalJobCancel or TickJobCancel
+end
+function Deadline:Start(delay)
+    Resolve()
+    return self:Start(delay)
+end
+function Job:Request()
+    Resolve()
+    return self:Request()
 end
 
 ------------------------------------------------------------------ tickers

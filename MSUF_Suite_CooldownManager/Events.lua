@@ -174,6 +174,7 @@ local function BagWindowDone()
     dirty.bags = true
     Schedule()
 end
+local BAG_WAKE = C.NewWake(BagWindowDone)
 local function OnBag()
     if dirty.bags or bagArmed then return end
     local now = GetTime()
@@ -183,7 +184,7 @@ local function OnBag()
         Schedule()
     else
         bagArmed = true
-        C_Timer.After(bagNext - now, BagWindowDone)
+        C.Wake(BAG_WAKE, bagNext - now)
     end
 end
 -- Bag contents changed: potion counts are recounted once, then every item
@@ -195,8 +196,8 @@ end
 -- Visibility keeps transparent bars in the plan. Only visible icons need
 -- a usability read; Visibility.Paint catches up on the show edge. The
 -- trailing refresh of a throttle window is one shared callback behind an
--- armed flag (no timer object per window); a disable does not cancel it,
--- the callback finds the module inactive.
+-- armed flag (no timer object per window, C.Wake); a disable does not
+-- cancel it, the callback finds the module inactive.
 local function UsableWindowDone()
     usableArmed = false
     if not M.active then return end
@@ -204,6 +205,7 @@ local function UsableWindowDone()
     dirty.usable = true
     Schedule()
 end
+local USABLE_WAKE = C.NewWake(UsableWindowDone)
 local function OnUsable()
     if dirty.usable or usableArmed then return end
     for i = 1, #usableEntries do
@@ -215,7 +217,7 @@ local function OnUsable()
                 Schedule()
             else
                 usableArmed = true
-                C_Timer.After(usableNext - now, UsableWindowDone)
+                C.Wake(USABLE_WAKE, usableNext - now)
             end
             return
         end
@@ -484,6 +486,10 @@ local function OnCombatEnd()
     C.Auras.FlushPending()
     C.ActionGlows.Refresh()
     C.Layout.CombatEnded()
+    -- MSUF's skin work a scale change in combat deferred (anchor footprint,
+    -- icon decorations).
+    C.Layout.SettleAnchors()
+    C.Icons.CombatEnded()
     if assistMode == "poll" then
         StopPoll()
         Assist(nil)
@@ -632,6 +638,34 @@ function Events.WatchParked()
     parkedListener:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
 end
 
+-- A skinned bar's MSUF anchor follows the pixel grid (Layout.FitAnchor):
+-- while an anchored bar draws a skin (the settings read tells), a scale event
+-- fits the anchors, in a fight at its end (Layout.SettleAnchors); without a
+-- skin nothing listens here and OnScale runs alone.
+local scaleListener, watchingScale
+local function FitOnScale()
+    C.Layout.InvalidateScale()
+    C.Layout.FitAnchors()
+end
+function Events.WatchScale(on)
+    on = on == true
+    if watchingScale == on then return end
+    watchingScale = on
+    if not scaleListener then
+        if not on then return end
+        scaleListener = S.CreateFrame("Frame")
+        scaleListener:SetScript("OnEvent", FitOnScale)
+    end
+    if on then
+        scaleListener:RegisterEvent("UI_SCALE_CHANGED")
+        scaleListener:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    else
+        scaleListener:UnregisterEvent("UI_SCALE_CHANGED")
+        scaleListener:UnregisterEvent("DISPLAY_SIZE_CHANGED")
+    end
+end
+function Events.WatchingScale() return watchingScale == true end
+
 -- Disable: the poll stops, every event goes and routing work parked for the
 -- end of combat is dropped; parked driver work keeps its combat end.
 function Events.Release(context)
@@ -648,13 +682,15 @@ end
 
 ------------------------------------------------------------------ data units of the flush
 -- Spec and catalog (a waiting first-run capture runs once Blizzard's data
--- is in), the routing index with its category seeds, event registration,
--- and the keybind and sound watches after a resolve.
+-- is in, bar positions follow the specialization), the routing index with
+-- its category seeds, event registration, and the keybind and sound
+-- watches after a resolve.
 local function CatalogUnit(locked)
     if UpdateSpec() then dirty.resolve = true end
     -- A changed catalog may move equipment slot records between bars.
     if C.Catalog.Rebuild() then dirty.resolve, dirty.events = true, true end
     CaptureWhenReady(locked)
+    Settings.SpecPositions()
 end
 local function IndexUnit(locked)
     staleRoutes = false

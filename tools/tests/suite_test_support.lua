@@ -495,6 +495,18 @@ function Support.TocFiles(root, addon, flavor)
     return files
 end
 
+-- Native LoadAddOn fixture for the real selected-language companion. Unknown
+-- names remain with the caller's module/missing-addon model.
+function Support.LoadLocaleAddon(root, addon, environment)
+    if not addon:match("^MSUF_Suite_Locale_%l%l%u%u$") then return false end
+    for _, file in ipairs(Support.TocFiles(root, addon)) do
+        local chunk = assert(loadfile(root .. "/" .. addon .. "/" .. file))
+        if environment then setfenv(chunk, environment) end
+        chunk(addon, {})
+    end
+    return true
+end
+
 -- Loads the addon's Lua files up to and including `through` (for example
 -- "Core/Suite.lua"). Files listed in `skip` are left out.
 function Support.Load(root, addon, namespace, through, skip, flavor)

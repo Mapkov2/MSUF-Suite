@@ -2,6 +2,14 @@
 -- /msuite routing after the redundant Suite Modules page was removed.
 local root = assert(arg[1], "repository root required")
 securecallfunction = function(callback, ...) return callback(...) end
+hooksecurefunc = function(target, name, callback)
+    local original = assert(target[name])
+    target[name] = function(...)
+        local results = { original(...) }
+        callback(...)
+        return unpack(results)
+    end
+end
 
 local function Frame(kind)
     local f = { kind = kind, shown = true, scripts = {}, points = {}, text = "", width = 100, height = 20, enabled = true }

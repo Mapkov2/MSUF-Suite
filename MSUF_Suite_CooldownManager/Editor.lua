@@ -390,6 +390,10 @@ function Editor.View(context, slot, source)
             if source.borderClass then view.borderClass, view.borderR, view.borderG, view.borderB = false, r, g, b end
             if source.barClass then view.barClass, view.barR, view.barG, view.barB = false, r, g, b end
         end
+        -- MSUF's skin (also one the source dropped) and the decoration made
+        -- from this view, so the skinned icon style reads its own colors.
+        view.skin = source.skin
+        C.Const.Decor(view)
         view.editorStyle, view.editorLayout, view.editorBehavior = source.styleGen, source.layoutGen, source.behaviorGen
         view.editorR, view.editorG, view.editorB = r, g, b
     end

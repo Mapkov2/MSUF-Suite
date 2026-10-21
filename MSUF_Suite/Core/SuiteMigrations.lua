@@ -320,6 +320,17 @@ function Steps.FriendlyPlayerDisplay(modules)
     plates.friendlyGroupOnly = nil
 end
 
+-- The first spec-layout build defaulted to shared positions and had no
+-- layouts to restore. Start automatic saving without moving any bar; an
+-- explicit shared-layout choice with saved spec layouts remains intact.
+function Steps.CooldownSpecLayouts(modules)
+    local cooldowns = Module(modules, "cooldownManager")
+    if cooldowns and cooldowns.specPositions == false
+        and (cooldowns.positionsData == nil or cooldowns.positionsData == "") then
+        cooldowns.specPositions = true
+    end
+end
+
 function Steps.RecordModuleLooks(modules, db)
     -- Profiles saved before db.moduleLooks: each module the global look
     -- styles gets the record its settings show (SuiteCatalog.lua

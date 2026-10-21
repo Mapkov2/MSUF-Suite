@@ -16,6 +16,10 @@ NS.ScrollBarSkin = ScrollBarSkin
 
 local Safety = NS.Safety
 local WatchSettings = NS.Registry.WatchSettings
+local TrackScrollMotion, ReleaseScrollMotion = function() end, function() end
+function ScrollBarSkin.SetScrollMotionProvider(track, release)
+    TrackScrollMotion, ReleaseScrollMotion = track, release
+end
 
 local TRACK_SURFACE_SPEC = {
     role = "input",
@@ -424,6 +428,7 @@ end
 
 local function RestoreState(target, state)
     if not state then return end
+    ReleaseScrollMotion(target, state.owner)
     RestoreNative(state)
     if state.contract and NS.Registry.GetSurface(state.contract.track) == state.surface then
         NS.Surface.SetVisible(state.contract.track, false)
@@ -532,7 +537,10 @@ local TINT_SETTINGS = {
 
 local function ApplyAndListen(target, owner)
     local state, reason = ApplyNow(target, owner)
-    if state then WatchSettings(RefreshAll, TINT_SETTINGS) end
+    if state then
+        WatchSettings(RefreshAll, TINT_SETTINGS)
+        TrackScrollMotion(target, owner)
+    end
     return state, reason
 end
 

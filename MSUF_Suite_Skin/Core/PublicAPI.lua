@@ -12,6 +12,11 @@ local PublicAPI = {
     playerReady = false,
 }
 NS.PublicAPI = PublicAPI
+-- The optional rendering half binds these after the facades load.
+PublicAPI.PlayContent = function() return false end
+PublicAPI.StopContent = function() return false end
+PublicAPI.TrackMenu = function() return false end
+PublicAPI.ReleaseMenu = function() end
 
 -- The rendering modules load before this file (TOC order).
 local ControlSkin = NS.ControlSkin
@@ -66,7 +71,7 @@ end
 -- textures, Icon or Checked fields, dropdown mixin or Blizzard-gold text,
 -- and never adds them. The skin then skips its native-asset and gold-text
 -- tracking for it; a false claim only costs the caller that adoption.
-local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape", "ownedArt" }
+local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape", "ownedArt", "paletteMotion" }
 
 -- Whitelist only declarative rendering values.  Public callers cannot pass
 -- region arrays, callbacks, functions, internal owner tokens, or the reviewed
@@ -89,6 +94,10 @@ local function SanitizeSpec(source)
         local value = ReadOption(source, key)
         if type(value) == "boolean" then spec[key] = value end
     end
+    local motion = rawget(source, "motion")
+    if type(motion) == "boolean" then spec.motion = motion end
+    local group = ReadOption(source, "motionGroup")
+    if type(group) == "string" and #group <= 80 then spec.motionGroup = group end
     return spec
 end
 
@@ -197,7 +206,7 @@ local function ClaimDependency(entry, target)
 end
 
 local function EntryNeedsRegions(entry)
-    return entry.surface ~= nil or entry.control ~= nil or entry.icon ~= nil
+    return entry.surface ~= nil or entry.control ~= nil or entry.icon ~= nil or entry.menu == true
 end
 
 local function ValidateEntry(entry)
@@ -236,6 +245,8 @@ end
 local function CleanupNow(entry)
     local safe, reason = ValidateEntry(entry)
     if not safe then return false, reason end
+    PublicAPI.ReleaseMenu(entry.owner, entry.target)
+    PublicAPI.StopContent(entry.owner, entry.target)
     ControlSkin.DisableOwner(entry.owner)
     WindowActionSkin.DisableOwner(entry.owner)
     IconSkin.DisableOwner(entry.owner)
@@ -279,7 +290,7 @@ local function ApplyControl(target, entry)
     if not control then return true end
     local method
     if control.kind == "windowAction" then
-        local state, reason = WindowActionSkin.Apply(target, entry.owner, control.action)
+        local state, reason = WindowActionSkin.Apply(target, entry.owner, control.action, control.motion ~= false)
         return state ~= nil, reason
     elseif control.kind == "button" then
         method = ControlSkin.ApplyButton
@@ -353,6 +364,7 @@ local function ReconcileNow(scope, target, entry)
         if not applied then return FailEntry(scope, target, entry, reason or "unsupported-state") end
     end
     entry.applied = true
+    if entry.menu then PublicAPI.TrackMenu(target, entry.owner) end
     entry.appliedControl, entry.appliedFor = entry.control, settingsGeneration
     return true, "applied"
 end

@@ -26,6 +26,8 @@ local function ShowEmbeddedPage(host, key)
     page:Show()
     for name, button in pairs(host.buttons) do O.SetButtonActive(button, name == key) end
     O.RefreshAll()
+    NS.MenuMotion.Track(page, O)
+    NS.ContentMotion.Play(page, O, key)
     local menu = _G.MSUF2
     if menu and menu.ResumeForeverPadNavigation then menu.ResumeForeverPadNavigation() end
     return true

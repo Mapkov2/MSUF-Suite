@@ -106,9 +106,12 @@ function Layout.EnsureBar(slot)
         -- MSUF's anchor: same rectangle as the bar, never a restricted frame.
         local anchor = S.CreateFrame("Frame", nil, frame)
         anchor:SetAllPoints(frame)
-        bar.anchorFrame = anchor
+        bar.anchorFrame, bar.outsetL, bar.outsetR, bar.outsetY = anchor, 0, 0, 0
     end
     C.bars[slot] = bar
+    -- A bar made after its flush (a deferred first aura build) starts at its
+    -- footprint all the same.
+    if bar.anchorFrame then Layout.FitAnchor(slot) end
     local view = C.views[slot]
     if view and AURA_KINDS[view.kind] then Host(bar) end
     -- A driver may have reported before the bar existed.
@@ -671,17 +674,70 @@ function Layout.Cell(slot, i)
     return cells[i]
 end
 
+-- MSUF measures its "Width mode" bars on the anchor frame: a skin's frame
+-- reaches past the icons, so the anchor grows by its outset where it draws
+-- (every side of an icon grid; above, below and on the icon's side of timer
+-- bars; none without the icon: K.Iconless). Anchored bars (ess, uti, buf) are
+-- cooldown or buff icon bars. Settled by EnsureBar, the settings read and a
+-- scale change while a skin draws (FitAnchors; Events.WatchScale), never by
+-- the flush's units or a bar without a skin.
+local fitLater = false
+function Layout.FitAnchor(slot)
+    local bar, view = C.bars[slot], C.views[slot]
+    local anchor = bar and bar.anchorFrame
+    if not (anchor and view) then return end
+    local K = C.Const
+    local w, h = K.IconSize(view)
+    local timer = view.kind == K.KIND.COOLDOWN and view.cooldownDuration
+    local skin = not K.Iconless(view) and view.skin or nil
+    -- With a skin, MSUF measures it: in combat (a new bar, a scale change)
+    -- that waits for the combat end (Layout.SettleAnchors).
+    if skin and NS.IsCombatLocked() then
+        fitLater = true
+        return
+    end
+    local x, y = NS.HostBridge.IconSkinOutset(skin, timer and h or w, h)
+    local left, right = x, x
+    if timer and view.barIconSide == K.BAR_ICON_SIDE.RIGHT then left = 0 elseif timer then right = 0 end
+    if bar.outsetL == left and bar.outsetR == right and bar.outsetY == y then return end
+    bar.outsetL, bar.outsetR, bar.outsetY = left, right, y
+    anchor:ClearAllPoints()
+    if left == 0 and right == 0 and y == 0 then
+        anchor:SetAllPoints(bar.frame)
+    else
+        anchor:SetPoint("TOPLEFT", bar.frame, "TOPLEFT", -left, y)
+        anchor:SetPoint("BOTTOMRIGHT", bar.frame, "BOTTOMRIGHT", right, -y)
+    end
+    C.AnchorChanged()
+end
+function Layout.FitAnchors()
+    local skinned = false
+    for slot in pairs(ANCHORED) do
+        Layout.FitAnchor(slot)
+        local view = C.views[slot]
+        if view and view.skin then skinned = true end
+    end
+    return skinned
+end
+function Layout.SettleAnchors()
+    if not fitLater then return end
+    fitLater = false
+    Layout.FitAnchors()
+end
+
 ------------------------------------------------------------------ passes
--- MSUF follows the Essential bar: tell it when that bar appears or goes.
-local function Notify(slot)
-    if slot == "ess" then C.AnchorChanged() end
+-- MSUF resolves and follows the anchored bars (ess, uti, buf: its Width
+-- modes and what it attaches to them): tell it when one appears or goes, a
+-- bar switched on later included (C.AnchorChanged merges a frame's calls).
+local function Notify(bar)
+    if bar.anchorFrame then C.AnchorChanged() end
 end
 function Layout.Hide(slot)
     local bar = C.bars[slot]
     if bar and bar.shown then
         bar.shown = false
         bar.frame:Hide()
-        Notify(slot)
+        Notify(bar)
     end
 end
 function Layout.HideAll()
@@ -711,7 +767,7 @@ function Layout.Apply(slot)
         if not bar.shown then
             bar.shown = true
             bar.frame:Show()
-            Notify(slot)
+            Notify(bar)
         end
     end
     Reanchor()
