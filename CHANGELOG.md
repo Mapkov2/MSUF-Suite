@@ -1,5 +1,25 @@
 # MSUF Suite Changelog
 
+## 0.1.4 Alpha - 2026-10-25
+
+### Appearance
+
+- Added optional gloss to Suite bars and icons in the Damage Meter, Buff Reminders, Action Tracker, Battle Res, Enemy Cast Stack and Skyriding, with an adjustable strength.
+- Added MSUF icon skins for the Minimap, Buff Reminders and Damage Meter icons.
+
+### Quality of Life
+
+- Added Mythic+ Auto Queue (Retail, off by default): confirms Mythic+ role checks with your saved roles and accepts invites for your active Mythic+ applications. Each part has its own switch.
+
+### Minimap
+
+- Grouped the Minimap settings into sections; search results open the matching section.
+
+### Performance
+
+- The connected MSUF menu opens pages, skins hidden menu parts and enters Edit Mode with much less work.
+- Action bar cooldown feedback and the group Bloodlust tracker do less work per update.
+
 ## 0.1.3 Alpha - 2026-10-21
 
 ### Cooldown Manager

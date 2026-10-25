@@ -305,6 +305,7 @@ T("Antique Footer preset", "Пресет «Старинная нижняя па�
 T("Antique Map", "Старинная карта")
 T("Antique footer", "Старинная нижняя панель")
 T("Appearance", "Внешний вид")
+T("Performance", "Производительность")
 T("Applicant score sorting is available only in Retail", "Сортировка кандидатов по рейтингу доступна только в Retail")
 T("Application could not be submitted by the client.", "Клиент не смог отправить заявку.")
 T("Applied %d settings; %d settings could not be changed.", "Применено настроек: %d; не удалось изменить: %d.")

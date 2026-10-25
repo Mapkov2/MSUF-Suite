@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
-## Version: 0.1.3-alpha
+## Version: 0.1.4-alpha
 ## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
