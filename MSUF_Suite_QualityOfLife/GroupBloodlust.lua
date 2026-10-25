@@ -84,10 +84,13 @@ local function ReadableNow(self)
 end
 
 local function LockoutAura()
-    for i = 1, #SPELLS do
-        local aura = C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[i])
-        if aura then return aura end
-    end
+    return C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[1])
+        or C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[2])
+        or C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[3])
+        or C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[4])
+        or C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[5])
+        or C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[6])
+        or C_UnitAuras.GetPlayerAuraBySpellID(SPELLS[7]) or nil
 end
 
 -- While the auras are unreadable, aura events carry nothing usable; the
