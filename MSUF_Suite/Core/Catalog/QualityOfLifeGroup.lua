@@ -60,6 +60,20 @@ B.Module("groupFinderApplicantSort", {
     end,
 })
 
+B.Module("mythicAutoQueue", {
+    title = "Mythic+ Auto Queue",
+    description = "Automatically confirm Mythic+ role checks and accept invitations for your active Mythic+ applications.",
+    optIn = true, automation = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    available = function()
+        if NS.Client.isForever then return false, "Mythic+ Auto Queue is available only in Retail" end
+        return true
+    end,
+})
+B.Section("mythicAutoQueue", "mythic_auto_queue", "Mythic+ Auto Queue", {
+    Bool("roleCheck", "Automatically confirm Mythic+ role checks", true),
+    Bool("invites", "Automatically accept Mythic+ invitations", true),
+})
+
 B.Module("groupFinderExitReminder", {
     title = "Active application reminder",
     description = "Show a local reminder when you leave group listings with active applications.",

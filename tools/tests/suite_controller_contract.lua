@@ -175,6 +175,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "groupDeathAlert" and id ~= "releaseProtection"
         and id ~= "autoUprank" and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
+        and id ~= "mythicAutoQueue"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
         and id ~= "cursorEffects" and id ~= "playerAuras"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower" and id ~= "selfCombatText"

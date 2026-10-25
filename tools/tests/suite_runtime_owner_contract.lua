@@ -101,7 +101,7 @@ assert(count == 65 and Suite.Suite.instances.autoUprank and Suite.Suite.instance
     and Suite.Suite.instances.dailyComfort and Suite.Suite.instances.groupDeathAlert and Suite.Suite.instances.releaseProtection
     and Suite.Suite.instances.tooltipVisibility and Suite.Suite.instances.uiErrorFilter
     and Suite.Suite.instances.groupFinderDoubleClick and Suite.Suite.instances.groupFinderApplicantSort
-    and Suite.Suite.instances.mythicKeyShare
+    and Suite.Suite.instances.mythicKeyShare and not Suite.Suite.instances.mythicAutoQueue
     and Suite.Suite.instances.groupBloodlust and Suite.Suite.instances.lootContainers
     and Suite.Suite.instances.lootVendorRules and Suite.Suite.instances.cursorEffects
     and not Suite.Suite.instances.mapQuickSwitch and Suite.Suite.instances.combatStatsHUD

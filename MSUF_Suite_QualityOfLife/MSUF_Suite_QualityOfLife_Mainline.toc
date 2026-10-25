@@ -43,6 +43,7 @@ GroupFinderDoubleClick.lua
 GroupFinderApplicantView.lua
 GroupFinderApplicantSort.lua
 GroupFinderExitReminder.lua
+MPlusAutoQueue.lua
 TrustedPartyInvites.lua
 GroupRaidShortcuts.lua
 MPlusKeystoneShare.lua

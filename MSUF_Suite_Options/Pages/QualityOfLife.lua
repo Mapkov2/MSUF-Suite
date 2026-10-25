@@ -56,6 +56,7 @@ local HELP = {
     bloodlust_lockout = "Shows your own Bloodlust exhaustion while in a group, or a ready state if you prefer. Relevant player aura changes update it; MSUF Edit Mode moves it and previews the locked state.",
     group_finder_double_click = "Double-click a search result to open Blizzard's application dialog. With submit on double-click, the second click also signs up with the roles already chosen in that dialog; hold Shift to review it instead. A saved note can appear beside the dialog for copying; it is stored when you finish editing.",
     group_finder_applicant_sort = "Sort applicants for your own Mythic+ listing by their average member score, highest first. Ties keep Blizzard's order. If any score is missing or restricted, the native order remains. The closed list is untouched.",
+    mythic_auto_queue = "Confirms Mythic+ premade role checks with saved roles. Accepts only active Mythic+ application invites. Each has its own switch.",
     group_finder_exit = "When the native group listing panel closes with applications still active, show their count in your own chat. Your applications remain active and no group chat is sent.",
     trusted_invites = "Accept only ordinary party invitations from the relationship types you select. Invites remain manual in combat, while grouped, during queue-loss or quest-session confirmations, or when Blizzard asks you to choose a role. The native popup handles the final action.",
     raid_shortcuts = "Type /msufraid to expand Blizzard's Raid Manager, /msufpull [1-60] for its native countdown, or /msufmark tank or /msufmark healer to mark one unambiguous party member. Optional automatic markers work only for one clear tank or healer in a five-player party, as leader or assistant. Existing and occupied markers are respected. Countdowns, markers and ready checks wait while Blizzard restricts them during combat, encounters and keystones; automatic markers try again afterwards.",
@@ -132,6 +133,8 @@ local GROUPS = {
         sections = { "group_finder_double_click" } },
     { id = "groupFinderApplicantSort", title = "Mythic+ applicant score sorting (Retail)", switch = "enabled",
         sections = { "group_finder_applicant_sort" } },
+    { id = "mythicAutoQueue", title = "Mythic+ Auto Queue (Retail)", switch = "enabled", sections = { "mythic_auto_queue" },
+        aliases = { "auto queue", "auto que", "auto accept", "auto invite", "auto role check", "rollenabfrage", "automatisch annehmen" } },
     { id = "guildChatPrivacy", title = "Guild chat privacy cover (Retail)", switch = "enabled",
         sections = { "guild_privacy" } },
     { id = "innervateCue", title = "Innervate whisper cue (Retail Druid)", switch = "enabled", sections = { "innervate_cue" } },
@@ -234,7 +237,7 @@ local CATEGORIES = {
             "groupFinderExitReminder.enabled", "groupFinderDoubleClick.enabled",
         } },
         { id = "mythic", title = "Mythic+", keys = {
-            "mythicKeyShare.enabled", "groupFinderApplicantSort.enabled", "mythicResetReminder.enabled",
+            "mythicKeyShare.enabled", "mythicAutoQueue.enabled", "groupFinderApplicantSort.enabled", "mythicResetReminder.enabled",
             "tooltipMPlusScore.enabled", "enemyCastStack.enabled", "dungeonPortals.enabled",
         } },
     } },
@@ -303,11 +306,9 @@ end
 SortCategories()
 P.QualityOfLifeCategories = CATEGORIES
 P.QualityOfLifeSearchFeatures = GROUPS
-
 local function GroupEnabled(group)
     return P.Get(group.id, "enabled") == true and P.Get(group.id, group.switch) == true
 end
-
 local function SetGroupEnabled(group, value)
     if group.switch == "enabled" then return P.Set(group.id, "enabled", value) end
     local otherActive = P.Get(group.id, "enabled") == true and P.Get(group.id, group.other) == true

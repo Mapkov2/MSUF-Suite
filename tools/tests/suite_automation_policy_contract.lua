@@ -41,7 +41,7 @@ end
 -- Kept here on purpose: dropping a flag from the catalog fails this list, and
 -- an automation API call in an unflagged module fails the source scan.
 local MODULES = { "qol", "quests", "combatLog", "lootContainers", "trustedPartyInvites", "delveSolePower",
-    "professionAppearance", "collectionNewMarkers", "autoUprank" }
+    "professionAppearance", "collectionNewMarkers", "autoUprank", "mythicAutoQueue" }
 local SWITCHES = { "qol.repair", "qol.autoJunk", "loot.quickLoot", "dailyComfort.autoSkipCinematic",
     "groupRaidShortcuts.autoMarkTank", "groupRaidShortcuts.autoMarkHealer", "groupFinderDoubleClick.quickApply",
     "mythicKeyShare.insertKey", "mythicResetReminder.announceReset", "tooltipDetails.inspectHovered", "autoUprank.replaceLowerRanks" }
@@ -180,7 +180,7 @@ local APIS = {
     "CancelAuraByInstanceID", "CancelUnitBuff", "SendChatMessage", "SendAddonMessage", "NotifyInspect",
     "StopCinematic", "CinematicFrame_CancelCinematic", "CreateMacro", "SlotKeystone", "DoReadyCheck",
     "DoCountdown", "LFGListApplicationDialogSignUpButton_OnClick", "ApplyToGroup", "TaxiRequestEarlyLanding",
-    "SetLootSpecialization",
+    "SetLootSpecialization", "CompleteLFGRoleCheck", "AcceptInvite",
 }
 -- Calls that run only after the player's own click or confirmation.
 local CONFIRMED = {
