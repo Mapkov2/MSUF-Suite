@@ -152,7 +152,7 @@ def build(root, output, curseforge_client_beta=False, release_channel="alpha"):
             "displayName": title + (" (CurseForge Client)" if curseforge_client_beta else ""),
             "releaseType": release_type, "changelogType": "markdown", "changelog": notes,
             "gameVersionNames": ["12.1.5", "1.60.1"],
-            "relations": {"projects": [{"slug": "midnightsimpleunitframes", "projectID": "1384660",
+            "relations": {"projects": [{"slug": "midnightsimpleunitframes", "projectID": 1384660,
                                          "type": "requiredDependency"}]},
         },
         "WAGO_METADATA.json": {

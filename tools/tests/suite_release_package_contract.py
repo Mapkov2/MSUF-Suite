@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
         for name, digest in manifest["files"].items():
             assert hashlib.sha256(package.read(name)).hexdigest() == digest, name
     curseforge = json.loads((first.parent / "CURSEFORGE_METADATA.json").read_text(encoding="utf-8"))
-    assert curseforge["relations"]["projects"] == [{"slug": "midnightsimpleunitframes", "projectID": "1384660",
+    assert curseforge["relations"]["projects"] == [{"slug": "midnightsimpleunitframes", "projectID": 1384660,
                                                   "type": "requiredDependency"}]
     wago = json.loads((first.parent / "WAGO_METADATA.json").read_text(encoding="utf-8"))
     assert wago["stability"] == "alpha"
