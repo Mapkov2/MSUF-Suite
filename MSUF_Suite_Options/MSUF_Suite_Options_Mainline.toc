@@ -29,6 +29,7 @@ Pages\ActionBars.lua
 Pages\MinimapPreviewArt.lua
 Pages\MinimapPreviewPaint.lua
 Pages\MinimapPreview.lua
+Pages\MinimapSections.lua
 Pages\Minimap.lua
 Pages\DamageMeter.lua
 Pages\Bags.lua

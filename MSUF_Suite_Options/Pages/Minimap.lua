@@ -64,8 +64,9 @@ local STYLE_PRESETS = {
     { 2, "Clean", "aab5c2" },
     { 3, "Arcane", "b7a4ff" }, { 4, "Ember", "ffc078" },
     { 5, "Astral", "a7e8ff" }, { 6, "Steel", "c1d6df" },
+    { 12, "Class Style", "e6ecf2" },
 }
-local PRESET_COLUMNS, PRESET_GAP = 4, 7
+local PRESET_GAP = 7
 
 -- A tall preset tile: the style's border art as a swatch above its name.
 local function PresetButton(body, spec, index, width)
@@ -101,13 +102,14 @@ local function BuildStylePresets(ctx, b)
         help = HELP.style_presets,
         open = true,
         extra = function(body, y, width)
-            local buttonWidth = math.max(40, math.floor((width - PRESET_GAP * (PRESET_COLUMNS - 1)) / PRESET_COLUMNS))
+            local columns = math.max(1, math.min(4, math.floor((width + PRESET_GAP) / 125)))
+            local buttonWidth = math.floor((width - PRESET_GAP * (columns - 1)) / columns)
             local buttons = {}
             for i, spec in ipairs(STYLE_PRESETS) do
                 local button = PresetButton(body, spec, i, buttonWidth)
                 button:SetPoint("TOPLEFT", body, "TOPLEFT",
-                    16 + ((i - 1) % PRESET_COLUMNS) * (buttonWidth + PRESET_GAP),
-                    y - math.floor((i - 1) / PRESET_COLUMNS) * 62)
+                    16 + ((i - 1) % columns) * (buttonWidth + PRESET_GAP),
+                    y - math.floor((i - 1) / columns) * 62)
                 buttons[i] = button
             end
             M.TrackRefresh(ctx, function()
@@ -116,9 +118,16 @@ local function BuildStylePresets(ctx, b)
                     buttons[i]:SetAlpha(selected == spec[1] and 1 or 0.58)
                 end
             end)
-            return y - math.ceil(#STYLE_PRESETS / PRESET_COLUMNS) * 62 - 6
+            return y - math.ceil(#STYLE_PRESETS / columns) * 62 - 6
         end,
     })
+end
+
+local function SkinStatus(ctx)
+    return function(body, y, width)
+        local height = Suite.HostBridge.IconSkinStatusRow(M, ctx, body, 16, y - 8, width, P.IconSkinKey(ID))
+        return height > 0 and y - 8 - height or y
+    end
 end
 
 local function Build(ctx)
@@ -141,33 +150,7 @@ local function Build(ctx)
           function() return S.states[ID] and S.states[ID].reloadRequired ~= nil end, key = "reload" },
     })
     sections.style_presets = BuildStylePresets(ctx, b)
-    for _, section in ipairs({ "layout", "hover_size", "landing", "shape", "behavior", "elements", "dungeon", "addons" }) do
-        local rules = P.SectionRules(ID, section)
-        sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(rules[1].sectionTitle), rules,
-            { help = HELP[section], open = section == "layout" })
-    end
-    for _, section in ipairs({ "style_art", "style_glow", "style_backdrop" }) do
-        local rules = P.SectionRules(ID, section)
-        sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(rules[1].sectionTitle), rules,
-            { help = HELP[section], open = false })
-    end
-    if not Suite.Client.isForever then
-        sections.specialization = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_specialization",
-            Tr("Minimap specialization menu"), P.SectionRules(ID, "specialization"),
-            { help = HELP.specialization, open = false })
-    end
-    for _, field in ipairs(Suite.MinimapInfoFields) do
-        local section = "info_" .. field:lower()
-        sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(field == "FPS" and "FPS" or field), P.SectionRules(ID, section),
-            { help = HELP[section], open = false })
-    end
-    for _, section in ipairs({ "info_difficulty", "info_colors", "info_tooltips" }) do
-        local rules = P.SectionRules(ID, section)
-        if #rules > 0 then
-            sections[section] = P.RuleSection(ctx, b, PAGE, ID, "suite_minimap_" .. section, Tr(rules[1].sectionTitle), rules,
-                { help = HELP[section], open = false })
-        end
-    end
+    P.MinimapSections.BuildMinimapSections(ctx, b, sections, HELP, SkinStatus(ctx))
 end
 
 P.RegisterPage({ key = PAGE, label = "Minimap", title = "Minimap", build = Build, icon = { 2, 0 },

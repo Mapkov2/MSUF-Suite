@@ -83,7 +83,8 @@ P.W.FocusCollapsibleSection = function(section) focused = section.sectionId end
 for key, section in pairs({clock="info_clock",fps="info_fps",latency="info_latency",coordinates="info_coordinates",durability="info_durability",location="info_location",weather="info_weather",difficultyText="info_difficulty",zoom="behavior",compass="behavior"}) do
     focused = nil
     buttons[key]:GetScript("OnClick")(buttons[key], "RightButton")
-    assert(focused == "suite_minimap_" .. section, "layer opened the wrong settings: " .. key)
+    local owner = section:match("^info_") and "information" or section
+    assert(focused == "suite_minimap_" .. owner, "layer opened the wrong settings: " .. key)
 end
 for _, handle in ipairs(ui.handles) do
     if handle._key:match("^ornament_") then assert(handle._previewLayerKey == "ornament", "artwork selection lost its layer") end

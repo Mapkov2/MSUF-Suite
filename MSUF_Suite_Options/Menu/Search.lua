@@ -253,6 +253,7 @@ local function SectionRow(page, spec, title, sectionId, ruleKey)
 end
 
 local function SearchableRule(spec, rule, config)
+    if spec.id == "minimap" and not P.MinimapSections.IsMinimapSectionAvailable(rule.section) then return false end
     if spec.controlAvailable and not spec.controlAvailable(rule, config) then return false end
     -- A rule this client cannot use has no control: its page skips the section
     -- (Buff Reminders' Mainline consumables on WoW Forever).

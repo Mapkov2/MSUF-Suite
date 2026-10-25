@@ -50,7 +50,7 @@ local function SetArrowBindings(ui, enabled)
 end
 
 local function FocusSection(ui, section)
-    local target = ui.sections[section]
+    local target = ui.sections.ResolveMinimapSection(section)
     if target and W.FocusCollapsibleSection then W.FocusCollapsibleSection(target, { persist = true, flash = true }) end
 end
 

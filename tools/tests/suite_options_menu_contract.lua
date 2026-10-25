@@ -381,7 +381,15 @@ local function CheckSearchTargets(searchRows, pageContexts, requireReverse)
         for _, section in ipairs(ctx.sections) do sections[pageKey][section.sectionId] = true end
         for _, id in ipairs(ctx.qualityOfLifeFeatureOrder or {}) do sections[pageKey][id] = true end
         if ctx.fixedPreview then sections[pageKey][pageKey .. "_preview"] = true end
-        for _, widget in ipairs(ctx.widgets) do Collect(widget.meta) end
+        if ctx.minimapSections then
+            local resolve = optionsNS.HM.GetMissingSectionResolver(ctx.entry)
+            for source, group in pairs(ctx.minimapSections.routes) do
+                local sectionId = "suite_minimap_" .. source
+                assert(resolve(sectionId) == group.body, "minimap section alias did not resolve: " .. source)
+                sections[pageKey][sectionId] = true
+            end
+        end
+        for _, widget in ipairs(ctx.widgets) do Collect(rawget(widget, "registeredMeta") or widget.meta) end
     end
     local checked = 0
     for _, row in ipairs(searchRows) do
@@ -1617,21 +1625,25 @@ do
     local keys, byKey = {}, {}
     for i, spec in ipairs(areas) do keys[i], byKey[spec.key] = spec.key, spec end
     assert(table.concat(keys, " ") == "suite_cdm_ess suite_cdm_uti suite_cdm_def suite_cdm_ext suite_cdm_buf suite_cdm_bar "
-        .. "suite_cdm_custom suite_actionbars suite_playerauras_buffs suite_playerauras_debuffs",
+        .. "suite_cdm_custom suite_actionbars suite_playerauras_buffs suite_playerauras_debuffs "
+        .. "suite_minimap suite_buffreminders suite_damageMeter",
         "icon skin areas: " .. table.concat(keys, " "))
     local GROUPS = { suite_actionbars = "Action bars", suite_playerauras_buffs = "Player aura layout",
-        suite_playerauras_debuffs = "Player aura layout" }
+        suite_playerauras_debuffs = "Player aura layout", suite_minimap = "Minimap",
+        suite_buffreminders = "Buff reminders", suite_damageMeter = "Damage meter" }
     for _, spec in ipairs(areas) do
         assert(spec.group == "T:" .. (GROUPS[spec.key] or "Cooldown manager") and spec.label:sub(1, 2) == "T:",
             spec.key .. ": the Suite translates its own group and row labels")
-        assert(spec.read() == "DEFAULT" and (not spec.shape or spec.shape() == "RECTANGLE"),
+        local default = spec.module == "minimap" or spec.module == "buffReminders" or spec.module == "damageMeter"
+        assert(spec.read() == (default and "CUSTOM" or "DEFAULT") and (not spec.shape or spec.shape() == "RECTANGLE"),
             spec.key .. ": an area must start Like default and square")
     end
     -- Each row says whether its icons are drawn now (Page.RegisterArea
     -- `available`): while its module is off (Buffs and Debuffs: Player aura
     -- skins and Player aura layout), false and a translated reason naming it.
     local MODULES = { suite_actionbars = { "actionbars" }, suite_playerauras_buffs = { "playerAuraSkins", "playerAuras" },
-        suite_playerauras_debuffs = { "playerAuraSkins", "playerAuras" } }
+        suite_playerauras_debuffs = { "playerAuraSkins", "playerAuras" }, suite_minimap = { "minimap" },
+        suite_buffreminders = { "buffReminders" }, suite_damageMeter = { "damageMeter" } }
     -- The rows read `enabled` through the Get of the namespace Register.lua
     -- was loaded with (S.Config hands out a copy without an active profile):
     -- the cases set it there. Reasons are translated when a row is asked: Tr
@@ -1685,6 +1697,20 @@ do
     assert(byKey.suite_playerauras_debuffs.write("DARK2") and auras.debuffSkin == "DARK2" and auras.buffSkin == "DEFAULT",
         "the Debuffs row writes only the debuff skin")
     assert(optionsNS.Set("playerAuras", "debuffSkin", "DEFAULT"))
+    local map, reminders, meter = S.Config("minimap"), S.Config("buffReminders"), S.Config("damageMeter")
+    assert(byKey.suite_minimap.write("ROUND1") and map.shape == 2 and map.iconSkin == "ROUND1")
+    assert(optionsNS.Set("minimap", "shape", 3) and byKey.suite_minimap.write("SHADOW1") and map.shape == 3,
+        "a rectangular skin must preserve the existing wide map")
+    defaultShape, defaultSkin = "RECTANGLE", "SHADOW1"
+    assert(byKey.suite_minimap.write("DEFAULT") and byKey.suite_minimap.setShape("RECTANGLE"))
+    hooks["MSUF_Suite_Options.shapes"]({}, "apply")
+    assert(map.shape == 3, "following a rectangular default must preserve Wide geometry")
+    defaultShape, defaultSkin = nil, nil
+    assert(not byKey.suite_minimap.setShape("HEXAGON"), "the native map must reject unsupported masks")
+    assert(byKey.suite_buffreminders.write("ROUND1") and reminders.iconShape == 2 and reminders.iconSkin == "ROUND1")
+    assert(not byKey.suite_damageMeter.shape and byKey.suite_damageMeter.write("SHADOW1") and meter.iconSkin == "SHADOW1")
+    assert(byKey.suite_minimap.write("CUSTOM") and byKey.suite_buffreminders.write("CUSTOM")
+        and byKey.suite_damageMeter.write("CUSTOM"), "each new area restores its previous appearance")
     local cdm, bars = S.Config("cooldownManager"), S.Config("actionbars")
     assert(byKey.suite_cdm_ess.write("SHADOW1") and cdm.ess_iconSkin == "SHADOW1" and cdm.uti_iconSkin == "DEFAULT",
         "a bar's row writes only that bar's skin")
@@ -1777,9 +1803,18 @@ assert(rawget(L, "Enable module") == "MSUF-eigene Übersetzung", "suite changed 
 local contexts = {}
 for _, key in ipairs(expected) do
     local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
-    if key == "suite_qualityOfLife" or key == "suite_dataTexts" then ctx.entry = { sections = {} } end
+    if key == "suite_qualityOfLife" or key == "suite_dataTexts" or key == "suite_minimap" then ctx.entry = { sections = {} } end
     current = ctx
     M.pages[key].build(ctx)
+    -- The broad inventory deliberately visits each lazy minimap editor.
+    -- Cold construction and selection isolation have their own contract.
+    if ctx.minimapSections then
+        for _, group in pairs(ctx.minimapSections.groups) do
+            local selected = group.selected
+            for _, source in ipairs(group.sources) do ctx.minimapSections:SelectMinimapSettings(source) end
+            ctx.minimapSections:SelectMinimapSettings(selected)
+        end
+    end
     if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
     for _, fn in ipairs(ctx.refreshers) do fn() end
     for _, section in ipairs(ctx.sections) do assert(section.finished, key .. " section not finished: " .. section.sectionId) end
@@ -1931,6 +1966,14 @@ do
     local finder = assert(rows[finderId])
     assert(finder.hasDetails and resolver(finderId) == finder.details,
         "group finder quick apply and saved note settings must remain reachable")
+    local autoQueueId = "suite_qualityOfLife_mythicAutoQueue_mythic_auto_queue"
+    local autoQueue = assert(rows[autoQueueId])
+    assert(autoQueue.hasDetails and resolver(autoQueueId) == autoQueue.details,
+        "Mythic+ Auto Queue options must remain reachable")
+    local autoQueueSpec = S.catalog.mythicAutoQueue
+    assert(autoQueueSpec.optIn and autoQueueSpec.automation and autoQueueSpec.defaultEnabled == false
+        and autoQueueSpec.rules.roleCheck.default and autoQueueSpec.rules.invites.default,
+        "Mythic+ Auto Queue must require opt-in and preserve its independent action defaults")
     local simpleId = "suite_qualityOfLife_tooltipClassColors_class_colors"
     local simple = assert(rows[simpleId])
     assert(not simple.hasDetails and not simple.details and not simple.settings
@@ -2568,12 +2611,25 @@ end
 assert(sliderCount > 0, "suite pages contain no sliders")
 -- Suite pages have no inline color boxes. Every visible catalog color must
 -- remain in its section's three-dot picker, including selected-bar templates.
+function optionsNS.MinimapColorSections(ctx)
+    local out = {}
+    for _, section in ipairs(ctx.sections) do out[#out + 1] = section end
+    if ctx.minimapSections then
+        for _, group in pairs(ctx.minimapSections.groups) do
+            for source, view in pairs(group.views) do
+                view.frame.sectionId = "suite_minimap_" .. source
+                out[#out + 1] = view.frame
+            end
+        end
+    end
+    return out
+end
 local shortcutColors, shortcutColorCount = {}, 0
 for pageKey, ctx in pairs(contexts) do
     for _, widget in ipairs(ctx.widgets) do
         assert(widget.rowKind ~= "color", pageKey .. " still renders an inline color box")
     end
-    for _, section in ipairs(ctx.sections) do
+    for _, section in ipairs(optionsNS.MinimapColorSections(ctx)) do
         if type(section.colorShortcut) == "table" then
             local targets = section.colorShortcut.options.getTargets()
             assert(section.colorShortcut.options.maxTargets >= #targets,
@@ -3275,7 +3331,8 @@ local qolFeaturesByCategory = {
     },
     groupFinderMythic = {
         "groupFinderExitReminder_group_finder_exit", "groupFinderDoubleClick_group_finder_double_click",
-        "mythicKeyShare_keystone_command", "groupFinderApplicantSort_group_finder_applicant_sort",
+        "mythicKeyShare_keystone_command", "mythicAutoQueue_mythic_auto_queue",
+        "groupFinderApplicantSort_group_finder_applicant_sort",
         "mythicResetReminder_mythic_reset", "tooltipMPlusScore_mplus_score",
         "enemyCastStack_dungeon_casts", "dungeonPortals_dungeon_portals",
     },
@@ -3370,7 +3427,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 66 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 67 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated")
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")
@@ -4017,7 +4074,7 @@ local function Find(ctx, predicate)
     for _, widget in ipairs(ctx.widgets) do if predicate(widget) then return widget end end
 end
 local function ColorTarget(ctx, sectionId, settingKey)
-    for _, section in ipairs(ctx.sections) do
+    for _, section in ipairs(optionsNS.MinimapColorSections(ctx)) do
         if section.sectionId == sectionId and type(section.colorShortcut) == "table" then
             for _, target in ipairs(section.colorShortcut.options.getTargets()) do
                 if target.sourceSettingKey == settingKey or target.settingKey == settingKey then return target end
@@ -4310,6 +4367,12 @@ do
     for _, path in ipairs(fonts) do if path == "Interface\\AddOns\\Test\\Clock.ttf" then found = true end end
     assert(found, "the minimap preview ignored the clock's chosen font")
 end
+function optionsNS.MinimapFocus(source)
+    local group = source:match("^info_") and source ~= "info_tooltips" and "information"
+        or ({ style_art = "decoration", style_glow = "decoration", style_backdrop = "decoration",
+            elements = "buttons", landing = "buttons", dungeon = "buttons", specialization = "buttons" })[source]
+    return "suite_minimap_" .. (group or source)
+end
 local focusedSection, focusOpts
 W.FocusCollapsibleSection = function(section, opts)
     focusedSection, focusOpts = section.sectionId, opts
@@ -4329,7 +4392,7 @@ else
     M.RequestRefresh()
     assert(specPreview.shown, "enabled specialization button missing from minimap preview")
     specPreview.scripts.OnClick(specPreview)
-    assert(focusedSection == "suite_minimap_specialization", "specialization preview must open its own accordion")
+    assert(focusedSection == optionsNS.MinimapFocus("specialization"), "specialization preview must open its own accordion")
     local deps, body = mm.fixedPreview.section.expander.box.selectionDeps, mm.fixedPreview.section.expander.box
     assert(deps.WriteOffsets(body, specPreview, 31, -17) and config.specX == 31 and config.specY == -17,
         "specialization selection editor must write independent minimap offsets")
@@ -4417,7 +4480,7 @@ for key, section in pairs({ map = "layout", style = "shape", ornament = "style_a
     local target = previewControls["menu2.suite_minimap.minimap.preview." .. key]
     assert(target and target.scripts.OnClick, "minimap preview lacks " .. key)
     target.scripts.OnClick(target)
-    assert(focusedSection == "suite_minimap_" .. section, "minimap preview routed " .. key .. " incorrectly")
+    assert(focusedSection == optionsNS.MinimapFocus(section), "minimap preview routed " .. key .. " incorrectly")
 end
 local fixed = mm.fixedPreview
 local selectionBox = fixed.section.expander.box
@@ -4440,12 +4503,12 @@ assert(offsets.ResetOffsets(selectionBox, selectedButton)
     and S.Config("minimap").buttonTrackingY == Suite.SuiteCatalog.minimap.rules.buttonTrackingY.default,
     "selection bar reset did not restore defaults")
 offsets.OpenSettings(selectionBox, selectedButton)
-assert(focusedSection == "suite_minimap_elements" and fixed.section.expander.expanded,
+assert(focusedSection == optionsNS.MinimapFocus("elements") and fixed.section.expander.expanded,
     "selection bar settings jump displaced the fixed preview")
 local glowLayer = previewControls["menu2.suite_minimap.minimap.preview.layer.glow"]
 assert(glowLayer and glowLayer.scripts.OnClick, "glow preview layer missing")
 glowLayer.scripts.OnClick(glowLayer, "RightButton")
-assert(focusedSection == "suite_minimap_style_glow", "right-clicking a layer did not open its settings")
+assert(focusedSection == optionsNS.MinimapFocus("style_glow"), "right-clicking a layer did not open its settings")
 local drawerPreview = previewControls["menu2.suite_minimap.minimap.preview.drawer"]
 local originalIsAddOnLoaded = Suite.Client.IsAddOnLoaded
 Suite.Client.IsAddOnLoaded = function(name)
@@ -4507,10 +4570,10 @@ assert(mapPreview.width == 190 and mapPreview.height == 127, "wide preview did n
 S.Config("minimap").shape = 1
 M.RequestRefresh()
 folioPreview.scripts.OnClick()
-assert(focusedSection == "suite_minimap_landing" and focusOpts.persist and focusOpts.flash,
+assert(focusedSection == optionsNS.MinimapFocus("landing") and focusOpts.persist and focusOpts.flash,
     "Folio preview did not reveal its accordion")
 stylePreview.scripts.OnClick()
-assert(focusedSection == "suite_minimap_shape", "style preview did not reveal border and shadow")
+assert(focusedSection == optionsNS.MinimapFocus("shape"), "style preview did not reveal border and shadow")
 hiddenLayer.scripts.OnClick()
 local priorPreviewShown = S.MinimapElementPreviewShown
 S.MinimapElementPreviewShown = function(key) if key == "Mail" then return false end return nil end
@@ -4561,7 +4624,7 @@ cursorX, cursorY = 109, 96
 clockPreview.scripts.OnDragStop(clockPreview)
 assert(S.Config("minimap").infoClockX > oldX and S.Config("minimap").infoClockY < oldY,
     "dragging a preview text did not save both offsets")
-assert(focusedSection == "suite_minimap_info_clock", "dragging a text did not reveal its accordion")
+assert(focusedSection == optionsNS.MinimapFocus("info_clock"), "dragging a text did not reveal its accordion")
 previewControls["menu2.suite_minimap.minimap.preview.map"].GetCenter = function() return 100, 100 end
 local trackingPreview = previewControls["menu2.suite_minimap.minimap.preview.tracking"]
 local calendarPreview = previewControls["menu2.suite_minimap.minimap.preview.calendar"]
@@ -4571,7 +4634,7 @@ trackingPreview.scripts.OnDragStart(trackingPreview)
 cursorX, cursorY = 140, 100
 trackingPreview.scripts.OnDragStop(trackingPreview)
 assert(S.Config("minimap").buttonTrackingX == 40 and S.Config("minimap").buttonCalendarX == calendarX
-    and focusedSection == "suite_minimap_elements",
+    and focusedSection == optionsNS.MinimapFocus("elements"),
     "dragging a Blizzard button did not save an independent position")
 cursorX, cursorY = 100, 100
 calendarPreview.scripts.OnDragStart(calendarPreview)
@@ -4611,7 +4674,7 @@ folioPreview.scripts.OnDragStart(folioPreview)
 cursorX, cursorY = 80, 80
 folioPreview.scripts.OnDragStop(folioPreview)
 assert(S.Config("minimap").landingX ~= folioStartX and S.Config("minimap").landingY ~= folioStartY
-    and focusedSection == "suite_minimap_landing", "dragging Folio did not save its corner offsets")
+    and focusedSection == optionsNS.MinimapFocus("landing"), "dragging Folio did not save its corner offsets")
 GetZoneText = function() return "Dornogal" end
 M.RequestRefresh()
 assert(locationPreview.width < S.Config("minimap").infoLocationWidth * 0.75,
@@ -4638,7 +4701,7 @@ cursorX, cursorY = 113, 92
 locationPreview.scripts.OnMouseUp(locationPreview, "LeftButton")
 assert(not locationPreview.moving and S.Config("minimap").infoLocationX > locationX
     and S.Config("minimap").infoLocationY < locationY
-    and focusedSection == "suite_minimap_info_location", "real mouse drag did not move Dornogal")
+    and focusedSection == optionsNS.MinimapFocus("info_location"), "real mouse drag did not move Dornogal")
 assert(arrowBinding and arrowBinding.enabled and arrowBinding.box == selectionBox
     and locationPreview.keyboardEnabled, "selected minimap element did not capture arrow keys")
 local arrowX, arrowY = S.Config("minimap").infoLocationX, S.Config("minimap").infoLocationY
@@ -5720,7 +5783,7 @@ end)()
         pending, lazy = {}, lazyHost
         W.PageBuilder = Builder
         local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
-        if key == "suite_qualityOfLife" or key == "suite_dataTexts" then ctx.entry = { sections = {} } end
+        if key == "suite_qualityOfLife" or key == "suite_dataTexts" or key == "suite_minimap" then ctx.entry = { sections = {} } end
         current = ctx
         M.pages[key].build(ctx)
         if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
