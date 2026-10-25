@@ -313,6 +313,9 @@ local CUSTOM_SLOT = {}
 for _, slot in ipairs(Suite.CDM.SLOTS) do CUSTOM_SLOT[slot.key] = slot.custom == true end
 function P.IconSkinKey(slot)
     if slot == "actionbars" then return "suite_actionbars" end
+    if slot == "minimap" then return "suite_minimap" end
+    if slot == "buffReminders" then return "suite_buffreminders" end
+    if slot == "damageMeter" then return "suite_damageMeter" end
     return "suite_cdm_" .. (CUSTOM_SLOT[slot] and "custom" or slot)
 end
 local function IndexOf(list, value)
@@ -373,7 +376,7 @@ local function FlushShapes(refreshed)
                 local skinKey, shapeKey = a.skinKeys[i] or a.skinKeys[1], a.shapeKeys[i]
                 local wanted = P.Get(a.id, skinKey) == "DEFAULT" and Suite.HostBridge.IconSkinShape("DEFAULT")
                 local index = wanted and IndexOf(a.ids, wanted)
-                if index and index ~= P.Get(a.id, shapeKey) then
+                if index and wanted ~= a.ids[P.Get(a.id, shapeKey)] then
                     local values = batches[a.id] or {}
                     batches[a.id] = values
                     values[shapeKey] = index
@@ -455,7 +458,15 @@ local function RegisterIconSkinAreas()
     -- Player aura layout module draws them.
     specs[#specs + 1] = SquareArea("suite_playerauras_buffs", "Player aura layout", "Buffs", 1, "playerAuras", "buffSkin")
     specs[#specs + 1] = SquareArea("suite_playerauras_debuffs", "Player aura layout", "Debuffs", 2, "playerAuras", "debuffSkin")
+    specs[#specs + 1] = SkinArea(P.IconSkinKey("minimap"), "Minimap", "Map", 1, "minimap",
+        { "iconSkin" }, { "shape" }, { "RECTANGLE", "CIRCLE", "RECTANGLE" }, "Interface\\Icons\\INV_Misc_Map_01")
+    specs[#specs + 1] = SkinArea(P.IconSkinKey("buffReminders"), "Buff reminders", "Icons", 1, "buffReminders",
+        { "iconSkin" }, { "iconShape" }, Suite.IconShapeIds, SKIN_SAMPLES.buf)
+    specs[#specs + 1] = SquareArea(P.IconSkinKey("damageMeter"), "Damage meter", "Bar icons", 1, "damageMeter", "iconSkin")
     local running = {
+        minimap = Running({ "minimap" }, "Turn on the Minimap to skin this map."),
+        buffReminders = Running({ "buffReminders" }, "Turn on Buff reminders to skin these icons."),
+        damageMeter = Running({ "damageMeter" }, "Turn on the Damage meter to skin these icons."),
         cooldownManager = Running({ "cooldownManager" }, "Turn on the Cooldown manager to skin these icons."),
         actionbars = Running({ "actionbars" }, "Turn on Action bars to skin these buttons."),
         playerAuras = Running({ "playerAuraSkins", "playerAuras" },

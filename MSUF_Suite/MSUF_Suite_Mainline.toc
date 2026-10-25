@@ -53,6 +53,7 @@ Core\SpellRange.lua
 Core\FontBridge.lua
 Integrations\MapkoSkin.lua
 Core\HostBridge.lua
+Core\GlossMaterial.lua
 Core\HostBridgeMenu.lua
 Core\ProfileIO.lua
 Core\InstallerLayout.lua

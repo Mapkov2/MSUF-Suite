@@ -200,6 +200,13 @@ local function Create(self)
         speedText, speedValue, self.surgeLabel, self.surgeText }
 end
 
+local function StyleGloss(bar, config, shown)
+    if config.glossEnabled or bar.glossActive then
+        bar.glossActive = NS.GlossMaterial.Bar(bar, config.glossEnabled == true and shown,
+            config.glossStrength, 1)
+    end
+end
+
 local function Style(self)
     local c = self.config
     local texture = S.ResolveTexture(c.barTexture, BAR_TEXTURE)
@@ -227,13 +234,17 @@ local function Style(self)
     self.surgeText:SetTextColor(RGB(c.textColor))
     for _, row in ipairs(self.rows) do
         local r, g, b = RGB(row == self.wind and c.windColor or c.accentColor)
-        for _, pip in ipairs(row.pips) do
+        local count = row == self.wind and (self.windCount or 3) or (self.vigorCount or 6)
+        for index, pip in ipairs(row.pips) do
             pip:SetStatusBarTexture(texture)
             Paint(pip.track, c.trackColor, c.trackOpacity / 100)
             pip:SetStatusBarColor(r, g, b)
+            StyleGloss(pip, c, index <= count and (row == self.wind and c.showSecondWind
+                or row == self.vigor and c.showVigor and c.vigorDisplay ~= 2))
         end
     end
     self.speed:SetStatusBarTexture(texture)
+    StyleGloss(self.speed, c, c.showSpeed)
     Paint(self.speed.track, c.trackColor, c.trackOpacity / 100)
     -- The speed bar switches between these two colors while flying.
     self.accentR, self.accentG, self.accentB = RGB(c.accentColor)
@@ -409,6 +420,11 @@ local function DrawRow(self, row, preview, maxPips, now)
         local top = ContentTop(c)
         LayoutRow(row, ContentWidth(c), row == self.wind and top
             or (c.showSecondWind and top - RowHeight(c, "wind") or top), count, c)
+        -- Only a capacity change adds/removes pip decoration; value ticks do not.
+        for index, pip in ipairs(row.pips) do
+            StyleGloss(pip, c, index <= count and (row == self.wind and c.showSecondWind
+                or row == self.vigor and c.showVigor and c.vigorDisplay ~= 2))
+        end
     end
     local alpha = current and 1 or 0.35
     for i = 1, count do

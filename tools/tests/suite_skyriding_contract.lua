@@ -8,7 +8,16 @@ local cooldown = { startTime = 0, duration = 0 }
 
 local function Widget(parent)
     local w = { shown = true, parent = parent }
-    function w:CreateTexture() return Widget(self) end
+    function w:CreateTexture()
+        local texture = Widget(self)
+        self.textures = self.textures or {}
+        self.textures[#self.textures + 1] = texture
+        return texture
+    end
+    function w:GetStatusBarTexture() self.fill = self.fill or Widget(self) return self.fill end
+    function w:SetVertexColor(r,g,b,a) self.vertex = {r,g,b} self.alpha = a end
+    function w:SetTexCoord(...) self.uv = {...} end
+    function w:SetBlendMode(value) self.blend = value end
     function w:CreateFontString() return Widget(self) end
     function w:GetParent() return self.parent end
     function w:SetFrameStrata(value) self.strata = value end
@@ -99,7 +108,8 @@ assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", suit
 MSUFSuite = suite
 local private = {}
 for _, file in ipairs({ "Bootstrap", "Skyriding" }) do
-    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
+    local path = file == "Skyriding" and arg[2] or nil
+    assert(loadfile(path or root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
 end
 local module = S.instances.skyriding
 module.active = true
@@ -381,4 +391,70 @@ S.DrawSkyridingPreview(parent, config, sample, { scale = .5, width = 200, height
 local view = parent.suiteFlightPreview
 assert(math.abs(view.edges[1].height * view.host:GetEffectiveScale() - config.borderSize) < .001,
     "first fitted flight paint used stale scale for edges")
-print("suite_skyriding_contract: OK")
+-- The real material is shared by live pips and the menu-owned flight scene.
+-- Native alpha shares the vertex-color lane in this fixture.
+suite.HostBridge = { GlossTexture = function() return "existing-gloss.tga" end }
+assert(loadfile(root .. "/MSUF_Suite/Core/GlossMaterial.lua"))("MSUF_Suite", suite)
+local paintBar, materialCalls = suite.GlossMaterial.Bar, 0
+suite.GlossMaterial.Bar = function(...)
+    materialCalls = materialCalls + 1
+    return paintBar(...)
+end
+local function Reflections(bar)
+    local found = {}
+    for _, texture in ipairs(bar.textures or {}) do
+        if texture.blend == "ADD" then found[#found+1] = texture end
+    end
+    return found
+end
+config.vigorDisplay, config.glossEnabled, config.glossStrength = 1, true, 80
+S.DrawSkyridingPreview(parent, config, sample)
+view = parent.suiteFlightPreview
+local reflections = Reflections(view.vigor.pips[1])
+assert(#reflections == 2, "flight preview did not paint the runtime Gloss material")
+assert(math.abs(reflections[1].vertex[1]-.8*.65)<.000001 and reflections[1].alpha==1,
+    "flight Gloss strength was overwritten by opacity")
+assert(#Reflections(view.vigor.pips[8]) == 0, "unused flight pip allocated Gloss regions")
+config.glossStrength = 0
+S.DrawSkyridingPreview(parent, config, sample)
+assert(not reflections[1]:IsShown() and not reflections[2]:IsShown(), "zero strength stayed visible")
+config.glossStrength = 40
+S.DrawSkyridingPreview(parent, config, sample)
+assert(Reflections(view.vigor.pips[1])[1] == reflections[1] and reflections[1]:IsShown(), "restyle replaced reflection")
+config.vigorDisplay = 2
+S.DrawSkyridingPreview(parent, config, sample)
+assert(not reflections[1]:IsShown(), "bar Gloss covered native Vigor gems")
+config.vigorDisplay, config.glossEnabled = 1, false
+S.DrawSkyridingPreview(parent, config, sample)
+assert(not reflections[1]:IsShown(), "disabled Gloss retained a reflection")
+local beforeCalls = materialCalls
+S.DrawSkyridingPreview(parent, config, sample)
+assert(materialCalls == beforeCalls, "never-active disabled material ran again")
+module.config = config
+config.glossEnabled = true
+flying, capable, speed = true, true, 700
+-- The controller closes the old context after Disable, removing all its events.
+for event in pairs(events) do events[event] = nil end
+charges[372610] = { currentCharges = 6, maxCharges = 6 }
+charges[425782] = { currentCharges = 3, maxCharges = 3 }
+module:Enable()
+assert(#Reflections(module.vigor.pips[8]) == 0, "unused live pip allocated a reflection")
+charges[372610] = { currentCharges = 8, maxCharges = 8 }
+charges[425782] = { currentCharges = 4, maxCharges = 4 }
+events.SPELL_UPDATE_CHARGES(module)
+now = now + .11
+module.host.OnUpdate(module.host, .11)
+assert(#Reflections(module.vigor.pips[8]) == 2 and #Reflections(module.wind.pips[4]) == 2,
+    "capacity increase left newly visible flight pips without Gloss")
+charges[372610] = { currentCharges = 6, maxCharges = 6 }
+charges[425782] = { currentCharges = 3, maxCharges = 3 }
+events.SPELL_UPDATE_CHARGES(module)
+now = now + .11
+module.host.OnUpdate(module.host, .11)
+assert(not Reflections(module.vigor.pips[8])[1]:IsShown() and not Reflections(module.wind.pips[4])[1]:IsShown(),
+    "capacity decrease retained hidden pip reflections")
+beforeCalls = materialCalls
+for i=1,20 do now=now+.11 if module.host.OnUpdate then module.host.OnUpdate(module.host,.11) end end
+assert(materialCalls == beforeCalls, "flight tick ran the material painter")
+module:Disable()
+print("suite_skyriding_contract: OK (Gloss real material, zero/disable/gems/reuse, no flight-tick work)")

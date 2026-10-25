@@ -23,6 +23,10 @@ local function WindowKey(key)
     return suffix and ("w" .. selected .. suffix) or key
 end
 
+local function IconSkinStatus(ctx, body, y, width)
+    return y - Suite.HostBridge.IconSkinStatusRow(M, ctx, body, 16, y, width, P.IconSkinKey(ID))
+end
+
 local gradientKeys = { "gradientDirLeft", "gradientDirRight", "gradientDirUp", "gradientDirDown" }
 local function BuildGradientPad(ctx, body, y, width)
     local sectionId = "suite_damageMeter_bars"
@@ -164,12 +168,17 @@ local function Build(ctx)
         if #rules > 0 then
             P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_damageMeter_" .. section, Tr(rules[1].sectionTitle), rules,
                 { help = HELP[section], open = section == "general",
-                  extra = section == "bars" and function(body, y, width) return BuildGradientPad(ctx, body, y, width) end or nil })
+                  extra = section == "bars" and function(body, y, width)
+                      return IconSkinStatus(ctx, body, BuildGradientPad(ctx, body, y, width), width)
+                  end or nil })
         end
     end
     BuildWindows(ctx, b)
     -- Windows above the configured count keep their settings but stay hidden.
     P.Gates[ID] = function(rule, key)
+        if rule.key == "glossEnabled" or rule.key == "glossStrength" then
+            return Suite.GlossMaterial.Available(), "This look requires MSUF 7.0."
+        end
         if rule.key == "nameEllipsis" then return P.Get(ID, "nameMaxChars") > 0 end
         if rule.key == "shadowOpacity" or rule.key == "shadowDistance" then
             return P.Get(ID, "rendering") ~= P.Suite.FontRendering.SLUG

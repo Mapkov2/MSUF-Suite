@@ -20,15 +20,26 @@ end
 
 local CARD = { width = 146, height = 44, fill = { .06, .07, .09, .92 }, edge = 1, line = { .54, .72, .78, .95 } }
 
+local function WatchGloss(self, on)
+    if on or self.glossWatch then
+        NS.HostBridge.WatchIconSkins(ID, on)
+        self.glossWatch = on or nil
+    end
+end
+
 local function Create(self)
     if self.host then return end
 
     local host, panel, edges = S.QoLCard(CARD)
+    if self.previewParent then
+        host:SetParent(self.previewParent)
+        host:SetFrameStrata(self.previewParent:GetFrameStrata())
+    end
 
     local icon = S.CreateTexture(host, nil, "ARTWORK")
     icon:SetPoint("LEFT", host, "LEFT", 3, 0)
     icon:SetSize(38, 38)
-    icon:SetTexture(C_Spell.GetSpellTexture(SPELL_ID))
+    icon:SetTexture(self.previewParent and "Interface\\Icons\\Spell_Nature_Reincarnation" or C_Spell.GetSpellTexture(SPELL_ID))
 
     local cooldown = S.CreateFrame("Cooldown", nil, host, "CooldownFrameTemplate")
     cooldown:SetAllPoints(icon)
@@ -53,8 +64,8 @@ local function Create(self)
     maximum:SetTextColor(.7, .84, .88)
 
     host:Hide()
-    self.host, self.panel, self.edges, self.cooldown, self.title, self.count, self.maximum =
-        host, panel, edges, cooldown, title, count, maximum
+    self.host, self.panel, self.edges, self.cooldown, self.title, self.count, self.maximum, self.icon =
+        host, panel, edges, cooldown, title, count, maximum, icon
 end
 
 local function Place(self)
@@ -64,7 +75,15 @@ local function Place(self)
     self.count:SetTextColor(S.RGB(style.text))
     self.maximum:SetTextColor(S.RGB(style.muted))
     self.host:SetSize(c.width, c.height)
-    S.PlaceHost(self.host, c)
+    if self.previewViewport then
+        local viewport = self.previewViewport
+        self.host:SetScale(math.min(viewport.scale, viewport.width / c.width, viewport.height / c.height))
+    else
+        S.PlaceHost(self.host, c)
+    end
+    if c.glossEnabled or self.glossIconActive then
+        self.glossIconActive = NS.GlossMaterial.Icon(self.host, self.icon, c.glossEnabled, c.glossStrength, 38) or nil
+    end
 end
 
 local function InSharedPool(self)
@@ -166,6 +185,7 @@ local function RecheckStart(self)
 end
 
 function M:Enable()
+    WatchGloss(self, self.config.glossEnabled == true)
     self.startJob = self.context:Coalesce(START_RECHECK, RecheckStart)
     Create(self)
     Place(self)
@@ -181,6 +201,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    WatchGloss(self, self.config.glossEnabled == true)
     S.SetFont(self.title, nil, 11, "OUTLINE")
     S.SetFont(self.count, nil, 22, "OUTLINE")
     S.SetFont(self.maximum, nil, 12, "OUTLINE")
@@ -190,6 +211,7 @@ end
 
 -- The context's Release drops a pending key recheck.
 function M:Disable()
+    WatchGloss(self, false)
     if self.watching then WatchCharges(self, false) end
     if self.host then
         self.cooldown:Clear()
@@ -206,6 +228,22 @@ function M:RegisterMovers()
         quickPosition = true, historyKeys = { "width", "height", "scale" },
         sizeKeys = { "width", "height", "scale" },
     })
+end
+
+function S.DrawBattleResPreview(parent, config, _, viewport)
+    local view = parent.suiteBattleResPreview
+    if not view then
+        view = { previewParent = parent }
+        parent.suiteBattleResPreview = view
+    end
+    view.config, view.previewViewport = config, viewport
+    Create(view)
+    Place(view)
+    view.count:SetText("2")
+    view.maximum:SetText("/3")
+    view.cooldown:SetCooldown(0, 0)
+    view.host:Show()
+    return view.host
 end
 
 S.Install(ID, M)

@@ -171,6 +171,13 @@ end
 
 ------------------------------------------------------------------ rows
 -- Cold style: sizes, fonts and text anchors change only in Refresh.
+local function WatchGloss(self, on)
+    if on or self.glossWatch then
+        NS.HostBridge.WatchIconSkins(ID, on)
+        self.glossWatch = on or nil
+    end
+end
+
 local function Style(self, row)
     local c, font = self.config, S.GlobalFontPath()
     local height = c.rowHeight
@@ -190,6 +197,12 @@ local function Style(self, row)
         row.name:SetPoint("RIGHT", row, "RIGHT", -TIME_WIDTH, 0)
     end
     row.target:SetShown(c.targetLine == true)
+    if c.glossEnabled or row.glossIconActive then
+        row.glossIconActive = NS.GlossMaterial.Icon(row, row.icon, c.glossEnabled, c.glossStrength, height) or nil
+    end
+    if c.glossEnabled or row.glossBarActive then
+        row.glossBarActive = NS.GlossMaterial.Bar(row, c.glossEnabled, c.glossStrength, 1) or nil
+    end
     row.slot = nil
 end
 
@@ -622,7 +635,7 @@ end
 
 ------------------------------------------------------------------ Edit Mode samples
 local function PaintSample(self, row, index)
-    local samples = Samples()
+    local samples = self.previewSamples or Samples()
     local sample, c = samples[(index - 1) % #samples + 1], self.config
     local color = sample.locked and self.lockedRGB or sample.important and self.priorityRGB or self.castRGB
     row.name:SetText(sample.name)
@@ -684,6 +697,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    WatchGloss(self, self.config.glossEnabled == true)
     local c, host = self.config, self.host
     SetRGB(self.castRGB, c.castColor)
     SetRGB(self.priorityRGB, c.priorityColor)
@@ -719,6 +733,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    WatchGloss(self, false)
     Clear(self)
     self.listening = nil
     self:HideEditPreview()
@@ -733,6 +748,37 @@ function M:RegisterMovers()
         getFrame = function() return self.host end, xKey = "x", yKey = "y",
         sizeKeys = { "width", "rowHeight", "scale" },
         point = function() return "CENTER" end, quickPosition = true })
+end
+
+-- A separate menu instance never joins live cast, cooldown or range routes.
+function S.DrawEnemyCastStackPreview(parent, config, _, viewport)
+    local view = parent.suiteCastStackPreview
+    if not view then
+        view = { host = S.CreateFrame("Frame", nil, parent), previews = {},
+            castRGB = {}, priorityRGB = {}, lockedRGB = {}, stripeRGB = {}, previewSamples = {} }
+        parent.suiteCastStackPreview = view
+        view.formatter = C_StringUtil.CreateSecondsFormatter()
+        view.formatter:SetDesiredUnitCount(1)
+        view.formatter:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
+        local icons = { "Spell_Frost_FrostBolt02", "Spell_Shadow_MindFlay", "Spell_Nature_Lightning", "Spell_Fire_Immolation" }
+        for index, sample in ipairs(SAMPLES) do
+            view.previewSamples[index] = { name = S.Text("Cast"), target = S.Text("Target"), icon = "Interface\\Icons\\" .. icons[index],
+                fraction = sample.fraction, left = sample.left, important = sample.important,
+                locked = sample.locked, far = sample.far, marker = sample.marker }
+        end
+    end
+    view.config = config
+    SetRGB(view.castRGB, config.castColor)
+    SetRGB(view.priorityRGB, config.priorityColor)
+    SetRGB(view.lockedRGB, config.lockedColor)
+    SetRGB(view.stripeRGB, config.stripeColor)
+    local height = config.listSize * config.rowHeight + (config.listSize - 1) * GAP
+    view.host:SetSize(config.width, height)
+    if viewport then view.host:SetScale(math.min(viewport.scale, viewport.width / config.width, viewport.height / height)) end
+    for _, row in ipairs(view.previews) do Style(view, row) end
+    ShowSamples(view)
+    view.host:Show()
+    return view.host
 end
 
 S.Install(ID, M)

@@ -30,6 +30,13 @@ local function Samples()
     return samples
 end
 
+local function WatchGloss(self, on)
+    if on or self.glossWatch then
+        NS.HostBridge.WatchIconSkins(ID, on)
+        self.glossWatch = on or nil
+    end
+end
+
 local function NewRow(host)
     local frame = S.CreateFrame("Frame", nil, host)
     frame:EnableMouse(false)
@@ -58,8 +65,8 @@ end
 
 local function Create(self)
     if self.host then return end
-    local host = S.CreateFrame("Frame", nil, UIParent)
-    host:SetFrameStrata("MEDIUM")
+    local host = S.CreateFrame("Frame", nil, self.previewParent or UIParent)
+    if not self.previewParent then host:SetFrameStrata("MEDIUM") end
     host:EnableMouse(false)
     self.host, self.rows = host, {}
     self.header = S.CreateFontString(host, nil, "OVERLAY")
@@ -84,9 +91,14 @@ local function Layout(self)
     self.header:SetPoint("TOPLEFT", self.host, "TOPLEFT", 4, -2)
     self.header:SetSize(totalWidth - 8, headerHeight)
     self.header:SetShown(headerHeight > 0)
-    self.host:SetScale(c.scale / 100)
-    self.host:ClearAllPoints()
-    self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    local viewport = self.previewViewport
+    if viewport then
+        self.host:SetScale(math.min(viewport.scale, viewport.width / totalWidth, viewport.height / (height + headerHeight)))
+    else
+        self.host:SetScale(c.scale / 100)
+        self.host:ClearAllPoints()
+        self.host:SetPoint(point, UIParent, point, c.x, c.y)
+    end
     for index, row in ipairs(self.rows) do
         row.frame:ClearAllPoints()
         local offset = (index - 1) * ((horizontal and width or c.rowHeight) + c.rowGap)
@@ -133,11 +145,15 @@ local function Style(self)
         row.rule:SetShown(not iconsOnly)
         row.marker:SetShown(not iconsOnly and c.showChevron)
         row.name:SetShown(not iconsOnly and c.showNames)
+        if c.glossEnabled or row.glossIconActive then
+            row.glossIconActive = NS.GlossMaterial.Icon(row.frame, row.icon, c.glossEnabled,
+                c.glossStrength, c.rowHeight - (iconsOnly and 2 or 4)) or nil
+        end
     end
 end
 
 local function Paint(self)
-    local entries = S.editMode and Samples() or self.history
+    local entries = self.previewEntries or (S.editMode and Samples() or self.history)
     local count = math.min(self.config.rows, #entries)
     for index, row in ipairs(self.rows) do
         local entry = index <= count and entries[index]
@@ -285,6 +301,7 @@ local function SyncEvents(self)
 end
 
 function M:Enable()
+    WatchGloss(self, self.config.glossEnabled == true)
     Create(self)
     self.history = {}
     self.lastCastAt = nil
@@ -296,6 +313,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    WatchGloss(self, self.config.glossEnabled == true)
     Layout(self)
     Style(self)
     Paint(self)
@@ -304,6 +322,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    WatchGloss(self, false)
     self.history = {}
     self.lastCastAt, self.pausedAt = nil, nil
     for _, row in ipairs(self.rows or {}) do
@@ -327,6 +346,26 @@ end
 function S.SetActionTrackerSessionHidden(hidden)
     M.sessionHidden = hidden == true
     if M.active then Paint(M) end
+end
+
+-- Menu samples share the live layout and styling without event subscriptions.
+function S.DrawActionTrackerPreview(parent, config, _, viewport)
+    local view = parent.suiteActionTrackerPreview
+    if not view then
+        view = { previewParent = parent, previewEntries = {} }
+        parent.suiteActionTrackerPreview = view
+        local icons = { "Spell_Frost_FrostBolt02", "Spell_Shadow_MindFlay", "Spell_Nature_Lightning",
+            "Spell_Fire_Immolation", "Ability_Rogue_KidneyShot" }
+        for index, icon in ipairs(icons) do
+            view.previewEntries[index] = { name = S.Text("Action"), icon = "Interface\\Icons\\" .. icon }
+        end
+    end
+    view.config, view.previewViewport = config, viewport
+    Create(view)
+    Layout(view)
+    Style(view)
+    Paint(view)
+    return view.host
 end
 
 S.Install(ID, M)

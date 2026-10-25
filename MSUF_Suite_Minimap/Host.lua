@@ -462,17 +462,18 @@ end
 
 function MM.ApplyBorder()
     local c = M.config
-    local thickness = MM.BorderWidth()
+    local skinned, outset = MM.style:PaintIconSkin(c, MM.width, MM.height, MM.host, true)
+    local thickness = skinned and 0 or MM.BorderWidth()
     local r, g, b = BorderRGB()
     local round = c.shape == SHAPE.CIRCLE
     PlaceRing(MM.edges, MM.disc, 0, thickness, r, g, b, c.borderAlpha / 100, thickness > 0, round)
-    local outerSize = (c.outerBorderSize or 0) * MM.Pixel()
+    local outerSize = skinned and 0 or (c.outerBorderSize or 0) * MM.Pixel()
     local inner = thickness + (c.outerBorderGap or 4) * MM.Pixel()
     local or_, og, ob = S.RGB(c.outerBorderColor or "000000")
     PlaceRing(MM.outerEdges, MM.outerDisc, inner, inner + outerSize, or_, og, ob, 1, outerSize > 0, round)
-    local shadow = c.shadowSize * MM.Pixel()
+    local shadow = skinned and 0 or c.shadowSize * MM.Pixel()
     ApplyShadows(c, thickness, shadow, round)
-    local outer = ClampOutside(c, math.max(thickness + shadow, outerSize > 0 and inner + outerSize or 0))
+    local outer = ClampOutside(c, math.max(outset, thickness + shadow, outerSize > 0 and inner + outerSize or 0))
     MM.host:SetClampRectInsets(-outer, outer, outer, -outer)
 end
 

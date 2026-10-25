@@ -252,7 +252,7 @@ end
 -- What one compile changed: the reminder list (entries), the host anchor,
 -- the geometry (size, spacing, columns), the border color and the count
 -- text. Reused, so an unchanged compile allocates nothing.
-local changed = { entries = false, anchor = false, geometry = false, color = false, text = false }
+local changed = { entries = false, anchor = false, geometry = false, color = false, text = false, skin = false }
 
 -- Compares the layout settings with the ones applied last.
 local function ReadLayoutChanges(layout, c)
@@ -262,13 +262,17 @@ local function ReadLayoutChanges(layout, c)
     changed.color = not layout or layout.borderColor ~= c.borderColor
     changed.text = not layout or layout.countFont ~= c.countFont or layout.countSize ~= c.countSize
         or layout.countPosition ~= c.countPosition or layout.countX ~= c.countX or layout.countY ~= c.countY
-    return changed.anchor or changed.geometry or changed.color or changed.text
+    local shape, look = R.IconLook(c)
+    changed.skin = not layout or layout.look ~= look or layout.shape ~= shape
+    changed.look, changed.shape = look, shape
+    return changed.anchor or changed.geometry or changed.color or changed.text or changed.skin
 end
 
 local function RememberLayout(layout, c)
     layout.point, layout.x, layout.y = c.point, c.x, c.y
     layout.size, layout.spacing, layout.columns = c.size, c.spacing, c.columns
     layout.borderColor = c.borderColor
+    layout.look, layout.shape = changed.look, changed.shape
     layout.countFont, layout.countSize, layout.countPosition = c.countFont, c.countSize, c.countPosition
     layout.countX, layout.countY = c.countX, c.countY
     return layout
@@ -281,7 +285,7 @@ local function LayoutButtons(self, entries)
     if newEntries or geometry then
         view.host:SetSize(R.IconGeometry(c, #entries))
     end
-    if not (newEntries or geometry or changed.color or changed.text) then return end
+    if not (newEntries or geometry or changed.color or changed.text or changed.skin) then return end
     local r, g, b = S.RGB(c.borderColor)
     local buttons = view.buttons
     for index = 1, math.max(#entries, #buttons) do
@@ -295,10 +299,14 @@ local function LayoutButtons(self, entries)
             if newEntries then BindButton(button, entry) end
             if newEntries or changed.text then R.StyleCount(button, c) end
             if newEntries or changed.color then
-                button.border:SetColorTexture(r, g, b, 1)
+                if button.reminderBorderArt then button.border:SetVertexColor(r, g, b)
+                else
+                    button.border:SetColorTexture(r, g, b, 1)
+                end
                 button.alertColor = nil
             end
             if newEntries or geometry then button:SetSize(size, size) end
+            if newEntries or geometry or changed.skin then R.StyleIcon(button, c, changed.look, changed.shape) end
         end
     end
 end
@@ -679,6 +687,7 @@ function M:Enable()
 end
 
 function M:Refresh()
+    NS.HostBridge.WatchIconSkins("buffReminders", self.config.iconSkin ~= "CUSTOM")
     ReadInstance(self)
     R.SyncPreparationEvents(self, OnEvent)
     RegisterEvents(self)
@@ -689,6 +698,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    NS.HostBridge.WatchIconSkins("buffReminders", false)
     R.StopCursor(self)
     CancelThreshold(self)
     R.StopReminderAlerts(self)

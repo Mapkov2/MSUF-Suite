@@ -143,6 +143,8 @@ B.Module("battleRes", {
     editElement = "charges",
 })
 B.Section("battleRes", "battle_res", "Battle resurrection", {
+    Bool("glossEnabled", "Glossy icons"),
+    Number("glossStrength", "Gloss strength (percent)", 50, 0, 100, 5),
     Number("width", "Display width", 146, 146, 350),
     Number("height", "Display height", 44, 44, 80),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
@@ -150,6 +152,8 @@ B.Section("battleRes", "battle_res", "Battle resurrection", {
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", 120, -3000, 3000),
 })
+
+NS.SuiteCatalog.battleRes.rules.glossStrength.enableKey = "glossEnabled"
 
 -- The flight HUD is Retail-only and remains dormant until explicitly enabled.
 B.Module("skyriding", {
@@ -215,6 +219,8 @@ B.Section("skyriding", "flight_typography", "Text and bars", {
     Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     B.Texture("barTexture", "Bar texture"),
+    Bool("glossEnabled", "Glossy bars"),
+    Number("glossStrength", "Gloss strength (percent)", 50, 0, 100, 5),
     Number("barHeight", "Bar height", 10, 6, 18),
     Number("vigorHeight", "Vigor bar height (0 inherits)", 0, 0, 32),
     Number("windHeight", "Second Wind bar height (0 inherits)", 0, 0, 32),
@@ -225,6 +231,7 @@ B.Section("skyriding", "flight_typography", "Text and bars", {
     Number("speedTextY", "Speed value Y offset", 0, -100, 100),
     Number("rowGap", "Space between rows", 0, 0, 12),
 })
+NS.SuiteCatalog.skyriding.rules.glossStrength.enableKey = "glossEnabled"
 NS.SuiteCatalog.skyriding.rules.font.defaultLabel = "MSUF global font (default)"
 B.LinkFontShadow(NS.SuiteCatalog.skyriding.rules)
 B.Section("skyriding", "flight_colors", "Colors and panel", {

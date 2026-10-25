@@ -242,6 +242,39 @@ end
 local Renderer = {}
 Renderer.__index = Renderer
 
+local function IconLook(c)
+    if not c.iconSkin or c.iconSkin == "CUSTOM" then return nil end
+    return NS.HostBridge.IconSkinLook(c.iconSkin, c.shape == SHAPE.CIRCLE and "CIRCLE" or "RECTANGLE")
+end
+
+function Renderer:IconSkinChanged(c)
+    return self.iconLook ~= IconLook(c)
+end
+
+-- Only the cold style/geometry path paints the shared host material. The map
+-- keeps its native terrain, mask, player arrow and interactive children.
+function Renderer:PaintIconSkin(c, width, height, anchor, shown)
+    local look = IconLook(c)
+    self.iconLook = look
+    local paint = shown and look or nil
+    if paint and not self.iconSurface then
+        self.iconSurface = Surface(self.parent, self.over:GetFrameLevel() - 1)
+    end
+    if not self.iconSurface then return look ~= nil, 0 end
+    if self.iconPaintLook ~= paint or self.iconWidth ~= width or self.iconHeight ~= height
+        or self.iconAnchor ~= anchor then
+        if self.iconAnchor ~= anchor then self.iconSurface:SetAllPoints(anchor) end
+        NS.HostBridge.PaintIconSkin(self.iconSurface, paint, width, height, anchor)
+        self.iconPaintLook, self.iconWidth, self.iconHeight, self.iconAnchor = paint, width, height, anchor
+    end
+    if self.iconShown ~= (paint ~= nil) then
+        self.iconShown = paint ~= nil
+        self.iconSurface:SetShown(self.iconShown)
+    end
+    local x, y = NS.HostBridge.IconSkinOutset(look, width, height)
+    return look ~= nil, math.max(x or 0, y or 0)
+end
+
 -- c: minimap settings; layerOn(key) filters preview layers (nil: all shown).
 function Renderer:Paint(c, scale, layerOn, animate, widthOverride, heightOverride)
     scale = tonumber(scale) or 1
@@ -257,6 +290,12 @@ function Renderer:Paint(c, scale, layerOn, animate, widthOverride, heightOverrid
 end
 
 function Renderer:Hide()
+    if self.iconSurface then
+        if self.iconPaintLook then NS.HostBridge.PaintIconSkin(self.iconSurface, nil) end
+        self.iconSurface:Hide()
+        self.iconLook, self.iconPaintLook, self.iconShown = nil, nil, false
+        self.iconWidth, self.iconHeight, self.iconAnchor = nil, nil, nil
+    end
     self.backdrop:Hide()
     self.glow:Hide()
     self.artUnder:Hide()

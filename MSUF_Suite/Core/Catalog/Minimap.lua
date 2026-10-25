@@ -109,6 +109,7 @@ B.Section(id, "hover_size", "Mouseover size", {
     Number("hoverHeight", "Mouseover height", 300, 100, 600),
 })
 B.Section(id, "shape", "Shape, border and shadow", {
+    String("iconSkin", "Icon skin", "CUSTOM", 64),
     Choice("shape", "Map shape", 1, { "Square", "Circle", "Wide rectangle (3:2)" }),
     Number("borderSize", "Border thickness", 1, 0, 4),
     Color("borderColor", "Border color", "000000"),
@@ -431,6 +432,7 @@ if NS.Client.isForever then
     end
 end
 rules.captured.hidden = true
+rules.iconSkin.hidden = true
 -- The preview selection bar is the sole numeric editor for movable elements.
 -- Keep these rules in the catalog for validation, presets and Edit Mode.
 rules.x.previewOnly, rules.y.previewOnly = true, true

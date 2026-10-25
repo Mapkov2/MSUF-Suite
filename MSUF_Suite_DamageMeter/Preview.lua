@@ -20,6 +20,9 @@ local function Style()
     for key in pairs(S.catalog.damageMeter.rules) do
         if settings[key] ~= c[key] then settings[key], changed = c[key], true end
     end
+    if M.style and c.iconSkin ~= "CUSTOM" then
+        changed = changed or M.style.iconSkin ~= P.NS.HostBridge.IconSkinLook(c.iconSkin)
+    end
     if changed then
         M.config = c
         M.styleGen = M.styleGen + 1

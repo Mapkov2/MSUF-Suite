@@ -109,6 +109,7 @@ local ICON_SKINS_VERSION = 1
 local SQUARE = "RECTANGLE"
 local skinsResolved, iconSkins = false, nil
 local skinLooks = { [SQUARE] = {} } -- icon shape -> choice -> look, or false for no skin
+local strengthLooks = setmetatable({}, { __mode = "k" }) -- compiled look -> strength variants
 local skinWatchers = {}   -- module id -> true while it draws skins
 local skinHooks = {}      -- key -> fn, run before the watchers refresh
 local refreshed = {}      -- module id -> true when a hook refreshed it already
@@ -121,6 +122,7 @@ local function IconSkinsChanged(reason)
     -- Icon Skins page set for it) are written first, so each module
     -- refreshes once, with the new look and its shape; a hook names the
     -- modules its writes refreshed in `refreshed`.
+    for look in pairs(strengthLooks) do strengthLooks[look] = nil end
     for id in pairs(refreshed) do refreshed[id] = nil end
     for _, fn in pairs(skinHooks) do fn(refreshed, reason) end
     -- Suite.Suite: the module controller (Core/Suite.lua); out of combat here.
@@ -147,7 +149,25 @@ end
 -- round action buttons), or nil when no skin draws: an older host, CUSTOM,
 -- an unknown id or a skin made for another shape. Equal looks are the same
 -- table until MSUF reports a change.
-function HostBridge.IconSkinLook(choice, shape)
+local function StrengthLook(skins, look, strength)
+    if not look or not skins.WithGlossStrength then return nil end
+    local variants = strengthLooks[look]
+    if not variants then variants = {} strengthLooks[look] = variants end
+    local adjusted = variants[strength]
+    if adjusted == nil then
+        adjusted = skins.WithGlossStrength(look, strength) or false
+        variants[strength] = adjusted
+    end
+    return adjusted or nil
+end
+
+-- Optional current-host artwork; older hosts keep their existing appearance.
+function HostBridge.GlossTexture()
+    local skins = HostBridge.IconSkins()
+    return skins and skins.GlossTexture and skins.GlossTexture() or nil
+end
+
+function HostBridge.IconSkinLook(choice, shape, strength)
     local skins = HostBridge.IconSkins()
     if not skins then return nil end
     if choice == nil then choice = skins.DEFAULT end
@@ -162,6 +182,7 @@ function HostBridge.IconSkinLook(choice, shape)
         look = skins.Compile(choice, shape) or false
         looks[choice] = look
     end
+    if strength ~= nil then return StrengthLook(skins, look, strength) end
     return look or nil
 end
 

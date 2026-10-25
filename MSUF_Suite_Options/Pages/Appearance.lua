@@ -277,8 +277,8 @@ local function BuildLook(ctx, b, skin)
                     Change(skin, "Skin color palette", "palette", function() return skin.Theme.ApplyPreset(value) end)
                 end, paletteValues),
         }, true, function(body, y, width)
-            local scope = P.Text(body, "Applies to Skinning and all enabled Suite modules.", 16, y, width, T.colors.text)
-            y = y - math.max(14, scope:GetStringHeight()) - 12
+            local scope = body and P.Text(body, "Applies to Skinning and all enabled Suite modules.", 16, y, width, T.colors.text)
+            if scope then y = y - math.max(14, scope:GetStringHeight()) - 12 end
             local half = math.floor((width - 12) / 2)
             local restore = format(Tr("Restore %s"), defaultLabel)
             Button(ctx, body, restore, 16, y, half, function()

@@ -45,6 +45,12 @@ local function Widget()
     end
     function w:SetTexCoord() end
     function w:SetColorTexture() end
+    function w:SetVertexColor() end
+    function w:SetDrawLayer() end
+    function w:SetFrameLevel() end
+    function w:GetFrameLevel() return 1 end
+    function w:SetWidth() end
+    function w:SetHeight() end
     function w:SetAllPoints() end
     function w:SetPoint() end
     function w:ClearAllPoints() end
@@ -210,6 +216,8 @@ local _, catalogNS = Support.CatalogDefaults(root, "buffReminders")
 catalogNS.Defaults = {}
 catalogNS.FinalizeCatalog()
 NS.Defaults = catalogNS.Defaults
+NS.IconShapeIds = catalogNS.IconShapeIds
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
 local private = { NS=NS, Suite=S }
 Support.Load(root, "MSUF_Suite_BuffReminders", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(testModule)

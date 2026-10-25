@@ -79,6 +79,8 @@ B.Module("enemyCastStack", {
     editElement = "casts",
 })
 B.Section("enemyCastStack", "dungeon_casts", "Dungeon cast stack", {
+    Bool("glossEnabled", "Glossy bars and icons"),
+    Number("glossStrength", "Gloss strength (percent)", 50, 0, 100, 5),
     Number("listSize", "Casts listed at once", 4, 1, 12),
     Choice("castKinds", "Cast types", 1, { "Casts and channels", "Casts", "Channels" }),
     Bool("fadeMinor", "Fade casts the game does not mark as important"),
@@ -103,6 +105,7 @@ B.Section("enemyCastStack", "dungeon_casts", "Dungeon cast stack", {
 })
 do
     local rules = NS.SuiteCatalog.enemyCastStack.rules
+    rules.glossStrength.enableKey = "glossEnabled"
     rules.x.hidden, rules.y.hidden = true, true
     rules.readyStyle.enableKey, rules.stripeColor.enableKey = "readyStripe", "readyStripe"
 end

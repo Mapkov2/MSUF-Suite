@@ -111,6 +111,8 @@ B.Section(id, "appearance", "Icons", {
     Choice("reminderSoundChannel", "Reminder sound channel", 1, { "Master", "Sound effects", "Dialog" }),
     Choice("reminderGlow", "Reminder border effect", 1, { "Normal", "Highlight", "Pulse" }),
     Color("reminderGlowColor", "Reminder highlight color", "ffd200"),
+    String("iconSkin", "Icon skin", "CUSTOM", 64),
+    Choice("iconShape", "Icon shape", 1, NS.IconShapeLabels),
     Number("size", "Icon size", 38, 22, 72),
     Number("spacing", "Icon spacing", 5, 0, 20),
     Number("columns", "Icons per row", 6, 1, 12),
@@ -131,6 +133,7 @@ B.Section(id, "position", "Position", {
 })
 
 local rules = NS.SuiteCatalog[id].rules
+rules.iconSkin.hidden = true
 rules.spellIDs.spells = true
 rules.mainHandItem.items = true
 rules.offHandItem.items = true

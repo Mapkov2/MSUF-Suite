@@ -45,6 +45,13 @@ local function AddPotionMap()
     P.Set(ID, "mapPotionMaps", value == "" and tostring(map) or value .. "," .. map)
 end
 
+local function SkinStatus(ctx)
+    return function(body, y, width)
+        local height = P.Suite.HostBridge.IconSkinStatusRow(P.M, ctx, body, 16, y - 8, width, P.IconSkinKey(ID))
+        return height > 0 and y - 8 - height or y
+    end
+end
+
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Buff Reminders", height = 202,
         tabs = {
@@ -65,7 +72,8 @@ local function Build(ctx)
                 P.ReminderVisibility.Build(ctx, b, section[1], section[2])
             else
                 P.MenuWorkspace.Rules(ctx, b, PAGE, ID, PAGE .. "_" .. section[1], Tr(section[2]),
-                    P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = false })
+                    P.SectionRules(ID, section[1]), { help = HELP[section[1]], open = false,
+                        extra = section[1] == "appearance" and SkinStatus(ctx) or nil })
             end
         end
     end

@@ -64,6 +64,7 @@ function S.BuffRemindersDrawPreview(stage, config, dirty, open, classSample)
     local entries, view = classSample and ClassSample(state, classSample) or state.list.entries, state.view
     local width, height = R.IconGeometry(config, #entries)
     stage:SetSize(width, height)
+    local shape, look = R.IconLook(config)
     for index = 1, math.max(#entries, #view.buttons) do
         local button = view.buttons[index]
         local entry = entries[index]
@@ -80,6 +81,7 @@ function S.BuffRemindersDrawPreview(stage, config, dirty, open, classSample)
             R.StyleCount(button, config)
             button.count:SetText(R.PreviewCount(entry))
             button:SetSize(config.size, config.size)
+            R.StyleIcon(button, config, look, shape)
             R.PositionIcon(button, stage, index - 1, config)
         end
         R.AlertTransition(state, button, entry, entry ~= nil)

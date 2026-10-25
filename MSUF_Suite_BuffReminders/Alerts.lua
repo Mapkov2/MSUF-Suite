@@ -19,7 +19,7 @@ end
 local function Pulse(button)
     local group = button.alertPulse
     if group then return group end
-    group = button.border:CreateAnimationGroup()
+    group = (button.reminderAlertBorder or button.border):CreateAnimationGroup()
     group:SetLooping("BOUNCE")
     local alpha = group:CreateAnimation("Alpha")
     alpha:SetFromAlpha(.25)
@@ -42,9 +42,20 @@ function R.AlertTransition(self, button, entry, visible)
     end
     button.alertKind, button.alertID, button.alertSlot = kind, id, slot
     local style, color = BorderStyle(self, entry)
+    local border = button.reminderAlertBorder or button.border
     if button.alertColor ~= color then
-        button.border:SetColorTexture(S.RGB(color))
+        if button.reminderBorderArt then border:SetVertexColor(S.RGB(color))
+        else
+            border:SetColorTexture(S.RGB(color))
+        end
         button.alertColor = color
+    end
+    if button.reminderSkinned or button.reminderBorderShown == false then
+        local shown = not button.reminderSkinned or style > 1
+        if button.reminderBorderShown ~= shown then
+            button.reminderBorderShown = shown
+            border:SetShown(shown)
+        end
     end
     local pulsing = visible and style == 3
     if button.alertPulsing == pulsing then return end
@@ -53,7 +64,7 @@ function R.AlertTransition(self, button, entry, visible)
         Pulse(button):Play()
     else
         if button.alertPulse then button.alertPulse:Stop() end
-        button.border:SetAlpha(1)
+        border:SetAlpha(1)
     end
 end
 

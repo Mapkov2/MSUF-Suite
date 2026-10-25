@@ -202,14 +202,18 @@ function D.StyleRow(row)
         icon:SetPoint("LEFT", row, "LEFT", list and c.iconOffsetX or 0, list and c.iconOffsetY or 0)
         bar:SetPoint("TOPLEFT", row, "TOPLEFT", height + 1, 0)
     else
-        icon:Hide()
+        D.SetIconShown(row, false)
         bar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
     end
     bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
     bar:SetStatusBarTexture(style.texture)
     D.StyleRowSurfaces(row)
     StyleGradient(bar, style)
+    if style.glossEnabled or row.glossActive then
+        row.glossActive = P.NS.GlossMaterial.Bar(bar, style.glossEnabled, style.glossStrength, style.barAlpha)
+    end
     StyleRowBorder(row, hasIcon)
+    D.StyleIconSkin(row, hasIcon)
     row.track:ClearAllPoints()
     row.track:SetAllPoints(bar)
     row.track:SetColorTexture(style.trackR, style.trackG, style.trackB, style.trackA)
@@ -268,19 +272,19 @@ function D.UnitIcon(row, spec, class, iconStyle)
     if bySpec then
         icon:SetTexture(spec)
         icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
-        icon:Show()
+        D.SetIconShown(row, true)
         return
     end
     local coords = class ~= "" and CLASS_ICON_TCOORDS[class]
     if type(coords) ~= "table" then
-        icon:Hide()
+        D.SetIconShown(row, false)
         return
     end
     local l, r, t, b = coords[1], coords[2], coords[3], coords[4]
     local dx, dy = (r - l) * zoom, (b - t) * zoom
     icon:SetTexture(CLASS_SHEET)
     icon:SetTexCoord(l + dx, r - dx, t + dy, b - dy)
-    icon:Show()
+    D.SetIconShown(row, true)
 end
 
 function D.SetBar(row, maxValue, value)
@@ -484,9 +488,9 @@ function D.PaintSpell(row, spell, source, meterType, class)
             if texture then
                 row.icon:SetTexture(texture)
                 row.icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
-                row.icon:Show()
+                D.SetIconShown(row, true)
             else
-                row.icon:Hide()
+                D.SetIconShown(row, false)
             end
             local name, pet = C_Spell.GetSpellName(id), spell.creatureName
             if not Public(name) or type(name) ~= "string" then name = "" end
@@ -498,7 +502,7 @@ function D.PaintSpell(row, spell, source, meterType, class)
         -- Secret spell IDs never reach texture lookups (reported to raise on
         -- some clients); C_Spell.GetSpellName accepts them and returns a secret.
         row.spellID = nil
-        row.icon:Hide()
+        D.SetIconShown(row, false)
         if Public(id) then
             row.spellName = ""
             row.nameText:SetText("")

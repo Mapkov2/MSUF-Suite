@@ -1,6 +1,15 @@
 local _, P = ...
 local S, K, Tr = P.S, P.PreviewCanvas, P.Tr
-local EXPORTS = { xpBar = "DrawExperienceBarPreview", skyriding = "DrawSkyridingPreview" }
+local EXPORTS = { xpBar = "DrawExperienceBarPreview", skyriding = "DrawSkyridingPreview",
+    actionTracker = "DrawActionTrackerPreview", battleRes = "DrawBattleResPreview", enemyCastStack = "DrawEnemyCastStackPreview" }
+local RETAIL = { skyriding = true, battleRes = true, enemyCastStack = true }
+local function GlossGate(rule)
+    if rule.key == "glossEnabled" or rule.key == "glossStrength" then
+        return P.Suite.GlossMaterial.Available(), "This look requires MSUF 7.0."
+    end
+    return true
+end
+for _, id in ipairs({ "actionTracker", "battleRes", "enemyCastStack", "skyriding" }) do P.Gates[id] = GlossGate end
 
 local function SampleSlider(ui, parent, key, label, maximum, step, y)
     local title = P.Text(parent, label, 16, y, ui.width)
@@ -55,7 +64,7 @@ end
 -- Lazy feature details call this once. Only these sliders' sample table changes;
 -- normal appearance controls still edit the active profile and repaint here.
 function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
-    if not EXPORTS[id] or id == "skyriding" and P.Suite.Client.isForever then return y end
+    if not EXPORTS[id] or RETAIL[id] and P.Suite.Client.isForever then return y end
     local room = width - 32
     local title = P.Text(parent, "Interactive preview", 16, y, room, P.T.colors.text)
     y = y - math.max(16, math.ceil(title:GetStringHeight() or 16)) - 6
@@ -75,7 +84,7 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     if id == "xpBar" then
         y = SampleSlider(ui, parent, "xp", "Preview XP (percent)", 100, 1, y)
         y = SampleSlider(ui, parent, "rested", "Preview rested XP (percent)", 100, 1, y)
-    else
+    elseif id == "skyriding" then
         y = SampleSlider(ui, parent, "vigor", "Preview Vigor", 6, .1, y)
         y = SampleSlider(ui, parent, "speed", "Preview speed (percent)", 1500, 10, y)
     end

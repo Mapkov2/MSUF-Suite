@@ -15,7 +15,7 @@ env.GetCurrentKeyBoardFocus = function() return nil end
 env.IsControlKeyDown, env.IsShiftKeyDown = function() return false end, function() return false end
 env.C_NamePlate = { GetNamePlates = function() return {} end, GetNamePlateForUnit = function() end }
 env.C_AddOns = {
-    GetAddOnMetadata = function() end, IsAddOnLoaded = function() return true, true end,
+    GetAddOnMetadata = function() end, IsAddOnLoaded = function(name) local loaded = name ~= "EllesmereUIDamageMeters" return loaded, loaded end,
     DoesAddOnExist = function(name) return name:find("^MSUF_Suite") ~= nil end,
     GetAddOnEnableState = function() return 2 end, LoadAddOn = function() return false, "MISSING" end,
     GetNumAddOns = function() return 0 end,
@@ -142,6 +142,35 @@ Click(targets.buttons.session, "w1Session", "suite_damageMeter_windows")
 Click(targets.buttons.settings, "windowCount", "suite_damageMeter_general")
 Click(targets.buttons.reset, "action.reset_data", "suite_damageMeter_damageMeter_module")
 Click(targets.body, "w1Width", "suite_damageMeter_windows")
+-- The Bars accordion exposes the same optional material settings as the real
+-- runtime preview; actual user callbacks write the persisted suite model.
+local glossRules = P.catalog.damageMeter.rules
+local savedGlossTexture = Suite.HostBridge.GlossTexture
+Suite.HostBridge.GlossTexture = function() end
+local supported, reason = P.RuleEnabled("damageMeter", glossRules.glossEnabled, nil, true)
+assert(not supported and reason == P.Tr("This look requires MSUF 7.0."), "old host lost the Gloss availability reason: " .. tostring(reason))
+Suite.HostBridge.GlossTexture = function() return "existing-top.tga" end
+local function GlossControl(key)
+    local exact = P.Meta("suite_damageMeter", "damageMeter", key, "setting", "suite_damageMeter_bars")
+    local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", exact)
+    return assert(widget, "Bars accordion omitted the exact Gloss control: " .. key)
+end
+local glossToggle, glossStrength = GlossControl("glossEnabled"), GlossControl("glossStrength")
+assert(P.RuleEnabled("damageMeter", glossRules.glossEnabled), "new host cannot enable Gloss")
+assert(not P.RuleEnabled("damageMeter", glossRules.glossStrength), "strength enabled before Gloss")
+glossToggle:GetScript("OnClick")(glossToggle)
+mw:RunTimers()
+assert(c.glossEnabled and P.RuleEnabled("damageMeter", glossRules.glossStrength), "Gloss toggle did not reach the saved model and gate")
+glossStrength:GetScript("OnValueChanged")(glossStrength, 75, true)
+mw:RunTimers()
+assert(c.glossStrength == 75, "Gloss strength input did not reach the saved model")
+glossStrength:GetScript("OnValueChanged")(glossStrength, 0, true)
+mw:RunTimers()
+assert(c.glossStrength == 0, "Gloss strength input replaced explicit zero")
+glossToggle:GetScript("OnClick")(glossToggle)
+mw:RunTimers()
+assert(c.glossEnabled == false and not P.RuleEnabled("damageMeter", glossRules.glossStrength), "Gloss toggle did not turn off the saved model and gate")
+Suite.HostBridge.GlossTexture = savedGlossTexture
 local selectedIndex = preview.selected
 -- Change the page's actual picker closure, then exercise real exact preparation.
 debug.setupvalue(selectedIndex, 1, 2)

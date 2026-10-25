@@ -142,6 +142,7 @@ function M:Refresh()
         S.Queue("minimap")
         return
     end
+    NS.HostBridge.WatchIconSkins("minimap", self.config.iconSkin ~= "CUSTOM")
     -- Reset replaces geometry with explicit defaults. An already-owned map
     -- must never defer first-enable capture over edits made after that reset.
     if self.mapOwned and not self.config.captured then S.Set("minimap", "captured", true) end
@@ -153,7 +154,7 @@ function M:Refresh()
         if not MM.CollectsButtons() then MM.RefreshIcons() end
     end
     if not self.mapOwned then MM.Queue("claim") end
-    if dirty.border or dirty.geometry then MM.ApplyBorder() end
+    if dirty.border or dirty.geometry or MM.style:IconSkinChanged(self.config) then MM.ApplyBorder() end
     if dirty.input then MM.ApplyInput() end
     if dirty.elements or dirty.geometry then MM.LayoutElements() end
     if dirty.drawer then MM.ApplyDrawer() elseif dirty.geometry then MM.LayoutDrawer() end
@@ -165,6 +166,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    NS.HostBridge.WatchIconSkins("minimap", false)
     if MM.style then MM.style:Hide() end
     MM.ReleaseTexts()
     MM.HideInfoTooltip()

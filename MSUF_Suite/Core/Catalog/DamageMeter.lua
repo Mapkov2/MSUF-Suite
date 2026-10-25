@@ -105,6 +105,7 @@ B.Section(id, "bars", "Bars", {
     Color("trackColor", "Bar background color", initial.trackColor),
     Number("trackAlpha", "Bar background opacity (percent)", initial.trackAlpha, 0, 100, 5),
     Choice("iconStyle", "Bar icons", 2, { "None", "Specialization", "Class" }),
+    B.String("iconSkin", "Icon skin", "CUSTOM", 64),
     Number("iconZoom", "Icon zoom (percent)", 6, 0, 20),
     Number("iconOffsetX", "Icons: horizontal", 0, -200, 200),
     Number("iconOffsetY", "Icons: vertical", 0, -200, 200),
@@ -116,6 +117,8 @@ B.Section(id, "bars", "Bars", {
     Bool("rowBorderIcon", "Include icon in row border", false),
     Bool("iconBorder", "Separate icon border", false),
     Bool("showPlayer", "Keep your own bar visible", true),
+    Bool("glossEnabled", "Glossy bars", false),
+    Number("glossStrength", "Gloss strength (percent)", 50, 0, 100, 5),
     Bool("gradientEnabled", "Bar gradient", false),
     Number("gradientStrength", "Gradient strength (percent)", 45, 0, 100, 5),
     Color("gradientColor", "Gradient color", "000000"),
@@ -247,12 +250,14 @@ end
 rules.leftColor.disabledBy = "leftClassColor"
 rules.rightColor.disabledBy = "rightClassColor"
 rules.barColor.disabledBy = "classColors"
+rules.glossStrength.enableKey = "glossEnabled"
 rules.gradientStrength.enableKey = "gradientEnabled"
 rules.gradientColor.enableKey = "gradientEnabled"
 for _, key in ipairs({ "gradientDirLeft", "gradientDirRight", "gradientDirUp", "gradientDirDown" }) do
     rules[key].hidden = true -- The Bars-style D-pad below owns these switches.
     rules[key].enableKey = "gradientEnabled"
 end
+rules.iconSkin.hidden = true
 rules.iconZoom.requiresChoice = { key = "iconStyle", values = { [ICON.SPEC] = true, [ICON.CLASS] = true } }
 rules.shadowOpacity.requiresChoice = { key = "outline", values = SHADOWED }
 rules.shadowDistance.requiresChoice = { key = "outline", values = SHADOWED }

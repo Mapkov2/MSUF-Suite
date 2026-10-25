@@ -48,6 +48,8 @@ local actionLook = NS.ActionTrackerLooks[1]
 B.Section("actionTracker", "action_tracker", "Recent actions", {
     Choice("look", "Style", 1, { "Classic UI", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
     Choice("displayPreset", "Display preset", 1, { "Standard rows", "Icons only" }),
+    Bool("glossEnabled", "Glossy icons"),
+    Number("glossStrength", "Gloss strength (percent)", 50, 0, 100, 5),
     Number("rows", "Visible actions", 5, 1, 8),
     Number("width", "Display width", 210, 150, 420, 5),
     Number("rowHeight", "Row height", 31, 24, 48),
@@ -66,6 +68,7 @@ B.Section("actionTracker", "action_tracker", "Recent actions", {
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", -40, -3000, 3000),
 })
+NS.SuiteCatalog.actionTracker.rules.glossStrength.enableKey = "glossEnabled"
 B.Section("actionTracker", "action_tracker_visibility", "Where to show recent actions", {
     Bool("showDungeons", "Dungeons", true),
     Bool("showRaids", "Raids", true),

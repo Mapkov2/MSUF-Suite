@@ -259,8 +259,9 @@ function Art:Paint(config, scale, layerOn)
     PaintTerrain(self, width, showMap)
     self.arrow:SetShown(showMap and layerOn("player"))
 
-    local border = PaintBorder(self, config, scale, width, height, round, layerOn("border"))
-    PaintShadow(self, config, scale, width, height, round, border, layerOn("shadow"))
+    local skinned = self.style:PaintIconSkin(config, width, height, self.map, showMap and layerOn("border"))
+    local border = PaintBorder(self, config, scale, width, height, round, layerOn("border") and not skinned)
+    PaintShadow(self, config, scale, width, height, round, border, layerOn("shadow") and not skinned)
     self.style:Paint(config, scale, layerOn, false)
 end
 
@@ -270,6 +271,6 @@ function P.CreateMinimapPreviewArt(canvas)
     BuildMap(art, canvas, canvasLevel)
     BuildFrame(art, canvas)
     art.terrain = ReadTerrain()
-    art.style = Suite.MinimapStyle.Create(canvas, canvasLevel, canvasLevel + 4)
+    art.style = Suite.MinimapStyle.Create(canvas, canvasLevel, canvasLevel + 5)
     return art
 end

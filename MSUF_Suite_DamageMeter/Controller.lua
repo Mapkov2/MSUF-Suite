@@ -49,6 +49,7 @@ function D.BuildStyle()
     style.leftSize, style.rightSize, style.barHeight, style.spacing = c.leftSize, c.rightSize, c.barHeight, c.barSpacing
     style.texture = S.ResolveTexture(c.barTexture, WHITE)
     style.barAlpha = c.barAlpha / 100
+    style.glossEnabled, style.glossStrength = c.glossEnabled == true, c.glossStrength or 50
     style.barR, style.barG, style.barB = S.RGB(c.barColor)
     style.gradientLeft, style.gradientRight, style.gradientUp, style.gradientDown =
         c.gradientDirLeft, c.gradientDirRight, c.gradientDirUp, c.gradientDirDown
@@ -68,6 +69,7 @@ function D.BuildStyle()
     style.rightR, style.rightG, style.rightB = S.RGB(c.rightColor)
     style.classColors, style.leftClass, style.rightClass = c.classColors, c.leftClassColor, c.rightClassColor
     style.iconStyle, style.zoom = c.iconStyle, c.iconZoom / 100
+    style.iconSkin = NS.HostBridge.IconSkinLook(c.iconSkin)
     style.rank, style.numberFormat, style.valueOrder, style.valueSeparator, style.percent, style.showPlayer =
         c.rank, c.numberFormat, c.valueOrder, c.valueSeparator, c.percent, c.showPlayer
 end
@@ -524,6 +526,7 @@ end
 
 function M:Refresh()
     local c = self.config
+    NS.HostBridge.WatchIconSkins("damageMeter", c.iconSkin ~= "CUSTOM")
     SyncHistoryVisibility()
     D.InvalidateTargets()
     -- Blizzard's own meter UI stays hidden (reversible CVar; the data API keeps
@@ -553,6 +556,7 @@ end
 
 -- Frames are kept and reused by the next Enable.
 function M:Disable()
+    NS.HostBridge.WatchIconSkins("damageMeter", false)
     M.sessionHidden = nil
     SyncHistoryVisibility()
     D.StopClock()
