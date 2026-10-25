@@ -35,7 +35,10 @@ local protected = { grid = false, routing = false }
 -- of the cooldown/usable cap is pending. Separate flags, so next-frame work
 -- (a page change, a slot change) never waits for the cap.
 local scheduled, throttled = false, false
+local sharedDue
 local last = { cooldown = 0, actionbarCooldown = 0, usable = 0, unreported = 0 }
+-- Only a capped pass can prove that this kind awaits the trailing timer.
+local waiting = {}
 -- Slots ACTION_USABLE_CHANGED has named: the client tracks their usability.
 local reported = {}
 local CAP = 0.1
@@ -55,14 +58,14 @@ local function Schedule()
 end
 
 local function CapDone()
-    throttled = false
+    throttled, sharedDue = false, nil
     -- A pending next-frame flush runs the capped walks as well.
     if not scheduled then Flush() end
 end
 
-local function Throttle(wait)
+local function Throttle(wait, due)
     if throttled then return end
-    throttled = true
+    throttled, sharedDue = true, due
     C_Timer.After(wait, CapDone)
 end
 
@@ -133,11 +136,14 @@ local function UnreportedWalk() Walk(UsableIfUnreported) end
 -- when the walk ran.
 local function Capped(kind, now, fn)
     if not dirty[kind] then return false end
-    local wait = last[kind] + CAP - now
+    local due = last[kind] + CAP
+    local wait = due - now
     if wait > 0 then
-        Throttle(wait)
+        waiting[kind] = due
+        Throttle(wait, due)
         return false
     end
+    waiting[kind] = nil
     dirty[kind] = false
     last[kind] = now
     Run(dirty, kind, true, fn)
@@ -147,7 +153,7 @@ end
 -- A full refresh repaints every bar and absorbs the same-frame marks.
 local function ExpandFull()
     dirty.full = false
-    for kind in pairs(dirty) do dirty[kind] = false end
+    for kind in pairs(dirty) do dirty[kind], waiting[kind] = false, nil end
     for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
     for rec in pairs(spellCooldowns) do spellCooldowns[rec] = nil end
     for index = 1, AB.BAR_COUNT do
@@ -163,7 +169,13 @@ local function ExpandFull()
 end
 
 local function PaintVisibleBar(bar)
-    if Visible(bar) then PaintBar(bar) end
+    if not Visible(bar) then return end
+    PaintBar(bar)
+    -- A completed owned-bar paint already refilled it. A new mark schedules
+    -- another pass and prevents reuse, including marks raised during paint.
+    if bar.owned and not bar.native and not scheduled and next(dirtySlots) and refillBars[bar] == nil then
+        refillBars[bar] = false
+    end
 end
 
 local function PaintSlot(slot)
@@ -171,7 +183,7 @@ local function PaintSlot(slot)
     if not list then return end
     for i = 1, #list do
         local rec = list[i]
-        if not rec.native and Visible(rec.bar) then
+        if not rec.native and (refillBars[rec.bar] ~= false or scheduled) and Visible(rec.bar) then
             Paint(rec)
             refillBars[rec.bar] = true
         end
@@ -187,9 +199,9 @@ local function PaintDirty()
         dirtySlots[slot] = nil
         Run(dirtySlots, slot, true, PaintSlot, slot)
     end
-    for bar in pairs(refillBars) do
+    for bar, needed in pairs(refillBars) do
         refillBars[bar] = nil
-        Run(refillBars, bar, true, Refill, bar)
+        if needed then Run(refillBars, bar, true, Refill, bar) end
     end
 end
 
@@ -302,6 +314,9 @@ Flush = function()
 end
 
 local function Mark(kind)
+    local due = waiting[kind]
+    -- Only an equally early shared wake can replace this kind's next frame.
+    if due and dirty[kind] and throttled and sharedDue <= due and not scheduled and GetTime() < due then return end
     dirty[kind] = true
     Schedule()
 end
@@ -330,7 +345,7 @@ end
 
 -- StopDispatcher: every mark and every parked unit is dropped.
 local function Reset()
-    for kind in pairs(dirty) do dirty[kind] = false end
+    for kind in pairs(dirty) do dirty[kind], waiting[kind] = false, nil end
     for slot in pairs(dirtySlots) do dirtySlots[slot] = nil end
     for rec in pairs(spellCooldowns) do spellCooldowns[rec] = nil end
     for bar in pairs(dirtyBars) do dirtyBars[bar] = nil end

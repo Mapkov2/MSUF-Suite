@@ -904,7 +904,8 @@ end
 local RUNTIME={"Bootstrap","Bars","Decorations","Blizzard","Paging","Visibility",
     "Bindings","Style","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(RUNTIME) do
-    assert(loadfile(root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
+    assert(loadfile((file=="Paint" and os.getenv("MSUF_ACTIONBARS_PAINT_SOURCE"))
+        or root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
 end
 -- The TOC lists the runtime in this order. The paint passes split along
 -- their seams: button painting (Paint), Blizzard's reused buttons
@@ -926,7 +927,8 @@ assert(created==before,"loading the runtime created frames")
 -- are called, never probed; the harness above stubs them.
 for _,file in ipairs({"Bars","Blizzard","Visibility","Bindings","Style","Paint","NativeButtons","Flush","Events",
     "Controller"}) do
-    local handle=assert(io.open(root.."/MSUF_Suite_ActionBars/"..file..".lua","rb"))
+    local handle=assert(io.open((file=="Paint" and os.getenv("MSUF_ACTIONBARS_PAINT_SOURCE"))
+        or root.."/MSUF_Suite_ActionBars/"..file..".lua","rb"))
     local text=handle:read("*a")
     handle:close()
     for _,api in ipairs({"GetBindingKey","GetActionInfo","SetOverrideBindingClick","ClearOverrideBindings","GetCVarBool",
@@ -1253,6 +1255,35 @@ do
     assert(S.Set("actionbars","bar1HeightPercent",100) and button.height==48
         and button.icon.coords[1]==button.icon.coords[3],"square action button crop did not recover")
     assert(S.SetMany("actionbars",before))
+end
+
+-- Feedback modes are compiled by the real refresh owner, including an
+-- unchanged alpha curve, a replaced config table and a module re-enable.
+-- Shared placement keeps both the native and suite-painted branches covered.
+do
+    local beforeDesaturate,beforeAlpha=c.desaturateCooldown,c.cooldownAlpha
+    local beforeRemaining=actions[61].remaining
+    local button=Button(2,1).button
+    actions[61].remaining=5
+    assert(S.SetMany("actionbars",{desaturateCooldown=false,cooldownAlpha=40}));RunTimers()
+    assert(button.icon.desaturation==0 and button.alpha==.4,"alpha-only feedback did not apply")
+    assert(S.Set("actionbars","desaturateCooldown",true));RunTimers()
+    assert(button.icon.desaturation==1 and button.alpha==.4,"same-alpha desaturation enable stayed stale")
+    assert(S.Set("actionbars","desaturateCooldown",false));RunTimers()
+    assert(button.icon.desaturation==0 and button.alpha==.4,"same-alpha desaturation disable stayed stale")
+    local replacement=Suite.CopyValue(c)
+    replacement.desaturateCooldown=true
+    Suite.DB.suite.modules.actionbars=replacement
+    S.Apply("actionbars");RunTimers()
+    assert(M.config==replacement and button.icon.desaturation==1 and button.alpha==.4,
+        "replaced config did not compile feedback modes")
+    assert(S.Set("actionbars","enabled",false) and S.Set("actionbars","enabled",true));RunTimers()
+    assert(button.icon.desaturation==1 and button.alpha==.4,"reenable lost compiled feedback modes")
+    Suite.DB.suite.modules.actionbars=c
+    actions[61].remaining=beforeRemaining
+    S.Apply("actionbars");RunTimers()
+    assert(M.config==c,"feedback config fixture did not restore the original table")
+    assert(S.SetMany("actionbars",{desaturateCooldown=beforeDesaturate,cooldownAlpha=beforeAlpha}));RunTimers()
 end
 
 if nativeReuse then

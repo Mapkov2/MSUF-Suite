@@ -25,6 +25,7 @@ local api = {}
 local slotMap = {}
 local chargeEpoch = 0
 local rangeRefs = {}
+local feedbackDesaturate, feedbackAlpha
 local WalkNative
 -- Blizzard keeps the vehicle/override page (133-144) alive separately.
 local SPECIAL_FIRST, SPECIAL_LAST = 133, 144
@@ -65,12 +66,15 @@ end
 -- Cooldown opacity curve: full alpha when ready, the setting while the
 -- remaining (GCD-free) duration is above zero. Rebuilt on refresh only.
 function AB.UpdateCurves()
+    local config = M.config
+    -- Mode changes also apply when the opacity curve can stay unchanged.
+    feedbackDesaturate, feedbackAlpha = config.desaturateCooldown, config.cooldownAlpha < 100
     -- With no cooldown feedback, the duration object paints and clears the
     -- swipe alone: no GetActionCooldown info table per visible button on
     -- each global cooldown event.
-    AB.directDuration = not M.config.desaturateCooldown and M.config.cooldownAlpha >= 100
+    AB.directDuration = not feedbackDesaturate and config.cooldownAlpha >= 100
     local curve = AB.alphaCurve
-    local alpha = M.config.cooldownAlpha / 100
+    local alpha = config.cooldownAlpha / 100
     if AB.curveAlpha == alpha then return end
     AB.curveAlpha = alpha
     curve:ClearPoints()
@@ -203,8 +207,8 @@ end
 -- Cooldown feedback (desaturation, alpha) excludes the global cooldown: the
 -- step curves evaluate the GCD-free remaining time straight into the sinks.
 local function CooldownFeedback(rec, active)
-    local config, button = M.config, rec.button
-    local desaturate, alpha = config.desaturateCooldown, config.cooldownAlpha < 100
+    local button = rec.button
+    local desaturate, alpha = feedbackDesaturate, feedbackAlpha
     if not desaturate and not alpha then
         if rec.feedback then
             rec.feedback = nil

@@ -45,7 +45,7 @@ raw(4*integer()) # line info
 for _ in range(integer()):
     string();integer();integer()
 upnames = [string() for _ in range(integer())]
-assert set(upnames) == {'M','api','AB'}, upnames
+assert set(upnames) in ({'M','api','AB'}, {'feedbackDesaturate','feedbackAlpha','api','AB'}), upnames
 assert pos == len(DATA), 'unparsed bytecode tail'
 assert source and 'MSUF_Suite_ActionBars/Paint.lua' in source, source
 
@@ -67,7 +67,8 @@ def run(desaturate=True, cooldown_alpha=100, result=SECRET, active=True, duratio
     config = {'desaturateCooldown': desaturate, 'cooldownAlpha': cooldown_alpha}
     # The real compiled function's upvalue ordering, as verified by luac -l.
     byname = {'M': {'config': config}, 'api': {'CooldownDuration': lambda slot, ignore: obj if duration else None},
-           'AB': {'desatCurve': 'desat', 'alphaCurve': 'alpha'}}
+           'AB': {'desatCurve': 'desat', 'alphaCurve': 'alpha'},
+           'feedbackDesaturate': desaturate, 'feedbackAlpha': cooldown_alpha < 100}
     ups = [byname[name] for name in upnames]
     registers = {0: {'button': button, 'slot': 1, 'feedback':feedback}, 1: active}
     pc, top, steps = 0, 2, 0
