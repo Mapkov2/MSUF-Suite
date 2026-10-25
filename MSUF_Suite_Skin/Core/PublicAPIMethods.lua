@@ -155,11 +155,12 @@ function ScopeMethods:AnimateContent(frame, token)
 end
 
 -- A menu boundary and its native lists; no global frame discovery.
-function ScopeMethods:RegisterMenu(frame)
+function ScopeMethods:RegisterMenu(frame, contentOnly)
+    if not NS.Safety.Public(contentOnly) then return false, "invalid-options" end
     if not HasMethod(frame, "HookScript") or not HasMethod(frame, "GetObjectType") then
         return false, "unsupported-frame"
     end
-    return RequestVisual(self, frame, "menu", true, true)
+    return RequestVisual(self, frame, "menu", contentOnly == true and "content" or true, true)
 end
 
 function ScopeMethods:SkinFrame(frame, options)

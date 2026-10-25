@@ -49,9 +49,10 @@ Safety.IsForbidden = IsForbidden
 
 -- True when target is a readable (not forbidden) table with a method of that
 -- name. Works for widgets and plain mixin tables alike.
-function Safety.HasMethod(target, name)
+local function HasMethod(target, name)
     return type(target) == "table" and not IsForbidden(target) and type(target[name]) == "function"
 end
+Safety.HasMethod = HasMethod
 
 -- Passes all results through; a call that returned nothing yields nil.
 local function AtLeastOne(first, ...)
@@ -146,7 +147,7 @@ Safety.IsCompositorManaged = IsCompositorManaged
 local function ReadProtection(target)
     if type(target.IsProtected) ~= "function" then return false, false end
     local protected, explicit = target:IsProtected()
-    if not Public(protected) or not Public(explicit) then return true, true end
+    if IsSecretValue ~= nil and (IsSecretValue(protected) or IsSecretValue(explicit)) then return true, true end
     return protected == true, explicit == true
 end
 
@@ -154,6 +155,20 @@ function Safety.GetProtection(target)
     if type(target) ~= "table" then return false, false end
     if IsForbidden(target) then return true, true end
     return ReadProtection(target)
+end
+
+-- One object/read pass: keep the forbidden/protection answers local, then
+-- read the getter directly instead of asking IsForbidden again through Read.
+-- Nothing survives this call: reparenting, combat and secret answers are
+-- checked afresh on the next pass. Never cache across native writes/hooks.
+function Safety.ReadUnprotected(target, name)
+    if not HasMethod(target, name) then return nil end
+    local method = target[name]
+    local protected, explicit = ReadProtection(target)
+    if protected or explicit then return nil end
+    local value = method(target)
+    if Public(value) then return value end
+    return nil
 end
 
 local function CanDecorate(target, allowImplicitProtected)

@@ -255,6 +255,10 @@ function S.RegisterOwnedMover(id, elementID, spec)
     return ok
 end
 
+function S.HasOwnedMover(id, elementID)
+    return owners[id] ~= nil and owners[id][elementID] ~= nil
+end
+
 function S.RefreshOwnedMovers(id)
     local api = API()
     if api and owners[id] and api.RefreshOwner then api.RefreshOwner(OwnerName(id)) end
@@ -295,7 +299,7 @@ function S.SetEditMode(active)
     if S.editMode == active then return end
     S.editMode = active
     for id in pairs(owners) do
-        if S.states[id].active then
+        if S.states[id].active and S.states[id].editMode ~= active then
             local instance=S.instances and S.instances[id]
             -- Own sample frames can hide immediately even when Apply must wait for combat.
             if not active and instance and instance.HideEditPreview then S.Dispatch(instance.HideEditPreview,instance) end

@@ -198,8 +198,10 @@ end
 
 -- Installer chrome can open before the load-on-demand options. Resolve at
 -- paint time: caching an absent Menu2 would miss the menu loaded later.
+local function LoadedMenu() return _G.MSUF2 end
+
 function HostBridge.MenuAppearance()
-    local menu = _G.MSUF2
+    local menu = LoadedMenu()
     if type(menu) == "table" and type(menu.Theme) == "table" then return menu.Theme end
     local ui = _G.MSUF_UI
     return type(ui) == "table" and ui or nil
@@ -248,7 +250,7 @@ end
 -- Public UI buttons own their hover/selection painter and the skin's
 -- corresponding control material. The label's legacy fields stay here.
 function HostBridge.MenuButtonLabel(button)
-    local menu = _G.MSUF2
+    local menu = LoadedMenu()
     local get = type(menu) == "table" and menu.GetControlLabel
     return type(get) == "function" and get(button) or button._msuf2Label or button._label
 end
@@ -287,7 +289,22 @@ end
 local contentWatchers = setmetatable({}, { __mode = "k" })
 function HostBridge.WatchMenuContent(menu, callback, register)
     if contentWatchers[menu] or not AppearanceAction(menu, "SelectPage") then return end
-    local serial, lastPage, lastResults = 0
+    local serial, lastPage, lastResults, lastTarget = 0
+    local watched = setmetatable({}, { __mode = "k" })
+    local function Shown(frame)
+        local key = watched[frame]
+        if key == "search" then
+            if menu.searchResultsPending then callback(frame, false) return end
+            lastResults = menu.searchResults
+        end
+        lastPage, lastTarget, serial = key, frame, serial + 1
+        callback(frame, serial)
+    end
+    local function Watch(frame, key)
+        if watched[frame] then return end
+        watched[frame] = key
+        frame:HookScript("OnShow", Shown)
+    end
     local function Painted()
         local key = menu.activeKey
         local entry = menu.cache and menu.cache[key]
@@ -300,11 +317,12 @@ function HostBridge.WatchMenuContent(menu, callback, register)
                 if target then callback(target, false) end
                 return
             end
-            if token == lastResults and key == lastPage then return end
+            if token == lastResults and key == lastPage and target == lastTarget then return end
             lastResults = token
-        elseif key == lastPage then return end
+        elseif key == lastPage and target == lastTarget then return end
         if not target then return end
-        lastPage, serial = key, serial + 1
+        Watch(target, key)
+        lastPage, lastTarget, serial = key, target, serial + 1
         callback(target, serial)
     end
     hooksecurefunc(menu, "SelectPage", Painted)
@@ -319,6 +337,27 @@ function HostBridge.WatchMenuContent(menu, callback, register)
         hooksecurefunc(render, "ShowSearchPage", Painted)
     end
     contentWatchers[menu] = true
+end
+
+-- Only the Options window refuses every combat open and hides at the combat
+-- edge. Its hidden art can wait for OnShow; Edit Mode and other public skin
+-- clients retain eager preparation, including controls first shown in combat.
+function HostBridge.IsOptionsSurface(frame)
+    local root = _G.MSUF2_Window
+    if not root then return false end
+    for _ = 1, 32 do
+        if not Suite.Public(frame) or type(frame) ~= "table" then return false end
+        if frame == root then return true end
+        local isForbidden = AppearanceAction(frame, "IsForbidden")
+        if isForbidden then
+            local forbidden = isForbidden(frame)
+            if not Suite.Public(forbidden) or forbidden then return false end
+        end
+        local getParent = AppearanceAction(frame, "GetParent")
+        if not getParent then return false end
+        frame = getParent(frame)
+    end
+    return false
 end
 
 return HostBridge

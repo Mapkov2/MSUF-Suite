@@ -231,19 +231,24 @@ end
 -- the Skinning page registers its own (P.RegisterSummary).
 local SUMMARY_KEYS = {}
 function P.RegisterSummary(id, keys)
+    SUMMARY_KEYS[id] = keys
+end
+
+local function SummaryRanks(keys)
     local ranks, rank = {}, 0
     for key in keys:gmatch("%S+") do
         rank = rank + 1
         ranks[key] = rank
     end
-    SUMMARY_KEYS[id] = ranks
-end
-for id, spec in pairs(P.catalog) do
-    if spec.summary then P.RegisterSummary(id, spec.summary) end
+    return ranks
 end
 
 function P.SummaryPriority(id, key)
-    local ranks = SUMMARY_KEYS[id]
+    local ranks = SUMMARY_KEYS[id] or P.catalog[id] and P.catalog[id].summary
+    if type(ranks) == "string" then
+        ranks = SummaryRanks(ranks)
+        SUMMARY_KEYS[id] = ranks
+    end
     return ranks and ranks[(key or ""):gsub("^bar%d+", "bar"):gsub("^w%d+", "w")]
 end
 

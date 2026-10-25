@@ -27,11 +27,24 @@ local ENTRIES = {
     ["static-popups"] = "staticPopups",
 }
 
-local function Ask(surface)
+local function LoadedSuite()
     local suite = _G.MSUFSuite
-    local controller = type(suite) == "table" and suite.Suite
+    return type(suite) == "table" and suite or nil
+end
+
+local function Ask(surface)
+    local suite = LoadedSuite()
+    local controller = suite and suite.Suite
     local owns = type(controller) == "table" and controller.OwnsBlizzardSurface
     return type(owns) == "function" and owns(surface) == true
+end
+
+-- The host bridge alone knows the menu hierarchy and its combat-open policy.
+-- Older Suite cores keep eager skinning when that capability is absent.
+function SuiteOwnership.IsOptionsSurface(frame)
+    local suite = LoadedSuite()
+    local bridge = suite and suite.HostBridge
+    return type(bridge) == "table" and bridge.IsOptionsSurface and bridge.IsOptionsSurface(frame) == true
 end
 
 -- Asks the Suite and remembers the answer, so Refresh rebuilds only what

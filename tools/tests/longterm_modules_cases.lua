@@ -154,8 +154,10 @@ cases.datatext_movers = function(root, variant, flavor)
     local arg = {root, variant}
 local root = assert(arg[1])
 local lastSpec
-local S = { Text = function(v) return v end, UnregisterEditElements = function() end,
-    RegisterOwnedMover = function(_,_,spec) lastSpec=spec end }
+local owned = {}
+local S = { Text = function(v) return v end, UnregisterEditElements = function() owned = {} end,
+    HasOwnedMover = function(_, id) return owned[id] == true end, RefreshOwnedMovers = function() end,
+    RegisterOwnedMover = function(_, id, spec) lastSpec=spec; owned[id]=true; return true end }
 local P = { NS = {}, Suite = S, DataTextBarKeys = function(index)
     return { prefix = "bar" .. index, enabled = "bar" .. index .. "Enabled" }
 end }

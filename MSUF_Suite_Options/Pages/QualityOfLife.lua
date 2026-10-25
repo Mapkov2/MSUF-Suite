@@ -293,7 +293,7 @@ end
 for _, group in ipairs(GROUPS) do
     assert(assigned[group], "Uncategorized Quality of Life feature: " .. group.title)
 end
-local function SortCategories()
+function P.SortQualityOfLifeCategories()
     for _, category in ipairs(CATEGORIES) do
         table.sort(category.features, LocalizedTitleLess)
         if category.tabs then
@@ -302,8 +302,8 @@ local function SortCategories()
         end
     end
     table.sort(CATEGORIES, LocalizedTitleLess)
+    P.qualityOfLifeSorted = true
 end
-SortCategories()
 P.QualityOfLifeCategories = CATEGORIES
 P.QualityOfLifeSearchFeatures = GROUPS
 local function GroupEnabled(group)
@@ -771,7 +771,7 @@ local function BuildCategory(ctx, builder, category, featureRows, featureOrder, 
 end
 
 local function Build(ctx)
-    SortCategories()
+    P.SortQualityOfLifeCategories()
     local builder = P.W.PageBuilder(ctx)
     if builder.Section then
         local header = builder:Section(Tr("Quality of Life"), 72)

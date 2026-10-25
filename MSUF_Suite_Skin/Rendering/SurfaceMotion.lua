@@ -9,13 +9,15 @@ local Motion, Safety = NS.Motion, NS.Safety
 local groups = setmetatable({}, { __mode = "k" })
 local clamp = NS.Clamp
 local opacityMaterial = { opacity = "control" }
+-- Shared read-only rest pose. A surface owns writable channels only once its
+-- first gesture starts; paints and hides before that need no spring object.
+local idleChannels = {}
+for index = 1, 7 do idleChannels[index] = { value = index == 7 and 1 or 0, target = 0, velocity = 0 } end
 
 local function Safe(record)
     local state = record.state
-    if Safety.IsForbidden(state.target) then return false end
-    local protected = Safety.GetProtection(state.target)
-    return not protected and Safety.CanCreateRegions(state.target)
-        and state.visible ~= false and Safety.Read(state.target, "IsVisible") == true
+    return state.visible ~= false and Safety.ReadUnprotected(state.target, "IsVisible") == true
+        and not Safety.IsCompositorManaged(state.target)
 end
 
 local function Anchor(region, state, x, y, width, height, press)
@@ -27,7 +29,7 @@ local function Anchor(region, state, x, y, width, height, press)
 end
 
 local function Paint(record)
-    local state, channels = record.state, record.channels
+    local state, channels = record.state, record.channels or idleChannels
     local reveal, press = clamp(channels[7].value, 0, 1), channels[6].value
     local x, y = channels[1].value, channels[2].value
     local width, height = channels[3].value, channels[4].value
@@ -60,7 +62,10 @@ local function Record(target)
     local state = NS.Registry.GetSurface(target)
     local record = state and state.motion
     if record and record.enabled and Motion.Enabled(state.spec)
-        and (not Safety.HasMethod(target, "IsEnabled") or Safety.Read(target, "IsEnabled") == true) then return record end
+        and (not Safety.HasMethod(target, "IsEnabled") or Safety.Read(target, "IsEnabled") == true) then
+        if not record.channels then Motion.New(state, Paint, Safe, Motion.Restore, record) end
+        return record
+    end
 end
 
 local function Hover(target, entered)
@@ -118,7 +123,7 @@ local function Hide(target)
     local record = state and state.motion
     if not record then return end
     record.focused, record.state.hovered = false, false
-    Motion.Clear(record)
+    if record.channels then Motion.Clear(record) else Motion.Restore(record) end
     record.lastActive = nil
     record.carryX, record.carryY, record.carryWidth, record.carryHeight = 0, 0, 0, 0
 end
@@ -149,7 +154,7 @@ local function Bind(state)
     local window = spec.role == "shell" or spec.role == "popup"
     if spec.role == "status" or not (window or kind == "Button" or kind == "CheckButton"
         or kind == "EditBox") or not Safety.HasMethod(target, "HasScript") then return end
-    local record = Motion.New(state, Paint, Safe, Motion.Restore)
+    local record = { state = state, paint = Paint, reset = Motion.Restore }
     record.window = window
     record.x, record.y, record.width, record.height, record.press = 0, 0, 0, 0, 0
     record.inset = state.spec.inset
@@ -185,6 +190,7 @@ local function Travel(record, previous)
     local x, y, width, height, scale = Rect(record.state.target)
     local oldX, oldY, oldWidth, oldHeight, oldScale = Rect(previous.state.target)
     if not x or not oldX or width <= 0 or height <= 0 then return end
+    Motion.New(record.state, Paint, Safe, Motion.Restore, record)
     local ratio = oldScale / scale
     Motion.Set(record, 1, 0, (oldX - x) / scale + (previous.carryX or 0) * ratio)
     Motion.Set(record, 2, 0, (oldY - y) / scale + (previous.carryY or 0) * ratio)
@@ -196,12 +202,14 @@ local function Travel(record, previous)
 end
 
 local function Carry(record)
-    local c = record.channels
+    local c = record.channels or idleChannels
     record.carryX, record.carryY = c[1].value, c[2].value
     record.carryWidth, record.carryHeight = c[3].value, c[4].value
     record.carryVX, record.carryVY = c[1].velocity, c[2].velocity
     record.carryVW, record.carryVH = c[3].velocity, c[4].velocity
-    for index = 1, 4 do Motion.Set(record, index, 0, 0) end
+    if record.channels then
+        for index = 1, 4 do Motion.Set(record, index, 0, 0) end
+    end
 end
 
 local function Selection(record)
@@ -259,8 +267,7 @@ function SurfaceMotion.Refresh(state)
         record.paintedDepthAlpha = Safety.Read(state.depth, "GetAlpha")
         if state.kind == "button" then record.paintedHighlightAlpha = Safety.Read(state.highlight, "GetAlpha") end
     end
-    if not Motion.Enabled(state.spec) or not Safety.CanCreateRegions(state.target)
-        or Safety.GetProtection(state.target) then
+    if not Motion.Enabled(state.spec) or not Safety.CanCreateRegions(state.target) then
         if record then
             Hide(state.target)
             record.enabled = state.visible ~= false

@@ -442,6 +442,8 @@ local function ApplyModule(id)
     if state.active then instance:Refresh() else instance:Enable() end
     instance.context:RefreshOwnedSkins()
     state.active = true
+    -- Followers or a nested apply may already have refreshed this transition.
+    state.editMode = S.editMode == true
     S.RefreshEditMover(id)
 end
 

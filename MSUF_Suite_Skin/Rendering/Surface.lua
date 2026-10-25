@@ -337,8 +337,11 @@ local function ReadNativeSelected(target)
     return selected
 end
 
-local function RefreshState(state)
-    if not CanRefreshState(state) then
+local function RefreshState(state, checked)
+    -- Only SetActive/SetVisible pass their immediately preceding guard.
+    -- Between that read and this call they change owned scalar state only;
+    -- Attach and explicit refreshes always obtain a fresh protection answer.
+    if not checked and not CanRefreshState(state) then
         return false
     end
     if state.syncNativeSelected then
@@ -576,7 +579,7 @@ function Surface.SetActive(target, active, repaint)
         return true
     end
     state.active = active
-    state.refresh(state)
+    state.refresh(state, true)
     return true
 end
 
@@ -594,9 +597,14 @@ function Surface.SetVisible(target, visible)
     if not CanRefreshState(state) then
         return false, "protected"
     end
+    -- Repeated public reconciliation often requests the visibility that the
+    -- preceding paint already established. Explicit Refresh/Attach still
+    -- repair native resets and in-place spec changes.
+    if state.visible == (visible == true) and state.paintGeneration == paintGeneration
+        and not state.syncNativeSelected then return true end
     if state.visible ~= (visible == true) then NextPaintGeneration() end
     state.visible = visible == true
-    state.refresh(state)
+    state.refresh(state, true)
     return true
 end
 

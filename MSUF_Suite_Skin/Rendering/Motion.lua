@@ -18,8 +18,13 @@ function Motion.Enabled(spec)
         and (not spec or spec.motion ~= false and (not spec.ownedArt or spec.motion == true))
 end
 
-function Motion.New(state, paint, safe, reset)
-    local record = { state = state, paint = paint, safe = safe, reset = reset, channels = {} }
+-- Palette snapshots exist before their first transition. Promote that same
+-- per-surface record only when it animates; later gestures reuse its channels.
+function Motion.New(state, paint, safe, reset, record)
+    record = record or {}
+    if record.channels then return record end
+    record.state, record.paint, record.safe, record.reset = state, paint, safe, reset
+    record.channels = {}
     for index = 1, 7 do
         record.channels[index] = { value = 0, target = 0, velocity = 0 }
     end

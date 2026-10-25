@@ -81,9 +81,9 @@ end
 
 -- Explicitly authored menu roots can be registered before the optional
 -- engine loads. The factory calls this again on show or after rendering.
-function Skin.RegisterMenu(frame, moduleID)
+function Skin.RegisterMenu(frame, moduleID, contentOnly)
     local client = Skin.Acquire(moduleID or "menuContent")
-    if client and client.RegisterMenu then return client:RegisterMenu(frame) end
+    if client and client.RegisterMenu then return client:RegisterMenu(frame, contentOnly) end
     return false
 end
 

@@ -243,10 +243,11 @@ RegisterPages()
 
 Suite.HostBridge.WatchMenuContent(M, function(frame, token)
     local client = Suite.Skin.Acquire("menuContent")
-    Suite.Skin.RegisterMenu(frame, "menuContent")
+    -- Menu2 supplies the completed page container. Its explicit paint signal
+    -- needs one fade, not a native-menu discovery walk or a second OnShow fade.
     if client and client.AnimateContent then client:AnimateContent(frame, token) end
 end, function(frame)
-    Suite.Skin.RegisterMenu(frame, "menuContent")
+    return Suite.Skin.RegisterMenu(frame, "menuContent", true)
 end)
 
 -- Menu2 asks for rows only while its layer overview is open. Keep Suite

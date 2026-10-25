@@ -36,6 +36,8 @@ local clients = {}
 local clientRecords = setmetatable({}, { __mode = "k" })
 local scopeRecords = setmetatable({}, { __mode = "k" })
 local claims = setmetatable({}, { __mode = "k" })
+local showHooks = setmetatable({}, { __mode = "k" })
+local QueueEntry
 
 local materialRoles = {
     shell = true, panel = true, card = true, popup = true, input = true,
@@ -119,10 +121,11 @@ end
 local function SafeTarget(target, needsRegions)
     if target == nil then return false, "invalid-target" end
     local Safety = NS.Safety
-    if Safety.IsForbidden(target) then return false, "protected-target" end
+    -- GetProtection checks forbidden status before reading any other method.
+    -- Keep the answers local to this check: parenting/protection can change.
     local protected, explicit = Safety.GetProtection(target)
     if protected or explicit then return false, "protected-target" end
-    if needsRegions and not Safety.CanCreateRegions(target, false) then
+    if needsRegions and (type(target) ~= "table" or Safety.IsCompositorManaged(target)) then
         return false, "protected-target"
     end
     return true
@@ -206,7 +209,7 @@ local function ClaimDependency(entry, target)
 end
 
 local function EntryNeedsRegions(entry)
-    return entry.surface ~= nil or entry.control ~= nil or entry.icon ~= nil or entry.menu == true
+    return entry.surface ~= nil or entry.control ~= nil or entry.icon ~= nil or entry.menu ~= nil
 end
 
 local function ValidateEntry(entry)
@@ -255,6 +258,7 @@ local function CleanupNow(entry)
         NS.Surface.SetNativeStateSync(entry.target, false)
         NS.Surface.SetVisible(entry.target, false)
     end
+    entry.pendingVisible = nil
     entry.applied = false
     return true
 end
@@ -325,6 +329,28 @@ local function FailEntry(scope, target, entry, reason)
     return false, reason
 end
 
+local function Shown(target)
+    local entry = claims[target]
+    if entry and entry.pendingVisible then QueueEntry(entry.scope, target, entry) end
+end
+
+-- Build the requested art only when this frame can display it. Repeated
+-- setters/refreshes while hidden update the same entry, then paint once.
+-- Menu-only watches remain cheap and must precede their first OnShow.
+local function DeferHidden(scope, target, entry)
+    if entry.applied or entry.release or not (entry.surface or entry.control or entry.icon)
+        or scope.client.name ~= "MidnightSimpleUnitFrames"
+        or not NS.Safety.HasMethod(target, "HookScript")
+        or NS.Safety.Read(target, "IsVisible") ~= false then return false end
+    if not NS.SuiteOwnership.IsOptionsSurface(target) then return false end
+    if not showHooks[target] then
+        target:HookScript("OnShow", Shown)
+        showHooks[target] = true
+    end
+    entry.scope, entry.pendingVisible = scope, true
+    return true
+end
+
 local function ReconcileNow(scope, target, entry)
     if scope.released or scope.client.released or scope.client.unregisterPending
         or entry.release then
@@ -336,6 +362,14 @@ local function ReconcileNow(scope, target, entry)
         local cleaned, cleanReason = CleanupEntry(entry)
         return cleaned, cleaned and "suspended" or cleanReason
     end
+
+    -- The host suppresses its fallback only for an accepted "applied" result.
+    -- This entry owns that presentation now; its one paint waits for visibility.
+    if DeferHidden(scope, target, entry) then return true, "applied" end
+    if entry.pendingVisible and entry.active ~= nil and entry.control and entry.control.kind == "button" then
+        entry.control.spec.active = entry.active
+    end
+    entry.pendingVisible = nil
 
     -- Attach/control painters can change native state before they finish.
     -- Retain this owner after a partial failure until cleanup really succeeds.
@@ -364,7 +398,7 @@ local function ReconcileNow(scope, target, entry)
         if not applied then return FailEntry(scope, target, entry, reason or "unsupported-state") end
     end
     entry.applied = true
-    if entry.menu then PublicAPI.TrackMenu(target, entry.owner) end
+    if entry.menu then PublicAPI.TrackMenu(target, entry.owner, entry.menu == "content") end
     entry.appliedControl, entry.appliedFor = entry.control, settingsGeneration
     return true, "applied"
 end
@@ -373,7 +407,7 @@ local function ReconcileEntry(scope, target, entry)
     return GuardedCall(ReconcileNow, scope, target, entry)
 end
 
-local function QueueEntry(scope, target, entry)
+QueueEntry = function(scope, target, entry)
     if not PublicAPI.playerReady then return true, "pending" end
     if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer(entry.pendingKey, function()

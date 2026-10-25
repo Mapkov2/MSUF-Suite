@@ -140,16 +140,17 @@ local function Snapshot(source)
     for id, config in pairs(source) do
         if Allowed(id) then
             if type(config) ~= "table" then return nil, false end
+            local spec = Suite.SuiteCatalog[id]
+            local rules = spec.rules
             local values = {}
             for key, value in pairs(config) do
-                local rule = VariantRule(id, key)
-                if rule then
+                local rule = rules[key]
+                if rule and not rule.automation then
                     local checked = Suite.Suite.CheckProfileValue(rule, value)
                     if checked == nil then return nil, false end
                     values[key] = checked
                 end
             end
-            local spec = Suite.SuiteCatalog[id]
             if spec.prepareConfig then spec.prepareConfig(values) end
             out[id] = values
         end

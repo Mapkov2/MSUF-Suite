@@ -34,17 +34,21 @@ end
 
 function Content.Play(frame, owner, token)
     local record = Content.records[frame]
-    if not Motion.Enabled() or not Safety.CanCreateRegions(frame) or Safety.GetProtection(frame)
+    if not Motion.Enabled() or not Safety.CanCreateRegions(frame)
         or Safety.Read(frame, "IsVisible") ~= true then
         if record then Stop(record) end
         return false
     end
     if record and record.owner ~= nil and record.owner ~= owner then return false end
+    local unchanged = record and record.token == token
+    if unchanged and Content.active[record] then return true end
     for active in pairs(Content.active) do
-        if Descendant(frame, active.target) then return false end
-        if Descendant(active.target, frame) then Stop(active) end
+        if active ~= record then
+            if Descendant(frame, active.target) then return false end
+            if Descendant(active.target, frame) then Stop(active) end
+        end
     end
-    if record and record.token == token then return true end
+    if unchanged then return true end
     local alpha = Safety.Read(frame, "GetAlpha")
     if type(alpha) ~= "number" then return false end
     if not record then
@@ -65,8 +69,8 @@ function Content.Play(frame, owner, token)
             progress = math.max(0, math.min(1, progress))
             from = record.fromAlpha + (record.toAlpha - record.fromAlpha) * progress
         end
+        record.group:Stop()
     end
-    record.group:Stop()
     record.owner, record.token = owner, token
     record.fromAlpha, record.toAlpha = from, alpha
     record.alpha:SetFromAlpha(from)
@@ -96,7 +100,7 @@ local function Shown(frame)
 end
 
 function Content.Watch(frame, owner)
-    if not Safety.CanCreateRegions(frame) or Safety.GetProtection(frame)
+    if not Safety.CanCreateRegions(frame)
         or not Safety.HasMethod(frame, "CreateAnimationGroup") then return false end
     local watch = Content.watchers[frame]
     if not watch then

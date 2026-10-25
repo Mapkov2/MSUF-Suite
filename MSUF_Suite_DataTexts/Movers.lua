@@ -1,8 +1,8 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 -- MSUF Edit Mode movers of the DataTexts bars. Each bar's mover spec and its
--- closures are made once per bar ID and reused; a refresh only renames them
--- and registers the present bars again.
+-- closures are made once per bar ID and reused. Only a changed set of bars or
+-- labels rebuilds the host registrations (which also capture undo history).
 local Movers = {}
 P.DataTextMovers = Movers
 local ID = "dataTexts"
@@ -36,12 +36,32 @@ local function Spec(module, index)
     return spec
 end
 
+local function Changed(module)
+    for index in pairs(specs) do
+        if not module.presentIDs[index] or not module.bars[index] then return true end
+    end
+    for _, index in ipairs(module.barIDs) do
+        if module.bars[index] then
+            local spec = specs[index]
+            if not spec or spec.label ~= (module.config[spec.nameKey] or BAR_LABEL:format(index))
+                or not S.HasOwnedMover(ID, "bar" .. index) then return true end
+        end
+    end
+    return false
+end
+
 function Movers.Register(module)
+    if not Changed(module) then
+        -- Coordinates, visibility and scale can change without a new spec.
+        -- Refresh the host handles without rebuilding their history records.
+        S.RefreshOwnedMovers(ID)
+        return
+    end
     S.UnregisterEditElements(ID)
     -- Imported profiles can replace bar IDs indefinitely. Only the present
     -- profile's IDs own cached closures; its catalog already bounds their count.
     for index in pairs(specs) do
-        if not module.presentIDs[index] then specs[index] = nil end
+        if not module.presentIDs[index] or not module.bars[index] then specs[index] = nil end
     end
     for _, i in ipairs(module.barIDs) do
         if module.bars[i] then

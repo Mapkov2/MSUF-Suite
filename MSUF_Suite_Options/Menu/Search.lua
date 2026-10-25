@@ -314,6 +314,9 @@ end
 local function QualityOfLifeRows(rows, page, modules, pageRow)
     local categories, features = P.QualityOfLifeCategories, P.QualityOfLifeSearchFeatures
     if type(categories) ~= "table" or type(features) ~= "table" then return false end
+    -- Keep cold search row ordering identical without sorting an unseen page
+    -- during ADDON_LOADED. Later page builds also re-sort for locale changes.
+    if not P.qualityOfLifeSorted then P.SortQualityOfLifeCategories() end
     local installed, byCategory = {}, {}
     for _, spec in ipairs(modules) do installed[spec.id] = spec end
     for _, category in ipairs(categories) do
