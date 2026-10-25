@@ -27,6 +27,9 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_menu_lifecycle_budget_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_options_load_budget_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_minimap_sections_contract.lua": [[], ["Forever"]],
     "suite_skin_collapse_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_menu_coverage_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -64,6 +67,13 @@ EXTRA = {
     "suite_actionbars_contract.lua": [[], ["native"]],
     # Icon skins: a recording host, then MSUF 7.0's real skin engine.
     "suite_icon_skins_contract.lua": [[], [str(MSUF_70)]],
+    "suite_gloss_material_contract.lua": [[], [str(MSUF_70)]],
+    "suite_meter_gloss_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_minimap_icon_skin_contract.lua": [[], [str(MSUF_70)]],
+    "suite_buff_reminder_skins_contract.lua": [["-", flavor] for flavor in FLAVORS]
+        + [[str(MSUF_70), flavor] for flavor in FLAVORS],
+    "suite_meter_icon_skin_contract.lua": [[flavor] for flavor in FLAVORS]
+        + [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     # The locale contract reads the live extraction through the same Python.
     "suite_locale_contract.lua": [[sys.executable]],
 }

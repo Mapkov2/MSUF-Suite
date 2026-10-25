@@ -2953,6 +2953,18 @@
    "kind": "addon",
    "reason": "Optional public skin extension: older standalone MapkoSkin and embedded builds omit this motion command. The integration remains compatible with an already-running old provider; motion and menu coverage contracts exercise absent and current commands.",
    "symbol": "client.AnimateContent"
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "root (= MSUF2_Window)",
+   "kind": "addon",
+   "reason": "The host Options window does not exist until its load-on-demand build. The A7 menu lifecycle contract removes the root and proves that unrelated hidden host controls retain eager art; only descendants of an existing Options root may defer skinning."
+  },
+  {
+   "file": "MSUF_Suite_Skin/Core/SuiteOwnership.lua",
+   "symbol": "bridge.IsOptionsSurface",
+   "kind": "addon",
+   "reason": "An older MSUF Suite core may lack the host bridge capability when paired with a newer skin addon. The A7 menu lifecycle contract removes the capability and proves that hidden host controls retain eager art instead of waiting for an unsupported visibility policy."
   }
  ]
 }
