@@ -78,6 +78,7 @@ local bar, healthGate
 local mover
 local portrait, portraitRing, topRule, bottomRule
 local portraitEnabled = false
+local portraitDirty = true
 local activeRoot
 -- The MicroMenu the bar took, until it hands it back.
 local takenRoot
@@ -172,6 +173,7 @@ local function ApplyShell(root, settings, horizontal, scale)
     topRule:SetColorTexture(r, g, b, a * 0.82)
     bottomRule:SetColorTexture(r, g, b, a * 0.52)
     SetPortraitTexture(portrait, "player")
+    portraitDirty = false
 end
 
 -- Grid, shell and companions for the current settings (out of combat). The
@@ -384,7 +386,7 @@ end
 -- the menu the full pass runs as before. Otherwise the bar is still placed
 -- as it was, and only what combat itself held back comes back: the skin's
 -- quiet button hooks and button set (MicroMenuSkin.RefreshAfterCombat), the
--- portrait (UNIT_PORTRAIT_UPDATE skips it in combat) and the mover hidden
+-- portrait (the portrait events skip it in combat) and the mover hidden
 -- at combat start.
 local function OnCombatEnded()
     if not desired or NS.CombatGate.IsPending(REAPPLY_KEY) then return end
@@ -394,7 +396,11 @@ local function OnCombatEnded()
         ScheduleReapply()
         return
     end
-    if portraitEnabled then SetPortraitTexture(portrait, "player") end
+    -- 2026-10-26 M+ trace: the portrait resolver is expensive even unchanged.
+    if portraitEnabled and portraitDirty then
+        SetPortraitTexture(portrait, "player")
+        portraitDirty = false
+    end
     SetMoverVisible(settings.locked == false)
 end
 
@@ -546,6 +552,7 @@ local function RegisterEvents(settings)
         eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
         eventFrame:RegisterEvent("PET_BATTLE_CLOSE")
         eventFrame:RegisterUnitEvent("UNIT_PORTRAIT_UPDATE", "player")
+        eventFrame:RegisterEvent("PORTRAITS_UPDATED")
         if NS.Client.SupportsEvent("INPUT_DEVICE_INTERFACE_TRANSITION") then
             eventFrame:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
         end
@@ -566,6 +573,7 @@ local function UnregisterEvents()
         eventFrame:UnregisterEvent("PLAYER_ENTERING_WORLD")
         eventFrame:UnregisterEvent("PET_BATTLE_CLOSE")
         eventFrame:UnregisterEvent("UNIT_PORTRAIT_UPDATE")
+        eventFrame:UnregisterEvent("PORTRAITS_UPDATED")
         -- Retail has no such event, and the client raises on an unknown one.
         if NS.Client.SupportsEvent("INPUT_DEVICE_INTERFACE_TRANSITION") then
             eventFrame:UnregisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION")
@@ -590,10 +598,15 @@ eventFrame:SetScript("OnEvent", function(_, event)
         -- (MainActionBar_InitializeGamepad) and shows it for mouse and keyboard;
         -- the shell follows once it has (Visibility.Apply).
         C_Timer.After(0, ScheduleReapply)
-    elseif event == "UNIT_PORTRAIT_UPDATE" then
-        -- Registered for the player unit only.
-        if portraitEnabled and not NS.IsCombatLocked() then
-            SetPortraitTexture(portrait, "player")
+    elseif event == "UNIT_PORTRAIT_UPDATE" or event == "PORTRAITS_UPDATED" then
+        -- UNIT_PORTRAIT_UPDATE is registered for the player unit only;
+        -- PORTRAITS_UPDATED invalidates every portrait and carries no unit.
+        if portraitEnabled then
+            portraitDirty = true
+            if not NS.IsCombatLocked() then
+                SetPortraitTexture(portrait, "player")
+                portraitDirty = false
+            end
         end
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         RefreshHealthGate(Settings())

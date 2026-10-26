@@ -13,6 +13,9 @@
 -- Real Safety, CombatGate, Registry, AdapterKit, OwnedMicroBar*, MicroMenuStates,
 -- MicroMenu, MicroMenuPerformance and MicroMenuVisual.
 local root = assert(arg[1], "Suite root required")
+local portraitOnly = os.getenv("SUITE_MICRO_PORTRAIT_ONLY") == "1"
+local baseline = os.getenv("SUITE_MICRO_BASELINE")
+local forever = os.getenv("SUITE_MICRO_FOREVER") == "1"
 local checks = 0
 local function Check(value, message)
     assert(value, message)
@@ -136,8 +139,12 @@ for index, name in ipairs({ "CharacterMicroButton", "QuestLogMicroButton" }) do
         button["Get" .. state .. "Texture"] = function() return texture end
     end
     -- MainMenuBarMicroButtonMixin's state methods (hooked by the skin).
-    function button:SetNormal() textures.Highlight:SetAlpha(1) end
-    function button:SetPushed() textures.Highlight:SetAlpha(0.5) end
+    button.buttonState, button.enabled, button.mouseOver = "NORMAL", true, false
+    function button:GetButtonState() return self.buttonState end
+    function button:IsEnabled() return self.enabled end
+    function button:IsMouseOver() return self.mouseOver end
+    function button:SetNormal() self.buttonState = "NORMAL"; textures.Highlight:SetAlpha(1) end
+    function button:SetPushed() self.buttonState = "PUSHED"; textures.Highlight:SetAlpha(0.5) end
     button.OnEnable, button.OnDisable = Noop, Noop
     _G[name], buttons[index] = button, button
 end
@@ -165,10 +172,10 @@ local settings = {
     buttonBackground = false, buttonBorder = 0, barBackground = false, barBorder = 0,
 }
 -- button -> state-only repaints, full repaints
-local stateApplies, fullApplies = {}, {}
+local stateApplies, fullApplies, paintedStates = {}, {}, {}
 local NS = {
     L = setmetatable({}, { __index = function(_, key) return key end }),
-    Client = { isForever = false, SupportsEvent = function() return true end },
+    Client = { isForever = forever, SupportsEvent = function() return true end },
     IsCombatLocked = function() return locked end,
     DB = { icons = { microMenu = settings }, skins = {} },
     Defaults = { icons = { microMenu = settings } },
@@ -182,16 +189,23 @@ local NS = {
     Theme = { GetColor = function() return 1, 1, 1, 1 end },
     MicroMenuVisual = {
         Prepare = function() Count("prepare"); return true end,
-        Apply = function(button, _, _, _, stateOnly)
+        Apply = function(button, _, _, state, stateOnly)
             local applies = stateOnly and stateApplies or fullApplies
             applies[button] = (applies[button] or 0) + 1
+            paintedStates[button] = state
             return true
         end,
         Restore = function() Count("restore"); return true end,
     },
 }
 local function Load(file)
-    assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
+    local source = root .. "/MSUF_Suite_Skin/" .. file
+    if baseline then
+        local override = baseline .. "/MSUF_Suite_Skin/" .. file
+        local found = io.open(override, "rb")
+        if found then found:close(); source = override end
+    end
+    assert(loadfile(source))("MSUF_Suite_Skin", NS)
 end
 for _, file in ipairs({ "Core/Safety.lua", "Core/CombatGate.lua", "Core/Registry.lua", "Adapters/AdapterKit.lua",
     "Adapters/OwnedMicroBarLayout.lua", "Adapters/OwnedMicroBarVisibility.lua",
@@ -239,12 +253,116 @@ Skin.Apply(menu, "combat-end-contract")
 bar, mover = Owned.GetFrames()
 Check(menu.parent == bar and Owned.active and mover.shown, "the owned bar did not take the menu with its mover")
 Check(NS.OwnedMicroBar.GetRoot() == menu, "the owned bar does not hold the menu")
+Check(counts.portrait == 1, "the initial owned shell did not seed its portrait")
 
--- A native state hook out of combat repaints its button at once and checks
--- CanControl once for the whole pass, not once per faded region.
+-- Lifecycle storms wait for one flush; input feedback stays synchronous.
+-- 2026-10-25 raid trace: three full walks must become one paint per button.
+if not portraitOnly then
+    Reset()
+    for _ = 1, 3 do
+        for _, button in ipairs(buttons) do button:SetNormal() end
+    end
+    Check(Total(stateApplies) == 0, "lifecycle burst painted before its flush")
+    Check(#nextFrame == 1, "lifecycle burst scheduled more than one flush")
+    -- SetNormal showed the highlight again; the clean style hides it at once.
+    Check(buttons[1].textures.Highlight.alpha == 0 and buttons[2].textures.Highlight.alpha == 0,
+        "a lifecycle call left the clean highlight visible until its flush")
+    Reset()
+    RunNextFrame()
+    Check(stateApplies[buttons[1]] == 1 and stateApplies[buttons[2]] == 1,
+        "lifecycle burst did not paint each button exactly once")
+    Check(counts.protection == #buttons, "a lifecycle flush repeated native protection checks")
+
+    -- Blizzard icon styles keep Blizzard's own highlight.
+    settings.iconStyle = "blizzard"
+    Skin.RefreshActive()
+    buttons[1]:SetNormal()
+    Check(buttons[1].textures.Highlight.alpha == 1, "a lifecycle call faded a Blizzard-style highlight")
+    RunNextFrame()
+    settings.iconStyle = "bold"
+    Skin.RefreshActive()
+
+    -- Repeated requests reuse the pending set and the single scheduled callback.
+    Reset()
+    buttons[1]:SetNormal()
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local memoryBefore = collectgarbage("count")
+    for _ = 1, 50 do buttons[1]:SetNormal() end
+    local allocated = collectgarbage("count") - memoryBefore
+    collectgarbage("restart")
+    Check(allocated < 1 and #nextFrame == 1,
+        ("repeated lifecycle requests allocated %.1f KB or scheduled extra callbacks"):format(allocated))
+    RunNextFrame()
+    Check(stateApplies[buttons[1]] == 1, "repeated lifecycle requests escaped their single flush")
+
+    for _, script in ipairs({ "OnEnter", "OnLeave", "OnMouseDown", "OnMouseUp", "OnClick" }) do
+        Reset()
+        buttons[1]:SetPushed()
+        if script == "OnMouseUp" or script == "OnLeave" or script == "OnEnter" then buttons[1]:SetNormal() end
+        buttons[1].mouseOver = script == "OnEnter"
+        buttons[1].scripts[script](buttons[1])
+        Check(stateApplies[buttons[1]] == 1, script .. " delayed input feedback")
+        local state = buttons[1].buttonState == "PUSHED" and "pressed"
+            or (buttons[1].mouseOver and "hover" or "normal")
+        Check(paintedStates[buttons[1]] == state, script .. " painted stale input state")
+        RunNextFrame()
+        Check(stateApplies[buttons[1]] == 1, script .. " left a duplicate lifecycle repaint")
+    end
+    buttons[1].mouseOver = false
+
+    -- The last lifecycle state wins, including disabled feedback.
+    Reset()
+    buttons[1]:SetPushed()
+    buttons[1]:SetNormal()
+    buttons[1].enabled = false
+    buttons[1]:OnDisable()
+    RunNextFrame()
+    Check(stateApplies[buttons[1]] == 1 and paintedStates[buttons[1]] == "disabled",
+        "lifecycle flush did not use the final disabled state")
+    buttons[1].enabled = true
+    buttons[1]:OnEnable()
+    RunNextFrame()
+
+    -- A full pass consumes pending work; disable cannot resurrect its old skin.
+    buttons[1]:SetNormal()
+    Skin.RefreshActive()
+    Reset()
+    RunNextFrame()
+    Check(Total(stateApplies) == 0, "a full pass left a duplicate lifecycle repaint")
+    buttons[1]:SetNormal()
+    Skin.Disable()
+    Reset()
+    RunNextFrame()
+    Check(Total(stateApplies) == 0 and Total(fullApplies) == 0,
+        "a queued lifecycle flush repainted after disable")
+    Skin.Apply(menu, "combat-end-contract")
+
+    -- A queued lifecycle burst meeting combat retains its repaint obligation.
+    buttons[1]:SetNormal()
+    StartCombat()
+    Reset()
+    RunNextFrame()
+    Check(Total(stateApplies) == 0, "a queued lifecycle flush repainted in combat")
+    EndCombat()
+    Check(stateApplies[buttons[1]] == 1 and not stateApplies[buttons[2]],
+        "a lifecycle burst meeting combat lost its stale button")
+
+    -- Combat replay can consume the button before its older timer gets to run.
+    buttons[1]:SetNormal()
+    StartCombat()
+    buttons[1]:SetPushed()
+    Reset()
+    EndCombat()
+    RunNextFrame()
+    Check(stateApplies[buttons[1]] == 1, "combat replay left a duplicate pending lifecycle repaint")
+end
+
+-- CanControl is checked once for a whole button, not per faded region.
 buttons[1].Background:SetAlpha(1)
-Reset()
 buttons[1]:SetNormal()
+Reset()
+RunNextFrame()
 Check(stateApplies[buttons[1]] == 1 and buttons[1].Background.alpha == 0,
     "a state hook did not repaint its button")
 Check(counts.protection == 1, "a state hook checked CanControl " .. tostring(counts.protection)
@@ -255,6 +373,8 @@ StartCombat()
 Check(not mover.shown, "combat start left the mover on screen")
 Reset()
 buttons[1]:SetPushed()
+Fire(barEvents, "UNIT_PORTRAIT_UPDATE")
+Fire(barEvents, "UNIT_PORTRAIT_UPDATE")
 Check(Total(stateApplies) == 0 and Total(fullApplies) == 0, "a state hook repainted in combat")
 Check(not Gate.IsPending(REAPPLY_KEY), "a state hook in combat deferred the bar's full pass")
 EndCombat()
@@ -271,6 +391,24 @@ StartCombat()
 Reset()
 EndCombat()
 Check(Total(stateApplies) == 0 and not counts.grid, "a quiet fight repainted or placed the bar")
+Check(not counts.portrait, "quiet combat end resolved an unchanged portrait")
+Fire(barEvents, "PLAYER_REGEN_ENABLED")
+Check(not counts.portrait, "a repeated combat end resolved an unchanged portrait")
+Fire(barEvents, "UNIT_PORTRAIT_UPDATE")
+Check(counts.portrait == 1, "an out-of-combat portrait update was delayed")
+Reset()
+Fire(barEvents, "PLAYER_REGEN_ENABLED")
+Check(not counts.portrait, "an immediate portrait update stayed dirty")
+-- PORTRAITS_UPDATED (every portrait invalidated, no unit) follows the same rule.
+StartCombat()
+Fire(barEvents, "PORTRAITS_UPDATED")
+Check(not Gate.IsPending(REAPPLY_KEY), "a PORTRAITS_UPDATED in combat deferred the bar's full pass")
+Reset()
+EndCombat()
+Check(counts.portrait == 1, "combat end did not refresh the portrait a PORTRAITS_UPDATED in combat invalidated")
+Reset()
+Fire(barEvents, "PORTRAITS_UPDATED")
+Check(counts.portrait == 1, "an out-of-combat PORTRAITS_UPDATED was delayed")
 
 -- A button Blizzard hid in combat: the owned grid is placed again once.
 StartCombat()
@@ -338,6 +476,7 @@ for _, gateFirst in ipairs({ false, true }) do
     local expensive, trailing = 0, 0
     StartCombat()
     Gate.RunOrDefer("contract:expensive", function() expensive = expensive + 1; clock = clock + 5 end)
+    Fire(barEvents, "UNIT_PORTRAIT_UPDATE")
     menu:Layout()
     buttons[1]:SetPushed()
     Gate.RunOrDefer("contract:trailing", function() trailing = trailing + 1 end)

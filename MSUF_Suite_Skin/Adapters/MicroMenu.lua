@@ -202,11 +202,15 @@ local function ApplyNativeButton(button, settings, stateOnly)
     return RestoreSurface(button) and success
 end
 
+-- Blizzard icons use the live native textures. Copying their atlas into a
+-- smaller overlay loses portrait, state and client-specific artwork.
+local function UsesCleanStyle(settings)
+    return settings.iconStyle ~= "blizzard" and settings.iconStyle ~= "blizzardIcons"
+end
+
 local function ApplyButton(button, buttonName, settings, stateOnly)
     if not CanControl(button) then return false end
-    -- Blizzard icons use the live native textures. Copying their atlas into a
-    -- smaller overlay loses portrait, state and client-specific artwork.
-    if settings.iconStyle ~= "blizzard" and settings.iconStyle ~= "blizzardIcons" then
+    if UsesCleanStyle(settings) then
         return ApplyCleanButton(button, buttonName, settings, stateOnly)
     end
     return ApplyNativeButton(button, settings, stateOnly)
@@ -236,16 +240,20 @@ end
 -- (MicroMenuSkin.RefreshAfterCombat). A full pass repaints every button and
 -- empties the set.
 local staleButtons = setmetatable({}, { __mode = "k" })
+local pendingButtons = setmetatable({}, { __mode = "k" })
+local visualRefreshPending = false
 -- A MicroButton was shown or hidden while combat kept OnContainerLayout quiet.
 local layoutChangedInCombat = false
 
 local function ForgetCombatChanges()
     for button in pairs(staleButtons) do staleButtons[button] = nil end
+    for button in pairs(pendingButtons) do pendingButtons[button] = nil end
     layoutChangedInCombat = false
 end
 
 -- Repaints the state-dependent art of one skinned button.
 local function RefreshButtonState(button)
+    pendingButtons[button] = nil
     local buttonName = activeButtons[button]
     local settings = buttonName and Settings()
     if settings then ApplyButton(button, buttonName, settings, true) end
@@ -254,7 +262,7 @@ end
 -- The hooks run inside Blizzard's own calls (UpdateMicroButtons walks every
 -- button; OnEnter/OnLeave run the button's own scripts first), so the
 -- repaint and the bar's mouseover reveal are each their own error boundary.
-local function OnButtonVisualLifecycle(button)
+local function OnButtonInteraction(button)
     if NS.IsCombatLocked() then
         staleButtons[button] = true
     elseif not SkinQuiet() then
@@ -262,13 +270,45 @@ local function OnButtonVisualLifecycle(button)
     end
 end
 
+-- Blizzard's SetNormal/SetPushed show the highlight again (alpha 1 or .5);
+-- the clean style keeps it hidden, so it fades at once instead of flashing
+-- until the flush.
+local function FadeCleanHighlight(button)
+    if activeButtons[button] and UsesCleanStyle(Settings()) then
+        FadeExact(button, Call(button, "GetHighlightTexture"))
+    end
+end
+
+-- 2026-10-25 raid trace: repeated native lifecycle calls repainted each
+-- button three times in one burst. Read its final state once at the flush;
+-- input scripts still repaint immediately after Blizzard's own feedback.
+local function FlushButtonVisuals()
+    visualRefreshPending = false
+    for button in pairs(pendingButtons) do
+        pendingButtons[button] = nil
+        OnButtonInteraction(button)
+    end
+end
+
+local function OnButtonVisualLifecycle(button)
+    if NS.IsCombatLocked() then
+        staleButtons[button] = true
+    elseif not SkinQuiet() then
+        Dispatch(FadeCleanHighlight, button)
+        pendingButtons[button] = true
+        if visualRefreshPending then return end
+        visualRefreshPending = true
+        C_Timer.After(0, FlushButtonVisuals)
+    end
+end
+
 local function OnButtonEnter(button)
-    OnButtonVisualLifecycle(button)
+    OnButtonInteraction(button)
     Dispatch(NS.OwnedMicroBar.HoverEnter)
 end
 
 local function OnButtonLeave(button)
-    OnButtonVisualLifecycle(button)
+    OnButtonInteraction(button)
     Dispatch(NS.OwnedMicroBar.HoverLeave)
 end
 
@@ -352,6 +392,9 @@ local function EnsureButtonHooks(button, buttonName)
     if tabard then hooksecurefunc(button, "UpdateTabard", OnButtonVisualLifecycle) end
     button:HookScript("OnEnter", OnButtonEnter)
     button:HookScript("OnLeave", OnButtonLeave)
+    button:HookScript("OnMouseDown", OnButtonInteraction)
+    button:HookScript("OnMouseUp", OnButtonInteraction)
+    button:HookScript("OnClick", OnButtonInteraction)
     hookedButtons[button] = true
     return true
 end

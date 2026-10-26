@@ -283,6 +283,29 @@ for _, frame in ipairs(frames) do
 end
 Check(deferred.canInterpolateScroll == false and not Motion.states[deferred].pending,
     "safe deferred release did not restore the exact native flag")
+-- Every combat edge passes over every controller (2026-10-26 M+ trace: 146
+-- per edge, 1.9-3.4 ms): the pass reads the configuration once and asks
+-- each controller IsForbidden twice (Safe), not again for its flag.
+do
+    local edge, reads = {}, 0
+    for i = 1, 8 do
+        local controller = Controller(false)
+        function controller:IsForbidden() reads = reads + 1 return false end
+        Check(Motion.Track(controller, "edge"), "a combat edge controller was refused")
+        edge[i] = controller
+    end
+    local isLocked, locked = NS.IsCombatLocked, 0
+    NS.IsCombatLocked = function() locked = locked + 1 return isLocked() end
+    reads = 0
+    for _, frame in ipairs(frames) do
+        if frame.events.PLAYER_REGEN_ENABLED then frame:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
+    end
+    NS.IsCombatLocked = isLocked
+    Check(locked == 1, "a combat edge read the configuration once per controller")
+    Check(reads == 2 * #edge, "a combat edge asked IsForbidden more than twice per controller")
+    for i = 1, #edge do Check(edge[i].canInterpolateScroll == true, "a combat edge changed a controller's flag") end
+    Motion.ReleaseOwner("edge")
+end
 Check(scriptWrites == 0, "native wheel/update scripts were replaced")
 for _, frame in ipairs(frames) do Check(frame.scripts.OnUpdate == nil, "Suite installed an idle update loop") end
 print("Suite skin smooth scrolling (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")

@@ -13,7 +13,9 @@ SOURCE = (ROOT / "MSUF_Suite_Skin" / PATH).read_text(encoding="utf-8")
 MUTANTS = (
     ("off switch", "db.theme.smoothScrolling ~= false", "true"),
     ("reduced motion", "db.theme.reduceMotion ~= true", "true"),
-    ("immediate thumb drag", "Enabled() == true and not state.dragging", "Enabled() == true"),
+    ("immediate thumb drag", "enabled and not state.dragging", "enabled"),
+    ("combat edge flag read", "local valid, current = SafeFlag(target)", "local valid, current = Flag(target)"),
+    ("combat edge configuration read", "else Update(state, enabled) end", "else Update(state) end"),
     ("paired thumb drag", "paired.dragging = true", "paired.dragging = false"),
     ("same-value foreign ownership", "if state and not state.writing then", "if false then"),
     ("nil native preference", "Write(state, state.original)", "Write(state, false)"),

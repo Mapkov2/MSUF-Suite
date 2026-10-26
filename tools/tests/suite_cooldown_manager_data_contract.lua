@@ -535,12 +535,22 @@ do
     assert(Resolve.ResumeConditions() and Resolve.ConditionsAllow(condition),"deferred talent change did not settle")
     -- A reload mid-fight: nothing is cached yet. The spell book is read at
     -- once (plain in combat) instead of hiding the entry for the fight, and
-    -- read again once the fight is over.
+    -- read again once the fight is over: a build follows only when it moved.
     Resolve.SpellsChanged()
     combatConditions=true
     assert(Resolve.ConditionsAllow(condition),"a condition first read in combat hid its entry")
     combatConditions=false
-    assert(Resolve.ResumeConditions() and Resolve.ConditionsAllow(condition),"a condition read in combat is read again after it")
+    assert(not Resolve.ResumeConditions() and Resolve.ConditionsAllow(condition),
+        "an unchanged condition read in combat asked for a build after it")
+    Resolve.SpellsChanged()
+    combatConditions=true
+    assert(Resolve.ConditionsAllow(condition),"a condition read again in combat hid its entry")
+    known[990001]=false
+    combatConditions=false
+    assert(Resolve.ResumeConditions() and not Resolve.ConditionsAllow(condition),
+        "a condition first read in combat that moved was not read again after it")
+    known[990001]=true
+    Resolve.SpellsChanged()
     -- A pet's spell counts like the player's.
     petKnown[990004]=true
     assert(Resolve.ConditionsAllow({requireSpell1=990004}),"a pet spell condition was never met")
@@ -1099,6 +1109,56 @@ assert(plans.def==nil and E.s342245==nil,"a preset-only spell has no bar while D
 C.views.def.on=true
 plans=Resolve.Build()
 Bars("preset on",{def="b113,s342245,b105,b114",uti="b112"})
+-- A spellbook change in combat asks for a build only when a preset-only
+-- spell the last build read changed its learned state (the racial here);
+-- the build then reads it again. Out of combat every change builds.
+do
+    local active=C.M.active
+    C.M.active=true
+    plans=Resolve.Build()
+    combatConditions=true
+    assert(Resolve.SpellsChanged()==true and Resolve.RefillChanged()==false,"an unchanged spellbook in combat asked for a build")
+    known[28730]=false
+    assert(Resolve.SpellsChanged()==true and Resolve.RefillChanged()==true,"a racial unlearned in combat asked for no build")
+    plans=Resolve.Build()
+    assert(E.s28730==nil,"the racial unlearned in combat stayed after the build")
+    known[28730]=true
+    assert(Resolve.SpellsChanged()==true and Resolve.RefillChanged()==true,"a racial learned again in combat asked for no build")
+    plans=Resolve.Build()
+    assert(E.s28730 and E.s28730.slot=="ext","the racial learned again in combat did not return")
+    -- A build after a spellbook change in combat that RefillChanged never
+    -- saw (a catalog change in the same flush) reads learned states afresh:
+    -- the racial read as unlearned before the fight shows once learned.
+    combatConditions=false
+    known[28730]=false
+    Resolve.SpellsChanged()
+    plans=Resolve.Build()
+    assert(E.s28730==nil,"the unlearned racial showed")
+    combatConditions=true
+    known[28730]=true
+    assert(Resolve.SpellsChanged()==true)
+    plans=Resolve.Build()
+    assert(E.s28730,"a build after a spellbook change in combat kept a stale learned state")
+    -- Item data that arrives later counts too: an item without data stays off
+    -- its bar until a check sees the data (a spellbook change in combat here).
+    local itemIcon=C_Item.GetItemIconByID
+    C_Item.GetItemIconByID=function(id) if id~=7001 then return itemIcon(id) end end
+    combatConditions=false
+    Resolve.SpellsChanged()
+    plans=Resolve.Build()
+    assert(E.i7001==nil,"an item without data showed")
+    combatConditions=true
+    assert(Resolve.SpellsChanged()==true and Resolve.RefillChanged()==false,"an item still without data asked for a build")
+    C_Item.GetItemIconByID=itemIcon
+    assert(Resolve.SpellsChanged()==true and Resolve.RefillChanged()==true,"item data that arrived in combat asked for no build")
+    plans=Resolve.Build()
+    assert(E.i7001 and E.i7001.texture==777,"the item whose data arrived did not show")
+    combatConditions=false
+    assert(Resolve.SpellsChanged()==false and Resolve.RefillChanged()==false,"a spellbook change out of combat waited")
+    Resolve.ResumeConditions()
+    C.M.active=active
+    plans=Resolve.Build()
+end
 -- A spec without lists or hidden entries gets the same preset.
 C.state.specID=64
 plans=Resolve.Build()

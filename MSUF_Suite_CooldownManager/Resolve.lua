@@ -63,6 +63,7 @@ end
 -- One entry key's fields (EntryFill.lua loads first).
 local EntryFill = C.EntryFill
 local Parse, FamilyOf, Known, BaseSpell = EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell
+local OverrideOf, Charged = EntryFill.OverrideOf, EntryFill.Charged
 local Fill, Clear, SetOverride, AURA_UNIT = EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.AURA_UNIT
 
 -- Talent and spell conditions (requireSpell1..3, excludeSpell1..3): known in
@@ -85,12 +86,6 @@ function Resolve.ConditionsAllow(ov)
         if required and ConditionKnown(required) ~= true then return false end
         if excluded and ConditionKnown(excluded) ~= false then return false end
     end
-    return true
-end
-function Resolve.ResumeConditions()
-    if not conditionsPending then return false end
-    wipe(conditionKnown)
-    conditionsPending = false
     return true
 end
 ------------------------------------------------------------------ presets
@@ -195,6 +190,14 @@ end
 -- changed (Resolve.SpellsChanged, from the catalog and loading-screen
 -- events). A module that is off gets no such events and reads live.
 local presetKnown = {}
+-- learnedStale: a spellbook change in combat whose inputs are not read again
+-- yet (RefillChanged, or the next build). By ID, what the last build read:
+-- for every plain spell entry its base spell, learned state, override (false:
+-- none) and charges flag (FillSpell); for every item key its icon (false: no
+-- item data yet), spell and name (FillItem).
+local learnedStale = false
+local spellBase, spellKnown, spellOverride, spellCharges = {}, {}, {}, {}
+local itemIcon, itemSpell, itemName = {}, {}, {}
 local function PresetKnown(key)
     local active = C.M.active == true
     local known
@@ -205,13 +208,70 @@ local function PresetKnown(key)
     end
     return known
 end
+-- True when the change came in combat: the caller then asks RefillChanged
+-- instead of building, and the end of combat reads everything the fight held
+-- back again (ResumeConditions).
 function Resolve.SpellsChanged()
-    wipe(presetKnown)
     if NS.IsCombatLocked() then
-        conditionsPending = true
-    else
-        wipe(conditionKnown)
+        conditionsPending, learnedStale = true, true
+        return true
     end
+    wipe(presetKnown)
+    wipe(conditionKnown)
+    return false
+end
+-- Whether an input the last build read outside the catalog moved: a
+-- preset-only spell's learned state, a plain spell entry's base, learned
+-- state, override or charges, an item key's data. The catalog compares its
+-- own records (Catalog.Rebuild); icons follow SPELL_UPDATE_ICON, gear and
+-- settings mark their own builds.
+local function RefillMoved()
+    for key, known in pairs(presetKnown) do
+        local spell = presetSpell[key]
+        if spell and Known(spell) ~= known then return true end
+    end
+    for id, base in pairs(spellBase) do
+        local now = BaseSpell(id)
+        local override = OverrideOf(now)
+        if now ~= base or Known(now) ~= spellKnown[id] or (override or false) ~= spellOverride[id]
+            or Charged(override or now) ~= spellCharges[id] then
+            return true
+        end
+    end
+    for id, icon in pairs(itemIcon) do
+        if (Catalog.ItemIcon(id) or false) ~= icon then return true end
+        if icon and ((Catalog.ItemSpell(id) or false) ~= itemSpell[id] or (Catalog.ItemName(id) or false) ~= itemName[id]) then
+            return true
+        end
+    end
+    return false
+end
+-- A spellbook change in combat with an unchanged catalog needs a build only
+-- when a refill input moved (RefillMoved). 2026-10-26 M+ trace: 121 builds in
+-- 18.7 min of combat after SPELLS_CHANGED, none of them changed an entry.
+function Resolve.RefillChanged()
+    if not learnedStale then return false end
+    if RefillMoved() then return true end
+    learnedStale = false
+    return false
+end
+-- The end of combat reads the conditions the fight held back again; a build
+-- follows only when one of them or a refill input moved (2026-10-26 M+ trace:
+-- every combat end after a spellbook change built, about 2 ms raw, unchanged).
+function Resolve.ResumeConditions()
+    if not conditionsPending then return false end
+    conditionsPending = false
+    local moved = false
+    for id, known in pairs(conditionKnown) do
+        if Known(id) ~= known then
+            moved = true
+            break
+        end
+    end
+    wipe(conditionKnown)
+    if moved or RefillMoved() then return true end
+    learnedStale = false
+    return false
 end
 
 -- A healthstone has two keys, its item and Blizzard's record of its
@@ -521,7 +581,15 @@ local function Materialize(key, slot, index, preview, spells)
     local old = entries[key]
     local entry = old or { key = key }
     if old then Snapshot(old) end
-    if not Fill(entry, key) or not (entry.known or preview and not presetSpell[key]) then return nil end
+    local filled = Fill(entry, key)
+    if filled and src == "s" then
+        spellBase[id], spellKnown[id] = entry.base, entry.known
+        spellOverride[id], spellCharges[id] = entry.override or false, entry.charges
+    elseif src == "i" then
+        itemIcon[id] = filled and entry.texture or false
+        if filled then itemSpell[id], itemName[id] = entry.spell or false, entry.name or false end
+    end
+    if not filled or not (entry.known or preview and not presetSpell[key]) then return nil end
     local ov = spells[key]
     ov = type(ov) == "table" and ov or EMPTY
     local chosen = entry.unit and AURA_UNIT[ov.auraUnit]
@@ -632,6 +700,12 @@ function Resolve.Build()
         wipe(conditionKnown)
         conditionsPending, conditionSpec = false, state.specID
     end
+    if learnedStale then
+        learnedStale = false
+        wipe(presetKnown)
+    end
+    wipe(spellBase)
+    wipe(itemIcon)
     local preview = state.preview == true
     -- The options canvas redraws only when entries may have changed.
     state.entryGen = (state.entryGen or 0) + 1

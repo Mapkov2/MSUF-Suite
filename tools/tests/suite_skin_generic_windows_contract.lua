@@ -1966,6 +1966,7 @@ Section("micro menu", function()
     raisePrepare = false
     local before = visualApplies
     buttons[1]:SetNormal()
+    table.remove(queued, 1)()
     Expect(ok and visualApplies == before + 1,
         "a raising Micro Bar transition left the button hooks silenced")
 
@@ -1980,6 +1981,7 @@ Section("micro menu", function()
     local reportedBefore = #reported
     ok = pcall(function()
         for _, button in ipairs(buttons) do button:SetNormal() end
+        table.remove(queued, 1)()
     end)
     microNS.MicroMenuVisual.Apply = visualApply
     Expect(ok and visualApplies == before + 1 and #reported == reportedBefore + 1,
@@ -2093,6 +2095,8 @@ Section("housing reward cards", function()
 end)
 
 Section("micro menu tint read-back", function()
+    local previousTimer, queued = C_Timer, {}
+    C_Timer = { After = function(_, callback) queued[#queued + 1] = callback end }
     -- Vertex colors read back at 8-bit precision.
     local function Quantize(value) return math.floor(value * 255 + 0.5) / 255 end
     local icon = { r = 1, g = 1, b = 1, a = 1 }
@@ -2139,6 +2143,7 @@ Section("micro menu tint read-back", function()
     microNS.MicroMenuSkin.Apply(menu, "tint")
     Expect(Near(icon.a, 0.5), "the Blizzard micro icon did not take its opacity")
     for _ = 1, 3 do button:SetNormal() end
+    table.remove(queued, 1)()
     Expect(Near(icon.a, 0.5), ("state hooks compounded the micro icon opacity to %.3f"):format(icon.a))
     microNS.MicroMenuSkin.Disable()
     Expect(Near(icon.a, 1), "disable did not give the micro icon its native color back")
@@ -2151,10 +2156,12 @@ Section("micro menu tint read-back", function()
     microNS.MicroMenuSkin.Apply(menu, "tint")
     Expect(icon.desaturated == true, "a monochrome Micro Bar did not desaturate the Blizzard icon")
     button:SetNormal()
+    table.remove(queued, 1)()
     Expect(icon.desaturated == true, "a state hook dropped the monochrome desaturation")
     microNS.MicroMenuSkin.Disable()
     Expect(icon.desaturated == false, "disable did not give the micro icon its native saturation back")
     _G.MicroMenu, _G.MicroMenuContainer, _G.CharacterMicroButton = nil, nil, nil
+    C_Timer = previousTimer
 end)
 
 Section("static popup hooks", function()
@@ -2181,6 +2188,8 @@ Section("static popup hooks", function()
 end)
 
 Section("owned micro bar", function()
+    local previousTimer, queued = C_Timer, {}
+    C_Timer = { After = function(_, callback) queued[#queued + 1] = callback end }
     -- Retail and Forever scale MicroMenu by this game rule (0: no factor).
     C_GameRules = { GetGameRuleAsFloat = function() return 0 end }
     Enum = Enum or {}
@@ -2301,6 +2310,7 @@ Section("owned micro bar", function()
     -- A native state hook keeps the plate the full pass attached.
     attaches = 0
     buttons[1]:SetPushed()
+    table.remove(queued, 1)()
     Expect(attaches == 0, "a Micro Bar state hook built and attached a new button plate")
 
     -- Combat end with nothing deferred keeps the bar where it is: combat
@@ -2347,6 +2357,7 @@ Section("owned micro bar", function()
 
     skinApi.Disable()
     CreateFrame, UIParent, FrameUtil = createFrame, uiParent, frameUtil
+    C_Timer = previousTimer
     _G.MicroMenu, _G.MicroMenuContainer = nil, nil
     _G.CharacterMicroButton, _G.QuestLogMicroButton = nil, nil
 end)

@@ -38,8 +38,9 @@ local bagEntries, itemEntries, rangedEntries = Index.bags, Index.items, Index.ra
 local AuraTimers = C.AuraTimers
 
 -- staleRoutes: an override arrived in combat and was routed without a
--- rebuild; seedLater: category entries wait for combat to end.
-local staleRoutes, seedLater = false, false
+-- rebuild; seedLater: category entries wait for combat to end;
+-- learnedProbe: a spellbook change in combat waits for the catalog unit.
+local staleRoutes, seedLater, learnedProbe = false, false, false
 local events = {}
 -- SPELL_UPDATE_USABLE has no spell payload. Bound its visible-icon sweep to
 -- five times per second for ordinary tinting, ten for resource-ready glows.
@@ -313,10 +314,14 @@ end
 local RESOLVING = { SPELLS_CHANGED = true, TRAIT_CONFIG_UPDATED = true, ACTIVE_PLAYER_SPECIALIZATION_CHANGED = true }
 local function OnCatalog(_, event)
     dirty.catalog = true
-    -- Learned state of custom spells and per-spec lists follow these.
+    -- Learned state of custom spells and per-spec lists follow these. In
+    -- combat the catalog unit decides whether to build (learnedProbe).
     if RESOLVING[event] then
-        dirty.resolve = true
-        C.Resolve.SpellsChanged()
+        if C.Resolve.SpellsChanged() then
+            learnedProbe = true
+        else
+            dirty.resolve = true
+        end
     end
     Schedule()
 end
@@ -676,7 +681,7 @@ function Events.Release(context)
         events[event] = nil
         context:RemoveEvent(event)
     end
-    staleRoutes, seedLater = false, false
+    staleRoutes, seedLater, learnedProbe = false, false, false
     if C.Visibility.HasPending() or C.AuraGlows.HasParkedGates() then Events.WatchParked() end
 end
 
@@ -689,6 +694,11 @@ local function CatalogUnit(locked)
     if UpdateSpec() then dirty.resolve = true end
     -- A changed catalog may move equipment slot records between bars.
     if C.Catalog.Rebuild() then dirty.resolve, dirty.events = true, true end
+    -- A spellbook change in combat builds only for a learned state that moved.
+    if learnedProbe then
+        if not dirty.resolve and C.Resolve.RefillChanged() then dirty.resolve = true end
+        learnedProbe = false
+    end
     CaptureWhenReady(locked)
     Settings.SpecPositions()
 end

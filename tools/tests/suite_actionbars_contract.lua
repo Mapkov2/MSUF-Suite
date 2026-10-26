@@ -784,6 +784,7 @@ MultiActionButtonUp=function() end
 ActionButton_UpdateCooldownNumberHidden=function(button)
     button.cooldown:SetHideCountdownNumbers(false)
 end
+ActionButton_ApplyCooldown=function() end
 local editElements={}
 MSUF_EditModeAPI={RegisterElement=function(owner,element) editElements[element.id]=element;return true end,
     RefreshOwner=function() end,UnregisterOwner=function() end,RegisterSessionListener=function() end,IsActive=function() return false end}
@@ -812,6 +813,7 @@ local function Buttons(prefix,parent,count,small)
         button.UpdateState=function(self)
             self:SetChecked(C_ActionBar.IsCurrentAction(self.attrs.action))
         end
+        button.UpdateAction=function() end
         button:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
     end
 end

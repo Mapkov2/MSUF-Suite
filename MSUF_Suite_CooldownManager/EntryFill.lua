@@ -234,3 +234,4 @@ end
 EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell = Parse, FamilyOf, Known, BaseSpell
 EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.AURA_UNIT = Fill, Clear, SetOverride, AURA_UNIT
 EntryFill.RefreshAuraUnit = RefreshAuraUnit
+EntryFill.OverrideOf, EntryFill.Charged = OverrideOf, Charged

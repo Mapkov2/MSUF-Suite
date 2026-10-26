@@ -44,6 +44,7 @@ local members, shortcuts, linkLabels, plainLabels = {}, {}, {}, {}
 -- native links, the inner one around URLs).
 local runs, pieces = {}, {}
 local tools = {}
+local formatGeneration = 0
 local stampFormat, stampSecond, stampText = DEFAULT_STAMP, nil, ""
 local stampPattern = "^%[%d+:%d+%] "
 local nativeSetting, nativeFormat, nativePrefix
@@ -209,10 +210,12 @@ end
 
 -- Cold path: what every line needs, from the current settings.
 function C.CompileMessages(config)
+    formatGeneration = formatGeneration + 1
     tools.links, tools.names = config.linkURLs, config.colorMentionNames
     tools.channels, tools.stamps = config.shortenChannels, config.allTimestamps
     tools.plain = tools.links or tools.names
     tools.format = tools.plain or tools.channels or tools.stamps
+    tools.prepare = tools.format
     tools.history = config.saveHistory
     tools.fade = config.idleSeconds > 0
     tools.unread = config.coloredUnreadTabs
@@ -243,6 +246,43 @@ local function Transform(frame, record)
     return true
 end
 
+-- 2026-10-25 raid trace: Suite prints paid a full history walk per line.
+-- Prepare only our own delivery; the native method and all its hooks still
+-- run. Only stable formatting may be shared with a hook's identical line.
+-- Unstable custom formats retain the native transform path until refresh.
+-- Restore the enclosing print after a nested print or a reported error.
+function P.NS.PrintChatMessage(frame, text)
+    local record = hooks[frame]
+    if not (record and record.live and not record.wakeOnly and not record.source and tools.prepare) then
+        frame:AddMessage(text)
+        return
+    end
+    local public = PublicText(text)
+    if not public then
+        frame:AddMessage(text)
+        return
+    end
+    local rendered = Format(public)
+    if rendered == text then
+        -- This identity result stays valid after a delivery error; a new
+        -- formatter generation invalidates it. Nested prints restore it.
+        local previous, generation = record.unchanged, record.unchangedGeneration
+        record.unchanged, record.unchangedGeneration = public, formatGeneration
+        frame:AddMessage(text)
+        record.unchanged, record.unchangedGeneration = previous, generation
+        return
+    end
+    if Format(rendered) ~= rendered then
+        tools.prepare = false
+        frame:AddMessage(text)
+        return
+    end
+    local previous, generation, source = record.prepared, record.preparedGeneration, record.preparedSource
+    record.prepared, record.preparedGeneration, record.preparedSource = rendered, formatGeneration, public
+    Dispatch(frame.AddMessage, frame, rendered)
+    record.prepared, record.preparedGeneration, record.preparedSource = previous, generation, source
+end
+
 local function MessageAdded(frame, text, r, g, b, chatTypeID)
     local record = hooks[frame]
     if not record.live or record.source then return end
@@ -255,8 +295,11 @@ local function MessageAdded(frame, text, r, g, b, chatTypeID)
     local public = PublicText(text)
     if not public then return end
     local rendered = public
-    if tools.format then
-        rendered = Format(public)
+    -- A preceding hook may remove formatting, which needs the original text.
+    local stale = public == record.prepared and record.preparedGeneration ~= formatGeneration
+    if stale or tools.format and public ~= record.prepared
+        and (public ~= record.unchanged or record.unchangedGeneration ~= formatGeneration) then
+        rendered = Format(stale and record.preparedSource or public)
         if rendered ~= public then
             record.source, record.rendered = public, rendered
             if Dispatch(Transform, frame, record) ~= true then rendered = public end
@@ -342,6 +385,7 @@ end
 LinkUtil.RegisterLinkHandler("msufurl", OpenURL)
 
 function C.MessageRoster()
+    formatGeneration = formatGeneration + 1
     for name in pairs(members) do members[name] = nil end
     if not tools.names then return end
     local raid = IsInRaid()

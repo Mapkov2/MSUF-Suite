@@ -2384,10 +2384,11 @@ end
 print("Suite nameplates: optional catalog listeners, readiness and disabled combat-exit budget passed")
 
 -- The end of combat applies only the plates a held-back write named
--- (Skin.lua pendingPlates); a write no plate owns (needsRefresh, Power.lua)
--- and quests to read again still take every shown plate. The 2026-10-11 raid
--- trace: one module-wide flag repainted every shown plate, 0.27-1.05 ms per
--- combat end. Each writer names its own plate.
+-- (Skin.lua pendingPlates); quests to read again still take every shown
+-- plate, and a held-back personal power write (needsRefresh, Power.lua) only
+-- the power bars. The 2026-10-11 raid trace: one module-wide flag repainted
+-- every shown plate, 0.27-1.05 ms per combat end. Each writer names its own
+-- plate.
 do
     module.active = true
     module:Enable()
@@ -2455,14 +2456,26 @@ do
     assert(CombatEnd() == 1 and next(applied) == nil and not Deferred(), "a plate no longer shown was applied")
 
     -- Blizzard's anchor rebuild in combat holds back its plate (Layout.lua
-    -- OnAnchors); a write no plate owns then takes every plate.
+    -- OnAnchors). A held-back personal power write (needsRefresh) is Power's
+    -- own: the power bars are written again, the plates stay as they are
+    -- (2026-10-26 M+ trace: it repainted all 16 shown plates every pull).
     combat = true
     layoutHook(uf)
     assert(DeferredPlate(uf), "a combat anchor rebuild held back more than its plate")
     module.needsRefresh = true
     combat = false
-    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == 1 and not Deferred(),
-        "a write no plate owns did not apply every plate once")
+    powerReads = 0
+    driver.GetClassNameplateManaBar = function(...) powerReads = powerReads + 1; return getMana(...) end
+    module.config.personalPowerOffsetX = 2
+    assert(CombatEnd() == 1 and applied.first == 1 and applied.second == nil and not Deferred(),
+        "a held-back power write applied plates no write held back")
+    assert(powerReads == 1, "a held-back power write did not write the personal power bars again")
+    module.needsRefresh = true
+    assert(CombatEnd() == 0 and next(applied) == nil and not Deferred() and powerReads == 2,
+        "a held-back power write alone scanned or applied plates, or skipped the power bars")
+    module.config.personalPowerOffsetX = 0
+    private.Power.Refresh()
+    driver.GetClassNameplateManaBar = getMana
     -- Quests to read again with a plate held back: every plate as well.
     combat = true
     layoutHook(uf)

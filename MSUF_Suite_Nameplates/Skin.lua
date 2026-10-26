@@ -26,7 +26,7 @@ local M = {
     nativeLevelAlphas = setmetatable({}, { __mode = "k" }),
     -- Unit frames whose plate a write held back (Layout, Level, CastTime,
     -- Auras): the end of combat applies those plates again. needsRefresh is
-    -- for a write no plate owns (Power): every plate then (OnCombatEnded).
+    -- a held-back personal power write: Power.Reapply then (OnCombatEnded).
     pendingPlates = setmetatable({}, { __mode = "k" }),
 }
 
@@ -400,19 +400,31 @@ local function EachPlate(callback)
     for i = 1, #plates do callback(plates[i]) end
 end
 
--- Classifies and repaints every active plate. A lieutenant level seen for
--- the first time on the way bosses the plates classified before it, so the
--- pass then runs once more.
-local function RefreshActive(self)
+-- Group/role changes affect facts, colors and name filtering, not presentation
+-- (2026-10-26 M+ trace: 60 Paint and 380 Text.Apply in one roster burst).
+local function RefreshActive(self, contextOnly, auraColors)
     for unit, uf in pairs(self.activeUnits) do
         if Safe(uf) then
             SetRole(uf, unit)
-            Paint(uf)
+            local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
+            if contextOnly and Safe(health) then
+                local prefix = Prefix(uf)
+                local visual = health and self.visuals[health]
+                local styled = prefix and self.config.look ~= LOOK_BLIZZARD and self.config[prefix]
+                if styled and not visual then Paint(uf)
+                else
+                    FilterFriendlyName(uf, prefix)
+                    if styled then PaintHealth(health, visual, prefix) end
+                    if auraColors then AuraColors.Apply(uf, unit, prefix == "enemy") end
+                end
+            elseif not contextOnly then
+                Paint(uf)
+            end
         end
     end
     if Roles.learnedLieutenant then
         Roles.learnedLieutenant = false
-        RefreshActive(self)
+        RefreshActive(self, contextOnly)
     end
 end
 
@@ -421,7 +433,7 @@ end
 local function AfterClassify(self)
     if not Roles.learnedLieutenant then return end
     Roles.learnedLieutenant = false
-    RefreshActive(self)
+    RefreshActive(self, true)
 end
 
 local function OnAdded(self, _, unit)
@@ -578,8 +590,13 @@ local function RepaintCasts()
     end
 end
 
--- Subzone steps (ZONE_CHANGED) fire often while moving; they repaint only
--- when the context the colors depend on changed.
+local function RepaintAuraColors(module)
+    for unit, uf in pairs(module.activeUnits) do AuraColors.Apply(uf, unit, Prefix(uf) == "enemy") end
+end
+
+-- World/area/level changes can reset native level badges and geometry. Keep
+-- their full pass; subzone steps take it only when the role context changed.
+local FULL_CONTEXT = { PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true, PLAYER_LEVEL_UP = true, ZONE_CHANGED = true }
 local function OnContextChanged(module, event)
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
         AuraColors.Configure(module.config, true)
@@ -588,7 +605,10 @@ local function OnContextChanged(module, event)
     if event == "ZONE_CHANGED" and not changed then return end
     CancelQuestRefresh(module)
     Roles.ClearQuest()
-    RefreshActive(module)
+    RefreshActive(module, not FULL_CONTEXT[event], event == "PLAYER_SPECIALIZATION_CHANGED")
+    -- A specialization brings other interrupt spells: casts that already run
+    -- take the kick-ready look again (KickReady.Paint).
+    if event == "PLAYER_SPECIALIZATION_CHANGED" then RepaintCasts() end
 end
 
 local function OnFocusChanged(module)
@@ -646,28 +666,29 @@ local function ApplyPending(pending)
     end
 end
 
--- Only the plates a write held back are applied again: every other plate is
--- current, so its pass changed nothing. The 2026-10-11 raid trace measured
--- one module-wide flag repainting every shown plate, 0.27-1.05 ms per end of
--- combat (about 0.2 ms per plate). A write no plate owns (needsRefresh) and
--- quests to read again (Roles.RetryQuests) still take every plate.
+-- Only the plates a write held back are applied again; the others are current
+-- (2026-10-11 raid trace: a module-wide flag repainted every shown plate).
+-- Quests to read again (Roles.RetryQuests) still take every plate. A held-back
+-- personal power write (needsRefresh) is Power's own: Power.Reapply writes it
+-- and no plate paint reads it (2026-10-26 M+ trace: 16 plates, 3.5-7.8 ms).
 local function OnCombatEnded(module)
     -- CVar writes held back for combat (CVars.Apply).
     if module.cvarsPending then CVars.Apply(module) end
     local retryQuests = Roles.RetryQuests()
     local pending = module.pendingPlates
-    if not module.needsRefresh and not next(pending) then
+    local powerHeld = module.needsRefresh
+    module.needsRefresh = false
+    if not powerHeld and not next(pending) then
         if retryQuests then
             CancelQuestRefresh(module)
             RefreshActive(module)
         end
         return
     end
-    if module.needsRefresh or retryQuests then
-        module.needsRefresh = false
+    if retryQuests then
         for uf in pairs(pending) do pending[uf] = nil end
         EachPlate(ApplyPlate)
-    else
+    elseif next(pending) then
         ApplyPending(pending)
     end
     Power.Reapply()
@@ -685,10 +706,6 @@ local CONTEXT_EVENTS = { "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "PLAY
     "GROUP_ROSTER_UPDATE", "PLAYER_ROLES_ASSIGNED", "PLAYER_SPECIALIZATION_CHANGED", "ZONE_CHANGED" }
 local AURA_CONFIG_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
     "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED", "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED" }
-
-local function RepaintAuraColors(module)
-    for unit, uf in pairs(module.activeUnits) do AuraColors.Apply(uf, unit, Prefix(uf) == "enemy") end
-end
 
 local function OnAuraSpellsChanged(module)
     AuraColors.Configure(module.config, true)

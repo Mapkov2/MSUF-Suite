@@ -2845,10 +2845,12 @@ combat=true
 Fire("PLAYER_REGEN_DISABLED")
 -- A catalog event that changes nothing passes nothing on: no bar syncs,
 -- relayouts or repaints, nothing is routed again or parked for combat end.
+-- In combat it rebuilds the catalog but builds no plans while no learned
+-- state moved (2026-10-26 M+ trace: 121 such builds, none changed an entry).
 ResetCalls()
 Fire("SPELLS_CHANGED")
 Run()
-assert(Calls("catalog")==1 and Calls("resolve")==1,"the catalog event rebuilds and resolves")
+assert(Calls("catalog")==1 and Calls("resolve")==0,"an unchanged catalog event in combat built the plans")
 assert(Structural()+Calls("layoutAll")+Calls("layout")+Calls("visAll")+Calls("vis")==0,
     "an unchanged resolve synced, routed, laid out or repainted bars")
 assert(Calls("keysRebuild")+Calls("keysRefresh")+Calls("keysRequest")==0 and next(C.Auras.pending)==nil,
@@ -2887,6 +2889,72 @@ assert(seeds>=1 and C.entries.b52.catSpell==431932 and C.entries.b52.catItem==21
 Fire("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",101,nil)
 Run()
 assert(e11.spell==101 and e11.override==nil)
+-- A spellbook change in combat builds the plans when a spell the last build
+-- read changed its learned state (a custom spell entry here), and only then;
+-- the end of combat builds once more, as conditions read in combat do.
+do
+    local wasCustom=C.entries.s9001~=nil
+    combat=true
+    Fire("PLAYER_REGEN_DISABLED")
+    Run()
+    ResetCalls()
+    Fire("SPELLS_CHANGED")
+    Run()
+    assert(Calls("catalog")==1 and Calls("resolve")==0,"an unchanged spellbook in combat built the plans")
+    known[9001]=not known[9001]
+    ResetCalls()
+    Fire("SPELLS_CHANGED")
+    Run()
+    assert(Calls("catalog")==1 and Calls("resolve")==1 and (C.entries.s9001~=nil)~=wasCustom,
+        "a custom spell's learned state changed in combat without a build")
+    known[9001]=not known[9001]
+    ResetCalls()
+    Fire("SPELLS_CHANGED")
+    Run()
+    assert(Calls("resolve")==1 and (C.entries.s9001~=nil)==wasCustom,"a custom spell learned again in combat did not return")
+    ResetCalls()
+    Fire("SPELLS_CHANGED")
+    Run()
+    assert(Calls("resolve")==0,"a settled spellbook built the plans again")
+    -- A custom spell's override (and the charges that come with it) counts
+    -- like its learned state.
+    local findOverride=C_SpellBook.FindSpellOverrideByID
+    C_SpellBook.FindSpellOverrideByID=function(spell) if spell==9001 then return 9011 end end
+    ResetCalls()
+    Fire("SPELLS_CHANGED")
+    Run()
+    assert(Calls("resolve")==1 and (not wasCustom or C.entries.s9001.override==9011),
+        "a custom spell's override in combat did not build")
+    C_SpellBook.FindSpellOverrideByID=findOverride
+    ResetCalls()
+    Fire("SPELLS_CHANGED")
+    Run()
+    assert(Calls("resolve")==1 and (not wasCustom or C.entries.s9001.override==nil),
+        "a custom spell's override ending in combat did not build")
+    -- The end of combat reads what the fight held back again: nothing moved,
+    -- nothing builds; a learned state that moved without an event builds.
+    combat=false
+    ResetCalls()
+    Fire("PLAYER_REGEN_ENABLED")
+    Run()
+    assert(Calls("resolve")==0,"the end of combat built although nothing the fight held back moved")
+    combat=true
+    Fire("PLAYER_REGEN_DISABLED")
+    Run()
+    Fire("SPELLS_CHANGED")
+    Run()
+    known[9001]=not known[9001]
+    combat=false
+    ResetCalls()
+    Fire("PLAYER_REGEN_ENABLED")
+    Run()
+    assert(Calls("resolve")==1 and (C.entries.s9001~=nil)~=wasCustom,
+        "the end of combat did not build after a learned state moved in combat")
+    known[9001]=not known[9001]
+    Fire("SPELLS_CHANGED")
+    Run()
+    assert((C.entries.s9001~=nil)==wasCustom,"a custom spell learned again out of combat did not return")
+end
 -- Blizzard's layout callbacks rebuild only when the saved layout string moved.
 local pendingChanges=registry["CooldownViewerSettings.OnPendingChanges"].fn
 ResetCalls()

@@ -7,7 +7,7 @@ local NS, S = P.NS, P.Suite
 -- after Blizzard repaints; the walks (Flush.lua) call the Native* parts.
 local AB = P.ActionBars
 local M = AB.M
-local Public = S.Public
+local Public, IsSecret = S.Public, NS.IsSecret
 local Dispatch = S.Dispatch
 local Painter = AB.Painter
 local api = Painter.api
@@ -15,10 +15,42 @@ local PROC_BLIZZARD, PROC_PIXEL = AB.ENUM.PROC_GLOW.BLIZZARD, AB.ENUM.PROC_GLOW.
 local OUT_OF_RANGE = S.USABLE.OUT_OF_RANGE
 local Tint, AcquireRange, Usable, CooldownFeedback = Painter.Tint, Painter.AcquireRange, Painter.Usable, Painter.CooldownFeedback
 local GlowCheck, SetGlow = Painter.GlowCheck, Painter.SetGlow
+local cooldownOwners = {}
+
+local function InvalidateFeedback(rec)
+    rec.feedbackInactive, rec.feedbackNeutral, rec.feedbackSlot = nil, nil, nil
+end
+
+local function Inactive(info)
+    if IsSecret(info) or type(info) ~= "table" then return false end
+    local active = info.isActive
+    return not IsSecret(active) and active == false
+end
+
+-- 2026-10-26 M+ trace: neutral native buttons paid five C calls per walk.
+-- SpellSharedDocumentation marks all three isActive fields NeverSecret;
+-- time fields may still be secret. GCD activity stays on the old path.
+local function NativeCooldownPost(rec, info, chargeInfo, lossInfo)
+    local inactive = Inactive(info) and Inactive(chargeInfo) and Inactive(lossInfo)
+    if not inactive or rec.feedbackSlot ~= rec.slot then rec.feedbackNeutral = nil end
+    rec.feedbackInactive, rec.feedbackSlot = inactive, rec.slot
+end
+
+local function NativeInvalidatePost(button)
+    local rec = AB.records[button]
+    if rec and rec.native then InvalidateFeedback(rec) end
+end
 
 local function NativeFeedback(rec)
     if AB.directDuration then
         if rec.feedback then CooldownFeedback(rec, false) end
+        return
+    end
+    if rec.feedbackInactive and rec.feedbackSlot == rec.slot then
+        if not rec.feedbackNeutral then
+            CooldownFeedback(rec, false)
+            rec.feedbackNeutral = true
+        end
         return
     end
     -- A replacing loss-of-control effect shows instead of the cooldown.
@@ -55,6 +87,8 @@ end
 local function NativeUsablePost(button)
     local rec = AB.records[button]
     if not rec or not rec.native or not M.active then return end
+    -- Level-link usability paint can desaturate an inactive icon again.
+    rec.feedbackNeutral = nil
     -- Blizzard has already painted usable state. Only an active range
     -- override needs reapplying; another IsUsableAction call here would
     -- duplicate the native call on every usable update.
@@ -100,13 +134,20 @@ local function NativeUsableHook(button) Dispatch(NativeUsablePost, button) end
 local function NativeStateHook(button) Dispatch(NativeStatePost, button) end
 local function NativeCountdownHook(button) Dispatch(NativeCountdownPost, button) end
 local function NativeAlertHook(manager, button) Dispatch(NativeAlertPost, manager, button) end
+local function NativeCooldownHook(normal, info, charge, chargeInfo, loss, lossInfo)
+    if not M.active or AB.directDuration or IsSecret(normal) then return end
+    local rec = cooldownOwners[normal]
+    if rec then Dispatch(NativeCooldownPost, rec, info, chargeInfo, lossInfo) end
+end
+local function NativeInvalidateHook(button) Dispatch(NativeInvalidatePost, button) end
 
--- Post-hooks on Blizzard's shared button code (both clients define both),
--- installed with the first reused bar; both only touch reused buttons.
+-- Shared button hooks, present on both clients and installed with the first
+-- reused bar; foreign cooldowns never enter the isolated observer.
 local function HookNativeShared()
     if AB.nativeSharedHooked then return end
     AB.nativeSharedHooked = true
     hooksecurefunc("ActionButton_UpdateCooldownNumberHidden", NativeCountdownHook)
+    hooksecurefunc("ActionButton_ApplyCooldown", NativeCooldownHook)
     hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", NativeAlertHook)
 end
 
@@ -120,10 +161,16 @@ local function NativeColor(rec)
 end
 
 local function RefreshNativeButton(rec)
+    InvalidateFeedback(rec)
+    cooldownOwners[rec.button.cooldown] = rec
     if not rec.nativeHooks then
         rec.nativeHooks = true
         hooksecurefunc(rec.button, "UpdateUsable", NativeUsableHook)
         hooksecurefunc(rec.button, "UpdateState", NativeStateHook)
+        -- UpdateAction owns slot/page changes, including forced same-slot
+        -- replacements. A post-hook discards any earlier paint in that call.
+        hooksecurefunc(rec.button, "UpdateAction", NativeInvalidateHook)
+        rec.button:HookScript("OnShow", NativeInvalidateHook)
     end
     NativeColor(rec)
     NativeCount(rec)

@@ -39,6 +39,10 @@ local OWED = {
     PLAYER_ENTERING_WORLD = "compile", ZONE_CHANGED_NEW_AREA = "compile",
     BAG_UPDATE_DELAYED = "bags", GROUP_ROSTER_UPDATE = "roster",
 }
+-- A bag update ends the bag reads a compile may keep (R.BagsChanged, Entries.lua).
+-- It is heard in combat too, where it only takes note; a world entry covers bag
+-- changes no event reported on the way in.
+local BAG_EVENTS = { BAG_UPDATE_DELAYED = true, PLAYER_ENTERING_WORLD = true }
 -- Subzone steps matter only to the map potion: listened to while it has maps,
 -- and they compile only when the player crossed onto or off such a map.
 local SUBZONE_EVENTS = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS" }
@@ -611,6 +615,7 @@ OnEvent = function(self, event, unit, updateInfo)
         end
     end
     if UNIT_FILTERED[event] and unit ~= "player" then return end
+    if BAG_EVENTS[event] then R.BagsChanged() end
     if event == "PLAYER_REGEN_DISABLED" then
         Suspend(self)
         return

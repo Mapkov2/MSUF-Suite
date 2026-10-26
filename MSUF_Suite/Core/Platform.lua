@@ -492,8 +492,12 @@ function Suite.Client.LoadReasonText(reason, fallback)
     return tostring(reason or fallback)
 end
 
+function Suite.PrintChatMessage(frame, text)
+    frame:AddMessage(text)
+end
+
 function Suite.Print(message)
-    DEFAULT_CHAT_FRAME:AddMessage("MSUF Suite: " .. tostring(message))
+    Suite.PrintChatMessage(DEFAULT_CHAT_FRAME, "MSUF Suite: " .. tostring(message))
 end
 
 -- Listeners are configuration-only. Registering one allocates no frame and

@@ -599,7 +599,10 @@ do
     assert(compiles == 1 and Food() == new and not module.stock.pending,
         "the new food was not picked at the next combat end once its data arrived")
     -- The same out of combat: the bag update owes the compile to combat end.
+    -- The game reports every bag change (the removal too), and a compile keeps
+    -- the bags it read until one is reported.
     itemData[new], bags[0][2] = nil, nil
+    events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
     module:Refresh()
     eq(Food(), old, "the old food did not come back")
     itemData[250120] = {}
@@ -613,6 +616,139 @@ do
     module:Disable()
     NS.IsCombatLocked = function() return false end
     bags[0][1], bags[0][3], itemData[old], itemData[250120] = nil, nil, nil, nil
+end
+
+-- The food census is kept while the bags are unchanged. The 2026-10-26 M+
+-- trace scanned the bags at every combat end although no bag update came (a
+-- spell change in combat compiled). The Controller reports every bag update
+-- through R.BagsChanged (in combat too); a bag update's own check
+-- (R.StockChanged), a preview and a first build read the bags again; a scan
+-- that met an item without data is not kept. Last in this file: it arms the
+-- census, which the blocks above must not see.
+do
+    local reported = assert(R.BagsChanged, "the module has no bag update report for the Controller")
+    local slotReads, slotRead = 0, C_Container.GetContainerItemID
+    C_Container.GetContainerItemID = function(...) slotReads = slotReads + 1; return slotRead(...) end
+    local SCAN = 5 * 16 -- bags 0-4 with 16 slots each in this model
+    itemData[260001], itemData[260010] = { spell = 1219187 }, { spell = 1233738 }
+    bags[0][1] = 260001
+    local owner = Owner({ classBuff = false, autoFlask = false, autoRune = false, autoWeapon = false })
+    local function Food(preview)
+        local entries = R.BuildEntries(owner, preview)
+        if not preview then owner.list.entries = entries end
+        for _, entry in ipairs(entries) do if entry.kind == "food" then return entry.id end end
+    end
+    reported()
+    eq(Food(), 260001, "the bag food was not picked")
+    eq(slotReads, SCAN, "the first build did not scan the bags once")
+    -- Spell and setting changes compile again: the unchanged bags are not scanned.
+    slotReads = 0
+    owner.config.restockNotice = true
+    eq(Food(), 260001, "a setting change changed the food")
+    owner.config.foodChoice = "260001"
+    eq(Food(), 260001, "the chosen food did not stay")
+    owner.config.foodChoice = ""
+    eq(Food(), 260001, "a second setting change changed the food")
+    eq(slotReads, 0, "compiles with unchanged bags scanned the bags again")
+    -- Food looted, then eaten (also in combat, where the Controller reports the update and the combat end compiles).
+    bags[0][2] = 260010
+    reported()
+    eq(Food(), 260010, "the looted newer food was not picked")
+    eq(Food(), 260010, "the looted food was lost")
+    eq(slotReads, SCAN, "one bag update scanned the bags more than once")
+    bags[0][2] = nil
+    reported()
+    slotReads = 0
+    eq(Food(), 260001, "a kept census hid the eaten food")
+    eq(slotReads, SCAN, "the bag update after eating did not scan once")
+    -- A bag update's own check reads the bags fresh and shares that scan with the compile it starts.
+    bags[0][2] = 260010
+    slotReads = 0
+    eq(R.StockChanged(owner), true, "a looted newer food did not change the pick")
+    eq(Food(), 260010, "the compile after the bag update missed the looted food")
+    eq(slotReads, SCAN, "a bag update scanned twice: its check and the compile it started")
+    -- An item whose data has not arrived: the scan is not kept, every compile asks again.
+    itemData[260020], bags[0][3] = {}, 260020
+    reported()
+    slotReads = 0
+    eq(Food(), 260010, "food without data replaced the known food")
+    assert(owner.stock.pending, "food without data did not leave the compile pending")
+    eq(Food(), 260010, "food without data replaced the known food at the second compile")
+    eq(slotReads, 2 * SCAN, "a scan that met an item without data was kept")
+    itemData[260020].spell = 1233738
+    slotReads = 0
+    eq(Food(), 260020, "the food decided by late data was not picked")
+    assert(not owner.stock.pending, "decided food left the compile pending")
+    eq(Food(), 260020, "the decided food was lost")
+    eq(slotReads, SCAN, "the decided census was not kept")
+    -- A preview hears no bag update: it reads the bags fresh, and the census it
+    -- reads replaces the kept one (the compile after it needs no second scan).
+    bags[0][3] = nil
+    slotReads = 0
+    eq(Food(R.NewEntryBuffer()), 260010, "a preview used the kept census")
+    eq(slotReads, SCAN, "a preview build did not scan the bags once")
+    eq(Food(), 260010, "the compile after a preview used the stale census")
+    eq(slotReads, SCAN, "the compile after a preview scanned again")
+    -- A list that was never built (first compile, or after a disable) reads the bags too.
+    owner = Owner({ classBuff = false, autoFlask = false, autoRune = false, autoWeapon = false })
+    slotReads = 0
+    eq(Food(), 260010, "a first build used the kept census")
+    eq(slotReads, SCAN, "a first build did not scan the bags once")
+    C_Container.GetContainerItemID = slotRead
+    bags[0][1], itemData[260001], itemData[260010], itemData[260020] = nil, nil, nil, nil
+end
+
+-- The Controller reports every bag update (R.BagsChanged in OnEvent), also in
+-- combat where the update only takes note: a combat end that compiles for a
+-- spell change reads no bag slot, and food looted or eaten in combat is
+-- picked at that combat end after one scan.
+do
+    local combat = false
+    NS.IsCombatLocked = function() return combat end
+    local slotReads, slotRead = 0, C_Container.GetContainerItemID
+    C_Container.GetContainerItemID = function(...) slotReads = slotReads + 1; return slotRead(...) end
+    local SCAN = 5 * 16
+    itemData[260301], itemData[260310] = { spell = 1219187 }, { spell = 1233738 }
+    bags[0][1] = 260301
+    module.config = Owner({ classBuff = false, autoFlask = false, autoRune = false, autoWeapon = false }).config
+    module:Enable()
+    local function Food()
+        for _, entry in ipairs(module.list.entries) do if entry.kind == "food" then return entry.id end end
+    end
+    local function Fight(inCombat)
+        events.PLAYER_REGEN_DISABLED(module, "PLAYER_REGEN_DISABLED")
+        combat = true
+        inCombat()
+        combat = false
+        slotReads = 0
+        events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    end
+    events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
+    eq(Food(), 260301, "the bag food was not picked")
+    Fight(function() events.SPELLS_CHANGED(module, "SPELLS_CHANGED") end)
+    eq(Food(), 260301, "a spell change in combat changed the food")
+    eq(slotReads, 0, "a combat end that compiled for a spell change scanned the bags")
+    Fight(function()
+        bags[0][2] = 260310
+        events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
+        events.SPELLS_CHANGED(module, "SPELLS_CHANGED")
+    end)
+    eq(Food(), 260310, "food looted in combat was not picked at combat end")
+    eq(slotReads, SCAN, "a combat end after a bag update in combat did not scan the bags once")
+    Fight(function()
+        bags[0][2] = nil
+        events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
+        events.SPELLS_CHANGED(module, "SPELLS_CHANGED")
+    end)
+    eq(Food(), 260301, "food eaten in combat stayed picked at combat end")
+    -- The world entry reads the bags too: a change no event reported on the way in.
+    bags[0][2] = 260310
+    events.PLAYER_ENTERING_WORLD(module, "PLAYER_ENTERING_WORLD")
+    eq(Food(), 260310, "a world entry kept the census")
+    module:Disable()
+    C_Container.GetContainerItemID = slotRead
+    NS.IsCombatLocked = function() return false end
+    bags[0][1], bags[0][2], itemData[260301], itemData[260310] = nil, nil, nil, nil
 end
 
 print("Suite buff reminders: restored campfire, map potion, bag food, demon looks, keystone and ready check options passed")

@@ -75,8 +75,12 @@ function Text.Apply(region, style, size)
     end
     local face, height = style.font or original[1], size > 0 and size or original[2]
     local fontChanged = path ~= face or nativeSize ~= height or flags ~= style.flags
-    if fontChanged then S.SetFont(region, face, height, style.flags) end
-    local appliedPath, appliedSize, appliedFlags = region:GetFont()
+    -- 2026-10-26 M+ trace: only a font write can change the values just read.
+    local appliedPath, appliedSize, appliedFlags = path, nativeSize, flags
+    if fontChanged then
+        S.SetFont(region, face, height, style.flags)
+        appliedPath, appliedSize, appliedFlags = region:GetFont()
+    end
     if S.Public(appliedPath) and S.Finite(appliedSize) and S.Public(appliedFlags) then
         original.appliedPath, original.appliedSize, original.appliedFlags = appliedPath, appliedSize, appliedFlags
     end

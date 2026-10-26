@@ -293,7 +293,7 @@ end
 
 -- Bag items that are food: a Food & Drink consumable whose use spell is one
 -- of the game's eating spells (R.EATING_SPELLS). The answer is kept per item
--- ID for the session; an item whose data has not arrived is asked again.
+-- ID for the session; an item whose data has not arrived (nil) is asked again.
 local EATING_SPELLS = R.EATING_SPELLS
 local CONSUMABLE, FOOD_AND_DRINK = Enum.ItemClass.Consumable, Enum.ItemConsumableSubclass.Fooddrink
 local foodItems = {}
@@ -309,24 +309,56 @@ local function IsFood(itemID)
     local _, spellID = C_Item.GetItemSpell(itemID)
     if not Public(spellID) or type(spellID) ~= "number" then
         undecided = true
-        return false
+        return nil
     end
     food = EATING_SPELLS[spellID] == true
     foodItems[itemID] = food
     return food
 end
 
--- The food in the bags with the highest item ID (the newest recipe).
-local function BagFood()
-    local best
+-- The food census (the food in the bags with the highest item ID, the newest
+-- recipe) is kept while the bags are unchanged. R.BagsChanged is how the
+-- Controller reports a bag update it heard, in combat too (a bag update there
+-- only takes note). Until one is reported nothing proves the bags unchanged,
+-- so every compile scans them. A bag update's own check (R.StockChanged), a
+-- preview build and a first build (no earlier list: nothing was heard while
+-- disabled) raise the revision themselves. A scan that met an item whose data
+-- has not arrived, or a slot it could not read, is not kept: the next compile
+-- asks again. 2026-10-26 M+ trace: every combat end compiled (a spell change
+-- in combat) and scanned the bags (152 slots, 0.3 ms) with no bag update.
+local census = { revision = false, best = nil }
+local bagRevision, bagsReported = 0, false
+
+function R.BagsChanged()
+    bagRevision, bagsReported = bagRevision + 1, true
+end
+
+-- The food in the bags with the highest item ID, and whether every item the
+-- scan asked about was decided.
+local function ScanBags()
+    local best, complete = nil, true
     for bag = 0, Constants.InventoryConstants.NumBagSlots do
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
             local itemID = C_Container.GetContainerItemID(bag, slot)
-            if Public(itemID) and type(itemID) == "number" and (not best or itemID > best) and IsFood(itemID) then
-                best = itemID
+            if not Public(itemID) then
+                complete = false
+            elseif type(itemID) == "number" and (not best or itemID > best) then
+                local food = IsFood(itemID)
+                if food then
+                    best = itemID
+                elseif food == nil then
+                    complete = false
+                end
             end
         end
     end
+    return best, complete
+end
+
+local function BagFood()
+    if bagsReported and census.revision == bagRevision then return census.best end
+    local best, complete = ScanBags()
+    if bagsReported and complete then census.revision, census.best = bagRevision, best end
     return best
 end
 
@@ -443,6 +475,8 @@ end
 -- the pick for now, so the compile is owed (stock.pending): a later one
 -- asks again, at the latest at combat end (Controller.lua).
 function R.StockChanged(self)
+    -- This is the answer to a bag update: the bags are read again.
+    bagRevision = bagRevision + 1
     local picks = self.stock
     for i = 1, #STOCK do
         local stock = STOCK[i]
@@ -457,6 +491,9 @@ end
 
 -- Returns the new list, built into the buffer the active list does not use.
 function R.BuildEntries(self, previewBuffer)
+    -- A preview hears no bag update, and a list that was never built (first
+    -- compile, or after a disable) heard none either: both read the bags again.
+    if previewBuffer or not self.list.entries then bagRevision = bagRevision + 1 end
     building = previewBuffer or (self.list.entries == buffers[1].list and buffers[2] or buffers[1])
     local list = building.list
     for index = #list, 1, -1 do list[index] = nil end
