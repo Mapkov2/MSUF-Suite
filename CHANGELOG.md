@@ -2,35 +2,109 @@
 
 ## 0.1.5 Alpha - 2026-10-31
 
-### Adventure Planner and everyday tools
+### New Macro workshop
 
-- Expanded the Adventure Planner with character overviews, weekly progress, planning boards, notes, loadout snapshots and history. Available data follows the current client and the characters you have visited.
-- Added inventory archives, stock targets, crafting shopping lists, never-sell rules, bank-transfer previews and mail templates.
-- Added a Macro workshop with a searchable library, consumable choices and configurable rules.
-- Expanded dungeon portals, keystone sharing, applicant raid-progress details, group-finder tools and profile links. Mythic+ invitations remain manual in Blizzard's dialog, with a reminder instead of blocked automatic acceptance.
-- Added more everyday helpers for mail recipients, quest rewards, fishing, keyword alerts, automatic replies, sound profiles, currencies and waypoint lists.
+- Added a dedicated Macro menu with Builder, Consumables, My macros and Code tabs, plus search links that open the matching editor.
+- Build macros from ordered actions, alternative rules and conditions, including target selection, modifier keys and negated conditions. Reorder actions and edit the generated result before creating a WoW macro.
+- Added templates for focus interrupts, heal-or-attack choices, mouseover healing and attacks, cursor casts, self casts, pet commands, weapon switching and spell or item sequences.
+- Added spell, item, pet-spell and icon pickers, target and world marker choices, action-bar page commands, sequence reset settings and optional tooltip generation.
+- Added consumable builders for health supplies, food and drink, buff food, flasks and bandages. Configure Healthstone, healing potion and healing spell priorities, preferred items and flask stats.
+- Consumable macros can choose available bag items, prefer conjured food, include a combat mana potion and refresh outside combat when automatic updates are enabled.
+- Save drafts separately from WoW macros, search saved drafts and existing macros, import an existing macro into the editor, and choose character or account scope.
+- Preview the generated code and character count, create or update a linked WoW macro, then pick it up or drag it to an action bar. Replacing a linked macro and discarding unsaved edits require confirmation.
 
-### Damage Meter, DataTexts and Minimap
+### Adventure Planner
 
-- Expanded the Damage Meter with target filtering, combat details, death recaps, favorites, reporting, navigation and additional timer and window styling.
-- Improved Damage Meter previews and visibility cleanup, including recovery when opening or closing the menu and switching profiles.
-- Added DataText sources for character statistics, supplies, weekly rewards and progress, with improved source selection and previews.
-- Improved Minimap difficulty labels, colors and backgrounds, button handling and clock refresh after the AFK screen fades away.
+- Rebuilt the Adventure Planner as a separate window with grouped, collapsible navigation, a weekly overview, preparation checks, archives and instance tools.
+- Added character snapshots with weekly Great Vault progress, keystones and recorded lockouts. Information shows the characters you have visited and the time of the saved snapshot.
+- Added a personal preparation overview and ready-check preparation prompts.
+- Added instance loadout snapshots and reminders on Retail.
+- Added Mythic+ and raid archives, including saved run summaries, raid attempts and recorded encounter results.
+- Added saved Group Finder workspaces and instance notes and checklists, with reminders when entering the matching instance.
+- Added planner search routes, settings shortcuts, window motion and history integration. Available tabs follow the current client.
 
-### Cooldowns, action bars and reminders
+### Bags, bank and inventory tools
 
-- Expanded Cooldown Manager bar editing, spell and potion selection, visibility conditions, scrolling and per-specialization layout handling.
-- Corrected Cooldown Manager preview text initialization and icon selection, aura highlights and preview cleanup.
-- Improved Action Bar, Buff Reminder and HUD controls, preview behavior and module lifecycle handling.
+- Reorganized bag settings into Bags, Inventory organisation and Bank organisation workspaces.
+- Expanded bag sorting with name, quality, item level, type, expansion, stack count and vendor-price choices; added saved searches and structured search filters.
+- Added free-slot counts, optional upgrade markers and additional categories for profession gear, collectibles and containers.
+- Added a separately configurable bank window with its own scale, position and background.
+- Added an inventory archive to search recorded bags and banks across your characters, with snapshot dates and recorded item-owner counts in tooltips.
+- Added stock targets with missing quantities and recorded bank supplies, plus a Retail crafting shopping list that combines tracked recipes and lets you choose material alternatives.
+- Added never-sell lists and conservative equipment-set protection for Suite sale actions.
+- Added Retail bank-transfer previews, moving one selected stack per click, and mail templates for recorded characters with saved subjects and item quantities. Sending mail stays manual.
 
-### Appearance, profiles and compatibility
+### Everyday helpers
 
-- Added more configurable Encounter Journal colors for cards, loot, filters, text, navigation and side tabs, with selected-tab updates.
-- Improved native Nameplate styling, tooltip controls, bag organization, objective tracking and player-aura menu integration.
-- Integrated Suite settings with the MSUF 7.0 profile workbench and shared undo/redo, and improved menu ownership, search routing and profile switching.
+- Added Action and key review to inspect action slots, missing bindings and overridden keys without changing them.
+- Added currency goals with goal-reached and near-cap notices.
+- Added watched chat words and phrases with channel filters, repeat limits and optional sounds.
+- Added named waypoint lists and a button to activate the next saved stop.
+- Added context sound profiles for open-world, dungeon, raid and PvP play, with separate music, ambience and effects levels and a list of sound file IDs to mute.
+- Added a bounded Suite notice history that combines repeated notices and opens the related settings.
+- Added mail-recipient lists for recorded characters, with name, level and recent-visit sorting, minimum levels and hidden-recipient controls.
+- Added quest-reward vendor-value markers, accounting for stack size; choosing a reward remains manual.
+- Added fishing bindings with optional rod and lure choices and a temporary fishing sound profile.
+- Added separate automatic-response choices for summons, resurrections, duels, pet duels and party invitations from strangers, with optional chat feedback and combat restrictions.
+
+### Mythic+, groups and progression
+
+- Added saved native Group Finder filters for dungeon difficulty, leader rating, activities, role availability, tanks and healers, plus Mythic+ application statistics for the session, character or account.
+- Expanded applicant information with locally available Raider.IO raid progress and searchable profile links.
+- Expanded keystone sharing and dungeon portals with optional other-addon key sources, current-season or custom portal sets and improved portal selection.
+- Mythic+ role checks retain their automatic confirmation option. Invitations now show a reminder and remain manual in Blizzard's dialog instead of attempting blocked acceptance.
+- Improved run summaries, party details, raid records, preparation data and loadout reminders.
+
+### Cooldown Manager
+
+- Reorganized bar configuration and spell selection, with clearer bar sections, scrolling, inspection tools and potion selection.
+- Added more visibility conditions: resting, solo, outside instances, flying and dead, plus hidden opacity, mouseover reveal and fade duration.
+- Added named-frame attachment, expanded bar sizing and alignment controls, and improved per-specialization layout handling.
+- Added optional interrupt-ready glows and screen-center ready pulses, with additional glow styles and controls for line count, thickness and speed.
+- Expanded icon swipe colors, class-colored swipes, active-buff swipes, sparks and optional Masque integration.
+- Corrected preview text initialization and icon selection, aura highlights, spell overrides and cleanup when switching bars, profiles or preview contexts.
+
+### Damage Meter
+
+- Added target filtering, favorite meter choices and configurable chat reports with three, five or ten lines.
+- Added identifiable party spell details during combat where the native data allows them, plus optional death details inside the meter.
+- Expanded per-window behavior with scale, click-through modes, synchronized fight selection, role-based meter choices, return-to-current rules and Mythic+ start/end behavior.
+- Added header visibility and button positioning, breakdown placement, optional smooth bar fill and more visibility conditions, including Delves.
+- Expanded window, row and icon borders with independent styles, opacity, spacing and side controls, plus separators and separate background and breakdown textures.
+- Added separate font and text-rendering choices for names, values, headers, details and the floating timer; the timer can dock to a chosen meter window.
+- Reworked the menu preview and its layer editor, corrected hidden-preview cleanup and reduced work in hidden or faded windows.
+
+### Action Bars, Buff Reminders and HUD
+
+- Added Action Bar colors for usable spells, insufficient resources and unusable actions, plus fade duration, flyout direction and per-bar tooltip visibility.
+- Added class and specialization reminders for supported buffs and stances, including Shadowform, Paladin auras and rites, Warrior stances, Shaman imbues and shields, Evoker ally buffs, Symbiotic Relationship and Arcane Familiar.
+- Added reminder sounds, text-size controls and hide-while-resting behavior, with updated reminder and ready-check previews.
+- Expanded the objective tracker with tracked collectibles, zone events, Traveler's Log activities, housing endeavors and tracked recipes where supported, plus optional raid encounters and Mythic+ overtime colors.
+- Expanded the experience display to track experience, reputation, honor or an automatic choice; improved HUD, AFK and module preview handling.
+
+### Chat, tooltips and DataTexts
+
+- Added saved typed-chat history, main-chat anchoring, configurable line limits, movable sidebar icons, channel-specific sound kits or files and keyword or own-name highlighting.
+- Expanded tooltip controls with specialization details, Mythic+ enemy forces where available, item-quality or class/reaction borders, and choices to hide faction, PvP, realm or guild lines.
+- Added a modifier-key option to reveal hidden tooltips and improved tooltip scaling and visibility handling.
+- Expanded DataTexts with Great Vault, supplies, secondary-stat and Mythic+ rating sources, plus improved source selection and previews.
+- Added realm or local clock time, 12/24-hour and seconds choices, configurable durability/FPS/latency warning thresholds, coordinate precision and remembered or custom supplies.
+
+### Minimap and native Nameplates
+
+- Expanded Minimap difficulty-label colors and backgrounds, with sizing that follows the displayed text, and improved button selection and drawer handling.
+- Fixed clock refresh after the AFK screen fades away and improved Minimap preview and visibility updates.
+- Expanded Blizzard Nameplate controls for enemy and friendly units, minions, maximum distance, occluded opacity, distance fading and shrinking, stacking overlap and motion, screen margins and target clamping, where supported.
+- Added mouseover highlighting, level difficulty colors, health-threshold line width and additional friendly castbar height, icon-size and timer-format controls. Nameplates continue to use Blizzard's native frames.
+
+### Skinning, menus, profiles and loading
+
+- Expanded Encounter Journal colors for cards, loot, filters, text, navigation and side tabs, with selected-tab updates.
+- Reorganized Suite pages and shared previews, improved section and search routing, and integrated Blizzard player-aura layout and skin controls into the host's player-aura page on supported hosts.
+- Integrated Suite settings with the MSUF 7.0 profile workbench, restore points and shared undo/redo, with improved profile switching and variant handling.
 - Consolidated translated catalogs into one optional MSUF_Suite_Locales addon. Update all bundled Suite folders together and remove obsolete MSUF_Suite_Locale_* folders from older installs.
-- Reduced repeated combat updates, hidden-window work and skin refreshes; updated translations and compatibility handling for Retail, WoW Forever and supported MSUF hosts.
-- Distributed through the Beta channel on CurseForge. The Suite version remains Alpha and requires Midnight Simple Unit Frames; newer host tools require MSUF 7.0.
+- Reduced repeated combat updates, hidden-window work and skin refreshes, and updated translations and compatibility handling for Retail, WoW Forever and supported MSUF hosts.
+- Distributed through the Beta channel on CurseForge. The Suite version remains Alpha and requires Midnight Simple Unit Frames; newer host tools require MSUF 7.0. Client-specific features appear only where supported.
 
 ## 0.1.4 Alpha - 2026-10-25
 
