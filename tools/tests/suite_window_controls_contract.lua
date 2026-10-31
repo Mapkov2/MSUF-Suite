@@ -220,6 +220,14 @@ local NS = {
     -- Blizzard.lua's adapter registry, which always loads with this file.
     Adapters = { ApplyAll = function() adapterPasses = adapterPasses + 1 end },
 }
+local core = { HostBridge = {} }
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
+NS.SuiteCore = function() return core end
+local bridgeHistoryCalls, withHistory = 0, core.HostBridge.WithMenuHistory
+core.HostBridge.WithMenuHistory = function(...)
+    bridgeHistoryCalls = bridgeHistoryCalls + 1
+    return withHistory(...)
+end
 -- The real guards and layout limits, not stubs.
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
@@ -263,7 +271,7 @@ Check(character.moving and state.titleDrag.events and state.titleDrag.events.GLO
 state.titleDrag.scripts.OnEvent(state.titleDrag, "GLOBAL_MOUSE_UP", "LeftButton")
 Check(not character.moving and not state.titleDrag.events.GLOBAL_MOUSE_UP,
     "a mouse release outside the title strip did not end the move")
-NS.DB.windowControls.positions.CharacterFrame, historyCalls = nil, 0
+NS.DB.windowControls.positions.CharacterFrame, historyCalls, bridgeHistoryCalls = nil, 0, 0
 -- A grip press that changes nothing (a click, or A on the grip under Forever's
 -- Gamepad UI, where SmartNavigation clicks it) stores no scale and no history.
 state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
@@ -293,6 +301,7 @@ Check(character.point and character.point[4] ==
     NS.DB.windowControls.positions.CharacterFrame.x / character.scale,
     "Blizzard reflow replaced the saved position")
 Check(historyCalls == 2, "move and scale were not committed through MSUF history")
+Check(bridgeHistoryCalls == 2, "window geometry bypassed the Suite's host history boundary")
 character:Hide()
 character:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -90)
 character:Show()

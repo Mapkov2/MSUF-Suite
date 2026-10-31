@@ -365,9 +365,9 @@ local function Metrics(editor, s, m)
     local contentWidth = (m.classic and 152 or m.forever and 190 or 230) * m.horizontal - 2 * inset
     local geometry = P.Get(ID, "look") ~= 2 and P.Get(ID, prefix) and P.Get(ID, "barGeometry") or 1
     local totalWidth, uniformHealth, uniformCast, uniformIcon = Style.BarDimensions(geometry, selectedStyle, m.horizontal, m.vertical)
-    if prefix == "enemy" and uniformCast then
-        uniformCast, uniformIcon = Style.CastDimensions(geometry, P.Get(ID, "enemyCastHeight"),
-            P.Get(ID, "enemyCastIconSize"), uniformCast, uniformIcon)
+    if uniformCast then
+        uniformCast, uniformIcon = Style.CastDimensions(geometry, P.Get(ID, prefix .. "CastHeight"),
+            P.Get(ID, prefix .. "CastIconSize"), uniformCast, uniformIcon)
     end
     if totalWidth then contentWidth, m.reserve = totalWidth - 2 * inset, 0 end
     m.classicInset = m.classic and 24.25 * m.horizontal or 0
@@ -505,6 +505,11 @@ local function RenderLevel(editor, s, m)
     Style.PaintBorder(s.levelBorder, level, boxed and not native and classic and 1 or 0, "d9b64b")
     levelText:SetJustifyH(boxed and (native or classic) and "CENTER" or "RIGHT")
     if boxed and (native or classic) then levelText:SetTextColor(1, 0.85, 0.35)
+    elseif prefix == "enemy" and P.Get(ID, "enemyLevelColor") then
+        -- The sample's difficulty: the low-level type is trivial, the others fair.
+        local difficulty = Enum.RelativeContentDifficulty
+        local color = GetDifficultyColor(m.role == 1 and difficulty.Trivial or difficulty.Fair)
+        levelText:SetTextColor(color.r, color.g, color.b)
     else levelText:SetTextColor(1, 1, 1) end
     levelText:SetText(prefix == "enemy" and (m.role == 1 and "11" or "73") or "80")
     levelText:SetTextHeight(not boxed and customSize > 0 and customSize or SetupNumber("levelFontHeight", 10 * m.vertical))
@@ -609,9 +614,9 @@ local function RenderFonts(s, m)
     PreviewFont(s.castText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
     PreviewFont(s.castTimeText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
     PreviewFont(s.castTargetText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
-    if prefix == "enemy" then
-        PreviewFont(s.value, prefix, P.Get(ID, "enemyHealthTextSize"), P.Get(ID, "enemyTextOutline"), nativeNameSize)
-    end
+    -- Both sides style their health text; only enemy plates size it (Skin.lua PaintFonts).
+    PreviewFont(s.value, prefix, prefix == "enemy" and P.Get(ID, "enemyHealthTextSize") or 0,
+        P.Get(ID, prefix .. "TextOutline"), nativeNameSize)
 end
 
 local function CastText(s, m)
@@ -633,7 +638,7 @@ local function RenderCastAndAuras(editor, s, m)
     Place(s, cast, "TOP", s.cell, "CENTER", m.castX, -4 - m.nativeBarHeight / 2 - m.castSpacing, "Cast")
     CastText(s, m)
     Place(s, s.castTime, "LEFT", cast, "RIGHT", 4, 0, "CastTime")
-    local elapsed = prefix == "enemy" and P.Get(ID, "enemyCastTimeFormat") == 2
+    local elapsed = P.Get(ID, prefix .. "CastTimeFormat") == 2
     s.castTime:SetWidth(elapsed and 90 or 38)
     s.castTimeText:SetText(elapsed and SAMPLE_CAST_TIME or "2.3s")
     s.castTime:SetShown(m.showCast and P.Get(ID, "look") ~= 2

@@ -37,6 +37,7 @@ CreateFrame = function(kind)
         frame.messages = {}
         for _, method in ipairs({ "SetSize", "SetPoint", "SetFrameStrata", "EnableMouse", "SetFontObject",
             "SetJustifyH", "SetInsertMode", "SetTimeVisible", "SetFadeDuration", "SetFading", "SetFont",
+            "ClearAllPoints", "SetScale",
             "SetShadowColor", "SetShadowOffset", "SetSpacing" }) do
             frame[method] = function() end
         end
@@ -61,6 +62,9 @@ GetRealmName = function() return "Realm" end
 InCombatLockdown = function() return false end
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 Support.Load(root, "MSUF_Suite", Suite, "Core/Suite.lua")
+for _, file in ipairs({ "Model", "Compile", "Templates", "Native", "Store" }) do
+    assert(loadfile(root .. "/MSUF_Suite/Core/Macros/" .. file .. ".lua"))("MSUF_Suite", Suite)
+end
 assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", Suite)
 assert(loadfile(root .. "/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite", Suite)
 assert(Suite.Database.Initialize(nil))
@@ -78,11 +82,12 @@ Support.Load(root, "MSUF_Suite_Modules", private)
 assert(private.NS == Suite and #frames == 0 and pixelVisits == 0)
 local shared = 0
 for id in pairs(Suite.Suite.instances) do
-    assert(id == "afkScreen" or id == "objectives" or id == "runSummary" or id == "announcements",
+    assert(id == "afkScreen" or id == "objectives" or id == "runSummary" or id == "announcements"
+        or id == "notificationHistory",
         "shared runtime registered a module it does not own: " .. id)
     shared = shared + 1
 end
-assert(shared == 4 and Suite.Suite.MythicPlus == nil, "Forever loaded the Mythic+ view or lost a HUD module")
+assert(shared == 5 and Suite.Suite.MythicPlus == nil, "Forever loaded the Mythic+ view or lost a shared module")
 Support.Load(root, "MSUF_Suite_QualityOfLife", {})
 assert(not Suite.SuiteCatalog.partyEffects and not Suite.Suite.instances.partyEffects,
     "retired Celebrations still registered from an enabled legacy profile")
@@ -92,7 +97,9 @@ for id in pairs(Suite.Suite.instances) do
     assert(Suite.Suite.catalog[id], "unknown module registration")
     count = count + 1
 end
-assert(count == 65 and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
+-- The shared notice owner and nine QoL tools are available on Forever.
+-- Craft shopping, bank transfer and mail templates remain Retail-only.
+assert(count == 77 and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
     and Suite.Suite.instances.playerAuraSkins and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
@@ -118,8 +125,15 @@ assert(count == 65 and Suite.Suite.instances.autoUprank and Suite.Suite.instance
     and Suite.Suite.instances.trustedPartyInvites and Suite.Suite.instances.burningRushCue
     and Suite.Suite.instances.threatMeter and Suite.Suite.instances.flightTimer and Suite.Suite.instances.characterExtras
     and Suite.Suite.instances.merchantList and Suite.Suite.instances.tooltipDetails
-    and Suite.Suite.instances.popupAttention,
+    and Suite.Suite.instances.popupAttention and Suite.Suite.instances.notificationHistory
+    and Suite.Suite.instances.inventoryArchive and Suite.Suite.instances.inventoryProtection
+    and Suite.Suite.instances.restockPlanner and not Suite.Suite.instances.planningTools
+    and Suite.Suite.instances.keyAudit and Suite.Suite.instances.currencyGoals
+    and Suite.Suite.instances.keywordAlerts and Suite.Suite.instances.waypointLists and Suite.Suite.instances.soundProfiles
+    and not Suite.Suite.instances.craftShopping and not Suite.Suite.instances.bankTransfer and not Suite.Suite.instances.mailTemplates,
     "shared HUD modules and Quality of Life helpers did not register together")
+Support.Load(root, "MSUF_Suite_AdventurePlanner", {})
+assert(Suite.Suite.instances.planningTools, "standalone Planner did not register")
 local eventOnly = Suite.Suite.instances.groupFinderExitReminder
 assert(type(eventOnly.Refresh) == "function"
     and eventOnly.Refresh == Suite.Suite.instances.delveSolePower.Refresh
@@ -333,9 +347,8 @@ assert(context.unitFrames[1] == overflow, "a routing frame was created again ins
 context:Release()
 assert(not next(overflow.events), "release left a routing frame registered")
 -- Nothing remembers a skin call (Context:OwnSkin had no caller), so the
--- controller's refresh after Enable has nothing to repeat and never reaches
--- the skin provider.
-context:RefreshOwnedSkins()
+-- controller has nothing to repeat after Enable (its RefreshOwnedSkins stub
+-- and call are gone: suite_modules_audit_contract.lua).
 assert(context.ownedSkins == nil and not context.OwnSkin, "a context kept a skin call nothing makes")
 
 -- CVar ownership: a context sets only CVars its module declares, and a saved
@@ -538,7 +551,8 @@ PlaySound = function(kit, channel)
     assert(kit == SOUNDKIT.RAID_WARNING and channel == "Master")
     deathSounds = deathSounds + 1
 end
-death.active, death.config = true, { chat = true, screen = true, sound = true, includePlayer = false }
+death.active, death.config = true, S.Config("groupDeathAlert")
+for key, value in pairs({ chat = true, screen = true, sound = true, includePlayer = false }) do death.config[key] = value end
 death.context = S.NewContext("groupDeathAlert")
 death:Enable()
 deathScreen = assert(death.screen.messages, "screen deaths did not use an owned native message frame")
@@ -566,5 +580,5 @@ assert(not death.dead and not death.context.callbacks.UNIT_HEALTH
     "runtime watched deaths outside combat")
 death:Disable()
 death.active = false
-print("Standalone runtime: shared HUD modules and " .. (count - 3)
+print("Standalone runtime: shared HUD modules and " .. (count - shared)
     .. " Quality of Life helpers register without skin or frames; event and property cleanup passed")

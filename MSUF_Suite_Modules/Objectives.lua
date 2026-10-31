@@ -6,6 +6,7 @@ local Create, Render, CollectDirty = O.Create, O.Render, O.CollectDirty
 local MythicPlus = S.MythicPlus
 local Raid = S.Raid
 local Public, Finite = S.Public, S.Finite
+local Dispatch = S.Dispatch
 local ID = "objectives"
 local IN_COMBAT = { inCombat = true }
 
@@ -45,6 +46,7 @@ end
 local function CancelPending(self)
     self.flushJob:Cancel()
     self.countdownJob:Cancel()
+    self.recipeItemsPending, self.recipeItemsNeeded = nil, nil
 end
 
 local function StopMythicPlus(self)
@@ -65,7 +67,12 @@ end
 
 local function ShowRaid(self)
     if not Raid or not Raid.Detect(self) then return false end
-    if self.raidActive then return true end
+    if self.raidActive then
+        local difficulty = self.raid and self.raid.difficultyName
+        Raid.Show(self)
+        if difficulty ~= self.raid.difficultyName then Render(self) end
+        return true
+    end
     for _, row in pairs(self.rows) do
         row:Hide()
         row.timerEnd = nil
@@ -100,6 +107,9 @@ end
 -- Which sources an event can change. Quest log updates also carry world
 -- quest and bonus objective progress, like in Blizzard's own tracker.
 local EVENT_SOURCES = {
+    TRACKED_RECIPE_UPDATE = { "recipes" },
+    BAG_UPDATE_DELAYED = { "recipes" },
+    CURRENCY_DISPLAY_UPDATE = { "recipes" },
     SCENARIO_UPDATE = { "scenario" },
     SCENARIO_CRITERIA_UPDATE = { "scenario" },
     UPDATE_ALL_UI_WIDGETS = { "scenario" },
@@ -107,10 +117,10 @@ local EVENT_SOURCES = {
     TRACKED_ACHIEVEMENT_UPDATE = { "achievements" },
     CRITERIA_UPDATE = { "achievements" },
     ACHIEVEMENT_EARNED = { "achievements" },
-    CONTENT_TRACKING_UPDATE = { "achievements" },
     ZONE_CHANGED = { "world", "bonus" },
     ZONE_CHANGED_INDOORS = { "world", "bonus" },
-    SUPER_TRACKING_CHANGED = { "quests" },
+    -- The waypoint line of a super-tracked collectible follows it.
+    SUPER_TRACKING_CHANGED = { "quests", "collectibles" },
     QUEST_POI_UPDATE = { "quests" },
     QUEST_AUTOCOMPLETE = { "quests" },
     QUEST_WATCH_UPDATE = { "quests", "world" },
@@ -151,6 +161,49 @@ local function EncounterEvent(self, event, ...)
     end
 end
 
+local function RecipeItemLoaded(self, itemID, success)
+    if Public(success) and Finite(itemID)
+        and self.recipeItemsPending and self.recipeItemsPending[itemID] ~= nil then
+        if success == true then
+            self.recipeItemsPending[itemID] = nil
+            Request(self, "recipes")
+        elseif success == false then
+            self.recipeItemsPending[itemID] = false
+        end
+    end
+end
+
+local ACHIEVEMENT_SOURCES, COLLECTIBLE_SOURCES = { "achievements" }, { "collectibles" }
+
+-- CONTENT_TRACKING_UPDATE names the trackable type: achievements and the
+-- Adventure Guide's collectibles are separate sources, as in Blizzard's
+-- Achievement and Adventure modules.
+local function ContentTrackingSources(trackableType)
+    if Public(trackableType) and trackableType == Enum.ContentTrackingType.Achievement then
+        return ACHIEVEMENT_SOURCES
+    end
+    return COLLECTIBLE_SOURCES
+end
+
+-- The scenario's widgets update on their own events; the zone widgets
+-- follow Blizzard's module (NativeWidgetsChanged).
+local function WidgetEvent(self, widget)
+    if Public(widget) and type(widget) == "table" and Finite(widget.widgetSetID)
+        and (widget.widgetSetID == self.scenarioWidgetSetID or widget.widgetSetID == self.scenarioTopWidgetSetID) then
+        Request(self, "scenario")
+    end
+end
+
+local function RequestEventSources(self, event, ...)
+    if event == "UPDATE_UI_WIDGET" then
+        WidgetEvent(self, ...)
+        return
+    end
+    local sources = event == "CONTENT_TRACKING_UPDATE" and ContentTrackingSources(...)
+        or EVENT_SOURCES[event] or QUEST_LOG_SOURCES
+    for i = 1, #sources do Request(self, sources[i]) end
+end
+
 local function Event(self, event, ...)
     if event == "ENCOUNTER_START" or event == "ENCOUNTER_END" then
         EncounterEvent(self, event, ...)
@@ -162,6 +215,9 @@ local function Event(self, event, ...)
     elseif self.pausedForRaidCombat then
         return
     end
+    -- Noted even while a key or raid view replaces the list: the next pass
+    -- over the collectibles stops tracking the item.
+    if O.COLLECTED_EVENTS[event] then O.NoteCollected(event, ...) end
     if event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_COMPLETED_REWARDS" then
         if self.mplusActive then
             MythicPlus.Complete(self)
@@ -203,20 +259,15 @@ local function Event(self, event, ...)
         MythicPlusEvent(self, event)
         return
     end
-    if event == "UPDATE_UI_WIDGET" then
-        local widget = ...
-        if Public(widget) and type(widget) == "table" and Finite(widget.widgetSetID)
-            and (widget.widgetSetID == self.scenarioWidgetSetID or widget.widgetSetID == self.scenarioTopWidgetSetID) then
-            Request(self, "scenario")
-        end
+    if event == "ITEM_DATA_LOAD_RESULT" then
+        RecipeItemLoaded(self, ...)
         return
     end
     if newArea then
         for i = 1, #SOURCES do Request(self, SOURCES[i]) end
         return
     end
-    local sources = EVENT_SOURCES[event] or QUEST_LOG_SOURCES
-    for i = 1, #sources do Request(self, sources[i]) end
+    RequestEventSources(self, event, ...)
 end
 
 ------------------------------------------------------------------ lifecycle
@@ -280,13 +331,28 @@ local function NativeUnfocused()
     if M.active then M:SuppressNative() end
 end
 
+-- Blizzard's widget block lays its container out one frame after the widget
+-- events, then marks its module dirty (WidgetsLayout,
+-- Blizzard_ObjectiveTrackerUIWidgetContainer.lua): only then does the
+-- container say whether any widgets show, so the zone group re-reads then.
+local function NativeWidgetsChanged()
+    if M.active then Request(M, "zone") end
+end
+
+-- The post-hooks run inside Blizzard's call chains: S.Dispatch reports an
+-- error in a handler and never breaks the Blizzard code that called it.
+local function HookGuarded(object, method, handler)
+    hooksecurefunc(object, method, function(...) Dispatch(handler, ...) end)
+end
+
 local function HookNative(self, native)
     if self.nativeModuleHook then return end
     self.nativeModuleHook = true
-    hooksecurefunc(native, "AddModule", NativeModuleAdded)
+    HookGuarded(native, "AddModule", NativeModuleAdded)
+    HookGuarded(UIWidgetObjectiveTracker, "MarkDirty", NativeWidgetsChanged)
     if NS.Client.isForever then
-        hooksecurefunc(native, "FocusGamepad", NativeFocused)
-        hooksecurefunc(native, "UnfocusGamepad", NativeUnfocused)
+        HookGuarded(native, "FocusGamepad", NativeFocused)
+        HookGuarded(native, "UnfocusGamepad", NativeUnfocused)
     end
 end
 
@@ -311,7 +377,9 @@ end
 local function ContentSignature(c)
     return tostring(c.showWorldQuests) .. ":" .. tostring(c.showBonus) .. ":"
         .. tostring(c.showScenario) .. ":" .. tostring(c.showAchievements) .. ":"
-        .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers) .. ":" .. tostring(c.questIconStyle)
+        .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers) .. ":" .. tostring(c.questIconStyle) .. ":"
+        .. tostring(c.showCollectibles) .. ":" .. tostring(c.showZoneEvents) .. ":"
+        .. tostring(c.showTravelersLog) .. ":" .. tostring(c.showEndeavors) .. ":" .. tostring(c.showRecipes)
 end
 
 local TRACKER_EVENTS = {
@@ -322,6 +390,17 @@ local TRACKER_EVENTS = {
     "UPDATE_ALL_UI_WIDGETS", "UPDATE_UI_WIDGET",
     "CRITERIA_UPDATE", "ACHIEVEMENT_EARNED", "CONTENT_TRACKING_UPDATE", "SCENARIO_POI_UPDATE",
 }
+if not NS.Client.isForever then
+    for _, event in ipairs({ "TRACKED_RECIPE_UPDATE", "BAG_UPDATE_DELAYED", "CURRENCY_DISPLAY_UPDATE", "ITEM_DATA_LOAD_RESULT" }) do
+        TRACKER_EVENTS[#TRACKER_EVENTS + 1] = event
+    end
+end
+-- The events of the sources in ObjectivesContent.lua.
+for event, sources in pairs(O.CONTENT_EVENTS) do
+    EVENT_SOURCES[event] = sources
+    TRACKER_EVENTS[#TRACKER_EVENTS + 1] = event
+end
+for event in pairs(O.COLLECTED_EVENTS) do EVENT_SOURCES[event] = COLLECTIBLE_SOURCES end
 local MYTHIC_PLUS_EVENTS = {
     "CHALLENGE_MODE_START", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_COMPLETED_REWARDS", "CHALLENGE_MODE_RESET",
     "CHALLENGE_MODE_DEATH_COUNT_UPDATED", "WORLD_STATE_TIMER_START", "WORLD_STATE_TIMER_STOP",
@@ -344,7 +423,20 @@ local function RaidCombatPauseWanted(self, event)
     return not Raid or not Raid.Detect(self)
 end
 
+-- The events of collected items (ObjectivesContent.lua) are heard only while
+-- collectibles are shown and the tracker works.
+local function SyncCollectedEvents(self, enabled)
+    for event in pairs(O.COLLECTED_EVENTS) do
+        if enabled and self.config.showCollectibles then
+            self.context:Event(event, Event, IN_COMBAT)
+        else
+            self.context:RemoveEvent(event)
+        end
+    end
+end
+
 local function SetWorkEvents(self, enabled)
+    SyncCollectedEvents(self, enabled)
     for _, event in ipairs(TRACKER_EVENTS) do
         if event ~= "PLAYER_ENTERING_WORLD" and event ~= "ZONE_CHANGED_NEW_AREA" then
             if enabled then
@@ -410,6 +502,7 @@ local function NativeAddonLoaded(module, _, name)
 end
 
 function M:Enable()
+    self.recipeItemsPending, self.recipeItemsNeeded = nil, nil
     self.flushJob = self.context:Coalesce(0, Flush)
     self.countdownJob = self.context:Coalesce(1, O.UpdateTimers)
     Create(self)
@@ -441,6 +534,7 @@ end
 function M:Refresh()
     self.retheme = true
     if UpdateRaidCombatPause(self) then return end
+    SyncCollectedEvents(self, true)
     local c = self.config
     local mapID = MythicPlus and MythicPlus.Detect(self)
     if mapID then

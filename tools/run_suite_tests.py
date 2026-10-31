@@ -9,7 +9,6 @@ a filter selects it with "ratchet".
 import os
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,34 +22,55 @@ LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua5
 HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_harness.lua",
            "suite_installer_harness.lua", "suite_bh3_state_support.lua",
            "suite_bh3_state_gear_fixture.lua", "suite_bh3_state_inspect_fixture.lua",
-           "suite_bh3_state_navigation_fixture.lua"}
+           "suite_bh3_state_navigation_fixture.lua", "suite_inventory_tools_fixture.lua"}
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_planner_lod_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_planner_motion_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_player_aura_menu_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_history_owner_core_contract.lua": [[str(MSUF_70), flavor, mode]
+        for flavor in FLAVORS for mode in ("contract", "overlay-contract")],
+    "suite_planner_overview_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_planner_board_contract.lua": [[locale, "-", flavor] for flavor in FLAVORS for locale in ("enUS", "deDE")],
+    "suite_menu_ownership_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_auto_responses_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_menu_lifecycle_budget_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_options_load_budget_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_minimap_sections_contract.lua": [[], ["Forever"]],
     "suite_skin_collapse_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_collapse_budget_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_menu_coverage_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_menu_discovery_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_menu_transitions_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_combat_cold_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_scroll_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_nameplates_aura_colors_contract.lua": [[], ["secret"]],
     "suite_forever_character_contract.lua": [[], ["secret"]],
     "suite_hud_contract.lua": [[], ["Forever"]],
+    "suite_tracker_sources_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_options_menu_contract.lua": [[], ["Forever"]],
     "suite_menu_ux_contract.lua": [[], ["Forever"]],
     "suite_buff_reminders_preview_contract.lua": [[], ["Forever"]],
     "suite_meter_menu_preview_contract.lua": [[], ["Forever"]],
+    "suite_meter_native_preview_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
+                                                for host in (MSUF_MAIN, MSUF_70)],
+    "suite_damage_meter_styling_contract.lua": [[], ["Forever"]],
+    "suite_damage_meter_audit_contract.lua": [[], ["Forever"]],
+    "suite_damage_meter_work_budget_contract.lua": [[], ["recap"], ["hidden"], ["faded"], ["picker"], ["title"]],
     "suite_meter_preview_editor_contract.lua": [[], ["Forever"]],
     "suite_meter_icon_layout_contract.lua": [[], ["Forever"]],
     "suite_preview_quality_contract.lua": [[], ["Forever"]],
     "suite_preview_interaction_contract.lua": [[], ["Forever"]],
     "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(MSUF_LEGACY)]],
+    # Every kick-glow lifecycle/strict case runs in the routine gate.
+    "suite_cdm_kick_glow_contract.lua": [[str(MSUF_70), mode]
+                                         for mode in ("normal", "cold", "stale", "effects", "provider")],
     # The pandemic window search in German (default) and English.
     "suite_cdm_pandemic_search_contract.lua": [[], ["Mainline", "enUS"]],
     "suite_search_findability_contract.lua": [
-        [flavor, locale] for flavor in FLAVORS
+        [flavor, locale, str(host)] for host in (MSUF_MAIN, MSUF_70) for flavor in FLAVORS
         for locale in ("enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW")
     ],
     "suite_skin_absorption_contract.lua": [[str(BRANCH / "MapkoSkin"), str(MSUF_LEGACY)],
@@ -93,13 +113,8 @@ def run_commands(test):
     def run(command):
         return subprocess.run(command, cwd=ROOT, capture_output=True, text=True, errors="replace")
 
-    # Each locale boots a separate, read-only Lua world. Keep reporting ordered.
-    if test.name == "suite_search_findability_contract.lua" and len(batch) > 2:
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            yield from zip(batch, pool.map(run, batch))
-    else:
-        for command in batch:
-            yield command, run(command)
+    for command in batch:
+        yield command, run(command)
 
 
 def ratchet_path():
@@ -152,6 +167,9 @@ def main():
             print("FAIL " + label)
         # The inventory owns its single summary line and names every open loss.
         print((run.stdout + run.stderr).strip())
+    if total == 0:
+        print("No tests matched: " + wanted, file=sys.stderr)
+        return 1
     print("\n%d passed, %d failed" % (total - len(failed), len(failed)))
     return 1 if failed else 0
 

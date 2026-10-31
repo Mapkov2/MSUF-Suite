@@ -1,8 +1,10 @@
 local root = assert(arg[1], "repository root required")
 local combat, timers, calls, state = false, {}, { scans = 0, fonts = 0 }, {}
 local methods = {}
-local function Widget()
-    return setmetatable({ shown = true, scripts = {}, font = { "Native", 14, "" } }, { __index = methods })
+local function Widget(_, _, _, template)
+    local widget = setmetatable({ shown = true, scripts = {}, font = { "Native", 14, "" } }, { __index = methods })
+    if template == "InputBoxInstructionsTemplate" then widget.Instructions = setmetatable({}, { __index = methods }) end
+    return widget
 end
 function methods:SetPoint(...) self.point = { ... }; self.moves = (self.moves or 0) + 1 end
 function methods:ClearAllPoints() self.point = nil end
@@ -41,6 +43,7 @@ function methods:UnregisterAllEvents() self.events = {} end
 for _, name in ipairs({ "SetJustifyH", "SetAllPoints", "SetFrameLevel", "RegisterForClicks", "RegisterForDrag", "SetNormalTexture" }) do
     methods[name] = function() end
 end
+for _, name in ipairs({ "SetAutoFocus", "SetMaxBytes", "SetTextColor", "SetWordWrap" }) do methods[name] = function() end end
 UIParent = Widget()
 UIParent.top = 1080
 -- Blizzard_FrameXML builds StackSplitFrame at startup on both clients.
@@ -116,6 +119,7 @@ local S = {
 }
 local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
 local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, BagsView = catalog.BagsView,
+    BagsSort = catalog.BagsSort,
     InCombat = function(event)
         if event == "PLAYER_REGEN_DISABLED" then return true end
         if event == "PLAYER_REGEN_ENABLED" then return false end
@@ -146,11 +150,19 @@ UnitGUID = function() return "Player-1" end
 GetServerTime = function() return 1000000 end
 Enum = { TooltipDataType = { Item = 0 },
     ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
-        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
-    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
+        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15, Glyph = 16,
+        Battlepet = 17, WoWToken = 18, Profession = 19 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 },
+    -- ItemConstantsDocumentation.lua (Retail and Forever)
+    ItemArmorSubclass = { Generic = 0, Cloth = 1, Leather = 2, Mail = 3, Plate = 4, Cosmetic = 5, Shield = 6 },
+    ItemMiscellaneousSubclass = { Junk = 0, Reagent = 1, CompanionPet = 2, Holiday = 3, Other = 4, Mount = 5,
+        MountEquipment = 6 },
+    BagIndex = { Backpack = 0, ReagentBag = 5 } }
 -- Blizzard_SharedXMLGame defines the tooltip data processor at startup.
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
-for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "InventoryView" }) do
+assert(loadfile(root .. "/MSUF_Suite/Core/InventoryRules.lua"))("Core", P.NS)
+for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "UpgradeMarker", "GridView",
+    "InventoryDetails", "SavedSearches", "SmartSearch", "FreeSlots", "InventoryView" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 -- Bags.lua runs the view from its sub-module list after its own refresh and stop.

@@ -53,8 +53,8 @@ function D.Atlas(texture, atlas)
     return false
 end
 
-function D.FontStyle(fontString, size)
-    local style = M.style
+function D.FontStyle(fontString, size, role)
+    local style = role and M.style.fonts[role] or M.style
     S.SetStyledFont(fontString, style.font, size, style.outline, style.rendering,
         style.shadow, style.shadowOpacity, style.shadowDistance)
     fontString:SetAlpha(style.textAlpha)
@@ -79,9 +79,9 @@ function D.CreateRow(parent, win, kind)
     row.rankText:SetWordWrap(false)
     row.nameText:SetWordWrap(false)
     row.valueText:SetWordWrap(false)
-    if kind == "tip" then
-        row:EnableMouse(false)
-    else
+    -- A click-through window (Window.lua D.ApplyMouse) makes its new rows deaf too.
+    if kind == "tip" or win.passive then row:EnableMouse(false) end
+    if kind ~= "tip" then
         local highlight = S.CreateTexture(row, nil, "HIGHLIGHT")
         highlight:SetAllPoints(row)
         highlight:SetColorTexture(1, 1, 1, .08)
@@ -159,7 +159,7 @@ end
 local function StyleRowBorder(row, hasIcon)
     local c, bar = M.config, row.bar
     local mode = c.rowBorderMode
-    local r, g, b = S.RGB(c.rowBorderColor)
+    local spec = M.style.rowBorder
     if mode ~= ROW_BORDER.NONE then
         local holder = RowEdges(row, "fillBorder", bar)
         local level = bar:GetFrameLevel() + 2
@@ -168,16 +168,21 @@ local function StyleRowBorder(row, hasIcon)
         holder:ClearAllPoints()
         -- Include the reserved icon column; a displaced icon must not invert
         -- the full-row rectangle by crossing its opposite bar corner.
-        holder:SetPoint("TOPLEFT", hasIcon and c.rowBorderIcon and row or target, "TOPLEFT", 0, 0)
-        holder:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", 0, 0)
-        S.PlaceEdges(holder.edges, holder, c.rowBorderSize, r, g, b, 1)
+        holder:SetPoint("TOPLEFT", hasIcon and c.rowBorderIcon and row or target, "TOPLEFT", -spec.gap, spec.gap)
+        holder:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", spec.gap, -spec.gap)
+        D.PaintBorder(holder, holder.edges, holder, spec)
         holder:Show()
     elseif row.fillBorder then row.fillBorder:Hide() end
     if c.iconBorder and hasIcon then
         local holder = RowEdges(row, "iconBorder", row.iconHost or bar)
         if row.iconHost then holder:SetFrameLevel(row.iconHost:GetFrameLevel() + 1) end
-        holder:SetAllPoints(row.icon)
-        S.PlaceEdges(holder.edges, holder, c.rowBorderSize, r, g, b, 1)
+        holder:ClearAllPoints()
+        local iconSpec = M.style.iconBorder
+        if iconSpec.gap == 0 then holder:SetAllPoints(row.icon) else
+            holder:SetPoint("TOPLEFT", row.icon, "TOPLEFT", -iconSpec.gap, iconSpec.gap)
+            holder:SetPoint("BOTTOMRIGHT", row.icon, "BOTTOMRIGHT", iconSpec.gap, -iconSpec.gap)
+        end
+        D.PaintBorder(holder, holder.edges, holder, iconSpec)
         holder:Show()
     elseif row.iconBorder then row.iconBorder:Hide() end
 end
@@ -206,7 +211,8 @@ function D.StyleRow(row)
         bar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
     end
     bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
-    bar:SetStatusBarTexture(style.texture)
+    local texture = not list and style.breakdownTexture or style.texture
+    bar:SetStatusBarTexture(texture)
     D.StyleRowSurfaces(row)
     StyleGradient(bar, style)
     if style.glossEnabled or row.glossActive then
@@ -214,14 +220,15 @@ function D.StyleRow(row)
     end
     StyleRowBorder(row, hasIcon)
     D.StyleIconSkin(row, hasIcon)
+    D.StyleRowSeparators(row, hasIcon)
     row.track:ClearAllPoints()
     row.track:SetAllPoints(bar)
     row.track:SetColorTexture(style.trackR, style.trackG, style.trackB, style.trackA)
     row.hasIcon = hasIcon
     local rank, name, value = row.rankText, row.nameText, row.valueText
-    D.FontStyle(rank, left)
-    D.FontStyle(name, left)
-    D.FontStyle(value, right)
+    D.FontStyle(rank, left, list and "names" or "details")
+    D.FontStyle(name, left, list and "names" or "details")
+    D.FontStyle(value, right, list and "values" or "details")
     rank:ClearAllPoints()
     name:ClearAllPoints()
     value:ClearAllPoints()
@@ -287,7 +294,7 @@ function D.UnitIcon(row, spec, class, iconStyle)
     D.SetIconShown(row, true)
 end
 
-function D.SetBar(row, maxValue, value)
+local function SetPlainBar(row, maxValue, value)
     local bar = row.bar
     row.full = nil
     maxValue, value = Num(maxValue), Num(value)
@@ -310,6 +317,26 @@ function D.SetBar(row, maxValue, value)
         bar:SetValue(value)
     end
 end
+
+-- Smooth fill: the client eases the bar toward its new range and value in C,
+-- secret values included, so no timer or OnUpdate is needed. Every declared
+-- client has Enum.StatusBarInterpolation (tools/tests/client_api_snapshot.json:
+-- 12.1.0, 12.1.5, Forever). The plain writes' memo stays empty here.
+local fillInterpolation
+local function SetSmoothBar(row, maxValue, value)
+    local bar = row.bar
+    row.full, row.mMax, row.mVal = nil, nil, nil
+    bar:SetMinMaxValues(0, Num(maxValue), fillInterpolation)
+    bar:SetValue(Num(value), fillInterpolation)
+end
+
+-- D.SetBar is picked when the style is built (Controller.lua BuildStyle), so
+-- the paint path takes no per-row branch.
+function D.UseBarFill(smooth)
+    fillInterpolation = smooth and Enum.StatusBarInterpolation.ExponentialEaseOut or nil
+    D.SetBar = smooth and SetSmoothBar or SetPlainBar
+end
+D.SetBar = SetPlainBar
 
 -- The rounded share of denominator while percent is shown; nil unless both
 -- values are plain (a secret is never used in arithmetic). Callers pass the

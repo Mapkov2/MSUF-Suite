@@ -32,3 +32,11 @@ end)
 private.RoleKey = Memo(function(role)
     return { enabled = "enemy" .. role .. "Enabled", color = "enemy" .. role .. "Color" }
 end)
+
+-- The settings side of a plate's unit frame: "friendly", "enemy", or nil
+-- while Blizzard's isFriend is restricted or unset.
+function private.PlatePrefix(uf)
+    local value = uf.isFriend
+    if not private.Suite.Public(value) or type(value) ~= "boolean" then return nil end
+    return value and "friendly" or "enemy"
+end

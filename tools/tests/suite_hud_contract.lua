@@ -87,6 +87,7 @@ local function Widget(parent, fontString)
     function w:Hide() self.shown = false end
     function w:SetShown(value) self.shown = value end
     function w:IsShown() return self.shown end
+    function w:IsProtected() return false end
     function w:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
     return w
 end
@@ -274,7 +275,9 @@ local SUITE_FONT = "Interface\\AddOns\\Test\\SuiteFont.ttf"
 local suite = { Client = { isMainline = true, isForever = flavor == "Forever" },
     MSUFMedia = { font = SUITE_FONT },
     Suite = { instances = {}, editMode = false },
-    Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end }
+    Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end,
+    -- The HUD text style reader (catalog HUD.lua); this contract draws no real fonts.
+    HUDTextArgs = function() end }
 local S = suite.Suite
 S.GlobalFontPath = function() return SUITE_FONT end
 -- The modules capture the readers when they load; this value stands in for a
@@ -388,15 +391,40 @@ end
 suite.Dispatch = S.Dispatch
 TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, suite)
 local private = { NS = suite, Suite = S }
+-- Native recipe tracking remains separate from watched quest identities.
+local trackedRecipes, trackedRecrafts, recipeReads = {}, {}, 0
+local recipeInventory, recipeName = 0, "Glimmering Gemdust"
+local recipeSchematic = { name = "Masterwork Sin'dorei Band", reagentSlotSchematics = {} }
+local ingredient = { itemID = 1234 }
+recipeSchematic.reagentSlotSchematics[1] = { required = true, reagentType = 0,
+    quantityRequired = 5, reagents = { ingredient }, variableQuantities = {} }
+C_TradeSkillUI = {
+    GetRecipesTracked = function(recraft)
+        assert(flavor ~= "Forever", "Forever must not read Retail recipe tracking")
+        recipeReads = recipeReads + 1
+        return recraft and trackedRecrafts or trackedRecipes
+    end,
+    GetRecipeSchematic = function() return recipeSchematic end,
+}
+C_Item = { GetItemNameByID = function() return recipeName end, RequestLoadItemDataByID = function() end }
+ItemUtil = { GetCraftingReagentCount = function() return recipeInventory end }
+PROFESSIONS_TRACKER_HEADER_PROFESSION = "Professions"
+PROFESSIONS_CRAFTING_FORM_RECRAFTING_HEADER = "Recraft %s"
+PROFESSIONS_TRACKER_REAGENT_FORMAT = "%s %s"
+PROFESSIONS_TRACKER_REAGENT_COUNT_FORMAT = "%d/%d"
+PROFESSIONS_TRACKER_REAGENT_RANGE_FORMAT = "%d-%d"
+PROFESSIONS_TRACKING_VIEW_RECIPE, PROFESSIONS_UNTRACK_RECIPE = "View Recipe", "Untrack Recipe"
+Enum.CraftingReagentType = { Basic = 0, Modifying = 1, Finishing = 2 }
 -- Dialogs.lua and MicroMenu.lua: S.ContextMenu, S.GamepadUI and S.CanOpenNativeWindow.
-for _, file in ipairs({ "Dialogs", "MicroMenu", "MythicPlusPull", "MythicPlus", "Raid", "ObjectivesData",
-    "ObjectivesDetails", "ObjectivesActions", "ObjectivesTracker", "Objectives", "Announcements" }) do
+for _, file in ipairs({ "Dialogs", "MicroMenu", "MythicPlusPull", "MythicPlus", "RaidRecords", "Raid", "ObjectivesData",
+    "ObjectivesContent", "ObjectivesDetails", "ObjectivesActions", "ObjectivesContentActions", "ObjectivesRows",
+    "ObjectivesTracker", "Objectives", "Announcements" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local tracker = S.instances.objectives
 tracker.context = Context("objectives", tracker)
 tracker.config = { width = 310, height = 570, scale = 100, x = -40, y = -240,
-    showWorldQuests = true, showBonus = true, showAchievements = true, showScenario = true }
+    showWorldQuests = true, showBonus = true, showAchievements = true, showScenario = true, showRecipes = true }
 -- Blizzard's tracker is a right-managed Edit Mode frame: a SetParent or Hide
 -- from addon code runs its OnHide (RemoveManagedFrame and the container
 -- layout that also places the protected boss frames) inside that call.
@@ -430,6 +458,9 @@ do
     end
 end
 local nativeQuestModule = Widget(UIParent)
+-- Blizzard's zone widget block, which the Suite follows (suite_tracker_sources_contract.lua).
+UIWidgetObjectiveTracker = Widget(UIParent)
+function UIWidgetObjectiveTracker:MarkDirty() end
 local function NativeTrackerSuppressed()
     if tracker.context.hidden[ObjectiveTrackerFrame] ~= true or ObjectiveTrackerFrame:GetScale() ~= 1
         or ObjectiveTrackerFrame:GetParent() ~= UIParent or #nativeTrackerChildren < 2 then
@@ -783,7 +814,7 @@ tracker.config.mutedColor = "aaaaaa"
 tracker.config.completeColor = "00ff00"
 tracker.config.dividerColor = "bbbbbb"
 for _, key in ipairs({ "scenarioColor", "focusedColor", "campaignColor", "importantColor",
-    "completeGroupColor", "questsColor", "worldColor", "bonusColor", "achievementsColor" }) do
+    "completeGroupColor", "questsColor", "worldColor", "bonusColor", "achievementsColor", "recipesColor" }) do
     tracker.config[key] = "ff0000"
 end
 tracker.config.entrySize = 18
@@ -819,7 +850,9 @@ C_Scenario.GetInfo = function()
     return "Delve", 1, 2, nil, nil, nil, nil, nil, nil, nil, nil, nil, 123
 end
 C_Scenario.GetStepInfo = function() return "Stage one", "Do the thing", 0 end
-tracker.context.events.CONTENT_TRACKING_UPDATE(tracker, "CONTENT_TRACKING_UPDATE")
+-- The event names the trackable type; achievements are one of two sources it feeds.
+tracker.context.events.CONTENT_TRACKING_UPDATE(tracker, "CONTENT_TRACKING_UPDATE",
+    Enum.ContentTrackingType.Achievement, 99, true)
 tracker.context.events.SCENARIO_UPDATE(tracker, "SCENARIO_UPDATE")
 Drain()
 local achievementRow = tracker.rows["entry:achievements:99"]
@@ -957,7 +990,11 @@ AchievementAlertSystem = { alertFramePool = {
         return function() if not used then used = true; return achievement end end
     end,
 } }
-function AchievementAlertSystem:ShowAlert() achievement:SetParent(UIParent) end
+function AchievementAlertSystem.setUpFunction(frame, id) frame.id = id end
+function AchievementAlertSystem:ShowAlert(id)
+    self.setUpFunction(achievement, id)
+    achievement:SetParent(UIParent)
+end
 local worldQuest, scenarioAlert = Widget(UIParent), Widget(UIParent)
 WorldQuestCompleteAlertSystem = { alertFramePool = {
     EnumerateActive = function()
@@ -984,16 +1021,16 @@ assert(movers.announcements.spec.extraControls[1].id == "scale"
 assert(movers.announcements.spec.extraControls[1].set(100))
 assert(SubZoneTextFrame:GetParent() == MutedHost and banner.context.hidden[EventToastManagerFrame])
 AchievementAlertSystem:ShowAlert()
-assert(achievement:GetParent() == MutedHost, "native achievement alert must be hidden")
--- Blizzard shows alerts and toasts in combat too: suppressing them there as
--- well keeps the banner from showing the same event twice.
+assert(achievement:GetParent() == UIParent, "unreadable achievement must retain its native fallback")
+-- Unreadable native achievements keep their fallback in combat too; other
+-- represented toasts remain suppressed alongside the owned banner.
 combatLocked = true
 banner.context.hidden[EventToastManagerFrame] = nil
 AchievementAlertSystem:ShowAlert()
 EventToastManagerFrame:DisplayToast(nil)
 combatLocked = false
-assert(achievement:GetParent() == MutedHost and banner.context.hidden[EventToastManagerFrame] ~= nil,
-    "combat let Blizzard's alert or toast show next to the banner")
+assert(achievement:GetParent() == UIParent and banner.context.hidden[EventToastManagerFrame] ~= nil,
+    "combat lost the native fallback or restored a represented toast")
 banner.context.events.QUEST_ACCEPTED(banner, "QUEST_ACCEPTED", 42)
 assert(not banner.host.shown and #banner.queue == 0, "optional quest alerts must stay off")
 GetSubZoneText = function() return "The Coreway" end
@@ -1649,6 +1686,9 @@ activeKey = false
 end
 local insideRaid, instanceKind = false, nil
 IsInInstance = function() return insideRaid, instanceKind end
+GetInstanceInfo = function()
+    return "Test Raid", instanceKind, 16, "Mythic", 20, 0, false, insideRaid and 2000 or 0
+end
 C_InstanceEncounter = { IsEncounterInProgress = function() return false end }
 tracker.config.hideInRaid = true
 insideRaid, instanceKind = true, "raid"
@@ -1988,6 +2028,14 @@ if flavor == "Mainline" then
     BigWigs = nil
     clock = 330
     tracker.context.events.ENCOUNTER_END(tracker, "ENCOUNTER_END", 800, "Twin Guardians", 16, 20, 0, {})
+    -- Re-entering another raid revalidates both the selected best and its
+    -- enclosing difficulty label, even while the raid HUD stays active.
+    local originalInstanceInfo = GetInstanceInfo
+    GetInstanceInfo = function() return "Other Raid", "raid", 17, "Other", 20, 0, false, 2001 end
+    tracker.context.events.ZONE_CHANGED_NEW_AREA(tracker, "ZONE_CHANGED_NEW_AREA")
+    assert(tracker.raidActive and tracker.raid.encounterID == nil and tracker.raid.difficultyName == nil
+        and tracker.count.text == "", "a raid transition left the previous difficulty in the tracker header")
+    GetInstanceInfo = originalInstanceInfo
     combatLocked = false
     tracker.context.events.PLAYER_REGEN_ENABLED(tracker, "PLAYER_REGEN_ENABLED")
     tracker.config.showRaid = false
@@ -2072,6 +2120,155 @@ tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 Drain()
 assert(tracker.sources.quests[1].lines.count == 1 and not completeLine.shown,
     "reused completed rows retained a stale turn-in hint")
+if flavor == "Mainline" then
+    local function RecipeEvent(event, ...)
+        assert(tracker.context.events[event], "recipe event is missing: " .. event)(tracker, event, ...)
+        Drain()
+    end
+    trackedRecipes[1], trackedRecrafts[1] = 42, 42
+    RecipeEvent("TRACKED_RECIPE_UPDATE", 42, true)
+    local recipe = assert(tracker.rows["entry:recipes:42"], "tracked crafting-order recipe is absent from Suite Objectives")
+    local recraft = assert(tracker.rows["entry:recipes:-42"], "recraft tracking overwrote regular recipe")
+    local material = assert(tracker.rows["line:recipes:42:1"])
+    assert(recipe.recipeID == 42 and recipe.isRecraft == false and recipe.mouse and material.mouse
+        and not recipe.questID and not material.questID and recraft.isRecraft == true
+        and material.text.text == "0/5 Glimmering Gemdust", "recipe action identity or reagent count is incorrect")
+    local collected, positions, questReads = tracker.sources.recipes[1], setPoints, questUpdates
+    local reads, queued = recipeReads, #scheduled
+    for _ = 1, 5 do tracker.context.events.BAG_UPDATE_DELAYED(tracker, "BAG_UPDATE_DELAYED") end
+    assert(#scheduled == queued + 1, "bag bursts must share one recipe flush")
+    Drain()
+    assert(recipeReads == reads + 2 and questUpdates == questReads and setPoints == positions
+        and tracker.sources.recipes[1] == collected, "unchanged recipes rescanned quests, allocated entries or relaid out")
+    recipeInventory = 5
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(material.text.text == "5/5 Glimmering Gemdust"
+        and material.text.textColor[1] == tracker.completeRGB[1], "material count/completion did not update")
+    local opened, inspected, loaded, stopped, learned = nil, nil, 0, nil, false
+    ProfessionsFrame_LoadUI = function() loaded = loaded + 1 end
+    Professions = { InspectRecipe = function(id) inspected = id end }
+    C_TradeSkillUI.IsRecipeProfessionLearned = function() return learned end
+    C_TradeSkillUI.OpenRecipe = function(id) opened = id end
+    C_TradeSkillUI.SetRecipeTracked = function(id, tracked, isRecraft) stopped = { id, tracked, isRecraft } end
+    recipe.OnClick(recipe, "LeftButton")
+    assert(inspected == 42 and loaded == 1 and not opened, "customer-order recipe must open native inspection")
+    learned = true
+    material.OnClick(material, "LeftButton")
+    assert(opened == 42 and loaded == 2, "learned recipe did not open from its material row")
+    combatLocked, opened = true, nil
+    recipe.OnClick(recipe, "LeftButton")
+    combatLocked = false
+    assert(not opened and loaded == 2, "recipe click opened a protected panel in combat")
+    recraft.OnClick(recraft, "LeftButton")
+    assert(not opened and loaded == 2, "recraft row opened an ordinary recipe")
+    recipe.OnClick(recipe, "RightButton")
+    assert(lastMenu.buttons["View Recipe"] and lastMenu.buttons["Untrack Recipe"]
+        and not lastMenu.buttons["View in Quest Log"], "recipe context menu used quest actions")
+    lastMenu.buttons["View Recipe"]()
+    assert(opened == 42, "recipe context action failed")
+    lastMenu.buttons["Untrack Recipe"]()
+    assert(stopped[1] == 42 and stopped[2] == false and stopped[3] == false, "menu did not untrack ordinary recipe")
+    shiftDown = true
+    recraft.OnClick(recraft, "LeftButton")
+    shiftDown = false
+    assert(stopped[1] == 42 and stopped[2] == false and stopped[3] == true, "Shift-click did not untrack recraft independently")
+    local oldModified = IsModifiedClick
+    IsModifiedClick = function(binding) return binding == "RECIPEWATCHTOGGLE" end
+    recipe.OnClick(recipe, "LeftButton")
+    IsModifiedClick = oldModified
+    assert(stopped[3] == false, "rebound recipe watch modifier was ignored")
+    local requests = 0
+    C_Item.RequestLoadItemDataByID = function(id) assert(id == 1234) requests = requests + 1 end
+    recipeName = nil
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(requests == 1 and not tracker.rows["line:recipes:42:1"], "uncached material was not requested once")
+    RecipeEvent("ITEM_DATA_LOAD_RESULT", 1234, false)
+    assert(requests == 1 and not tracker.flushJob.pending, "failed item loads created an unbounded retry")
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(requests == 2, "a later inventory event could not retry a failed material load")
+    RecipeEvent("ITEM_DATA_LOAD_RESULT", 1234, false)
+    recipeName = "Glimmering Gemdust"
+    RecipeEvent("ITEM_DATA_LOAD_RESULT", 1234, true)
+    local loadedMaterial = tracker.rows["line:recipes:42:1"]
+    assert(loadedMaterial and loadedMaterial.text.text == "5/5 Glimmering Gemdust",
+        "successful item loads from another requester were ignored after a failure")
+    local slot = recipeSchematic.reagentSlotSchematics[1]
+    slot.reagents[2] = { itemID = 1235 }
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(tracker.rows["line:recipes:42:1"].text.text == "10/5 Glimmering Gemdust", "reagent quality tiers were not combined")
+    slot.reagents[2] = nil
+    slot.reagents[1] = { currencyID = 77 }
+    local oldCurrency = C_CurrencyInfo
+    C_CurrencyInfo = { GetCurrencyInfo = function() return { name = "Artisan's Acuity", quantity = 2 } end }
+    RecipeEvent("CURRENCY_DISPLAY_UPDATE")
+    assert(tracker.rows["line:recipes:42:1"].text.text == "2/5 Artisan's Acuity", "currency reagent did not refresh")
+    C_CurrencyInfo = oldCurrency
+    slot.reagents[1] = ingredient
+    recipeInventory = secret
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(tracker.rows["line:recipes:42:1"].text.text == "?/5 Glimmering Gemdust", "secret reagent quantity was compared or formatted")
+    recipeInventory = 5
+    slot.variableQuantities = { { quantity = 2 }, { quantity = 7 } }
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(tracker.rows["line:recipes:42:1"].text.text == "2-7 Glimmering Gemdust", "variable reagent range was lost")
+    slot.variableQuantities = {}
+    recipeSchematic.reagentSlotSchematics[2] = { required = true, reagentType = Enum.CraftingReagentType.Modifying,
+        quantityRequired = 2, reagents = { ingredient }, slotInfo = { slotText = "Spark" }, variableQuantities = {} }
+    recipeSchematic.reagentSlotSchematics[3] = { required = false, reagentType = Enum.CraftingReagentType.Basic,
+        quantityRequired = 1, reagents = { ingredient }, variableQuantities = {} }
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(tracker.rows["line:recipes:42:1"].text.text == "5/2 Spark"
+        and tracker.rows["line:recipes:42:2"].text.text == "5/5 Glimmering Gemdust"
+        and not tracker.rows["line:recipes:42:3"], "required/optional slot filtering or native order is incorrect")
+    recipeSchematic.reagentSlotSchematics[4] = { required = true, reagentType = Enum.CraftingReagentType.Modifying,
+        quantityRequired = 3, reagents = { ingredient }, slotInfo = { slotText = "Seal" }, variableQuantities = {} }
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    assert(tracker.rows["line:recipes:42:1"].text.text == "5/3 Seal"
+        and tracker.rows["line:recipes:42:2"].text.text == "5/2 Spark", "multiple modifying slots differ from native order")
+    recipeSchematic.reagentSlotSchematics[4] = nil
+    recipeSchematic.reagentSlotSchematics[2], recipeSchematic.reagentSlotSchematics[3] = nil, nil
+    recipeName = nil
+    RecipeEvent("BAG_UPDATE_DELAYED")
+    local requestsBeforePause = requests
+    tracker.config.hideInRaid = true
+    insideRaid, instanceKind = true, "raid"
+    tracker:Refresh()
+    assert(not tracker.context.events.TRACKED_RECIPE_UPDATE and not tracker.context.events.BAG_UPDATE_DELAYED
+        and not tracker.context.events.CURRENCY_DISPLAY_UPDATE and not tracker.context.events.ITEM_DATA_LOAD_RESULT,
+        "raid pause left recipe work events running")
+    trackedRecrafts[1] = nil
+    insideRaid, instanceKind, tracker.config.hideInRaid = false, nil, false
+    tracker.context.events.ZONE_CHANGED_NEW_AREA(tracker, "ZONE_CHANGED_NEW_AREA")
+    Drain()
+    assert(tracker.context.events.TRACKED_RECIPE_UPDATE and tracker.rows["entry:recipes:42"]
+        and not tracker.rows["entry:recipes:-42"], "resume did not refresh tracked recipes")
+    assert(requests == requestsBeforePause + 1, "a load event lost during raid suspension prevented material recovery")
+    recipeName = "Glimmering Gemdust"
+    RecipeEvent("ITEM_DATA_LOAD_RESULT", 1234, true)
+    trackedRecipes[1] = nil
+    RecipeEvent("TRACKED_RECIPE_UPDATE", 42, false)
+    assert(not next(tracker.recipeItemsPending), "removed recipes retained obsolete item requests")
+    trackedRecipes[1] = 43
+    RecipeEvent("TRACKED_RECIPE_UPDATE", 43, true)
+    local reused = assert(tracker.rows["entry:recipes:43"])
+    assert(reused.recipeID == 43 and not reused.questID, "reused quest row retained quest actions")
+    tracker:Disable()
+    tracker:Enable()
+    Drain()
+    assert(tracker.rows["entry:recipes:43"], "already tracked recipe did not return when the tracker enabled")
+    trackedRecipes[1] = secret
+    RecipeEvent("TRACKED_RECIPE_UPDATE")
+    assert(tracker.sources.recipes.count == 0, "secret recipe ID was used as a key")
+    trackedRecipes[1] = nil
+    tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+    Drain()
+    for _, row in pairs(tracker.rows) do
+        if row.group ~= "recipes" then assert(not row.recipeID and row.isRecraft == nil, "pooled recipe action leaked") end
+    end
+else
+    assert(recipeReads == 0 and not tracker.context.events.TRACKED_RECIPE_UPDATE
+        and not tracker.context.events.BAG_UPDATE_DELAYED, "Retail recipe path leaked into Forever")
+end
 tracker:Disable()
 Drain()
 for _, child in ipairs(nativeTrackerChildren) do tracker.context:RestoreProperty(child, "SetScale") end

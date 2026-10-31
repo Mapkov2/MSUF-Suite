@@ -310,8 +310,9 @@ local private = { NS = NS, Suite = S }
 -- fills it from _G.MSUFSuite, which this fixture passes in directly).
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
-NS.ChatBubbleSources = catalogNS.ChatBubbleSources
-local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "Fade.lua",
+NS.ChatBubbleSources, NS.ChatSoundChannels = catalogNS.ChatBubbleSources, catalogNS.ChatSoundChannels
+NS.ChatLineLimits = catalogNS.ChatLineLimits
+local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
     "Messages.lua", "CompleteMessages.lua", "Window.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
@@ -324,6 +325,9 @@ S.SetFont = S.SetFont or function(fontString, path, size, flags)
     return flags
 end
 assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = S })
+-- The shared tool window (ToolListWindow.lua): Disable only has to close the saved chat search it opened.
+local closedTools = {}
+S.ToolListWindow = { Close = function(owner) closedTools[#closedTools + 1] = owner end }
 Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
@@ -1246,6 +1250,7 @@ assert(module.panelDelegate.shown and module.panelDelegate:GetAttribute("clickbu
 -- The controller (Suite.lua Stop) clears active before Disable.
 module.active = false
 module:Disable()
+assert(#closedTools == 1 and type(closedTools[1]) == "table", "disabling Chat left the saved chat search open")
 assert(not module.panelDelegate.shown and not module.panelDelegate.owner and not ctx.callbacks.PLAYER_REGEN_DISABLED,
     "disabling Chat left the secure delegate on the sidebar")
 assert(ChatFrame4Tab.noMouseAlpha == 0.2 and ChatFrame4Tab.mouseOverAlpha == 0.6

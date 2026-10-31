@@ -39,10 +39,12 @@ function AuraButtons.Sample(parent, row, view, ov, texture, name)
     row.sampleOv, row.sampleTexture, row.sampleName = ov, texture, name
     row.samplePx = px
     local rec, part = row.rec, row.part
-    rec.stackFill = view.barStacks == true
+    rec.stackFill, rec.view = view.barStacks == true, view
     -- The live buttons' look and markers (AuraButtons Look and Style).
     AuraButtons.Look(rec, view)
     AuraButtons.Style(rec, part)
+    -- The entry's own border and fill, as on its live button.
+    C.AuraLooks.Apply(rec, part, ov, false)
     local stackMax = rec.lk.smax
     local amount = max(1, floor(stackMax * .6))
     part.bar:SetMinMaxValues(0, rec.stackFill and stackMax or 1)
@@ -53,15 +55,19 @@ function AuraButtons.Sample(parent, row, view, ov, texture, name)
     part.icon:SetTexture(texture or QUESTION)
     part.name:SetText(name or "")
     part.name:SetShown(view.barName ~= false)
-    part.dur:SetText("8")
+    -- The sample's 8 seconds in the countdown's stages (K.Countdown).
+    local state = C.state
+    part.dur:SetText((state.tenths or 0) > 8 and "8.0" or "8")
     part.dur:SetShown(K.Choice(ov.timeText, K.BarTime(view)))
     local threshold = ov.threshold
-    if threshold == nil then threshold = C.state.threshold or 0 end
-    if threshold > 8 then part.dur:SetTextColor(C.state.thR or 1, C.state.thG or 1, C.state.thB or 1) end
+    if threshold == nil then threshold = state.threshold or 0 end
+    if threshold > 8 then part.dur:SetTextColor(state.thR or 1, state.thG or 1, state.thB or 1) end
+    if (state.urgent or 0) > 8 then part.dur:SetTextColor(state.urR or 1, state.urG or 1, state.urB or 1) end
     part.count:SetText(amount > 1 and tostring(amount) or "")
     part.count:SetShown(K.Choice(ov.stackText, K.BarStacks(view, false)))
     if (ov.stackColorAt or 0) > 0 and amount >= ov.stackColorAt then
-        part.count:SetTextColor(K.HexRGB(ov.stackColor or STACK_COLOR))
+        local hex = ov.stackColor
+        part.count:SetTextColor(K.HexRGB(hex ~= nil and hex ~= "" and hex or STACK_COLOR))
     end
     local level = row:GetFrameLevel()
     local top = K.Choice(ov.textTop, K.BarStacksTop(view))
@@ -131,8 +137,10 @@ local function Settle(cell, h)
     if h.shown then return Draw(cell, h, h.ownLook, h.ownW, h.ownH) end
     HideSkin(h)
 end
+local Missing
 local function UnholdPlain(cell)
     local h = cell and holders[cell]
+    if h and h.glow then Missing(cell, h, nil, nil, false) end
     if h and h.shown then
         h.shown = false
         h.icon:Hide()
@@ -179,7 +187,7 @@ local function HoldPlain(cell, entry, barMeta, dim, view)
         h.icon:Hide()
         h.bg:Hide()
         h.name:Hide()
-        h.sample = AuraButtons.Sample(cell, h.sample, view, entry.ov, tex, entry.name)
+        h.sample = AuraButtons.Sample(cell, h.sample, view, entry.ov, tex, C.Const.EntryLabel(entry))
         h.sample:SetAllPoints(cell)
         h.sample:Show()
         return
@@ -212,7 +220,7 @@ local function HoldPlain(cell, entry, barMeta, dim, view)
         local lead = lk.icon and lk.h or 0
         name:SetPoint("LEFT", cell, "LEFT", (left and lead or 0) + 4 * lk.px, 0)
         name:SetPoint("RIGHT", cell, "RIGHT", -(left and 0 or lead) - 4 * lk.px, 0)
-        name:SetText(entry.name or "")
+        name:SetText(C.Const.EntryLabel(entry))
         name:SetShown(view.barName ~= false)
     else
         icon:SetPoint("TOPLEFT", cell, "TOPLEFT", bw, -bw)
@@ -263,11 +271,77 @@ end
 local function Held(entry, view, preview)
     if preview then return true end
     if entry.src == "p" then return false end
-    local show = (entry.ov or EMPTY).showMissing
+    local ov = entry.ov or EMPTY
+    local show = ov.showMissing
     if show == nil then show = view.showMissing == true end
-    return show and true or false
+    -- A glow while missing glows on the stand-in, so it holds one.
+    return (show or ov.missingGlow == true) and true or false
 end
 AuraButtons.Held = Held
+
+------------------------------------------------------------------ glow while missing
+-- "Glow while missing" (missingGlow): a missing buff's stand-in glows in its
+-- spell's glow style and color (else the bar's). Textures of a frame at its
+-- cell's level, so the slot button above covers it while the buff is
+-- active: nothing runs per aura event. The flipbook styles play inside the
+-- icon, the edge styles draw its border (Pulse pulses; Pixel and Autocast
+-- hold a still border). Made on first use, kept per cell. "All glows only
+-- in combat" shows it in combat only (MissingCombat, the combat edges).
+local lit = {} -- cell -> its glow frame while one is wanted
+local function Allowed() return not C.state.allGlowsCombat or C.state.inCombat or C.state.preview end
+local function Paint(g, style, r, gg, b)
+    local spec = K.GLOW[style]
+    local px = Px()
+    if g.st == style and g.r == r and g.g == gg and g.b == b and g.px == px then return end
+    g.st, g.r, g.g, g.b, g.px = style, r, gg, b, px
+    g.book:Stop()
+    g.pulse:Stop()
+    if spec.atlas then
+        g.flip:SetAtlas(spec.atlas)
+        g.flip:SetDesaturated(r ~= nil)
+        g.flip:SetVertexColor(r or 1, gg or 1, b or 1)
+        K.SetFlipBook(g.book, spec)
+        K.PlaceEdges(g.edges, g, 0)
+    else
+        local gold = K.GLOW_GOLD
+        K.PlaceEdges(g.edges, g, K.Pixels(spec.edge), r or gold[1], gg or gold[2], b or gold[3], 1)
+    end
+    g.flip:SetShown(spec.atlas ~= nil)
+    g.anim = (spec.atlas and g.book) or (spec.pulse and g.pulse) or nil
+end
+function Missing(cell, h, entry, view, on)
+    local g = h.glow
+    if not on then
+        if g and lit[cell] then
+            lit[cell] = nil
+            if g.anim then g.anim:Stop() end
+            g:Hide()
+        end
+        return
+    end
+    if not g then
+        g = S.CreateFrame("Frame", nil, cell)
+        g:SetAllPoints(cell)
+        g.flip = S.CreateTexture(g, nil, "OVERLAY")
+        g.flip:SetAllPoints(g)
+        g.book, g.edges, g.pulse = K.FlipBook(g.flip, K.GLOW[1]), K.NewEdges(g), K.Pulse(g, K.GLOW[3].pulse)
+        h.glow = g
+    end
+    -- Under the slot button: the cell's own level.
+    g:SetFrameLevel(cell:GetFrameLevel())
+    Paint(g, K.GlowSpec(entry.ov or EMPTY, view.glowStyle, view.glowTint, view.glowR, view.glowG, view.glowB))
+    lit[cell] = g
+    g:SetShown(Allowed())
+    if g.anim then g.anim:Play() end
+end
+-- Combat edges and the "only in combat" switch: lit glows show or hide.
+function AuraButtons.MissingCombat()
+    local allowed = Allowed()
+    for _, g in pairs(lit) do g:SetShown(allowed) end
+end
+C.MissingGlowGate = AuraButtons.MissingCombat
+-- Diagnostics and tests: the glow a cell's stand-in shows (nil: none).
+function C.Diagnostics.MissingGlow(cell) return lit[cell] end
 
 -- preview: the aura layer's preview state (every entry shows its sample).
 local function Placeholders(slot, view, plan, barMeta, preview)
@@ -281,13 +355,18 @@ local function Placeholders(slot, view, plan, barMeta, preview)
     if type(limit) == "number" and limit > 0 and limit < cap then cap = limit end
     for i = 1, cap do
         local entry = entries[i]
-        local show = preview
+        local show, glow = preview, false
         if not show and barMeta.fixed and entry.src ~= "p" then
-            show = (entry.ov or EMPTY).showMissing
+            local ov = entry.ov or EMPTY
+            show, glow = ov.showMissing, ov.missingGlow == true
             if show == nil then show = view.showMissing == true end
+            show = show or glow
         end
         if show then
-            Hold(Cell(slot, i), entry, barMeta, not preview, view)
+            local cell = Cell(slot, i)
+            Hold(cell, entry, barMeta, not preview, view)
+            local h = holders[cell]
+            if glow or h.glow then Missing(cell, h, entry, view, glow) end
         else
             Unhold(bar.cells[i])
         end

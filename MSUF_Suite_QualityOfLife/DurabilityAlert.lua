@@ -64,6 +64,8 @@ local function Update(self)
         return
     end
     self.value:SetText(("%d%%"):format(math.floor(lowest * 100)))
+    -- The sound marks the warning appearing, not a repaint of the shown one.
+    if self.config.sound and not self.host:IsShown() then S.QoLWarningSound() end
     self.host:Show()
 end
 

@@ -4,8 +4,13 @@ local NS, S = P.NS, P.Suite
 -- Supplemental alerts for Blizzard's personal item-loot-toast event, in and
 -- out of combat like Blizzard's own toasts. Ordinary bag gains have no
 -- equivalent public payload, so they are not inferred here.
+local ID = "lootToastFilter"
 local M = { toasts = {}, ids = {}, waiting = {}, waitingCount = 0 }
 local MAX_TOASTS = 3
+-- The toasts stack down from the top right corner of one host, which MSUF
+-- Edit Mode moves and scales.
+local TOAST_WIDTH, TOAST_HEIGHT, TOAST_STEP = 258, 48, 53
+local SAMPLE_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local POPUP_SECONDS = 5
 local BATTLE_PET_CLASS = 17 -- upstream/live Enum.ItemClass.Battlepet
 -- kindFilter (MSUF_Suite/Core/Catalog/QualityOfLife.lua).
@@ -19,10 +24,10 @@ local function LeaveTooltip(frame)
     if GameTooltip:IsOwned(frame) then GameTooltip:Hide() end
 end
 
-local function MakeToast(index)
-    local frame = CreateFrame("Frame", nil, UIParent)
-    frame:SetSize(258, 48)
-    frame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -24, -162 - (index - 1) * 53)
+local function MakeToast(host, index)
+    local frame = CreateFrame("Frame", nil, host)
+    frame:SetSize(TOAST_WIDTH, TOAST_HEIGHT)
+    frame:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -(index - 1) * TOAST_STEP)
     frame:EnableMouse(true)
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -75,6 +80,28 @@ local function StopWaiting(self)
     self.context:RemoveEvent("GET_ITEM_INFO_RECEIVED")
 end
 
+local function PaintToast(frame, style)
+    S.QoLColor(frame.bg, style.background, .94)
+    S.QoLColor(frame.accent, style.accent)
+    frame.name:SetTextColor(S.RGB(style.text))
+    frame.count:SetTextColor(S.RGB(style.muted))
+end
+
+-- The toast of a slot, made on first use. Each slot hides on its own
+-- deadline, restarted when it is reused; one callback per slot, made with it.
+local function Slot(self, index)
+    local frame = self.toasts[index]
+    if not frame then
+        frame = MakeToast(self.host, index)
+        frame.expire = function()
+            frame:Hide()
+            frame.link = nil
+        end
+        self.toasts[index] = frame
+    end
+    return frame
+end
+
 local function ShowToast(self, itemLink, quantity, arrived)
     local name, _, quality, _, _, _, _, _, _, icon = C_Item.GetItemInfo(itemLink)
     if not arrived and S.Public(name) and name == nil then return Wait(self, itemLink, quantity) end
@@ -102,22 +129,8 @@ local function ShowToast(self, itemLink, quantity, arrived)
             or (filter == MOUNTS_AND_PETS and not (mount or pet)) then return end
     end
     self.nextIndex = (self.nextIndex or 0) % MAX_TOASTS + 1
-    local frame = self.toasts[self.nextIndex]
-    if not frame then
-        frame = MakeToast(self.nextIndex)
-        -- Each toast slot hides on its own deadline, restarted when it is
-        -- reused; one callback per slot, made with the slot.
-        frame.expire = function()
-            frame:Hide()
-            frame.link = nil
-        end
-        self.toasts[self.nextIndex] = frame
-    end
-    local style = S.QoLStyle(self.config)
-    S.QoLColor(frame.bg, style.background, .94)
-    S.QoLColor(frame.accent, style.accent)
-    frame.name:SetTextColor(S.RGB(style.text))
-    frame.count:SetTextColor(S.RGB(style.muted))
+    local frame = Slot(self, self.nextIndex)
+    PaintToast(frame, S.QoLStyle(self.config))
     frame.link = itemLink
     frame.icon:SetTexture(icon)
     frame.name:SetText(name)
@@ -143,6 +156,19 @@ local function HideAll(self)
     end
 end
 
+-- MSUF Edit Mode shows every slot with a sample, to place and scale the stack.
+local function ShowSamples(self)
+    local style = S.QoLStyle(self.config)
+    for index = 1, MAX_TOASTS do
+        local frame = Slot(self, index)
+        PaintToast(frame, style)
+        frame.icon:SetTexture(SAMPLE_ICON)
+        frame.name:SetText(S.Text("Filtered loot notice"))
+        frame.count:SetText("")
+        frame:Show()
+    end
+end
+
 local function LootToast(self, _, kind, itemLink, quantity, _, _, personal)
     if not self.active or not S.Public(kind) or kind ~= "item"
         or not S.Public(personal) or personal ~= true
@@ -152,21 +178,26 @@ local function LootToast(self, _, kind, itemLink, quantity, _, _, personal)
 end
 
 function M:Enable()
+    self.host = self.host or CreateFrame("Frame", nil, UIParent)
+    self.host:SetSize(TOAST_WIDTH, (MAX_TOASTS - 1) * TOAST_STEP + TOAST_HEIGHT)
+    S.PlaceHost(self.host, self.config)
     self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
     self.context:Event("SHOW_LOOT_TOAST", LootToast)
+    if S.editMode then ShowSamples(self) end
 end
 
 function M:Refresh()
     self.ids = S.QoLParseIDs(self.config.itemIDs, MAX_IDS)
+    S.PlaceHost(self.host, self.config)
     local style = S.QoLStyle(self.config)
-    for _, frame in ipairs(self.toasts) do
-        S.QoLColor(frame.bg, style.background, .94)
-        S.QoLColor(frame.accent, style.accent)
-        frame.name:SetTextColor(S.RGB(style.text))
-        frame.count:SetTextColor(S.RGB(style.muted))
-    end
+    for _, frame in ipairs(self.toasts) do PaintToast(frame, style) end
     HideAll(self)
     StopWaiting(self)
+    if S.editMode then ShowSamples(self) end
+end
+
+function M:HideEditPreview()
+    HideAll(self)
 end
 
 function M:Disable()
@@ -176,4 +207,15 @@ function M:Disable()
     self.ids = {}
 end
 
-S.Install("lootToastFilter", M)
+function M:RegisterMovers()
+    S.RegisterOwnedMover(ID, "notices", {
+        label = "Filtered loot notice", order = 652,
+        getFrame = function() return self.host end,
+        xKey = "x", yKey = "y", pointKey = "point",
+        point = function() return NS.AnchorPoints[self.config.point] or "TOPRIGHT" end,
+        quickPosition = true, historyKeys = { "scale" },
+        sizeKeys = { "scale" },
+    })
+end
+
+S.Install(ID, M)

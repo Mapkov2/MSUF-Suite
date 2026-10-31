@@ -44,6 +44,12 @@ local FOREVER_CLASS_BUFF = {
 function R.ClassBuff(class)
     return (P.NS.Client.isForever and FOREVER_CLASS_BUFF or CLASS_BUFF)[class]
 end
+-- A class reminder's behaviour on this client (the catalog's
+-- NS.BuffReminderClassReminders); nil where the reminder does not exist.
+function R.ClassPlan(def)
+    if P.NS.Client.isForever then return def.forever end
+    return def.retail
+end
 -- Spell IDs are game identifiers. Assassination favors Deadly Poison;
 -- Outlaw and Subtlety favor Instant Poison. Any active poison of the same
 -- category satisfies the reminder, including a player's talent choice.

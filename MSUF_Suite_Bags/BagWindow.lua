@@ -420,4 +420,6 @@ function M:RegisterMovers()
         moveValues = { reagentWindowMoved = true }, resetKeys = { "reagentWindowMoved" },
         historyKeys = { "reagentWindowMoved" },
     })
+    -- Retail only: BankWindow.lua returns early on WoW Forever.
+    if not NS.Client.isForever then S.RegisterOwnedMover("bags", "bank", Private.BankWindow.mover) end
 end

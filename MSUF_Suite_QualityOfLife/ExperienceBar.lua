@@ -3,6 +3,7 @@ local NS, S = P.NS, P.Suite
 local IN_COMBAT = { inCombat = true }
 local M = {}
 local Native = P.NativeExperienceBar
+local Tracked = P.ExperienceTrack
 local ID = "xpBar"
 local SEGMENT_COUNT = 20
 local SESSION_MAX_AGE = 604800
@@ -48,6 +49,9 @@ local TEXT = {
     session = S.Text("Session +%s"),
     rate = S.Text("XP/h %s"),
     toLevel = S.Text("To level %s"),
+    progress = S.Text("Progress"),
+    progressShort = S.Text("%s  %s / %s"),
+    nothing = S.Text("Nothing to track"),
 }
 -- Reused for the details line; table.concat reads only the filled prefix.
 local detailParts = {}
@@ -197,8 +201,27 @@ local function AddSessionLines(self, remaining)
     GameTooltip:AddDoubleLine(TEXT.levelUps, tostring(self.session.levelUps), 1, 1, 1, 1, 1, 1)
 end
 
+-- Reputation or honor (the track setting): the standing and what is left.
+local function TrackedTooltip(self)
+    local label, current, maximum, _, name, capped = Tracked.Read(self.source)
+    GameTooltip:SetOwner(self.host, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine(name or TEXT.progress, 0.3, 0.85, 0.95)
+    if label then
+        GameTooltip:AddLine(label, 1, 1, 1)
+        if not capped then
+            GameTooltip:AddDoubleLine(TEXT.progress, Exact(current) .. " / " .. Exact(maximum), 1, 1, 1, 1, 1, 1)
+            GameTooltip:AddDoubleLine(TEXT.remaining, Exact(max(0, maximum - current)), 1, 1, 1, 1, 1, 1)
+        end
+    else
+        GameTooltip:AddLine(TEXT.nothing, 1, 1, 1)
+    end
+    GameTooltip:Show()
+end
+
 local function Tooltip(self)
     if not self.host or not self.host:IsShown() then return end
+    if self.source and self.source ~= Tracked.XP then return TrackedTooltip(self) end
     local level, current, maximum = XP()
     GameTooltip:SetOwner(self.host, "ANCHOR_TOP")
     GameTooltip:ClearLines()
@@ -323,6 +346,7 @@ local function ApplyLook(self)
     Paint(self.panel, panel, 0.94)
     Paint(self.background, look.track, 0.98)
     Tint(self.fill, accent, 0.98)
+    self.accent, self.fillColor = accent, nil
     Tint(self.rested, look.rested, 0.78)
     Paint(self.restedMarker, look.rested, 1)
     Paint(self.edges[1], index == CUSTOM and border or accent, 0.88)
@@ -479,16 +503,56 @@ local function DetailsText(self, current, maximum, sampleGain, sampleRate)
     return table.concat(detailParts, DETAIL_SEPARATOR, 1, count)
 end
 
+-- Reputation or honor (the track setting) on the same bar, filled in the
+-- source's color. Nothing rested or timed belongs to them.
+local function ShowProgress(view, label, current, maximum, color, name, capped)
+    local c = view.config
+    local fraction = max(0, min(1, current / maximum))
+    if view.fillColor ~= color then
+        Tint(view.fill, color, 0.98)
+        view.fillColor = color
+    end
+    view.fill:SetSize(max(0.01, c.width * fraction), c.height)
+    view.fill:SetShown(fraction > 0)
+    view.rested:Hide()
+    view.restedMarker:Hide()
+    view.levelText:SetText(capped and label or TEXT.progressShort:format(label, Compact(current), Compact(maximum)))
+    view.percentText:SetText((c.displayStyle == 2 and "%.0f%%" or "%.1f%%"):format(fraction * 100))
+    view.details:SetText(name)
+end
+
+local function PaintTracked(self, source)
+    local host = self.host
+    CancelRateTimer(self)
+    local label, current, maximum, color, name, capped = Tracked.Read(source)
+    if not label then
+        HideProgress(self, TEXT.nothing, "", "")
+        host:SetShown(S.editMode == true)
+        return
+    end
+    host:Show()
+    ShowProgress(self, label, current, maximum, color, name, capped)
+    -- An open tooltip follows the new values.
+    if GameTooltip:IsOwned(host) then Tooltip(self) end
+end
+
 -- Values only: XP, rested and rate changes never move the bar or its dividers.
 PaintValues = function(self)
     local c, host = self.config, self.host
     local level, current, maximum = XP()
+    local capped = level and (maximum <= 0 or AtEffectiveMaxLevel(self, level))
+    local source = Tracked.Source(c.track, capped)
+    self.source = source
+    if source ~= Tracked.XP then return PaintTracked(self, source) end
+    if self.fillColor then
+        Tint(self.fill, self.accent, 0.98)
+        self.fillColor = nil
+    end
     if not level then
         HideProgress(self, TEXT.unavailable, "", TEXT.unavailableDetails)
         host:SetShown(S.editMode == true)
         return
     end
-    local capped = maximum <= 0 or AtEffectiveMaxLevel(self, level)
     host:SetShown(S.editMode or not (c.hideAtMax and capped))
     if not host:IsShown() then CancelRateTimer(self) end
     if maximum <= 0 then
@@ -512,7 +576,15 @@ local function Render(self)
     PaintValues(self)
 end
 
-local function XPChanged(self, event, unit)
+-- The events the track setting and the shown source need (ExperienceTrack.lua).
+local XPChanged
+local function SyncTrack(self)
+    Tracked.SyncEvents(self, self.source, XPChanged)
+end
+
+-- Every event of the bar comes here: only the experience events change the
+-- session.
+XPChanged = function(self, event, unit)
     if event == "PLAYER_XP_UPDATE" and unit and unit ~= "player" then return end
     local level, current, maximum = XP()
     if level then
@@ -522,6 +594,7 @@ local function XPChanged(self, event, unit)
         end
     end
     PaintValues(self)
+    SyncTrack(self)
 end
 
 local function EnterWorld(self)
@@ -530,16 +603,15 @@ local function EnterWorld(self)
     if level then InitializeSession(self, level, current, maximum) end
     self.cappedLevel = nil
     Render(self)
+    SyncTrack(self)
 end
 
 function M:Enable()
     self.rateJob = self.context:Coalesce(RATE_REFRESH, PaintValues)
     Create(self)
+    self.trackEvents = nil
     local context = self.context
     context:Event("PLAYER_ENTERING_WORLD", EnterWorld, IN_COMBAT)
-    context:Event("PLAYER_XP_UPDATE", XPChanged, IN_COMBAT)
-    context:Event("PLAYER_LEVEL_UP", XPChanged, IN_COMBAT)
-    context:Event("UPDATE_EXHAUSTION", XPChanged, IN_COMBAT)
     context:Event("ADDON_LOADED", Native.AddonLoaded, IN_COMBAT)
     if NS.loginKind then
         local level, current, maximum = XP()
@@ -553,12 +625,14 @@ function M:Enable()
     end
     Native.Sync(self, true)
     Render(self)
+    SyncTrack(self)
 end
 
 function M:Refresh()
     Native.Sync(self, true)
     self.cappedLevel = nil
     Render(self)
+    SyncTrack(self)
 end
 
 function M:Disable()
@@ -597,6 +671,15 @@ function S.DrawExperienceBarPreview(parent, config, sample, viewport)
             viewport.height / ((config.height + 23) * scale)))
     end
     Layout(view)
+    local source = Tracked.PreviewSource(config.track)
+    if source ~= Tracked.XP then
+        ShowProgress(view, Tracked.Sample(source, sample.xp))
+        return view.host, config.width, config.height + 23
+    end
+    if view.fillColor then
+        Tint(view.fill, view.accent, 0.98)
+        view.fillColor = nil
+    end
     local fraction = sample.xp / 100
     view.fill:SetSize(max(.01, config.width * fraction), config.height)
     view.fill:SetShown(fraction > 0)

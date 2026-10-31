@@ -3,7 +3,7 @@
 ## Notes: Alpha interface modules for MSUF. Requires MSUF; compatible with 6.5 (6.50).
 ## Author: Mapko
 ## Category: MSUF
-## Version: 0.1.4-alpha
+## Version: 0.1.5-alpha
 ## X-Wago-ID: YK9xrV6L
 ## X-Curse-Project-ID: 1743628
 ## Dependencies: MidnightSimpleUnitFrames
@@ -24,6 +24,10 @@ Core\ModernDarkFactory.lua
 Core\Database.lua
 Core\SessionGold.lua
 Core\CharacterData.lua
+Core\WeeklyRewards.lua
+Core\TooltipScale.lua
+Core\InventoryRules.lua
+Core\InventoryLists.lua
 Core\SuiteCatalog.lua
 Core\Catalog\ActionBars.lua
 Core\Bindings.lua
@@ -39,6 +43,10 @@ Core\Catalog\QualityOfLifeHUD.lua
 Core\Catalog\QualityOfLifeCombatText.lua
 Core\Catalog\QualityOfLifeDistance.lua
 Core\Catalog\QualityOfLifeGroup.lua
+Core\Catalog\QualityOfLifeComfort.lua
+Core\Catalog\InventoryTools.lua
+Core\Catalog\PlanningTools.lua
+Core\Catalog\EverydayTools.lua
 Core\Catalog\HUD.lua
 Core\Catalog\DataTexts.lua
 Core\Catalog\BuffReminders.lua
@@ -47,8 +55,10 @@ Core\NameplateStyle.lua
 Core\NameplateAuraColors.lua
 Core\Catalog\Nameplates.lua
 Core\Catalog\CooldownManager.lua
+Core\Catalog\CooldownManagerData.lua
 Core\SuiteMigrations.lua
 Core\Suite.lua
+Core\CDMInspection.lua
 Core\SpellRange.lua
 Core\FontBridge.lua
 Integrations\MapkoSkin.lua
@@ -58,6 +68,7 @@ Core\HostBridgeMenu.lua
 Core\ProfileIO.lua
 Core\InstallerLayout.lua
 Core\Profiles.lua
+Core\ProfileWorkbenchBridge.lua
 Core\ProfileVariants.lua
 Core\ModernDarkMinimap.lua
 Core\InstallerProfiles.lua
@@ -68,6 +79,12 @@ Core\InstallerScreenshot.lua
 Core\InstallerPreviewModel.lua
 Core\InstallerPreview.lua
 Core\Installer.lua
+Core\Macros\Model.lua
+Core\Macros\Compile.lua
+Core\Macros\Templates.lua
+Core\Macros\Native.lua
+Core\Macros\Store.lua
 Core\Menu.lua
 Core\API.lua
+Core\PlannerCommand.lua
 Core\Startup.lua

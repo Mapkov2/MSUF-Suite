@@ -64,12 +64,38 @@ local function SyncCVar(self, key, enabled, value)
     end
 end
 
-local function ReleaseChatFade(self)
-    if not self.chatFadePrior then return end
-    for frame, previous in pairs(self.chatFadePrior) do
-        if frame:GetFading() == false and previous then frame:SetFading(true) end
+-- Native chat fading has a second owner, the Chat module's "Fade individual
+-- messages". MSUF_Suite_Chat/Appearance.lua keeps one record per chat frame
+-- in S.chatFading (the frame's native value, each owner's hold) and settles
+-- it through S.HoldChatFading. That addon loads on its own; until it does,
+-- nothing else holds the frames and this keeps the same record directly.
+local fading = S.chatFading or setmetatable({}, { __mode = "k" })
+S.chatFading = fading
+
+-- Keeps the frame's messages visible (keep true) or lets go of it (nil).
+local function KeepVisible(frame, keep)
+    local hold = S.HoldChatFading
+    if hold then return hold(frame, "keep", keep) end
+    local record = fading[frame]
+    local current = frame:GetFading()
+    if not S.Public(current) then return end
+    if keep then
+        if not record then
+            record = { native = current }
+            fading[frame] = record
+        end
+        record.keep, record.applied = true, false
+        if current then frame:SetFading(false) end
+    elseif record then
+        fading[frame] = nil
+        if current == false and record.native then frame:SetFading(true) end
     end
-    self.chatFadePrior = nil
+end
+
+local function ReleaseChatFade()
+    for frame, record in pairs(fading) do
+        if record.keep then KeepVisible(frame, nil) end
+    end
 end
 
 local SyncChatFade
@@ -81,20 +107,16 @@ end
 -- opens further windows through these two functions, called by name.
 SyncChatFade = function(self)
     if not self.config.noChatFade then
-        ReleaseChatFade(self)
+        ReleaseChatFade()
         self.context:RemoveEvent("UPDATE_CHAT_WINDOWS")
         self.context:RemoveEvent("UPDATE_FLOATING_CHAT_WINDOWS")
         return
     end
-    self.chatFadePrior = self.chatFadePrior or setmetatable({}, { __mode = "k" })
     local count = 0
     for _, name in pairs(CHAT_FRAMES) do
         if count >= CHAT_LIMIT then break end
         count = count + 1
-        local frame = _G[name]
-        local current = frame:GetFading()
-        if self.chatFadePrior[frame] == nil then self.chatFadePrior[frame] = current end
-        if current then frame:SetFading(false) end
+        KeepVisible(_G[name], true)
     end
     self.context:Event("UPDATE_CHAT_WINDOWS", ChatWindowsChanged)
     self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", ChatWindowsChanged)
@@ -260,7 +282,7 @@ function M:Refresh() Sync(self) end
 function M:Disable()
     S.CloseCharacterFor(self)
     if self.auctionHint then self.auctionHint:Hide() end
-    ReleaseChatFade(self)
+    ReleaseChatFade()
     self.appliedCVars = nil
     if self.screenshotWasRegistered then ActionStatus:RegisterEvent("SCREENSHOT_SUCCEEDED") end
     self.screenshotWasRegistered = nil

@@ -7,6 +7,8 @@ B.Module("selfCombatText", {
     description = "Movable incoming damage and healing with native animations.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     editElement = "text", cvars = { enableFloatingCombatText = true },
+    -- Each of these owns the same floating combat text and its CVar.
+    conflicts = { "MikScrollingBattleText", "Parrot", "xCT+" },
     available = function()
         local api = C_CombatText
         if type(api) ~= "table" or type(api.GetCurrentEventInfo) ~= "function"

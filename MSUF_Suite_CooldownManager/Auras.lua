@@ -119,8 +119,10 @@ local function Collect(plan, unit, over, view)
                 if limit and steady >= limit then break end
                 if not Hides(entry, view) then steady = steady + 1 end
                 if entry.family == FAMILY.COOLDOWN and entry.hasAura and entry.src ~= "p" and OnUnit(entry, unit) then
-                    ok = (entry.ov or EMPTY).showAura
-                    if ok == nil then ok = view.showAura == true end
+                    local ov = entry.ov or EMPTY
+                    -- An item's use buff (itemAura) shows like a spell's buff.
+                    ok = ov.showAura
+                    if ok == nil then ok = view.showAura == true or ov.itemAura == true end
                 end
             end
         elseif entry.src ~= "p" and OnUnit(entry, unit) then
@@ -152,12 +154,18 @@ end
 -- What a bar's entries ask of its buttons (need, read by Ensure): countdown
 -- regions (the bar shows the countdown or a spell asks for it), a glow while
 -- active, a stack glow, the pandemic window (aura bars and overlays), a
--- sensor for kit sounds (aura bars only).
+-- sensor for kit sounds (aura bars only), Pixel or Autocast lines (a
+-- spell's own glow style).
+local LINE_STYLES = K.LINE_STYLES
 local function Needs(entries, aura, view)
-    need.glow, need.stack, need.kit, need.pandemic = false, false, false, false
+    need.glow, need.stack, need.kit, need.pandemic, need.lines = false, false, false, false, false
     need.text = K.BarTime(view)
     need.timers = ""
     local isKit = C.Alerts.IsKit
+    -- Border, fill or name (AuraLooks.lua): asked only while a choice of any
+    -- specialization uses one (C.lookChoices, Settings.DecodeData).
+    local looks = C.lookChoices
+    need.looks, need.label = false, false
     for i = 1, #entries do
         local entry = entries[i]
         if aura and entry.timer and C.AuraTimers.Wants(entry, view) then need.timers = need.timers .. i .. ":" end
@@ -167,12 +175,19 @@ local function Needs(entries, aura, view)
             local n = ov.stackGlow
             if type(n) == "number" and n >= 1 then need.stack = true end
             if ov.pandemic == true then need.pandemic = true end
+            if LINE_STYLES[ov.glowStyle] then need.lines = true end
+            -- A bar's own name needs its string (a region set: need.timers).
+            if looks and (ov.activeBorder or ov.barColor or ov.barText) then
+                need.looks = true
+                if aura and ov.barText and ov.barText ~= "" then need.label = true end
+            end
             if aura then
                 if ov.auraGlow == true then need.glow = true end
                 if isKit(ov.sound) or isKit(ov.lossSound) then need.kit = true end
             end
         end
     end
+    if need.label then need.timers = need.timers .. "L" end
 end
 
 local function Run(slot, fam, unit, role, fixed, view, n, force, offset, split)

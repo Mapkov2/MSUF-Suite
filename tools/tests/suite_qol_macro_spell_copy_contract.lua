@@ -2,9 +2,6 @@ local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local modules, widgets, notices, reported = {}, {}, {}, {}
 local combat = false
-local accountCount, characterCount = 0, 0
-local storedMacros = {}
-local created = 0
 
 local function Widget(kind, parent)
     local widget = { kind = kind, parent = parent, shown = false, scripts = {} }
@@ -69,25 +66,9 @@ Support.QoLStyleFixture(root, S)
 Enum = { TooltipDataType = { Spell = 4 } }
 local tooltips = Support.TooltipFixture(root, S, NS)
 local function spellPostCall(tooltip, data) tooltips.Run(4, tooltip, data) end
-Constants = { MacroConsts = { MAX_ACCOUNT_MACROS = 120, MAX_CHARACTER_MACROS = 30 } }
-C_Spell = { GetSpellInfo = function(value)
-    if value == 123 or value == "Heal" then return { name = "Heal" } end
-    if value == "Injected" then return { name = "Heal; /run print(1)" } end
-end }
-GetNumMacros = function() return accountCount, characterCount end
-GetMacroInfo = function(index) return storedMacros[index] end
-CreateMacro = function(name, icon, body, isCharacter)
-    assert(icon == 134400 and isCharacter == true and body:find("^#showtooltip\n/cast"))
-    created = created + 1
-    characterCount = characterCount + 1
-    storedMacros[120 + characterCount] = name
-    return 120 + characterCount
-end
-
 local P = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SlashCommands.lua"))("QoL", P)
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipSpellCopy.lua"))("QoL", P)
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/MacroBuilder.lua"))("QoL", P)
 
 local copy = assert(modules.tooltipSpellCopy)
 local events = {}
@@ -112,60 +93,4 @@ assert(not SlashCmdList.MSUFSUITECOPYSPELL and not copy.dialog.shown
     and copy.dialog.edit.text == "", "spell copy retained state when disabled")
 assert(not slash.Type("/msufcopyspell 123"), "the disabled spell copy kept its typed command")
 
-local macro = assert(modules.macroBuilder)
-macro.active = true
-macro:Enable()
-assert(SLASH_MSUFSUITEMACROBUILDER1 == "/msufmacro" and created == 0,
-    "macro builder created a macro before a click")
-assert(slash.Type("/msufmacro"))
-local panel = assert(macro.panel)
-assert(panel.shown and panel.preview.multiline and panel.name.maxLetters == 16)
-panel.spell:SetText("123")
-local function Click(caption)
-    for i = 1, #widgets do
-        local widget = widgets[i]
-        if widget.kind == "FontString" and widget.text == caption
-            and widget.parent and widget.parent.scripts.OnClick then
-            widget.parent.scripts.OnClick(widget.parent)
-            return
-        end
-    end
-    error("button not found: " .. caption)
-end
-Click("Preview")
-assert(panel.preview.text:find("%[@mouseover,help,nodead%]") and created == 0,
-    "preview did not build a safe mouseover macro")
-Click("Create character macro")
-assert(created == 1 and storedMacros[121] == "MSUF Mouseover", "explicit creation failed")
-Click("Create character macro")
-assert(created == 1 and panel.status.text == "That macro name already exists",
-    "duplicate macro name created another macro")
-panel.name:SetText("Another macro")
-combat = true
-Click("Create character macro")
-assert(created == 1 and panel.status.text == "Create macros after combat",
-    "macro creation ran in combat")
-combat = false
-characterCount = 30
-Click("Create character macro")
-assert(created == 1 and panel.status.text == "Character macro slots are full",
-    "full character macro storage was ignored")
-characterCount = 1
-panel.spell:SetText("Injected")
-Click("Create character macro")
-assert(created == 1 and panel.preview.text == "", "spell name injected macro syntax")
--- A client refusal is reported to the error handler, never swallowed.
-local nativeCreate = CreateMacro
-CreateMacro = function() error("macro storage refused") end
-panel.spell:SetText("123")
-panel.name:SetText("Refused macro")
-Click("Create character macro")
-assert(panel.status.text == "WoW could not create the macro" and #reported == 1
-    and reported[1]:find("macro storage refused", 1, true), "a CreateMacro error was swallowed")
-CreateMacro = nativeCreate
-macro.active = false
-macro:Disable()
-assert(not SlashCmdList.MSUFSUITEMACROBUILDER and not panel.shown,
-    "macro builder retained the command or window on disable")
-assert(not slash.Type("/msufmacro"), "the disabled macro builder kept its typed command")
-print("Suite spell copy and manual macro builder lifecycle passed")
+print("Suite spell copy lifecycle passed; macro workshop has dedicated contracts")

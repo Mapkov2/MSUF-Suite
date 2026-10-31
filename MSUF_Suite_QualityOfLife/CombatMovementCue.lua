@@ -3,7 +3,7 @@ local NS, S = P.NS, P.Suite
 local IN_COMBAT = { inCombat = true }
 local M = {}
 local ID = "combatMovementCue"
-local MAX_IDS, THROTTLE, CHECK_INTERVAL, SHOW_SECONDS = 8, 20, 1, 2.5
+local MAX_IDS, THROTTLE, CHECK_INTERVAL = 8, 20, 1
 local QUESTION = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 local function ParseIDs(raw)
@@ -89,7 +89,8 @@ local function Show(self, name, icon, now)
     self.icon:SetTexture(icon or QUESTION)
     self.label:SetText(string.format(S.Text("%s ready for movement"), name))
     self.host:Show()
-    self.context:After(SHOW_SECONDS, HideCue)
+    if self.config.sound then S.QoLWarningSound() end
+    self.context:After(self.config.duration, HideCue)
 end
 
 local function StartedMoving(self)

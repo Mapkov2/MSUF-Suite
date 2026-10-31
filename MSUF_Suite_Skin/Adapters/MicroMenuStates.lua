@@ -270,6 +270,18 @@ local function ApplySurface(target, role, background, border, settings, isBar,
     return true
 end
 
+-- Seed before the first owned reparent, then keep the structural regions.
+-- A warm full pass still discovers native text added or recolored since the
+-- last pass, but does not paint and restore an unused temporary plate.
+function States.SeedButtonSurface(button, settings)
+    if NS.Registry.GetSurface(button) then
+        if not NS.Safety.CanCreateRegions(button, true) then return false end
+        NS.BlizzardYellow.TrackFrame(button)
+        return true
+    end
+    return ApplySurface(button, "microButton", true, settings.buttonBorder, settings, false, true)
+end
+
 -- True while target still shows the plate our last full pass attached. The
 -- plate does not depend on the button state, so a state hook keeps it.
 local function ShowsAppliedPlate(target)

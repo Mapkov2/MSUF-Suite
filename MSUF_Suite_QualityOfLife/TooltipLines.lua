@@ -68,8 +68,21 @@ function Lines.Line(tooltip, label, value, r, g, b)
         r or VALUE_R, g or VALUE_G, b or VALUE_B)
 end
 
--- The unit token of a unit tooltip and the text of its name line, read from
--- the UnitName line Blizzard added first (never rebuilt from GUIDs).
+-- The spell icon file ID line, which two options offer: Tooltip IDs (Alt held)
+-- and Tooltip details. A tooltip build gets it once, from whichever reaches it
+-- first; r, g, b color the value of the one that prints.
+local iconBuild
+function Lines.SpellIcon(tooltip, data, r, g, b)
+    if data == iconBuild or not S.Finite(data.id) then return end
+    local icon = C_Spell.GetSpellTexture(data.id)
+    if not S.Finite(icon) or icon < 1 then return end
+    iconBuild = data
+    Lines.Line(tooltip, "Spell icon ID", tostring(math.floor(icon)), r, g, b)
+end
+
+-- The unit token of a unit tooltip, the tooltip text of its name line and the
+-- data of that line, read from the UnitName line Blizzard added first (never
+-- rebuilt from GUIDs).
 function Lines.UnitName(data)
     local lines = data.lines
     if not S.Public(lines) or type(lines) ~= "table" or not canaccesstable(lines) then return end
@@ -79,5 +92,5 @@ function Lines.UnitName(data)
     local unit = S.PublicText(line.unitToken)
     if not unit then return end
     local index = line.lineIndex
-    return unit, S.Public(index) and index == 1 and GameTooltipTextLeft1 or nil
+    return unit, S.Public(index) and index == 1 and GameTooltipTextLeft1 or nil, line
 end

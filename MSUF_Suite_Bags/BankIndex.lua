@@ -36,6 +36,7 @@ local function ReadTab(index, tab, bankType)
         local info, quest, version = Slots.Get(id, slot)
         local item = Index.ReadButton(index, key, info, quest, version, id, slot, bankType)
         item.bagName = container.name
+        if not item.itemID then index.free = index.free + 1 end
     end
     for slot = #container.slots, size + 1, -1 do container.slots[slot] = nil end
     container.size = size
@@ -51,7 +52,7 @@ end
 function Bank.Read(index, mode)
     for i = #index.items, 1, -1 do index.items[i] = nil end
     for i = #index.tabs, 1, -1 do index.tabs[i] = nil end
-    index.filtered = 0
+    index.filtered, index.free = 0, 0
     local both = mode == BANK_VIEW.CATEGORIES
     if both or mode == BANK_VIEW.CHARACTER then ReadType(index, Enum.BankType.Character) end
     if both or mode == BANK_VIEW.WARBANK then ReadType(index, Enum.BankType.Account) end

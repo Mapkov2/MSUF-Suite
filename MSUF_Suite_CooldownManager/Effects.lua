@@ -2,11 +2,12 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
 -- Glows, usable/range tint and the assisted-combat overlay. Glows are C
--- animations (flipbooks, alpha bounce) started and stopped only on edges;
--- nothing is animated from Lua. Glow reasons (proc, ready, aura) share one
--- glow per icon; the assist suggestion has its own ants overlay. Range
--- checks are reference counted per spell so shared spells stay enabled
--- until their last icon lets go.
+-- animations (flipbooks, alpha bounce, the Pixel and Autocast lines'
+-- translations) started and stopped only on edges; nothing is animated
+-- from Lua. Glow reasons (proc, ready, aura) share one glow per icon; the
+-- assist suggestion has its own ants overlay (the standalone assisted icon
+-- is AssistIcon.lua's). Range checks are reference counted per spell so
+-- shared spells stay enabled until their last icon lets go.
 local K = C.Const
 local KIND = K.KIND
 local USABLE = S.USABLE
@@ -16,6 +17,8 @@ C.Effects = Effects
 local Public = S.Public
 local issecret = _G.issecretvalue
 local EMPTY = C.EMPTY
+-- Pixel and Autocast (GlowLines.lua loads first).
+local Lines = C.GlowLines
 local IsUsable = C_Spell.IsSpellUsable
 local InRange = C_Spell.IsSpellInRange
 local function EnableRangeCheck(spell, enabled) S.SetNativeSpellRange("cooldownManager", spell, enabled) end
@@ -26,98 +29,8 @@ local ranged = {}
 local fxIcons = {}
 local REASONS = { proc = "gProc", ready = "gReady", aura = "gAura" }
 local assistSpell
-local recommendation
-function Effects.RecommendationFrame() return recommendation end
-function Effects.RecommendationGCD()
-    local frame = recommendation
-    if not frame or not frame:IsShown() then return end
-    if not C.state.assistIconGCD then
-        frame.cd:Clear()
-        return
-    end
-    local duration = C_Spell.GetSpellCooldownDuration(K.GCD_SPELL)
-    if duration then frame.cd:SetCooldownFromDurationObject(duration, true) else frame.cd:Clear() end
-end
-local function NewRecommendation()
-    local frame = S.CreateFrame("Frame", nil, UIParent)
-    frame:EnableMouse(false)
-    frame.tex = S.CreateTexture(frame, nil, "ARTWORK")
-    frame.tex:SetAllPoints(frame)
-    frame.tex:SetTexCoord(.08, .92, .08, .92)
-    frame.cd = S.CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
-    frame.cd:SetAllPoints(frame)
-    frame.cd:SetHideCountdownNumbers(true)
-    frame.cd:SetDrawEdge(false)
-    frame.cd:SetDrawBling(false)
-    frame.over = S.CreateFrame("Frame", nil, frame)
-    frame.over:SetAllPoints(frame)
-    frame.over:SetFrameLevel(frame.cd:GetFrameLevel() + 1)
-    frame.key = S.CreateFontString(frame.over, nil, "OVERLAY")
-    frame.key:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -3, 3)
-    frame.badge = S.CreateTexture(frame.over, nil, "BACKGROUND")
-    frame.badge:SetPoint("TOPLEFT", frame.key, "TOPLEFT", -2, 2)
-    frame.badge:SetPoint("BOTTOMRIGHT", frame.key, "BOTTOMRIGHT", 2, -2)
-    frame.badge:SetColorTexture(0, 0, 0, .85)
-    return frame
-end
--- A new suggestion arrives up to five times a second in combat: the frame
--- writes only what changed (shown state, size, place, texture, font and
--- key text, memoized on the frame). MSUF Edit Mode moves the frame itself,
--- so its place is written again on every call while Edit Mode runs.
-function Effects.Recommendation()
-    local state = C.state
-    local spell = assistSpell
-    local show = state.assistIcon == true and (spell ~= nil or state.preview == true)
-    local frame = recommendation
-    if not frame and not show then return end
-    if not frame then
-        frame = NewRecommendation()
-        recommendation = frame
-    end
-    local edge = frame.layShown ~= show
-    if edge then
-        frame.layShown = show
-        frame:SetShown(show)
-    end
-    if not show then
-        if edge then frame.cd:Clear() end
-        return
-    end
-    local size = state.assistIconSize or 48
-    local x, y = state.assistIconX or 0, state.assistIconY or -180
-    if frame.laySize ~= size then
-        frame.laySize = size
-        frame:SetSize(size, size)
-    end
-    if frame.layX ~= x or frame.layY ~= y or S.editMode then
-        frame.layX, frame.layY = x, y
-        frame:ClearAllPoints()
-        frame:SetPoint("CENTER", UIParent, "CENTER", x, y)
-    end
-    local texture = spell and C_Spell.GetSpellTexture(spell) or K.QUESTION_ICON
-    if frame.layTexture ~= texture then
-        frame.layTexture = texture
-        frame.tex:SetTexture(texture)
-    end
-    local fontSize = K.TextSize(nil, K.FONT.keybind, size)
-    if frame.layFontSize ~= fontSize or frame.layText ~= state.textGen then
-        frame.layFontSize, frame.layText = fontSize, state.textGen
-        S.SetStyledFont(frame.key, state.font, fontSize, state.fontFlags,
-            state.fontRendering, state.fontShadow, state.fontShadowOpacity, state.fontShadowDistance)
-    end
-    local key = state.assistIconKeybind and spell and C.Keybinds.Text(spell) or ""
-    if frame.layKey ~= key then
-        frame.layKey = key
-        frame.key:SetText(key)
-        frame.badge:SetShown(key ~= "")
-    end
-    -- The GCD swipe follows its own events while shown; it is read here
-    -- when the frame appears or the GCD option changed.
-    if edge or frame.layGCD ~= state.assistIconGCD then
-        frame.layGCD = state.assistIconGCD
-        Effects.RecommendationGCD()
-    end
-end
+-- The assisted icon (AssistIcon.lua) reads the suggestion.
+function Effects.AssistSpell() return assistSpell end
 -- The press flash: a white overlay over the icon texture that fades out,
 -- made at the first press (Effects.Press, Suite main's code) or, for a shaped
 -- icon, by its decoration out of combat, so the shape's mask takes it then
@@ -218,11 +131,14 @@ end
 
 -- The painted look (atlas or edges, size, tint) stays on the glow frame
 -- while it is hidden: showing the same look again only shows and plays.
+-- Pixel and Autocast paint their lines (GlowLines.PaintIcon).
 local function PaintPlain(glow, icon, spec, style, r, g, b, w, h)
+    if spec.lines then return Lines.PaintIcon(glow, icon, spec, r, g, b, w, h) end
     local px = K.Px()
     if glow.pStyle == style and glow.pR == r and glow.pG == g and glow.pB == b and glow.pW == w and glow.pH == h and glow.pPx == px then return end
     glow.pStyle, glow.pR, glow.pG, glow.pB, glow.pW, glow.pH, glow.pPx = style, r, g, b, w, h, px
     local flip, edges = glow.flip, glow.edges
+    if glow.linesOn then Lines.Off(glow) end
     if spec.atlas then
         flip:SetAtlas(spec.atlas)
         flip:SetSize(w * spec.scale, h * spec.scale)
@@ -274,6 +190,7 @@ local function PaintShaped(glow, icon, spec, style, r, g, b, w, h)
         and glow.rShape == shape then return end
     glow.rStyle, glow.rR, glow.rG, glow.rB, glow.rPx, glow.rShape = style, r, g, b, px, shape
     glow.pStyle = nil
+    if glow.linesOn then Lines.Off(glow) end
     K.PlaceEdges(glow.edges, icon, 0)
     glow.edgesOn = false
     if glow.flipOn then
@@ -309,7 +226,7 @@ local function ShowGlow(icon, style, r, g, b)
     local spec = K.GLOW[style]
     local w, h = icon.w or icon:GetWidth(), icon.h or icon:GetHeight()
     Paint(glow, icon, spec, style, r, g, b, w, h)
-    local anim = (spec.atlas and glow.flipAnim) or (spec.pulse and glow.pulse) or nil
+    local anim = (spec.atlas and glow.flipAnim) or (glow.linesOn and glow.lines) or (spec.pulse and glow.pulse) or nil
     if anim then anim:Play() end
     glow.anim = anim
     glow:Show()
@@ -349,11 +266,13 @@ function Effects.SetGlow(icon, reason, on)
     end
 end
 
--- A running glow follows style, color and size changes (cold path).
+-- A running glow follows style, color and size changes and its bar's
+-- Pixel or Autocast lines (cold path).
 local function Restyle(icon, entry, view)
     if icon.gStyle == nil then return end
     local style, r, g, b = GlowSpec(entry, view)
-    if style == icon.gStyle and r == icon.gR and g == icon.gG and b == icon.gB and icon.gW == icon.w and icon.gH == icon.h then return end
+    if style == icon.gStyle and r == icon.gR and g == icon.gG and b == icon.gB and icon.gW == icon.w and icon.gH == icon.h
+        and not (icon.glow.linesOn and Lines.Changed(icon.glow, view)) then return end
     HideGlow(icon)
     ShowGlow(icon, style, r, g, b)
 end
@@ -421,11 +340,13 @@ local Tint = Effects.Tint
 
 -- A ready glow that waits for enough resources (readyResources).
 local function NeedsResources(entry, view)
-    return view ~= nil and K.Pick(entry.ov or EMPTY, view, "readyResources")
+    if view == nil then return false end
+    local value = (entry.ov or EMPTY).readyResources
+    if value == nil then value = view.readyResources end
+    return value == true
 end
--- Whether a usability read of the entry can show: its icon is on a shown
--- bar and in range, or the read gates its ready glow. The usable broadcast
--- (Events) and the flush ask this before Effects.Usable.
+-- Event eligibility is unchanged while individual icons are hidden. Only
+-- the broadcast defers them; whole bars catch up through Visibility.Paint.
 function Effects.UsableShown(entry)
     if not entry.icon then return false end
     local bar = C.bars[entry.slot]
@@ -440,6 +361,7 @@ function Effects.Usable(entry, queries)
     local needResources = NeedsResources(entry, view)
     if entry.outOfRange and not needResources then return end
     local code = USABLE.USABLE
+    local previousResources = entry.resourcesAvailable
     entry.resourcesAvailable = nil
     if view and (view.usable or needResources) and entry.src ~= "p" then
         local usable, noPower, id, reader
@@ -477,7 +399,8 @@ function Effects.Usable(entry, queries)
     -- after a range or behavior change. All compared values are local codes.
     if icon and (icon.tint ~= code
         or icon.tintGen ~= (view and view.behaviorGen or 0)) then Tint(entry) end
-    if needResources then Effects.RefreshReady(entry) end
+    if needResources and (not queries or previousResources ~= entry.resourcesAvailable) then Effects.RefreshReady(entry) end
+    entry.usablePending = nil
 end
 
 ------------------------------------------------------------------ range
@@ -564,32 +487,105 @@ end
 -- Glow when ready / when all charges are ready, from a cooling and a
 -- full-charges state; the simulation (Preview.Glows) feeds its own.
 local function ReadyRule(ov, view, cooling, full)
-    return (K.Pick(ov, view, "readyGlow") and not cooling) or (K.Pick(ov, view, "fullChargeGlow") and full == true)
+    return (not cooling and K.Pick(ov, view, "readyGlow")) or (full == true and K.Pick(ov, view, "fullChargeGlow"))
 end
 Effects.ReadyRule = ReadyRule
 
 local function ReadyWanted(entry, view)
     local ov = entry.ov or EMPTY
-    if not ReadyRule(ov, view, entry.cooling, entry.fullyCharged) or entry.hidden then return false end
+    if entry.hidden or not ReadyRule(ov, view, entry.cooling, entry.fullyCharged) then return false end
     if K.Pick(ov, view, "readyResources") and entry.resourcesAvailable ~= true then return false end
     local state = C.state
     if state.readyGlowCombat and not state.inCombat and not state.preview then return false end
     return true
 end
 
+------------------------------------------------------------------ show conditions
+-- "Show only when usable" and "Show only during a spell alert" (per-spell,
+-- cooldown icons): entry.gated, which the time layer folds into
+-- entry.hidden (Time.Refresh, icon.gate). Usability comes from the usable
+-- sweep's shared answers (Index.gated, GateUsable below), the alert from
+-- the proc events; Time's curves seed both (SeedGate). A flip of the
+-- hidden state relayouts the bar like a hideReady edge; unchanged answers
+-- write nothing.
+local function Regate(entry)
+    local ov, icon = entry.ov or EMPTY, entry.icon
+    local gated = (ov.usableOnly == true and entry.unusable == true) or (ov.procOnly == true and entry.procOn ~= true)
+    if entry.gated == gated then return end
+    entry.gated = gated
+    if not (icon and icon.gate) then return end
+    local hidden = (not C.state.preview and ((icon.hideReady and not entry.cooling) or entry.empty or gated)) and true or false
+    if (entry.hidden == true) == hidden then return end
+    entry.hidden = hidden
+    C.Layout.Request(entry.slot)
+    Effects.RefreshReady(entry)
+end
+Effects.Regate = Regate
+-- One usability answer for the gate, also while the icon is hidden (it is
+-- what shows it again), also while its bar is hidden: from the flush's
+-- maps (queries: the usable sweep's spells and items) or, outside the
+-- sweep, the client. A secret answer shows the icon.
+function Effects.GateUsable(entry, queries)
+    if not entry.icon then return end
+    if queries then queries.used = true end
+    local id, reader
+    if entry.src == "i" then
+        id, reader, queries = entry.itemID or entry.id, IsUsableItem, queries and queries.items
+    else
+        local spell, category = entry.spell, entry.spellCategory
+        if category and category ~= 0 then spell = entry.catSpell end
+        id, reader, queries = spell, IsUsable, queries and queries.spells
+    end
+    if not id then return end
+    local usable
+    if queries and not issecret(id) then
+        if not queries.seen[id] then
+            local noPower
+            usable, noPower = reader(id)
+            queries.seen[id], queries.usable[id], queries.noPower[id] = true, usable, noPower
+        end
+        usable = queries.usable[id]
+    else
+        usable = reader(id)
+    end
+    entry.unusable = (not issecret(usable) and usable == false) or nil
+    Regate(entry)
+end
+
+-- The first answers of an entry's show conditions, or letting go of them:
+-- Time's curves ask when the entry's choices or bar behavior changed (cold).
+function Effects.SeedGate(entry, queries)
+    local ov, spell = entry.ov or EMPTY, entry.spell
+    if ov.procOnly and spell then
+        local shown = IsOverlayed(spell)
+        entry.procOn = (Public(shown) and shown) and true or false
+        if entry.procOn then procced[entry.key] = true end
+    end
+    if ov.usableOnly then return Effects.GateUsable(entry, queries) end
+    Regate(entry)
+end
+
 -- A simulated icon (icon.simFx, Preview.lua) keeps the simulation's glows.
 function Effects.Proc(entry, on)
     entry.procOn = on and true or false
     if on then procced[entry.key] = true end
+    if entry.ov.procOnly then Regate(entry) end
     local icon = entry.icon
     if not icon or icon.simFx then return end
     local view = C.views[entry.slot]
     Effects.SetGlow(icon, "proc", view and ProcWanted(entry, view) or false)
 end
 
--- Cold part of an update: runs when the icon, spell, choices or the bar's
--- behavior generation changed; seeds proc, range and usable state.
-local function Bind(entry, icon, view)
+-- Rebinds and show catch-up share the same synchronous query domain.
+local function SeedUsable(entry, queries)
+    if queries then
+        queries.used = true
+        queries = entry.src == "i" and queries.items or queries.spells
+    end
+    Effects.Usable(entry, queries)
+end
+-- Changed icon, spell, choices or bar behavior: bind proc, range and usable state.
+local function Bind(entry, icon, view, queries)
     icon.fxEntry, icon.fxOv, icon.fxGen, icon.fxSpell = entry, entry.ov, view.behaviorGen, entry.spell
     if entry.src == "p" then return end
     local spell = entry.spell
@@ -602,17 +598,19 @@ local function Bind(entry, icon, view)
     local assist = assistSpell
     entry.assistOn = assist ~= nil and (spell == assist or entry.base == assist or entry.override == assist)
     Effects.EnableRange(entry, view.range == true)
-    Effects.Usable(entry)
+    return SeedUsable(entry, queries)
 end
 
 -- Re-derives every effect of one entry from its flags and its bar.
-function Effects.Update(entry)
+function Effects.Update(entry, queries)
     local icon = entry.icon
     if not icon then return end
     local view = C.views[entry.slot]
     if not view then return end
     if icon.fxEntry ~= entry or icon.fxOv ~= entry.ov or icon.fxGen ~= view.behaviorGen or icon.fxSpell ~= entry.spell then
-        Bind(entry, icon, view)
+        Bind(entry, icon, view, queries)
+    elseif entry.usablePending and (not entry.hidden or C.state.preview) then
+        SeedUsable(entry, queries)
     end
     if icon.simFx then
         C.Preview.Glows(entry)
@@ -679,6 +677,9 @@ function Effects.CombatChanged(edge)
             gate:SetShown(allowed)
         end
     end
+    -- Missing buffs' glows (AuraPlaceholders.lua) follow the same gate.
+    local missing = C.MissingGlowGate
+    if missing then missing() end
     if edge and not C.state.readyGlowCombat then return end
     Walk(C.Index.ready, ReadyEntry)
 end
@@ -688,6 +689,7 @@ function Effects.Refit(icon)
     local entry = icon.entry
     local view = entry and C.views[entry.slot] or EMPTY
     Restyle(icon, entry, view)
+    if view.kickMark and icon.kickGlow then C.KickMark.Style(entry, view) end
     if icon.antsOn then SizeAnts(icon) end
 end
 
@@ -715,6 +717,16 @@ local function UnparkGlow(icon)
     icon.parkedGate = nil
     glow:SetFrameLevel(icon:GetFrameLevel() + K.LEVEL.glow)
     icon.glow, fxIcons[icon] = glow, true
+end
+
+-- Independent owned layers leave the shared combat walk while parked.
+function Effects.ParkOwnedGlow(icon)
+    if not icon.glow then return end
+    HideGlow(icon)
+    ParkGlow(icon, icon.glow)
+end
+function Effects.ResumeOwnedGlow(icon)
+    if icon.parkedGlow then UnparkGlow(icon) end
 end
 
 -- A shaped icon's new decoration (a new shape, pixel grid or look: Icons.lua's
@@ -755,6 +767,7 @@ end
 
 -- Stops every visual on a recycled icon; the next Update re-seeds.
 function Effects.ResetIcon(icon)
+    if icon.kickGlow then C.KickMark.Recycled(icon) end
     if icon.pressPulse then icon.pressPulse:Stop() end
     icon.gProc, icon.gReady, icon.gAura, icon.simFx = nil, nil, nil, nil
     HideGlow(icon)
@@ -779,11 +792,7 @@ function Effects.ReleaseAll()
     for icon in pairs(fxIcons) do Effects.ResetIcon(icon) end
     Walk(nil, ClearAssist)
     assistSpell = nil
-    if recommendation then
-        recommendation.layShown = false
-        recommendation:Hide()
-        recommendation.cd:Clear()
-    end
+    Effects.ReleaseRecommendation()
 end
 
 -- Diagnostics: range references currently held.

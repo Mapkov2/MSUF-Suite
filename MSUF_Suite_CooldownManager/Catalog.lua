@@ -8,6 +8,8 @@ local C = P.CDM
 -- HideByDefault, the saved global order, then per-cooldown category moves.
 -- Cold path only; allocation is fine here.
 local Public = S.Public
+-- The client's secret test (Platform.lua), called directly in Fetch.
+local issecret = NS.IsSecret
 local type, pairs, tonumber, select, floor = type, pairs, tonumber, select, math.floor
 local EMPTY = C.EMPTY
 local wipe = C.wipe
@@ -63,11 +65,6 @@ local function Num(v)
 end
 local function Flag(v) return Public(v) and v == true end
 Catalog.Num, Catalog.Flag = Num, Flag
-
-local function HiddenByDefault(flags)
-    if not (Public(flags) and type(flags) == "number") then return false end
-    return floor(flags / HIDE_BY_DEFAULT) % 2 == 1
-end
 
 local function SpellTexture(spell)
     if not spell then return nil end
@@ -268,20 +265,16 @@ local defaultBars = { ess = {}, uti = {}, buf = {}, bar = {} }
 local defaultSeen = {}
 local tailTmp, equipTmp = {}, {}
 local basePool = {}
-local changed = false
+local changed, orderChanged = false, false
+local built = {}
 
-local function Put(rec, field, value)
-    if rec[field] ~= value then
-        rec[field] = value
-        changed = true
-    end
-end
+-- True when the record's linked IDs were replaced (lists are never edited).
 local function CopyLinked(rec, list)
     local n = 0
     if type(list) == "table" then
         for i = 1, #list do
-            local id = Num(list[i])
-            if id then
+            local id = list[i]
+            if not issecret(id) and type(id) == "number" and id > 0 then
                 n = n + 1
                 linkedTmp[n] = id
             end
@@ -297,7 +290,7 @@ local function CopyLinked(rec, list)
                 break
             end
         end
-        if same then return end
+        if same then return false end
     end
     if n == 0 then
         rec.linked = EMPTY
@@ -306,35 +299,50 @@ local function CopyLinked(rec, list)
         for i = 1, n do copy[i] = linkedTmp[i] end
         rec.linked = copy
     end
-    changed = true
+    return true
 end
 
 -- One whitelisted record per cooldownID. The returned info table is read and
--- dropped; nothing of it is kept.
-local function Copy(id, info, category)
-    local records = Catalog.records
-    local rec = records[id]
-    if not rec then
-        rec = { id = id, key = "b" .. id }
-        records[id] = rec
-        changed = true
-    end
+-- dropped; nothing of it is kept. Returns whether a field moved and the
+-- record's default category. The readers (Num, Flag, HideByDefault) are
+-- inline: the 2026-10-28 M+ trace counted 1,700 helper calls per rebuild
+-- for 76 records, 1.1 of Fetch's 1.66 ms; the checks are the same.
+local function Copy(rec, info, category)
     local cat = info.category
-    if not (Public(cat) and type(cat) == "number") then cat = category end
-    local hidden = HiddenByDefault(info.flags)
+    if issecret(cat) or type(cat) ~= "number" then cat = category end
+    local flags = info.flags
+    local hidden = not issecret(flags) and type(flags) == "number" and floor(flags / HIDE_BY_DEFAULT) % 2 == 1
     local default = hidden and HIDDEN_OF[cat] or cat
-    Put(rec, "spell", Num(info.spellID))
-    Put(rec, "override", Num(info.overrideSpellID))
-    Put(rec, "tooltip", Num(info.overrideTooltipSpellID))
-    Put(rec, "equipSlot", Num(info.equipSlot))
-    Put(rec, "spellCategory", Num(info.spellCategoryID))
-    Put(rec, "selfAura", Flag(info.selfAura))
-    Put(rec, "hasAura", Flag(info.hasAura))
-    Put(rec, "charges", Flag(info.charges))
-    Put(rec, "known", Flag(info.isKnown))
-    Put(rec, "defaultCategory", default)
-    CopyLinked(rec, info.linkedSpellIDs)
-    eff[id] = default
+    local diff = CopyLinked(rec, info.linkedSpellIDs)
+    local v = info.spellID
+    v = not issecret(v) and type(v) == "number" and v > 0 and v or nil
+    if rec.spell ~= v then rec.spell, diff = v, true end
+    v = info.overrideSpellID
+    v = not issecret(v) and type(v) == "number" and v > 0 and v or nil
+    if rec.override ~= v then rec.override, diff = v, true end
+    v = info.overrideTooltipSpellID
+    v = not issecret(v) and type(v) == "number" and v > 0 and v or nil
+    if rec.tooltip ~= v then rec.tooltip, diff = v, true end
+    v = info.equipSlot
+    v = not issecret(v) and type(v) == "number" and v > 0 and v or nil
+    if rec.equipSlot ~= v then rec.equipSlot, diff = v, true end
+    v = info.spellCategoryID
+    v = not issecret(v) and type(v) == "number" and v > 0 and v or nil
+    if rec.spellCategory ~= v then rec.spellCategory, diff = v, true end
+    v = info.selfAura
+    v = not issecret(v) and v == true
+    if rec.selfAura ~= v then rec.selfAura, diff = v, true end
+    v = info.hasAura
+    v = not issecret(v) and v == true
+    if rec.hasAura ~= v then rec.hasAura, diff = v, true end
+    v = info.charges
+    v = not issecret(v) and v == true
+    if rec.charges ~= v then rec.charges, diff = v, true end
+    v = info.isKnown
+    v = not issecret(v) and v == true
+    if rec.known ~= v then rec.known, diff = v, true end
+    if rec.defaultCategory ~= default then rec.defaultCategory, diff = default, true end
+    return diff, default
 end
 
 local function Fetch()
@@ -342,26 +350,36 @@ local function Fetch()
     local getSet, getInfo = viewer.GetCooldownViewerCategorySet, viewer.GetCooldownViewerCooldownInfo
     -- Blizzard currently shows invisible entries (CDM_HIDE_INVISIBLE_ITEMS is false).
     local hideInvisible = CDM_HIDE_INVISIBLE_ITEMS == true
+    local records = Catalog.records
     local n = 0
     for c = 1, #CAT_ORDER do
         local category = CAT_ORDER[c]
         local ids = getSet(category, true)
-        if Public(ids) and type(ids) == "table" then
+        if not issecret(ids) and type(ids) == "table" then
             for j = 1, #ids do
-                local id = Num(ids[j])
+                local id = ids[j]
                 -- A cooldownID listed by two sets keeps its first position.
-                if id and not fetched[id] then
+                if not issecret(id) and type(id) == "number" and id > 0 and not fetched[id] then
                     local info = getInfo(id)
-                    if Public(info) and type(info) == "table" and not (hideInvisible and Flag(info.isInvisible)) then
-                        Copy(id, info, category)
-                        fetched[id] = true
+                    if not issecret(info) and type(info) == "table" and not (hideInvisible and Flag(info.isInvisible)) then
+                        local rec = records[id]
+                        if not rec then
+                            rec = { id = id, key = "b" .. id }
+                            records[id] = rec
+                            changed = true
+                        end
+                        local diff, default = Copy(rec, info, category)
+                        if diff then changed = true end
+                        fetched[id], eff[id] = true, default
                         n = n + 1
+                        if defaultOrder[n] ~= id then orderChanged = true end
                         defaultOrder[n] = id
                     end
                 end
             end
         end
     end
+    if #defaultOrder ~= n then orderChanged = true end
     for i = #defaultOrder, n + 1, -1 do defaultOrder[i] = nil end
     return n
 end
@@ -489,9 +507,10 @@ local function FillBars(records, order)
         local id = order[i]
         local rec = records[id]
         local cat = eff[id]
-        Put(rec, "category", cat)
-        Put(rec, "family", FAMILY_OF[cat] or FAMILY_OF[rec.defaultCategory])
-        Put(rec, "bar", BAR_OF[cat])
+        local family, bar = FAMILY_OF[cat] or FAMILY_OF[rec.defaultCategory], BAR_OF[cat]
+        if rec.category ~= cat or rec.family ~= family or rec.bar ~= bar then
+            rec.category, rec.family, rec.bar, changed = cat, family, bar, true
+        end
         -- Bars that hold an equipment slot, learned or not: a gear change
         -- there can add, remove or restyle an entry.
         if rec.equipSlot and rec.bar then equipTmp[rec.bar] = true end
@@ -530,17 +549,27 @@ local function CommitEquipBars()
     end
 end
 
-function Catalog.Rebuild()
-    if not Catalog.Ready() then return false end
-    changed = false
+-- The inputs every pass commits against, read when its records are written.
+local function Start()
+    local reusable = built.valid
+    built.valid = false
+    -- Keep changes copied before an interrupted pass until its retry commits.
+    if reusable then changed, orderChanged = false, false end
     local tag = SpecTag()
+    local guide = C.GuideProfiles[C.state.specID]
     -- Decode first: if the client rejects the string, nothing is half-built.
     local data = Decode(C_CooldownViewer.GetLayoutData())
-    local layout = ActiveLayout(data, tag)
     wipe(fetched)
     wipe(eff)
-    Fetch()
-    local order = ApplyLayout(layout)
+    return reusable, tag, guide, ActiveLayout(data, tag)
+end
+
+-- A combat pass (CatalogSlices.lua fills in the rest).
+local pass = { on = false, stale = false }
+Catalog.pass = pass
+
+------------------------------------------------------------------ commit
+local function Finish(reusable, tag, guide, layout)
     local records = Catalog.records
     for id, rec in pairs(records) do
         if not fetched[id] then
@@ -548,6 +577,16 @@ function Catalog.Rebuild()
             changed = true
         end
     end
+    -- Refresh every native record first: identical IDs do not prove equal
+    -- metadata. Reuse derived lists only after all inputs stayed unchanged.
+    -- An interrupted pass leaves valid false, so its retry cannot reuse them.
+    if reusable and not changed and not orderChanged and built.layout == layout
+        and Catalog.specTag == tag and built.guide == guide then
+        built.valid = true
+        Catalog.generation = Catalog.generation + 1
+        return false
+    end
+    local order = ApplyLayout(layout)
     for _, list in pairs(bars) do wipe(list) end
     for _, list in pairs(defaultBars) do wipe(list) end
     wipe(equipTmp)
@@ -564,8 +603,35 @@ function Catalog.Rebuild()
     end
     Catalog.generation = Catalog.generation + 1
     if changed then Catalog.content = Catalog.content + 1 end
+    built.layout, built.guide, built.valid = layout, guide, true
     return changed
 end
+
+-- Whether the catalog content changed. sliced (combat): one slice per call
+-- (Catalog.Slice, CatalogSlices.lua), nil until the pass lands; fresh: a
+-- catalog event since the last call. Every other caller reads everything
+-- now and drops a pass in progress.
+function Catalog.Rebuild(sliced, fresh)
+    if not Catalog.Ready() then return false end
+    if sliced and Catalog.Slice then
+        local landed, changedNow = Catalog.Slice(fresh)
+        if landed == nil then return nil end
+        if landed then return changedNow end
+    end
+    pass.on = false
+    local reusable, tag, guide, layout = Start()
+    Fetch()
+    return Finish(reusable, tag, guide, layout)
+end
+-- For the combat slices: the copy, the inputs, the scratch tables and the
+-- commit, which takes the slices' own change flags.
+Catalog.parts = { Copy = Copy, CopyLinked = CopyLinked, Start = Start, CAT_ORDER = CAT_ORDER, fetched = fetched, eff = eff,
+    defaultOrder = defaultOrder, issecret = issecret,
+    Finish = function(moved, reordered, ...)
+        if moved then changed = true end
+        if reordered then orderChanged = true end
+        return Finish(...)
+    end }
 
 ------------------------------------------------------------------ overrides
 -- COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED(base, override|nil). Runs in
@@ -590,6 +656,11 @@ local function Override(entry, base, override)
     end
 end
 function Catalog.OnOverride(base, override)
+    -- A combat pass or a staged resolve (CatalogSlices.lua, ResolveStages.lua)
+    -- may hold records or keys new to it, read before this event: any
+    -- override reads them again, whether or not a live one changes.
+    local stage = C.Resolve.stage
+    pass.stale, stage.stale = pass.on, stage.on
     base, override = Num(base), Num(override)
     if not base then return false end
     local recs = Catalog.byBase[base]

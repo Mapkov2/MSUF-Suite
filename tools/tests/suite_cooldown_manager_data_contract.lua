@@ -22,7 +22,7 @@ issecretvalue=IsSecret
 
 ------------------------------------------------------------------ static checks
 -- TOC order; Presets.lua is plain data plus one class lookup (CDM table only).
-local FILES={"Presets.lua","GuideProfiles.lua","Catalog.lua","EntryFill.lua","Resolve.lua","Index.lua"}
+local FILES={"Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua"}
 local HEADER,DATA_HEADER="local _, P = ...\nlocal NS, S = P.NS, P.Suite\nlocal C = P.CDM\n","local _, P = ...\nlocal C = P.CDM\n"
 for _,file in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..file
@@ -64,6 +64,7 @@ B.Module=function(mid,spec)
     return original(mid,spec)
 end
 assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite",NS)
+assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManagerData.lua"))("MSUF_Suite",NS)
 local CDM=NS.CDM
 
 ------------------------------------------------------------------ WoW world
@@ -191,7 +192,8 @@ local C=P.CDM
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/Const.lua"))("MSUF_Suite_CooldownManager",P)
 assert(loadfile(root.."/MSUF_Suite_CooldownManager/AuraTimers.lua"))("MSUF_Suite_CooldownManager",P)
 for _,file in ipairs(FILES) do
-    assert(loadfile(root.."/MSUF_Suite_CooldownManager/"..file))("MSUF_Suite_CooldownManager",P)
+    local override=file=="Catalog.lua" and os.getenv("SUITE_CDM_CATALOG_SOURCE")
+    assert(loadfile(override or root.."/MSUF_Suite_CooldownManager/"..file))("MSUF_Suite_CooldownManager",P)
 end
 local Catalog,Resolve,Index=C.Catalog,C.Resolve,C.Index
 -- Lua VM instructions of fn(...) with the GC stopped (deterministic for one
@@ -253,9 +255,11 @@ for _,v in ipairs({-1,100,2.5,0/0,math.huge,"3",true,{}}) do
     assert(not F.stackGlow(v) and not F.stackColorAt(v),"stack threshold "..tostring(v).." accepted")
 end
 assert(F.stackColor("ff5a3c") and F.stackColor("FFAA00"),"hex stack colors")
-for _,v in ipairs({"ff5a3","ff5a3c0","#ff5a3c","gg5a3c","",0xff5a3c,true}) do
+for _,v in ipairs({"ff5a3","ff5a3c0","#ff5a3c","gg5a3c",0xff5a3c,true}) do
     assert(not F.stackColor(v),"stack color "..tostring(v).." accepted")
 end
+-- "" is a specialization's explicit bar (default) color over a shared one.
+assert(F.stackColor("") and F.glowColor(""),"the explicit default color is refused")
 Same("stack color default",CDM.SPELL_DEFAULTS.stackColor,"ff5a3c")
 assert(F.stackColor(CDM.SPELL_DEFAULTS.stackColor),"the default is a valid value")
 -- Blizzard Cooldown Manager sounds are sound kits.
@@ -263,7 +267,8 @@ assert(F.sound("kit:8959") and F.lossSound("kit:8959") and not F.sound("kit:") a
 local cleanSpells=CDM.CleanSpells({e={
     a9101={stackGlow=3,stackColorAt=2,stackColor="3cff5a",glowStyle=2,glowColor="00ff00",auraGlow=true,sound="kit:8959"},
     a9102={stackGlow=100,stackColorAt=-1,stackColor="red",bogus=true},
-    b101={stackGlow=0,stackColorAt=1,stackColor="FF5A3C",glowStyle=5,glowColor="xyz"},
+    -- Styles 5 and 6 (Pixel, Autocast) are valid: 7 is the first unknown one.
+    b101={stackGlow=0,stackColorAt=1,stackColor="FF5A3C",glowStyle=7,glowColor="xyz"},
     d9103={stackGlow=2.5,readyGlow=true},
 }})
 local sp=cleanSpells.e.a9101
@@ -372,6 +377,107 @@ infos[101].spellID=1001
 local content=Catalog.content
 assert(Catalog.Rebuild()==false and Catalog.generation==gen+1,"unchanged rebuild still counts a generation")
 assert(Catalog.content==content,"an unchanged rebuild keeps the content generation (preset lists stay)")
+
+-- Full native refresh stays authoritative. Only derived lists may be reused.
+do
+    local originalGet=C_CooldownViewer.GetCooldownViewerCooldownInfo
+    local queries,failAt=0,nil
+    C_CooldownViewer.GetCooldownViewerCooldownInfo=function(id)
+        queries=queries+1
+        if id==failAt then error("catalog fixture interruption") end
+        return originalGet(id)
+    end
+    local derived={ApplyLayout=true,FillDefaults=true,FillBars=true,IndexBases=true,CommitEquipBars=true}
+    local function RebuildWork()
+        local calls=0
+        debug.sethook(function()
+            local info=debug.getinfo(2,"n")
+            if derived[info.name] then calls=calls+1 end
+        end,"c")
+        local changed=Catalog.Rebuild()
+        debug.sethook()
+        return changed,calls
+    end
+    local function Fresh(label)
+        local changed,calls=RebuildWork()
+        assert(calls==5,label.." did not rebuild every derived structure")
+        return changed
+    end
+    local settledGeneration,settledContent=Catalog.generation,Catalog.content
+    local changed,calls=RebuildWork()
+    assert(not changed and calls==0,"unchanged native data repeated derived catalog work")
+    assert(queries==17,"unchanged data skipped a required native info refresh")
+    assert(Catalog.generation==settledGeneration+1 and Catalog.content==settledContent,"reused catalog generation")
+    local unchangedCost=Cost(Catalog.Rebuild)
+    -- 2026-10-29 inline record readers (Copy): 8641 -> 6177 unchanged,
+    -- 11023 -> 8289 changed. Budgets +1%; native reads stay 17.
+    assert(unchangedCost<=6239,"unchanged catalog exceeded its reduced work budget")
+    -- Before: 10939 unchanged / 10945 changed with these API wrappers.
+    queries=0;infos[101].isKnown=false
+    local changedCost=Cost(Catalog.Rebuild)
+    assert(changedCost<=8371,"changed catalog exceeded its +1% work budget")
+    assert(queries==17,"changed data added or dropped native info reads")
+    infos[101].isKnown=true;Fresh("restore budget change")
+    print("CDM catalog VM: unchanged="..unchangedCost.." changed="..changedCost.."; native reads=17 each")
+
+    -- Same IDs/order/layout are insufficient: these fields can change alone.
+    for _,field in ipairs({"isKnown","charges","hasAura","selfAura"}) do
+        local before=infos[101][field]
+        infos[101][field]=not before
+        assert(Fresh(field),field.." change was lost")
+        infos[101][field]=before;Fresh("restore "..field)
+    end
+    infos[101].spellID=1003;Fresh("base spell")
+    assert(Catalog.byBase[1003][1]==recs[101] and not Catalog.byBase[1001],"base index stayed stale")
+    infos[101].spellID=1001;Fresh("restore base")
+    infos[101].linkedSpellIDs={1009};Fresh("linked spells")
+    assert(recs[101].linked[1]==1009,"linked spell update lost")
+    infos[101].linkedSpellIDs={};Fresh("restore links")
+    infos[101].overrideSpellID=1003;Fresh("override")
+    assert(recs[101].override==1003,"override update lost")
+    infos[101].overrideSpellID=nil;Fresh("restore override")
+    infos[701].equipSlot=14;Fresh("equipment slot")
+    assert(recs[701].equipSlot==14,"equipment slot update lost")
+    infos[701].equipSlot=13;Fresh("restore equipment slot")
+
+    sets[0][1],sets[0][2]=sets[0][2],sets[0][1]
+    Fresh("native order")
+    assert(Catalog.order[1]==102,"native order change lost")
+    sets[0][1],sets[0][2]=sets[0][2],sets[0][1];Fresh("restore order")
+    local removed=table.remove(sets[0])
+    Fresh("removal");assert(not recs[removed],"deleted record survived")
+    sets[0][#sets[0]+1]=removed;Fresh("addition");assert(recs[removed],"new record missing")
+
+    layouts.reuse={5,{[83]=1},{[83]={[1]={{102,101},{}}}}}
+    layoutBlob="1|reuse";Fresh("layout")
+    assert(Catalog.order[1]==102,"saved layout change lost")
+    layoutBlob="";Fresh("restore layout")
+    specIndex=2;Fresh("spec tag");assert(Catalog.specTag==82,"spec tag lost")
+    specIndex=3;Fresh("restore spec tag")
+    local oldSpec=C.state.specID
+    C.GuideProfiles[987654]={order={112,111},moves={}}
+    C.state.specID=987654;Fresh("guide")
+    assert(Catalog.defaultByBar.uti[1]=="b112","spec guide change lost")
+    C.state.specID=oldSpec;Fresh("restore guide");C.GuideProfiles[987654]=nil
+
+    -- A native error can follow a partial record update. The next refresh
+    -- sees equal fields but must still commit their derived structures.
+    local beforeFailure=Catalog.content
+    infos[101].spellID=1003;failAt=112
+    local ok,err=pcall(Catalog.Rebuild)
+    assert(not ok and tostring(err):find("catalog fixture interruption",1,true),"interruption fixture")
+    failAt=nil
+    assert(Fresh("retry after partial fetch") and Catalog.content==beforeFailure+1,
+        "retry lost the change signal needed by resolve and preset caches")
+    assert(Catalog.byBase[1003][1]==recs[101] and not Catalog.byBase[1001],"retry retained a stale base index")
+    infos[101].spellID=1001;Fresh("restore partial fetch")
+    changed,calls=RebuildWork()
+    assert(not changed and calls==0,"successful retry did not settle")
+    C_CooldownViewer.GetCooldownViewerCooldownInfo=originalGet
+    -- The pre-existing following checks compare against this content value.
+    content=Catalog.content
+end
+
 -- Invisible entries follow Blizzard's own switch.
 CDM_HIDE_INVISIBLE_ITEMS=true
 assert(Catalog.Rebuild()==true and recs[502]==nil and Keys(Catalog.byBar.ext)=="501")

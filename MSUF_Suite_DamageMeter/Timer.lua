@@ -23,34 +23,13 @@ function D.StyleTimer()
         return
     end
     if not frame then
-        frame = S.CreateFrame("Frame", nil, UIParent)
+        frame = D.NewTimer(UIParent)
         frame:SetClampedToScreen(true)
         frame:SetFrameStrata("HIGH")
-        frame.background = S.CreateTexture(frame, nil, "BACKGROUND")
-        frame.background:SetAllPoints(frame)
-        frame.edges = {}
-        for i = 1, 4 do frame.edges[i] = S.CreateTexture(frame, nil, "BORDER") end
-        frame.text = S.CreateFontString(frame, nil, "OVERLAY")
-        frame.text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-        frame:Hide()
         M.timerFrame = frame
     end
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", UIParent, "CENTER", c.timerX, c.timerY)
-    frame:SetSize(c.timerSize * (c.timerDecimals and 5.5 or 4), c.timerSize + 8)
-    local br, bg, bb = S.RGB(c.timerBackground)
-    frame.background:SetColorTexture(br, bg, bb, c.timerBackgroundAlpha / 100)
-    br, bg, bb = S.RGB(c.timerBorderColor)
-    S.PlaceEdges(frame.edges, frame, c.timerBorderSize, br, bg, bb, 1)
-    -- The text color is resolved here, not on every tick: the live color and,
-    -- with timerDesaturate, its gray for outside combat.
-    local r, g, b = S.RGB(c.timerTextColor)
-    frame.liveR, frame.liveG, frame.liveB = r, g, b
-    frame.dim = c.timerDesaturate and r * .299 + g * .587 + b * .114 or nil
-    D.FontStyle(frame.text, c.timerSize)
-    frame.text:ClearAllPoints()
-    frame.text:SetPoint("CENTER", frame, "CENTER", 0, M.style.baseline)
-    frame.textR, frame.textG, frame.textB = nil, nil, nil
+    D.AnchorTimer(frame, D.windows[c.timerWindow])
+    D.PaintTimerStyle(frame)
     M.timerSecond = false
     D.UpdateTimer()
 end
@@ -58,6 +37,10 @@ end
 function D.UpdateTimer(liveDuration, liveResolved)
     local frame, c = M.timerFrame, M.config
     if not frame or not c.combatTime or not c.timer then return end
+    if not D.TimerAnchorShown() then
+        frame:Hide()
+        return
+    end
     if M.sessionHidden and c.toggleTimer and not M.forced then
         frame:Hide()
         return

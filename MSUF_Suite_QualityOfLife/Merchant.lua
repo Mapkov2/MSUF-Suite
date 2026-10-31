@@ -42,6 +42,12 @@ local function SellJunk(self)
     if not Public(enabled) or enabled ~= true then return end
     local count = C_MerchantFrame.GetNumJunkItems()
     if not S.Finite(count) or count < 1 then return end
+    -- Native bulk selling cannot accept per-item exclusions. Never call it
+    -- when a protected or unreadable bag item may be among its candidates.
+    if S.InventoryProtection:HasProtectedJunk() then
+        NS.Print(S.Text("Automatic junk sale paused because a protected item is among your junk. Review items manually."))
+        return
+    end
     C_MerchantFrame.SellAllJunkItems()
     self.saleRequested = true
 end

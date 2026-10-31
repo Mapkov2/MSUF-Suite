@@ -8,7 +8,7 @@ See suite_inventory.md for extraction boundaries and evidence requirements.
 """
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 import contextlib
 from datetime import date
@@ -64,9 +64,10 @@ def extract(root, clients=CLIENTS):
     constants = {}
     # The locale pass is the longest and shares nothing with the others, so it
     # runs in its own process while the catalogs and the source pass finish.
-    with ProcessPoolExecutor(max_workers=1) as process, ThreadPoolExecutor(max_workers=len(clients)) as threads:
+    with ProcessPoolExecutor(max_workers=1) as process:
         english = process.submit(english_keys, root)
-        for rows in [job.result() for job in [threads.submit(catalog, root, client) for client in clients]]:
+        for client in clients:
+            rows = catalog(root, client)
             for category, *parts in rows:
                 if category == "constants":
                     constants[parts[0]] = parts[1]

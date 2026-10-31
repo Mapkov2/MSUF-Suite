@@ -12,8 +12,10 @@ local C = P.CDM
 local Layout = { dirty = {} }
 C.Layout = Layout
 local SLOTS = NS.CDM.SLOTS
+local SLOT_KEYS = {}
+for i = 1, #SLOTS do SLOT_KEYS[i] = SLOTS[i].key end
 local Public = S.Public
-local floor, ceil = math.floor, math.ceil
+local floor, ceil, max = math.floor, math.ceil, math.max
 local STRATA = C.Const.STRATA
 local AURA_KINDS = C.Const.AURA_KINDS
 local SIDE, ALIGN = C.Const.SIDE, C.Const.ALIGN
@@ -39,16 +41,16 @@ local SIDE_Y = { [BELOW] = -1, [ABOVE] = 1, [LEFT] = 0, [RIGHT] = 0 }
 -- Where a point sits on a rectangle: -1 left/bottom, 0 center, 1 right/top.
 local POINT_X = { TOP = 0, BOTTOM = 0, LEFT = -1, RIGHT = 1, TOPLEFT = -1, TOPRIGHT = 1, BOTTOMLEFT = -1, BOTTOMRIGHT = 1, CENTER = 0 }
 local POINT_Y = { TOP = 1, BOTTOM = -1, LEFT = 0, RIGHT = 0, TOPLEFT = 1, TOPRIGHT = 1, BOTTOMLEFT = -1, BOTTOMRIGHT = -1, CENTER = 0 }
-local FRAME_ANCHORS = NS.CDM.FRAME_ANCHORS
+-- The attach choices that sit on a frame: MSUF's player and target frames and
+-- "Other frame" (the bar's own frame name).
+local FRAME_ANCHORS = { [NS.CDM.OTHER_ANCHOR] = "other" }
+for index, unit in pairs(NS.CDM.FRAME_ANCHORS) do FRAME_ANCHORS[index] = unit end
 local UNIT_FRAME = { player = "MSUF_player", target = "MSUF_target", viewer = "EssentialCooldownViewer" }
+local Frames = C.Frames
 -- Bars MSUF may anchor to (Native.AnchorFrame); they carry an anchor frame.
 local ANCHORED = { ess = true, uti = true, buf = true }
 
 local function Round(value) return floor(value + .5) end
--- Bumped whenever a watched frame (MSUF's unit frames, Blizzard's Essential
--- bar) may have moved or the pixel scale changed: cached rectangles and bar
--- anchors older than this generation are read and written again.
-local frameGen = 0
 
 ------------------------------------------------------------------ pixel scale
 local px
@@ -64,7 +66,7 @@ function Layout.PixelScale()
 end
 function Layout.InvalidateScale()
     px = nil
-    frameGen = frameGen + 1
+    Frames.gen = Frames.gen + 1
     return Layout.PixelScale()
 end
 function Layout.Snap(value)
@@ -119,10 +121,13 @@ function Layout.EnsureBar(slot)
     return bar
 end
 
+-- True when the width changed.
 local function Size(region, w, h)
     if region.layW ~= w or region.layH ~= h then
+        local widened = region.layW ~= w
         region.layW, region.layH = w, h
         region:SetSize(w, h)
+        return widened
     end
 end
 
@@ -214,22 +219,15 @@ local function SetAnchor(bar, point, rel, relPoint, x, y)
     frame:SetPoint(point, rel, relPoint, x, y)
 end
 
------------------------------------------------------------------- MSUF unit frames
--- A bar attached to MSUF's player or target frame never anchors to it: that
--- frame is protected, and a bar in its anchor family could not reflow in
--- combat. The bar reads the frame's rectangle and sits against UIParent at
--- that spot instead. MSUF frames do not move in combat, so this is exact.
--- Two probes stretched from UIParent's corner to the frame's corners report
--- every move or resize through OnSizeChanged: no polling, no hooks. Between
--- two reports the rectangle is read once and kept, so relayouts of bars on
--- these frames make no geometry reads.
-local watched, probesPending, rects = {}, false, {}
-local function Num(v) return Public(v) and type(v) == "number" and v == v end
+------------------------------------------------------------------ frames
+-- A bar attached to MSUF's player or target frame, or to any other frame,
+-- never anchors to it (FrameAnchors.lua): it reads the frame's rectangle and
+-- sits against UIParent at that spot, and the frame's probes report its moves
+-- and resizes. MSUF frames do not move in combat, so this is exact.
 local function FollowsViewer(slot)
     return slot == "ess" and C.Native ~= nil and C.Native.FollowViewer()
 end
 local function FrameMoved()
-    frameGen = frameGen + 1
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
         local view = C.views[slot]
@@ -240,51 +238,16 @@ local function FrameMoved()
         end
     end
 end
-local function Probe(frame, relPoint)
-    local probe = S.CreateFrame("Frame", nil, UIParent)
-    probe:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
-    probe:SetPoint("TOPRIGHT", frame, relPoint, 0, 0)
-    probe:SetScript("OnSizeChanged", FrameMoved)
-    return probe
+Frames.OnMoved(FrameMoved)
+-- Rectangle of MSUF's frame for `unit`, of Blizzard's Essential bar for
+-- "viewer" or of the frame `view` names for "other", in UIParent units: left,
+-- bottom, right, top; nil when the frame is missing or unreadable (a missing
+-- named frame makes the bar wait for its add-on).
+local function Rect(unit, view)
+    if unit == "other" then return Frames.Rect(Frames.Named(view.anchorFrame, view.key)) end
+    return Frames.Rect(_G[UNIT_FRAME[unit]])
 end
--- Rectangle of MSUF's frame for `unit` (or Blizzard's Essential bar for
--- "viewer") in UIParent units: left, bottom, right, top; nil when the frame
--- is missing or unreadable. A watched frame's readable rectangle is kept
--- until its probes (or a scale change) bump frameGen; a frame without
--- probes yet (it appeared in combat) is read on every call.
-local function Rect(unit)
-    local frame = _G[UNIT_FRAME[unit]]
-    local kept = rects[unit]
-    if kept and kept.frame == frame and kept.gen == frameGen then return kept[1], kept[2], kept[3], kept[4] end
-    if type(frame) ~= "table" or NS.Safety.IsForbidden(frame) then return nil end
-    if watched[unit] ~= frame then
-        if NS.IsCombatLocked() then
-            probesPending = true
-        else
-            watched[unit] = frame
-            Probe(frame, "BOTTOMLEFT")
-            Probe(frame, "TOPRIGHT")
-        end
-    end
-    local left, bottom, width, height = frame:GetRect()
-    local scale, ui = frame:GetEffectiveScale(), UIParent:GetEffectiveScale()
-    if not (Num(left) and Num(bottom) and Num(width) and Num(height) and Num(scale) and Num(ui)) or ui <= 0 then
-        return nil
-    end
-    local k = scale / ui
-    local right, top = (left + width) * k, (bottom + height) * k
-    left, bottom = left * k, bottom * k
-    if watched[unit] == frame then
-        if not kept then
-            kept = {}
-            rects[unit] = kept
-        end
-        kept.frame, kept.gen = frame, frameGen
-        kept[1], kept[2], kept[3], kept[4] = left, bottom, right, top
-    end
-    return left, bottom, right, top
-end
-
+Layout.FrameRect = Rect
 -- MSUF's "follow the cooldown bars" toggle (foreign saved data, so every
 -- level is type-checked) and whether this MSUF knows our bars
 -- (MSUF_GetSuiteCooldownAnchor): then MSUF follows our Essential bar itself,
@@ -304,7 +267,8 @@ function Layout.FrameTarget(slot, from)
     local view = C.views[from or slot]
     local target = view and FRAME_ANCHORS[view.anchor]
     if not target then return nil end
-    if MSUFFollows() then
+    -- (Another frame hanging from our bars is refused by FrameAnchors.Named.)
+    if target ~= "other" and MSUFFollows() then
         local cursor = "ess"
         for _ = 1, #SLOTS do
             if cursor == slot or cursor == from then return nil end
@@ -382,7 +346,7 @@ local function Anchor(slot)
     end
     local target = Layout.FrameTarget(slot, standIn)
     local left, bottom, right, top
-    if target then left, bottom, right, top = Rect(target) end
+    if target then left, bottom, right, top = Rect(target, pv) end
     -- Blizzard's invisible Essential bar carries MSUF's frames: sit on it,
     -- growth edge on growth edge, centered (also for a bar standing in for
     -- a switched-off Essential bar: its x/y count from Blizzard's bar too).
@@ -406,12 +370,8 @@ local function Anchor(slot)
     end
 end
 
--- Combat end: watch the MSUF frames that appeared during combat.
-function Layout.CombatEnded()
-    if not probesPending then return end
-    probesPending = false
-    FrameMoved()
-end
+-- Combat end: watch the frames that appeared during combat.
+Layout.CombatEnded = Frames.CombatEnded
 
 -- Edit Mode drag preview: place the bar as if x/y were these values.
 function Layout.DragPlace(slot, x, y)
@@ -436,10 +396,12 @@ end
 
 local function Reanchor()
     local follow = (FollowsViewer("ess") and 1 or 0) + (MSUFFollows() and 2 or 0)
+    local frameGen = Frames.gen
     local stale = seenPx ~= px or seenFrames ~= frameGen or seenFollow ~= follow
     seenFrames, seenFollow = frameGen, follow
+    local views = C.views
     for i = 1, #SLOTS do
-        local view = C.views[SLOTS[i].key]
+        local view = views[SLOT_KEYS[i]]
         local gen = false
         if view then
             gen = view.layoutGen
@@ -454,7 +416,7 @@ local function Reanchor()
     end
     if not stale then return end
     seenPx = px
-    for i = 1, #SLOTS do Anchor(SLOTS[i].key) end
+    for i = 1, #SLOTS do Anchor(SLOT_KEYS[i]) end
 end
 
 ------------------------------------------------------------------ content
@@ -573,7 +535,7 @@ function Layout.FixedAuras(view, entries)
                 fixed = true
                 break
             end
-            if ov and ov.showMissing == true then
+            if ov and (ov.showMissing == true or ov.missingGlow == true) then
                 fixed = true
                 break
             end
@@ -742,6 +704,38 @@ function Layout.Hide(slot)
 end
 function Layout.HideAll()
     for i = 1, #SLOTS do Layout.Hide(SLOTS[i].key) end
+    Frames.Clear()
+end
+
+-- "Bar width 0" matches what the bar is attached to: its parent bar, or the
+-- frame it sits on (the width follows when that resizes, through the frame's
+-- probes). Attached to nothing readable it keeps its usual width. The view
+-- holds the result (Settings.MatchWidth).
+local function AttachWidth(slot)
+    local parent = Layout.Parent(slot)
+    if parent then
+        local bar = C.bars[parent]
+        return bar and bar.frame.layW
+    end
+    local _, off = Direct(slot)
+    local target = Layout.FrameTarget(slot, off)
+    if not target then return nil end
+    local left, _, right = Rect(target, C.views[off or slot])
+    return left and right - left
+end
+local function MatchWidth(slot, view)
+    local kind = view.kind
+    if not (kind == C.Const.KIND.AURA_BAR or kind == C.Const.KIND.COOLDOWN and view.cooldownDuration) then return end
+    local width = AttachWidth(slot)
+    C.Settings.MatchWidth(slot, width and max(px or Layout.PixelScale(), Layout.Snap(width)))
+end
+-- A bar's width changed: the bars that match it follow.
+local function WidthChanged(slot)
+    for i = 1, #SLOTS do
+        local other = SLOTS[i].key
+        local view = C.views[other]
+        if view and view.barW and other ~= slot and Layout.Parent(other) == slot then Layout.Request(other) end
+    end
 end
 
 function Layout.Apply(slot)
@@ -755,6 +749,7 @@ function Layout.Apply(slot)
         local restored = S.ApplyOwnedLayer(bar.frame, view.layer)
         if bar.auraHost then S.ApplyOwnedChildLayer(bar.auraHost, bar.frame, view.layer, 1, restored) end
         local width, height
+        if view.barW then MatchWidth(slot, view) end
         if AURA_KINDS[view.kind] then
             Host(bar)
             width, height = PlaceAuras(bar, view, plan)
@@ -762,7 +757,7 @@ function Layout.Apply(slot)
             width, height = PlaceIcons(bar, view, plan)
             HideCells(bar)
         end
-        Size(bar.frame, width, height)
+        if Size(bar.frame, width, height) then WidthChanged(slot) end
         Anchor(slot)
         if not bar.shown then
             bar.shown = true

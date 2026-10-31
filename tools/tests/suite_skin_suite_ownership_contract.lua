@@ -66,7 +66,7 @@ Check(not S.OwnsBlizzardSurface("staticPopups"),"disabled popup skin retained ow
 -- Start and stop order around a surface module; other modules never notify.
 Suite.Skin = { SurfacesChanged = function(phase) events[#events + 1] = "skin:" .. phase end }
 S.started = true
-S.NewContext = function() return { Release = function() end, RefreshOwnedSkins = function() end } end
+S.NewContext = function() return { Release = function() end } end
 S.RefreshEditMover = function() end
 S.UnregisterEditElements = function() end
 S.instances.bags = {

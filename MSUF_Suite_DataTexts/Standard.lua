@@ -4,6 +4,10 @@ local GoldLedger = P.GoldLedger
 local NO_VALUE = P.NO_VALUE
 local Finite, MoneyText = S.Finite, S.MoneyText
 local floor = math.floor
+local CLOCK = NS.DataTextClockSource
+-- The module's settings and the limits and format resolved from them, set by
+-- Standard.Configure before the places paint.
+local settings, fpsLimit, latencyLimit, durabilityLimit, coordinateFormat
 
 -- The built-in DataTexts: the shared data source each one reads, how often a
 -- sampled one refreshes, the events that change them, their labels and the
@@ -68,6 +72,35 @@ end
 -- and DataTexts (MSUF_Suite/Core/SessionGold.lua).
 local SessionBaseline = NS.SessionGoldBaseline
 
+-- 12-hour times use the client's own formats (TIME_TWELVEHOURAM and PM, as
+-- GameTime_GetFormattedTime does), which put the AM/PM word where the
+-- language does; seconds follow the minutes.
+local function TwelveHour(hour, minute, second)
+    local text = (hour < 12 and TIME_TWELVEHOURAM or TIME_TWELVEHOURPM):format(hour % 12 == 0 and 12 or hour % 12, minute)
+    if not second then return text end
+    return (text:gsub("%d+:%d%d", ("%%0:%02d"):format(second), 1))
+end
+
+-- The realm clock reads the shared game time (hour, minute); the local clock
+-- reads the computer's. Seconds are only read when they show.
+local function ClockText(hour, minute)
+    local c, second = settings, nil
+    if c.clockSource == CLOCK.LOCAL then
+        hour, minute = tonumber(date("%H")), tonumber(date("%M"))
+        second = c.clockSeconds and tonumber(date("%S")) or nil
+    elseif c.clockSeconds then
+        local stamp = S.ReadInfoSource("clockStamp")
+        second = Finite(stamp) and floor(stamp) % 60 or nil
+    end
+    if not (Finite(hour) and Finite(minute)) then return end
+    if c.clock24Hour == false then return TwelveHour(hour, minute, second) end
+    if second then return string.format("%02d:%02d:%02d", hour, minute, second) end
+    return string.format("%02d:%02d", hour, minute)
+end
+
+-- The coordinate format of each number of decimal places (0 to 3).
+local COORDINATE_FORMATS = { [0] = "%.0f, %.0f", "%.1f, %.1f", "%.2f, %.2f", "%.3f, %.3f" }
+
 -- Each formatter returns the display value (nil when unknown) and an
 -- optional "bad" severity from the raw values of its shared data source.
 local FORMATTERS = {
@@ -92,19 +125,19 @@ local FORMATTERS = {
         end
     end,
     durability = function(lowest)
-        if Finite(lowest) then return floor(lowest * 100 + .5) .. "%", lowest <= .2 and "bad" or nil end
+        if Finite(lowest) then
+            return floor(lowest * 100 + .5) .. "%", lowest <= durabilityLimit and "bad" or nil
+        end
     end,
-    clock = function(hour, minute)
-        if Finite(hour) and Finite(minute) then return string.format("%02d:%02d", hour, minute) end
-    end,
+    clock = ClockText,
     fps = function(rate)
-        if Finite(rate) then return tostring(floor(rate + .5)), rate < 30 and "bad" or nil end
+        if Finite(rate) then return tostring(floor(rate + .5)), rate < fpsLimit and "bad" or nil end
     end,
     latency = function(_, world)
-        if Finite(world) then return Milliseconds(world), world >= 200 and "bad" or nil end
+        if Finite(world) then return Milliseconds(world), world >= latencyLimit and "bad" or nil end
     end,
     coordinates = function(x, y)
-        if Finite(x) and Finite(y) then return string.format("%.1f, %.1f", x * 100, y * 100) end
+        if Finite(x) and Finite(y) then return string.format(coordinateFormat, x * 100, y * 100) end
     end,
     location = function(zone, subZone)
         if type(subZone) == "string" and subZone ~= "" then return subZone end
@@ -116,6 +149,14 @@ local FORMATTERS = {
         end
     end,
 }
+
+-- The module's settings (a new table on every profile change): the places
+-- read their clock format, warning limits and coordinate decimals from them.
+function Standard.Configure(config)
+    settings = config
+    fpsLimit, latencyLimit, durabilityLimit = config.fpsWarning, config.latencyWarning, config.durabilityWarning / 100
+    coordinateFormat = COORDINATE_FORMATS[config.coordinateDecimals] or COORDINATE_FORMATS[1]
+end
 
 -- Label, display value, severity and alternate value of a built-in source.
 function Standard.Format(key)
@@ -129,7 +170,7 @@ function Standard.Format(key)
         local _, world = S.ReadInfoSource("latency")
         if Finite(fps) and Finite(world) then
             return LABELS[key], floor(fps + .5) .. " / " .. Milliseconds(world),
-                (fps < 30 or world >= 200) and "bad" or nil
+                (fps < fpsLimit or world >= latencyLimit) and "bad" or nil
         end
         return LABELS[key], NO_VALUE
     end

@@ -10,6 +10,12 @@ local FRIEND_EVENTS = {
     "FRIENDLIST_UPDATE", "BN_FRIEND_LIST_SIZE_CHANGED", "BN_FRIEND_ACCOUNT_ONLINE",
     "BN_FRIEND_ACCOUNT_OFFLINE", "BN_CONNECTED", "BN_DISCONNECTED",
 }
+-- The addons that own the chat windows themselves: the module's conflicts in
+-- Core/Catalog/Chat.lua. One that loads late takes the module out of service.
+local CHAT_ADDONS = {
+    EllesmereUIChat = true, ElvUI = true, Glass = true, Glassy = true,
+    ["Prat-3.0"] = true, Chattynator = true, Chatter = true,
+}
 local ApplyWindow, ReleaseWindow, ColorTab, TabSelected = C.ApplyWindow, C.ReleaseWindow, C.ColorTab, C.TabSelected
 local KeepTabVisible = C.KeepTabVisible
 local PlaceSidebar, ReleaseNativeControls, UpdateFriendsCount = C.PlaceSidebar, C.ReleaseNativeControls, C.UpdateFriendsCount
@@ -84,7 +90,7 @@ end
 -- Other chat addons change the module's availability; Blizzard's quick join,
 -- chat and combat log addons add parts the windows restyle around.
 local function AddonLoaded(_, _, name)
-    if name == "EllesmereUIChat" or name == "ElvUI" or name == "Glass" or name == "Glassy" then S.Apply("chat") end
+    if CHAT_ADDONS[name] then S.Apply("chat") end
     if name == "Blizzard_QuickJoin" or name == "Blizzard_ChatFrame" or name == "Blizzard_CombatLog" then
         ApplyAll(M)
     end
@@ -161,9 +167,22 @@ function M:Disable()
     -- Faded alpha goes back before the context restores the tabs it owns.
     C.FadeDisable()
     C.BubblesDisable()
+    C.HistoryDisable()
     for _, visual in pairs(self.visuals) do ReleaseWindow(self, visual) end
     ReleaseNativeControls(self)
     HideCopyDialog(self.copyDialog)
+end
+
+-- The main window's position is the Suite's only while "Anchor the main chat
+-- window" is on (Window.lua ApplyPositionLock); otherwise Blizzard's Edit Mode
+-- layout owns it and there is nothing to move here.
+function M:RegisterMovers()
+    S.RegisterOwnedMover("chat", "window", {
+        label = "Chat window", order = 870,
+        getFrame = function() return ChatFrame1 end,
+        xKey = "windowX", yKey = "windowY", point = "BOTTOMLEFT",
+        isEnabled = function() return self.config.lockWindowPosition == true end,
+    })
 end
 
 S.Install("chat", M)

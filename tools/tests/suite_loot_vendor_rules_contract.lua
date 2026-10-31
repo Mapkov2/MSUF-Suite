@@ -21,8 +21,15 @@ bagSlots[0][4] = Item(200, "gear", 2)
 bagSlots[0][5] = Item(100, "box", 1, { hasLoot = true })
 bagSlots[0][6] = Item(100, "no-value", 1, { hasNoValue = true })
 bagSlots[1][1] = Item(100, "sale-two", 2)
+-- GetContainerItemPurchaseInfo by "bag:slot"; refund.all answers every slot.
+local refund = {}
+local function InRefundWindow(money) return { refundSeconds = 600, money = money, itemCount = 0, currencyCount = 0 } end
 
 C_Container = {
+    GetContainerItemPurchaseInfo = function(bag, slot, equipped)
+        assert(equipped == false, "bag items ask without the equipped flag")
+        return refund[bag .. ":" .. slot] or refund.all
+    end,
     GetContainerNumSlots = function(bag) return bag == 0 and 6 or bag == 1 and 1 or 0 end,
     GetContainerItemInfo = function(bag, slot)
         local item = bagSlots[bag][slot]
@@ -80,6 +87,7 @@ local NS = {
     Print = function(value) printed[#printed + 1] = value end,
 }
 Support.QoLStyleFixture(root, S)
+dofile(root .. "/tools/tests/suite_inventory_tools_fixture.lua").DisabledProtection(root, NS, S)
 local context = { events = {} }
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
@@ -102,6 +110,15 @@ assert(buttonCount == 1 and module.button.shown and module.button.enabled
     and module.button.text == "Verkaufen (2)"
     and context.events.BAG_UPDATE_DELAYED,
     "the merchant button did not preview only eligible non-gear stacks")
+-- Inside its refund window Blizzard's click opens the refund dialog
+-- (ContainerFrame_GetExtendedPriceString); a direct use would sell it.
+refund["1:1"] = InRefundWindow(50)
+module:UpdateButton()
+assert(module.button.text == "Verkaufen (1)", "a stack inside its refund window was offered for sale")
+refund["1:1"] = InRefundWindow(0)
+module:UpdateButton()
+assert(module.button.text == "Verkaufen (2)", "a purchase with nothing to refund blocked the sale")
+refund["1:1"] = nil
 module.button.OnClick(module.button)
 local question = Question()
 assert(question and question.text == "Sell 2 marked item stacks to this merchant?" and #sold == 0
@@ -165,4 +182,13 @@ dialogs.Accept(Question())
 assert(#sold == 1 and #reported == 0 and printed[#printed]
     == "Marked item sale stopped; earlier items may already have been sold.",
     "a blocked merchant item use hid the partial-sale warning")
+-- A stack that enters its refund window after the question opened stays unsold.
+C_Container.UseContainerItem = function(bag, slot) sold[#sold + 1] = { bag, slot } end
+local soldBefore = #sold
+module.button.OnClick(module.button)
+local late = Question()
+assert(late, "the sale question did not open again")
+refund.all = InRefundWindow(10)
+dialogs.Accept(late)
+assert(#sold == soldBefore, "confirmation sold a stack that became refundable")
 print("Suite marked vendor rules: preview, revalidation, combat, merchant close passed")

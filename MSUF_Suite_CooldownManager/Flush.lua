@@ -23,7 +23,9 @@ C.Flush = Flush
 ------------------------------------------------------------------ dirty mask
 -- keysLater: keybind texts after a resolve, through the coalesced request.
 -- bags: a capped bag cooldown refresh (Events.lua OnBag) for the item and
--- equipment entries. Pending names every key; the contract checks that.
+-- equipment entries. catalog: true starts a catalog pass, "slice" continues
+-- a combat pass (CatalogUnit). Pending names every key; the contract checks
+-- that.
 local dirty = { catalog = false, resolve = false, index = false, events = false, cooldowns = false, usable = false, effects = false,
     keybinds = false, keysLater = false, alerts = false, layout = false, visibility = false, bags = false }
 -- Per slot: sync (structure), style, behavior (entry refresh), visible
@@ -145,8 +147,14 @@ local CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit
 function Flush.BindDataUnits(catalog, index, events, keysLater, alerts)
     CatalogUnit, IndexUnit, EventsUnit, KeysLaterUnit, AlertsUnit = catalog, index, events, keysLater, alerts
 end
-local function ResolveUnit()
-    local _, any = C.Resolve.Build()
+-- In combat a resolve stages its entries over frames (ResolveStages.lua):
+-- nil until it lands; dirty.resolve "stage" continues it, true restarts it.
+local function ResolveUnit(locked, fresh)
+    local plans, any = C.Resolve.Build(locked, fresh)
+    if plans == nil then
+        if not dirty.resolve then dirty.resolve = "stage" end
+        return
+    end
     C.Preview.Decorate()
     Resolved(any)
     C.ActionGlows.Refresh()
@@ -159,23 +167,45 @@ local function StyleUnit(slot)
     C.Icons.Style(slot)
     C.Auras.Restyle(slot)
 end
-local function EntryUnit(entry, reason)
-    if reason == "full" then C.Icons.Texture(entry) end
-    if C.Time.Refresh(entry, reason) then C.Layout.Request(entry.slot) end
-    if reason == "full" then C.Effects.Update(entry) end
-end
--- Reuse native usability answers only during one synchronous broadcast.
--- The maps retain capacity, but no answers (including secrets) across passes.
+-- Exact spell/item answers are shared by rebinds, show edges and the
+-- usability broadcast in one synchronous entry pass. Never retain answers across
+-- passes; range, target and show edges outside this pass still read fresh.
 local usableSpells = { seen = {}, usable = {}, noPower = {} }
 local usableItems = { seen = {}, usable = {}, noPower = {} }
+local usableQueries = { spells = usableSpells, items = usableItems }
+local function EntryUnit(entry, reason)
+    if reason ~= "full" then
+        if C.Time.Refresh(entry, reason, usableQueries) then C.Layout.Request(entry.slot) end
+        return
+    end
+    C.Icons.Texture(entry)
+    if C.Time.Refresh(entry, reason, usableQueries) then C.Layout.Request(entry.slot) end
+    C.Effects.Update(entry, usableQueries)
+end
 local function UsableUnit()
+    usableQueries.used = true
     local list = C.Index.usable
     local fx = C.Effects
     for i = 1, #list do
         local entry = list[i]
-        if fx.UsableShown(entry) then fx.Usable(entry, entry.src == "i" and usableItems or usableSpells) end
+        if entry.hidden and not C.state.preview then
+            entry.usablePending = true
+        elseif fx.UsableShown(entry) then
+            fx.Usable(entry, entry.src == "i" and usableItems or usableSpells)
+        end
     end
 end
+-- "Show only when usable" (Index.gated): the same sweep, then the gate list,
+-- asked from the same answers also while hidden. Bound in place of the
+-- plain sweep only while the list holds entries (Flush.Gated, the event
+-- registration), so the plain sweep costs what it did.
+local function GatedUsableUnit()
+    UsableUnit()
+    local list, fx = C.Index.gated, C.Effects
+    for i = 1, #list do fx.GateUsable(list[i], usableQueries) end
+end
+local usableUnit = UsableUnit
+function Flush.Gated(on) usableUnit = on and GatedUsableUnit or UsableUnit end
 local function EffectsUnit()
     C.Effects.CombatChanged()
     C.ActionGlows.Refresh()
@@ -189,15 +219,37 @@ local function VisibilityUnit(slot) C.Visibility.Apply(slot) end
 ------------------------------------------------------------------ flush steps, in dependency order
 -- Catalog, resolve, routing index and event registration. Only the catalog
 -- and index units read the lockdown, so only they ask for it (the combat
--- state cannot change inside one flush).
-local function FlushData()
-    if dirty.catalog then
-        dirty.catalog = false
-        Run(dirty, "catalog", true, CatalogUnit, NS.IsCombatLocked())
+-- state cannot change inside one flush). In combat the catalog reads in
+-- slices over consecutive frames, and such a frame runs nothing else of
+-- this step: the resolve a pass asks for comes a frame later, so no frame
+-- holds both. True when the rest waits. After DEFER such frames while the
+-- rest has work, the catalog waits one frame instead: catalog events every
+-- few frames cannot starve the resolve (it stages as usual).
+local DEFER, deferred = 3, 0
+local function CatalogStep()
+    local fresh, locked = dirty.catalog == true, NS.IsCombatLocked()
+    local waiting = locked and (dirty.resolve or dirty.index or dirty.events)
+    if not waiting then
+        deferred = 0
+    elseif deferred >= DEFER then
+        deferred = 0
+        return false
     end
+    dirty.catalog = false
+    -- A catalog event stages a combat resolve again (its inputs may move).
+    local stage = C.Resolve.stage
+    if fresh then stage.stale = stage.on end
+    Run(dirty, "catalog", true, CatalogUnit, locked, fresh)
+    if waiting then deferred = deferred + 1 end
+    return locked
+end
+Flush.DEFER = DEFER
+local function FlushData()
+    if dirty.catalog and CatalogStep() then return end
     if dirty.resolve then
+        local fresh = dirty.resolve == true
         dirty.resolve = false
-        Run(dirty, "resolve", true, ResolveUnit)
+        Run(dirty, "resolve", true, ResolveUnit, NS.IsCombatLocked(), fresh)
     end
     if dirty.index then
         dirty.index, dirty.events = false, true
@@ -257,10 +309,18 @@ local function FlushEntries()
     if timeQueries then C.Time.EndQueries() end
     if dirty.usable then
         dirty.usable = false
-        Run(dirty, "usable", true, UsableUnit)
-        -- Run isolates a raising entry; cleanup also runs after that failure.
-        for _, map in pairs(usableSpells) do wipe(map) end
-        for _, map in pairs(usableItems) do wipe(map) end
+        Run(dirty, "usable", true, usableUnit)
+    end
+    if usableQueries.used then
+        usableQueries.used = false
+        -- Run isolates raising units; Settle only re-marks them for a later
+        -- pass. Cleanup therefore also runs after a failed rebind or sweep.
+        wipe(usableSpells.seen)
+        wipe(usableSpells.usable)
+        wipe(usableSpells.noPower)
+        wipe(usableItems.seen)
+        wipe(usableItems.usable)
+        wipe(usableItems.noPower)
     end
     if dirty.effects then
         dirty.effects = false
@@ -312,6 +372,7 @@ local function FlushPlacement()
             Run(visible, slot, true, VisibilityUnit, slot)
         end
     end
+    if C.Preview.mode == "options" then S.Dispatch(C.Preview.PaintLabels) end
 end
 
 -- The flush flag clears whatever raised, so the bars never freeze until a
@@ -333,7 +394,8 @@ FlushNow = function()
     if next(sync) ~= nil or next(style) ~= nil then FlushStructure() end
     FlushEntries()
     FlushTextsAndSounds()
-    if dirty.layout or dirty.visibility or next(laid) ~= nil or next(visible) ~= nil or next(layoutRequests) ~= nil then
+    if dirty.layout or dirty.visibility or next(laid) ~= nil or next(visible) ~= nil
+        or next(layoutRequests) ~= nil then
         FlushPlacement()
     end
     scheduled = false

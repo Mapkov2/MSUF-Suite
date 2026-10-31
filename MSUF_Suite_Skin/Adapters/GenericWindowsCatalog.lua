@@ -14,6 +14,7 @@ local Kit = NS.AdapterKit
 local DEFAULT_OWNER = Shared.DEFAULT_OWNER
 local OwnerState = Shared.OwnerState
 local OwnerKey = Shared.OwnerKey
+local CanSkin = Shared.CanSkin
 local CatalogMode = Shared.CatalogMode
 local ApplyFrameNow = Shared.ApplyFrameNow
 local DeactivateOwner = Shared.DeactivateOwner
@@ -164,71 +165,139 @@ local function AddMetrics(totals, metrics)
     totals.truncated = totals.truncated or metrics.truncated == true
 end
 
-local function ApplyEntryFrames(entry, owner)
-    local applied, failed, protected = 0, 0, 0
+local DeferredEntryFrame
+
+local function EntryRequest(entry, owner)
+    local ownerState = OwnerState(owner)
+    ownerState.active = true
+    local requests = ownerState.catalogRequests
+    if not requests then
+        requests = {}
+        ownerState.catalogRequests = requests
+    end
+    local request = requests[entry.id]
+    if not request then
+        request = { ownerState = ownerState, owner = owner, jobs = {} }
+        requests[entry.id] = request
+    end
+    request.entry, request.frames, request.complete, request.error = entry, {}, false, false
+    return request
+end
+
+local function StoreFrameResult(request, index, applied, reason, metrics)
+    local result = request.frames[index]
+    if not result then
+        result = {}
+        request.frames[index] = result
+    end
+    result.applied, result.reason = applied, reason
+    for index = 1, #metricTotalKeys do
+        local key = metricTotalKeys[index]
+        result[key] = metrics and metrics[key] or 0
+    end
+    result.fullscreenGuarded = metrics and metrics.fullscreenGuarded == true or false
+    result.truncated = metrics and metrics.truncated == true or false
+end
+
+local function PaintEntryFrame(request, index)
+    local entry, owner = request.entry, request.owner
+    local frameValue = entry.frames[index]
+    local frame = ResolveFrame(frameValue)
+    if not frame then
+        StoreFrameResult(request, index, false, "missing")
+        return
+    end
+    -- Only an unprotected window root waits for its OnShow. HUD and protected roots
+    -- (EncounterTimeline, encounter warnings, ExtraActionBar, TargetFrame ...) show
+    -- mostly in combat, where they cannot be painted: a deferral woke in combat and
+    -- re-armed after every combat. They are decided now, as before deferral.
+    if entry.category ~= "hud" and CanSkin(frame)
+        and Kit.DeferHidden(frame, request, DeferredEntryFrame, request, index) then
+        StoreFrameResult(request, index, false, "waiting")
+        return
+    end
+    local frameMode = type(entry.frameModes) == "table"
+        and type(frameValue) == "string" and entry.frameModes[frameValue] or nil
+    local ok, reason, metrics = ApplyFrameNow(frame, owner, CatalogMode(frameMode or entry.mode))
+    StoreFrameResult(request, index, ok, reason, metrics)
+    -- Preserve the Macro adapter's specific artwork after this root's pass.
+    if entry.id == "macros" then NS.MacroWindow.Apply(frame, owner) end
+end
+
+local function SummarizeEntry(request)
+    local applied, failed, protected, waiting = 0, 0, 0, 0
     local totals = {
         nodes = 0, surfaces = 0, controls = 0, scrollBars = 0,
-        protected = 0, errors = 0, fullscreenGuarded = 0,
-        truncated = false,
+        protected = 0, errors = 0, fullscreenGuarded = 0, truncated = false,
     }
-    local frames = type(entry.frames) == "table" and entry.frames or noEntries
-    for index = 1, #frames do
-        local frameValue = frames[index]
-        local frame = ResolveFrame(frameValue)
-        if frame then
-            local frameMode = type(entry.frameModes) == "table"
-                and type(frameValue) == "string" and entry.frameModes[frameValue]
-                or nil
-            local ok, reason, metrics = ApplyFrameNow(frame, owner, CatalogMode(frameMode or entry.mode))
-            if ok then
-                applied = applied + 1
-            else
-                failed = failed + 1
-                if reason == "protected" then protected = protected + 1 end
-            end
-            if metrics then AddMetrics(totals, metrics) end
-            -- The Macro adapter also starts independently of the catalog.
-            -- Reapply after a late generic pass so pooled slot surfaces keep
-            -- their specific artwork and selection style in either event order.
-            if entry.id == "macros" then
-                NS.MacroWindow.Apply(frame, owner)
-            end
-        else
-            failed = failed + 1
-        end
+    for _, result in ipairs(request.frames) do
+        if result.applied then applied = applied + 1
+        elseif result.reason == "waiting" then waiting = waiting + 1
+        else failed = failed + 1 end
+        if result.reason == "protected" then protected = protected + 1 end
+        AddMetrics(totals, result)
     end
-    return applied, failed, protected, totals
+    local state
+    if not request.complete or request.error then state = "error"
+    elseif applied == 0 and waiting > 0 then state = "waiting"
+    elseif applied > 0 and failed == 0 and waiting == 0 and totals.fullscreenGuarded == 0 then state = "applied"
+    elseif applied > 0 then state = "partial"
+    elseif protected > 0 then state = "protected"
+    else state = "missing" end
+    entryStatus[request.entry.id] = { state = state, frames = applied, failed = failed,
+        owner = request.owner, metrics = totals }
+    entryOwners[request.entry.id] = request.owner
+    return applied > 0 or waiting > 0, state
+end
+
+local function FrameJob(request, index)
+    local job = request.jobs[index]
+    if not job then
+        job = { key = "generic-entry-frame:" .. request.entry.id .. ":" .. OwnerKey(request.owner) .. ":" .. index }
+        job.run = function()
+            request.ownerState.deferred[job.key] = nil
+            DeferredEntryFrame(request, index)
+        end
+        request.jobs[index] = job
+    end
+    return job
+end
+
+local function RefreshEntryFrame(request, index)
+    if not request.ownerState.active then return end
+    local result, entry = request.frames[index], request.entry
+    if not result or result.reason ~= "waiting" then return end
+    if not Enabled() or not GenericWindows.IsCategoryEnabled(entry.category) or SuiteOwnsEntry(entry) then
+        SetEntryStatus(entry, request.owner, "disabled")
+        return
+    end
+    if NS.IsCombatLocked() then
+        local job = FrameJob(request, index)
+        request.ownerState.deferred[job.key] = true
+        NS.CombatGate.RunOrDefer(job.key, job.run)
+        return
+    end
+    PaintEntryFrame(request, index)
+    SummarizeEntry(request)
+end
+
+DeferredEntryFrame = function(request, index)
+    if not Kit.Isolate(RefreshEntryFrame, request, index) then
+        request.error = true
+        SetEntryStatus(request.entry, request.owner, "error")
+    end
 end
 
 function GenericWindows.ApplyEntry(entry, owner)
     owner = owner or DEFAULT_OWNER
-    if type(entry) ~= "table" or type(entry.id) ~= "string" then
-        return false, "invalid"
-    end
+    if type(entry) ~= "table" or type(entry.id) ~= "string" then return false, "invalid" end
     local blocker = EntryBlocker(entry, owner)
     if blocker then return false, blocker end
-
-    local applied, failed, protected, totals = ApplyEntryFrames(entry, owner)
-    local state
-    if applied > 0 and failed == 0 and totals.fullscreenGuarded == 0 then
-        state = "applied"
-    elseif applied > 0 then
-        state = "partial"
-    elseif protected > 0 then
-        state = "protected"
-    else
-        state = "missing"
-    end
-
-    entryStatus[entry.id] = {
-        state = state,
-        frames = applied,
-        failed = failed,
-        owner = owner,
-        metrics = totals,
-    }
-    entryOwners[entry.id] = owner
-    return applied > 0, state
+    local request = EntryRequest(entry, owner)
+    local frames = type(entry.frames) == "table" and entry.frames or noEntries
+    for index = 1, #frames do PaintEntryFrame(request, index) end
+    request.complete = true
+    return SummarizeEntry(request)
 end
 
 -- Each catalog entry is its own error boundary: an entry that raises is

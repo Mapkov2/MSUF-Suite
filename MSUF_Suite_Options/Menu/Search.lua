@@ -27,10 +27,13 @@ local PAGE_WORDS = {
     suite_skin = "skin|skins|skinning|window skin|blizzard windows",
     suite_qualityOfLife = "quality of life|qualityoflife|quality_of_life|qol|comfort|helpers",
     suite_hud = "hud",
+    suite_macros = "macro|macros|makro|makros|sequence|castsequence|consumables|food|drink|healthstone|bandage|raid marker|mouseover",
+    suite_planningTools = "adventure planner|weekly|preparation|loadouts|runs|raid|goals|lfg|notes",
 }
 -- Words players use for a page in their own language: each English word is
 -- searchable in English and, through the locale packs, as its translation.
 local PAGE_TRANSLATED_WORDS = {
+    suite_macros = { "Raid marker" },
     suite_cooldownManager = { "received buffs" },
     suite_damageMeter = { "damage meter" },
     suite_dataTexts = { "data text", "data texts", "info bar", "info bars" },
@@ -76,6 +79,7 @@ end
 
 -- Page rows and FAQ answers: some module of the page can run here.
 local function PageAvailable(pageKey)
+    if pageKey == "suite_macros" then return true end
     if pageKey == "suite_skin" then return SkinAvailable() end
     for _, id in ipairs(P.order) do
         if P.catalog[id].page == pageKey and ModuleAvailable(id) then return true end
@@ -166,7 +170,10 @@ end
 -- Shared editors use their first instance's stable widget identity. Other
 -- numbered controls (DataTexts bars and slots) have their own real widgets.
 local function RuleTarget(page, spec, rule)
+    if spec.id == "macroBuilder" then return nil end
     local section = rule.section
+    if P.OwnedTools[spec.id] then return page.key .. "_" .. spec.id .. "_module" end
+    if spec.id == "planningTools" then return P.PlanningRuleTarget(rule.key) end
     if rule.key == "enabled" then return page.key .. "_" .. spec.id .. "_module" end
     if rule.previewOnly then return page.key .. "_preview", nil, false end
     if spec.id == "nameplates" then
@@ -233,13 +240,19 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
     -- Colors are edited from the section's color shortcut, not a control on
     -- the page, so a color row leads to its section.
     local exact = kind ~= "color" and targetExact ~= false
+    local controlId
+    if exact and not template and (P.OwnedTools[spec.id] or spec.id == "planningTools" or spec.id == "macroBuilder") then
+        controlId = P.Meta(page.key, spec.id, rule.key, "setting", sectionId).controlId
+    end
     return {
-        pageKey = page.key, kind = kind,
+        pageKey = page.key, kind = kind, controlId = controlId,
         label = rule.key == "enabled" and spec.title ~= page.title and Tr(spec.title) or Tr(rule.label),
         suiteModuleId = spec.id, suiteFeatureSwitch = feature and feature.switch or nil, suiteRuleKey = rule.key,
         section = section, keywords = keywords, help = rule.help and Tr(rule.help) or nil,
         settingKey = exact and ("msufsuite." .. spec.id .. "." .. rule.key) or nil,
-        sectionId = feature and (page.key .. "_" .. feature.id .. "_" .. feature.sections[1]) or sectionId,
+        sectionId = spec.id ~= "macroBuilder" and (feature and (page.key .. "_" .. feature.id .. "_" .. feature.sections[1]) or sectionId) or nil,
+        prepareKind = spec.id == "macroBuilder" and "suiteMacroTab" or nil,
+        prepareValue = spec.id == "macroBuilder" and "consumable" or nil,
         anchorText = kind == "color" and (feature and Tr(feature.title) or section) or nil,
     }
 end
@@ -430,6 +443,7 @@ function P.SearchRows()
     -- found also while the Skin addon is off.
     for _, row in ipairs(P.SkinSearchRows()) do rows[#rows + 1] = row end
     P.AppendSearchActionRows(rows, pagesByKey)
+    P.PlayerAurasPage.AppendSearchRows(rows, RuleRow)
     local visible = {}
     for _, row in ipairs(rows) do
         local available, inactive = P.SearchRowAvailable(row.pageKey, row.settingKey, row)
@@ -539,6 +553,7 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     if owner == "skin" then pageKey = "suite_skin"
     elseif owner and P.catalog[owner] then pageKey = P.catalog[owner].page or pageKey end
     if pageKey:sub(1, 6) ~= "suite_" then return true end
+    if pageKey == "suite_macros" and not owner then return true end
     record = record or {}
     local row = record.providerRow or record
     if record.kind == "page" or row.kind == "page" or record.kind == "faq" or row.kind == "faq" then

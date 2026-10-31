@@ -51,7 +51,7 @@ C_AddOns = {
         local controller = Suite.Suite
         if name == "MSUF_Suite_Modules" then
             controller.NewContext = function()
-                return { Release = function() end, RefreshOwnedSkins = function() end }
+                return { Release = function() end }
             end
             controller.RefreshEditMover = function() end
             controller.UnregisterEditElements = function() end

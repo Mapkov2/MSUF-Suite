@@ -5,6 +5,9 @@ local _, NS = ...
 local AddonListMotion = { states = {}, scrollStates = {}, records = setmetatable({}, { __mode = "k" }) }
 NS.AddonListMotion = AddonListMotion
 local Safety, Motion, Rows = NS.Safety, NS.Motion, NS.CollapseRows
+-- Shown owners can rebuild after combat; only pending snapshots need a
+-- stop pass. Cached hidden views keep their reusable records outside both.
+local shownStates, pendingStates = {}, {}
 local abs = math.abs
 local Noop = function() end
 local Ghost = { Capture = Noop, Released = Noop, Layout = Noop, Stop = Noop, Release = Noop, AfterLayout = Noop, Hidden = Noop, Initialized = Noop }
@@ -23,6 +26,7 @@ local function StopState(state)
     wipe(state.collapsed)
     wipe(state.parents)
     state.provider, state.hadSnapshot = nil, false
+    pendingStates[state] = nil
 end
 
 local function RowHidden(row)
@@ -34,12 +38,18 @@ local OnLayout
 
 local function RootHidden(root)
     local state = AddonListMotion.states[root] or AddonListMotion.scrollStates[root]
-    if state then StopState(state) end
+    if state then
+        shownStates[state] = nil
+        StopState(state)
+    end
 end
 
 local function RootShown(root)
     local state = AddonListMotion.states[root] or AddonListMotion.scrollStates[root]
-    if state and state.active then OnLayout(state) end
+    if state and state.active then
+        shownStates[state] = true
+        OnLayout(state)
+    end
 end
 
 local function CollectionScrolled(root)
@@ -211,10 +221,13 @@ local function AnimateRow(state, record, changed, headerTop, stable)
 end
 
 OnLayout = function(state)
-    if not state.active or not Motion.Enabled() or Safety.Read(state.root, "IsVisible") ~= true then
+    if not state.active or not Motion.Enabled() then StopState(state) return end
+    if Safety.Read(state.root, "IsVisible") ~= true then
+        shownStates[state] = nil
         StopState(state)
         return
     end
+    shownStates[state], pendingStates[state] = true, true
     local scrollBox = state.scrollBox
     if not state.collection and Safety.HasMethod(scrollBox, "GetView") and Safety.Read(scrollBox, "GetView") == nil then
         StopState(state)
@@ -270,6 +283,9 @@ end
 
 local function Register(state)
     if state.registered then return end
+    -- A cached visible root can acquire a new owner during combat, while
+    -- OnLayout is suspended; it must still rebuild at combat end.
+    if Safety.Read(state.root, "IsVisible") == true then shownStates[state] = true end
     local scrollBox = state.scrollBox
     if not state.collection then
         if not state.driven then scrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnLayout, OnLayout, state) end
@@ -362,6 +378,7 @@ function AddonListMotion.DisableOwner(owner)
         state.owners[owner] = nil
         if not next(state.owners) then
             state.active = false
+            shownStates[state] = nil
             StopState(state)
             Ghost.Release(state)
             if state.registered then
@@ -377,11 +394,11 @@ function AddonListMotion.DisableOwner(owner)
 end
 
 local function StopAll()
-    for _, state in pairs(AddonListMotion.states) do StopState(state) end
+    for state in pairs(pendingStates) do StopState(state) end
 end
 local function SettingsChanged()
     StopAll()
-    for _, state in pairs(AddonListMotion.states) do
+    for state in pairs(shownStates) do
         if state.active then OnLayout(state) end
     end
 end

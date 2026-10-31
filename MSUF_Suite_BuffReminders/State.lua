@@ -23,8 +23,10 @@ R.STATE = {
     -- preview: the Edit Mode label, previewShown its shown state, previewing
     -- while Edit Mode shows every entry; mask: the bit mask of the shown
     -- buttons (nil repaints); layout: the layout settings applied last;
-    -- newAlert: a newly shown reminder still owes its sound.
-    view = { "host", "buttons", "preview", "previewShown", "previewing", "mask", "layout", "newAlert" },
+    -- newAlert: a newly shown reminder still owes its sound; dismissed: the
+    -- reminders the player hid until the next reload (Alerts).
+    view = { "host", "buttons", "preview", "previewShown", "previewing", "mask", "layout", "newAlert",
+        "dismissed" },
     -- Following the cursor (Cursor): the OnUpdate driver (it runs while the
     -- host follows) and whether the host left its saved anchor.
     cursor = { "driver", "displaced" },
@@ -45,10 +47,13 @@ R.STATE = {
     -- list; presence: the group buff per member; soulstonePresence,
     -- beaconLightPresence and beaconFaithPresence: the player's own aura per
     -- member, with soulstoneKnown, beaconLightKnown and beaconFaithKnown;
-    -- dirty, rosterDirty and pass (a context job): the coalesced member pass.
+    -- allies: an ally class reminder reads the members' auras (last roster
+    -- read); allyStates: the player's own aura per member for each ally class
+    -- reminder, by catalog key; dirty, rosterDirty and pass (a context job):
+    -- the coalesced member pass.
     group = { "settings", "buffers", "units", "unitList", "classes", "listChanged", "presence",
         "soulstonePresence", "beaconLightPresence", "beaconFaithPresence", "soulstoneKnown",
-        "beaconLightKnown", "beaconFaithKnown", "dirty", "rosterDirty", "pass" },
+        "beaconLightKnown", "beaconFaithKnown", "allies", "allyStates", "dirty", "rosterDirty", "pass" },
     -- The notice lines below the buttons (Special, Group): one field per
     -- notice (Special's NOTICES), the shown set (mask), its text and label, the
     -- summon that may teach a demon look (summonDemon, summonAt, summonPet).
@@ -56,8 +61,10 @@ R.STATE = {
         "mask", "text", "label", "summonDemon", "summonAt", "summonPet" },
     -- Where the player is (Preparation): the instance type (false while
     -- unreadable), the content setting key, whether a keystone has not
-    -- started yet (preKey), the keystone's time limit and whether it started.
-    environment = { "instanceType", "key", "preKey", "keystoneSeconds", "challengeStarted" },
+    -- started yet (preKey), the keystone's time limit and whether it started,
+    -- and whether nothing shows here (hidden: unreadable, arena, battleground,
+    -- or resting with "Hide while resting" on).
+    environment = { "instanceType", "key", "preKey", "keystoneSeconds", "challengeStarted", "hidden" },
     -- The ready check mana note (Preparation): its label (its hide is a
     -- context wait).
     readyCheck = { "label" },

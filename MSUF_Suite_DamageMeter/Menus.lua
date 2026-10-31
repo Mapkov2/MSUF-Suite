@@ -9,7 +9,7 @@ local D = P.DamageMeter
 local M = D.M
 local Public, Finite = S.Public, S.Finite
 local format, max, min = string.format, math.max, math.min
-local HIDES = { "HideDungeon", "HideRaid", "HidePvP", "HideWorld" }
+local HIDES = { "HideDungeon", "HideDelve", "HideRaid", "HidePvP", "HideWorld" }
 -- Blizzard's grouping of meter types; Absorbs joins the healing group.
 local TYPE = D.TYPE
 local GROUPS = {
@@ -33,12 +33,22 @@ local function Choices(win)
 end
 
 function D.Persist(key, value)
+    return D.PersistMany({ [key] = value })
+end
+
+-- A multi-window selection changes runtime state first and commits once.
+-- In combat, even a return to the saved value must replace an older queue entry.
+function D.PersistMany(writes)
+    if not next(writes) then return false end
     if M.inCombat or NS.IsCombatLocked() then
         M.pendingWrites = M.pendingWrites or {}
-        M.pendingWrites[key] = value
-        return
+        for key, value in pairs(writes) do M.pendingWrites[key] = value end
+        return false
     end
-    S.Set(M.id, key, value)
+    for key, value in pairs(writes) do
+        if M.config[key] ~= value then return S.SetMany(M.id, writes) == true end
+    end
+    return false
 end
 
 -- Returns true when saved picks were applied (the controller then refreshed).
@@ -53,27 +63,28 @@ local function Changed(win)
     D.CloseBreakdown(win, true)
     win.offset, win.timerSecond, win.dirty = 0, false, true
     D.UpdateTitle(win)
-    if win.shown then
-        D.Paint(win)
-        D.UpdateTimers()
-    end
 end
-function D.SetWindowType(win, meterType)
+function D.SetWindowType(win, meterType, writes)
     if win.meterType == meterType then return end
+    D.ClearTarget(win)
     win.meterType, win.cfgType = meterType, meterType
+    if not writes and win.styleGen == M.styleGen then D.StyleHeader(win) end
     D.SyncWatch()
     -- Threat listens only while a shown window shows it.
     D.UpdateEvents()
     Changed(win)
-    D.Persist(D.KEYS[win.index].Type, meterType + 1)
+    if writes then
+        writes[D.KEYS[win.index].Type] = meterType + 1
+    elseif not D.Persist(D.KEYS[win.index].Type, meterType + 1) and win.shown and not win.faded then
+        D.Paint(win)
+        D.UpdateTimers()
+    end
 end
 
 -- value: a D.SESSION choice; a historic sessionID pins the window and keeps
 -- Current as the saved fallback.
 function D.SetWindowSession(win, value, sessionID, duration)
-    D.ApplySession(win, value, sessionID, duration)
-    Changed(win)
-    D.Persist(D.KEYS[win.index].Session, value)
+    D.SelectSession(win, value, sessionID, duration)
 end
 
 local TYPE_WIDTH, TYPE_PAD, TYPE_GAP, TYPE_ROW, TYPE_HEADING = 376, 10, 6, 24, 20
@@ -131,8 +142,12 @@ function D.HideTypeMenu()
     panel.win, panel.owner = nil, nil
 end
 
-local function TypePicked(button)
+local function TypePicked(button, mouseButton)
     local panel = button:GetParent()
+    if mouseButton == "RightButton" then
+        if D.ToggleFavorite(button.meterType) then D.LayoutFavorites(panel) end
+        return
+    end
     local win = panel.win
     D.HideTypeMenu()
     if win then D.SetWindowType(win, button.meterType) end
@@ -160,10 +175,10 @@ local function TypeFontString(parent)
     return fontString
 end
 -- One meter type tile: the index-th of its group, two per row below y.
-local function TypeTile(panel, index, meterType, y)
+local function TypeTile(panel, index, meterType, y, collection)
     local button = S.CreateFrame("Button", nil, panel)
-    button.meterType = meterType
-    button:RegisterForClicks("LeftButtonUp")
+    button.meterType, button.groupIndex, button.baseY = meterType, index, y
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetSize(TYPE_TILE, TYPE_ROW)
     button:SetPoint("TOPLEFT", panel, "TOPLEFT", TYPE_PAD + ((index - 1) % 2) * (TYPE_TILE + TYPE_GAP),
         y - math.floor((index - 1) / 2) * (TYPE_ROW + TYPE_GAP))
@@ -185,8 +200,11 @@ local function TypeTile(panel, index, meterType, y)
     button:SetScript("OnClick", TypePicked)
     button:SetScript("OnEnter", TypeEntered)
     button:SetScript("OnLeave", TypeLeft)
-    panel.buttons[meterType] = button
+    local tiles = collection or panel.buttons
+    tiles[meterType] = button
+    return button
 end
+D.CreateTypeTile, D.StyleTypeTile = TypeTile, TypeTileStyle
 
 -- Blizzard's three groups, each a heading above its tiles; returns the
 -- height they take.
@@ -194,6 +212,7 @@ local function AddTypeGroups(panel)
     local y = -TYPE_PAD
     for groupIndex, group in ipairs(GROUPS) do
         local heading = TypeFontString(panel)
+        heading.baseY = y
         heading:SetPoint("TOPLEFT", panel, "TOPLEFT", TYPE_PAD, y)
         heading:SetText(S.BlizzardText(group[1], group[2]))
         heading:SetJustifyH("LEFT")
@@ -221,7 +240,8 @@ local function EnsureTypePanel()
     -- OpenTypeMenu paints the plate and places the 1-pixel outline (S.PlaceEdges).
     panel.edges = {}
     for i = 1, 4 do panel.edges[i] = S.CreateTexture(panel, nil, "BORDER") end
-    panel:SetSize(TYPE_WIDTH, AddTypeGroups(panel))
+    panel.baseHeight = AddTypeGroups(panel)
+    panel:SetSize(TYPE_WIDTH, panel.baseHeight)
     panel:Hide()
     D.typePanel = panel
     return panel
@@ -239,10 +259,10 @@ function D.OpenTypeMenu(win, owner)
     S.PlaceEdges(panel.edges, panel, 1, border[1], border[2], border[3], 1)
     if panel.styleGen ~= M.styleGen then
         panel.styleGen = M.styleGen
-        for _, heading in ipairs(panel.headings) do D.FontStyle(heading, 11) end
+        for _, heading in ipairs(panel.headings) do D.FontStyle(heading, 11, "details") end
         for _, button in pairs(panel.buttons) do
-            D.FontStyle(button.label, 11)
-            D.FontStyle(button.arrow, 11)
+            D.FontStyle(button.label, 11, "details")
+            D.FontStyle(button.arrow, 11, "details")
         end
     end
     for _, heading in ipairs(panel.headings) do heading:SetTextColor(unpack(panel.palette.accent)) end
@@ -250,6 +270,7 @@ function D.OpenTypeMenu(win, owner)
         TypeTileStyle(button, panel.palette, win.meterType == meterType, false)
         button.arrow:SetTextColor(unpack(panel.palette.accent))
     end
+    D.LayoutFavorites(panel)
     panel:ClearAllPoints()
     local x, y = GetCursorPosition()
     local scale = panel:GetEffectiveScale()
@@ -354,6 +375,7 @@ local function SettingsMenu(_, root, win)
         if locked then item:SetEnabled(false) end
     end
     root:CreateDivider()
+    D.ReportMenu(root, win)
     if win.index == 1 then
         item = root:CreateButton(S.BlizzardText("DAMAGE_METER_SHOW_NEW_WINDOW", "New window"), NewWindow)
         if locked or c.windowCount >= D.MAX then item:SetEnabled(false) end
@@ -399,6 +421,7 @@ function D.HeaderButtonClick(button)
         D.OpenTypeMenu(win, button)
         return
     end
+    if kind == "target" then D.OpenTargetMenu(win, button) return end
     -- Blizzard's context menu, or the Suite's list under WoW Forever's
     -- Gamepad UI (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
     S.ContextMenu(button, menus[kind], win)
@@ -406,6 +429,7 @@ end
 
 local function ButtonLabel(kind)
     local rules = S.catalog[M.id].rules
+    if kind == "target" then return S.Text("Filter damage by target") end
     if kind == "type" then return S.Text(rules.w1Type.label) end
     if kind == "session" then return S.Text(rules.w1Session.label) end
     if kind == "reset" then return S.BlizzardText("DAMAGE_METER_RESET_ALL_SESSIONS", "Reset all sessions") end

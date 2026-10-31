@@ -14,10 +14,17 @@ local HELP = {
     readycheck = "When a ready check starts outside combat and your mana as a healer is low, a short note shows how much you have; it turns red below half of your limit. Only your own mana is read.",
 }
 HELP.visibility = P.Help("Show missing or expiring buffs outside combat.", "Pick the places where reminders may show; arenas and battlegrounds never show them. Before a keystone starts, buffs can be asked to last the dungeon's timer or a number of minutes; once the key starts, the normal warning time applies again. One scheduled wakeup handles the next expiry.")
+HELP.classReminders = P.Help("Reminders for the buffs your class and specialization keep up.",
+    "Switch on the first option, then keep or drop the reminders you want. A reminder shows only when your "
+    .. "character knows its spell. Stances, auras, shields, Shadowform and weapon or shield imbues show while "
+    .. "they are missing. Buffs you put on an ally (Source of Magic, Blistering Scales, Earth Shield, "
+    .. "Symbiotic Relationship) show while your buff is on nobody in the group; target an ally and click the "
+    .. "icon to cast it. Right-click or middle-click any reminder to hide it until you reload the UI.")
 
 -- { catalog section, accordion title } in page order.
 local SECTIONS = {
     { "tracking", "What to remind" },
+    { "classReminders", "Class reminders" },
     { "demons", "Warlock demon choice" },
     { "recommended", "Recommended consumables (Mainline)" },
     { "visibility", "When to show" },
@@ -55,7 +62,7 @@ end
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Buff Reminders", height = 202,
         tabs = {
-            { id = "reminders", label = "What to remind", sections = "buffReminders_module composer tracking demons recommended readycheck" },
+            { id = "reminders", label = "What to remind", sections = "buffReminders_module composer tracking classReminders demons recommended readycheck" },
             { id = "visibility", label = "When to show", sections = "visibility classVisibility personalVisibility consumableVisibility" },
             { id = "appearance", label = "Appearance", sections = "appearance position" },
         } })
@@ -64,6 +71,7 @@ local function Build(ctx)
         { "Edit Mode", function() P.OpenEditMode(ID, "buffs") end,
             function() return P.EditModeReady() and S.Status(ID) == "Active" end, key = "edit" },
         { "Add this map to the potion maps", AddPotionMap, nil, key = "potionMap" },
+        P.PlannerAction("preparation"),
     })
     P.ReminderEditor.Build(ctx, b)
     for _, section in ipairs(SECTIONS) do

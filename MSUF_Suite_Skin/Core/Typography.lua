@@ -71,10 +71,7 @@ local function LocaleFallback(kind)
 end
 
 local function MSUFFontPath()
-    local getter = _G.MSUF_GetFontPath
-    if type(getter) ~= "function" then return nil end
-    local path = getter()
-    return NS.Safety.Public(path) and type(path) == "string" and path ~= "" and path or nil
+    return NS.SuiteCore().HostBridge.HostFontPath()
 end
 
 local function ConfiguredPath()
@@ -98,14 +95,19 @@ end
 
 local selectionPrefix = "lsm:"
 
-function Typography.GetSelection()
-    local config = NS.DB and NS.DB.typography
+-- The dropdown value a typography settings table stands for (the profile's
+-- own, or a factory profile's to restore).
+function Typography.SelectionOf(config)
     if not config then return "friz" end
     if config.followMSUF ~= false then return "msuf" end
     if config.face == "sharedMedia" then
         return selectionPrefix .. tostring(config.sharedMediaFont or "")
     end
     return config.face or "friz"
+end
+
+function Typography.GetSelection()
+    return Typography.SelectionOf(NS.DB and NS.DB.typography)
 end
 
 function Typography.GetSelectionValues()

@@ -178,6 +178,7 @@ B.Module=function(mid,spec)
     return original(mid,spec)
 end
 assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite",NS)
+assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManagerData.lua"))("MSUF_Suite",NS)
 local CDM=NS.CDM
 local rules=NS.SuiteCatalog.cooldownManager.rules
 
@@ -219,7 +220,7 @@ local function LinesAre(bar,first,second)
 end
 
 C.AuraTimers={Wants=function() return false end,NeedsSources=function() return false end}
-local FILES={"Const","Grid","Layout","Visibility","Native","Preview"}
+local FILES={"Const","Grid","FrameAnchors","Layout","Visibility","Native","Preview"}
 local createdBefore=created
 for _,name in ipairs(FILES) do
     local path=root.."/MSUF_Suite_CooldownManager/"..name..".lua"
@@ -472,7 +473,8 @@ for i=2,#CDM.SLOTS do
     assert(view.x==0 and view.y==0,CDM.SLOTS[i].key.." default offset is zero")
 end
 assert(CDM.FRAME_ANCHORS[PLAYER]=="player" and CDM.FRAME_ANCHORS[TARGET]=="target","frame anchors after the bar entries")
-assert(CDM.ANCHOR_LABELS[PLAYER]=="Player frame" and CDM.ANCHOR_LABELS[TARGET]=="Target frame" and #CDM.ANCHOR_LABELS==TARGET,"anchor labels")
+assert(CDM.ANCHOR_LABELS[PLAYER]=="Player frame" and CDM.ANCHOR_LABELS[TARGET]=="Target frame"
+    and CDM.ANCHOR_LABELS[TARGET+1]=="Other frame" and CDM.OTHER_ANCHOR==TARGET+1 and #CDM.ANCHOR_LABELS==TARGET+1,"anchor labels")
 -- MSUF follows the Essential bar: every show/hide of that bar notifies it
 local anchorChanges=0
 C.AnchorChanged=function() anchorChanges=anchorChanges+1 end
@@ -1477,6 +1479,8 @@ assert(L.Parent("c4")==nil and L.FrameTarget("c4")=="player","player frame entry
 c4.anchor=TARGET
 assert(L.Parent("c4")==nil and L.FrameTarget("c4")=="target","target frame entry")
 c4.anchor=TARGET+1
+assert(L.Parent("c4")==nil and L.FrameTarget("c4")=="other","other frame entry")
+c4.anchor=TARGET+2
 assert(L.Parent("c4")==nil and L.FrameTarget("c4")==nil,"out-of-range anchor is free")
 c4.anchor=AnchorOf("c4")
 -- free bar growth edges

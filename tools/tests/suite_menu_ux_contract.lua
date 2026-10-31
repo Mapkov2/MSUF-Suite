@@ -14,8 +14,8 @@ local mutations = {
     filteredSearch = { "Pages/QualityOfLife.lua", "if hasDetails or ctx.suiteQoLActiveOnly then Select", "if hasDetails then Select" },
     filterTitle = { "Pages/QualityOfLife.lua", "header.title:Hide()", "header.title:Show()" },
     copyWrap = { "Pages/ActionBars.lua", "popup:SetHeight(math.max(340, 264 + (popup.suiteCopySummary:GetStringHeight() or 42)))", "-- missing wrapped height" },
-    meterDefault = { "Pages/DamageMeter.lua", '{ id = "shared", label = "General settings", sections = "damageMeter_module look general bars text window details timer" },\n            { id = "window", label = "Window settings", sections = "windows" },',
-        '{ id = "window", label = "Window settings", sections = "windows" },\n            { id = "shared", label = "General settings", sections = "damageMeter_module look general bars text window details timer" },' },
+    meterDefault = { "Pages/DamageMeter.lua", '{ id = "shared", label = "General settings", sections = "damageMeter_module look general details" },',
+        '{ id = "window", label = "Window settings", sections = "windows" },\n            { id = "shared", label = "General settings", sections = "damageMeter_module look general details" },' },
     reminderRelease = { "Pages/BuffRemindersPreview.lua", "S.BuffRemindersReleasePreview(stage)", "do end" },
     reminderScale = { "Pages/BuffRemindersPreview.lua", "stage:SetScale(nativeScale * fit)", "stage:SetScale(.25)" },
     reminderIdle = { "Pages/BuffRemindersPreview.lua", "viewport:UnregisterAllEvents()", "-- kept hidden listeners" },
@@ -145,11 +145,14 @@ for _, page in ipairs({ "suite_bags", "suite_buffReminders", "suite_damageMeter"
     for _, width in ipairs({ 340, 760 }) do
         local ctx, ui = Build(page, width)
         assert(ui and #ui.spec.tabs >= 2, page .. ": no tab workspace")
-        if page == "suite_damageMeter" then
+        if page == "suite_damageMeter" and width == 340 then
             assert(ui.selected == "shared" and ui.spec.tabs[1].id == "shared",
                 "damage meter hid general settings on first open")
             assert(ui.sections.suite_damageMeter_general._uxBuilt and ui.groups.shared.frame:IsShown(),
                 "damage meter general controls were not visible on first open")
+        end
+        if page == "suite_damageMeter" and width == 760 then
+            assert(ui.selected == "appearance", "damage meter lost the previously selected styling tab")
         end
         assert(ui.header:GetHeight() >= ui.spec.height, page .. ": fixed preview lost its height")
         if width == 340 then assert(ui.selector, page .. ": narrow host must use a dropdown") end

@@ -169,7 +169,7 @@ frames.profileVariants = Schema({ { path = { "suiteModules", "objectives", "widt
 Check(V.Resolve(frames) and modules.objectives.width == base + 100, "the overlay for the history check is missing")
 local title = modules.objectives.titleSize
 local state = Check(P.CaptureHistoryState(), "the Suite history provider captured nothing")
-Check(state.root.profiles.Default.suite.modules.objectives.width == base,
+Check(state.root == nil and state.suite.modules.objectives.width == base,
     "undo history captured the variant's value as the profile's own")
 modules.objectives.titleSize = title + 4
 Check(P.RestoreHistoryState(state), "the Suite history provider did not restore")

@@ -1,8 +1,11 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local R = P.BuffReminders
 local CHANNELS = { "Master", "SFX", "Dialog" }
-local SOUNDS = { false, "RAID_WARNING", "READY_CHECK", "IG_QUEST_LOG_OPEN" }
+-- The catalog's reminderSound choice is an index into this list: new sounds
+-- go at the end.
+local SOUNDS = { false, "RAID_WARNING", "READY_CHECK", "IG_QUEST_LOG_OPEN", "ALARM_CLOCK_WARNING_3", "MAP_PING",
+    "TELL_MESSAGE" }
 
 -- The border effect of an entry's category, and its color.
 local function BorderStyle(self, entry)
@@ -87,4 +90,34 @@ function R.StopReminderAlerts(self)
         if button.alertPulse then button.alertPulse:Stop() end
     end
     view.newAlert = nil
+end
+
+-- A dismissed reminder stays hidden until the next reload. It is remembered by
+-- the identity AlertTransition uses, so it survives recompiles and layout
+-- changes.
+local function DismissKey(entry)
+    return entry.kind .. ":" .. entry.id .. ":" .. (entry.slot or entry.poisonRank or 0)
+end
+
+-- PostClick of a reminder button: a right or middle click dismisses it. The
+-- button's secure attributes are not touched: its left click still casts or
+-- uses. Refused in combat and in Edit Mode, where every reminder shows.
+function R.DismissClick(self, button, mouseButton)
+    local entry = button.entry
+    if mouseButton ~= "RightButton" and mouseButton ~= "MiddleButton" then return end
+    if not entry or NS.IsCombatLocked() or S.editMode then return end
+    local view = self.view
+    view.dismissed = view.dismissed or {}
+    view.dismissed[DismissKey(entry)] = true
+    entry.dismissed = true
+    -- The reminder keeps its bit in the mask; repainting hides it (ShowMask).
+    view.mask = nil
+    self:Update("visual")
+end
+
+-- A new reminder list marks the entries the player dismissed before.
+function R.RestoreDismissed(self, entries)
+    local dismissed = self.view.dismissed
+    if not dismissed then return end
+    for _, entry in ipairs(entries) do entry.dismissed = dismissed[DismissKey(entry)] end
 end

@@ -65,6 +65,17 @@ module.active = true
 module:Enable()
 assert(slash.Type("/way 12.5 34,5") and placed.mapID == 11 and placed.x == 0.125 and placed.y == 0.345
     and tracked and not mapOpened, "a free /way did not place a waypoint on the visible map")
+-- A comma beside a space separates the numbers; one inside a number is a decimal comma.
+for _, case in ipairs({
+    { "/way 12.3, 45.6", 11, .123, .456 }, { "/way 12.3 ,45.6", 11, .123, .456 },
+    { "/way 12.3,45.6", 11, .123, .456 }, { "/way 12,3 45,6", 11, .123, .456 },
+    { "/way 12,3, 45,6", 11, .123, .456 }, { "/way 22 12.3, 45.6", 22, .123, .456 },
+}) do
+    placed = nil
+    slash.Type(case[1])
+    assert(placed and placed.mapID == case[2] and math.abs(placed.x - case[3]) < 1e-9
+        and math.abs(placed.y - case[4]) < 1e-9, case[1] .. " did not place the waypoint")
+end
 WorldMapFrame.shown = false
 tracked = false
 assert(slash.Type("/msufway 22 75 20") and placed.mapID == 22 and placed.x == .75 and placed.y == .2

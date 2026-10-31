@@ -127,7 +127,15 @@ menu.layoutFramesGoingRight, menu.layoutFramesGoingUp, menu.childXPadding, menu.
 local CLEAN_REGIONS = { "Background", "PushedBackground", "Portrait", "Shadow", "PushedShadow", "Emblem",
     "HighlightEmblem" }
 local buttons = {}
-for index, name in ipairs({ "CharacterMicroButton", "QuestLogMicroButton" }) do
+local names = { "CharacterMicroButton", "QuestLogMicroButton", "ProfessionMicroButton", "HousingMicroButton",
+    "GuildMicroButton", "LFDMicroButton", "CollectionsMicroButton", "EJMicroButton", "HelpMicroButton",
+    "StoreMicroButton", "MainMenuMicroButton" }
+if forever then
+    names[#names + 1], names[#names + 2], names[#names + 3] = "SpellbookMicroButton", "TalentMicroButton", "LegacyMicroButton"
+else
+    names[#names + 1], names[#names + 2] = "PlayerSpellsMicroButton", "AchievementMicroButton"
+end
+for index, name in ipairs(names) do
     local button = Widget(name, menu)
     button.layoutIndex = index
     function button:GetObjectType() return "Button" end
@@ -148,7 +156,9 @@ for index, name in ipairs({ "CharacterMicroButton", "QuestLogMicroButton" }) do
     button.OnEnable, button.OnDisable = Noop, Noop
     _G[name], buttons[index] = button, button
 end
-function menu:GetChildren() return buttons[1], buttons[2] end
+menu.BorderArt, menu.BackgroundArt = Widget(), Widget()
+menu.numButtons = #buttons
+function menu:GetChildren() return unpack(buttons) end
 function menu:GetLayoutChildren()
     local shown = {}
     for _, button in ipairs(buttons) do
@@ -165,7 +175,7 @@ MicroMenu = menu
 
 ------------------------------------------------------------------ skin
 local settings = {
-    layoutMode = "owned", scale = 1, buttonsPerLine = 13, spacing = 0, padding = 4,
+    layoutMode = "owned", scale = 1, buttonsPerLine = #buttons, spacing = 0, padding = 4,
     orientation = "horizontal", growth = "RIGHT_DOWN", barMaterial = "modern", iconStyle = "bold",
     visibility = "always", locked = false, layoutPoint = "BOTTOM", layoutRelativePoint = "BOTTOM",
     layoutX = 0, layoutY = 0, buttonSize = 30, tint = "native",
@@ -179,7 +189,7 @@ local NS = {
     IsCombatLocked = function() return locked end,
     DB = { icons = { microMenu = settings }, skins = {} },
     Defaults = { icons = { microMenu = settings } },
-    MicroMenuMaxButtonsPerLine = 13,
+    MicroMenuMaxButtonsPerLine = #buttons,
     MicroMenuLoadConditions = {},
     Clamp = function(value, minimum, maximum)
         value = tonumber(value) or minimum
@@ -254,6 +264,90 @@ bar, mover = Owned.GetFrames()
 Check(menu.parent == bar and Owned.active and mover.shown, "the owned bar did not take the menu with its mover")
 Check(NS.OwnedMicroBar.GetRoot() == menu, "the owned bar does not hold the menu")
 Check(counts.portrait == 1, "the initial owned shell did not seed its portrait")
+
+-- Layout and reset paths share the same portrait invalidation as combat end.
+-- Measure twice: collection can shrink the Lua string table between runs.
+if not portraitOnly then
+    local bestVM, bestKB, renders
+    for attempt = 1, 2 do
+        Reset()
+        collectgarbage("collect")
+        collectgarbage("stop")
+        local before = collectgarbage("count")
+        local instructions = 0
+        local function CountInstruction() instructions = instructions + 1 end
+        debug.sethook(CountInstruction, "", 1)
+        for _ = 1, 8 do Owned.Relayout(menu) end
+        debug.sethook()
+        local grown = collectgarbage("count") - before
+        collectgarbage("restart")
+        bestVM = math.min(bestVM or instructions, instructions)
+        bestKB = math.min(bestKB or grown, grown)
+        renders = counts.portrait or 0
+    end
+    print(("Warm portrait layout budget: %d VM, %.3f KB, %d portrait renders / 8 layouts"):format(
+        bestVM, bestKB, renders))
+    Check(renders == 0, "warm layout resolved an unchanged portrait")
+    Check(bestVM < 27000 and bestKB < 3, "warm portrait layout exceeded its VM/allocation budget")
+    Reset()
+    menu:Layout()
+    menu:ResetMicroMenuPosition()
+    menu:ResetMicroMenuPosition()
+    Check(not counts.portrait, "native layout/reset rendered an unchanged portrait")
+    RunNextFrame()
+
+    -- Hidden portrait styles still remember invalidations, without rendering.
+    settings.iconStyle = "blizzard"
+    Owned.Relayout(menu)
+    Reset()
+    Fire(barEvents, "UNIT_PORTRAIT_UPDATE")
+    Check(not counts.portrait, "disabled portrait style rendered a portrait")
+    settings.iconStyle = "bold"
+    Owned.Relayout(menu)
+    Check(counts.portrait == 1, "re-enabled portrait lost its hidden invalidation")
+    Reset()
+    Owned.Relayout(menu)
+    Check(not counts.portrait, "re-enabled portrait remained dirty after painting")
+    settings.orientation = "vertical"
+    Owned.Relayout(menu)
+    Fire(barEvents, "PORTRAITS_UPDATED")
+    Check(not counts.portrait, "vertical layout rendered its hidden portrait")
+    settings.orientation = "horizontal"
+    Owned.Relayout(menu)
+    Check(counts.portrait == 1, "horizontal layout lost a hidden global invalidation")
+
+    -- A changed button set needs layout on regen; a dirty portrait paints once.
+    RunNextFrame()
+    StartCombat()
+    Reset()
+    Fire(barEvents, "UNIT_PORTRAIT_UPDATE")
+    buttons[2].shown = false
+    container:Layout()
+    Check(not counts.portrait, "combat rendered a dirty portrait")
+    EndCombat()
+    Check(counts.portrait == 1, "regen layout and portrait restore did not paint exactly once")
+    Reset()
+    buttons[2].shown = true
+    container:Layout()
+    RunNextFrame()
+    Check(not counts.portrait, "quiet button-set change rendered the portrait")
+
+    -- Disabled modules miss unit events and must reseed on acquisition.
+    Skin.Disable()
+    Check(not barEvents.events.UNIT_PORTRAIT_UPDATE, "disable kept portrait event registration")
+    Reset()
+    Skin.Apply(menu, "portrait-reacquire")
+    Check(counts.portrait == 1, "reacquisition reused a portrait from before disable")
+    Reset()
+    Fire(barEvents, "PLAYER_ENTERING_WORLD")
+    RunNextFrame()
+    Check(counts.portrait == 1, "world entry reused the previous world portrait")
+    Reset()
+    Owned.Relayout(menu)
+    Check(not counts.portrait, "world entry left its portrait dirty")
+    RunNextFrame()
+    Reset()
+end
 
 -- Lifecycle storms wait for one flush; input feedback stays synchronous.
 -- 2026-10-25 raid trace: three full walks must become one paint per button.
@@ -493,6 +587,35 @@ for _, gateFirst in ipairs({ false, true }) do
     Check(counts.grid == 1, order .. ": the deferred full pass ran again")
 end
 
+-- Duplicate native resets keep synchronous placement, but reuse this
+-- frame's successful skin pass. A later frame must validate the full skin.
+RunNextFrame()
+Reset()
+local function MeasuredReset()
+    local instructions = 0
+    local function CountInstruction() instructions = instructions + 1 end
+    debug.sethook(CountInstruction, "", 1)
+    menu:ResetMicroMenuPosition()
+    debug.sethook()
+    return instructions
+end
+local firstReset = MeasuredReset()
+local firstProtection = counts.protection or 0
+Check(menu.parent == bar and counts.prepare == #buttons, "first reset did not restore the full owned skin immediately")
+local repeatedReset = MeasuredReset()
+local repeatedProtection = (counts.protection or 0) - firstProtection
+print(("Native reset budget: first %d VM/%d protection reads; duplicate %d VM/%d reads"):format(
+    firstReset, firstProtection, repeatedReset, repeatedProtection))
+Check(repeatedReset < firstReset * 0.9 and repeatedProtection < firstProtection,
+    "duplicate reset did not reduce VM and native protection work")
+Check(menu.parent == bar and counts.grid == 2, "duplicate reset delayed native ownership/grid restoration")
+Check(counts.prepare == #buttons, "duplicate native reset repeated the full skin pass")
+Check(Total(stateApplies) >= #buttons, "duplicate reset lost current button feedback")
+RunNextFrame()
+menu:ResetMicroMenuPosition()
+Check(counts.prepare == 2 * #buttons, "later-frame reset reused stale skin permission")
+RunNextFrame()
+
 ------------------------------------------------------------------ menu held by Blizzard
 -- A vehicle took the menu before combat: combat end runs the full skin pass
 -- as before (it keeps the native art while Blizzard holds the menu).
@@ -514,7 +637,30 @@ EndCombat()
 Check(menu.parent == bar and counts.prepare == #buttons,
     "combat end left a menu the bar no longer holds where it was")
 
+-- Repeated vehicle transitions within one reset burst require fresh art.
+for _ = 1, 2 do
+    menu:OverrideMicroMenuPosition(vehicle)
+    Reset()
+    menu:ResetMicroMenuPosition()
+    Check(menu.parent == bar and not Owned.suspended and counts.prepare == #buttons,
+        "same-frame vehicle return reused suspended art")
+end
+-- An incomplete pass must never grant permission to skip its retry.
+local prepare = NS.MicroMenuVisual.Prepare
+NS.MicroMenuVisual.Prepare = function() Count("prepare"); return false end
+Skin.RefreshActive()
+Reset()
+menu:ResetMicroMenuPosition()
+menu:ResetMicroMenuPosition()
+Check(counts.prepare == 2 * #buttons, "partial native reset suppressed the next full retry")
+NS.MicroMenuVisual.Prepare = prepare
+Skin.RefreshActive()
+RunNextFrame()
+menu:ResetMicroMenuPosition()
 Skin.Disable()
+Reset()
+RunNextFrame()
+Check(not counts.prepare and not counts.grid, "reset expiry repainted after disable")
 Check(not Owned.active and menu.parent == container, "disable did not hand the menu back")
 
 ------------------------------------------------------------------ overlay paint memo

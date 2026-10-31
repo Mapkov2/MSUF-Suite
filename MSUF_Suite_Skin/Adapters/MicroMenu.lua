@@ -101,6 +101,12 @@ local desiredOwner
 local DEFER_KEY = "micro-menu:state"
 local visualSuspended = false
 local transitionInProgress = false
+local resetRoot
+local resetExpiryPending = false
+
+local function ExpireNativeReset()
+    resetRoot, resetExpiryPending = nil, false
+end
 
 local function Settings()
     local icons = NS.DB and NS.DB.icons
@@ -484,8 +490,7 @@ local function ApplyResolved(root, owner, settings)
             -- Native artwork can still use MSKIN button surfaces later. Seed
             -- those regions before an owned layout reparents the button,
             -- independent of the currently selected icon artwork.
-            if not ApplySurface(button, "microButton", true, settings.buttonBorder,
-                settings, false, true) then
+            if not States.SeedButtonSurface(button, settings) then
                 partial = true
             end
         else
@@ -555,6 +560,7 @@ local function RunTransition(transition, ...)
 end
 
 ApplyNow = function(requestedRoot, owner)
+    resetRoot = nil
     if NS.IsCombatLocked() then return false, "combat" end
     local root, reason = ResolveRoot(requestedRoot)
     if not root then return false, reason end
@@ -607,6 +613,7 @@ function MicroMenuSkin.Apply(frame, owner)
 end
 
 function MicroMenuSkin.Disable()
+    resetRoot = nil
     desiredActive, desiredRoot, desiredOwner = false, nil, nil
     if NS.IsCombatLocked() then return DeferDesired() end
     return DisableNow()
@@ -650,6 +657,37 @@ function MicroMenuSkin.RefreshActive(layoutOnly)
     desiredActive, desiredRoot, desiredOwner = true, activeRoot, activeOwner
     if NS.IsCombatLocked() then return DeferDesired() end
     return ApplyNow(activeRoot, activeOwner)
+end
+
+local function ResetButtonsCurrent(root)
+    for index = 1, #BUTTON_NAMES do
+        local name = BUTTON_NAMES[index]
+        local button = ResolveButton(name, root)
+        if not button or activeButtons[button] ~= name then return false end
+    end
+    return true
+end
+
+-- Blizzard can reset the menu twice in one frame. The first complete pass
+-- restores its art immediately; a duplicate still restores native geometry
+-- synchronously, but only repaints button state. Expiry never does UI work.
+function MicroMenuSkin.RefreshNativeReset(root)
+    if not desiredActive or not MicroMenuSkin.active or NS.IsCombatLocked() then return false end
+    if resetRoot == root and root == activeRoot and not SkinQuiet()
+        and not NS.OwnedMicroBar.suspended and ResetButtonsCurrent(root) then
+        local target, result = RunTransition(NS.OwnedMicroBar.Apply, root, Settings())
+        if target and result == "owned" and MicroMenuSkin.RefreshButtonStates() then return true, "reused" end
+    end
+    local applied, result = MicroMenuSkin.RefreshActive()
+    if applied and result == "applied" and root == activeRoot and not SkinQuiet()
+        and NS.OwnedMicroBar.active and not NS.OwnedMicroBar.suspended then
+        resetRoot = root
+        if not resetExpiryPending then
+            resetExpiryPending = true
+            C_Timer.After(0, ExpireNativeReset)
+        end
+    end
+    return applied, result
 end
 
 -- Applies a changed setting to the active skin (MicroMenuSettings.lua).

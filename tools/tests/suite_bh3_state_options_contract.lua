@@ -72,12 +72,14 @@ end)
 BH3("S06-A1",function()
     local old=MapkoSkin
     local root={activeProfile="Previous",profiles={Previous={color=1},Target={color=2}}}
-    MapkoSkin={addonName="MSUF_Suite_Skin",Database={GetRoot=function() return root end,
-        GetHistoryProfile=function() return "Target" end,GetHistoryEpoch=function() return 7 end,
-        SetActiveProfile=function(name) root.activeProfile=name;return true end}}
+    MapkoSkin={addonName="MSUF_Suite_Skin",ProfileIO={},Database={GetRoot=function() return root end,
+        GetHistoryProfile=function() return "Target" end,GetActiveProfileName=function() return root.activeProfile end,
+        GetHistoryEpoch=function() return 7 end,
+        SetActiveProfile=function(name) root.activeProfile=name;return true end,
+        SetProfile=function(name,profile) root.profiles[name]=Suite.CopyValue(profile);return true end}}
     local before=P.CaptureHistoryState()
-    assert(before.skinRoot.profiles.Target and before.skinRoot.profiles.Target.color==2
-        and not before.skinRoot.profiles.Previous,"S06-A1: embedded replace captured the previous profile instead of the replaced target")
+    assert(before.present and before.skinProfileName=="Target" and before.profile.color==2,
+        "S06-A1: embedded replace captured the previous profile instead of the replaced target")
     root.activeProfile="Target";root.profiles.Target.color=3
     assert(P.RestoreHistoryState(before) and root.profiles.Target.color==2,
         "S06-A1: embedded undo did not restore the replaced target")

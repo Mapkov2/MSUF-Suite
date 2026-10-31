@@ -41,17 +41,45 @@ function K.Runtime(addon, export)
 end
 function K.Watch(ui, paint)
     local events = CreateFrame("Frame", nil, ui.header)
+    local queued, pending = false, false
     local function Refresh()
-        if ui.header:IsVisible() and ui.ctx.wrapper:IsVisible() then paint() end
+        if ui.header:IsVisible() and ui.ctx.wrapper:IsVisible() then
+            pending = false
+            paint()
+            return true
+        end
+        return false
+    end
+    local function Replay()
+        queued = false
+        if not pending then return end
+        pending = false
+        Refresh()
+    end
+    local function Request()
+        if Refresh() then return end
+        if not ui.header:IsShown() or not ui.ctx.wrapper:IsShown() then return end
+        if not ui.header:IsVisible() and not ui.ctx.wrapper:IsVisible() then return end
+        -- Detached owners can become visible in different layout callbacks.
+        -- Retry once after that transition; Replay never schedules more work.
+        pending = true
+        if queued then return end
+        queued = true
+        C_Timer.After(0, Replay)
     end
     local function Activate()
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
-        Refresh()
+        Request()
     end
     events:SetScript("OnShow", Activate)
-    events:SetScript("OnHide", function() events:UnregisterAllEvents() end)
-    events:SetScript("OnEvent", Refresh)
-    ui.refreshPreview = Refresh
-    P.M.TrackRefresh(ui.ctx, Refresh)
+    events:SetScript("OnHide", function()
+        pending = false
+        events:UnregisterAllEvents()
+    end)
+    events:SetScript("OnEvent", Request)
+    ui.ctx.wrapper:HookScript("OnShow", Request)
+    ui.ctx.wrapper:HookScript("OnHide", function() pending = false end)
+    ui.refreshPreview = Request
+    P.M.TrackRefresh(ui.ctx, Request)
     if events:IsVisible() then Activate() end
 end

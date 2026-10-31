@@ -46,6 +46,30 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         assert(popup.rows[3]:GetAttribute("spell") == 900
             and popup.rows[3].cooldown.cooldownDuration == durationObject, "portal must use its native duration object")
     end
+    -- The row under the pointer gets a mark on the HIGHLIGHT layer (no script
+    -- shows it): a soft light fill without the skin, else the skin's hover
+    -- colour and style, scaled by its intensity.
+    local row = popup.rows[1]
+    assert(row.hoverFill.layer == "HIGHLIGHT" and row.hoverFill.color[4] == .1 and #row.hoverEdges == 4
+        and row.hoverEdges[1].layer == "HIGHLIGHT" and row.hoverEdges[1].color[4] == 0, "travel rows lost their plain hover")
+    local look = { hoverStyle = "outline", hoverIntensity = .5 }
+    M.context.Skin = function()
+        return { IsEnabled = function() return true end, GetColor = function() return .2, .4, .6, .8 end,
+            GetAppearance = function(_, key) return look[key] end }
+    end
+    W.Click(button)
+    W.Click(button)
+    assert(row.hoverFill.color[4] == 0 and row.hoverEdges[3].color[1] == .2 and row.hoverEdges[3].color[4] == .4,
+        "the skin's outline hover was not used")
+    look.hoverStyle = "softFill"
+    W.Click(button)
+    W.Click(button)
+    assert(math.abs(row.hoverFill.color[4] - .8 * .5 * .28) < 1e-9 and row.hoverEdges[2].color[4] == 0,
+        "the skin's soft hover was not used")
+    M.context.Skin = nil
+    W.Click(button)
+    W.Click(button)
+    assert(row.hoverFill.color[4] == .1, "the plain hover did not come back without the skin")
     W.Click(popup.rows[1])
     local action = W.secureActions[#W.secureActions]
     assert(action.type == "item" and action.item == "item:6948" and not popup.shown, "travel item did not execute securely")

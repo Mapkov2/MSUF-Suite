@@ -30,7 +30,8 @@ function methods:SetScrollChild(value) self.child = value end
 function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
 function methods:RegisterUnitEvent(event, unit) self.events = self.events or {}; self.events[event] = unit end
 function methods:UnregisterAllEvents() self.events = {} end
-for _, name in ipairs({ "SetJustifyH", "SetAllPoints", "SetFrameLevel", "EnableMouse", "EnableMouseWheel", "SetColorTexture" }) do
+for _, name in ipairs({ "SetJustifyH", "SetAllPoints", "SetFrameLevel", "EnableMouse", "EnableMouseWheel", "SetColorTexture",
+    "SetAutoFocus", "SetMaxBytes", "SetTextColor", "SetWordWrap", "SetTexture" }) do
     methods[name] = function() end
 end
 function methods:Init(kind, bag, slot)
@@ -50,8 +51,14 @@ end
 SetItemButtonDesaturated = function(button, value) button.desaturated = value end
 Enum = { BankType = { Character = 1, Account = 2 }, TooltipDataType = { Item = 0 },
     ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
-        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
-    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
+        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15, Glyph = 16,
+        Battlepet = 17, WoWToken = 18, Profession = 19 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 },
+    -- ItemConstantsDocumentation.lua (Retail and Forever)
+    ItemArmorSubclass = { Generic = 0, Cloth = 1, Leather = 2, Mail = 3, Plate = 4, Cosmetic = 5, Shield = 6 },
+    ItemMiscellaneousSubclass = { Junk = 0, Reagent = 1, CompanionPet = 2, Holiday = 3, Other = 4, Mount = 5,
+        MountEquipment = 6 },
+    BagIndex = { Backpack = 0, ReagentBag = 5 } }
 -- Blizzard_SharedXMLGame defines the tooltip data processor at startup.
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
 BankFrame = Widget()
@@ -92,17 +99,24 @@ local M = { active = true, config = c, Refresh = function() end, Disable = funct
     HideBankLevels = function(self) self.hiddenNativeLabels = true end,
     UpdateBank = function(self) self.nativeUpdates = (self.nativeUpdates or 0) + 1 end }
 local S = {
-    CreateFrame = function(kind) local w = Widget(); if kind == "ItemButton" then w.Count = Widget() end; return w end,
+    CreateFrame = function(kind)
+        local w = Widget()
+        if kind == "ItemButton" then w.Count = Widget() end
+        if kind == "EditBox" then w.Instructions = Widget() end
+        return w
+    end,
     CreateTexture = Widget, CreateFontString = Widget, Text = function(v) return v end,
     SetFont = function() end, ResolveFont = function() return "Suite" end,
     Public = function() return true end, Finite = function(v) return type(v) == "number" end,
     PublicText = function(v) return type(v) == "string" and v ~= "" and v or nil end,
     ModuleState = function() return state end,
+    RGB = function() return 0.06, 0.07, 0.08 end,
     Set = function(_, key, value) c[key] = value; M:Refresh() end,
 }
 local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
 local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
-    BagsView = catalog.BagsView, BagsBankView = catalog.BagsBankView,
+    BagsView = catalog.BagsView, BagsBankView = catalog.BagsBankView, BagsSort = catalog.BagsSort,
+    BagsBankColor = catalog.BagsBankColor,
     Client = { SupportsEvent = function() return true end } }, BagsModule = M,
     StackSplitter = { OwnerHidden = function() end, OpenFor = function() end } }
 -- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans the open
@@ -123,8 +137,9 @@ UnitGUID = function() return "Player-1" end
 -- The Bags module's context timers: bank passes are one coalesced job.
 P.NS.Dispatch = function(callback, ...) return callback(...) end
 M.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", M)
-for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "GridView", "InventoryDetails", "BankIndex",
-    "BankActions", "BankInventory" }) do
+assert(loadfile(root .. "/MSUF_Suite/Core/InventoryRules.lua"))("Core", P.NS)
+for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "UpgradeMarker", "GridView",
+    "InventoryDetails", "SavedSearches", "SmartSearch", "FreeSlots", "BankIndex", "BankActions", "BankInventory" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 local B = P.BankInventory

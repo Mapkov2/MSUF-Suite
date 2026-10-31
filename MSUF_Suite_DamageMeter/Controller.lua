@@ -26,6 +26,9 @@ local IsSecret = NS.IsSecret
 local max, format = math.max, string.format
 local HOST_KEY = "external:msuf.blizzard:damagemeter"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
+-- Delves report the instance type "scenario", like every scenario. D.ZoneKey
+-- gives the Delves their own switch; the other scenarios stay with Hide in
+-- dungeons, as they did before Hide in Delves existed.
 local ZONES = { party = "HideDungeon", scenario = "HideDungeon", raid = "HideRaid", pvp = "HidePvP", arena = "HidePvP" }
 local PREVIEW_SECONDS = 95
 local VISIBILITY, TEXT_STYLE, SESSION = D.VISIBILITY, D.TEXT_STYLE, D.SESSION
@@ -48,6 +51,7 @@ function D.BuildStyle()
     style.textAlpha, style.baseline = c.textOpacity / 100, c.baseline
     style.leftSize, style.rightSize, style.barHeight, style.spacing = c.leftSize, c.rightSize, c.barHeight, c.barSpacing
     style.texture = S.ResolveTexture(c.barTexture, WHITE)
+    style.breakdownTexture = c.breakdownOwnTexture and S.ResolveTexture(c.breakdownTexture, style.texture) or style.texture
     style.barAlpha = c.barAlpha / 100
     style.glossEnabled, style.glossStrength = c.glossEnabled == true, c.glossStrength or 50
     style.barR, style.barG, style.barB = S.RGB(c.barColor)
@@ -70,8 +74,11 @@ function D.BuildStyle()
     style.classColors, style.leftClass, style.rightClass = c.classColors, c.leftClassColor, c.rightClassColor
     style.iconStyle, style.zoom = c.iconStyle, c.iconZoom / 100
     style.iconSkin = NS.HostBridge.IconSkinLook(c.iconSkin)
+    D.BuildDecorationStyle(style, c)
     style.rank, style.numberFormat, style.valueOrder, style.valueSeparator, style.percent, style.showPlayer =
         c.rank, c.numberFormat, c.valueOrder, c.valueSeparator, c.percent, c.showPlayer
+    style.smoothFill = c.smoothFill == NS.DamageMeterSmoothFill.ON
+    D.UseBarFill(style.smoothFill)
 end
 
 function D.MarkAll()
@@ -90,7 +97,7 @@ function D.UpdateTimers()
         local win = D.windows[i]
         if win and win.shown and not win.faded then
             local seconds
-            if c.combatTime and c.headerTimer then
+            if M.style.headerClock then
                 if win.sessionID then
                     seconds = win.pinDuration
                 elseif not win.overall then
@@ -167,6 +174,7 @@ function D.PaintDirty()
                     local candidate = D.windows[j]
                     -- Threat reads the watched enemy whatever fight a window has picked.
                     if candidate and candidate.paintBatch == batch and candidate.meterType == win.meterType
+                        and candidate.damageTarget == win.damageTarget
                         and (win.meterType == D.THREAT
                             or candidate.sessionType == win.sessionType and candidate.sessionID == win.sessionID) then
                         previous = candidate
@@ -205,8 +213,8 @@ end
 function D.NeedClock()
     local c = M.config
     if not M.active or not M.inCombat or not c.combatTime then return false end
-    if c.timer and not (M.sessionHidden and c.toggleTimer) then return true end
-    if not c.headerTimer or not M.anyShown then return false end
+    if c.timer and D.TimerAnchorShown() and not (M.sessionHidden and c.toggleTimer) then return true end
+    if not M.style.headerClock or not M.anyShown then return false end
     for i = 1, c.windowCount do
         local win = D.windows[i]
         if win and win.shown and not win.faded and not win.sessionID and not win.overall then return true end
@@ -255,7 +263,8 @@ end
 function D.ClearPins()
     for i = 1, M.config.windowCount do
         local win = D.windows[i]
-        if win and win.sessionID then
+        if win and win.sessionID and D.AutoCurrent(win) then
+            D.ClearTarget(win)
             D.ApplySession(win, SESSION.CURRENT, nil, nil)
             D.CloseBreakdown(win, true)
             win.offset, win.timerSecond, win.dirty = 0, false, true
@@ -267,6 +276,11 @@ end
 function D.ZoneKey()
     local inside, kind = IsInInstance()
     if not Public(inside) or not Public(kind) or not inside then return "HideWorld" end
+    if kind == "scenario" then
+        -- Blizzard's InstanceDifficulty asks C_DelvesUI too (Retail and Forever).
+        local delve = C_DelvesUI.HasActiveDelve()
+        if Public(delve) and delve == true then return "HideDelve" end
+    end
     return ZONES[kind] or "HideWorld"
 end
 
@@ -289,7 +303,7 @@ SessionUpdated = function(self, _, meterType, sessionID)
         local win = windows[i]
         if win and win.shown then
             local kind = win.meterType
-            if kind == meterType then
+            if kind == meterType or (win.damageTarget and meterType == D.TYPE.EnemyDamageTaken) then
                 local id = win.sessionID
                 if (id and id == sessionID) or (not id and sessionID == 0) then win.dirty, dirty = true, true end
             end
@@ -306,6 +320,11 @@ local function CurrentUpdated(self)
     for i = 1, self.config.windowCount do
         local win = D.windows[i]
         if win and win.shown and not win.sessionID and not win.overall and win.meterType ~= D.THREAT then
+            if win.damageTarget then
+                D.ClearTarget(win)
+                D.CloseBreakdown(win, true)
+                D.UpdateTitle(win)
+            end
             win.dirty, dirty = true, true
         end
     end
@@ -316,6 +335,8 @@ local function Reset()
     for i = 1, D.MAX do
         local win = D.windows[i]
         if win then
+            D.ClearTarget(win)
+            D.UpdateTitle(win)
             if win.sessionID then
                 D.ApplySession(win, SESSION.CURRENT, nil, nil)
                 D.UpdateTitle(win)
@@ -334,7 +355,11 @@ local function CombatStart(self)
     M.combatStart = GetTime()
     M.nextPaint = nil
     M.preview = false
-    if self.config.autoCurrent then D.ClearPins() end
+    D.ClearPins()
+    for i = 1, self.config.windowCount do
+        local win = D.windows[i]
+        if win and win.damageTarget then D.ClearTarget(win) D.CloseBreakdown(win, true) D.UpdateTitle(win) end
+    end
     D.HideTip()
     D.EvaluateVisibility()
     D.MarkAll()
@@ -350,6 +375,7 @@ local function CloseBlocked()
 end
 local function LateRepaint()
     if not M.active or M.inCombat then return end
+    D.SnapshotIdentities()
     CloseBlocked()
     D.MarkAll()
     D.PaintDirty()
@@ -375,20 +401,25 @@ local function CombatEnd()
 end
 local function Encounter(self, event)
     D.InvalidateTargets()
-    if event == "ENCOUNTER_START" and self.config.autoCurrent then D.ClearPins() end
+    if event == "ENCOUNTER_START" then D.ClearPins() end
     D.MarkAll()
     D.RequestPaint()
 end
-local function World(self)
+-- isInitialLogin: the first world entry of a session, when the role meters apply.
+local function World(self, _, isInitialLogin)
+    D.ClearIdentities()
     D.InvalidateTargets()
     local combat = NS.IsCombatLocked()
     if combat and not M.inCombat then CombatStart(self) elseif not combat and M.inCombat then CombatEnd() end
     M.available, M.reason = S.DamageMeterAvailability()
+    if Public(isInitialLogin) and isInitialLogin == true then D.ApplyRoleMeters() end
     D.EvaluateVisibility()
     D.MarkAll()
     D.RequestPaint()
 end
 local function Roster()
+    D.ClearIdentities()
+    D.SnapshotIdentities()
     if M.threatOn then D.ThreatRosterChanged() end
     if M.config.visibility ~= VISIBILITY.GROUP then return end
     D.EvaluateVisibility()
@@ -396,12 +427,13 @@ local function Roster()
 end
 local function KeyStart(self)
     if self.config.mythicReset then C_DamageMeter.ResetAllCombatSessions() end
+    D.MythicStart()
 end
 -- Fires after a restriction lifted: session data is readable again.
 local function Restriction(_, _, _, state)
     if Public(state) and state == Enum.AddOnRestrictionState.Inactive then
         D.InvalidateTargets()
-        if not M.inCombat then CloseBlocked() end
+        if not M.inCombat then CloseBlocked() D.SnapshotIdentities() end
         D.MarkAll()
         D.RequestPaint()
     end
@@ -431,10 +463,10 @@ local function WantThreat(threat)
     Want("UNIT_TARGET", threat, D.ThreatTargetsTarget, "target")
     Want("UNIT_PET", threat, D.ThreatPetChanged)
 end
-local function MeterShown()
+local function MeterShown(includeFaded)
     for i = 1, M.config.windowCount do
         local win = D.windows[i]
-        if win and win.shown and win.meterType ~= D.THREAT then return true end
+        if win and win.shown and (includeFaded or not win.faded) and win.meterType ~= D.THREAT then return true end
     end
     return false
 end
@@ -448,20 +480,26 @@ function D.UpdateEvents()
     local possible = M.forced or c.visibility ~= VISIBILITY.NEVER
     local clock = possible or (c.combatTime and c.timer)
     local threat = M.anyShown and D.THREAT ~= nil and D.ThreatShown()
-    local data = M.anyShown and (not threat or MeterShown())
+    local shown = M.anyShown and MeterShown(true)
+    local data = shown and MeterShown(false)
+    M.dataVisible = data == true
     WantThreat(threat)
     Want("PLAYER_REGEN_DISABLED", clock, CombatStart)
     Want("PLAYER_REGEN_ENABLED", clock or M.inCombat, CombatEnd)
-    Want("PLAYER_ENTERING_WORLD", clock, World)
+    local roles = D.WantsRoleMeters()
+    Want("PLAYER_ENTERING_WORLD", clock or roles, World)
+    Want("PLAYER_SPECIALIZATION_CHANGED", roles, D.RoleChanged, "player")
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
-    Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or threat, Roster)
-    Want("CHALLENGE_MODE_START", c.mythicReset, KeyStart)
+    Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or (shown and D.WantsGroupDetails()) or threat, Roster)
+    local mythic = D.WantsMythicEvents()
+    Want("CHALLENGE_MODE_START", mythic, KeyStart)
+    Want("CHALLENGE_MODE_COMPLETED", mythic, D.MythicEnd)
     Want("DAMAGE_METER_COMBAT_SESSION_UPDATED", data, SessionUpdated)
-    Want("DAMAGE_METER_CURRENT_SESSION_UPDATED", data, CurrentUpdated)
-    Want("DAMAGE_METER_RESET", data, Reset)
-    Want("ENCOUNTER_START", data, Encounter)
-    Want("ENCOUNTER_END", data, Encounter)
-    Want("ADDON_RESTRICTION_STATE_CHANGED", data, Restriction)
+    Want("DAMAGE_METER_CURRENT_SESSION_UPDATED", shown, CurrentUpdated)
+    Want("DAMAGE_METER_RESET", shown, Reset)
+    Want("ENCOUNTER_START", shown, Encounter)
+    Want("ENCOUNTER_END", shown, Encounter)
+    Want("ADDON_RESTRICTION_STATE_CHANGED", shown, Restriction)
 end
 
 -- Visibility: Edit Mode (out of combat) and the options preview force every
@@ -492,12 +530,18 @@ function D.EvaluateVisibility()
             win = D.EnsureWindow(i)
             D.SyncWindow(win)
         end
-        if win then D.SetShown(win, show) end
+        if win then
+            D.SetShown(win, show)
+            D.ApplyMouse(win)
+        end
         any = any or show
     end
+    local wasShown = M.anyShown
     M.anyShown = any
+    if any and not wasShown then D.SnapshotIdentities() elseif not any then D.ClearIdentities() end
     D.UpdateEvents()
     if not D.HasDirtyVisible() then D.CancelPaint() end
+    D.UpdateTimer()
     D.SyncClock()
 end
 
@@ -510,6 +554,7 @@ function M:Enable()
     M.inCombat = NS.IsCombatLocked()
     M.preview, M.pendingWrites, M.lastDuration, M.nextPaint = false, nil, nil, nil
     D.SessionTypes()
+    D.TrackUIVisibility()
     self:Refresh()
 end
 
@@ -550,17 +595,21 @@ function M:Refresh()
     D.HideTip()
     D.EvaluateVisibility()
     D.StyleTimer()
+    D.SnapshotIdentities()
     D.MarkAll()
     D.PaintDirty()
 end
 
 -- Frames are kept and reused by the next Enable.
 function M:Disable()
+    D.UntrackUIVisibility()
     NS.HostBridge.WatchIconSkins("damageMeter", false)
     M.sessionHidden = nil
+    D.ClearIdentities()
     SyncHistoryVisibility()
     D.StopClock()
     D.CancelPaint()
+    D.CancelReport()
     D.HideTypeMenu()
     M.preview, M.pendingWrites, M.forced, M.anyShown, M.inCombat, M.nextPaint = false, nil, false, false, false, nil
     for i = 1, D.MAX do
@@ -568,6 +617,7 @@ function M:Disable()
         if win then
             D.CloseBreakdown(win, true)
             win.targetCache = nil
+            D.ClearTarget(win)
             win.shown, win.hover = false, false
             win.frame:Hide()
         end
@@ -613,7 +663,7 @@ local function Movers()
     movers.timer = {
         label = "Combat timer", point = "CENTER", order = 906, xKey = "timerX", yKey = "timerY",
         getFrame = function() return M.timerFrame end,
-        isEnabled = function() return M.config.combatTime and M.config.timer == true end,
+        isEnabled = function() return M.config.combatTime and M.config.timer == true and M.config.timerAnchor == 1 end,
         historyKeys = { "timerSize" },
         extraControls = {
             { id = "size", label = "Text size", kind = "number", min = 10, max = 40, step = 1,

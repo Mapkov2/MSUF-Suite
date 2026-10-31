@@ -5,7 +5,7 @@ B.Module("chat", {
     title = "Chat",
     description = "Style Blizzard's native chat windows, tabs and input line. Links, channels, filters, docking and message delivery remain Blizzard-owned.",
     page = "suite_chat", optIn = true,
-    conflicts = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy" },
+    conflicts = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy", "Prat-3.0", "Chattynator", "Chatter" },
     summary = "look fontSize tabFontSize tabAccent panelAlpha sidebarPanel sidebarWidth inputPanel inputAlpha"
         .. " copyMessages",
 })
@@ -102,7 +102,8 @@ B.Section(id, "window", "Chat window", {
     B.Bool("lockWindowSize", "Keep the main chat window at a fixed size", false),
     B.Number("windowWidth", "Locked width", 420, 200, 1200),
     B.Number("windowHeight", "Locked height", 180, 80, 800),
-    B.Bool("lockWindowPosition", "Anchor the main chat window to the bottom left", false),
+    B.Tooltip(B.Bool("lockWindowPosition", "Anchor the main chat window to the bottom left", false),
+        "While this is on, move the window in MSUF Edit Mode or with the two positions below. While it is off, Blizzard's Edit Mode places it."),
     B.Number("windowX", "Horizontal position", 12, -4000, 4000),
     B.Number("windowY", "Vertical position", 12, -3000, 3000),
     B.Number("idleSeconds", "Fade after inactivity (seconds; 0 disables)", 0, 0, 300),
@@ -159,13 +160,17 @@ B.Section(id, "input", "Input line", {
     B.Bool("inputPanel", "Show input background", initial.inputPanel),
     B.Color("inputColor", "Input background color", initial.inputColor),
     B.Number("inputAlpha", "Input opacity (percent)", initial.inputAlpha, 0, 100, 5),
+    B.Tooltip(B.Bool("saveInputHistory", "Remember typed lines between sessions", false),
+        "Brings back the lines you typed last time with the Up arrow. Lines that start with /script, /run or /dump are never saved."),
 })
 -- Shift-dragged sidebar icons (Chat/Sidebar.lua); labels translate their format.
+-- An icon's position acts only on the MSUF sidebar, and only once it is moved.
 for index = 1, 5 do
     local prefix = "sidebarButton" .. index
-    B.Add(id, B.Bool(prefix .. "Moved", NS.Text("Custom position for sidebar icon %d"):format(index), false), "sidebar")
-    B.Add(id, B.Number(prefix .. "X", NS.Text("Sidebar icon %d X"):format(index), 0, -400, 400), "sidebar")
-    B.Add(id, B.Number(prefix .. "Y", NS.Text("Sidebar icon %d Y"):format(index), 0, -800, 800), "sidebar")
+    local moved = B.Add(id, B.Bool(prefix .. "Moved", NS.Text("Custom position for sidebar icon %d"):format(index), false), "sidebar")
+    moved.enableKey = "sidebarPanel"
+    B.Add(id, B.Number(prefix .. "X", NS.Text("Sidebar icon %d X"):format(index), 0, -400, 400), "sidebar").enableKey = moved.key
+    B.Add(id, B.Number(prefix .. "Y", NS.Text("Sidebar icon %d Y"):format(index), 0, -800, 800), "sidebar").enableKey = moved.key
 end
 B.Section(id, "text", "Message text", {
     B.Bool("messageFading", "Fade individual messages", false),
@@ -179,9 +184,16 @@ B.Section(id, "text", "Message text", {
     B.Number("fontShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     B.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
 })
+-- The scrollback a window can keep: choice 1 leaves Blizzard's 128 lines
+-- alone, the later choices are these limits (Chat's History.lua applies them).
+NS.ChatLineLimits = { 256, 512, 1000, 2000 }
+local lineChoices = { "Keep Blizzard's setting" }
+for index, lines in ipairs(NS.ChatLineLimits) do lineChoices[index + 1] = NS.Text("%d lines"):format(lines) end
 B.Section(id, "tools", "Chat tools", {
     B.Bool("saveHistory", "Save chat history for this character and tab", false),
     B.Number("historyLines", "Saved lines per tab", 200, 20, 1000, 20),
+    B.Tooltip(B.Choice("maxLines", "Lines kept per chat window", 1, lineChoices),
+        "Blizzard keeps 128 lines in each window. A higher limit lets you scroll back further and lets saved history fill the window."),
     B.Bool("linkURLs", "Clickable URLs with a copy box", false),
     B.Bool("allTimestamps", "Timestamp every public displayed message", false),
     B.String("timestampFormat", "Custom timestamp format", "[%H:%M]", 64),
@@ -194,6 +206,40 @@ B.Section(id, "tools", "Chat tools", {
     B.Bool("copyMessages", "Show Copy button for chat messages", false),
     B.Number("copyButtonX", "Copy button X", 0, -200, 200),
     B.Number("copyButtonY", "Copy button Y", 0, -200, 200),
+})
+-- The channels that can play a sound: the chat events of each and the
+-- settings holding its sound, a sound kit ID or a custom file (the file wins).
+-- Whisper keeps the settings it always had, in Chat tools; Chat's Messages.lua
+-- listens only for the channels that have a sound.
+NS.ChatSoundChannels = {
+    { label = "Whisper", events = { "CHAT_MSG_WHISPER" }, kit = "whisperSoundKit", file = "whisperSound" },
+    { label = "Battle.net whisper", events = { "CHAT_MSG_BN_WHISPER" },
+      kit = "bnWhisperSoundKit", file = "bnWhisperSound" },
+    { label = "Guild", events = { "CHAT_MSG_GUILD" }, kit = "guildSoundKit", file = "guildSound" },
+    { label = "Officer", events = { "CHAT_MSG_OFFICER" }, kit = "officerSoundKit", file = "officerSound" },
+    { label = "Party", events = { "CHAT_MSG_PARTY" }, kit = "partySoundKit", file = "partySound" },
+    { label = "Party leader", events = { "CHAT_MSG_PARTY_LEADER" },
+      kit = "partyLeaderSoundKit", file = "partyLeaderSound" },
+    { label = "Raid", events = { "CHAT_MSG_RAID" }, kit = "raidSoundKit", file = "raidSound" },
+    { label = "Raid leader", events = { "CHAT_MSG_RAID_LEADER" },
+      kit = "raidLeaderSoundKit", file = "raidLeaderSound" },
+    { label = "Instance", events = { "CHAT_MSG_INSTANCE_CHAT" },
+      kit = "instanceSoundKit", file = "instanceSound" },
+}
+local soundRules = {}
+for index = 2, #NS.ChatSoundChannels do
+    local channel = NS.ChatSoundChannels[index]
+    local name = NS.Text(channel.label)
+    soundRules[#soundRules + 1] = B.Number(channel.kit, NS.Text("%s sound kit ID (0 disables)"):format(name), 0, 0, 1000000)
+    soundRules[#soundRules + 1] = B.String(channel.file, NS.Text("%s custom sound file"):format(name), "", 240)
+end
+B.Section(id, "sounds", "Channel sounds", soundRules)
+B.Section(id, "highlight", "Keyword highlight", {
+    B.Bool("highlightKeywords", "Highlight keywords in chat messages", false),
+    B.String("highlightWords", "Words to highlight (separated by commas)", "", 256),
+    B.Tooltip(B.Bool("highlightOwnName", "Also highlight my character name", false),
+        "Marks your character's name inside messages, so you notice when somebody mentions you."),
+    B.Color("highlightColor", "Highlight color", "ffd100"),
 })
 -- Where a speech bubble's text came from. Blizzard switches nearby, party
 -- and raid bubbles separately (chatBubbles, chatBubblesParty,
@@ -231,7 +277,7 @@ B.Section(id, "bubbles", "Speech bubbles", {
 for _, source in ipairs(NS.ChatBubbleSources) do
     local key, label = source.key, NS.Text(source.label)
     local function Label(format) return NS.Text(format):format(label) end
-    for _, rule in ipairs({
+    local rules = {
         B.Bool("bubbleStyle" .. key, Label("%s: MSUF bubble look"), true),
         B.Bool("bubbleOwn" .. key, Label("%s: own bubble look"), false),
         B.Font("bubbleFont" .. key, Label("%s: bubble font")),
@@ -242,15 +288,50 @@ for _, source in ipairs(NS.ChatBubbleSources) do
         B.Color("bubbleEdge" .. key, Label("%s: bubble border color"), source.edge),
         B.Number("bubblePad" .. key, Label("%s: space around bubble text"), 8, 0, 24),
         B.Number("bubbleWidth" .. key, Label("%s: widest bubble text (pixels)"), 300, 80, 600),
-    }) do
-        B.Add(id, rule, "bubbles")
-    end
+    }
+    -- The MSUF look needs the bubble styling on, the own look needs the MSUF
+    -- look, and each part of it (the rules after the two switches) the own look.
+    rules[1].enableKey = "styleBubbles"
+    rules[2].enableKey = rules[1].key
+    for index = 3, #rules do rules[index].enableKey = rules[2].key end
+    for _, rule in ipairs(rules) do B.Add(id, rule, "bubbles") end
 end
 local textRules = NS.SuiteCatalog[id].rules
+-- Settings that act only while their switch is on stay greyed out until then
+-- (the menu only; stored values never change).
+textRules.windowWidth.enableKey = "lockWindowSize"
+textRules.windowHeight.enableKey = "lockWindowSize"
 textRules.windowX.enableKey = "lockWindowPosition"
 textRules.windowY.enableKey = "lockWindowPosition"
+textRules.historyLines.enableKey = "saveHistory"
+textRules.timestampFormat.enableKey = "allTimestamps"
+textRules.copyButtonX.enableKey = "copyMessages"
+textRules.copyButtonY.enableKey = "copyMessages"
+textRules.channelShortcuts.enableKey = "shortenChannels"
+-- The sidebar settings shape the MSUF sidebar only; hiding Blizzard's buttons
+-- works without it. The input colors paint the MSUF input background.
+for _, key in ipairs({ "sidebarSide", "sidebarColor", "sidebarAlpha", "sidebarGap", "scrollButtonPlace",
+    "sidebarWidth", "sidebarClassColor" }) do
+    textRules[key].enableKey = "sidebarPanel"
+end
+textRules.inputColor.enableKey = "inputPanel"
+textRules.inputAlpha.enableKey = "inputPanel"
+-- The tab strip gap, and the individual tab backgrounds with their parts, need the dark tab strip.
+textRules.tabPanelGap.enableKey = "tabPanel"
+textRules.tabIndividualPanels.enableKey = "tabPanel"
+for _, key in ipairs({ "tabActiveBackground", "tabInactiveBackground", "tabActiveAlpha", "tabInactiveAlpha",
+    "tabBorderSize", "tabActiveBorder", "tabInactiveBorder" }) do
+    textRules[key].enableKey = "tabIndividualPanels"
+end
+for _, key in ipairs({ "bubbleFont", "bubbleFontSize", "bubbleTextColor", "bubbleBackground", "bubbleAlpha",
+    "bubbleBorder", "bubblePadding", "bubbleMaxWidth" }) do
+    textRules[key].enableKey = "styleBubbles"
+end
 textRules.messageTimeVisible.enableKey = "messageFading"
 textRules.messageFadeDuration.enableKey = "messageFading"
+for _, key in ipairs({ "highlightWords", "highlightOwnName", "highlightColor" }) do
+    textRules[key].enableKey = "highlightKeywords"
+end
 textRules.font.defaultLabel = "MSUF global font (default)"
 textRules.tabFont.defaultLabel = "MSUF global font (default)"
 for _, key in ipairs({ "fontShadowOpacity", "fontShadowDistance" }) do

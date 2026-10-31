@@ -440,7 +440,9 @@ P.SectionRules = function(_, section)
     return { { key = section .. "Size", label = "Size", sectionTitle = section, section = section, default = 1, min = 0, max = 2 } }
 end
 P.ModuleCard, P.BuildNameplatesPreview, P.BuildNameplatesAuraColors = Noop, Noop, Noop
-P.catalog.nameplates = { rules = {} }
+P.catalog.nameplates = { rules = {}, controls = {} }
+-- The native-aware catalog always provides its client-filtered controls.
+P.catalog.nameplates.getControls = function() return P.catalog.nameplates.controls end
 P.Gates = P.Gates or {}
 -- The area header (NameplatesWorkspace.lua) needs host widgets these stubs
 -- lack: the page then shows every section, as on an older host.

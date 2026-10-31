@@ -10,6 +10,7 @@ local config = { audioChannel = 1, itemLevelEquipped = true, itemLevelDecimals =
     randomHearth = true }
 local S = { Text = function(v) return v end, Public = function(v) return v ~= "secret" end,
     Finite = function(v) return type(v) == "number" and v == v end, MoneyText = tostring,
+    PublicText = function(v) return type(v) == "string" and v ~= "secret" and v or nil end,
     RGB = function() return 1, 1, 1 end, Config = function() return config end,
     -- MSUF_Suite_Modules/Dialogs.lua: Retail and Forever without its Gamepad UI.
     GamepadUI = function() return false end }
@@ -19,6 +20,7 @@ local function Load(file, package)
     MSUFSuite = NS
     assert(loadfile(root .. "/MSUF_Suite_DataTexts/" .. file .. ".lua"))("MSUF_Suite_DataTexts", package)
 end
+assert(loadfile(root .. "/MSUF_Suite_Modules/PlayerReaders.lua"))("MSUF_Suite_Modules", { Suite = S })
 local P = {}
 Load("Bootstrap", P)
 eq(P.NO_VALUE, DASH, "placeholder bytes")
@@ -41,9 +43,15 @@ local level = 70
 UnitLevel = function() return level end
 UnitXP = function() return 50 end
 UnitXPMax = function() return 100 end
+-- The reputation resolver (MSUF_Suite_Modules/PlayerReaders.lua) reads these.
+MAX_REPUTATION_REACTION = 8
+GetText = function(token) return token end
+UnitSex = function() return 2 end
 C_Reputation = { GetWatchedFactionData = function()
-    return { name = "Faction", currentStanding = 50, currentReactionThreshold = 0, nextReactionThreshold = 200 }
-end }
+    return { factionID = 7, name = "Faction", reaction = 4, currentStanding = 50, currentReactionThreshold = 0,
+        nextReactionThreshold = 200 }
+end, IsFactionParagonForCurrentPlayer = function() return false end, IsMajorFaction = function() return false end }
+C_GossipInfo = { GetFriendshipReputation = function() return { friendshipFactionID = 0 } end }
 PlayerHasToy = function(id) return id == 42 end
 local itemQuantity = 1
 C_Item = { GetItemCount = function(id) return id == 6948 and itemQuantity or 0 end,

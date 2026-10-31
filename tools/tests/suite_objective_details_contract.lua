@@ -30,7 +30,7 @@ end
 S.CreateFontString, S.CreateTexture = Widget, Widget
 S.SetStyledFont = function() end
 assert(loadfile(root .. "/MSUF_Suite_Modules/ObjectivesDetails.lua"))("MSUF_Suite_Modules", {
-    NS = { IsCombatLocked = function() return combat end }, Suite = S, Objectives = O,
+    NS = { IsCombatLocked = function() return combat end, HUDTextArgs = function() end }, Suite = S, Objectives = O,
 })
 local module = { active = true, config = {}, sources = {
     quests = { count = 2, { group = "quests", itemLink = "item:1" }, { group = "focused", itemLink = "item:2" } },

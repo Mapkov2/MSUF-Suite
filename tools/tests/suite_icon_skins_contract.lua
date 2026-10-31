@@ -148,6 +148,7 @@ do
     end
 end
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CooldownManagerData.lua"))("MSUF_Suite", NS)
 local S = {}
 NS.Suite = S
 MSUFSuite = NS
@@ -202,6 +203,7 @@ local function RealHost()
         MSUF_EventBus_Register = function(event, key, fn) realBus[event] = fn end,
         MSUF_EventBus_Unregister = function(event) realBus[event] = nil end,
     }
+    dofile(root .. "/tools/tests/suite_test_support.lua").HostMediaProviders(providers)
     function MSUF.Require(name) return assert(providers[name], "unexpected dependency " .. tostring(name)) end
     function MSUF.RunHostAPIStep(_, step, ...) return true, step(...) end
     function MSUF.ExportPublic(name, value) MSUF[name] = value end

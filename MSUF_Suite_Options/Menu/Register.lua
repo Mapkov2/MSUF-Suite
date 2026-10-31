@@ -10,7 +10,9 @@ local NAV_GROUPS = {
     { id = "style", title = "Style", fallback = "appearance" },
     { id = "general", title = "General", fallback = "features", after = "gameplay" },
 }
-if type(M.RegisterHistoryProvider) == "function" then
+if Suite.ProfileWorkbenchBridge.HistoryOwned() then
+    P.historyRegistered = true
+elseif type(M.RegisterHistoryProvider) == "function" then
     P.historyRegistered = M.RegisterHistoryProvider("MSUF_Suite", P.CaptureHistoryState, P.RestoreHistoryState) == true
 end
 
@@ -22,7 +24,7 @@ local HD_NAV_ICONS = {
     suite_actionbars = { 4, 3 }, suite_minimap = { 5, 3 },
     suite_damageMeter = { 6, 3 }, suite_bags = { 7, 3 },
     suite_chat = { 0, 4 }, suite_dataTexts = { 1, 4 },
-    suite_skin = { 2, 4 }, suite_qualityOfLife = { 3, 4 },
+    suite_skin = { 2, 4 }, suite_qualityOfLife = { 3, 4 }, suite_macros = { 7, 1 }, suite_planningTools = { 4, 4 },
 }
 local function AddIcons()
     for _, page in ipairs(P.pages) do
@@ -45,6 +47,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
     end
 end
 local function PageAddOnEnabled(key)
+    if key == "suite_macros" then return true end
     if key == "suite_skin" then return Suite.Client.AddOnEnabled("MSUF_Suite_Skin") end
     local modules = PAGE_MODULES[key]
     if not modules then return true end
@@ -54,6 +57,7 @@ local function PageAddOnEnabled(key)
     return false
 end
 local function PageEnabled(key)
+    if key == "suite_macros" then return true end
     if not PageAddOnEnabled(key) then return false, ADDON_NOTICE end
     if key == "suite_skin" then
         return P.SkinningEnabled() == true and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin"), "Off"
@@ -224,7 +228,10 @@ local function PageResetHandlers()
         if body then return body() == true end
         local modules = PAGE_MODULES[key]
         if not modules then return false end
-        for _, id in ipairs(modules) do if not S.Reset(id) then return false end end
+        for _, id in ipairs(modules) do
+            local moved = key == "suite_qualityOfLife" and P.PlayerAurasPage.Relocated(id)
+            if not moved and not S.Reset(id) then return false end
+        end
         return true
     end
     function handlers.finish()
@@ -441,6 +448,7 @@ local function Running(ids, reason)
     end
 end
 local function RegisterIconSkinAreas()
+    if not Suite.HostBridge.HasIconSkinAreas(M) then return end
     local CDM, specs, customSkins, customShapes = Suite.CDM, {}, {}, {}
     for i, slot in ipairs(CDM.SLOTS) do
         local keys = CDM.KEYS[slot.key]

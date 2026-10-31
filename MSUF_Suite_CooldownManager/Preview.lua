@@ -78,7 +78,10 @@ function Preview.SetMode(mode)
     local was = Preview.mode ~= nil
     Preview.mode = mode
     local on = mode ~= nil
-    if mode ~= "options" then Preview.Simulate(false) end
+    if mode ~= "options" then
+        Preview.Simulate(false)
+        Preview.HideLabels()
+    end
     C.state.preview = on
     if was == on then return false end
     C.Auras.SetPreview(on)
@@ -405,6 +408,8 @@ local function Content(slot, kind, holder)
         end
         local ov = spells[key]
         if type(ov) == "table" and ov.icon then tex = ov.icon end
+        -- A bar's own name for the spell (barText) shows in the samples too.
+        if type(ov) == "table" and ov.barText and ov.barText ~= "" then name = ov.barText end
         n = n + 1
         textures[n], names[n] = tex or QUESTION, name or ""
         itemKeys[n], dim[n] = key, known == false
@@ -589,5 +594,86 @@ function Preview.Release(parent)
 end
 
 function Preview.ReleaseAll()
+    Preview.HideLabels()
     for parent in pairs(canvases) do Preview.Release(parent) end
+end
+
+------------------------------------------------------------------ live bar labels
+-- A pooled outline follows each existing bar while its options are open.
+-- Both the label and the rim select that bar; combat removes the overlays.
+local labels, selectBar = {}, nil
+Preview.labels = labels
+local function LabelClick(self)
+    if selectBar and not NS.IsCombatLocked() then selectBar(self.slot) end
+end
+local function NewLabel(bar)
+    local frame = S.CreateFrame("Button", nil, bar.frame)
+    frame:Hide()
+    frame.slot = bar.key
+    frame:SetAllPoints(bar.frame)
+    frame:SetFrameLevel(bar.frame:GetFrameLevel() + 20)
+    frame:SetScript("OnClick", LabelClick)
+    local top, bottom, left, right = S.CreateTexture(frame, nil, "OVERLAY"), S.CreateTexture(frame, nil, "OVERLAY"),
+        S.CreateTexture(frame, nil, "OVERLAY"), S.CreateTexture(frame, nil, "OVERLAY")
+    top:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    top:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    top:SetHeight(1)
+    bottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    bottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    bottom:SetHeight(1)
+    left:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    left:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    left:SetWidth(1)
+    right:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    right:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    right:SetWidth(1)
+    for _, edge in ipairs({ top, bottom, left, right }) do edge:SetColorTexture(.85, .74, .46, .85) end
+    frame.label = S.CreateFontString(frame, nil, "OVERLAY")
+    frame.label:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 2, 2)
+    frame.label:SetJustifyH("LEFT")
+    return frame
+end
+function Preview.HideLabels()
+    for _, frame in pairs(labels) do
+        if frame.labelShown then
+            frame.labelShown = false
+            frame:Hide()
+        end
+    end
+end
+function Preview.PaintLabels()
+    if Preview.mode ~= "options" or not selectBar or not C.M.active or C.state.inCombat or NS.IsCombatLocked() then
+        Preview.HideLabels()
+        return
+    end
+    for _, slot in ipairs(NS.CDM.SLOTS) do
+        local bar, view = C.bars[slot.key], C.views[slot.key]
+        local show = bar and bar.shown and view and view.on
+        local frame = labels[slot.key]
+        if show then
+            if not frame then
+                frame = NewLabel(bar)
+                labels[slot.key] = frame
+            end
+            local name = view.name
+            if not name or name == "" then name = NS.Text(slot.title) end
+            if frame.labelName ~= name or frame.labelTextGen ~= C.state.textGen then
+                S.SetStyledFont(frame.label, C.state.font, 12, C.state.fontFlags,
+                    C.state.fontRendering, C.state.fontShadow, C.state.fontShadowOpacity, C.state.fontShadowDistance)
+                frame.label:SetText(name)
+                frame.labelName, frame.labelTextGen = name, C.state.textGen
+            end
+            if not frame.labelShown then
+                frame.labelShown = true
+                frame:Show()
+            end
+        elseif frame and frame.labelShown then
+            frame.labelShown = false
+            frame:Hide()
+        end
+    end
+end
+function Preview.LabelBars(select)
+    selectBar = select
+    Preview.PaintLabels()
 end

@@ -21,12 +21,31 @@ nativeValue = "secret"
 assert(NS.NameplateStyle.NativeToggle("SoftTargetNameplateSize", false) == false)
 -- Removed on request: native cast appearance cannot be reenabled by a preset
 -- or offered through the menu/import schema. Cast text and dragging remain.
-for _, key in ipairs({ "enemyCastSkin", "enemyCastFollowMSUF", "enemyCastTexture", "enemyCastBorderSize",
+-- 2026-10-29 (owner, again): no bar, backdrop or castbar textures and no
+-- Suite cast colors under any key either; MSUF's interrupt-ready colors stay.
+local RETIRED = { "enemyCastSkin", "enemyCastFollowMSUF", "enemyCastTexture", "enemyCastBorderSize",
     "enemyCastBackdropAlpha", "enemyCastFillAlpha", "enemyCastBorderColor", "enemyCastBackdropColor", "enemyCastFillColor",
-    "enemyHealthTexture", "enemyFocusHealthTexture", "friendlyHealthTexture", "friendlyFocusHealthTexture" }) do
+    "enemyHealthTexture", "enemyFocusHealthTexture", "friendlyHealthTexture", "friendlyFocusHealthTexture",
+    "enemyBarTexture", "friendlyBarTexture", "enemyBackdropTexture", "friendlyBackdropTexture",
+    "enemyCastBarTexture", "friendlyCastBarTexture", "enemyCastColors", "enemyCastStandardColor",
+    "enemyCastChannelColor", "enemyCastLockedColor", "enemyCastImportantColor", "enemyCastOnYouColor",
+    "enemyCastInterruptedColor" }
+local pages = {}
+for _, name in ipairs({ "Nameplates", "NameplatesPreview", "NameplatesPreviewDecor" }) do
+    local file = assert(io.open(root .. "/MSUF_Suite_Options/Pages/" .. name .. ".lua", "rb"))
+    pages[name] = file:read("*a")
+    file:close()
+end
+for _, key in ipairs(RETIRED) do
     assert(not spec.rules[key], "retired cast appearance control remains: " .. key)
     for _, preset in pairs(spec.look.presets) do assert(preset[key] == nil, "preset restores retired cast appearance: " .. key) end
+    for name, source in pairs(pages) do
+        assert(not source:find('"' .. key .. '"', 1, true), name .. " still offers retired " .. key)
+    end
 end
+-- No texture picker at all on the nameplates: every one would be a bar texture.
+for key, rule in pairs(spec.rules) do assert(not rule.texture, "nameplate texture picker returned: " .. key) end
+assert(not NS.NameplateStyle.Decor.Media and not NS.NameplateStyle.Tint, "a nameplate texture path returned to the painter")
 local fixture = dofile(root .. "/tools/fixtures/nameplates_eqol_features.lua")
 local count = 0
 for feature, keys in pairs(fixture) do

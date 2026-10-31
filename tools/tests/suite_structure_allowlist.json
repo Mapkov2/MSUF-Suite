@@ -39,13 +39,13 @@
    "symbol": "MSUF_TryDecodeCompactString"
   },
   {
-   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
+   "file": "MSUF_Suite/Core/Catalog/CooldownManagerData.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "decode (= MSUF_TryDecodeCompactString)"
   },
   {
-   "file": "MSUF_Suite/Core/Catalog/CooldownManager.lua",
+   "file": "MSUF_Suite/Core/Catalog/CooldownManagerData.lua",
    "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "encode (= MSUF_EncodeCompactTable)"
@@ -1185,16 +1185,16 @@
    "symbol": "b.FinishSection"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "file": "MSUF_Suite/Core/ProfileWorkbenchBridge.lua",
    "kind": "lod",
-   "reason": "export of MSUF_Suite_Skin, which loads on demand",
-   "symbol": "skin.Database"
+   "reason": "Optional history-profile selector on the load-on-demand Suite skin database; current engine preserves the in-flight history target, older ready engines fall back to GetActiveProfileName. Consolidated from the former Options history adapter.",
+   "symbol": "db.GetHistoryProfile"
   },
   {
-   "file": "MSUF_Suite_Options/Menu/Bridge.lua",
+   "file": "MSUF_Suite/Core/ProfileWorkbenchBridge.lua",
    "kind": "lod",
-   "reason": "export of MSUF_Suite_Skin, which loads on demand",
-   "symbol": "skin.Database.GetRoot"
+   "reason": "Optional direct-root reader on the load-on-demand Suite skin database; read only the selected stored profile when available, otherwise use the existing WorkbenchSkinSnapshot export/prepare fallback. Consolidated from the former Options skin-root history adapter.",
+   "symbol": "db.GetRoot"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Bridge.lua",
@@ -1397,6 +1397,12 @@
   {
    "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
    "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Bars.lua exports the usability or range color setting a button paints with only when its runtime is loaded. Disabled-module preview shows the usable color instead.",
+   "symbol": "S.ActionBarPreviewTint"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBarsPreviewData.lua",
+   "kind": "lod",
    "reason": "MSUF_Suite_ActionBars/Bindings.lua exports the live compact binding formatter only when the runtime is loaded. Disabled-module preview uses Blizzard GetBindingText instead.",
    "symbol": "S.KeyText"
   },
@@ -1465,6 +1471,30 @@
    "kind": "lod",
    "reason": "The BuffReminders LoD renderer can be absent when the menu closes after a cold combat open or failed addon load; the preview lifecycle contract covers release with and without the renderer.",
    "symbol": "S.BuffRemindersReleasePreview"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ComfortPickers.lua",
+   "kind": "lod",
+   "reason": "DungeonPortalChoices is exported by the optional, load-on-demand QualityOfLife addon (DungeonPortals.lua). The portal picker requests that addon once and opens nothing while the export is missing (also in combat); suite_dungeon_portals_contract covers the export.",
+   "symbol": "choices (= P.S.DungeonPortalChoices)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ComfortPickers.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
+   "symbol": "M.ApplyPopupFramePriority"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ComfortPickers.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 theme may skin the native search edit box. Older hosts keep the functional native input without this cosmetic helper.",
+   "symbol": "T.SkinEditBox"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ComfortPickers.lua",
+   "kind": "addon",
+   "reason": "Retail and Forever Menu2 theme may style the native scroll frame. Older hosts retain its native scroll behavior without this cosmetic helper.",
+   "symbol": "T.StyleScrollFrame"
   },
   {
    "file": "MSUF_Suite_Options/Pages/CooldownManager.lua",
@@ -2097,6 +2127,18 @@
    "symbol": "frame (= ChallengesKeystoneFrame)"
   },
   {
+   "file": "MSUF_Suite_QualityOfLife/MPlusKeystoneSources.lua",
+   "kind": "addon",
+   "reason": "optional library from another addon (LibStub, LibKeystone, LibOpenRaid): the keystone window reads their public API when an addon loaded them; the Suite bundles neither. suite_keys_interop_contract covers the library absent, present and raising.",
+   "symbol": "stub (= LibStub)"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MPlusKeystoneSources.lua",
+   "kind": "addon",
+   "reason": "optional library from another addon (LibStub, LibKeystone, LibOpenRaid): the keystone window reads their public API when an addon loaded them; the Suite bundles neither. suite_keys_interop_contract covers the library absent, present and raising.",
+   "symbol": "stub.GetLibrary (= LibStub)"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/MapLandingShortcuts.lua",
    "kind": "addon",
    "reason": "The Retail expansion landing button is created by a LoadOnDemand Blizzard addon",
@@ -2131,6 +2173,12 @@
    "kind": "addon",
    "reason": "The MSUF target frame may be disabled or not yet constructed; the optional anchor falls back to the native TargetFrame.",
    "symbol": "MSUF_target"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TooltipDetails.lua",
+   "kind": "client",
+   "reason": "Retail 12.1.0 has no UnitCriteriaProgress tooltip line type (Retail 12.1.5 and Forever do). A missing type is nil and matches no row, so on 12.1.0 the check finds no native criteria line and the forces line is added; suite_tooltip_plus_contract covers both.",
+   "symbol": "Enum.TooltipDataLineType.UnitCriteriaProgress"
   },
   {
    "file": "MSUF_Suite_QualityOfLife/TooltipDetails.lua",
@@ -2649,7 +2697,7 @@
    "symbol": "suite.Suite.ApplyGlobalLook"
   },
   {
-   "file": "MSUF_Suite_Skin/Core/Typography.lua",
+   "file": "MSUF_Suite/Core/HostBridge.lua",
    "kind": "addon",
    "reason": "MSUF font export is read only when available; the embedded skin keeps its saved face until MSUF publishes a public font path",
    "symbol": "getter (= MSUF_GetFontPath)"
@@ -2739,16 +2787,10 @@
    "symbol": "target.HookScript"
   },
   {
-   "file": "MSUF_Suite_Skin/Rendering/WindowControls.lua",
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
    "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
-   "symbol": "menu (= MSUF2)"
-  },
-  {
-   "file": "MSUF_Suite_Skin/Rendering/WindowControls.lua",
-   "kind": "addon",
-   "reason": "MSUF export: the Retail (Main) and Classic MSUF builds do not provide the same functions",
-   "symbol": "menu.RunWithHistory (= MSUF2)"
+   "reason": "Menu2 is load-on-demand and an older host may not expose RunWithHistory; the bridge uses its late LoadedMenu resolver and falls back to one direct callback.",
+   "symbol": "menu.RunWithHistory"
   },
   {
    "file": "MSUF_Suite_Skin/Shell/OptionsLoader.lua",
@@ -2965,6 +3007,66 @@
    "symbol": "bridge.IsOptionsSurface",
    "kind": "addon",
    "reason": "An older MSUF Suite core may lack the host bridge capability when paired with a newer skin addon. The A7 menu lifecycle contract removes the capability and proves that hidden host controls retain eager art instead of waiting for an unsupported visibility policy."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/MailRecipients.lua",
+   "symbol": "SendMailFrame",
+   "kind": "lod",
+   "reason": "Retail Blizzard_MailFrame loads on demand; MAIL_SHOW builds the owned recipient panel only after the native send-mail pane exists. The comfort mail regression starts without it and opens it later."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GroupFinderTools.lua",
+   "symbol": "LFGListFrame",
+   "kind": "lod",
+   "reason": "Retail Blizzard_GroupFinder can load after the Suite; ADDON_LOADED retries building the owned companion view without creating or replacing native frames."
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/KeyAudit.lua",
+   "symbol": "S.ActionKeyAuditRows",
+   "kind": "lod",
+   "reason": "The action-bar review provider belongs to MSUF_Suite_ActionBars, which may remain unloaded while the QoL key review runs. Missing provider still permits native binding review; no action-bar addon is loaded by the audit."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "menu.RegisterSearchTargetResolver",
+   "kind": "addon",
+   "reason": "New MSUF Menu2 resolver registration is absent on older hosts, including the frozen 6.22 host. This sole adapter uses the existing routing facade there; suite_host_api_v2_contract covers legacy registration and closed-menu refusal, while MSUF 7.0 menu_feature_suite_ownership_smoke exercises native host registration."
+  },
+  {
+   "file": "MSUF_Suite/Core/HostBridgeMenu.lua",
+   "symbol": "button.RefreshVisual",
+   "kind": "addon",
+   "reason": "Older MSUF host Theme.Button implementations do not export RefreshVisual; optional repaint through the version-compatible host bridge."
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningWeekly.lua",
+   "symbol": "GetSavedInstanceEncounterInfo",
+   "kind": "client",
+   "reason": "Optional encounter-name enrichment: no loaded native caller was found on Retail or Forever; absent API keeps the saved lockout summary without individual boss names."
+  },
+  {
+   "file": "MSUF_Suite_CooldownManager/FrameAnchors.lua",
+   "symbol": "frame.GetRect",
+   "kind": "addon",
+   "reason": "The player names a global frame: it may hold any value (a number, a table of another add-on), and only a frame has GetRect. Frames.Named refuses everything else (suite_cdm_layout_extras_contract)."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/CooldownManagerFrames.lua",
+   "symbol": "S.CooldownManagerConvertAnchor",
+   "kind": "lod",
+   "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads"
+  },
+  {
+   "file": "MSUF_Suite/Core/Macros/Store.lua",
+   "symbol": "Macros.Consumables",
+   "kind": "lod",
+   "reason": "The resolver is exported by the load-on-demand MSUF_Suite_QualityOfLife/MacroConsumables.lua and is absent before that addon loads or when disabled. Core rules and raw drafts remain usable; consumable compilation returns its not-ready error. Covered by suite_macros_runtime_contract."
+  },
+  {
+   "file": "MSUF_Suite/Core/Macros/Store.lua",
+   "symbol": "Store.OnChange",
+   "kind": "lod",
+   "reason": "The change subscriber is installed only by the load-on-demand MSUF_Suite_QualityOfLife/MacroBuilder.lua runtime. Core draft writes are valid before it loads and need no subscriber. Covered by suite_macros_runtime_contract."
   }
  ]
 }

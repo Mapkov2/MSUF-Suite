@@ -27,7 +27,9 @@ end)
 local hookedAnchors = setmetatable({}, { __mode = "k" })
 local GROUPS = {
     { "Everyday", { "clock", "date", "gold", "sessionGold", "bags", "durability", "location", "coordinates" } },
-    { "Character", { "xp", "progress", "itemLevel", "specialization", "specLoot", "professions" } },
+    { "Social", { "friends", "guild" } },
+    { "Character", { "xp", "progress", "itemLevel", "secondaryStat", "mythicRating", "specialization", "specLoot",
+        "professions", "vault", "supplies" } },
     { "Travel and menus", { "travel", "hearth", "portals", "microMenu" } },
     { "Currencies", { "currency", "crests" } },
     { "System", { "fps", "latency", "fpsLatency", "memory", "audio" } },
@@ -119,7 +121,21 @@ local function MouseOver(frame)
     return frame and frame:IsVisible() and frame:IsMouseOver()
 end
 
-local function Lifecycle(frame)
+-- A Suite popup of the menu window: this picker and the Dungeon portals
+-- picker (ComfortPickers.lua). A child of the menu window, like the other
+-- Suite popups: under its anchor it would be clipped by the preview host and
+-- take the anchor's strata. It closes in combat and on a click outside it and
+-- its anchor (frame.anchor); its search box (frame.search) then loses focus.
+function P.MenuPopupPanel(width, height)
+    local parent = M.frame or UIParent
+    local frame = M.CreateMenuPopupPanel and M.CreateMenuPopupPanel(parent, {}) or CreateFrame("Frame", nil, parent)
+    frame:SetSize(width, height)
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(true)
+    local background = frame:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(frame)
+    background:SetColorTexture(.025, .035, .045, .98)
     frame:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_REGEN_DISABLED" or not MouseOver(frame) and not MouseOver(frame.anchor) then frame:Hide() end
     end)
@@ -128,11 +144,11 @@ local function Lifecycle(frame)
         frame:RegisterEvent("GLOBAL_MOUSE_DOWN")
     end)
     frame:HookScript("OnHide", function()
-        frame.session = nil
         frame:UnregisterAllEvents()
-        frame.search:ClearFocus()
+        if frame.search then frame.search:ClearFocus() end
         if frame:IsShown() then frame:Hide() end
     end)
+    return frame
 end
 
 local function SearchBox(frame)
@@ -150,20 +166,10 @@ local function SearchBox(frame)
     return input
 end
 
--- A child of the menu window, like the other Suite popups: under its anchor
--- it would be clipped by the preview host and take the anchor's strata.
 local function Ensure()
     if popup then return popup end
-    local parent = M.frame or UIParent
-    local frame = M.CreateMenuPopupPanel and M.CreateMenuPopupPanel(parent, {}) or CreateFrame("Frame", nil, parent)
+    local frame = P.MenuPopupPanel(WIDTH, HEIGHT)
     popup = frame
-    frame:SetSize(WIDTH, HEIGHT)
-    frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame:SetClampedToScreen(true)
-    frame:EnableMouse(true)
-    local background = frame:CreateTexture(nil, "BACKGROUND")
-    background:SetAllPoints(frame)
-    background:SetColorTexture(.025, .035, .045, .98)
     frame.rows, frame.headings = {}, {}
     frame.title = P.Text(frame, "Choose a data source", 14, -14, WIDTH - 52, T.colors.text)
     frame.close = T.Button(frame, "x", 24, 23, { noSearch = true })
@@ -183,8 +189,8 @@ local function Ensure()
     end)
     if T.StyleScrollFrame then T.StyleScrollFrame(frame.scroll, frame) end
     frame.empty = P.Text(frame, "No matching data sources.", 14, -106, WIDTH - 48)
+    frame:HookScript("OnHide", function() frame.session = nil end)
     frame:Hide()
-    Lifecycle(frame)
     return frame
 end
 
@@ -283,16 +289,23 @@ function Picker.BuildDetails(ctx, parent, bar, slot, sectionId, y, width)
         return choice and Suite.DataTextSourceKeys[choice]
     end
     local meta = P.Meta(PAGE, ID, block .. ".choose", "action", sectionId)
+    -- Places that list dungeon portals share the portal set of the Dungeon
+    -- portals helper (ComfortPickers.lua); Retail only.
+    local function Portals(source)
+        return (source == "portals" or source == "travel") and Suite.Client.modernEquipment == true
+    end
     local button
     button = P.Button(ctx, parent, "Choose discovered currency", 16, y, width, function()
         local source = Source()
         if source == "broker" then BrokerMenu(button, block)
-        elseif source == "currency" then CurrencyMenu(button, block) end
+        elseif source == "currency" then CurrencyMenu(button, block)
+        elseif Portals(source) then P.DungeonPortalMenu(button) end
     end, function() return not P.Combat() end, meta)
     M.TrackRefresh(ctx, function()
         local source = Source()
-        button:SetShown(source == "broker" or source == "currency")
-        P.SetButtonText(button, Tr(source == "broker" and "Choose loaded broker" or "Choose discovered currency"))
+        button:SetShown(source == "broker" or source == "currency" or Portals(source))
+        P.SetButtonText(button, Tr(source == "broker" and "Choose loaded broker"
+            or Portals(source) and "Choose dungeon portals" or "Choose discovered currency"))
     end)
     return y - 38, { { meta = meta, label = "Choose data source", widget = button } }
 end

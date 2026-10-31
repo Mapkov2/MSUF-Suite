@@ -27,9 +27,11 @@ local HELP = {
 }
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
-    { id = "visibility", title = "When the selected bar appears", suffixes = { "Visibility", "HideGamepad", "Alpha", "FadeAlpha", "ClickThrough" } },
+    { id = "visibility", title = "When the selected bar appears",
+        suffixes = { "Visibility", "HideGamepad", "Alpha", "FadeAlpha", "FadeDuration", "ClickThrough", "Tooltip" } },
     { id = "layout", title = "Layout for the selected bar",
-        suffixes = { "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty", "Layer", "Point", "X", "Y" } },
+        suffixes = { "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty", "FlyoutDirection",
+        "Layer", "Point", "X", "Y" } },
     { id = "text", title = "Text for the selected bar", suffixes = { "Keybind", "KeybindSize", "Macro", "MacroSize",
         "CountSize", "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint",
         "MacroX", "MacroY", "CountPoint", "CountX", "CountY", "CooldownPoint", "CooldownX", "CooldownY" } },
@@ -44,7 +46,7 @@ local ESSENTIAL = {
     layout = { Buttons = true, Rows = true, Size = true, HeightPercent = true, Spacing = true, Vertical = true, ShowEmpty = true },
     text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
         CountSize = true, CooldownSize = true, CooldownAutoSize = true },
-    visibility = { Visibility = true, Alpha = true, FadeAlpha = true },
+    visibility = { Visibility = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
     ornaments = { LeftEndcap = true, LeftEndcapSize = true, RightEndcap = true, RightEndcapSize = true },
     background = { Background = true, BackgroundAlpha = true, BackgroundPadding = true, BackgroundBorder = true },
 }
@@ -52,9 +54,9 @@ P.ActionBarSearchGroups = GROUPS
 -- Copy To categories, one per section above, like the Unit and Group pages.
 local COPY_CATEGORIES = {
     { key = "visibility", label = "Visibility", default = true,
-      description = "Copies when the bar is shown, its opacity, fade and click-through." },
+      description = "Copies when the bar is shown, its opacity, fade, tooltips and click-through." },
     { key = "layout", label = "Layout", default = true,
-      description = "Copies buttons, rows, size, spacing, growth direction and empty slots. Position is never copied." },
+      description = "Copies buttons, rows, size, spacing, growth direction, empty slots and flyout direction. Position is never copied." },
     { key = "text", label = "Text", default = true,
       description = "Copies keybind and macro name visibility and every text size." },
     { key = "ornaments", label = "Endcaps", default = true, description = "Copies both endcaps, their sizes and offsets." },
@@ -437,13 +439,22 @@ local function EditorContent(ctx, b, body)
     return y - 38
 end
 
+-- The visibility keys are a bar's only on/off switch (Never = off), so the
+-- reset of its other settings must not bring a switched-off bar back. The
+-- "Enable action bars" card and the visibility section reset them.
+local KEEP_ON_BAR_RESET = { Visibility = true, ResumeVisibility = true }
+local function ResetBar(index)
+    local prefix = "bar" .. index
+    return P.ResetRules(ID, P.SectionRules(ID, prefix, function(rule)
+        return not KEEP_ON_BAR_RESET[rule.key:sub(#prefix + 1)]
+    end))
+end
+
 local function BuildEditor(ctx, b)
     P.LazySection(b, "suite_actionbars_editor", Tr("Customize a bar"), false, {
         content = function(body) return EditorContent(ctx, b, body) end,
         shell = function(body)
-            P.AttachSectionReset(ctx, body, "Customize a bar", function()
-                return P.ResetPrefix(ID, "bar" .. selected)
-            end)
+            P.AttachSectionReset(ctx, body, "Customize a bar", function() return ResetBar(selected) end)
         end,
         finish = function(body, y) P.FinishBody(b, body, y) end,
     })
@@ -471,6 +482,12 @@ P.SearchPreparers[ID] = function(rule)
         end
     end
 end
+
+-- Behavior holds the hidden `imported` flag. Cleared by a section reset, it
+-- makes the next refresh import Blizzard's layout over every bar again, so
+-- that reset covers the visible rules only. (Button appearance keeps its
+-- hidden icon skin in the reset: the status row there offers no other way back.)
+local function Visible(rule) return not rule.hidden end
 
 local function Build(ctx)
     local b = P.ActionBarMenu.Builder(ctx)
@@ -505,10 +522,11 @@ local function Build(ctx)
     end
     BuildEditor(ctx, b)
     for _, section in ipairs({ "appearance", "cooldowns", "text", "behavior" }) do
-        local rules = P.SectionRules(ID, section)
+        local rules = P.SectionRules(ID, section, section == "behavior" and Visible or nil)
         P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = false, extra = section == "appearance" and SkinStatus(ctx) or nil })
     end
+    P.BuildOwnedTool(ctx, b, "keyAudit")
     P.ActionBarMenu.Finish(ctx)
 end
 

@@ -11,6 +11,10 @@ local AB = P.ActionBars
 local M = AB.M
 local max, floor = math.max, math.floor
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
+-- The color setting of each usable state (S.USABLE).
+local USABLE = S.USABLE
+local TINT_KEYS = { [USABLE.USABLE] = "usableColor", [USABLE.NO_POWER] = "noPowerColor", [USABLE.UNUSABLE] = "unusableColor" }
+AB.TINT_KEYS = TINT_KEYS
 -- Highlight and pressed choices (the fourth, none, draws nothing).
 local STYLE_BORDER, STYLE_FILL, STYLE_BLIZZARD = AB.ENUM.HIGHLIGHT.BORDER, AB.ENUM.HIGHLIGHT.FILL, AB.ENUM.HIGHLIGHT.BLIZZARD
 local PROC_BLIZZARD = AB.ENUM.PROC_GLOW.BLIZZARD
@@ -21,6 +25,25 @@ AB.styleGen = 0
 local function Class()
     local _, class = UnitClass("player")
     return S.Public(class) and class or nil
+end
+
+-- The usability tints, by usable state. A color left at its default keeps
+-- the stock tint (S.USABLE_TINT, Blizzard's own), so the defaults paint
+-- exactly what the bars always did. customTints tells the reused Blizzard
+-- buttons whether the suite has to paint usability at all.
+local function BuildTints(style, config)
+    local tints, rules, stock = style.tints or {}, S.catalog.actionbars.rules, S.USABLE_TINT
+    style.tints, style.customTints = tints, false
+    for state, key in pairs(TINT_KEYS) do
+        local color = tints[state] or {}
+        tints[state] = color
+        if config[key] == rules[key].default then
+            color[1], color[2], color[3] = stock[state][1], stock[state][2], stock[state][3]
+        else
+            color[1], color[2], color[3] = S.RGB(config[key])
+            style.customTints = true
+        end
+    end
 end
 
 -- Resolved once per style change; buttons read plain values from here.
@@ -59,6 +82,7 @@ function AB.BuildStyle()
     style.swipeAlpha = config.swipeAlpha / 100
     style.highlight, style.pushed = config.highlightStyle, config.pushedStyle
     style.rr, style.rg, style.rb = S.RGB(config.rangeColor)
+    BuildTints(style, config)
     AB.styleGen = AB.styleGen + 1
     return style
 end

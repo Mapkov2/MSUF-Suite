@@ -25,6 +25,8 @@ local HELP = {
     native = P.Help("Blizzard's own plate style and size, and player names in the world."),
     visibility = P.Help("Which units get nameplates and how plates share space.",
         "Blizzard's own nameplate options. Keep Blizzard setting changes nothing; other choices go back to Blizzard's value when the skin turns off."),
+    distance = P.Help("How far plates show, how they fade and shrink, and how stacked plates sit.",
+        "Blizzard's distance and stacking options. Keep Blizzard setting changes nothing; other choices return to Blizzard's value when the skin turns off."),
 }
 
 local CAST_ELEMENT_KEYS = { enemyCastEnabled = true, enemyCastDisplay = true,
@@ -35,8 +37,9 @@ local CAST_ELEMENT_KEYS = { enemyCastEnabled = true, enemyCastDisplay = true,
 -- entry and, in a tabbed one, one tab (Portrait and Class Resources style).
 -- Keys missing on this client are skipped. Colors open from the section's
 -- ::: menu; positions stay with the preview and reset with the section whose
--- catalog section `positions` names. A setting placed nowhere still shows,
--- under More settings.
+-- catalog section `positions` names, or whose `positionElements` names the
+-- element (both sides). A setting placed nowhere still shows, under More
+-- settings.
 local ROLE_SWITCHES, ROLE_COLORS = {}, {}
 for _, role in ipairs(P.Suite.NameplateStyle.Roles) do
     if role.key ~= "TankMode" then ROLE_SWITCHES[#ROLE_SWITCHES + 1] = "enemy" .. role.key .. "Enabled" end
@@ -48,6 +51,7 @@ local SECTIONS = {
       keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
             "classColors", "playerGuildNames", "playerTitles" } },
     { key = "visibility", area = "general", catalog = "visibility" },
+    { key = "distance", area = "general", catalog = "distance" },
     { key = "personal", area = "general", catalog = "personal", positions = "personal" },
     { key = "enemy", area = "enemies", title = "Enemy appearance", open = true, positions = "enemy",
       colors = { "enemyBorderColor", "enemyBackdropColor", "enemyOuterFrameColor", "enemyGlowColor", "enemyTargetColor",
@@ -58,11 +62,12 @@ local SECTIONS = {
         { id = "frame", label = "Frame and highlights", help = "decor", keys = {
             "enemyOuterFrame", "enemyOuterFrameSize", "enemyShadowEnabled", "enemyGlowEnabled", "enemyGlowMode", "enemyEffectSize" } },
         { id = "text", label = "Text", keys = { "enemyTextMode", "enemyMirrorHeader", "enemyTextEnabled", "enemyCustomFont", "enemyNameFont",
-            "enemyNameSize", "enemyHealthTextSize", "enemyTextOutline", "enemyTextShadow", "enemyLevelEnabled", "enemyLevelSize" } },
+            "enemyNameSize", "enemyHealthTextSize", "enemyTextOutline", "enemyTextShadow", "enemyLevelEnabled", "enemyLevelSize",
+            "enemyLevelColor" } },
         { id = "markers", label = "Markers", help = "elements", keys = { "enemyEliteMarker", "enemyEliteMarkerAnchor",
             "enemyEliteMarkerSize", "enemyQuestMarker", "enemyQuestMarkerAnchor", "enemyQuestMarkerSize",
             "enemyRarityIcon", "enemyRaidIcon", "enemyFocusMarker", "enemyFocusMarkerSize", "enemyFocusMarkerX", "enemyFocusMarkerY",
-            "enemyThresholdEnabled", "enemyThresholdPercent" } },
+            "enemyThresholdEnabled", "enemyThresholdPercent", "enemyThresholdWidth" } },
         { id = "target", label = "Target arrows", keys = { "enemyTargetMarker", "enemyTargetStyle", "enemyTargetLayout",
             "enemyTargetAnchor", "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetHideFriendly" } },
     } },
@@ -72,11 +77,13 @@ local SECTIONS = {
             "enemyColorsOutside", "enemyQuestColors", "enemyTankMode", "enemyPreviewRole" } },
         { id = "types", label = "Types", keys = ROLE_SWITCHES },
     } },
-    { key = "signals", area = "colors", title = "Blizzard indicators",
-      colors = { "threatFlashColor", "threatHighlightColor", "selectionTargetColor", "selectionFocusColor" }, tabs = {
+    { key = "signals", area = "colors", title = "Blizzard indicators", positionElements = { "SoftTarget" },
+      colors = { "threatFlashColor", "threatHighlightColor", "selectionTargetColor", "selectionFocusColor",
+            "mouseoverHighlightColor" }, tabs = {
         { id = "aggro", label = "Aggro", help = "signals", keys = { "threatSignalMode", "threatFlash", "threatHighlight",
             "threatFlashColorEnabled", "threatHighlightColorEnabled" } },
-        { id = "selection", label = "Target and focus", keys = { "selectionBorder", "selectionDim", "selectionDimPercent" } },
+        { id = "selection", label = "Target and focus", keys = { "selectionBorder", "selectionDim", "selectionDimPercent",
+            "mouseoverHighlight" } },
         { id = "soft", label = "Soft target", keys = { "softTargetEnemy", "softTargetFriend", "softTargetInteract",
             "softTargetIconGate" } },
     } },
@@ -94,10 +101,14 @@ local SECTIONS = {
             "friendlyNameSize", "friendlyTextOutline", "friendlyTextShadow", "friendlyLevelEnabled", "friendlyLevelSize" } },
         { id = "markers", label = "Markers", keys = { "friendlyEliteMarker", "friendlyEliteMarkerAnchor",
             "friendlyEliteMarkerSize", "friendlyQuestMarker", "friendlyQuestMarkerAnchor", "friendlyQuestMarkerSize" } },
-        { id = "castbar", label = "Castbar", keys = { "friendlyCastTextEnabled", "friendlyCastTimeEnabled",
+        { id = "castbar", label = "Castbar", keys = { "friendlyCastHeight", "friendlyCastIconSize",
+            "friendlyCastTextEnabled", "friendlyCastTimeEnabled", "friendlyCastTimeFormat",
             "friendlyCastCustomFont", "friendlyCastFont", "friendlyCastSize", "friendlyCastOutline", "friendlyCastTextShadow" } },
     } },
-    { key = "auras", area = "auras", title = "Blizzard auras", open = true, positions = "auras", tabs = {
+    -- The aura handles' offsets sit in the enemy and friendly catalog sections
+    -- (Catalog/Nameplates.lua AddOffsets); the reset names them here.
+    { key = "auras", area = "auras", title = "Blizzard auras", open = true,
+      positionElements = { "Auras", "Buffs", "ControlAura" }, tabs = {
         { id = "enemyNpc", label = "Enemy NPC", help = "auras", keys = { "enemyNpcAuraMode", "enemyNpcBuffs",
             "enemyNpcDebuffs", "enemyNpcControl" } },
         { id = "enemyPlayer", label = "Enemy player", keys = { "enemyPlayerAuraMode", "enemyPlayerBuffs",
@@ -135,10 +146,17 @@ local function VisibleRules(rules)
     return visible
 end
 
-local function PositionKeys(section)
+-- The offsets a section's reset restores (SECTIONS: positions, positionElements).
+local function PositionKeys(spec)
     local keys = {}
-    for _, rule in ipairs(section and P.SectionRules(ID, section) or {}) do
+    for _, rule in ipairs(spec.positions and P.SectionRules(ID, spec.positions) or {}) do
         if IsPositionRule(rule) then keys[#keys + 1] = rule.key end
+    end
+    for _, element in ipairs(spec.positionElements or {}) do
+        for _, side in ipairs({ "enemy", "friendly" }) do
+            keys[#keys + 1] = side .. element .. "OffsetX"
+            keys[#keys + 1] = side .. element .. "OffsetY"
+        end
     end
     return keys
 end
@@ -154,14 +172,19 @@ for _, spec in ipairs(SECTIONS) do
     Place(spec.colors)
     for _, tab in ipairs(spec.tabs or {}) do Place(tab.keys) end
     if spec.catalog then
-        for _, rule in ipairs(P.SectionRules(ID, spec.catalog)) do placed[rule.key] = placed[rule.key] or PAGE .. "_" .. spec.key end
+        for _, rule in pairs(P.catalog[ID].rules) do
+            if rule.section == spec.catalog and rule.key ~= "enabled" and not rule.previewOnly then
+                placed[rule.key] = placed[rule.key] or PAGE .. "_" .. spec.key
+            end
+        end
     end
 end
 
--- Visible settings the placement does not name (a newer catalog rule).
+-- Visible settings the placement does not name (a newer catalog rule). A
+-- setting this client lacks (spec.controlAvailable) has no control at all.
 local function Unplaced()
     local rules = {}
-    for _, rule in ipairs(P.catalog[ID].controls or {}) do
+    for _, rule in ipairs(P.catalog[ID].getControls()) do
         if not placed[rule.key] and rule.key ~= "enabled" and not rule.hidden and not rule.previewOnly
             and not IsPositionRule(rule) and rule.section ~= "auraColors" then rules[#rules + 1] = rule end
     end
@@ -236,7 +259,7 @@ local function TabbedSection(ctx, builder, spec)
     end
     if type(P.W.SegmentTabs) ~= "function" then
         local body = P.RuleSection(ctx, builder, PAGE, ID, sectionId, Tr(spec.title), all,
-            { help = HELP[spec.tabs[1].help], open = spec.open, resetKeys = PositionKeys(spec.positions) })
+            { help = HELP[spec.tabs[1].help], open = spec.open, resetKeys = PositionKeys(spec) })
         spec.select = function() return body end
         return body
     end
@@ -253,7 +276,7 @@ local function TabbedSection(ctx, builder, spec)
                 return body
             end
             P.AttachSectionReset(ctx, body, Tr(spec.title), function()
-                return P.ResetRules(ID, all, nil, PositionKeys(spec.positions))
+                return P.ResetRules(ID, all, nil, PositionKeys(spec))
             end)
         end,
         finish = function() refresh() end,
@@ -285,7 +308,7 @@ local function PlainSection(ctx, builder, spec, rules)
     for _, rule in ipairs(Rules(spec.colors)) do rules[#rules + 1] = rule end
     if #rules == 0 then return nil end
     return P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. spec.key, Tr(spec.title or rules[1].sectionTitle), rules,
-        { help = HELP[spec.key], open = spec.open, resetKeys = PositionKeys(spec.positions),
+        { help = HELP[spec.key], open = spec.open, resetKeys = PositionKeys(spec),
           extra = spec.key == "castbar" and KickReadyLink(ctx) or nil })
 end
 

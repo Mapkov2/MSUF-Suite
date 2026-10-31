@@ -13,10 +13,32 @@ local toggle, panel, single, library
 local libraryToken = {}
 local detached = setmetatable({}, weak)
 local GAP, MARGIN, RESCAN_DELAY = 4, 8, 0.1
--- MBB takes permanent ownership of the buttons it collects. Keep the map
--- active, but never compete with its button container.
+local Kept = NS.MinimapKeptButtons
+-- A dedicated collector (NS.MinimapButtonCollectors) takes permanent ownership
+-- of the buttons it collects. Keep the map active, but never compete with its
+-- button container. The loaded one is looked up when the module starts and when
+-- an addon loads, not on every query.
+local collector
+local function LoadedCollector()
+    if collector == nil then collector = NS.MinimapButtonCollector() or false end
+    return collector
+end
+function MM.ForgetButtonCollector()
+    collector = nil
+end
 function MM.CollectsButtons()
-    return M.config and M.config.collectButtons and not NS.Client.IsAddOnLoaded("MinimapButtonButton") or false
+    return M.config and M.config.collectButtons and not LoadedCollector() or false
+end
+
+-- The buttons the player keeps on the map, parsed again only when the setting changed.
+local keptText, keptSet = "", {}
+local function KeptButtons()
+    local text = M.config.drawerKeep
+    if text ~= keptText then
+        local _, set = Kept.Names(text)
+        keptText, keptSet = text, set
+    end
+    return keptSet
 end
 
 -- Blizzard frames, the suite's own and known replacements are never collected.
@@ -39,10 +61,11 @@ local PANEL_ANCHORS = {
     { "BOTTOMLEFT", "BOTTOMRIGHT", GAP, 0 }, { "TOPRIGHT", "BOTTOMRIGHT", 0, -GAP },
 }
 
-local function Candidate(frame)
+local function Candidate(frame, kept)
     if not MM.Usable(frame) or collected[frame] then return false end
     local name = frame:GetName()
     if not S.Public(name) or type(name) ~= "string" or name == "" or frame:IsProtected() then return false end
+    if kept[name] then return false end
     if name:find("^LibDBIcon10_") then return true end
     if BLOCKED[name] or name:find("^MSUFSuite") or name:find("%d$") then return false end
     for i = 1, #PINS do if name:find(PINS[i]) then return false end end
@@ -52,15 +75,32 @@ local function ByLabel(a, b) return labels[a] < labels[b] end
 local function OwnerChanged(frame)
     if M.active and collected[frame] then MM.Queue("drawer") end
 end
+local function ReleaseButton(button)
+    if detached[button] then detached[button]:Hide() end
+    MM.Release(button)
+    collected[button] = nil
+end
+-- Buttons the player now keeps on the map leave the drawer.
+local function ReleaseKept(kept)
+    for i = #list, 1, -1 do
+        local button = list[i]
+        if MM.Usable(button) and kept[button:GetName()] then
+            ReleaseButton(button)
+            table.remove(list, i)
+        end
+    end
+end
 local function Scan()
     local map = _G.Minimap
     if not MM.Usable(map) then return end
+    local kept = KeptButtons()
+    ReleaseKept(kept)
     local children, added = { map:GetChildren() }, false
     for i = 1, #children do
         local frame = children[i]
-        if Candidate(frame) then
+        if Candidate(frame, kept) then
             collected[frame], added = true, true
-            labels[frame] = (frame:GetName():gsub("^LibDBIcon10_", "")):lower()
+            labels[frame] = Kept.Label(frame:GetName()):lower()
             list[#list + 1] = frame
             if not hooked[frame] then
                 hooked[frame] = true
@@ -134,7 +174,7 @@ function S.MinimapButtonLayoutMenu(anchor)
         for _, button in ipairs(list) do
             if MM.Usable(button) then
                 local name = button:GetName()
-                local title = (positions[name] and S.Text("Collect: %s") or S.Text("Detach: %s")):format(name:gsub("^LibDBIcon10_", ""))
+                local title = (positions[name] and S.Text("Collect: %s") or S.Text("Detach: %s")):format(Kept.Label(name))
                 root:CreateButton(title, function()
                     if NS.IsCombatLocked() then return end
                     if positions[name] then
@@ -348,14 +388,19 @@ local function Library()
     return type(stub) == "table" and type(stub.GetLibrary) == "function" and stub:GetLibrary("LibDBIcon-1.0", true) or
         nil
 end
--- Without collection LibDBIcon lays its icons around the current shape and size.
+-- LibDBIcon lays its icons around the current shape and size: all of them
+-- without collection, only the ones the player keeps on the map with it.
 function MM.RefreshIcons()
-    if NS.Client.IsAddOnLoaded("MinimapButtonButton") then return end
+    if LoadedCollector() then return end
+    local kept = MM.CollectsButtons() and KeptButtons()
+    if kept and next(kept) == nil then return end
     local lib = Library()
     if not lib or type(lib.GetButtonList) ~= "function" or type(lib.Refresh) ~= "function" then return end
     local names = lib:GetButtonList()
     if type(names) ~= "table" then return end
-    for i = 1, #names do lib:Refresh(names[i]) end
+    for i = 1, #names do
+        if not kept or kept[Kept.IconFrame(names[i])] then lib:Refresh(names[i]) end
+    end
 end
 
 function MM.ApplyDrawer()
@@ -374,6 +419,7 @@ function MM.ApplyDrawer()
     end
     Scan()
     MM.LayoutDrawer()
+    MM.RefreshIcons()
 end
 
 function S.MinimapRescanButtons()
@@ -381,6 +427,16 @@ function S.MinimapRescanButtons()
     Scan()
     MM.LayoutDrawer()
     return true
+end
+
+-- The frame names of the buttons in the drawer: what the options page offers
+-- to keep on the map.
+function S.MinimapButtonNames()
+    local names = {}
+    for i = 1, #list do
+        if MM.Usable(list[i]) then names[#names + 1] = list[i]:GetName() end
+    end
+    return names
 end
 
 function MM.ReleaseDrawer()
@@ -392,10 +448,8 @@ function MM.ReleaseDrawer()
     library = nil
     ClosePanel()
     for i = #list, 1, -1 do
-        local button = list[i]
-        if detached[button] then detached[button]:Hide() end
-        MM.Release(button)
-        collected[button], list[i] = nil, nil
+        ReleaseButton(list[i])
+        list[i] = nil
     end
     for i = #visible, 1, -1 do visible[i] = nil end
     if toggle then

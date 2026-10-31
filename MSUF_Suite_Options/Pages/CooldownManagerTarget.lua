@@ -125,7 +125,15 @@ function Page.BuildTargetPicker(ui, body)
 end
 function Page.PaintTargetPicker(ui)
     local profile = Suite.Database.GetActiveProfileName()
-    local text = string.format(Tr("Profile: %s. Layout and colors are shared; spell lists and specialization overrides use the selected spec."), profile)
+    local text
+    if P.Get(ID, "specPositions") then
+        local _, name = PlayerSpec()
+        text = string.format(
+            Tr("Profile: %s. Layout edits change the active specialization (%s). Colors are shared; lists and overrides use the selected spec."),
+            profile, name or Tr("No specialization"))
+    else
+        text = string.format(Tr("Profile: %s. Layout and colors are shared; spell lists and specialization overrides use the selected spec."), profile)
+    end
     if ui.profileText ~= text then
         ui.profileText = text
         Page.SetRaw(ui.profileCaption, text)

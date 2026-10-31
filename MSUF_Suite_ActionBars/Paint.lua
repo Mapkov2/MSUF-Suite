@@ -13,9 +13,8 @@ local AB = P.ActionBars
 local M = AB.M
 local ENUM = AB.ENUM
 local PROC_BLIZZARD, PROC_PIXEL, PROC_NONE = ENUM.PROC_GLOW.BLIZZARD, ENUM.PROC_GLOW.PIXEL, ENUM.PROC_GLOW.NONE
-local USABLE, USABLE_TINT = S.USABLE, S.USABLE_TINT
+local USABLE = S.USABLE
 local USABLE_OK, NO_POWER, UNUSABLE, OUT_OF_RANGE = USABLE.USABLE, USABLE.NO_POWER, USABLE.UNUSABLE, USABLE.OUT_OF_RANGE
-local UNUSABLE_TINT = USABLE_TINT[UNUSABLE]
 local Public = S.Public
 -- The client's secret test (Platform.lua), called directly on the paint
 -- paths every cooldown, usability and state event runs.
@@ -82,7 +81,7 @@ function AB.UpdateCurves()
     curve:AddPoint(0.001, alpha)
 end
 
-local function Visible(bar) return bar.header:IsVisible() end
+local function Visible(bar) return not bar.paintDormant and bar.header:IsVisible() end
 
 ------------------------------------------------------------------ range
 local function Tint(rec)
@@ -95,7 +94,8 @@ local function Tint(rec)
     if key == OUT_OF_RANGE then
         icon:SetVertexColor(style.rr, style.rg, style.rb)
     else
-        local color = USABLE_TINT[key] or UNUSABLE_TINT
+        -- AB.style.tints: the usability colors (Style.lua), Blizzard's own by default.
+        local color = style.tints[key] or style.tints[UNUSABLE]
         icon:SetVertexColor(color[1], color[2], color[3])
     end
 end
@@ -568,6 +568,12 @@ local function Clear(rec)
     if button.Name then button.Name:SetText("") end
     if button.Border then button.Border:Hide() end
     button:SetChecked(false)
+    -- The checked frame art goes with it, also when the button had no action
+    -- state of its own to repaint.
+    if rec.decorChecked then
+        rec.decorChecked = false
+        AB.UpdateDecorState(rec)
+    end
     if rec.feedback then
         rec.feedback = nil
         if button.icon then

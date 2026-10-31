@@ -99,9 +99,14 @@ hooksecurefunc = function(owner, key, callback)
 end
 -- Blizzard_ChatFrameBase creates its chat frames before any addon loads.
 local function ChatFrame()
-    local frame = { fading = true, calls = 0 }
+    local frame = { fading = true, calls = 0, timeVisible = 120, fadeDuration = 3 }
     function frame:GetFading() return self.fading end
     function frame:SetFading(value) self.fading, self.calls = value, self.calls + 1 end
+    function frame:GetTimeVisible() return self.timeVisible end
+    function frame:SetTimeVisible(value) self.timeVisible = value end
+    function frame:GetFadeDuration() return self.fadeDuration end
+    function frame:SetFadeDuration(value) self.fadeDuration = value end
+    frame.editBox = { HasFocus = function() return false end }
     return frame
 end
 CHAT_FRAMES = { "ChatFrame1" }
@@ -361,4 +366,64 @@ MovieFrame:PlayMovie()
 assert(stops == 2 and movieCancels == 2, "disabled cinematic hooks kept running")
 assert(ActionStatus:IsEventRegistered("SCREENSHOT_SUCCEEDED"),
     "disabling the module did not preserve the screenshot event")
+
+-- Native chat fading has two owners: "Keep chat messages visible" here and
+-- the Chat module's "Fade individual messages" (MSUF_Suite_Chat/Appearance.lua),
+-- each in an addon that loads on its own. Whatever order they take and let go
+-- of a window, its native fading comes back; while both hold it, keeping the
+-- messages visible wins, and the one left holding gets its own value at once.
+do
+    local frame = ChatFrame1
+    local visual = { frame = frame }
+    local fadeConfig = { messageFading = true, messageTimeVisible = 20, messageFadeDuration = 5 }
+    local function Keep(on)
+        module.config.noChatFade = on
+        module:Refresh()
+    end
+    module.active, module.config = true, {}
+    -- The exact report: keep on, then the Chat addon loads and fades, keep
+    -- off, fading off.
+    frame.fading = true
+    Keep(true)
+    local chat = { Suite = suite, Chat = {} }
+    assert(loadfile(root .. "/MSUF_Suite_Chat/Appearance.lua"))("MSUF_Suite_Chat", chat)
+    local Chat = chat.Chat
+    Chat.ApplyMessageFade(visual, fadeConfig)
+    local both = frame.fading
+    Keep(false)
+    local left = frame.fading
+    Chat.ReleaseMessageFade(visual)
+    assert(frame.fading == true, "keep, fade, keep off, fade off: native fading was not restored")
+    assert(both == false and left == true, "the Chat addon loaded later broke the hand-over")
+    local switch = {
+        keep = Keep,
+        fade = function(on)
+            if on then Chat.ApplyMessageFade(visual, fadeConfig) else Chat.ReleaseMessageFade(visual) end
+        end,
+    }
+    local alone = { keep = false, fade = true }
+    for _, native in ipairs({ true, false }) do
+        for _, first in ipairs({ "keep", "fade" }) do
+            for _, lastOff in ipairs({ "keep", "fade" }) do
+                local second = first == "keep" and "fade" or "keep"
+                local firstOff = lastOff == "keep" and "fade" or "keep"
+                local case = ("native %s, %s then %s on, %s off first"):format(tostring(native), first, second, firstOff)
+                frame.fading = native
+                switch[first](true)
+                switch[second](true)
+                both = frame.fading
+                Chat.MessageFadeFocus(visual, false)
+                local focusLost = frame.fading
+                switch[firstOff](false)
+                left = frame.fading
+                switch[lastOff](false)
+                assert(frame.fading == native, case .. ": native fading was not restored")
+                assert(both == false and focusLost == false, case .. ": kept messages faded")
+                assert(left == alone[lastOff], case .. ": the remaining owner's value was not applied")
+            end
+        end
+    end
+    module.active = false
+    module:Disable()
+end
 print("Suite daily comfort lifecycle passed")

@@ -1,5 +1,8 @@
 local _, Suite = ...
-local IO = { prefix = "MSUFM1:", maxBytes = 2 * 1024 * 1024 }
+-- MSUF's profile string box holds 200,000 characters (Menu2 W.TextInput), so
+-- a longer export could never be pasted back (it also stays below MSUF's
+-- 192 KiB decode cap). Imports keep maxBytes.
+local IO = { prefix = "MSUFM1:", modulePrefix = "MSUFM2:", maxBytes = 2 * 1024 * 1024, maxExportBytes = 200000 }
 Suite.ProfileIO = IO
 local LEGACY_MINIMAP_KEYS = { enabled = "specButton", showSpec = "specShowSpec", showLoot = "specShowLoot",
     corner = "specCorner", size = "specSize", x = "specX", y = "specY" }
@@ -34,19 +37,29 @@ end
 -- string then marks that module (envelope.characterBound), and a shared
 -- import keeps them only for a marked module. The choice itself never
 -- travels. keep: { [module id] = true } of modules whose values stay.
-local function ResetPersonal(profile, keep)
+-- current (optional): the module settings of the profile an import goes
+-- into; that profile keeps its own values instead of the defaults.
+local function ResetPersonal(profile, keep, current)
     for id, settings in pairs(profile.suite.modules) do
         local spec = Suite.SuiteCatalog[id]
         if spec then
-            local kept = keep and keep[id]
+            local kept, own = keep and keep[id], current and current[id]
             for key, rule in pairs(spec.rules) do
                 if rule.personal and settings[key] ~= nil and (not kept or key == spec.personalExport) then
                     settings[key] = rule.default
+                    if own and own[key] ~= nil then settings[key] = own[key] end
                 end
             end
         end
     end
     return profile
+end
+
+-- A prepared shared profile imported into an existing one: its modules keep
+-- that profile's character-bound settings, as a module import does
+-- (PrepareModuleProfile leaves them out), except where the string marked them.
+function IO.KeepPersonal(profile, current, keep)
+    return ResetPersonal(profile, keep, current)
 end
 
 -- The modules whose character-bound settings an export keeps: those whose
@@ -211,16 +224,21 @@ function IO.ExportModule(id, options)
         addon = "MSUF_Suite", format = 2, module = id, revision = clean.suite.revision,
         settings = clean.suite.modules[id], characterBound = keep and keep[id] or nil,
     }, "MSUF3")
-    if type(encoded) ~= "string" or #encoded > IO.maxBytes then return nil, "Suite module profile is too large" end
-    return "MSUFM2:" .. encoded
+    if type(encoded) ~= "string" or #IO.modulePrefix + #encoded > IO.maxExportBytes then
+        return nil, "Suite module profile is too large"
+    end
+    return IO.modulePrefix .. encoded
 end
 
 function IO.PrepareModuleProfile(text, preservePersonal)
-    if type(text) ~= "string" or #text > IO.maxBytes + 7 or text:sub(1, 7) ~= "MSUFM2:" then
+    local prefix = IO.modulePrefix
+    -- MSUF matches ^%s* and passes the pasted text as it is.
+    text = type(text) == "string" and #text <= IO.maxBytes + #prefix and text:match("^%s*(.-)%s*$")
+    if not text or text:sub(1, #prefix) ~= prefix then
         return nil, nil, "Invalid suite module profile"
     end
     if not CodecAvailable() then return nil, nil, "Profile codec unavailable on this client" end
-    local encoded = text:sub(8)
+    local encoded = text:sub(#prefix + 1)
     if encoded:sub(1, 6) ~= "MSUF3:" then return nil, nil, "Invalid suite module payload" end
     local envelope = _G.MSUF_TryDecodeCompactString(encoded)
     if type(envelope) ~= "table" or envelope.addon ~= "MSUF_Suite" or envelope.format ~= 2
@@ -259,7 +277,10 @@ function IO.PrepareProfile(text, shared)
     if type(envelope) ~= "table" or envelope.addon ~= "MSUF_Suite" or envelope.format ~= 1 then
         return nil, "Unsupported suite profile"
     end
-    return IO.PrepareTable(envelope.profile, shared ~= false, MarkedModules(envelope.characterBound))
+    -- The marks go back too, for an import into an existing profile (KeepPersonal).
+    local keep = MarkedModules(envelope.characterBound)
+    local profile, why = IO.PrepareTable(envelope.profile, shared ~= false, keep)
+    return profile, why, keep
 end
 
 -- Older development bundles embedded module settings in a MapkoSkin export.

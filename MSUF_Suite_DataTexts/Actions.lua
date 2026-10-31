@@ -13,12 +13,13 @@ local CREST = NS.DataTextCrestMode
 --     place, never inside a bar, and runs its SecureActionButtonTemplate click
 --     (item, toy or a click on Blizzard's talent micro button); the Suite only
 --     adds PostClick.
---   * The built-in Durability, Coordinates and Zone places and the Currency
---     and Crests places borrow it too: it clicks the Blizzard button that
---     opens their window (S.PanelButton), so the character window, its
---     currency tab and the world map open from secure code. Without that
---     button the place opens the window through Blizzard's panel manager
---     (S.TogglePanel; Standard.Click for the built-in places).
+--   * The built-in Durability, Coordinates and Zone places and the Currency,
+--     Crests, Friends and Guild places borrow it too: it clicks the Blizzard
+--     button that opens their window (S.PanelButton), so the character
+--     window, its currency tab, the world map, the friends list and the guild
+--     window open from secure code. Without that button the place opens the
+--     window through Blizzard's panel manager (S.TogglePanel; Standard.Click
+--     for the built-in places).
 --   * Under WoW Forever's Gamepad UI (S.GamepadUI) the Gold, Session, Bags,
 --     Date, Time and Professions places borrow it as well
 --     (Sources.gamepadPanelSources): no window opens from the Suite's own
@@ -34,7 +35,7 @@ local OVERLAY_KINDS = { hearth = true, specialization = true, currency = true, c
 -- Places whose window a Blizzard button opens (S.PanelButton): built-in
 -- sources by source, additional ones by kind.
 local PANEL_SOURCES = Sources.panelSources
-local PANEL_KINDS = { currency = "currency", crests = "currency" }
+local PANEL_KINDS = { currency = "currency", crests = "currency", friends = "friends", guild = "guild" }
 local GAMEPAD_SOURCES, GAMEPAD_KINDS = Sources.gamepadPanelSources, Sources.gamepadPanelKinds
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100
@@ -222,6 +223,41 @@ local function Popup()
     return popup
 end
 
+-- The portal and travel rows mark the row under the pointer: with the Suite
+-- skin's hover colour and style while the skin is on (as its own buttons:
+-- outline, soft or solid fill, or off; intensity scales it), else a soft
+-- light fill. The marks sit on the HIGHLIGHT layer, so the client shows them
+-- without a script on the secure rows. The look is read once per opened
+-- popup and a row repaints only when it changed.
+local NO_HOVER = { color = { 0, 0, 0, 0 } }
+local PLAIN_HOVER = { color = { 1, 1, 1, .1 } }
+local EDGES = { { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
+    { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+local skinHover = { color = {} }
+local function HoverLook()
+    local skin = P.DataTexts.context:Skin()
+    if not skin or not skin:IsEnabled() then return PLAIN_HOVER end
+    local style = skin:GetAppearance("hoverStyle")
+    local intensity = skin:GetAppearance("hoverIntensity")
+    local r, g, b, a = skin:GetColor("hover")
+    if not (S.Finite(r) and S.Finite(g) and S.Finite(b)) then return PLAIN_HOVER end
+    a = (S.Finite(a) and a or 1) * (S.Finite(intensity) and intensity or 1)
+        * (style == "softFill" and .28 or style == "off" and 0 or 1)
+    local color, outline = skinHover.color, style == "outline" or style == nil
+    if color[1] ~= r or color[2] ~= g or color[3] ~= b or color[4] ~= a or skinHover.outline ~= outline then
+        skinHover = { color = { r, g, b, a }, outline = outline }
+    end
+    return skinHover
+end
+
+local function PaintHover(row, look)
+    if row.hoverLook == look then return end
+    row.hoverLook = look
+    local r, g, b, a = look.color[1], look.color[2], look.color[3], look.color[4]
+    row.hoverFill:SetColorTexture(r, g, b, look.outline and 0 or a)
+    for _, edge in ipairs(row.hoverEdges) do edge:SetColorTexture(r, g, b, look.outline and a or 0) end
+end
+
 local function Row(index)
     local row = popup.rows[index]
     if row then return row end
@@ -240,6 +276,16 @@ local function Row(index)
     row.label:SetWordWrap(false)
     row.cooldown = S.CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
     row.cooldown:SetAllPoints(row.icon)
+    row.hoverFill = S.CreateTexture(row, nil, "HIGHLIGHT")
+    row.hoverFill:SetAllPoints(row)
+    row.hoverEdges = {}
+    for i, edge in ipairs(EDGES) do
+        local texture = S.CreateTexture(row, nil, "HIGHLIGHT")
+        texture:SetPoint(edge[1], row, edge[1])
+        texture:SetPoint(edge[2], row, edge[2])
+        if edge[3] then texture:SetHeight(1) else texture:SetWidth(1) end
+        row.hoverEdges[i] = texture
+    end
     popup.rows[index] = row
     return row
 end
@@ -261,8 +307,9 @@ end
 -- column there wrap into further columns, as many as the screen is wide.
 -- A list those columns cannot hold there takes the screen's height (the
 -- clamp moves the popup over its place); entries beyond its rows scroll
--- into them with the mouse wheel. fill(row, index) sets up each entry.
-local function OpenPopup(button, count, fill)
+-- into them with the mouse wheel. fill(row, index) sets up each entry;
+-- hover marks the row under the pointer (HoverLook).
+local function OpenPopup(button, count, fill, hover)
     if Locked() then return end
     count = math.min(count, ROW_LIMIT)
     if count == 0 then
@@ -288,11 +335,13 @@ local function OpenPopup(button, count, fill)
         frame:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 0, 3)
     end
     frame:SetSize(4 + math.ceil(slots / perColumn) * 236, perColumn * 26 + 8)
+    local look = hover and HoverLook() or NO_HOVER
     for i = 1, slots do
         local row = Row(i)
         local column, line = math.floor((i - 1) / perColumn), (i - 1) % perColumn
         row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + column * 236, -4 - line * 26)
         fill(row, i)
+        PaintHover(row, look)
         row:Show()
     end
     for i = slots + 1, #frame.rows do frame.rows[i]:Hide() end
@@ -326,7 +375,7 @@ function Actions.PortalMenu(button)
     if not S.LearnedDungeonPortals then C_AddOns.LoadAddOn("MSUF_Suite_QualityOfLife") end
     if not S.LearnedDungeonPortals then return end
     portals = S.LearnedDungeonPortals()
-    OpenPopup(button, #portals, FillPortal)
+    OpenPopup(button, #portals, FillPortal, true)
 end
 
 local travelHearths
@@ -358,7 +407,7 @@ function Actions.TravelMenu(button)
         if not S.LearnedDungeonPortals then C_AddOns.LoadAddOn("MSUF_Suite_QualityOfLife") end
         if S.LearnedDungeonPortals then portals = S.LearnedDungeonPortals() end
     end
-    OpenPopup(button, #travelHearths + #portals, FillTravel)
+    OpenPopup(button, #travelHearths + #portals, FillTravel, true)
 end
 
 local micro = {}
@@ -432,6 +481,8 @@ function Actions.Click(button, mouse)
         -- without Blizzard's button opens its window right away (not under
         -- the Gamepad UI: S.TogglePanel).
         if not Actions.Attach(button) and PANEL_KINDS[kind] then S.TogglePanel(PANEL_KINDS[kind]) end
+    elseif kind == "vault" then
+        if NS.WeeklyRewards.Available() then WeeklyRewards_ShowUI() end
     elseif kind == "professions" then
         ToggleProfessionsBook()
     elseif kind == "portals" then
@@ -490,10 +541,17 @@ function Actions.Tooltip(button, title)
         GameTooltip:ClearLines()
         GameTooltip:AddLine(title, 1, .82, .36)
         GameTooltip:AddLine(button.text or NO_VALUE, 1, 1, 1)
-        if kind == "crests" then
+        if kind == "vault" then
+            P.VaultDataText.Tooltip(button)
+        elseif kind == "supplies" then
+            P.SuppliesDataText.Tooltip(GameTooltip)
+        elseif kind == "crests" then
             CrestLines(S.Config("dataTexts"))
         elseif kind == "audio" then
             GameTooltip:AddLine(S.Text("Mouse wheel or left/right click changes volume by 5%."), 1, 1, 1)
+        else
+            -- A provider's own detail lines (Social.lua, Stats.lua).
+            Sources.AddLines(kind, GameTooltip, button)
         end
     end
     GameTooltip:Show()
@@ -502,6 +560,7 @@ end
 function Actions.Leave(button)
     local binding = button.extra
     if not binding then return end
+    if binding.kind == "vault" then P.VaultDataText.Leave(button) end
     if binding.kind == "broker" then
         local object = Sources.BrokerObject(binding)
         if object and type(object.OnLeave) == "function" then S.Dispatch(NS.Finish, object.OnLeave, button) end

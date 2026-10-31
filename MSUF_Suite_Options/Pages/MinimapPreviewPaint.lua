@@ -243,6 +243,15 @@ local function OffsetKeys(key)
 end
 
 ------------------------------------------------------------------ painting
+-- The difficulty sample ("5H") is heroic, the second tier of the live text's colours.
+local SAMPLE_DIFFICULTY_TIER = 2
+local function TextColor(config, name, prefix)
+    if name == "Difficulty" and config.infoDifficultyColors then
+        return Suite.MinimapDifficultyColors[SAMPLE_DIFFICULTY_TIER]
+    end
+    return config[prefix .. "Color"] or "ffffff"
+end
+
 local function PaintText(ui, config, item)
     local name, prefix = item.spec[1], "info" .. item.spec[1]
     local on = config[prefix] == true
@@ -289,11 +298,11 @@ local function PaintText(ui, config, item)
         Suite.MinimapStyle.LayoutWeather(item, config, sample, scale)
         item.box:SetWidth(math.max(contentHeight * scale, item.contentWidth + 8 * scale))
     end
-    local r, g, b = P.RGB(config[prefix .. "Color"] or "ffffff")
+    local r, g, b = P.RGB(TextColor(config, name, prefix))
     if config[prefix .. "ClassColor"] then r, g, b = PlayerClassColor(r, g, b) end
     item.label:SetTextColor(r or 1, g or 1, b or 1)
     local boxMode = config[prefix .. "Box"]
-    local boxed = name ~= "Difficulty" and (boxMode == BOX.BORDER or boxMode == BOX.CUSTOM)
+    local boxed = boxMode == BOX.BORDER or boxMode == BOX.CUSTOM
     local br, bg, bb = P.RGB(config.borderColor)
     if boxMode == BOX.CUSTOM then br, bg, bb = P.RGB(config[prefix .. "BoxColor"]) end
     Tint(item.box, br, bg, bb, 0.85)
@@ -319,7 +328,7 @@ local function IconWanted(config, spec)
         return wanted
     end
     local wanted = key == "folio" and config.showLanding ~= LANDING.NEVER or spec[4] and config[spec[4]] == true
-    if key == "drawer" and Suite.Client.IsAddOnLoaded("MinimapButtonButton") then wanted = false end
+    if key == "drawer" and Suite.MinimapButtonCollector() then wanted = false end
     if spec[4] == false then
         local frame = Native.Frame(nativeKey)
         local shown = frame and frame:IsShown()

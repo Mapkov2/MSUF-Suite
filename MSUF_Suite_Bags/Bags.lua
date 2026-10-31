@@ -429,8 +429,10 @@ end
 -- its stop method (nil: nothing to do there); retail: the file loads on
 -- Retail only. Their files load after this one.
 local SUBMODULES = {
+    { "UpgradeMarker", "Refresh", "Disable" },                -- worn equipment, for the upgrade arrow
     { "InventoryView", "Refresh", "Disable" },                -- the Suite grid of the combined bag
     { "BankInventory", "Refresh", "Disable", retail = true }, -- the organized bank view
+    { "BankWindow", "Refresh", "Disable", retail = true },    -- the bank window's size and place
     { "BagFinance", "Enable", "Disable" },                    -- the currency and gold history line
     { "AutoSplit", nil, "Stop" },                             -- a running automatic split
     { "StackSplitter", "Refresh", "Close" },                  -- split presets beside Blizzard's window

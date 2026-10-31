@@ -80,7 +80,11 @@ function M:Refresh()
     if all then dirty.catalog, dirty.resolve, dirty.layout, dirty.visibility, dirty.events, dirty.keybinds = true, true, true, true, true, true end
     C.PressBridge()
     ApplyPreview()
+    C.Effects.RecommendationWatchAnchor()
+    C.Effects.RecommendationVisibility()
     C.Effects.Recommendation()
+    C.KickMark.Rebuild()
+    if C.Preview.mode == "options" then C.Preview.PaintLabels() end
     if not Settings.CaptureWaiting() then
         C.Native.Apply()
         Settings.SyncViewerOffset()
@@ -155,9 +159,10 @@ end
 -- The options page keeps every bar visible while it is open. A request made
 -- while the module is off is kept and applies once it is enabled; the
 -- result says whether the preview runs now.
-function S.CooldownManagerSetPreview(on)
+function S.CooldownManagerSetPreview(on, select)
     on = on == true
     if on and NS.IsCombatLocked() then return false end
+    C.Preview.LabelBars(on and select or nil)
     if optionsPreview ~= on then
         optionsPreview = on
         if M.active then ApplyPreview() end

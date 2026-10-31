@@ -218,6 +218,9 @@ local NS = {
     Client = { isForever = false, IsGamepadUI = function() return false end },
     Adapters = { ApplyAll = function() end },
 }
+local core = { HostBridge = {} }
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
+NS.SuiteCore = function() return core end
 for _, file in ipairs({ "Core/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",
     "Rendering/WindowControlChrome.lua", "Rendering/WindowControls.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)

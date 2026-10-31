@@ -42,16 +42,18 @@ local function BracketColor(owner, bracket)
     if bracket == 3 then return owner.completeRGB or COMPLETE_RGB end
     if bracket == 2 then return groups and groups.scenario or SCENARIO_RGB end
     if bracket == 1 then return groups and groups.focused or FOCUSED_RGB end
-    return LATE_RGB
+    return owner.lateRGB or LATE_RGB
 end
 
-local function StyleText(fontString, font, size)
-    S.SetStyledFont(fontString, font, size, "OUTLINE", 1, true, 70, 1)
+-- The tracker's text style (config: its settings; nil while a string is
+-- created, until the first theme pass styles it).
+local function StyleText(fontString, config, font, size)
+    S.SetStyledFont(fontString, font, size, NS.HUDTextArgs(config))
 end
 
 local function NewText(parent, size, right)
     local fontString = S.CreateFontString(parent, nil, "OVERLAY")
-    StyleText(fontString, S.GlobalFontPath(), size)
+    StyleText(fontString, nil, S.GlobalFontPath(), size)
     fontString:SetJustifyH(right and "RIGHT" or "LEFT")
     fontString:SetWordWrap(false)
     return fontString
@@ -160,7 +162,7 @@ local function ThemeBars(owner)
     local barHeight = c.timerBarHeight or 7
     view.bar:SetHeight(barHeight)
     view.barText:SetShown(c.timerBarText == true)
-    StyleText(view.barText, owner.font or S.GlobalFontPath(), 11)
+    StyleText(view.barText, c, owner.font or S.GlobalFontPath(), 11)
     SetText(view.barText, Clock(view.lastElapsed) .. " / " .. Clock(view.limit))
     local width = view.bar:GetWidth()
     if not Finite(width) or width <= 0 then width = math.max(1, (c.width or 310) - 8) end
@@ -188,7 +190,7 @@ local function ThemeBars(owner)
         spec[1]:SetPoint("TOPRIGHT", -4, spec[2])
     end
     view.observedPull:SetShown(c.showObservedPull == true and not view.completed)
-    StyleText(view.observedPull, owner.font or S.GlobalFontPath(), 12)
+    StyleText(view.observedPull, c, owner.font or S.GlobalFontPath(), 12)
     view.bossY = deathY - 110 - pullSpace
     for i, row in ipairs(view.bosses) do
         row:ClearAllPoints()
@@ -203,7 +205,7 @@ local function ThemeBars(owner)
     view.forcesBar:ClearAllPoints()
     view.forcesBar:SetPoint("TOPLEFT", inset, deathY - 69)
     view.forcesBar:SetPoint("TOPRIGHT", -inset, deathY - 69)
-    StyleText(view.forces, owner.font or S.GlobalFontPath(), c.forcesTextSize or c.objectiveSize or 13)
+    StyleText(view.forces, c, owner.font or S.GlobalFontPath(), c.forcesTextSize or c.objectiveSize or 13)
 end
 
 function H.Theme(owner)
@@ -217,13 +219,13 @@ function H.Theme(owner)
     local accent = owner.groupRGB and owner.groupRGB.scenario or SCENARIO_RGB
     local objectiveSize = c.objectiveSize or 13
     local smallSize = math.max(10, objectiveSize - 1)
-    StyleText(view.dungeon, font, c.entrySize or 15)
-    StyleText(view.clock, font, math.max(23, (c.titleSize or 18) + 6))
-    StyleText(view.remaining, font, objectiveSize)
-    StyleText(view.deaths, font, objectiveSize)
-    StyleText(view.forces, font, c.forcesTextSize or objectiveSize)
-    StyleText(view.affixes, font, smallSize)
-    StyleText(view.bossHeader, font, smallSize)
+    StyleText(view.dungeon, c, font, c.entrySize or 15)
+    StyleText(view.clock, c, font, math.max(23, (c.titleSize or 18) + 6))
+    StyleText(view.remaining, c, font, objectiveSize)
+    StyleText(view.deaths, c, font, objectiveSize)
+    StyleText(view.forces, c, font, c.forcesTextSize or objectiveSize)
+    StyleText(view.affixes, c, font, smallSize)
+    StyleText(view.bossHeader, c, font, smallSize)
     view.dungeon:SetTextColor(unpack(text))
     view.clock:SetTextColor(unpack(text))
     view.remaining:SetTextColor(unpack(muted))
@@ -236,16 +238,16 @@ function H.Theme(owner)
     if view.barBracket then view.bar:SetStatusBarColor(unpack(BracketColor(owner, view.barBracket))) end
     for i = 1, 3 do
         local row = view.chests[i]
-        StyleText(row.label, font, objectiveSize)
-        StyleText(row.remaining, font, objectiveSize)
+        StyleText(row.label, c, font, objectiveSize)
+        StyleText(row.remaining, c, font, objectiveSize)
         local chestColor = owner.groupRGB and owner.groupRGB[CHEST_GROUPS[i]] or text
         row.label:SetTextColor(unpack(chestColor))
         row.remaining:SetTextColor(unpack(muted))
     end
     for i = 1, #view.bosses do
         local row = view.bosses[i]
-        StyleText(row.name, font, smallSize)
-        StyleText(row.time, font, smallSize)
+        StyleText(row.name, c, font, smallSize)
+        StyleText(row.time, c, font, smallSize)
         row.name:SetTextColor(unpack(text))
         row.time:SetTextColor(unpack(muted))
     end

@@ -594,6 +594,7 @@ B.Module=function(id,spec)
     return module(id,spec)
 end
 assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite",NS)
+assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManagerData.lua"))("MSUF_Suite",NS)
 local CDM=NS.CDM
 local S=NS.Suite or {}
 NS.Suite=S
@@ -703,13 +704,16 @@ GetNumTotemSlots=function() return 0 end
 GetTotemInfo=function() return false,"",0,0,0,1,0 end
 GetTotemDuration=function() end
 setmetatable(_G,{__newindex=function(_,key) error("global write: "..tostring(key),2) end})
+LoadRuntime("GlowLines.lua")
 LoadRuntime("AuraGlows.lua")
+LoadRuntime("AuraLooks.lua")
 LoadRuntime("StackColors.lua")
 LoadRuntime("AuraButtons.lua")
 LoadRuntime("AuraPlaceholders.lua")
 LoadRuntime("AuraTimers.lua")
 LoadRuntime("AuraContainers.lua")
 LoadRuntime("Auras.lua")
+LoadRuntime("ReadyPulse.lua")
 LoadRuntime("Alerts.lua")
 local A,Alerts=C.Auras,C.Alerts
 assert(A and Alerts,"exports")
@@ -1773,6 +1777,7 @@ do
     if chunk then
         local C2={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},AuraTimers=C.AuraTimers,Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
+        assert(loadfile(root.."/MSUF_Suite_CooldownManager/FrameAnchors.lua"))("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C2})
         local L2=C2.Layout
         assert(type(L2.EnsureBar)=="function" and type(L2.Cell)=="function" and type(L2.Metrics)=="function","Layout interface")
@@ -1810,6 +1815,7 @@ do
     local chunk=assert(loadfile(root.."/MSUF_Suite_CooldownManager/Layout.lua"))
     local Cx={EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},AuraTimers=C.AuraTimers,Const=C.Const,Grid=C.Grid,
         Visibility={Paint=function() end}}
+    assert(loadfile(root.."/MSUF_Suite_CooldownManager/FrameAnchors.lua"))("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=Cx})
     local L2=Cx.Layout
     assert(type(L2.FixedAuras)=="function","Layout.FixedAuras")
@@ -2158,6 +2164,7 @@ do
     if chunk then
         local C3={EMPTY={},views={c2=both},plans={c2=C.plans.c2},bars={},entries={},Diagnostics={},state={px=1},Auras={TargetRow=A.TargetRow},AuraTimers=C.AuraTimers,Const=C.Const,Grid=C.Grid,
             Visibility={Paint=function() end}}
+        assert(loadfile(root.."/MSUF_Suite_CooldownManager/FrameAnchors.lua"))("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         chunk("MSUF_Suite_CooldownManager",{NS=NS,Suite=S,CDM=C3})
         C3.Layout.Apply("c2")
         local lb=C3.bars.c2
@@ -2684,6 +2691,25 @@ assert(f1:FormatNumber(0)=="" and f1:FormatNumber(1)=="" and f1:FormatNumber(2)=
 assert(#f3.points==2 and f3.points[2].threshold==1 and f3:FormatNumber(0)=="" and f3:FormatNumber(1)=="|cffff5a3c1|r",
     "N = 1 colors one application, default color ff5a3c")
 assert(#f4.points==2 and f4:FormatNumber(1)=="" and f4:FormatNumber(2)=="|cff3366ff2|r","N = 2: no plain step")
+-- A specialization's explicit default color ("", over a shared color) is
+-- the default color: the same signature and formatter.
+t3.ov={stackColorAt=1,stackColor=""}
+A.Sync("c4")
+assert(R[Acquired(sc,"g3")].bind.countFormatter==f3 and CountFormatters()==made+3,"stack color \"\": the default color")
+t3.ov={stackColorAt=1}
+A.Sync("c4")
+-- The preview's sample row colors its stacks the same way: "" is the
+-- default color, not a color of its own.
+do
+    local sample=C.AuraButtons.Sample(CreateFrame("Frame"),nil,View("bar",3),{stackColorAt=1,stackColor=""},1001,"Sample")
+    local r,g,b=S.RGB(CDM.SPELL_DEFAULTS.stackColor)
+    local color=Args(sample.part.count,"SetTextColor")
+    assert(color and color[1]==r and color[2]==g and color[3]==b,"sample stack color \"\": the default color")
+    sample=C.AuraButtons.Sample(CreateFrame("Frame"),nil,View("bar",3),{stackColorAt=1,stackColor="3366ff"},1001,"Sample")
+    r,g,b=S.RGB("3366ff")
+    color=Args(sample.part.count,"SetTextColor")
+    assert(color[1]==r and color[2]==g and color[3]==b,"sample stack color: the entry's own color")
+end
 -- live changes rebind in place while buttons are accessible; an equal
 -- signature is no change
 local b1=R[Acquired(sc,"g1")]

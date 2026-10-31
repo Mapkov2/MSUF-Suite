@@ -59,29 +59,69 @@ local function Create(parent, index)
     return win
 end
 
-function S.DamageMeterDrawMenuPreview(parent, index)
+local function Details(win, enabled)
+    if not enabled then
+        if win.panel then win.panel:Hide() end
+        return
+    end
+    local panel = D.EnsurePanel(win)
+    Passive(panel, D.panelScripts)
+    for _, button in ipairs({ panel.targetsTab, panel.spellsTab }) do
+        button:SetScript("OnClick", nil)
+    end
+    D.StyleBreakdownPanel(win)
+    panel.title:SetText(S.Text("Targets"))
+    panel.back:Hide()
+    panel.targetsTab:Hide()
+    panel.spellsTab:Hide()
+    panel.message:Hide()
+    for i = 1, #CLASS do
+        local row = win.bdRows[i]
+        if not row then
+            row = D.CreateRow(panel, win, "spell")
+            Passive(row, D.spellScripts)
+            win.bdRows[i] = row
+        end
+        D.AnchorRow(row, panel, i + 1)
+        D.StyleRow(row)
+        D.PaintSource(row, sources[i], i, sample, win)
+        row:SetShown(i < win.capacity)
+    end
+    panel:Show()
+end
+
+function S.DamageMeterDrawMenuPreview(parent, index, details)
     Style()
     local win = parent.damageMeterMenuPreview or Create(parent, index)
-    if win.index ~= index or win.styleGen ~= M.styleGen then
+    details = details == true
+    if win.index ~= index or win.styleGen ~= M.styleGen or win.detailsSample ~= details then
+        win.detailsSample = details
         win.index = index
         local c, keys = M.config, D.KEYS[index]
         win.meterType = c[keys.Type] - 1
         -- Sample headings never resolve live sessions, threat targets or APIs.
         win.overall = c[keys.Session] == D.SESSION.OVERALL
+        -- The page fits the stage to the window at its own scale.
+        win.previewZoom = c[keys.Scale] / 100
         D.StyleWindowLayout(win)
-        win.frame:ClearAllPoints()
-        win.frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, c.headerOutside and -c.headerHeight or 0)
+        D.LayoutMenuTimer(win, parent)
         if win.meterType == D.THREAT then
             win.title:SetText(D.TypeName(win.meterType))
             win.buttons.session.label:SetText(S.BlizzardText("DAMAGE_METER_CURRENT_SESSION_SHORT", "C"))
         else D.UpdateTitle(win) end
-        D.SetTimerText(win, c.combatTime and c.headerTimer and not win.overall and 95 or nil)
+        D.SetTimerText(win, M.style.headerClock and not win.overall and 95 or nil)
+        -- Turning smooth fill on shows it: the bars ease in from empty.
+        if M.style.smoothFill and not win.smoothShown then
+            for _, row in ipairs(win.rows) do row.bar:SetValue(0) end
+        end
+        win.smoothShown = M.style.smoothFill
         for i, row in ipairs(win.rows) do
             D.AnchorRow(row, win.body, i)
             D.StyleRow(row)
             D.PaintSource(row, sources[i], i, sample, win)
             row:SetShown(i <= win.capacity)
         end
+        Details(win, details)
         win.status:Hide()
         win.frame:Show()
     end

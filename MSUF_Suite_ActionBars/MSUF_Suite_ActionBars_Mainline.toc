@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Action bars
 ## Notes: Optional Action bars module for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.4-alpha
+## Version: 0.1.5-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -15,6 +15,7 @@ Blizzard.lua
 Paging.lua
 Visibility.lua
 Bindings.lua
+KeyAudit.lua
 Style.lua
 Paint.lua
 NativeButtons.lua

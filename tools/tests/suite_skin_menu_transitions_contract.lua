@@ -75,6 +75,7 @@ local function Frame(parent, native)
     function frame:SetScript(event, callback) self.scripts[event] = callback end
     function frame:GetScript(event) return self.scripts[event] end
     function frame:RegisterEvent(event) self.events[event] = true end
+    function frame:UnregisterEvent(event) self.events[event] = nil end
     function frame:Fire(event, ...)
         if self.scripts[event] then self.scripts[event](self, ...) end
         for _, callback in ipairs(self.hooks[event] or {}) do callback(self, ...) end

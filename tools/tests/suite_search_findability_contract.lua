@@ -92,10 +92,24 @@ for _, feature in ipairs(P.QualityOfLifeSearchFeatures or {}) do
 end
 P.InvalidateSearch()
 local api = M.Search._CoreAPI
+local function ReadySearchRecords()
+    api.GetSearchRecords()
+    if api.WhenIndexReady then
+        local ready = false
+        assert(api.WhenIndexReady(function() ready = true end), "search readiness refused")
+        for _ = 1, 1000 do
+            if ready then break end
+            world.widgets:RunTimers(1000)
+        end
+        assert(ready, "asynchronous search index did not complete")
+    end
+    return api.GetSearchRecords()
+end
 local PALETTE = 6
 flavor = flavor .. " " .. locale -- Include the language in every failure.
 
 local function Rank(query, wanted)
+    ReadySearchRecords()
     local rows = api.SearchPages(query)
     for i = 1, #rows do
         if wanted(rows[i]) then return i, rows end
@@ -112,7 +126,7 @@ end
 local rows = P.SearchRows()
 local Normalize = M.Search.Text.NormalizeSearchText
 local byName = {}
-for _, rec in ipairs(api.GetSearchRecords()) do
+for _, rec in ipairs(ReadySearchRecords()) do
     local name = Normalize(rec.label or "")
     byName[name] = (byName[name] or 0) + 1
 end
@@ -191,16 +205,29 @@ local featureAliases = {
     { "targetDistance", { "range finder", "zielreichweite" } },
     { "threatMeter", { "aggro meter", "threat list", "bedrohungsliste" } },
     { "flightTimer", { "taxi timer", "flight path timer" } },
+    { "chatProfileLinks", { "raider io", "raiderio", "warcraft logs", "warcraftlogs", "wcl",
+        "applicant profiles", "group finder profile links", "right click raider io", "right click warcraft logs",
+        "bewerber profile", "bewerber rechtsklick", "gruppensuche profile", "rechtsklick links",
+        "raiderio bewerber", "warcraft logs rechtsklick", "lfg profile links",
+        "raid progress", "raidprogress", "raid fortschritt", "raidfortschritt", "progressstand", "bewerber fortschritt" },
+        { ["raider io"] = "raiderIO", raiderio = "raiderIO", ["warcraft logs"] = "warcraftLogs",
+            warcraftlogs = "warcraftLogs", wcl = "warcraftLogs", ["raid progress"] = "raidProgress" } },
 }
+-- A bare service or raid-progress query may lead directly to its switch on the
+-- same feature. General feature aliases must still find the feature enable switch.
+local function AliasTarget(case, query, record)
+    if record.key ~= "suite_qualityOfLife" or not record.exactTarget then return false end
+    local prefix = "msufsuite." .. case[1] .. "."
+    local service = case[3] and case[3][query]
+    local setting = record.exactTarget.settingKey
+    return setting == prefix .. "enabled" or (service ~= nil and setting == prefix .. service)
+end
 local function CheckFeatureAliases(stage)
     for _, case in ipairs(featureAliases) do
-        local settingKey = "msufsuite." .. case[1] .. ".enabled"
         for _, query in ipairs(case[2]) do
-            local rank, results = Rank(query, function(rec)
-                return rec.key == "suite_qualityOfLife" and rec.exactTarget and rec.exactTarget.settingKey == settingKey
-            end)
+            local rank, results = Rank(query, function(rec) return AliasTarget(case, query, rec) end)
             if P.Available(case[1]) then
-                Check(rank and rank <= PALETTE, flavor .. " " .. stage .. ": feature alias missed its switch: "
+                Check(rank and rank <= PALETTE, flavor .. " " .. stage .. ": feature alias missed its target: "
                     .. query .. " -> " .. Got(results))
             else
                 Check(not rank, flavor .. " " .. stage .. ": feature alias exposed an unavailable switch: " .. query)
@@ -300,7 +327,7 @@ for _, case in ipairs(featureAliases) do
     if P.Available(case[1]) then
         local settingKey = "msufsuite." .. case[1] .. ".enabled"
         local target
-        for _, record in ipairs(api.GetSearchRecords()) do
+        for _, record in ipairs(ReadySearchRecords()) do
             if record.key == "suite_qualityOfLife" and record.exactTarget
                 and record.exactTarget.settingKey == settingKey then target = record; break end
         end
@@ -320,6 +347,59 @@ for _, case in ipairs(featureAliases) do
     end
 end
 CheckFeatureAliases("details visited disabled")
+-- Service and progress queries may choose a real widget after the page has been
+-- visited; it must reveal the same feature and leave its enable switch off.
+for _, case in ipairs(featureAliases) do
+    if case[3] and P.Available(case[1]) then
+        for query in pairs(case[3]) do
+            local rank, results = Rank(query, function(rec) return AliasTarget(case, query, rec) end)
+            local target = rank and results[rank]
+            if Check(target, flavor .. ": missing service route: " .. query) then
+                local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
+                    target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+                world.widgets:RunTimers(80)
+                local page = M.cache.suite_qualityOfLife
+                local feature = page and page.qualityOfLifeFeatureRows["suite_qualityOfLife_chatProfileLinks_profile_links"]
+                local category = feature and page.sections["suite_qualityOfLife_category_" .. feature.category]
+                Check(selected and anchored and exact and feature and feature.details and feature.details:IsShown()
+                    and category and category._msuf2CollapsibleEntry.open,
+                    flavor .. ": service route did not reveal profile-link settings: " .. query)
+                local runtime = M.RuntimeControlCatalog.Get(target.exactTarget.controlId)
+                local prepare = runtime and runtime.widget and P.HM.GetSearchTargetPrepare(runtime.widget)
+                Check(type(prepare) == "function" and prepare(runtime.widget, target.exactTarget) == true,
+                    flavor .. ": service preparation did not report success: " .. query)
+                Check(Suite.Suite.Config(case[1]).enabled == false, flavor .. ": service search enabled a feature: " .. query)
+            end
+        end
+    end
+end
+
+-- The new control itself must remain reachable even when a short progress
+-- query ranks the feature enable switch ahead of the individual setting.
+if P.Available("chatProfileLinks") then
+    local target
+    for _, record in ipairs(ReadySearchRecords()) do
+        if record.key == "suite_qualityOfLife" and record.exactTarget
+            and record.exactTarget.settingKey == "msufsuite.chatProfileLinks.raidProgress" then target = record; break end
+    end
+    if Check(target, flavor .. ": missing applicant raid-progress control") then
+        local config = Suite.Suite.Config("chatProfileLinks")
+        local previous = config.raidProgress
+        local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
+            target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+        world.widgets:RunTimers(80)
+        local page = M.cache.suite_qualityOfLife
+        local feature = page and page.qualityOfLifeFeatureRows["suite_qualityOfLife_chatProfileLinks_profile_links"]
+        local category = feature and page.sections["suite_qualityOfLife_category_" .. feature.category]
+        Check(selected and anchored and exact and feature and feature.details and feature.details:IsShown()
+            and category and category._msuf2CollapsibleEntry.open, flavor .. ": raid-progress control route failed")
+        local runtime = M.RuntimeControlCatalog.Get(target.exactTarget.controlId)
+        local prepare = runtime and runtime.widget and P.HM.GetSearchTargetPrepare(runtime.widget)
+        Check(type(prepare) == "function" and prepare(runtime.widget, target.exactTarget) == true,
+            flavor .. ": raid-progress preparation did not report success")
+        Check(config.enabled == false and config.raidProgress == previous, flavor .. ": raid-progress search changed a setting")
+    end
+end
 
 if #failures > 0 then
     error("suite_search_findability_contract failed:\n  " .. table.concat(failures, "\n  "))

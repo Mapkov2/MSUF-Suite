@@ -383,7 +383,7 @@ local function Style(row, entry, view)
     if row.cast ~= cast or row.seconds ~= seconds then Stop(row) end
     row.cast, row.seconds = cast, seconds
     if seconds > 0 and not row.manual then row.manual = C_DurationUtil.CreateDuration() end
-    C.AuraButtons.Sample(row.frame:GetParent(), row.frame, view, ov, ov.icon or entry.texture, entry.name)
+    C.AuraButtons.Sample(row.frame:GetParent(), row.frame, view, ov, ov.icon or entry.texture, C.Const.EntryLabel(entry))
     -- Leave native aura stacks, glows, sounds and mouse/tooltip ownership
     -- intact. The matching static icon/name also serve a summon without an
     -- aura. Only the duration regions have an independent clock owner.
@@ -441,7 +441,7 @@ function Timers.Sync(slot, view, plan)
                 end
             end
             if not row then
-                local frame = C.AuraButtons.Sample(cell, nil, view, entry.ov, entry.texture, entry.name)
+                local frame = C.AuraButtons.Sample(cell, nil, view, entry.ov, entry.texture, C.Const.EntryLabel(entry))
                 frame:SetAllPoints(cell)
                 frame:Hide()
                 local gate = S.CreateFrame("Cooldown", nil, frame)

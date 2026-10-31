@@ -498,7 +498,7 @@ end
 -- Native LoadAddOn fixture for the real selected-language companion. Unknown
 -- names remain with the caller's module/missing-addon model.
 function Support.LoadLocaleAddon(root, addon, environment)
-    if not addon:match("^MSUF_Suite_Locale_%l%l%u%u$") then return false end
+    if addon ~= "MSUF_Suite_Locales" then return false end
     for _, file in ipairs(Support.TocFiles(root, addon)) do
         local chunk = assert(loadfile(root .. "/" .. addon .. "/" .. file))
         if environment then setfenv(chunk, environment) end
@@ -667,6 +667,18 @@ function Support.NameplateUnits(root)
     setfenv(chunk, env)
     chunk("MSUF_Suite_Modules", {})
     return suite.NameplateUnits, suite.NameplateUnit
+end
+
+-- Kernel/MSUF_Libs.lua without optional LSM or a C_UIFileAsset inventory:
+-- addon paths are known; an unlisted native asset remains unknown, not false.
+function Support.HostMediaProviders(providers)
+    providers.MSUF_GetSharedMedia = function() return nil end
+    providers.MSUF_IsKnownFileAsset = function(asset)
+        if type(asset) ~= "string" or asset == "" then return false end
+        local path = asset:gsub("/", "\\"):lower()
+        if path:sub(1, 17) == "interface\\addons\\" then return true end
+        return nil
+    end
 end
 
 return Support

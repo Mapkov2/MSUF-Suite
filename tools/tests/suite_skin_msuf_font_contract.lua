@@ -43,6 +43,9 @@ local NS = {
     CharacterStats = { RefreshFonts = function() end },
     IsCombatLocked = function() return false end,
 }
+local core = { Public = NS.Safety.Public }
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", core)
+NS.SuiteCore = function() return core end
 local typography = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Typography.lua"))("MSUF_Suite_Skin", NS)
 
 assert(typography.GetSelection() == "msuf" and typography.GetSelectionValues()[1] == "msuf")
@@ -65,6 +68,12 @@ assert(typography.SetSelection("lsm:Skin") and game.path == "Skin.ttf"
     "a SharedMedia font selection must stop following the MSUF font")
 assert(typography.SetSelection("msuf") and game.path == msufPath,
     "selecting MSUF again must restore font following")
+local hostGetter, bridgeGetter = MSUF_GetFontPath, core.HostBridge.HostFontPath
+MSUF_GetFontPath = nil
+core.HostBridge.HostFontPath = function() return "Bridge.ttf" end
+assert(typography.ApplyConfigured() and game.path == "Bridge.ttf" and chat.path == "Bridge.ttf",
+    "skin typography bypassed the Suite's host font provider")
+MSUF_GetFontPath, core.HostBridge.HostFontPath = hostGetter, bridgeGetter
 msufPath = "secret"
 assert(typography.ApplyConfigured() and game.path == "Skin.ttf",
     "an unreadable MSUF font path must fall back to the saved Skin face")

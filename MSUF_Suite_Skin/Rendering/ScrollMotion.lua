@@ -7,6 +7,13 @@ local ScrollMotion = { states = setmetatable({}, { __mode = "k" }),
 NS.ScrollMotion = ScrollMotion
 local Safety = NS.Safety
 local Partner
+local visible, pendingRestore, pendingPause = {}, {}, {}
+
+local function SyncVisible(state)
+    local shown = Safety.Read(state.target, "IsVisible")
+    visible[state.target] = Safety.Public(shown) and shown == true
+        and state.captured and next(state.leases) and state or nil
+end
 
 local function Safe(target)
     return Safety.Public(target) and not Safety.IsForbidden(target) and not Safety.GetProtection(target)
@@ -86,9 +93,13 @@ local function FlagChanged(target)
     local state = ScrollMotion.states[target]
     if state and not state.writing then
         state.captured, state.pending = false, false
+        visible[target], pendingRestore[target], pendingPause[target] = nil, nil, nil
         local partner = Partner(target)
         local paired = partner and ScrollMotion.states[partner]
-        if paired then paired.captured, paired.pending = false, false end
+        if paired then
+            paired.captured, paired.pending = false, false
+            visible[partner], pendingRestore[partner], pendingPause[partner] = nil, nil, nil
+        end
     end
 end
 
@@ -113,30 +124,37 @@ local function Update(state, enabled)
     local valid, current = SafeFlag(target)
     if not valid then return end
     if enabled == nil then enabled = Enabled() == true end
-    local desired = enabled and not state.dragging
-    if not desired then Cancel(target, true) end
+    local desired = enabled and not state.dragging and visible[target] ~= nil
+    if not desired then Cancel(target, visible[target] ~= nil) end
     if current ~= desired then Write(state, desired) end
-    state.written = desired
+    state.written, pendingPause[target] = desired, nil
+    return true
 end
 
 local function Restore(state)
-    if not state.captured then state.pending = false return end
+    if not state.captured then state.pending = false pendingRestore[state.target] = nil return end
     local target = state.target
     if not Safe(target) then
         Cancel(target, false)
         state.pending = true
+        pendingRestore[target] = state
         return
     end
     Cancel(target, true)
     local valid, current = Flag(target)
     if valid and current == state.written then Write(state, state.original) end
     state.pending, state.captured = false, false
+    visible[target], pendingRestore[target], pendingPause[target] = nil, nil, nil
 end
 
 local function Hidden(target)
+    visible[target] = nil
     local state = ScrollMotion.states[target]
     if state and state.captured and next(state.leases) then
-        Cancel(target, false)
+        if not Update(state, false) then
+            Cancel(target, false)
+            pendingPause[target] = state
+        end
         state.dragging = false
         local partner = Partner(target)
         local paired = partner and ScrollMotion.states[partner]
@@ -192,11 +210,12 @@ end
 local function Shown(target)
     local state = ScrollMotion.states[target]
     if state then
+        SyncVisible(state)
         if state.pending and not next(state.leases) then Restore(state)
         else Update(state) end
         local partner = Partner(target)
         local paired = partner and ScrollMotion.states[partner]
-        if paired then Update(paired) end
+        if paired then SyncVisible(paired) Update(paired) end
     end
 end
 
@@ -227,8 +246,10 @@ local function AddController(lease, target)
         state.leases[lease] = true
         lease.controllers[#lease.controllers + 1] = state
     end
+    state.pending, pendingRestore[target] = false, nil
     BindThumb(state)
     BindLayout(state)
+    SyncVisible(state)
     Update(state)
     return true
 end
@@ -268,6 +289,7 @@ function ScrollMotion.Release(target, owner)
         local state = lease.controllers[index]
         state.leases[lease], lease.controllers[index] = nil, nil
         if not next(state.leases) then
+            visible[state.target], pendingPause[state.target] = nil, nil
             if state.layout then
                 state.target:UnregisterCallback(ScrollBoxListMixin.Event.OnLayout, state)
                 state.layout = false
@@ -293,17 +315,29 @@ function ScrollMotion.ReleaseOwner(owner)
     for lease in pairs(owned) do ScrollMotion.Release(lease.target, owner) end
 end
 
--- Every combat edge passes over every controller (2026-10-26 M+ trace: 146,
--- 1.9-3.4 ms per edge): Enabled is read once for the pass.
+-- OnShow/OnHide maintain the combat working set. Hidden controllers catch
+-- up on show; deferred ownership restoration has its own bounded set.
 local function Refresh(_, domain, key)
     local acquire = domain == "profile" or domain == "motion"
         and (key == "smoothScrolling" or key == "reduceMotion")
     local enabled = Enabled() == true
-    for _, state in pairs(ScrollMotion.states) do
-        if acquire and not state.captured and next(state.leases) and Safe(state.target) then Capture(state) end
+    local edge = domain == "PLAYER_REGEN_DISABLED" or domain == "PLAYER_REGEN_ENABLED"
+    for _, state in pairs(edge and visible or ScrollMotion.states) do
+        if acquire and not state.captured and next(state.leases) and Safe(state.target) then
+            Capture(state)
+            SyncVisible(state)
+        end
         if domain == "PLAYER_REGEN_DISABLED" and state.captured then Cancel(state.target, false) end
         if state.pending and not next(state.leases) then Restore(state)
         else Update(state, enabled) end
+    end
+    if edge then
+        for _, state in pairs(pendingRestore) do Restore(state) end
+        for target, state in pairs(pendingPause) do
+            if not visible[target] and not Update(state, false) and domain == "PLAYER_REGEN_DISABLED" then
+                Cancel(target, false)
+            end
+        end
     end
 end
 

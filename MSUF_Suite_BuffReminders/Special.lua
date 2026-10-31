@@ -163,6 +163,18 @@ local NOTICES = {
     { field = "wrongDemon", text = "This demon is not one you chose; summon another." },
 }
 
+local NOTICE_GAP = 6
+
+-- The notice lines follow the "Notice text size" setting and hang below the
+-- row, or above it with a bottom anchor (R.PlaceNote); a settings change calls
+-- this (Refresh) and the label's creation does.
+function R.StyleNotices(self)
+    local label = self.notices.label
+    if not label then return end
+    R.PlaceNote(label, self.view.host, self.config, true, NOTICE_GAP)
+    R.StyleNote(label, GameFontNormal, self.config.noticeSize or R.Default("noticeSize"))
+end
+
 -- Runs on every evaluation; the text is rebuilt only when the set of active
 -- notices changed.
 function R.SpecialText(self, allowed)
@@ -184,10 +196,9 @@ function R.SpecialText(self, allowed)
     notices.text = text
     local label = notices.label
     if not label and text ~= "" then
-        local host = self.view.host
-        label = S.CreateFontString(host, nil, "OVERLAY", "GameFontNormal")
-        label:SetPoint("TOP", host, "BOTTOM", 0, -6)
+        label = S.CreateFontString(self.view.host, nil, "OVERLAY", "GameFontNormal")
         notices.label = label
+        R.StyleNotices(self)
     end
     if label then
         label:SetText(text)

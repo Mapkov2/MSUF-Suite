@@ -8,6 +8,25 @@ local K = C.Const
 local TrackingBars = {}
 C.TrackingBars = TrackingBars
 local emptyDuration
+local EMPTY = C.EMPTY
+
+-- The fill color: the entry's own (barColor, "" the bar's), the class color
+-- while it is readable, else the bar's own color (the charge segments shade
+-- what is stored here; a new color repaints them).
+local function Paint(bar, view, entry)
+    local r, g, b
+    local hex = entry and (entry.ov or EMPTY).barColor
+    if hex and hex ~= "" then
+        r, g, b = K.HexRGB(hex)
+    else
+        hex = nil
+        if view.barClass then r, g, b = K.ClassRGB() end
+        local fill = K.BAR_RGB
+        if not r then r, g, b = view.barR or fill[1], view.barG or fill[2], view.barB or fill[3] end
+    end
+    bar:SetStatusBarColor(r, g, b)
+    bar.r, bar.g, bar.b, bar.hex, bar.segmentStyle = r, g, b, hex, nil
+end
 
 -- Presentation of the existing cooldown entry; the native duration, event
 -- routing, ownership, binding and tooltip stay with the icon owner.
@@ -47,15 +66,13 @@ function TrackingBars.Style(icon, view)
     bar:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", shown and right and -h - 2 or -inset, inset)
     local texture = S.ResolveTexture(view.barTexture, K.BAR_TEXTURE)
     bar:SetStatusBarTexture(texture)
-    -- The class color while it is readable, else the bar's own color (the
-    -- charge segments shade what is stored here).
-    local r, g, b
-    if view.barClass then r, g, b = K.ClassRGB() end
-    local fill = K.BAR_RGB
-    if not r then r, g, b = view.barR or fill[1], view.barG or fill[2], view.barB or fill[3] end
-    bar:SetStatusBarColor(r, g, b)
-    bar.r, bar.g, bar.b, bar.texture = r, g, b, texture
+    bar.texture = texture
+    Paint(bar, view, icon.entry)
     bar.innerWidth, bar.innerHeight = icon.w - (shown and h + 2 or 0) - inset * 2, h - inset * 2
+    -- "Show a spark" on the fill's edge (K.Spark), hidden while charge
+    -- segments draw the bar (Charges).
+    if bar.spark or view.barSpark then K.Spark(bar, view.barSpark == true, bar, true, bar:GetStatusBarTexture(), bar.innerHeight, K.Px()) end
+    if bar.spark and bar.segmentMode then bar.spark:Hide() end
     bar.chargeSegments, bar.chargeDim = view.barChargeSegments == true, view.barChargeDim ~= false
     bar.segmentStyle = nil
     bar.bg:SetColorTexture(0, 0, 0, (view.barBgAlpha or K.BAR_BG_ALPHA) / 100)
@@ -69,12 +86,22 @@ function TrackingBars.Style(icon, view)
     label:SetWidth(math.max(1, icon.w - (shown and h + 2 or 0) - 48))
     label:SetWordWrap(false)
     label:SetJustifyH("LEFT")
-    label:SetText(icon.entry and icon.entry.name or "")
+    label:SetText(K.EntryLabel(icon.entry))
     local countdown = icon.cd:GetCountdownFontString()
     if countdown then
         countdown:ClearAllPoints()
         countdown:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
     end
+end
+
+-- Per-spell parts of a bar row (Icons.Apply, on a new entry or choice):
+-- its name, and its color when the entry's own color changed.
+function TrackingBars.Entry(icon, entry, view)
+    local bar = icon.timerBar
+    bar.name:SetText(K.EntryLabel(entry))
+    local hex = (entry.ov or EMPTY).barColor
+    if hex == "" then hex = nil end
+    if bar.hex ~= hex then Paint(bar, view, entry) end
 end
 
 function TrackingBars.Duration(icon, duration)
@@ -101,6 +128,7 @@ function TrackingBars.Charges(icon, charges, duration)
     if not wanted then
         if bar.segmentMode then
             bar.segmentMode = false
+            if bar.spark then bar.spark:SetShown(bar.sparkOn == true) end
             bar.countFill:Hide()
             bar:GetStatusBarTexture():SetAlpha(1)
             bar.recharge:Hide()
@@ -119,6 +147,7 @@ function TrackingBars.Charges(icon, charges, duration)
         bar.recharge:SetFrameLevel(level)
         bar.separators = {}
     end
+    if bar.spark and not bar.segmentMode then bar.spark:Hide() end
     bar.segmentMode = true
     bar:GetStatusBarTexture():SetAlpha(0)
     bar.countFill:Show()

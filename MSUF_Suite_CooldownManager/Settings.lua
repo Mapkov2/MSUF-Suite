@@ -32,6 +32,8 @@ C.Settings = Settings
 --  overlay  aura overlays on cooldown icons   aura  aura containers of aura bars
 --  visible  visibility driver and opacity     resolve  what the bar holds
 --  bar      buff bar look                     keybind  keybind texts and events
+--  relook   a look the aura buttons' style pass reads from the view itself
+--           (view.relook counts it, so their look signature changes)
 local WORK = {}
 local function Work(list, flags)
     for i = 1, #list do
@@ -40,7 +42,7 @@ local function Work(list, flags)
         WORK[list[i]] = work
     end
 end
-Work({ "x", "y", "anchor", "side", "gap" }, { layout = true })
+Work({ "x", "y", "anchor", "anchorFrame", "side", "gap" }, { layout = true })
 Work({ "align", "spacing", "perRow", "maxIcons", "vertical", "grow" }, { layout = true, flow = true })
 Work({ "cooldownFixed" }, { layout = true })
 Work({ "centerFirst" }, { layout = true, flow = true })
@@ -52,15 +54,25 @@ Work({ "size", "height", "barWidth", "barHeight" }, { layout = true, flow = true
 Work({ "on" }, { layout = true, resolve = true, visible = true })
 Work({ "kind" }, { layout = true, flow = true, resolve = true, style = true, behavior = true, bar = true })
 Work({ "zoom", "border", "borderColor", "borderClass", "swipeAlpha", "edge", "cdText", "cdSize", "stackSize", "stackPos",
-    "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding", "textTop" }, { style = true })
+    "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding", "textTop",
+    "swipeColor", "swipeClass" }, { style = true })
+Work({ "swipeColor", "swipeClass", "auraSwipeColor", "barSpark", "glowLines", "glowThickness", "glowSpeed" }, { relook = true })
 -- Counts: the icon's text switch (style), the count read back when shown
 -- again (behavior) and use-count routing (index).
 Work({ "stackText" }, { style = true, behavior = true, index = true })
 Work({ "keybind" }, { style = true, keybind = true })
 Work({ "desat", "cdAlpha", "readyAlpha", "hideReady", "rangeColor", "bling" }, { behavior = true })
+-- The pulse is read at the ready edge (ReadyPulse.lua): nothing to redo.
+Work({ "readyPulse" }, {})
+Work({ "kickMark" }, { index = true })
 -- The glow look also styles aura glows: aura buttons of aura bars and the
 -- overlays of cooldown bars restyle through their diffed sync.
 Work({ "glowStyle", "glowColor", "glowTint" }, { behavior = true, restyle = true })
+-- Pixel and Autocast's lines: running cooldown glows repaint (behavior),
+-- aura buttons restyle in place (their look).
+Work({ "glowLines", "glowThickness", "glowSpeed" }, { behavior = true, restyle = true })
+-- The active buff swipe is the aura overlays' look.
+Work({ "auraSwipeColor" }, { restyle = true })
 Work({ "range", "usable", "procGlow", "readyGlow", "readyResources", "fullChargeGlow", "charges", "assist" }, { behavior = true, index = true })
 Work({ "chargeSwipe", "chargeEdge" }, { style = true, behavior = true })
 Work({ "showAura" }, { behavior = true, index = true, overlay = true })
@@ -69,9 +81,12 @@ Work({ "showMissing", "keepSlots", "auraGlow", "pandemic" }, { behavior = true, 
 -- look restyles the aura buttons in place, like the glow look.
 Work({ "pandemic" }, { overlay = true })
 Work({ "pandemicStyle", "pandemicColor", "pandemicSize" }, { restyle = true })
-Work({ "vis", "hideMounted", "hideVehicle", "alpha", "oocAlpha" }, { visible = true })
+Work({ "vis", "hideMounted", "hideVehicle", "alpha", "oocAlpha", "hideResting", "hideSolo", "hideWorld", "hideFlying",
+    "hideDead", "hiddenAlpha", "hoverShow", "fadeTime" }, { visible = true })
 Work({ "tooltips" }, { restyle = true })
 Work({ "iconSkin" }, { style = true })
+-- Masque skins the icons: restyle and sync them (Masque.lua adds or removes the buttons).
+Work({ "masque" }, { style = true, overlay = true })
 -- A shape restyles icons and builds the aura containers again (a mask is part
 -- of a button's regions; Blizzard seals them after initializeFrame).
 Work({ "iconShape" }, { style = true, aura = true, overlay = true })
@@ -79,7 +94,7 @@ Work({ "strata" }, { restyle = true, visible = true })
 Work({ "layer" }, { layout = true, aura = true, restyle = true })
 Work({ "barTexture", "barColor", "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
     "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments",
-    "barChargeDim" }, { bar = true, style = true, behavior = true })
+    "barChargeDim", "barSpark" }, { bar = true, style = true, behavior = true })
 Work({ "barStacks" }, { index = true })
 Work({ "name" }, { named = true })
 -- A fresh view (first read, activation) does everything once.
@@ -93,12 +108,14 @@ for _, work in pairs(WORK) do
 end
 local COLOR = { borderColor = { "borderR", "borderG", "borderB" }, glowColor = { "glowR", "glowG", "glowB" },
     rangeColor = { "rangeR", "rangeG", "rangeB" }, barColor = { "barR", "barG", "barB" },
-    pandemicColor = { "pandemicR", "pandemicG", "pandemicB" } }
+    pandemicColor = { "pandemicR", "pandemicG", "pandemicB" }, swipeColor = { "swipeR", "swipeG", "swipeB" },
+    auraSwipeColor = { "auraSwipeR", "auraSwipeG", "auraSwipeB" } }
 local OUTLINE = { "OUTLINE", "THICKOUTLINE", "" }
 -- Globals whose change re-registers events (the assisted icon's sources and
 -- the keybind watch); its size and place only repaint it (Refresh does).
-local EVENT_GLOBALS = { "assistIcon", "assistIconKeybind", "assistIconGCD", "keybindStable" }
-local PLACE_GLOBALS = { "assistIconSize", "assistIconX", "assistIconY" }
+local EVENT_GLOBALS = { "assistIcon", "assistIconKeybind", "assistIconGCD", "assistIconVis", "keybindStable" }
+local PLACE_GLOBALS = { "assistIconSize", "assistIconX", "assistIconY", "assistIconAlpha", "assistIconBorder",
+    "assistIconBorderColor", "assistIconZoom", "assistIconKeySize", "assistIconKeyPos", "assistIconAnchor" }
 local CHANNEL = { "Master", "SFX", "Dialog" }
 
 -- Per slot: suffixes, their keys and work records as arrays (built-in bars
@@ -119,6 +136,26 @@ end
 local hit = {}
 local seenHex = {}
 local lastLists, lastSpells
+
+-- The countdown's warning stage, and its tenths and urgent stage
+-- (K.Countdown; a change of these drops the last duration text options,
+-- K.ForgetDurationText). True when one of them changed.
+local function ReadCountdown(config, state)
+    local changed = false
+    if seenHex.th ~= config.thresholdColor then
+        seenHex.th, changed = config.thresholdColor, true
+        state.thR, state.thG, state.thB = S.RGB(config.thresholdColor)
+    end
+    if state.threshold ~= config.thresholdSeconds then state.threshold, changed = config.thresholdSeconds, true end
+    local tenths, urgent = config.tenthsSeconds or 0, config.urgentSeconds or 0
+    if state.tenths ~= tenths or state.urgent ~= urgent or seenHex.urgent ~= config.urgentColor then
+        seenHex.urgent, state.tenths, state.urgent, changed = config.urgentColor, tenths, urgent, true
+        state.urR, state.urG, state.urB = S.RGB(config.urgentColor)
+        state.cdExtra = tenths > 0 or urgent > 0
+        K.ForgetDurationText()
+    end
+    return changed
+end
 
 -- Fonts and text colors (the result: their change restyles every bar), the
 -- GCD display, the combat glow and the sound options.
@@ -152,17 +189,15 @@ function Settings.ReadGlobals(config, all)
         seenHex.key, text = config.keybindColor, true
         state.keyR, state.keyG, state.keyB = S.RGB(config.keybindColor)
     end
-    if seenHex.th ~= config.thresholdColor then
-        seenHex.th, text = config.thresholdColor, true
-        state.thR, state.thG, state.thB = S.RGB(config.thresholdColor)
-    end
-    if state.threshold ~= config.thresholdSeconds then state.threshold, text = config.thresholdSeconds, true end
+    if ReadCountdown(config, state) then text = true end
     local gcd = config.showGCD == true
     if all or state.showGCD ~= gcd then state.showGCD, dirty.cooldowns, dirty.index = gcd, true, true end
     local glow = config.readyGlowCombat == true
     if all or state.readyGlowCombat ~= glow then state.readyGlowCombat, dirty.effects = glow, true end
     local allGlows = config.allGlowsCombat == true
     state.pressFeedback = config.pressFeedback == true
+    state.pulseCombat, state.pulseSize, state.pulseY, state.pulseHold =
+        config.pulseCombat ~= false, config.pulseSize, config.pulseY, config.pulseHold
     for i = 1, #EVENT_GLOBALS do
         local key = EVENT_GLOBALS[i]
         if state[key] ~= config[key] then
@@ -195,10 +230,41 @@ end
 -- the bar like any style setting. nil: no skin.
 local function ReadSkin(view)
     view.shape = K.ShapeOf(view)
-    local skin = NS.HostBridge.IconSkinLook(view.iconSkin, view.shape)
+    -- Masque draws the icons it skins instead of MSUF's skin.
+    local skin
+    if not (view.masque and C.Masque.Active(view)) then skin = NS.HostBridge.IconSkinLook(view.iconSkin, view.shape) end
     local changed = skin ~= view.skin and (skin and skin.signature) ~= (view.skin and view.skin.signature)
     view.skin = skin
     return changed
+end
+
+-- "Bar width 0" matches what the bar is attached to (Layout.lua): view.barW is
+-- the width in use, view.matchW the one last read there; any other width
+-- leaves both unset, so the readers see the setting.
+local function DefaultWidth(slot)
+    local rule = NS.SuiteCatalog[ID].rules[KEYS[slot].barWidth]
+    return rule and rule.default or 200
+end
+local function ReadWidth(view)
+    if view.barWidth == 0 then
+        view.barW = view.matchW or DefaultWidth(view.key)
+    elseif view.barW then
+        view.barW, view.matchW = nil, nil
+    end
+end
+-- Layout read the width of what a bar is attached to (nil: nothing readable,
+-- the usual width stands): the bar restyles and lays out again, as for a
+-- width setting.
+function Settings.MatchWidth(slot, width)
+    local view = C.views[slot]
+    if not view or view.matchW == width then return end
+    view.matchW = width
+    view.barW = width or DefaultWidth(slot)
+    view.layoutGen, view.styleGen = view.layoutGen + 1, view.styleGen + 1
+    if view.decor then view.decor.gen = view.styleGen end
+    style[slot] = true
+    if AURA_KINDS[view.kind] then sync[slot] = true end
+    Flush.Schedule()
 end
 
 -- Views are rebuilt in place. Each changed setting adds its work (WORK) to
@@ -232,6 +298,7 @@ function Settings.ReadViews(config, all, text)
                 hit[key] = true
             end
         end
+        ReadWidth(view)
         if ReadSkin(view) then hit.style = true end
         if text then hit.style = true end
         if not def.builtin then
@@ -258,6 +325,7 @@ function Settings.ReadViews(config, all, text)
             -- StyleDecorated defers only icons decorated since).
             if hit.style and view.decor then view.decor.gen = view.styleGen end
             if hit.style or hit.restyle then style[slot] = true end
+            if hit.relook then view.relook = (view.relook or 0) + 1 end
             if hit.behavior then
                 view.behaviorGen = view.behaviorGen + 1
                 behavior[slot] = true
@@ -276,6 +344,27 @@ function Settings.ReadViews(config, all, text)
     C.AuraButtons.StandIns(decor)
 end
 
+-- Whether any entry of any specialization uses one of these choices: the
+-- routing index serves ROUTED in a pass of its own (Index.lua
+-- RouteChoices), the aura buttons ask for LOOKS only then (Auras.lua Needs).
+local ROUTED = { "usableOnly", "procOnly", "itemAura" }
+local LOOKS = { "activeBorder", "barColor", "barText" }
+local function Uses(map, names)
+    for _, fields in pairs(map) do
+        for i = 1, #names do
+            if fields[names[i]] then return true end
+        end
+    end
+    return false
+end
+local function Chosen(spells, names)
+    if Uses(spells.e, names) then return true end
+    for _, map in pairs(spells.s) do
+        if Uses(map, names) then return true end
+    end
+    return false
+end
+
 -- The data strings are decoded only when they changed. Per-spell choices
 -- reach cooldown entries through the behavior refresh and aura buttons and
 -- overlays through a structural sync.
@@ -289,6 +378,7 @@ function Settings.DecodeData(config)
     if spells ~= lastSpells then
         lastSpells = spells
         C.spells = CDM.Codec.DecodeSpells(spells)
+        C.routedChoices, C.lookChoices = Chosen(C.spells, ROUTED), Chosen(C.spells, LOOKS)
         dirty.resolve, dirty.alerts, dirty.index = true, true, true
         for i = 1, #SLOTS do
             local slot = SLOTS[i].key

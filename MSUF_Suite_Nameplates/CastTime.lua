@@ -137,9 +137,8 @@ function CastTime.Paint(cast, prefix, unit, uf)
         state = Create(cast)
         M.castTimes[cast] = state
     end
-    if M.config.enemyCastTimeFormat == 2 or state.elapsed then
-        ApplyFormat(state, prefix == "enemy" and M.config.enemyCastTimeFormat or 1)
-    end
+    local format = M.config[Key[prefix].CastTimeFormat] or 1
+    if format == 2 or state.elapsed then ApplyFormat(state, format) end
     if state.unit ~= unit then
         state.unit = unit
         CastTime.Refresh(state, unit)

@@ -238,6 +238,7 @@ do
     end
 end
 assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite",NS)
+assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManagerData.lua"))("MSUF_Suite",NS)
 local S={}
 NS.Suite=S
 assert(loadfile(root.."/MSUF_Suite/Core/SpellRange.lua"))("MSUF_Suite",NS)
@@ -255,7 +256,7 @@ local C={M={},EMPTY={},views={},plans={},bars={},entries={},Diagnostics={},wipe=
     px=1,font="Fonts\\TEST.TTF",fontFlags="OUTLINE",cdR=1,cdG=1,cdB=1,stackR=1,stackG=1,stackB=1,keyR=1,keyG=1,keyB=1,
     threshold=0,thR=1,thG=90/255,thB=60/255,showGCD=false,readyGlowCombat=true,inCombat=false,preview=false}}
 local P={NS=NS,Suite=S,CDM=C}
-local FILES={"Const.lua","Presets.lua","Icons.lua","TrackingBars.lua","Time.lua","Effects.lua"}
+local FILES={"Const.lua","Presets.lua","Icons.lua","TrackingBars.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua"}
 -- Presets.lua is plain data plus one class lookup: it needs only the CDM table.
 local HEADERS={["Presets.lua"]="^local _, P = %.%.%.\nlocal C = P%.CDM\n"}
 for _,file in ipairs(FILES) do

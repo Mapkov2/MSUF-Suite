@@ -2,11 +2,17 @@ local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 -- The view modes are the Bags catalog's choice values.
 local _, catalog = Support.CatalogDefaults(root, "bags")
-local P = { NS = { BagsView = catalog.BagsView } }
+local P = { NS = { BagsView = catalog.BagsView, BagsSort = catalog.BagsSort } }
 -- ItemConstantsDocumentation.lua and ItemQualitiesDocumentation.lua (Retail and Forever).
 Enum = { ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
-        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
-    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 } }
+        Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15, Glyph = 16,
+        Battlepet = 17, WoWToken = 18, Profession = 19 },
+    ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 },
+    -- ItemConstantsDocumentation.lua (Retail and Forever)
+    ItemArmorSubclass = { Generic = 0, Cloth = 1, Leather = 2, Mail = 3, Plate = 4, Cosmetic = 5, Shield = 6 },
+    ItemMiscellaneousSubclass = { Junk = 0, Reagent = 1, CompanionPet = 2, Holiday = 3, Other = 4, Mount = 5,
+        MountEquipment = 6 },
+    BagIndex = { Backpack = 0, ReagentBag = 5 } }
 -- Each named mode is the position of its label in the setting's choice list.
 do
     local rules = catalog.SuiteCatalog.bags.rules
@@ -27,6 +33,7 @@ do
         assert(count == #choices, entry[1] .. " has a choice without a name")
     end
 end
+assert(loadfile(root .. "/MSUF_Suite/Core/InventoryRules.lua"))("Core", P.NS)
 assert(loadfile(root .. "/MSUF_Suite_Bags/InventoryModel.lua"))("Bags", P)
 local Model = P.InventoryModel
 local function equal(actual, expected, why)

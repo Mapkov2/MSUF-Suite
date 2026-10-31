@@ -37,6 +37,7 @@ local S = {
     SetFont = function(label) label.font = true end,
     Text = function(value) return value end,
     Public = function(value) return value ~= "secret" end,
+    Finite = function(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end,
     PublicText = function(value) return type(value) == "string" and value ~= "secret" and value or nil end,
 }
 UIParent = Widget("Frame")
@@ -48,8 +49,13 @@ Menu = { ModifyMenu = function(tag, callback)
     assert(not callbacks[tag], "menu hook registered twice")
     callbacks[tag] = callback
 end }
+local progressCalls, progressName = 0, nil
+local private = { Suite = S, ApplicantRaidProgress = { Populate = function(menu, name)
+    progressCalls, progressName = progressCalls + 1, name
+    menu:CreateTitle("Raid progress sample")
+end } }
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/ChatProfileLinks.lua"))(
-    "MSUF_Suite_QualityOfLife", { Suite = S })
+    "MSUF_Suite_QualityOfLife", private)
 module.active = true
 module.config = { raiderIO = true, warcraftLogs = true }
 module.context = { Event = function() error("Menu should exist at login") end }
@@ -60,14 +66,14 @@ assert(callbacks.MENU_UNIT_CHAT_ROSTER and callbacks.MENU_UNIT_PLAYER
 module:Refresh()
 module:Enable()
 
-local function Popup(contextData, tag)
+local function Popup(contextData, tag, owner)
     local entries = {}
     local rootDescription = {
         CreateDivider = function() entries.divider = true end,
         CreateTitle = function(_, value) entries.title = value end,
         CreateButton = function(_, label, callback) entries[label] = callback end,
     }
-    callbacks[tag or "MENU_UNIT_CHAT_ROSTER"](nil, rootDescription, contextData)
+    callbacks[tag or "MENU_UNIT_CHAT_ROSTER"](owner, rootDescription, contextData)
     return entries
 end
 -- TARGET is also the menu of a non-player target, FOCUS covers every focus
@@ -121,7 +127,75 @@ assert(module.dialog.edit.text == "https://raider.io/characters/eu/der-rat-von-d
     "the player's own realm lost the words its display name keeps")
 entries = Popup({ name = "secret", server = "Realm" })
 assert(not entries.divider, "secret character name leaked to the context menu")
+-- The applicant menu has no contextData. Its member button supplies the IDs;
+-- capture that identity before Blizzard reuses the row for another applicant.
+local applicantTag = "MENU_LFG_FRAME_MEMBER_APPLY"
+assert(callbacks[applicantTag], "native applicant context menu has no profile links")
+local applicant = { applicantID = 42 }
+local member = { memberIdx = 2, GetParent = function() return applicant end }
+local applicantName, lookups = "Darkbloody-Ravencrest", 0
+C_LFGList = { GetApplicantMemberInfo = function(applicantID, memberIdx)
+    assert(applicantID == 42 and memberIdx == 2, "looked up a different applicant member")
+    lookups = lookups + 1
+    return applicantName
+end }
+entries = Popup(nil, applicantTag, member)
+assert(entries["Copy Raider.IO URL"] and entries["Copy Warcraft Logs URL"] and lookups == 1,
+    "applicant menu did not offer both profiles from its native owner")
+assert(progressCalls == 1 and progressName == "Darkbloody-Ravencrest",
+    "applicant progress did not use the selected member full name")
+applicant.applicantID, member.memberIdx = 99, 1
+entries["Copy Raider.IO URL"]()
+assert(module.dialog.edit.text == "https://raider.io/characters/eu/ravencrest/Darkbloody" and lookups == 1,
+    "row reuse changed the applicant selected for Raider.IO")
+entries["Copy Warcraft Logs URL"]()
+assert(module.dialog.edit.text == "https://www.warcraftlogs.com/character/eu/ravencrest/Darkbloody",
+    "applicant Warcraft Logs link lost its cross-realm identity")
+applicant.applicantID, member.memberIdx = 42, 2
+for _, invalid in ipairs({ "secret", false, 0, -1, 1.5, math.huge, 0/0 }) do
+    applicant.applicantID = invalid
+    assert(not Popup(nil, applicantTag, member).divider, "invalid applicant ID offered profiles")
+    applicant.applicantID, member.memberIdx = 42, invalid
+    assert(not Popup(nil, applicantTag, member).divider, "invalid member index offered profiles")
+    member.memberIdx = 2
+end
+applicant.applicantID = nil
+assert(not Popup(nil, applicantTag, member).divider, "removed applicant offered profiles")
+applicant.applicantID = 42
+member.memberIdx = nil
+assert(not Popup(nil, applicantTag, member).divider, "removed member offered profiles")
+member.memberIdx = 2
+assert(lookups == 1, "invalid IDs reached the applicant API")
+applicantName = "secret"
+assert(not Popup(nil, applicantTag, member).divider, "secret applicant name offered profiles")
+applicantName = nil
+assert(not Popup(nil, applicantTag, member).divider, "missing applicant name offered profiles")
+applicantName = "Darkbloody-Ravencrest"
+module.config.raiderIO = false
+entries = Popup(nil, applicantTag, member)
+assert(not entries["Copy Raider.IO URL"] and entries["Copy Warcraft Logs URL"],
+    "applicant menu ignored the per-service setting")
+module.config.warcraftLogs = false
+module.config.raidProgress = true
+local beforeProgressOnly = progressCalls
+entries = Popup(nil, applicantTag, member)
+assert(entries.title == "Raid progress sample" and progressCalls == beforeProgressOnly + 1
+    and not entries["Copy Raider.IO URL"] and not entries["Copy Warcraft Logs URL"],
+    "progress-only mode depended on a profile URL switch")
+module.config.raidProgress = false
+local beforeInactive, beforeProgressDisabled = lookups, progressCalls
+assert(not Popup(nil, applicantTag, member).divider and lookups == beforeInactive,
+    "disabled services still read applicant data")
+assert(progressCalls == beforeProgressDisabled, "disabled progress still queried the provider")
+module.config.raiderIO = true
+entries = Popup(nil, applicantTag, member)
+assert(entries["Copy Raider.IO URL"] and progressCalls == beforeProgressDisabled,
+    "turning progress off changed profile links or still queried raid data")
+module.config.raiderIO, module.config.warcraftLogs, module.config.raidProgress = true, true, true
+beforeInactive = lookups
 module.active = false
+assert(not Popup(nil, applicantTag, member).divider and lookups == beforeInactive,
+    "disabled module still read applicant data")
 entries = Popup({ name = "Pmi", server = "Tarren Mill" })
 assert(not entries.divider, "disabled module kept adding menu entries")
 module:Disable()

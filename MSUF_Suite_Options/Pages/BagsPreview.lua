@@ -1,8 +1,9 @@
 local _, P = ...
 local K, S, Tr = P.PreviewCanvas, P.S, P.Tr
 -- Representative inventory, not a scan of bags or inaccessible bank tabs.
+-- The fifth field marks the sample equipment that beats what is worn.
 local ITEMS = {
-    { 135274, 4, "450", "" }, { 132529, 3, "437", "" }, { 132608, 4, "450", "" },
+    { 135274, 4, "450", "", true }, { 132529, 3, "437", "" }, { 132608, 4, "450", "", true },
     { 134829, 2, "", "20" }, { 134830, 2, "", "5" }, { 134414, 1, "", "200" },
     { 133739, 2, "", "80" }, { 134414, 3, "", "12" }, { 132727, 4, "450", "" },
     { 132574, 3, "437", "" }, { 134328, 2, "", "8" }, { 134328, 1, "", "50" },
@@ -55,7 +56,16 @@ local function Slot(window, index, ui)
     slot.level:SetJustifyH("RIGHT")
     slot.count = K.Text(slot, item[4], 2, -22, 32)
     slot.count:SetJustifyH("RIGHT")
+    slot.arrow = Texture(slot, "OVERLAY")
+    slot.arrow:SetAtlas("bags-greenarrow", true)
+    slot.arrow:SetPoint("TOPLEFT")
     return slot
+end
+-- The bank panel: its own color, always opaque (Catalog/Bags.lua).
+local function BankLook(look, c)
+    look.backgroundColor, look.backgroundOpacity = P.Suite.BagsBankColor(c), 100
+    look.accentColor, look.font = c.accentColor, c.font
+    return look
 end
 local function Paint(ui, preview)
     if not K.Runtime("MSUF_Suite_Bags", "BagsPaintPreviewWindow") then
@@ -69,7 +79,7 @@ local function Paint(ui, preview)
     local bank = ui.selected == "bank"
     local categories = bank and c.bankView == 4 or not bank and c.inventoryView == 3
     P.SetTranslatedText(preview.title, bank and Tr("Bank organisation") or Tr("Bags"))
-    S.BagsPaintPreviewWindow(preview.chrome, c)
+    S.BagsPaintPreviewWindow(preview.chrome, bank and BankLook(preview.bankLook, c) or c)
     preview.categories:SetShown(categories)
     local start = categories and 128 or 12
     local columns = math.max(1, math.min(6, math.floor((preview.width - start - 12) / 40)))
@@ -79,6 +89,7 @@ local function Paint(ui, preview)
             -76 - math.floor((i - 1) / columns) * 40)
         slot:SetShown(i <= columns * 3)
         slot.level:SetShown(bank and c.showBankItemLevel or not bank and c.showItemLevel)
+        slot.arrow:SetShown(c.showUpgradeMarker and ITEMS[i][5] == true)
         S.BagsStylePreviewLabel(slot.level, c)
         local r, g, b = 1, 1, 1
         if c.qualityColor then r, g, b = C_Item.GetItemQualityColor(ITEMS[i][2]) end
@@ -87,6 +98,8 @@ local function Paint(ui, preview)
         slot.border:SetColorTexture(r, g, b, 1)
         P.StylePreviewFont(slot.count, P.Suite.ResolveFont(c.font), c.itemCountSize or 12, "OUTLINE", c.fontRendering)
     end
+    preview.free:SetShown(c.showFreeSlots)
+    preview.free:SetText(string.format(bank and Tr("%d free") or Tr("%d free + %d reagent"), 22, 4))
     P.SetTranslatedText(preview.footer, Tr("Sample values. Click an element to open its settings."))
     P.MenuWorkspace.FitHeader(ui, 344 + math.ceil(preview.footer:GetStringHeight() or 14))
 end
@@ -95,7 +108,7 @@ function P.BuildBagsMenuPreview(ui)
     if not ui then return end
     local width = math.min(520, ui.width - 40)
     local window = K.Button(ui.header, 20, -76, width, 242, function() ui:Focus("suite_bags_appearance") end)
-    local preview = { window = window, width = width, settings = {}, slots = {} }
+    local preview = { window = window, width = width, settings = {}, slots = {}, bankLook = {} }
     preview.chrome = Chrome(window, width)
     preview.title = K.Text(window, "Bags", 12, -10, width - 48)
     K.Jump({ Focus = function()
@@ -114,6 +127,8 @@ function P.BuildBagsMenuPreview(ui)
     for i = 1, #ITEMS do preview.slots[i] = Slot(window, i, ui) end
     local finance = K.Text(window, "36 / 80", 12, -214, 110)
     K.Jump(ui, finance, window, "suite_bags_finance")
+    preview.free = K.Text(window, "", 130, -214, 150)
+    K.Jump(ui, preview.free, window, "suite_bags_organisation")
     K.Jump(ui, preview.chrome.goldLabel, window, "suite_bags_finance")
     K.Text(ui.header, "Preview", 16, -52, ui.width - 32)
     preview.footer = K.Text(ui.header, "", 16, -328, ui.width - 32)

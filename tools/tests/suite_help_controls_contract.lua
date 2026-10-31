@@ -18,7 +18,8 @@ local function Widget(kind)
 end
 for _, current in ipairs({ false, true }) do
     local made, glyph, tooltip, delegated
-    local P = { W = {}, T = { colors = { text = {}, muted = {} } }, M = {} }
+    local HELP = { first = "First instructions", second = "Second instructions" }
+    local P = { W = {}, T = { colors = { text = {}, muted = {} } }, M = {}, QoLHelpText = function(section) return HELP[section] end }
     function P.T.Font(_, _, text, color, role)
         glyph = Widget("FontString")
         glyph.text, glyph.color, glyph.role = text, color, role
@@ -38,7 +39,7 @@ for _, current in ipairs({ false, true }) do
             return made
         end
     end
-    local env = { P = P, Tr = function(text) return text end, HELP = { first = "First instructions", second = "Second instructions" },
+    local env = { P = P, Tr = function(text) return text end,
         ipairs = ipairs, table = table, CreateFrame = function(kind, _, parent)
             made = Widget(kind)
             made.parent = parent

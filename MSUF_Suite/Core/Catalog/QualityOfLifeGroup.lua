@@ -6,6 +6,7 @@ B.Module("groupDeathAlert", {
     title = "Group death alert",
     description = "Reports group member deaths in chat during combat.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+    editElement = "notice",
 })
 B.Section("groupDeathAlert", "group_death_alert", "Group death alert", {
     Bool("includePlayer", "Include your own death"),
@@ -13,7 +14,18 @@ B.Section("groupDeathAlert", "group_death_alert", "Group death alert", {
     B.Tooltip(Bool("screen", "Show deaths on screen"),
         "Large red death notices with a skull appear near the center of the screen, including during combat."),
     Bool("sound", "Play a sound for group deaths"),
+    Number("scale", "On-screen notice scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 5, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", 55, -3000, 3000),
 })
+do
+    local rules = NS.SuiteCatalog.groupDeathAlert.rules
+    -- MSUF Edit Mode places the on-screen notice; the position stays for its
+    -- mover, profile import and undo.
+    for _, key in ipairs({ "point", "x", "y" }) do rules[key].hidden = true end
+    rules.scale.enableKey = "screen"
+end
 
 B.Module("releaseProtection", {
     title = "Release spirit protection",
@@ -62,7 +74,7 @@ B.Module("groupFinderApplicantSort", {
 
 B.Module("mythicAutoQueue", {
     title = "Mythic+ Auto Queue",
-    description = "Automatically confirm Mythic+ role checks and accept invitations for your active Mythic+ applications.",
+    description = "Automatically confirm Mythic+ role checks and remind you to accept active Mythic+ invitations manually.",
     optIn = true, automation = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
         if NS.Client.isForever then return false, "Mythic+ Auto Queue is available only in Retail" end
@@ -71,7 +83,7 @@ B.Module("mythicAutoQueue", {
 })
 B.Section("mythicAutoQueue", "mythic_auto_queue", "Mythic+ Auto Queue", {
     Bool("roleCheck", "Automatically confirm Mythic+ role checks", true),
-    Bool("invites", "Automatically accept Mythic+ invitations", true),
+    Bool("invites", "Remind me to accept Mythic+ invitations", true),
 })
 
 B.Module("groupFinderExitReminder", {
@@ -97,6 +109,24 @@ B.Section("trustedPartyInvites", "trusted_invites", "Trusted party invites", {
     Bool("battleNet", "Accept Battle.net friends", true),
     Bool("wowFriends", "Accept WoW friends", true),
     Bool("guild", "Accept guild members"),
+})
+
+B.Module("autoResponses", {
+    title = "Automatic responses",
+    description = "Accept summons and resurrections, decline duels and party invites from strangers. Each response is its own choice and never acts in combat.",
+    optIn = true, automation = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+B.Section("autoResponses", "auto_responses", "Automatic responses", {
+    B.Tooltip(B.Automation(Bool("acceptSummon", "Accept summons")),
+        "Accepts a summon out of combat. A summon that skips a starting area stays yours to answer."),
+    B.Tooltip(B.Automation(Bool("acceptResurrect", "Accept resurrections")),
+        "Accepts a resurrection out of combat. During a boss encounter, or while Blizzard still makes you wait, the dialog stays yours."),
+    B.Tooltip(B.Automation(Bool("declineDuel", "Decline duel requests")),
+        "Declines duel requests from anyone. In combat the request stays yours to answer."),
+    B.Automation(Bool("declinePetDuel", "Decline pet battle duel requests")),
+    B.Tooltip(B.Automation(Bool("declineInvite", "Decline party invites from strangers")),
+        "Friends, Battle.net friends and guild members are never declined. Invites that ask for a role and quest session invites stay yours to answer."),
+    Bool("report", "Show a chat line for each response", true),
 })
 
 B.Module("groupRaidShortcuts", {
@@ -142,6 +172,8 @@ B.Module("mythicKeyShare", {
 
 B.Section("mythicKeyShare", "keystone_command", "Keystone overview", {
     B.Automation(Bool("insertKey", "Insert your keystone when the pedestal opens (Shift skips)")),
+    B.Tooltip(Bool("otherAddons", "Also read keys from other keystone addons", true),
+        "When BigWigs, Details or another addon provides LibKeystone or LibOpenRaid, a keys request asks it too, so players without the Suite are listed."),
     Number("fontSize", "Keystone text size", 14, 10, 20, 1),
     Number("windowScale", "Keystone window scale (percent)", 100, 60, 160, 5),
 })
@@ -202,9 +234,19 @@ B.Module("dungeonPortals", {
         return true
     end,
 })
+-- Which learned portals the minimap flyout and the DataText portal and
+-- travel menus list (MSUF_Suite_QualityOfLife/DungeonPortals.lua). Saved
+-- profiles store the choice index, so this order never changes.
+NS.DungeonPortalSet = { ALL = 1, SEASON = 2, CUSTOM = 3 }
 B.Section("dungeonPortals", "dungeon_portals", "Dungeon portals", {
+    B.Tooltip(Choice("portalSet", "Portals to show", NS.DungeonPortalSet.ALL,
+        { "All learned portals", "Current season", "Custom set" }),
+        "Current season follows the game's Mythic+ season by itself. An empty custom set lists every learned portal."),
     Bool("showMinimap", "Show dungeon portals beside the minimap", true),
     Number("flyoutScale", "Dungeon portal flyout scale (percent)", 100, 60, 160, 5),
     Bool("joinPopup", "Suggest a learned portal when joining a dungeon group"),
     Number("popupScale", "Dungeon portal suggestion scale (percent)", 100, 60, 160, 5),
+    -- Spell IDs, set through the portal picker (Options Pages/ComfortPickers.lua).
+    B.String("customPortals", "Custom portal set", "", 1200),
 })
+NS.SuiteCatalog.dungeonPortals.rules.customPortals.hidden = true

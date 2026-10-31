@@ -5,13 +5,18 @@ local M, SOURCES, Read = O.M, O.SOURCES, O.Read
 local MythicPlus = S.MythicPlus
 local Raid = S.Raid
 local Finite = S.Finite
+local FlatSlot, EntryBase, AddFlat, SameItem = O.FlatSlot, O.EntryBase, O.AddFlat, O.SameItem
 local Tr = S.Text
 
 -- The objective tracker's frame: rows, clicks and context menus, countdowns,
 -- theme and layout (see ObjectivesData.lua for how the files fit together).
-local ORDER = { "scenario", "focused", "campaign", "important", "complete", "quests", "world", "bonus", "achievements" }
+-- Blizzard's own module order puts the zone widgets after the scenario and the
+-- collectibles before the achievements.
+local ORDER = { "scenario", "zone", "focused", "campaign", "important", "complete", "quests", "world", "bonus",
+    "collectibles", "achievements", "travelersLog", "endeavors", "recipes" }
 local GROUP = {
     scenario = { Tr("SCENARIO"), .39, .64, .90 },
+    zone = { Tr("ZONE EVENT"), .45, .72, .95 },
     focused = { Tr("FOCUSED"), .98, .84, .42 },
     campaign = { Tr("CAMPAIGN"), .98, .76, .32 },
     important = { Tr("IMPORTANT"), .94, .52, .79 },
@@ -19,7 +24,11 @@ local GROUP = {
     quests = { Tr("QUESTS"), .91, .92, .95 },
     world = { Tr("WORLD QUESTS"), .73, .58, .94 },
     bonus = { Tr("BONUS OBJECTIVES"), .47, .82, .80 },
+    collectibles = { Tr("COLLECTIBLES"), .93, .66, .40 },
     achievements = { Tr("ACHIEVEMENTS"), .83, .62, .38 },
+    travelersLog = { Tr("TRAVELER'S LOG"), .60, .82, .70 },
+    endeavors = { Tr("ENDEAVORS"), .86, .60, .72 },
+    recipes = { PROFESSIONS_TRACKER_HEADER_PROFESSION, .91, .92, .95 },
 }
 -- Header titles, translated once at load: renders only set them.
 local TITLE = { objectives = Tr("OBJECTIVES"), mythic = Tr("MYTHIC+"), raid = Tr("RAID") }
@@ -27,10 +36,15 @@ local GROUP_COLOR_KEYS = {
     scenario = "scenarioColor", focused = "focusedColor", campaign = "campaignColor",
     important = "importantColor", complete = "completeGroupColor", quests = "questsColor",
     world = "worldColor", bonus = "bonusColor", achievements = "achievementsColor",
+    zone = "scenarioColor", collectibles = "achievementsColor",
+    travelersLog = "questsColor", endeavors = "questsColor",
 }
+-- Tracked recipes (professions) exist on Retail only and have their own color.
+if not NS.Client.isForever then GROUP_COLOR_KEYS.recipes = "recipesColor" end
 local SECTION_KEYS = {}
 for _, group in ipairs(ORDER) do SECTION_KEYS[group] = "section:" .. group end
 local TEXT_RGB, MUTED_RGB, COMPLETE_RGB = { .95, .96, .98 }, { .78, .81, .85 }, { .49, .75, .53 }
+local LATE_RGB = { .92, .36, .36 }
 
 ------------------------------------------------------------------ frames
 -- Row and header buttons: O.ClickButton (ObjectivesActions.lua).
@@ -102,6 +116,19 @@ local function OnRowClick(button, mouseButton)
         ToggleGroup(M, button.group)
         return
     end
+    if button.secureWindow then
+        -- Blizzard's own button opened the window (O.RowPreClick).
+        button.secureWindow = nil
+        return
+    end
+    if Finite(button.recipeID) then
+        O.OnRecipeClick(button)
+        return
+    end
+    if Finite(button.contentID) then
+        O.OnContentClick(button)
+        return
+    end
     if WatchTogglePressed() and (Finite(button.questID) or Finite(button.achievementID)) then
         Untrack(button)
         return
@@ -113,17 +140,9 @@ local function OnRowClick(button, mouseButton)
         ShowQuestComplete(button.questID)
         return
     end
-    if button.secureWindow then
-        -- Blizzard's own button opened the window (O.RowPreClick).
-        button.secureWindow = nil
-        return
-    end
     local opens = Finite(button.questID) or Finite(button.achievementID) or button.group == "scenario"
     -- Blizzard's panel manager refuses the Suite's call in combat (KS-2).
-    if opens and NS.IsCombatLocked() then
-        S.Print(NS.RestrictedNotice())
-        return
-    end
+    if opens and not O.WindowAllowed() then return end
     if Finite(button.questID) then
         OpenQuestDetails(button.questID)
     elseif Finite(button.achievementID) then
@@ -326,6 +345,10 @@ local function Theme(self)
     self.textRGB = custom and RGB(c.textColor) or skin and { skin:GetColor("text") } or TEXT_RGB
     self.mutedRGB = custom and RGB(c.mutedColor) or skin and { skin:GetColor("muted") } or MUTED_RGB
     self.completeRGB = custom and RGB(c.completeColor) or COMPLETE_RGB
+    -- Only the Mythic+ view reads it, and only Retail has that view.
+    self.lateRGB = custom and c.lateColor and RGB(c.lateColor) or LATE_RGB
+    -- Rows restyle their text when this changes (PaintRow, PaintRowWidgets).
+    self.textRevision = (self.textRevision or 0) + 1
     self.groupRGB = self.groupRGB or {}
     for group, key in pairs(GROUP_COLOR_KEYS) do
         local spec = GROUP[group]
@@ -342,7 +365,7 @@ local function Theme(self)
     else
         self.background:SetColorTexture(dark and .035 or .025, dark and .039 or .055, dark and .047 or .085, opacity)
     end
-    S.SetStyledFont(self.title, self.font, c.titleSize or 18, "OUTLINE", 1, true, 70, 1)
+    S.SetStyledFont(self.title, self.font, c.titleSize or 18, NS.HUDTextArgs(c))
     O.ApplyHeading(self, c)
     self.title:SetText(TITLE.objectives)
     if custom then
@@ -352,7 +375,9 @@ local function Theme(self)
     else
         self.title:SetTextColor(.96, .97, .98)
     end
-    S.SetStyledFont(self.count, self.font, math.max(9, (c.sectionSize or 14)), "OUTLINE", 1, false)
+    -- The entry count has never had a shadow.
+    local outline, rendering = NS.HUDTextArgs(c)
+    S.SetStyledFont(self.count, self.font, math.max(9, (c.sectionSize or 14)), outline, rendering, false)
     if custom then
         self.count:SetTextColor(unpack(self.mutedRGB))
         local r, g, b = S.RGB(c.dividerColor)
@@ -382,105 +407,6 @@ local function PlaceHost(self, c, force)
     self.host:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", c.x, c.y)
     self.content:SetWidth(c.width - 14)
     return true
-end
-
-local function FlatSlot(flat, index)
-    local item = flat[index]
-    if not item then
-        item = {}
-        flat[index] = item
-    end
-    -- Both flat buffers survive refreshes. Clear fields that belong to another row kind.
-    item.key, item.kind, item.group, item.text, item.height = nil, nil, nil, nil, nil
-    item.collapsed, item.menuTitle, item.tracked, item.itemIcon, item.itemLink = nil, nil, nil, nil, nil
-    item.findGroup, item.questGroupSearch = nil, nil
-    item.questIcon, item.questIconAtlas = nil, nil
-    item.scenarioHeaderSetID = nil
-    item.timerEnd, item.hasLines, item.collapseKey = nil, nil, nil
-    item.questID, item.achievementID, item.scenarioID = nil, nil, nil
-    item.done, item.percent = nil, nil
-    return item
-end
-
--- Row keys are cached per entry so an unchanged tracker builds no strings.
-local function EntryBase(entry, group)
-    if entry.keyGroup ~= group or entry.keyID ~= entry.id then
-        entry.keyGroup, entry.keyID = group, entry.id
-        entry.base = group .. ":" .. tostring(entry.id)
-        entry.entryKey = "entry:" .. entry.base
-        local lineKeys = entry.lineKeys or {}
-        for j = #lineKeys, 1, -1 do lineKeys[j] = nil end
-        entry.lineKeys = lineKeys
-    end
-    return entry.base
-end
-
-local function LineKey(entry, index)
-    local key = entry.lineKeys[index]
-    if not key then
-        key = "line:" .. entry.base .. ":" .. index
-        entry.lineKeys[index] = key
-    end
-    return key
-end
-
-local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedEntries)
-    if #items == 0 then return index end
-    index = index + 1
-    local section = FlatSlot(flat, index)
-    section.key, section.kind, section.group = SECTION_KEYS[group], "section", group
-    section.text = GROUP[group][1]
-    section.height = math.max(23, (c.sectionSize or 14) + 12)
-    section.collapsed = collapsedGroups[group] == true
-    if collapsedGroups[group] then return index end
-    local entryHeight = math.max(32, (c.entrySize or 15) + 19)
-    local objectiveSize = c.objectiveSize or 13
-    for i = 1, #items do
-        local entry = items[i]
-        local base = EntryBase(entry, group)
-        local questID = group ~= "achievements" and group ~= "scenario" and entry.id > 0 and entry.id or nil
-        local achievementID = group == "achievements" and entry.id or nil
-        local scenarioID = group == "scenario" and entry.scenarioID or nil
-        local lines = entry.lines
-        index = index + 1
-        local item = FlatSlot(flat, index)
-        item.key, item.kind, item.group = entry.entryKey, "entry", group
-        item.text, item.height = entry.title, entryHeight
-        item.menuTitle, item.tracked = entry.title, entry.tracked
-        item.itemIcon, item.itemLink, item.timerEnd = entry.itemIcon, entry.itemLink, entry.timerEnd
-        item.questIcon, item.questIconAtlas = entry.questIcon, entry.questIconAtlas
-        item.scenarioHeaderSetID = entry.scenarioHeaderSetID
-        item.findGroup, item.questGroupSearch = entry.findGroup, entry.questGroupSearch
-        item.hasLines, item.collapsed, item.collapseKey = lines.count > 0, collapsedEntries[base] == true, base
-        item.questID, item.achievementID, item.scenarioID = questID, achievementID, scenarioID
-        if not collapsedEntries[base] then
-            for j = 1, lines.count do
-                local line = lines[j]
-                index = index + 1
-                item = FlatSlot(flat, index)
-                item.key, item.kind, item.group = LineKey(entry, j), "line", group
-                item.text, item.done, item.percent = line.text, line.done, line.percent
-                item.menuTitle, item.tracked = entry.title, entry.tracked
-                item.questID, item.achievementID, item.scenarioID = questID, achievementID, scenarioID
-                item.height = math.max(line.percent and 28 or 24, objectiveSize + (line.percent and 17 or 13))
-            end
-        end
-    end
-    return index
-end
-
-local function SameItem(a, b)
-    return b and a.key == b.key and a.kind == b.kind and a.group == b.group
-        and a.text == b.text and a.height == b.height and a.done == b.done
-        and a.percent == b.percent and a.tracked == b.tracked
-        and a.questID == b.questID and a.achievementID == b.achievementID
-        and a.scenarioID == b.scenarioID and a.collapsed == b.collapsed
-        and a.itemIcon == b.itemIcon and a.itemLink == b.itemLink and a.timerEnd == b.timerEnd
-        and a.questIcon == b.questIcon and a.questIconAtlas == b.questIconAtlas
-        and a.scenarioHeaderSetID == b.scenarioHeaderSetID
-        and a.findGroup == b.findGroup and a.questGroupSearch == b.questGroupSearch
-        and a.hasLines == b.hasLines and a.menuTitle == b.menuTitle
-        and a.collapseKey == b.collapseKey
 end
 
 local function RenderMythicPlus(self, c)
@@ -581,9 +507,9 @@ local function PaintRowWidgets(self, row, item, color, size)
     end
     if Finite(item.timerEnd) and item.timerEnd > GetTime() and item.kind == "entry" then
         local timer = EnsureTimer(row)
-        if row.timerFont ~= self.font or row.timerSize ~= size then
-            S.SetStyledFont(timer, self.font, math.max(10, size - 1), "OUTLINE", 1, true, 70, 1)
-            row.timerFont, row.timerSize = self.font, size
+        if row.timerFont ~= self.font or row.timerSize ~= size or row.timerRevision ~= self.textRevision then
+            S.SetStyledFont(timer, self.font, math.max(10, size - 1), NS.HUDTextArgs(self.config))
+            row.timerFont, row.timerSize, row.timerRevision = self.font, size, self.textRevision
         end
         timer:ClearAllPoints()
         timer:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
@@ -599,7 +525,7 @@ local function PaintRowWidgets(self, row, item, color, size)
     if item.kind == "section" or (item.kind == "entry" and item.hasLines) then
         row.collapse:ClearAllPoints()
         row.collapse:SetPoint("RIGHT", row, "RIGHT", -rightInset, 0)
-        S.SetStyledFont(row.collapse.glyph, self.font, math.max(10, size), "OUTLINE", 1, true, 70, 1)
+        S.SetStyledFont(row.collapse.glyph, self.font, math.max(10, size), NS.HUDTextArgs(self.config))
         row.collapse.glyph:SetText(item.collapsed and "+" or "-")
         row.collapse.glyph:SetTextColor(color[1], color[2], color[3])
         row.collapse:Show()
@@ -621,10 +547,12 @@ local function PaintRowState(self, row, item, color)
     end
     row.questID = item.questID
     row.achievementID, row.scenarioID = item.achievementID, item.scenarioID
+    row.recipeID, row.isRecraft = item.recipeID, item.isRecraft
+    row.contentID, row.contentType = item.contentID, item.contentType
     row.menuTitle, row.tracked = item.menuTitle, item.tracked
     row.findGroup, row.questGroupSearch = item.findGroup, item.questGroupSearch
-    row:EnableMouse(item.kind == "section" or item.questID ~= nil or item.achievementID ~= nil
-        or (item.group == "scenario" and item.kind ~= "section"))
+    row:EnableMouse(item.kind == "section" or item.questID ~= nil or item.achievementID ~= nil or item.recipeID ~= nil
+        or item.contentID ~= nil or (item.group == "scenario" and item.kind ~= "section"))
     if item.percent then
         row.progress:SetStatusBarColor(color[1], color[2], color[3], .95)
         row.progress:SetValue(item.percent)
@@ -655,9 +583,9 @@ local function PaintRow(self, row, item, c, width, y)
     end
     local size = item.kind == "section" and (c.sectionSize or 14)
         or item.kind == "entry" and (c.entrySize or 15) or (c.objectiveSize or 13)
-    if row.cachedSize ~= size or row.cachedFont ~= self.font then
-        S.SetStyledFont(row.text, self.font, size, "OUTLINE", 1, true, 70, 1)
-        row.cachedSize, row.cachedFont = size, self.font
+    if row.cachedSize ~= size or row.cachedFont ~= self.font or row.cachedRevision ~= self.textRevision then
+        S.SetStyledFont(row.text, self.font, size, NS.HUDTextArgs(c))
+        row.cachedSize, row.cachedFont, row.cachedRevision = size, self.font, self.textRevision
     end
     if row.cachedText ~= item.text then
         row.text:SetText(item.text)
@@ -716,7 +644,7 @@ local function BuildFlat(self, c)
     local flat, flatCount, totalEntries = self.flatWork or {}, 0, 0
     for i = 1, #ORDER do
         local group = ORDER[i]
-        flatCount = AddFlat(flat, flatCount, group, grouped[group], c, self.collapsedGroups, self.collapsedEntries)
+        flatCount = AddFlat(flat, flatCount, group, grouped[group], c, self.collapsedGroups, self.collapsedEntries, GROUP, SECTION_KEYS)
         totalEntries = totalEntries + #grouped[group]
     end
     if flatCount == 0 and S.editMode then

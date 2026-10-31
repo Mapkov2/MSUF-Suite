@@ -17,13 +17,16 @@ local FIELDS = {
     { key = "showVersatility", label = "VERS", full = "Versatility" },
     -- Each extra stat has its own switch and color.
     { key = "showLeech", color = "leechColor", label = "LEECH", full = "Leech", rating = "CR_LIFESTEAL",
-        read = function() return GetLifesteal() end },
+        read = S.ReadLeech },
     { key = "showAvoidance", color = "avoidanceColor", label = "AVOID", full = "Avoidance", rating = "CR_AVOIDANCE",
         read = function() return GetAvoidance() end },
     { key = "showSpeed", color = "speedColor", label = "SPD", full = "Speed", rating = "CR_SPEED",
         read = function() return GetSpeed() end },
 }
 local FIRST_EXTRA = 5
+-- The text size (fontSize) is the value's. The stat names are LABEL_STEP
+-- smaller, but not below MIN_LABEL; the FPS readout is FPS_STEP smaller.
+local LABEL_STEP, MIN_LABEL, FPS_STEP = 5, 8, 1
 
 local function Enabled(c, field)
     return c[field.key] == true
@@ -34,43 +37,16 @@ local function AnyEnabled(c)
     return false
 end
 
-local function ReadPercent(fn)
-    local value = fn()
-    return S.Finite(value) and value or nil
-end
-
--- Match Blizzard's PaperDollFrame crit display: the highest of melee,
--- ranged and the lowest spell-school value. One restricted school leaves the
--- result unknown rather than silently showing a misleading partial maximum.
-local function ReadCrit()
-    local melee = ReadPercent(GetCritChance)
-    local ranged = ReadPercent(GetRangedCritChance)
-    if not melee or not ranged then return nil end
-    local spell
-    for school = 2, 7 do
-        local value = GetSpellCritChance(school)
-        if not S.Finite(value) then return nil end
-        spell = spell and math.min(spell, value) or value
-    end
-    if spell >= ranged and spell >= melee then return spell, _G.CR_CRIT_SPELL end
-    if ranged >= melee then return ranged, _G.CR_CRIT_RANGED end
-    return melee, _G.CR_CRIT_MELEE
-end
+-- The stat readers are shared with the DataTexts Secondary stat place
+-- (MSUF_Suite_Modules/PlayerReaders.lua); a disabled stat is never read.
+local ReadPercent = S.ReadPercent
 
 local function ReadStats(config)
     local crit, critRating
-    if config.showCrit then crit, critRating = ReadCrit() end
-    local haste = config.showHaste and ReadPercent(GetHaste) or nil
-    local mastery = config.showMastery and ReadPercent(GetMasteryEffect) or nil
-    local versatility
-    if config.showVersatility then
-        local rating = CR_VERSATILITY_DAMAGE_DONE
-        local fromRating = GetCombatRatingBonus(rating)
-        local fromEffects = GetVersatilityBonus(rating)
-        if S.Finite(fromRating) and S.Finite(fromEffects) then
-            versatility = fromRating + fromEffects
-        end
-    end
+    if config.showCrit then crit, critRating = S.ReadCrit() end
+    local haste = config.showHaste and S.ReadHaste() or nil
+    local mastery = config.showMastery and S.ReadMastery() or nil
+    local versatility = config.showVersatility and S.ReadVersatility() or nil
     return crit, haste, mastery, versatility, critRating
 end
 
@@ -99,6 +75,11 @@ local function SetValue(field, value, rating, raw, ratingsOnly)
     end
 end
 
+local function StyleField(field, c)
+    S.SetFont(field.label, nil, math.max(MIN_LABEL, c.fontSize - LABEL_STEP), "OUTLINE")
+    S.SetFont(field.value, nil, c.fontSize, "OUTLINE")
+end
+
 local function Create(self)
     if self.host then return end
     local host = S.CreateFrame("Frame", nil, UIParent)
@@ -115,14 +96,12 @@ local function Create(self)
     border:SetColorTexture(.85, .68, .36, 1)
     local fields = {}
     for i = 1, #FIELDS do
-        local label = S.CreateFontString(host, nil, "OVERLAY")
-        S.SetFont(label, nil, 10, "OUTLINE")
-        label:SetText(S.Text(FIELDS[i].label))
-        label:SetTextColor(.68, .74, .79)
-        local value = S.CreateFontString(host, nil, "OVERLAY")
-        S.SetFont(value, nil, 15, "OUTLINE")
-        value:SetTextColor(1, .87, .56)
-        fields[i] = { label = label, value = value }
+        local field = { label = S.CreateFontString(host, nil, "OVERLAY"), value = S.CreateFontString(host, nil, "OVERLAY") }
+        StyleField(field, self.config)
+        field.label:SetText(S.Text(FIELDS[i].label))
+        field.label:SetTextColor(.68, .74, .79)
+        field.value:SetTextColor(1, .87, .56)
+        fields[i] = field
     end
     host:Hide()
     self.host, self.bg, self.border, self.fields = host, bg, border, fields
@@ -136,6 +115,10 @@ local function FPSPlacement(self)
     if not self.active or not (wanted or S.editMode) then return nil end
     if self.config.fps == FPS_BELOW then return FPS_BELOW end
     return FPS_ALONE
+end
+
+local function StyleFPS(self)
+    S.SetStyledFont(self.fpsText, S.GlobalFontPath(), self.config.fontSize - FPS_STEP, "OUTLINE", 1, true, 70, 1)
 end
 
 local function PaintFPS(self)
@@ -157,7 +140,7 @@ local function UpdateFPS(self)
         self.fpsHost:SetSize(110, 24)
         self.fpsText = S.CreateFontString(self.fpsHost, nil, "OVERLAY")
         self.fpsText:SetAllPoints(self.fpsHost)
-        S.SetStyledFont(self.fpsText, S.GlobalFontPath(), 14, "OUTLINE", 1, true, 70, 1)
+        StyleFPS(self)
         self.fpsFormat, self.fpsUnknown = S.Text("%.0f FPS"), S.Text("-- FPS")
     end
     self.fpsHost:ClearAllPoints()
@@ -206,6 +189,7 @@ local function Layout(self)
     local host = self.host
     host:SetSize(c.width, c.valueFormat == BOTH and 58 or 42)
     S.PlaceHost(host, c)
+    if self.fpsText then StyleFPS(self) end
     self.bg:SetColorTexture(S.RGB(c.backgroundColor))
     self.bg:SetAlpha(c.opacity / 100)
     self.border:SetColorTexture(S.RGB(c.accentColor))
@@ -219,6 +203,7 @@ local function Layout(self)
     for i = 1, #FIELDS do
         local field, definition = self.fields[i], FIELDS[i]
         local shown = Enabled(c, definition)
+        StyleField(field, c)
         field.label:SetText(S.Text(c.labelStyle == FULL_NAMES and definition.full or definition.label))
         field.label:SetShown(shown)
         field.value:SetShown(shown)

@@ -403,6 +403,23 @@ local FONT_TOGGLES = {
     { "Quest, mail and combat text", "includeSpecial", "SetIncludeSpecial" },
 }
 
+-- Typography.GetStatus().error: why the chosen font is not in use.
+local FONT_PROBLEMS = {
+    ["invalid-path"] = "The chosen font was not found, so Blizzard text keeps its own font.",
+    ["font-unavailable"] = "The game could not use the chosen font, so Blizzard text keeps its own font.",
+}
+local FONT_PROBLEM_UNKNOWN = "The chosen font could not be applied."
+
+-- The line under the font controls; blank while the font works.
+local function FontStatusLine(ctx, body, skin, y, width)
+    local line = P.Text(body, "", 16, y, width, T.colors.danger)
+    M.TrackRefresh(ctx, function()
+        local problem = skin.Typography.GetStatus().error
+        P.SetTranslatedText(line, problem and Tr(FONT_PROBLEMS[problem] or FONT_PROBLEM_UNKNOWN) or "")
+    end)
+    return y - 30
+end
+
 local function BuildFonts(ctx, b, skin)
     local fonts = {
         Row("toggle", "Override Blizzard fonts", "font.enabled", "fonts",
@@ -444,7 +461,7 @@ local function BuildFonts(ctx, b, skin)
                         function() return skin.Typography.SetCustomPath(value or "") end)
                 end,
                 true, Meta("font.path", "fonts"))
-            return y - 60
+            return FontStatusLine(ctx, body, skin, y - 60, width)
         end)
 end
 
@@ -554,6 +571,14 @@ local CHARACTER_TOGGLES = {
     { "Diminishing returns", "characterStats", "diminishingReturns", "CharacterStats" },
 }
 
+local CHARACTER_HELP = "Choose the detailed character view and its extra information. Changing the view reloads the UI."
+local CHARACTER_FOREVER_NOTE = "The detailed character panel and stats are available only in Retail. WoW Forever keeps its own character layout."
+
+-- The skin's character adapters skip every one of these controls on WoW Forever.
+local function CharacterUnavailable()
+    return "The detailed character panel is available only in Retail."
+end
+
 local function BuildCharacter(ctx, b, skin)
     local character = {
         Row("dropdown", "Character view", "character.view", "character",
@@ -571,13 +596,21 @@ local function BuildCharacter(ctx, b, skin)
                 Change(skin, label, group .. "." .. key, function() return skin[api].SetOption(key, value) end)
             end)
     end
+    local retail = Suite.Client.modernEquipment == true
+    if not retail then
+        for _, row in ipairs(character) do row.unavailable = CharacterUnavailable end
+    end
     Section(ctx, b, "character", "Character panel and stats",
-        "Choose the detailed character view and its extra information. Changing the view reloads the UI.",
-        character, false)
+        retail and CHARACTER_HELP or CHARACTER_FOREVER_NOTE, character, false)
 end
 
-local function ResetSkinProfile(skin)
+-- The factory profile and look come back; the player's two Skinning switches
+-- (Blizzard windows, Suite windows) stay as they were. The Suite follows the
+-- factory look like it follows any look chosen on this page.
+local function ResetSkinProfile(skin, windowsEnabled)
     skin.Database.ResetAll()
+    skin.DB.enabled = windowsEnabled
+    P.S.ApplyGlobalLook(skin.DB.theme.look)
     skin.Typography.ApplyConfigured()
     skin.Adapters.ApplyAll()
     skin.Registry.RefreshAll()
@@ -587,8 +620,9 @@ end
 P.ResetSkinPage = function()
     local skin = Engine()
     if not skin or P.Combat() then return false end
-    if not ResetSkinProfile(skin) then return false end
-    return Suite.Skin.SetEnabled(true)
+    local suiteWindows = Suite.Skin.enabled
+    if not ResetSkinProfile(skin, skin.DB.enabled) then return false end
+    return Suite.Skin.SetEnabled(suiteWindows)
 end
 
 -- "Restore chat colors": a chat category the skin themes gets its recorded

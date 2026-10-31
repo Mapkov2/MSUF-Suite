@@ -162,8 +162,9 @@ function Suite.CreateFrame(_, _, parent, template)
     end
     return frame
 end
-local P = { NS = {}, Suite = Suite, Objectives = O }
+local P = { NS = { Client = { isForever = false }, HUDTextArgs = function() end }, Suite = Suite, Objectives = O }
 assert(loadfile(root .. '/MSUF_Suite_Modules/ObjectivesDetails.lua'))('Suite', P)
+assert(loadfile(root .. "/MSUF_Suite_Modules/ObjectivesRows.lua"))("Suite", P)
 local file = assert(io.open(root .. '/MSUF_Suite_Modules/ObjectivesTracker.lua', 'rb'))
 local tracker = file:read('*a'); file:close()
 assert(loadstring(tracker .. '\nO.TestPaintRow, O.TestPaintRows = PaintRow, PaintRows'))('Suite', P)

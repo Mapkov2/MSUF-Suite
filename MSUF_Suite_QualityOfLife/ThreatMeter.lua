@@ -92,12 +92,12 @@ local function Layout(self, key, host)
     host:ClearAllPoints()
     host:SetPoint("CENTER", UIParent, "CENTER", c[key .. "X"], c[key .. "Y"])
     local font = S.GlobalFontPath()
-    S.SetStyledFont(host.title, font, c.fontSize, "OUTLINE", 1, true, 80, 1)
+    S.QoLStyleText(host.title, c, font, c.fontSize)
     for i, bar in ipairs(host.rows) do
         bar:ClearAllPoints()
         bar:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -23 - (i - 1) * (c.rowHeight + 2))
         bar:SetSize(c.width, c.rowHeight)
-        S.SetStyledFont(bar.text, font, c.fontSize, "OUTLINE", 1, true, 80, 1)
+        S.QoLStyleText(bar.text, c, font, c.fontSize)
     end
 end
 

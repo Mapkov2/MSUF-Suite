@@ -34,8 +34,9 @@ D.ROW_BORDER, D.TEXT_STYLE, D.VALUE_FORMAT = NS.DamageMeterRowBorder, NS.DamageM
 
 -- Per-window setting names, built once so paint and visibility paths never
 -- concatenate keys.
-local suffixes = { "Type", "Session", "Width", "Height", "X", "Y", "Locked", "HideDungeon", "HideRaid", "HidePvP",
-    "HideWorld" }
+local suffixes = { "Type", "Session", "Width", "Height", "X", "Y", "Locked", "HideDungeon", "HideDelve", "HideRaid",
+    "HidePvP", "HideWorld", "AutoCurrent", "SyncSession", "MythicSwap", "MythicType", "Scale", "ClickThrough",
+    "RoleTank", "RoleHealer", "RoleDamager" }
 for i = 1, D.MAX do
     local keys = {}
     for _, suffix in ipairs(suffixes) do keys[suffix] = "w" .. i .. suffix end
@@ -168,12 +169,15 @@ function D.FetchSession(win)
     else
         session = C_DamageMeter.GetCombatSessionFromType(win.sessionType, win.meterType)
     end
-    if type(session) ~= "table" then session = nil end
+    -- Both native getters return a session table or nothing on Retail and
+    -- Forever. Keep nil as-is without rechecking that contract every paint.
     if M.forced and D.Count(session and session.combatSources) == 0 then return D.Sample(win.meterType) end
+    if win.damageTarget and D.damageTypes[win.meterType] then return D.FilterSession(win, session) end
     return session
 end
 
 function D.FetchSource(win, guid, creature)
+    if win.damageTarget and D.damageTypes[win.meterType] then return D.FilterSource(win, guid, creature) end
     if not (guid or creature) then return nil end
     local source
     if win.sessionID then
@@ -187,7 +191,7 @@ end
 -- The source getters refuse secret arguments from addon code. Only plain
 -- identities go back into the API; in combat that leaves the local player's
 -- own row, mapped to UnitGUID("player"). nil,nil means "blocked".
-function D.Identity(source)
+function D.Identity(source, win)
     local guid, creature = source.sourceGUID, source.sourceCreatureID
     if not Public(guid) or type(guid) ~= "string" or guid == "" then guid = nil end
     if not Finite(creature) or creature <= 0 then creature = nil end
@@ -198,6 +202,7 @@ function D.Identity(source)
             if Public(own) and type(own) == "string" and own ~= "" then guid = own end
         end
     end
+    if not guid and not creature then guid = D.GroupIdentity(source, win) end
     return guid, creature
 end
 
@@ -288,7 +293,7 @@ local function TargetIndex(session)
         if not Public(name) or type(name) ~= "string" or not Public(class) or type(class) ~= "string" then
             return nil
         end
-        local player = { name = name, class = class }
+        local player = { name = name, class = class, source = source }
         if full[name] ~= nil then full[name] = false else full[name] = player end
         local abbreviated = Ambiguate(name, "short")
         if not Public(abbreviated) or type(abbreviated) ~= "string" then return nil end
@@ -297,17 +302,19 @@ local function TargetIndex(session)
     return full, short
 end
 
+-- The player an attacker row names, or nil. A second result of true marks a
+-- name that fits several players: unlike a pet, guardian, totem or NPC (which
+-- fit none and are left out), it cannot be told apart.
 local function TargetPlayer(full, short, name, class)
     local player = full[name]
     -- A complete realm-qualified name remains usable when its short form is
     -- ambiguous; only short-name lookups must fail closed in that case.
-    if not player then player = short[name] end
     if not player then
-        local abbreviated = Ambiguate(name, "short")
-        if not Public(abbreviated) or type(abbreviated) ~= "string" then return nil end
-        player = short[abbreviated]
+        if name:find("-", 1, true) then return nil, player == false end
+        player = short[name]
     end
-    if not player or player == false or (class ~= "" and player.class ~= "" and player.class ~= class) then return nil end
+    if player == false then return nil, true end
+    if not player or (class ~= "" and player.class ~= "" and player.class ~= class) then return nil end
     return player.name
 end
 
@@ -341,6 +348,9 @@ local function EnemySource(win, guid, creature)
     if guid and creature then return Fetch(guid, nil) end
     return detail
 end
+
+D.TargetIndex, D.TargetPlayer = TargetIndex, TargetPlayer
+D.EnemySession, D.EnemySource = EnemySession, EnemySource
 
 local function BuildTargets(win)
     local full, short = TargetIndex(win.session)
@@ -448,6 +458,7 @@ end
 
 function D.TargetGroups(win, source, detail)
     if M.inCombat or NS.IsCombatLocked() or M.preview then return nil end
+    if win.damageTarget and source and source.targets then return source.targets, 1, source.totalAmount end
     if D.healingTypes[win.meterType] then return HealingTargets(detail) end
     if not D.damageTypes[win.meterType] then return nil end
     if not source then return nil end

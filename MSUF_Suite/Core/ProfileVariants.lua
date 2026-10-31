@@ -7,6 +7,7 @@ local _, Suite = ...
 local P = {}
 Suite.ProfileVariants = P
 local runtime, F, V, S
+local Snapshot
 local hadOverlay = false
 
 local function Allowed(id)
@@ -68,8 +69,16 @@ end
 -- `modules`, a copy of the stored module settings. Automation settings never
 -- enter the overlay, so they keep their stored values.
 local function UseBase(modules, name)
-    local snapshot, why = V.BaseSnapshot(FrameProfile(name), true)
-    if not snapshot then return false, why end
+    local snapshot, why
+    if V.ProjectBaseRoot then
+        if not V.ProjectBaseRoot(FrameProfile(name), "suiteModules", modules) then return false, "invalid setting value" end
+        local projected, valid = Snapshot(modules)
+        if not valid then return false, "invalid setting value" end
+        snapshot = { suiteModules = projected }
+    else
+        snapshot, why = V.BaseSnapshot(FrameProfile(name), true)
+        if not snapshot then return false, why end
+    end
     for id, config in pairs(snapshot.suiteModules or {}) do
         local stored = modules[id]
         if type(stored) == "table" then
@@ -135,7 +144,7 @@ local function Check(path, value, remove)
     return checked, checked ~= nil
 end
 
-local function Snapshot(source)
+Snapshot = function(source)
     local out = {}
     for id, config in pairs(source) do
         if Allowed(id) then

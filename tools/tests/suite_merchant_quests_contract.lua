@@ -37,6 +37,7 @@ local owner = {
     IsCombatLocked = function() return combat end,
     Print = function(message) messages[#messages + 1] = message end,
 }
+dofile(root .. "/tools/tests/suite_inventory_tools_fixture.lua").DisabledProtection(root, owner, suite)
 for _, file in ipairs({ "Merchant", "QuestHelpers" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))(
         "MSUF_Suite_QualityOfLife", { NS = owner, Suite = suite })

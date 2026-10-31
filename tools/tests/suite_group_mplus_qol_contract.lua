@@ -217,8 +217,10 @@ IsInRaid = function() return false end
 UnitFullName = function() return "Player", "Realm" end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/SlashCommands.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/MPlusKeystoneShare.lua"))(
-    "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
+local keysAddon = { NS = ns, Suite = suite }
+for _, file in ipairs({ "MPlusKeystoneSources", "MPlusKeystoneTeleport", "MPlusKeystoneShare" }) do
+    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", keysAddon)
+end
 local keys = assert(installed.mythicKeyShare)
 keys.active, keys.context = true, context()
 keys:Enable()
@@ -584,7 +586,8 @@ UnitIsFeignDeath = function() return false end
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 local death = assert(installed.groupDeathAlert)
-death.active, death.context, death.config = true, context(), { includePlayer = false }
+death.active, death.context, death.config = true, context(),
+    { includePlayer = false, scale = 100, point = 5, x = 0, y = 55 }
 death:Enable()
 local deathNotices = #notices
 unitDead.player = true

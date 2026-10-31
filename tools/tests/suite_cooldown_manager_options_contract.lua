@@ -35,7 +35,7 @@ issecretvalue = IsSecret
 UnitClass = function() return "Mage", "MAGE", 8 end
 
 ------------------------------------------------------------------ frames
-local frames = {}
+local frames, shownFrames = {}, {}
 local methods = {}
 local WidgetMT = {}
 local function Noop() end
@@ -50,6 +50,7 @@ local function Widget(kind, parent)
     local w = setmetatable({ kind = kind, parent = parent, shown = true, scripts = {}, hooks = {}, events = {},
         text = "", width = 100, height = 20, enabled = true, alpha = 1, points = {} }, WidgetMT)
     frames[#frames + 1] = w
+    shownFrames[w] = true
     if parent then
         parent.children = parent.children or {}
         parent.children[#parent.children + 1] = w
@@ -60,13 +61,15 @@ local function Run(frame, script)
     if frame.scripts[script] then frame.scripts[script](frame) end
     if frame.hooks[script] then frame.hooks[script](frame) end
 end
-function methods:Show() if not self.shown then self.shown = true; Run(self, "OnShow") end end
-function methods:Hide() if self.shown then self.shown = false; Run(self, "OnHide") end end
+-- Native visibility is independent of Lua fields: the picker stores its
+-- visible row count in .shown, which must not suppress native OnShow.
+function methods:Show() if not shownFrames[self] then shownFrames[self], self.shown = true, true; Run(self, "OnShow") end end
+function methods:Hide() if shownFrames[self] then shownFrames[self], self.shown = false, false; Run(self, "OnHide") end end
 function methods:SetShown(v) if v then self:Show() else self:Hide() end end
-function methods:IsShown() return self.shown end
+function methods:IsShown() return shownFrames[self] end
 function methods:IsVisible()
     local frame = self
-    while frame do if not frame.shown then return false end; frame = frame.parent end
+    while frame do if not shownFrames[frame] then return false end; frame = frame.parent end
     return true
 end
 function methods:SetText(v) self.text = v end
@@ -105,11 +108,15 @@ function methods:GetChildren() return unpack(self.children or {}) end
 function methods:RegisterEvent(event) self.events[event] = true end
 function methods:UnregisterEvent(event) self.events[event] = nil end
 function methods:UnregisterAllEvents() self.events = {} end
+function methods:EnableMouseWheel(value) self.mouseWheelEnabled = value == true end
 function methods:ClearFocus() self.focus = false end
 function methods:HasFocus() return self.focus == true end
 function methods:SetVerticalScroll(v) self.scroll = v end
 function methods:GetVerticalScroll() return self.scroll or 0 end
-function methods:GetVerticalScrollRange() return 0 end
+function methods:SetScrollChild(child) self.scrollChild = child end
+function methods:GetVerticalScrollRange()
+    return self.scrollChild and math.max(0, self.scrollChild:GetHeight() - self:GetHeight()) or 0
+end
 function methods:CreateTexture() return Widget("Texture", self) end
 function methods:CreateFontString() return Widget("FontString", self) end
 function methods:StartMoving() self.moving = true end
@@ -133,6 +140,8 @@ UIParent = Widget("Frame")
 ------------------------------------------------------------------ client stand-ins
 local combat = false
 InCombatLockdown = function() return combat end
+-- Same-load history stamps use the client clock; this fixture never advances it.
+GetTime = function() return 100 end
 SlashCmdList = {}
 IsLoggedIn = function() return false end
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
@@ -146,11 +155,12 @@ WOW_PROJECT_ID, WOW_PROJECT_MAINLINE = 1, 1
 GameFontHighlightSmall = {}
 SecureHandlerSetFrameRef, RegisterStateDriver = function() end, function() end
 C_DamageMeter = { GetCombatSessionFromType = function() end }
-Enum = { DamageMeterType = { DamageDone = 0 } }
+Enum = { DamageMeterType = { DamageDone = 0 }, ItemClass = { Consumable = 0 }, ItemConsumableSubclass = { Potion = 1 } }
 Minimap = { SetMaskTexture = function() end }
 C_CooldownViewer = { GetCooldownViewerCategorySet = function() return {} end, GetCooldownViewerCooldownInfo = function() end }
 local SPELLS = { [133] = { "Fireball", 1001 }, [1459] = { "Arcane Intellect", 1002 }, [122] = { "Frost Nova", 1004 },
     [10060] = { "Power Infusion", 1010 }, [29166] = { "Innervate", 1011 },
+    [1236616] = { "Light's Potential", 1012 }, [1236994] = { "Potion of Recklessness", 1013 },
     [382440] = { "Shifting Power", 1006 } }
 C_Spell = {
     GetSpellCooldownDuration = function() end,
@@ -158,10 +168,33 @@ C_Spell = {
     GetSpellTexture = function(id) return SPELLS[id] and SPELLS[id][2] or nil end,
     GetSpellIDForSpellIdentifier = function(text) for id, spell in pairs(SPELLS) do if spell[1] == text then return id end end end,
 }
+local potionBags, potionItems, potionRequests = {}, {}, {}
+local potionScans = 0
+NUM_BAG_SLOTS = 4
+C_Container = {
+    GetContainerNumSlots = function(bag)
+        potionScans = potionScans + 1
+        return potionBags[bag] and #potionBags[bag] or 0
+    end,
+    GetContainerItemID = function(bag, slot) return potionBags[bag] and potionBags[bag][slot] end,
+}
 C_Item = {
-    GetItemNameByID = function(id) return id == 5512 and "Healthstone" or id == 9001 and "Trinket of Tests" or nil end,
+    GetItemNameByID = function(id)
+        local item = potionItems[id]
+        if item then return item.cached and item.name or nil end
+        return id == 5512 and "Healthstone" or id == 9001 and "Trinket of Tests" or nil
+    end,
     GetItemIconByID = function(id) return id == 5512 and 2001 or nil end,
-    RequestLoadItemDataByID = function() end,
+    GetItemInfoInstant = function(id)
+        local item = potionItems[id]
+        if item then return id, "Consumable", "Potion", "", 2002, item.class or 0, item.subclass or 1 end
+    end,
+    GetItemSpell = function(id)
+        local item = potionItems[id]
+        if item and item.cached then return item.name, item.spell end
+    end,
+    IsItemDataCachedByID = function(id) return not potionItems[id] or potionItems[id].cached end,
+    RequestLoadItemDataByID = function(id) potionRequests[id] = (potionRequests[id] or 0) + 1 end,
 }
 GetInventoryItemTexture = function(_, slot) return slot == 13 and 3001 or nil end
 GetInventoryItemID = function(_, slot) return slot == 13 and 9001 or nil end
@@ -288,6 +321,15 @@ M.ShouldExpandFixedPreview = function() return true end
 M.pages = {}
 M.Tr = function(text) return L[text] end
 M.CreateMenuPopupPanel = function(parent) return Widget("Popup", parent) end
+M.AddTooltip = function(widget, title, text)
+    widget:HookScript("OnEnter", function(self)
+        tooltip:SetOwner(self)
+        tooltip:SetText(title)
+        tooltip:AddLine(text)
+        tooltip:Show()
+    end)
+    widget:HookScript("OnLeave", function() tooltip:Hide() end)
+end
 T.colors = { muted = { 0.5, 0.5, 0.5 }, text = { 1, 1, 1 }, dim = { 0.4, 0.4, 0.4 }, accent = { 0.2, 0.6, 1 } }
 T.navIconGrid = { home = { 0, 0 }, gameplay = { 7, 1 } }
 T.navIconColors = { home = { 1 }, gameplay = { 2 }, profiles = { 3 } }
@@ -429,6 +471,7 @@ for _, file in ipairs(files) do
             end
         end
         assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite", NS)
+        assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CooldownManagerData.lua"))("MSUF_Suite", NS)
         B.Module = original
     end
     if file:match("%.lua$") then assert(loadfile(root .. "/MSUF_Suite/" .. file))("MSUF_Suite", NS) end
@@ -598,9 +641,10 @@ local strict = setmetatable({}, { __index = _G, __newindex = function(_, key) er
 for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewClasses.lua", "Menu/PreviewInteraction.lua", "Menu/SectionActions.lua",
     "Pages/DataTextsWorkspace.lua",
     "Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua", "Pages/CooldownManagerTarget.lua",
-    "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
-    "Pages/CooldownManagerSounds.lua", "Pages/CooldownManagerPopover.lua",
-    "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManager.lua",
+    "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerFrames.lua", "Pages/CooldownManagerSections.lua", "Pages/CooldownManagerWidgets.lua", "Pages/CooldownManagerPicker.lua",
+    "Pages/CooldownManagerSounds.lua", "Pages/CooldownManagerPopoverFields.lua",
+    "Pages/CooldownManagerPopoverInputs.lua", "Pages/CooldownManagerPopover.lua",
+    "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManagerInspection.lua", "Pages/CooldownManager.lua",
     "Pages/AppearanceKit.lua", "Pages/Appearance.lua", "Menu/Register.lua" }) do
     local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))
     if file:find("CooldownManager", 1, true) then setfenv(chunk, strict) end
@@ -898,16 +942,21 @@ do
     assert(own.disabled and own.tooltip(own) == "A bar cannot send cooldowns to itself.", "a bar takes its own excess")
     assert(buffs.disabled and buffs.text == Page.BarName("buf") and buffs.tooltip(buffs) == "Only a cooldown bar can take excess cooldowns.",
         "an aura bar is offered as a destination for excess cooldowns")
-    assert(not utility.disabled and utility.tooltip(utility) == nil and utility.text == Page.BarName("uti"),
-        "another cooldown bar stays selectable")
+    -- With a limit set, a valid destination has no inactive reason; unlimited gives one.
+    assert(utility.tooltip(utility) == "Overflow is inactive because Maximum icons is unlimited (0). Set a limit first.")
+    Config().ess_maxIcons = 3
+    assert(not utility.disabled and utility.tooltip(utility) == nil and Page.OverflowReason("ess") == nil
+        and utility.text == Page.BarName("uti"), "another cooldown bar stays selectable")
+    Config().ess_maxIcons = 0
 end
--- Attach targets: Free, the twelve bars, then MSUF's player and target frames.
+-- Attach targets: Free, the twelve bars, then MSUF's player and target frames
+-- and any other frame by name (appended last).
 local anchors = anchor.row.values
-assert(#anchors == #CDM.SLOTS + 3 and #anchors == #CDM.ANCHOR_LABELS, "attach list must end with the two unit frames")
-assert(CDM.FRAME_ANCHORS[14] == "player" and CDM.FRAME_ANCHORS[15] == "target" and not CDM.FRAME_ANCHORS[13],
-    "frame targets must follow the last bar")
+assert(#anchors == #CDM.SLOTS + 4 and #anchors == #CDM.ANCHOR_LABELS, "attach list must end with the two unit frames and Other frame")
+assert(CDM.FRAME_ANCHORS[14] == "player" and CDM.FRAME_ANCHORS[15] == "target" and not CDM.FRAME_ANCHORS[13]
+    and not CDM.FRAME_ANCHORS[16] and CDM.OTHER_ANCHOR == 16, "frame targets must follow the last bar")
 local function FrameTargetsIntact()
-    for i, label in pairs({ [14] = "Player frame", [15] = "Target frame" }) do
+    for i, label in pairs({ [14] = "Player frame", [15] = "Target frame", [16] = "Other frame" }) do
         local item = anchors[i]
         if item.value ~= i or item.text ~= label or item.translate == false or item.disabled then return false end
     end
@@ -932,6 +981,14 @@ assert(defSummary:find("Player frame", 1, true) and not defSummary:find("placed 
     "bar summary must name the unit frame a bar is attached to: " .. defSummary)
 assert(Page.Summary("uti"):find("Essential cooldowns", 1, true) and Page.Summary("ess"):find("placed freely", 1, true),
     "bar summary for bar attaches and free bars")
+-- A bar on any other frame names it, or "Other frame" until it has a name.
+local utiAnchor = Config().uti_anchor
+Config().uti_anchor, Config().uti_anchorFrame = CDM.OTHER_ANCHOR, "ChatFrame1"
+assert(Page.Summary("uti"):find("ChatFrame1", 1, true) and not Page.Summary("uti"):find("placed freely", 1, true),
+    "bar summary must name the frame a bar is attached to: " .. Page.Summary("uti"))
+Config().uti_anchorFrame = ""
+assert(Page.Summary("uti"):find("Other frame", 1, true), "bar summary without a frame name: " .. Page.Summary("uti"))
+Config().uti_anchor = utiAnchor
 Control("grow").set(2)
 assert(runtime.grow == "ess" and Config().ess_grow == 2 and Config().ess_y == -123, "grow change did not keep the bar in place")
 Control("vertical").set(true)
@@ -1030,6 +1087,80 @@ local function VisibleRows()
     for _, row in ipairs(pick.rows) do if row.shown and row.item then out[#out + 1] = row.item end end
     return out
 end
+-- Interactive rows cover the scroll viewport, so native wheel delivery
+-- must be enabled on those rows and forwarded to the current host handler.
+do
+    local orderCount, viewportHeight = #CATALOG_ORDER, pick.scroll:GetHeight()
+    local registerMenu, animateContent = Suite.Skin.RegisterMenu, Suite.Skin.AnimateContent
+    local legacyAdoptions, contentAnimations = 0, 0
+    Suite.Skin.RegisterMenu = function(frame, moduleID, contentOnly)
+        if frame == pick and moduleID == "cdmMenuMotion" and not contentOnly then legacyAdoptions = legacyAdoptions + 1 end
+        return registerMenu(frame, moduleID, contentOnly)
+    end
+    Suite.Skin.AnimateContent = function(frame, token, moduleID)
+        if frame == pick.content and moduleID == "cdmMenuMotion" then contentAnimations = contentAnimations + 1 end
+        return animateContent(frame, token, moduleID)
+    end
+    for i = 1, 16 do
+        local key = "b" .. (1000 + i)
+        CATALOG[key] = { name = "Scroll fixture " .. i, texture = 101, family = 1, known = true }
+        CATALOG_ORDER[#CATALOG_ORDER + 1] = key
+    end
+    pick.scroll:SetHeight(pick:GetHeight() - 66 - 132)
+    Page.RebuildPicker()
+    local header, row = pick.rows[1], pick.rows[2]
+    assert(header.item.kind == "header" and row.item.kind == "entry", "scroll fixture must cover header and entry buttons")
+    local function NativeWheel(underMouse, delta)
+        if underMouse.mouseWheelEnabled and underMouse:IsVisible() then Fire(underMouse, "OnMouseWheel", delta) end
+    end
+    local fallback = pick.scroll:GetScript("OnMouseWheel")
+    local receiver, delta, firstCalls, secondCalls = nil, nil, 0, 0
+    pick.scroll:SetScript("OnMouseWheel", function(frame, value)
+        receiver, delta, firstCalls = frame, value, firstCalls + 1
+    end)
+    NativeWheel(row, -2)
+    assert(firstCalls == 1 and receiver == pick.scroll and delta == -2,
+        "wheel over an interactive picker row must reach the scroll frame's current handler")
+    pick.scroll:SetScript("OnMouseWheel", function(frame, value)
+        receiver, delta, secondCalls = frame, value, secondCalls + 1
+    end)
+    NativeWheel(row, 3)
+    NativeWheel(header, -4)
+    assert(firstCalls == 1 and secondCalls == 2 and receiver == pick.scroll and delta == -4,
+        "picker rows and section headers must follow handler replacements without capturing an old host handler")
+    assert(legacyAdoptions == 0 and contentAnimations > 0,
+        "picker content animation must not adopt the host scroll frame into a second scroll-motion layer")
+    pick.scroll:SetScript("OnMouseWheel", fallback)
+    local range = pick.scroll:GetVerticalScrollRange()
+    assert(range > 48, "the picker fixture must have real content overflow")
+    pick.scroll:SetVerticalScroll(0)
+    NativeWheel(row, -1)
+    assert(pick.scroll:GetVerticalScroll() == 48, "row wheel must scroll the fallback viewport downward")
+    NativeWheel(row, -100)
+    assert(pick.scroll:GetVerticalScroll() == range, "row wheel must stop at the last visible picker rows")
+    NativeWheel(header, 100)
+    assert(pick.scroll:GetVerticalScroll() == 0, "header wheel must stop at the top of the picker")
+    pick.scroll:SetVerticalScroll(range)
+    pick.search:SetText("   ")
+    Fire(pick.search, "OnTextChanged", true)
+    assert(pick.scroll:GetVerticalScroll() == range, "an unchanged normalized query must retain the current scroll position")
+    local listBeforePick = Config().listsData
+    assert(Page.PickItem(row.item), "scroll fixture row must be selectable")
+    assert(pick.scroll:GetVerticalScroll() == range, "selecting an entry must retain the current scroll position")
+    Config().listsData = listBeforePick
+    pick.search:SetText("frost")
+    Fire(pick.search, "OnTextChanged", true)
+    assert(pick.scroll:GetVerticalScrollRange() == 0 and pick.scroll:GetVerticalScroll() == 0,
+        "filtering a bottom-scrolled picker to a short list must return the results into view")
+    for i = #CATALOG_ORDER, orderCount + 1, -1 do
+        CATALOG[CATALOG_ORDER[i]], CATALOG_ORDER[i] = nil, nil
+    end
+    pick.scroll:SetHeight(viewportHeight)
+    pick.search:SetText("")
+    Page.RebuildPicker()
+    Suite.Skin.RegisterMenu, Suite.Skin.AnimateContent = registerMenu, animateContent
+    M.RequestRefresh()
+end
 local rows = VisibleRows()
 assert(rows[1].kind == "header" and rows[2].key == "b40", "unassigned entries must come first")
 local seenTrinket, trinketRows = false, 0
@@ -1126,6 +1257,33 @@ assert(Keys("ess") == "b1,b2,b3,b4,i5512,s133" and historyWrites == writes + 2 a
 Click(grid.tiles[6], "MiddleButton")
 assert(Keys("ess") == "b1,b2,b3,b4,i5512", "custom entries leave the list")
 assert(not (Lists().hidden[62] or {}).s133, "custom entries are never hidden")
+-- Under the spell grid: a spell-option search says what to click next, and
+-- a catalog the game has not sent yet is not an empty selection.
+do
+    local note, hint = Page.note, Page.searchSpellHint
+    Page.note, Page.searchSpellHint = nil, "Click a spell to change Sound when lost."
+    ui.PaintNote()
+    assert(ui.note.text == "Click a spell to change Sound when lost.", "the search hint must show under the spell grid")
+    Page.searchSpellHint = nil
+    ui.PaintNote()
+    assert(ui.note.text == "", "a used search hint must leave the grid note")
+    Page.note, Page.searchSpellHint = note, hint
+    ui.PaintNote()
+    local entries, unavailable = Page.Entries, Page.CatalogUnavailable
+    Page.Entries = function() return {} end
+    Page.CatalogUnavailable = function() return "The cooldown catalog is not available yet." end
+    grid.valid = false
+    grid:Refresh()
+    assert(grid.message.shown and grid.message.text == "The cooldown catalog is not available yet.",
+        "a missing catalog must not read as an empty bar")
+    Page.CatalogUnavailable = function() return nil end
+    grid.valid = false
+    grid:Refresh()
+    assert(grid.message.text == "No spells yet. Click + to add some.", "an empty bar keeps its own message")
+    Page.Entries, Page.CatalogUnavailable = entries, unavailable
+    grid.valid = false
+    grid:Refresh()
+end
 
 -- The Spell list's list-wide actions say what they drop, are one history
 -- entry each and offer Undo (also one entry).
@@ -1226,6 +1384,8 @@ ui.chips.buf.mouseOver = false
 assert(Page.noteError and Page.note == "That bar shows buffs." and Keys("buf") == "b10,b11", "cooldown dropped on a buff bar")
 
 ------------------------------------------------------------------ per-spell popover
+-- Rows made on the first open or search join the list first.
+Page.CompleteFields()
 local fieldRows = {}
 for _, field in ipairs(Page.FIELDS) do
     assert(CDM.SPELL_FIELDS[field.key], "popover row for an unknown spell field: " .. field.key)
@@ -1355,8 +1515,9 @@ do
     assert(countdown and countdown.shown and charges.shown and top.shown, "cooldowns offer the text rows")
     assert(countdown.label.text == "Countdown" and charges.label.text == "Charges" and top.label.text == "Text on top",
         "text row labels of a cooldown")
-    assert(countdown.points[1][5] == pop.rows.swipe.points[1][5] - 26 and pop.rows.threshold.points[1][5] == top.points[1][5] - 26,
-        "the text rows sit between Swipe and Warn below")
+    assert(countdown.field.section == top.field.section and charges.points[1][5] == countdown.points[1][5] - 26
+        and top.points[1][5] == charges.points[1][5] - 26 and pop.rows.threshold.points[1][5] == top.points[1][5] - 26,
+        "the Text section keeps Countdown, Charges, Text on top and Warn below together")
     assert(countdown.choice.text == "Bar: Show" and charges.choice.text == "Bar: Show" and top.choice.text == "Bar: Stacks"
         and not countdown.reset.shown, "text rows follow the bar and say how")
     for _, row in ipairs({ countdown, charges, top }) do
@@ -1581,6 +1742,47 @@ assert(Page.SetSpellField("b1", "stackGlow", 99))
 writes = historyWrites
 Fire(stackGlow.plus, "OnClick")
 assert(Page.SpellField("b1", "stackGlow") == 99 and historyWrites == writes, "glow at stacks stops at 99")
+-- The stack comparison sits in the Glow at stacks row (owner 2026-10-29: the
+-- separate row went unnoticed): a list with a chevron in front of the
+-- threshold, its mark on the button, the rule in words on hover. The row's
+-- reset clears both; a comparison alone marks the row as customised.
+do
+    local op = stackGlow.op
+    assert(op and op.chevron and trackOn.choice.chevron and not pop.rows.stackGlowOp and op.text == ">=",
+        "the comparison must be a list in the Glow at stacks row")
+    assert(op.points[1][4] == Page.POP_X and stackGlow.minus.points[1][4] == Page.POP_X + op.width + 4
+        and Page.POP_X + op.width + 4 + 22 + 2 + stackGlow.value.width + 2 + 22 <= resetLeft,
+        "the comparison and its threshold must fit before the reset button")
+    assert(Page.SetSpellField("b1", "stackGlow", 3))
+    writes = historyWrites
+    Fire(op, "OnClick")
+    local field = op.field
+    assert(lastDropdown.owner == op and lastDropdown.values == field.menu and lastDropdown.current == 0,
+        "the comparison list did not open on At least")
+    local words = {}
+    for i, item in ipairs(field.menu) do words[i] = item.text .. " " .. item.mark end
+    assert(table.concat(words, ",") == "At least >=,Exactly =,More than >,Fewer than <,At most <=",
+        "comparison words: " .. table.concat(words, ","))
+    lastDropdown.onSelect(4)
+    assert(Page.SpellField("b1", "stackGlowOp") == 4 and historyWrites == writes + 1 and op.text == "<", "Fewer than failed")
+    Fire(op, "OnEnter")
+    assert(tooltip.owner == op and tooltip.text == "Stack comparison"
+        and table.concat(tooltip.lines, " "):find("Glows below 3 stacks.", 1, true), "the comparison must say its rule")
+    Fire(op, "OnLeave")
+    Fire(stackGlow.tip, "OnEnter")
+    assert(table.concat(tooltip.lines, " "):find("Glows below 3 stacks.", 1, true), "the row label must say the rule too")
+    Fire(stackGlow.tip, "OnLeave")
+    Fire(stackGlow.reset, "OnClick")
+    assert(Page.SpellField("b1", "stackGlow") == nil and Page.SpellField("b1", "stackGlowOp") == nil and op.text == ">="
+        and not stackGlow.reset.shown, "the row reset must clear the comparison too")
+    assert(Page.SetSpellField("b1", "stackGlowOp", 3) and stackGlow.reset.shown and op.text == ">"
+        and stackGlow.label.textColor[1] == 0.2, "a comparison alone marks the row as customised")
+    Fire(op, "OnEnter")
+    assert(table.concat(tooltip.lines, " "):find("The stack glow is off.", 1, true), "an unset threshold must say the glow is off")
+    Fire(op, "OnLeave")
+    Fire(stackGlow.reset, "OnClick")
+    assert(Page.SpellField("b1", "stackGlowOp") == nil and Page.SetSpellField("b1", "stackGlow", 99))
+end
 for _ = 1, 3 do Fire(stackColor.plus, "OnClick") end
 assert(Page.SpellField("b1", "stackColorAt") == 3 and stackColor.value.text == "3" and stackColor.swatch.alpha == 1,
     "color stacks from failed")
@@ -1669,9 +1871,9 @@ assert(pop.rows.stackGlow.shown and pop.rows.stackColorAt.shown and pop.rows.sta
 local buffTrack = pop.rows.auraUnit
 assert(buffTrack.shown and buffTrack.alpha == 1 and buffTrack.label.text == "Track on" and buffTrack.choice.text == "Automatic",
     "buff entries must offer Track on at full strength, under the same label")
-assert(buffTrack.points[1][5] == pop.rows.showMissing.points[1][5] - 26
+assert(buffTrack.field.section.label == "Buff and stacks" and buffTrack.points[1][5] < pop.rows.showMissing.points[1][5] - 26
     and pop.rows.stackGlow.points[1][5] == buffTrack.points[1][5] - 26,
-    "buff stack rows follow the missing row, Track on first")
+    "buff stack rows have their own section, Track on first")
 Fire(buffTrack.choice, "OnClick")
 lastDropdown.onSelect(4)
 assert(Page.SpellField("b10", "auraUnit") == 4 and buffTrack.choice.text == "Both", "buff Track on failed")
@@ -1727,6 +1929,190 @@ assert(Keys("buf") == "b10,b11,a10060,a29166,a1459", "custom received buff did n
 Fire(received.close, "OnClick")
 Config().listsData = beforeReceived
 M.RequestRefresh()
+-- Potion suggestions use native player-aura keys, without needing an item
+-- in the bags. Each gesture uses the existing list/history path.
+do
+    local beforePotions, customKind = Config().listsData, Config().c2_kind
+    local function PotionQuery(query)
+        pick.search:SetText(query)
+        Fire(pick.search, "OnTextChanged", true)
+        return VisibleRows()
+    end
+    local function PotionRow(key)
+        for _, row in ipairs(pick.rows) do
+            if row.shown and row.item and row.item.key == key then return row end
+        end
+    end
+    local function PotionListener()
+        for _, frame in ipairs(frames) do
+            if frame.events.ITEM_DATA_LOAD_RESULT and frame.events.BAG_UPDATE_DELAYED then return frame end
+        end
+    end
+    local function PotionEvent(event, ...)
+        for _, frame in ipairs(frames) do
+            if frame.events[event] then Fire(frame, "OnEvent", event, ...) end
+        end
+    end
+    assert(not PotionListener(), "closed potion picker must not listen for bag or item updates")
+    assert(Page.TogglePicker(grid.plus), "potion buff picker did not open")
+    local listener = assert(PotionListener(), "visible aura picker must listen for bag and item-data updates")
+    local scans = potionScans
+    local potions = PotionQuery("potions")
+    assert(#potions == 3 and potions[1].kind == "header" and potions[1].text == "Potions",
+        "buff picker must offer the supported potions under a searchable Potions section")
+    local potential = assert(PotionRow("a1236616"), "Light's Potential suggestion missing")
+    local reckless = assert(PotionRow("a1236994"), "Potion of Recklessness suggestion missing")
+    assert(potential.item.family == CDM.FAMILY.AURA and reckless.item.family == CDM.FAMILY.AURA,
+        "potion suggestions must be player auras rather than item cooldowns")
+    assert(potionScans == scans, "filtering potion suggestions must not scan bags")
+    Fire(potential, "OnEnter")
+    assert(table.concat(tooltip.lines, " "):find("Instant healing and mana potions do not leave a buff.", 1, true),
+        "potion tooltip must explain that the active buff is tracked")
+    Fire(potential, "OnLeave")
+    local beforeWrite, beforeEncode = historyWrites, encodes
+    Fire(potential, "OnClick")
+    assert(Keys("buf") == "b10,b11,a1236616" and historyWrites == beforeWrite + 1 and encodes == beforeEncode + 1,
+        "one potion pick must persist its aura key through one history entry")
+    Fire(potential, "OnClick")
+    assert(Keys("buf") == "b10,b11,a1236616" and historyWrites == beforeWrite + 1,
+        "picking the same potion twice must not duplicate it or write history")
+    combat = true
+    Fire(reckless, "OnClick")
+    assert(Keys("buf") == "b10,b11,a1236616" and historyWrites == beforeWrite + 1,
+        "potion picks must refuse combat without modifying the list")
+    combat = false
+    Fire(reckless, "OnClick")
+    assert(Keys("buf") == "b10,b11,a1236616,a1236994", "the second potion must retain its own aura key")
+    Fire(pick.close, "OnClick")
+    assert(Page.TogglePicker(grid.plus), "potion picker did not reopen")
+    assert(#PotionQuery("1236616") == 2 and PotionRow("a1236616").status.text == "On this bar",
+        "reopened picker must find the saved potion by aura ID and retain its bar assignment")
+    assert(#PotionQuery("recklessness") == 2 and PotionRow("a1236994").status.text == "On this bar",
+        "potion suggestions must be searchable by the client spell name")
+    for _, id in ipairs({ 1295132, 1236998, 1238443 }) do SPELLS[id] = { "Extra potion effect " .. id, 1016 } end
+    Page.RebuildPicker()
+    assert(#PotionQuery("potions") == 6, "all five available Retail potion presets must be offered")
+    for _, id in ipairs({ 1295132, 1236998, 1238443 }) do
+        assert(PotionRow("a" .. id), "available Retail potion preset missing: " .. id)
+        SPELLS[id] = nil
+    end
+    local translate = M.Tr
+    M.Tr = function(text)
+        if text == "Potions" then return "Traenke" end
+        return translate and translate(text) or text
+    end
+    Page.RebuildPicker()
+    potions = PotionQuery("traenke")
+    assert(#potions == 3 and potions[1].text == "Traenke",
+        "the localized Potions section must find every potion, including names without potion")
+    M.Tr = translate
+    local potentialSpell, recklessSpell = SPELLS[1236616], SPELLS[1236994]
+    SPELLS[1236616] = nil
+    Page.RebuildPicker()
+    potions = PotionQuery("potions")
+    assert(#potions == 2 and potions[2].key == "a1236994", "unavailable potion spells must be skipped")
+    SPELLS[1236994] = nil
+    Page.RebuildPicker()
+    assert(#PotionQuery("potions") == 0, "an unavailable potion list must not leave an empty section")
+    SPELLS[1236616], SPELLS[1236994] = potentialSpell, recklessSpell
+    local forever = Suite.Client.isForever
+    Suite.Client.isForever = true
+    Page.RebuildPicker()
+    assert(#PotionQuery("potions") == 0, "Retail potion suggestions must not appear on Forever")
+    assert(#PotionQuery("10060") == 2, "Forever must retain received-buff suggestions")
+    Suite.Client.isForever = forever
+    Fire(pick.close, "OnClick")
+    assert(not listener.events.ITEM_DATA_LOAD_RESULT and not listener.events.BAG_UPDATE_DELAYED,
+        "closing the aura picker must release item and bag listeners")
+    scans = potionScans
+    PotionEvent("BAG_UPDATE_DELAYED")
+    PotionEvent("ITEM_DATA_LOAD_RESULT", 9011, true)
+    assert(potionScans == scans, "closed picker must not scan bags on item or bag updates")
+    for _, target in ipairs({ { "bar", 3 }, { "c2", 2 }, { "c2", 3 } }) do
+        Config().c2_kind = target[2]
+        picker.set(target[1])
+        M.RequestRefresh()
+        assert(Page.TogglePicker(grid.plus), "potion picker must open for every aura bar kind")
+        assert(#PotionQuery("potions") == 3, "all aura bar kinds must offer potion suggestions")
+        Fire(assert(PotionRow("a1236616")), "OnClick")
+        assert(Page.WhereIs("a1236616") == target[1], "potion selection must save on the selected aura bar")
+        Fire(pick.close, "OnClick")
+    end
+    picker.set("ess")
+    M.RequestRefresh()
+    scans = potionScans
+    assert(Page.TogglePicker(grid.plus), "cooldown picker did not open after potion selections")
+    PotionQuery("")
+    assert(not PotionRow("a1236616") and not PotionRow("a1236994"),
+        "cooldown bars must not offer potion buff suggestions")
+    PotionEvent("BAG_UPDATE_DELAYED")
+    assert(potionScans == scans and not PotionListener(), "cooldown picker must not scan or listen for potion inventory")
+    Fire(pick.close, "OnClick")
+    Config().listsData, Config().c2_kind = beforePotions, customKind
+    picker.set("buf")
+    M.RequestRefresh()
+
+    -- Inventory suggestions use the client's item classification and use
+    -- spell, including on Forever, with no hard-coded Forever spell IDs.
+    SPELLS[700001], SPELLS[700002] = { "Bag potion effect", 1014 }, { "Loaded potion effect", 1015 }
+    potionItems[9011] = { name = "Brilliant Draught Rank One", spell = 1236616, cached = true }
+    potionItems[9012] = { name = "Brilliant Draught Rank Two", spell = 1236616, cached = true }
+    potionItems[9021] = { name = "Inventory Draught", spell = 700001, cached = true }
+    potionItems[9022] = { name = "Delayed Draught", spell = 700002, cached = false }
+    potionItems[9023] = { name = "Food fixture", spell = 700002, cached = true, subclass = 5 }
+    potionItems[9024] = { name = "Other item fixture", spell = 700002, cached = true, class = 7 }
+    potionItems[9025] = { name = "Potion without a use spell", cached = true }
+    potionBags[0], potionBags[4] = { 9011, 9012, 9023, 9024 }, { 9021, 9022, 9025 }
+    assert(Page.TogglePicker(grid.plus), "inventory potion picker did not open")
+    assert(#PotionQuery("potions") == 4, "static and inventory entries must deduplicate the same potion aura")
+    for _, query in ipairs({ "9011", "9012", "rank one", "rank two" }) do
+        assert(#PotionQuery(query) == 2 and PotionRow("a1236616"), "every item rank must find the deduplicated potion aura")
+    end
+    assert(#PotionQuery("9023") == 0 and #PotionQuery("9024") == 0,
+        "non-potion item classes and consumable subclasses must not enter potion suggestions")
+    assert(potionRequests[9022] == 1 and not potionRequests[9025],
+        "only uncached potion data must be requested, once per picker opening")
+    PotionEvent("BAG_UPDATE_DELAYED")
+    PotionEvent("BAG_UPDATE_DELAYED")
+    assert(potionRequests[9022] == 1, "repeated inventory updates must not repeat an outstanding item-data request")
+    scans = potionScans
+    combat = true
+    PotionEvent("BAG_UPDATE_DELAYED")
+    PotionEvent("ITEM_DATA_LOAD_RESULT", 9022, true)
+    assert(potionScans == scans, "combat must refuse inventory rebuilds and delayed item completions")
+    combat = false
+    potionItems[9022].cached = true
+    PotionEvent("ITEM_DATA_LOAD_RESULT", 9022, true)
+    assert(#PotionQuery("9022") == 2 and PotionRow("a700002"), "item-data completion must refresh an open aura picker")
+    assert(#PotionQuery("potions") == 5, "loaded inventory potion must join the existing static and bag choices")
+    Suite.Client.isForever = true
+    Page.RebuildPicker()
+    assert(#PotionQuery("potions") == 4 and not PotionRow("a1236994"),
+        "Forever must offer only its actual inventory potions, without Retail-only presets")
+    assert(#PotionQuery("inventory draught") == 2, "Forever potion suggestions must be found by their item names")
+    Fire(assert(PotionRow("a700001")), "OnClick")
+    assert(Keys("buf") == "b10,b11,a700001", "Forever inventory potion must save its native player-aura key")
+    scans = potionScans
+    PotionQuery("700001")
+    PotionQuery("9021")
+    assert(potionScans == scans, "name and ID filtering must reuse inventory suggestions without rescanning")
+    potionBags[4] = {}
+    PotionEvent("BAG_UPDATE_DELAYED")
+    assert(#PotionQuery("9021") == 0 and Keys("buf") == "b10,b11,a700001",
+        "bag changes must refresh suggestions without deleting an already selected potion buff")
+    Fire(pick.close, "OnClick")
+    assert(not PotionListener(), "Forever picker close must release inventory listeners")
+    scans = potionScans
+    PotionEvent("BAG_UPDATE_DELAYED")
+    PotionEvent("ITEM_DATA_LOAD_RESULT", 9022, true)
+    assert(potionScans == scans, "closed Forever picker must not process inventory updates")
+    Suite.Client.isForever = forever
+    Config().listsData = beforePotions
+    potionBags[0], potionBags[4] = nil, nil
+    for id in pairs(potionItems) do potionItems[id] = nil end
+    SPELLS[700001], SPELLS[700002] = nil, nil
+    M.RequestRefresh()
+end
 picker.set("ess")
 assert(not pop.shown, "changing the bar closes the popover")
 M.RequestRefresh()
@@ -2282,9 +2668,9 @@ do
     local effects, text = ctx.sections[8], ctx.sections[7]
     Page.Select("bar")
     M.RequestRefresh()
-    assert(effects._msuf2CollapsibleEntry.label.text == "Cooldown effects"
-        and Note(effects) == "Not used by the Timer bar type. Pick another bar to edit these.",
-        "an unused section must keep its plain title: " .. effects._msuf2CollapsibleEntry.label.text)
+    assert(effects._msuf2CollapsibleEntry.label.text == "Cooldown effects: Buff bars"
+        and Note(effects) == "Greyed options are not used by this bar type.",
+        "timer bars use the line-style controls beside the glow settings: " .. effects._msuf2CollapsibleEntry.label.text)
     assert(text._msuf2CollapsibleEntry.label.text == "Text: Buff bars", "the text switches apply to timer bars too")
     Config().enabled = false
     M.RequestRefresh()
@@ -2668,7 +3054,7 @@ end
 -- picked out of a table at runtime, so such a label stays English in every
 -- language. The talent and spell condition rows are translated everywhere.
 do
-    local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/CooldownManagerPopover.lua", "rb"))
+    local handle = assert(io.open(root .. "/MSUF_Suite_Options/Pages/CooldownManagerPopoverFields.lua", "rb"))
     local text = handle:read("*a")
     handle:close()
     assert(not text:find("label%s*=%s*%(") and not text:find("Label%s*=%s*%("),

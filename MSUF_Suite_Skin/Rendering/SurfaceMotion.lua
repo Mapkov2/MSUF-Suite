@@ -142,18 +142,30 @@ local function Show(target)
 end
 
 local hooks = {
-    OnEnter = Enter, OnLeave = Leave, OnMouseDown = Press, OnMouseUp = Release,
+    OnEnter = Enter, OnLeave = Leave,
     OnHide = Hide, OnDisable = Hide, OnShow = Show,
     OnEditFocusGained = FocusIn, OnEditFocusLost = FocusOut,
     OnClick = Click,
 }
+-- Controls only. Forever's SmartNavigation reads GetScript("OnMouseUp"/"OnMouseDown")
+-- of every frame it scans that is not a Button or EditBox by type (Blizzard_Gamepad-
+-- SmartNavigation/Utility.lua:196-206): a skin hook on a plain shell or popup Frame
+-- (Game Menu, child panels) is a skin-tainted value in that secure scan.
+local pressHooks = { OnMouseDown = Press, OnMouseUp = Release }
+
+local function HookAll(target, list)
+    for event, callback in pairs(list) do
+        if target:HasScript(event) then target:HookScript(event, callback) end
+    end
+end
 
 local function Bind(state)
     local target, spec = state.target, state.spec
     local kind = Safety.Read(target, "GetObjectType")
     local window = spec.role == "shell" or spec.role == "popup"
-    if spec.role == "status" or not (window or kind == "Button" or kind == "CheckButton"
-        or kind == "EditBox") or not Safety.HasMethod(target, "HasScript") then return end
+    local control = kind == "Button" or kind == "CheckButton" or kind == "EditBox"
+    if spec.role == "status" or not (window or control)
+        or not Safety.HasMethod(target, "HasScript") then return end
     local record = { state = state, paint = Paint, reset = Motion.Restore }
     record.window = window
     record.x, record.y, record.width, record.height, record.press = 0, 0, 0, 0, 0
@@ -164,9 +176,8 @@ local function Bind(state)
         state.hoverOverlay = state.hoverOverlay or target:CreateTexture(nil, "HIGHLIGHT", nil, 0)
         Anchor(state.hoverOverlay, state, 0, 0, 0, 0, 0)
     end
-    for event, callback in pairs(hooks) do
-        if target:HasScript(event) then target:HookScript(event, callback) end
-    end
+    HookAll(target, hooks)
+    if control then HookAll(target, pressHooks) end
     return record
 end
 

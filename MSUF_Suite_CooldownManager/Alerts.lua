@@ -1,15 +1,18 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
--- Sounds and speech. Ready alerts for cooldowns play from Lua with a 1 s
--- throttle per entry; aura gain and loss sounds from files are registered
--- with C_UnitAuras.AddAuraSound, so Blizzard plays them without any Lua per
--- aura event. Known Blizzard CDM kits resolve to their sound files; only
--- unknown kits need the aura-button sensor (AuraButtons.lua) through PlayAura.
+-- Sounds and speech. A ready cooldown also pulses in the screen center when
+-- its bar asks for it (ReadyPulse.lua). Ready alerts for cooldowns play from
+-- Lua with a 1 s throttle per entry; aura gain and loss sounds from files
+-- are registered with C_UnitAuras.AddAuraSound, so Blizzard plays them
+-- without any Lua per aura event. Known Blizzard CDM kits resolve to their
+-- sound files; only unknown kits need the aura-button sensor
+-- (AuraButtons.lua) through PlayAura.
 -- Nothing plays while muted or during the short silence after a loading
 -- screen (C.state.soundQuietUntil, set by the controller).
 local Alerts = { pending = false }
 C.Alerts = Alerts
+local Pulse = C.Pulse
 
 local GetTime = GetTime
 local pairs, type, tonumber = pairs, type, tonumber
@@ -158,8 +161,11 @@ end
 -- A cooldown became ready (called by the time layer on the edge). Aura
 -- entries sound through their native registrations instead.
 function Alerts.Ready(entry)
-    local ov = entry and entry.ov
-    if not ov or entry.family == FAMILY.AURA then return end
+    if not entry or entry.family == FAMILY.AURA then return end
+    local view = C.views[entry.slot]
+    if view and view.readyPulse then Pulse.Ready(entry) end
+    local ov = entry.ov
+    if not ov then return end
     local sound, tts = ov.sound, ov.tts == true
     if sound == "" then sound = nil end
     if not sound and not tts then return end
@@ -173,6 +179,26 @@ function Alerts.Ready(entry)
     if sound then Emit(sound) end
     if tts then Speak(entry.name) end
 end
+
+-- "Sound when used" (the cooldown started) and "Sound when a charge
+-- returns" (a running recharge ran out): the time layer calls these on its
+-- edges, only for entries with that sound. Mute, the quiet window and a
+-- 1 s gap per entry and sound keep repeats from piling up.
+local usedAt = setmetatable({}, { __mode = "k" })   -- entry -> time of its last "used" sound
+local chargeAt = setmetatable({}, { __mode = "k" }) -- entry -> time of its last charge sound
+local function EdgeSound(entry, value, seen)
+    if type(value) ~= "string" or value == "" or entry.family == FAMILY.AURA then return false end
+    local state = C.state
+    if state.muteSounds then return false end
+    local now = GetTime()
+    if now < (state.soundQuietUntil or 0) then return false end
+    local prev = seen[entry]
+    if prev and now - prev < THROTTLE then return false end
+    seen[entry] = now
+    return Emit(value)
+end
+function Alerts.Used(entry) return EdgeSound(entry, entry.ov.usedSound, usedAt) end
+function Alerts.Charge(entry) return EdgeSound(entry, entry.ov.chargeSound, chargeAt) end
 
 ------------------------------------------------------------------ aura kit sounds
 -- "kit:<soundKitID>" values: aura entries play these from a sensor.
@@ -396,6 +422,7 @@ function Alerts.SyncAuraSounds(keepFailed)
 end
 
 function Alerts.ReleaseAll()
+    Pulse.Release()
     local remove = C_UnitAuras.RemoveAuraSound
     for key, reg in pairs(have) do
         have[key] = nil

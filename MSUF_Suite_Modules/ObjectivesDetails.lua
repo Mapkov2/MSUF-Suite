@@ -145,7 +145,7 @@ function O.PaintQuestIcon(self, row, item, c, color)
             row.questBadge:SetPoint("LEFT", row, "LEFT", 10, 0)
             row.questBadge:SetWidth(16)
         end
-        S.SetStyledFont(row.questBadge, self.font, c.entrySize or 15, "OUTLINE", 1, true, 70, 1)
+        S.SetStyledFont(row.questBadge, self.font, c.entrySize or 15, NS.HUDTextArgs(c))
         row.questBadge:SetText(SYMBOLS[item.group] or "!")
         row.questBadge:SetTextColor(color[1], color[2], color[3])
         row.questBadge:Show()

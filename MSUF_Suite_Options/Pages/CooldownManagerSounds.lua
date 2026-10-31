@@ -17,6 +17,31 @@ local Button, Label = Page.Button, Page.Label
 local SOUND_W, SOUND_H = 280, 400
 local sounds
 
+function Page.SoundTestEnter(self)
+    Page.ShowTip(self, Tr("Play"), Tr("This sound preview ignores mute."))
+end
+-- Called after the popover lays out its pooled rows.
+function Page.PaintSoundControls(pop)
+    local muted = P.Get(Page.ID, "muteSounds") == true
+    for _, row in pairs(pop.rows) do
+        if row.field.kind == "sound" then
+            if not row.muteNote then
+                row.muteNote = Label(row, "GameFontDisableSmall", "Alerts are muted.", "muted")
+                row.muteNote:SetPoint("LEFT", row, "LEFT", 0, -7)
+                row.muteNote:SetWidth(150)
+                row.play:HookScript("OnEnter", Page.SoundTestEnter)
+                row.play:HookScript("OnLeave", Page.HideTip)
+            end
+            if row.soundMuted ~= muted then
+                row.soundMuted = muted
+                row.muteNote:SetShown(muted)
+                row.label:ClearAllPoints()
+                row.label:SetPoint("LEFT", row, "LEFT", 0, muted and 6 or 0)
+            end
+        end
+    end
+end
+
 local function SoundRowClick(self)
     local item = self.item
     if not item or item.header or P.Combat() then return end
@@ -46,6 +71,8 @@ local function SoundRow(index)
     row.play = Button(row, "Play", 44, 18, SoundPlayClick)
     row.play.row = row
     row.play:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    row.play:HookScript("OnEnter", Page.SoundTestEnter)
+    row.play:HookScript("OnLeave", Page.HideTip)
     row:SetScript("OnClick", SoundRowClick)
     row:SetScript("OnEnter", SoundRowEnter)
     row:SetScript("OnLeave", SoundRowLeave)
@@ -100,6 +127,8 @@ function Page.FilterSounds()
         sounds.rows[i]:Hide()
     end
     sounds.content:SetHeight(max(1, shown * 22))
+    sounds.empty:SetShown(shown == 0)
+    sounds.clear:SetShown(shown == 0)
 end
 -- header: 1 section, 2 category. Rows are found by their category name too.
 local function SoundItem(n, value, text, header, section, group)
@@ -165,6 +194,16 @@ local function EnsureSounds()
     sounds.scroll, sounds.content = Page.ScrollArea(sounds, SOUND_W - 40)
     sounds.scroll:SetPoint("TOPLEFT", sounds, "TOPLEFT", 12, -66)
     sounds.scroll:SetPoint("BOTTOMRIGHT", sounds, "BOTTOMRIGHT", -26, 12)
+    sounds.empty = Label(sounds, "GameFontHighlightSmall", "No matching sounds.", "muted")
+    sounds.empty:SetPoint("TOPLEFT", sounds, "TOPLEFT", 16, -72)
+    sounds.clear = Button(sounds, "Clear search",SOUND_W - 32, 22, function()
+        sounds.search:SetText("")
+        sounds.scroll:SetVerticalScroll(0)
+        Page.FilterSounds()
+    end)
+    sounds.clear:SetPoint("TOPLEFT", sounds.empty, "BOTTOMLEFT", 0, -8)
+    sounds.muteNote = Label(sounds, "GameFontDisableSmall", "Alerts are muted.", "muted")
+    sounds.muteNote:SetPoint("BOTTOMLEFT", sounds, "BOTTOMLEFT", 14, 12)
     sounds.OnClosed = function(self)
         self.search:ClearFocus()
         self.onPick = nil
@@ -182,7 +221,8 @@ function Page.OpenSoundPicker(anchor, current, onPick)
     local kits = Page.BlizzardSounds()
     local n = 1
     SoundItem(n, "", Tr("None"))
-    if current ~= "" and not current:find("^lsm:") and not KitListed(current, kits) then
+    local unavailable = current:find("^lsm:") and Page.SoundLabel(current) ~= current:sub(5)
+    if current ~= "" and (unavailable or not current:find("^lsm:") and not KitListed(current, kits)) then
         n = n + 1
         SoundItem(n, current, Page.SoundLabel(current))
     end
@@ -192,6 +232,9 @@ function Page.OpenSoundPicker(anchor, current, onPick)
     Page.PlacePopup(sounds, anchor)
     if Page.popover then sounds:SetFrameLevel(Page.popover:GetFrameLevel() + 20) end
     sounds.search:SetText("")
+    local muted = P.Get(Page.ID, "muteSounds") == true
+    sounds.muteNote:SetShown(muted)
+    sounds.scroll:SetPoint("BOTTOMRIGHT", sounds, "BOTTOMRIGHT", -26, muted and 32 or 12)
     sounds.scroll:SetVerticalScroll(0)
     Page.FilterSounds()
     sounds:Show()

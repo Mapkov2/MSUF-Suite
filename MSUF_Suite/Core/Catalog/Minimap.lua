@@ -6,9 +6,10 @@ B.Module("minimap", {
     title = "Minimap",
     description = "A clean minimap in its own frame: size, shape, border, zoom, Blizzard buttons, an addon button drawer and information texts. Blizzard's minimap buttons keep working.",
     core = true, page = "suite_minimap",
-    -- A dedicated minimap button collector owns addon buttons, not the map. The
-    -- runtime lets it keep those buttons and leaves the Suite drawer dormant.
-    conflicts = { "SexyMap", "EllesmereUIMinimap", "ElvUI" },
+    -- A dedicated minimap button collector (NS.MinimapButtonCollectors) owns
+    -- addon buttons, not the map. The runtime lets it keep those buttons and
+    -- leaves the Suite drawer dormant.
+    conflicts = { "SexyMap", "Chinchilla", "BasicMinimap", "EllesmereUIMinimap", "ElvUI" },
     cvars = { rotateMinimap = true },
     summary = "stylePreset size point hoverResize hoverWidth shape borderSize styleTexture styleScale styleGlow"
         .. " styleGlowAlpha styleBackdrop styleBackdropAlpha visibility rotate elementRow elementSize"
@@ -86,6 +87,65 @@ NS.MinimapLatencySource = { HOME = 1, WORLD = 2, BOTH = 3 }
 NS.MinimapCoordinatesMode = { MOUSEOVER = 1, ALWAYS = 2 }
 NS.MinimapDurabilityMode = { LOWEST = 1, COMBINED = 2 }
 NS.MinimapInstanceKind = { ALL = 1, RAIDS = 2, DUNGEONS = 3 }
+-- Colour per difficulty tier (1 normal, 2 heroic, 3 mythic, 4 raid finder or
+-- follower, 5 timewalking, 6 keystone): the difficulty text and its preview.
+NS.MinimapDifficultyColors = { "e0a060", "4aa8ff", "b36bff", "a0a0a0", "40d8d8", "ff9a33" }
+
+-- Addons that collect the minimap's buttons and take permanent ownership of
+-- them (folder names). While one is loaded the Suite drawer stays dormant and
+-- leaves the buttons to it; the map itself stays ours.
+NS.MinimapButtonCollectors = { "MinimapButtonButton", "HidingBar", "MinimapButtonFrame" }
+local collectors = {}
+for _, name in ipairs(NS.MinimapButtonCollectors) do collectors[name] = true end
+function NS.IsMinimapButtonCollector(name)
+    return collectors[name] == true
+end
+-- The folder name of the first loaded collector, or nil.
+function NS.MinimapButtonCollector()
+    for _, name in ipairs(NS.MinimapButtonCollectors) do
+        if NS.Client.IsAddOnLoaded(name) then return name end
+    end
+end
+
+-- Addon buttons the player keeps on the map instead of in the drawer: their
+-- frame names, one per line, in the hidden setting drawerKeep.
+local Kept = {}
+NS.MinimapKeptButtons = Kept
+local KEPT_LIMIT = 24
+-- The names of a stored list in order, and the set of them.
+function Kept.Names(text)
+    local names, set = {}, {}
+    for name in text:gmatch("[^\n]+") do
+        if not set[name] then names[#names + 1], set[name] = name, true end
+    end
+    return names, set
+end
+-- The list with the name added; nil when the name cannot be stored or the list is full.
+function Kept.With(text, name)
+    local names, set = Kept.Names(text)
+    if set[name] then return text end
+    if name:find("%c") or #names >= KEPT_LIMIT then return nil end
+    names[#names + 1] = name
+    local joined = table.concat(names, "\n")
+    if #joined > NS.SuiteCatalog.minimap.rules.drawerKeep.maxLength then return nil end
+    return joined
+end
+function Kept.Without(text, name)
+    local names = Kept.Names(text)
+    for i = #names, 1, -1 do
+        if names[i] == name then table.remove(names, i) end
+    end
+    return table.concat(names, "\n")
+end
+-- LibDBIcon names the frame of each icon after the name its addon registered.
+local ICON_PREFIX = "LibDBIcon10_"
+function Kept.IconFrame(name)
+    return ICON_PREFIX .. name
+end
+-- The button's name as its addon shows it.
+function Kept.Label(name)
+    return (name:gsub("^" .. ICON_PREFIX, ""))
+end
 
 B.Section(id, "layout", "Size and position", {
     Number("size", "Minimap size", 190, 100, 600),
@@ -284,6 +344,8 @@ B.Section(id, "addons", "Addon buttons", {
     Bool("drawerMouseover", "Show the drawer button only on mouseover", false),
     Number("drawerX", "Drawer horizontal offset", 0, -600, 600),
     Number("drawerY", "Drawer vertical offset", 0, -600, 600),
+    -- Edited by the page's picker and list (MinimapButtonList.lua), not as text.
+    String("drawerKeep", "Keep these buttons on the minimap", "", 1200),
 })
 
 -- Information texts keep their established keys and per-text styling.
@@ -402,10 +464,14 @@ for _, rule in ipairs({
     Bool("infoDifficultyShadow", "Text shadow"),
     Number("infoDifficultyShadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
     Choice("infoDifficultyShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
+    Bool("infoDifficultyColors", "Color by difficulty", true),
+    Color("infoDifficultyColor", "Text color", "ffffff"),
+    Number("infoDifficultyWidth", "Text width", 120, 40, 400),
     Choice("infoDifficultyAnchor", "Text anchor", 1, NS.MinimapTextAnchorLabels),
     Number("infoDifficultyX", "Horizontal offset", 4, -300, 300),
     Number("infoDifficultyY", "Vertical offset", -20, -300, 300),
-    Bool("infoDifficultyColors", "Color by difficulty", true),
+    Choice("infoDifficultyBox", "Text background", 1, { "None", "Box in the border color", "Box in custom color" }),
+    Color("infoDifficultyBoxColor", "Text background color", "000000"),
 }) do
     rule.enableKey = "infoDifficulty"
     B.Add(id, rule, "info_difficulty", "Difficulty")
@@ -440,7 +506,7 @@ for key, rule in pairs(rules) do
     local prefix = key:match("^(.+)[XY]$")
     if prefix and type(rule.default) == "number" and (prefix:match("^info[%a]+$")
         or prefix:match("^button[%a]+$") or prefix == "zoomIn" or prefix == "zoomOut"
-        or prefix == "drawer" or prefix == "landing" or prefix == "difficultyButton"
+        or prefix == "drawer" or prefix == "landing" or prefix == "difficultyButton" or prefix == "dungeon"
         or prefix == "style") then rule.previewOnly = true end
 end
 rules.x.category, rules.y.category, rules.point.category = "advanced", "advanced", "advanced"
@@ -451,7 +517,12 @@ rules.borderColor.disabledBy = "borderClassColor"
 rules.landingIcon.requiresChoice = { key = "showLanding", values = { [1] = true, [2] = true } }
 rules.zoomResetSeconds.enableKey = "scrollZoom"
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
-for _, key in ipairs({ "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover" }) do rules[key].enableKey = "collectButtons" end
+rules.drawerKeep.hidden = true
+for _, key in ipairs({ "drawerRow", "drawerButtonSize", "drawerColumns", "drawerMouseover", "drawerKeep" }) do
+    rules[key].enableKey = "collectButtons"
+end
+rules.infoDifficultyColor.disabledBy = "infoDifficultyColors"
+rules.infoDifficultyBoxColor.requiresChoice = { key = "infoDifficultyBox", values = { [2] = true, [3] = true } }
 for _, key in ipairs({ "infoGoodColor", "infoWarningColor", "infoBadColor" }) do rules[key].enableKey = "infoStatusColors" end
 for _, key in ipairs({ "infoLocationZone", "infoLocationSubzone" }) do
     rules[key].requiresChoice = { key = "infoLocationSource", values = { [1] = true } }

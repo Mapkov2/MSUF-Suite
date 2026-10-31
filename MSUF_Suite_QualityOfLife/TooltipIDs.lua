@@ -46,9 +46,7 @@ local function Spell(tooltip, data)
     if not AltHeld() then return end
     idsFor = data
     AddID(tooltip, "Spell ID", data.id)
-    if M.config.showSpellIcon and S.Finite(data.id) then
-        AddID(tooltip, "Spell icon ID", C_Spell.GetSpellTexture(data.id))
-    end
+    if M.config.showSpellIcon then S.TooltipLines.SpellIcon(tooltip, data) end
 end
 
 local function Quest(tooltip, data)

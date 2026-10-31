@@ -149,7 +149,7 @@ do
                 page = row
             elseif row.settingKey == "msufsuite.chat.enabled" then
                 switch = row
-            else
+            elseif row.suiteModuleId == "chat" then
                 detail = detail or row
                 Check(row.section and row.section:find(P.Tr("Off"), 1, true), "disabled detail lacks Off context")
             end
@@ -208,9 +208,24 @@ do
     disabled.MSUF_Suite_Chat = true
     P.ForgetAvailability()
     Check(not P.SearchRowAvailable("suite_chat", "msufsuite.chat.enabled", { kind = "toggle" })
-        and not P.SearchRowAvailable("suite_chat", nil, { kind = "page" }),
-        "an unavailable module stayed searchable")
+        and P.SearchRowAvailable("suite_chat", nil, { kind = "page" }),
+        "Chat styling must disappear while independent keyword tools retain the page")
     disabled.MSUF_Suite_Chat = nil
+    P.ForgetAvailability()
+    -- The editor is core-owned; only its optional consumable updater needs QoL.
+    disabled.MSUF_Suite_QualityOfLife = true
+    P.ForgetAvailability()
+    Check(P.SearchRowAvailable("suite_macros", nil, { kind = "page" })
+        and P.SearchRowAvailable("suite_macros", nil, { kind = "button", prepareKind = "suiteMacroTab" }),
+        "the core macro workspace disappeared with its optional updater AddOn disabled")
+    Check(not P.SearchRowAvailable("suite_macros", "msufsuite.macroBuilder.enabled", { kind = "toggle" }),
+        "the unavailable consumable updater was incorrectly marked usable")
+    local macroPage
+    for _, row in ipairs(P.SearchRows()) do
+        if row.pageKey == "suite_macros" and row.kind == "page" then macroPage = row end
+    end
+    Check(macroPage, "cold search omitted the core macro workspace with QoL disabled")
+    disabled.MSUF_Suite_QualityOfLife = nil
     P.ForgetAvailability()
 end
 
@@ -512,12 +527,20 @@ for _, feature in ipairs(Check(P.QualityOfLifeSearchFeatures,
     local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
     Check(not expectedQolRows[sectionId] and not (P.Available(feature.id) and expectedQolRows[sectionId] == false),
         "duplicate Quality of Life feature inventory: " .. sectionId)
-    if P.Available(feature.id) then
+    if P.Available(feature.id) and feature.id ~= "macroBuilder" then
         expectedQolRows[sectionId] = "msufsuite." .. feature.id .. "." .. feature.switch
         expectedQolCount = expectedQolCount + 1
         expectedCategories["suite_qualityOfLife_category_" .. feature.category] = true
     end
 end
+local macroSwitch
+for _, row in ipairs(rows) do
+    if row.pageKey == "suite_macros" and row.settingKey == "msufsuite.macroBuilder.enabled" then
+        macroSwitch = row
+    end
+end
+Check(macroSwitch and macroSwitch.sectionId == nil and macroSwitch.prepareKind == "suiteMacroTab"
+    and macroSwitch.prepareValue == "consumable", "relocated macro updater lost its direct workspace target")
 local directQolRows, directQolCount, categoryRows = {}, 0, {}
 for _, row in ipairs(rows) do
     if row.pageKey == "suite_qualityOfLife" and row.qolFeatureId then
@@ -570,7 +593,7 @@ end
 Check(chatRows > 0, "the chat page has no rows")
 missing.MSUF_Suite_Chat = true
 for _, row in ipairs(P.SearchRows()) do
-    Check(not (row.pageKey == "suite_chat" and row.kind ~= "page"), "rows of a module that is not installed")
+    Check(row.suiteModuleId ~= "chat", "rows of a module that is not installed")
 end
 missing.MSUF_Suite_Chat = nil
 
@@ -1338,14 +1361,23 @@ do
     for _, id in ipairs(Suite.SuiteOrder) do disabled[catalog[id].addon] = true end
     disabled.MSUF_Suite_Skin = true
     local addonOffRows = P.SearchRows()
-    Check(#addonOffRows == 4 and MaintenanceRows(addonOffRows) == 4, "Suite AddOns that are off still provided module rows")
+    Check(MaintenanceRows(addonOffRows) == 4, "AddOn-off search lost its maintenance actions")
+    local coreMacroRows = 0
+    for _, row in ipairs(addonOffRows) do
+        if row.pageKey == "suite_macros" and not row.settingKey then coreMacroRows = coreMacroRows + 1
+        else Check(row.suiteAlways, "disabled AddOn still provided a module row") end
+    end
+    Check(coreMacroRows > 0, "AddOn-off search lost the core macro workspace")
     if M.RegisterSearchAvailability then
         Search("suite")
         local maintenance = 0
         for _, row in ipairs(api.GetSearchRecords()) do
             local always = row.providerRow and row.providerRow.suiteAlways
             if always then maintenance = maintenance + 1 end
-            Check(not row.key:match("^suite_") or always, "AddOn-off cache retained " .. row.kind .. " on " .. row.key)
+            local coreMacro = row.key == "suite_macros" and not (row.settingKey
+                or row.exactTarget and row.exactTarget.settingKey)
+            Check(not row.key:match("^suite_") or always or coreMacro,
+                "AddOn-off cache retained " .. row.kind .. " on " .. row.key)
         end
         Check(maintenance == 4, "search does not find maintenance and graphics actions without their module AddOns")
     end

@@ -364,6 +364,16 @@ function H.BuildClient(W, env)
     W.CF = CombinedBag(W, env)
     W.Reagent = ReagentBag(W, env)
     W.BankFrame = Bank(W, env)
+    -- UpdateUIPanelPositions (Blizzard_UIParentPanelManager): a pass anchors the
+    -- left panel, the bank, at the top left of the screen in its own scale. A
+    -- closed bank is no panel of the manager's, unless the pass is for it.
+    UpdateUIPanelPositions = function(frame)
+        W.panelPasses = (W.panelPasses or 0) + 1
+        local bank = W.BankFrame
+        if frame ~= bank and not bank.shown then return end
+        bank:ClearAllPoints()
+        bank:SetPoint("TOPLEFT", W.UIParent, "TOPLEFT", 20 / bank.scale, -100 / bank.scale)
+    end
     -- ContainerFrameSettingsManager:GetBagsShown caches the open bags in
     -- bagsShown; ContainerFrame_OnShow and ContainerFrame_OnHide mark it stale
     -- (OnHide also runs the anchor pass). A list rebuilt from addon code is
@@ -452,6 +462,8 @@ function H.BuildClient(W, env)
     end
     function W.OpenBank(kind)
         W.Native(function()
+            -- ShowUIPanel: the pass runs before the panel is shown.
+            UpdateUIPanelPositions(W.BankFrame)
             W.BankFrame:Show()
             W.BankFrame.BankPanel.bankType = kind or Enum.BankType.Character
             W.BankFrame.BankPanel:Show()
@@ -498,7 +510,7 @@ function H.New(root, options)
     Widget.__index = Widget
     local function NewWidget(kind, name, parent, native)
         local w = setmetatable({ kind = kind, name = name, parent = parent, shown = true, scripts = {},
-            points = {}, width = 0, height = 0, scale = 1, alpha = 1, level = parent and (parent.level or 0) + 1 or 0,
+            points = {}, width = 0, height = 0, scale = 1, alpha = 1, level = parent and (type(parent.level) == "number" and parent.level or 0) + 1 or 0,
             native = native == true, children = {}, mouse = false, wheel = false, text = nil }, Widget)
         if parent and parent.children then parent.children[#parent.children + 1] = w end
         W.frames[#W.frames + 1] = w
@@ -679,6 +691,7 @@ function H.New(root, options)
     function Widget:SetVerticalScroll(value) self.verticalScroll = value end
     function Widget:SetAutoFocus(value) self.autoFocus = value end
     function Widget:SetMaxLetters(value) self.maxLetters = value end
+    function Widget:SetMaxBytes(value) self.maxBytes = value end
     function Widget:SetNumeric(value) self.numeric = value end
     function Widget:SetFocus() self.focus = true end
     function Widget:ClearFocus() self.focus = false end
@@ -755,6 +768,7 @@ function H.New(root, options)
         return frame
     end
     W.templates = {
+        InputBoxInstructionsTemplate = function(frame) frame.Instructions = frame:CreateFontString() end,
         BasicFrameTemplateWithInset = function(frame) frame.TitleText = frame:CreateFontString() end,
         -- SecureActionButtonTemplate (Blizzard_FrameXML/SecureTemplates.lua): a
         -- protected button whose OnClick is Blizzard's secure code. An
@@ -810,6 +824,12 @@ function H.New(root, options)
     GameEvent = forever and { RegisterCamelotEvents = function() end } or nil
     MSUF_NS = { L = {} }
     UnitGUID = function() return W.guid or "Player-1-0001" end
+    -- Worn equipment for the upgrade marker: W.worn[slot] = link; the player is a mage.
+    W.worn = {}
+    GetInventoryItemLink = function(_, slot) return W.worn[slot] end
+    UnitClass = function() return "Mage", "MAGE", 8 end
+    C_PlayerInfo = { CanUseItem = function() return true end }
+    C_ToyBox = { GetToyInfo = function(id) return W.data[id] and W.data[id].toy and id or nil end }
     UnitName = function() return W.playerName or "Tester", nil end
     UnitFullName = function() return W.playerName or "Tester", W.realmShort or "TestRealm" end
     GetRealmName = function() return W.realm or "Test Realm" end
@@ -851,8 +871,13 @@ function H.New(root, options)
         ItemBind = { None = 0, OnAcquire = 1, OnEquip = 2, OnUse = 3, Quest = 4, Unused1 = 5, Unused2 = 6,
             ToWoWAccount = 7, ToBnetAccount = 8, ToBnetAccountUntilEquipped = 9 },
         ItemClass = { Consumable = 0, Container = 1, Weapon = 2, Gem = 3, Armor = 4, Reagent = 5, Projectile = 6,
-            Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15 },
+            Tradegoods = 7, ItemEnhancement = 8, Recipe = 9, Quiver = 11, Questitem = 12, Key = 13, Miscellaneous = 15, Glyph = 16,
+            Battlepet = 17, WoWToken = 18, Profession = 19 },
         ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 },
+        -- ItemConstantsDocumentation.lua (Retail and Forever)
+        ItemArmorSubclass = { Generic = 0, Cloth = 1, Leather = 2, Mail = 3, Plate = 4, Cosmetic = 5, Shield = 6 },
+        ItemMiscellaneousSubclass = { Junk = 0, Reagent = 1, CompanionPet = 2, Holiday = 3, Other = 4, Mount = 5,
+            MountEquipment = 6 },
         BagIndex = { Backpack = 0, ReagentBag = 5, CharacterBankTab_1 = 6, AccountBankTab_1 = 12 } }
     MenuResponse = { Open = 1, Close = 2 }
     INVSLOT_FIRST_EQUIPPED, INVSLOT_LAST_EQUIPPED = 1, 19
@@ -986,7 +1011,7 @@ function H.New(root, options)
             local data = id and W.data[id]
             if not data or not data.cached then return nil end
             return data.name, link, data.quality, data.level, 1, "Type", data.subclassName or "Sub", data.maxStack,
-                data.equipLoc, 1, 1, data.class, data.subclass, data.bind or 0, data.expansion or 10, nil, data.reagent
+                data.equipLoc, 1, data.sellPrice or 1, data.class, data.subclass, data.bind or 0, data.expansion or 10, nil, data.reagent
         end,
         RequestLoadItemDataByID = function(id) W.requested = W.requested or {}; W.requested[id] = (W.requested[id] or 0) + 1 end,
         GetDetailedItemLevelInfo = function(link)
@@ -1066,6 +1091,7 @@ function H.New(root, options)
     NS.Client.isForever = forever
     NS.Client.modernEquipment = not forever
     assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", NS)
+    assert(loadfile(root .. "/MSUF_Suite/Core/InventoryRules.lua"))("MSUF_Suite", NS)
     assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", NS)
     assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Bags.lua"))("MSUF_Suite", NS)
     NS.RootDB = options.rootDB or {}

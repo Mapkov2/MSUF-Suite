@@ -1,20 +1,21 @@
 local _, P = ...
 local S = P.Suite
 local C = P.Chat
--- Optional message tools: clickable URLs, class-colored group names, short
--- channel prefixes, a timestamp on every line, saved history and the idle
--- fade's wake-up. A secure post-hook on a window's AddMessage sees each
--- line; a line that changes is rewritten in place through the window's own
--- TransformMessages, so Blizzard's elevation barrier keeps every access ID,
--- event argument and censorship formatter and nothing is delivered again.
+-- Optional message tools: clickable URLs, class-colored group names, keyword
+-- highlight, short channel prefixes, a timestamp on every line, saved
+-- history, channel sounds and the idle fade's wake-up. A secure post-hook on
+-- a window's AddMessage sees each line; a line that changes is rewritten in
+-- place through the window's own TransformMessages, so Blizzard's elevation
+-- barrier keeps every access ID, event argument and censorship formatter and
+-- nothing is delivered again.
 -- The combat log (ChatFrame2, Blizzard_CombatLog's COMBATLOG) prints far
 -- more lines than anyone reads: its lines only wake the idle fade. Its text
 -- tools would rewrite the whole window per line, and Blizzard_CombatLog
 -- rebuilds the window from the client's own entries; Blizzard's combat log
 -- has its own Timestamp setting. Everything a line needs is compiled when
 -- the settings change.
-local M = C.M
-local PublicText = S.PublicText
+local NS = P.NS
+local PublicText, Public = S.PublicText, S.Public
 local HistoryRing, HistoryStore, HistoryReplay = C.HistoryRing, C.HistoryStore, C.HistoryReplay
 local ChatActivity = C.ChatActivity
 local Dispatch = S.Dispatch
@@ -22,6 +23,14 @@ local URL = "https?://[^%s|<>]+"
 local NAME = "[%a\128-\255][%w\128-\255]*"
 local DATE_SPEC = "%%[aAbBcdHIjmMpSUwWxXyYzZ%%]"
 local DEFAULT_STAMP = "[%H:%M]"
+-- Keyword highlight: at most MAX_KEYWORDS words of MAX_KEYWORD_BYTES each.
+local MAX_KEYWORDS, MAX_KEYWORD_BYTES = 20, 64
+local DEFAULT_HIGHLIGHT = "ffd100"
+local PIPE = 124
+-- A channel's sound plays at most once per SOUND_GAP seconds, so a burst of
+-- lines is one cue.
+local SOUND_GAP = 1
+local SOUND_GUID = 12
 -- What date() writes for a specifier of DATE_SPEC, as a pattern: numbers by
 -- default, the C library's names, %c, %x and %X as the Windows and macOS
 -- runtimes write them, the zone (an offset or the system's zone name) and a
@@ -41,13 +50,59 @@ local hooks = setmetatable({}, { __mode = "k" })
 -- plainLabels (label, short, ...) for a label without one (the raid warning).
 local members, shortcuts, linkLabels, plainLabels = {}, {}, {}, {}
 -- Reused buffers of the formatting passes (the outer one splits around
--- native links, the inner one around URLs).
-local runs, pieces = {}, {}
+-- native links, the inner one around URLs, the last one around keyword hits).
+local runs, pieces, marks = {}, {}, {}
+-- Compiled keywords: one case-folded pattern per word, and the color escape
+-- a hit is wrapped in.
+local keywords, keywordOpen = {}, "|cff" .. DEFAULT_HIGHLIGHT
+-- chat event -> { kit, file, nextAt } of a channel that has a sound
+local channelSounds = {}
 local tools = {}
 local formatGeneration = 0
 local stampFormat, stampSecond, stampText = DEFAULT_STAMP, nil, ""
 local stampPattern = "^%[%d+:%d+%] "
 local nativeSetting, nativeFormat, nativePrefix
+
+------------------------------------------------------------------ keywords
+-- An ASCII letter or digit. Bytes of other scripts are boundaries, so a
+-- keyword also marks inside running Chinese or Korean text.
+local function WordByte(byte)
+    return byte and (byte >= 48 and byte <= 57 or byte >= 65 and byte <= 90 or byte >= 97 and byte <= 122)
+end
+
+-- A hit marks only as a whole word, and never right behind a "|": that byte
+-- may open a color or line escape (|cffRRGGBB, |r, |n), which a keyword must
+-- not cut. The same rule keeps the pass idempotent (PrintChatMessage formats
+-- a line twice): a word we marked follows our own color escape, which ends in
+-- a hex digit, so the second pass sees no word boundary and leaves it alone.
+local function WholeWord(run, start, finish)
+    local before = start > 1 and run:byte(start - 1) or nil
+    return before ~= PIPE and not WordByte(before) and not WordByte(run:byte(finish + 1))
+end
+
+-- Wraps every whole-word hit of pattern in the highlight color. A run
+-- without a hit comes back untouched, and nothing is allocated for it.
+local function MarkWord(run, pattern)
+    local start, finish = run:find(pattern)
+    if not start then return run end
+    local count, index = 0, 1
+    while start do
+        if WholeWord(run, start, finish) then
+            marks[count + 1] = run:sub(index, start - 1)
+            marks[count + 2] = keywordOpen .. run:sub(start, finish) .. "|r"
+            count, index = count + 2, finish + 1
+        end
+        start, finish = run:find(pattern, finish + 1)
+    end
+    if count == 0 then return run end
+    marks[count + 1] = run:sub(index)
+    return table.concat(marks, "", 1, count + 1)
+end
+
+local function Highlight(run)
+    for i = 1, #keywords do run = MarkWord(run, keywords[i]) end
+    return run
+end
 
 ------------------------------------------------------------------ formatting
 local function ColorName(name)
@@ -60,25 +115,30 @@ local function ColorNames(run)
     return (run:gsub(NAME, ColorName))
 end
 
+local function MarkText(run)
+    if tools.keywords then run = Highlight(run) end
+    return ColorNames(run)
+end
+
 local function LinkURL(url)
     local body, tail = url:match("^(.-)([.,!;:)]*)$")
     return "|Hmsufurl:" .. body .. "|h[" .. body .. "]|h" .. tail
 end
 
--- Plain text between native links: URLs become links, names get colored
--- outside the new links.
+-- Plain text between native links: URLs become links, keywords and names get
+-- colored outside the new links.
 local function FormatRun(run)
-    if run == "" or not tools.links then return ColorNames(run) end
+    if run == "" or not tools.links then return MarkText(run) end
     local start, finish = run:find(URL)
-    if not start then return ColorNames(run) end
+    if not start then return MarkText(run) end
     local count, index = 0, 1
     while start do
-        pieces[count + 1] = ColorNames(run:sub(index, start - 1))
+        pieces[count + 1] = MarkText(run:sub(index, start - 1))
         pieces[count + 2] = LinkURL(run:sub(start, finish))
         count, index = count + 2, finish + 1
         start, finish = run:find(URL, index)
     end
-    pieces[count + 1] = ColorNames(run:sub(index))
+    pieces[count + 1] = MarkText(run:sub(index))
     return table.concat(pieces, "", 1, count + 1)
 end
 
@@ -208,12 +268,47 @@ local function CompileChannels(config)
     end
 end
 
+-- A word as a pattern: magic characters escaped, every letter matching both
+-- cases (the lines are never lower-cased, so a miss allocates nothing).
+local function FoldCase(letter)
+    return "[" .. letter:lower() .. letter:upper() .. "]"
+end
+
+local function KeywordPattern(word)
+    return (word:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0"):gsub("%a", FoldCase))
+end
+
+local function AddKeyword(seen, word)
+    word = word:match("^%s*(.-)%s*$")
+    local key = word:lower()
+    if word == "" or #word > MAX_KEYWORD_BYTES or #keywords >= MAX_KEYWORDS or seen[key]
+        or word:find("[%c|]") then
+        return
+    end
+    seen[key] = true
+    keywords[#keywords + 1] = KeywordPattern(word)
+end
+
+-- Cold path: the words of highlightWords, and the player's own name when
+-- asked, as patterns, with the color escape their hits are wrapped in.
+-- Returns whether any word is left to look for.
+local function CompileKeywords(config)
+    for i = #keywords, 1, -1 do keywords[i] = nil end
+    if not config.highlightKeywords then return false end
+    keywordOpen = "|cff" .. (config.highlightColor:match("^%x%x%x%x%x%x$") or DEFAULT_HIGHLIGHT)
+    local seen = {}
+    if config.highlightOwnName then AddKeyword(seen, PublicText(UnitName("player")) or "") end
+    for word in config.highlightWords:gmatch("[^,;\r\n]+") do AddKeyword(seen, word) end
+    return #keywords > 0
+end
+
 -- Cold path: what every line needs, from the current settings.
 function C.CompileMessages(config)
     formatGeneration = formatGeneration + 1
     tools.links, tools.names = config.linkURLs, config.colorMentionNames
     tools.channels, tools.stamps = config.shortenChannels, config.allTimestamps
-    tools.plain = tools.links or tools.names
+    tools.keywords = CompileKeywords(config)
+    tools.plain = tools.links or tools.names or tools.keywords
     tools.format = tools.plain or tools.channels or tools.stamps
     tools.prepare = tools.format
     tools.history = config.saveHistory
@@ -399,12 +494,45 @@ function C.MessageRoster()
     end
 end
 
-local function WhisperSound()
-    local c = M.config
-    if c.whisperSound ~= "" then
-        PlaySoundFile(c.whisperSound, "Master")
-    elseif c.whisperSoundKit > 0 then
-        PlaySound(c.whisperSoundKit, "Master")
+------------------------------------------------------------------ channel sounds
+-- A custom file wins over the sound kit, as the whisper sound always did.
+local function PlayChannelSound(sound)
+    if sound.file ~= "" then
+        PlaySoundFile(sound.file, "Master")
+    else
+        PlaySound(sound.kit, "Master")
+    end
+end
+
+-- The player's own line comes back as the same event, with the player's guid
+-- among its arguments; it is no cue. A restricted guid cannot be compared, and
+-- the line plays.
+local function ChannelSound(_, event, ...)
+    local sound, now = channelSounds[event], GetTime()
+    if not sound or now < sound.nextAt then return end
+    local guid = select(SOUND_GUID, ...)
+    if Public(guid) and guid == UnitGUID("player") then return end
+    sound.nextAt = now + SOUND_GAP
+    PlayChannelSound(sound)
+end
+
+-- Cold path: only the channels with a sound listen (and keep their throttle
+-- across a settings change); the others have no event registered.
+local function RefreshSounds(self)
+    local config, context = self.config, self.context
+    for _, channel in ipairs(NS.ChatSoundChannels) do
+        local kit, file = config[channel.kit], config[channel.file]
+        for _, event in ipairs(channel.events) do
+            if file ~= "" or kit > 0 then
+                local sound = channelSounds[event] or { nextAt = 0 }
+                sound.kit, sound.file = kit, file
+                channelSounds[event] = sound
+                C.ListenInCombat(context, event, ChannelSound)
+            else
+                channelSounds[event] = nil
+                context:RemoveEvent(event)
+            end
+        end
     end
 end
 
@@ -417,9 +545,5 @@ function C.MessagesRefresh(self)
         context:RemoveEvent("GROUP_ROSTER_UPDATE")
     end
     C.MessageRoster()
-    if c.whisperSound ~= "" or c.whisperSoundKit > 0 then
-        C.ListenInCombat(context, "CHAT_MSG_WHISPER", WhisperSound)
-    else
-        context:RemoveEvent("CHAT_MSG_WHISPER")
-    end
+    RefreshSounds(self)
 end

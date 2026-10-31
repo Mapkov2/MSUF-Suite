@@ -214,11 +214,6 @@ function Context:Skin()
     return NS.Skin.Acquire(self.id)
 end
 
--- The controller (Suite.lua ApplyModule) still calls this after every Enable
--- and Refresh. No module remembers a skin call to repeat, so there is nothing
--- to paint; drop it together with that call.
-function Context:RefreshOwnedSkins() end
-
 -- Single-value getter/setter pairs such as GetScale/SetScale.
 local function SetOwnedProperty(self, frame, getter, setter, value)
     if not Accessible(frame) or type(frame[getter]) ~= "function" or type(frame[setter]) ~= "function" then

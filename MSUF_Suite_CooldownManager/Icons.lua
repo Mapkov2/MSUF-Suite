@@ -144,7 +144,8 @@ function Icons.StyleCharge(icon)
     local edge = ov.chargeEdge
     if edge == nil then edge = view.chargeEdge end
     cooldown:SetDrawEdge(edge ~= false)
-    cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or SWIPE_ALPHA) / 100)
+    local r, g, b = K.SwipeRGB(view)
+    cooldown:SetSwipeColor(r, g, b, (view.swipeAlpha or SWIPE_ALPHA) / 100)
 end
 
 function Icons.ChargeCooldown(icon)
@@ -250,9 +251,12 @@ local function StylePlain(icon, view, width, height)
     local level = icon:GetFrameLevel()
     if icon.chargeCd then icon.chargeCd:SetFrameLevel(level + K.LEVEL.charge) end
     if icon.glow then icon.glow:SetFrameLevel(level + K.LEVEL.glow) end
+    if icon.glow and icon.glow.lines then C.GlowLines.Level(icon.glow.lines, level + K.LEVEL.glow) end
     if icon.ants then icon.ants:SetFrameLevel(level + K.LEVEL.assist) end
     icon.over:SetFrameLevel(level + K.LEVEL.text)
-    local border = K.Pixels(view.border or 0)
+    -- Masque places the art and draws the border of the icons it takes over.
+    local masqued = icon.masqued
+    local border = masqued and 0 or K.Pixels(view.border or 0)
     icon.border = border
     local r, g, b = view.borderR or 0, view.borderG or 0, view.borderB or 0
     if view.borderClass then
@@ -262,12 +266,15 @@ local function StylePlain(icon, view, width, height)
     K.PlaceEdges(icon.edges, icon, border, r, g, b, 1)
     local tex = icon.tex
     tex:Show()
-    tex:ClearAllPoints()
-    tex:SetPoint("TOPLEFT", icon, "TOPLEFT", border, -border)
-    tex:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -border, border)
-    tex:SetTexCoord(K.Crop(view.zoom, w - 2 * border, h - 2 * border))
+    if not masqued then
+        tex:ClearAllPoints()
+        tex:SetPoint("TOPLEFT", icon, "TOPLEFT", border, -border)
+        tex:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -border, border)
+        tex:SetTexCoord(K.Crop(view.zoom, w - 2 * border, h - 2 * border))
+    end
     local cooldown = icon.cd
-    cooldown:SetSwipeColor(0, 0, 0, (view.swipeAlpha or SWIPE_ALPHA) / 100)
+    r, g, b = K.SwipeRGB(view)
+    cooldown:SetSwipeColor(r, g, b, (view.swipeAlpha or SWIPE_ALPHA) / 100)
     cooldown:SetDrawEdge(view.edge == true)
     local entry = icon.entry
     Texts(icon, view, entry and entry.ov or EMPTY)
@@ -278,7 +285,7 @@ local function StylePlain(icon, view, width, height)
     StyleKey(icon, view)
     C.TrackingBars.Style(icon, view)
     icon.styleGen, icon.styleView = view.styleGen, view
-    if icon.glow or icon.ants then C.Effects.Refit(icon) end
+    if icon.glow or icon.ants or view.kickMark then C.Effects.Refit(icon) end
 end
 
 -- A shaped icon's square edges: the plain style keeps placing icon.edges (its
@@ -471,7 +478,7 @@ function Icons.Apply(entry)
     local ov = entry.ov or EMPTY
     if icon.esEntry == entry and icon.esOv == ov and icon.esStyle == view.styleGen and icon.esBehavior == view.behaviorGen then return end
     icon.esEntry, icon.esOv, icon.esStyle, icon.esBehavior = entry, ov, view.styleGen, view.behaviorGen
-    if icon.durationBar then icon.timerBar.name:SetText(entry.name or "") end
+    if icon.durationBar then C.TrackingBars.Entry(icon, entry, view) end
     Texts(icon, view, ov)
     Icons.StyleCharge(icon)
     local cooldown, state = icon.cd, C.state
@@ -488,7 +495,7 @@ function Icons.Apply(entry)
     end
     local seconds = ov.threshold
     if seconds == nil then seconds = state.threshold or 0 end
-    local formatter = seconds > 0 and Icons.Formatter(seconds, state.thR, state.thG, state.thB) or nil
+    local formatter = K.Countdown(seconds)
     if icon.lastFmt ~= formatter then
         icon.lastFmt = formatter
         cooldown:SetCountdownFormatter(formatter)
@@ -564,6 +571,7 @@ end
 -- Returns an icon to its bar's pool. Points stay with the layout layer.
 local function Recycle(pool, icon)
     local entry = icon.entry
+    if icon.masqued then C.Masque.Remove(pool, icon) end
     -- Its aura overlay goes off with it at once (combat too), so a rebound
     -- icon never shows the old aura; the layout memo goes as well, so an
     -- icon rebound within the same flush is placed and reported again.
@@ -616,6 +624,7 @@ function Icons.Sync(slotKey)
     if not (bar and bar.frame) then bar = C.Layout.EnsureBar(slotKey) end
     if not (bar and bar.frame) then return end
     local pool = Pool(slotKey)
+    if view.masque or pool.group then C.Masque.Update(slotKey, pool, view) end
     syncGen = syncGen + 1
     local byKey, entries = pool.byKey, plan.entries
     local time, fx = C.Time, C.Effects
@@ -628,6 +637,7 @@ function Icons.Sync(slotKey)
         if not icon then
             icon = Acquire(pool, bar.frame)
             byKey[entry.key] = icon
+            if pool.group then C.Masque.Join(pool, icon) end
         end
         icon.mark = syncGen
         local fresh = icon.entry ~= entry or entry.icon ~= icon
@@ -655,6 +665,9 @@ function Icons.Sync(slotKey)
             Recycle(pool, icon)
         end
     end
+    -- Routing is built before icons. Seed an enabled kick layer only after
+    -- this owner has attached and styled every acquired icon.
+    if view.kickMark then C.KickMark.Rebuild() end
 end
 
 -- Restyles a bar's icons after a style or tooltip change (memoized).

@@ -91,7 +91,8 @@ C_AddOns = { LoadAddOn = function() return true end }
 
 -- The Suite core's fields the skin boundary and the module runtime read.
 local Suite = {
-    Client = { HasAddOn = function() return false end, AddOnEnabled = function() return true end },
+    Client = { HasAddOn = function() return false end, AddOnEnabled = function() return true end,
+        IsAddOnLoaded = function() return false end },
     IsCombatLocked = function() return locked end,
     Suite = { started = false, states = {}, instances = {}, catalog = {} },
     RootDB = { skinMigrationDone = true },

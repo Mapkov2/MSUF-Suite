@@ -1,4 +1,4 @@
--- The real Platform provider and companion TOCs, independent of the host's client language.
+-- The real Platform provider and combined locale TOC, independent of the host's client language.
 local root = assert(arg[1])
 local provider = arg[2] or root .. "/MSUF_Suite/Core/Platform.lua"
 local locales = { "enUS", "enGB", "deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }
@@ -36,7 +36,7 @@ local function Run(locale, forever, legacy, state, clientLocale)
         end,
         LoadAddOn = function(name)
             loads[#loads + 1] = name
-            assert(name == "MSUF_Suite_Locale_" .. locale, "loaded an inactive language")
+            assert(name == "MSUF_Suite_Locales", "loaded an individual language addon")
             if state == "missing" or state == "disabled" or state == "outdated" then return false, state:upper() end
             if not loaded[name] then
                 assert(Support.LoadLocaleAddon(root, name, env))
@@ -56,20 +56,29 @@ local function Run(locale, forever, legacy, state, clientLocale)
         expectedEnv._G = expectedEnv
         setfenv(assert(loadfile(root .. "/MSUF_Suite/Locales/" .. locale .. ".lua")), expectedEnv)()
         if state == "preloaded" then
-            assert(Support.LoadLocaleAddon(root, "MSUF_Suite_Locale_" .. locale, env))
-            loaded["MSUF_Suite_Locale_" .. locale] = true
+            assert(Support.LoadLocaleAddon(root, "MSUF_Suite_Locales", env))
+            loaded["MSUF_Suite_Locales"] = true
         end
     end
     local owner = {}
     setfenv(assert(loadfile(provider)), env)("MSUF_Suite", owner)
     Same(expected, L)
-    assert(owner.L == L and host.LOCALE == locale and owner.startupError == nil)
-    assert(owner.Text("Reset %s") == "HOST WINS" and owner.Text("Icon size") == "Icon size")
+    local failure = translated[locale] and (state == "missing" or state == "disabled" or state == "outdated")
+    assert((owner.L == L) == not failure and host.LOCALE == locale and owner.startupError == nil)
+    assert(owner.Text("Reset %s") == (failure and "Reset %s" or "HOST WINS"))
+    assert(owner.Text("Icon size") == "Icon size")
+    -- Skin text must follow the same English fallback, including keys already translated by MSUF.
+    env.MSUFSuite = owner
+    local skin = {}
+    for _, file in ipairs({ "Localization.lua", "enUS.lua" }) do
+        setfenv(assert(loadfile(root .. "/MSUF_Suite_Skin/Locales/" .. file)), env)("MSUF_Suite_Skin", skin)
+    end
+    skin.InitializeLocalization()
+    assert(skin.L["Reset %s"] == owner.Text("Reset %s"))
     assert(rawget(L, "Icon size") == "", "existing empty host value was overwritten")
     if translated[locale] then
         assert(#loads == 1, "selected translated language was not loaded exactly once")
-        local failure = state == "missing" or state == "disabled" or state == "outdated"
-        assert(#messages == (failure and 1 or 0), "locale failure was silent or successful load warned")
+        assert(#messages == (failure and state ~= "disabled" and 1 or 0), "unexpected locale failure notice")
         assert(nested == ((failure or state == "preloaded") and 0 or 1))
     else
         assert(#loads == 0 and #messages == 0, "English/unknown locale loaded a companion")

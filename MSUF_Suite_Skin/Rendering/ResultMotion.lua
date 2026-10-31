@@ -6,6 +6,7 @@ local _, NS = ...
 local Results = { states = setmetatable({}, { __mode = "k" }) }
 NS.ResultMotion = Results
 local Safety, Content, Motion = NS.Safety, NS.ContentMotion, NS.Motion
+local visible = {}
 
 local function Cancel(state)
     Content.StopOwner(state, state.target)
@@ -33,8 +34,14 @@ local function Layout(state)
 end
 
 local function Hidden(target)
+    visible[target] = nil
     local state = Results.states[target]
     if state then Cancel(state) end
+end
+
+local function Shown(target)
+    local state = Results.states[target]
+    if state and state.registered then visible[target] = state end
 end
 
 function Results.Track(target, owner)
@@ -46,6 +53,7 @@ function Results.Track(target, owner)
         state = { target = target, owners = {} }
         Results.states[target] = state
         target:HookScript("OnHide", Hidden)
+        target:HookScript("OnShow", Shown)
     end
     state.owners[owner] = true
     if not state.registered then
@@ -54,12 +62,15 @@ function Results.Track(target, owner)
         target:RegisterCallback(ScrollBoxListMixin.Event.OnLayout, Layout, state)
         state.registered = true
     end
+    local shown = Safety.Read(target, "IsVisible")
+    if Safety.Public(shown) and shown == true then Shown(target) end
 end
 
 function Results.ReleaseOwner(owner)
     for _, state in pairs(Results.states) do
         state.owners[owner] = nil
         if not next(state.owners) then
+            visible[state.target] = nil
             Cancel(state)
             NS.AddonListMotion.DisableOwner(state)
             if state.registered then
@@ -71,7 +82,7 @@ function Results.ReleaseOwner(owner)
 end
 
 local function StopAll()
-    for _, state in pairs(Results.states) do Cancel(state) end
+    for _, state in pairs(visible) do Cancel(state) end
 end
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")

@@ -28,6 +28,7 @@ C.Events = Events
 -- functions are resolved once here: an event costs no module lookup.
 -- Index.Rebuild wipes the routing arrays in place, never replaces them.
 local Index, Effects = C.Index, C.Effects
+local resolveStage = C.Resolve.stage
 local Refresh, BagsChanged, Request = C.Time.Refresh, C.Time.BagsChanged, C.Layout.Request
 local ForSpell, ForBase, ForCategory, ForItem, AddSpell =
     Index.ForSpell, Index.ForBase, Index.ForCategory, Index.ForItem, Index.AddSpell
@@ -224,6 +225,20 @@ local function OnUsable()
         end
     end
 end
+-- While entries are shown only while usable (Index.gated), the sweep runs
+-- whatever shows: they are asked hidden too. Registered in place of
+-- OnUsable only then (UpdateEvents).
+local function OnUsableGated()
+    if dirty.usable or usableArmed then return end
+    local now = GetTime()
+    local wait = usableNext - now
+    if wait > 0 then
+        usableArmed = true
+        return C.Wake(USABLE_WAKE, wait)
+    end
+    usableNext, dirty.usable = now + (Index.usableInterval or USABLE_INTERVAL), true
+    Schedule()
+end
 
 -- SPELL_UPDATE_ICON names the base spell (nil = all).
 local function Retexture(entry)
@@ -241,6 +256,9 @@ local function Retexture(entry)
     end
 end
 local function OnIcon(_, _, spellID)
+    -- A staged combat resolve may hold keys new to it with the old texture:
+    -- any icon update fills it again (ResolveStages.lua).
+    resolveStage.stale = resolveStage.on
     if issecret(spellID) or spellID == nil then return EachCooldown(Retexture) end
     ForSpell(spellID, nil, Retexture)
 end
@@ -262,6 +280,7 @@ local function OnRange(_, _, spell, inRange, checksRange)
 end
 
 local function OnTarget()
+    if C.state.assistIcon and C.state.assistIconVis == K.VIS.COMBAT_OR_TARGET then C.Effects.RecommendationVisibility() end
     for i = 1, #rangedEntries do ReadRange(rangedEntries[i]) end
     C.Auras.TargetChanged()
     if C.ActionGlows.targetWanted then C.ActionGlows.TargetChanged() end
@@ -469,6 +488,8 @@ end
 local function OnCombatStart()
     local state = C.state
     state.inCombat = true
+    if state.assistIcon then C.Effects.RecommendationVisibility() end
+    C.Preview.HideLabels()
     C.ActionUsableGlows.Repaint()
     C.Preview.Simulate(false)
     C.Effects.CombatChanged(true)
@@ -480,6 +501,8 @@ end
 -- and category seeds combat held back.
 local function OnCombatEnd()
     C.state.inCombat = false
+    if C.state.assistIcon then C.Effects.RecommendationVisibility() end
+    C.Preview.PaintLabels()
     C.ActionUsableGlows.Repaint()
     if C.Resolve.ResumeConditions() then
         dirty.resolve = true
@@ -521,15 +544,14 @@ local IN_COMBAT = { inCombat = true }
 -- BAG_UPDATE_COOLDOWN 686 (the item refresh's trigger) events.
 local DIRECT = { inCombat = true, direct = true }
 local EVENT_OPTIONS = { SPELL_UPDATE_COOLDOWN = DIRECT, SPELL_UPDATE_USABLE = DIRECT, BAG_UPDATE_COOLDOWN = DIRECT }
+-- events[event]: the handler registered now; another handler re-registers.
 local function Want(event, on, handler, unit)
-    on = on and true or false
-    if (events[event] == true) == on then return end
-    events[event] = on or nil
-    if on then
-        M.context:Event(event, handler, EVENT_OPTIONS[event] or IN_COMBAT, unit)
-    else
-        M.context:RemoveEvent(event)
-    end
+    local want = on and handler or nil
+    local have = events[event]
+    if have == want then return end
+    events[event] = want
+    if have then M.context:RemoveEvent(event) end
+    if want then M.context:Event(event, want, EVENT_OPTIONS[event] or IN_COMBAT, unit) end
 end
 local function TargetWatch()
     local list = Index.aura
@@ -576,7 +598,9 @@ local function UpdateEvents()
     Want("SPELL_UPDATE_CHARGES", #Index.charged > 0, OnCharges)
     Want("BAG_UPDATE_COOLDOWN", #Index.bags > 0, OnBag)
     Want("BAG_UPDATE_DELAYED", #Index.items > 0, OnBagContents)
-    Want("SPELL_UPDATE_USABLE", #Index.usable > 0, OnUsable)
+    local gated = #Index.gated > 0
+    Flush.Gated(gated)
+    Want("SPELL_UPDATE_USABLE", #Index.usable > 0 or gated, gated and OnUsableGated or OnUsable)
     Want("ACTION_USABLE_CHANGED", C.ActionUsableGlows.wanted, C.ActionUsableGlows.Changed)
     Want("ACTIONBAR_UPDATE_USABLE", C.ActionUsableGlows.wanted, C.ActionUsableGlows.Queue)
     Want("PLAYER_MOUNT_DISPLAY_CHANGED", C.ActionUsableGlows.wanted, C.ActionUsableGlows.Queue)
@@ -586,6 +610,7 @@ local function UpdateEvents()
     Want("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE", proc, OnGlowHide)
     Want("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED", cooldown or #Index.aura > 0, OnOverride)
     local target = TargetWatch() or C.ActionGlows.targetWanted
+        or C.state.assistIcon and C.state.assistIconVis == K.VIS.COMBAT_OR_TARGET
     Want("PLAYER_TARGET_CHANGED", #Index.ranged > 0 or target, OnTarget)
     Want("UNIT_FACTION", target, OnFaction)
     Want("ADDON_RESTRICTION_STATE_CHANGED", #Index.aura > 0 or #Index.overlay > 0 or C.ActionGlows.wanted, OnRestriction)
@@ -674,6 +699,7 @@ function Events.WatchingScale() return watchingScale == true end
 -- Disable: the poll stops, every event goes and routing work parked for the
 -- end of combat is dropped; parked driver work keeps its combat end.
 function Events.Release(context)
+    C.KickMark.Release()
     usableNext, bagNext = 0, 0
     StopPoll()
     assistMode = nil
@@ -690,10 +716,18 @@ end
 -- is in, bar positions follow the specialization), the routing index with
 -- its category seeds, event registration, and the keybind and sound
 -- watches after a resolve.
-local function CatalogUnit(locked)
-    if UpdateSpec() then dirty.resolve = true end
+local function CatalogUnit(locked, fresh)
+    -- In combat the catalog reads in slices (Catalog.lua): nil until the
+    -- pass lands, and the flush continues it next frame. The spec is read
+    -- once per pass, when it starts.
+    if fresh and UpdateSpec() then dirty.resolve = true end
+    local changed = C.Catalog.Rebuild(locked, fresh)
+    if changed == nil then
+        if not dirty.catalog then dirty.catalog = "slice" end
+        return
+    end
     -- A changed catalog may move equipment slot records between bars.
-    if C.Catalog.Rebuild() then dirty.resolve, dirty.events = true, true end
+    if changed then dirty.resolve, dirty.events = true, true end
     -- A spellbook change in combat builds only for a learned state that moved.
     if learnedProbe then
         if not dirty.resolve and C.Resolve.RefillChanged() then dirty.resolve = true end
@@ -705,6 +739,7 @@ end
 local function IndexUnit(locked)
     staleRoutes = false
     Index.Rebuild()
+    C.KickMark.Rebuild()
     if locked then
         seedLater = true
     else

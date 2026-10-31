@@ -97,11 +97,28 @@ local function Populate(_, rootDescription, contextData)
     end
 end
 
+-- The native applicant menu has no contextData. Snapshot the clicked member's
+-- full name before its pooled row can be reused by a list refresh.
+local function PopulateApplicant(owner, rootDescription)
+    if not M.active or (not M.config.raiderIO and not M.config.warcraftLogs and M.config.raidProgress == false)
+        or not S.Public(owner) or not owner then return end
+    local parent = owner:GetParent()
+    if not S.Public(parent) or not parent then return end
+    local applicantID, memberIdx = parent.applicantID, owner.memberIdx
+    if not S.Finite(applicantID) or applicantID < 1 or applicantID ~= math.floor(applicantID)
+        or not S.Finite(memberIdx) or memberIdx < 1 or memberIdx ~= math.floor(memberIdx) then return end
+    local name = S.PublicText(C_LFGList.GetApplicantMemberInfo(applicantID, memberIdx))
+    if not name then return end
+    Populate(owner, rootDescription, { name = name })
+    if M.config.raidProgress ~= false then P.ApplicantRaidProgress.Populate(rootDescription, name) end
+end
+
 -- Blizzard_Menu loads first (LoadFirst); its tags exist before any addon.
 -- Menu modifications cannot be removed, so they act only while active.
 function M:Enable()
     if self.hooked then return end
     for i = 1, #MENU_TAGS do Menu.ModifyMenu(MENU_TAGS[i], Populate) end
+    Menu.ModifyMenu("MENU_LFG_FRAME_MEMBER_APPLY", PopulateApplicant)
     self.hooked = true
 end
 

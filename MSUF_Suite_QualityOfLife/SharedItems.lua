@@ -2,7 +2,8 @@ local _, P = ...
 local S = P.Suite
 
 -- Item helpers the loot and merchant modules share: ID lists typed into a
--- setting, the GUID of a bag item and item data asked for once per visit.
+-- setting, the GUID of a bag item, its refund state and item data asked for
+-- once per visit.
 
 -- The item or spell IDs of a list typed into a setting ("1, 2; 3"): a set
 -- of whole IDs below 10,000,000, at most limit of them.
@@ -29,6 +30,17 @@ end
 
 function S.QoLItemGUID(bag, slot)
     return S.QoLLocationGUID(ItemLocation:CreateFromBagAndSlot(bag, slot))
+end
+
+-- An item still refundable, the way ContainerFrame_GetExtendedPriceString
+-- decides it: a refund time and a price in gold, items or currencies. Nil
+-- while the answer is unreadable; each caller picks its safe side.
+function S.QoLRefundable(bag, slot, equipped)
+    local info = C_Container.GetContainerItemPurchaseInfo(bag, slot, equipped)
+    if not S.Public(info) then return nil end
+    if type(info) ~= "table" or not S.Finite(info.refundSeconds) then return false end
+    return (S.Finite(info.money) and info.money > 0) or (S.Finite(info.itemCount) and info.itemCount > 0)
+        or (S.Finite(info.currencyCount) and info.currencyCount > 0)
 end
 
 -- Item data asked for once per visit (a merchant window, for example).

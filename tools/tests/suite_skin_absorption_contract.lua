@@ -21,6 +21,16 @@ function Frame:GetNumRegions() return select("#", self:GetRegions()) end
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(arg[1])
 -- The chat adapter keeps its colour ledger in the Suite core's skin boundary.
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteSkinBoundary(arg[1])
+-- The embedded skin's mandatory Suite dependency has both bridges before
+-- its TOC starts. Use real providers, including the equivalent public-value
+-- predicate from skin Safety, rather than an incomplete bootstrap table.
+do
+    local readers = {}
+    assert(loadfile(arg[1] .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", readers)
+    MSUFSuite.Public = readers.Safety.Public
+    assert(loadfile(arg[1] .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", MSUFSuite)
+    assert(loadfile(arg[1] .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", MSUFSuite)
+end
 -- The Suite core's text lookup (MSUF_Suite/Core/Platform.lua), through which
 -- the skin shows its English text; no language pack is loaded here.
 local function SuiteText(english) return english end
@@ -208,7 +218,15 @@ assert(not toc:find("MapkoSkin_Suite", 1, true))
 for line in toc:gmatch("[^\r\n]+") do
     line = line:match("^%s*(.-)%s*$")
     if line:match("%.lua$") then
-        load_addon_file("MSUF_Suite_Skin/" .. line:gsub("\\", "/"), "MSUF_Suite_Skin", namespace)
+        local relative = "MSUF_Suite_Skin/" .. line:gsub("\\", "/")
+        local override = os.getenv("SUITE_MICRO_SURFACE_BASELINE")
+        local found = override and io.open(override .. "/" .. relative, "rb")
+        if found then
+            found:close()
+            assert(loadfile(override .. "/" .. relative))("MSUF_Suite_Skin", namespace)
+        else
+            load_addon_file(relative, "MSUF_Suite_Skin", namespace)
+        end
     end
 end
 assert(namespace.ready and namespace.addonName == "MSUF_Suite_Skin")
@@ -1483,7 +1501,10 @@ do
             assert(sublevel == nil or type(sublevel) == "number"
                 and sublevel >= -8 and sublevel <= 7,
                 "Micro Button texture sublevel is outside Blizzard's -8..7 range")
-            return createTexture(self, ...)
+            local region = createTexture(self, ...)
+            self.regions = self.regions or {}
+            self.regions[#self.regions + 1] = region
+            return region
         end
         button.Background = button:CreateTexture(nil, "BACKGROUND")
         button.Background:SetAtlas("UI-HUD-MicroMenu-ButtonBG-Up")
@@ -1515,6 +1536,16 @@ do
         assert(namespace.MicroMenuSkin.SetOption("buttonsPerLine", 14))
     end
     local hooksBefore = MSKIN_TEST_SECURE_HOOK_COUNT
+    local reparent = FrameUtil.SetParentMaintainRenderLayering
+    FrameUtil.SetParentMaintainRenderLayering = function(frame, parent)
+        if frame == root and parent ~= container then
+            for _, button in ipairs(buttons) do
+                local state = namespace.Registry.GetSurface(button)
+                assert(state and state.fill and state.edge, "owned reparent preceded structural surface creation")
+            end
+        end
+        return reparent(frame, parent)
+    end
 
     for _, preset in ipairs({ "modern", "midnightDark", "forever" }) do
         assert(namespace.MicroMenuSkin.ApplyPreset(preset))
@@ -1590,12 +1621,157 @@ do
             end
         end
     end
+    FrameUtil.SetParentMaintainRenderLayering = reparent
     -- Four state methods per button, the guild tabard, one container and the
     -- owned bar's MicroMenu hooks (its UpdateScale keeps the owned scale);
     -- re-applying presets must not add more.
     assert(MSKIN_TEST_SECURE_HOOK_COUNT - hooksBefore <= #buttons * 4 + 5,
         "Micro Bar installed more than four native hooks per button: "
             .. tostring(MSKIN_TEST_SECURE_HOOK_COUNT - hooksBefore))
+    -- Reusing the structural button surfaces must not paint temporary plates.
+    -- Real Surface/Registry/BlizzardYellow run here, including late regions.
+    do
+        local settings = namespace.DB.icons.microMenu
+        local attach, track = namespace.Surface.Attach, namespace.BlizzardYellow.TrackFrame
+        local targets, counts, restores = {}, {}, {}
+        for _, button in ipairs(buttons) do targets[button] = true end
+        namespace.Surface.Attach = function(target, ...)
+            if targets[target] then counts.attach = (counts.attach or 0) + 1 end
+            return attach(target, ...)
+        end
+        namespace.BlizzardYellow.TrackFrame = function(target, ...)
+            if targets[target] then counts.track = (counts.track or 0) + 1 end
+            return track(target, ...)
+        end
+        for _, button in ipairs(buttons) do
+            local state = assert(namespace.Registry.GetSurface(button))
+            for _, region in ipairs({ state.fill, state.edge }) do
+                for _, method in ipairs({ "SetTexture", "SetAtlas", "SetTexCoord", "SetVertexColor",
+                    "SetColorTexture", "ClearAllPoints", "SetPoint", "SetSize", "Show", "Hide" }) do
+                    local original = region[method]
+                    if original then
+                        restores[#restores + 1] = { region, method, original }
+                        region[method] = function(self, ...)
+                            counts.write = (counts.write or 0) + 1
+                            return original(self, ...)
+                        end
+                    end
+                end
+            end
+        end
+        local function Refresh()
+            local success, result = namespace.MicroMenuSkin.RefreshActive()
+            assert(success, "surface reuse lost the active Micro Bar")
+            assert(result == "applied", "surface reuse returned a partial result")
+        end
+        local function Clean()
+            settings.iconStyle, settings.buttonBackground, settings.buttonBorder = "bold", false, 0
+            Refresh()
+        end
+        local function Measure()
+            local bestVM, bestKB
+            for attempt = 1, 2 do
+                counts = {}
+                collectgarbage("collect")
+                collectgarbage("stop")
+                local before = collectgarbage("count")
+                local instructions = 0
+                local function Instruction() instructions = instructions + 1 end
+                debug.sethook(Instruction, "", 1)
+                Refresh()
+                debug.sethook()
+                local grown = collectgarbage("count") - before
+                collectgarbage("restart")
+                bestVM = math.min(bestVM or instructions, instructions)
+                bestKB = math.min(bestKB or grown, grown)
+            end
+            print(("Micro surface warm clean: %d buttons, %d VM, %.3f KB, %d attaches, %d paint writes, %d text scans")
+                :format(#buttons, bestVM, bestKB, counts.attach or 0, counts.write or 0, counts.track or 0))
+            return bestVM, bestKB
+        end
+        Clean()
+        local vm, kb = Measure()
+        assert(not counts.attach and not counts.write, "warm clean Micro Bar painted structural button surfaces")
+        assert(counts.track == #buttons, "warm clean Micro Bar lost its late-native-text scan")
+        assert(vm < 85000 and kb < 22, "warm clean Micro Bar exceeded its VM/allocation budget")
+        for _, button in ipairs(buttons) do
+            assert(namespace.Registry.GetSurface(button).visible == false,
+                "clean artwork exposed its temporary structural surface")
+        end
+
+        -- Owned reparenting can make native buttons implicitly protected.
+        -- Warm reuse must keep the OOC exception and reject it during combat.
+        for _, button in ipairs(buttons) do button.protected = true end
+        counts = {}
+        Refresh()
+        assert(counts.track == #buttons and not counts.attach,
+            "implicit protection lost warm surface reuse or native text")
+        local combat = InCombatLockdown
+        InCombatLockdown = function() return true end
+        counts = {}
+        assert(namespace.MicroMenuStates.SeedButtonSurface(buttons[1], settings) == false
+            and not counts.track and not counts.attach,
+            "implicit protected surface bypassed combat")
+        InCombatLockdown = combat
+        for _, button in ipairs(buttons) do button.protected = false end
+        local late = buttons[1]:CreateFontString()
+        buttons[1].regions[#buttons[1].regions + 1] = late
+        late:SetTextColor(1, 0.82, 0, 1)
+        Refresh()
+        assert(namespace.BlizzardYellow.directStates[late], "surface reuse missed a late native gold FontString")
+        settings.iconStyle, settings.buttonBackground, settings.buttonBorder = "blizzard", true, 1
+        Refresh()
+        counts = {}
+        Refresh()
+        assert(counts.attach == #buttons, "warm native plate repeated structural seeding")
+        for _, button in ipairs(buttons) do
+            local state = namespace.Registry.GetSurface(button)
+            assert(state.visible and state.spec.role == "microButton" and state.spec.fillVisible
+                and state.spec.border == 1, "surface reuse changed the requested native button plate")
+        end
+        settings.buttonBackground, settings.buttonBorder = false, 0
+        Refresh()
+        counts = {}
+        Refresh()
+        assert(not counts.attach and counts.track == #buttons, "native no-plate mode repeated structural seeding")
+
+        -- Existing foreign surfaces retain their exact spec/visibility across modes.
+        Clean()
+        local foreign = { role = "card", border = 2, radius = 3 }
+        attach(buttons[1], foreign)
+        namespace.Surface.SetVisible(buttons[1], false)
+        Refresh()
+        local state = namespace.Registry.GetSurface(buttons[1])
+        assert(state.spec == foreign and state.visible == false, "structural reuse replaced a foreign surface")
+        settings.iconStyle, settings.buttonBackground, settings.buttonBorder = "blizzard", true, 1
+        Refresh()
+        Clean()
+        assert(state.spec == foreign and state.visible == false, "plate removal lost its foreign predecessor")
+        settings.iconStyle, settings.buttonBackground, settings.buttonBorder = "blizzard", true, 1
+        Refresh()
+        namespace.MicroMenuSkin.Disable()
+        assert(state.spec == foreign and state.visible == false, "disable lost a foreign surface")
+        assert(namespace.MicroMenuSkin.Apply(root, "surface-reacquire"))
+        Clean()
+        assert(state.spec == foreign and state.visible == false, "reacquire lost a foreign surface")
+        -- A cached structural surface never grants stale permission.
+        local protected = buttons[1].IsProtected
+        buttons[1].IsProtected = function() return true, true end
+        counts = {}
+        assert(namespace.MicroMenuStates.SeedButtonSurface(buttons[1], settings) == false
+            and not counts.track and not counts.attach,
+            "structural surface reuse bypassed current protection")
+        buttons[1].IsProtected = protected
+        local forbidden = buttons[1].IsForbidden
+        buttons[1].IsForbidden = function() return true end
+        assert(namespace.MicroMenuStates.SeedButtonSurface(buttons[1], settings) == false
+            and not counts.track and not counts.attach,
+            "structural surface reuse bypassed current forbidden state")
+        buttons[1].IsForbidden = forbidden
+        namespace.Surface.Attach, namespace.BlizzardYellow.TrackFrame = attach, track
+        for _, restore in ipairs(restores) do restore[1][restore[2]] = restore[3] end
+    end
+
     assert(namespace.MicroMenuSkin.ApplyPreset("blizzard"))
     assert(namespace.DB.icons.microMenu.layoutMode == "blizzard"
         and not namespace.OwnedMicroBar.active and root:GetParent() == container
@@ -1748,12 +1924,14 @@ assert(looks == 5 and palettes >= 5,
     "Client look catalog or palette collection changed")
 
 local private = {}
-_G.MSUFSuite = { Database = _G.MSUFSuite.Database, Skin = _G.MSUFSuite.Skin, Text = SuiteText, Client = {
+-- The core namespace stays the same object when its controller client is
+-- supplied; Bootstrap.SuiteCore has already cached that mandatory provider.
+_G.MSUFSuite.Client = {
     AttachControllerWindow = function() end,
     PauseControllerWindow = function() end,
     ResumeControllerWindow = function() end,
     RaiseControllerCursor = function() end,
-} }
+}
 local optionsToc = read("MSUF_Suite_Skin_Options/MSUF_Suite_Skin_Options_Mainline.toc")
 assert(optionsToc:find("## LoadOnDemand: 1", 1, true))
 for line in optionsToc:gmatch("[^\r\n]+") do

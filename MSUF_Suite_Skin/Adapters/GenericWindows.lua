@@ -123,8 +123,9 @@ local function ObjectName(object)
 end
 
 local function HasAnyField(object, fields)
+    if type(object) ~= "table" then return false end
     for index = 1, #fields do
-        if Field(object, fields[index]) ~= nil then return true end
+        if object[fields[index]] ~= nil then return true end
     end
     return false
 end
@@ -310,7 +311,11 @@ end
 local function DeactivateOwnerState(owner, ownerState)
     ownerState.active = false
     Kit.CancelDeferred(ownerState)
+    if ownerState.catalogRequests then
+        for _, request in pairs(ownerState.catalogRequests) do Kit.CancelHidden(request) end
+    end
     for scrollBox, registration in pairs(ownerState.scrollBoxes) do
+        Kit.CancelHidden(registration)
         Kit.UnregisterRowCallback(scrollBox, registration.event, registration)
     end
     ownerState.scrollBoxes = Kit.WeakSet()

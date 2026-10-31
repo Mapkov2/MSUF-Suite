@@ -13,7 +13,7 @@ local floor, max, min, format = math.floor, math.max, math.min, string.format
 local Public, SetIcon, SetRaw = Page.Public, Page.SetIcon, Page.SetRaw
 local Accent, TextColor = Page.Accent, Page.TextColor
 local Button, Label, ButtonText = Page.Button, Page.Label, Page.ButtonText
-local ShowTip, HideTip, ClearFocus, Light = Page.ShowTip, Page.HideTip, Page.ClearFocusScript, Page.Light
+local ShowTip, HideTip, Light = Page.ShowTip, Page.HideTip, Page.Light
 
 ------------------------------------------------------------------ per-spell popover
 -- Options of one entry, limited to its family and to what the runtime reads
@@ -24,169 +24,54 @@ local ShowTip, HideTip, ClearFocus, Light = Page.ShowTip, Page.HideTip, Page.Cle
 -- serve buffs and cooldowns that show their buff; "Color stacks from" also
 -- holds the stack color (its swatch opens a color list, reset clears both).
 -- Every row explains itself on its label (help), without allocating.
-local POP_W, POP_MAX = 360, 520
+local POP_W, POP_MAX = 380, 520
 -- Label column and the x where every row's control starts.
 local LABEL_W, POP_X = 150, 154
 Page.POP_X = POP_X
-local SWATCHES = { "ffd200", "ffffff", "ff4d4d", "4dff73", "4db8ff", "c78cff", "4dffff", "ff9933" }
-local SWATCH_NAMES = { "Gold", "White", "Red", "Green", "Blue", "Purple", "Cyan", "Orange" }
+local FIELDS = Page.FIELDS
+local SWATCHES, COLOR_MENU
 local SWATCH, SWATCH_STEP, STACK_SWATCH = 13, 14, 18
--- The stack color of an entry that has none.
 local STACK_COLOR = CDM.SPELL_DEFAULTS.stackColor
-local SHOW_HIDE = { { 0, "Bar setting" }, { 2, "Show" }, { 3, "Hide" } }
-local FROM_BOOL = { [true] = 2, [false] = 3 }
--- bar: the bar setting a missing value follows. fromBar: that setting's
--- value as a choice of the row. fallback: the hint when no bar setting
--- stands behind the row. switch: On or nothing (no bar setting to follow).
--- blizzardOnly: Blizzard's entries only (custom auras name their unit).
-local ALL_FIELDS = {
-    { key = "procGlow", label = "Spell alert glow", kind = "bool", cd = true, spellOnly = true, bar = "procGlow",
-      help = "Glow while the game highlights this spell (spell alert)." },
-    { key = "readyGlow", label = "Glow when ready", kind = "bool", cd = true, bar = "readyGlow",
-      help = "Glow while the spell is ready. \"Ready glows only in combat\" in Basics limits it to combat." },
-    { key = "actionUsableGlow", label = "Action-bar glow when usable", kind = "bool", cd = true, spellOnly = true, switch = true,
-      help = "Glow on this spell's MSUF action-bar buttons when it is usable and its real cooldown is over. Unavailable state keeps the glow off." },
-    { key = "showGCD", label = "Show global cooldown", kind = "bool", cd = true, spellOnly = true,
-      help = "Show the global cooldown swipe for this spell. Reset follows the global cooldown setting in Basics." },
-    { key = "readyResources", label = "Ready glow requires enough resources", kind = "bool", cd = true, bar = "readyResources",
-      help = "Suppress ready glows when resources are insufficient or their state is unavailable." },
-    { key = "fullChargeGlow", label = "Glow when all charges are ready", kind = "bool", cd = true, spellOnly = true, bar = "fullChargeGlow",
-      help = "Glow when the game reports that this charge spell has finished recharging." },
-    { key = "chargeSwipe", label = "Show recharge swipe", kind = "bool", cd = true, spellOnly = true, bar = "chargeSwipe",
-      help = "Draw the recharge swipe independently of the main cooldown swipe." },
-    { key = "chargeEdge", label = "Show recharge edge", kind = "bool", cd = true, spellOnly = true, bar = "chargeEdge",
-      help = "Draw the recharge edge independently of the main cooldown edge." },
-    { key = "auraGlow", label = "Glow while active", kind = "bool", aura = true, bar = "auraGlow",
-      help = "Glow while the buff is active." },
-    { key = "glowStyle", label = "Glow style", kind = "choice", cd = true, aura = true,
-      values = { { 0, "Bar setting" }, { 1, "Blizzard alert" }, { 2, "Marching ants" }, { 3, "Pulse" }, { 4, "Border" } },
-      help = "Style of every glow of this spell: spell alert, ready, active buff and stack glows." },
-    { key = "glowColor", label = "Glow color", kind = "color", cd = true, aura = true,
-      help = "Tints every glow of this spell. Click the chosen color again to follow the bar." },
-    { key = "desat", label = "Desaturate on cooldown", kind = "choice", cd = true,
-      values = { { 0, "Bar setting" }, { 2, "Never" }, { 3, "Always" } },
-      help = "Grey out the icon while the spell is on cooldown." },
-    { key = "hideReady", label = "Hide when ready", kind = "bool", cd = true, bar = "hideReady",
-      help = "Show the icon only while the spell is on cooldown." },
-    { key = "readyAlpha", label = "Opacity when ready", kind = "number", cd = true, bar = "readyAlpha", step = 1, max = 100,
-      help = "Icon opacity while the spell is ready. Shift steps by 5, Ctrl by 10." },
-    { key = "cdAlpha", label = "Opacity on cooldown", kind = "number", cd = true, bar = "cdAlpha", step = 1, max = 100,
-      help = "Icon opacity while the spell is on cooldown. Shift steps by 5, Ctrl by 10." },
-    { key = "showAura", label = "Show active buff duration", kind = "bool", cd = true, spellOnly = true, bar = "showAura",
-      help = "While the buff of this spell lasts, the icon shows its duration and stacks instead of the cooldown." },
-    { key = "showMissing", label = "Show dimmed when missing", kind = "bool", aura = true, bar = "showMissing",
-      help = "Keep the icon in its place, dimmed, while the buff is missing." },
-    { key = "auraUnit", label = "Track on", kind = "choice", stack = true, blizzardOnly = true,
-      values = { { 0, "Automatic" }, { 2, "Me" }, { 3, "Target" }, { 4, "Both" } },
-      help = "Where the buff or debuff is looked for. Automatic: harmful spells on your target, all others on you." },
-    { key = "stackGlow", label = "Glow at stacks", kind = "number", stack = true, off = true, step = 1, max = 99,
-      help = "Stack threshold for the selected comparison. Zero disables the stack glow." },
-    { key = "hideAvailableCharges", label = "Hide while a charge is available", kind = "bool", cd = true, spellOnly = true,
-      help = "Fade the charge spell while at least one charge is usable. Its space stays reserved; the native cooldown controls the opacity without exposing charge counts." },
-    { key = "stackGlowOp", label = "Stack comparison", kind = "choice", stack = true,
-      values = { { 0, "At least" }, { 2, "Exactly" }, { 3, "More than" }, { 4, "Below" }, { 5, "At most" } },
-      help = "Compare the native stack count with the configured threshold." },
-    { key = "actionGlowSpell", label = "Glow on action-bar spell", kind = "spell", stack = true,
-      help = "Enter a spell name or ID on MSUF action bars. Its buttons glow from the aura and unit selected below. A page change in combat pauses the glow until combat ends." },
-    { key = "actionGlowUnit", label = "Action-bar aura source", kind = "choice", stack = true,
-      values = { { 0, "Buff on me" }, { 2, "My debuff on target" } },
-      help = "Choose your buffs or your own harmful auras on the current target. The additional required buff is always checked on you." },
-    { key = "actionGlowMode", label = "Action-bar glow condition", kind = "choice", stack = true,
-      values = { { 0, "Aura present" }, { 2, "Stack comparison" } },
-      help = "The stack condition uses Glow at stacks and Stack comparison. Buff absence cannot drive a combat glow through the native aura-slot API." },
-    { key = "actionGlowRequireSpell", label = "Also require this buff", kind = "spell", stack = true,
-      help = "The action-bar glow also requires this buff on you. Clear the field to use only the original buff or stack condition." },
-    { key = "stackColorAt", label = "Color stacks from", kind = "number", stack = true, off = true, step = 1, max = 99,
-      color = "stackColor", help = "From this many stacks the number shows in the color on the right." },
-    { key = "pandemic", label = "Pandemic window", kind = "bool", stack = true, bar = "pandemic",
-      help = "Highlight this buff or debuff while refreshing it keeps the remaining time." },
-    { key = "swipe", label = "Swipe", kind = "choice", cd = true, aura = true,
-      values = { { 0, "Normal" }, { 2, "Reversed" }, { 3, "Hidden" } },
-      help = "The dark sweep over the icon while it counts down." },
-    { key = "timeText", label = "Countdown", auraLabel = "Seconds", kind = "choice", cd = true, aura = true,
-      bar = "cdText", fromBar = FROM_BOOL, values = SHOW_HIDE,
-      help = "Show or hide the countdown numbers of this spell. Bar setting follows the bar's Text section." },
-    { key = "stackText", label = "Charges", auraLabel = "Stacks", kind = "choice", cd = true, aura = true,
-      bar = "stackText", fromBar = FROM_BOOL, values = SHOW_HIDE,
-      help = "Show or hide the charges, stacks or item count of this spell." },
-    { key = "textTop", label = "Text on top", kind = "choice", cd = true, aura = true, bar = "textTop",
-      fromBar = { 2, 3 }, values = { { 0, "Bar setting" }, { 2, "Stacks" }, { 3, "Countdown" } },
-      help = "Which number is drawn on top when both show." },
-    { key = "threshold", label = "Warn below (seconds)", kind = "number", cd = true, aura = true, step = 1, max = 10,
-      fallback = "All bars",
-      help = "The countdown turns to the warning color below this many seconds. All bars: the Text section's setting." },
-    { key = "timerDuration", label = "Custom duration (seconds)", kind = "number", aura = true, timer = true, off = true, step = 1, max = 600,
-      help = "Zero uses the game's duration. A custom duration starts on the trigger spell's successful cast. Summon timers use fixed places." },
-    { key = "timerSpell", label = "Timer trigger spell", kind = "spell", aura = true, timer = true,
-      help = "Enter the cast spell's name or ID. Leave empty for automatic spell matching. Timers start only from readable player cast events." },
-    { key = "sound", label = "Sound when ready", auraLabel = "Sound when gained", kind = "sound", cd = true, aura = true,
-      help = "Plays when the spell becomes ready (a buff: when you gain it)." },
-    { key = "lossSound", label = "Sound when lost", kind = "sound", aura = true, help = "Plays when the buff ends." },
-    { key = "tts", label = "Say the name when ready", kind = "bool", cd = true, switch = true,
-      help = "Your computer says the spell's name when it becomes ready." },
-    -- A buff shows the game's icon while active; its own icon only while missing.
-    { key = "icon", label = "Icon file ID (Enter)", auraLabel = "Icon when missing (Enter)", kind = "icon", cd = true,
-      aura = true, help = "Type a texture file ID and press Enter to show another icon. Empty follows the game." },
-}
--- Rows exist for the fields the catalog stores. Labels and help are plain
--- literals in the rows, so the locale extraction sees every one of them.
-local REQUIRE_HELP = "Enter a talent or spell name or ID, then press Enter. Every required spell must be learned. Empty removes this condition."
-local EXCLUDE_HELP = "Enter a talent or spell name or ID, then press Enter. The entry is hidden while any excluded spell is learned. Conditions update outside combat."
-local CONDITIONS = {
-    { key = "requireSpell1", label = "Required talent or spell 1", help = REQUIRE_HELP },
-    { key = "excludeSpell1", label = "Excluded talent or spell 1", help = EXCLUDE_HELP },
-    { key = "requireSpell2", label = "Required talent or spell 2", help = REQUIRE_HELP },
-    { key = "excludeSpell2", label = "Excluded talent or spell 2", help = EXCLUDE_HELP },
-    { key = "requireSpell3", label = "Required talent or spell 3", help = REQUIRE_HELP },
-    { key = "excludeSpell3", label = "Excluded talent or spell 3", help = EXCLUDE_HELP },
-}
-for _, row in ipairs(CONDITIONS) do
-    row.kind, row.cd, row.aura = "spell", true, true
-    ALL_FIELDS[#ALL_FIELDS + 1] = row
-end
-local FIELDS = {}
-for _, field in ipairs(ALL_FIELDS) do
-    if CDM.SPELL_FIELDS[field.key] then FIELDS[#FIELDS + 1] = field end
-end
-Page.FIELDS = FIELDS
-local function SwatchItem(value, text, hex)
-    local r, g, b = P.RGB(hex)
-    return { value = value, text = text, swatchColor = { r, g, b, 1 } }
-end
--- Stack colors: "" is the default color (the field is cleared).
-local COLOR_MENU = { SwatchItem("", "Default", STACK_COLOR) }
-for i, hex in ipairs(SWATCHES) do COLOR_MENU[i + 1] = SwatchItem(hex, SWATCH_NAMES[i], hex) end
-Page.COLOR_MENU = COLOR_MENU
-for _, field in ipairs(FIELDS) do
-    if field.values then
-        field.menu = {}
-        for i, pair in ipairs(field.values) do field.menu[i] = { value = pair[1], text = pair[2] } end
-    end
-    if field.color then field.clears = { field.key, field.color } end
-end
 local pop
 
 -- aura: the entry is a buff, or a cooldown that shows the buff it tracks.
-local function Applies(field, family, kind, aura, barKind)
+-- bars: the bar draws bars (buff bars, cooldowns shown as timer bars).
+local function Applies(field, family, kind, aura, barKind, bars)
     if field.timer and barKind ~= CDM.KIND.AURA_BAR then return false end
     if field.blizzardOnly and kind ~= "b" then return false end
+    if field.bars and not bars then return false end
+    if field.itemOnly and kind ~= "i" and kind ~= "e" then return false end
     if field.stack then return family == FAMILY.AURA or aura == true end
     if family == FAMILY.AURA then return field.aura == true end
     if not field.cd then return false end
     return not (field.spellOnly and (kind == "i" or kind == "e"))
 end
 Page.FieldApplies = Applies
+local function BarSetting(suffix)
+    local key = KEYS[pop.slot] and KEYS[pop.slot][suffix]
+    if key then return P.Get(ID, key) end
+end
 local function BarValue(field)
     if field.key == "threshold" then return P.Get(ID, "thresholdSeconds") end
     if field.key == "showGCD" then return P.Get(ID, "showGCD") end
-    local key = field.bar and KEYS[pop.slot] and KEYS[pop.slot][field.bar]
-    if key then return P.Get(ID, key) end
+    -- Countdown and charges say what the runtime shows (K.BarTime and
+    -- K.BarStacks in MSUF_Suite_CooldownManager/Const.lua): timer bars also
+    -- follow "Show time", cooldown icons also "Show charges".
+    if field.key == "timeText" then
+        return BarSetting("cdText") ~= false and (Page.Kind(pop.slot) ~= CDM.KIND.AURA_BAR
+            and not BarSetting("cooldownDuration") or BarSetting("barTime") ~= false)
+    end
+    if field.key == "stackText" then
+        return BarSetting("stackText") ~= false and not (pop.family ~= FAMILY.AURA and BarSetting("charges") == false)
+    end
+    return field.bar and BarSetting(field.bar)
 end
 
 -- "Own options: ..." for tooltips, built once per entry and stored string.
 local customLines, customText = {}, nil
 local customSpec
 function Page.CustomLine(key)
+    Page.CompleteFields()
     local text = P.Get(ID, "spellsData")
     local spec = Page.Spec()
     if customText ~= text or customSpec ~= spec then
@@ -213,7 +98,7 @@ end
 -- A cooldown shows its buff, and so its stacks, only while "Show active
 -- buff duration" applies to it; its stack rows are dimmed otherwise.
 local function StacksShown(fields)
-    if pop.family == FAMILY.AURA then return true end
+    if pop.family == FAMILY.AURA or fields and fields.itemAura then return true end
     local value = fields and fields.showAura
     if value == nil then
         local key = KEYS[pop.slot] and KEYS[pop.slot].showAura
@@ -227,6 +112,8 @@ local function SetField(field, value)
 end
 local function ResetClick(self)
     local field = self.row.field
+    -- A reset also drops text typed into the row and not stored.
+    if self.row.edit then self.row.edit.dirty = nil end
     if not field.clears then
         SetField(field, nil)
         return
@@ -234,21 +121,32 @@ local function ResetClick(self)
     local ok, reason = Page.ClearSpellFields(pop.key, field.clears)
     if not ok then Page.Fail(reason) end
 end
--- Three states follow, force on or force off; a switch is On or nothing.
+-- Shared choices: three states follow, force on or force off (the active
+-- one clicked again follows); a switch is On or nothing. A specialization
+-- stores On or Off as clicked, so Off never inherits a shared On.
 local function BoolClick(self)
     local field = self.row.field
+    if Page.spellSpecScope then
+        SetField(field, self.value)
+        return
+    end
     if field.switch then
         SetField(field, self.value == true or nil)
         return
     end
     if Page.SpellField(pop.key, field.key) == self.value then SetField(field, nil) else SetField(field, self.value) end
 end
+-- self.field: an inline choice (the stack comparison) inside another row.
+-- The first choice clears a shared choice; a specialization stores it
+-- (field.zero), so it does not inherit the shared one.
 local function ChoiceClick(self)
-    local field = self.row.field
+    local field = self.field or self.row.field
     local current = Page.SpellField(pop.key, field.key) or 0
+    if current == field.zero then current = 0 end
     local function Pick(value)
         value = tonumber(value) or 0
-        SetField(field, value ~= 0 and value or nil)
+        if value == 0 then value = Page.spellSpecScope and field.zero or nil end
+        SetField(field, value)
     end
     if W.OpenDropdown then
         Page.dropdownOpen = true
@@ -260,7 +158,8 @@ local function ChoiceClick(self)
     for i = 1, #menu do if menu[i].value == current then index = i end end
     Pick(menu[index % #menu + 1].value)
 end
--- Fields with "off" start at 0 and clear themselves when stepped back to it.
+-- Fields with "off" start at 0; stepped back to it they clear, or, in a
+-- specialization, store 0 (off over a shared count).
 local function StepClick(self)
     local field = self.row.field
     local current = Page.SpellField(pop.key, field.key)
@@ -268,17 +167,25 @@ local function StepClick(self)
     local multiplier = IsControlKeyDown() and 10 or IsShiftKeyDown() and 5 or 1
     local value = max(0, min(field.max, current + self.delta * field.step * multiplier))
     value = floor(value / field.step + 0.5) * field.step
-    SetField(field, not (field.off and value == 0) and value or nil)
+    SetField(field, not (field.off and value == 0 and not Page.spellSpecScope) and value or nil)
 end
+-- The chosen color clicked again follows the bar: cleared, or, in a
+-- specialization, stored as "" (the bar's color over a shared color).
 local function SwatchClick(self)
     local field = self.row.field
-    if Page.SpellField(pop.key, field.key) == self.hex then SetField(field, nil) else SetField(field, self.hex) end
+    local current = Page.SpellField(pop.key, field.key)
+    if not (current and current:lower() == self.hex) then
+        SetField(field, self.hex)
+    else
+        SetField(field, Page.spellSpecScope and "" or nil)
+    end
 end
+-- Default ("") clears a shared stack color; a specialization stores it.
 local function ColorClick(self)
     local name = self.row.field.color
     local current = Page.SpellField(pop.key, name) or ""
     local function Pick(value)
-        local ok, reason = Page.SetSpellField(pop.key, name, value ~= "" and value or nil)
+        local ok, reason = Page.SetSpellField(pop.key, name, (value ~= "" or Page.spellSpecScope) and value or nil)
         if not ok then Page.Fail(reason) end
     end
     if W.OpenDropdown then
@@ -294,42 +201,14 @@ end
 local function ColorEnter(self)
     ShowTip(self, Tr("Stack color"), Tr("Stacks show in this color from the number on the left."))
 end
+-- None clears a shared sound; a specialization stores it ("", silent).
 local function SoundClick(self)
     local field = self.row.field
     Page.OpenSoundPicker(self, Page.SpellField(pop.key, field.key) or "", function(value)
-        SetField(field, value ~= "" and value or nil)
+        SetField(field, (value ~= "" or Page.spellSpecScope) and value or nil)
     end)
 end
 local function PlayClick(self) Page.PlaySound(Page.SpellField(pop.key, self.row.field.key)) end
-local function IconCommit(self)
-    local text = (self:GetText() or ""):gsub("%s", "")
-    local id = tonumber(text)
-    self:ClearFocus()
-    if text == "" then
-        SetField(self.row.field, nil)
-    elseif id and id >= 1 and id < 2147483648 and id == floor(id) then
-        SetField(self.row.field, id)
-    else
-        Page.Fail("Enter a texture file ID.")
-        Page.PaintPopover()
-    end
-end
-local function SpellCommit(self)
-    local text = (self:GetText() or ""):match("^%s*(.-)%s*$")
-    self:ClearFocus()
-    if text == "" then
-        SetField(self.row.field, nil)
-        return
-    end
-    local id = C_Spell.GetSpellIDForSpellIdentifier(text)
-    if Public(id) and type(id) == "number" and id > 0 and id < 2147483648 then
-        SetField(self.row.field, id)
-    else
-        Page.Fail("Enter a valid talent or spell name or ID.")
-        Page.PaintPopover()
-    end
-end
-
 local function NewSwatch(row, size, onClick)
     local swatch = CreateFrame("Button", nil, row)
     swatch:SetSize(size, size)
@@ -342,13 +221,39 @@ local function NewSwatch(row, size, onClick)
     swatch:SetScript("OnClick", onClick)
     return swatch
 end
+-- The comparison in front of its threshold reads "Glow at stacks >= 3"; its
+-- tooltip says the rule in words.
+local OP_W = 40
+local function OpMenuItem(field, value)
+    local menu = field.menu
+    for i = 1, #menu do if menu[i].value == (value or 0) then return menu[i] end end
+    return menu[1]
+end
+local function StackRule(row)
+    local fields = Page.SpellFields(pop.key)
+    local count = fields and fields[row.field.key]
+    if not count or count == 0 then return Tr("The stack glow is off.") end
+    return format(Tr(OpMenuItem(row.op.field, fields[row.field.op]).rule), count)
+end
+local function OpEnter(self)
+    ShowTip(self, Tr(self.field.label), Tr(self.field.help), StackRule(self.row))
+end
 local function NumberControls(row, field, x)
+    if field.op then
+        row.op = Button(row, "", OP_W, 20, ChoiceClick)
+        row.op.row, row.op.field = row, field.opField
+        Page.Chevron(row.op)
+        row.op:SetPoint("LEFT", row, "LEFT", x, 0)
+        row.op:HookScript("OnEnter", OpEnter)
+        row.op:HookScript("OnLeave", HideTip)
+        x = x + OP_W + 4
+    end
     row.minus = Button(row, "-", 22, 20, StepClick)
     row.minus.row, row.minus.delta = row, -1
     row.minus:SetPoint("LEFT", row, "LEFT", x, 0)
-    row.value = Label(row, "GameFontHighlightSmall", "")
-    row.value:SetWidth(36)
-    row.value:SetJustifyH("CENTER")
+    -- A click on the value types it (CooldownManagerPopoverInputs.lua).
+    row.value = Button(row, "", 36, 20, Page.BeginPopoverNumber)
+    row.value.row = row
     row.value:SetPoint("LEFT", row.minus, "RIGHT", 2, 0)
     row.plus = Button(row, "+", 22, 20, StepClick)
     row.plus.row, row.plus.delta = row, 1
@@ -370,7 +275,75 @@ end
 local STACK_DIM = "Needs \"Show active buff duration\": this icon shows the buff and its stacks only then."
 local function LabelEnter(self)
     local row = self.row
-    ShowTip(self, row.label:GetText(), Tr(row.field.help), row.dimmed and Tr(STACK_DIM) or nil)
+    ShowTip(self, row.label:GetText(), Tr(row.field.help), row.op and StackRule(row) or nil, row.dimmed and Tr(STACK_DIM) or nil)
+end
+-- The glow color swatches. A stored color that is none of them (imported)
+-- shows as a ninth, selected swatch that names it; like any chosen swatch,
+-- clicked it follows the bar. No picker: one color route.
+local function CustomColorEnter(self)
+    ShowTip(self, format(Tr("Glow color: #%s"), self.hex))
+end
+local function ColorControls(row, x)
+    row.swatches = {}
+    for i = 1, #SWATCHES + 1 do
+        local swatch = NewSwatch(row, SWATCH, SwatchClick)
+        swatch:SetPoint("LEFT", row, "LEFT", x + (i - 1) * SWATCH_STEP, 0)
+        if SWATCHES[i] then
+            local r, g, b = P.RGB(SWATCHES[i])
+            swatch.fill:SetColorTexture(r, g, b, 1)
+            swatch.hex = SWATCHES[i]
+        else
+            swatch:SetScript("OnEnter", CustomColorEnter)
+            swatch:SetScript("OnLeave", HideTip)
+            swatch:Hide()
+        end
+        row.swatches[i] = swatch
+    end
+end
+-- value "": a specialization follows the bar, so no swatch is selected.
+local function PaintColors(row, value)
+    local hex, found = value and value ~= "" and value:lower() or nil, false
+    local ar, ag, ab = Accent()
+    for i = 1, #SWATCHES do
+        local swatch = row.swatches[i]
+        if swatch.hex == hex then
+            found = true
+            swatch.edge:SetColorTexture(ar, ag, ab, 1)
+        else
+            swatch.edge:SetColorTexture(0, 0, 0, 0.8)
+        end
+    end
+    local custom = row.swatches[#SWATCHES + 1]
+    custom:SetShown(hex ~= nil and not found)
+    if hex and not found then
+        custom.hex = hex
+        local r, g, b = P.RGB(hex)
+        custom.fill:SetColorTexture(r, g, b, 1)
+        custom.edge:SetColorTexture(ar, ag, ab, 1)
+    end
+end
+-- A text box of a row: kind "spell", "icon" or "number" (the box a value
+-- click opens). CooldownManagerPopoverInputs.lua stores what is typed.
+function Page.NewPopoverEdit(row, kind, width)
+    local edit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+    edit:SetSize(width, 20)
+    edit:SetAutoFocus(false)
+    edit:SetNumeric(kind == "icon")
+    edit:SetMaxLetters(kind == "spell" and 100 or kind == "text" and 40 or 10)
+    if T.SkinEditBox then T.SkinEditBox(edit) end
+    edit.row = row
+    Page.InitPopoverInput(edit, kind)
+    row.edit = edit
+    return edit
+end
+local function InputControls(row, kind, x)
+    local edit = Page.NewPopoverEdit(row, kind, kind == "text" and 150 or 80)
+    edit:SetPoint("LEFT", row, "LEFT", x + 4, 0)
+    if kind == "text" then return end
+    row.preview = row:CreateTexture(nil, "ARTWORK")
+    row.preview:SetSize(20, 20)
+    row.preview:SetPoint("LEFT", edit, "RIGHT", 8, 0)
+    row.preview:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
 end
 local function Row(field)
     local row = pop.rows[field.key]
@@ -381,6 +354,8 @@ local function Row(field)
     row.label = Label(row, "GameFontHighlightSmall", "")
     row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.label:SetWidth(LABEL_W)
+    row.label:SetWordWrap(true)
+    row.label:SetMaxLines(2)
     row.tip = CreateFrame("Frame", nil, row)
     row.tip:SetPoint("LEFT", row, "LEFT", 0, 0)
     row.tip:SetSize(LABEL_W, 20)
@@ -405,6 +380,7 @@ local function Row(field)
     elseif kind == "choice" or kind == "sound" then
         row.choice = Button(row, "", kind == "sound" and 68 or 108, 20, kind == "sound" and SoundClick or ChoiceClick)
         row.choice.row = row
+        Page.Chevron(row.choice)
         row.choice:SetPoint("LEFT", row, "LEFT", x, 0)
         if kind == "sound" then
             row.play = Button(row, "Play", 38, 20, PlayClick)
@@ -414,40 +390,21 @@ local function Row(field)
     elseif kind == "number" then
         NumberControls(row, field, x)
     elseif kind == "color" then
-        row.swatches = {}
-        for i, hex in ipairs(SWATCHES) do
-            local swatch = NewSwatch(row, SWATCH, SwatchClick)
-            swatch:SetPoint("LEFT", row, "LEFT", x + (i - 1) * SWATCH_STEP, 0)
-            local r, g, b = P.RGB(hex)
-            swatch.fill:SetColorTexture(r, g, b, 1)
-            swatch.hex = hex
-            row.swatches[i] = swatch
-        end
-    elseif kind == "icon" or kind == "spell" then
-        local edit = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
-        edit:SetSize(80, 20)
-        edit:SetAutoFocus(false)
-        edit:SetNumeric(kind == "icon")
-        edit:SetMaxLetters(kind == "icon" and 10 or 100)
-        if T.SkinEditBox then T.SkinEditBox(edit) end
-        edit.row = row
-        edit:SetPoint("LEFT", row, "LEFT", x + 4, 0)
-        edit:SetScript("OnEnterPressed", kind == "icon" and IconCommit or SpellCommit)
-        edit:SetScript("OnEscapePressed", ClearFocus)
-        row.edit = edit
-        row.preview = row:CreateTexture(nil, "ARTWORK")
-        row.preview:SetSize(20, 20)
-        row.preview:SetPoint("LEFT", edit, "RIGHT", 8, 0)
-        row.preview:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
+        ColorControls(row, x)
+    elseif kind == "icon" or kind == "spell" or kind == "text" then
+        InputControls(row, kind, x)
     end
     pop.rows[field.key] = row
     return row
 end
 
+-- companion: the stack color ("" is a specialization's explicit default).
 local function PaintNumber(row, field, value, companion)
+    if companion == "" then companion = nil end
     local shown = value
     if shown == nil then shown = field.off and 0 or tonumber(BarValue(field)) or 0 end
-    SetRaw(row.value, field.off and shown == 0 and Tr("Off") or tostring(shown))
+    row.shownNumber = shown
+    ButtonText(row.value, field.off and shown == 0 and Tr("Off") or tostring(shown))
     row.value:SetAlpha(value ~= nil and 1 or 0.6)
     if row.hint then SetRaw(row.hint, value ~= nil and "" or Tr(field.fallback or "Bar")) end
     local swatch = row.swatch
@@ -464,7 +421,8 @@ local function PaintRow(row, fields)
     local value = fields and fields[field.key]
     local companion = field.color and fields and fields[field.color] or nil
     local own = Page.OwnSpellFields(pop.key)
-    local custom = own and (own[field.key] ~= nil or (field.color and own[field.color] ~= nil)) or false
+    local partner = field.color or field.op
+    local custom = own and (own[field.key] ~= nil or (partner and own[partner] ~= nil)) or false
     SetRaw(row.label, Tr(pop.family == FAMILY.AURA and field.auraLabel or field.label))
     local r, g, b
     if custom then r, g, b = Accent() else r, g, b = TextColor() end
@@ -486,14 +444,17 @@ local function PaintRow(row, fields)
             SetRaw(row.hint, custom and "" or (Tr("Bar") .. ": " .. Tr(bar == true and "On" or "Off")))
         end
     elseif kind == "choice" then
-        local menu, shown = field.menu, value
+        -- A specialization's stored first choice reads as the first choice.
+        local menu, choice = field.menu, value
+        if choice == field.zero then choice = nil end
         -- A row that follows the bar names the bar's current choice.
+        local shown = choice
         if shown == nil and field.fromBar then shown = field.fromBar[BarValue(field)] end
         local text = menu[1].text
         for i = 1, #menu do if menu[i].value == (shown or 0) then text = menu[i].text end end
-        if value == nil and shown ~= nil then
+        if choice == nil and shown ~= nil then
             ButtonText(row.choice, Tr("Bar") .. ": " .. Tr(text))
-        elseif value == nil and field.key == "auraUnit" and (pop.unit == "player" or pop.unit == "target") then
+        elseif choice == nil and field.key == "auraUnit" and (pop.unit == "player" or pop.unit == "target") then
             -- What Automatic picked, when the runtime says so.
             ButtonText(row.choice, Tr(pop.unit == "target" and "Automatic: target" or "Automatic: you"))
         else
@@ -501,22 +462,17 @@ local function PaintRow(row, fields)
         end
     elseif kind == "number" then
         PaintNumber(row, field, value, companion)
+        if row.op then ButtonText(row.op, OpMenuItem(row.op.field, fields and fields[field.op]).mark) end
     elseif kind == "color" then
-        local ar, ag, ab = Accent()
-        for i = 1, #row.swatches do
-            local swatch = row.swatches[i]
-            if swatch.hex == value then
-                swatch.edge:SetColorTexture(ar, ag, ab, 1)
-            else
-                swatch.edge:SetColorTexture(0, 0, 0, 0.8)
-            end
-        end
+        PaintColors(row, value)
     elseif kind == "sound" then
         ButtonText(row.choice, value and Page.SoundLabel(value) or Tr("None"))
-        row.play:SetEnabled(value ~= nil)
+        row.play:SetEnabled(value ~= nil and value ~= "")
+    elseif kind == "text" then
+        Page.PaintPopoverInput(row.edit, value or "")
     elseif kind == "icon" or kind == "spell" then
         local name = value and kind == "spell" and C_Spell.GetSpellName(value)
-        if not (row.edit.HasFocus and row.edit:HasFocus()) then row.edit:SetText(value and (name or tostring(value)) or "") end
+        Page.PaintPopoverInput(row.edit, value and (name or tostring(value)) or "")
         if value then row.preview:SetTexture(kind == "spell" and C_Spell.GetSpellTexture(value) or value) else SetIcon(row.preview, pop.texture) end
     end
     if Page.spellSpecScope and not custom and value ~= nil and row.hint then SetRaw(row.hint, Tr("Shared")) end
@@ -556,6 +512,9 @@ local function MoveClick(self)
     end)
 end
 local function ResetSpellClick()
+    for _, row in pairs(pop.rows) do
+        if row.edit then row.edit.dirty = nil end
+    end
     local ok, reason = Page.ResetSpell(pop.key)
     if not ok then Page.Fail(reason) end
 end
@@ -569,16 +528,20 @@ local function CopyClick()
         or format(Tr("Copied to %d specializations."), result))
 end
 
+-- Typed input is stored in the scope it was typed in; invalid input stays.
 local function ScopeClick()
+    if not Page.FlushPopoverInputs() then return end
     Page.spellSpecScope = not Page.spellSpecScope
     Page.PaintPopover()
 end
 
 local function EnsurePopover()
     if pop then return pop end
+    Page.PreparePopoverFields()
+    SWATCHES, COLOR_MENU = Page.POPOVER_SWATCHES, Page.COLOR_MENU
     pop = Page.NewPopup(POP_W, 300)
     Page.popover = pop
-    pop.rows, pop.moveValues = {}, {}
+    pop.rows, pop.moveValues, pop.headers = {}, {}, {}
     pop.icon = pop:CreateTexture(nil, "ARTWORK")
     pop.icon:SetSize(34, 34)
     pop.icon:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -12)
@@ -606,18 +569,21 @@ local function EnsurePopover()
     pop.scope = Label(pop, "GameFontDisableSmall", "These choices apply to this spell on every bar and specialization.",
         "muted")
     pop.scope:SetWidth(POP_W - 24)
+    pop.scope:SetWordWrap(true)
     pop.scroll, pop.content = Page.ScrollArea(pop, POP_W - 40)
     pop.OnClosed = function(self)
-        for _, row in pairs(self.rows) do if row.edit then row.edit:ClearFocus() end end
+        Page.FlushPopoverInputs()
         Light(self.anchor, false)
     end
     return pop
 end
 -- Places the header actions (Copy only for the player's own entries) and
--- returns where the rows start; moves nothing when the set did not change.
+-- returns where the rows start, below the scope text however many lines it
+-- wraps to; moves nothing when neither changed.
 local function PlaceActions(copy)
-    if pop.placedCopy == copy then return pop.top end
-    pop.placedCopy = copy
+    local scopeHeight = max(14, pop.scope:GetStringHeight() or 14)
+    if pop.placedCopy == copy and pop.placedScope == scopeHeight then return pop.top end
+    pop.placedCopy, pop.placedScope = copy, scopeHeight
     pop.copy:SetShown(copy)
     local x, line = 12, 0
     for i = 1, copy and 4 or 3 do
@@ -631,15 +597,48 @@ local function PlaceActions(copy)
     local y = 54 + (line + 1) * 26
     pop.scope:ClearAllPoints()
     pop.scope:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -y)
+    pop.scope:SetHeight(scopeHeight)
     pop.scopeButton:ClearAllPoints()
     pop.scopeButton:SetPoint("TOPLEFT", pop.scope, "BOTTOMLEFT", 0, -5)
-    pop.top = y + 48
+    pop.top = y + scopeHeight + 34
     pop.scroll:ClearAllPoints()
     pop.scroll:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -pop.top)
     pop.scroll:SetPoint("BOTTOMRIGHT", pop, "BOTTOMRIGHT", -26, 10)
     return pop.top
 end
 
+-- Section headers: the section's name in the accent color and a thin rule,
+-- one pooled frame per section, shown above the first row it holds.
+local SECTION_H = 20
+local function Header(section, y)
+    local header = pop.headers[section]
+    if not header then
+        header = CreateFrame("Frame", nil, pop.content)
+        header:SetSize(POP_W - 40, SECTION_H)
+        header.label = Label(header, "GameFontNormalSmall", "")
+        header.label:SetPoint("LEFT", header, "LEFT", 0, 0)
+        SetRaw(header.label, Tr(section.label))
+        header.line = header:CreateTexture(nil, "ARTWORK")
+        header.line:SetHeight(1)
+        header.line:SetPoint("LEFT", header.label, "RIGHT", 8, 0)
+        header.line:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+        pop.headers[section] = header
+    end
+    local r, g, b = Accent()
+    header.label:SetTextColor(r, g, b)
+    header.line:SetColorTexture(r, g, b, 0.25)
+    header:ClearAllPoints()
+    header:SetPoint("TOPLEFT", pop.content, "TOPLEFT", 0, -y)
+    header:Show()
+end
+-- A label may wrap to two lines; its row grows to fit and keeps the
+-- controls centered on it. Single-line rows keep their 26 px step.
+local function RowHeight(row)
+    local height = max(24, min(40, row.label:GetStringHeight() or 14) + 4)
+    row:SetHeight(height)
+    row.tip:SetHeight(height)
+    return height + 2
+end
 function Page.PaintPopover()
     if not pop then return end
     local fields = Page.SpellFields(pop.key)
@@ -653,23 +652,33 @@ function Page.PaintPopover()
     pop.scopeButton:SetText(Page.spellSpecScope and "Edit shared choices" or "Edit this specialization")
     pop.scopeButton:SetEnabled(Page.Spec() ~= nil)
     local top = PlaceActions(kind ~= "b")
-    local y = 0
+    local barKind = Page.Kind(pop.slot)
+    local bars = barKind == CDM.KIND.AURA_BAR or barKind == CDM.KIND.COOLDOWN and BarSetting("cooldownDuration") == true
+    local y, section = 0, nil
+    for _, header in pairs(pop.headers) do header:Hide() end
     for i = 1, #FIELDS do
         local field = FIELDS[i]
         local row = pop.rows[field.key]
-        if Applies(field, pop.family, kind, pop.hasAura, Page.Kind(pop.slot)) then
+        if not field.inline and Applies(field, pop.family, kind, pop.hasAura, barKind, bars) then
+            if section ~= field.section then
+                section = field.section
+                Header(section, y)
+                y = y + SECTION_H
+            end
             row = Row(field)
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", pop.content, "TOPLEFT", 0, -y)
             PaintRow(row, fields)
             row:Show()
-            y = y + 26
+            y = y + RowHeight(row)
         elseif row then
             row:Hide()
         end
     end
     pop.content:SetHeight(max(1, y))
     pop:SetHeight(min(POP_MAX, top + y + 12))
+    -- Sound mute note; a searched option scrolls into view and flashes.
+    Page.PaintSpellOptionFeedback(pop)
 end
 
 -- Opens the entry of a spell tile, anchored under the tile or under anchor
@@ -682,6 +691,8 @@ function Page.TogglePopover(tile, anchor)
     end
     if P.Combat() or not tile.key then return false end
     EnsurePopover()
+    -- Typed input belongs to its entry: stored first, emptied for another one.
+    Page.FlushPopoverInputs(pop.key ~= tile.key)
     Page.ClosePopups(pop)
     if pop:IsShown() and pop.anchor ~= anchor then Light(pop.anchor, false) end
     pop.key, pop.slot, pop.family, pop.hasAura = tile.key, Page.selected, tile.family, tile.aura == true

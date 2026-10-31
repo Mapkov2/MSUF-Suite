@@ -511,17 +511,46 @@ local function RefreshRecycledRow(row, registration)
     RefreshRowNodes(row, registration.owner, mode, nodes)
 end
 
+local RefreshVisibleRows
+
 -- Registered once per ScrollBox as callback(registration, row).
 local function OnRowInitialized(registration, row)
     local ownerState = registration.ownerState
     -- Optional pooled-row cosmetics never justify combat work or a
     -- post-combat backlog. A later OOC initialization handles the row.
     if not ownerState.active or not row or NS.IsCombatLocked() then return end
+    if Kit.IsHidden(registration.box[1]) then
+        registration.catchUp = true
+        Kit.DeferHidden(registration.box[1], registration, RefreshVisibleRows, registration)
+        return
+    end
+    if registration.catchUp then
+        RefreshVisibleRows(registration)
+        return
+    end
     if ownerState.skinnedRows[row] == ownerState.generation then
         RefreshRecycledRow(row, registration)
     elseif ApplyFrameNow(row, registration.owner, registration.mode) then
         ownerState.skinnedRows[row] = ownerState.generation
     end
+end
+
+RefreshVisibleRows = function(registration)
+    local ownerState = registration.ownerState
+    if not ownerState.active then return end
+    local scrollBox = registration.box[1]
+    if not scrollBox or Kit.DeferHidden(scrollBox, registration, RefreshVisibleRows, registration) then return end
+    -- This obligation began outside combat while hidden. Keep exactly one
+    -- continuation; ordinary in-combat row events still create no backlog.
+    if NS.IsCombatLocked() then
+        ownerState.deferred[registration.key] = true
+        NS.CombatGate.RunOrDefer(registration.key, registration.refreshRows)
+        return
+    end
+    NS.CombatGate.Cancel(registration.key)
+    ownerState.deferred[registration.key] = nil
+    registration.catchUp = false
+    Kit.ForEachRow(scrollBox, registration.visitRow)
 end
 
 RegisterDynamicScrollBox = function(scrollBox, owner, allowImplicitProtected, menuPopup)
@@ -533,13 +562,18 @@ RegisterDynamicScrollBox = function(scrollBox, owner, allowImplicitProtected, me
         owner = owner,
         mode = rowModes[allowImplicitProtected == true][menuPopup == true],
     }
+    registration.box = setmetatable({ scrollBox }, { __mode = "v" })
+    registration.catchUp = true
+    registration.key = "generic-rows:" .. OwnerKey(owner) .. ":" .. tostring(scrollBox)
+    registration.refreshRows = function() RefreshVisibleRows(registration) end
+    registration.visitRow = function(row) OnRowInitialized(registration, row) end
     registration.event = Kit.RegisterRowCallback(scrollBox, OnRowInitialized, registration)
     if not registration.event then return false end
     ownerState.scrollBoxes[scrollBox] = registration
     EnsureThemeListener()
-    Kit.ForEachRow(scrollBox, function(row)
-        OnRowInitialized(registration, row)
-    end)
+    if not Kit.DeferHidden(scrollBox, registration, RefreshVisibleRows, registration) then
+        RefreshVisibleRows(registration)
+    end
     return true
 end
 

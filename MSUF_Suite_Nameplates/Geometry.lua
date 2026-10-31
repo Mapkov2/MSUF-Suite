@@ -1,6 +1,7 @@
 local _, private = ...
 local NS = private.NS
 local SAME_GEOMETRY = private.Mode.SAME_GEOMETRY
+local Key = private.Key
 local G = {}
 private.Geometry = G
 
@@ -95,10 +96,9 @@ function G.Apply(state, uf, setup, config, force, prefix)
     if not container then return end
     local totalWidth, healthHeight, castHeight, iconHeight = NS.NameplateStyle.BarDimensions(
         config.barGeometry, config.nativeStyle, setup.horizontalScale, setup.verticalScale)
-    if prefix == "enemy" then
-        castHeight, iconHeight = NS.NameplateStyle.CastDimensions(config.barGeometry,
-            config.enemyCastHeight, config.enemyCastIconSize, castHeight, iconHeight)
-    end
+    local keys = Key[prefix]
+    castHeight, iconHeight = NS.NameplateStyle.CastDimensions(config.barGeometry,
+        config[keys.CastHeight], config[keys.CastIconSize], castHeight, iconHeight)
     local nativeWidth = NativeWidth(setup.useClassicHealthBar == true)
     if not NS.Finite(nativeWidth) then return end
     local inset = setup.insetWidth + (nativeWidth * setup.horizontalScale - totalWidth) / 2

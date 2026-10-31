@@ -53,6 +53,12 @@ CDM.KIND = { COOLDOWN = 1, AURA_ICON = 2, AURA_BAR = 3 }
 local KIND = CDM.KIND
 -- The "Show" choice of a bar.
 CDM.VIS = { ALWAYS = 1, COMBAT = 2, COMBAT_OR_TARGET = 3, HIDDEN = 4 }
+-- Hide conditions with a macro conditional, in driver order (runtime
+-- Visibility.lua; CDMInspection.lua asks the same conditions).
+CDM.HIDE_MACROS = { { suffix = "hideResting", macro = "[resting]" }, { suffix = "hideSolo", macro = "[nogroup]" },
+    { suffix = "hideFlying", macro = "[flying]" }, { suffix = "hideDead", macro = "[@player,dead]" } }
+-- "Hide outside instances": the IsInInstance types that count as inside.
+CDM.INSTANCES = { party = true, raid = true, scenario = true, pvp = true, arena = true }
 -- The bar's "Text on top" choice.
 CDM.TEXT_TOP = { STACKS = 1, COUNTDOWN = 2 }
 -- The family of a Blizzard catalog entry: cooldown spells (Essential,
@@ -65,7 +71,8 @@ CDM.GROW = { DOWN = 1, UP = 2 }
 CDM.ALIGN = { CENTER = 1, START = 2, END = 3 }
 CDM.SIDE = { BELOW = 1, ABOVE = 2, LEFT = 3, RIGHT = 4 }
 -- "Attach to": free, then another bar (its slot index plus FREE), then
--- MSUF's player and target frames. "Send excess cooldowns to": off, then a
+-- MSUF's player and target frames, then any other frame by name (append-only:
+-- saved indices keep their meaning). "Send excess cooldowns to": off, then a
 -- bar the same way (slot index plus OFF).
 CDM.ANCHOR = { FREE = 1 }
 CDM.OVERFLOW = { OFF = 1 }
@@ -100,19 +107,28 @@ local ANCHOR_LABELS = { "Free" }
 local OVERFLOW_LABELS = { "Off" }
 for i, slot in ipairs(CDM.SLOTS) do ANCHOR_LABELS[i + 1] = slot.title end
 for i, slot in ipairs(CDM.SLOTS) do OVERFLOW_LABELS[i + 1] = slot.title end
-local PLAYER_ANCHOR, TARGET_ANCHOR = #ANCHOR_LABELS + 1, #ANCHOR_LABELS + 2
+local PLAYER_ANCHOR, TARGET_ANCHOR, OTHER_ANCHOR = #ANCHOR_LABELS + 1, #ANCHOR_LABELS + 2, #ANCHOR_LABELS + 3
 ANCHOR_LABELS[PLAYER_ANCHOR], ANCHOR_LABELS[TARGET_ANCHOR] = "Player frame", "Target frame"
+ANCHOR_LABELS[OTHER_ANCHOR] = "Other frame"
 CDM.ANCHOR_LABELS = ANCHOR_LABELS
 CDM.FRAME_ANCHORS = { [PLAYER_ANCHOR] = "player", [TARGET_ANCHOR] = "target" }
+-- "Other frame": the global frame named by the bar's "Frame name" (runtime
+-- FrameAnchors.lua follows its rectangle like MSUF's own frames).
+CDM.OTHER_ANCHOR = OTHER_ANCHOR
 
 ------------------------------------------------------------------ module rules
 local SPEC_LAYOUT_TIP =
     "Each specialization keeps its own bar layout: positions, attachments, growth, rows, spacing and sizes. Until it has its own, it uses the current one."
 B.Section(id, "general", "General", {
     Choice("blizzard", "Blizzard's cooldown bars", CDM.BLIZZARD.OFF, { "Turn off (fastest)", "Keep running invisibly" }),
-    Bool("raidEssentials", "Use MSUF cooldown profiles by specialization", true),
+    B.Tooltip(Bool("raidEssentials", "Use MSUF cooldown profiles by specialization", true),
+        "Uses MSUF's default spell lists for each specialization. Your own list changes are kept. This does not switch Suite profiles."),
     Bool("showGCD", "Show the global cooldown on icons", false),
     Bool("readyGlowCombat", "Ready glows only in combat", true),
+    Bool("pulseCombat", "Pulse only in combat", true),
+    Number("pulseSize", "Ready pulse size", 96, 32, 256),
+    Number("pulseY", "Ready pulse vertical position", 120, -1000, 1000),
+    Number("pulseHold", "Ready pulse hold time (seconds)", 0.5, 0.1, 3, 0.1),
     Bool("allGlowsCombat", "All glows only in combat", false),
     Bool("pressFeedback", "Show action bar presses on cooldown icons", false),
     Bool("potionStockIcon", "Show a stocked potion on potion category icons", false),
@@ -123,6 +139,14 @@ B.Section(id, "general", "General", {
     Number("assistIconSize", "Assisted icon size", 48, 20, 96),
     Number("assistIconX", "Assisted icon horizontal offset", 0, -4000, 4000),
     Number("assistIconY", "Assisted icon vertical offset", -180, -3000, 3000),
+    Choice("assistIconVis", "Assisted icon visibility", CDM.VIS.ALWAYS, { "Always", "In combat", "In combat or with a target" }),
+    Number("assistIconAlpha", "Assisted icon opacity (percent)", 100, 0, 100),
+    Number("assistIconBorder", "Assisted icon border size", 0, 0, 6),
+    Color("assistIconBorderColor", "Assisted icon border color", "000000"),
+    Number("assistIconZoom", "Assisted icon zoom (percent)", 8, 0, 30),
+    Number("assistIconKeySize", "Assisted icon keybind text size (0 = automatic)", 0, 0, 40),
+    Choice("assistIconKeyPos", "Assisted icon keybind position", 9, POINT_LABELS),
+    Choice("assistIconAnchor", "Assisted icon attachment", 1, { "Free", "Essential cooldowns", "Player frame" }),
     Bool("muteSounds", "Mute cooldown manager sounds", false),
     Choice("soundChannel", "Sound channel", 1, { "Master", "Sound effects", "Dialog" }),
     B.Tooltip(Bool("specPositions", "Save bar layout per specialization", true), SPEC_LAYOUT_TIP),
@@ -133,6 +157,9 @@ B.TextSection(id, {
     Color("keybindColor", "Keybind color", "ffffff"),
     Number("thresholdSeconds", "Warn when fewer seconds remain (0 = off)", 0, 0, 10),
     Color("thresholdColor", "Warning countdown color", "ff5a3c"),
+    Number("tenthsSeconds", "Show tenths below (seconds, 0 = off)", 0, 0, 10),
+    Number("urgentSeconds", "Urgent warning below (seconds, 0 = off)", 0, 0, 10),
+    Color("urgentColor", "Urgent warning color", "ff2020"),
 })
 B.Section(id, "data", "Data", {
     String("listsData", "Bar contents", "", 60000),
@@ -196,7 +223,24 @@ end
 CDM.KEYS = {}
 CDM.SUFFIXES = {}
 -- The glow styles (K.GLOW): of the glows and of the pandemic window.
-local GLOW_STYLES = { "Blizzard alert", "Marching ants", "Pulse", "Border" }
+-- Append-only: Pixel and Autocast (lines or sparks travelling around the
+-- border, CDM.LINE_STYLES) came last.
+local GLOW_STYLES = { "Blizzard alert", "Marching ants", "Pulse", "Border", "Pixel", "Autocast" }
+CDM.LINE_STYLES = { [5] = true, [6] = true }
+-- The active buff swipe's color as it always was (the runtime keeps its
+-- exact gold for this value).
+CDM.AURA_SWIPE = "ffd100"
+local INSTANCE_TIP = "Dungeons, raids, delves and scenarios, battlegrounds and arenas count as instances."
+local HIDDEN_ALPHA_TIP = "At 0 a hidden bar disappears. Above 0 it fades to this opacity instead, never brighter than it shows."
+local HOVER_TIP =
+    "Pointing at a hidden or faded bar shows it at its full opacity. Clicks still pass through; its tooltips stay off until the bar shows on its own."
+local FADE_TIP = "How long a full fade takes when the bar hides, shows or changes opacity. 0 switches at once."
+local FRAME_NAME_TIP =
+    "The global name of a frame, for example ChatFrame1. The bar follows its place and size, never anchored to it. Until the frame exists, the bar stays put."
+local BAR_WIDTH_TIP =
+    "0 matches the width of the bar or frame this bar is attached to and follows when that resizes. A bar attached to nothing uses its usual width."
+local MASQUE_TIP =
+    "Skins this bar's cooldown icons with Masque, in one Masque group per bar. Buff icons (Blizzard's sealed aura buttons) and timer bars keep their look."
 -- Per-bar rules by group, in menu order. Add(rule, suffix) appends to the
 -- bar's list; p is the bar's key prefix and d its defaults.
 local function CommonRules(Add, p, d, slot)
@@ -206,6 +250,7 @@ local function CommonRules(Add, p, d, slot)
     Add(Number(p .. "x", "Horizontal position", d.x, -4000, 4000), "x")
     Add(Number(p .. "y", "Vertical position", d.y, -3000, 3000), "y")
     Add(Choice(p .. "anchor", "Attach to", d.anchor, ANCHOR_LABELS), "anchor")
+    Add(B.Tooltip(String(p .. "anchorFrame", "Frame name", "", 64), FRAME_NAME_TIP), "anchorFrame")
     Add(Choice(p .. "side", "Attach side", d.side, { "Below", "Above", "Left", "Right" }), "side")
     Add(Number(p .. "gap", "Attach gap", d.gap, 0, 60), "gap")
     Add(Number(p .. "alpha", "Opacity (percent)", 100, 0, 100, 5), "alpha")
@@ -214,6 +259,14 @@ local function CommonRules(Add, p, d, slot)
         "vis")
     Add(Bool(p .. "hideMounted", "Hide while mounted", false), "hideMounted")
     Add(Bool(p .. "hideVehicle", "Hide in vehicles", true), "hideVehicle")
+    Add(Bool(p .. "hideResting", "Hide while resting", false), "hideResting")
+    Add(Bool(p .. "hideSolo", "Hide when not in a group", false), "hideSolo")
+    Add(B.Tooltip(Bool(p .. "hideWorld", "Hide outside instances", false), INSTANCE_TIP), "hideWorld")
+    Add(Bool(p .. "hideFlying", "Hide while flying", false), "hideFlying")
+    Add(Bool(p .. "hideDead", "Hide while dead", false), "hideDead")
+    Add(B.Tooltip(Number(p .. "hiddenAlpha", "Opacity while hidden (percent)", 0, 0, 100, 5), HIDDEN_ALPHA_TIP), "hiddenAlpha")
+    Add(B.Tooltip(Bool(p .. "hoverShow", "Show on mouseover", false), HOVER_TIP), "hoverShow")
+    Add(B.Tooltip(Number(p .. "fadeTime", "Fade time (seconds)", 0, 0, 2, 0.1), FADE_TIP), "fadeTime")
     Add(Bool(p .. "tooltips", "Show tooltips", false), "tooltips")
     Add(Choice(p .. "strata", "Frame layer", 3, { "Background", "Low", "Medium", "High" }), "strata")
     Add(Number(p .. "layer", "MSUF layer (-1 = Auto)", -1, -1, 30), "layer")
@@ -246,8 +299,13 @@ local function IconRules(Add, p, d)
     Add(Number(p .. "stackSize", "Charges and stacks size (0 = automatic)", 0, 0, 40), "stackSize")
     Add(Choice(p .. "stackPos", "Charges and stacks position", 9, POINT_LABELS), "stackPos")
     Add(Number(p .. "swipeAlpha", "Swipe opacity (percent)", d.swipeAlpha, 0, 100, 5), "swipeAlpha")
+    Add(Color(p .. "swipeColor", "Swipe color", "000000"), "swipeColor")
+    Add(Bool(p .. "swipeClass", "Class-colored swipe", false), "swipeClass")
     Add(Bool(p .. "edge", "Show the swipe edge", false), "edge")
 end
+-- The pulse follows the bar's cooldowns, not its visibility.
+local PULSE_TIP =
+    "Shows the spell's icon in the middle of the screen when its cooldown ends, even while this bar is hidden. Its size, place and time are in General."
 local function CooldownRules(Add, p, d)
     Add(Bool(p .. "cooldownDuration", "Display cooldowns as timer bars", false), "cooldownDuration")
     Add(Bool(p .. "desat", "Desaturate on cooldown", true), "desat")
@@ -269,6 +327,7 @@ local function CooldownRules(Add, p, d)
     Add(Bool(p .. "range", "Color out-of-range spells", d.range ~= false), "range")
     Add(Color(p .. "rangeColor", "Out-of-range color", "cc2e2e"), "rangeColor")
     Add(Bool(p .. "showAura", "Show active buff duration", true), "showAura")
+    Add(Color(p .. "auraSwipeColor", "Active buff swipe color", CDM.AURA_SWIPE), "auraSwipeColor")
     Add(Bool(p .. "charges", "Show charges", true), "charges")
     Add(Bool(p .. "chargeSwipe", "Show recharge swipe", false), "chargeSwipe")
     Add(Bool(p .. "chargeEdge", "Show recharge edge", true), "chargeEdge")
@@ -280,7 +339,12 @@ local function CooldownRules(Add, p, d)
     Add(Color(p .. "keybindBorder", "Keybind badge border", "808080"), "keybindBorder")
     Add(Number(p .. "keybindPadding", "Keybind badge padding", 2, 0, 8), "keybindPadding")
     Add(Bool(p .. "assist", "Highlight the assisted combat suggestion", false), "assist")
+    Add(B.Tooltip(Bool(p .. "kickMark", "Glow the interrupt while the target's cast can be interrupted", false),
+        "Shows each ready interrupt with the bar's glow style while the target's cast can be interrupted. Requires per-interrupt readiness from MSUF."),
+        "kickMark")
     Add(Bool(p .. "bling", "Flash when ready", false), "bling")
+    Add(B.Tooltip(Bool(p .. "readyPulse", "Pulse ready cooldowns in the screen center", false), PULSE_TIP), "readyPulse")
+    Add(B.Tooltip(Bool(p .. "masque", "Skin icons with Masque", false), MASQUE_TIP), "masque")
 end
 -- Every bar marks the pandemic window: aura bars on their auras, cooldown
 -- bars on the aura their icons show, as Blizzard's Cooldown Manager does.
@@ -298,6 +362,11 @@ local function AuraRules(Add, p, slot)
     Add(Choice(p .. "pandemicStyle", "Pandemic window style", 4, GLOW_STYLES), "pandemicStyle")
     Add(Color(p .. "pandemicColor", "Pandemic window color", "ff4d26"), "pandemicColor")
     Add(Number(p .. "pandemicSize", "Pandemic window thickness", 2, 1, 8), "pandemicSize")
+    -- Pixel and Autocast (the glows' and the pandemic window's): how many
+    -- lines or sparks, how thick, how fast.
+    Add(Number(p .. "glowLines", "Glow lines", 8, 1, 16), "glowLines")
+    Add(Number(p .. "glowThickness", "Glow thickness", 2, 1, 6), "glowThickness")
+    Add(Number(p .. "glowSpeed", "Glow speed (percent)", 100, 25, 400, 5), "glowSpeed")
 end
 local function BarRules(Add, p, d, slot)
     if not Has(slot, "icon") then
@@ -307,7 +376,7 @@ local function BarRules(Add, p, d, slot)
         Add(Bool(p .. "stackText", "Show charges and stacks", true), "stackText")
         Add(Choice(p .. "textTop", "Text on top", CDM.TEXT_TOP.STACKS, { "Stacks", "Countdown" }), "textTop")
     end
-    Add(Number(p .. "barWidth", "Bar width", slot.key == "bar" and 220 or 200, 60, 480), "barWidth")
+    Add(B.Tooltip(Number(p .. "barWidth", "Bar width", slot.key == "bar" and 220 or 200, 0, 480), BAR_WIDTH_TIP), "barWidth")
     Add(Number(p .. "barHeight", "Bar height", slot.key == "bar" and 20 or 18, 8, 48), "barHeight")
     Add(Texture(p .. "barTexture", "Bar texture"), "barTexture")
     Add(Color(p .. "barColor", "Bar color", NS.Client.isForever and "d8b66a" or "e8b855"), "barColor")
@@ -318,6 +387,7 @@ local function BarRules(Add, p, d, slot)
     Add(Bool(p .. "barName", "Show name", true), "barName")
     Add(Bool(p .. "barTime", "Show time", true), "barTime")
     Add(Choice(p .. "barFill", "Bar direction", CDM.BAR_FILL.DRAIN, { "Drain", "Fill" }), "barFill")
+    Add(Bool(p .. "barSpark", "Show a spark", false), "barSpark")
     Add(Bool(p .. "barStacks", "Fill buff bars by stacks", false), "barStacks")
     Add(Bool(p .. "barChargeSegments", "Separate cooldown charges into segments", false), "barChargeSegments")
     Add(Bool(p .. "barChargeDim", "Darken the recharging segment", true), "barChargeDim")
@@ -378,331 +448,28 @@ for _, slot in ipairs(CDM.SLOTS) do
     Set("glowColor", "enableKey", k.glowTint)
     Set("borderColor", "disabledBy", k.borderClass)
     Set("barColor", "disabledBy", k.barClass)
+    Set("swipeColor", "disabledBy", k.swipeClass)
+    -- "Mark every stack" overrides the custom markers; centering needs Center.
+    Set("barStackMarks", "disabledBy", k.barStackEach)
+    if k.centerFirst then rules[k.centerFirst].requiresChoice = { key = k.align, values = { [CDM.ALIGN.CENTER] = true } } end
     -- The thickness belongs to the border styles (Pulse, Border).
     rules[k.pandemicSize].requiresChoice = { key = k.pandemicStyle, values = { [3] = true, [4] = true } }
+    -- The lines' look belongs to Pixel and Autocast, as the glow style or
+    -- (orKey) the pandemic window's.
+    local lines = { key = k.glowStyle or k.pandemicStyle, orKey = k.glowStyle and k.pandemicStyle, values = CDM.LINE_STYLES }
+    for _, suffix in ipairs({ "glowLines", "glowThickness", "glowSpeed" }) do rules[k[suffix]].requiresChoice = lines end
     if k.side then
         rules[k.side].requiresChoice = { key = k.anchor, values = {} }
         rules[k.gap].requiresChoice = rules[k.side].requiresChoice
         for i = 2, #ANCHOR_LABELS do rules[k.side].requiresChoice.values[i] = true end
+        -- The frame name belongs to "Other frame" alone.
+        rules[k.anchorFrame].requiresChoice = { key = k.anchor, values = { [OTHER_ANCHOR] = true } }
     end
 end
 
------------------------------------------------------------------- entry keys and data codec
--- Entry keys: b<cooldownID> Blizzard entry, s<spellID> spell, i<itemID> item,
--- e<slot> equipment slot, a<spellID> helpful aura on the player,
--- d<spellID> harmful aura the player cast on the target.
-local ENTRY_KINDS = { b = true, s = true, i = true, e = true, a = true, d = true }
-function CDM.ValidEntryKey(key)
-    if type(key) ~= "string" or #key < 2 or #key > 16 then return false end
-    local kind, number = key:match("^(%l)(%d+)$")
-    if not kind or not ENTRY_KINDS[kind] then return false end
-    number = tonumber(number)
-    if not number or number <= 0 or number >= 2147483648 then return false end
-    if kind == "e" and number > 19 then return false end
-    return true
-end
-function CDM.EntryKind(key) return key:sub(1, 1) end
-function CDM.EntryID(key) return tonumber(key:sub(2)) end
-function CDM.IsAuraKey(key)
-    local kind = key:sub(1, 1)
-    return kind == "a" or kind == "d"
-end
-
-local function Bool01(value) return type(value) == "boolean" end
-local function Range(min, max)
-    return function(value)
-        return type(value) == "number" and value == value and value >= min and value <= max
-            and math.floor(value) == value
-    end
-end
-local function Hex(value) return type(value) == "string" and #value == 6 and not value:find("[^%x]") end
-local function Sound(value)
-    if type(value) ~= "string" or #value > 120 then return false end
-    if value == "" then return true end
-    return value:find("^lsm:.+") ~= nil or value:find("^kit:%d+$") ~= nil or value:find("^file:%d+$") ~= nil
-end
--- Per-spell choice values; absent (the menu's 0) is the bar's setting.
--- timeText and stackText: 2 show, 3 hide; textTop: 2 stacks on top,
--- 3 countdown on top (K.Choice reads 2 as yes and 3 as no).
-CDM.CHOICE = { BAR = 1, YES = 2, NO = 3 }
--- desat: 2 never, 3 always. swipe: 1 normal, 2 reversed, 3 hidden.
--- stackGlowOp: at least, exactly, more than, below or at most the stackGlow count.
--- actionGlowMode: 1 while the buff is present, 2 the stack comparison.
-CDM.DESAT = { NEVER = 2, ALWAYS = 3 }
-CDM.SWIPE = { NORMAL = 1, REVERSED = 2, HIDDEN = 3 }
-CDM.STACK_OP = { AT_LEAST = 1, EXACTLY = 2, MORE_THAN = 3, BELOW = 4, AT_MOST = 5 }
-CDM.ACTION_GLOW = { PRESENT = 1, STACKS = 2 }
--- glowStyle (1 Blizzard alert, 2 Marching ants, 3 Pulse, 4 Border) and
--- glowColor style every glow of the entry: ready, spell alert, "glow while
--- active" and the stack glow; absent, the bar's glow style and tint apply.
--- stackGlow: glow while the aura has at least N applications (0 = off).
--- stackColorAt: stack text in stackColor from N applications (0 = off).
-CDM.SPELL_FIELDS = {
-    procGlow = Bool01, readyGlow = Bool01, readyResources = Bool01, fullChargeGlow = Bool01,
-    chargeSwipe = Bool01, chargeEdge = Bool01, auraGlow = Bool01, pandemic = Bool01, glowStyle = Range(1, 4), glowColor = Hex,
-    desat = Range(1, 3), hideReady = Bool01, hideAvailableCharges = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
-    showAura = Bool01, swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
-    threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01,
-    stackGlow = Range(0, 99), stackGlowOp = Range(1, 5), stackColorAt = Range(0, 99), stackColor = Hex,
-    -- Where a buff-bar aura is looked for: 1 automatic (audited native aura
-    -- identities, then cast polarity), 2 the player, 3 the target, 4 both.
-    auraUnit = Range(1, 4),
-    timerDuration = Range(0, 600), timerSpell = Range(1, 2147483647),
-    -- Countdown and charge/stack text: 1 the bar's setting, 2 show, 3 hide.
-    -- textTop: 1 the bar's setting, 2 stacks on top, 3 countdown on top.
-    timeText = Range(1, 3), stackText = Range(1, 3), textTop = Range(1, 3),
-    showGCD = Bool01, actionGlowSpell = Range(1, 2147483647), actionGlowMode = Range(1, 2),
-    actionGlowRequireSpell = Range(1, 2147483647), actionGlowUnit = Range(1, 2), actionUsableGlow = Bool01,
-    requireSpell1 = Range(1, 2147483647), requireSpell2 = Range(1, 2147483647), requireSpell3 = Range(1, 2147483647),
-    excludeSpell1 = Range(1, 2147483647), excludeSpell2 = Range(1, 2147483647), excludeSpell3 = Range(1, 2147483647),
-}
--- What an absent per-spell field means where no bar setting stands behind it.
-CDM.SPELL_DEFAULTS = { stackColor = "ff5a3c" }
-CDM.LIMITS = { specs = 64, entries = 120, hidden = 400, spells = 600 }
-
-local function ValidSpec(value) return type(value) == "number" and value > 0 and value < 100000 and math.floor(value) == value end
-
--- The parts of CDM.CleanLists, each filling its part of out from data.
-local function CleanShared(data, out)
-    if type(data.shared) == "table" then
-        for slot, list in pairs(data.shared) do
-            local index = CDM.SLOT_INDEX[slot]
-            if index and CDM.SLOTS[index].custom and type(list) == "table" then
-                local clean, seen = {}, {}
-                for i = 1, math.min(#list, CDM.LIMITS.entries) do
-                    local key = list[i]
-                    -- Blizzard record IDs are specialization-specific; shared
-                    -- groups accept explicit spells, received auras and items.
-                    if CDM.ValidEntryKey(key) and CDM.EntryKind(key) ~= "b" and not seen[key] then
-                        clean[#clean + 1], seen[key] = key, true
-                    end
-                end
-                out.shared[slot] = clean
-            end
-        end
-    end
-end
-local function CleanSpecs(data, out)
-    local specCount = 0
-    if type(data.specs) == "table" then
-        for spec, slots in pairs(data.specs) do
-            if ValidSpec(spec) and type(slots) == "table" and specCount < CDM.LIMITS.specs then
-                local cleanSlots, any = {}, false
-                for slotKey, list in pairs(slots) do
-                    if CDM.SLOT_INDEX[slotKey] and type(list) == "table" then
-                        local clean, seen = {}, {}
-                        for i = 1, math.min(#list, CDM.LIMITS.entries) do
-                            local key = list[i]
-                            if CDM.ValidEntryKey(key) and not seen[key] then
-                                seen[key] = true
-                                clean[#clean + 1] = key
-                            end
-                        end
-                        -- Cross-spec additions inherit that spec's live defaults.
-                        -- A manual reorder/import materializes an ordinary list.
-                        if list.inherit == true and (slotKey == "ess" or slotKey == "uti"
-                            or slotKey == "buf" or slotKey == "bar") then clean.inherit = true end
-                        cleanSlots[slotKey] = clean
-                        any = true
-                    end
-                end
-                if any then
-                    out.specs[spec] = cleanSlots
-                    specCount = specCount + 1
-                end
-            end
-        end
-    end
-end
-local function CleanHidden(data, out)
-    if type(data.hidden) == "table" then
-        for spec, set in pairs(data.hidden) do
-            if ValidSpec(spec) and type(set) == "table" then
-                local clean, count = {}, 0
-                for key, flag in pairs(set) do
-                    if flag == true and CDM.ValidEntryKey(key) and count < CDM.LIMITS.hidden then
-                        clean[key] = true
-                        count = count + 1
-                    end
-                end
-                if count > 0 then out.hidden[spec] = clean end
-            end
-        end
-    end
-end
--- A copied Blizzard layout is a complete selection for each built-in bar.
--- Older saved lists have no replace map and retain append-new-spells.
-local function CleanReplace(data, out)
-    if type(data.replace) == "table" then
-        for spec, slots in pairs(data.replace) do
-            if ValidSpec(spec) and type(slots) == "table" and out.specs[spec] then
-                local clean = {}
-                for slot, flag in pairs(slots) do
-                    if flag == true and CDM.SLOT_INDEX[slot] and out.specs[spec][slot] then
-                        clean[slot] = true
-                    end
-                end
-                if next(clean) then out.replace[spec] = clean end
-            end
-        end
-    end
-end
-
--- Returns a clean copy; anything malformed is dropped rather than rejected.
-function CDM.CleanLists(data)
-    local out = { v = 1, specs = {}, hidden = {}, replace = {}, shared = {} }
-    if type(data) ~= "table" then return out end
-    CleanShared(data, out)
-    CleanSpecs(data, out)
-    CleanHidden(data, out)
-    CleanReplace(data, out)
-    return out
-end
-
-local function CleanSpellMap(source)
-    local out = {}
-    if type(source) ~= "table" then return out end
-    local count = 0
-    for key, fields in pairs(source) do
-        if count >= CDM.LIMITS.spells then break end
-        if CDM.ValidEntryKey(key) and type(fields) == "table" then
-            local clean, any = {}, false
-            for field, value in pairs(fields) do
-                local valid = CDM.SPELL_FIELDS[field]
-                if valid and valid(value) then
-                    clean[field] = value
-                    any = true
-                end
-            end
-            if any then
-                out[key] = clean
-                count = count + 1
-            end
-        end
-    end
-    return out
-end
-
--- v1's e map is the shared base. v2 adds sparse per-spec differences: clearing
--- a spec choice resumes inheritance, without overwriting the shared value.
-function CDM.CleanSpells(data)
-    local out = { v = 2, e = {}, s = {} }
-    if type(data) ~= "table" then return out end
-    out.e = CleanSpellMap(data.e)
-    if type(data.s) == "table" then
-        local count = 0
-        for spec, fields in pairs(data.s) do
-            if count >= CDM.LIMITS.specs then break end
-            if ValidSpec(spec) then
-                local clean = CleanSpellMap(fields)
-                if next(clean) then out.s[spec], count = clean, count + 1 end
-            end
-        end
-    end
-    return out
-end
-
--- Called on a settings/spec change, never from cooldown events. Unmodified
--- entries reuse the base table; only entries with spec choices need a merge.
-function CDM.EffectiveSpells(data, spec)
-    local base = type(data) == "table" and type(data.e) == "table" and data.e or {}
-    local selected = type(data) == "table" and type(data.s) == "table" and data.s[spec]
-    if type(selected) ~= "table" or not next(selected) then return base end
-    local out = {}
-    for key, fields in pairs(base) do out[key] = fields end
-    for key, fields in pairs(selected) do
-        local merged = {}
-        for field, value in pairs(base[key] or {}) do merged[field] = value end
-        for field, value in pairs(fields) do merged[field] = value end
-        out[key] = merged
-    end
-    return out
-end
-
--- "Save bar layout per specialization" (runtime Settings.lua): spec is the
--- specialization the flat settings hold now, specs[id] every other one's
--- layout per bar, by setting suffix ("assist": the assisted icon's x/y).
--- The layout is where a bar sits and how it is arranged: attachment,
--- growth, rows, spacing and size. r marks Essential x/y saved as an offset
--- from Blizzard's bar (essOnViewer). Places of the first format (x, y and
--- the attach target as a) read as that part of the layout.
-CDM.LAYOUT_SUFFIXES = { "x", "y", "anchor", "side", "gap", "align", "grow", "vertical", "perRow", "spacing", "size",
-    "height", "centerFirst", "laterPerRow", "laterSize", "barWidth", "barHeight" }
-CDM.PLACE_KEYS = { assist = { x = "assistIconX", y = "assistIconY" } }
-for _, slot in ipairs(CDM.SLOTS) do
-    local keys, place = CDM.KEYS[slot.key], {}
-    for _, suffix in ipairs(CDM.LAYOUT_SUFFIXES) do place[suffix] = keys[suffix] end
-    CDM.PLACE_KEYS[slot.key] = place
-end
-local function Valid(rule, value)
-    if type(rule.default) == "boolean" then return type(value) == "boolean" end
-    return type(value) == "number" and value >= rule.min and value <= rule.max and math.floor(value) == value
-end
-local function CleanPlace(place, keys)
-    if type(place) ~= "table" then return nil end
-    local clean, any = {}, false
-    for suffix, key in pairs(keys) do
-        local value = place[suffix]
-        if value == nil and suffix == "anchor" then value = place.a end
-        if value ~= nil and Valid(rules[key], value) then clean[suffix], any = value, true end
-    end
-    if not any then return nil end
-    if keys.anchor then clean.r = place.r == true or nil end
-    return clean
-end
-function CDM.CleanPositions(data)
-    local out = { v = 2, specs = {} }
-    if type(data) ~= "table" then return out end
-    if ValidSpec(data.spec) then out.spec = data.spec end
-    if type(data.specs) ~= "table" then return out end
-    local count = 0
-    for spec, places in pairs(data.specs) do
-        if count >= CDM.LIMITS.specs then break end
-        if ValidSpec(spec) and type(places) == "table" then
-            local clean = {}
-            for slot, keys in pairs(CDM.PLACE_KEYS) do clean[slot] = CleanPlace(places[slot], keys) end
-            if next(clean) then out.specs[spec], count = clean, count + 1 end
-        end
-    end
-    return out
-end
-
-local Codec = {}
-CDM.Codec = Codec
--- Empty strings mean "no customization". Decoding never raises; a damaged
--- string yields the empty structure.
-local function Decode(text, Clean)
-    if type(text) ~= "string" or text == "" then return Clean(nil) end
-    local decode = _G.MSUF_TryDecodeCompactString
-    return Clean(type(decode) == "function" and decode(text) or nil)
-end
-function Codec.DecodeLists(text) return Decode(text, CDM.CleanLists) end
-function Codec.DecodeSpells(text) return Decode(text, CDM.CleanSpells) end
-function Codec.DecodePositions(text) return Decode(text, CDM.CleanPositions) end
-local function Empty(tbl)
-    for _, value in pairs(tbl) do
-        if type(value) ~= "table" or next(value) ~= nil then return false end
-    end
-    return true
-end
-local function Encode(clean, check)
-    if check then return "" end
-    local encode = _G.MSUF_EncodeCompactTable
-    if type(encode) ~= "function" then return nil, "MSUF codec unavailable" end
-    local text = encode(clean, "MSUF3")
-    if type(text) ~= "string" then return nil, "Could not store the list" end
-    if #text > 60000 then return nil, "Too many entries" end
-    return text
-end
-function Codec.EncodeLists(data)
-    local clean = CDM.CleanLists(data)
-    return Encode(clean, Empty(clean.specs) and Empty(clean.hidden) and Empty(clean.replace) and Empty(clean.shared))
-end
-function Codec.EncodeSpells(data)
-    local clean = CDM.CleanSpells(data)
-    return Encode(clean, next(clean.e) == nil and next(clean.s) == nil)
-end
-function Codec.EncodePositions(data)
-    local clean = CDM.CleanPositions(data)
-    return Encode(clean, clean.spec == nil and next(clean.specs) == nil)
-end
+-- Assisted-icon dependents keep the switch visible when the feature is off.
+for _, key in ipairs({ "assistIconVis", "assistIconAlpha", "assistIconBorder", "assistIconBorderColor", "assistIconZoom",
+    "assistIconKeySize", "assistIconKeyPos", "assistIconAnchor", "assistIconSize", "assistIconX", "assistIconY",
+    "assistIconKeybind", "assistIconGCD" }) do rules[key].enableKey = "assistIcon" end
+rules.assistIconKeySize.requiresChoice = { key = "assistIconKeybind", values = { [true] = true } }
+rules.assistIconKeyPos.requiresChoice = rules.assistIconKeySize.requiresChoice

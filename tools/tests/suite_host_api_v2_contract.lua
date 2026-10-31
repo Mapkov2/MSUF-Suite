@@ -58,6 +58,26 @@ end
 local function OldHost() return { Theme = Theme() } end
 
 local HostBridge = Bridge()
+do
+    local shown, resolved, routed = false, 0, 0
+    local menu = { frame = { IsShown = function() return shown end }, Search = { _RoutingAPI = {} } }
+    menu.Search._RoutingAPI.OpenSearchTarget = function(page)
+        routed = routed + 1
+        return page == "canonical", true, true
+    end
+    Check(HostBridge.RegisterSearchTargetResolver(menu, "test", function()
+        resolved = resolved + 1
+        return "canonical", { sectionId = "target" }
+    end), "legacy target resolver did not register")
+    local open = menu.Search._RoutingAPI.OpenSearchTarget
+    local a, b, c = open("legacy")
+    Check(a == false and b == false and c == false and resolved == 0 and routed == 0,
+        "closed legacy menu ran resolver selection side effects")
+    shown = true
+    Check(open("legacy") == true and resolved == 1 and routed == 1, "visible legacy menu did not resolve target")
+    menu.frame = nil
+    Check(open("legacy") == false and resolved == 1 and routed == 1, "absent legacy menu ran resolver")
+end
 local newM = NewHost()
 local newHM = HostBridge.Menu2(newM)
 Check(newHM.mode == "host" and newM.HOST_API_VERSION == 2, "a v2 Menu2 must get the host adapter")

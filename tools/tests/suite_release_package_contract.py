@@ -44,17 +44,20 @@ with tempfile.TemporaryDirectory(prefix="suite-release-contract-") as temporary:
     core.write_text(header + "## Dependencies: MidnightSimpleUnitFrames\n", encoding="utf-8")
     options.write_text(header + "## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options\n", encoding="utf-8")
     files = [path.relative_to(scratch).as_posix() for path in (core, options)]
-    # A complete minimal package carries every canonical catalog and companion.
+    # A complete minimal package has one optional addon with all canonical catalogs.
+    addon = "MSUF_Suite_Locales"
+    locale_manifest = scratch / addon / (addon + "_Mainline.toc")
+    locale_manifest.parent.mkdir(parents=True)
+    locale_entries = []
     for locale in ("deDE", "esES", "esMX", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW"):
-        addon = "MSUF_Suite_Locale_" + locale
-        manifest = scratch / addon / (addon + "_Mainline.toc")
-        manifest.parent.mkdir(parents=True)
-        manifest.write_text(header + "## Dependencies: MidnightSimpleUnitFrames\n## LoadOnDemand: 1\n"
-                            + "..\\MSUF_Suite\\Locales\\" + locale + ".lua\n", encoding="utf-8")
+        locale_entries.append("..\\MSUF_Suite\\Locales\\" + locale + ".lua\n")
         catalog = scratch / "MSUF_Suite/Locales" / (locale + ".lua")
         catalog.parent.mkdir(exist_ok=True)
         catalog.write_text("return\n", encoding="utf-8")
-        files.extend([manifest.relative_to(scratch).as_posix(), catalog.relative_to(scratch).as_posix()])
+        files.append(catalog.relative_to(scratch).as_posix())
+    locale_manifest.write_text(header + "## Dependencies: MidnightSimpleUnitFrames\n## LoadOnDemand: 1\n"
+                               + "".join(locale_entries), encoding="utf-8")
+    files.append(locale_manifest.relative_to(scratch).as_posix())
     builder.validate_addons(scratch, files, "0.1-alpha")
     original = core.read_bytes()
     for old, new in ((b"MidnightSimpleUnitFrames", b"OptionalHost"), (b"120105,16001", b"120105"),

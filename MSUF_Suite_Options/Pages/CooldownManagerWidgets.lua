@@ -31,6 +31,25 @@ end
 -- Captions built from data skip the locale lookup and the search index.
 local ButtonText = P.SetButtonText
 Page.Button, Page.Label, Page.ButtonText = Button, Label, ButtonText
+-- A button that opens a list carries Menu2's dropdown chevron; its caption
+-- ends before the chevron.
+local CHEVRON = "Interface\\AddOns\\MidnightSimpleUnitFrames\\Media\\msuf_dropdown_chevron_down.tga"
+function Page.Chevron(button)
+    local chevron = button:CreateTexture(nil, "OVERLAY")
+    chevron:SetTexture(CHEVRON)
+    chevron:SetSize(10, 10)
+    chevron:SetPoint("RIGHT", button, "RIGHT", -5, 0)
+    local muted = T.colors and T.colors.muted
+    if muted then chevron:SetVertexColor(muted[1], muted[2], muted[3], 0.95) end
+    local label = HM.GetControlLabel(button)
+    if label then
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", button, "LEFT", 4, 0)
+        label:SetPoint("RIGHT", chevron, "LEFT", -2, 0)
+    end
+    button.chevron = chevron
+    return button
+end
 
 -- The cursor in screen pixels.
 local function Cursor()
@@ -494,7 +513,8 @@ function Grid:Refresh()
     if blocked then
         SetRaw(self.message, blocked)
     elseif count == 0 then
-        SetRaw(self.message, Tr("No spells yet. Click + to add some."))
+        -- A catalog the game has not sent yet is not an empty selection.
+        SetRaw(self.message, Page.CatalogUnavailable() or Tr("No spells yet. Click + to add some."))
     else
         self.message:SetText("")
     end

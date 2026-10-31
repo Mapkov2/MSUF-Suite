@@ -72,10 +72,21 @@ local function Scripts(text)
     return found
 end
 local function Specifiers(text)
-    local list = {}
-    for spec in text:gmatch("%%[-+ #0]*%d*%.?%d*[%a%%]") do list[#list + 1] = spec end
+    local list, escaped = {}, 0
+    for spec, after in text:gmatch("(%%[-+ #0]*%d*%.?%d*[%a%%])()") do
+        -- A literal percent followed by a word ("% of", "% health") is
+        -- prose, not a space-flag format. Keep actual formats such as "% s".
+        if spec == "%%" then escaped = escaped + 1
+        elseif not (spec:sub(1, 2) == "% " and text:sub(after, after):match("%a")) then
+            list[#list + 1] = spec
+        end
+    end
+    for _ = 1, escaped do list[#list + 1] = "%%" end
     return table.concat(list, " ")
 end
+Check(Specifiers("Top margin (% of screen height)") == "", "plain screen percentage became a format")
+Check(Specifiers("At 100% health") == "" and Specifiers("Hide % sign") == "", "percentage prose became a format")
+Check(Specifiers("% s") == "% s" and Specifiers("%d%% done") == "%d %%", "real formats or escapes were lost")
 local function Count(text, pattern)
     local n = 0
     for _ in text:gmatch(pattern) do n = n + 1 end

@@ -122,6 +122,7 @@ if arg[2] then
             local MSUF = { MSUF_Auras3 = A3, Util = { InCombat = function() return world.combat end } }
             local providers = { MSUF_PixelLayoutRegion = function(region) return region end,
                 MSUF_EventBus_Register = function() end, MSUF_EventBus_Unregister = function() end }
+            dofile(root .. "/tools/tests/suite_test_support.lua").HostMediaProviders(providers)
             function MSUF.Require(name) return assert(providers[name], name) end
             function MSUF.RunHostAPIStep(_, fn, ...) return true, fn(...) end
             function MSUF.ExportPublic(name, value) MSUF[name] = value end

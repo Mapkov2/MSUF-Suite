@@ -43,7 +43,7 @@ S.CreateFrame=function(_,_,parent) return Widget(parent) end
 S.CreateTexture=function(parent) return Widget(parent) end
 S.CreateFontString=S.CreateTexture
 S.GlobalFontPath=function() return "font" end
-S.SetStyledFont=function() end
+S.QoLStyleText=function() end
 -- Formats are translated, then filled in: the test locale marks the lookup.
 S.Text=function(v) return v=="%.1f%% of pull" and "pull %.1f%%" or v end
 local movers={}

@@ -51,7 +51,7 @@ C_AddOns = {
             -- The shared runtime: contexts (Runtime.lua) and movers (EditMode.lua).
             loads = loads + 1
             controller.NewContext = function()
-                return { Release = function(self) self.released = true end, RefreshOwnedSkins = function() end }
+                return { Release = function(self) self.released = true end }
             end
             controller.RefreshEditMover = function() end
             controller.UnregisterEditElements = function() end
@@ -175,7 +175,8 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "groupDeathAlert" and id ~= "releaseProtection"
         and id ~= "autoUprank" and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
-        and id ~= "mythicAutoQueue"
+        and id ~= "mythicAutoQueue" and id ~= "questRewardValue" and id ~= "mailRecipients"
+        and id ~= "groupFinderTools" and id ~= "fishingComfort"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
         and id ~= "cursorEffects" and id ~= "playerAuras"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower" and id ~= "selfCombatText"
@@ -192,7 +193,11 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "threatMeter" and id ~= "flightTimer" and id ~= "characterExtras"
         and id ~= "merchantList" and id ~= "tooltipDetails" and id ~= "popupAttention"
         and id ~= "combatMovementCue" and id ~= "professionAppearance"
-        and id ~= "trustedPartyInvites" and id ~= "burningRushCue"),
+        and id ~= "trustedPartyInvites" and id ~= "burningRushCue" and id ~= "autoResponses"
+        and id ~= "inventoryArchive" and id ~= "restockPlanner" and id ~= "craftShopping"
+        and id ~= "inventoryProtection" and id ~= "bankTransfer" and id ~= "mailTemplates" and id ~= "planningTools"
+        and id ~= "keyAudit" and id ~= "currencyGoals" and id ~= "keywordAlerts" and id ~= "waypointLists"
+        and id ~= "soundProfiles" and id ~= "notificationHistory"),
         id .. " factory enable state is wrong")
 end
 for _, id in ipairs(Suite.SuiteOrder) do Suite.Suite.Config(id).enabled = false end

@@ -11,7 +11,7 @@ local Public, Finite = S.Public, S.Finite
 local IsSecret = NS.IsSecret
 local floor, max, min, format = math.floor, math.max, math.min, string.format
 local GRIP = "Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-"
-local ORDER = { "settings", "reset", "session", "type" }
+local ORDER = { "settings", "reset", "session", "type", "target" }
 local EDGE = { TOP = { "TOPLEFT", "TOPRIGHT" }, BOTTOM = { "BOTTOMLEFT", "BOTTOMRIGHT" } }
 
 local function HeaderButton(win, kind)
@@ -38,7 +38,10 @@ local function HeaderButton(win, kind)
         icon:Hide()
         button.label = S.CreateFontString(button, nil, "OVERLAY")
         button.label:SetPoint("CENTER", button, "CENTER", 0, 0)
-        if kind == "settings" then button.label:SetText("*") elseif kind == "reset" then button.label:SetText("R") end
+        D.FontStyle(button.label, 11)
+        if kind == "settings" then button.label:SetText("*")
+        elseif kind == "reset" then button.label:SetText("R")
+        elseif kind == "target" then button.label:SetText("T") end
     end
     return button
 end
@@ -126,7 +129,7 @@ function D.SyncWatch()
     end
     for i = 1, D.MAX do
         local win = D.windows[i]
-        local kind = win and win.shown and win.meterType
+        local kind = win and win.shown and not win.faded and win.meterType
         if kind then
             local sessions = watch[kind]
             if not sessions then
@@ -134,12 +137,18 @@ function D.SyncWatch()
                 watch[kind] = sessions
             end
             sessions[win.sessionID or 0] = true
+            if win.damageTarget then
+                local targets = watch[D.TYPE.EnemyDamageTaken]
+                if not targets then targets = {} watch[D.TYPE.EnemyDamageTaken] = targets end
+                targets[win.sessionID or 0] = true
+            end
         end
     end
 end
 
 -- Runtime session state; historic session IDs are never saved.
 function D.ApplySession(win, value, sessionID, duration)
+    D.ClearTarget(win)
     win.cfgSession, win.sessionID = value, sessionID
     win.pinDuration = sessionID and duration or nil
     local overall = value == D.SESSION.OVERALL
@@ -154,6 +163,7 @@ function D.SyncWindow(win)
     local c, keys = M.config, D.KEYS[win.index]
     local meterType = c[keys.Type] - 1
     if meterType ~= win.cfgType then
+        D.ClearTarget(win)
         win.cfgType, win.meterType = meterType, meterType
         D.SyncWatch()
         D.CloseBreakdown(win, true)
@@ -165,18 +175,50 @@ function D.SyncWindow(win)
         D.CloseBreakdown(win, true)
         win.offset, win.dirty = 0, true
     end
+    D.ApplyScale(win)
 end
 
 function D.PlaceWindow(win)
-    local keys = D.KEYS[win.index]
+    local c, keys = M.config, D.KEYS[win.index]
     win.frame:ClearAllPoints()
-    win.frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", M.config[keys.X], M.config[keys.Y])
+    win.frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", c[keys.X], c[keys.Y])
+    win.placedConfig, win.placedX, win.placedY = c, c[keys.X], c[keys.Y]
+end
+
+-- The saved offsets are in the window's own scale (MSUF Edit Mode divides its
+-- drag by the frame's scale). A new scale therefore rewrites them, and the
+-- corner the window hangs from stays where the player put it. Only a scale
+-- edit does that: a profile change, import or reset brings offsets of its own,
+-- which PlaceWindow has not placed yet.
+local function Rescaled(rule, offset, from, to)
+    return max(rule.min, min(rule.max, floor(offset * from / to + .5)))
+end
+
+function D.ApplyScale(win)
+    local c, keys = M.config, D.KEYS[win.index]
+    local scale, previous = c[keys.Scale] / 100, win.cfgScale
+    if scale == previous then return end
+    win.cfgScale = scale
+    win.frame:SetScale(scale)
+    if previous and win.placedConfig == c and win.placedX == c[keys.X] and win.placedY == c[keys.Y] then
+        local rules = S.catalog[M.id].rules
+        c[keys.X] = Rescaled(rules[keys.X], c[keys.X], previous, scale)
+        c[keys.Y] = Rescaled(rules[keys.Y], c[keys.Y], previous, scale)
+    end
 end
 
 function D.Capacity(height)
     local style = M.style
-    local capacity = floor((height - (M.config.headerOutside and 0 or M.config.headerHeight) - 2 + style.spacing) / (style.barHeight + style.spacing))
+    local capacity = floor((height - M.style.headerSpace - 2 + style.spacing) / (style.barHeight + style.spacing))
     return capacity < 0 and 0 or capacity > 40 and 40 or capacity
+end
+
+-- The header buttons shown, counted from the right: Target only for the damage
+-- meters, and no Session button on a threat window, which has no fights.
+local function HeaderSlots(c, meterType)
+    if c.headerSelectors == false then return 2 end
+    local slots = D.damageTypes[meterType] and c.targetSelector and #ORDER or #ORDER - 1
+    return meterType == D.THREAT and slots - 1 or slots
 end
 
 function D.StyleHeader(win)
@@ -184,21 +226,26 @@ function D.StyleHeader(win)
     local size = min(c.headerIconSize, c.headerHeight)
     local r, g, b = S.RGB(c.titleColor)
     local previous
-    local slots = c.headerSelectors == false and 2 or #ORDER
+    local slots, gap = HeaderSlots(c, win.meterType), 0
     for index, kind in ipairs(ORDER) do
         local button = win.buttons[kind]
-        button:SetShown(index <= slots)
+        -- The buttons after the unused Session button close its slot.
+        local unused = kind == "session" and win.meterType == D.THREAT
+        if unused then gap = 1 end
+        local slot = index - gap
+        button.configuredShown = c.headerVisible ~= false and slot <= slots and not unused
+        button:SetShown(button.configuredShown)
         button:ClearAllPoints()
         local elementSize = c[kind .. "Size"] > 0 and c[kind .. "Size"] or size
         button:SetSize(elementSize, elementSize)
         -- Every element has a stable slot; moving/resizing one never drags
         -- its siblings, the title or the combat timer through an anchor chain.
-        button:SetPoint("RIGHT", win.header, "RIGHT", -3 - (index - 1) * (size + 2)
+        button:SetPoint("RIGHT", win.header, "RIGHT", -3 - (slot - 1) * (size + 2)
             + c.buttonsOffsetX + c[kind .. "OffsetX"], c.buttonsOffsetY + c[kind .. "OffsetY"])
         previous = button
         if button.iconScale then button.icon:SetSize(elementSize * button.iconScale, elementSize * button.iconScale) end
         if button.label then
-            D.FontStyle(button.label, c[kind .. "Size"] > 0 and max(8, floor(elementSize * .6)) or max(8, c.headerFontSize - 1))
+            D.FontStyle(button.label, c[kind .. "Size"] > 0 and max(8, floor(elementSize * .6)) or max(8, c.headerFontSize - 1), "header")
             button.label:SetTextColor(r, g, b)
             button.label:ClearAllPoints()
             button.label:SetPoint("CENTER", button, "CENTER", 0, M.style.baseline)
@@ -214,9 +261,9 @@ function D.StyleHeader(win)
         end
     end
     win.firstButton = previous
-    D.FontStyle(win.title, c.titleSize > 0 and c.titleSize or c.headerFontSize)
+    D.FontStyle(win.title, c.titleSize > 0 and c.titleSize or c.headerFontSize, "header")
     win.title:SetTextColor(r, g, b)
-    D.FontStyle(win.timer, c.headerTimerSize > 0 and c.headerTimerSize or c.headerFontSize)
+    D.FontStyle(win.timer, c.headerTimerSize > 0 and c.headerTimerSize or c.headerFontSize, "header")
     win.timer:SetTextColor(r, g, b)
     win.title:ClearAllPoints()
     win.timer:ClearAllPoints()
@@ -230,15 +277,14 @@ end
 -- reaches size pixels past each side, so the strips cover the same pixels
 -- as an outline drawn around the window itself.
 function D.StyleBorder(win)
-    local c, box = M.config, win.borderBox
-    local size = c.borderSize
-    if size > 0 then
-        box:ClearAllPoints()
-        box:SetPoint("TOPLEFT", win.border, "TOPLEFT", -size, size)
-        box:SetPoint("BOTTOMRIGHT", win.border, "BOTTOMRIGHT", size, -size)
-    end
-    local r, g, b = S.RGB(c.borderColor)
-    S.PlaceEdges(win.edges, box, size, r, g, b, 1)
+    local c, box, spec = M.config, win.borderBox, M.style.windowBorder
+    local top = win.border
+    if c.borderArea == 2 and c.headerVisible ~= false then top = win.header end
+    if c.borderArea == 3 then top = win.body end
+    box:ClearAllPoints()
+    box:SetPoint("TOPLEFT", top, "TOPLEFT", -spec.size - spec.gap, spec.size + spec.gap)
+    box:SetPoint("BOTTOMRIGHT", win.border, "BOTTOMRIGHT", spec.size + spec.gap, -spec.size - spec.gap)
+    D.PaintBorder(win.border, win.edges, box, spec)
 end
 
 -- Layout pass: runs when the style generation changed (after Refresh).
@@ -249,21 +295,21 @@ function D.StyleWindowLayout(win)
     local height = c[keys.Height]
     frame:SetSize(c[keys.Width], height)
     header:ClearAllPoints()
-    local headerPoint = c.headerOutside and "BOTTOM" or "TOP"
+    local headerPoint = c.headerVisible ~= false and c.headerOutside and "BOTTOM" or "TOP"
     header:SetPoint(headerPoint .. "LEFT", frame, "TOPLEFT", 0, 0)
     header:SetPoint(headerPoint .. "RIGHT", frame, "TOPRIGHT", 0, 0)
-    header:SetHeight(c.headerHeight)
-    local r, g, b = S.RGB(c.headerColor)
-    win.headerBg:SetColorTexture(r, g, b, c.headerAlpha / 100)
-    r, g, b = S.RGB(c.bgColor)
+    header:SetHeight(c.headerVisible ~= false and c.headerHeight or 0)
+    header:SetShown(c.headerVisible ~= false)
+    D.PaintSurface(win.headerBg, M.style.headerTexture, c.headerColor, c.headerAlpha)
     win.bg:ClearAllPoints()
     win.bg:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
     win.bg:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    win.bg:SetColorTexture(r, g, b, c.bgAlpha / 100)
+    D.PaintSurface(win.bg, M.style.bgTexture, c.bgColor, c.bgAlpha)
     body:ClearAllPoints()
     body:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 1, -1)
     body:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
     D.StyleHeader(win)
+    D.StyleHeaderSeparator(win)
     D.StyleBorder(win)
     D.FontStyle(win.status, M.style.leftSize)
     win.status:SetTextColor(.8, .8, .8)
@@ -289,6 +335,7 @@ end
 
 function D.UpdateTitle(win)
     local text = D.TypeName(win.meterType)
+    if win.damageTarget then text = format("%s: %s", text, win.damageTarget.name) end
     if win.meterType == D.THREAT then
         -- Threat reads the watched enemy, never a fight session.
         local enemy = D.ThreatEnemyName()
@@ -322,6 +369,7 @@ function D.SetShown(win, show)
     if show then
         if win.styleGen ~= M.styleGen then D.StyleWindow(win) end
         if not win.shown then
+            win.filteredCache, win.targetCache = nil, nil
             win.shown, win.dirty = true, true
             D.SyncWatch()
             win.frame:Show()
@@ -377,9 +425,13 @@ function D.UpdateStatus(win, count)
     local text = ""
     if not M.available and not M.preview and win.meterType ~= D.THREAT then
         text = M.reason or ""
-    elseif count == 0 and win.meterType == D.TYPE.AvoidableDamageTaken then
-        local notice = _G.DAMAGE_METER_AVOIDABLE_DAMAGE_NOT_ACTIVE
-        text = type(notice) == "string" and notice or ""
+    elseif count == 0 then
+        if win.damageTarget and not win.session then
+            text = S.Text((M.inCombat or NS.IsCombatLocked()) and "Targets after combat" or "Target data unavailable")
+        elseif win.meterType == D.TYPE.AvoidableDamageTaken then
+            local notice = _G.DAMAGE_METER_AVOIDABLE_DAMAGE_NOT_ACTIVE
+            text = type(notice) == "string" and notice or ""
+        end
     end
     if text ~= win.statusText then
         win.statusText = text
@@ -476,17 +528,30 @@ function D.HoverLeave(region)
     D.ApplyHover(win)
 end
 
-function D.ApplyHover(win)
+function D.ApplyHover(win, deferred)
     local c = M.config
-    local fade = c.visibility == D.VISIBILITY.MOUSEOVER and not M.forced and not win.hover
+    local fade = M.uiHidden or (c.visibility == D.VISIBILITY.MOUSEOVER and not M.forced and not win.hover)
     if fade ~= win.faded then
-        win.faded = fade
+        win.faded, win.dirty = fade, true
         win.frame:SetAlpha(fade and 0 or 1)
+        if not fade then
+            win.filteredCache, win.targetCache = nil, nil
+            D.InvalidateTargets()
+        end
+        if not deferred then
+            local resumeIdentities = not fade and not M.dataVisible
+            D.SyncWatch()
+            D.UpdateEvents()
+            if resumeIdentities then D.SnapshotIdentities() end
+        end
         -- Faded windows skip painting; catch up once they are revealed.
-        if not fade and win.shown and win.dirty then D.Paint(win) end
-        if not fade and win.shown then D.UpdateTimers() end
-        if fade and not D.HasDirtyVisible() then D.CancelPaint() end
-        D.SyncClock()
+        if not deferred and not fade and win.shown and win.dirty then D.Paint(win) end
+        if not deferred and not fade and win.shown then D.UpdateTimers() end
+        if not deferred and fade and not D.HasDirtyVisible() then D.CancelPaint() end
+        if not deferred then
+            if fade then D.UpdateTimer() end
+            D.SyncClock()
+        end
     end
     local alpha = (c.headerMouseover and not win.hover and not M.forced) and 0 or 1
     if alpha ~= win.buttonAlpha then
@@ -501,16 +566,57 @@ function D.CanMove(win)
     return not M.inCombat and not NS.IsCombatLocked() and (M.forced or not M.config[D.KEYS[win.index].Locked])
 end
 
+-- Click-through (the window's Click through choice): the window's own frames
+-- stop taking the mouse, so clicks reach the game under it. D.EvaluateVisibility
+-- asks at every combat edge. Edit Mode and the options preview keep the window
+-- usable, and so does a Mouseover window, which needs the mouse to appear.
+local CLICK_THROUGH = NS.DamageMeterClickThrough
+local function WantsPassive(win)
+    local mode = M.config[D.KEYS[win.index].ClickThrough]
+    if mode == CLICK_THROUGH.NEVER or M.forced or M.config.visibility == D.VISIBILITY.MOUSEOVER then return false end
+    return mode == CLICK_THROUGH.ALWAYS or M.inCombat == true
+end
+
+local function SetMouse(win, enabled)
+    win.frame:EnableMouse(enabled)
+    win.header:EnableMouse(enabled)
+    win.body:EnableMouse(enabled)
+    win.grip:EnableMouse(enabled)
+    for _, button in pairs(win.buttons) do button:EnableMouse(enabled) end
+    for _, row in pairs(win.rows) do row:EnableMouse(enabled) end
+    local panel = win.panel
+    if not panel then return end
+    panel:EnableMouse(enabled)
+    panel.targetsTab:EnableMouse(enabled)
+    panel.spellsTab:EnableMouse(enabled)
+    for _, row in pairs(win.bdRows) do row:EnableMouse(enabled) end
+end
+
+function D.ApplyMouse(win)
+    local passive = WantsPassive(win)
+    if passive == (win.passive == true) then return end
+    win.passive = passive
+    SetMouse(win, not passive)
+    -- A frame that stops taking the mouse may never report the pointer leaving.
+    if passive and win.hover then
+        win.hover = false
+        D.ApplyHover(win)
+    end
+end
+
 local function Round(value) return floor(value + .5) end
 function D.SaveGeometry(win, sized)
     local frame, keys = win.frame, D.KEYS[win.index]
     local right, bottom = frame:GetRight(), frame:GetBottom()
     local parentRight, parentBottom = UIParent:GetRight(), UIParent:GetBottom()
-    if not (Finite(right) and Finite(bottom) and Finite(parentRight) and Finite(parentBottom)) then
+    -- The frame's edges are in its own scale, UIParent's in the screen's: the
+    -- offsets are saved in the window's scale (see D.ApplyScale).
+    local ratio = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
+    if not (Finite(right) and Finite(bottom) and Finite(parentRight) and Finite(parentBottom) and Finite(ratio)) then
         D.PlaceWindow(win)
         return
     end
-    local values = { [keys.X] = Round(right - parentRight), [keys.Y] = Round(bottom - parentBottom) }
+    local values = { [keys.X] = Round(right - parentRight * ratio), [keys.Y] = Round(bottom - parentBottom * ratio) }
     if sized then
         local width, height = frame:GetWidth(), frame:GetHeight()
         if Finite(width) and Finite(height) then values[keys.Width], values[keys.Height] = Round(width), Round(height) end

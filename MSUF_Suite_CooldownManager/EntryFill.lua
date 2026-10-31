@@ -11,6 +11,7 @@ local type, tonumber = type, tonumber
 local EMPTY = C.EMPTY
 local wipe = C.wipe
 local CDM = NS.CDM
+local AURA_GROUPS = CDM.AURA_GROUPS
 local Catalog = C.Catalog
 local Num = Catalog.Num
 local EntryFill = {}
@@ -179,7 +180,22 @@ local function FillSpell(entry, id)
     entry.auraIDs = nil
     return true
 end
-local function FillItem(entry, id)
+-- "Show active buff duration" of an item or equipment slot (itemAura, the
+-- choice in effect: C.Choices): the buff its use spell puts on the player,
+-- shown on the icon by the aura overlay like a spell's (Auras.lua). Static
+-- item data only; the buff's presence and time stay in Blizzard's aura
+-- container.
+local function ItemAura(entry)
+    local spell = entry.spell
+    if not spell or (entry.src ~= "i" and entry.src ~= "e") then return end
+    entry.hasAura, entry.selfAura, entry.auraHelpful, entry.unit = true, true, true, "player"
+    entry.auraIDs = AuraSet(entry.auraIDs, spell)
+end
+local function OwnAura(entry, key)
+    local ov = C.Choices()[key]
+    if type(ov) == "table" and ov.itemAura then ItemAura(entry) end
+end
+local function FillItem(entry, id, key)
     local icon = Catalog.ItemIcon(id)
     if not icon then return false end
     local spell = Catalog.ItemSpell(id)
@@ -188,9 +204,10 @@ local function FillItem(entry, id)
     entry.base, entry.spell, entry.itemID, entry.known, entry.hideEmpty = spell, spell, id, true, hideItem[id] == true
     entry.texture, entry.name = icon, Catalog.ItemName(id)
     entry.auraIDs = nil
+    OwnAura(entry, key)
     return true
 end
-local function FillEquip(entry, slot)
+local function FillEquip(entry, slot, key)
     local item = Catalog.EquipItem(slot)
     local spell = item and Catalog.ItemSpell(item) or nil
     Clear(entry, "e", slot, COOLDOWN_FAMILY)
@@ -199,9 +216,30 @@ local function FillEquip(entry, slot)
     entry.texture = Catalog.EquipTexture(slot)
     entry.name = item and Catalog.ItemName(item) or Catalog.SlotLabel(slot)
     entry.auraIDs = nil
+    OwnAura(entry, key)
+    return true
+end
+-- An aura group (CDM.AURA_GROUPS): one entry that looks for every aura of
+-- the group; the first one this client knows gives the icon. A client that
+-- knows none of them (WoW Forever has no Bloodlust) has no such entry.
+local function FillGroup(entry, id, group)
+    local ids, texture = group.ids, nil
+    for i = 1, #ids do
+        texture = texture or Catalog.SpellTexture(ids[i])
+    end
+    if not texture then return false end
+    Clear(entry, "a", id, AURA_FAMILY)
+    SetOverride(entry, nil)
+    entry.base, entry.spell, entry.known = group.spell, group.spell, true
+    entry.selfAura, entry.hasAura = true, true
+    entry.texture, entry.name = texture, S.Text(group.name)
+    entry.auraIDs = AuraSet(entry.auraIDs, nil, nil, nil, ids)
+    entry.unit, entry.auraHelpful = "player", true
     return true
 end
 local function FillAura(entry, src, id)
+    local group = src == "a" and AURA_GROUPS[id]
+    if group then return FillGroup(entry, id, group) end
     local name, texture = Catalog.SpellName(id), Catalog.SpellTexture(id)
     if not (name or texture) then return false end
     Clear(entry, src, id, AURA_FAMILY)
@@ -222,9 +260,9 @@ local function Fill(entry, key)
     elseif src == "s" then
         return FillSpell(entry, id)
     elseif src == "i" then
-        return FillItem(entry, id)
+        return FillItem(entry, id, key)
     elseif src == "e" then
-        return FillEquip(entry, id)
+        return FillEquip(entry, id, key)
     elseif src == "a" or src == "d" then
         return FillAura(entry, src, id)
     end
@@ -233,5 +271,5 @@ end
 
 EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell = Parse, FamilyOf, Known, BaseSpell
 EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.AURA_UNIT = Fill, Clear, SetOverride, AURA_UNIT
-EntryFill.RefreshAuraUnit = RefreshAuraUnit
+EntryFill.RefreshAuraUnit, EntryFill.ItemAura = RefreshAuraUnit, ItemAura
 EntryFill.OverrideOf, EntryFill.Charged = OverrideOf, Charged

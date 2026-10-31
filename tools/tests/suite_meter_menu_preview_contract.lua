@@ -80,11 +80,16 @@ Point(row.rankText, 1, 20, 19, "names and ranks no longer move together")
 Point(row.nameText, 2, -12, -6, "value movement pulled or stretched the name field")
 Point(row.valueText, 1, 20, 25, "value offset did not reach native rows")
 Point(preview.buttons.settings, 1, 40, 44, "header buttons did not move together")
-Point(preview.timer, 1, -34, 53, "button movement pulled the header timer")
+local targetSlot = preview.buttons.target.configuredShown and 20 or 0
+-- A threat window has no Session button: the buttons after it and the timer take its slot.
+local sessionSlot = preview.buttons.session.configuredShown and 0 or 20
+Point(preview.timer, 1, -34 - targetSlot + sessionSlot, 53, "button movement pulled the header timer")
 Point(preview.title, 1, 37, 33, "title offset did not reach native header")
-Point(preview.title, 2, -91, 33, "timer movement pulled or stretched the title field")
+Point(preview.title, 2, -91 - targetSlot + sessionSlot, 33, "timer movement pulled or stretched the title field")
 -- Exercise the actual cold runtime layout after individual editor settings change.
 local order = { "settings", "reset", "session", "type" }
+if sessionSlot > 0 then table.remove(order, 3) end
+if targetSlot > 0 then order[#order + 1] = "target" end
 local priorHeight, priorIconSize = config.headerHeight, config.headerIconSize
 config.headerHeight, config.headerIconSize = 14, 30
 S.DamageMeterDrawMenuPreview(stage, 1)

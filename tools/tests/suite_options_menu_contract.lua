@@ -4,10 +4,12 @@
 -- per-bar/per-window key mapping, enable gating and the locale merge.
 C_CreatureInfo = { GetClassInfo = function(id) return { className = "Class " .. id } end }
 LOCALIZED_CLASS_NAMES_MALE = {}
+GetProfessions = function() return nil end
 local root = assert(arg[1], "repository root required")
 -- The client's securecallfunction reports an error and returns nothing;
 -- this stand-in lets errors raise, so a failing callback fails the test.
 securecallfunction = function(callback, ...) return callback(...) end
+GetTime = function() return 100 end
 -- Native posthooks preserve the original function's results.
 hooksecurefunc = function(target, name, callback)
     local original = assert(target[name])
@@ -141,6 +143,9 @@ local lockedEditMode = { CanEnterEditMode = function() return false end }
 EditModeManagerFrame = lockedEditMode
 UnitName = function() return "Preview Player" end
 GetInventoryItemTexture = function() return 134400 end
+-- The AFK preview follows the character sheet's slot list (catalog HUD.lua);
+-- this sheet has no ranged slot.
+C_PaperDollInfo = { IsRangedSlotShown = function() return false end }
 GetInventoryItemLink = function() return "|Hitem:1|h[Preview item]|h" end
 UnitClass = function() return nil end
 UnitIsPlayer = function() return false end
@@ -216,7 +221,23 @@ local function LoadTOC(addon, ns)
     toc:close()
 end
 -- No combinedBags setting: the Bags module stays unavailable in this fixture.
-C_CVar = { GetCVar = function() return nil end }
+-- Registered native Nameplate CVars, using the same explicit client values
+-- as suite_nameplates_cvars_contract. Unknown settings, including combinedBags,
+-- remain absent; the catalog's controlAvailable path is not bypassed.
+do
+local nativeNameplateCVars = {
+    nameplateMaxDistance = "60", nameplateOccludedAlphaMult = "0.4", nameplateMinAlpha = "0.6",
+    nameplateMinScale = "0.8", nameplateOverlapV = "1.1", nameplateOverlapH = "0.8",
+    nameplateOtherTopInset = "0.08", nameplateOtherBottomInset = "0.1", nameplateMotionSpeed = "0.025",
+    clampTargetNameplateToScreen = "0", nameplateShowEnemies = "1", nameplateShowFriendlyPlayers = "1",
+    nameplateShowSelf = "1", nameplateShowEnemyPets = "1", nameplateShowEnemyGuardians = "0",
+    nameplateShowEnemyTotems = "0", nameplateShowFriendlyPlayerPets = "0", nameplateShowFriendlyPlayerGuardians = "0",
+    nameplateShowFriendlyPlayerTotems = "0", nameplateShowEnemyMinions = "1", nameplateShowFriendlyPlayerMinions = "0",
+    nameplateSelectedScale = "1.1",
+}
+C_CVar = { GetCVar = function(key) return nativeNameplateCVars[key] end }
+C_GameRules = { IsGameRuleActive = function() return false end }
+end
 -- Blizzard_NamePlates is always loaded, and CvarUtil is SharedXMLBase.
 NamePlateSetupOptions = {}
 NamePlateConstants = { DEBUFF_PADDING_CVAR = "nameplateDebuffPadding" }
@@ -246,6 +267,8 @@ assert(loadfile(root .. "/../MidnightSimpleUnitFrames/MidnightSimpleUnitFrames/U
 
 -- Menu2 public surface
 local M, W, T = {}, {}, {}
+T.SkinEditBox = function(widget) widget.editSkinApplied = true end
+T.SkinPrimaryButton = function(widget) widget.primarySkinApplied = true end
 M.CreateMenuPopupPanel = function() return Widget("SectionPopup") end
 W.TopButton = function(parent, text)
     local button = Widget("SectionAction")
@@ -353,7 +376,8 @@ M.ControlMeta = function(page, domain, path, classification, exact)
     return meta
 end
 local previewControls, registeredControls = {}, {}
-M.RegisterControlMetadata = function(widget, meta)
+M.RegisterControlMetadata = function(widget, meta, label)
+    widget.registeredLabel = label
     if meta and meta.prepareExactSearchTarget and meta.searchPrepareKind and meta.searchPrepareValue then
         widget._msuf2ExactTargetKinds = { [meta.searchPrepareKind] = true }
         widget._msuf2ExactTargetContracts = { [meta.searchPrepareKind] = { [meta.searchPrepareValue] = true } }
@@ -399,7 +423,7 @@ local function CheckSearchTargets(searchRows, pageContexts, requireReverse)
                 local actual = row.controlId and byId[row.controlId] or bySetting[row.settingKey]
                 assert(actual, "cold search target has no built control: " .. target)
                 assert(actual.sectionId == row.sectionId,
-                    "cold search target points to the wrong section: " .. target)
+                    "cold search target points to the wrong section: " .. target .. " expected=" .. tostring(row.sectionId) .. " actual=" .. tostring(actual.sectionId))
                 if row.settingKey then indexed[row.settingKey] = true end
                 checked = checked + 1
             end
@@ -488,6 +512,13 @@ W.BoolAt = function(parent, label, x, y, width)
     widget:SetWidth(width)
     return widget
 end
+W.ToggleAt = function(parent, label, x, y, width)
+    local widget = W.BoolAt(parent, label, x, y, width)
+    widget._msuf2Label = Widget("FontString")
+    widget._msuf2Label.parent = parent
+    widget._msuf2Label:SetText(label)
+    return widget
+end
 W.ControlCard = function() return Widget("Card") end
 W.SectionSwitch = function(section, label)
     local widget = Widget("Switch")
@@ -540,7 +571,8 @@ W.PageBuilder = function(ctx)
     if ctx.key == "suite_dataTexts" then
         function b:RelayoutCollapsibles() self.relayouts = (self.relayouts or 0) + 1 end
     end
-    if ctx.key == "suite_actionbars" or ctx.key == "suite_dataTexts" or ctx.key == "suite_hud" then
+    if ctx.key == "suite_actionbars" or ctx.key == "suite_dataTexts" or ctx.key == "suite_hud" or ctx.key == "suite_macros"
+        or ctx.key == "suite_planningTools" then
         function b:Section(title, height)
             local body = Widget("Panel")
             body.title, body.parent = Widget("FontString"), ctx.wrapper
@@ -609,7 +641,8 @@ end
 SecureHandlerExecute, SecureHandlerSetFrameRef, RegisterStateDriver =
     function() end, function() end, function() end
 C_DamageMeter = { GetCombatSessionFromType = function() end }
-Enum = { DamageMeterType = { DamageDone = 0 }, SpellBookSpellBank = { Player = 0 } }
+Enum = { DamageMeterType = { DamageDone = 0 }, SpellBookSpellBank = { Player = 0 },
+    GameRule = { PersonalResourceDisplayDisabled = 5 } }
 C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
 issecretvalue = function(value) return actionPreview.secret ~= nil and rawequal(value, actionPreview.secret) end
 Minimap = { SetMaskTexture = function() end }
@@ -1337,7 +1370,8 @@ do (function()
     C_Timer = timerAPI
 end)() end
     for _, refresh in ipairs(hudCtx.refreshers) do refresh() end
-    assert(#hudCtx.sections == (flavor == "Forever" and 13 or 17),
+    -- Forever offers the raid encounter view as well: one more accordion.
+    assert(#hudCtx.sections == (flavor == "Forever" and 14 or 17),
         "HUD topics must be separate accordions beneath four feature categories")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
@@ -1423,6 +1457,23 @@ end)() end
     current = previousCurrent
     optionsNS.Refresh()
 end)() end
+if arg[3] == "ownership" then
+    return { Suite = Suite, P = optionsNS, M = M, S = S, widgets = registeredControls,
+        inContext = function(ctx, callback)
+            local previous = current
+            current = ctx
+            callback()
+            current = previous
+        end,
+        build = function(key)
+            local ctx = { key = key, width = 760, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+            local previous = current
+            current = ctx
+            M.pages[key].build(ctx)
+            current = previous
+            return ctx
+        end }
+end
 if flavor == "Forever" then
     local plates = S.Config("nameplates")
     assert(plates.look == 4 and plates.barGeometry == 2 and plates.enemyLevelEnabled == false,
@@ -1448,7 +1499,7 @@ if flavor == "Forever" then
 end
 
 -- Navigation: suite pages join MSUF's groups by id and MSUF rows keep their places.
-local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_nameplates", "suite_cooldownManager", "suite_skin" }
+local expected = { "suite_actionbars", "suite_minimap", "suite_damageMeter", "suite_bags", "suite_dataTexts", "suite_qualityOfLife", "suite_hud", "suite_buffReminders", "suite_chat", "suite_nameplates", "suite_cooldownManager", "suite_skin", "suite_macros", "suite_planningTools" }
 local function NavShape(items)
     local out = {}
     for _, item in ipairs(items) do
@@ -1461,7 +1512,7 @@ local INTERFACE_ROWS = "#interface suite_actionbars@interface suite_minimap@inte
     .. " suite_bags@interface suite_chat@interface suite_dataTexts@interface"
 local hostShape = "home@nil #frames uf_player@frames " .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
     .. " #style opt_colors@style suite_skin@style"
-    .. " #general gameplay@general suite_qualityOfLife@general opt_misc@general profiles@general"
+    .. " #general gameplay@general suite_qualityOfLife@general suite_macros@general suite_planningTools@general opt_misc@general profiles@general"
 assert(NavShape(M.navItems) == hostShape, "suite navigation: " .. NavShape(M.navItems))
 for _, key in ipairs(expected) do
     assert(M.pages[key], "page not registered: " .. key)
@@ -1511,10 +1562,8 @@ C_AddOns.GetAddOnEnableState = function(name, guid)
     assert(guid == "Player-Test", "AddOn enable state must use the current character")
     return name == "MSUF_Suite_ActionBars" and 0 or 1
 end
-assert(rows.suite_actionbars.availability() == false
-    and select(2, rows.suite_actionbars.availability()) == "You need to turn on the module in Blizzard's AddOn list"
-    and not select(3, rows.suite_actionbars.availability()),
-    "Suite navigation must keep Blizzard-disabled AddOns grey and visible")
+assert(select(2, rows.suite_actionbars.availability()) ~= "You need to turn on the module in Blizzard's AddOn list",
+    "independent key review must keep its page available with ActionBars disabled")
 assert(Suite.Client.AddOnEnabled("MSUF_Suite_Minimap")
     and Suite.Client.AddOnEnabled("MSUF_Suite_QualityOfLife"), "unrelated AddOns were disabled")
 C_AddOns.GetAddOnEnableState = AllEnabled
@@ -1545,12 +1594,13 @@ assert(NavShape(M.navItems) == hostShape, "suite navigation inserted twice: " ..
     local cells, count = {}, 0
     for _, page in ipairs(optionsNS.pages) do
         local cell = assert(T.navIconGrid[page.key], "HD icon missing: " .. page.key)
-        assert(cell[1] >= 0 and cell[1] < 8 and (cell[2] == 3 or cell[2] == 4), "invalid HD atlas cell")
+        assert(cell[1] >= 0 and cell[1] < 8 and (cell[2] == 3 or cell[2] == 4
+            or page.key == "suite_macros" and cell[1] == 7 and cell[2] == 1), "invalid HD atlas cell")
         local key = cell[1] .. ":" .. cell[2]
         assert(not cells[key], "unrelated Suite pages share a navigation symbol")
         cells[key], count = true, count + 1
     end
-    assert(count == 12, "Suite navigation coverage changed")
+    assert(count == 14, "Suite navigation coverage changed")
     local chosen = T.navIconGrid.suite_bags
     Reattach()
     assert(T.navIconGrid.suite_bags == chosen, "reattaching replaces registered icons")
@@ -1573,7 +1623,7 @@ Reattach()
 local legacyShape = "home@nil #frames uf_player@frames"
     .. " #appearance opt_bars@appearance opt_misc@appearance suite_skin@appearance "
     .. COMBAT_ROWS .. " " .. INTERFACE_ROWS
-    .. " #features classpower@features gameplay@features suite_qualityOfLife@features profiles@features"
+    .. " #features classpower@features gameplay@features suite_qualityOfLife@features suite_macros@features suite_planningTools@features profiles@features"
 assert(NavShape(M.navItems) == legacyShape, "suite navigation on a legacy host: " .. NavShape(M.navItems))
 M.navItems = hostItems
 
@@ -3259,12 +3309,12 @@ end
 assert(timestampWidget and timestampWidget.rowKind == "dropdown"
     and timestampWidget.meta.sectionId == "suite_chat_tools",
     "chat timestamps must be a dropdown bound to Blizzard's setting")
-local nativeTimestamp = "none"
+do
+local nativeTimestamp, priorCVars = "none", C_CVar
 C_CVar = {
     GetCVar = function(key)
-        -- Other optional client settings are unavailable in this timestamp fixture.
-        if key ~= "showTimestamps" then return nil end
-        return nativeTimestamp
+        if key == "showTimestamps" then return nativeTimestamp end
+        return priorCVars.GetCVar(key)
     end,
     SetCVar = function(key, value) assert(key == "showTimestamps"); nativeTimestamp = value end,
 }
@@ -3278,6 +3328,8 @@ assert(#timestampWidget.meta.values() == 7 and timestampWidget.get() == "none")
 timestampWidget.set(TIMESTAMP_FORMAT_HHMM_24HR)
 assert(nativeTimestamp == TIMESTAMP_FORMAT_HHMM_24HR and timestampWidget.get() == nativeTimestamp
     and savedChat.timestamp == nil, "Suite timestamp dropdown did not update the native CVar")
+C_CVar = priorCVars
+end
 savedChat.fontRendering = 1
 S.Normalize(Suite.DB)
 assert(savedChat.fontRendering == 1, "normalization overwrote an existing Smooth selection")
@@ -3308,10 +3360,13 @@ end
 do
 local qolFeaturesByCategory = {
     everydayAutomation = {
+        "mailTemplates_mailTemplates", "soundProfiles_sound_volumes",
         "collectionNewMarkers_collection_markers", "dailyComfort_daily_comfort",
         "delveSolePower_delve_sole_power", "trainerLearnAll_trainer_all", "autoUprank_auto_uprank", "quests_automation",
+        "questRewardValue_quest_reward_value", "mailRecipients_mail_recipients", "fishingComfort_fishing_comfort",
     },
     lootMerchants = {
+        "inventoryProtection_inventoryProtection",
         "loot_collection", "lootToastFilter_filtered_loot", "vaultSpec_vault_spec",
         "loot_history", "merchantLevel_merchant_level", "lootContainers_open_containers",
         "qol_repair", "qol_junk", "lootVendorRules_marked_sales", "merchantList_merchant_list",
@@ -3327,10 +3382,12 @@ local qolFeaturesByCategory = {
     groupRaid = {
         "battleRes_battle_res", "groupBloodlust_bloodlust_lockout",
         "groupDeathAlert_group_death_alert", "innervateCue_innervate_cue",
-        "groupRaidShortcuts_raid_shortcuts", "trustedPartyInvites_trusted_invites", "releaseProtection_release_protection",
+        "groupRaidShortcuts_raid_shortcuts", "trustedPartyInvites_trusted_invites", "autoResponses_auto_responses",
+        "releaseProtection_release_protection",
     },
     groupFinderMythic = {
         "groupFinderExitReminder_group_finder_exit", "groupFinderDoubleClick_group_finder_double_click",
+        "groupFinderTools_group_finder_tools",
         "mythicKeyShare_keystone_command", "mythicAutoQueue_mythic_auto_queue",
         "groupFinderApplicantSort_group_finder_applicant_sort",
         "mythicResetReminder_mythic_reset", "tooltipMPlusScore_mplus_score",
@@ -3343,10 +3400,12 @@ local qolFeaturesByCategory = {
         "combatMovementCue_movement_cue", "combatPetStatus_pet_status", "threatMeter_threat_meter",
     },
     mapTravel = {
+        "waypointLists_saved_waypoints",
         "mapLandingShortcuts_expansion_shortcuts",
         "skyriding_flight_hud", "waypoints_waypoint_command", "flightTimer_flight_route",
     },
     interfaceChat = {
+        "notificationHistory_notice_history",
         "cursorEffects_cursor_effects", "guildChatPrivacy_guild_privacy",
         "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter", "popupAttention_popup_attention",
     },
@@ -3384,12 +3443,16 @@ for category, features in pairs(qolFeaturesByCategory) do
         expectedQolFeatureCount = expectedQolFeatureCount + 1
         local oldSectionId = "suite_qualityOfLife_" .. name
         local row = assert(qolRows[oldSectionId], "missing Quality of Life feature row: " .. name)
+        local movedMacro = name == "macroBuilder_macro_builder"
+        local targetSection = oldSectionId
+        if movedMacro then targetSection = nil end
+        local targetPage = movedMacro and "suite_macros" or "suite_qualityOfLife"
         assert(row.category == category and row.toggle and row.toggle.meta
-            and row.toggle.meta.sectionId == oldSectionId,
+            and row.toggle.meta.sectionId == targetSection,
             "Quality of Life feature has wrong category or no independent switch: " .. name)
         local search = row.toggle.searchMeta
-        assert(search and search.pageKey == "suite_qualityOfLife" and search.kind == "toggle"
-            and search.sectionId == oldSectionId
+        assert(search and search.pageKey == targetPage and search.kind == "toggle"
+            and search.sectionId == targetSection
             and search.settingKey == row.toggle.meta.settingKey
             and row.row.tooltip and row.toggle.tooltip
             and (not row.settings or row.settings.tooltip)
@@ -3427,8 +3490,8 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 67 and actualQolFeatureCount == expectedQolFeatureCount,
-    "Quality of Life features are missing or duplicated")
+assert(expectedQolFeatureCount == (flavor == "Forever" and 76 or 77) and actualQolFeatureCount == expectedQolFeatureCount,
+    "Quality of Life features are missing or duplicated: expected " .. expectedQolFeatureCount .. ", rendered " .. actualQolFeatureCount)
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")
 assert(#sourceCategories == 9, "Quality of Life source should define nine categories")
@@ -3733,6 +3796,7 @@ skin.Typography = {
     SetApplyChat = function(value) skin.DB.typography.applyChat = value; return true end,
     SetIncludeSpecial = function(value) skin.DB.typography.includeSpecial = value; return true end,
     SetCustomPath = function(value) skin.DB.typography.customPath = value; return true end,
+    GetStatus = function() return {} end,
 }
 skin.WindowActionSkin = { SetOption = function(key, value) skin.DB.icons.windowActions[key] = value; return true end }
 skin.MicroMenuSkin = {
@@ -4745,13 +4809,13 @@ GetZoneText = function() return "" end
 for _, id in ipairs({ "minimap", "actionbars", "damageMeter", "bags", "dataTexts", "xpBar", "skyriding", "chat" }) do
     S.Config(id).enabled = true
 end
--- A history snapshot copies the active profile and root flags only; other
--- profiles and runtime logs are neither copied nor rolled back.
+-- History uses the Core provider's canonical settings/layout/skin payload;
+-- other profiles and runtime logs are neither copied nor rolled back.
 Suite.RootDB.profiles.Other = { suite = { schema = 1, modules = {} } }
 Suite.RootDB.suiteChat = { lines = { "kept" } }
 local beforeStyle = historyProvider.capture()
-assert(beforeStyle.root.profiles.Other == nil and beforeStyle.root.suiteChat == nil
-    and beforeStyle.root.profiles[Suite.RootDB.activeProfile],
+assert(beforeStyle.root == nil and beforeStyle.profiles == nil and beforeStyle.suiteChat == nil
+    and beforeStyle.activeProfile == Suite.RootDB.activeProfile and beforeStyle.suite,
     "Suite history copied more than the active profile")
 Suite.RootDB.profiles.Other.marker = true
 local clockVisible, barVisibility, meterType = S.Config("minimap").infoClock,
@@ -4769,7 +4833,7 @@ assert(S.Config("minimap").infoClock == clockVisible
     and S.Config("actionbars").bar1Visibility == barVisibility
     and S.Config("damageMeter").w1Type == meterType, "Forever style changed behavior or layout")
 assert(historyWrites > 0 and historyProvider.restore(beforeStyle), "Suite history restore failed")
-assert(S.Config("minimap").stylePreset == beforeStyle.root.profiles[beforeStyle.root.activeProfile].suite.modules.minimap.stylePreset,
+assert(S.Config("minimap").stylePreset == beforeStyle.suite.modules.minimap.stylePreset,
     "Suite history did not restore the minimap style")
 assert(Suite.RootDB.profiles.Other.marker and Suite.RootDB.suiteChat.lines[1] == "kept",
     "Suite history restore touched another profile or the chat log")
@@ -4790,10 +4854,10 @@ Suite.RootDB.profiles.Other, Suite.RootDB.suiteChat = nil, nil
         minimap = { detachedButtons = placed } }
     local size = S.Config("minimap").size
     local snapshot = historyProvider.capture()
-    local captured = snapshot.root.profiles[root.activeProfile].suite
-    assert(snapshot.root.chatHistory == nil and snapshot.root.goldLedger == nil
-        and snapshot.root.suiteBagRecent == nil and snapshot.root.suiteBagSort == nil
-        and snapshot.root.suiteCharacters == nil and captured.moduleState == nil
+    local captured = snapshot.suite
+    assert(snapshot.root == nil and snapshot.chatHistory == nil and snapshot.goldLedger == nil
+        and snapshot.suiteBagRecent == nil and snapshot.suiteBagSort == nil
+        and snapshot.suiteCharacters == nil and captured.moduleState == nil
         and captured.modules.minimap.size == size,
         "Suite history copied runtime data or missed the settings")
     root.chatHistory.Player.lines[2] = "second"
@@ -4814,8 +4878,7 @@ Suite.RootDB.profiles.Other, Suite.RootDB.suiteChat = nil, nil
         "Suite history restore rolled back or deleted runtime data")
     local restored = Suite.DB.suite.moduleState.minimap.detachedButtons
     assert(restored ~= placed and restored.LibDBIcon10_Test.x == 10 and restored.LibDBIcon10_Test.y == 20
-        and restored.LibDBIcon10_Other == nil and snapshot.root.profiles[root.activeProfile].layoutState
-        .minimap.detachedButtons.LibDBIcon10_Test.x == 10, "undo did not restore the detached minimap buttons")
+        and restored.LibDBIcon10_Other == nil and snapshot.layout.minimap.detachedButtons.LibDBIcon10_Test.x == 10, "undo did not restore the detached minimap buttons")
     root.chatHistory, root.goldLedger, root.suiteBagGold, root.suiteRuns, root.suiteXP = nil, nil, nil, nil, nil
     root.suiteBagRecent, root.suiteBagSort = nil, nil
     root.suiteCharacters = nil
@@ -4825,7 +4888,16 @@ local skinRoot = { activeProfile = "Default", profiles = { Default = { theme = {
     optionsUI = { lastPage = "colors" } }
 MapkoSkin = {
     addonName = "MSUF_Suite_Skin",
-    Database = { GetRoot = function() return skinRoot end, SetActiveProfile = function() return true end },
+    -- A ready skin store exposes the same profile/epoch protocol as
+    -- Core/DatabaseProfiles.lua; the canonical Core history provider uses it.
+    ProfileIO = {},
+    Database = {
+        GetRoot = function() return skinRoot end,
+        GetActiveProfileName = function() return skinRoot.activeProfile end,
+        GetHistoryEpoch = function() return 0 end,
+        SetProfile = function(name, profile) skinRoot.profiles[name] = Suite.CopyValue(profile); return true end,
+        SetActiveProfile = function(name) skinRoot.activeProfile = name; return true end,
+    },
     Theme = { ApplyLook = function(look) skinRoot.profiles.Default.theme.look = look; return true end },
 }
 local beforeSkinStyle = historyProvider.capture()
@@ -5163,16 +5235,27 @@ end
 assert(S.Config("actionbars").look == 1,
     "Suite page reset changed another page")
 ;(function()
-    local changed = {}
+    -- A page reset restores the settings of its modules, not whether they run
+    -- (suite_skin_resets_contract.lua also covers the factory reset).
+    local changed, probes = {}, {}
     for _, id in ipairs(Suite.SuiteOrder) do
         if S.catalog[id].page == "suite_qualityOfLife" then
-            S.Config(id).enabled = not S.catalog[id].rules.enabled.default
+            local config = S.Config(id)
+            config.enabled = not S.catalog[id].rules.enabled.default
+            for key, rule in pairs(S.catalog[id].rules) do
+                if key ~= "enabled" and type(rule.default) == "boolean" and not probes[id] then
+                    probes[id], config[key] = key, not rule.default
+                end
+            end
             changed[#changed + 1] = id
         end
     end
     assert(#changed > 9 and M.ResetPageToDefaults("suite_qualityOfLife"), "Quality of Life page reset failed")
     for _, id in ipairs(changed) do
-        assert(S.Config(id).enabled == S.catalog[id].rules.enabled.default,
+        assert(S.Config(id).enabled == not S.catalog[id].rules.enabled.default,
+            "Quality of Life page reset switched a module back: " .. id)
+        local key = probes[id]
+        assert(not key or S.Config(id)[key] == S.catalog[id].rules[key].default,
             "Quality of Life page reset skipped a module of its page: " .. id)
     end
 end)()
@@ -5378,7 +5461,7 @@ end)()
     assert(applies == 1, "undoing a profile switch applied the modules more than once")
     -- An undo that also switches the skin (on in this snapshot) still applies
     -- the modules once.
-    assert(snapshot.root.skinEnabled == true and Suite.Skin.enabled)
+    assert(snapshot.skinEnabled == true and Suite.Skin.enabled)
     assert(Suite.Database.Activate("Undo test") and Suite.Skin.SetEnabled(false) and not Suite.Skin.enabled)
     applies = 0
     assert(historyProvider.restore(snapshot) and Suite.RootDB.activeProfile == original
@@ -5821,7 +5904,11 @@ end)()
         assert(headers == eagerHeaders, key .. ": a section shell lost a header part:\n" .. headers .. "\n--- eager\n" .. eagerHeaders)
         assert(Shape(lazyCtx) == Shape(eagerCtx), key .. ": ensured lazy sections differ from the eager build")
         assert(#lazyCtx.refreshers == #eagerCtx.refreshers, key .. ": lazy sections changed the page refreshers")
+        if key == "suite_macros" then
+            assert(closed == 0, "macro workspace must open directly without an outer accordion")
+        else
         assert(closed > 0 and built == 0, key .. ": a shell-first page built section content")
+        end
     end
     S.states.damageMeter.error, MapkoSkin, C_CVar = meterLoadError, nil, cvar
     W.PageBuilder, W.EnsureSectionContent, current = eager, previousEnsure, previous

@@ -64,6 +64,12 @@ local PANEL_BUTTONS = {
     end,
     -- Blizzard_UIPanels_Game creates the character window at startup.
     currency = function() return CharacterFrameTab3 end,
+    -- QuickJoinToastButton, the chat frame's Friends button (also the Chat
+    -- sidebar's Friends icon, which keeps it in place at alpha 0), runs
+    -- ToggleFriendsFrame(FRIEND_TAB_FRIENDS) unless a queue toast is showing
+    -- (QuickJoinToastMixin:OnClick). GuildMicroButton runs ToggleGuildFrame.
+    friends = function() return QuickJoinToastButton end,
+    guild = function() return GuildMicroButton end,
 }
 -- A tab of a closed window is shown but not visible: TokenFrameMixin:Update
 -- shows the currency tab while the player has currencies.
@@ -88,6 +94,8 @@ local WINDOW_TABS = { currency = true }
 --   professions ProfessionMicroButton: ToggleProfessionsBook;
 --   questLog    QuestLogMicroButton: ToggleQuestLog, the world map with its
 --               quest log (Blizzard_WorldMap);
+--   friends     QuickJoinToastButton, shown only when the chat frame shows it;
+--   guild       GuildMicroButton: the micro menu is hidden, its buttons shown;
 --   journal     EJMicroButton: ToggleEncounterJournal;
 --   groupFinder LFDMicroButton: native group finder toggle;
 --   currency    CharacterMicroButton: Forever has no currency tab button
@@ -104,6 +112,8 @@ local GAMEPAD_BUTTONS = {
     groupFinder = function() return LFDMicroButton end,
     currency = function() return CharacterMicroButton end,
     worldMap = QuestLogButton,
+    friends = function() return QuickJoinToastButton end,
+    guild = function() return GuildMicroButton end,
 }
 
 local function Ready(button, panel, gamepad)
@@ -114,8 +124,8 @@ local function Ready(button, panel, gamepad)
     return S.Public(visible) and visible == true and S.Public(enabled) and enabled == true
 end
 
--- The Blizzard button that opens panel ("character", "worldMap" or
--- "currency"; under the Gamepad UI also the GAMEPAD_BUTTONS panels), or nil
+-- The Blizzard button that opens panel ("character", "worldMap", "currency",
+-- "friends" or "guild"; under the Gamepad UI also the GAMEPAD_BUTTONS panels), or nil
 -- while it is missing, forbidden, hidden or disabled: the caller then opens
 -- the window through S.TogglePanel. Out of combat, when a place offers its
 -- secure click.
@@ -150,14 +160,18 @@ end
 -- (HandleUserActionOpenSelf), the character window on the tab the player
 -- used last. The game rules that disable a window are honoured, and the
 -- panel manager refuses addon calls in combat. Blizzard_WorldMap and
--- Blizzard_UIPanels_Game load at startup on Retail and WoW Forever. Under the
--- Gamepad UI nothing opens from here (S.CanOpenNativeWindow): the places
--- click Blizzard's buttons instead (S.PanelButton).
+-- Blizzard_UIPanels_Game load at startup on Retail and WoW Forever. The
+-- friends list (FriendsFrame, no game rule on Forever) is such a panel too;
+-- the guild window (Communities) has no fallback and opens only through its
+-- button. Under the Gamepad UI nothing opens from here
+-- (S.CanOpenNativeWindow): the places click Blizzard's buttons instead
+-- (S.PanelButton).
 function S.TogglePanel(panel)
-    if not S.CanOpenNativeWindow() then return end
+    if not S.CanOpenNativeWindow() or panel == "guild" then return end
     local window, rule = CharacterFrame, Enum.GameRule.CharacterPanelDisabled
     if panel == "worldMap" then window, rule = WorldMapFrame, Enum.GameRule.WorldMapDisabled end
-    if C_GameRules.IsGameRuleActive(rule) then return end
+    if panel == "friends" then window = FriendsFrame end
+    if panel ~= "friends" and C_GameRules.IsGameRuleActive(rule) then return end
     S.Dispatch(NS.Finish, window:IsShown() and HideUIPanel or ShowUIPanel, window)
 end
 

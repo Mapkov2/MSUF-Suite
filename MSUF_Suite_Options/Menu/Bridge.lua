@@ -23,149 +23,15 @@ local Tr = P.Tr
 -- The core painter is available before optional module runtimes load.
 P.StylePreviewFont = S.SetStyledFont
 
--- One MSUF history entry owns a complete Suite gesture, including edits made
--- from the preview and Edit Mode. MSUF calls every provider on every tracked
--- gesture, so a snapshot holds only the settings a gesture can change
--- (Database.ROOT_SETTINGS and PROFILE_SETTINGS of the active Suite profile,
--- plus the Edit Mode layout state of PROFILE_LAYOUT_STATE) and the active
--- skin profile. Other profiles (MSUF clears its history on profile
--- operations), other module state and runtime data such as chat history,
--- gold ledgers and run history are never copied or rolled back.
-local DB = Suite.Database
-local SKIN_ROOT_SETTINGS = { "activeProfile" }
-
-local function CopyKeys(source, keys, target)
-    for _, key in ipairs(keys) do
-        if source[key] ~= nil then target[key] = Suite.CopyValue(source[key]) end
-    end
-    return target
-end
-
--- Returns a root-shaped copy: { profiles = { [active] = copy }, flags... }.
--- The Suite part holds the active profile's base settings: the stored ones,
--- never a variant overlay the core laid over them (ProfileVariants.lua).
--- The layout state of one stored Suite profile: { [owner] = { [key] = copy } }.
-local function CaptureLayoutState(suite)
-    local states = type(suite) == "table" and type(suite.moduleState) == "table" and suite.moduleState or {}
-    local layout = {}
-    for owner, keys in pairs(DB.PROFILE_LAYOUT_STATE) do
-        local state = type(states[owner]) == "table" and states[owner] or {}
-        layout[owner] = CopyKeys(state, keys, {})
-    end
-    return layout
-end
-
-local function CaptureSuite(root)
-    if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end
-    local snapshot = CopyKeys(root, DB.ROOT_SETTINGS, { profiles = {} })
-    local name = root.activeProfile
-    if name ~= nil and type(root.profiles[name]) == "table" then
-        local settings = Suite.ProfileVariants.BaseSettings(name)
-        if not settings then return nil end
-        snapshot.profiles[name] = { suite = settings, layoutState = CaptureLayoutState(root.profiles[name].suite) }
-    end
-    return snapshot
-end
-
--- Writes the captured layout state back, also where it was empty then.
-local function RestoreLayoutState(root, snapshot)
-    local name = snapshot.activeProfile
-    local profile = name ~= nil and type(snapshot.profiles) == "table" and snapshot.profiles[name]
-    local target = type(root.profiles[name]) == "table" and root.profiles[name].suite
-    if type(profile) ~= "table" or type(profile.layoutState) ~= "table" or type(target) ~= "table" then return end
-    for owner, keys in pairs(DB.PROFILE_LAYOUT_STATE) do
-        local saved = type(profile.layoutState[owner]) == "table" and profile.layoutState[owner] or {}
-        if type(target.moduleState) ~= "table" then target.moduleState = {} end
-        local state = type(target.moduleState[owner]) == "table" and target.moduleState[owner] or {}
-        target.moduleState[owner] = state
-        for _, key in ipairs(keys) do state[key] = Suite.CopyValue(saved[key]) end
-    end
-end
-
--- A skin profile holds settings only and is copied whole.
-local function CaptureSkin(root, name)
-    if type(root) ~= "table" or type(root.profiles) ~= "table" then return nil end
-    local snapshot = CopyKeys(root, SKIN_ROOT_SETTINGS, { profiles = {} })
-    name = name or root.activeProfile
-    snapshot.activeProfile = name
-    local profile = root.profiles[name]
-    if name ~= nil and type(profile) == "table" then snapshot.profiles[name] = Suite.CopyValue(profile) end
-    return snapshot
-end
-
-local function RestoreRoot(root, snapshot, rootKeys, profileKeys)
-    for _, key in ipairs(rootKeys) do
-        if snapshot[key] ~= nil then root[key] = Suite.CopyValue(snapshot[key]) end
-    end
-    local name = snapshot.activeProfile
-    local profile = name ~= nil and type(snapshot.profiles) == "table" and snapshot.profiles[name]
-    if type(profile) ~= "table" then return end
-    if not profileKeys then
-        root.profiles[name] = Suite.CopyValue(profile)
-        return
-    end
-    local target = type(root.profiles[name]) == "table" and root.profiles[name] or {}
-    root.profiles[name] = target
-    if type(target.suite) ~= "table" then target.suite = {} end
-    local saved = type(profile.suite) == "table" and profile.suite or {}
-    for _, key in ipairs(profileKeys) do target.suite[key] = Suite.CopyValue(saved[key]) end
-end
-
-local function SkinRoot()
-    local skin = _G.MapkoSkin
-    if type(skin) == "table" and skin.addonName == "MSUF_Suite_Skin"
-        and skin.Database and type(skin.Database.GetRoot) == "function" then
-        return skin, skin.Database.GetRoot()
-    end
-end
-
+-- The Suite Core provider owns history and Workbench payloads alike. Its
+-- decoder also accepts older root-shaped Options points.
 function P.CaptureHistoryState()
-    local root = CaptureSuite(Suite.RootDB)
-    if not root then return nil end
-    local skin, skinRoot = SkinRoot()
-    local db = skin and skin.Database
-    local name = db and db.GetHistoryProfile and db.GetHistoryProfile()
-    local epoch = db and db.GetHistoryEpoch and db.GetHistoryEpoch() or 0
-    return { root = root, skinRoot = CaptureSkin(skinRoot, name), skinEpoch = epoch }
+    return Suite.SuiteProfiles.CaptureWorkbenchSkin()
 end
-
 function P.RestoreHistoryState(state)
-    if Suite.IsCombatLocked() or type(state) ~= "table" or type(state.root) ~= "table"
-        or type(Suite.RootDB) ~= "table" or type(Suite.RootDB.profiles) ~= "table" then
-        return false
-    end
-    local previousProfile = Suite.RootDB.activeProfile
-    -- Base settings go under the overlay: lift it, write and normalize them,
-    -- then lay it again.
-    local lifted = Suite.ProfileVariants.LiftOverlay(previousProfile)
-    RestoreRoot(Suite.RootDB, state.root, DB.ROOT_SETTINGS, DB.PROFILE_SETTINGS)
-    RestoreLayoutState(Suite.RootDB, state.root)
-    local active = Suite.RootDB.profiles[Suite.RootDB.activeProfile]
-    if type(active) == "table" then
-        Suite.DB = active
-        S.Normalize(active)
-    end
-    if lifted then Suite.ProfileVariants.LayOverlay() end
-    if type(active) ~= "table" then return false end
-    local skin, skinRoot = SkinRoot()
-    local epoch = skin and skin.Database.GetHistoryEpoch and skin.Database.GetHistoryEpoch() or 0
-    if (state.skinEpoch or 0) == epoch and type(state.skinRoot) == "table"
-        and type(skinRoot) == "table" and type(skinRoot.profiles) == "table" then
-        RestoreRoot(skinRoot, state.skinRoot, SKIN_ROOT_SETTINGS)
-        skin.Database.SetActiveProfile(skinRoot.activeProfile)
-    end
-    -- The restored state reaches the modules in one pass: the skin switch
-    -- defers its own pass, then either the controller's profile listener or
-    -- ApplyAll applies everything.
-    local skinEnabled = Suite.RootDB.skinEnabled == true
-    if Suite.Skin.enabled ~= skinEnabled then Suite.Skin.SetEnabled(skinEnabled, true) end
-    if previousProfile ~= Suite.RootDB.activeProfile then
-        Suite.OnProfileChanged(Suite.RootDB.activeProfile)
-    else
-        S.ApplyAll()
-    end
-    P.Refresh()
-    return true
+    local ok = Suite.SuiteProfiles.RestoreWorkbenchSkin(Suite.CopyValue(state), "MSUF2_SUITE_HISTORY")
+    if ok then P.Refresh() end
+    return ok
 end
 function P.WithHistory(label, source, fn)
     if type(fn) ~= "function" then return false end
@@ -492,7 +358,9 @@ function P.RuleEnabled(id, rule, resolve, explain)
         return Blocked(explain, "Turn off \"%s\" to change this.", explain and RuleLabel(id, rule.disabledBy))
     end
     local choice = rule.requiresChoice
-    if choice and not choice.values[P.Get(id, RuleKey(resolve, choice.key))] then
+    -- orKey: a second choice that may hold one of the values instead.
+    if choice and not choice.values[P.Get(id, RuleKey(resolve, choice.key))]
+        and not (choice.orKey and choice.values[P.Get(id, RuleKey(resolve, choice.orKey))]) then
         if not explain then return false end
         local choices, labels = P.catalog[id].rules[choice.key], {}
         for value, label in ipairs(choices and choices.choices or {}) do

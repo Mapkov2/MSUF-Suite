@@ -2,14 +2,14 @@ local _, Suite = ...
 local MSUF = assert(_G.MSUF_NS, "MSUF_Suite requires MSUF")
 
 -- MSUF has finalized its saved menu language before this dependent addon runs.
--- Load its one unchanged catalog before any Suite title or binding is captured.
--- Locale companions depend on MSUF alone, avoiding a cycle while Suite loads.
+-- Load the optional language addon before any Suite title or binding is captured.
+-- It depends on MSUF alone, avoiding a cycle while Suite loads.
 local localeAddonName, localeAddonReason
 do
     local translated = { deDE = true, esES = true, esMX = true, frFR = true, itIT = true,
         koKR = true, ptBR = true, ruRU = true, zhCN = true, zhTW = true }
     if translated[MSUF.LOCALE or ""] then
-        localeAddonName = "MSUF_Suite_Locale_" .. MSUF.LOCALE
+        localeAddonName = "MSUF_Suite_Locales"
         local loaded
         loaded, localeAddonReason = C_AddOns.LoadAddOn(localeAddonName)
     end
@@ -245,8 +245,16 @@ end
 -- probes the capability it needs instead.
 Suite.Host = { build = host and "Classic" or "Main" }
 
+function Suite.Client.IsAddOnLoaded(name)
+    local loaded, finished = C_AddOns.IsAddOnLoaded(name)
+    if finished ~= nil then return finished == true end
+    return loaded == true
+end
+
+-- A disabled language addon leaves Suite text English without changing MSUF.
+local localeAddonLoaded = not localeAddonName or Suite.Client.IsAddOnLoaded(localeAddonName)
 Suite.Defaults = {}
-Suite.L = type(MSUF.L) == "table" and MSUF.L or {}
+Suite.L = localeAddonLoaded and type(MSUF.L) == "table" and MSUF.L or {}
 Suite.Safety = {}
 
 -- English source text through MSUF's locale table; a missing or empty
@@ -456,12 +464,6 @@ function Suite.Safety.IsForbidden(frame)
     return frame and type(frame.IsForbidden) == "function" and frame:IsForbidden() == true
 end
 
-function Suite.Client.IsAddOnLoaded(name)
-    local loaded, finished = C_AddOns.IsAddOnLoaded(name)
-    if finished ~= nil then return finished == true end
-    return loaded == true
-end
-
 function Suite.Client.HasAddOn(name)
     return C_AddOns.DoesAddOnExist(name) == true
 end
@@ -522,7 +524,7 @@ end
 
 -- A missing translation must not suppress setup or any enabled module. On
 -- Forever the completed registration, rather than LoadAddOn's result, wins.
-if localeAddonName and not Suite.Client.IsAddOnLoaded(localeAddonName) then
+if not localeAddonLoaded and localeAddonReason ~= "DISABLED" then
     Suite.Print(Suite.Text("Cannot load %s: %s"):format(localeAddonName,
         Suite.Client.LoadReasonText(localeAddonReason, Suite.Text("not installed"))))
 end

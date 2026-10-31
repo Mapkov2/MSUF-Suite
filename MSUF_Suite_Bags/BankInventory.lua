@@ -2,11 +2,12 @@ local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 if NS.Client.isForever then return end
 local Model, Index, Bank, Grid = P.InventoryModel, P.InventoryIndex, P.BankInventoryIndex, P.GridView
+local FreeSlots = P.FreeSlots
 local Font = Grid.Font
 local ALL = { label = "All items", translate = true }
 local VIEW, BANK_VIEW, POOR = NS.BagsView, NS.BagsBankView, Enum.ItemQuality.Poor
 local BankInventory = { index = Bank.New(), model = Model.New(), buttons = {}, labels = {}, categories = {},
-    scroll = 0, config = {}, context = { transactions = true }, filtered = {}, view = {} }
+    scroll = 0, config = {}, context = { transactions = true }, filtered = {}, view = {}, freeSlots = {} }
 P.BankInventory = BankInventory
 local Request, Flush, Render
 local MODES = { [BANK_VIEW.TABS] = "Bank tabs", [BANK_VIEW.CHARACTER] = "Combined bank",
@@ -83,6 +84,13 @@ local function Select(button)
     Request()
 end
 
+-- A header click in the bank's categories: collapse or expand its group. The
+-- bank keeps its own collapsed set (Index.State).
+local function ToggleGroup(key)
+    if NS.IsCombatLocked() then return end
+    if Model.ToggleCollapsed(BankInventory.view.collapsed, key, BankInventory.model.groupsByKey) then Request() end
+end
+
 -- The navigation button at position, made on first use; returns position.
 local function AddNavigation(position, key, text)
     local button = BankInventory.categories[position]
@@ -126,6 +134,23 @@ local function NextMode()
     S.Set("bags", "bankView", M.config.bankView % #MODES + 1)
 end
 
+-- The smart search box and its Filters button stand in the title row.
+local function PlaceSearch(edit, button)
+    button:SetPoint("TOPRIGHT", -12, -7)
+    edit:SetPoint("TOPLEFT", BankInventory.title, "TOPRIGHT", 16, 4)
+    edit:SetPoint("TOPRIGHT", button, "TOPLEFT", -8, 0)
+end
+
+-- The panel hides Blizzard's slots underneath, so it is always opaque; only
+-- its color is a setting (bankBackground). Painted when that color changes.
+local function PaintBackground()
+    local hex = NS.BagsBankColor(M.config)
+    if BankInventory.paintedColor == hex then return end
+    BankInventory.paintedColor = hex
+    local r, g, b = S.RGB(hex)
+    BankInventory.background:SetColorTexture(r, g, b, 1)
+end
+
 local function Create()
     BankInventory.frame = P.ChildFrame("Frame", BankFrame.BankPanel)
     local frame = BankInventory.frame
@@ -134,9 +159,9 @@ local function Create()
     frame:EnableMouse(true)
     frame:EnableMouseWheel(true)
     frame:SetScript("OnMouseWheel", function(_, delta) Scroll(-delta * 3) end)
-    local background = S.CreateTexture(frame, nil, "BACKGROUND")
-    background:SetAllPoints(frame)
-    background:SetColorTexture(0.06, 0.07, 0.08, 1)
+    BankInventory.background = S.CreateTexture(frame, nil, "BACKGROUND")
+    BankInventory.background:SetAllPoints(frame)
+    PaintBackground()
     BankInventory.title = Font(frame, 14)
     BankInventory.title:SetPoint("TOPLEFT", 12, -10)
     BankInventory.previous = Button(frame, "Previous", 72, function() Scroll(-BankInventory.visibleRows) end)
@@ -147,6 +172,12 @@ local function Create()
     BankInventory.position:SetPoint("LEFT", BankInventory.next, "RIGHT", 8, 0)
     BankInventory.native = Button(frame, "Manage bank tabs", 145, function() S.Set("bags", "bankView", BANK_VIEW.TABS) end)
     BankInventory.native:SetPoint("BOTTOMRIGHT", -12, 8)
+    BankInventory.free = Font(frame, 11)
+    BankInventory.free:SetJustifyH("RIGHT")
+    BankInventory.free:SetWordWrap(false)
+    BankInventory.free:SetPoint("LEFT", BankInventory.position, "RIGHT", 8, 0)
+    BankInventory.free:SetPoint("RIGHT", BankInventory.native, "LEFT", -8, 0)
+    P.InventorySearch.Create(BankInventory, Request, frame, PlaceSearch)
     BankInventory.side = P.ChildFrame("ScrollFrame", frame, "UIPanelScrollFrameTemplate")
     BankInventory.side:SetPoint("TOPLEFT", 10, -40)
     BankInventory.side:SetPoint("BOTTOMLEFT", 10, 40)
@@ -172,8 +203,9 @@ local function PaintCell(cell, number, sidebar, font)
     local x, y = sidebar + cell.column * 40, -40 - (cell.line - BankInventory.scroll) * 40
     if not cell.row then
         BankInventory.labelCount = BankInventory.labelCount + 1
+        local toggle = M.config.bankView == BANK_VIEW.CATEGORIES and ToggleGroup or nil
         Grid.PaintHeader(BankInventory.labels, BankInventory.labelCount, BankInventory.frame, BankInventory.frame,
-            x, y - 9, (cell.width or BankInventory.columns) * 40 - 4, cell.group)
+            x, y - 9, (cell.width or BankInventory.columns) * 40 - 4, cell.group, toggle)
         return number
     end
     number = number + 1
@@ -208,7 +240,7 @@ Render = function()
     local layout = Model.Layout(BankInventory.model, BankInventory.columns, M.config.compactGroups)
     BankInventory.maxScroll = math.max(0, BankInventory.model.lineCount - BankInventory.visibleRows)
     BankInventory.scroll = math.min(BankInventory.scroll, BankInventory.maxScroll)
-    for i = 1, #BankInventory.labels do BankInventory.labels[i]:Hide() end
+    Grid.HideHeaders(BankInventory.labels)
     local shown = 0
     BankInventory.labelCount = 0
     local font = Grid.FontPath()
@@ -223,6 +255,7 @@ Render = function()
     BankInventory.previous:SetEnabled(BankInventory.scroll > 0)
     BankInventory.next:SetEnabled(BankInventory.scroll < BankInventory.maxScroll)
     Grid.PositionText(BankInventory.position, BankInventory.scroll, BankInventory.visibleRows, BankInventory.model.lineCount)
+    if M.config.showFreeSlots then FreeSlots.Paint(BankInventory.free, BankInventory.freeSlots) else BankInventory.free:Hide() end
     BankInventory.title:SetText(S.Text(MODES[M.config.bankView]))
     BankInventory.frame:Show()
 end
@@ -276,9 +309,11 @@ Flush = function()
     M:HideBankLevels()
     local moduleState = S.ModuleState("bags")
     if not moduleState then return end
-    local state = Index.State(moduleState, BankInventory.view)
+    local state = Index.State(moduleState, BankInventory.view, "bankCollapsed")
     Bank.Read(BankInventory.index, M.config.bankView)
-    P.InventoryDetails.Index(BankInventory.index)
+    P.InventoryDetails.Index(BankInventory.index, BankInventory.smartQuery)
+    FreeSlots.Read(BankInventory.freeSlots, BankInventory.index, false)
+    BankInventory.context.query = BankInventory.smartQuery
     PrepareModel(state)
     Render()
     RenderNavigation()
@@ -326,9 +361,12 @@ local function Event(_, event, value, success)
     Request()
 end
 
+BankInventory.Request = Request
+
 function BankInventory.Refresh()
     BankInventory.enabled = M.active == true
     Grid.RefreshFonts()
+    if BankInventory.background then PaintBackground() end
     if not BankInventory.events then
         BankInventory.events = S.CreateFrame("Frame")
         BankInventory.events:SetScript("OnEvent", Event)

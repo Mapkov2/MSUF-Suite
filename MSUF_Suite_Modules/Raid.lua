@@ -1,16 +1,18 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local IN_COMBAT = { inCombat = true }
-if NS.Client.isForever then return end
 
 -- Encounter records belong to the Suite objective HUD. Blizzard supplies the
 -- engaged boss list at ENCOUNTER_END, including bosses from earlier phases.
+-- Retail and WoW Forever both document every API the view reads (catalog
+-- HUD.lua lists them), so it runs on both clients.
 local H = {}
 local Finite, Public, Text = S.Finite, S.Public, S.PublicText
 -- The client's secret test (Platform.lua), called directly on boss health.
 local IsSecret = NS.IsSecret
 local Dispatch, Finish = S.Dispatch, NS.Finish
 local Clock = S.ClockText
+local RaidRecords = S.RaidRecords
 local Tr = S.Text
 local DOT = "  \194\183  "
 -- Translated once; the view repaints every second during a pull.
@@ -40,7 +42,7 @@ end
 
 local function Line(parent, size, y)
     local line = S.CreateFontString(parent, nil, "OVERLAY")
-    S.SetStyledFont(line, S.GlobalFontPath(), size, "OUTLINE", 1, true, 70, 1)
+    S.SetStyledFont(line, S.GlobalFontPath(), size, NS.HUDTextArgs())
     line:SetPoint("TOPLEFT", 4, y)
     line:SetPoint("TOPRIGHT", -4, y)
     line:SetJustifyH("LEFT")
@@ -206,11 +208,11 @@ function H.Theme(owner)
     local primary = owner.textRGB or { .95, .96, .98 }
     local muted = owner.mutedRGB or { .78, .81, .85 }
     for _, line in ipairs({ view.name, view.elapsed, view.phase, view.current, view.best, view.fastest }) do
-        S.SetStyledFont(line, font, c.objectiveSize or 13, "OUTLINE", 1, true, 70, 1)
+        S.SetStyledFont(line, font, c.objectiveSize or 13, NS.HUDTextArgs(c))
         line:SetTextColor(unpack(primary))
     end
-    S.SetStyledFont(view.name, font, c.entrySize or 15, "OUTLINE", 1, true, 70, 1)
-    S.SetStyledFont(view.elapsed, font, math.max(23, (c.titleSize or 18) + 5), "OUTLINE", 1, true, 70, 1)
+    S.SetStyledFont(view.name, font, c.entrySize or 15, NS.HUDTextArgs(c))
+    S.SetStyledFont(view.elapsed, font, math.max(23, (c.titleSize or 18) + 5), NS.HUDTextArgs(c))
     view.current:SetTextColor(unpack(muted))
     view.phase:SetTextColor(unpack(muted))
     view.fastest:SetTextColor(unpack(muted))
@@ -222,14 +224,107 @@ function H.Detect(owner)
     return Public(inside) and Public(kind) and inside == true and kind == "raid"
 end
 
+-- Keep only aggregate bests and one encounter selection, never a saved pull.
+local function ClearEncounter(view)
+    view.encounterID, view.difficultyID, view.encounterName, view.difficultyName = nil, nil, nil, nil
+    view.stage, view.stageStep, view.stageSource = nil, nil, nil
+    view.lastTime, view.lastResult, view.instanceID = nil, nil, nil
+end
+
+local function BetterProgress(candidate, previous)
+    return candidate and (not previous or candidate.defeated > previous.defeated
+        or candidate.defeated == previous.defeated and candidate.remaining < previous.remaining)
+end
+
+local function BetterPhase(candidate, previous)
+    return not previous or candidate.step > previous.step
+        or candidate.step == previous.step and candidate.remaining
+            and (not previous.remaining or (candidate.defeated or 0) > (previous.defeated or 0)
+                or (candidate.defeated or 0) == (previous.defeated or 0) and candidate.remaining < previous.remaining)
+end
+
+local function MergeRecord(record, pending)
+    if Finite(pending.fastest) and (not Finite(record.fastest) or pending.fastest < record.fastest) then
+        record.fastest = pending.fastest
+    end
+    if Finite(pending.kills) then record.kills = (Finite(record.kills) and record.kills or 0) + pending.kills end
+    if BetterProgress(pending.best, record.best) then record.best = pending.best end
+    if pending.bestPhases then
+        record.bestPhases = record.bestPhases or {}
+        for source, phase in pairs(pending.bestPhases) do
+            if BetterPhase(phase, record.bestPhases[source]) then record.bestPhases[source] = phase end
+        end
+    end
+end
+
+-- The records are the store the run summary's raid card shares (RaidRecords.lua).
+local function BindRecords(view)
+    local records, data = RaidRecords.Store()
+    if not data then
+        view.records = view.records or {}
+        return view.recordOwner, false
+    end
+    -- Identity can become readable after the result. Merge pending bests once,
+    -- preserving stronger saved results and any already durable binding.
+    if view.records and not view.recordOwner and view.records ~= records then
+        for key, record in pairs(view.records) do
+            if records[key] then MergeRecord(records[key], record)
+            else records[key] = record end
+        end
+        if view.pendingEncounter then data.raidLastEncounter = view.pendingEncounter end
+    end
+    local changed = view.recordOwner ~= data
+    view.records, view.recordOwner, view.pendingEncounter = records, data, nil
+    return data, changed
+end
+
+local function RaidScope()
+    local _, kind, difficulty, _, _, _, _, instance = GetInstanceInfo()
+    if not Public(kind) or kind ~= "raid" or not Finite(instance) or instance <= 0
+        or not Finite(difficulty) or difficulty <= 0 then return end
+    return instance, difficulty
+end
+
+local function RestoreEncounter(owner, view, data, changed)
+    local instance, difficulty = RaidScope()
+    if view.pull then
+        if not instance or not view.instanceID or view.instanceID == instance and view.difficultyID == difficulty then return end
+        H.Stop(owner)
+    end
+    local active = C_InstanceEncounter.IsEncounterInProgress()
+    if not Public(active) or active ~= false then
+        ClearEncounter(view)
+        return
+    end
+    if not changed and instance and view.instanceID == instance and view.difficultyID == difficulty then return end
+    ClearEncounter(view)
+    local saved = data and data.raidLastEncounter
+    if not instance or not Public(saved) or type(saved) ~= "table"
+        or not Finite(saved.encounterID) or saved.encounterID <= 0
+        or not Finite(saved.instanceID) or not Finite(saved.difficultyID)
+        or saved.instanceID ~= instance or saved.difficultyID ~= difficulty then return end
+    local key = saved.encounterID .. ":" .. difficulty
+    if type(view.records[key]) ~= "table" then return end
+    view.encounterID, view.difficultyID, view.instanceID = saved.encounterID, difficulty, instance
+    view.encounterName = Text(saved.encounterName) or L.encounter
+    view.difficultyName = Text(GetDifficultyInfo(difficulty)) or L.difficulty:format(difficulty)
+end
+
+local function RememberEncounter(view, data)
+    local instance, difficulty = RaidScope()
+    if not instance or instance ~= view.instanceID or difficulty ~= view.difficultyID then return end
+    local selected = { encounterID = view.encounterID, difficultyID = difficulty,
+        encounterName = Text(view.encounterName), instanceID = instance }
+    if data then data.raidLastEncounter = selected else view.pendingEncounter = selected end
+end
+
 -- Records belong to the character (MSUF_Suite/Core/CharacterData.lua); the
 -- one-time move from profiles also converted old 0..1 wipe fractions.
 function H.Show(owner)
     if not H.Detect(owner) then return false end
     local view = Create(owner)
-    local data = S.CharacterData("objectives") or {}
-    if type(data.raidRecords) ~= "table" then data.raidRecords = {} end
-    view.records = data.raidRecords
+    local data, changed = BindRecords(view)
+    RestoreEncounter(owner, view, data, changed)
     owner.raidActive = true
     view.frame:Show()
     H.Bind(owner)
@@ -250,9 +345,7 @@ function H.Stop(owner)
     owner.context:RemoveEvent("UNIT_HEALTH")
     owner.context:RemoveEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT")
     view.pull = nil
-    view.encounterID, view.difficultyID, view.encounterName, view.difficultyName = nil, nil, nil, nil
-    view.stage, view.stageStep, view.stageSource = nil, nil, nil
-    view.lastTime, view.lastResult = nil, nil
+    ClearEncounter(view)
     view.live = {}
     view.liveText, view.secretFormat = nil, nil
     for index in pairs(view.liveDirty) do view.liveDirty[index] = nil end
@@ -450,6 +543,8 @@ function H.Start(owner, encounterID, encounterName, difficultyID)
     local view = owner.raid
     StopTicker(owner)
     view.encounterID, view.difficultyID = encounterID, difficultyID
+    local instance, difficulty = RaidScope()
+    view.instanceID = difficulty == difficultyID and instance or nil
     view.encounterName = Text(encounterName) or L.encounter
     view.difficultyName = Text(GetDifficultyInfo(difficultyID)) or L.difficulty:format(difficultyID)
     view.lastTime, view.lastResult = nil, nil
@@ -513,6 +608,7 @@ function H.End(owner, encounterID, _, difficultyID, _, success, status)
     local elapsed = GetTime() - view.pull.started
     view.lastTime = Finite(elapsed) and elapsed >= 0 and elapsed or nil
     view.pull = nil
+    local data = BindRecords(view)
     local key = view.encounterID .. ":" .. view.difficultyID
     local record = view.records[key] or {}
     view.records[key] = record
@@ -520,9 +616,7 @@ function H.End(owner, encounterID, _, difficultyID, _, success, status)
         view.lastResult = L.unavailable
     elseif success == 1 then
         view.lastResult = L.kill
-        if view.lastTime and (not Finite(record.fastest) or view.lastTime < record.fastest) then
-            record.fastest = view.lastTime
-        end
+        RaidRecords.Kill(view.records, key, view.lastTime)
     elseif success == 0 then
         local progress = WipeProgress(status, view.live)
         view.lastResult = L.wipe:format(progress and ProgressText(progress) or L.hpUnavailable)
@@ -540,15 +634,13 @@ function H.End(owner, encounterID, _, difficultyID, _, success, status)
                     boss = progress and progress.boss or nil }
             end
         end
-        local best = record.best
-        if progress and (not best or progress.defeated > best.defeated
-            or progress.defeated == best.defeated and progress.remaining < best.remaining) then
-            record.best = progress
-        end
+        if BetterProgress(progress, record.best) then record.best = progress end
     else
         view.lastResult = L.unavailable
     end
+    if Finite(success) and (success == 0 or success == 1) then RememberEncounter(view, data) end
     Paint(owner)
 end
 
+H.AttemptProgress = WipeProgress
 S.Raid = H

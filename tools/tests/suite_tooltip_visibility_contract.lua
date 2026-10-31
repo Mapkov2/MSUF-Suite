@@ -67,6 +67,10 @@ hooksecurefunc = function(owner, key, callback)
     owner[key] = function(...) original(...); callback(...) end
 end
 GameTooltip = tooltip
+-- The tooltip's scale belongs to the Suite core's owner (TooltipScale.lua).
+ApproximatelyEqual = function(a, b) return math.abs(a - b) < .000001 end
+ns.Finite = function(value) return type(value) == "number" and value == value end
+assert(loadfile(root .. "/MSUF_Suite/Core/TooltipScale.lua"))("MSUF_Suite", ns)
 local context = { events = {} }
 function context:Event(name, callback) self.events[name] = callback end
 function context:RemoveEvent(name) self.events[name] = nil end
@@ -74,7 +78,7 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipVisibility.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
 module.active, module.context = true, context
-module.config = { inCombat = true, inInstances = false }
+module.config = { inCombat = true, inInstances = false, scale = 100 }
 module:Enable()
 assert(context.events.PLAYER_REGEN_DISABLED and context.events.PLAYER_REGEN_ENABLED
     and not context.events.PLAYER_ENTERING_WORLD, "combat-only tooltip listener was not selective")

@@ -4,7 +4,7 @@ if NS.Client.isForever then return end
 local M = { invited = {}, attempted = {} }
 
 -- Blizzard_GroupFinder loads at startup on Retail. Use its activity facts
--- and accept APIs without changing the native dialogs or their state.
+-- without changing the native dialogs or their state.
 local function MythicActivity(activityID)
     if not S.Finite(activityID) then return false end
     local info = C_LFGList.GetActivityInfoTable(activityID)
@@ -74,42 +74,37 @@ local function MythicInvite(resultID)
     return S.Public(activities) and type(activities) == "table" and MythicActivity(activities[1])
 end
 
-local function AcceptInvitation(self)
-    local chosen
-    if self.active and self.config.invites and not NS.InCombat() and not self.joining and CanJoin() then
+local function NotifyInvitations(self)
+    local notify
+    if self.active and self.config.invites and not NS.InCombat() and CanJoin() then
         for resultID in pairs(self.invited) do
             if not self.attempted[resultID] and MythicInvite(resultID) then
-                chosen = resultID
-                break
+                self.attempted[resultID], notify = true, true
             end
         end
     end
     for resultID in pairs(self.invited) do self.invited[resultID] = nil end
-    if not chosen then return end
-    -- One outstanding join only, even if several applications are invited.
-    -- A blocked action stays manual rather than retrying on duplicate events.
-    self.attempted[chosen], self.joining = true, chosen
-    S.Dispatch(NS.Finish, C_LFGList.AcceptInvite, chosen)
+    -- Retail blocks AcceptInvite from addon callbacks even outside combat.
+    -- Keep Blizzard's dialog and its user-click acceptance path untouched.
+    if notify then S.Print(S.Text("Mythic+ invitation received. Accept it in Blizzard's dialog.")) end
 end
 
 local function OnApplication(self, _, resultID, status)
     if not S.Finite(resultID) or not S.PublicText(status) then return end
     if status ~= "invited" then
         self.invited[resultID], self.attempted[resultID] = nil, nil
-        if self.joining == resultID then self.joining = nil end
         return
     end
-    if not self.active or not self.config.invites or self.attempted[resultID] or self.joining or NS.InCombat() then return end
+    if not self.active or not self.config.invites or self.attempted[resultID] or NS.InCombat() then return end
     self.invited[resultID] = true
-    self.context:After(0, AcceptInvitation)
+    self.context:After(0, NotifyInvitations)
 end
 
 function M:Refresh()
     ClearRole(self)
-    self.context:Cancel(AcceptInvitation)
+    self.context:Cancel(NotifyInvitations)
     for resultID in pairs(self.invited) do self.invited[resultID] = nil end
     for resultID in pairs(self.attempted) do self.attempted[resultID] = nil end
-    self.joining = nil
 end
 
 function M:Enable()

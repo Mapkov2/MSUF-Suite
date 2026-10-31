@@ -27,6 +27,11 @@ loadfile = function(path)
 end
 assert(originalLoad(root .. "/tools/tests/suite_menu_ux_contract.lua"))()
 loadfile = originalLoad
+local originalTimer, queuedTimers = C_Timer, {}
+C_Timer = { After = function(delay, callback)
+    assert(delay == 0, "preview visibility replay must be a one-frame callback")
+    queuedTimers[#queuedTimers + 1] = callback
+end }
 local function Context(page)
     return { key = page, width = 340, sections = {}, widgets = {}, refreshers = {}, pageItems = {}, wrapper = CreateFrame("Frame") }
 end
@@ -55,6 +60,7 @@ P.S.DamageMeterDrawMenuPreview = function(parent)
         row.bar.GetStatusBarTexture = function() return fill end
         row.bar.gradientOverlays = false
         row.fillBorder, row.iconBorder = false, false
+        row.rowSeparator, row.iconSeparator, row.iconSkinApplied = false, false, false
         win.rows[i] = row
     end
     parent.provider = win
@@ -178,5 +184,11 @@ assert(chatPaints == 1, "hidden Chat preview repainted its fonts")
 parts.sample:Show()
 regen.scripts.OnShow(regen)
 assert(chatPaints == 2 and regen._events.PLAYER_REGEN_ENABLED, "visible Chat preview did not resume")
+local batch = queuedTimers
+queuedTimers = {}
+for _, callback in ipairs(batch) do callback() end
+assert(#queuedTimers == 0, "preview visibility replay polled while hidden")
+assert(chatPaints == 2, "settled Chat preview replayed its native font painter")
+C_Timer = originalTimer
 CreateFrame, P.Combat, C_AddOns.LoadAddOn = originalCreate, originalCombat, originalAddonLoad
 print("Preview quality: distinct meter targets, bank routing, useful items, reserved height, warm/hidden budgets and cold-combat Chat retry passed")

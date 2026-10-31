@@ -6,9 +6,16 @@ local WHITE = "Interface\\Buttons\\WHITE8X8"
 local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 local RING = "Interface\\AddOns\\MSUF_Suite_Modules\\Media\\Minimap\\Halo"
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "" }
-local function Edges(parent)
+local PROC_GLOW = Suite.ActionBarEnum.PROC_GLOW
+-- The sample spell alert: Blizzard's alert frame is 1.4x its button and the
+-- pixel glow 2 pixels wide on the bars (Paint.lua). The arrows are the bars'
+-- own (Decorations.lua): 17x14 buttons in a 17x34 frame, 4 pixels off bar 1.
+local ALERT_ATLAS, ALERT_SCALE, PIXEL_GLOW = "UI-HUD-RotationHelper-ProcAltGlow", 1.4, 2
+local PAGE_ARROW = { width = 17, height = 14, frameHeight = 34, gap = 4,
+    atlases = { "ui-hud-actionbar-pageuparrow-up", "ui-hud-actionbar-pagedownarrow-up" } }
+local function Edges(parent, layer)
     local edges = {}
-    for i = 1, 4 do edges[i] = parent:CreateTexture(nil, "OVERLAY") end
+    for i = 1, 4 do edges[i] = parent:CreateTexture(nil, layer or "OVERLAY") end
     return edges
 end
 local function Border(edges, target, size, color, shown)
@@ -78,6 +85,13 @@ local function NewTile(ui, ordinal)
     tile.text:SetAllPoints(tile)
     tile.text:SetFrameLevel(tile.cooldown:GetFrameLevel() + 1)
     tile.text:EnableMouse(false)
+    -- The sample spell alert sits with the text, above the cooldown swipe.
+    -- New textures show: the first style pass (glowing) hides them all.
+    tile.alert = tile.text:CreateTexture(nil, "ARTWORK")
+    tile.alert:SetAtlas(ALERT_ATLAS)
+    tile.glowEdges = Edges(tile.text, "ARTWORK")
+    tile.glowRing = tile.text:CreateTexture(nil, "ARTWORK")
+    tile.glowing = true
     tile.key = T.Font(tile.text, "GameFontHighlightSmall", "", T.colors.text)
     tile.count = T.Font(tile.text, "GameFontHighlightSmall", "", T.colors.text)
     tile.name = T.Font(tile.text, "GameFontHighlightSmall", "", T.colors.text)
@@ -127,15 +141,17 @@ local function StyleText(tile, c, p, bar, size, border)
     local r, g, b = P.RGB(c.swipeColor)
     tile.cooldown:SetSwipeColor(r, g, b, c.swipeAlpha / 100)
 end
-local function BorderColor(c)
-    if c.borderClassColor then
+-- A color setting that can follow the player's class: the border and the
+-- highlights (the bars' AB.BuildStyle).
+local function ClassColor(c, classKey, colorKey)
+    if c[classKey] then
         local _, class = UnitClass("player")
         if not Suite.IsSecret(class) and class and RAID_CLASS_COLORS[class] then
             local color = RAID_CLASS_COLORS[class]
             return string.format("%02x%02x%02x", color.r * 255, color.g * 255, color.b * 255)
         end
     end
-    return c.borderColor
+    return c[colorKey]
 end
 -- The button shape as the bars resolve it (AB.ResolveShape, Decorations.lua):
 -- MSUF's shape with its ring art, or on an older host the Suite's own circle.
@@ -166,12 +182,41 @@ local function ShapeTile(tile, shape, legacy)
         tile.chargeCooldown:SetSwipeTexture(circle and CIRCLE or WHITE)
     end
 end
--- The shape and the icon skin every tile of one preview pass shows.
+-- The shape, the icon skin and the glow color every tile of one preview pass shows.
 local form = {}
 local function TileForm(c)
     form.shape, form.ring, form.legacy = TileShape(c)
     form.skin = Suite.HostBridge.IconSkinLook(c.iconSkin, form.shape)
+    form.glow = ClassColor(c, "interactionClassColor", "interactionColor")
     return form
+end
+-- The icon tint of an action button: the usability or range color its bar
+-- paints now, else the usable color. Stance and pet buttons keep Blizzard's.
+local function IconTint(tile, c, bar)
+    if bar > 10 then return 1, 1, 1 end
+    return P.RGB(c[tile.tint or "usableColor"])
+end
+-- The spell alert glow of a sample button (ActionBarsPreviewData.lua), drawn
+-- as the bars do (Paint.lua SetGlow): Blizzard's alert art around the button,
+-- or a border in the highlight color, the ring of a shaped button.
+local function Glow(tile, c, look, size, height)
+    if not (tile.glow or tile.glowing) then return end
+    tile.glowing = tile.glow
+    local mode = tile.glow and c.procGlow
+    local pixel, round = mode == PROC_GLOW.PIXEL, look.shape ~= "RECTANGLE"
+    tile.alert:SetShown(mode == PROC_GLOW.BLIZZARD)
+    tile.alert:ClearAllPoints()
+    tile.alert:SetPoint("CENTER", tile, "CENTER")
+    tile.alert:SetSize(size * ALERT_SCALE, height * ALERT_SCALE)
+    Border(tile.glowEdges, tile, PIXEL_GLOW, look.glow, pixel and not round)
+    tile.glowRing:SetShown(pixel and round)
+    if pixel and round then
+        tile.glowRing:SetTexture(look.ring)
+        tile.glowRing:SetVertexColor(P.RGB(look.glow))
+        tile.glowRing:ClearAllPoints()
+        tile.glowRing:SetPoint("CENTER", tile, "CENTER")
+        tile.glowRing:SetSize(size, size)
+    end
 end
 local function StyleTile(tile, c, p, bar, size, height, color, look)
     local shape, ring, legacy = look.shape, look.ring, look.legacy
@@ -187,6 +232,7 @@ local function StyleTile(tile, c, p, bar, size, height, color, look)
     local x, y = zoom, zoom
     if size > height then y = .5 - (1 - zoom * 2) * math.max(1, height - border * 2) / math.max(1, size - border * 2) / 2 end
     tile.icon:SetTexCoord(x, 1 - x, y, 1 - y)
+    tile.icon:SetVertexColor(IconTint(tile, c, bar))
     tile.fill:SetAllPoints(tile.icon)
     local r, g, b = P.RGB(c.slotColor)
     tile.fill:SetColorTexture(r, g, b, c.slotAlpha / 100)
@@ -204,6 +250,7 @@ local function StyleTile(tile, c, p, bar, size, height, color, look)
         tile.art:SetSize(extent, extent * height / size)
     end
     StyleText(tile, c, p, bar, size, border)
+    Glow(tile, c, look, size, height)
 end
 
 local function Endcap(ui, c, p, side, color)
@@ -247,9 +294,31 @@ local function Background(ui, c, p, width, height, color)
     Border(back.edges, back, c[p .. "BackgroundBorder"], color, true)
 end
 
+-- Bar 1's page arrows (Preview.PageArrowSide): two stacked arrows beside the
+-- bar, centered on it. The canvas owns them, so they scale with the bar.
+local function NewArrows(canvas)
+    local arrows = CreateFrame("Frame", nil, canvas)
+    arrows:SetSize(PAGE_ARROW.width, PAGE_ARROW.frameHeight)
+    for i, atlas in ipairs(PAGE_ARROW.atlases) do
+        local arrow = arrows:CreateTexture(nil, "ARTWORK")
+        arrow:SetAtlas(atlas)
+        arrow:SetSize(PAGE_ARROW.width, PAGE_ARROW.height)
+        arrow:SetPoint(i == 1 and "TOP" or "BOTTOM")
+    end
+    return arrows
+end
+local function PageArrows(ui, side)
+    ui.arrows:SetShown(side ~= nil)
+    if not side then return end
+    local left = side == "LEFT"
+    ui.arrows:ClearAllPoints()
+    ui.arrows:SetPoint(left and "RIGHT" or "LEFT", ui.canvas, left and "LEFT" or "RIGHT",
+        left and -PAGE_ARROW.gap or PAGE_ARROW.gap, 0)
+end
+
 -- Fit the whole decorated bar, including asymmetric offsets, inside the
 -- canvas. Large padding or endcaps must not overlap the header controls.
-local function Bounds(c, p, width, height, size, buttonHeight)
+local function Bounds(c, p, width, height, size, buttonHeight, arrowSide)
     local edge = math.max(0, ((size + c.borderExpansion * 2) * c.borderScale / 100 - size) / 2)
     local padX, padY = edge, edge
     for _, group in ipairs({ "Keybind", "Count", "Macro", "Cooldown" }) do
@@ -279,6 +348,11 @@ local function Bounds(c, p, width, height, size, buttonHeight)
             bottom, top = math.min(bottom, y - cap / 2), math.max(top, y + cap / 2)
         end
     end
+    if arrowSide then
+        local reach = PAGE_ARROW.gap + PAGE_ARROW.width
+        if arrowSide == "LEFT" then left = math.min(left, -width / 2 - reach) else right = math.max(right, width / 2 + reach) end
+        bottom, top = math.min(bottom, -PAGE_ARROW.frameHeight / 2), math.max(top, PAGE_ARROW.frameHeight / 2)
+    end
     return left - 4, right + 4, bottom - 4, top + 4
 end
 
@@ -297,6 +371,21 @@ function Preview.RefreshScope(ui)
     P.SetTranslatedText(ui.status, string.format(Tr("Editing: %s"), label))
 end
 
+-- Reads the bar's buttons and lists the ones the preview displays, in order;
+-- returns how many (Preview.Sample picks the sample buttons among them).
+local function ReadTiles(ui, bar, count, c)
+    local shown, empty = 0, c["bar" .. bar .. "ShowEmpty"]
+    for i = 1, count do
+        local tile = ui.tiles[i]
+        Preview.Read(tile, bar, i, c)
+        if tile.filled or empty then
+            shown = shown + 1
+            ui.displayed[shown] = tile
+        end
+    end
+    return shown
+end
+
 local function Paint(ui)
     if not ui.canvas:IsVisible() then return end
     Preview.RefreshScope(ui)
@@ -307,7 +396,8 @@ local function Paint(ui)
         and math.floor(size * (c[p .. "HeightPercent"] or 100) / 100 + .5) or size
     local columns, rows, r = Suite.ActionBarGrid(count, c[p .. "Rows"], c[p .. "Vertical"])
     local width, height = columns * size + (columns - 1) * gap, rows * buttonHeight + (rows - 1) * gap
-    local left, right, bottom, top = Bounds(c, p, width, height, size, buttonHeight)
+    local arrowSide = Preview.PageArrowSide(bar, c)
+    local left, right, bottom, top = Bounds(c, p, width, height, size, buttonHeight, arrowSide)
     local fit = math.min(1, ui.width / (right - left), (ui.height - 44) / (top - bottom))
     ui.canvas:SetSize(width, height)
     ui.canvas:SetScale(fit)
@@ -315,13 +405,14 @@ local function Paint(ui)
     -- Native anchors scale these local offsets together with the canvas.
     ui.canvas:SetPoint("CENTER", ui.host, "CENTER", -(left + right) / 2, 2 / fit - (top + bottom) / 2)
     ui.canvas:SetAlpha(math.max(.1, c[p .. "Alpha"] / 100))
-    local color = BorderColor(c)
+    PageArrows(ui, arrowSide)
+    local color = ClassColor(c, "borderClassColor", "borderColor")
     Background(ui, c, p, width, height, color)
+    Preview.Sample(ui.displayed, ReadTiles(ui, bar, count, c), bar, c)
     local look = TileForm(c)
     for i, tile in ipairs(ui.tiles) do
         local shown = i <= count
         if shown then
-            Preview.Read(tile, bar, i, c)
             StyleTile(tile, c, p, bar, size, buttonHeight, color, look)
             local col, row = Suite.ActionBarCell(i - 1, columns, rows, r, c[p .. "Vertical"], c[p .. "Start"])
             tile:ClearAllPoints()
@@ -340,11 +431,12 @@ function Preview.Build(ctx, parent, y, width, height, selected)
     host:SetPoint("TOPLEFT", 16, y)
     host:SetSize(width, height)
     host:SetClipsChildren(true)
-    local ui = { ctx = ctx, host = host, width = width, height = height, selected = selected, tiles = {}, caps = {} }
+    local ui = { ctx = ctx, host = host, width = width, height = height, selected = selected, tiles = {}, displayed = {}, caps = {} }
     ctx._msufSuiteActionBarPreview = ui
     ui.status = P.Text(host, "", 0, 0, width, T.colors.muted)
     ui.canvas = CreateFrame("Frame", nil, host)
     ui.canvas:SetPoint("CENTER", host, "CENTER", 0, 2)
+    ui.arrows = NewArrows(ui.canvas)
     ui.background = CreateFrame("Button", nil, ui.canvas)
     ui.background.fill = ui.background:CreateTexture(nil, "BACKGROUND")
     ui.background.fill:SetAllPoints()

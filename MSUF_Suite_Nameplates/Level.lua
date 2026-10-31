@@ -8,6 +8,7 @@ local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local Level = {}
 private.Level = Level
 local M
+local WHITE = { r = 1, g = 1, b = 1 }
 
 function Level.Bind(module) M = module end
 
@@ -103,9 +104,24 @@ local function Label(uf)
     label:SetPoint("RIGHT", container, "LEFT", -4, 0)
     label:SetWidth(24)
     label:SetJustifyH("RIGHT")
-    label:SetTextColor(1, 1, 1)
+    label:SetTextColor(WHITE.r, WHITE.g, WHITE.b)
+    label._suiteLevelColor = WHITE
     M.levelLabels[uf] = label
     return label
+end
+
+-- "Color the level by difficulty": the color Blizzard's target frame gives
+-- an attackable unit's level, its content difficulty for the player
+-- (TargetFrameMixin:CheckLevel, upstream/live and forever). It also follows
+-- level scaling. Other units, and a restricted answer, keep white. Read on a
+-- plate paint and on UNIT_LEVEL; the player's own level up repaints every
+-- plate (Skin.lua FULL_CONTEXT).
+local function DifficultyColor(unit)
+    local attackable = UnitCanAttack("player", unit)
+    if not S.Public(attackable) or attackable ~= true then return WHITE end
+    local difficulty = C_PlayerInfo.GetContentDifficultyCreatureForPlayer(unit)
+    if not S.Public(difficulty) or difficulty == nil then return WHITE end
+    return GetDifficultyColor(difficulty)
 end
 
 function Level.Paint(uf, prefix, unit)
@@ -135,5 +151,10 @@ function Level.Paint(uf, prefix, unit)
     -- SetText accepts secret text in the engine; never compare or format a
     -- secret level in addon Lua.
     label:SetText(value)
+    local color = prefix == "enemy" and M.config.enemyLevelColor and DifficultyColor(unit) or WHITE
+    if label._suiteLevelColor ~= color then
+        label:SetTextColor(color.r, color.g, color.b)
+        label._suiteLevelColor = color
+    end
     label:Show()
 end

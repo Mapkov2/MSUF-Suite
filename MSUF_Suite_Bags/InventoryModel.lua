@@ -3,19 +3,32 @@ local _, P = ...
 -- The native slot remains the authority even when several stacks share a row.
 local Model = {}
 P.InventoryModel = Model
-local VIEW = P.NS.BagsView
+local VIEW, SORT = P.NS.BagsView, P.NS.BagsSort
 local BY_BAG, CATEGORIES = VIEW.BY_BAG, VIEW.CATEGORIES
--- Item classes and qualities: Enum.ItemClass and Enum.ItemQuality
--- (ItemConstantsDocumentation, ItemQualitiesDocumentation; Retail and Forever).
+-- Item classes, subclasses and qualities: Enum.ItemClass, Enum.ItemArmorSubclass,
+-- Enum.ItemMiscellaneousSubclass and Enum.ItemQuality (ItemConstantsDocumentation,
+-- ItemQualitiesDocumentation; Retail and Forever).
 local CLASS, POOR = Enum.ItemClass, Enum.ItemQuality.Poor
+local MISC, COSMETIC = Enum.ItemMiscellaneousSubclass, Enum.ItemArmorSubclass.Cosmetic
 local REAGENT_CLASSES = { [CLASS.Reagent] = true, [CLASS.Tradegoods] = true, [CLASS.Gem] = true }
+local COLLECTIBLE_MISC = { [MISC.CompanionPet] = true, [MISC.Mount] = true, [MISC.MountEquipment] = true }
 local floor, sort = math.floor, table.sort
+-- key, label, order, optional. An optional category exists only while its
+-- category_<key> setting is on, so a layout made without it does not move.
 local BUILTINS = {
-    { "equipment", "Equipment", 40 }, { "consumables", "Consumables", 50 },
-    { "reagents", "Reagents", 60 }, { "recipes", "Recipes", 70 },
+    { "equipment", "Equipment", 40 }, { "professionGear", "Profession gear", 45, true },
+    { "consumables", "Consumables", 50 }, { "reagents", "Reagents", 60 }, { "recipes", "Recipes", 70 },
+    { "collectibles", "Collectibles", 75, true }, { "containers", "Containers", 85, true },
     { "quest", "Quest items", 90 }, { "junk", "Junk", 100 }, { "other", "Other items", 110 },
 }
 Model.categories = BUILTINS
+for i = 1, #BUILTINS do BUILTINS[i].setting = "category_" .. BUILTINS[i][1] end
+
+-- Whether a built-in category is on: the optional ones only when turned on.
+local function CategoryOn(config, entry)
+    if entry[4] then return config[entry.setting] == true end
+    return config[entry.setting] ~= false
+end
 
 local function Clear(t)
     for key in pairs(t) do t[key] = nil end
@@ -39,6 +52,31 @@ end
 
 Model.CATEGORY_ITEMS = 500
 
+-- Group keys the profile keeps collapsed (Categories view), at most this many,
+-- so the profile cannot grow without limit. Keys of groups that are gone (a
+-- renamed equipment set, a custom category deleted) make room first.
+Model.MAX_COLLAPSED = 64
+
+-- Flips one group in the collapsed set. groups is the model's groupsByKey: a
+-- full set drops the keys it does not hold, and only when every key is a live
+-- group does the flip fail (false).
+function Model.ToggleCollapsed(collapsed, key, groups)
+    if collapsed[key] then
+        collapsed[key] = nil
+        return true
+    end
+    local count = 0
+    for _ in pairs(collapsed) do count = count + 1 end
+    if count >= Model.MAX_COLLAPSED then
+        for stale in pairs(collapsed) do
+            if not groups[stale] then collapsed[stale], count = nil, count - 1 end
+        end
+        if count >= Model.MAX_COLLAPSED then return false end
+    end
+    collapsed[key] = true
+    return true
+end
+
 function Model.CountItems(category)
     local count = 0
     for _, enabled in pairs(category.items) do
@@ -51,11 +89,18 @@ function Model.DecodeCategories(text)
     local categories = {}
     if type(text) ~= "string" or #text > 16000 then return categories end
     for line in text:gmatch("[^\r\n]+") do
-        local enabled, name, ids = line:match("^([01])|([^|]*)|([%d, ]*)$")
+        local enabled, name, ids, query = line:match("^([01])|([^|]*)|([%d, ]*)|([^|]*)$")
+        if not enabled then enabled, name, ids = line:match("^([01])|([^|]*)|([%d, ]*)$") end
         if name and #categories < 24 then
             name = Name(Unescape(name))
             if name:find("%S") then
                 local entry = { name = name, enabled = enabled == "1", items = {} }
+                if query and query:find("%S") then
+                    entry.query = Unescape(query)
+                    entry.rule = P.NS.InventoryRules.Compile(entry.query)
+                    -- A rule of blanks is no rule: it would take every item.
+                    if entry.rule and not P.NS.InventoryRules.HasTerms(entry.rule) then entry.query, entry.rule = nil, nil end
+                end
                 local count = 0
                 for value in ids:gmatch("%d+") do
                     local id = tonumber(value)
@@ -86,6 +131,7 @@ function Model.EncodeCategories(categories)
         if name:find("%S") then
             lines[#lines + 1] = (category.enabled == false and "0|" or "1|")
                 .. Escape(name) .. "|" .. table.concat(ids, ",")
+                .. (category.query and category.query:find("%S") and "|" .. Escape(category.query) or "")
         end
     end
     local result = table.concat(lines, "\n")
@@ -109,16 +155,56 @@ local function KeyCategories(model)
     end
 end
 
--- key, label, order, translate (label is Suite English text).
-function Model.Category(item, custom)
+-- What each optional category holds. Collectibles: pets, mounts, toys (the
+-- toy flag is read for them alone, InventoryDetails.lua) and cosmetic armor.
+local OPTIONAL_TESTS = {
+    professionGear = function(item) return item.classID == CLASS.Profession end,
+    containers = function(item) return item.classID == CLASS.Container end,
+    collectibles = function(item)
+        local class = item.classID
+        return item.toy == true or class == CLASS.Battlepet
+            or class == CLASS.Miscellaneous and COLLECTIBLE_MISC[item.subclassID] == true
+            or class == CLASS.Armor and item.subclassID == COSMETIC
+    end,
+}
+
+-- The optional categories that are on, in BUILTINS order (out is refilled).
+local function EnabledOptional(config, out)
+    for i = #out, 1, -1 do out[i] = nil end
+    for i = 1, #BUILTINS do
+        local entry = BUILTINS[i]
+        if entry[4] and config[entry.setting] == true then out[#out + 1] = entry end
+    end
+    return out
+end
+
+-- key, label, order of the first of the optional categories that holds the item.
+local function Optional(item, optional)
+    for i = 1, #optional do
+        local entry = optional[i]
+        if OPTIONAL_TESTS[entry[1]](item) then return entry[1], entry[2], entry[3] end
+    end
+end
+
+Model.EnabledOptional = EnabledOptional
+
+-- key, label, order, translate (label is Suite English text). optional is the
+-- list of optional categories that are on (Model.EnabledOptional); without it only
+-- the categories that are always on exist.
+function Model.Category(item, custom, optional)
     for i = 1, #custom do
         local category = custom[i]
-        if category.enabled and category.items[item.itemID] then
+        if category.enabled and (category.items[item.itemID]
+            or item.itemID and category.rule and P.NS.InventoryRules.Matches(category.rule, item)) then
             return category.key or "custom:" .. category.name, category.name, i + 2, false
         end
     end
     if item.quality == POOR then return "junk", "Junk", 100, true end
     if item.quest then return "quest", "Quest items", 90, true end
+    if optional and optional[1] then
+        local key, label, order = Optional(item, optional)
+        if key then return key, label, order, true end
+    end
     if item.equipLoc and item.equipLoc ~= "" and item.equipLoc ~= "INVTYPE_NON_EQUIP_IGNORE" then
         return "equipment", "Equipment", 40, true
     end
@@ -128,6 +214,15 @@ function Model.Category(item, custom)
     if class == CLASS.Recipe then return "recipes", "Recipes", 70, true end
     if class == CLASS.Questitem then return "quest", "Quest items", 90, true end
     return "other", "Other items", 110, true
+end
+
+-- A custom category that was deleted or renamed leaves its collapsed key
+-- behind (also with an expansion suffix): drop the keys the list no longer holds.
+local function PruneCollapsed(model, collapsed)
+    for key in pairs(collapsed) do
+        local base = key:gsub(":exp:%d+$", "")
+        if base:sub(1, 7) == "custom:" and not model.customIndex[base] then collapsed[key] = nil end
+    end
 end
 
 function Model.New()
@@ -198,6 +293,46 @@ local function SortRows(a, b)
     return a.slot < b.slot
 end
 
+-- The sort modes other than Name: a row's number for the mode, compared
+-- largest first (smallest first for Type). Rows with no number come last and
+-- rows with equal numbers keep name order. Numbers come from the index
+-- record; a row's own count is the sum of its merged stacks.
+local TYPE_STRIDE = 1000
+
+local function Ranked(value, descending)
+    return function(a, b)
+        local x, y = value(a), value(b)
+        if x ~= y then
+            if x == nil then return false end
+            if y == nil then return true end
+            if descending then return x > y end
+            return x < y
+        end
+        return SortRows(a, b)
+    end
+end
+
+local function TypeNumber(row)
+    local item = row.item
+    return item.classID and item.classID * TYPE_STRIDE + (item.subclassID or 0)
+end
+
+local SORTERS = {
+    [SORT.QUALITY] = Ranked(function(row) return row.item.quality end, true),
+    [SORT.ITEM_LEVEL] = Ranked(function(row) return row.item.itemLevel end, true),
+    [SORT.TYPE] = Ranked(TypeNumber, false),
+    [SORT.EXPANSION] = Ranked(function(row) return row.item.expansion end, true),
+    [SORT.STACK] = Ranked(function(row) return row.count end, true),
+    [SORT.PRICE] = Ranked(function(row) return row.item.sellPrice end, true),
+}
+
+-- The comparator for a group's rows, or nil for the order they were read in.
+-- A shuffle outranks the mode; Name sorts Categories only, as it always has.
+local function RowOrder(config, shuffle, categories)
+    if shuffle then return SortRows end
+    return SORTERS[config.sortMode] or categories and SortRows or nil
+end
+
 local function SortGroups(a, b)
     if a.expansionFirst and a.order > 1 and b.order > 1 and a.expansion ~= b.expansion then
         return (a.expansion or -1) > (b.expansion or -1)
@@ -222,7 +357,7 @@ local function Subgroup(item, config, key, label)
 end
 
 -- key, label, order, expansion, translate, expansionName
-local function ItemGroup(item, config, state, custom)
+local function ItemGroup(item, config, state, model)
     if item.itemID and config.showPinned and state.pinned and state.pinned[item.itemID] then
         return "pinned", "Pinned items", 0, nil, true
     end
@@ -234,7 +369,7 @@ local function ItemGroup(item, config, state, custom)
     end
     if config.inventoryView ~= CATEGORIES then return "all", "All items", 2, nil, true end
     if not item.itemID then return "empty", "Empty slots", 200, nil, true end
-    local key, label, order, translate = Model.Category(item, custom)
+    local key, label, order, translate = Model.Category(item, model.custom, model.optional)
     if config["category_" .. key] == false then
         key, label, order, translate = "other", "Other items", 110, true
     end
@@ -263,11 +398,32 @@ end
 local function AddEmptyCategories(model, config)
     for i = 1, #BUILTINS do
         local entry = BUILTINS[i]
-        if config["category_" .. entry[1]] ~= false then Group(model, entry[1], entry[2], entry[3], nil, true) end
+        if CategoryOn(config, entry) then Group(model, entry[1], entry[2], entry[3], nil, true) end
     end
     for i = 1, #model.custom do
         local category = model.custom[i]
         if category.enabled then Group(model, category.key, category.name, i + 2, nil, false) end
+    end
+end
+
+-- Orders a group's rows and picks the ones the grid shows. A collapsed group
+-- (set by the player, not while one group is selected) keeps its header and
+-- shows no rows; hidden counts the rows it holds.
+local function Arrange(group, selected, collapsed, order)
+    local all = not selected or selected == "all"
+    group.visible = all or selected == group.key
+    group.collapsed = all and collapsed ~= nil and collapsed[group.key] == true
+    group.hidden = 0
+    if order then sort(group.rows, order) end
+    for j = 1, #group.rows do
+        local row = group.rows[j]
+        if not all or not row.alias then
+            if group.collapsed then
+                group.hidden = group.hidden + 1
+            else
+                group.displayRows[#group.displayRows + 1] = row
+            end
+        end
     end
 end
 
@@ -276,26 +432,30 @@ function Model.Build(model, items, config, state, context)
     Clear(model.groupsByKey)
     model.rowCount, model.groupCount = 0, 0
     model.expansionFirst = config.expansionFirst == true
+    model.optional = EnabledOptional(config, model.optional or {})
     if model.customText ~= config.customCategories then
         model.customText = config.customCategories
         model.custom = Model.DecodeCategories(config.customCategories)
         KeyCategories(model)
+        if state.collapsed then PruneCollapsed(model, state.collapsed) end
     end
     local merge = config.mergeStacks and not (context and context.transactions)
     local selected = context and context.selected
     local categories = config.inventoryView == CATEGORIES
     local showSets = categories and config.groupEquipmentSets and config.category_equipment ~= false
     local query = context and context.query
-    if query == "" then query = nil end
-    if query then query = query:lower() end
+    if query and not query:find("%S") then query = nil end
+    if query and query ~= model.query then
+        model.query, model.queryRule = query, P.NS.InventoryRules.Compile(query)
+    end
     -- searching: Blizzard's search marks non-matching slots isFiltered.
     local searching = context and context.searching
     for i = 1, #items do
         local item = items[i]
         if not (config.hideEmptySlots and not item.itemID)
             and not (searching and (item.filtered or not item.itemID))
-            and (not query or item.search and item.search:find(query, 1, true)) then
-            local key, label, order, expansion, translate, expansionName = ItemGroup(item, config, state, model.custom)
+            and (not query or item.itemID and model.queryRule and P.NS.InventoryRules.Matches(model.queryRule, item)) then
+            local key, label, order, expansion, translate, expansionName = ItemGroup(item, config, state, model)
             Add(model, Group(model, key, label, order, expansion, translate, expansionName), item, merge)
             -- An item can belong to several equipment sets. Each set filter
             -- includes it, while All keeps one physical native button only.
@@ -306,17 +466,10 @@ function Model.Build(model, items, config, state, context)
         AddEmptyCategories(model, config)
     end
     sort(model.groups, SortGroups)
-    for i = 1, #model.groups do
-        local group = model.groups[i]
-        group.visible = not selected or selected == "all" or selected == group.key
-        if categories or context and context.shuffle then sort(group.rows, SortRows) end
-        for j = 1, #group.rows do
-            local row = group.rows[j]
-            if selected and selected ~= "all" or not row.alias then
-                group.displayRows[#group.displayRows + 1] = row
-            end
-        end
-    end
+    local order = RowOrder(config, context and context.shuffle, categories)
+    -- Collapsing applies to the Categories view; a search shows its matches.
+    local collapsed = categories and not query and not searching and state.collapsed or nil
+    for i = 1, #model.groups do Arrange(model.groups[i], selected, collapsed, order) end
     return model.groups
 end
 
@@ -331,7 +484,7 @@ function Model.Layout(model, columns, compact)
     for g = 1, #model.groups do
         local group = model.groups[g]
         local rows = group.displayRows
-        if group.visible and #rows > 0 then
+        if group.visible and (#rows > 0 or group.collapsed) then
             local span = compact and #rows <= math.floor(columns / 2)
                 and math.floor(columns / 2) or columns
             if column + span > columns then line, column, bandHeight = line + bandHeight, 0, 0 end

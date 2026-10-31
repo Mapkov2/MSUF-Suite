@@ -27,6 +27,10 @@ NS.DamageMeterIconStyle = { NONE = 1, SPEC = 2, CLASS = 3 }
 NS.DamageMeterRowBorder = { NONE = 1, FULL = 2, FILLED = 3 }
 NS.DamageMeterTextStyle = { SHADOW = 1, OUTLINE = 2, THICK = 3, NONE = 4, OUTLINE_SHADOW = 5, THICK_SHADOW = 6 }
 NS.DamageMeterValueFormat = { RATE = 1, PRIMARY = 2, PARENTHESES = 3, BAR = 4, CUSTOM = 5 }
+NS.DamageMeterClickThrough = { NEVER = 1, COMBAT = 2, ALWAYS = 3 }
+NS.DamageMeterSmoothFill = { OFF = 1, ON = 2 }
+-- The lines of a chat report, by the position of its choice.
+NS.DamageMeterReportLines = { 3, 5, 10 }
 local ICON, BORDER, TEXT = NS.DamageMeterIconStyle, NS.DamageMeterRowBorder, NS.DamageMeterTextStyle
 local SHADOWED = { [TEXT.SHADOW] = true, [TEXT.OUTLINE_SHADOW] = true, [TEXT.THICK_SHADOW] = true }
 
@@ -91,6 +95,8 @@ B.Section(id, "general", "Windows and data", {
     Bool("toggleTimer", "Meter hotkey also toggles combat timer", true),
     Bool("toggleHistory", "Meter hotkey also toggles spell history", false),
     Bool("confirmReset", "Ask before resetting data", true),
+    Choice("reportLines", "Lines in chat reports", 2, { "3 lines", "5 lines", "10 lines" }),
+    B.String("favoriteMeters", "Favorite meters", "0,2,5,9", 128),
 })
 B.Section(id, "bars", "Bars", {
     Texture("barTexture", "Bar texture"),
@@ -102,6 +108,8 @@ B.Section(id, "bars", "Bars", {
     Bool("classColors", "Class-colored bars", true),
     Color("barColor", "Bar color", initial.barColor),
     Number("barAlpha", "Bar opacity (percent)", 100, 0, 100, 5),
+    B.Tooltip(Choice("smoothFill", "Smooth bar fill", NS.DamageMeterSmoothFill.OFF, { "Off", "On" }),
+        "Bars glide to their new length instead of jumping. The client animates them, so it costs no extra updates."),
     Color("trackColor", "Bar background color", initial.trackColor),
     Number("trackAlpha", "Bar background opacity (percent)", initial.trackAlpha, 0, 100, 5),
     Choice("iconStyle", "Bar icons", 2, { "None", "Specialization", "Class" }),
@@ -112,7 +120,7 @@ B.Section(id, "bars", "Bars", {
     Number("iconLayer", "Icons: MSUF layer (-1 = Auto)", -1, -1, 30),
     Number("iconSize", "Icon size (0 = bar height)", 0, 0, 40),
     Choice("rowBorderMode", "Row border", 1, { "None", "Full row", "Filled portion" }),
-    Number("rowBorderSize", "Row border thickness", 1, 1, 4),
+    Number("rowBorderSize", "Row border thickness", 1, 1, 16),
     Color("rowBorderColor", "Row border color", "575b58"),
     Bool("rowBorderIcon", "Include icon in row border", false),
     Bool("iconBorder", "Separate icon border", false),
@@ -164,8 +172,9 @@ B.Section(id, "text", "Text and numbers", {
 B.Section(id, "window", "Window and header", {
     Color("bgColor", "Background color", initial.bgColor),
     Number("bgAlpha", "Background opacity (percent)", initial.bgAlpha, 0, 100, 5),
-    Number("borderSize", "Border thickness", initial.borderSize, 0, 4),
+    Number("borderSize", "Border thickness", initial.borderSize, 0, 16),
     Color("borderColor", "Border color", initial.borderColor),
+    Bool("headerVisible", "Show header", true),
     Bool("headerOutside", "Place header above the window", false),
     Bool("headerSelectors", "Show session and meter selectors", true),
     Number("headerHeight", "Header height", 22, 14, 40),
@@ -190,10 +199,19 @@ B.Section(id, "window", "Window and header", {
     Number("resetSize", "Header button size", 0, 0, 64),
     Number("sessionSize", "Header button size", 0, 0, 64),
     Number("typeSize", "Header button size", 0, 0, 64),
+    Number("targetSize", "Header button size", 0, 0, 64),
+    Number("targetOffsetX", "Horizontal position", 0, -200, 200),
+    Number("targetOffsetY", "Vertical position", 0, -200, 200),
     Number("titleSize", "Title size (0 = header text size)", 0, 0, 40),
     Bool("headerMouseover", "Show header buttons only on mouseover", false),
 })
 B.Section(id, "details", "Details", {
+    Bool("targetSelector", "Show target filter button", true),
+    Bool("combatDetails", "Show identifiable party spell details in combat", true),
+    Bool("inlineRecap", "Open death details inside the meter", false),
+    Choice("tooltipAnchor", "Breakdown position", 1, { "Above hovered row", "Screen center", "Left of window", "Right of window" }),
+    Bool("breakdownOwnTexture", "Use a separate breakdown texture", false),
+    Texture("breakdownTexture", "Breakdown bar texture"),
     Bool("hoverTooltip", "Show target damage on mouseover (spells when unavailable)", true),
     Number("tooltipRows", "Breakdown rows", 10, 3, 20),
     Number("tooltipScale", "Breakdown scale (percent)", 100, 80, 150, 5),
@@ -219,7 +237,71 @@ B.Section(id, "timer", "Combat timer", {
     Number("timerY", "Timer: vertical", 250, -2000, 2000),
 })
 
+
+B.Section(id, "surfaces", "Background textures", {
+    Bool("bgTextured", "Use a window background texture", false),
+    Texture("bgTexture", "Window background texture"),
+    Bool("headerTextured", "Use a header background texture", false),
+    Texture("headerTexture", "Header background texture"),
+})
+local borderLooks = { "Solid", "Tooltip", "Dialog", "Gold" }
+B.Section(id, "borders", "Border styling", {
+    Choice("borderStyle", "Window border style", 1, borderLooks),
+    Choice("borderArea", "Window border surrounds", 1, { "Automatic", "Window and header", "Content only" }),
+    Number("borderAlpha", "Window border opacity (percent)", 100, 0, 100, 5),
+    Number("borderGap", "Window border distance", 0, -8, 16),
+    Bool("borderTop", "Window border: top", true),
+    Bool("borderBottom", "Window border: bottom", true),
+    Bool("borderLeft", "Window border: left", true),
+    Bool("borderRight", "Window border: right", true),
+    Choice("rowBorderStyle", "Row border style", 1, borderLooks),
+    Number("rowBorderAlpha", "Row border opacity (percent)", 100, 0, 100, 5),
+    Number("rowBorderGap", "Row border distance", 0, -4, 8),
+    Bool("rowBorderTop", "Row border: top", true),
+    Bool("rowBorderBottom", "Row border: bottom", true),
+    Bool("rowBorderLeft", "Row border: left", true),
+    Bool("rowBorderRight", "Row border: right", true),
+})
+B.Section(id, "iconBorder", "Icon border styling", {
+    Bool("iconBorderCustom", "Use independent icon border settings", false),
+    Choice("iconBorderStyle", "Icon border style", 1, borderLooks),
+    Number("iconBorderSize", "Icon border thickness", 1, 1, 16),
+    Color("iconBorderColor", "Icon border color", "575b58"),
+    Number("iconBorderAlpha", "Icon border opacity (percent)", 100, 0, 100, 5),
+    Number("iconBorderGap", "Icon border distance", 0, -4, 8),
+})
+B.Section(id, "separators", "Separators", {
+    Bool("rowSeparators", "Show row separators", false),
+    Bool("iconSeparator", "Separate icons from bars", false),
+    Bool("headerSeparator", "Show a line below the header", false),
+    Color("separatorColor", "Separator color", "575b58"),
+    Number("separatorAlpha", "Separator opacity (percent)", 70, 0, 100, 5),
+    Number("separatorSize", "Separator thickness", 1, 1, 4),
+    Number("separatorInset", "Separator inset", 0, 0, 6),
+})
+local fontRoles = { { "names", "Name font" }, { "values", "Value font" }, { "header", "Header font" },
+    { "details", "Breakdown font" }, { "timer", "Floating timer font" } }
+for _, role in ipairs(fontRoles) do
+    B.Section(id, role[1] .. "Font", role[2], {
+        Bool(role[1] .. "FontCustom", "Use a separate font and text style", false),
+        Font(role[1] .. "Font", "Font"),
+        Choice(role[1] .. "Outline", "Text style", 2,
+            { "Shadow", "Outline", "Thick outline", "None", "Outline + shadow", "Thick outline + shadow" }),
+        Choice(role[1] .. "Rendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
+    })
+end
+B.Section(id, "timerDock", "Timer placement", {
+    Choice("timerAnchor", "Timer anchor", 1, { "Free position", "Top left", "Top right", "Bottom left", "Bottom right" }),
+    Number("timerWindow", "Attach to window", 1, 1, MAX_WINDOWS),
+    Number("timerDockX", "Docked timer: horizontal", 0, -200, 200),
+    Number("timerDockY", "Docked timer: vertical", 0, -200, 200),
+    Choice("timerAlign", "Timer text alignment", 2, { "Left", "Center", "Right" }),
+})
+
 local defaultTypes = { 1, 3, 8, 6, 10 }
+-- A choice of any meter, or none: the Mythic+ start and each role.
+local meterOrKeep = { "Keep selected meter", unpack(NS.DamageMeterTypeLabels) }
+local ROLE_TIP = "Applies at login and when a specialization change brings this role. A Mythic+ meter keeps its window during a keystone."
 for i = 1, MAX_WINDOWS do
     local p = "w" .. i
     local title = NS.Text("Window %d"):format(i)
@@ -228,15 +310,31 @@ for i = 1, MAX_WINDOWS do
         Choice(p .. "Session", "Fight", 1, { "Current fight", "Overall" }),
         Number(p .. "Width", "Width", NS.Client.isForever and 340 or 260, 150, 900),
         Number(p .. "Height", "Height", 170, 50, 900),
+        Number(p .. "Scale", "Window scale (percent)", 100, 50, 200, 5),
         Number(p .. "Layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
         Number(p .. "X", "Horizontal position", -20, -4000, 4000),
         Number(p .. "Y", "Vertical position", (NS.Client.isForever and 60 or 20) + (i - 1) * 190, -3000, 3000),
         Bool(p .. "Locked", "Lock window", false),
+        B.Tooltip(Choice(p .. "ClickThrough", "Click through the window", NS.DamageMeterClickThrough.NEVER,
+            { "Never", "In combat", "Always" }),
+            "Clicks pass through the window to the game. Edit Mode and the preview still use the mouse, and Mouseover windows cannot be click-through."),
+        Choice(p .. "AutoCurrent", "Return to current fight", 1, { "Use shared setting", "Always", "Never" }),
+        Bool(p .. "SyncSession", "Synchronize fight selection", false),
+        Bool(p .. "MythicSwap", "Switch to Overall when a Mythic+ run ends", false),
+        Choice(p .. "MythicType", "Meter at Mythic+ start", 1, meterOrKeep),
         Bool(p .. "HideDungeon", "Hide in dungeons", false),
+        Bool(p .. "HideDelve", "Hide in Delves", false),
         Bool(p .. "HideRaid", "Hide in raids", false),
         Bool(p .. "HidePvP", "Hide in battlegrounds and arenas", false),
         Bool(p .. "HideWorld", "Hide outside instances", false),
+        B.Tooltip(Choice(p .. "RoleTank", "Meter as tank", 1, meterOrKeep), ROLE_TIP),
+        B.Tooltip(Choice(p .. "RoleHealer", "Meter as healer", 1, meterOrKeep), ROLE_TIP),
+        B.Tooltip(Choice(p .. "RoleDamager", "Meter as damage dealer", 1, meterOrKeep), ROLE_TIP),
     }, { window = i })
+    if NS.Client.isForever then
+        NS.SuiteCatalog[id].rules[p .. "MythicSwap"].hidden = true
+        NS.SuiteCatalog[id].rules[p .. "MythicType"].hidden = true
+    end
 end
 
 -- Presentation dependencies for the menu: enableKey needs the named switch on,
@@ -244,9 +342,14 @@ end
 local rules = NS.SuiteCatalog.damageMeter.rules
 -- Direct element controls live beside the preview instead of duplicating
 -- twelve anonymous position/size rows in the header accordion.
-for _, kind in ipairs({ "settings", "reset", "session", "type" }) do
+for _, kind in ipairs({ "settings", "reset", "session", "type", "target" }) do
     rules[kind .. "OffsetX"].hidden, rules[kind .. "OffsetY"].hidden, rules[kind .. "Size"].hidden = true, true, true
 end
+rules.favoriteMeters.hidden = true
+-- WoW Forever has no Mythic+ keystones: like the window's Mythic+ choices
+-- above, the reset has nothing to act on (D.WantsMythicEvents).
+rules.mythicReset.hidden = NS.Client.isForever or nil
+rules.breakdownTexture.enableKey = "breakdownOwnTexture"
 rules.leftColor.disabledBy = "leftClassColor"
 rules.rightColor.disabledBy = "rightClassColor"
 rules.barColor.disabledBy = "classColors"
@@ -265,6 +368,9 @@ local CUSTOM = { [NS.DamageMeterValueFormat.CUSTOM] = true }
 rules.valueOrder.requiresChoice = { key = "numberFormat", values = CUSTOM }
 rules.valueSeparator.requiresChoice = { key = "numberFormat", values = CUSTOM }
 rules.headerTimer.enableKey = "combatTime"
+for _, key in ipairs({ "headerTimerSize", "headerTimerOffsetX", "headerTimerOffsetY" }) do
+    rules[key].enableKey = "headerTimer"
+end
 rules.timer.enableKey = "combatTime"
 for _, key in ipairs({ "tooltipRows", "tooltipScale", "spellTooltips" }) do rules[key].enableKey = "hoverTooltip" end
 for _, key in ipairs({ "timerSize", "timerKeep", "timerX", "timerY", "timerDecimals", "timerDesaturate", "timerTextColor",
@@ -276,7 +382,37 @@ end
 -- stay editable with Row border None (Rows.lua StyleRowBorder).
 rules.rowBorderIcon.requiresChoice = { key = "rowBorderMode", values = { [BORDER.FULL] = true, [BORDER.FILLED] = true } }
 rules.timerX.category, rules.timerY.category = "advanced", "advanced"
+-- Mouseover windows need the mouse to appear, so they cannot be click-through.
+local VISIBILITY = NS.DamageMeterVisibility
+local NOT_MOUSEOVER = { key = "visibility", values = { [VISIBILITY.ALWAYS] = true, [VISIBILITY.COMBAT] = true,
+    [VISIBILITY.GROUP] = true, [VISIBILITY.NEVER] = true } }
 for i = 1, MAX_WINDOWS do
     rules["w" .. i .. "X"].category = "advanced"
     rules["w" .. i .. "Y"].category = "advanced"
+    rules["w" .. i .. "ClickThrough"].requiresChoice = NOT_MOUSEOVER
+end
+
+-- Delves used to hide with "Hide in dungeons" (the client calls them
+-- scenarios). A profile saved before Hide in Delves existed keeps that
+-- behaviour: the new switch starts from the old one, once, because a stored
+-- value (even false) is never derived again.
+NS.SuiteCatalog[id].prepareConfig = function(config)
+    for i = 1, MAX_WINDOWS do
+        local dungeon, delve = "w" .. i .. "HideDungeon", "w" .. i .. "HideDelve"
+        if config[delve] == nil and config[dungeon] == true then config[delve] = true end
+    end
+end
+
+rules.bgTexture.enableKey = "bgTextured"
+rules.headerTexture.enableKey = "headerTextured"
+for _, role in ipairs(fontRoles) do
+    for _, suffix in ipairs({ "Font", "Outline", "Rendering" }) do
+        rules[role[1] .. suffix].enableKey = role[1] .. "FontCustom"
+    end
+end
+for _, key in ipairs({ "iconBorderStyle", "iconBorderSize", "iconBorderColor", "iconBorderAlpha", "iconBorderGap" }) do
+    rules[key].enableKey = "iconBorderCustom"
+end
+for _, key in ipairs({ "timerAnchor", "timerWindow", "timerDockX", "timerDockY", "timerAlign" }) do
+    rules[key].enableKey = "timer"
 end

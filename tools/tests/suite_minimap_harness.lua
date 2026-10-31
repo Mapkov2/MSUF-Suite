@@ -745,7 +745,7 @@ function H.New(root, client, options)
     -- Blizzard builds its shared font objects at startup on every client.
     G.GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
     Load("MSUF_Suite/Core/FontBridge.lua", "MSUF_Suite", W.Suite)
-    for _, file in ipairs({ "Surfaces", "Runtime", "Timers", "Dialogs", "MicroMenu", "DataSources", "EditMode" }) do
+    for _, file in ipairs({ "Surfaces", "Runtime", "Timers", "Dialogs", "MicroMenu", "DataSources", "PlayerReaders", "EditMode" }) do
         Load("MSUF_Suite_Modules/" .. file .. ".lua", "MSUF_Suite_Modules", W.private)
     end
     for _, file in ipairs(options.modules or H.MODULES) do

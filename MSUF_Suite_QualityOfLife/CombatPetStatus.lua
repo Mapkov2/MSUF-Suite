@@ -76,6 +76,8 @@ local function Update(self, event)
         self.label:SetTextColor(1, .8, .43)
         self.stripe:SetColorTexture(1, .68, .3)
     end
+    -- The sound marks the warning appearing, not a repaint of the shown one.
+    if self.config.sound and not self.host:IsShown() then S.QoLWarningSound() end
     self.host:Show()
 end
 

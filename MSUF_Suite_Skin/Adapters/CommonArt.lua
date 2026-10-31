@@ -265,7 +265,16 @@ local function SkinCategoryCards(selection, state)
     return applied
 end
 
-local function SkinCardsOf(state, selection) SkinCategoryCards(selection, state) end
+local ApplyDeferred
+
+local function SkinCardsOf(state, selection)
+    local root = Resolve("PVEFrame")
+    if Kit.IsHidden(root) then
+        Kit.DeferHidden(root, state, ApplyDeferred, state, nil, nil, 20)
+        return
+    end
+    SkinCategoryCards(selection, state)
+end
 
 local function ScheduleCategoryCards(selection, state)
     if not selection or not state.active then
@@ -348,20 +357,44 @@ local function SkinRowForOwners(row, kind)
     end
 end
 
+local RefreshScrollBox
+
 -- Registered once per ScrollBox as callback(registration, row).
 local function OnRowInitialized(registration, row)
+    if NS.IsCombatLocked() then return end
+    if registration.catchUp or Kit.IsHidden(registration.box[1]) then
+        registration.catchUp = true
+        RefreshScrollBox(registration)
+        return
+    end
     SkinRowForOwners(row, registration.kind)
+end
+
+RefreshScrollBox = function(registration)
+    if CommonArt.activeOwnerCount == 0 then return end
+    local scrollBox = registration.box[1]
+    if not scrollBox or Kit.DeferHidden(scrollBox, registration, RefreshScrollBox, registration, nil, nil, 20) then return end
+    if NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer(registration.key, registration.refreshRows)
+        return
+    end
+    NS.CombatGate.Cancel(registration.key)
+    registration.catchUp = false
+    Kit.ForEachRow(scrollBox, registration.visitRow)
 end
 
 local function RegisterScrollBox(scrollBox, kind)
     if not scrollBox or CommonArt.scrollBoxes[scrollBox] then
         return false
     end
-    local registration = { kind = kind }
+    local registration = { kind = kind, catchUp = true, box = setmetatable({ scrollBox }, { __mode = "v" }) }
+    registration.key = "common-art:rows:" .. tostring(scrollBox)
+    registration.refreshRows = function() RefreshScrollBox(registration) end
+    registration.visitRow = function(row) SkinRowForOwners(row, kind) end
     registration.event = Kit.RegisterRowCallback(scrollBox, OnRowInitialized, registration)
     if not registration.event then return false end
     CommonArt.scrollBoxes[scrollBox] = registration
-    Kit.ForEachRow(scrollBox, function(row) SkinRowForOwners(row, kind) end)
+    RefreshScrollBox(registration)
     return true
 end
 
@@ -370,6 +403,7 @@ local function ApplyNow(state)
         return false, "disabled"
     end
 
+    if Kit.DeferHidden(Resolve("PVEFrame"), state, ApplyDeferred, state, nil, nil, 20) then return true, "waiting" end
     Kit.Attach(state, _G.PVEFrame, SHELL_SPEC)
     for index = 1, #exactGlobalRegions do
         Fade(state, _G[exactGlobalRegions[index]])
@@ -386,6 +420,10 @@ local function ApplyNow(state)
     end
     -- Forever lacks PVEFrame: Blizzard_GroupFinder excludes the camelot game type.
     return _G.PVEFrame ~= nil, _G.PVEFrame and "applied" or "missing"
+end
+
+ApplyDeferred = function(state)
+    return Owners.RunOrDefer(state, "visible", ApplyNow)
 end
 
 function CommonArt.Apply(owner)
@@ -408,6 +446,8 @@ end
 
 local function UnregisterScrollBoxes()
     for scrollBox, registration in pairs(CommonArt.scrollBoxes) do
+        Kit.CancelHidden(registration)
+        NS.CombatGate.Cancel(registration.key)
         Kit.UnregisterRowCallback(scrollBox, registration.event, registration)
     end
     CommonArt.scrollBoxes = Kit.WeakSet()

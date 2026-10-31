@@ -254,10 +254,11 @@ local function NavShape()
     end
     return table.concat(out, " ")
 end
-assert(NavShape():find("#general gameplay@general suite_qualityOfLife@general opt_misc@general", 1, true),
-    "Quality of Life is missing from General: " .. NavShape())
+assert(NavShape():find("#general gameplay@general suite_qualityOfLife@general suite_macros@general suite_planningTools@general opt_misc@general", 1, true),
+    "Quality of Life / Macros / Adventure planner order differs in General: " .. NavShape())
 local rows = {}
 for _, item in ipairs(M.navItems) do if item.key then rows[item.key] = item end end
+assert(rows.suite_macros.availability() == true, "macro workspace must stay available while automatic updates are off")
 assert(rows.suite_modules == nil and M.pages.suite_modules == nil and M.ALIASES.suite_modules == nil,
     "the removed Suite Modules page is still reachable")
 assert(M.PageHasReset("suite_bags") == true and M.PageHasReset("suite_skin") == true,
@@ -275,8 +276,22 @@ do
         suite_cooldownManager = "MSUF_Suite_CooldownManager", suite_buffReminders = "MSUF_Suite_BuffReminders",
     }
     for key, addon in pairs(addonForPage) do
+        local owners = { [addon] = true }
+        for _, id in ipairs(Suite.SuiteOrder) do
+            local spec = P.catalog[id]
+            if spec.page == key then owners[spec.addon] = true end
+        end
         for _, state in ipairs({ disabled, missing }) do
+            local prior = {}
+            for owner in pairs(owners) do prior[owner] = state[owner] end
             state[addon] = true
+            local shared = key == "suite_bags" or key == "suite_chat" or key == "suite_actionbars"
+            if shared then
+                local _, reason = rows[key].availability()
+                assert(reason ~= notice and M.PageHasReset(key), key .. ": styling disabled independent helper tools")
+            end
+            -- A shared page is unavailable only when every owning AddOn is.
+            for owner in pairs(owners) do state[owner] = true end
             local ok, reason, hide = rows[key].availability()
             assert(ok == false and reason == notice and not hide, key .. ": unavailable row must stay grey and clickable")
             local before, buttonsBefore = #fonts, #buttons
@@ -309,12 +324,37 @@ do
             assert((graphics and #ctx.widgets == 4) or (#ctx.widgets == 0 and #ctx.sections == 0),
                 key .. ": unavailable page built module settings")
             assert(not M.PageHasReset(key) and not M.ResetPageToDefaults(key), key .. ": unavailable page can reset settings")
-            state[addon] = nil
+            for owner in pairs(owners) do state[owner] = prior[owner] end
         end
+    end
+    -- Notice history belongs to the shared runtime, independently of QoL.
+    do
+        local spec = assert(P.catalog.notificationHistory)
+        assert(spec.page == "suite_qualityOfLife" and spec.addon == "MSUF_Suite_Modules",
+            "notice history must retain its shared runtime owner on the QoL page")
+        local history = S.Config("notificationHistory")
+        local wasEnabled, wasLoaded = history.enabled, loaded[spec.addon]
+        history.enabled, loaded[spec.addon] = true, true
+        for _, state in ipairs({ disabled, missing }) do
+            local priorQoL, priorRuntime = state.MSUF_Suite_QualityOfLife, state[spec.addon]
+            state.MSUF_Suite_QualityOfLife, state[spec.addon] = true, nil
+            local ok, reason, hide = rows.suite_qualityOfLife.availability()
+            assert(ok == true and reason ~= notice and not hide and M.PageHasReset("suite_qualityOfLife"),
+                "enabled notice history must keep QoL reachable while its other owner is unavailable")
+            state.MSUF_Suite_QualityOfLife, state[spec.addon] = priorQoL, priorRuntime
+        end
+        history.enabled, loaded[spec.addon] = wasEnabled, wasLoaded
     end
     -- A menu-disabled load-on-demand module still exposes the switch that
     -- turns it back on. Only the rail is dimmed, and missing runtime code is
     -- never mistaken for an active module.
+    local helperStates = {}
+    for id in pairs(P.OwnedTools) do
+        if P.catalog[id].page == "suite_bags" then
+            helperStates[id] = S.Config(id).enabled
+            S.Config(id).enabled = false
+        end
+    end
     local wasEnabled, wasLoaded = S.Config("bags").enabled, loaded.MSUF_Suite_Bags
     S.Config("bags").enabled, loaded.MSUF_Suite_Bags = false, nil
     assert(rows.suite_bags.availability() == false, "Frame Basics off does not dim the rail")
@@ -328,6 +368,7 @@ do
     S.Config("bags").enabled = false
     assert(rows.suite_bags.availability() == false, "loaded module ignores its Frame Basics switch")
     S.Config("bags").enabled, loaded.MSUF_Suite_Bags = wasEnabled, wasLoaded
+    for id, enabled in pairs(helperStates) do S.Config(id).enabled = enabled end
 
     -- A multi-module destination stays active while any of its modules is on.
     local states = {}

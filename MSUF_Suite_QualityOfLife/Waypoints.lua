@@ -4,14 +4,29 @@ local S = P.Suite
 local M = {}
 local COMMAND, ALIAS = "MSUFSUITEWAY", "/way"
 
+-- False once a piece is no number or a fourth value appears.
+local function Add(words, text)
+    local value = tonumber(text)
+    if not S.Finite(value) then return false end
+    words[#words + 1] = value
+    return #words <= 3
+end
+
+-- A comma at the edge of a word separates numbers ("12.3, 45.6"), as does
+-- one beside a period ("12.3,45.6"); one inside a plain number ("12,3 45,6")
+-- is a decimal comma.
 local function Coordinates(message)
     if not S.PublicText(message) then return nil end
     local words = {}
     for word in message:gmatch("%S+") do
-        local value = tonumber((word:gsub(",", ".")))
-        if not S.Finite(value) then return nil end
-        words[#words + 1] = value
-        if #words > 3 then return nil end
+        word = word:gsub("^,+", ""):gsub(",+$", "")
+        if word:find(".", 1, true) then
+            for piece in word:gmatch("[^,]+") do
+                if not Add(words, piece) then return nil end
+            end
+        elseif word ~= "" and not Add(words, (word:gsub(",", "."))) then
+            return nil
+        end
     end
     if #words == 2 then return nil, words[1], words[2] end
     if #words == 3 and words[1] % 1 == 0 then return words[1], words[2], words[3] end

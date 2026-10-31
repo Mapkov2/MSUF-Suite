@@ -135,23 +135,14 @@ function AB.ReadBlizzard()
     return state
 end
 
--- Blizzard's hidden bars still apply their own shown-button plan to the
--- buttons the suite reuses: action changes (UpdateAction calls
--- self.bar:UpdateShownButtons, also in combat), spellbook and Quick Keybind
--- grids and Edit Mode icon counts call UpdateShownButtons, which caps them at
--- Blizzard's icon count. The suite's plan runs again with the next flush out
--- of combat (AB.Regrid, once per bar for a burst), and the reused buttons'
--- OnHide wrap (KEEP) answers at once, also in combat. The
--- suite writes nothing on Blizzard's bar or buttons (numButtonsShowable,
--- `bar` and the like): Blizzard's secure code reads those fields, and a
--- tainted value would spread into it.
+-- Visible buttons keep the suite plan through their restricted hide wrap.
+-- Under a hidden header native Hide is silent, so only that case needs the
+-- coalesced grid repair. Alpha-only mouseover hiding still counts as visible.
 local suiteBarOf = {}
 local function AfterBlizzardPlan(blizzardBar)
     local bar = suiteBarOf[blizzardBar]
-    if bar and M.active then AB.Regrid(bar) end
+    if bar and M.active and not bar.header:IsVisible() then AB.Regrid(bar) end
 end
--- Both hooks run inside Blizzard's call chains (UpdateShownButtons, the
--- main bar's OnShow): isolated, so an error never stops Blizzard's caller.
 local function AfterBlizzardPlanHook(blizzardBar) Dispatch(AfterBlizzardPlan, blizzardBar) end
 local function ReassertHook() Dispatch(Reassert) end
 
@@ -172,8 +163,7 @@ if show then self:Show() end
 ]]
 
 -- Bars 2-8 and the stance and pet bars go under the hidden parent. Bars
--- 2-8 lose their events; a reused bar keeps a post-hook on its own
--- shown-button plan (AfterBlizzardPlan).
+-- 2-8 lose their events; the reused buttons keep their restricted hide wrap.
 local function DisposeBars(control)
     local bars = 0
     for index = 2, 8 do

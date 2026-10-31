@@ -17,7 +17,7 @@ local function Run(extra, selected)
         C_AddOns = { GetNumAddOns = function() return 2 + extra end,
             GetAddOnInfo = function(index)
                 metadata = metadata + 1
-                return index <= 2 and ("Addon" .. index) or "MSUF_Suite_Locale_deDE"
+                return index <= 2 and ("Addon" .. index) or "MSUF_Suite_Locales"
             end },
     }, { __index = _G })
     setfenv(assert(loadfile(root .. "/MSUF_Suite_Modules/DataSources.lua")), env)("MSUF_Suite_Modules", { Suite = S })
@@ -39,8 +39,8 @@ local function Run(extra, selected)
     return table.concat(rows, "\n"), initialReads
 end
 local before, oldReads = Run(0, false)
-local after, newReads = Run(10, false)
-assert(before == after and newReads == oldReads + 10, "unloaded locale slots changed memory totals/rows")
-local selected = Run(10, true)
-assert(selected:find("MSUF_Suite_Locale_deDE=256.00 KB", 1, true), "loaded companion was hidden from native memory ownership")
-print("Suite locale memory footprint: 10 zero-usage slots preserve totals/rows and30s cache; +10 native reads per existing sample/tooltip, selected pack reported")
+local after, newReads = Run(1, false)
+assert(before == after and newReads == oldReads + 1, "unloaded locale slots changed memory totals/rows")
+local selected = Run(1, true)
+assert(selected:find("MSUF_Suite_Locales=256.00 KB", 1, true), "loaded companion was hidden from native memory ownership")
+print("Suite locale memory footprint: one zero-usage slot preserve totals/rows and30s cache; +1 native read per existing sample/tooltip, selected pack reported")

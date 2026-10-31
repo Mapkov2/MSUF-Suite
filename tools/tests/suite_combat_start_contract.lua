@@ -50,7 +50,7 @@ C_AddOns = {
         local controller = Suite.Suite
         if name == "MSUF_Suite_Modules" then
             controller.NewContext = function()
-                return { Release = function() end, RefreshOwnedSkins = function() end }
+                return { Release = function() end }
             end
             -- The shared runtime's Edit Mode elements (MSUF_Suite_Modules/EditMode.lua).
             controller.Finite, controller.Text = Suite.Finite, function(text) return text end

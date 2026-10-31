@@ -1,20 +1,20 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
-local Model, Index, Grid = P.InventoryModel, P.InventoryIndex, P.GridView
+local Model, Index, Grid, FreeSlots = P.InventoryModel, P.InventoryIndex, P.GridView, P.FreeSlots
 local Font, Button = Grid.Font, Grid.Button
 local VIEW, POOR = NS.BagsView, Enum.ItemQuality.Poor
 local ALL, PINNED = { label = "All items", translate = true }, { label = "Pinned items", translate = true }
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
 local InventoryView = { index = Index.New(), model = Model.New(), buttons = {}, labels = {}, scroll = 0, view = {},
-    context = {}, layout = "native" }
+    context = {}, layout = "native", freeSlots = {} }
 InventoryView.nativeCountFonts = setmetatable({}, { __mode = "k" })
 InventoryView.visibleButtons, InventoryView.slotState = {}, setmetatable({}, { __mode = "k" })
 P.InventoryView = InventoryView
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 -- Cell size, the space above the first Suite row, the footer above the money
 -- row, and the top margin of the combat layout (below the window header).
-local CELL, TOP, FOOTER, COMBAT_TOP = 40, 92, 50, 66
+local CELL, TOP, FOOTER, COMBAT_TOP = 40, 122, 50, 66
 local Request, Render, Flush
 -- Windows that take items one physical stack at a time: merged stacks split
 -- up while one is open. Blizzard_GuildBankUI loads on demand.
@@ -125,6 +125,14 @@ local function CategoryButton(key, group, count, order)
     return button
 end
 
+-- A header click in the Categories view: collapse or expand its group. The
+-- collapsed set belongs to the profile (Index.State).
+local function ToggleGroup(key)
+    if NS.IsCombatLocked() then return end
+    local state = State()
+    if state and Model.ToggleCollapsed(state.collapsed, key, InventoryView.model.groupsByKey) then Request() end
+end
+
 local function ViewSelected(button)
     InventoryView.scroll, InventoryView.selected = 0, "all"
     InventoryView.shuffle = false
@@ -167,6 +175,12 @@ local function MakeFooter(frame)
     InventoryView.shuffleButton:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Dice-Up")
     InventoryView.shuffleButton:SetScript("OnEnter", ShuffleEnter)
     InventoryView.shuffleButton:SetScript("OnLeave", GameTooltip_Hide)
+    -- The free slot count takes the room between the page counter and the buttons.
+    InventoryView.free = Font(InventoryView.chrome, 11)
+    InventoryView.free:SetJustifyH("RIGHT")
+    InventoryView.free:SetWordWrap(false)
+    InventoryView.free:SetPoint("LEFT", InventoryView.position, "RIGHT", 8, 0)
+    InventoryView.free:SetPoint("RIGHT", InventoryView.shuffleButton, "LEFT", -6, 0)
 end
 
 local function MakeControls()
@@ -182,6 +196,7 @@ local function MakeControls()
         button:SetPoint("TOPLEFT", 12 + (view - 1) * 104, -62)
     end
     MakeFooter(frame)
+    P.InventorySearch.Create(InventoryView, Request)
     InventoryView.sidebar = P.ChildFrame("ScrollFrame", InventoryView.chrome, "UIPanelScrollFrameTemplate")
     InventoryView.sidebar:SetPoint("TOPLEFT", 12, -TOP)
     InventoryView.sidebar:SetPoint("BOTTOMLEFT", InventoryView.previous, "TOPLEFT", -4, 8)
@@ -319,8 +334,9 @@ local function PaintCell(cell, top, sidebar, columns, font)
         PaintSlot(row.item, sidebar + cell.column * CELL, y, row, row.count, font)
     else
         InventoryView.labelCount = InventoryView.labelCount + 1
+        local toggle = M.config.inventoryView == VIEW.CATEGORIES and ToggleGroup or nil
         Grid.PaintHeader(InventoryView.labels, InventoryView.labelCount, InventoryView.chrome, InventoryView.frame,
-            sidebar + cell.column * CELL, y - 10, (cell.width or columns) * CELL - 5, group)
+            sidebar + cell.column * CELL, y - 10, (cell.width or columns) * CELL - 5, group, toggle)
     end
 end
 
@@ -357,7 +373,7 @@ end
 
 local function ClearVisible()
     for button in pairs(InventoryView.visibleButtons) do InventoryView.visibleButtons[button] = nil end
-    for i = 1, #InventoryView.labels do InventoryView.labels[i]:Hide() end
+    Grid.HideHeaders(InventoryView.labels)
     InventoryView.labelCount = 0
 end
 
@@ -367,6 +383,15 @@ local function HideUnplaced()
         if not InventoryView.visibleButtons[button] and button:IsShown() then button:Hide() end
     end
     InventoryView.positionsDirty = false
+end
+
+local function PaintFree()
+    local counts = InventoryView.freeSlots
+    if M.config.showFreeSlots and counts.regular then
+        FreeSlots.Paint(InventoryView.free, counts)
+    else
+        InventoryView.free:Hide()
+    end
 end
 
 local function RenderSuite()
@@ -396,6 +421,7 @@ local function RenderSuite()
     InventoryView.previous:SetEnabled(InventoryView.scroll > 0)
     InventoryView.next:SetEnabled(InventoryView.scroll < InventoryView.maxScroll)
     Grid.PositionText(InventoryView.position, InventoryView.scroll, visibleRows, InventoryView.model.lineCount)
+    PaintFree()
     SetWindowSize(max(500, sidebar + columns * CELL + 12), visibleRows * CELL + TOP + bottom)
 end
 
@@ -446,6 +472,7 @@ local function BuildModel(state)
     -- Blizzard's search only dims matching buttons; matches on later pages
     -- would stay unseen, so the Suite grid lists the matches alone.
     InventoryView.context.searching = InventoryView.index.filtered > 0
+    InventoryView.context.query = InventoryView.smartQuery
     InventoryView.selected = Grid.Build(Model, InventoryView.model, InventoryView.index.items, M.config, state, InventoryView.context, InventoryView.selected)
 end
 
@@ -464,7 +491,7 @@ Flush = function(event)
     local state = State()
     if not state then return end
     Index.ReadContainer(InventoryView.index, InventoryView.frame, Index.Recent())
-    P.InventoryDetails.Index(InventoryView.index)
+    P.InventoryDetails.Index(InventoryView.index, InventoryView.smartQuery)
     if NS.InCombat(event) then
         RenderCombat()
         return
@@ -473,6 +500,7 @@ Flush = function(event)
         InventoryView.splitPending = true
         return
     end
+    if M.config.showFreeSlots then FreeSlots.Read(InventoryView.freeSlots, InventoryView.index, true) end
     BuildModel(state)
     RenderSuite()
     RenderSidebar()

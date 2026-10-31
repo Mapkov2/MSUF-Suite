@@ -33,6 +33,8 @@ local suite = {
     Text = function(value) return value end,
     Print = function(value) lines[#lines + 1] = value end,
     SetFont = function(frame, _, size, flags) frame.fontSize, frame.fontFlags = size, flags end,
+    -- The QoL bootstrap's S.PlaceHost: the same anchor point of the frame and the screen.
+    PlaceHost = function(frame, config) frame:SetPoint("CENTER", UIParent, "CENTER", config.x, config.y) end,
     CreateFrame = function(kind, name, parent, template)
         created = created + 1
         assert(kind == "MessageFrame" and parent == UIParent and not template,
@@ -67,7 +69,8 @@ ns.InCombat = assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_QualityOfLife/GroupDeathAlert.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
 assert(module)
-module.active, module.context, module.config = true, context, { includePlayer = false, screen = true }
+module.active, module.context, module.config = true, context,
+    { includePlayer = false, screen = true, scale = 100, point = 5, x = 0, y = 55 }
 module:Enable()
 assert(not context.events.UNIT_HEALTH and context.events.GROUP_ROSTER_UPDATE,
     "group health must not be observed while idle")

@@ -39,7 +39,6 @@ local Public = S.Public
 local EMPTY = C.EMPTY
 
 local BAR_TEXTURE = K.BAR_TEXTURE
-local TEXT_DEFAULT = {}
 -- Init of a button whose group has no entry yet: the bar's choices.
 local NO_ENTRY = {}
 local TIMER = Enum.StatusBarTimerDirection
@@ -48,17 +47,15 @@ local IMMEDIATE = Enum.StatusBarInterpolation.Immediate
 -- the elapsed time up.
 local BAR_OPTS = { [K.BAR_FILL.DRAIN] = { direction = TIMER.RemainingTime, interpolation = IMMEDIATE },
     [K.BAR_FILL.FILL] = { direction = TIMER.ElapsedTime, interpolation = IMMEDIATE } }
-local GOLD = K.GLOW_GOLD
 local BAR_LEVEL, ICON_LEVEL = K.AURA_LEVEL, K.AURA_ICON_LEVEL
 local STACK_COLOR = NS.CDM.SPELL_DEFAULTS.stackColor
 -- Every field Look writes: the signature changes exactly when a button needs restyling.
 local LOOK = { "w", "h", "px", "bw", "er", "eg", "eb", "l", "r", "t", "b", "font", "flags", "rendering", "shadow", "shadowOpacity",
     "shadowDistance", "cs", "ss", "sp", "cr", "cg", "cb", "sr", "sg", "sb", "swipe", "edge", "tip", "tex", "fr", "fg", "fb", "bgA", "icon", "side",
-    "smax", "marks", "skinSig", "shape" }
+    "smax", "marks", "relook", "skinSig", "shape" }
 local NO_MARKS = {}
 
 local sig = {}
-local textOpts = K.NewCache()  -- duration text options per countdown formatter
 local countOpts = K.NewCache() -- stack text options per (N, color)
 local Recall, Remember = K.Recall, K.Remember
 local barOpts = {}   -- SetApplicationBar options (Blizzard copies them)
@@ -72,39 +69,17 @@ local Px = K.Px
 local Child = K.Child
 local function Snap(value, px) return floor(value / px + .5) * px end
 local ClassRGB = K.ClassRGB
--- Glows and edges (AuraGlows.lua loads first).
-local Glows = C.AuraGlows
+-- Glows and edges (AuraGlows.lua), per-spell border, fill and name
+-- (AuraLooks.lua): both load first.
+local Glows, Looks = C.AuraGlows, C.AuraLooks
 local Edges, NewGlow, NewStack, BindStack = Glows.Edges, Glows.NewGlow, Glows.NewStack, Glows.BindStack
 local ApplyGlow, ApplyStack, ApplyCombatGate = Glows.ApplyGlow, Glows.ApplyStack, Glows.ApplyCombatGate
 local NewPandemic, ApplyPandemic = Glows.NewPandemic, Glows.ApplyPandemic
 
--- Duration text options per (threshold, warning color): a binding template
--- that Blizzard copies into each button, around the shared countdown
--- formatter (Const). The fallbacks must ride on the binding, and without a
--- formatter on it no text renders at all.
--- Every entry of a sync asks for the same few signatures, so the last answer
--- is kept: a repeat costs four compares.
-local lastSeconds, lastR, lastG, lastB, lastOpts
-local function TextOpts(seconds)
-    local state = C.state
-    local r, g, b = state.thR, state.thG, state.thB
-    if lastOpts and seconds == lastSeconds and r == lastR and g == lastG and b == lastB then return lastOpts end
-    local formatter = K.CountdownFormatter(seconds, r, g, b)
-    local opts = textOpts.young[formatter] or Recall(textOpts, formatter)
-    if opts then
-        lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
-        return opts
-    end
-    local binding = C_DurationUtil.CreateDurationTextBinding()
-    binding:SetFormatter(formatter)
-    binding:SetZeroDurationText("")
-    binding:SetExpiredText("")
-    binding:SetUpdateInterval(.1)
-    binding:SetEnabled(true)
-    opts = Remember(textOpts, formatter, { binding = binding })
-    lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
-    return opts
-end
+-- Duration text options per (threshold, warning color, the Text section's
+-- tenths and urgent stage): a binding template that Blizzard copies into
+-- each button, around the shared countdown formatter (both Const's).
+local TextOpts = K.DurationText
 
 -- Stack text options per (stackColorAt, stackColor): one formatter per
 -- signature, shared by every button. Nothing below two applications (like
@@ -114,7 +89,9 @@ local function CountOpts(ov)
     local n = ov.stackColorAt
     if type(n) ~= "number" or n < 1 then return nil end
     n = floor(n)
-    local hex = ov.stackColor or STACK_COLOR
+    -- "": a specialization's explicit default color.
+    local hex = ov.stackColor
+    if hex == nil or hex == "" then hex = STACK_COLOR end
     local rgb = type(hex) == "string" and #hex == 6 and tonumber(hex, 16)
     if not rgb then return nil end
     local key = n * 16777216 + rgb
@@ -130,13 +107,16 @@ end
 
 ------------------------------------------------------------------ look
 -- Every visual value of a container's buttons in rec.lk; the returned
--- string changes exactly when a button needs restyling.
+-- string changes exactly when a button needs restyling. The looks the style
+-- pass reads from the view itself (the swipe colors, the spark, the Pixel
+-- and Autocast lines) stand in it as their settings' count (lk.relook:
+-- view.relook, Settings.lua), so an unchanged sync pays nothing for them.
 local function Look(rec, view)
     local state, lk, bar = C.state, rec.lk, rec.role == "bar"
     local px = Px()
     local w, h
     if bar then
-        w, h = max(px, Snap(view.barWidth or 200, px)), max(px, Snap(view.barHeight or 18, px))
+        w, h = max(px, Snap(view.barW or view.barWidth or 200, px)), max(px, Snap(view.barHeight or 18, px))
     else
         local size = view.size or 36
         w, h = max(px, Snap(size, px)), max(px, Snap(size * (view.height or 100) / 100, px))
@@ -168,6 +148,7 @@ local function Look(rec, view)
     lk.cr, lk.cg, lk.cb = state.cdR or 1, state.cdG or 1, state.cdB or 1
     lk.sr, lk.sg, lk.sb = state.stackR or 1, state.stackG or 1, state.stackB or 1
     lk.swipe = (view.swipeAlpha or K.SWIPE_ALPHA) / 100
+    lk.relook = view.relook or 0
     lk.edge = view.edge == true
     lk.tip = view.tooltips == true
     if bar then
@@ -346,6 +327,12 @@ local function StyleBar(rec, part, lk, b, icon)
     bar:SetStatusBarTexture(lk.tex)
     bar:SetStatusBarColor(lk.fr, lk.fg, lk.fb, 1)
     if rec.stackFill or part.markers then PlaceMarkers(rec, part, lk, bar) end
+    -- The spark rides the fill's edge, under the texts (not while an owned
+    -- timer draws the bar instead: part.external).
+    local spark = (rec.view or EMPTY).barSpark == true
+    if spark or part.spark then
+        K.Spark(part, spark and not part.external, part.timeFrame, part.sample, bar:GetStatusBarTexture(), inner, px)
+    end
     -- The fill's range is its application bar's maximum: a bound button
     -- is rebound in place when the maximum changes.
     if rec.stackFill and part.bound and part.appMax ~= lk.smax then
@@ -353,21 +340,25 @@ local function StyleBar(rec, part, lk, b, icon)
         barOpts.maxApplications = lk.smax
         b:SetApplicationBar(bar, barOpts)
     end
-    local dur, name = part.dur, part.name
+    local dur = part.dur
     if dur then
         Text(dur, lk.cs, lk.cr, lk.cg, lk.cb, lk)
         dur:ClearAllPoints()
         dur:SetPoint("RIGHT", bar, "RIGHT", -4 * px, 0)
         dur:SetJustifyH("RIGHT")
     end
-    if name then
-        Text(name, lk.cs, lk.cr, lk.cg, lk.cb, lk)
-        name:ClearAllPoints()
-        -- Room for the time text without anchoring to a sealed string.
-        name:SetPoint("LEFT", bar, "LEFT", 4 * px, 0)
-        name:SetPoint("RIGHT", bar, "RIGHT", dur and -floor(lk.cs * 2.6 + .5) or -4 * px, 0)
-        name:SetJustifyH("LEFT")
-        name:SetWordWrap(false)
+    -- The spell's name, and the entry's own name in its place (AuraLooks).
+    for i = 1, 2 do
+        local name = i == 1 and part.name or part.label
+        if name then
+            Text(name, lk.cs, lk.cr, lk.cg, lk.cb, lk)
+            name:ClearAllPoints()
+            -- Room for the time text without anchoring to a sealed string.
+            name:SetPoint("LEFT", bar, "LEFT", 4 * px, 0)
+            name:SetPoint("RIGHT", bar, "RIGHT", dur and -floor(lk.cs * 2.6 + .5) or -4 * px, 0)
+            name:SetJustifyH("LEFT")
+            name:SetWordWrap(false)
+        end
     end
 end
 
@@ -376,12 +367,15 @@ local function StyleIcon(rec, part, lk, b, icon)
     local bw = lk.bw
     icon:SetPoint("TOPLEFT", b, "TOPLEFT", bw, -bw)
     icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bw, bw)
-    local cd = part.cd
+    local cd, view = part.cd, rec.view or EMPTY
+    -- The active buff's swipe over a cooldown icon, else the bar's swipe.
     if rec.role == "over" then
-        cd:SetSwipeColor(GOLD[1], GOLD[2], GOLD[3], .55)
+        local r, g, sb = K.AuraSwipeRGB(view)
+        cd:SetSwipeColor(r, g, sb, .55)
         cd:SetDrawEdge(false)
     else
-        cd:SetSwipeColor(0, 0, 0, lk.swipe)
+        local r, g, sb = K.SwipeRGB(view)
+        cd:SetSwipeColor(r, g, sb, lk.swipe)
         cd:SetDrawEdge(lk.edge)
     end
     local dur = part.dur
@@ -455,12 +449,14 @@ local function Style(rec, part)
     count:ClearAllPoints()
     count:SetPoint(point, icon, point, K.POINT_X[pos] * inset, K.POINT_Y[pos] * inset)
     count:SetJustifyH(K.JUSTIFY[pos])
-    -- A new size repaints the pandemic glow (ApplyEntry follows).
+    -- A new size repaints the pandemic glow, the bar's look the per-spell
+    -- border and fill (ApplyEntry follows).
     part.pGen = nil
+    Looks.Restyled(part)
     b:SetMouseMotionEnabled(lk.tip)
     if rec.skinLook or part.skinned then PaintSkin(rec, part, lk, b, icon) end
     if lk.shape ~= K.SQUARE or part.shaped then PaintShape(rec, part, lk, b, icon) end
-    Glows.Reshape(part, lk.shape)
+    Glows.Reshape(part, lk.shape, rec.view)
 end
 
 -- Text on top: the two text frames trade levels (both stay above the glows).
@@ -478,8 +474,9 @@ local function Layer(part, top)
 end
 
 -- Per-spell choices on one button: swipe mode, glows, pandemic window,
--- stack text (shown, color), countdown (shown, warning threshold) and which
--- is on top. With dry set it only reports whether a write is needed.
+-- border, fill and name (AuraLooks), stack text (shown, color), countdown
+-- (shown, warning threshold) and which text is on top. With dry set it
+-- only reports whether a write is needed.
 -- Unbound (initializeFrame) it prepares what the binding takes. Hidden text
 -- is never bound: a bound one is cleared, then hidden by hand.
 local function ApplyEntry(rec, part, entry, dry)
@@ -501,12 +498,12 @@ local function ApplyEntry(rec, part, entry, dry)
             cd:SetDrawSwipe(mode ~= HIDDEN_SWIPE)
         end
     end
-    if part.glow and ApplyGlow(rec, part, ov, dry) then return true end
-    if part.glow and ApplyCombatGate(part.glow, part.gOn, dry) then return true end
-    if part.stack and ApplyStack(rec, part, ov, dry) then return true end
-    if part.stack and ApplyCombatGate(part.stack.glow, part.stack.on, dry) then return true end
+    if part.glow and (ApplyGlow(rec, part, ov, dry) or ApplyCombatGate(part.glow, part.gOn, dry)) then return true end
+    if part.stack and (ApplyStack(rec, part, ov, dry) or ApplyCombatGate(part.stack.glow, part.stack.on, dry)) then return true end
     -- The pandemic window: only a new bar look (pGen) or spell choice writes.
     if part.pan and (part.pGen ~= rec.pGen or part.pWant ~= ov.pandemic) and ApplyPandemic(rec, part, ov, dry) then return true end
+    -- Border, fill and name where entries choose one (rec.looks) or it still shows (part.looked).
+    if (rec.looks or part.looked) and Looks.Apply(rec, part, ov, dry) then return true end
     local b = part.button
     local stacks = Choice(ov.stackText, rec.stackBar)
     local count = stacks and CountOpts(ov) or nil
@@ -591,9 +588,9 @@ local function NewPart(rec, button, k)
     lower:SetFrameLevel(base + LEVEL.fill)
     -- Glows over the icon, fill, colour and markers; text above the glows.
     local level = base + LEVEL.glow
-    if rec.pandemic then part.pan = NewPandemic(button, level, part.icon) end
-    if rec.glow then part.glow = NewGlow(button, button, level, part.icon) end
-    if rec.stack then part.stack = NewStack(button, level) end
+    if rec.pandemic then part.pan = NewPandemic(button, level, part.icon, rec.panLines) end
+    if rec.glow then part.glow = NewGlow(button, button, level, part.icon, nil, rec.glowLines) end
+    if rec.stack then part.stack = NewStack(button, level, rec.glowLines) end
     -- Stacks and countdown (with the name) on two frames above the glows,
     -- stacks on top until the entry's Text on top says otherwise.
     local stacks = Child("Frame", button)
@@ -606,6 +603,8 @@ local function NewPart(rec, button, k)
     part.count = stacks:CreateFontString(nil, "OVERLAY")
     if rec.text then part.dur = texts:CreateFontString(nil, "OVERLAY") end
     if rec.name then part.name = texts:CreateFontString(nil, "OVERLAY") end
+    -- A bar where an entry has its own name gets the string for it.
+    if rec.name and rec.label then part.label = texts:CreateFontString(nil, "OVERLAY") end
     if rec.kit then
         -- A new button hides once it is set up: not an aura leaving.
         Hush(rec)
@@ -638,7 +637,7 @@ local function Bind(rec, part, k)
         end
     end
     if part.dur and part.durOn and not part.external then
-        local opts = rec.topts[k] or TEXT_DEFAULT
+        local opts = TextOpts(((rec.entry[k] or NO_ENTRY).ov or EMPTY).threshold or C.state.threshold)
         button:SetDurationText(part.dur, opts)
         part.textOpts = opts
     end
@@ -670,6 +669,7 @@ local function Adopt(rec, button, k)
     if part.external then
         part.bar:Hide()
         if part.dur then part.dur:Hide() end
+        if part.spark then part.spark:Hide() end
     end
     ApplyEntry(rec, part, rec.entry[k] or NO_ENTRY, false)
     Bind(rec, part, k)

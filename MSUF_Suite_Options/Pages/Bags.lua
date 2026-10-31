@@ -20,8 +20,9 @@ end
 
 local WORKSPACE = { page = PAGE, module = ID, title = "Bags", height = 220,
         tabs = {
-            { id = "bags", label = "Bags", sections = "bags_module organisation categories collections finance window reagentWindow" },
-            { id = "bank", label = "Bank organisation", sections = "bank" },
+            { id = "bags", label = "Bags", sections = "bags_module organisation categories collections finance currencyGoals_module window reagentWindow" },
+            { id = "inventory", label = "Inventory organisation", sections = "inventoryArchive_module restockPlanner_module craftShopping_module" },
+            { id = "bank", label = "Bank organisation", sections = "bank bankWindow bankTransfer_module" },
             { id = "appearance", label = "Appearance", sections = "look appearance itemLevels" },
         } }
 
@@ -47,7 +48,26 @@ end
 local function WorkspaceSpec()
     if #P.SectionRules(ID, "bank", function(rule) return not rule.hidden end) > 0 then return WORKSPACE end
     return { page = PAGE, module = ID, title = "Bags", height = WORKSPACE.height,
-        tabs = { WORKSPACE.tabs[1], WORKSPACE.tabs[3] } }
+        tabs = { WORKSPACE.tabs[1], WORKSPACE.tabs[2], WORKSPACE.tabs[4] } }
+end
+
+-- The built-in category switches, the equipment set grouping and the hiding of
+-- empty categories act in the Categories view of the bags and, on Retail, in
+-- the bank's Categories view too (BankInventory.lua copies them into its
+-- model), so the catalog's single requiresChoice link cannot grey them. The
+-- three grouping options with bank twins are linked there.
+local SHARED_WITH_BANK = { groupEquipmentSets = true, hideEmptyCategories = true }
+
+local function CategoriesInUse()
+    local Suite = P.Suite
+    return P.Get(ID, "inventoryView") == Suite.BagsView.CATEGORIES
+        or not Suite.Client.isForever and P.Get(ID, "bankView") == Suite.BagsBankView.CATEGORIES
+end
+
+P.Gates[ID] = function(rule)
+    if rule.section ~= "categories" and not SHARED_WITH_BANK[rule.key] or CategoriesInUse() then return true end
+    if P.Suite.Client.isForever then return false, Tr("Choose Categories for \"Default inventory view\".") end
+    return false, Tr("Choose Categories for \"Default inventory view\" or Bank categories for \"Default bank view\".")
 end
 
 local function Build(ctx)
@@ -62,7 +82,7 @@ local function Build(ctx)
     -- Hidden rules are data (custom categories): never rendered, never reset.
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_organisation", Tr("Inventory organisation"),
         P.SectionRules(ID, "organisation", function(rule) return not rule.hidden end), {
-            help = "Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
+            help = "Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Sort items by orders every Suite view; Name keeps the order each view has always had. Click a category header to hide or show its items. The footer counts free slots, and Mark items that beat what you wear puts a small arrow on equipment that beats what you wear in its slot. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
             open = true,
         })
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_categories", Tr("Built-in categories"),
@@ -100,13 +120,24 @@ local function Build(ctx)
     local bankRules = P.SectionRules(ID, "bank", function(rule) return not rule.hidden end)
     if #bankRules > 0 then
         P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_bank", Tr("Bank organisation"), bankRules, {
-            help = "Switch between native tabs, combined bank, combined warbank and shared categories with the button below the bank window. Shared categories include accessible character and warbank tabs. Manage bank tabs returns to Blizzard purchases, deposits and tab settings. Every slot keeps its own item action and bank stacks are never merged; clicking a warband item selects Blizzard's Warband Bank tab first, and a refundable item asks before it enters the warband bank.",
+            help = "Switch between native tabs, combined bank, combined warbank and shared categories with the button below the bank window. Shared categories include accessible character and warbank tabs. Manage bank tabs returns to Blizzard purchases, deposits and tab settings. The bank views have the same smart search, free slot count and collapsible category headers. Every slot keeps its own item action and bank stacks are never merged; clicking a warband item selects Blizzard's Warband Bank tab first, and a refundable item asks before it enters the warband bank.",
         })
+        P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_bankWindow", Tr("Bank window"),
+            P.SectionRules(ID, "bankWindow", function(rule) return not rule.hidden end), {
+                help = "Dark panel keeps the bank's usual color for the Suite bank views; " ..
+                    "Match the bag window follows the bag background color and look. " ..
+                    "The panel stays opaque so Blizzard's own slots never show through it. " ..
+                    "The size and position apply to the whole bank window, also in Bank tabs. " ..
+                    "Move the open bank in MSUF Edit Mode, or set the offsets here after turning on the custom position.",
+            })
     end
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_reagentWindow", Tr("Reagent bag window"),
         P.SectionRules(ID, "reagentWindow"), {
             help = "Drag the reagent bag title while it is open to move it independently. Click the title for bag options. Reset its position in MSUF Edit Mode to follow Blizzard's normal bag layout again.",
         })
+    for _, id in ipairs({ "inventoryArchive", "restockPlanner", "craftShopping", "bankTransfer", "currencyGoals" }) do
+        P.BuildOwnedTool(ctx, b, id)
+    end
     P.MenuWorkspace.Finish(ui)
 end
 

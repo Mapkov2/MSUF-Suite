@@ -10,6 +10,20 @@ local Tr = S.Text
 -- how the files fit together).
 
 ------------------------------------------------------------------ Blizzard actions
+-- Whether a row click may open a Blizzard window from the Suite's code now.
+-- In combat the panel manager refuses the call, so the player is told, the
+-- same way for every row. Under the Gamepad UI nothing opens from here: the
+-- click went to Blizzard's own button (row.secureWindow, O.RowPreClick) or
+-- has none to go to.
+local function WindowAllowed()
+    if NS.IsCombatLocked() then
+        S.Print(NS.RestrictedNotice())
+        return false
+    end
+    return S.CanOpenNativeWindow()
+end
+O.WindowAllowed = WindowAllowed
+
 -- Quest log/group finder load with Retail/Forever game UI. Achievement and
 -- Adventure Guide bootstraps depend on game type, so those two are checked.
 -- Each opens a panel of Blizzard's panel manager (ShowUIPanel), which refuses
@@ -55,6 +69,7 @@ local function WatchTogglePressed()
 end
 
 local function CanUntrack(button)
+    if Finite(button.recipeID) or Finite(button.contentID) then return true end
     if Finite(button.achievementID) then return true end
     if not Finite(button.questID) or not button.tracked then return false end
     if button.group == "world" then return true end
@@ -63,13 +78,35 @@ end
 
 local function Untrack(button)
     if not CanUntrack(button) then return end
-    if Finite(button.achievementID) then
+    if Finite(button.recipeID) then
+        C_TradeSkillUI.SetRecipeTracked(button.recipeID, false, button.isRecraft == true)
+    elseif Finite(button.contentID) then
+        O.UntrackContent(button)
+    elseif Finite(button.achievementID) then
         C_ContentTracking.StopTracking(Enum.ContentTrackingType.Achievement,
             button.achievementID, Enum.ContentTrackingStopType.Manual)
     elseif button.group == "world" then
         QuestUtil.UntrackWorldQuest(button.questID)
     else
         C_QuestLog.RemoveQuestWatch(button.questID)
+    end
+end
+
+local function OpenRecipe(button)
+    if not Finite(button.recipeID) or button.isRecraft or not WindowAllowed() then return end
+    ProfessionsFrame_LoadUI()
+    if Read(C_TradeSkillUI.IsRecipeProfessionLearned, button.recipeID) == true then
+        C_TradeSkillUI.OpenRecipe(button.recipeID)
+    else
+        Professions.InspectRecipe(button.recipeID)
+    end
+end
+
+function O.OnRecipeClick(button)
+    if Read(IsModifiedClick, "RECIPEWATCHTOGGLE") == true or WatchTogglePressed() then
+        Untrack(button)
+    else
+        OpenRecipe(button)
     end
 end
 
@@ -90,8 +127,10 @@ end
 --     quest's zone map when it has one, right Blizzard's stop-tracking menu
 --     while the quest is watched; other bonus objectives answer nothing.
 -- Without such a header a left click uses the quest log micro button, a
--- scenario's the Adventure Guide's (S.PanelButton), and a right click opens
--- the Suite's own menu (S.ContextMenu).
+-- scenario's the Adventure Guide's (S.PanelButton), a recipe's the professions
+-- window's and a Traveler's Log or collectible row's the nearest window's
+-- (O.ContentPanelButton), and a right click opens the Suite's own menu
+-- (S.ContextMenu).
 local function TaskHeaderAnswers(module, questID, mouseButton)
     local threat = Read(C_QuestLog.IsThreatQuest, questID) == true
     if not (module.showWorldQuests == true or threat) then return false end
@@ -124,6 +163,11 @@ local function WindowButton(row)
         return NativeQuestHeader(row, "LeftButton") or S.PanelButton("questLog")
     elseif row.group == "scenario" then
         return S.PanelButton("journal")
+    elseif Finite(row.recipeID) then
+        -- The professions window; a recraft row opens nothing.
+        return not row.isRecraft and S.PanelButton("professions") or nil
+    elseif Finite(row.contentID) then
+        return O.ContentPanelButton(row)
     end
 end
 
@@ -301,10 +345,18 @@ end
 
 local function ShowContextMenu(button)
     local group, title = button.group, button.menuTitle or Tr("Objective")
-    if not (Finite(button.questID) or Finite(button.achievementID) or group == "scenario") then return end
+    if not (Finite(button.questID) or Finite(button.achievementID) or Finite(button.recipeID)
+        or Finite(button.contentID) or group == "scenario") then return end
     S.ContextMenu(button, function(_, root)
         root:CreateTitle(title)
-        if Finite(button.achievementID) then
+        if Finite(button.contentID) then
+            O.BuildContentMenu(root, button)
+        elseif Finite(button.recipeID) then
+            if not button.isRecraft then
+                root:CreateButton(PROFESSIONS_TRACKING_VIEW_RECIPE, function() OpenRecipe(button) end):SetEnabled(S.CanOpenNativeWindow())
+            end
+            root:CreateButton(PROFESSIONS_UNTRACK_RECIPE, function() Untrack(button) end)
+        elseif Finite(button.achievementID) then
             BuildAchievementMenu(root, button)
         elseif group == "scenario" then
             BuildScenarioMenu(root, button.scenarioID)

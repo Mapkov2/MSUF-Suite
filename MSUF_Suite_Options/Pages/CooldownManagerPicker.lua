@@ -32,6 +32,16 @@ local RECEIVED_BUFFS = {
     116849, -- Life Cocoon
 }
 
+-- Retail item-effect aura IDs (all ranks share the same aura). Other clients
+-- use their own bag items below; only selected entries become live aura groups.
+local POTION_BUFFS = {
+    1236616, -- Light's Potential
+    1236994, -- Potion of Recklessness
+    1295132, -- Liquid Luster (the lasting aura, not its triggered effect)
+    1236998, -- Draught of Rampant Abandon
+    1238443, -- Potion of Zealotry
+}
+
 local function SortCatalog(a, b)
     if a.rank ~= b.rank then return a.rank < b.rank end
     if a.known ~= b.known then return a.known end
@@ -46,6 +56,7 @@ local function Item(n, kind, text, key, texture, known, slot, family, spell, ove
     end
     item.kind, item.text, item.key, item.texture = kind, text, key, texture
     item.known, item.slot, item.family = known ~= false, slot, family
+    item.potion, item.tip, item.count, item.keys = nil, nil, nil, nil
     item.search = kind == "entry" and Page.SearchText(text, key, spell, override, tooltip) or nil
     return item
 end
@@ -87,7 +98,10 @@ local function ResolveItem(text)
     local name, texture = C_Item.GetItemNameByID(id), C_Item.GetItemIconByID(id)
     if not Public(name) then name = nil end
     if not Public(texture) then texture = nil end
-    if name == nil then C_Item.RequestLoadItemDataByID(id) end
+    if name == nil then
+        picker.pendingItem = id
+        C_Item.RequestLoadItemDataByID(id)
+    end
     if name == nil and texture == nil then return nil end
     return id, type(name) == "string" and name or format(Tr("Item %d"), id), texture
 end
@@ -95,8 +109,10 @@ end
 local function PickerRowEnter(self)
     self.hover:Show()
     local item = self.item
-    if item and item.kind == "entry" then
+    if item and item.kind ~= "header" then
         local first = not item.known and Tr("Not learned right now. You can add it anyway.") or nil
+        if item.potion then first = Tr("Shows the active potion buff. Instant healing and mana potions do not leave a buff.") end
+        if item.tip then first = item.tip end
         local second = item.slot and item.slot ~= Page.selected and format(Tr("Picking it moves it from %s."), Page.BarName(item.slot)) or nil
         ShowTip(self, Public(item.text) and item.text or item.key, first, second)
     end
@@ -107,8 +123,15 @@ local function PickerRowLeave(self)
 end
 local function PickerRowClick(self)
     local item = self.item
-    if not item or item.kind ~= "entry" or P.Combat() then return end
+    if not item or item.kind == "header" or P.Combat() then return end
     Page.PickItem(item)
+end
+-- Rows fill the viewport; forward their wheel input to the current styled
+-- handler so the host remains the sole owner of scrolling and its easing.
+local function PickerRowWheel(_, delta)
+    local scroll = picker.scroll
+    local handler = scroll:GetScript("OnMouseWheel")
+    if handler then handler(scroll, delta) end
 end
 local function PickerRow(index)
     local row = picker.rows[index]
@@ -126,11 +149,14 @@ local function PickerRow(index)
     row.icon:SetTexCoord(CROP_MIN, CROP_MAX, CROP_MIN, CROP_MAX)
     row.text = Label(row, "GameFontHighlightSmall", "")
     row.text:SetPoint("LEFT", row, "LEFT", 28, 0)
-    row.text:SetWidth(PICK_W - 170)
     row.status = Label(row, "GameFontDisableSmall", "", "muted")
     row.status:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     row.status:SetWidth(112)
     row.status:SetJustifyH("RIGHT")
+    row.text:SetPoint("RIGHT", row.status, "LEFT", -6, 0)
+    row.text:SetWordWrap(false)
+    row:EnableMouseWheel(true)
+    row:SetScript("OnMouseWheel", PickerRowWheel)
     row:SetScript("OnClick", PickerRowClick)
     row:SetScript("OnEnter", PickerRowEnter)
     row:SetScript("OnLeave", PickerRowLeave)
@@ -145,6 +171,7 @@ local function PaintPickerRow(row, item)
         row.icon:Hide()
         row.text:ClearAllPoints()
         row.text:SetPoint("LEFT", row, "LEFT", 2, 0)
+        row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0)
         row.text:SetText(item.text)
         row.status:SetText("")
         row:SetAlpha(1)
@@ -154,12 +181,15 @@ local function PaintPickerRow(row, item)
         row.icon:SetDesaturated(not item.known)
         row.text:ClearAllPoints()
         row.text:SetPoint("LEFT", row, "LEFT", 28, 0)
+        row.text:SetPoint("RIGHT", row.status, "LEFT", -6, 0)
         SetRaw(row.text, Public(item.text) and item.text or item.key)
         local status, alpha = "", 1
         if item.slot == Page.selected then
             status, alpha = Tr("On this bar"), 0.45
         elseif item.slot then
             status = format(Tr("On %s"), Page.BarName(item.slot))
+        elseif item.count then
+            status = format(Tr("Adds %d"), item.count)
         elseif picker.removed[item.key] then
             status = Tr("Removed")
         elseif not item.known then
@@ -209,9 +239,14 @@ function Page.FilterPicker()
     end
     picker.shown = shown
     picker.content:SetHeight(max(1, shown * 24))
+    if picker.query ~= query then picker.scroll:SetVerticalScroll(0) end
+    picker.query = query
     SetRaw(picker.empty, any and "" or Tr("Nothing matches. Try a spell ID below."))
     picker.empty:SetShown(not any)
-    P.Suite.Skin.RegisterMenu(picker, "cdmMenuMotion")
+    picker.lookup:SetShown(not any and query ~= "")
+    -- The host already smooths this ScrollFrame. Adopt authored content only,
+    -- otherwise the skin adds a second translation to every scroll update.
+    P.Suite.Skin.RegisterMenu(picker, "cdmMenuMotion", true)
     P.Suite.Skin.AnimateContent(picker.content, query, "cdmMenuMotion")
 end
 
@@ -252,6 +287,30 @@ end
 -- the catalog; n is the last row so far, the result the new last row.
 local function AddReceivedBuffs(n)
     local headerAdded = false
+    -- The haste buff of any source (Bloodlust and its look-alikes) is one row.
+    -- Its search text holds every source's name; a client that knows none of
+    -- them (WoW Forever) has no row.
+    local key = CDM.HASTE_KEY
+    local group = CDM.AURA_GROUPS[CDM.EntryID(key)]
+    local texture, names = nil, ""
+    for i = 1, #group.ids do
+        local name = C_Spell.GetSpellName(group.ids[i])
+        if Public(name) and type(name) == "string" then
+            names = names .. " " .. name:lower()
+            texture = texture or C_Spell.GetSpellTexture(group.ids[i])
+        end
+    end
+    if names ~= "" then
+        n = n + 1
+        Item(n, "header", Tr("Received buffs (any caster)"))
+        headerAdded = true
+        n = n + 1
+        -- The group's name is its translation key (CDM.AURA_GROUPS).
+        local item = Item(n, "entry", Tr("Bloodlust (any source)"), key, Public(texture) and texture or nil, true, Page.WhereIs(key),
+            FAMILY.AURA, group.spell)
+        item.search = item.search .. names
+        item.tip = Tr("Shows whichever haste buff is active, from any source: Bloodlust, Heroism, Time Warp, Primal Rage, Fury of the Aspects and similar.")
+    end
     for i = 1, #RECEIVED_BUFFS do
         local id = RECEIVED_BUFFS[i]
         local name = C_Spell.GetSpellName(id)
@@ -265,6 +324,124 @@ local function AddReceivedBuffs(n)
             n = n + 1
             Item(n, "entry", name, "a" .. id, Public(texture) and texture or nil,
                 true, Page.WhereIs("a" .. id), 2, id)
+        end
+    end
+    return n
+end
+
+-- Potion choices are built only in the editor. The running client supplies
+-- bag-item use spells; no item IDs or Retail spell data are assumed on Forever.
+local function AddPotionSpell(n, spell, itemID, itemName)
+    spell = RowSpell(spell)
+    if not spell then return n end
+    local name = C_Spell.GetSpellName(spell)
+    if not Public(name) or type(name) ~= "string" or name == "" then return n end
+    local key, item = "a" .. spell, picker.potionRows[spell]
+    local searchName = name .. " " .. Tr("Potions")
+    if Public(itemName) and type(itemName) == "string" then searchName = searchName .. " " .. itemName end
+    local search = Page.SearchText(searchName, key, spell, itemID)
+    if item then
+        item.search = item.search .. " " .. search
+        return n
+    end
+    local texture = C_Spell.GetSpellTexture(spell)
+    n = n + 1
+    item = Item(n, "entry", name, key, Plain(texture), true, Page.WhereIs(key), FAMILY.AURA, spell)
+    item.search, item.potion = search, true
+    picker.potionRows[spell] = item
+    return n
+end
+local function RequestPotionData(itemID)
+    if picker.potionLoads[itemID] ~= nil then return end
+    local cached = C_Item.IsItemDataCachedByID(itemID)
+    if not Public(cached) or cached ~= false then return end
+    picker.potionLoads[itemID] = true
+    C_Item.RequestLoadItemDataByID(itemID)
+end
+local function AddBagPotion(n, itemID)
+    local _, _, _, _, _, class, subclass = C_Item.GetItemInfoInstant(itemID)
+    if not Public(class) or not Public(subclass) then return n end
+    if class == nil then RequestPotionData(itemID) end
+    if class ~= Enum.ItemClass.Consumable or subclass ~= Enum.ItemConsumableSubclass.Potion then return n end
+    local _, spell = C_Item.GetItemSpell(itemID)
+    local name = C_Item.GetItemNameByID(itemID)
+    if RowSpell(spell) == nil or Plain(name) == nil then RequestPotionData(itemID) end
+    return AddPotionSpell(n, spell, itemID, name)
+end
+local function AddPotions(n)
+    local before, seen = n, {}
+    picker.potionRows = {}
+    n = n + 1
+    Item(n, "header", Tr("Potions"))
+    if not P.Suite.Client.isForever then
+        for i = 1, #POTION_BUFFS do n = AddPotionSpell(n, POTION_BUFFS[i]) end
+    end
+    for bag = 0, NUM_BAG_SLOTS do
+        local slots = C_Container.GetContainerNumSlots(bag)
+        if Public(slots) and type(slots) == "number" then
+            for slot = 1, min(slots, 100) do
+                local itemID = RowSpell(C_Container.GetContainerItemID(bag, slot))
+                if itemID and not seen[itemID] then
+                    seen[itemID] = true
+                    n = AddBagPotion(n, itemID)
+                end
+            end
+        end
+    end
+    return n == before + 1 and before or n
+end
+local function WatchPotionItems()
+    picker:UnregisterAllEvents()
+    if picker:IsShown() then
+        picker:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+        if picker.family == FAMILY.AURA then picker:RegisterEvent("BAG_UPDATE_DELAYED") end
+    end
+end
+local function PotionItemsChanged(_, event, itemID, success)
+    if not picker:IsShown() or P.Combat() then return end
+    if event == "ITEM_DATA_LOAD_RESULT" then
+        if not Public(itemID) then return end
+        if picker.pendingItem == itemID then
+            picker.pendingItem = nil
+            if Public(success) and success == true then Page.EchoCustom() end
+        end
+        if picker.family ~= FAMILY.AURA or not picker.potionLoads[itemID] then return end
+        picker.potionLoads[itemID] = false
+    end
+    Page.RebuildPicker()
+end
+
+-- Spell groups (the runtime's Presets.CATEGORY_ORDER): id and name of each.
+-- A row adds the character's known spells of the group.
+local GROUP_IDS = { "interrupts", "crowdcontrol", "movement", "battlerez", "dispels", "offensive" }
+local GROUP_NAMES = { "Interrupts", "Crowd control spells", "Movement", "Battle resurrection", "Dispels", "Major offensive cooldowns" }
+
+-- The group rows go first; a group the character knows no spell of has none.
+-- n is the last row so far, the result the new last row.
+local function AddGroups(n, slot)
+    local keys = P.S.CooldownManagerGroupKeys
+    local groups = keys and keys(Page.SharedList(slot))
+    if not groups then return n end
+    local on, shown = {}, Page.Entries(slot) or EMPTY
+    for i = 1, #shown do on[EntryKey(shown[i]) or ""] = true end
+    local started = false
+    for i = 1, #GROUP_IDS do
+        local list = groups[GROUP_IDS[i]]
+        if list and #list > 0 then
+            if not started then
+                started = true
+                n = n + 1
+                Item(n, "header", Tr("Add a group of spells"))
+            end
+            local fresh = 0
+            for j = 1, #list do
+                if not on[list[j]] then fresh = fresh + 1 end
+            end
+            n = n + 1
+            local text = Tr(GROUP_NAMES[i])
+            local item = Item(n, "group", text, GROUP_IDS[i], list.icon, true, fresh == 0 and slot or nil, FAMILY.COOLDOWN)
+            item.keys, item.count, item.search = list, fresh, text:lower() .. " " .. GROUP_IDS[i]
+            item.tip = Tr("Adds every spell of this group that you know. Spells on another bar move here.")
         end
     end
     return n
@@ -285,7 +462,7 @@ function Page.RebuildPicker()
     local slot = Page.selected
     local family = Page.Family(slot)
     SetRaw(picker.title, format(Tr("Add to %s"), Page.BarName(slot)))
-    local n = 1
+    local n = family == FAMILY.COOLDOWN and AddGroups(0, slot) + 1 or 1
     Item(n, "header", Tr(family == FAMILY.COOLDOWN and "Blizzard cooldowns" or "Blizzard buffs"))
     local sorted, bySpell, equip = CollectCatalog(slot, family)
     for i = 1, #sorted do
@@ -296,10 +473,11 @@ function Page.RebuildPicker()
         if record.spell and not bySpell[record.spell] then bySpell[record.spell] = item end
         if record.override and not bySpell[record.override] then bySpell[record.override] = item end
     end
-    if family == FAMILY.AURA then n = AddReceivedBuffs(n) end
+    if family == FAMILY.AURA then n = AddPotions(AddReceivedBuffs(n)) end
     if family == FAMILY.COOLDOWN then n = AddTrinkets(n, equip) end
     picker.count = n
     picker.family = family
+    WatchPotionItems()
     SetRaw(picker.idTitle, Tr(family == FAMILY.COOLDOWN and "Custom spell or item ID" or "Custom aura ID"))
     picker.addA:SetText(family == FAMILY.COOLDOWN and "Add spell" or "Buff on me")
     picker.addB:SetText(family == FAMILY.COOLDOWN and "Add item" or "Debuff on target")
@@ -311,7 +489,13 @@ function Page.PickItem(item)
     if item.slot == Page.selected then return false end
     local name = Public(item.text) and item.text or item.key
     local from = item.slot
-    local ok, reason = Page.AddEntry(Page.selected, item.key, item.family)
+    local group = item.kind == "group"
+    local ok, reason
+    if group then
+        ok, reason = Page.AddGroup(Page.selected, item.keys)
+    else
+        ok, reason = Page.AddEntry(Page.selected, item.key, item.family)
+    end
     if ok then
         item.slot = Page.selected
         local text = from and format(Tr("Moved %s from %s."), name, Page.BarName(from)) or format(Tr("Added %s."), name)
@@ -320,12 +504,14 @@ function Page.PickItem(item)
     else
         SetRaw(picker.note, Tr(reason or "That did not work."))
     end
-    Page.FilterPicker()
+    -- A group changes what the other groups still add.
+    if group and ok then Page.RebuildPicker() else Page.FilterPicker() end
     return ok
 end
 
 function Page.EchoCustom()
     local text = (picker.idBox:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    picker.pendingItem = nil
     local spellID, spellName, spellIcon = ResolveSpell(text)
     local itemID, itemName, itemIcon
     if picker.family == FAMILY.COOLDOWN then itemID, itemName, itemIcon = ResolveItem(text) end
@@ -385,7 +571,8 @@ local function EnsurePicker()
     picker = Page.NewPopup(PICK_W, PICK_H)
     Page.picker = picker
     picker.items, picker.rows, picker.sorted, picker.pool, picker.count = {}, {}, {}, {}, 0
-    picker.bySpell, picker.equip = {}, {}
+    picker.bySpell, picker.equip, picker.potionLoads = {}, {}, {}
+    picker:SetScript("OnEvent", PotionItemsChanged)
     picker.title = Label(picker, "GameFontNormal", "")
     picker.title:SetPoint("TOPLEFT", picker, "TOPLEFT", 12, -12)
     picker.title:SetWidth(PICK_W - 60)
@@ -398,6 +585,12 @@ local function EnsurePicker()
     picker.scroll:SetPoint("BOTTOMRIGHT", picker, "BOTTOMRIGHT", -26, 132)
     picker.empty = Label(picker, "GameFontHighlightSmall", "", "muted")
     picker.empty:SetPoint("TOPLEFT", picker, "TOPLEFT", 16, -72)
+    picker.lookup = Button(picker, "Look up this name or ID",PICK_W - 32, 22, function()
+        picker.idBox:SetText(picker.search:GetText() or "")
+        Page.EchoCustom()
+        picker.idBox:SetFocus()
+    end)
+    picker.lookup:SetPoint("TOPLEFT", picker.empty, "BOTTOMLEFT", 0, -8)
     picker.idTitle = Label(picker, "GameFontHighlightSmall", "", "muted")
     picker.idTitle:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 112)
     picker.idBox = Page.SearchBox(picker, 120, Tr("ID or name"), Page.EchoCustom)
@@ -419,6 +612,8 @@ local function EnsurePicker()
     picker.hint = Label(picker, "GameFontDisableSmall", "Picks stay open so you can add several.", "muted")
     picker.hint:SetPoint("BOTTOMLEFT", picker, "BOTTOMLEFT", 14, 34)
     picker.OnClosed = function(self)
+        self:UnregisterAllEvents()
+        self.pendingItem = nil
         self.search:ClearFocus()
         self.idBox:ClearFocus()
     end
@@ -432,6 +627,7 @@ function Page.TogglePicker(anchor)
     end
     if P.Combat() or Page.EditorBlocked() then return false end
     EnsurePicker()
+    picker.potionLoads = {}
     Page.ClosePopups(picker)
     Page.PlacePopup(picker, anchor)
     picker.note:SetText("")
@@ -440,5 +636,6 @@ function Page.TogglePicker(anchor)
     picker.scroll:SetVerticalScroll(0)
     Page.RebuildPicker()
     picker:Show()
+    WatchPotionItems()
     return true
 end

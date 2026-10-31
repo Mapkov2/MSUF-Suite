@@ -17,17 +17,44 @@ local Prune, KIND_NAMES = Page.PruneLists, Page.KIND_NAMES
 -- through Menu2's cancellable timer (nothing is scheduled in combat).
 function Page.ClearNote()
     local task = Page.noteTask
-    Page.noteTask, Page.note, Page.undo = nil, nil, nil
+    Page.noteTask, Page.note, Page.undo, Page.undoHover = nil, nil, nil, nil
     if task and task.Cancel then task:Cancel() end
     if Page.ui and Page.ui.PaintNote then Page.ui.PaintNote() end
 end
-function Page.Note(text, undo, isError)
+local function ExpireNote()
     local task = Page.noteTask
     Page.noteTask = nil
     if task and task.Cancel then task:Cancel() end
-    Page.note, Page.undo, Page.noteError = text, undo, isError == true
     local timer = M.MenuTimer
-    if text and timer and timer.After then Page.noteTask = timer.After(8, Page.ClearNote) end
+    if Page.note and not Page.undoHover and timer and timer.After then Page.noteTask = timer.After(8, Page.ClearNote) end
+end
+local function UndoEnter(self)
+    if Page.undo then
+        Page.undoHover = self
+        ExpireNote()
+    end
+end
+local function UndoLeave(self)
+    if Page.undoHover == self then
+        Page.undoHover = nil
+        ExpireNote()
+    end
+end
+function Page.BindUndo(button)
+    if not button then return end
+    button:HookScript("OnEnter", UndoEnter)
+    button:HookScript("OnLeave", UndoLeave)
+    button:HookScript("OnHide", UndoLeave)
+end
+-- Ends a pending spell-option search (CooldownManagerInspection.lua): a new
+-- note, the page hiding and the reveal itself all call it.
+function Page.ClearSpellSearch()
+    Page.searchSpellOption, Page.searchSpellHint, Page.searchSpellSlot = nil, nil, nil
+end
+function Page.Note(text, undo, isError)
+    Page.ClearSpellSearch()
+    Page.note, Page.undo, Page.noteError = text, undo, isError == true
+    ExpireNote()
     if Page.ui and Page.ui.PaintNote then Page.ui.PaintNote() end
 end
 function Page.Fail(reason) Page.Note(Tr(reason or "That did not work."), nil, true) end
@@ -71,23 +98,23 @@ end
 -- text: the note, or a function of run's extra results that returns it.
 function Page.WithUndo(text, keys, run)
     local before = Snapshot(keys)
-    local ok, reason, extra = run()
+    local ok, reason, extra, skipped = run()
     if not ok then return false, reason end
     local after, config = Snapshot(keys), S.Config(ID)
     for key, value in pairs(after) do
         if before[key] ~= value then
-            if type(text) == "function" then text = text(reason, extra) end
+            if type(text) == "function" then text = text(reason, extra, skipped) end
             Page.Note(text, function() return Restore(before, after, config) end)
             break
         end
     end
-    return ok, reason, extra
+    return ok, reason, extra, skipped
 end
 -- Keys of one bar (plus its spell lists) for Page.WithUndo.
 function Page.SlotKeys(slot, withLists)
     local keys = {}
     for _, key in pairs(KEYS[slot]) do keys[#keys + 1] = key end
-    if withLists then keys[#keys + 1] = "listsData" end
+    if withLists then keys[#keys + 1], keys[#keys + 2] = "listsData", "positionsData" end
     -- The Essential bar's x/y may count from Blizzard's bar.
     if slot == "ess" and RULES.essOnViewer then keys[#keys + 1] = "essOnViewer" end
     return keys
@@ -107,6 +134,7 @@ function Page.ClearWithUndo(slot)
         or label == "Restore raid essentials" and format(Tr("%s is back to its raid essentials."), Page.BarName(slot))
         or label == "Restore spec defaults" and format(Tr("%s is back to its spec defaults."), Page.BarName(slot))
         or format(Tr("%s follows Blizzard's list again."), Page.BarName(slot))
+    if Page.SharedList(slot) then text = format(Tr("Removed every spell from %s for all specializations."), Page.BarName(slot)) end
     local ok, reason = Page.WithUndo(text, LIST_KEYS, function() return Page.ClearList(slot) end)
     if not ok then Page.Fail(reason) end
     return ok
@@ -123,7 +151,10 @@ function Page.RestoreWithUndo()
     if not ok then Page.Fail(reason) end
     return ok
 end
-local function CopiedText(added, specs)
+local function CopiedText(added, specs, skipped)
+    if skipped and skipped > 0 then
+        return format(Tr("Copied %d entries to %d other specializations. %d destinations were full and could not accept every entry."), added, specs, skipped)
+    end
     return format(Tr("Copied %d entries to %d other specializations."), added, specs)
 end
 function Page.CopyListWithUndo(slot)
@@ -132,7 +163,10 @@ function Page.CopyListWithUndo(slot)
         Page.Fail(added)
         return false
     end
-    if added == 0 then Page.Note(Tr("Your other specializations have them already.")) end
+    if added == 0 then
+        Page.Note(Tr(Page.SharedList(slot) and "This shared group's list already applies to all specializations."
+            or "Your other specializations have them already."))
+    end
     return true
 end
 function Page.RunUndo()
@@ -185,6 +219,19 @@ local function FreeSpot(slot, x, y)
     end
     return x, y
 end
+-- The slot's saved layout of every specialization. An older build left them
+-- behind when it deleted a bar, so even an unnamed slot may still hold some.
+local function DropPositions(slot, values)
+    local positions = CDM.Codec.DecodePositions(P.Get(ID, "positionsData"))
+    local changed = false
+    for spec, slots in pairs(positions.specs) do
+        if slots[slot] then
+            slots[slot], changed = nil, true
+            if next(slots) == nil then positions.specs[spec] = nil end
+        end
+    end
+    if changed then values.positionsData = CDM.Codec.EncodePositions(positions) end
+end
 -- A custom slot used before starts over as a new bar: settings back to
 -- their defaults and its spells dropped from every specialization.
 local function ResetSlot(slot, values)
@@ -206,11 +253,12 @@ local function ResetSlot(slot, values)
         end
     end
     if changed then values.listsData = CDM.Codec.EncodeLists(lists) end
+    DropPositions(slot, values)
 end
 local function NewBarValues(slot, kind, reused)
     local keys = KEYS[slot]
     local values = {}
-    if reused then ResetSlot(slot, values) end
+    if reused then ResetSlot(slot, values) else DropPositions(slot, values) end
     values[keys.on], values[keys.kind] = true, kind
     local name = Tr(DEFAULT_NAMES[kind]):format(tonumber(slot:sub(2)))
     if #name > RULES[keys.name].maxLength then name = Tr("Bar %d"):format(tonumber(slot:sub(2))) end
@@ -234,11 +282,13 @@ function Page.AddBar(kind)
     kind = (kind == KIND.AURA_ICON or kind == KIND.AURA_BAR) and kind or KIND.COOLDOWN
     Page.CommitFocus()
     local ok
-    if reused then
+    local values = NewBarValues(slot, kind, reused)
+    -- Layouts an older build left on a fresh slot are dropped with an Undo too.
+    if reused or values.positionsData then
         ok = Page.WithUndo(format(Tr("%s was reset for the new bar."), Page.BarName(slot)), Page.SlotKeys(slot, true),
-            function() return P.SetMany(ID, NewBarValues(slot, kind, true)) end)
+            function() return P.SetMany(ID, values) end)
     else
-        ok = P.SetMany(ID, NewBarValues(slot, kind, false))
+        ok = P.SetMany(ID, values)
     end
     if ok then
         Page.selected = slot
@@ -287,7 +337,7 @@ function Page.DeleteBar(slot)
 end
 -- Settings that make a bar what it is and where it sits never copy: name,
 -- type, attachment, position and how it grows.
-local COPY_SKIP = { on = true, name = true, kind = true, anchor = true, side = true, gap = true, x = true, y = true,
+local COPY_SKIP = { on = true, name = true, kind = true, anchor = true, anchorFrame = true, side = true, gap = true, x = true, y = true,
     vertical = true, grow = true, align = true, centerFirst = true, shareContents = true }
 function Page.CopyBarSettings(from, to)
     if P.Combat() or from == to or not (KEYS[from] and KEYS[to]) then return false end
@@ -308,7 +358,7 @@ function Page.CopyBarSettings(from, to)
     if not ok then Page.Fail(reason) end
     return ok
 end
--- Kept by "Reset this bar's settings": identity, bar type and position.
+-- Reset keeps identity and free x/y; attachment conversion may move the bar.
 local RESET_KEEP = { on = true, name = true, kind = true, x = true, y = true }
 function Page.ResetBar(slot)
     if P.Combat() then return false end
@@ -439,6 +489,8 @@ local function BarPicked(value)
         Page.DeleteBar(slot)
     end
 end
+local RESET_TIP =
+    "Keeps name, type and spells. Resets attachment, side, gap and growth. Attached offsets become zero; bars becoming free keep position. You can undo it."
 function Page.OpenBarMenu(owner, slot)
     slot = slot or Page.selected
     if P.Combat() or not (W.OpenDropdown and owner and KEYS[slot]) then return false end
@@ -454,7 +506,9 @@ function Page.OpenBarMenu(owner, slot)
     move.disabled = not (on and Page.Movable(slot) and P.Get(ID, "enabled"))
     if move.disabled then move.tooltip = Tr(on and "This bar cannot be moved on its own right now." or "Show this bar first.") end
     n = n + 1
-    MenuItem(n, "reset", "Reset this bar's settings").tooltip = Tr("Keeps its name, type and position. You can undo it.")
+    local free = P.Get(ID, KEYS[slot].anchor) == FREE and RULES[KEYS[slot].anchor].default == FREE
+    MenuItem(n, "reset", "Reset this bar's settings").tooltip =
+        Tr(free and "Keeps its name, type and position. You can undo it." or RESET_TIP)
     if custom then
         n = n + 1
         MenuItem(n, "delete", "Delete this bar").tooltip =

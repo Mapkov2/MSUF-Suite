@@ -10,6 +10,18 @@ local PARTY, RAID = {}, {}
 for i = 1, 4 do PARTY[i] = "party" .. i end
 for i = 1, 40 do RAID[i] = "raid" .. i end
 
+-- A death notice: the raid skull, the message, in warning red.
+local function AddNotice(frame, message)
+    frame:AddMessage("|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:32|t " .. message, 1, .2, .2)
+end
+
+-- MSUF Edit Mode keeps one sample on the frame, to place it.
+local function ShowSample(frame)
+    frame:Clear()
+    frame:SetFading(false)
+    AddNotice(frame, S.Text("A group member died"))
+end
+
 -- Blizzard's RaidWarningFrame owns a shared Lua pool. BuffFrame.lua reads it
 -- through RaidWarningUtil.UpdateCenterScreenAnchors after updating deadly
 -- debuffs; addon messages there can taint the following aura update/scripts.
@@ -19,7 +31,6 @@ local function PrepareScreen(self)
         if not self.screen then
             local frame = S.CreateFrame("MessageFrame", "MSUFSuiteGroupDeathAlerts", UIParent)
             frame:SetSize(960, 210)
-            frame:SetPoint("TOP", UIParent, "CENTER", 0, 160)
             frame:SetFrameStrata("HIGH")
             frame:EnableMouse(false)
             S.SetFont(frame, nil, 36, "OUTLINE")
@@ -33,7 +44,9 @@ local function PrepareScreen(self)
             frame:SetFading(true)
             self.screen = frame
         end
+        S.PlaceHost(self.screen, self.config)
         self.screen:Show()
+        if S.editMode then ShowSample(self.screen) end
     elseif self.screen then
         self.screen:Clear()
         self.screen:Hide()
@@ -78,7 +91,7 @@ local function Announce(self, unit)
     local message = name and string.format(S.Text("%s died"), name) or S.Text("A group member died")
     if self.config.chat ~= false then S.Print(message) end
     if self.config.screen then
-        self.screen:AddMessage("|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:32|t " .. message, 1, .2, .2)
+        AddNotice(self.screen, message)
     end
     if self.config.sound then
         local now = GetTime()
@@ -232,6 +245,25 @@ end
 function M:Refresh()
     PrepareScreen(self)
     Sync(self)
+end
+
+function M:HideEditPreview()
+    if self.screen then
+        self.screen:Clear()
+        self.screen:SetFading(true)
+    end
+end
+
+function M:RegisterMovers()
+    S.RegisterOwnedMover("groupDeathAlert", "notice", {
+        label = "Group death notice", order = 654,
+        getFrame = function() return self.screen end,
+        xKey = "x", yKey = "y", pointKey = "point",
+        point = function() return NS.AnchorPoints[self.config.point] or "CENTER" end,
+        visible = function() return self.config.screen == true end,
+        quickPosition = true, historyKeys = { "scale" },
+        sizeKeys = { "scale" },
+    })
 end
 
 function M:Disable()

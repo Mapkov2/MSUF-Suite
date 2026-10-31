@@ -315,6 +315,13 @@ do
     NS.Clamp, NS.IsListed = defaults.Clamp, defaults.IsListed
     NS.MicroMenuMaxButtonsPerLine = defaults.MicroMenuMaxButtonsPerLine
 end
+local function ColdSource(file)
+    local baseline = os.getenv("SUITE_SKIN_COLD_BASELINE")
+    local path = baseline and baseline .. "/MSUF_Suite_Skin/" .. file
+    local found = path and io.open(path, "rb")
+    if found then found:close(); return path end
+    return skin .. file
+end
 -- Safety reads issecretvalue at load; "generic traversal secrets" assigns it later.
 dofile(root .. "/tools/tests/suite_test_support.lua").SecretValues()
 for _, file in ipairs({ "Core/Safety.lua", "Core/SuiteOwnership.lua",
@@ -322,7 +329,7 @@ for _, file in ipairs({ "Core/Safety.lua", "Core/SuiteOwnership.lua",
     "Adapters/AdapterKit.lua", "Adapters/SharedChrome.lua",
     "Adapters/GenericWindows.lua", "Adapters/GenericWindowsNodes.lua", "Adapters/GenericWindowsFrames.lua",
     "Adapters/GenericWindowsCatalog.lua" }) do
-    assert(loadfile(skin .. file))("MSUF_Suite_Skin", NS)
+    assert(loadfile(ColdSource(file)))("MSUF_Suite_Skin", NS)
 end
 local GenericWindows = NS.GenericWindows
 local Kit = NS.AdapterKit
@@ -396,6 +403,22 @@ rowOne.childReads, counters.yellow = 0, 0
 scrollBox:Initialize(rowOne)
 Check(rowOne.childReads == 0 and counters.yellow > 0,
     "a recycled row enumerated its children again instead of revisiting its recorded subtree")
+
+-- The visible row pays one effective-visibility read to suppress all of its
+-- cosmetic work while hidden. Budget this accepted gate separately.
+do
+    local instructions, visibilityReads = 0, 0
+    function scrollBox:IsVisible() visibilityReads = visibilityReads + 1; return true end
+    local function CountInstruction() instructions = instructions + 1 end
+    debug.sethook(CountInstruction, "", 1)
+    scrollBox:Initialize(rowOne)
+    debug.sethook()
+    print(("Visible row budget: %d VM; %d visibility reads"):format(instructions, visibilityReads))
+    -- Accepted: 97 -> at most 190 VM instructions and one native visibility
+    -- read for a visible row; hidden rows perform no cosmetic pass.
+    Check(instructions <= 190 and visibilityReads <= 1, "visible row exceeded its visibility gate budget")
+    scrollBox.IsVisible = nil
+end
 
 locked = true
 rowOne.childReads, counters.yellow = 0, 0
@@ -553,7 +576,11 @@ EventUtil = nil
 -------------------------------------------------------------------------------
 
 local function Load(file, namespace)
-    assert(loadfile(skin .. "Adapters/" .. file))("MSUF_Suite_Skin", namespace or NS)
+    if file == "EncounterJournal.lua" then
+        assert(loadfile(skin .. "Adapters/EncounterJournalPanels.lua"))("MSUF_Suite_Skin", namespace or NS)
+    end
+    local override = file == "PlayerSpells.lua" and os.getenv("SUITE_PLAYER_SPELLS_SOURCE")
+    assert(loadfile(override or ColdSource("Adapters/" .. file)))("MSUF_Suite_Skin", namespace or NS)
 end
 
 -- A text region whose color reads back the way the client stores it.
@@ -1252,6 +1279,12 @@ Section("player spells tab colors", function()
     local tab = Frame("PlayerSpellsTab")
     tab.Text, tab.isSelected = label, true
     local spells = Frame("PlayerSpellsFrame")
+    spells.shown, spells.hooks = true, {}
+    function spells:IsShown() return self.shown end
+    function spells:HookScript(name, callback)
+        assert(not self.hooks[name], "duplicate spellbook hook")
+        self.hooks[name] = callback
+    end
     spells.TabSystem = { tabs = { tab } }
     -- The spell book's search box takes the shared search box skin.
     local spellBook = Frame(nil)
@@ -1272,7 +1305,8 @@ Section("player spells tab colors", function()
         return {}
     end
     local getColor = NS.Theme.GetColor
-    NS.Theme.GetColor = function() return 0.71, 0.72, 0.73, 1 end
+    local themeRed, themeReads = 0.71, 0
+    NS.Theme.GetColor = function() themeReads = themeReads + 1; return themeRed, 0.72, 0.73, 1 end
     NS.PlayerSpellsSkin.Apply(spells, "spells")
     NS.ControlSkin.ApplySearchBox = applySearchBox
     Expect(searchBoxes[spellBook.SearchBox], "the spell book search box was not skinned")
@@ -1282,6 +1316,48 @@ Section("player spells tab colors", function()
     Expect(#attached == 2 and attached[2].frame == spells and attached[2].owner == "spells",
         "native spellbook tab changes did not reapply its stored window controls")
     Expect(Near(label.color[1], 0.71), "the selected tab label was not themed")
+    local attachBefore, paintBefore = #attached, counters.attach
+    spells.shown = false
+    for _ = 1, 100 do
+        NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+        NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+    end
+    NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    themeRed = 0.81
+    NS.PlayerSpellsSkin:OnThemeChanged()
+    Expect(Near(label.color[1], 0.71), "theme change repainted a hidden spellbook")
+    Expect(#attached == attachBefore and counters.attach == paintBefore,
+        "hidden spellbook callbacks exceeded zero visual work budget")
+    Expect(spells.hooks.OnShow ~= nil, "hidden spellbook has no show refresh")
+    spells.shown = true
+    if spells.hooks.OnShow then spells.hooks.OnShow(spells) end
+    Expect(#attached == attachBefore + 1, "show lost the coalesced page refresh")
+    Expect(Near(label.color[1], 0.81), "show lost the hidden theme change")
+    attachBefore, paintBefore = #attached, counters.attach
+    local readsBefore = themeReads
+    if spells.hooks.OnShow then spells.hooks.OnShow(spells) end
+    Expect(#attached == attachBefore and counters.attach == paintBefore and themeReads == readsBefore,
+        "show without invalidation repeated visual work")
+    local defer, deferred = NS.CombatGate.RunOrDefer, nil
+    NS.CombatGate.RunOrDefer = function(_, callback) deferred = callback end
+    locked = true
+    NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+    Expect(#attached == attachBefore and deferred ~= nil, "combat refresh was not deferred")
+    spells.shown, locked = false, false
+    if deferred then deferred() end
+    Expect(#attached == attachBefore, "combat-end job painted a closed spellbook")
+    spells.shown = true
+    if spells.hooks.OnShow then spells.hooks.OnShow(spells) end
+    Expect(#attached == attachBefore + 1, "reopen lost combat-deferred page work")
+    locked = true
+    NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+    locked = false
+    NS.PlayerSpellsSkin:QueueRefresh(spells)
+    paintBefore, readsBefore = counters.attach, themeReads
+    if deferred then deferred() end
+    Expect(counters.attach == paintBefore and themeReads == readsBefore,
+        "older combat job repeated an already completed refresh")
+    NS.CombatGate.RunOrDefer = defer
     NS.PlayerSpellsSkin.Disable(spells, "spells")
     Expect(releasedOwner == "spells", "disabling the dedicated spellbook skin did not release its window controls")
     NS.WindowControls.Attach = attachControls
@@ -2746,6 +2822,401 @@ Section("adapter file structure", function()
     Kit.RestoreTextColors(context.textColors)
     Expect(box.color[1] == 0.9 and placeholder.color[1] == 0.5,
         "the shared search box skin did not restore the native text colors")
+end)
+
+
+Section("hidden windows defer cosmetic work until visible", function()
+    local function Window(name)
+        local frame = Frame(name)
+        frame.shown, frame.parentShown, frame.hooks = false, true, {}
+        function frame:IsShown() return self.shown end
+        function frame:IsVisible() return self.shown and self.parentShown end
+        function frame:HookScript(script, callback)
+            self.hooks[script] = self.hooks[script] or {}
+            table.insert(self.hooks[script], callback)
+        end
+        function frame:Display(shown)
+            self.shown = shown
+            if shown then
+                if self.beforeShow then self.beforeShow(self) end
+                for _, callback in ipairs(self.hooks.OnShow or {}) do callback(self) end
+            end
+        end
+        return frame
+    end
+    local function Paints() return counters.attach + counters.yellow end
+    local ordered, order = Window("OrderedSkin"), {}
+    local function Order(value) order[#order + 1] = value end
+    Kit.DeferHidden(ordered, {}, Order, "common", nil, nil, 20)
+    Kit.DeferHidden(ordered, {}, Order, "major", nil, nil, 10)
+    Kit.DeferHidden(ordered, {}, Order, "generic")
+    ordered:Display(true)
+    Expect(table.concat(order, ",") == "generic,major,common", "hidden skin layers did not retain generic-before-specialized order")
+    local shared = Window("CancellationWindow")
+    local ownerA, ownerB, calls = {}, {}, 0
+    local function CancelOther(other)
+        calls = calls + 1
+        NS.AdapterKit.CancelHidden(other)
+    end
+    NS.AdapterKit.DeferHidden(shared, ownerA, CancelOther, ownerB)
+    NS.AdapterKit.DeferHidden(shared, ownerB, CancelOther, ownerA)
+    shared:Display(true)
+    Expect(calls == 1, "same-show cancellation dispatched a canceled owner")
+    shared:Display(false)
+    local replaced = 0
+    local function Replacement() replaced = replaced + 1 end
+    local function HideAndReplace(other)
+        shared:Display(false)
+        NS.AdapterKit.DeferHidden(shared, other, Replacement)
+    end
+    NS.AdapterKit.DeferHidden(shared, ownerA, HideAndReplace, ownerB)
+    NS.AdapterKit.DeferHidden(shared, ownerB, HideAndReplace, ownerA)
+    shared:Display(true)
+    Expect(replaced == 0, "OnShow dispatched replacement work after the frame hid again")
+    shared:Display(true)
+    Expect(replaced == 1, "replacement request did not survive until the next show")
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local memory = collectgarbage("count")
+    for _ = 1, 1000 do shared:Display(true) end
+    local growth = collectgarbage("count") - memory
+    collectgarbage("restart")
+    Expect(growth < 1, "clean OnShow allocated pending request tables")
+    Load("MajorWindows.lua")
+    Load("MajorWindowsItems.lua")
+    local previous = _G.PVPUIFrame
+    local panel = Window("PVPUIFrame")
+    _G.PVPUIFrame = panel
+    local before = Paints()
+    NS.MajorWindows.Apply("cold-major")
+    Expect(Paints() == before and panel.surfaceSpec == nil, "hidden major window performed initial cosmetic traversal")
+    for _ = 1, 30 do NS.MajorWindows.Apply("cold-major") end
+    Expect(Paints() == before, "repeated hidden major requests painted")
+    Expect(#(panel.hooks.OnShow or {}) == 1, "hidden major requests added duplicate/missing show hooks")
+    panel:Display(true)
+    Expect(panel.surfaceSpec ~= nil and Paints() > before, "first show did not paint the deferred major window")
+    before = Paints()
+    panel:Display(false)
+    panel:Display(true)
+    Expect(Paints() == before, "clean major reopen repeated a tree pass")
+    panel:Display(false)
+    NS.MajorWindows.Apply("cold-major")
+    NS.MajorWindows.Disable("cold-major")
+    before = Paints()
+    panel:Display(true)
+    Expect(Paints() == before, "hidden major request repainted after disable")
+    local originalGate, pending = NS.CombatGate, {}
+    NS.CombatGate = {
+        RunOrDefer = function(key, callback)
+            if locked then pending[key] = callback else callback() end
+        end,
+        Cancel = function(key) pending[key] = nil end,
+        IsPending = function(key) return pending[key] ~= nil end,
+    }
+    panel = Window("PVPUIFrame")
+    _G.PVPUIFrame = panel
+    NS.MajorWindows.Apply("cold-combat")
+    before = Paints()
+    locked = true
+    panel:Display(true)
+    Expect(Paints() == before and next(pending) ~= nil, "first show painted during combat or lost its deferred work")
+    panel:Display(false)
+    locked = false
+    for key, callback in pairs(pending) do pending[key] = nil; callback() end
+    Expect(Paints() == before, "combat end painted a window that had hidden again")
+    panel:Display(true)
+    Expect(Paints() > before, "post-combat first show did not apply the latest skin")
+    NS.MajorWindows.Disable("cold-combat")
+    NS.CombatGate = originalGate
+    _G.PVPUIFrame = previous
+
+    local frame = Window("ColdGenericFrame")
+    local entry = { id = "cold-generic", category = "utility", frames = { frame } }
+    before = Paints()
+    GenericWindows.ApplyEntry(entry, "cold-generic")
+    Expect(Paints() == before and frame.surfaceSpec == nil, "hidden catalog frame performed a tree pass")
+    frame.shown, frame.parentShown = true, false
+    local cancelHidden, cancellationScans = Kit.CancelHidden, 0
+    Kit.CancelHidden = function(owner) cancellationScans = cancellationScans + 1; return cancelHidden(owner) end
+    for _ = 1, 30 do GenericWindows.ApplyEntry(entry, "cold-generic") end
+    Kit.CancelHidden = cancelHidden
+    Expect(cancellationScans == 0, "catalog apply scanned unrelated hidden windows")
+    Expect(Paints() == before, "a shown frame under a hidden parent performed a tree pass")
+    frame.parentShown = true
+    frame:Display(true)
+    Expect(frame.surfaceSpec ~= nil and Paints() > before, "catalog frame did not catch up on parent show")
+    frame:Display(false)
+    GenericWindows.ApplyEntry(entry, "cold-generic")
+    GenericWindows.Disable("cold-generic")
+    before = Paints()
+    frame:Display(true)
+    Expect(Paints() == before, "hidden catalog job survived owner disable")
+
+    -- Protected HUD roots (ExtraActionBarFrame, OverrideActionBar, SpellFlyout,
+    -- TargetFrame ...) are decided at once, as before hidden deferral: they show
+    -- mostly in combat, so an OnShow wait wakes in combat and re-arms after it.
+    local previousLockdown = InCombatLockdown
+    InCombatLockdown = function() return locked end
+    local explicitRoot, implicitRoot = Window("ColdExplicitRoot"), Window("ColdImplicitRoot")
+    function explicitRoot:IsProtected() return true, true end
+    function implicitRoot:IsProtected() return true, false end
+    local _, explicitState = GenericWindows.ApplyEntry(
+        { id = "cold-explicit", category = "utility", frames = { explicitRoot } }, "cold-protected")
+    local _, implicitState = GenericWindows.ApplyEntry(
+        { id = "cold-implicit", category = "utility", frames = { implicitRoot } }, "cold-protected")
+    Expect(explicitState == "protected" and GenericWindows.GetStatus("cold-explicit") == "protected"
+        and explicitRoot.hooks.OnShow == nil, "a hidden protected root waited for its OnShow instead of reading protected")
+    Expect(implicitState == "applied" and implicitRoot.surfaceSpec ~= nil and implicitRoot.hooks.OnShow == nil,
+        "a hidden implicitly protected root waited for an OnShow in combat instead of painting out of combat")
+    GenericWindows.Disable("cold-protected")
+    InCombatLockdown = previousLockdown
+    -- Unprotected HUD roots (EncounterTimeline, the encounter warnings, cooldown
+    -- viewers shown in combat) paint at once as well, for the same reason.
+    local hudEntry = NS.BlizzardCatalog.FindByFrame("EncounterTimeline")
+    local previousTimeline = _G.EncounterTimeline
+    local timeline = Window("EncounterTimeline")
+    _G.EncounterTimeline = timeline
+    local _, hudState = GenericWindows.ApplyEntry(hudEntry, "cold-hud")
+    Expect(hudEntry.category == "hud" and hudState == "applied"
+        and GenericWindows.GetStatus(hudEntry.id) == "applied" and timeline.hooks.OnShow == nil,
+        "a hidden HUD root waited for an OnShow in combat instead of painting at once")
+    GenericWindows.Disable("cold-hud")
+    _G.EncounterTimeline = previousTimeline
+
+    local list = Window("ColdScrollBox")
+    local row = Frame("ColdRow")
+    local rowCallback, rowOwner, visits
+    visits = 0
+    function list:HasView() return true end
+    function list:RegisterCallback(_, callback, owner) rowCallback, rowOwner = callback, owner end
+    function list:UnregisterCallback() rowCallback, rowOwner = nil, nil end
+    function list:ForEachFrame(callback) visits = visits + 1; callback(row) end
+    local host = Frame("VisibleHost", { list })
+    GenericWindows.ApplyFrame(host, "cold-rows", MODE)
+    Expect(visits == 0 and row.surfaceSpec == nil, "hidden ScrollBox enumerated its pooled rows")
+    before = Paints()
+    for _ = 1, 30 do rowCallback(rowOwner, row) end
+    Expect(visits == 0 and Paints() == before, "hidden row initializations painted")
+    collectgarbage("collect")
+    collectgarbage("stop")
+    memory = collectgarbage("count")
+    for _ = 1, 1000 do rowCallback(rowOwner, row) end
+    growth = collectgarbage("count") - memory
+    collectgarbage("restart")
+    Expect(growth < 1 and Paints() == before, "warm hidden row callbacks allocated jobs or painted")
+    list:Display(true)
+    Expect(visits == 1 and row.surfaceSpec ~= nil, "shown ScrollBox did not catch up once")
+    before = Paints()
+    list:Display(false)
+    rowCallback(rowOwner, row)
+    GenericWindows.Disable("cold-rows")
+    before = Paints()
+    list:Display(true)
+    Expect(visits == 1 and Paints() == before, "disabled ScrollBox retained a cosmetic job")
+
+    local weak = setmetatable({}, { __mode = "v" })
+    do
+        local disposable = Window("DisposableScrollBox")
+        disposable.HasView, disposable.RegisterCallback = list.HasView, function() end
+        disposable.UnregisterCallback, disposable.ForEachFrame = function() end, function() end
+        GenericWindows.ApplyFrame(disposable, "gc-rows", MODE)
+        weak[1] = disposable
+    end
+    collectgarbage("collect")
+    collectgarbage("collect")
+    Expect(weak[1] == nil, "hidden row registration retained a discarded ScrollBox")
+    GenericWindows.Disable("gc-rows")
+
+    local first, second = Window("SiblingA"), Window("SiblingB")
+    local siblings = { id = "cold-siblings", category = "utility", frames = { first, second } }
+    GenericWindows.ApplyEntry(siblings, "cold-siblings")
+    first:Display(true)
+    local firstReads = first.childReads
+    second:Display(true)
+    Expect(first.childReads == firstReads, "showing a sibling repeated the visible sibling's generic pass")
+    first:Display(false)
+    second:Display(false)
+    first:Display(true)
+    local siblingPaints = Paints()
+    first:Display(false)
+    second:Display(true)
+    second:Display(false)
+    first:Display(true)
+    Expect(Paints() == siblingPaints, "alternating clean catalog siblings re-armed full passes")
+    GenericWindows.Disable("cold-siblings")
+    first, second = Window("ExclusiveA"), Window("ExclusiveB")
+    siblings = { id = "cold-exclusive", category = "utility", frames = { first, second } }
+    GenericWindows.ApplyEntry(siblings, "cold-exclusive")
+    first:Display(true)
+    first:Display(false)
+    second:Display(true)
+    second:Display(false)
+    siblingPaints = Paints()
+    first:Display(true)
+    first:Display(false)
+    second:Display(true)
+    Expect(Paints() == siblingPaints, "exclusive catalog siblings re-armed each other")
+    GenericWindows.Disable("cold-exclusive")
+
+    local overlap = Window("SharedCatalogFrame")
+    GenericWindows.ApplyEntry({ id = "overlap-one", category = "utility", frames = { overlap } }, "overlap")
+    GenericWindows.ApplyEntry({ id = "overlap-two", category = "utility", frames = { overlap } }, "overlap")
+    overlap:Display(true)
+    Expect(GenericWindows.GetStatus("overlap-one") == "applied" and GenericWindows.GetStatus("overlap-two") == "applied",
+        "two catalog entries sharing a frame overwrote a pending pass")
+    GenericWindows.Disable("overlap")
+    local firstError, broken, unvisited = Window("BeforeError"), Window("BrokenWindow"), Window("AfterError")
+    broken.shown = true
+    function broken:GetChildren() error("cold entry sibling failure") end
+    local failedEntry = { id = "cold-errors", category = "utility", frames = { firstError, broken, unvisited } }
+    local failed = pcall(GenericWindows.ApplyEntry, failedEntry, "cold-errors")
+    Expect(not failed, "raising sibling did not reach the entry error boundary")
+    firstError:Display(true)
+    Expect(GenericWindows.GetStatus("cold-errors") == "error", "reveal erased an incomplete catalog entry failure")
+    GenericWindows.Disable("cold-errors")
+    broken, firstError = Window("DeferredError"), Window("OtherDeferred")
+    function broken:GetChildren() error("deferred entry sibling failure") end
+    failedEntry = { id = "cold-deferred-errors", category = "utility", frames = { broken, firstError } }
+    GenericWindows.ApplyEntry(failedEntry, "cold-deferred-errors")
+    broken:Display(true)
+    firstError:Display(true)
+    Expect(GenericWindows.GetStatus("cold-deferred-errors") == "error", "sibling reveal erased a deferred frame error")
+    broken.GetChildren = function() return end
+    GenericWindows.ApplyEntry(failedEntry, "cold-deferred-errors")
+    Expect(GenericWindows.GetStatus("cold-deferred-errors") == "applied", "successful full refresh retained a stale error")
+    GenericWindows.Disable("cold-deferred-errors")
+
+    local deferred, savedGate = {}, NS.CombatGate
+    NS.CombatGate = {
+        RunOrDefer = function(key, callback) if locked then deferred[key] = callback else callback() end end,
+        Cancel = function(key) deferred[key] = nil end,
+        IsPending = function(key) return deferred[key] ~= nil end,
+    }
+    local rows = { Frame("CatchupOne"), Frame("CatchupTwo") }
+    local catchup = Window("CombatScrollBox")
+    catchup.HasView, catchup.RegisterCallback = list.HasView, list.RegisterCallback
+    catchup.UnregisterCallback = list.UnregisterCallback
+    function catchup:ForEachFrame(callback) for _, item in ipairs(rows) do callback(item) end end
+    GenericWindows.ApplyFrame(Frame("CatchupHost", { catchup }), "catchup-rows", MODE)
+    locked = true
+    catchup:Display(true)
+    Expect(rows[1].surfaceSpec == nil and rows[2].surfaceSpec == nil, "row catchup painted during combat")
+    locked = false
+    for key, callback in pairs(deferred) do deferred[key] = nil; callback() end
+    Expect(rows[1].surfaceSpec ~= nil and rows[2].surfaceSpec ~= nil, "combat first show lost the pending ScrollBox catchup")
+    catchup:Display(false)
+    rows = { Frame("NativeShowOne"), Frame("NativeShowTwo") }
+    rowCallback(rowOwner, rows[1])
+    rowCallback(rowOwner, rows[2])
+    catchup.shown = true
+    rowCallback(rowOwner, rows[1])
+    catchup:Display(true)
+    Expect(rows[1].surfaceSpec ~= nil and rows[2].surfaceSpec ~= nil, "native show initialization canceled the remaining row catchup")
+    GenericWindows.Disable("catchup-rows")
+    NS.CombatGate = savedGate
+
+    Load("CommonArt.lua")
+    local oldCategoryHook = _G.LFGListCategorySelection_UpdateCategoryButtons
+    _G.LFGListCategorySelection_UpdateCategoryButtons = function() end
+    local oldPVE, oldNavigation, oldButton = _G.PVEFrame, _G.GroupFinderFrame, NS.ControlSkin.ApplyButton
+    NS.ControlSkin.ApplyButton = function(button, _, spec) button.lastSpec = spec; return {} end
+    local function Finder(shown, owner)
+        local finder, navigation = Window("PVEFrame"), Frame("GroupFinderFrame")
+        navigation.groupButton1 = Frame("GroupFinderFrameGroupButton1")
+        finder.children = { navigation }
+        finder.shown = shown
+        _G.PVEFrame, _G.GroupFinderFrame = finder, navigation
+        finder.beforeShow = function()
+            _G.LFGListCategorySelection_UpdateCategoryButtons({ CategoryButtons = {} })
+        end
+        local entry = { id = "ordered-finder", category = "group", frames = { finder } }
+        GenericWindows.ApplyEntry(entry, owner)
+        NS.MajorWindows.Apply(owner)
+        NS.CommonArt.Apply(owner)
+        if not shown then finder:Display(true) end
+        local spec = navigation.groupButton1.lastSpec
+        Expect(spec and spec.radius == 8 and spec.pillHeight == 48 and spec.activeRole == nil,
+            "hidden Group Finder reversed the final CommonArt navigation style")
+        finder:Display(false)
+        GenericWindows.ApplyEntry(entry, owner)
+        NS.MajorWindows.Apply(owner)
+        NS.CommonArt.Apply(owner)
+        navigation.groupButton1.lastSpec = nil
+        finder:Display(true)
+        spec = navigation.groupButton1.lastSpec
+        Expect(spec and spec.radius == 8 and spec.pillHeight == 48,
+            "hidden settings refresh changed the Group Finder's final navigation style")
+        NS.CommonArt.Disable(owner)
+        NS.MajorWindows.Disable(owner)
+        GenericWindows.Disable(owner)
+    end
+    Finder(true, "visible-finder")
+    Finder(false, "hidden-finder")
+    local oldList = _G.LFGListFrame
+    local pooled = Window("LFGSearchScrollBox")
+    pooled.callbacks = {}
+    pooled.rows = { Frame("LFGFirstRow"), Frame("LFGSecondRow") }
+    pooled.HasView = function() return true end
+    pooled.RegisterCallback, pooled.UnregisterCallback = RowBox().RegisterCallback, RowBox().UnregisterCallback
+    pooled.ForEachFrame, pooled.Initialize = RowBox().ForEachFrame, RowBox().Initialize
+    _G.PVEFrame = Window("PVEFrame")
+    _G.PVEFrame.shown = true
+    _G.GroupFinderFrame = nil
+    _G.LFGListFrame = { SearchPanel = { ScrollBox = pooled } }
+    local nativeGate, rowJobs = NS.CombatGate, {}
+    NS.CombatGate = {
+        RunOrDefer = function(key, callback) if locked then rowJobs[key] = callback else callback() end end,
+        Cancel = function(key) rowJobs[key] = nil end,
+        IsPending = function(key) return rowJobs[key] ~= nil end,
+    }
+    GenericWindows.ApplyFrame(Frame("GenericRowsHost", { pooled }), "shared-rows", MODE)
+    NS.CommonArt.Apply("shared-rows")
+    pooled:Initialize(pooled.rows[1])
+    Expect(not pooled.rows[1].lastSpec and not pooled.rows[2].lastSpec, "CommonArt painted hidden finder rows")
+    locked = true
+    pooled:Display(true)
+    Expect(not pooled.rows[1].lastSpec and next(rowJobs) ~= nil, "CommonArt lost its precombat hidden obligation")
+    locked = false
+    for key, callback in pairs(rowJobs) do rowJobs[key] = nil; callback() end
+    Expect(pooled.rows[1].lastSpec and pooled.rows[2].lastSpec, "CommonArt did not restore every deferred row after combat")
+    pooled:Display(false)
+    pooled.rows = { Frame("LFGRecycledOne"), Frame("LFGRecycledTwo") }
+    pooled:Initialize(pooled.rows[1])
+    pooled.shown = true
+    pooled:Initialize(pooled.rows[1])
+    pooled:Display(true)
+    Expect(pooled.rows[1].lastSpec and pooled.rows[2].lastSpec, "native row initialization lost CommonArt sibling rows")
+    pooled:Display(false)
+    pooled:Initialize(pooled.rows[1])
+    NS.CommonArt.Disable("shared-rows")
+    GenericWindows.Disable("shared-rows")
+    pooled.rows = { Frame("DisabledCommonRow") }
+    pooled:Display(true)
+    Expect(pooled.rows[1].lastSpec == nil and next(rowJobs) == nil, "disabled CommonArt retained row work")
+    NS.CombatGate, _G.LFGListFrame = nativeGate, oldList
+    _G.LFGListCategorySelection_UpdateCategoryButtons = oldCategoryHook
+
+    local retained = setmetatable({}, { __mode = "v" })
+    local metricOwner = { deferred = {} }
+    local metricNS = setmetatable({ GenericWindows = {}, GenericWindowsShared = {
+        DEFAULT_OWNER = "metrics", OwnerState = function() return metricOwner end,
+        OwnerKey = tostring, CatalogMode = function(mode) return mode end,
+        CanSkin = function() return true end, DeactivateOwner = function() end,
+        ApplyFrameNow = function()
+            local metrics = { nodes = 1, surfaces = 2, controls = 3, scrollBars = 4, protected = 0, errors = 0 }
+            for index = 1, 200 do metrics["scratch" .. index] = {} end
+            retained[1] = metrics
+            return true, "applied", metrics
+        end,
+    } }, { __index = NS })
+    Load("GenericWindowsCatalog.lua", metricNS)
+    local metricFrame = Window("MetricsLifetime")
+    metricFrame.shown = true
+    metricNS.GenericWindows.ApplyEntry({ id = "metrics-lifetime", category = "utility", frames = { metricFrame } })
+    collectgarbage("collect")
+    collectgarbage("collect")
+    Expect(retained[1] == nil, "catalog retained a frame pass's scratch metrics")
+    _G.PVEFrame, _G.GroupFinderFrame, NS.ControlSkin.ApplyButton = oldPVE, oldNavigation, oldButton
 end)
 
 if #failures > 0 then

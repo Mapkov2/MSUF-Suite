@@ -49,6 +49,8 @@ local EDITOR_ACTIONS = {
     { "cooldownManager", "cooldownManager_module", "editor.actions", "Bar actions" },
     { "cooldownManager", "layout", "editor.move", "Move this bar on screen" },
     { "cooldownManager", "layout", "editor.reset", "Reset this bar's settings" },
+    { "cooldownManager", "layout", "editor.copyLayout", "Copy layout to other specializations" },
+    { "cooldownManager", "basics", "editor.pickFrame", "Pick a frame" },
     { "cooldownManager", "spells", "spells.add", "Add spells" },
     { "cooldownManager", "spells", "spells.restore", "Show removed spells" },
     { "cooldownManager", "spells", "spells.clear", "Reset to Blizzard's list" },
@@ -72,6 +74,7 @@ local QOL_ACTIONS = {
     xpBar = { { "resetSession", "Reset session" } },
     innervateCue = { { "target", "Use current player target" } },
     loadoutReminder = { { "saveCurrent", "Save current build and loot spec" }, { "clearSaved", "Clear saved selection" } },
+    dungeonPortals = { { "portals", "Choose dungeon portals" } },
 }
 
 -- The names of a Quality of Life feature's color rules besides its own switch,
@@ -104,16 +107,20 @@ end
 -- by clicking the spell in the Spells list, so their rows lead to that list.
 -- Options that follow a bar setting are found by that bar setting already.
 local SPELL_OPTION_KINDS = { bool = "toggle", choice = "dropdown", number = "slider", color = "color",
-    sound = "dropdown", spell = "textinput", icon = "textinput" }
+    sound = "dropdown", spell = "textinput", icon = "textinput", text = "textinput" }
 local SPELL_ACTIONS = { "Remove from bar", "Move to bar", "Reset this spell", "Copy to all specs" }
 local function AddSpellOptionRows(rows, pagesByKey)
     local spec, page = P.catalog.cooldownManager, P.CDMPage
     if not (spec and page and page.FIELDS and pagesByKey[spec.page] and P.Suite.Client.HasAddOn(spec.addon)) then return end
+    if not page.spellSearchRegistered then
+        page.spellSearchRegistered = P.Suite.HostBridge.RegisterSearchTargetResolver(P.M,
+            "MSUF_Suite.CDMSpell", P.ResolveCDMSpellSearchTarget)
+    end
     local shown = {}
     for _, row in ipairs(rows) do
         if row.pageKey == spec.page and row.label then shown[row.label] = true end
     end
-    local function Row(label, kind, alternative)
+    local function Row(label, kind, alternative, key)
         local text = Tr(label)
         if shown[text] then return end
         shown[text] = true
@@ -122,12 +129,15 @@ local function AddSpellOptionRows(rows, pagesByKey)
         rows[#rows + 1] = {
             pageKey = spec.page, kind = kind, label = text, sectionId = spec.page .. "_spells",
             suiteModuleId = "cooldownManager", section = Tr("Spell list"), keywords = keywords,
+            prepareKind = "suiteCDMSpell", prepareValue = key,
         }
     end
+    -- Rows made on the first open or search (CooldownManagerPopoverFields.lua).
+    page.CompleteFields()
     for _, field in ipairs(page.FIELDS) do
-        if not field.bar then Row(field.label, SPELL_OPTION_KINDS[field.kind] or "button", field.auraLabel) end
+        if not field.bar then Row(field.label, SPELL_OPTION_KINDS[field.kind] or "button", field.auraLabel, field.key) end
     end
-    for _, label in ipairs(SPELL_ACTIONS) do Row(label, "button") end
+    for i, label in ipairs(SPELL_ACTIONS) do Row(label, "button", nil, i) end
 end
 
 -- Add(id, key, label, sectionId, classification, kind, feature, extra) below.
@@ -221,6 +231,7 @@ function P.AppendSearchActionRows(rows, pagesByKey)
     for _, preset in ipairs(P.Suite.DataTextPresets) do
         Add("dataTexts", "preset." .. preset.id, preset.title, "suite_dataTexts_presets")
     end
+    P.AppendToolSearchActions(Add)
     AddQualityOfLifeRows(Add)
     AddSpellOptionRows(rows, pagesByKey)
     P.AppendGraphicsSearchRows(rows)

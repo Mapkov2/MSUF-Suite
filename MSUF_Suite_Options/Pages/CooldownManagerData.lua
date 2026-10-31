@@ -173,7 +173,7 @@ Page.KIND3_EXTRA = KIND3_EXTRA
 local AURA_EXTRA = { glowStyle = true, glowTint = true, glowColor = true }
 Page.AURA_EXTRA = AURA_EXTRA
 local TIMER_FIELDS = { barWidth=true, barHeight=true, barTexture=true, barColor=true, barClass=true,
-    barBgAlpha=true, barIcon=true, barIconSide=true, barName=true, barTime=true, barFill=true }
+    barBgAlpha=true, barIcon=true, barIconSide=true, barName=true, barTime=true, barFill=true, barSpark=true }
 function Page.Relevant(slot, suffix)
     local key = KEYS[slot] and KEYS[slot][suffix]
     if not key or RULES[key].hidden then return false end
@@ -209,10 +209,34 @@ function Page.ResetKeyFn(key)
     if not suffix then return key end
     return KEYS[Page.selected][suffix]
 end
+-- Opacity while hidden needs a rule that can hide the bar; mouseover and fade
+-- time also act on its out-of-combat fade.
+local HIDE_RULES = { "hideMounted", "hideVehicle", "hideResting", "hideSolo", "hideWorld", "hideFlying", "hideDead" }
+local CONCEALS = { hiddenAlpha = "hide", hoverShow = "fade", fadeTime = "fade" }
+function Page.Conceals(slot, how)
+    local keys = KEYS[slot]
+    if P.Get(ID, keys.vis) ~= CDM.VIS.ALWAYS then return true end
+    for i = 1, #HIDE_RULES do
+        if P.Get(ID, keys[HIDE_RULES[i]]) == true then return true end
+    end
+    if how == "fade" and (P.Get(ID, keys.oocAlpha) or 100) < (P.Get(ID, keys.alpha) or 100) then return true end
+    return false, "Nothing hides or fades this bar."
+end
 -- The sound channel means nothing while the module's sounds are muted.
 P.Gates[ID] = function(rule)
     if rule.key == "soundChannel" then return P.Get(ID, "muteSounds") ~= true end
+    -- The pulse's own settings mean nothing while no bar pulses.
+    if rule.key:find("^pulse") then
+        for _, info in ipairs(SLOTS) do
+            local key = KEYS[info.key].readyPulse
+            if key and P.Get(ID, key) then return true end
+        end
+        return false, "Turn on \"Pulse ready cooldowns in the screen center\" for a bar first."
+    end
     if not TEMPLATE_SUFFIX[rule.key] then return true end
+    if rule.suffix == "masque" and not Suite.Client.IsAddOnLoaded("Masque") then return false, "Masque is not loaded." end
+    local how = CONCEALS[rule.suffix]
+    if how then return Page.Conceals(Page.selected, how) end
     return Page.Relevant(Page.selected, rule.suffix)
 end
 
@@ -280,6 +304,14 @@ function Page.Catalog(family)
     return type(list) == "table" and list or nil
 end
 
+function Page.CatalogUnavailable()
+    local context = Page.TargetContext()
+    local rows = context and context.bars[Page.selected]
+    if context and context.catalogUnavailable and (not rows or #rows == 0) then
+        return Tr("The cooldown catalog is not available yet. Log in on this character and specialization, then open this page.")
+    end
+end
+
 -- Why the spell editor is empty, or nil when it can edit.
 function Page.EditorBlocked()
     local ok, reason = S.Availability(ID)
@@ -321,15 +353,18 @@ local Media = Suite.SharedMedia
 Page.Media = Media
 function Page.PlaySound(value)
     if type(value) ~= "string" or value == "" then return end
+    local played
     if S.CooldownManagerPlaySound then
-        S.CooldownManagerPlaySound(value)
-        return
+        played = S.CooldownManagerPlaySound(value)
+    else
+        local name = value:match("^lsm:(.+)$")
+        local lsm = name and Media()
+        local path = lsm and lsm.Fetch and lsm:Fetch("sound", name, true)
+        -- PlaySoundFile is not referenced in Blizzard's UI source, so it is checked.
+        if path and type(_G.PlaySoundFile) == "function" then played = _G.PlaySoundFile(path, "Master") end
     end
-    local name = value:match("^lsm:(.+)$")
-    local lsm = name and Media()
-    local path = lsm and lsm.Fetch and lsm:Fetch("sound", name, true)
-    -- PlaySoundFile is not referenced in Blizzard's UI source, so it is checked.
-    if path and type(_G.PlaySoundFile) == "function" then _G.PlaySoundFile(path, "Master") end
+    if played ~= true then Page.Fail("This sound could not be played. It may be unavailable.") end
+    return played == true
 end
 -- Blizzard's Cooldown Manager sound list, read only: CooldownViewerSoundData
 -- maps Enum.CooldownViewerSoundCategory values to { soundEnum, soundKitID,
@@ -381,7 +416,12 @@ end
 function Page.SoundLabel(value)
     if type(value) ~= "string" or value == "" then return Tr("None") end
     local name = value:match("^lsm:(.+)$")
-    if name then return name end
+    if name then
+        local lsm = Media()
+        local path = lsm and lsm.Fetch and lsm:Fetch("sound", name, true)
+        if not path then return format(Tr("The sound %s is unavailable."), name) end
+        return name
+    end
     local kit = value:match("^kit:(%d+)$")
     if kit then
         return Page.BlizzardSounds().names[tonumber(kit)] or format(Tr("Sound kit %s"), kit)
@@ -395,6 +435,9 @@ function Page.Identity(key)
     if kind == "s" then return format(Tr("Spell %d"), number) end
     if kind == "i" then return format(Tr("Item %d"), number) end
     if kind == "e" then return format(Tr("Equipment slot %d"), number) end
-    if kind == "a" then return format(Tr("Buff %d on you"), number) end
+    if kind == "a" then
+        local group = CDM.AURA_GROUPS[number]
+        return group and Tr(group.name) or format(Tr("Buff %d on you"), number)
+    end
     return format(Tr("Debuff %d on your target"), number)
 end

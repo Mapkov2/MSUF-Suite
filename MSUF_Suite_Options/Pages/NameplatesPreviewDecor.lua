@@ -1,5 +1,6 @@
 local _, P = ...
-local Draw = P.Suite.NameplateStyle.Decor
+local Style = P.Suite.NameplateStyle
+local Draw = Style.Decor
 local Preview = {}
 P.NameplatesPreviewDecor = Preview
 local ID = "nameplates"
@@ -11,8 +12,29 @@ local function NativeScale()
     return tonumber(value) or 1
 end
 
+-- The samples by their health bar: the editor's handle tip (NameplatesEditor.lua)
+-- reports the mouse entering and leaving every handle.
+local hovers = setmetatable({}, { __mode = "k" })
+
+-- The mouseover highlight shows while the mouse is over the sample's health
+-- bar, as over a live plate.
+local function Hover(sample, on)
+    local texture = sample.highlight
+    if not (on and P.Get(ID, "mouseoverHighlight") and P.Get(ID, "look") ~= 2 and P.Get(ID, sample.prefix)) then
+        if texture then texture:Hide() end
+        return
+    end
+    if not texture then
+        texture = Style.CreateHighlight(sample.bar)
+        sample.highlight = texture
+    end
+    Style.PaintHighlight(texture, P.Get(ID, "mouseoverHighlightColor"))
+    texture:Show()
+end
+
 function Preview.Build(editor, sample)
     sample.decor = { parent = sample.cell, health = sample.bar, cast = sample.cast, fillSource = sample.progress }
+    hovers[sample.bar] = sample
     if editor.targetStateButton then return end
     local button = P.T.Button(editor.tools, "Target / non-target", 126, 20)
     button:SetPoint("RIGHT", editor.tools, "RIGHT", -114, 0)
@@ -44,6 +66,11 @@ function Preview.Build(editor, sample)
     editor.LayoutDecorTools = LayoutTools
     editor.tools:HookScript("OnSizeChanged", LayoutTools)
     LayoutTools()
+end
+
+function Preview.Hover(handle, on)
+    local sample = hovers[handle]
+    if sample then Hover(sample, on) end
 end
 
 function Preview.Paint(editor, s, m)

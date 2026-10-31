@@ -131,7 +131,7 @@ end
 assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
 for _, file in ipairs(Support.TocFiles(root, "MSUF_Suite_Modules")) do
-    if file == "Surfaces.lua" or file == "Runtime.lua" or file == "Timers.lua" then
+    if file == "Surfaces.lua" or file == "Runtime.lua" or file == "Timers.lua" or file == "PlayerReaders.lua" then
         assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file))("MSUF_Suite_Modules", private)
     end
 end

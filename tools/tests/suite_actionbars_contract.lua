@@ -904,7 +904,7 @@ for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
 local RUNTIME={"Bootstrap","Bars","Decorations","Blizzard","Paging","Visibility",
-    "Bindings","Style","Paint","NativeButtons","Flush","Events","Controller"}
+    "Bindings","KeyAudit","Style","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(RUNTIME) do
     assert(loadfile((file=="Paint" and os.getenv("MSUF_ACTIONBARS_PAINT_SOURCE"))
         or root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
@@ -1264,6 +1264,8 @@ end
 -- Shared placement keeps both the native and suite-painted branches covered.
 do
     local beforeDesaturate,beforeAlpha=c.desaturateCooldown,c.cooldownAlpha
+    local beforeVisibility=c.bar2Visibility
+    assert(S.Set("actionbars","bar2Visibility",1));RunTimers()
     local beforeRemaining=actions[61].remaining
     local button=Button(2,1).button
     actions[61].remaining=5
@@ -1285,7 +1287,8 @@ do
     actions[61].remaining=beforeRemaining
     S.Apply("actionbars");RunTimers()
     assert(M.config==c,"feedback config fixture did not restore the original table")
-    assert(S.SetMany("actionbars",{desaturateCooldown=beforeDesaturate,cooldownAlpha=beforeAlpha}));RunTimers()
+    assert(S.SetMany("actionbars",{desaturateCooldown=beforeDesaturate,cooldownAlpha=beforeAlpha,
+        bar2Visibility=beforeVisibility}));RunTimers()
 end
 
 if nativeReuse then
@@ -1333,8 +1336,16 @@ if nativeReuse then
     c.bar4Buttons=12;M:Refresh()
     assert(Button(4,11).button.shown and not Button(4,11).button.attrs.statehidden,
         "suite must reveal buttons beyond the imported Blizzard count")
+    c.bar4Visibility=2;M:Refresh()
+    assert(not Bar(4).header:IsShown())
+    MultiBarRight:UpdateShownButtons();RunTimers()
+    conditions.combat=true;combat=true;Drivers()
+    assert(Button(4,11).button:IsVisible() and Button(4,12).button:IsVisible(),
+        "native plan under hidden header removed suite buttons")
+    conditions.combat=nil;Drivers();combat=false
+    c.bar4Visibility=1;M:Refresh()
     -- Blizzard's hidden bar still runs its own plan (spellbook grids, Edit
-    -- Mode icon counts) and caps at its count; the suite's plan follows.
+    -- Mode icon counts); KEEP immediately preserves the suite's chosen count.
     MultiBarRight:UpdateShownButtons()
     assert(Button(4,11).button.shown and Button(4,12).button.shown,
         "Blizzard's icon count capped suite buttons out of combat")
@@ -1349,9 +1360,8 @@ if nativeReuse then
     combat=false
     Event("PLAYER_REGEN_ENABLED");RunTimers()
     assert(Button(4,11).button.shown,"the suite's plan did not hold after combat")
-    -- Blizzard plans on every UpdateAction: a slot burst out of combat runs
-    -- the suite's plan once per bar on the next flush, never per call; in
-    -- combat the bar waits for combat end.
+    -- Unchanged native plans need no protected suite work, including a burst
+    -- in combat. Real slot changes still request the affected bar's grid.
     local execute,grids=SecureHandlerExecute,{}
     local function GridRuns()
         local total=0
@@ -1366,8 +1376,7 @@ if nativeReuse then
     assert(GridRuns()==0 and Button(4,11).button.shown and Button(4,12).button.shown,
         "Blizzard's plan ran the suite's plan synchronously or capped suite buttons before the flush")
     RunTimers()
-    assert(grids[Bar(4).header]==1 and grids[Bar(2).header]==1 and GridRuns()==2,
-        "a plan burst did not run the suite's plan exactly once per bar")
+    assert(GridRuns()==0, "unchanged native plan burst repeated protected grid work")
     grids={}
     combat=true
     for _=1,12 do MultiBarRight:UpdateShownButtons() end
@@ -1375,7 +1384,22 @@ if nativeReuse then
     assert(GridRuns()==0 and Button(4,11).button.shown,"the suite's plan ran in combat")
     combat=false
     Event("PLAYER_REGEN_ENABLED");RunTimers()
-    assert(grids[Bar(4).header]==1,"the plan parked in combat did not run once after combat")
+    assert(GridRuns()==0,"native plan hooks parked redundant grid work for combat end")
+    c.bar4Visibility=2;M:Refresh()
+    grids={}
+    for _=1,12 do MultiBarRight:UpdateShownButtons() end
+    RunTimers()
+    assert(GridRuns()==1, "hidden header repair was lost or not coalesced")
+    c.bar4Visibility=1;M:Refresh()
+    grids={}
+    actions[62]={kind="spell",id=62,texture=62}
+    Event("ACTIONBAR_SLOT_CHANGED",62);RunTimers()
+    assert(GridRuns()==1 and Button(2,2).button.shown and not Button(2,2).button.attrs.statehidden,
+        "real native slot fill failed to rebuild its grid")
+    actions[62]=nil
+    Event("ACTIONBAR_SLOT_CHANGED",62);RunTimers()
+    assert(GridRuns()==2 and not Button(2,2).button.shown and Button(2,2).button.attrs.statehidden,
+        "real native slot removal failed to rebuild its grid")
     SecureHandlerExecute=execute
     c.bar4Buttons=10;M:Refresh()
     c.bar2ShowEmpty=true;M:Refresh()
@@ -1526,8 +1550,31 @@ if nativeReuse then
     assert(calls.texture==painted,"suite repainted a native button")
     now=now+.2;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
     assert(calls.texture==painted,"native cooldown event repainted textures through suite")
+    -- Exercise the actual secure-header attribute route, not UpdateAlpha
+    -- called directly: hidden native state must catch up on driver reveal.
+    do
+        local rec, bar = Button(2,1), Bar(2)
+        local current, highlight = actions[61].current, c.castHighlight
+        c.castHighlight=true;M:Refresh()
+        bar.header:SetAttribute("state-vis","hide")
+        assert(bar.paintDormant,"native driver hide failed to park post-hooks")
+        actions[61].current=true;rec.button:UpdateState()
+        assert(rec.nativeStateDirty,"hidden native update failed to retain dirty state")
+        bar.header:SetAttribute("state-vis","show")
+        assert(not bar.paintDormant and rec.decorChecked==true and not rec.nativeStateDirty,
+            "secure driver reveal failed current checked-state catch-up")
+        actions[61].current=current;c.castHighlight=highlight;M:Refresh()
+    end
     TestQuickKeybind()
     TestGridCap()
+    for index=2,8 do assert(S.Set("actionbars","bar"..index.."Visibility",6)) end
+    assert(AB.nativeFeedbackVisible==false,"hidden native bars kept the shared observer awake")
+    cursor="spell";AB.ApplyDrag()
+    assert(Bar(6).header.shown and not Bar(6).paintDormant and AB.nativeFeedbackVisible,
+        "drag reveal left native bars or the global feedback gate dormant")
+    cursor=nil;AB.ApplyDrag()
+    assert(not Bar(6).header.shown and Bar(6).paintDormant and AB.nativeFeedbackVisible==false,
+        "ending drag left hidden native bars awake")
     print("Action bars native reuse: Retail bars 2-8 adopted, suite painter skipped, custom bars retained, routing passed")
     return
 end
@@ -1611,6 +1658,7 @@ AB.UpdateRouting();assert(overrideWrites==writes,"unchanged routing must be skip
 -- Crafting quality badges: item actions only, on Retail and Forever alike
 -- (ActionBarActionButtonMixin:UpdateProfessionQuality on both clients).
 do
+    Fire(Bar(9).header,"OnEnter",true)
     local saved=actions[16]
     actions[16]={kind="item",id=5016,texture=516,quality="Professions-Icon-Quality-Tier3-Inv"}
     Suite.Client.isForever=true
@@ -1625,9 +1673,11 @@ do
     actions[16]=saved
     Event("ACTIONBAR_SLOT_CHANGED",16);RunTimers()
     assert(not rec.quality.shown,"the crafting quality badge outlived its item")
+    Fire(Bar(9).header,"OnLeave",true)
 end
 
 ------------------------------------------------------------------ paging
+Fire(Bar(1).header,"OnEnter",true)
 local actionsChanged=triggered["MSUFSuite.ActionBars.ActionsChanged"] or 0
 conditions["bar:2"]=true;barPage=2;Drivers();RunTimers()
 assert(Bar(1).header.attrs.actionpage==2 and Button(1,1).button.attrs.action==13 and Button(1,1).slot==13)
@@ -1721,7 +1771,7 @@ assert(not empty.shown and Bar(5).header.attrs.gridmask==0)
 assert(S.Set("actionbars","bar6Visibility",6))
 assert(not Bar(6).header.shown)
 cursor="spell";Event("ACTIONBAR_SHOWGRID");RunTimers()
-assert(Bar(6).header.shown,"showOnDrag reveals Never bars while dragging")
+assert(Bar(6).header.shown and not Bar(6).paintDormant,"showOnDrag must reveal and wake Never bars")
 cursor=nil;Event("ACTIONBAR_HIDEGRID");RunTimers()
 assert(not Bar(6).header.shown)
 combat=true;cursor="spell";Event("ACTIONBAR_SHOWGRID");RunTimers()
@@ -1733,6 +1783,7 @@ assert(not AB.dragPending)
 TestGridCap()
 
 ------------------------------------------------------------------ visibility and mouseover
+Fire(Bar(1).header,"OnLeave",true)
 assert(S.SetMany("actionbars",{bar3Visibility=4,bar3Alpha=80,bar3FadeAlpha=10,bar4Visibility=4,bar4FadeAlpha=30}))
 RunTimers()
 local h3,h4=Bar(3).header,Bar(4).header
@@ -1770,6 +1821,10 @@ S.SetEditMode(false)
 assert(not h3.shown and Bar(5).header.attrs.gridmask==0)
 
 ------------------------------------------------------------------ dispatcher
+-- Paint contracts below exercise visible bars; zero-fade suspension is
+-- checked separately through the same event and hover owners.
+Fire(Bar(1).header,"OnEnter",true)
+Fire(Bar(9).header,"OnEnter",true)
 -- Cooldown events as the client sends them (SpellBookDocumentation.lua,
 -- ActionBarFrameDocumentation.lua): SPELL_UPDATE_COOLDOWN names a spell
 -- (nil: every cooldown; startRecoveryCategory 133: a global cooldown
@@ -1790,6 +1845,45 @@ local function SlotReads(slot,fn)
     fn()
     api.CooldownDuration,api.ChargeDuration=cooldown,charge
     return cooldowns,charges
+end
+-- The real event owner must park a zero-fade owned bar, including direct
+-- cooldown completion and targeted updates, then repaint before alpha rises.
+do
+    local rec,bar=Button(1,1),Bar(1)
+    local saved={bar1Visibility=c.bar1Visibility,bar1FadeAlpha=c.bar1FadeAlpha,
+        mouseoverShowAll=c.mouseoverShowAll}
+    assert(S.SetMany("actionbars",{bar1Visibility=4,bar1FadeAlpha=0,mouseoverShowAll=false}))
+    Fire(bar.header,"OnLeave",true);RunTimers()
+    local action=actions[rec.slot]
+    local texture=action.texture
+    action.texture=987654
+    now=now+1
+    local reads=SlotReads(rec.slot,function()
+        AllCooldowns();Event("ACTIONBAR_SLOT_CHANGED",rec.slot)
+        Fire(rec.button.cooldown,"OnCooldownDone")
+        RunTimers()
+    end)
+    assert(reads==0 and rec.button.icon.texture~=987654,
+        "dormant owned bar queried or painted cooldowns/icons")
+    local setAlpha=bar.header.SetAlpha
+    bar.header.SetAlpha=function(self,value)
+        if value>0.01 then assert(rec.button.icon.texture==987654,"hover revealed stale action art") end
+        return setAlpha(self,value)
+    end
+    combat=true
+    Fire(bar.header,"OnEnter",true)
+    combat=false
+    bar.header.SetAlpha=setAlpha
+    assert(rec.button.icon.texture==987654 and not bar.paintDormant,
+        "combat hover failed to repaint the dormant owned bar")
+    Fire(bar.header,"OnLeave",true)
+    assert(S.Set("actionbars","bar1FadeAlpha",1));RunTimers()
+    now=now+1
+    reads=SlotReads(rec.slot,function() AllCooldowns();RunTimers() end)
+    assert(reads>0 and not bar.paintDormant,"one-percent fade was incorrectly suspended")
+    action.texture=texture
+    assert(S.SetMany("actionbars",saved))
+    Fire(bar.header,"OnEnter",true);RunTimers()
 end
 RunTimers()
 local cooldownCalls=calls.duration
@@ -1828,9 +1922,11 @@ do
     AB.Painter.api.Charges=saved;c.hideEmptyCharges=setting
     AB.Painter.Paint(rec)
 end
--- Flush: one capped cooldown walk over every filled button.
+-- Flush: one capped cooldown walk over every filled button. The dormant
+-- guard adds 82 VM instructions to this fully visible case (2444 -> 2526),
+-- with unchanged native calls; zero-fade bars avoid all duration reads.
 now=now+1
-Budget("action bars flush: a cooldown walk",Cost(function() AllCooldowns();RunTimers() end),2444)
+Budget("action bars flush: a cooldown walk",Cost(function() AllCooldowns();RunTimers() end),2526)
 cooldownCalls=calls.duration
 local start=now
 AllCooldowns();RunTimers()
@@ -1861,7 +1957,8 @@ do
     -- item, the macro): before, this event ran the full walk, 2654
     -- instructions and 22 duration reads; now 1309 and 2 (1313 since the
     -- walk consumes the spell marks of the buttons it paints, 2026-10-03).
-    Budget("action bars flush: an ACTIONBAR_UPDATE_COOLDOWN walk",used,1313)
+    -- Zero-fade visibility gate: visible-case VM 1313 -> 1359; native work unchanged.
+Budget("action bars flush: an ACTIONBAR_UPDATE_COOLDOWN walk",used,1359)
     -- A named spell: its own button only (one native duration read), by
     -- the spell or by the base an override names.
     reads=calls.duration
@@ -1949,8 +2046,9 @@ do
         assert(cooldowns==1 and charges==1,"a charge action read "..cooldowns.." cooldown and "..charges
             .." recharge durations for one event pair")
         now=now+1
+        -- Visible-case dormant guards add 41 VM instructions; native read counts above stay fixed.
         Budget("action bars flush: a charge action's spell and action bar events",
-            Cost(function() SpellChanged(1002);RunTimers() end),1606)
+            Cost(function() SpellChanged(1002);RunTimers() end),1647)
     end
     actions[2].charges.isActive=false
     now=now+1;Event("ACTIONBAR_UPDATE_COOLDOWN");RunTimers()
@@ -2218,9 +2316,10 @@ assert(Button(1,1).button.icon.vertex[1]==1,"owned action did not accept usable 
 do
     local function Usable(on) Event("ACTION_USABLE_CHANGED",{{slot=61,usable=on,noMana=not on}}) end
     Budget("actionbars: a usable report pair",Cost(function() Usable(true);Usable(false) end),461)
-    Budget("actionbars: a range edge pair",Cost(function()
+    -- Zero-fade visibility gate: visible-case VM 412 -> 430; native work unchanged.
+Budget("actionbars: a range edge pair",Cost(function()
         Event("ACTION_RANGE_CHECK_UPDATE",61,false,true);Event("ACTION_RANGE_CHECK_UPDATE",61,true,true)
-    end),412)
+    end),430)
 end
 -- Usability follows Blizzard's buttons (ActionButton.lua, Retail and
 -- Forever): slot payloads, plus one full re-read when the mount display
@@ -2299,9 +2398,10 @@ assert(S.Set("actionbars","bar2HeightPercent",50) and alert.height==b61.height*1
 assert(S.Set("actionbars","bar2HeightPercent",100) and alert.height==b61.height*1.4,
     "existing proc glow did not follow the button height change")
 -- A proc glow pair on the Blizzard alert (instructions, GC stopped).
+-- Zero-fade visibility gate: visible-case VM 1555 -> 1646; native work unchanged.
 Budget("actionbars: a proc glow pair, Blizzard alert",Cost(function()
     Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61);Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
-end),1555)
+end),1646)
 assert(not next(alerts),"a suite button entered Blizzard's shared spell alert table")
 overlayed[61]=nil
 Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61)
@@ -2310,9 +2410,10 @@ Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",Secret());RunTimers()
 assert(S.Set("actionbars","procGlow",2))
 overlayed[61]=true;Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
 assert(not alerts[b61] and Button(2,1).glowEdges and Button(2,1).glowEdges[1].shown,"pixel border glow")
+-- Zero-fade visibility gate: visible-case VM 1820 -> 1908; native work unchanged.
 Budget("actionbars: a proc glow pair, pixel border",Cost(function()
     Event("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE",61);Event("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW",61)
-end),1820)
+end),1908)
 -- A new highlight color reaches a pixel glow that is already showing.
 local highlightColor=c.interactionColor
 assert(not c.interactionClassColor and S.Set("actionbars","interactionColor","00ff00"))
@@ -2934,6 +3035,8 @@ assert(S.SetMany("actionbars",{bar3Buttons=6,bar3Rows=3,bar3Size=51,bar3Spacing=
     and c.bar3Buttons==4 and c.bar3Rows==2 and c.bar3Size==40
     and c.bar3Visibility==2, "Edit Mode undo did not restore popup controls")
 assert(S.ActionBarAvailable(8) and not S.ActionBarAvailable(13))
+Fire(Bar(1).header,"OnLeave",true)
+Fire(Bar(9).header,"OnLeave",true)
 TestQuickKeybind()
 
 ------------------------------------------------------------------ disable and re-enable

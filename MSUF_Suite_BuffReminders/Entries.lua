@@ -1,9 +1,9 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local R = P.BuffReminders
--- The reminder list: class buff, Rogue poisons, the configured spells, items
--- and weapon enchants, then the first owned consumable of each enabled
--- category. Selection runs on configuration, spell, spec, equipment and bag
+-- The reminder list: class buff, class reminders, Rogue poisons, the configured
+-- spells, items and weapon enchants, then the first owned consumable of each
+-- enabled category. Selection runs on configuration, spell, spec, equipment and bag
 -- events only, never on a timer.
 local Public = S.Public
 local MAX_ENTRIES = 12
@@ -12,6 +12,7 @@ local FLASK_AURAS, RUNE_AURAS, OIL_WEAPON_LOCATIONS = R.FLASK_AURAS, R.RUNE_AURA
 local LETHAL_POISONS, NONLETHAL_POISONS = R.LETHAL_POISONS, R.NONLETHAL_POISONS
 local ASSASSINATION_LETHAL_POISONS, OTHER_LETHAL_POISONS = R.ASSASSINATION_LETHAL_POISONS, R.OTHER_LETHAL_POISONS
 local Clear, Known, ItemCount = R.Clear, R.Known, R.ItemCount
+local PlayerClass, SpecID, ClassPlan = R.PlayerClass, R.SpecID, R.ClassPlan
 -- The automatic consumable picks remembered by Compile (the stock state's
 -- fields). A bag update only recompiles when one of these picks changed. A
 -- choice is the item the player wants used first while it is in the bags.
@@ -48,13 +49,32 @@ local function FirstStocked(items, preference)
     end
 end
 
-local function OilWeaponEquipped(slot)
+-- ItemClass.Weapon is 2 and ItemClass.Armor 4.
+local ITEM_CLASS_WEAPON, ITEM_CLASS_ARMOR, SHIELD_LOCATION = 2, 4, "INVTYPE_SHIELD"
+
+-- The item class and equip location of what a slot holds (nil: nothing readable).
+local function SlotItem(slot)
     local itemID = GetInventoryItemID("player", slot)
-    if not Public(itemID) or type(itemID) ~= "number" then return false end
+    if not Public(itemID) or type(itemID) ~= "number" then return end
     local _, _, _, location, _, classID = C_Item.GetItemInfoInstant(itemID)
-    if not Public(location) or not Public(classID) then return false end
-    -- ItemClass.Weapon is 2; a shield, held item or ranged weapon is not an oil target.
-    return classID == 2 and OIL_WEAPON_LOCATIONS[location] == true
+    if Public(location) and Public(classID) then return classID, location end
+end
+
+-- A shield, held item or ranged weapon is not a weapon enchant target.
+local function WeaponEquipped(slot)
+    local classID, location = SlotItem(slot)
+    return classID == ITEM_CLASS_WEAPON and OIL_WEAPON_LOCATIONS[location] == true
+end
+
+local function ShieldEquipped(slot)
+    local classID, location = SlotItem(slot)
+    return classID == ITEM_CLASS_ARMOR and location == SHIELD_LOCATION
+end
+
+-- Whether a slot holds the item an imbue needs: "weapon" or "shield".
+local function SlotHolds(slot, equip)
+    if equip == "shield" then return ShieldEquipped(slot) end
+    return WeaponEquipped(slot)
 end
 
 local function OwnWeaponImbueKnown()
@@ -122,6 +142,7 @@ local function Append(kind, id)
     entry.category = buildingCategory
     entry.group, entry.notice, entry.missingCount = nil, nil, nil
     entry.ranked, entry.spellName = nil, nil
+    entry.ally, entry.allyMissing, entry.dismissed = nil, nil, nil
     entry.bit, entry.present, entry.expiresAt, entry.totalDuration = nil, nil, nil, nil
     entry.auraInstanceID, entry.instanceIDs, entry.actionID, entry.count = nil, nil, nil, nil
     list[count] = entry
@@ -185,7 +206,8 @@ function R.SameEntries(left, right)
         if a.kind ~= b.kind or a.id ~= b.id or a.aura ~= b.aura
             or a.slot ~= b.slot or a.aliases ~= b.aliases or a.poison ~= b.poison
             or a.poisonRank ~= b.poisonRank or a.restock ~= b.restock or a.group ~= b.group or a.notice ~= b.notice
-            or a.category ~= b.category or a.ranked ~= b.ranked or a.spellName ~= b.spellName then
+            or a.category ~= b.category or a.ranked ~= b.ranked or a.spellName ~= b.spellName
+            or a.ally ~= b.ally then
             return false
         end
         if a.candidates or b.candidates then
@@ -196,11 +218,6 @@ function R.SameEntries(left, right)
         end
     end
     return true
-end
-
-local function PlayerClass()
-    local _, value = UnitClass("player")
-    if Public(value) then return value end
 end
 
 -- group is "lethal" or "nonlethal": the building buffer's candidate list.
@@ -214,18 +231,86 @@ local function AddPoisonGroup(group, aliases, priority, perCategory)
     for rank = 1, math.min(perCategory, #candidates) do AddPoison(group, rank, candidates, aliases) end
 end
 
--- C_SpecializationInfo directly: the global GetSpecialization shims exist only
--- while Blizzard's deprecation fallbacks are loaded.
 local function AddRoguePoisons()
-    local specIndex = C_SpecializationInfo.GetSpecialization()
-    if not Public(specIndex) or type(specIndex) ~= "number" or specIndex <= 0 then return end
-    local specID = C_SpecializationInfo.GetSpecializationInfo(specIndex)
-    if not Public(specID) or not (specID == 259 or specID == 260 or specID == 261) then return end
+    local specID = SpecID()
+    if not (specID == 259 or specID == 260 or specID == 261) then return end
     -- Dragon-Tempered Blades permits two poisons per category on Assassination.
     local perCategory = specID == 259 and Known(381801) and 2 or 1
     AddPoisonGroup("lethal", LETHAL_POISONS,
         specID == 259 and ASSASSINATION_LETHAL_POISONS or OTHER_LETHAL_POISONS, perCategory)
     AddPoisonGroup("nonlethal", NONLETHAL_POISONS, NONLETHAL_POISONS, perCategory)
+end
+
+-- Class reminders (the catalog's NS.BuffReminderClassReminders, one def per
+-- switch). A reminder exists when the master switch and its own switch are on,
+-- the client has it, the specialization fits and the player knows one of its
+-- spells. An aura or ally reminder is one spell entry; an imbue reminder is
+-- one weapon-slot entry per rule that fits. An ally entry is a group entry
+-- that casts on the player's target and is satisfied by the player's own aura
+-- on a member (Group.lua).
+local function FirstKnown(spells)
+    for index = 1, #spells do
+        if Known(spells[index]) then return spells[index] end
+    end
+end
+
+-- specs is a set of specialization IDs; nil allows every specialization.
+local function SpecFits(specs, specID)
+    return specs == nil or specs[specID] == true
+end
+
+-- The plan of a def that is switched on for this class and exists here.
+local function Wanted(c, def, class)
+    local plan = ClassPlan(def)
+    if plan and def.class == class and c[def.key] ~= false then return plan end
+end
+
+-- The spell an aura or ally reminder casts: the specialization's own pick
+-- while it is known, else the first known one.
+local function ClassCast(plan, specID)
+    local preferred = plan.prefer and plan.prefer[specID]
+    if preferred and Known(preferred) then return preferred end
+    return FirstKnown(plan.casts)
+end
+
+local function AddClassSpell(def, plan, specID)
+    local cast = ClassCast(plan, specID)
+    local entry = cast and AddSpell(cast, plan.auras[1], plan.auras)
+    if entry and plan.kind == "ally" then entry.ally, entry.group = def, true end
+end
+
+local function AddImbues(plan, specID)
+    for _, rule in ipairs(plan.imbues) do
+        if SpecFits(rule.specs, specID) and Known(rule.spell) and SlotHolds(rule.slot, rule.equip)
+            and not Full() and ClaimAura(rule.spell) then
+            Append("spell", rule.spell).slot = rule.slot
+        end
+    end
+end
+
+local function AddClassReminders(c, class)
+    local specID = SpecID()
+    for _, def in ipairs(NS.BuffReminderClassReminders) do
+        local plan = Wanted(c, def, class)
+        if plan and SpecFits(plan.specs, specID) then
+            if plan.kind == "imbue" then AddImbues(plan, specID) else AddClassSpell(def, plan, specID) end
+        end
+    end
+end
+
+-- Whether an ally reminder of the player's class is switched on and its spell
+-- known: then the roster and the members' auras are read (Group.lua).
+function R.WantsAllies(self)
+    local c = self.config
+    if c.classReminders ~= true then return false end
+    local class = PlayerClass()
+    for _, def in ipairs(NS.BuffReminderClassReminders) do
+        local plan = Wanted(c, def, class)
+        if plan and plan.kind == "ally" and FirstKnown(plan.casts) and SpecFits(plan.specs, SpecID()) then
+            return true
+        end
+    end
+    return false
 end
 
 -- The configured ID lists are parsed when their setting text changes.
@@ -410,8 +495,8 @@ local function AddStocked(self, c, mainID, offID)
     if c.autoWeapon and not Full() and (not mainID or not offID) then
         local itemID, restock = Pick(self, c, STOCK[3])
         if itemID and not OwnWeaponImbueKnown() then
-            if not mainID and OilWeaponEquipped(16) then AddWeapon(itemID, 16, restock) end
-            if not offID and not Full() and OilWeaponEquipped(17) then AddWeapon(itemID, 17, restock) end
+            if not mainID and WeaponEquipped(16) then AddWeapon(itemID, 16, restock) end
+            if not offID and not Full() and WeaponEquipped(17) then AddWeapon(itemID, 17, restock) end
         end
     end
 end
@@ -530,6 +615,7 @@ function R.BuildEntries(self, previewBuffer)
             end
         end
     end
+    if c.classReminders == true and class then AddClassReminders(c, class) end
     buildingCategory = "personal"
     if NS.Client.modernEquipment and c.autoRoguePoisons and class == "ROGUE" then AddRoguePoisons() end
     local mainID, offID = AddConfigured(c)

@@ -19,7 +19,8 @@ B.Module("bags", {
     title = "Bags",
     description = "One combined bag with a clear Suite background and item levels on equipment. Keep Blizzard's own item grid, or choose a Suite view with pages, bag groups or categories. Using and sorting items stays Blizzard's.",
     core = true, page = "suite_bags", available = Available,
-    conflicts = { "EllesmereUIBags", "ElvUI", "Bagnon", "BetterBags", "AdiBags", "ArkInventory", "Inventorian" },
+    conflicts = { "EllesmereUIBags", "ElvUI", "Bagnon", "BetterBags", "AdiBags", "ArkInventory", "Inventorian",
+        "Baganator", "Combuctor", "LiteBag" },
     cvars = { combinedBags = true },
     summary = "look windowScale windowMoved reagentWindowMoved showItemLevel itemLevelSize backgroundOpacity",
 })
@@ -29,6 +30,19 @@ B.Module("bags", {
 NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4 }
 NS.BagsBankView = { TABS = 1, CHARACTER = 2, WARBANK = 3, CATEGORIES = 4 }
 NS.BagsSortDirection = { BLIZZARD = 1, FROM_TOP = 2, FROM_BOTTOM = 3 }
+-- The order of the Suite views' items (the "sortMode" setting).
+NS.BagsSort = { NAME = 1, QUALITY = 2, ITEM_LEVEL = 3, TYPE = 4, EXPANSION = 5, STACK = 6, PRICE = 7 }
+
+-- The organised bank covers Blizzard's own slots, which stay shown underneath:
+-- its panel is always opaque, whichever color it takes. Dark panel is the
+-- color it has always had; Match the bag window follows the bags' background
+-- color (and so every look preset).
+NS.BagsBankBackground = { DARK = 1, MATCH_BAGS = 2 }
+NS.BagsBankDark = "0f1214"
+function NS.BagsBankColor(config)
+    if config.bankBackground == NS.BagsBankBackground.MATCH_BAGS then return config.backgroundColor end
+    return NS.BagsBankDark
+end
 
 -- Bags first kept Blizzard's own item grid under a Suite surface; the Suite
 -- inventory views came later. A profile saved before them keeps Blizzard's
@@ -87,6 +101,8 @@ B.Section("bags", "window", "Combined bag window", {
 })
 B.Section("bags", "organisation", "Inventory organisation", {
     B.Choice("inventoryView", "Default inventory view", 1, { "All items", "By bag", "Categories", "Blizzard grid" }),
+    B.Choice("sortMode", "Sort items by", NS.BagsSort.NAME,
+        { "Name", "Quality", "Item level", "Type", "Expansion", "Stack count", "Vendor price" }),
     B.Number("inventoryColumns", "Items per row", 12, 8, 20),
     B.Number("inventoryRows", "Visible rows", 10, 4, 16),
     B.Bool("autoSizeWindow", "Fit window to contents", true),
@@ -105,6 +121,8 @@ B.Section("bags", "organisation", "Inventory organisation", {
     B.Number("equipmentSetNameSize", "Equipment set name text size", 9, 7, 16),
     B.Bool("showUpgradeTrack", "Show upgrade track and rank"),
     B.Number("upgradeTextSize", "Upgrade rank text size", 9, 7, 16),
+    B.Bool("showFreeSlots", "Show the free slot count", true),
+    B.Bool("showUpgradeMarker", "Mark items that beat what you wear"),
     B.Bool("showKeystoneDetails", "Show keystone level and dungeon", true),
     B.Number("keystoneLevelSize", "Keystone level text size", 16, 8, 24),
     B.Number("keystoneDungeonSize", "Dungeon abbreviation text size", 9, 7, 16),
@@ -118,6 +136,9 @@ B.Section("bags", "categories", "Built-in categories", {
     B.Bool("category_recipes", "Recipes category", true),
     B.Bool("category_quest", "Quest items category", true),
     B.Bool("category_junk", "Junk category", true),
+    B.Bool("category_professionGear", "Profession gear category"),
+    B.Bool("category_collectibles", "Collectibles category"),
+    B.Bool("category_containers", "Containers category"),
 })
 B.Section("bags", "finance", "Gold and currencies", {
     B.Bool("showGoldHistory", "Record gold history and character balances", true),
@@ -138,6 +159,13 @@ B.Section("bags", "bank", "Bank organisation", {
     B.Bool("bankHideEmptySlots", "Hide empty bank slots"),
     B.Bool("showBankTabs", "Show individual bank tabs in the sidebar", true),
 })
+B.Section("bags", "bankWindow", "Bank window", {
+    B.Choice("bankBackground", "Bank background", NS.BagsBankBackground.DARK, { "Dark panel", "Match the bag window" }),
+    B.Number("bankWindowScale", "Bank window size", 1, 0.65, 1.5, 0.05),
+    B.Bool("bankWindowMoved", "Use custom bank window position", false),
+    B.Number("bankWindowX", "Horizontal offset", 0, -4096, 4096),
+    B.Number("bankWindowY", "Vertical offset", 0, -4096, 4096),
+})
 B.Section("bags", "reagentWindow", "Reagent bag window", {
     B.Bool("reagentWindowMoved", "Use custom reagent bag position", false),
     B.Number("reagentWindowX", "Horizontal offset", 0, -4096, 4096),
@@ -145,9 +173,22 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+-- The bank views and the bank window exist on Retail only.
 for _, key in ipairs({ "bankView", "bankGroupExpansions", "bankGroupEquipmentSlots",
-    "bankGroupReagentTypes", "bankHideEmptySlots", "showBankTabs" }) do
+    "bankGroupReagentTypes", "bankHideEmptySlots", "showBankTabs", "bankBackground", "bankWindowScale",
+    "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
     rules[key].hidden = NS.Client.isForever
+end
+-- These only act in the Categories view, so the menu greys them in the others.
+-- category_*, groupEquipmentSets and hideEmptyCategories are read by the bank's
+-- category view too (BankInventory.lua copies them); Pages/Bags.lua gates those.
+local categoriesOnly = { key = "inventoryView", values = { [NS.BagsView.CATEGORIES] = true } }
+for _, key in ipairs({ "groupEquipmentSlots", "groupExpansions", "groupReagentTypes" }) do
+    rules[key].requiresChoice = categoriesOnly
+end
+local bankCategoriesOnly = { key = "bankView", values = { [NS.BagsBankView.CATEGORIES] = true } }
+for _, key in ipairs({ "bankGroupEquipmentSlots", "bankGroupExpansions", "bankGroupReagentTypes" }) do
+    rules[key].requiresChoice = bankCategoriesOnly
 end
 rules.showKeystoneDetails.hidden = NS.Client.isForever
 rules.keystoneLevelSize.hidden = NS.Client.isForever

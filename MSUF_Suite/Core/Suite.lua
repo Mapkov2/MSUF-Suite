@@ -440,7 +440,6 @@ local function ApplyModule(id)
     instance.context = instance.context or S.NewContext(id)
     -- A completed callback is required before publishing an active state.
     if state.active then instance:Refresh() else instance:Enable() end
-    instance.context:RefreshOwnedSkins()
     state.active = true
     -- Followers or a nested apply may already have refreshed this transition.
     state.editMode = S.editMode == true
@@ -622,12 +621,18 @@ function S.ResetKeys(id, values)
     return true
 end
 
+-- A page reset: every setting of the module back to its catalog default
+-- except whether it runs, which stays the player's choice (as in a section
+-- reset). The factory reset replaces the whole profile (Database.StageFactoryReset)
+-- and does not come through here.
 function S.Reset(id)
     local db = ActiveSuite()
     if NS.InCombat() or not S.catalog[id] or not db then return false end
+    local enabled = S.Config(id).enabled
     db.modules[id] = NS.CopyValue(NS.Defaults.suite.modules[id])
     if type(db.moduleLooks) == "table" then db.moduleLooks[id] = nil end
     local config = S.Config(id)
+    if type(enabled) == "boolean" then config.enabled = enabled end
     if id == "cooldownManager" then config.defaultsVersion = NS.CDM.DEFAULTS_VERSION end
     if config.enabled then AdoptLook(db, id, config) end
     S.states[id].error = nil

@@ -156,7 +156,9 @@ C_Item = { GetItemInfo = function() return "item", "link", 4, 100, nil, nil, nil
 C_Spell = { GetSpellTexture = function() return 4321 end }
 
 local tooltips = Support.TooltipFixture(root, S, NS)
-assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/TooltipDetails.lua"))("test", { NS = NS, Suite = S })
+for _, file in ipairs({ "TooltipBorder.lua", "TooltipHiddenLines.lua", "TooltipDetails.lua" }) do
+    assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file))("test", { NS = NS, Suite = S })
+end
 local m = modules.tooltipDetails
 m.active, m.events = true, {}
 m.config = { guildRank = true, target = true, selfTarget = true, itemLevel = true, inspectHovered = false,

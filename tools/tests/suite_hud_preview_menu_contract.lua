@@ -1,5 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local actions, page, combat = {}, nil, false
+local plannerTab
 local menu = { shown = true, hides = 0 }
 function menu:Hide() self.shown = false; self.hides = self.hides + 1 end
 local calls = {}
@@ -14,6 +15,7 @@ local P = {
     S = { instances = { runSummary = summary }, catalog = {
         runSummary = { rules = { showMythicPlus = {} } } } },
     M = { frame = menu }, W = { PageBuilder = function() return {} end },
+    Suite = { Client = { isForever = false } },
     HUDMenu = { Builder = function() return {} end, Finish = function() end },
     Tr = function(text) return text end,
     Combat = function() return combat end,
@@ -27,8 +29,14 @@ local P = {
         end
     end,
 }
+P.S.PlanningTools = { Active = function() return true end, Window = {
+    Open = function(tab) plannerTab = tab return true end,
+} }
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/PlanningTools.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/HUD.lua"))("MSUF_Suite_Options", P)
 page.build({})
+actions["planner.runs"]()
+assert(plannerTab == "runs" and menu.shown, "HUD planner link must retain its exact archive tab")
 actions.preview_raid()
 assert(calls[1] == "raid" and not menu.shown and menu.hides == 1,
     "raid preview must dismiss the options window that otherwise obscures the result")
@@ -64,9 +72,11 @@ asked.accept()
 assert(calls[4] == "clear", "confirming did not clear the run history")
 calls[4] = nil
 P.S.catalog.runSummary.rules.showMythicPlus = nil
+P.Suite.Client.isForever = true
 actions = {}
 page.build({})
 assert(actions.preview_raid and not actions.preview_mythic, "Forever retains only its supported preview action")
+assert(not actions["planner.runs"], "Forever must not offer the unsupported Mythic+ archive")
 actions.preview_raid()
 assert(not menu.shown and calls[4] == "raid", "Forever raid preview dismisses the menu")
 menu.shown, P.M.frame = true, nil

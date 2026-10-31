@@ -31,7 +31,7 @@ local TIP = "Click: settings \194\183 Drag: reorder \194\183 Middle-click: remov
 function Page.Activate()
     if P.Combat() then return end
     Page.EnsureRuntime()
-    if S.CooldownManagerSetPreview and S.CooldownManagerSetPreview(true) ~= false then Page.previewOn = true end
+    if S.CooldownManagerSetPreview and S.CooldownManagerSetPreview(true, Page.Select) ~= false then Page.previewOn = true end
     -- The runtime ends the simulation on its own (combat, module off); the
     -- toggle shows what actually runs.
     if Page.simulating and S.CooldownManagerSimulate then
@@ -47,9 +47,11 @@ function Page.Deactivate(ui)
     if stage and S.CooldownManagerReleasePreview then S.CooldownManagerReleasePreview(stage) end
     if ui then ui.live = false end
     if ui and Page.ui ~= ui then return end
+    -- The page hiding ends a pending spell-option search.
+    Page.ClearSpellSearch()
     if Page.simulating and S.CooldownManagerSimulate then S.CooldownManagerSimulate(false) end
     Page.simulating = false
-    if Page.previewOn and S.CooldownManagerSetPreview then S.CooldownManagerSetPreview(false) end
+    if S.CooldownManagerSetPreview then S.CooldownManagerSetPreview(false) end
     Page.previewOn = false
     Page.ClosePopups()
     -- The note's 8 s timer never outlives the page.
@@ -372,7 +374,7 @@ local function BuildNoteLine(ui, body)
             Page.SetRaw(line, Page.note)
             if Page.noteError then line:SetTextColor(1, 0.4, 0.35) else line:SetTextColor(Page.TextColor()) end
         else
-            line:SetText(HINT)
+            Page.SetRaw(line, Page.CatalogUnavailable() or Page.SpellSearchHint() or Tr(HINT))
             line:SetTextColor(Page.MutedColor())
         end
         undo:SetShown(Page.undo ~= nil)
@@ -445,7 +447,7 @@ local function Render(ui)
         P.PreviewInteraction.Outline(handle, true)
         message:Hide()
     else
-        Page.SetRaw(message, Tr("Nothing to show on this bar yet."))
+        Page.SetRaw(message, Page.CatalogUnavailable() or Tr("Nothing to show on this bar yet."))
         message:Show()
         handle:Hide()
     end

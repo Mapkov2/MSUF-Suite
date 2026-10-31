@@ -16,7 +16,9 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     { "Item level", "itemLevel" }, { "Professions", "professions" }, { "Specialization", "specialization" },
     { "Audio volume", "audio" }, { "Hearthstone", "hearth" }, { "XP / reputation", "progress" },
     { "Dungeon portals", "portals" }, { "Micro menu", "microMenu" },
-    { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" }, { "Addon memory", "memory" } }) do
+    { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" }, { "Addon memory", "memory" },
+    { "Great Vault", "vault" }, { "Supplies", "supplies" }, { "Friends online", "friends" },
+    { "Guild online", "guild" }, { "Secondary stat", "secondaryStat" }, { "Mythic+ rating", "mythicRating" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
@@ -26,7 +28,11 @@ for index, key in ipairs(NS.DataTextSourceKeys) do
     if key then NS.DataTextSourceIndex[key] = index end
 end
 function NS.DataTextSourceAvailable(key)
+    if key == "vault" then return not NS.Client.isForever and NS.Client.HasAddOn("Blizzard_WeeklyRewards") end
+    if key == "supplies" then return NS.Client.isForever == true end
     if key == "specLoot" then return not NS.Client.isForever end
+    -- Mythic+ is Retail only.
+    if key == "mythicRating" then return not NS.Client.isForever end
     if key == "itemLevel" or key == "crests" or key == "portals" then return NS.Client.modernEquipment == true end
     return true
 end
@@ -39,6 +45,10 @@ NS.DataTextPlacement = { FLOW = 1, CENTER = 2, FILL = 3 }
 NS.DataTextDock = { FREE = 1, TOP = 2, BOTTOM = 3, LEFT = 4, RIGHT = 5 }
 NS.DataTextAccentPosition = { BOTTOM = 1, TOP = 2 }
 NS.DataTextCrestMode = { OBSERVED = 1, SELECTED = 2 }
+NS.DataTextClockSource = { REALM = 1, LOCAL = 2 }
+-- The stat choices of the Secondary stat place, in the order of their labels.
+NS.DataTextStat = { CRIT = 1, HASTE = 2, MASTERY = 3, VERSATILITY = 4, LEECH = 5 }
+NS.DataTextStatLabels = { "Critical strike", "Haste", "Mastery", "Versatility", "Leech" }
 
 function NS.CenterDefaultDataTexts(modules)
     local data = modules.dataTexts
@@ -89,6 +99,10 @@ B.Module("dataTexts", {
     description = "Movable information bars with individually chosen data sources.",
     core = NS.Client.isForever, optIn = not NS.Client.isForever,
     page = "suite_dataTexts",
+    -- Information bar addons: Titan Panel (folder Titan), ChocolateBar and
+    -- Bazooka are the CurseForge folder names (none is installed here to
+    -- check); EllesmereUIDataBars is the installed folder.
+    conflicts = { "Titan", "ChocolateBar", "Bazooka", "EllesmereUIDataBars" },
     summary = "look barLook barWidth barHeight barVisibility barFontSize fontSize textAlign backgroundEnabled"
         .. " backgroundOpacity trackAltGold hideBlizzardBagBar",
 })
@@ -199,6 +213,22 @@ for _, key in ipairs({ "itemLevelEquipped", "itemLevelDecimals", "crestCurrencie
     NS.SuiteCatalog.dataTexts.rules[key].hidden = not NS.Client.modernEquipment or nil
 end
 
+-- The built-in Clock, FPS, Latency, Durability and Coordinates places. The
+-- defaults are what these places always showed.
+B.Section("dataTexts", "clock", "Clock", {
+    Choice("clockSource", "Clock time", NS.DataTextClockSource.REALM, { "Realm time", "Local time" }),
+    Bool("clock24Hour", "Use 24-hour format", true),
+    Bool("clockSeconds", "Show seconds", false),
+})
+B.Section("dataTexts", "warnings", "Warning thresholds", {
+    Number("durabilityWarning", "Durability warns at or below (percent)", 20, 1, 99),
+    Number("fpsWarning", "FPS warns below", 30, 1, 300),
+    Number("latencyWarning", "Latency warns at or above (ms)", 200, 20, 2000),
+})
+B.Section("dataTexts", "coordinates", "Coordinates", {
+    Number("coordinateDecimals", "Coordinate decimal places", 1, 0, 3),
+})
+
 -- Settings are copied from the shared style when an override is switched on.
 local function AddBarStyle(bar)
     local prefix, section = "bar" .. bar, "bar" .. bar .. "Style"
@@ -259,6 +289,9 @@ for bar = 1, 12 do
         B.Add("dataTexts", Number(block .. "Alpha", Label("Place %d background opacity"), 0, 0, 100), target, title)
         B.Add("dataTexts", Color(block .. "IconColor", Label("Place %d icon color"), "ffffff"), target, title)
         B.Add("dataTexts", Number(block .. "Scale", Label("Place %d scale"), 100, 50, 200, 5), target, title)
+        local stat = Choice(block .. "Stat", Label("Place %d stat"), NS.DataTextStat.CRIT, NS.DataTextStatLabels)
+        stat.requiresChoice = { key = block, values = { [NS.DataTextSourceIndex.secondaryStat] = true } }
+        B.Add("dataTexts", stat, target, title)
     end
     for _, condition in ipairs(NS.DataTextLoadConditions) do
         local rule = Bool(prefix .. "LoadCond" .. condition[1], condition[2], false)
@@ -282,7 +315,7 @@ end
 -- Keep the six legacy slots physically registered. Further slots share
 -- templates and are materialized only for bars whose controls are requested.
 NS.DataTextSlotSuffixes = { "", "Broker", "Currency", "MaxWidth", "Placement", "Padding",
-    "Background", "Alpha", "IconColor", "Scale" }
+    "Background", "Alpha", "IconColor", "Scale", "Stat" }
 for slot = 7, NS.DataTextSlotLimit do
     for _, field in ipairs(NS.DataTextSlotSuffixes) do
         local suffix = "Slot" .. slot .. field
@@ -290,6 +323,9 @@ for slot = 7, NS.DataTextSlotLimit do
         for key, value in pairs(original) do copy[key] = value end
         copy.key = "bar12" .. suffix
         copy.label = original.label and original.label:gsub("6", tostring(slot)) or nil
+        if original.requiresChoice then
+            copy.requiresChoice = { key = "bar12Slot" .. slot, values = original.requiresChoice.values }
+        end
         templates[suffix] = copy
         templateOrder[#templateOrder + 1] = suffix
     end
@@ -649,3 +685,11 @@ function NS.DataTextEffectiveStyle(config, bar)
         memoryUnitColor = Value("memoryUnitColor"),
     }
 end
+
+if NS.Client.isForever then
+    B.Section("dataTexts", "supplies", "Supplies", {
+        Bool("suppliesLearn", "Remember carried reagents", true),
+        B.String("suppliesItems", "Additional supply item IDs", "", 400),
+    })
+end
+if NS.Client.isForever then NS.SuiteCatalog.dataTexts.rules.suppliesItems.hidden = true end

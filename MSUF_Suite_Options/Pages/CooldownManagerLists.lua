@@ -58,8 +58,20 @@ function Page.OwnSpellFields(key)
     local map = SpellEditMap(Page.SpellOverrides())
     return map and map[key]
 end
+function Page.SharedList(slot)
+    return Page.SlotInfo(slot).custom and P.Get(ID, KEYS[slot].shareContents) == true
+end
+-- The Suite's spec defaults (raid essentials, spec Utility and buff rows)
+-- need the profile option and a profile row for the spec, as the runtime
+-- resolves them; a spec without a row (WoW Forever) follows Blizzard's
+-- layout on every built-in bar. Without the runtime the option decides.
+local function SpecDefaults(spec)
+    if P.Get(ID, "raidEssentials") == false then return false end
+    local row = S.CooldownManagerProfileRow
+    return not row or row(spec) == true
+end
 local function ListSlots(lists, spec, slot, create)
-    if Page.SlotInfo(slot).custom and P.Get(ID, KEYS[slot].shareContents) then
+    if Page.SharedList(slot) then
         if create and not lists.shared then lists.shared = {} end
         return lists.shared
     end
@@ -133,7 +145,7 @@ local function Materialize(lists, spec, slot)
         for i = 1, #old do if not IndexOf(list, old[i]) then list[#list + 1] = old[i] end end
     end
     slots[slot] = list
-    if slot == "ess" and (not old or old.inherit) and P.Get(ID, "raidEssentials") ~= false then
+    if slot == "ess" and (not old or old.inherit) and SpecDefaults(spec) then
         local replace = lists.replace[spec] or {}
         replace.ess = true
         lists.replace[spec] = replace
@@ -233,6 +245,35 @@ function Page.AddEntry(slot, key, family)
     end)
 end
 
+-- A spell group (the picker's group rows) in one history entry: the keys the
+-- bar does not hold yet join its end, each leaving its old bar (one home per
+-- entry); the rest stay where they are. A full bar takes none of them.
+-- Returns true and how many joined.
+function Page.AddGroup(slot, keys)
+    local added = 0
+    local ok, reason = EditLists(function(lists, spec)
+        local wrong = WrongFamily(FAMILY.COOLDOWN, slot)
+        if wrong then return false, wrong end
+        local hidden = lists.hidden[spec]
+        local list = Materialize(lists, spec, slot)
+        for i = 1, #keys do
+            local key = keys[i]
+            if not CDM.ValidEntryKey(key) then return false, "Invalid spell or item." end
+            local listed = IndexOf(list, key)
+            if not listed or hidden and hidden[key] then
+                if not listed then
+                    if #list >= CDM.LIMITS.entries then return false, "This bar is full." end
+                    list[#list + 1] = key
+                end
+                Unclaim(lists, spec, key, slot)
+                added = added + 1
+            end
+        end
+        return added > 0 and "Add to cooldown bar" or true
+    end)
+    return ok, ok and added or reason
+end
+
 -- Built-in bars refill from Blizzard's list, so a Blizzard entry removed there
 -- is hidden for this specialization. Elsewhere it only leaves the list (a
 -- Blizzard entry then returns to its own bar).
@@ -245,7 +286,7 @@ function Page.RemoveEntry(slot, key)
         -- Blizzard entries and preset spells come back unless hidden for this spec.
         local info = Page.SlotInfo(slot)
         if not info.custom and (CDM.EntryKind(key) == "b" or info.preset
-            or not at and slot == "ess" and P.Get(ID, "raidEssentials") ~= false) then
+            or not at and slot == "ess" and SpecDefaults(spec)) then
             local hidden = lists.hidden[spec] or {}
             local count = 0
             for _ in pairs(hidden) do count = count + 1 end
@@ -290,7 +331,7 @@ end
 function Page.ClearLabel(slot)
     local info = Page.SlotInfo(slot)
     if info.custom then return "Remove all spells" end
-    if P.Get(ID, "raidEssentials") ~= false then
+    if SpecDefaults((Page.Spec())) then
         if slot == "ess" then return "Restore raid essentials" end
         if slot == "uti" or slot == "buf" or slot == "bar" then return "Restore spec defaults" end
     end
@@ -365,7 +406,7 @@ local function CopyEntry(lists, spec, slot, key)
     local slots = lists.specs[spec] or {}
     lists.specs[spec] = slots
     local list = slots[slot]
-    if not list and P.Get(ID, "raidEssentials") ~= false
+    if not list and SpecDefaults(spec)
         and (slot == "ess" or slot == "uti" or slot == "buf" or slot == "bar") then
         list = { inherit = true }
     end
@@ -414,24 +455,25 @@ function Page.CopyListToSpecs(slot)
         if CDM.EntryKind(own[i]) ~= "b" then keys[#keys + 1] = own[i] end
     end
     if #keys == 0 then return false, "This bar has no spells or items you added." end
-    local added, specs, refused = 0, 0, nil
+    local added, specs, skipped = 0, 0, 0
     for _, other in ipairs(Page.ClassSpecs({})) do
         if other ~= spec then
-            local before = added
+            local before, full = added, false
             for i = 1, #keys do
                 local copied, reason = CopyEntry(lists, other, slot, keys[i])
                 if copied then added = added + 1 end
-                refused = refused or reason
+                if reason == "full" then full = true end
             end
             if added > before then specs = specs + 1 end
+            if full then skipped = skipped + 1 end
             Prune(lists, other)
         end
     end
-    if added == 0 and refused then return false, refused == "full" and "This bar is full." or refused end
+    if added == 0 and skipped > 0 then return false, "This bar is full." end
     if added == 0 then return true, 0, 0 end
     local ok, reason = Page.Commit("Copy bar to all specializations", lists)
     if not ok then return false, reason end
-    return true, added, specs
+    return true, added, specs, skipped
 end
 
 function Page.SetSpellField(key, field, value)

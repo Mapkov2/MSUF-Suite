@@ -154,6 +154,13 @@ end
 local NS = { MSUFMedia = { font = SUITE_FONT }, Client = { isForever = false },
     Dispatch = function(callback, ...) return callback(...) end }
 function NS.IsCombatLocked() return InCombatLockdown() == true end
+-- The slot list and count the screen shares with its menu preview come from
+-- the real catalog file (HUD.lua); its count follows NS.Client.
+do
+    local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "afkScreen", "HUD", NS.Client)
+    NS.AFKSlots, NS.AFK_RANGED_ROW, NS.AFK_AMMO_ROW, NS.AFKSlotCount =
+        catalog.AFKSlots, catalog.AFK_RANGED_ROW, catalog.AFK_AMMO_ROW, catalog.AFKSlotCount
+end
 -- The shipped context timers on each module's stub context.
 local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, suite, NS)
 local InCombatOption = dofile(root .. "/tools/tests/suite_test_support.lua").InCombatOption

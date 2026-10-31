@@ -79,6 +79,13 @@ local function Describe(key, family, saved)
             end
             hasAura = Plain(info.hasAura) == true
         end
+    elseif kind == "a" and CDM.AURA_GROUPS[id] then
+        -- A group's own name; its icon is the first source this client knows.
+        local group = CDM.AURA_GROUPS[id]
+        name = S.Text(group.name)
+        for i = 1, #group.ids do
+            texture = texture or Number(C_Spell.GetSpellTexture(group.ids[i]))
+        end
     elseif kind == "s" or kind == "a" or kind == "d" then
         spell = id
     elseif kind == "i" then
@@ -176,6 +183,7 @@ local function Defaults(context)
     SavedCatalog(context)
     if not context.observed then GuideCatalog(context) end
     context.catalogCount = #context.order
+    context.catalogUnavailable = not context.observed and context.catalogCount == 0
     local spellKey = {}
     for i = 1, #context.order do
         local row = context.records[context.order[i]]
@@ -255,7 +263,8 @@ local function ListOf(context, def, defaultsOnly)
     local list = (context.lists.specs[context.spec] or EMPTY)[slot]
     if list and not (defaultsOnly and list.inherit) then return list, true end
     if slot == "ess" or def.preset == "defensives" then return context.presets[slot], false end
-    if context.config.raidEssentials ~= false then return context.defaultByBar[slot], false end
+    -- As Resolve: spec defaults only with the spec's profile row.
+    if context.presets.ess then return context.defaultByBar[slot], false end
 end
 local function Claim(context, list, slot)
     for i = 1, list and #list or 0 do

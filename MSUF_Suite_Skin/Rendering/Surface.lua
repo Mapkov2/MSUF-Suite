@@ -626,5 +626,23 @@ function Surface.Refresh(target)
     return false
 end
 
+-- A caller's color for the edge of target's surface (the Suite colors a
+-- tooltip border by item quality or class), in place of the theme's border
+-- until the next repaint. Without a color the theme's border is back. False
+-- when target has no visible edge. Only the owned edge texture changes, so
+-- combat does not matter.
+function Surface.TintEdge(target, r, g, b)
+    local state = NS.Registry.GetSurface(target)
+    if not state or not state.edge:IsShown() then return false end
+    if r == nil then
+        local material = NS.Theme.GetMaterial(RoleForState(state))
+        SetVertexColor(state.edge, material.border, NS.Theme.GetBorderOpacity())
+    else
+        local _, _, _, alpha = state.edge:GetVertexColor()
+        state.edge:SetVertexColor(r, g, b, alpha)
+    end
+    return true
+end
+
 -- Every settings notification can change how a surface paints.
 NS.Registry.AddListener(Surface, NextPaintGeneration)

@@ -657,3 +657,95 @@ for _, case in ipairs({
     check(clock.label.text == case.localTime, "12-hour local clock: " .. tostring(clock.label.text))
 end
 print("Minimap information: localized 12-hour clock words and their order passed")
+
+-- AFKScreen fades UIParent without hiding the information host. Alpha changes
+-- do not fire OnShow/OnHide; returning must resume the clock without a refresh.
+for _, client in ipairs({ "Mainline", "Forever" }) do
+    for source = 1, 3 do
+        local reads, alphaHooks = 0, 0
+        local W = H.New(root, client, { beforeModules = function(W)
+            local G, hook = W.G, W.G.hooksecurefunc
+            G.hooksecurefunc = function(target, name, callback)
+                if target == G.UIParent and name == "SetAlpha" then alphaHooks = alphaHooks + 1 end
+                return hook(target, name, callback)
+            end
+            G.GetServerTime = function() return W.now end
+            G.GetGameTime = function()
+                reads = reads + 1
+                return 13, math.floor(W.now / 60) % 60
+            end
+            G.date = function(format)
+                reads = reads + 1
+                assert(format == "%H:%M")
+                return string.format("14:%02d", math.floor(W.now / 60) % 60)
+            end
+        end })
+        W.editModeReady = true
+        H.Enable(W, { captured = true, infoLocation = false, infoWeather = false,
+            infoClock = true, infoClockSource = source, infoClock24Hour = true,
+            infoClockSeconds = false, infoClockDate = false })
+        W.Step()
+        local G, S, M = W.G, W.S, W.M
+        local clock, shown = M.infoEntries.Clock, 0
+        local schedule, schedules = S.ScheduleDataTick, 0
+        S.ScheduleDataTick = function(...)
+            schedules = schedules + 1
+            return schedule(...)
+        end
+        M.infoFrame:HookScript("OnShow", function() shown = shown + 1 end)
+        local function Expected(minute)
+            local realm, computer = string.format("13:%02d", minute), string.format("14:%02d", minute)
+            return source == 1 and realm or source == 2 and computer or realm .. " / " .. computer
+        end
+        check(clock.label.text == Expected(0) and W.Pending() == 1, "AFK clock initial state")
+        G.UIParent:SetAlpha(.85)
+        -- Exact entry/exit ordering used by AFKScreen: fade UI, hide map;
+        -- restore map, then restore UI. The information host stays shown.
+        G.UIParent:SetAlpha(0)
+        G.Minimap:Hide()
+        local before = reads
+        W.Advance(180)
+        check(reads == before and W.Pending() == 0, "AFK clock sampled while UI was transparent")
+        G.Minimap:Show()
+        G.UIParent:SetAlpha(.85)
+        check(shown == 0, "alpha-only AFK fixture unexpectedly fired OnShow")
+        check(clock.label.text == Expected(3) and W.Pending() == 1,
+            "AFK return left minimap clock stale or stopped: " .. client .. "/" .. source)
+        W.Advance(60)
+        check(clock.label.text == Expected(4) and W.Pending() == 1, "AFK clock did not keep ticking")
+        -- A short fade must cancel immediately, preserve the next deadline,
+        -- and never duplicate it when alpha changes while already visible.
+        G.UIParent:SetAlpha(0)
+        check(W.Pending() == 0, "transparent clock retained a scheduled sample")
+        before = reads
+        W.Advance(10)
+        G.UIParent:SetAlpha(.4)
+        local resumedSchedules = schedules
+        G.UIParent:SetAlpha(.85)
+        check(schedules == resumedSchedules, "visible alpha change redundantly rescheduled clock")
+        check(reads == before and W.Pending() == 1, "brief fade duplicated samples or timers")
+        W.Advance(50)
+        check(clock.label.text == Expected(5) and W.Pending() == 1, "brief fade lost next clock deadline")
+        -- Restoring parent alpha cannot override the configured hidden state.
+        assert(S.Set("minimap", "visibility", 5))
+        G.UIParent:SetAlpha(0)
+        W.Advance(120)
+        before = reads
+        G.UIParent:SetAlpha(.85)
+        check(reads == before and W.Pending() == 0, "hidden minimap resumed on alpha restoration")
+        assert(S.Set("minimap", "visibility", 1))
+        check(clock.label.text == Expected(7) and W.Pending() == 1, "visible clock did not catch up")
+        -- Persistent secure hooks stay inert after disable and install once.
+        assert(S.Set("minimap", "enabled", false))
+        before = reads
+        G.UIParent:SetAlpha(0)
+        W.Advance(120)
+        G.UIParent:SetAlpha(.85)
+        check(reads == before and not M.infoTimer and W.Pending() == 0, "disabled clock resumed")
+        assert(S.Set("minimap", "enabled", true))
+        W.Step()
+        check(alphaHooks == 1, "clock re-enable duplicated alpha hook")
+        check(clock.label.text == Expected(9) and W.Pending() == 1, "clock re-enable lost sampling")
+    end
+end
+print("Minimap AFK clock: realm/local/both, alpha restoration, hidden suspension and re-enable passed")

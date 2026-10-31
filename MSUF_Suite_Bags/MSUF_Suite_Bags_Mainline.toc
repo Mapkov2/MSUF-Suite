@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Bags
 ## Notes: Optional Bags module for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.4-alpha
+## Version: 0.1.5-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -16,13 +16,18 @@ BagWindow.lua
 BankItemLevel.lua
 InventoryModel.lua
 InventoryIndex.lua
+UpgradeMarker.lua
 GridView.lua
 InventoryDetails.lua
+SavedSearches.lua
+SmartSearch.lua
 CategoryEditor.lua
+FreeSlots.lua
 InventoryView.lua
 BankIndex.lua
 BankActions.lua
 BankInventory.lua
+BankWindow.lua
 Finance.lua
 CurrencyPicker.lua
 SplitInventory.lua

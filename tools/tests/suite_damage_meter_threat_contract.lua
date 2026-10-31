@@ -34,6 +34,9 @@ end
 function Region:Show() self.shown=true end
 function Region:Hide() self.shown=false end
 function Region:IsShown() return self.shown end
+function Region:IsVisible()
+    return self.shown and (not self.parent or self.parent:IsVisible())
+end
 function Region:SetShown(shown) self.shown=shown and true or false end
 function Region:SetScript(key,value) self.scripts[key]=value end
 function Region:GetScript(key) return self.scripts[key] end

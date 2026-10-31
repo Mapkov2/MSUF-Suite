@@ -22,6 +22,7 @@ B.Section("combatStatsHUD", "secondary_stats", "Secondary stats", {
     Bool("showSpeed", "Add speed (the stat, not running speed)"),
     Bool("combatOnly", "Show only in combat"),
     Number("width", "Display width", 300, 180, 480),
+    Number("fontSize", "Text size", 15, 10, 24),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     B.Color("backgroundColor", "Background color", "10151b"),
     B.Color("accentColor", "Accent color", "d9ad60"),
@@ -103,6 +104,7 @@ B.Section("enemyCastStack", "dungeon_casts", "Dungeon cast stack", {
     B.Color("lockedColor", "Uninterruptible cast color", "7d8290"),
     B.Color("stripeColor", "Ready mark color", "63c88a"),
 })
+NS.AddQoLTextStyle("enemyCastStack", "dungeon_casts", "Dungeon cast stack", 70)
 do
     local rules = NS.SuiteCatalog.enemyCastStack.rules
     rules.glossStrength.enableKey = "glossEnabled"

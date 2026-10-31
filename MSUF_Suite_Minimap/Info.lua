@@ -63,7 +63,7 @@ local TAGS = {
     [8] = { "M+", 6, true },
     [208] = { "D", 1, true },
 }
-local TIER_COLORS = { "e0a060", "4aa8ff", "b36bff", "a0a0a0", "40d8d8", "ff9a33" }
+local TIER_COLORS = NS.MinimapDifficultyColors
 -- Flexible raids show the current group size instead of the maximum.
 local FLEX = { [14] = true, [15] = true, [17] = true, [33] = true }
 
@@ -326,6 +326,18 @@ local function Sample(entry, key)
     return delay
 end
 
+-- The text's box hugs it like the other texts' boxes do, and rests while
+-- there is no text (outside instances).
+local function FitDifficultyBox(label, text)
+    local box, size = M.difficultyBox, M.difficultyBoxSize
+    if not box then return end
+    box:SetShown(size ~= nil and text ~= "")
+    if size and text ~= "" then
+        local width = label:GetStringWidth()
+        box:SetWidth(math.max(size, (Finite(width) and width or 0) + 8))
+    end
+end
+
 local function UpdateDifficulty()
     local label = M.difficultyLabel
     if not M.difficultyActive or not label then return end
@@ -338,8 +350,9 @@ local function UpdateDifficulty()
     if text ~= M.difficultyText then
         label:SetText(text)
         M.difficultyText = text
+        FitDifficultyBox(label, text)
     end
-    local color = M.config.infoDifficultyColors and TIER_COLORS[tier] or "ffffff"
+    local color = M.config.infoDifficultyColors and TIER_COLORS[tier] or M.config.infoDifficultyColor
     if color ~= M.difficultyColor then
         label:SetTextColor(Color(color))
         M.difficultyColor = color
@@ -455,6 +468,7 @@ local function CreateEntry(key)
     return { button = button, label = label, icon = icon }
 end
 
+local parentAlphaHooked
 local function EnsureFrame()
     local host = MM.host
     if M.infoFrame and NS.Safety.IsForbidden(M.infoFrame) then M.infoFrame, M.infoEntries = nil, nil end
@@ -464,6 +478,11 @@ local function EnsureFrame()
         M.infoFrame:SetScript("OnShow", MM.UpdateInfoVisibility)
         M.infoFrame:SetScript("OnHide", Cancel)
         M.infoEntries = {}
+    end
+    -- Alpha-only fades (AFK) do not fire OnShow when UIParent returns.
+    if not parentAlphaHooked then
+        hooksecurefunc(UIParent, "SetAlpha", MM.UpdateInfoVisibility)
+        parentAlphaHooked = true
     end
     M.infoFrame:ClearAllPoints()
     M.infoFrame:SetAllPoints(host)
@@ -485,6 +504,18 @@ local function Anchor(region, anchor, x, y)
     local point = MM.ANCHORS[anchor] or "CENTER"
     region:SetPoint(point, host, point, x, y)
     return point:find("LEFT", 1, true) and "LEFT" or point:find("RIGHT", 1, true) and "RIGHT" or "CENTER"
+end
+
+-- A text's box starts on the side its text is justified to.
+local function PlaceBox(box, owner, justify)
+    box:ClearAllPoints()
+    if justify == "LEFT" then
+        box:SetPoint("LEFT", owner, "LEFT", -4, 0)
+    elseif justify == "RIGHT" then
+        box:SetPoint("RIGHT", owner, "RIGHT", 4, 0)
+    else
+        box:SetPoint("CENTER", owner, "CENTER")
+    end
 end
 
 local function Style(entry, key, c, classColor, boxR, boxG, boxB)
@@ -535,14 +566,7 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     if boxMode == BOX.BORDER or boxMode == BOX.CUSTOM then
         if not entry.box then entry.box = S.CreateTexture(entry.button, nil, "BACKGROUND") end
         local box = entry.box
-        box:ClearAllPoints()
-        if entry.justify == "LEFT" then
-            box:SetPoint("LEFT", entry.button, "LEFT", -4, 0)
-        elseif entry.justify == "RIGHT" then
-            box:SetPoint("RIGHT", entry.button, "RIGHT", 4, 0)
-        else
-            box:SetPoint("CENTER", entry.button, "CENTER")
-        end
+        PlaceBox(box, entry.button, entry.justify)
         box:SetHeight(height + 4)
         if boxMode == BOX.CUSTOM then boxR, boxG, boxB = Color(c[prefix .. "BoxColor"]) end
         box:SetColorTexture(boxR, boxG, boxB, 1)
@@ -640,19 +664,42 @@ local function ApplyInviteMark(c)
     UpdateInvite()
 end
 
+-- The box is made when first wanted; its width follows the text (FitDifficultyBox).
+local function ApplyDifficultyBox(c, label, justify)
+    local mode = c.infoDifficultyBox
+    if mode ~= BOX.BORDER and mode ~= BOX.CUSTOM then
+        M.difficultyBoxSize = nil
+        if M.difficultyBox then M.difficultyBox:Hide() end
+        return
+    end
+    if not M.difficultyBox then M.difficultyBox = S.CreateTexture(M.infoFrame, nil, "BACKGROUND") end
+    local box = M.difficultyBox
+    PlaceBox(box, label, justify)
+    box:SetHeight(c.infoDifficultySize + 4)
+    local r, g, b = MM.BorderRGB()
+    if mode == BOX.CUSTOM then r, g, b = Color(c.infoDifficultyBoxColor) end
+    box:SetColorTexture(r, g, b, 1)
+    M.difficultyBoxSize = c.infoDifficultySize
+end
+
 local function ApplyDifficultyLabel(c, difficulty)
     if not difficulty then
         if M.difficultyLabel then M.difficultyLabel:Hide() end
+        if M.difficultyBox then M.difficultyBox:Hide() end
         return
     end
     if not M.difficultyLabel then
         M.difficultyLabel = S.CreateFontString(M.infoFrame, nil, "OVERLAY", "GameFontNormalSmall")
+        M.difficultyLabel:SetWordWrap(false)
     end
     local label = M.difficultyLabel
     S.SetStyledFont(label, S.ResolveFont(c.infoDifficultyFont), c.infoDifficultySize,
         outlines[c.infoDifficultyOutline] or "OUTLINE", c.infoDifficultyRendering,
         c.infoDifficultyShadow, c.infoDifficultyShadowOpacity, c.infoDifficultyShadowDistance)
-    label:SetJustifyH(Anchor(label, c.infoDifficultyAnchor, c.infoDifficultyX, c.infoDifficultyY))
+    label:SetWidth(c.infoDifficultyWidth)
+    local justify = Anchor(label, c.infoDifficultyAnchor, c.infoDifficultyX, c.infoDifficultyY)
+    label:SetJustifyH(justify)
+    ApplyDifficultyBox(c, label, justify)
     label:Show()
     M.difficultyText, M.difficultyColor, M.difficultyDirty = nil, nil, true
 end

@@ -370,9 +370,9 @@ end
 
 local function RefreshPendingState()
     local current = PlayerSpellsSkin.activeState
-    if current and current.active then
+    if current and current.active and current.pendingRefresh and Safety.Read(current.frame, "IsShown") ~= false then
         local includePages = current.pendingPageRefresh == true
-        current.pendingPageRefresh = nil
+        current.pendingRefresh, current.pendingPageRefresh = nil, nil
         RefreshVisualState(current, includePages)
     end
 end
@@ -386,12 +386,14 @@ function PlayerSpellsSkin:QueueRefresh(frame, refreshPages)
         return
     end
 
+    state.pendingRefresh = true
+    state.pendingPageRefresh = state.pendingPageRefresh or refreshPages == true
+    if Safety.Read(state.frame, "IsShown") == false then return end
     if NS.IsCombatLocked() then
-        state.pendingPageRefresh = state.pendingPageRefresh or refreshPages == true
         NS.CombatGate.RunOrDefer("playerSpells:refresh", RefreshPendingState)
         return
     end
-    RefreshVisualState(state, refreshPages)
+    RefreshPendingState()
 end
 
 function PlayerSpellsSkin:OnFrameTabSet(frame)
@@ -402,10 +404,19 @@ function PlayerSpellsSkin:OnDisplayedSpellsChanged()
     self:QueueRefresh()
 end
 
+local function OnShown(frame)
+    local state = PlayerSpellsSkin.states[frame]
+    if state and state.pendingRefresh then PlayerSpellsSkin:QueueRefresh(frame) end
+end
+
 local function RefreshActiveColors()
     local state = PlayerSpellsSkin.activeState
     if state and state.active and not NS.IsCombatLocked() then
-        RefreshThemeColors(state)
+        if Safety.Read(state.frame, "IsShown") == false then
+            state.pendingRefresh = true
+        else
+            RefreshThemeColors(state)
+        end
     end
 end
 
@@ -446,6 +457,7 @@ end
 
 local function RestoreState(state)
     state.active = false
+    state.pendingRefresh, state.pendingPageRefresh = nil, nil
     NS.GenericWindows.Disable(state.owner)
     state.pagesSkinned = nil
     NS.ControlSkin.DisableOwner(state.owner)
@@ -487,7 +499,11 @@ function PlayerSpellsSkin.Apply(frame, owner)
 
     SkinSpecializationAndTalentPages(state)
     RegisterCallbacks()
-    RefreshVisualState(state)
+    if not state.showHooked then
+        frame:HookScript("OnShow", Safety.Isolated(OnShown))
+        state.showHooked = true
+    end
+    PlayerSpellsSkin:QueueRefresh(frame)
     return true
 end
 

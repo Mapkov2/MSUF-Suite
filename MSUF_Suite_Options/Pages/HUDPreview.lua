@@ -73,14 +73,16 @@ function Preview.Color(c, key, fallback, token)
     return unpack(fallback)
 end
 
-function Preview.Label(ui, text, x, y, width, size, color, shadow, distance)
+-- role: the text style role of the screen's own text (Suite.HUDTextArgs), for
+-- headline text that takes a stronger shadow.
+function Preview.Label(ui, text, x, y, width, size, color, role)
     ui.used = ui.used + 1
     local label = ui.labels[ui.used]
     if not label then
         label = ui.canvas:CreateFontString(nil, "OVERLAY")
         ui.labels[ui.used] = label
     end
-    P.StylePreviewFont(label, Suite.ResolveFont(ui.config.font), size, "OUTLINE", 1, true, shadow or 70, distance or 1)
+    P.StylePreviewFont(label, Suite.ResolveFont(ui.config.font), size, Suite.HUDTextArgs(ui.config, role))
     label:ClearAllPoints()
     label:SetPoint("TOPLEFT", x, y)
     label:SetWidth(width)

@@ -94,6 +94,8 @@ Refresh = function()
     local category = Editor.categories[Editor.selected]
     Editor.name:SetText(category and category.name or "")
     Editor.items:SetText(category and ItemText(category.items) or "")
+    Editor.rule:SetText(category and category.query or "")
+    Editor.rule:SetEnabled(not Editor.editPins)
     Editor.enabled:SetChecked(not category or category.enabled)
     Editor.save:SetEnabled(category ~= nil)
     Editor.remove:SetEnabled(category ~= nil)
@@ -135,6 +137,15 @@ local function SaveCategory()
     end
     local parsed = Model.DecodeCategories("1|x|" .. input)
     if #parsed ~= 1 then return end
+    local query = Editor.rule:GetText():match("^%s*(.-)%s*$")
+    local compiled, why = NS.InventoryRules.Compile(query)
+    if not compiled then
+        Editor.status:SetText(S.Text(why))
+        return
+    end
+    -- A rule of blanks is no rule: it would take every item.
+    if not NS.InventoryRules.HasTerms(compiled) then query = nil end
+    category.query = not Editor.editPins and query or nil
     category.name, category.items, category.enabled = name, parsed[1].items, Editor.enabled:GetChecked() == true
     if Store() then Refresh() else Editor.status:SetText(S.Text("Category data is full. Remove unused item IDs first.")) end
 end
@@ -154,7 +165,7 @@ local function MoveCategory(button)
 end
 
 local function Create()
-    local frame = P.GridView.Window("MSUFSuiteBagCategories", 410, 485, "Bag categories")
+    local frame = P.GridView.Window("MSUFSuiteBagCategories", 410, 545, "Bag categories")
     Editor.frame = frame
     frame:HookScript("OnHide", ClearSession)
     Label(frame, "Name", 18, -40)
@@ -166,21 +177,22 @@ local function Create()
     Editor.enabled = S.CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     Editor.enabled:SetPoint("TOPLEFT", 15, -147)
     Label(frame, "Show this category", 48, -153)
-    Editor.save = Action(frame, "Save", 18, -185, 80, SaveCategory)
-    Editor.add = Action(frame, "New", 104, -185, 80, NewCategory)
-    Editor.remove = Action(frame, "Delete", 190, -185, 80, RemoveCategory)
-    Editor.up = Action(frame, "Up", 278, -185, 50, MoveCategory)
+    P.InventorySearch.RuleControls(Editor, Label, Input, Action)
+    Editor.save = Action(frame, "Save", 18, -245, 80, SaveCategory)
+    Editor.add = Action(frame, "New", 104, -245, 80, NewCategory)
+    Editor.remove = Action(frame, "Delete", 190, -245, 80, RemoveCategory)
+    Editor.up = Action(frame, "Up", 278, -245, 50, MoveCategory)
     Editor.up.delta = -1
-    Editor.down = Action(frame, "Down", 333, -185, 59, MoveCategory)
+    Editor.down = Action(frame, "Down", 333, -245, 59, MoveCategory)
     Editor.down.delta = 1
     local scroll = S.CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 20, -226)
+    scroll:SetPoint("TOPLEFT", 20, -286)
     scroll:SetPoint("BOTTOMRIGHT", -40, 42)
     Editor.child = S.CreateFrame("Frame", nil, scroll)
     Editor.child:SetSize(340, 27)
     scroll:SetScrollChild(Editor.child)
-    Label(frame, "Deleting a category never deletes its items.", 18, -452)
-    Editor.status = Label(frame, "", 18, -470)
+    Label(frame, "Deleting a category never deletes its items.", 18, -512)
+    Editor.status = Label(frame, "", 18, -530)
     Editor.status:SetWidth(375)
     Editor.status:SetTextColor(1, 0.55, 0.2)
 end

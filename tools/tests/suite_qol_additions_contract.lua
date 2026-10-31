@@ -31,6 +31,8 @@ local function Frame()
     function f:GetAlpha() return self.alpha end
     function f:SetAlpha(value) self.alpha = value end
     function f:SetPoint() end
+    function f:ClearAllPoints() end
+    function f:SetScale() end
     function f:SetAllPoints() end
     function f:SetWidth() end
     function f:SetColorTexture() end
@@ -104,11 +106,12 @@ local configNames = { [7] = "Base", [100] = "Raid", [101] = "Dungeon" }
 C_Traits = { GetConfigInfo = function(configID) return { name = configNames[configID] } end }
 UnitGUID = function() return "Player-123" end
 assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixture(root, S)
+assert(loadfile(root .. "/MSUF_Suite_Modules/LoadoutSnapshot.lua"))("MSUF_Suite_Modules", { Suite = S })
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LoadoutReminder.lua"))("MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 local reminder = modules.loadoutReminder
 reminder.context = Support.ModuleTimers(root, S, NS)("loadoutReminder", reminder, Context())
 reminder.config = { onReadyCheck = true, onInstanceEntry = true, onlyMismatch = false,
-    duration = 8, expectedConfigID = 0, expectedLootSpecID = 0 }
+    duration = 8, expectedConfigID = 0, expectedLootSpecID = 0, scale = 100, point = 2, x = 0, y = -155 }
 reminder.active = true
 reminder:Enable()
 assert(reminder.context.events.READY_CHECK and not reminder.host,

@@ -84,7 +84,7 @@ local function RangeChanged(_, _, slot, inRange, checksRange)
     local out = not IsSecret(inRange) and not IsSecret(checksRange) and checksRange and not inRange or nil
     for i = 1, #list do
         local rec = list[i]
-        if rec.rangeSlot == slot and rec.outOfRange ~= out then
+        if Visible(rec.bar) and rec.rangeSlot == slot and rec.outOfRange ~= out then
             rec.outOfRange = out
             if not out then
                 Usable(rec)
@@ -390,7 +390,7 @@ end
 -- Hooked only on cooldowns StartDispatcher recorded in AB.cooldownOwner.
 local function CooldownDone(frame)
     local rec = AB.cooldownOwner[frame]
-    if rec and M.active and rec.filled then Cooldown(rec) end
+    if rec and M.active and rec.filled and Visible(rec.bar) then Cooldown(rec) end
 end
 
 function AB.StartDispatcher()

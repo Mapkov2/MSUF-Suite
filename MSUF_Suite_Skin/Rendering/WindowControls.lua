@@ -56,9 +56,8 @@ local function Enabled()
 end
 
 local function CommitWithHistory(label, key, commit)
-    local menu = _G.MSUF2
-    if menu and type(menu.RunWithHistory) == "function" and not IsCombat() then
-        return menu.RunWithHistory(label, "suite:skin.windowControls." .. key, commit)
+    if not IsCombat() then
+        return NS.SuiteCore().HostBridge.WithMenuHistory(label, "suite:skin.windowControls." .. key, commit)
     end
     return commit()
 end

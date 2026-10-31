@@ -3,6 +3,8 @@ local Suite, S = P.Suite, P.S
 local Preview = {}
 P.ActionBarPreview = Preview
 local IsSecret = Suite.IsSecret
+local ENUM = Suite.ActionBarEnum
+local LAST_ACTION = ENUM.BAR.LAST_ACTION
 local function Number(value) return not IsSecret(value) and type(value) == "number" end
 
 local function Slot(bar, ordinal)
@@ -83,6 +85,39 @@ function Preview.Read(tile, bar, ordinal, config)
     tile.icon:SetTexture(texture)
     tile.filled = filled == true
     tile.icon:SetShown(tile.filled)
+    tile.glow = false
+    -- The color setting the bar's own paint tints this button with.
+    tile.tint = bar <= LAST_ACTION and S.ActionBarPreviewTint and S.ActionBarPreviewTint(bar, ordinal) or nil
+end
+
+-- Out of range and a spell alert are short-lived on a real bar, so their
+-- options would almost never show. While an option is on, the second button
+-- the preview displays wears the out-of-range color and the third the alert
+-- glow (the last button when fewer show), on a sample icon if the slot is
+-- empty. Stance and pet buttons have neither state. `displayed` lists the
+-- `shown` buttons in order, after Preview.Read.
+local SAMPLE_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+local SAMPLE_RANGE, SAMPLE_GLOW = 2, 3
+local function SampleTile(displayed, shown, position)
+    local tile = displayed[math.min(position, shown)]
+    if not tile.filled then
+        tile.icon:SetTexture(SAMPLE_ICON)
+        tile.icon:SetShown(true)
+        tile.filled = true
+    end
+    return tile
+end
+function Preview.Sample(displayed, shown, bar, config)
+    if shown == 0 or bar > LAST_ACTION then return end
+    if config.rangeColoring then SampleTile(displayed, shown, SAMPLE_RANGE).tint = "rangeColor" end
+    if config.procGlow ~= ENUM.PROC_GLOW.NONE then SampleTile(displayed, shown, SAMPLE_GLOW).glow = true end
+end
+
+-- Page arrows hang beside bar 1 only: the side they sit on ("LEFT" or
+-- "RIGHT"), else nil.
+function Preview.PageArrowSide(bar, config)
+    if bar ~= ENUM.BAR.MAIN or not config.pageArrows then return nil end
+    return config.pageArrowSide == ENUM.PAGE_ARROW_SIDE.LEFT and "LEFT" or "RIGHT"
 end
 
 -- The preview owns no timer loop. A burst of native changes gets one paint

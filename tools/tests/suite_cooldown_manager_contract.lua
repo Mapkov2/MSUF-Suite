@@ -50,9 +50,9 @@ local function Read(path)
     return text
 end
 AuraContainerSortMethod={ExpirationOnly=5}
-local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","EntryFill.lua","Resolve.lua","Index.lua","Icons.lua","TrackingBars.lua","Time.lua",
-    "Effects.lua","AuraGlows.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua","ActionUsableGlows.lua","Alerts.lua","Grid.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua",
-    "Flush.lua","Settings.lua","Events.lua","Controller.lua","Editor.lua","Exports.lua"}
+local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua","Icons.lua","Masque.lua",
+    "TrackingBars.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua", "KickMark.lua","AuraGlows.lua","AuraLooks.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua",
+    "ActionUsableGlows.lua","ReadyPulse.lua","Alerts.lua","Grid.lua","FrameAnchors.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua","Flush.lua","Settings.lua","Events.lua","Controller.lua","Editor.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
 for i=1,#ORDER do assert(tocFiles[i]==ORDER[i],"TOC order: expected "..ORDER[i].." at "..i) end
@@ -69,7 +69,8 @@ do
         ["Controller.lua"]={"Flush.lua","Settings.lua","Events.lua"},["Exports.lua"]={"Controller.lua"},
         ["AuraPlaceholders.lua"]={"AuraButtons.lua"},["Auras.lua"]={"AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua"},
         ["AuraContainers.lua"]={"AuraButtons.lua"},
-        ["AuraButtons.lua"]={"AuraGlows.lua"},["StackColors.lua"]={"AuraGlows.lua"}}
+        ["AuraButtons.lua"]={"AuraGlows.lua","AuraLooks.lua"},["StackColors.lua"]={"AuraGlows.lua"},
+        ["Effects.lua"]={"GlowLines.lua"},["AuraGlows.lua"]={"GlowLines.lua"},["AssistIcon.lua"]={"Effects.lua"}}
     for file,deps in pairs(USES) do
         for _,dep in ipairs(deps) do assert(at[dep] and at[dep]<at[file],dep.." must load before "..file) end
     end
@@ -660,7 +661,12 @@ C_Item={
     cooldowns={},
     GetItemCooldown=function(item) local cd=C_Item.cooldowns[item];if cd then return cd[1],cd[2],cd[3] end return 0,0,true end,
     GetItemCount=function(item) return bagCounts[item] or 2 end,
-    IsUsableItem=function() return true,false end,
+    usableCalls={},
+    IsUsableItem=function(item)
+        local reads=C_Item.usableCalls
+        reads[item]=(reads[item] or 0)+1
+        return true,false
+    end,
 }
 GetInventoryItemID=function(_,slot) if slot==13 then return 7777 end end
 GetInventoryItemTexture=function(_,slot) if slot==13 then return 4444 end end
@@ -752,6 +758,7 @@ for _,file in ipairs(coreFiles) do
     if file:match("%.lua$") then
         if file=="Core/Suite.lua" and not listed then
             assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManager.lua"))("MSUF_Suite",Suite)
+            assert(loadfile(root.."/MSUF_Suite/Core/Catalog/CooldownManagerData.lua"))("MSUF_Suite",Suite)
         end
         assert(loadfile(root.."/MSUF_Suite/"..file))("MSUF_Suite",Suite)
         if file=="Core/SuiteCatalog.lua" and not listed then
@@ -844,7 +851,17 @@ Count(C.Icons,"Sync","iconSync");Count(C.Auras,"Sync","auraSync");Count(C.Index,
 Count(C.Layout,"ApplyAll","layoutAll");Count(C.Layout,"Apply","layout");Count(C.Layout,"FitAnchor","fit")
 Count(C.Visibility,"ApplyAll","visAll");Count(C.Visibility,"Apply","vis")
 Count(C.Keybinds,"Rebuild","keysRebuild");Count(C.Keybinds,"Refresh","keysRefresh");Count(C.Keybinds,"Request","keysRequest")
-Count(C.Catalog,"Rebuild","catalog");Count(C.Resolve,"Build","resolve")
+Count(C.Catalog,"Rebuild","catalog")
+-- A combat resolve stages over frames (ResolveStages.lua): "resolve" counts
+-- the builds that land, not their stages.
+do
+    local build=C.Resolve.Build
+    C.Resolve.Build=function(...)
+        local plans,any=build(...)
+        if plans~=nil then calls.resolve=(calls.resolve or 0)+1 end
+        return plans,any
+    end
+end
 local function ResetCalls() wipe(calls) end
 local function Calls(label) return calls[label] or 0 end
 local seeds=0
@@ -1449,6 +1466,122 @@ usable[201]=SECRET_BOOL
 C.Effects.Usable(e21)
 assert(e21.icon.tint==1,"a secret usability answer changed the visible tint")
 usable[201]=nil
+-- A rebind and the pending broadcast are one synchronous read scope,
+-- including a cooling edge that binds effects inside Time.Refresh first.
+do
+    local oldOv, oldCooling = e21.ov, e21.cooling
+    for _, edge in ipairs({ false, true, "visibility" }) do
+        local ov = {}
+        for k,v in pairs(oldOv or {}) do ov[k]=v end
+        e21.ov=ov
+        e21.cooling=edge == true and not oldCooling or oldCooling
+        if edge == "visibility" then e21.hidden = true end
+        usable[201]=false
+        local before=usable.calls[201] or 0
+        local refresh, boundInRefresh = C.Time.Refresh, false
+        C.Time.Refresh = function(entry, reason, queries)
+            local result = refresh(entry, reason, queries)
+            if entry == e21 then boundInRefresh = e21.icon.fxEntry == e21 and e21.icon.fxOv == e21.ov end
+            return result
+        end
+        C.Flush.Mark(e21,"full");C.Flush.dirty.usable=true;Run()
+        C.Time.Refresh = refresh
+        assert(boundInRefresh == (edge ~= false), "expected timing/visibility bind path was not exercised")
+        assert(usable.calls[201]==before+1 and e21.usableCode==3,
+            "rebind plus broadcast repeated the same native usability read")
+        usable[201]=nil
+        C.Flush.dirty.usable=true;C.Schedule();Run()
+        assert(usable.calls[201]==before+2 and e21.usableCode==1,
+            "a later flush retained the previous rebind answer")
+    end
+    e21.ov=oldOv
+    C.Flush.Mark(e21,"full");Run()
+end
+
+-- Individually hidden cooldown icons do not consume usability broadcasts.
+-- Reappearance refreshes the current answer before the layout shows the icon.
+do
+    local ov, state = e21.ov, cdState[201]
+    local view = C.views[e21.slot]
+    local fixed = view.cooldownFixed
+    for _, reserve in ipairs({ false, true }) do
+    view.cooldownFixed = reserve
+    local replacement = {}
+    for k,v in pairs(ov or {}) do replacement[k]=v end
+    replacement.hideReady=true
+    e21.ov=replacement;cdState[201]=nil;usable[201]=nil
+    C.Flush.Mark(e21,"full");Run()
+    assert(e21.hidden and not e21.icon.shown,"fixture did not hide the ready icon")
+    usable[201]=false
+    local reads=usable.calls[201] or 0
+    C.Flush.dirty.usable=true;C.Schedule();Run()
+    assert((usable.calls[201] or 0)==reads,"hidden individual icon consumed usability")
+    cdState[201]={start=now,length=8}
+    Fire("SPELL_UPDATE_COOLDOWN",201);Run()
+    assert(not e21.hidden and e21.icon.shown and e21.icon.tint==3
+        and usable.calls[201]==reads+1,"warm show did not catch up before painting")
+    cdState[201]=nil;Fire("SPELL_UPDATE_COOLDOWN",201);Run()
+    assert(e21.hidden and not e21.icon.shown,"icon did not hide after cooldown")
+    usable[201]=nil
+    C.Flush.dirty.usable=true;C.Schedule();Run()
+    cdState[201]={start=now,length=8}
+    Fire("SPELL_UPDATE_COOLDOWN",201);Run()
+    assert(e21.icon.shown and e21.icon.tint==1,"second show retained stale tint")
+    -- A show edge and a broadcast in one pass share one exact answer.
+    e21.ov=replacement;cdState[201]=nil;usable[201]=nil
+    C.Flush.Mark(e21,"full");Run()
+    C.Flush.dirty.usable=true;C.Schedule();Run()
+    assert(e21.hidden and e21.usablePending,"fixture did not defer the hidden icon")
+    local once=usable.calls[201] or 0
+    cdState[201]={start=now,length=8}
+    C.Flush.dirty.usable=true
+    C.Flush.Mark(e21,"cooldown");Run()
+    assert(not e21.hidden and usable.calls[201]==once+1,"queued show edge and broadcast read twice in one pass")
+    -- Cooldown events are immediate, outside Flush: a later broadcast must
+    -- read again, since the native answer may change between those owners.
+    cdState[201]=nil;Fire("SPELL_UPDATE_COOLDOWN",201);Run()
+    C.Flush.dirty.usable=true;C.Schedule();Run()
+    local immediate=usable.calls[201] or 0
+    cdState[201]={start=now,length=8};usable[201]=false
+    Fire("SPELL_UPDATE_COOLDOWN",201)
+    assert(usable.calls[201]==immediate+1 and e21.icon.tint==3,"direct show missed fresh answer")
+    usable[201]=nil;C.Flush.dirty.usable=true;C.Schedule();Run()
+    assert(usable.calls[201]==immediate+2 and e21.icon.tint==1,"broadcast reused a previous event answer")
+    end
+    view.cooldownFixed=fixed
+    e21.ov=ov;cdState[201]=state;usable[201]=nil
+    C.Flush.Mark(e21,"full");Run()
+end
+
+-- A failed rebind-only pass clears answers before the real unit runner
+-- restores its mark. Re-entry outside that pass always uses a fresh reader.
+do
+    local real, cache = C.Effects.Usable
+    local errors = #dispatch.errors
+    e21.icon.fxEntry = nil
+    usable[201] = SECRET_BOOL
+    C.Effects.Usable = function(entry, queries)
+        real(entry, queries)
+        cache = queries
+        error("rebind read failed")
+    end
+    dispatch.expect = true
+    C.Flush.Mark(e21,"full");Run()
+    dispatch.expect = false
+    C.Effects.Usable = real
+    assert(#dispatch.errors == errors + 1 and cache and not next(cache.seen)
+        and not next(cache.usable) and not next(cache.noPower), "failed rebind retained answers")
+    usable[201] = false
+    local before = usable.calls[201]
+    real(e21)
+    assert(usable.calls[201] == before + 1 and e21.usableCode == 3, "direct read reused a failed scope")
+    usable[201] = nil
+    e21.icon.fxEntry = nil
+    C.Schedule();Run()
+    assert(usable.calls[201] == before + 2 and e21.usableCode == 1 and not next(cache.seen),
+        "deferred rebind retry did not read current state")
+    dispatch.errors[#dispatch.errors] = nil -- leave later independent failure scenarios unchanged
+end
 -- All range-tinted entries are inert for this broadcast. A range edge still
 do
     local duplicate = {}
@@ -3591,6 +3724,31 @@ do (function()
         "bag events stay while only hidden healthstones follow the bags")
     local rows=S.CooldownManagerBarEntries("ext")
     assert(rows[2].key=="i5512" and rows[2].hidden==true and rows[1].hidden==false,"the page marks an empty healthstone hidden")
+    -- Hidden item catch-up is also needed when only bag count changes.
+    do
+        local refresh, seen, oldOverride, oldSpell = C.Effects.Usable, false, stone.ov, stone.spell
+        -- The generic item fixture only resolves a use spell for item 9002.
+        stone.spell=9102
+        local override = {}
+        for key,value in pairs(stone.ov or {}) do override[key]=value end
+        override.readyResources=true;stone.ov=override
+        C.Index.Rebuild();C.Flush.Mark(stone,"full");Run()
+        C.Flush.dirty.usable=true;C.Schedule();Run()
+        assert(stone.usablePending,"hidden item fixture was not a usability consumer")
+        C.Effects.Usable = function(entry, queries)
+            if entry == stone then seen = true end
+            return refresh(entry, queries)
+        end
+        local before=C_Item.usableCalls[5512] or 0
+        C.Flush.dirty.usable=true
+        bagCounts[5512]=1;Fire("BAG_UPDATE_DELAYED");Run()
+        C.Effects.Usable=refresh
+        assert(seen and stone.icon.shown and stone.usablePending == nil,
+            "item show without cooling edge missed usability catch-up")
+        assert(C_Item.usableCalls[5512]==before+1,"bag show and broadcast did not share the native answer")
+        bagCounts[5512]=0;Fire("BAG_UPDATE_DELAYED");Run()
+        stone.ov=oldOverride;stone.spell=oldSpell;C.Index.Rebuild();C.Flush.Mark(stone,"full");Run()
+    end
     -- Count 0 -> 1 -> 0: one relayout of the bar per flip, none in between.
     ResetCalls()
     bagCounts[5512]=1

@@ -17,12 +17,15 @@ C.AuraGlows = AuraGlows
 -- Regions inside Blizzard's aura buttons are created with the client's
 -- CreateFrame, with their parent at creation (K.Child, AuraButtons.lua).
 local Child = K.Child
+-- Pixel and Autocast's lines (GlowLines.lua loads first).
+local Lines = C.GlowLines
 local IsCombatLocked = NS.IsCombatLocked
 local floor, max, min = math.floor, math.max, math.min
 local type, pairs, ipairs, next = type, pairs, ipairs, next
 local GOLD = K.GLOW_GOLD
 -- Glow styles (Const): 1 Blizzard alert and 2 marching ants share one
--- flipbook layout, 3 pulses the edges, 4 holds them still.
+-- flipbook layout, 3 pulses the edges, 4 holds them still, 5 Pixel and 6
+-- Autocast run lines around the button (GlowLines.lua).
 local GLOW = K.GLOW
 local FLIP = GLOW[1]
 local PULSE = GLOW[3].pulse
@@ -56,7 +59,9 @@ end
 -- pandemic: the pandemic window's glow (NewPandemic), without a combat
 -- gate; 12.1.5 and Forever play its loops while the aura is inside its
 -- window (AddPandemicActiveAnimation), 12.1.0 gets the start.
-local function NewGlow(button, parent, level, anchor, pandemic)
+-- lines: the container's region set asks for Pixel or Autocast; their
+-- loops bind here with the glow's own (a sealed button takes no new ones).
+local function NewGlow(button, parent, level, anchor, pandemic, lines)
     -- This independent native visibility gate never reads aura state and
     -- never requires a Lua mutation of protected descendants in combat.
     local combatGate
@@ -99,6 +104,10 @@ local function NewGlow(button, parent, level, anchor, pandemic)
     fade:SetDuration(PULSE)
     local g = { frame = frame, flip = flip, ring = ring, edges = Edges(ring), fade = fade,
         combatGate = combatGate, combatOnly = false, button = button, anchor = anchor }
+    if lines then
+        g.lines = Lines.New(frame, false, level)
+        Lines.Bind(g.lines, button, pandemic)
+    end
     if pandemic and button.AddPandemicActiveAnimation then
         button:AddPandemicActiveAnimation(loop)
         button:AddPandemicActiveAnimation(pulse)
@@ -119,12 +128,12 @@ end
 -- while the aura is inside its window (AddPandemicRegion, bound last, gives
 -- it a secret Shown aspect: Lua never shows or hides it once bound) and the
 -- glow inside it, which Lua shows per entry (ApplyPandemic).
-local function NewPandemic(button, level, anchor)
+local function NewPandemic(button, level, anchor, lines)
     local region = Child("Frame", button)
     region:SetAllPoints(button)
     region:SetFrameLevel(level)
     region:Hide()
-    local g = NewGlow(button, region, level, anchor, true)
+    local g = NewGlow(button, region, level, anchor, true, lines)
     g.region = region
     return g
 end
@@ -221,6 +230,11 @@ local function PaintGlow(g, style, r, gg, b, lk, edge)
     local w, h, px = lk.w, lk.h, lk.px
     g.st, g.cr, g.cg, g.cb, g.w, g.h, g.px, g.edge = style, r, gg, b, w, h, px, edge
     local spec = GLOW[style] or FLIP
+    -- Pixel and Autocast: the lines where the button has them, unless the
+    -- icon is shaped (its rings, as a still border, below).
+    local lines = g.lines
+    if spec.lines and lines and not g.shape then return Lines.PaintAura(g, spec, r, gg, b, lk) end
+    if lines then lines.frame:Hide() end
     if spec.atlas then
         -- Same margin on every side: bars get a band, not a stretched art.
         local grow = (spec.scale - 1) * min(w, h)
@@ -263,7 +277,7 @@ end
 -- on the fill edge sits on the center and the glow on the button, and each
 -- missing application moves it one travel (more than the gate is wide) to
 -- the left, out of the gate. The count stays in C: no Lua compares it.
-local function NewStack(button, level)
+local function NewStack(button, level, lines)
     local gate = Child("Frame", button)
     gate:SetPoint("CENTER", button, "CENTER", 0, 0)
     gate:SetFrameLevel(level)
@@ -276,7 +290,7 @@ local function NewStack(button, level)
     bar:SetAlpha(0)
     local host = Child("Frame", gate)
     host:SetPoint("CENTER", bar:GetStatusBarTexture(), "RIGHT", 0, 0)
-    local glow = NewGlow(button, host, level)
+    local glow = NewGlow(button, host, level, nil, nil, lines)
     glow.frame:Show()
     return { gate = gate, bar = bar, host = host, glow = glow, owner = button }
 end
@@ -439,16 +453,26 @@ AuraGlows.ApplyGlow, AuraGlows.ApplyStack, AuraGlows.ApplyCombatGate = ApplyGlow
 
 -- A button's icon shape for its glows (lk.shape, from its style pass): the
 -- paint memo leaves it out (Painted), so a new one drops the memo and they
--- repaint with their next apply; the glow events stay the plain code.
-function AuraGlows.Reshape(part, shape)
+-- repaint with their next apply; the glow events stay the plain code. A
+-- glow with Pixel and Autocast lines keeps its bar's count, thickness and
+-- speed (view: the container's) the same way.
+local NO_VIEW = {}
+local function Relined(g, view)
+    local count, thick, speed = view.glowLines, view.glowThickness, view.glowSpeed
+    if g.lc == count and g.lt == thick and g.lv == speed then return false end
+    g.lc, g.lt, g.lv = count, thick, speed
+    return true
+end
+function AuraGlows.Reshape(part, shape, view)
     if shape == K.SQUARE then shape = nil end
     if shape then K.RingArt(shape) end
+    view = view or NO_VIEW
     local g = part.glow
-    if g and g.shape ~= shape then g.shape, g.st = shape, nil end
+    if g and (g.lines and Relined(g, view) or g.shape ~= shape) then g.shape, g.st = shape, nil end
     g = part.stack and part.stack.glow
-    if g and g.shape ~= shape then g.shape, g.st = shape, nil end
+    if g and (g.lines and Relined(g, view) or g.shape ~= shape) then g.shape, g.st = shape, nil end
     g = part.pan
-    if g and g.shape ~= shape then g.shape, g.st = shape, nil end
+    if g and (g.lines and Relined(g, view) or g.shape ~= shape) then g.shape, g.st = shape, nil end
 end
 AuraGlows.ApplyPandemic = ApplyPandemic
 AuraGlows.BindStack, AuraGlows.Overlay, AuraGlows.BridgeStack = BindStack, Overlay, BridgeStack

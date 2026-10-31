@@ -126,6 +126,54 @@ function S.CooldownManagerCatalogEntries(family)
     return rows
 end
 
+-- Picker group rows (Presets.Category): per group, the entry keys of the
+-- character's known spells, each once in the group's order, and the icon of
+-- the first (keys.icon). A spell that Blizzard's catalog tracks gives that
+-- record's key (the Defensives bar claims it the same way), any other its
+-- plain spell key; plain: spell keys only, for shared groups. Known is the
+-- player's or the pet's spell book, so a client without a spell (WoW
+-- Forever) never gets it. Cold: one call per picker build.
+local tracked, listed = {}, {}
+local function Track(id, key)
+    if id and not tracked[id] then tracked[id] = key end
+end
+function S.CooldownManagerGroupKeys(plain)
+    Cold()
+    local Presets, Fill, Catalog = C.Presets, C.EntryFill, C.Catalog
+    wipe(tracked)
+    for i = 1, plain and 0 or #Catalog.order do
+        local rec = Catalog.records[Catalog.order[i]]
+        if rec and rec.family == K.FAMILY.COOLDOWN then
+            Track(rec.spell, rec.key)
+            Track(rec.override, rec.key)
+            for j = 1, #(rec.linked or EMPTY) do Track(rec.linked[j], rec.key) end
+        end
+    end
+    local out, classID, specID = {}, select(3, UnitClass("player")), C.state.specID
+    for _, name in ipairs(Presets.CATEGORY_ORDER) do
+        local keys = {}
+        out[name] = keys
+        wipe(listed)
+        local byClass, bySpec = Presets.Category(name, classID, specID)
+        for pass = 1, 2 do
+            local ids = pass == 1 and byClass or bySpec
+            for i = 1, #ids do
+                local id = ids[i]
+                local base = Fill.BaseSpell(id)
+                if Fill.Known(id) or Fill.Known(base) then
+                    local key = tracked[id] or tracked[base] or "s" .. base
+                    if not listed[key] then
+                        listed[key] = true
+                        keys[#keys + 1] = key
+                        keys.icon = keys.icon or Catalog.SpellTexture(base)
+                    end
+                end
+            end
+        end
+    end
+    return out
+end
+
 ------------------------------------------------------------------ previews, status, sounds
 function S.CooldownManagerRenderPreview(parent, slot, maxWidth, maxHeight, classSample)
     if not CDM.SLOT_INDEX[slot] or type(parent) ~= "table" then return nil end
@@ -141,6 +189,9 @@ end
 
 -- Moves with every Blizzard catalog rebuild; the page's tile memo keys on it.
 function S.CooldownManagerGeneration() return C.Catalog.generation end
+-- Whether the spec has an MSUF profile row (Presets.RAID_ESSENTIALS): only
+-- then do its built-in bars take the Suite's spec defaults (Resolve.ListOf).
+function S.CooldownManagerProfileRow(spec) return C.Presets.RaidEssentials(spec) ~= nil end
 
 function S.CooldownManagerStatus()
     if not M.active then return nil end
@@ -300,10 +351,10 @@ local function Control(id, key)
 end
 local ICON_CONTROLS, BAR_CONTROLS = { "size", "spacing", "perRow" }, { "barWidth", "barHeight" }
 -- Free bars move in MSUF Edit Mode; attached bars follow their parent.
-local function Mover(i)
+local function Mover(i, timer)
     local def = SLOTS[i]
     local slot, keys = def.key, KEYS[def.key]
-    local list = keys.size and ICON_CONTROLS or BAR_CONTROLS
+    local list = timer and BAR_CONTROLS or ICON_CONTROLS
     local controls, history = {}, {}
     for j = 1, #list do
         local key = keys[list[j]]
@@ -312,7 +363,7 @@ local function Mover(i)
             history[#history + 1] = key
         end
     end
-    return { label = def.title, order = 700 + i, xKey = keys.x, yKey = keys.y, extraControls = controls, historyKeys = history,
+    return { timer = timer, label = def.title, order = 700 + i, xKey = keys.x, yKey = keys.y, extraControls = controls, historyKeys = history,
         getFrame = function()
             local bar = C.bars[slot]
             return bar and bar.frame
@@ -330,13 +381,30 @@ end
 local function AssistMover()
     return { label = "Assisted combat icon", order = 730, xKey = "assistIconX", yKey = "assistIconY",
         point = function() return "CENTER" end, getFrame = C.Effects.RecommendationFrame,
+        place = function(x, y) return C.Effects.RecommendationPlace(x, y) end,
         isEnabled = function() return M.active == true and C.state.assistIcon == true end,
         historyKeys = { "assistIconSize" }, extraControls = { Control("size", "assistIconSize") } }
 end
 -- The controller asks after every Enable and Refresh; specs are built once.
+local function TimerMover(i)
+    local slot = SLOTS[i].key
+    local view = C.views[slot]
+    local config = S.Config(ID)
+    local kind = view and view.kind or SLOTS[i].kind or config[KEYS[slot].kind]
+    return kind == KIND.AURA_BAR or kind == KIND.COOLDOWN
+        and (view and view.cooldownDuration or not view and config[KEYS[slot].cooldownDuration]) == true
+end
 function M:RegisterMovers()
+    local changed = false
     for i = 1, #SLOTS do
-        movers[i] = movers[i] or Mover(i)
+        if movers[i] and movers[i].timer ~= TimerMover(i) then changed = true end
+    end
+    if changed then
+        S.UnregisterEditElements(ID)
+        wipe(movers)
+    end
+    for i = 1, #SLOTS do
+        movers[i] = movers[i] or Mover(i, TimerMover(i))
         S.RegisterOwnedMover(ID, SLOTS[i].key, movers[i])
     end
     movers.assist = movers.assist or AssistMover()

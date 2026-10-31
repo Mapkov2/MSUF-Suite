@@ -427,8 +427,19 @@ S.RegisterOwnedMover("test", "live", {})
             (root / "tools/tests").mkdir(parents=True)
             with patch.object(runner, "ROOT", root), patch.object(runner.subprocess, "run") as call:
                 with patch.object(sys, "argv", ["run_suite_tests.py", "unrelated"]):
-                    with contextlib.redirect_stdout(io.StringIO()):
-                        self.assertEqual(runner.main(), 0)
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as errors:
+                        self.assertEqual(runner.main(), 1)
+                self.assertIn("No tests matched", errors.getvalue())
+                call.assert_not_called()
+
+    def test_runner_does_not_execute_inventory_fixture(self):
+        with tempfile.TemporaryDirectory(prefix="suite-inventory-runner-") as tmp:
+            root = Path(tmp)
+            write(root / "tools/tests/suite_inventory_tools_fixture.lua", "error(\"fixture executed\")")
+            with patch.object(runner, "ROOT", root), patch.object(runner.subprocess, "run") as call:
+                with patch.object(sys, "argv", ["run_suite_tests.py", "inventory_tools_fixture"]):
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        self.assertEqual(runner.main(), 1)
                 call.assert_not_called()
 
 

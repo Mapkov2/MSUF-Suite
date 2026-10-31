@@ -11,7 +11,6 @@ local IN_COMBAT = { inCombat = true }
 -- documents.
 local M = R.NewState({})
 local Public = S.Public
-local ANCHORS = { "CENTER", "TOP" }
 -- Registered while out of combat. In combat the reminders are hidden by their
 -- state driver, so only PLAYER_REGEN_ENABLED and the compile inputs (OWED)
 -- stay registered. Subzone steps (SUBZONE_EVENTS) are listened to only for
@@ -48,6 +47,9 @@ local BAG_EVENTS = { BAG_UPDATE_DELAYED = true, PLAYER_ENTERING_WORLD = true }
 local SUBZONE_EVENTS = { "ZONE_CHANGED", "ZONE_CHANGED_INDOORS" }
 local SUBZONE_EVENT = { ZONE_CHANGED = true, ZONE_CHANGED_INDOORS = true }
 local INSTANCE_EVENTS = { PLAYER_ENTERING_WORLD = true, ZONE_CHANGED_NEW_AREA = true, PLAYER_REGEN_ENABLED = true }
+-- The environment is read again and the display only repainted (Preparation).
+local ENVIRONMENT_EVENT = { CHALLENGE_MODE_START = true, CHALLENGE_MODE_RESET = true,
+    CHALLENGE_MODE_COMPLETED = true, PLAYER_UPDATE_RESTING = true }
 local EVENT_MODES = {
     UNIT_AURA = "aura",
     UNIT_INVENTORY_CHANGED = "weapon", WEAPON_ENCHANT_CHANGED = "weapon",
@@ -96,9 +98,10 @@ local function Allowed(self)
         if not Public(mounted) or mounted == true then return false end
     end
     local environment = self.environment
-    local instanceType = environment.instanceType
-    if instanceType == false or instanceType == "arena" or instanceType == "pvp" then return false end
-    if self.config.instancesOnly and instanceType ~= "party" and instanceType ~= "raid" then return false end
+    if environment.hidden then return false end
+    if self.config.instancesOnly and environment.instanceType ~= "party" and environment.instanceType ~= "raid" then
+        return false
+    end
     if self.config[environment.key] == false then return false end
     return true
 end
@@ -136,11 +139,16 @@ local function Tooltip(button)
         GameTooltip:SetItemByID(entry.id)
     end
     if entry.restock then GameTooltip:AddLine(S.Text("None left in your bags: restock it."), 1, .65, .2, true) end
-    if entry.group then GameTooltip:AddLine(S.Text("Group members need your buff."), 1, .65, .2, true) end
+    if entry.ally then
+        GameTooltip:AddLine(S.Text("Target an ally, then click to cast it."), 1, .65, .2, true)
+    elseif entry.group then
+        GameTooltip:AddLine(S.Text("Group members need your buff."), 1, .65, .2, true)
+    end
     if entry.notice == true then GameTooltip:AddLine(S.Text("A class in your group can provide this buff."), 1, .65, .2, true) end
     if entry.notice == "food" and not entry.restock then
         GameTooltip:AddLine(S.Text("No food for this buff in your bags."), 1, .65, .2, true)
     end
+    GameTooltip:AddLine(S.Text("Right-click to hide this reminder until you reload the UI."), .7, .7, .7, true)
     GameTooltip:Show()
 end
 
@@ -153,10 +161,13 @@ end
 -- Their regions use the shared helpers like every other Suite region.
 local function MakeButton(self, index)
     local button = CreateFrame("Button", nil, self.view.host, "SecureActionButtonTemplate")
-    button:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
+    -- The left click is the secure cast or use (type1 in BindButton); a right or
+    -- middle click has no secure action and only dismisses the reminder.
+    button:RegisterForClicks("LeftButtonDown", "LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
     R.CreateIcon(button)
     button:SetScript("OnEnter", Tooltip)
     button:SetScript("OnLeave", HideTooltip)
+    button:SetScript("PostClick", function(_, mouseButton) R.DismissClick(self, button, mouseButton) end)
     button:Hide()
     self.view.buttons[index] = button
     return button
@@ -171,6 +182,27 @@ local OnEvent
 -- unit or unit list.
 function R.Listen(self, event, callback, units)
     self.context:Event(event, callback, IN_COMBAT, units)
+end
+
+-- The roster event follows the group options, and a compile can change them
+-- (an ally class reminder depends on the known spells).
+local function SyncRosterEvent(self)
+    if R.WantsGroup(self) then
+        R.Listen(self, "GROUP_ROSTER_UPDATE", OnEvent)
+    else
+        self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
+    end
+end
+
+-- The resting event is followed only with "Hide while resting" on. A fight does
+-- not release it: the rare event is ignored while suspended, and the combat end
+-- reads the environment again.
+local function SyncRestingEvent(self)
+    if self.config.hideResting then
+        R.Listen(self, "PLAYER_UPDATE_RESTING", OnEvent)
+    else
+        self.context:RemoveEvent("PLAYER_UPDATE_RESTING")
+    end
 end
 
 -- Unit and weapon events are registered only while an entry needs them and
@@ -248,7 +280,8 @@ local function BindButton(button, entry)
     button:SetAttribute("spell1", click and action == "spell" and (entry.spellName or entry.id) or nil)
     button:SetAttribute("item1", click and action == "item" and ("item:" .. entry.id) or nil)
     button:SetAttribute("target-slot", entry.slot)
-    button:SetAttribute("unit", "player")
+    -- An ally reminder buffs the player's target; every other one the player.
+    button:SetAttribute("unit", entry.ally and "target" or "player")
     R.PaintEntry(button, entry)
     entry.actionID = entry.id
 end
@@ -326,12 +359,14 @@ function M:Compile()
     local entries = BuildEntries(self)
     R.ReadPet(self)
     R.ReadHealthstone(self)
+    SyncRosterEvent(self)
     SyncUnitEvents(self)
     local list, view = self.list, self.view
     changed.entries = not SameEntries(list.entries, entries)
     if changed.entries then
         list.entries, view.mask = entries, nil
         list.needsFullRefresh, list.countsDirty = true, true
+        R.RestoreDismissed(self, entries)
     else
         entries = list.entries
     end
@@ -344,7 +379,7 @@ function M:Compile()
     if changed.entries then IndexEntries(self, entries) end
     if changed.anchor then
         view.host:ClearAllPoints()
-        local point = ANCHORS[c.point] or "CENTER"
+        local point = R.ScreenPoint(c)
         view.host:SetPoint(point, UIParent, point, c.x, c.y)
     end
     LayoutButtons(self, entries)
@@ -431,8 +466,10 @@ local function ShowMask(self, mask)
     for index, button in ipairs(view.buttons) do
         local entry = entries[index]
         local bit = entry and entry.bit or 2 ^ (index - 1)
-        R.AlertTransition(self, button, entry, mask % (bit * 2) >= bit)
-        if mask % (bit * 2) >= bit then
+        -- A dismissed reminder keeps its bit and stays hidden (R.DismissClick).
+        local visible = mask % (bit * 2) >= bit and not (entry and entry.dismissed)
+        R.AlertTransition(self, button, entry, visible)
+        if visible then
             R.PositionIcon(button, view.host, shown, self.config)
             button:Show()
             shown = shown + 1
@@ -536,11 +573,7 @@ local function RegisterEvents(self)
         local event = EVENTS[i]
         if not suspended or OWED[event] or event == "PLAYER_REGEN_ENABLED" then R.Listen(self, event, OnEvent) end
     end
-    if R.WantsGroup(self) then
-        R.Listen(self, "GROUP_ROSTER_UPDATE", OnEvent)
-    else
-        self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
-    end
+    SyncRosterEvent(self)
     if suspended then return end
     SyncSubzoneEvents(self)
     R.SyncPreparationEvents(self, OnEvent)
@@ -650,7 +683,7 @@ OnEvent = function(self, event, unit, updateInfo)
         if Allowed(self) then R.ReadyCheck(self) end
         return
     end
-    if event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_RESET" or event == "CHALLENGE_MODE_COMPLETED" then
+    if ENVIRONMENT_EVENT[event] then
         ReadInstance(self, event)
         self:Update("visual")
         return
@@ -695,8 +728,10 @@ function M:Refresh()
     NS.HostBridge.WatchIconSkins("buffReminders", self.config.iconSkin ~= "CUSTOM")
     ReadInstance(self)
     R.SyncPreparationEvents(self, OnEvent)
+    SyncRestingEvent(self)
     RegisterEvents(self)
     if not self.config.readyCheckMana then R.HideReadyCheck(self) end
+    R.StyleNotices(self)
     self:Compile()
     self.view.mask = nil
     self:Update("visual")
@@ -717,20 +752,21 @@ function M:Disable()
     R.CancelGroupWork(self)
     self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
     for i = 1, #EVENTS do self.context:RemoveEvent(EVENTS[i]) end
+    self.context:RemoveEvent("PLAYER_UPDATE_RESTING")
     SyncSubzoneEvents(self)
     listen.suspended = false
     UnregisterStateDriver(view.host, "visibility")
     view.host:Hide()
     self.list.entries, view.mask = nil, nil
     self.food.known = nil
-    view.previewShown, view.previewing = nil, nil
+    view.previewShown, view.previewing, view.dismissed = nil, nil, nil
 end
 
 function M:RegisterMovers()
     S.RegisterOwnedMover("buffReminders", "buffs", {
         label = "Buff reminders", order = 620, getFrame = function() return self.view.host end,
         xKey = "x", yKey = "y", pointKey = "point",
-        point = function() return ANCHORS[self.config.point] or "CENTER" end,
+        point = function() return R.ScreenPoint(self.config) end,
         historyKeys = { "size", "spacing", "columns" },
         extraControls = {
             { id = "size", label = "Icon size", kind = "number", min = 22, max = 72, step = 1,

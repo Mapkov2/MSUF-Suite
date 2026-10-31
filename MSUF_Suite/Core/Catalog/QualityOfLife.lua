@@ -17,6 +17,12 @@ function NS.AddQoLVisualStyle(id, section, title)
         { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Clean Modern", "Class Style" }), section, title)
 end
 
+-- The text style of an on-screen list or window, as the Skyriding HUD offers
+-- it (S.QoLStyleText applies it): the shared Build.TextStyle.
+function NS.AddQoLTextStyle(id, section, title, shadowOpacity)
+    B.TextStyle(id, section, title, shadowOpacity)
+end
+
 -- This independent recent-cast display starts with a restrained game-like
 -- palette, regardless of the profile's global Suite look.
 B.Module("actionTracker", {
@@ -68,6 +74,7 @@ B.Section("actionTracker", "action_tracker", "Recent actions", {
     Number("x", "Horizontal position", 0, -4000, 4000),
     Number("y", "Vertical position", -40, -3000, 3000),
 })
+NS.AddQoLTextStyle("actionTracker", "action_tracker", "Recent actions")
 NS.SuiteCatalog.actionTracker.rules.glossStrength.enableKey = "glossEnabled"
 B.Section("actionTracker", "action_tracker_visibility", "Where to show recent actions", {
     Bool("showDungeons", "Dungeons", true),
@@ -188,6 +195,10 @@ B.Section("tooltipVisibility", "tooltip_visibility", "Tooltip visibility", {
     Bool("hideItems", "Hide item tooltips"),
     Bool("hideSpells", "Hide spell tooltips"),
     Bool("hideUnits", "Hide unit tooltips"),
+    B.Tooltip(Choice("revealModifier", "Hold a key to show hidden tooltips", 1, { "None", "Shift", "Ctrl", "Alt" }),
+        "While you hold the key, a tooltip that the rules above would hide is shown."),
+    B.Tooltip(Number("scale", "Main tooltip scale (percent)", 100, 50, 150, 5),
+        "Scales Blizzard's main tooltip. Other tooltips keep their size."),
 })
 
 B.Module("itemCounts", {
@@ -245,12 +256,8 @@ B.Module("tooltipClassColors", {
 
 B.Module("macroBuilder", {
     title = "Macro builder",
-    description = "Preview a mouseover or focus spell macro and create it on your character with /msufmacro.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "The macro builder is available only in Retail" end
-        return true
-    end,
+    description = "Create macros with rules, sequences and consumables.",
+    optIn = true, defaultEnabled = false, page = "suite_macros",
 })
 
 B.Module("chatProfileLinks", {
@@ -265,6 +272,7 @@ B.Module("chatProfileLinks", {
 B.Section("chatProfileLinks", "profile_links", "Character profile links", {
     Bool("raiderIO", "Show Raider.IO link", true),
     Bool("warcraftLogs", "Show Warcraft Logs link", true),
+    Bool("raidProgress", "Show applicant raid progress (Raider.IO)", true),
 })
 
 B.Module("waypoints", {
@@ -455,6 +463,7 @@ B.Section("combatPetStatus", "pet_status", "Pet status warning", {
     Bool("showDead", "Warn when pet is dead", true),
     Bool("combatOnly", "Show only in combat"),
     Bool("anyClass", "Warn on classes without a permanent pet"),
+    Bool("sound", "Play a warning sound"),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
@@ -479,6 +488,8 @@ movementIDs.ids = true
 B.Section("combatMovementCue", "movement_cue", "Movement ability cue", {
     movementIDs,
     Bool("combatOnly", "Show only in combat", true),
+    Number("duration", "Display duration (seconds)", 2.5, 1, 10, .5),
+    Bool("sound", "Play a warning sound"),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
     Choice("point", "Screen anchor", 5, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),
@@ -518,6 +529,7 @@ B.Module("loadoutReminder", {
         if NS.Client.isForever then return false, "Talent loadouts are available only in Retail" end
         return true
     end,
+    editElement = "reminder",
 })
 B.Section("loadoutReminder", "loadout_reminder", "When to remind", {
     Bool("onReadyCheck", "On ready check", true),
@@ -525,8 +537,16 @@ B.Section("loadoutReminder", "loadout_reminder", "When to remind", {
     Bool("onInstanceEntry", "On instance entry", true),
     Bool("onlyMismatch", "Show only when saved selection differs"),
     Number("duration", "Display duration (seconds)", 8, 3, 20),
+    Bool("sound", "Play a warning sound"),
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 2, NS.AnchorLabels),
+    Number("x", "Horizontal position", 0, -4000, 4000),
+    Number("y", "Vertical position", -155, -3000, 3000),
     Bool("exportSavedSelection", "Put the saved selection into profile exports (the string then identifies this character)"),
 })
+for _, key in ipairs({ "point", "x", "y" }) do
+    NS.SuiteCatalog.loadoutReminder.rules[key].hidden = true
+end
 B.Section("loadoutReminder", "loadout_expectation", "Saved selection", {
     Number("expectedConfigID", "Expected talent build ID (0: any)", 0, 0, 100000000),
     Number("expectedLootSpecID", "Expected loot spec ID (0: any)", 0, 0, 100000),
@@ -616,6 +636,7 @@ B.Module("lootToastFilter", {
         if NS.Client.isForever then return false, "Filtered loot notice is available only in Retail" end
         return true
     end,
+    editElement = "notices",
 })
 local toastIDs = String("itemIDs", "Item IDs (empty: all qualifying items)", "", 800)
 toastIDs.ids = true
@@ -624,7 +645,14 @@ B.Section("lootToastFilter", "filtered_loot", "Filtered loot notice", {
     Choice("kindFilter", "Item type filter", 1,
         { "All matching items", "Mount items only", "Pet items only", "Mount and pet items" }),
     toastIDs,
+    Number("scale", "Scale (percent)", 100, 50, 200, 5),
+    Choice("point", "Screen anchor", 3, NS.AnchorLabels),
+    Number("x", "Horizontal position", -24, -4000, 4000),
+    Number("y", "Vertical position", -162, -3000, 3000),
 })
+for _, key in ipairs({ "point", "x", "y" }) do
+    NS.SuiteCatalog.lootToastFilter.rules[key].hidden = true
+end
 
 B.Module("autoUprank", {
     title = "Auto-uprank (Forever)",

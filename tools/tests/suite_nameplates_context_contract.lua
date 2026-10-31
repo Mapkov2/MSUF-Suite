@@ -111,6 +111,7 @@ Component("CastTime", "Bind Paint Restore Refresh")
 Component("CVars", "Apply")
 Component("Auras", "Bind Apply Restore")
 Component("KickReady", "Bind Paint Restore Configure Disable")
+Component("Mouseover", "Bind Configure Restore Disable")
 Component("Selection", "Apply Restore Configure RestoreAll")
 Component("Decor", "Configure Paint Restore Disable TargetChanged")
 Component("AuraColors", "Bind Configure Apply Restore SetEditMode")
@@ -122,6 +123,7 @@ end
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Roles.lua"))("nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Text.lua"))("nameplates", private)
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/FriendlyNames.lua"))("nameplates", private)
 assert(loadfile(override or root .. "/MSUF_Suite_Nameplates/Skin.lua"))("nameplates", private)
 local applyText = private.Text.Apply
 private.Text.Apply = function(...) Count("Text.Apply"); return applyText(...) end

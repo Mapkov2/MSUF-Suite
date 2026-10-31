@@ -16,15 +16,16 @@ local FLUSH_DELAY = 0.1
 function R.WantsGroup(self)
     local c = self.config
     return c.groupBuff == true or c.otherClassBuffs == true or c.healthstoneFromWarlock == true
-        or c.soulstoneOnAlly == true or c.beaconOnAlly == true
+        or c.soulstoneOnAlly == true or c.beaconOnAlly == true or R.WantsAllies(self)
 end
 
--- The group options that read the members' auras (R.RefreshGroup); only
--- these follow the members' aura, connection, flag and phase events. The
--- other group options need the roster alone.
+-- The group options that read the members' auras (R.RefreshGroup), the ally
+-- class reminders among them; only these follow the members' aura,
+-- connection, flag and phase events. The other group options need the roster
+-- alone.
 function R.WantsMemberAuras(self)
     local c = self.config
-    return c.groupBuff == true or c.soulstoneOnAlly == true or c.beaconOnAlly == true
+    return c.groupBuff == true or c.soulstoneOnAlly == true or c.beaconOnAlly == true or R.WantsAllies(self)
 end
 
 local function NewRoster()
@@ -81,6 +82,7 @@ function R.GroupRoster(self)
     local classes = group.classes or {}
     group.classes = classes
     Clear(classes)
+    group.allies = R.WantsAllies(self)
     if R.WantsGroup(self) then FillRoster(roster) end
     if not SameMembers(group.units, roster) then group.listChanged = true end
     group.units, group.unitList = roster.units, roster.list
@@ -113,6 +115,13 @@ local function Eligible(unit)
         and Public(visible) and visible == true and Public(dead) and dead == false
 end
 
+local function Listed(ids, id)
+    for i = 1, #ids do
+        if ids[i] == id then return true end
+    end
+    return false
+end
+
 -- Whether a member has one of the auras: true, false, or nil while that is
 -- unknown. The lookups return nothing instead of raising while aura data is
 -- restricted, which R.AurasRestricted reports.
@@ -122,13 +131,23 @@ end
 -- same aura on this unit (no first-instance guess). A member that is
 -- offline, out of sight or dead cannot be read and holds none (false), so
 -- one such raid member does not silence that notice for everyone.
-local function OwnAuraOn(unit, aliases)
+-- An ally reminder (ally) counts the other members only, and only its own
+-- spells: Earth Shield on the shaman (Elemental Orbit, 383648) shares the
+-- name of the ally spell 974. The roster holds the player as "player" alone
+-- (FillRoster).
+local function OwnAuraOn(unit, aliases, ally)
+    if ally and unit == "player" then return false end
     if R.AurasRestricted() then return nil end
     if not Eligible(unit) then return false end
     for i = 1, #aliases do
         local known, data = R.RankAura(unit, aliases[i], R.OWN_HELPFUL)
         if not known or not Public(data) then return nil end
-        if data then return true end
+        if data then
+            if not ally then return true end
+            local spellID = data.spellId
+            if not Public(spellID) then return nil end
+            if Listed(aliases, spellID) then return true end
+        end
     end
     return false
 end
@@ -151,16 +170,18 @@ local function BuffOn(unit, aliases, ranked)
 end
 
 -- Whether the player's own aura is on no member: true, false, or nil while
--- a member is unknown.
-local function OwnMissing(self, key, aliases, changedUnit)
+-- a member is unknown. The members' answers are kept in group[key], or in
+-- group.allyStates[key] for an ally reminder (ally).
+local function OwnMissing(self, key, aliases, changedUnit, ally)
     local group = self.group
-    local states = group[key] or {}
-    group[key] = states
+    local parent = ally and group.allyStates or group
+    local states = parent[key] or {}
+    parent[key] = states
     if changedUnit then
-        states[changedUnit] = OwnAuraOn(changedUnit, aliases)
+        states[changedUnit] = OwnAuraOn(changedUnit, aliases, ally)
     else
         Clear(states)
-        for unit in pairs(group.units) do states[unit] = OwnAuraOn(unit, aliases) end
+        for unit in pairs(group.units) do states[unit] = OwnAuraOn(unit, aliases, ally) end
     end
     local unknown = false
     for unit in pairs(group.units) do
@@ -197,12 +218,36 @@ local function RefreshOwnBuffs(self, changedUnit)
     end
 end
 
+-- The ally class reminders: each one's allyMissing says whether the player's
+-- own aura is on no other member. Alone in the group, nobody can be buffed.
+local function RefreshAllies(self, changedUnit)
+    local entries = self.list.entries
+    if not entries then return end
+    local group = self.group
+    local alone = #group.unitList < 2
+    group.allyStates = group.allyStates or {}
+    for _, entry in ipairs(entries) do
+        local def = entry.ally
+        if def then
+            entry.allyMissing = not alone and OwnMissing(self, def.key, entry.aliases, changedUnit, true)
+        end
+    end
+end
+
+-- Present while the player's aura is on a member; nil while unknown.
+function R.AllyPresent(entry)
+    local missing = entry.allyMissing
+    if missing == nil then return nil end
+    return not missing
+end
+
 function R.RefreshGroup(self, changedUnit)
     local group = self.group
     local units = group.units
     if NS.IsCombatLocked() or not units then return end
     if changedUnit and not units[changedUnit] then return end
     RefreshOwnBuffs(self, changedUnit)
+    if group.allies then RefreshAllies(self, changedUnit) end
     if not self.config.groupBuff then return end
     local _, class = UnitClass("player")
     local buff = Public(class) and R.ClassBuff(class)
@@ -224,6 +269,7 @@ end
 -- player's aura record, kept apart so the group presence does not decide
 -- which aura deltas need a fresh lookup.
 function R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo)
+    if entry.ally then return end
     if not self.config.classBuff then
         entry.expiresAt, entry.totalDuration = nil, nil
         return
@@ -247,12 +293,15 @@ function R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo)
 end
 
 function R.GroupPresent(self, entry)
+    if entry.ally then return R.AllyPresent(entry) end
     local group = self.group
     local presence = group.presence
     local missing = 0
-    for unit in pairs(group.units or {}) do
-        if (unit ~= "player" or self.config.classBuff) and presence
-            and presence[unit] == false then missing = missing + 1 end
+    if presence then
+        local classBuff = self.config.classBuff
+        for unit in pairs(group.units or {}) do
+            if (unit ~= "player" or classBuff) and presence[unit] == false then missing = missing + 1 end
+        end
     end
     entry.missingCount = missing
     return missing == 0

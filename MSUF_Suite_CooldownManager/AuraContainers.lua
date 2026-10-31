@@ -14,7 +14,7 @@ local K = C.Const
 local AuraContainers = {}
 C.AuraContainers = AuraContainers
 local AuraButtons = C.AuraButtons
-local TextOpts, Look, Hush, Mutable = AuraButtons.TextOpts, AuraButtons.Look, AuraButtons.Hush, AuraButtons.Mutable
+local Look, Hush, Mutable = AuraButtons.Look, AuraButtons.Hush, AuraButtons.Mutable
 local Style, ApplyEntry, Init = AuraButtons.Style, AuraButtons.ApplyEntry, AuraButtons.Init
 
 -- The containers are created with the client's CreateFrame: they lay out
@@ -25,7 +25,6 @@ local CreateFrame = CreateFrame
 local next, type = next, type
 local tremove = table.remove
 local Public = S.Public
-local EMPTY = C.EMPTY
 
 local STRATA = K.STRATA
 -- The pandemic window's default color (the catalog's pandemicColor).
@@ -292,7 +291,7 @@ local function Build(rec, view, n)
     local parts = rec.parts
     if parts[1] == nil then rec.look = look end
     BarChoices(rec, view)
-    local threshold = C.state.threshold
+    rec.looks = need.looks
     local keys = rec.keys
     stamp = stamp + 1
     rec.helpfulTarget = false
@@ -302,7 +301,6 @@ local function Build(rec, view, n)
         if rec.unit == "target" and entry.auraHelpful then rec.helpfulTarget = true end
         local k = KeyOf(rec, entry, i)
         rec.mark[k] = stamp
-        if rec.text then rec.topts[k] = TextOpts((entry.ov or EMPTY).threshold or threshold) end
         if rec.ids[k] then
             Update(rec, k, entry, filter, set)
             if not fixed and (rec.li[k] ~= entry.index or rec.lg[k] ~= rec.geo) then
@@ -387,11 +385,14 @@ end
 -- The region set the bar's entries ask of one container, as the signature
 -- that swaps containers when it changes: Blizzard's buttons get their
 -- regions when they are made, so a change of mode, countdown text, name,
--- pandemic, glow, stack glow, kit sensor or bar direction needs a new
--- container (`need` says what the entries ask for). Region sets only: the
--- stack maximum and markers are looks (Look), applied in place, so a slider
--- drag never builds another container. The parts are left in `want`.
+-- pandemic, glow, stack glow, kit sensor, bar direction or Pixel and
+-- Autocast lines (a glow style of the bar or a spell, the pandemic
+-- window's) needs a new container (`need` says what the entries ask for).
+-- Region sets only: the stack maximum and markers are looks (Look), and the
+-- lines' count, thickness and speed restyle in place too (Look's relook), so
+-- a slider drag never builds another container. The parts are left in `want`.
 local want = {}
+local LINE_STYLES = K.LINE_STYLES
 local function RegionSet(fam, role, fixed, view)
     local DRAIN, FILL = K.BAR_FILL.DRAIN, K.BAR_FILL.FILL
     local text, name, fill = need.text == true, false, DRAIN
@@ -407,11 +408,15 @@ local function RegionSet(fam, role, fixed, view)
     local stackExtra = stackFill and stack
     if stackFill then stack = false end -- The native button has one application-bar binding.
     local color = stackFill and (view.barStackColorAt or 0) > 0
+    -- G: the glows (while active, the stack glow), P: the pandemic window's.
+    local glowLines = (glow or stack) and (need.lines or LINE_STYLES[view.glowStyle]) and "G" or ""
+    local panLines = pan and LINE_STYLES[view.pandemicStyle] and "P" or ""
     want.text, want.name, want.fill, want.pandemic, want.glow = text, name, fill, pan, glow
     want.stack, want.kit, want.stackFill, want.stackExtra, want.color = stack, kit, stackFill, stackExtra, color
+    want.glowLines, want.panLines = glowLines ~= "", panLines ~= ""
     return (fixed and "s" or "g") .. role .. (text and 1 or 0) .. (name and 1 or 0) .. (pan and 1 or 0) .. (glow and 1 or 0)
         .. (stack and 1 or 0) .. (kit and 1 or 0) .. fill .. (stackFill and 1 or 0) .. (color and 1 or 0) .. (stackExtra and 1 or 0)
-        .. (need.timers or "") .. (view.shape and view.shape ~= K.SQUARE and view.shape or "")
+        .. (need.timers or "") .. (view.shape and view.shape ~= K.SQUARE and view.shape or "") .. glowLines .. panLines
 end
 
 -- A new container for one bar, family and unit with the region set in `want`.
@@ -428,8 +433,9 @@ local function NewContainer(bar, slot, fam, unit, role, fixed, bind, eager)
     local rec = { frame = container, slot = slot, fam = fam, role = role, fixed = fixed, bind = bind, prefix = fixed and "s" or "g",
         eager = eager == true,
         text = want.text, name = want.name, pandemic = want.pandemic, glow = want.glow, stack = want.stack, kit = want.kit,
+        glowLines = want.glowLines, panLines = want.panLines, label = need.label,
         fill = want.fill, geo = 0, stackFill = want.stackFill, stackExtra = want.stackExtra, color = want.color,
-        keys = {}, on = {}, act = {}, shut = {}, filter = {}, ids = {}, entry = {}, anchors = {}, byAnchor = {}, topts = {}, li = {}, lg = {},
+        keys = {}, on = {}, act = {}, shut = {}, filter = {}, ids = {}, entry = {}, anchors = {}, byAnchor = {}, li = {}, lg = {},
         mark = {}, parts = {}, lk = {} }
     if want.kit then
         local watch = S.CreateFrame("Frame", nil, parent)

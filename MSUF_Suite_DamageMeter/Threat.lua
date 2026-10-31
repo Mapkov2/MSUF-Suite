@@ -129,7 +129,7 @@ end
 function D.ThreatShown()
     for i = 1, M.config.windowCount do
         local win = D.windows[i]
-        if win and win.shown and win.meterType == D.THREAT then return true end
+        if win and win.shown and not win.faded and win.meterType == D.THREAT then return true end
     end
     return false
 end

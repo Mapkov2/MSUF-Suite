@@ -14,6 +14,12 @@ local function MerchantOpen(self)
         and not NS.IsCombatLocked()
 end
 
+-- Blizzard's click sends an item inside its refund window to the refund
+-- dialog; a direct use would sell it. An unreadable answer counts as refundable.
+local function Refundable(bag, slot)
+    return S.QoLRefundable(bag, slot, false) ~= false
+end
+
 local function Eligible(self, bag, slot)
     local info = C_Container.GetContainerItemInfo(bag, slot)
     if not S.Public(info) or type(info) ~= "table"
@@ -33,12 +39,14 @@ local function Eligible(self, bag, slot)
         or not S.Public(quest.questID) or quest.questID then return nil end
     local guid = ItemGUID(bag, slot)
     if not guid then return nil end
+    if S.InventoryProtection:IsProtected(info.itemID, bag, slot) or Refundable(bag, slot) then return nil end
     return { bag = bag, slot = slot, id = info.itemID, guid = guid }
 end
 
 local function Candidates(self)
     local list = {}
     if not MerchantOpen(self) or not next(self.ids) then return list end
+    S.InventoryProtection:Prepare()
     for bag = FIRST_BAG, LAST_BAG do
         local count = C_Container.GetContainerNumSlots(bag)
         if S.Finite(count) and count >= 0 and count <= 200 and count == math.floor(count) then
@@ -60,6 +68,7 @@ local function Sell(self, preview)
     local cursorItem = CursorHasItem()
     if not S.Public(cursorItem) or cursorItem then return end
     local sold, rejected = 0, false
+    S.InventoryProtection:Prepare()
     for i = 1, #preview do
         local expected = preview[i]
         local current = Eligible(self, expected.bag, expected.slot)

@@ -97,7 +97,11 @@ for pass = 1, 2 do
 end
 print(string.format("BUDGET options-attach-execution vm=%d kb=%.3f native=%d", vm, kb, calls))
 if not os.getenv("SUITE_A7_MEASURE_ONLY") then
-    assert(vm < 54000 and kb < 380 and calls < 10, "Options load execution budget exceeded")
+    -- Thirteen opt-in planning/inventory/everyday entries and their cold menu routes:
+    -- same-run baseline 37260 VM / 379.287 KiB / 8 native; new 38273 / 389.034 / 8.
+    -- This allows 12 KiB for the new reachable controls; execution/native limits stay fixed.
+    -- The eager-summary mutation remains above this ceiling (395.358 KiB).
+    assert(vm < 54000 and kb < 392 and calls < 10, "Options load execution budget exceeded")
 end
 print("RECEIPT all catalog summary ranks and overrides; cold QoL category/feature identities present")
 SUITE_OPTIONS_FIXTURE, A7_CHUNKS, A7_BEGIN, A7_END = nil, nil, nil, nil

@@ -10,7 +10,8 @@ B.Module("nameplates", {
     title = "Nameplates",
     description = "The Mapko skin for Blizzard nameplates. Blizzard keeps health, threat, casts, auras, selection and click handling.",
     page = "suite_nameplates", optIn = true, defaultEnabled = true, available = Available,
-    conflicts = { "Plater", "Platynator", "ElvUI", "EllesmereUINameplates" },
+    conflicts = { "Plater", "Platynator", "ElvUI", "EllesmereUINameplates", "Kui_Nameplates",
+        "TidyPlates_ThreatPlates", "TidyPlatesContinued", "BetterBlizzPlates" },
     cvars = {
         nameplateStyle = true,
         nameplateSelectedScale = true,
@@ -132,6 +133,14 @@ local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Bool("enemyRaidIcon", "Blizzard raid target icon on enemy plates", true)
 end
 
+-- Enemy plates only: the threshold line's width (a decoration knob like the
+-- outer frame's thickness) and the level number's difficulty color (Level.lua).
+local function AddEnemyLookRules(appearance)
+    appearance[#appearance + 1] = B.Number("enemyThresholdWidth", "Health threshold line width (px)", 1, 1, 4)
+    appearance[#appearance + 1] = B.Tooltip(B.Bool("enemyLevelColor", "Color the level by difficulty", false),
+        "The level number takes the color Blizzard gives it on the target frame. Units you cannot attack keep white.")
+end
+
 local function AddFriendlyRules(appearance)
     -- Put the outcome first; font and border controls refine that choice.
     table.insert(appearance, 1, B.Choice("friendlyNamesOnly", "Friendly player display", 2,
@@ -152,8 +161,11 @@ local function AddFriendlyRules(appearance)
     end
     local friendlyCastFont = B.Font("friendlyCastFont", "Friendly cast font")
     for _, rule in ipairs({
+        B.Number("friendlyCastHeight", "Friendly castbar height (0 = automatic)", 0, 0, 48),
+        B.Number("friendlyCastIconSize", "Friendly spell icon size (0 = automatic)", 0, 0, 72),
         B.Bool("friendlyCastTextEnabled", "Customize friendly cast text", false),
         B.Bool("friendlyCastTimeEnabled", "Show friendly cast time", true),
+        B.Choice("friendlyCastTimeFormat", "Friendly cast time format", 1, { "Remaining time", "Elapsed / total" }),
         B.Bool("friendlyCastCustomFont", "Override friendly cast font", true),
         B.Bool("friendlyCastTextShadow", "Friendly cast text shadow", false),
         B.Number("friendlyCastSize", "Friendly cast text size (0 = Blizzard)", 11, 0, 32),
@@ -207,6 +219,7 @@ local function Side(prefix, title, size)
     AddDecorRules(appearance, prefix)
     if prefix == "enemy" then
         AddEnemyNativeRules(appearance)
+        AddEnemyLookRules(appearance)
         appearance[#appearance + 1] = B.Bool("enemyThresholdEnabled", "Show health threshold line", false)
         appearance[#appearance + 1] = B.Number("enemyThresholdPercent", "Health threshold (%)", 20, 1, 99)
         appearance[#appearance + 1] = B.Color("enemyThresholdColor", "Health threshold line color", "ffffff")
@@ -302,24 +315,79 @@ B.Section(id, "signals", "Blizzard indicators", {
     B.Color("selectionFocusColor", "Focus border", "ff66ff"),
     B.Choice("selectionDim", "Dim other nameplates", 1, { "Keep Blizzard setting", "Custom strength", "Off" }),
     B.Number("selectionDimPercent", "Dim strength (%)", 50, 0, 100, 5),
+    B.Bool("mouseoverHighlight", "Highlight the nameplate under the mouse", false),
+    B.Color("mouseoverHighlightColor", "Mouseover highlight", "ffffff"),
 })
+
+-- The engine CVar a rule writes (CVars.lua). The module's manifest declares
+-- it, and the rule has no control on a client that does not register it (see
+-- spec.controlAvailable below). gameRule names a game rule that switches the
+-- feature off for the whole client.
+local function Writes(cvar, rule, gameRule)
+    rule.cvar, rule.gameRule = cvar, gameRule
+    NS.SuiteCatalog[id].cvars[cvar] = true
+    return rule
+end
 
 -- Which units get a plate and how plates share space: Blizzard's own
 -- nameplate options (Settings > Nameplates). Not part of a look.
 local SHOW_HIDE, SIMPLE = { "Keep Blizzard setting", "Show", "Hide" }, { "Keep Blizzard setting", "Simplified", "Full size" }
 local STACK = { "Keep Blizzard setting", "Stack", "Overlap" }
+-- The combined minion choices predate the separate ones and keep applying.
+local COMBINED_NOTE = "Blizzard's combined switch for pets, guardians and totems. The separate choices set each kind on its own."
+-- Friendly NPC plates are the "Friendly NPC nameplates" choice (Friendly appearance, Display).
 B.Section(id, "visibility", "Visibility", {
+    Writes("nameplateShowEnemies", B.Choice("plateEnemies", "Show enemy nameplates", 1, SHOW_HIDE)),
+    Writes("nameplateShowFriendlyPlayers", B.Choice("plateFriendlyPlayers", "Show friendly player nameplates", 1, SHOW_HIDE)),
+    Writes("nameplateShowSelf", B.Choice("personalResource", "Show personal resource display", 1, SHOW_HIDE),
+        "PersonalResourceDisplayDisabled"),
     B.Choice("plateShowAll", "Always show nameplates", 1, { "Keep Blizzard setting", "On", "Off" }),
     B.Choice("plateStackEnemy", "Enemy nameplate stacking", 1, STACK),
     B.Choice("plateStackFriendly", "Friendly nameplate stacking", 1, STACK),
-    B.Choice("plateEnemyMinions", "Enemy minions (pets, guardians, totems)", 1, SHOW_HIDE),
+    B.Tooltip(B.Choice("plateEnemyMinions", "Enemy minions (pets, guardians, totems)", 1, SHOW_HIDE), COMBINED_NOTE),
+    Writes("nameplateShowEnemyPets", B.Choice("plateEnemyPets", "Enemy pets", 1, SHOW_HIDE)),
+    Writes("nameplateShowEnemyGuardians", B.Choice("plateEnemyGuardians", "Enemy guardians", 1, SHOW_HIDE)),
+    Writes("nameplateShowEnemyTotems", B.Choice("plateEnemyTotems", "Enemy totems", 1, SHOW_HIDE)),
     B.Choice("plateEnemyMinus", "Minor enemies", 1, SHOW_HIDE),
-    B.Choice("plateFriendlyMinions", "Friendly player minions", 1, SHOW_HIDE),
+    B.Tooltip(B.Choice("plateFriendlyMinions", "Friendly player minions", 1, SHOW_HIDE), COMBINED_NOTE),
+    Writes("nameplateShowFriendlyPlayerPets", B.Choice("plateFriendlyPets", "Friendly player pets", 1, SHOW_HIDE)),
+    Writes("nameplateShowFriendlyPlayerGuardians", B.Choice("plateFriendlyGuardians", "Friendly player guardians", 1, SHOW_HIDE)),
+    Writes("nameplateShowFriendlyPlayerTotems", B.Choice("plateFriendlyTotems", "Friendly player totems", 1, SHOW_HIDE)),
     B.Choice("plateOffscreen", "Off-screen nameplates", 1, SHOW_HIDE),
     B.Choice("plateSimpleMinion", "Enemy minion plates", 1, SIMPLE),
     B.Choice("plateSimpleMinus", "Minor enemy plates", 1, SIMPLE),
     B.Choice("plateSimpleFriendlyPlayer", "Friendly player plates", 1, SIMPLE),
     B.Choice("plateSimpleFriendlyNpc", "Friendly NPC plates", 1, SIMPLE),
+})
+
+-- How far plates show, how they fade and shrink with distance, and how
+-- stacked plates and the screen edge treat them. Every choice starts on
+-- Blizzard's value and writes nothing; "Customize" enables the numbers after
+-- it (yards or percent). Fade and shrink are presets for the far end of the
+-- range (Blizzard's far plates keep 60% opacity and 80% size; None keeps full
+-- strength). They set the plate frame's own values (CVars.lua) and compose
+-- with "Dim other nameplates" and the larger current target.
+local CUSTOM_ONLY = { "Keep Blizzard setting", "Customize" }
+local FAR_PRESETS = { "Keep Blizzard setting", "None", "Subtle", "Strong" }
+local FADE_NOTE = "How faint the farthest plates get. Dim other nameplates (Blizzard indicators) is separate and adds to this."
+local SHRINK_NOTE = "How small the farthest plates get. The larger current target (Blizzard plates) is separate."
+B.Section(id, "distance", "Distance and stacking", {
+    Writes("nameplateMaxDistance", B.Choice("plateMaxDistanceMode", "Maximum distance", 1, CUSTOM_ONLY)),
+    Writes("nameplateMaxDistance", B.Number("plateMaxDistance", "Maximum distance (yards)", 60, 10, 100, 5)),
+    Writes("nameplateOccludedAlphaMult", B.Choice("plateOccludedMode", "Plates behind walls", 1, CUSTOM_ONLY)),
+    Writes("nameplateOccludedAlphaMult", B.Number("plateOccludedPercent", "Opacity behind walls (%)", 40, 0, 100, 5)),
+    Writes("nameplateMinAlpha", B.Tooltip(B.Choice("plateFadeDistance", "Fade with distance", 1, FAR_PRESETS), FADE_NOTE)),
+    Writes("nameplateMinScale", B.Tooltip(B.Choice("plateShrinkDistance", "Shrink with distance", 1, FAR_PRESETS), SHRINK_NOTE)),
+    Writes("nameplateOverlapV", B.Choice("plateSpacingMode", "Stacked plate overlap", 1, CUSTOM_ONLY)),
+    Writes("nameplateOverlapV", B.Number("plateOverlapV", "Vertical overlap (%)", 110, 50, 300, 5)),
+    Writes("nameplateOverlapH", B.Number("plateOverlapH", "Horizontal overlap (%)", 80, 20, 300, 5)),
+    Writes("nameplateMotionSpeed", B.Choice("plateMotionSpeed", "Stacked plate motion speed", 1,
+        { "Keep Blizzard setting", "Slow", "Fast", "Instant" })),
+    Writes("nameplateOtherTopInset", B.Choice("plateInsetMode", "Screen edge margins", 1, CUSTOM_ONLY)),
+    Writes("nameplateOtherTopInset", B.Number("plateTopInset", "Top margin (% of screen height)", 8, 0, 40)),
+    Writes("nameplateOtherBottomInset", B.Number("plateBottomInset", "Bottom margin (% of screen height)", 10, 0, 40)),
+    Writes("clampTargetNameplateToScreen", B.Choice("plateClampTarget", "Target plate stays on screen", 1,
+        { "Keep Blizzard setting", "On", "Off" })),
 })
 
 B.Section(id, "personal", "Personal power bar", {
@@ -427,6 +495,7 @@ local SIDE_SWITCHES = {
     { "QuestMarker", "QuestMarkerAnchor", "QuestMarkerSize" },
     { "CastTextEnabled", "CastCustomFont", "CastTextShadow", "CastSize", "CastOutline" },
     { "CastCustomFont", "CastFont" },
+    { "CastTimeEnabled", "CastTimeFormat" },
 }
 for _, side in ipairs({ "enemy", "friendly" }) do
     for _, switch in ipairs(SIDE_SWITCHES) do
@@ -434,10 +503,12 @@ for _, side in ipairs({ "enemy", "friendly" }) do
     end
     -- Hidden castbars show no text or time (CastTime.Paint).
     Requires({ side .. "CastTextEnabled", side .. "CastTimeEnabled" }, "enemyCastEnabled", { [1] = true, [2] = true })
+    -- Explicit cast dimensions apply to the portable bar dimensions only (Geometry.Apply).
+    Requires({ side .. "CastHeight", side .. "CastIconSize" }, "barGeometry")
 end
 EnabledBy({ "enemyHealthTextSize" }, "enemyTextEnabled")
-EnabledBy({ "enemyCastTimeFormat" }, "enemyCastTimeEnabled")
-Requires({ "enemyCastHeight", "enemyCastIconSize" }, "barGeometry")
+EnabledBy({ "enemyLevelColor" }, "enemyLevelEnabled")
+EnabledBy({ "mouseoverHighlightColor" }, "mouseoverHighlight")
 EnabledBy({ "enemyTargetHideFriendly", "enemyTargetStyle", "enemyTargetLayout", "enemyTargetAnchor",
     "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetColor" }, "enemyTargetMarker")
 EnabledBy({ "enemyColorsInDungeons", "enemyColorsOutside", "enemyQuestColors", "enemyTankMode" }, "enemyRoleColors")
@@ -460,8 +531,35 @@ EnabledBy({ "threatFlashColor" }, "threatFlashColorEnabled")
 EnabledBy({ "threatHighlightColor" }, "threatHighlightColorEnabled")
 Requires({ "selectionTargetColor", "selectionFocusColor" }, "selectionBorder")
 Requires({ "selectionDimPercent" }, "selectionDim")
+Requires({ "plateMaxDistance" }, "plateMaxDistanceMode")
+Requires({ "plateOccludedPercent" }, "plateOccludedMode")
+Requires({ "plateOverlapV", "plateOverlapH" }, "plateSpacingMode")
+Requires({ "plateTopInset", "plateBottomInset" }, "plateInsetMode")
 EnabledBy({ "personalPowerBorderSize", "personalPowerBorderColor" }, "personalPowerSkin")
 
 EnabledBy({ "targetScalePercent" }, "targetScaleEnabled")
-EnabledBy({ "enemyThresholdPercent", "enemyThresholdColor" }, "enemyThresholdEnabled")
+EnabledBy({ "enemyThresholdPercent", "enemyThresholdWidth", "enemyThresholdColor" }, "enemyThresholdEnabled")
 EnabledBy({ "enemyFocusMarkerSize", "enemyFocusMarkerColor", "enemyFocusMarkerX", "enemyFocusMarkerY" }, "enemyFocusMarker")
+
+-- A rule that writes an engine CVar has no control, search entry or reset on a
+-- client that does not register that CVar (most of these names are not in
+-- Blizzard's UI source), or where a game rule switches the feature off. The
+-- test is the one Context:CVar makes before a write and Blizzard's own
+-- Settings make for the stacking option: a hidden control could not write.
+spec.controlAvailable = function(rule)
+    if rule.cvar == nil then return true end
+    if C_CVar.GetCVar(rule.cvar) == nil then return false end
+    return not (rule.gameRule and C_GameRules.IsGameRuleActive(Enum.GameRule[rule.gameRule]))
+end
+-- The controls this client has, listed on first use: registered CVars and
+-- game rules do not change during a session.
+local available
+spec.getControls = function()
+    if not available then
+        available = {}
+        for _, rule in ipairs(spec.controls) do
+            if spec.controlAvailable(rule) then available[#available + 1] = rule end
+        end
+    end
+    return available
+end

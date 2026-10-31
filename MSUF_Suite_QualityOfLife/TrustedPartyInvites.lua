@@ -11,11 +11,26 @@ local function Invalidate(self)
 end
 
 -- Blizzard's relationship and queue helpers are Lua: an error inside one is
--- reported (S.Dispatch) and the invite stays manual.
-local function Trusted(self, guid, name)
+-- reported (S.Dispatch) and the invite stays manual. Answers whether the
+-- lookup worked, then the inviter's relationship ("bnfriend", "wowfriend",
+-- "guild", "club", or nil for a stranger). AutoResponses reads it too.
+function S.InviteRelation(guid, name)
     local ok, _, _, relation = S.Dispatch(NS.Finish, SocialQueueUtil_GetRelationshipInfo, guid, name)
+    if not ok or not S.Public(relation) then return false end
+    return true, relation
+end
+
+-- An ordinary invite: no group finder role to choose and no quest session.
+function S.PlainInvite(tank, healer, damage, questSession)
+    return S.Public(tank) and tank == false
+        and S.Public(healer) and healer == false
+        and S.Public(damage) and damage == false
+        and S.Public(questSession) and questSession == false
+end
+
+local function Trusted(self, guid, name)
+    local ok, relation = S.InviteRelation(guid, name)
     if not ok then return false end
-    relation = S.PublicText(relation)
     return relation == "bnfriend" and self.config.battleNet
         or relation == "wowfriend" and self.config.wowFriends
         or relation == "guild" and self.config.guild
@@ -53,10 +68,7 @@ end
 local function OnInvite(self, _, name, tank, healer, damage, _, _, guid, questSession)
     Invalidate(self)
     if not self.active or not S.PublicText(name) or not S.PublicText(guid)
-        or not S.Public(tank) or tank ~= false
-        or not S.Public(healer) or healer ~= false
-        or not S.Public(damage) or damage ~= false
-        or not S.Public(questSession) or questSession ~= false
+        or not S.PlainInvite(tank, healer, damage, questSession)
         or not SafeToJoin() or not Trusted(self, guid, name) then return end
     -- The event may reach addons before Blizzard creates its native popup.
     self.inviter = name

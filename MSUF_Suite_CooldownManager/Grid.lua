@@ -34,7 +34,7 @@ end
 -- Cell size and spacing in whole pixels, stride, flow and alignment.
 local function Cells(view, unit)
     if view.kind == AURA_BAR or view.kind == COOLDOWN and view.cooldownDuration then
-        return max(1, Round((view.barWidth or 200) / unit)), max(1, Round((view.barHeight or 18) / unit)),
+        return max(1, Round((view.barW or view.barWidth or 200) / unit)), max(1, Round((view.barHeight or 18) / unit)),
             Round((view.spacing or 2) / unit), 1, false, Grow(view), CENTER
     end
     local size = view.size or 36

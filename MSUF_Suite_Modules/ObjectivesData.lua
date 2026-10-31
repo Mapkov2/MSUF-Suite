@@ -5,7 +5,11 @@ local S = P.Suite
 -- P.Objectives (TOC order): ObjectivesData.lua reads Blizzard's objectives
 -- into reused entry tables, ObjectivesDetails.lua adds quest icons and
 -- scenario headers, ObjectivesActions.lua holds what rows do (Blizzard
--- actions and context menus), ObjectivesTracker.lua owns the frame and draws
+-- actions and context menus), ObjectivesContent.lua reads the Traveler's Log,
+-- Endeavors, collectibles and zone widgets that Blizzard's modules show
+-- beyond quests (ObjectivesContentActions.lua holds what their rows do),
+-- ObjectivesRows.lua projects reused display
+-- records, ObjectivesTracker.lua owns the frame and draws
 -- its rows, and Objectives.lua runs the module (events, refresh flow and
 -- lifecycle). Events mark sources dirty; one deferred flush per frame
 -- re-reads them, and rows are laid out again only when their content or
@@ -19,6 +23,7 @@ local O = {
     SOURCES = { "quests", "world", "bonus", "achievements", "scenario" },
 }
 P.Objectives = O
+if not P.NS.Client.isForever then O.SOURCES[#O.SOURCES + 1] = "recipes" end
 local SOURCES = O.SOURCES
 local Public, Finite, Text = S.Public, S.Finite, S.PublicText
 
@@ -56,6 +61,8 @@ local function NextEntry(list, id, title, group)
     entry.findGroup, entry.questGroupSearch = nil, nil
     entry.questIcon, entry.questIconAtlas = nil, nil
     entry.scenarioHeaderSetID = nil
+    entry.recipeID, entry.isRecraft = nil, nil
+    entry.contentID, entry.contentType = nil, nil
     entry.lines.count = 0
     return entry
 end
@@ -71,6 +78,7 @@ local function AddLine(entry, text, done, percent)
     line.text, line.done, line.percent = text, done, percent
     lines.count = index
 end
+O.NextEntry, O.AddLine = NextEntry, AddLine
 
 -- Retail/Forever QuestObjectiveTracker checks this flag from QuestLogInfo
 -- and reads completion at click time before opening the native reward dialog.
@@ -423,8 +431,138 @@ local function CollectScenario(list, c)
     end
 end
 
+------------------------------------------------------------------ tracked recipes
+-- Blizzard_ProfessionsRecipeTracker reads both lists, including recipes tracked
+-- from customer orders for professions the player has not learned.
+local function RecipeReagentCount(reagents)
+    local total = 0
+    for i = 1, #reagents do
+        local reagent = reagents[i]
+        if not Public(reagent) or type(reagent) ~= "table" then return end
+        local quantity
+        if Finite(reagent.itemID) and reagent.itemID > 0 then
+            quantity = ItemUtil.GetCraftingReagentCount(reagent.itemID)
+        elseif Finite(reagent.currencyID) and reagent.currencyID > 0 then
+            local info = Read(C_CurrencyInfo.GetCurrencyInfo, reagent.currencyID)
+            if type(info) == "table" then quantity = info.quantity end
+        end
+        if not Finite(quantity) or quantity < 0 then return end
+        total = total + quantity
+    end
+    return total
+end
+
+local function RecipeReagentName(slot, reagent)
+    if slot.reagentType == Enum.CraftingReagentType.Modifying then
+        local info = slot.slotInfo
+        return Public(info) and type(info) == "table" and Text(info.slotText) or nil
+    end
+    if Finite(reagent.itemID) and reagent.itemID > 0 then
+        local name = Read(C_Item.GetItemNameByID, reagent.itemID)
+        if not Text(name) then
+            local needed = O.M.recipeItemsNeeded or {}
+            O.M.recipeItemsNeeded = needed
+            needed[reagent.itemID] = true
+            local pending = O.M.recipeItemsPending or {}
+            O.M.recipeItemsPending = pending
+            if not pending[reagent.itemID] then
+                pending[reagent.itemID] = true
+                C_Item.RequestLoadItemDataByID(reagent.itemID)
+            end
+        end
+        return Text(name)
+    elseif Finite(reagent.currencyID) and reagent.currencyID > 0 then
+        local info = Read(C_CurrencyInfo.GetCurrencyInfo, reagent.currencyID)
+        return type(info) == "table" and Text(info.name) or nil
+    end
+end
+
+local function RecipeQuantity(slot)
+    local variables = slot.variableQuantities
+    if Public(variables) and type(variables) == "table" and #variables > 0 then
+        local low, high = math.huge, 0
+        for i = 1, #variables do
+            local value = variables[i]
+            local quantity = Public(value) and type(value) == "table" and value.quantity
+            if not Finite(quantity) or quantity < 0 then return end
+            low, high = math.min(low, quantity), math.max(high, quantity)
+        end
+        return PROFESSIONS_TRACKER_REAGENT_RANGE_FORMAT:format(low, high)
+    end
+    local quantity = slot.quantityRequired
+    if Finite(quantity) and quantity >= 0 then return nil, quantity end
+end
+
+local function AddRecipeLine(entry, slot)
+    if not Public(slot) or type(slot) ~= "table" or not Public(slot.required) or slot.required ~= true
+        or not Finite(slot.reagentType) then return end
+    local kind = slot.reagentType
+    if kind ~= Enum.CraftingReagentType.Basic and kind ~= Enum.CraftingReagentType.Modifying then return end
+    local reagents = slot.reagents
+    if not Public(reagents) or type(reagents) ~= "table" or #reagents == 0 then return end
+    local reagent = reagents[1]
+    if not Public(reagent) or type(reagent) ~= "table" then return end
+    local name = RecipeReagentName(slot, reagent)
+    if not name then return end
+    local range, required = RecipeQuantity(slot)
+    if range then
+        AddLine(entry, PROFESSIONS_TRACKER_REAGENT_FORMAT:format(range, name), false)
+    elseif required then
+        local quantity = RecipeReagentCount(reagents)
+        local counts = string.format("%s/%d", Finite(quantity) and tostring(quantity) or "?", required)
+        AddLine(entry, PROFESSIONS_TRACKER_REAGENT_FORMAT:format(counts, name), Finite(quantity) and quantity >= required)
+    end
+end
+
+local function CollectRecipeList(list, recraft)
+    local ids = Read(C_TradeSkillUI.GetRecipesTracked, recraft)
+    if type(ids) ~= "table" then return end
+    for i = 1, #ids do
+        local id = ids[i]
+        if Finite(id) and id > 0 then
+            local schematic = Read(C_TradeSkillUI.GetRecipeSchematic, id, recraft)
+            local name = type(schematic) == "table" and Text(schematic.name)
+            if name then
+                local title = recraft and PROFESSIONS_CRAFTING_FORM_RECRAFTING_HEADER:format(name) or name
+                local entry = NextEntry(list, recraft and -id or id, title, "recipes")
+                entry.recipeID, entry.isRecraft, entry.tracked = id, recraft, true
+                local slots = schematic.reagentSlotSchematics
+                if Public(slots) and type(slots) == "table" then
+                    -- Match the native order: required modifying slots before basic ones.
+                    for pass = 1, 2 do
+                        local first, last, step = 1, #slots, 1
+                        if pass == 1 then first, last, step = #slots, 1, -1 end
+                        for j = first, last, step do
+                            local slot = slots[j]
+                            if Public(slot) and type(slot) == "table" and Finite(slot.reagentType)
+                                and (slot.reagentType == Enum.CraftingReagentType.Modifying) == (pass == 1) then
+                                AddRecipeLine(entry, slot)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 ------------------------------------------------------------------ collection pass
 local COLLECTORS = {
+    recipes = function(list, c)
+        local needed = O.M.recipeItemsNeeded
+        if needed then for id in pairs(needed) do needed[id] = nil end end
+        -- Switched off, nothing is read and no item name is waited for.
+        if c.showRecipes then
+            CollectRecipeList(list, true)
+            CollectRecipeList(list, false)
+        end
+        local pending = O.M.recipeItemsPending
+        if pending then
+            for id in pairs(pending) do
+                if not O.M.recipeItemsNeeded[id] then pending[id] = nil end
+            end
+        end
+    end,
     quests = function(list, c) CollectQuests(list, c) end,
     world = function(list, c) if c.showWorldQuests then CollectWorld(list, c) end end,
     bonus = function(list, c) if c.showBonus then CollectBonus(list, c) end end,
@@ -434,6 +572,8 @@ local COLLECTORS = {
         if c.showScenario then CollectScenario(list, c) end
     end,
 }
+-- ObjectivesContent.lua adds its sources here.
+O.COLLECTORS = COLLECTORS
 
 -- Re-reads every dirty source into its reused entry list.
 function O.CollectDirty(self)

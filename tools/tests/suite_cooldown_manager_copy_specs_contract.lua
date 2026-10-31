@@ -32,6 +32,7 @@ local function Load(file, namespace) return assert(loadfile(root .. "/" .. file)
 Load("MSUF_Suite/Core/SuiteCatalog.lua", Suite)
 Load("MSUF_Suite/Core/Catalog/DataTexts.lua", Suite)
 Load("MSUF_Suite/Core/Catalog/CooldownManager.lua", Suite)
+Load("MSUF_Suite/Core/Catalog/CooldownManagerData.lua", Suite)
 local CDM = Suite.CDM
 local config = {}
 for key, rule in pairs(Suite.SuiteCatalog.cooldownManager.rules) do config[key] = rule.default end

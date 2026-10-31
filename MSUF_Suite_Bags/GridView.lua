@@ -56,19 +56,79 @@ function GridView.CountLabel(label, count)
     return string.format(S.Text("%s (%d)"), label, count)
 end
 
--- Header label of a group cell, from a pool owned by the view.
-function GridView.PaintHeader(pool, index, parent, anchor, x, y, width, group)
+-- A collapsible group's header is also a button: a click flips the group
+-- (toggle(key)); a collapsed one shows a plus sign and its item count.
+local COLLAPSE_ICON, HEADER_HEIGHT = 16, 18
+
+local function HitClicked(hit)
+    hit.toggle(hit.key)
+end
+
+local function HitEnter(hit)
+    GameTooltip:SetOwner(hit, "ANCHOR_RIGHT")
+    GameTooltip:SetText(S.Text(hit.collapsed and "Click to show these items" or "Click to hide these items"))
+    GameTooltip:Show()
+end
+
+local function HeaderHit(label, parent)
+    local hit = label.hit
+    if hit then return hit end
+    hit = P.ChildFrame("Button", parent)
+    hit:SetHeight(HEADER_HEIGHT)
+    hit:SetScript("OnClick", HitClicked)
+    hit:SetScript("OnEnter", HitEnter)
+    hit:SetScript("OnLeave", GameTooltip_Hide)
+    hit.plus = S.CreateTexture(hit, nil, "ARTWORK")
+    hit.plus:SetSize(COLLAPSE_ICON, COLLAPSE_ICON)
+    hit.plus:SetPoint("LEFT", 0, 0)
+    hit.plus:SetTexture("Interface\\Buttons\\UI-PlusButton-Up")
+    label.hit = hit
+    return hit
+end
+
+local function PlaceHit(label, parent, anchor, x, y, width, group, toggle)
+    local hit = HeaderHit(label, parent)
+    if hit.placeX ~= x or hit.placeY ~= y or hit.placeWidth ~= width or hit.placeAnchor ~= anchor then
+        hit:ClearAllPoints()
+        hit:SetPoint("TOPLEFT", anchor, "TOPLEFT", x, y)
+        hit:SetWidth(width)
+        hit.placeX, hit.placeY, hit.placeWidth, hit.placeAnchor = x, y, width, anchor
+    end
+    local collapsed = group.collapsed == true
+    if hit.collapsed ~= collapsed then
+        hit.collapsed = collapsed
+        hit.plus:SetShown(collapsed)
+    end
+    hit.key, hit.toggle = group.key, toggle
+    if not hit:IsShown() then hit:Show() end
+end
+
+-- Header label of a group cell, from a pool owned by the view. toggle makes
+-- the header a button that collapses its group.
+function GridView.PaintHeader(pool, index, parent, anchor, x, y, width, group, toggle)
     local label = pool[index]
     if not label then
         label = GridView.Font(parent)
         pool[index] = label
     end
+    local text = GridView.GroupLabel(group)
+    local shift = toggle and group.collapsed and COLLAPSE_ICON or 0
+    if shift > 0 then text = GridView.CountLabel(text, group.hidden) end
     label:ClearAllPoints()
-    label:SetPoint("TOPLEFT", anchor, "TOPLEFT", x, y)
-    label:SetWidth(width)
-    label:SetText(GridView.GroupLabel(group))
+    label:SetPoint("TOPLEFT", anchor, "TOPLEFT", x + shift, y)
+    label:SetWidth(width - shift)
+    label:SetText(text)
     label:Show()
+    if toggle then PlaceHit(label, parent, anchor, x, y, width, group, toggle) elseif label.hit then label.hit:Hide() end
     return label
+end
+
+-- Hides every header of a pool, with its button.
+function GridView.HideHeaders(pool)
+    for i = 1, #pool do
+        pool[i]:Hide()
+        if pool[i].hit then pool[i].hit:Hide() end
+    end
 end
 
 function GridView.PositionText(text, scroll, visibleRows, lineCount)

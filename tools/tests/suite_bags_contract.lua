@@ -271,7 +271,7 @@ local S = {
     Queue = function(id) assert(id == "bags"); queued = queued + 1 end,
     Install = function(id, instance) assert(id == "bags"); module = instance end,
     RegisterOwnedMover = function(id, element, spec)
-        assert(id == "bags" and (element == "combined" or element == "reagent"))
+        assert(id == "bags" and (element == "combined" or element == "reagent" or element == "bank"))
         movers[element] = spec
         if element == "combined" then mover = spec end
     end,
@@ -353,7 +353,7 @@ end
 for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
         NS = state, Suite = S, BagsModule = module, ItemLoads = bagsPrivate.ItemLoads,
-        ChildFrame = bagsPrivate.ChildFrame,
+        ChildFrame = bagsPrivate.ChildFrame, BankWindow = { mover = {} },
     })
 end
 assert(module and #fonts == 0 and #textures == 0 and not next(hooks) and infoCalls == 0,
@@ -430,10 +430,10 @@ module.context, module.active = context, true
 module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
 -- The explicit sub-module list replaces the files' post-hooks on the module.
-local REFRESH_ORDER = { "InventoryView.Refresh", "BankInventory.Refresh", "BagFinance.Enable",
-    "StackSplitter.Refresh", "SortDirection.Refresh" }
-local STOP_ORDER = { "InventoryView.Disable", "BankInventory.Disable", "BagFinance.Disable", "AutoSplit.Stop",
-    "StackSplitter.Close", "SortDirection.Restore" }
+local REFRESH_ORDER = { "UpgradeMarker.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
+    "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh" }
+local STOP_ORDER = { "UpgradeMarker.Disable", "InventoryView.Disable", "BankInventory.Disable", "BankWindow.Disable",
+    "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore" }
 local function Ran(order)
     if #submoduleCalls ~= #order then return false end
     for i = 1, #order do if submoduleCalls[i] ~= order[i] then return false end end
@@ -441,7 +441,8 @@ local function Ran(order)
 end
 assert(Ran(REFRESH_ORDER), "a refresh did not run the sub-modules in Bags.lua's order: "
     .. table.concat(submoduleCalls, ", "))
-for _, file in ipairs({ "InventoryView", "BankInventory", "Finance", "AutoSplit", "StackSplitter", "SortDirection" }) do
+for _, file in ipairs({ "UpgradeMarker", "InventoryView", "BankInventory", "BankWindow", "Finance", "AutoSplit",
+    "StackSplitter", "SortDirection" }) do
     local handle = assert(io.open(root .. "/MSUF_Suite_Bags/" .. file .. ".lua", "rb"))
     local source = handle:read("*a")
     handle:close()

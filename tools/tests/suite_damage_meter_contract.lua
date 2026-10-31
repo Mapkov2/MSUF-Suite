@@ -42,6 +42,9 @@ function Region:SetShadowOffset(x,y) self.shadowOffset={x,y} end
 function Region:Show() self.shown=true end
 function Region:Hide() self.shown=false end
 function Region:IsShown() return self.shown end
+function Region:IsVisible()
+    return self.shown and (not self.parent or self.parent:IsVisible())
+end
 function Region:SetShown(shown) self.shown=shown and true or false end
 function Region:SetScript(key,value) self.scripts[key]=value end
 function Region:GetScript(key) return self.scripts[key] end
@@ -118,7 +121,19 @@ MSUFSuite={}
 MSUF_NS={Client={Family="Mainline",Flavor="Mainline",SupportsEvent=function() return true end}}
 IsInInstance=function() return inside,instanceType end
 IsInGroup=function() return grouped end
+-- What the window menu's Report entry asks about chat channels (Report.lua);
+-- the report contract brings groups, guild and target of its own.
+LE_PARTY_CATEGORY_HOME,LE_PARTY_CATEGORY_INSTANCE=1,2
+IsInRaid=function() return false end
+IsInGuild=function() return false end
+C_GuildInfo={IsGuildOfficer=function() return false end}
+UnitIsPlayer=function() return false end
+UnitIsUnit=function() return false end
+UnitIsConnected=function() return false end
+GetUnitName=function() return nil end
 UnitGUID=function(unit) return unit=="player" and "Player-1" or nil end
+UnitClassBase=function(unit) return unit=="player" and "MAGE" or nil end
+C_DeathRecap={HasRecapEvents=function() return false end}
 UnitName=function() return "Tester" end
 GetRealmName=function() return "Realm" end
 -- No other AddOn is loaded, so no conflict claims the meter.
@@ -307,7 +322,7 @@ Support.Load(root,"MSUF_Suite",Suite,"Core/HostBridge.lua")
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
-local files={"Data","IconLayout","Rows","Window","Breakdown","Menus","Timer","Controller"}
+local files={"Data","TargetFilter","CombatDetails","Recap","Navigation","Favorites","Styling","IconLayout","Rows","Window","Breakdown","Menus","Report","TimerStyle","Timer","Visibility","Controller"}
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }
@@ -738,7 +753,8 @@ assert(S.Set("damageMeter","timer",false))
 c.visibility=4;S.Apply("damageMeter")
 assert(frame.alpha==0 and win.faded,"mouseover window should fade out")
 fetches=api.fetch
-Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0);RunPaint()
+assert(not Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED"), "faded windows kept session events")
+RunPaint()
 assert(api.fetch==fetches and win.dirty,"faded windows should skip painting")
 frame.mouseOver=true;frame.scripts.OnEnter(frame)
 assert(frame.alpha==1 and api.fetch==fetches+1,"hover did not reveal and repaint")
@@ -747,7 +763,7 @@ assert(frame.alpha==0)
 combat=true;Event("PLAYER_REGEN_DISABLED")
 assert(LiveTimers()==0,"fully faded mouseover meters kept a timer")
 fetches=api.fetch
-Event("DAMAGE_METER_COMBAT_SESSION_UPDATED",0,0)
+assert(not Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED"), "faded combat windows kept session events")
 assert(not PaintRequest() and api.fetch==fetches and win.dirty,
     "hidden combat updates scheduled a needless repaint")
 frame.mouseOver=true;frame.scripts.OnEnter(frame)
@@ -1599,5 +1615,14 @@ do
     assert(win.header.points[1][1] == "TOPLEFT" and win.buttons.session.shown and win.buttons.type.shown,
         "header setting did not restore the original layout")
     assert(capacity >= win.capacity, "external header incorrectly consumes body rows")
+end
+if MSUF_DM_FEATURE_TESTS then
+    MSUF_DM_FIXTURE={D=D,S=S,NS=Suite,M=M,api=api,Event=Event,RunPaint=RunPaint,
+        Registered=Registered,Secret=Secret,Row=Row,Region=Region,Pick=Pick,
+        SetCombat=function(value) combat=value end,
+        SetZone=function(kind) inside=kind~="none";instanceType=kind end,
+        SetGroup=function(value) grouped=value end, SetTime=function(value) now=value end,
+        SetRoster=function(value) roster=value;api.roster=value end,
+        GetMenu=function() return lastMenu end}
 end
 print("Damage meter: tile picker, dormant load, lifecycle, dedupe, event paints, visible clock, secret sinks, damage and healing targets, combat spell unit labels, breakdown rules, movers, window shifting, visibility, preview and plain-value percent passed")

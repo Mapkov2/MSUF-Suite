@@ -27,6 +27,7 @@ local function Widget(fontString)
     end
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
+    function w:IsShown() return self.shown end
     return w
 end
 

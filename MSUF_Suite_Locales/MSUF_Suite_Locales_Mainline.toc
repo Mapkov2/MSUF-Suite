@@ -1,0 +1,20 @@
+## Interface: 120100, 120105, 16001
+## Title: MSUF Suite - Locales
+## Notes: Optional MSUF Suite translations. Disable for English; follows the language selected in MSUF.
+## Author: Mapko
+## Category: MSUF
+## Version: 0.1.5-alpha
+## Dependencies: MidnightSimpleUnitFrames
+## LoadOnDemand: 1
+## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
+
+..\MSUF_Suite\Locales\deDE.lua
+..\MSUF_Suite\Locales\esES.lua
+..\MSUF_Suite\Locales\esMX.lua
+..\MSUF_Suite\Locales\frFR.lua
+..\MSUF_Suite\Locales\itIT.lua
+..\MSUF_Suite\Locales\koKR.lua
+..\MSUF_Suite\Locales\ptBR.lua
+..\MSUF_Suite\Locales\ruRU.lua
+..\MSUF_Suite\Locales\zhCN.lua
+..\MSUF_Suite\Locales\zhTW.lua

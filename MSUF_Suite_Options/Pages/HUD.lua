@@ -56,11 +56,12 @@ local function BuildObjectives(ctx, b)
         { "Move in Edit Mode", function() P.MoveOnScreen("objectives", "tracker") end,
             key = "edit" },
         { "Tracker colors", function() OpenColors("objectives") end, key = "colors" },
+        P.PlannerAction("raid"),
     }
 
     AddSection(sections, "suite_hud_objectives_content",
         Tr("What to track"), P.SectionRules("objectives", "content"), {
-            help = P.Help("Choose what the Suite tracker lists and when it steps aside.", "The Suite draws its own tracker and hides Blizzard's while it runs. Entries are sorted into groups: the focused quest, campaign and important quests, quests ready to hand in, regular quests, world quests, nearby bonus objectives, scenario and delve steps, and tracked achievements. In a raid it can hide completely, only while a boss is engaged, or pause the regular list during any raid fight; the encounter view keeps running then. Quest symbols come as Suite letters or as Blizzard's icons, and the heading line can be switched off. The key binding Use tracked quest item uses the focused quest's item, else the first usable one, and picks a new item only outside combat. Left-click a group name to fold it or a quest to open its log entry; right-click for more actions."),
+            help = P.Help("Choose what the Suite tracker lists and when it steps aside.", "The Suite draws its own tracker and hides Blizzard's while it runs. Entries are sorted into groups: the focused quest, campaign and important quests, quests ready to hand in, regular quests, world quests, nearby bonus objectives, scenario and delve steps, zone event progress, tracked achievements and collectibles and, on Retail, tracked recipes, Traveler's Log activities and Housing endeavors. In a raid it can hide completely, only while a boss is engaged, or pause the regular list during any raid fight; the encounter view keeps running then. Quest symbols come as Suite letters or as Blizzard's icons, and the heading line can be switched off. The key binding Use tracked quest item uses the focused quest's item, else the first usable one, and picks a new item only outside combat. Left-click a group name to fold it or a quest to open its log entry; right-click for more actions."),
             open = true,
         })
     local mythicRules = P.SectionRules("objectives", "mythic")
@@ -121,6 +122,7 @@ local function BuildSummary(ctx, b)
         { "Summary colors", function() OpenColors("runSummary") end, key = "colors" },
     }
     if S.catalog.runSummary.rules.showMythicPlus then
+        table.insert(summaryActions, P.PlannerAction("runs"))
         table.insert(summaryActions, { "Open run history", function() SummaryAction("ShowHistory") end, key = "history" })
         table.insert(summaryActions, { "Clear run history", function() ConfirmClearHistory(SummaryAction) end,
             key = "clear_history" })

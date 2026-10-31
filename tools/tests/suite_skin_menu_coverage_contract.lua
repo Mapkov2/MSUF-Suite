@@ -39,6 +39,7 @@ NS.AdapterKit = { SetMotionProvider = function(track, watch)
     NS.AdapterKit.track, NS.AdapterKit.watch = track, watch
 end }
 Load("Rendering/LegacyScrollMotion.lua")
+local legacyEvents = H.frames[#H.frames]
 NS.GenericWindows.SetCollapseMotionProvider = Noop
 NS.SocialUISkin = { SetMotionProvider = Noop }
 Load("Rendering/CollapseCollectionRows.lua")
@@ -106,12 +107,26 @@ travel.group.progress = 0.5
 scroll.scrollOffset = 84
 scroll:Fire("OnVerticalScroll", 84)
 Check(travel.move.y == -63, "legacy rapid wheel lost current visual offset")
-bar:Fire("OnMouseDown", "LeftButton")
+-- Forever's SmartNavigation reads GetScript("OnMouseDown"/"OnMouseUp") of every
+-- non-Button it scans (Blizzard_GamepadSmartNavigation/Utility.lua:196-206): the
+-- legacy Slider carries no skin handler. A drag is a global press over the bar,
+-- held until the global release.
+Check(not bar.hooks.OnMouseDown and not bar.hooks.OnMouseUp,
+    "legacy bar got a mouse handler Forever's SmartNavigation reads")
+function bar:IsMouseOver() return self.mouseOver == true end
+legacyEvents:Fire("OnEvent", "GLOBAL_MOUSE_DOWN", "LeftButton")
+Check(travel.group:IsPlaying() and not legacyEvents.events.GLOBAL_MOUSE_UP,
+    "a press away from the legacy bar started a drag")
+bar.mouseOver = true
+legacyEvents:Fire("OnEvent", "GLOBAL_MOUSE_DOWN", "LeftButton")
 Check(not travel.group:IsPlaying(), "legacy thumb drag retained smoothing")
+Check(legacyEvents.events.GLOBAL_MOUSE_UP, "legacy drag did not watch for the mouse release")
 scroll.scrollOffset = 100
 scroll:Fire("OnVerticalScroll", 100)
 Check(not travel.group:IsPlaying() and scroll.scrollOffset == 100, "legacy drag changed native scroll ownership")
-bar:Fire("OnMouseUp", "LeftButton")
+bar.mouseOver = false
+legacyEvents:Fire("OnEvent", "GLOBAL_MOUSE_UP", "LeftButton")
+Check(not legacyEvents.events.GLOBAL_MOUSE_UP, "legacy drag kept watching after the mouse release")
 scroll.scrollOffset = 120
 scroll:Fire("OnVerticalScroll", 120)
 Check(travel.group:IsPlaying(), "legacy wheel did not resume after drag")
@@ -119,12 +134,31 @@ local groups = #H.groups
 scroll.scrollOffset = 140
 scroll:Fire("OnVerticalScroll", 140)
 Check(#H.groups == groups, "warm legacy wheel created more animation groups")
+-- Every mouse press in the game is watched only while a tracked bar shows, out of
+-- combat and with the skin and smooth scrolling on.
+local function WatchingPresses() return legacyEvents.events.GLOBAL_MOUSE_DOWN == true end
+Check(WatchingPresses(), "a shown legacy bar did not watch for presses")
+bar:Hide()
+Check(not WatchingPresses(), "hiding the last legacy bar kept watching every mouse press")
+bar:Show() bar:Fire("OnShow")
+Check(WatchingPresses(), "a legacy bar shown again did not watch for presses")
+legacyEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+Check(not WatchingPresses(), "combat kept watching every mouse press")
+legacyEvents:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+Check(WatchingPresses(), "combat end did not watch the shown legacy bar again")
+NS.DB.enabled = false
+H.listeners[Legacy](Legacy, "adapter", "master")
+Check(not WatchingPresses(), "the disabled skin kept watching every mouse press")
+NS.DB.enabled = true
+H.listeners[Legacy](Legacy, "adapter", "master")
+Check(WatchingPresses(), "the re-enabled skin did not watch the shown legacy bar")
 NS.DB.theme.smoothScrolling = false
 scroll.scrollOffset = 160
 scroll:Fire("OnVerticalScroll", 160)
 Check(not travel.group:IsPlaying(), "smooth-scroll off retained legacy transform")
 NS.DB.theme.smoothScrolling = nil
 Legacy.ReleaseOwner(owner1)
+Check(not WatchingPresses(), "a released legacy owner kept watching every mouse press")
 scroll:Fire("OnVerticalScroll", 180)
 Check(not travel.group:IsPlaying(), "released legacy owner resumed animation")
 
@@ -137,6 +171,41 @@ Legacy.Track(modernFrame, owner1)
 modernFrame:Fire("OnVerticalScroll", 42)
 Check(nativeTracks[modernBar] == owner1 and not Legacy.states[modernFrame],
     "native modern ScrollFrame controller was smoothed twice")
+
+-- Authored popups keep the host's styled scrolling and only adopt content fades.
+-- RegisterMenu's contentOnly flag reaches this real provider unchanged.
+local function CheckPopupScrollOwnership(contentOnly)
+    local popup, pane, child, rail = Frame(), Frame(), Frame(), Frame()
+    pane.parent, child.parent, rail.parent = popup, pane, popup
+    popup.children, pane.children = { pane, rail }, { child }
+    pane.kind, pane.scrollChild, pane.scrollOffset = "ScrollFrame", child, 0
+    pane._msuf2ScrollBar = rail
+    local owner = {}
+    Check(Menus.Track(popup, owner, contentOnly), "authored popup motion refused")
+    popup:Fire("OnShow")
+    local fade = Content.records[popup]
+    Check(fade and fade.group:IsPlaying(), "popup lost its opening content fade")
+    local beforeScroll = #H.groups
+    pane.scrollOffset = 64
+    pane:Fire("OnVerticalScroll", 64)
+    rail:Fire("OnMouseDown", "LeftButton")
+    pane.scrollOffset = 96
+    pane:Fire("OnVerticalScroll", 96)
+    if contentOnly then
+        Check(not Legacy.states[pane] and #H.groups == beforeScroll,
+            "content-only popup adopted or translated the host's scrolling")
+        Check(pane.scrollOffset == 96 and fade.group:IsPlaying(),
+            "host scroll or thumb drag changed the offset or popup fade")
+    else
+        local state = Legacy.states[pane]
+        Check(state and state.current and state.current.group:IsPlaying(),
+            "ordinary menu discovery stopped adopting legacy scrolling")
+    end
+    Menus.Release(owner, popup)
+    Check(not fade.group:IsPlaying(), "popup release retained its content fade")
+end
+CheckPopupScrollOwnership(true)
+CheckPopupScrollOwnership(false)
 
 -- Actual programmatic modern and legacy tab events, preserving callbacks.
 NS.ControlSkin = { states = {}, SetTabMotionProvider = function(track) NS.ControlSkin.track = track end,

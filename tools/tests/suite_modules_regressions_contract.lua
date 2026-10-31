@@ -136,7 +136,7 @@ Case("objective-deadline", function()
     local suite = { Text = function(v) return v end, Public = function() return true end,
         PublicText = function(v) return v end, Finite = function(v) return type(v) == "number" end,
         SetStyledFont = function() end, ClockText = function(v) return tostring(math.ceil(v)) end }
-    local private = { Suite = suite }
+    local private = { Suite = suite, NS = { Client = { isForever = false }, HUDTextArgs = function() end } }
     Load("MSUF_Suite_Modules/ObjectivesData.lua", private)
     local objectives = private.Objectives
     local collectors = assert(Upvalue(objectives.CollectDirty, "COLLECTORS"))
@@ -145,6 +145,7 @@ Case("objective-deadline", function()
     objectives.CollectDirty(owner)
     local cached = owner.sources.quests[1]
     assert(cached.timerEnd == 160, "source did not capture one absolute deadline")
+    Load("MSUF_Suite_Modules/ObjectivesRows.lua", private)
     Load("MSUF_Suite_Modules/ObjectivesTracker.lua", private)
     local paint = assert(Upvalue(objectives.Render, "PaintRowWidgets"))
     local timer = { Show = function(self) self.shown = true end, Hide = function(self) self.shown = false end,

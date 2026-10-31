@@ -6,6 +6,7 @@ P.DataTextsPreviewData = Data
 -- Deliberately static samples: opening the editor never activates a data
 -- source, currency lookup, broker callback or background refresh.
 local SAMPLES = {
+    vault = { "Great Vault", "3 / 9" }, supplies = { "Supplies", "24 / 150" },
     gold = { "Gold", "12458g" }, sessionGold = { "Session", "+245g" },
     bags = { "Bags", "38/96" }, durability = { "Durability", "100%" },
     clock = { "Time", "20:45" }, fps = { "FPS", "120" }, latency = { "World", "24 ms" },
@@ -17,21 +18,45 @@ local SAMPLES = {
     hearth = { "Hearthstone", "Ready" }, progress = { "XP", "64%" },
     portals = { "Dungeon portals", "Open" }, microMenu = { "Menu", "Open" },
     specLoot = { "Specialization / loot", "Specialization" }, travel = { "Travel cooldowns", "Ready" },
+    friends = { "Friends", "6" }, guild = { "Guild", "14" }, secondaryStat = { "Crit", "28.5%" },
+    mythicRating = { "Mythic+ rating", "2850" },
 }
+-- The stat names and values of the Secondary stat place, by its stat choice.
+local STAT_SAMPLES = { { "Crit", "28.5%" }, { "Haste", "21.3%" }, { "Mastery", "34.2%" }, { "Vers", "6.8%" },
+    { "Leech", "3.1%" } }
 local WORD_VALUES = { location = "Location", specialization = "Specialization", hearth = "Ready",
     portals = "Open", microMenu = "Open" }
+
+-- The Time place at 20:45:30 in the chosen format (Standard.lua): the
+-- client's 12-hour format (TIME_TWELVEHOURPM) puts the PM word where the
+-- language does.
+local function ClockSample(config)
+    if config.clock24Hour ~= false then return config.clockSeconds and "20:45:30" or "20:45" end
+    local text = TIME_TWELVEHOURPM:format(8, 45)
+    return config.clockSeconds and (text:gsub("%d+:%d%d", "%0:30", 1)) or text
+end
 
 function Data.Sample(source, style, config, block)
     local sample = SAMPLES[source]
     if not sample then return "", "" end
     local name, value = Tr(sample[1]), sample[2]
     if WORD_VALUES[source] then value = Tr(WORD_VALUES[source]) end
+    if source == "vault" then value = Tr("%d / %d slots"):format(3, 9) end
     if source == "latency" then value = Tr("%d ms"):format(24) end
     if source == "fpsLatency" then value = "120 / " .. Tr("%d ms"):format(24) end
     if source == "specLoot" then value = Tr("%s / Loot: %s"):format(Tr("Specialization"), Tr("Default")) end
     if source == "travel" then value = Tr(Suite.Client.isForever and "Hearthstone" or "Hearthstone / portals") end
     if source == "bags" and style.bagsPercent then value = "60%" end
     if source == "itemLevel" then value = string.format("%." .. (config.itemLevelDecimals or 1) .. "f", 275.5) end
+    if source == "clock" then value = ClockSample(config) end
+    if source == "coordinates" then
+        local format = "%." .. (config.coordinateDecimals or 1) .. "f"
+        value = (format .. ", " .. format):format(48.2, 61.7)
+    end
+    if source == "secondaryStat" then
+        local stat = STAT_SAMPLES[config[block .. "Stat"]] or STAT_SAMPLES[1]
+        name, value = Tr(stat[1]), stat[2]
+    end
     if source == "broker" and config[block .. "Broker"] ~= "" then name = config[block .. "Broker"] or name end
     if source == "crests" then value = "90" .. (config.crestSeparator or " / ") .. "120" end
     local showName = style.showLabels and (source ~= "clock" or style.clockLabel)

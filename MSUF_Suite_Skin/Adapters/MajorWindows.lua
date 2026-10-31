@@ -608,6 +608,12 @@ NS.MajorWindowsShared = {
     BACKGROUND_AND_BORDER = BACKGROUND_AND_BORDER,
 }
 
+local ApplyGroupForOwners
+local function ApplyVisibleGroup(spec, root, state)
+    if Kit.DeferHidden(root, spec, ApplyGroupForOwners, spec, nil, nil, 10) then return true, "waiting" end
+    return groupSkinners[spec.id](root, state)
+end
+
 local function ApplyGroup(spec, state)
     if not state or not state.active then return false, "disabled" end
     if NS.IsCombatLocked() then return false, "combat" end
@@ -616,12 +622,12 @@ local function ApplyGroup(spec, state)
     if not root then return false, NS.Client.IsAddOnLoaded(spec.addon) and "missing" or "waiting" end
     -- Each group is its own error boundary: a raising group is reported and
     -- the other groups (and owners) still apply.
-    local finished, applied, reason = Kit.Isolate(groupSkinners[spec.id], root, state)
+    local finished, applied, reason = Kit.Isolate(ApplyVisibleGroup, spec, root, state)
     if not finished then return false, "error" end
     return applied, reason
 end
 
-local function ApplyGroupForOwners(spec)
+ApplyGroupForOwners = function(spec)
     if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer("major-windows:load:" .. spec.id, function()
             ApplyGroupForOwners(spec)
@@ -704,7 +710,9 @@ function MajorWindows.Apply(owner)
         local spec = groups[index]
         if CategoryEnabled(spec.category) then
             local ok, reason = ApplyGroup(spec, state)
-            if ok then
+            if ok and reason == "waiting" then
+                waiting = waiting + 1
+            elseif ok then
                 applied = applied + 1
             elseif reason == "waiting" and Schedule(spec) then
                 waiting = waiting + 1
@@ -737,6 +745,7 @@ function MajorWindows.Disable(owner)
         NS.CombatGate.Cancel("major-windows:housing-rewards")
         NS.CombatGate.Cancel("major-windows:scouting-map")
         for index = 1, #groups do
+            Kit.CancelHidden(groups[index])
             NS.CombatGate.Cancel("major-windows:load:" .. groups[index].id)
         end
     end

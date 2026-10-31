@@ -5,7 +5,7 @@ P.ActionBarMenu = Page
 local selectedTab = "shared"
 local details = {}
 local GROUPS = {
-    { id = "shared", label = "All action bars", sections = "actionbars_module look appearance cooldowns text behavior" },
+    { id = "shared", label = "All action bars", sections = "actionbars_module keyAudit_module look appearance cooldowns text behavior" },
     { id = "layout", label = "Layout", sections = "editor bar_layout" },
     { id = "text", label = "Text", sections = "bar_text" },
     { id = "visibility", label = "Visibility", sections = "bar_visibility" },

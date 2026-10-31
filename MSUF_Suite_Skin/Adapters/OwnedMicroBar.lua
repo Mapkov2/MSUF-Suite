@@ -172,8 +172,10 @@ local function ApplyShell(root, settings, horizontal, scale)
     local r, g, b, a = NS.Theme.GetColor("microBarBorder")
     topRule:SetColorTexture(r, g, b, a * 0.82)
     bottomRule:SetColorTexture(r, g, b, a * 0.52)
-    SetPortraitTexture(portrait, "player")
-    portraitDirty = false
+    if portraitDirty then
+        SetPortraitTexture(portrait, "player")
+        portraitDirty = false
+    end
 end
 
 -- Grid, shell and companions for the current settings (out of combat). The
@@ -406,7 +408,11 @@ end
 
 local function OnNativeReset(root)
     if desired and OwnedMicroBar.active and root == activeRoot then
-        ScheduleReapply()
+        if NS.IsCombatLocked() then
+            ScheduleReapply()
+        else
+            NS.MicroMenuSkin.RefreshNativeReset(root)
+        end
     end
 end
 
@@ -601,12 +607,10 @@ eventFrame:SetScript("OnEvent", function(_, event)
     elseif event == "UNIT_PORTRAIT_UPDATE" or event == "PORTRAITS_UPDATED" then
         -- UNIT_PORTRAIT_UPDATE is registered for the player unit only;
         -- PORTRAITS_UPDATED invalidates every portrait and carries no unit.
-        if portraitEnabled then
-            portraitDirty = true
-            if not NS.IsCombatLocked() then
-                SetPortraitTexture(portrait, "player")
-                portraitDirty = false
-            end
+        portraitDirty = true
+        if portraitEnabled and not NS.IsCombatLocked() then
+            SetPortraitTexture(portrait, "player")
+            portraitDirty = false
         end
     elseif event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         RefreshHealthGate(Settings())
@@ -618,6 +622,7 @@ eventFrame:SetScript("OnEvent", function(_, event)
             ApplyVisibility(Settings())
         end
     else
+        if event == "PLAYER_ENTERING_WORLD" then portraitDirty = true end
         ScheduleReapply()
     end
 end)
@@ -697,6 +702,7 @@ function OwnedMicroBar.Disable(root)
     OwnedMicroBar.active = false
     OwnedMicroBar.suspended = false
     portraitEnabled = false
+    portraitDirty = true
     activeRoot = nil
     takenRoot = nil
     EditMode.RefreshOwner()

@@ -14,7 +14,8 @@ end
 local function Metadata(index, link, itemID)
     local data = index.metadata[link]
     if data then return data end
-    local name, _, _, _, _, _, subclassName, maxStack, equipLoc, _, _, classID, subclassID, _, expansion = C_Item.GetItemInfo(link)
+    local name, _, _, level, _, className, subclassName, maxStack, equipLoc, _, sellPrice, classID, subclassID, bindType,
+        expansion = C_Item.GetItemInfo(link)
     if not S.Public(name) or type(name) ~= "string" then
         -- At most 2048 items are asked for at once (ItemLoads.lua).
         if Loads.Request(index.loads, itemID) then index.pending[itemID] = true end
@@ -23,9 +24,12 @@ local function Metadata(index, link, itemID)
     data = { name = name, search = name:lower(), maxStack = S.Finite(maxStack) and maxStack or 1,
         classID = S.Finite(classID) and classID or nil,
         subclassID = S.Finite(subclassID) and subclassID or nil,
+        className = S.PublicText(className), itemLevel = S.Finite(level) and level or nil,
         subclassName = S.Public(subclassName) and subclassName or nil,
         equipLoc = S.Public(equipLoc) and equipLoc or nil,
-        expansion = S.Finite(expansion) and expansion or nil }
+        expansion = S.Finite(expansion) and expansion or nil,
+        sellPrice = S.Finite(sellPrice) and sellPrice or nil,
+        bindType = S.Finite(bindType) and bindType or nil }
     if data.equipLoc then data.slotName = _G[data.equipLoc] or data.equipLoc end
     if data.expansion then data.expansionName = _G["EXPANSION_NAME" .. data.expansion] end
     -- Cache only while the module is enabled; bounded even during long sessions.
@@ -39,7 +43,7 @@ local function Metadata(index, link, itemID)
 end
 
 local METADATA = { "name", "search", "maxStack", "classID", "subclassID", "subclassName", "equipLoc",
-    "slotName", "expansion", "expansionName" }
+    "slotName", "expansion", "expansionName", "className", "itemLevel", "sellPrice", "bindType" }
 
 local function ApplyMetadata(index, item)
     local data = Metadata(index, item.link, item.itemID)
@@ -140,13 +144,16 @@ local function Remember(recent, itemID, now)
     order[#order + 1], recent.items[itemID] = itemID, now
 end
 
--- The view state: pinned items from the profile's module state, recent items
--- of this character. Older builds kept recent items in the profile.
-function Index.State(state, view)
+-- The view state: pinned items and the collapsed groups (under collapsedKey)
+-- from the profile's module state, recent items of this character. Older
+-- builds kept recent items in the profile.
+function Index.State(state, view, collapsedKey)
+    collapsedKey = collapsedKey or "collapsed"
     state.pinned = type(state.pinned) == "table" and state.pinned or {}
+    state[collapsedKey] = type(state[collapsedKey]) == "table" and state[collapsedKey] or {}
     state.recent, state.recentOrder, state.dismissedRecent = nil, nil, nil
     view = view or {}
-    view.pinned, view.recent = state.pinned, Index.Recent().items
+    view.pinned, view.recent, view.collapsed = state.pinned, Index.Recent().items, state[collapsedKey]
     return view
 end
 
@@ -248,7 +255,7 @@ function Index.ReadContainer(index, frame, recent)
     index.filtered = 0
     local now = GetServerTime()
     Index.ExpireRecent(recent, now)
-    local synced
+    local synced, free = nil, 0
     for i = 1, #order do
         local key = order[i]
         local bag, slot = math.floor(key / KEY), key % KEY
@@ -259,7 +266,9 @@ function Index.ReadContainer(index, frame, recent)
         local info, quest, version = Slots.Get(bag, slot)
         local item = Index.ReadButton(index, index.buttons[key], info, quest, version, bag, slot)
         item.bagName = BagName(index, bag)
-        if item.itemID and Fresh(item, bag, slot) then
+        if not item.itemID then
+            free = free + 1
+        elseif Fresh(item, bag, slot) then
             index.freshItems[item.itemID] = true
             if not recent.dismissed[item.itemID] then Remember(recent, item.itemID, now) end
         end
@@ -270,7 +279,7 @@ function Index.ReadContainer(index, frame, recent)
     for itemID in pairs(recent.dismissed) do
         if not index.freshItems[itemID] then recent.dismissed[itemID] = nil end
     end
-    index.revision = index.revision + 1
+    index.free, index.revision = free, index.revision + 1
     return items
 end
 

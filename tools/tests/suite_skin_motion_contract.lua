@@ -306,6 +306,23 @@ Tick()
 Check(window:IsShown() and foreignWrites == 0, "window opening touched native visibility/geometry")
 window:Hide()
 Check(Motion.count == 0, "window close was delayed")
+-- Forever's SmartNavigation reads GetScript("OnMouseUp"/"OnMouseDown") of every
+-- frame it scans that is not a Button or EditBox (Blizzard_GamepadSmartNavigation/
+-- Utility.lua:196-206): a skin hook there taints that secure scan. A plain Frame
+-- has these scripts in the client, so shells and popups must not hook them.
+local frameScripts = { OnShow = true, OnHide = true, OnEnter = true, OnLeave = true,
+    OnMouseDown = true, OnMouseUp = true, OnMouseWheel = true }
+for _, role in ipairs({ "shell", "popup" }) do
+    local panel = Target("Frame", UIParent)
+    function panel:HasScript(event) return frameScripts[event] == true end
+    Surface.Attach(panel, { role = role })
+    Check(NS.Registry.GetSurface(panel).motion and panel.hooks.OnShow and panel.hooks.OnEnter,
+        role .. " frame lost its opening or hover motion")
+    Check(not panel.hooks.OnMouseDown and not panel.hooks.OnMouseUp,
+        role .. " frame got a press hook Forever's SmartNavigation reads")
+end
+Check(button.hooks.OnMouseDown and button.hooks.OnMouseUp and checkbox.hooks.OnMouseDown
+    and edit.hooks.OnMouseDown, "skinned buttons and inputs lost their press feedback")
 -- Event-derived combat gate must win before lockdown turns true.
 button:Fire("OnEnter"); Tick(3)
 button:Fire("OnMouseDown"); Tick()
@@ -498,7 +515,7 @@ local compatibilityOptions = { Suite = compatibilitySuite, M = { navItems = {} }
 -- The actual Register file also registers icon-skin areas. Use its real
 -- core catalog metadata while keeping the motion provider boundary isolated.
 local iconCatalog = { Client = NS.Client, Text = function(text) return text end }
-for _, file in ipairs({ "SuiteCatalog.lua", "Catalog/CooldownManager.lua", "Catalog/ActionBars.lua" }) do
+for _, file in ipairs({ "SuiteCatalog.lua", "Catalog/CooldownManager.lua", "Catalog/CooldownManagerData.lua", "Catalog/ActionBars.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file))("MSUF_Suite", iconCatalog)
 end
 compatibilitySuite.CDM = assert(iconCatalog.CDM)
@@ -506,6 +523,8 @@ compatibilitySuite.IconShapeIds = assert(iconCatalog.IconShapeIds)
 compatibilitySuite.ActionBarEnum = assert(iconCatalog.ActionBarEnum)
 compatibilityOptions.Tr = function(text) return text end
 compatibilitySuite.HostBridge.OnIconSkinsChanged = Noop
+-- This isolated host explicitly supports the area registration tested below.
+compatibilitySuite.HostBridge.HasIconSkinAreas = function() return true end
 local skinAreaRegistrations = 0
 compatibilitySuite.HostBridge.RegisterIconSkinAreas = function(hostMenu, specs)
     Check(hostMenu == compatibilityOptions.M and #specs >= 4, "actual icon areas were not registered")
@@ -515,6 +534,13 @@ compatibilitySuite.HostBridge.RegisterIconSkinAreas = function(hostMenu, specs)
     end
     skinAreaRegistrations = skinAreaRegistrations + 1
 end
+-- This legacy menu host has no Workbench. Load the real Suite history owner
+-- just as the core TOC does, retaining its designed absent-host fallback.
+compatibilitySuite.SuiteProfiles, compatibilitySuite.ProfileIO = {}, {}
+compatibilitySuite.HostBridge.ProfileWorkbench = function() end
+assert(loadfile(root .. "/MSUF_Suite/Core/ProfileWorkbenchBridge.lua"))("MSUF_Suite", compatibilitySuite)
+Check(type(compatibilitySuite.SuiteProfiles.CaptureWorkbenchSkin) == "function"
+    and not compatibilitySuite.ProfileWorkbenchBridge.HistoryOwned(), "actual absent-host history bridge did not load")
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", compatibilityOptions)
 Check(skinAreaRegistrations == 1, "actual icon area registration was skipped")
 pageCallback(page, 20) -- No skin provider available.

@@ -60,8 +60,12 @@ function Menu.Open(page, moduleID)
         if not Menu.Attach() or not Menu.FocusQualityOfLifeModule then return false end
         return Menu.FocusQualityOfLifeModule(moduleID)
     end
+    if moduleID then return Menu.Attach() and Menu.FocusOwnedTool(moduleID) end
     return true
 end
+
+SLASH_MSUFSUITEMACROBUILDER1 = "/msufmacro"
+SlashCmdList.MSUFSUITEMACROBUILDER = function() Menu.Open("suite_macros") end
 
 -- A summary for MSUF's dashboard card. Pure reads (safe in combat); the
 -- returned table is a new one and the only allocation. nil while the Suite

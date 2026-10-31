@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
-## Version: 0.1.4-alpha
+## Version: 0.1.5-alpha
 ## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -29,6 +29,7 @@ Pages\ActionBars.lua
 Pages\MinimapPreviewArt.lua
 Pages\MinimapPreviewPaint.lua
 Pages\MinimapPreview.lua
+Pages\MinimapButtonList.lua
 Pages\MinimapSections.lua
 Pages\Minimap.lua
 Pages\DamageMeter.lua
@@ -39,14 +40,29 @@ Pages\DataTextsPreview.lua
 Pages\DataTextsSourcePicker.lua
 Pages\DataTextsPresets.lua
 Pages\DataTextsEditor.lua
+Pages\ComfortPickers.lua
+Pages\QualityOfLifeComfort.lua
 Pages\DataTexts.lua
 Pages\QualityOfLifePreview.lua
 Menu\GraphicsPerformance.lua
 Pages\GraphicsPerformance.lua
+Pages\InventoryTools.lua
+Pages\MacrosWidgets.lua
+Pages\MacrosPicker.lua
+Pages\MacrosRules.lua
+Pages\MacrosConsumables.lua
+Pages\MacrosLibrary.lua
+Pages\Macros.lua
+Pages\PlanningTools.lua
+Pages\EverydayTools.lua
+Pages\ToolIntegration.lua
+Pages\QualityOfLifeHelp.lua
+Pages\PlayerAuras.lua
 Pages\QualityOfLife.lua
 Pages\HUDWorkspace.lua
 Pages\HUDPreview.lua
 Pages\HUDPreviewSamples.lua
+Pages\HUDPreviewViews.lua
 Pages\HUDAFKPreview.lua
 Pages\HUD.lua
 Pages\BuffRemindersVisibility.lua
@@ -69,17 +85,23 @@ Pages\CooldownManagerData.lua
 Pages\CooldownManagerLists.lua
 Pages\CooldownManagerTarget.lua
 Pages\CooldownManagerBars.lua
+Pages\CooldownManagerFrames.lua
+Pages\CooldownManagerSections.lua
 Pages\CooldownManagerWidgets.lua
 Pages\CooldownManagerPicker.lua
 Pages\CooldownManagerSounds.lua
+Pages\CooldownManagerPopoverFields.lua
+Pages\CooldownManagerPopoverInputs.lua
 Pages\CooldownManagerPopover.lua
 Pages\CooldownManagerPreviewIcons.lua
 Pages\CooldownManagerPreview.lua
 Pages\CooldownManagerOverrides.lua
+Pages\CooldownManagerInspection.lua
 Pages\CooldownManager.lua
 Pages\AppearanceKit.lua
 Pages\AppearancePreview.lua
 Pages\Appearance.lua
+Menu\ToolRouting.lua
 Menu\Register.lua
 Menu\SearchActions.lua
 Menu\Search.lua

@@ -10,6 +10,8 @@ B.Module("threatMeter", {
         return true
     end,
     editElement = "main",
+    -- Omen's own threat list covers the same data.
+    conflicts = { "Omen" },
 })
 B.Section("threatMeter", "threat_meter", "Threat meter", {
     Choice("windows", "Watched enemies", 1, { "Target", "Focus", "Target and focus" }),
@@ -23,6 +25,7 @@ B.Section("threatMeter", "threat_meter", "Threat meter", {
     Number("mainX", "Main window X", 350, -4000, 4000), Number("mainY", "Main window Y", -150, -3000, 3000),
     Number("focusX", "Focus window X", 350, -4000, 4000), Number("focusY", "Focus window Y", 100, -3000, 3000),
 })
+NS.AddQoLTextStyle("threatMeter", "threat_meter", "Threat meter", 80)
 B.Module("flightTimer", {
     title = "Flight route timer (Forever)", description = "Learn flight-master route times, show the route and request landing at the next stop.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
@@ -46,7 +49,8 @@ local function RetailExtras()
 end
 B.Module("characterExtras", {
     title = "Character sheet additions",
-    description = "A summary with gem sockets, durability, PvP item level and Great Vault and expansion buttons, durability on the model, cropped slot icons and item levels on equipment choices.",
+    description = "A summary with gem sockets, durability, PvP item level and Great Vault and expansion buttons, " ..
+        "durability on the model, cropped slot icons and item levels on equipment choices.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = RetailExtras,
 })
 B.Section("characterExtras", "character_extras", "Summary beside the character sheet", {
@@ -91,6 +95,7 @@ B.Module("tooltipDetails", {
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife", available = RetailExtras,
     editElement = "tooltip",
 })
+local HIDDEN_LINE = "Blanks the text on unit tooltips. Text the game keeps private is never changed."
 B.Section("tooltipDetails", "tooltip_details", "Tooltip details", {
     Choice("anchor", "General tooltip anchor", 1, { "Blizzard", "Cursor", "Fixed screen corner" }),
     Number("cursorX", "Cursor X offset", 16, -500, 500),
@@ -102,15 +107,25 @@ B.Section("tooltipDetails", "tooltip_details", "Tooltip details", {
     Bool("titles", "Show unit titles", true),
     Bool("itemLevel", "Item level for you and the unit in the Inspect window", true),
     B.Automation(Bool("inspectHovered", "Request item levels of hovered players (sends inspect requests)")),
+    B.Tooltip(Bool("spec", "Specialization next to the item level", true),
+        "Uses the inspect result that supplies the item level, so it sends no request of its own. Your own specialization needs none."),
     Bool("ownedMount", "Collection marker on native mount tooltips", true),
     Bool("guildRank", "Guild rank", true),
     Bool("unitMount", "Currently ridden mount in unit tooltips (out of combat)", true),
     Bool("unitMountOwned", "Collection marker for the hovered mount", true),
     Bool("target", "Hovered unit target", true),
     Bool("selfTarget", "Highlight targets that are you", true),
+    B.Tooltip(Bool("mythicForces", "Mythic+ enemy forces on enemy tooltips (in keystones)", true),
+        "Shows the share of the keystone's enemy forces that an enemy gives, while a Mythic+ keystone is running and Blizzard shows no such line itself."),
     Bool("hideHealth", "Hide unit tooltip health bar"),
     Bool("maxStack", "Item maximum stack", true),
     Bool("iconID", "Item and spell icon file IDs"),
+    B.Tooltip(Choice("borderColor", "Tooltip border color", 1, { "Keep", "Item quality", "Class or reaction", "Both" }),
+        "Item tooltips take the color of the item quality, unit tooltips the class color of a player or the reaction color of any other unit. Keep leaves the border as it is. The Suite skin's tooltip border takes the color too."),
+    B.Tooltip(Bool("hideFaction", "Hide the faction line"), HIDDEN_LINE),
+    B.Tooltip(Bool("hidePvP", "Hide the PvP line"), HIDDEN_LINE),
+    B.Tooltip(Bool("hideRealm", "Hide realm names"), HIDDEN_LINE),
+    B.Tooltip(Bool("hideGuild", "Hide the guild line"), HIDDEN_LINE),
 })
 do
     local rules = NS.SuiteCatalog.tooltipDetails.rules
@@ -118,6 +133,7 @@ do
     -- mover, profile import and undo.
     rules.fixedX.hidden, rules.fixedY.hidden = true, true
     rules.inspectHovered.enableKey = "itemLevel"
+    rules.spec.enableKey = "itemLevel"
     rules.selfTarget.enableKey = "target"
     rules.cursorX.requiresChoice = { key = "anchor", values = { [2] = true } }
     rules.cursorY.requiresChoice = { key = "anchor", values = { [2] = true } }

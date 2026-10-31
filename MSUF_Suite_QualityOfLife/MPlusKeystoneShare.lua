@@ -1,11 +1,27 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
+local Sources, Teleport = P.KeystoneSources, P.KeystoneTeleport
 local IN_COMBAT = { inCombat = true }
 
-local M = { rows = {}, page = 1 }
-local Command
+-- rows maps a player to the listed text, entries to the answer behind it
+-- (rowCount counts the answering players); layout is the window's geometry,
+-- shared with the teleport buttons over the rows.
+local M = { rows = {}, entries = {}, rowMaps = {}, rowCount = 0, page = 1,
+    layout = { rows = 12, top = 48, step = 27, inset = 16, iconRoom = 26 } }
+local Command, RefreshGroup
 local COMMAND = "MSUFSUITEKEYS"
 local PREFIX = "MSUFKEY1"
+-- Seconds, except MAX_ANSWERS.
+local REQUEST_COOLDOWN = 2   -- between two requests
+local RESPONSE_COOLDOWN = 5  -- between two answers to the Suite protocol's request
+local ANSWER_WINDOW = 5      -- answers over the Suite protocol count this long after a request
+local SOURCE_WINDOW = 12     -- other addons' libraries answer more slowly
+local GROUP_SETTLE = 3       -- the roster stays quiet this long before the list is asked again
+local MAX_ANSWERS = 100
+
+-- Precedence of equal answers: the Suite protocol, LibKeystone, LibOpenRaid.
+local RANK = {}
+for rank, source in ipairs(Sources.order) do RANK[source] = rank end
 
 -- /keys stays with another keystone addon whenever one owns it
 -- (SlashCommands.lua follows the client's slash hash and proxy).
@@ -40,80 +56,200 @@ local function GuildChannel()
     return S.Public(guild) and guild == true and "GUILD" or nil
 end
 
+-- The window is a plain frame and scales in combat too; the teleport layer
+-- follows it (MPlusKeystoneTeleport.lua).
+local function ApplyScale(self, scale)
+    if self.appliedScale == scale then return end
+    self.appliedScale = scale
+    self.host:SetScale(scale)
+    Teleport.Follow(self)
+end
+
+-- "Suite 2, LibKeystone 1": the answering players by the source they answered
+-- through, in the order of precedence.
+local function AnswerSources(self)
+    local counts, parts = {}, {}
+    for _, entry in pairs(self.entries) do
+        if entry.source then counts[entry.source] = (counts[entry.source] or 0) + 1 end
+    end
+    for _, source in ipairs(Sources.order) do
+        if counts[source] then parts[#parts + 1] = source .. " " .. counts[source] end
+    end
+    return table.concat(parts, ", ")
+end
+
+-- Before the first request the window shows its original line.
+local function StatusText(self, pages)
+    if not self.requestMode then
+        return string.format(S.Text("Page %d/%d · Suite users who answered this request"), self.page, pages)
+    end
+    if self.rowCount == 0 then
+        return string.format(S.Text("Page %d/%d · No answers yet"), self.page, pages)
+    end
+    return string.format(S.Text("Page %d/%d · Players who answered: %d (%s)"),
+        self.page, pages, self.rowCount, AnswerSources(self))
+end
+
 local function PaintWindow(self)
     if not self.host then return end
     local c = self.config or {}
-    self.host:SetScale((c.windowScale or 100) / 100)
+    ApplyScale(self, (c.windowScale or 100) / 100)
     local size = c.fontSize or 14
     local rows = {}
     for name, key in pairs(self.rows) do rows[#rows + 1] = { name, key } end
     table.sort(rows, function(a, b) return a[1] < b[1] end)
-    local pages = math.max(1, math.ceil(#rows / 12))
+    local perPage = self.layout.rows
+    local pages = math.max(1, math.ceil(#rows / perPage))
     self.page = math.min(self.page or 1, pages)
-    for i = 1, 12 do
-        local row = rows[(self.page - 1) * 12 + i]
+    for i = 1, perPage do
+        local row = rows[(self.page - 1) * perPage + i]
         local label = self.labels[i]
         S.SetStyledFont(label, S.GlobalFontPath(), size, "OUTLINE", 1, true, 70, 1)
         label:SetText(row and (row[1] .. "  ·  " .. row[2]) or "")
+        local entry = row and self.entries[row[1]]
+        self.rowMaps[i] = entry and entry.mapID or nil
     end
-    self.status:SetText(string.format(S.Text("Page %d/%d · Suite users who answered this request"), self.page, pages))
+    self.status:SetText(StatusText(self, pages))
+    -- Combat locks the teleport buttons; PLAYER_REGEN_ENABLED paints again (AfterCombat).
+    Teleport.Paint(self, self.rowMaps)
+end
+
+-- The end of combat paints a shown window again and lets the teleport layer
+-- catch up with a window that moved, scaled, opened or closed in combat.
+local function AfterCombat(self)
+    if self.host:IsShown() then
+        PaintWindow(self)
+    else
+        self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+    end
+    Teleport.CombatEnded(self)
+end
+
+local function CreateWindow(self)
+    local host = S.CreateFrame("Frame", "MSUFSuiteKeystones", UIParent)
+    host:SetSize(480, 414)
+    host:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    host:SetFrameStrata("DIALOG")
+    host:SetClampedToScreen(true)
+    host:SetMovable(true)
+    host:EnableMouse(true)
+    host:RegisterForDrag("LeftButton")
+    -- The teleport layer follows the window outside combat (MPlusKeystoneTeleport.lua).
+    host:SetScript("OnDragStart", function()
+        host:StartMoving()
+        Teleport.Follow(self, true)
+    end)
+    host:SetScript("OnDragStop", function()
+        host:StopMovingOrSizing()
+        Teleport.Follow(self)
+    end)
+    host:SetScript("OnShow", function() Teleport.Follow(self) end)
+    -- The window listens to the roster and to the end of combat only while it
+    -- is shown; after a close in combat the end of combat still hides the
+    -- teleport layer (AfterCombat).
+    host:SetScript("OnHide", function()
+        self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
+        if not Teleport.Follow(self) then self.context:RemoveEvent("PLAYER_REGEN_ENABLED") end
+    end)
+    local back = S.CreateTexture(host, nil, "BACKGROUND")
+    back:SetAllPoints(host)
+    back:SetColorTexture(.04, .05, .07, .97)
+    self.host, self.labels = host, {}
+    local function Button(label, x, action)
+        local button = S.CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
+        button:SetSize(83, 24)
+        button:SetPoint("TOPLEFT", x, -12)
+        button:SetText(S.Text(label))
+        button:SetScript("OnClick", action)
+    end
+    Button("Party keys", 12, function() Command("group") end)
+    Button("Guild keys", 104, function() Command("guild") end)
+    Button("Previous", 196, function()
+        self.page = math.max(1, self.page - 1)
+        PaintWindow(self)
+    end)
+    Button("Next", 288, function()
+        self.page = self.page + 1
+        PaintWindow(self)
+    end)
+    Button("Close", 380, function() host:Hide() end)
+    local layout = self.layout
+    for i = 1, layout.rows do
+        local y = -layout.top - (i - 1) * layout.step
+        local label = S.CreateFontString(host, nil, "OVERLAY")
+        label:SetPoint("TOPLEFT", layout.inset, y)
+        label:SetPoint("TOPRIGHT", -layout.inset - layout.iconRoom, y)
+        label:SetJustifyH("LEFT")
+        label:SetWordWrap(false)
+        self.labels[i] = label
+    end
+    self.status = S.CreateFontString(host, nil, "OVERLAY")
+    self.status:SetPoint("BOTTOMLEFT", 16, 15)
+    S.SetStyledFont(self.status, S.GlobalFontPath(), 11, "OUTLINE", 1, true, 70, 1)
+    -- Escape closes the window like Blizzard's own panels.
+    table.insert(UISpecialFrames, "MSUFSuiteKeystones")
 end
 
 local function ShowWindow(self)
-    if not self.host then
-        local host = S.CreateFrame("Frame", "MSUFSuiteKeystones", UIParent)
-        host:SetSize(480, 414)
-        host:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-        host:SetFrameStrata("DIALOG")
-        host:SetClampedToScreen(true)
-        host:SetMovable(true)
-        host:EnableMouse(true)
-        host:RegisterForDrag("LeftButton")
-        host:SetScript("OnDragStart", function() host:StartMoving() end)
-        host:SetScript("OnDragStop", function() host:StopMovingOrSizing() end)
-        local back = S.CreateTexture(host, nil, "BACKGROUND")
-        back:SetAllPoints(host)
-        back:SetColorTexture(.04, .05, .07, .97)
-        self.host, self.labels = host, {}
-        local function Button(label, x, action)
-            local button = S.CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
-            button:SetSize(83, 24)
-            button:SetPoint("TOPLEFT", x, -12)
-            button:SetText(S.Text(label))
-            button:SetScript("OnClick", action)
-        end
-        Button("Party keys", 12, function() Command("group") end)
-        Button("Guild keys", 104, function() Command("guild") end)
-        Button("Previous", 196, function()
-            self.page = math.max(1, self.page - 1)
-            PaintWindow(self)
-        end)
-        Button("Next", 288, function()
-            self.page = self.page + 1
-            PaintWindow(self)
-        end)
-        Button("Close", 380, function() host:Hide() end)
-        for i = 1, 12 do
-            local label = S.CreateFontString(host, nil, "OVERLAY")
-            label:SetPoint("TOPLEFT", 16, -48 - (i - 1) * 27)
-            label:SetPoint("TOPRIGHT", -16, -48 - (i - 1) * 27)
-            label:SetJustifyH("LEFT")
-            label:SetWordWrap(false)
-            self.labels[i] = label
-        end
-        self.status = S.CreateFontString(host, nil, "OVERLAY")
-        self.status:SetPoint("BOTTOMLEFT", 16, 15)
-        S.SetStyledFont(self.status, S.GlobalFontPath(), 11, "OUTLINE", 1, true, 70, 1)
-        -- Escape closes the window like Blizzard's own panels.
-        table.insert(UISpecialFrames, "MSUFSuiteKeystones")
-    end
+    if not self.host then CreateWindow(self) end
+    Teleport.Reset(self)
+    self.context:Event("PLAYER_REGEN_ENABLED", AfterCombat, IN_COMBAT)
     PaintWindow(self)
     self.host:Show()
 end
 
 local function AddOwn(self)
-    local text = OwnKeystone()
-    self.rows[S.Text("You")] = text or S.Text("No owned keystone found")
+    local text, mapID, level = OwnKeystone()
+    local you = S.Text("You")
+    self.rows[you] = text or S.Text("No owned keystone found")
+    self.entries[you] = mapID and { mapID = mapID, level = level } or nil
+end
+
+-- The "Name-Realm" of a sender (a bare name is a player of the own realm), or
+-- nil for an unreadable sender and for the player itself.
+local function PeerName(sender)
+    if not S.PublicText(sender) then return nil end
+    local ownName, ownRealm = UnitFullName("player")
+    local realm = S.PublicText(ownRealm)
+    if realm and not sender:find("-", 1, true) then sender = sender .. "-" .. realm end
+    if S.PublicText(ownName) and (sender == ownName or (realm and sender == ownName .. "-" .. realm)) then
+        return nil
+    end
+    return sender
+end
+
+local function ValidKey(mapID, level)
+    return S.Finite(mapID) and mapID >= 1 and mapID <= 100000 and mapID == math.floor(mapID)
+        and S.Finite(level) and level >= 2 and level <= 99 and level == math.floor(level)
+end
+
+-- A newer answer replaces an older one, and so does an equal moment's answer
+-- of a source with precedence; the same key from a source with precedence
+-- only changes the source credited with it.
+local function Supersedes(old, mapID, level, rank, now)
+    if old.mapID == mapID and old.level == level then return rank < old.rank end
+    return now > old.at or now == old.at and rank < old.rank
+end
+
+-- The one way in of every source: one entry per player (peer is a PeerName).
+-- Says in chat when a key is new or changed, if the request asked for that.
+local function Take(self, peer, mapID, level, source, now)
+    local dungeon
+    if peer and ValidKey(mapID, level) then dungeon = S.PublicText(C_ChallengeMode.GetMapUIInfo(mapID)) end
+    if not dungeon then return end
+    local old, rank = self.entries[peer], RANK[source]
+    if old then
+        if not Supersedes(old, mapID, level, rank, now) then return end
+    elseif self.rowCount >= MAX_ANSWERS then
+        return
+    else
+        self.rowCount = self.rowCount + 1
+    end
+    local changed = not old or old.mapID ~= mapID or old.level ~= level
+    self.entries[peer] = { mapID = mapID, level = level, source = source, rank = rank, at = now }
+    self.rows[peer] = dungeon .. " +" .. level
+    PaintWindow(self)
+    if changed and self.announce then S.Print(string.format(S.Text("%s: %s +%d"), peer, dungeon, level)) end
 end
 
 local function OnAddonMessage(self, _, prefix, payload, channel, sender)
@@ -121,16 +257,15 @@ local function OnAddonMessage(self, _, prefix, payload, channel, sender)
         or not S.PublicText(payload) or not S.PublicText(channel)
         or not S.PublicText(sender) then return end
     if channel ~= "PARTY" and channel ~= "RAID" and channel ~= "INSTANCE_CHAT" and channel ~= "GUILD" then return end
-    local ownName, ownRealm = UnitFullName("player")
-    if S.PublicText(ownName) and (sender == ownName
-        or (S.PublicText(ownRealm) and sender == ownName .. "-" .. ownRealm)) then return end
+    local peer = PeerName(sender)
+    if not peer then return end
     local current
     if channel == "GUILD" then current = GuildChannel() else current = GroupChannel() end
     if not current or channel ~= current then return end
     local now = GetTime()
     if not S.Finite(now) then return end
     if payload == "Q" then
-        if self.lastResponseAt and now - self.lastResponseAt < 5 then return end
+        if self.lastResponseAt and now - self.lastResponseAt < RESPONSE_COOLDOWN then return end
         local _, mapID, level = OwnKeystone()
         if not mapID then return end
         self.lastResponseAt = now
@@ -139,24 +274,31 @@ local function OnAddonMessage(self, _, prefix, payload, channel, sender)
     end
     if not self.requestExpiresAt or now > self.requestExpiresAt or channel ~= self.requestChannel then return end
     local mapText, levelText = payload:match("^K:(%d+):(%d+)$")
-    local mapID, level = tonumber(mapText), tonumber(levelText)
-    if not S.Finite(mapID) or mapID < 1 or mapID > 100000
-        or not S.Finite(level) or level < 2 or level > 99
-        or self.seen[sender] then return end
-    local name = S.PublicText(C_ChallengeMode.GetMapUIInfo(mapID))
-    if not name then return end
-    if (self.rowCount or 0) >= 100 then return end
-    self.seen[sender] = true
-    self.rowCount = (self.rowCount or 0) + 1
-    self.rows[sender] = name .. " +" .. level
-    PaintWindow(self)
-    S.Print(string.format(S.Text("%s: %s +%d"), sender, name, level))
+    Take(self, peer, tonumber(mapText), tonumber(levelText), Sources.SUITE, now)
 end
 
-local function RequestKeys(mode)
+-- The libraries of other addons answer a request through P.KeystoneSources.
+-- scope says whether an answer belongs to a group or to a guild request.
+local function OnSourceAnswer(source, name, mapID, level, scope)
+    local now = GetTime()
+    if not M.active or not S.Finite(now) or not M.sourcesExpireAt or now > M.sourcesExpireAt
+        or scope ~= M.requestMode then return end
+    Take(M, PeerName(name), mapID, level, source, now)
+end
+
+-- A roster change asks again after it settled; the cooldown of RequestKeys
+-- still holds.
+local function OnRosterChanged(self)
+    self.context:After(GROUP_SETTLE, RefreshGroup)
+end
+
+-- mode is "group" or "guild". quiet is a request of the window itself after
+-- a roster change: it leaves the chat alone.
+local function RequestKeys(mode, quiet)
     local channel
     if mode == "guild" then channel = GuildChannel() else channel = GroupChannel() end
     if not channel then
+        if quiet then return end
         if mode == "guild" then
             S.Print(S.Text("Join a guild to request Suite keystones"))
         else
@@ -165,19 +307,34 @@ local function RequestKeys(mode)
         return
     end
     local now = GetTime()
-    if not S.Finite(now) or (M.lastRequestAt and now - M.lastRequestAt < 2) then return end
-    M.lastRequestAt, M.requestExpiresAt, M.seen = now, now + 5, {}
-    M.requestChannel, M.rows, M.rowCount, M.page = channel, {}, 0, 1
+    if not S.Finite(now) or (M.lastRequestAt and now - M.lastRequestAt < REQUEST_COOLDOWN) then return end
+    M.lastRequestAt, M.requestExpiresAt, M.sourcesExpireAt = now, now + ANSWER_WINDOW, nil
+    M.requestChannel, M.requestMode, M.announce = channel, mode, not quiet
+    M.rows, M.entries, M.rowCount, M.page = {}, {}, 0, 1
+    if mode == "group" then
+        M.context:Event("GROUP_ROSTER_UPDATE", OnRosterChanged, IN_COMBAT)
+    else
+        M.context:RemoveEvent("GROUP_ROSTER_UPDATE")
+    end
     AddOwn(M)
     ShowWindow(M)
     local own = OwnKeystone()
-    if own then S.Print(own) end
+    if own and not quiet then S.Print(own) end
     -- Addon messages report a lockdown or throttle as a result; nothing raises.
     local sent = C_ChatInfo.SendAddonMessage(PREFIX, "Q", channel)
     if not S.Public(sent) or sent ~= Enum.SendAddonMessageResult.Success then
         M.requestExpiresAt = nil
-        S.Print(S.Text("Keystone requests cannot be sent right now; the window lists only your own key."))
+        if not quiet then
+            S.Print(S.Text("Keystone requests cannot be sent right now; the window lists only your own key."))
+        end
+        return
     end
+    if M.config and M.config.otherAddons == false then return end
+    if Sources.Request(mode, OnSourceAnswer) > 0 then M.sourcesExpireAt = now + SOURCE_WINDOW end
+end
+
+RefreshGroup = function(self)
+    if self.requestMode == "group" and self.host and self.host:IsShown() then RequestKeys("group", true) end
 end
 
 Command = function(message)
@@ -282,11 +439,13 @@ function M:Refresh()
 end
 
 function M:Disable()
+    -- Hiding the window drops its roster and combat events.
     if self.host then self.host:Hide() end
-    self.rows, self.requestChannel = {}, nil
+    self.rows, self.entries, self.rowCount, self.requestChannel, self.requestMode = {}, {}, 0, nil, nil
     self.context:RemoveEvent("CHAT_MSG_ADDON")
     self.context:RemoveEvent("ADDON_LOADED")
-    self.requestExpiresAt, self.seen, self.lastResponseAt, self.lastRequestAt = nil, nil, nil, nil
+    self.requestExpiresAt, self.sourcesExpireAt, self.lastResponseAt, self.lastRequestAt = nil, nil, nil, nil
+    Sources.Detach()
     S.UnregisterSlash(COMMAND, Command)
 end
 

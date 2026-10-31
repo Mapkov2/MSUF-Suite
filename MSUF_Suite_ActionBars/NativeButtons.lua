@@ -21,17 +21,21 @@ local function InvalidateFeedback(rec)
     rec.feedbackInactive, rec.feedbackNeutral, rec.feedbackSlot = nil, nil, nil
 end
 
-local function Inactive(info)
-    if IsSecret(info) or type(info) ~= "table" then return false end
-    local active = info.isActive
-    return not IsSecret(active) and active == false
-end
-
 -- 2026-10-26 M+ trace: neutral native buttons paid five C calls per walk.
 -- SpellSharedDocumentation marks all three isActive fields NeverSecret;
 -- time fields may still be secret. GCD activity stays on the old path.
 local function NativeCooldownPost(rec, info, chargeInfo, lossInfo)
-    local inactive = Inactive(info) and Inactive(chargeInfo) and Inactive(lossInfo)
+    local active, chargeActive, lossActive
+    if not IsSecret(info) and type(info) == "table" then active = info.isActive end
+    local inactive = not IsSecret(active) and active == false
+    if inactive then
+        if not IsSecret(chargeInfo) and type(chargeInfo) == "table" then chargeActive = chargeInfo.isActive end
+        inactive = not IsSecret(chargeActive) and chargeActive == false
+    end
+    if inactive then
+        if not IsSecret(lossInfo) and type(lossInfo) == "table" then lossActive = lossInfo.isActive end
+        inactive = not IsSecret(lossActive) and lossActive == false
+    end
     if not inactive or rec.feedbackSlot ~= rec.slot then rec.feedbackNeutral = nil end
     rec.feedbackInactive, rec.feedbackSlot = inactive, rec.slot
 end
@@ -84,27 +88,48 @@ local function NativeState(rec)
     if not M.config.castHighlight then rec.button:SetChecked(false) end
 end
 
-local function NativeUsablePost(button)
+local function NativeUsablePost(button, usable, noMana)
     local rec = AB.records[button]
     if not rec or not rec.native or not M.active then return end
+    -- Blizzard paints the state now: the cached one is old until the suite
+    -- reads it again below (the preview asks, S.ActionBarPreviewTint).
+    rec.usable = nil
     -- Level-link usability paint can desaturate an inactive icon again.
     rec.feedbackNeutral = nil
     -- Blizzard has already painted usable state. Only an active range
     -- override needs reapplying; another IsUsableAction call here would
     -- duplicate the native call on every usable update.
+    if rec.bar.paintDormant then return end
     if rec.outOfRange then
         rec.tint = nil
         Tint(rec)
+    elseif AB.style.customTints then
+        -- Custom usability colors: Blizzard's payload says which one, so
+        -- only an update without payload (it read the answer itself) asks again.
+        rec.tint = nil
+        if noMana == nil then usable = nil end
+        Usable(rec, usable, noMana)
     end
+end
+
+local function CatchUpState(rec)
+    if not M.config.castHighlight then NativeState(rec) end
+    local checked = rec.button:GetChecked()
+    rec.decorChecked = Public(checked) and checked == true
+    AB.UpdateDecorState(rec)
+    rec.nativeStateDirty = nil
 end
 
 local function NativeStatePost(button)
     local rec = AB.records[button]
     if rec and rec.native and M.active then
-        if not M.config.castHighlight then NativeState(rec) end
-        local checked = button:GetChecked()
-        rec.decorChecked = Public(checked) and checked == true
-        AB.UpdateDecorState(rec)
+        -- Native state keeps changing while a mouseover bar is faded. Its
+        -- decoration catches up in the existing synchronous reveal pass.
+        if rec.bar.paintDormant then
+            rec.nativeStateDirty = true
+            return
+        end
+        CatchUpState(rec)
     end
 end
 
@@ -130,14 +155,14 @@ end
 -- Blizzard runs these post-hooks inside its own call chains (button
 -- updates, the alert manager): each runs isolated, so an error is reported
 -- and never stops Blizzard's caller.
-local function NativeUsableHook(button) Dispatch(NativeUsablePost, button) end
+local function NativeUsableHook(button, _, usable, noMana) Dispatch(NativeUsablePost, button, usable, noMana) end
 local function NativeStateHook(button) Dispatch(NativeStatePost, button) end
 local function NativeCountdownHook(button) Dispatch(NativeCountdownPost, button) end
 local function NativeAlertHook(manager, button) Dispatch(NativeAlertPost, manager, button) end
 local function NativeCooldownHook(normal, info, charge, chargeInfo, loss, lossInfo)
-    if not M.active or AB.directDuration or IsSecret(normal) then return end
+    if not M.active or AB.directDuration or AB.nativeFeedbackVisible == false or IsSecret(normal) then return end
     local rec = cooldownOwners[normal]
-    if rec then Dispatch(NativeCooldownPost, rec, info, chargeInfo, lossInfo) end
+    if rec and not rec.bar.paintDormant then Dispatch(NativeCooldownPost, rec, info, chargeInfo, lossInfo) end
 end
 local function NativeInvalidateHook(button) Dispatch(NativeInvalidatePost, button) end
 
@@ -154,7 +179,7 @@ end
 local function NativeColor(rec)
     local wasRangeTint = rec.tint == OUT_OF_RANGE
     AcquireRange(rec)
-    if M.config.rangeColoring or wasRangeTint then
+    if M.config.rangeColoring or wasRangeTint or AB.style.customTints then
         rec.tint = nil
         Usable(rec)
     end
@@ -174,7 +199,11 @@ local function RefreshNativeButton(rec)
     end
     NativeColor(rec)
     NativeCount(rec)
-    NativeState(rec)
+    if rec.nativeStateDirty and M.active and not rec.bar.paintDormant then
+        Dispatch(CatchUpState, rec)
+    else
+        NativeState(rec)
+    end
     NativeFeedback(rec)
     if M.config.procGlow == PROC_PIXEL then
         GlowCheck(rec)
@@ -195,12 +224,13 @@ function AB.RefreshNative()
     end
 end
 
--- A range color change: buttons tinted out of range take the new color.
+-- A color change (range or usability): a tinted button takes the new colors.
+-- A suite button knows its usability (rec.usable); a reused Blizzard button
+-- reads it once, and only when the suite tints it at all.
 local function Retint(rec)
-    if rec.outOfRange then
-        rec.tint = nil
-        Tint(rec)
-    end
+    if rec.native and rec.tint == nil and not AB.style.customTints then return end
+    rec.tint = nil
+    if rec.native then Usable(rec) else Tint(rec) end
 end
 
 AB.NativeButtons = {

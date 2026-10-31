@@ -28,6 +28,12 @@ def problems(locale, english, text):
     return " | ".join(tool.check_entry(locale, english, text))
 
 
+# Long literals must yield the same key as Lua on CRLF worktrees and LF checkouts.
+for ending in ("\n", "\r\n", "\r", "\n\r"):
+    tokens = tool.lex("[[First" + ending + "Second]]")
+    check([token.value for token in tokens if token.kind == "str"] == ["First\nSecond"],
+          "long-string newlines differ from Lua 5.1: " + repr(ending))
+
 # A trailing space joins the following text; full-width CJK punctuation needs none.
 check(problems("deDE", "Loot: ", "Beute: ") == "", "a correct translation with its trailing space was flagged")
 check("ends with a space" in problems("deDE", "Loot: ", "Beute:"), "a dropped trailing space was not flagged")
@@ -50,6 +56,114 @@ check(tool.english_problems("/keys [self|raid]"), "|r without a color was not fl
 check(not tool.english_problems("|cff00ff00Ready|r and a|b, Primary | secondary, Vertical bar |"),
       "complete escapes or displayed pipes were flagged")
 check(not tool.english_problems("%d%% done"), "a format string with %% was flagged")
+
+# A catalog's summary ranks settings; help summaries on pages are visible prose.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    catalog = tree / "MSUF_Suite/Core/Catalog/Test.lua"
+    catalog.parent.mkdir(parents=True)
+    catalog.write_text('local _, NS = ...\nNS.Text(data.summary)\nlocal spec = { summary = "width height privateKey" }\n', encoding="utf-8")
+    page = tree / "MSUF_Suite_Options/Pages/Test.lua"
+    page.parent.mkdir(parents=True)
+    page.write_text('local _, P = ...\nP.Tr(help.summary)\nlocal help = { summary = "Visible help summary" }\n', encoding="utf-8")
+    catalog.write_text(catalog.read_text(encoding="utf-8") +
+        'B.Color("accent", "Visible color label", "ffffff")\n' +
+        'B.Texture("fill", "Visible texture label", "")\n' +
+        'NS.Text("Complete " .. "literal sentence.")\n' +
+        'NS.Text("Dynamic fragment " .. userName)\n', encoding="utf-8")
+    renderer = tree / "MSUF_Suite/Core/Renderer.lua"
+    renderer.write_text('local function Color(layer, role) return role end\nColor("OVERLAY", "ARTWORK")\n' +
+        'local function Font(key, label) NS.Text(key) end\n', encoding="utf-8")
+    catalog.write_text(catalog.read_text(encoding="utf-8") +
+        'local Font = B.Font\nFont("private" .. suffix, "Visible font label")\n', encoding="utf-8")
+    caption = tree / "MSUF_Suite/Core/Catalog/Caption.lua"
+    caption.write_text('local function Font(text) NS.Text(text) end\nFont("Visible real font caption")\n', encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    found = extractor.found
+    check("Visible color label" in found and "Visible texture label" in found, "catalog color or texture labels disappeared")
+    check("Visible font label" in found, "catalog font label disappeared")
+    check("Visible real font caption" in found, "a real local Font caption was hidden by a builder exception")
+    check(not any(row[2].endswith("Font#0") for row in extractor.dynamic), "catalog font key became translated text")
+    check("Complete literal sentence." in found, "static literal concatenation lost the whole translation key")
+    check(any(row[-1] == "literal" for row in extractor.dynamic), "dynamic fragment stopped being rejected")
+    check("ARTWORK" not in found and "OVERLAY" not in found, "rendering color helpers were treated as catalog labels")
+    check("width height privateKey" not in found, "catalog ranking keys were treated as translated prose")
+    check("Visible help summary" in found, "authored help summary stopped being translated")
+
+# A private table's named fields cannot borrow the translation shape of
+# an unrelated global field. This is the real ProfileVariants UseBase shape:
+# a forward function result is projected through a private snapshot wrapper.
+with tempfile.TemporaryDirectory() as directory:
+    tree = Path(directory)
+    source = tree / "MSUF_Suite/Core/FieldOwnership.lua"
+    source.parent.mkdir(parents=True)
+    source.write_text("""
+local _, NS = ...
+local Project
+local function CheckedValue(value) return value end
+local function UseBase(modules)
+    local snapshot
+    if enabled then
+        local projected = Project(modules)
+        snapshot = { projectedValues = projected }
+    else
+        snapshot = NS.UnknownSnapshot()
+        if not snapshot then return end
+    end
+    for _, value in pairs(snapshot.projectedValues) do Consume(value) end
+end
+Project = function(source)
+    local result = {}
+    for key, value in pairs(source) do result[key] = CheckedValue(value) end
+    return result
+end
+CheckedValue("Private enum payload")
+CheckedValue("Private setting key")
+UseBase(storedModules)
+for _, label in pairs(NS.visible.projectedValues) do NS.Text(label) end
+NS.visible = { projectedValues = { "Visible global list label" } }
+
+local record = { caption = "Visible local record label" }
+NS.Text(record.caption)
+local function Render(row) NS.Text(row.caption) end
+Render({ caption = "Visible parameter record label" })
+NS.Text(NS.unknown.caption)
+NS.caption = "Visible opaque namespace label"
+local returned = { caption = "Visible returned record label" }
+local function Get() return returned end
+NS.Text(Get().caption)
+local exported = { caption = "Visible exported record label" }
+NS.exported = exported
+local passed = { caption = "Visible passed record label" }
+Render(passed)
+local aliased = { caption = "Visible alias record label" }
+local alias = aliased
+NS.Text(alias.caption)
+local captured = { caption = "Visible closure record label" }
+local function Callback() NS.Text(captured.caption) end
+Callback()
+NS.Render = function(text) NS.Text(text) end
+NS.Render("Visible global callback label")
+local mixed = {}
+mixed = NS.GetRow()
+NS.Text(mixed.opaqueCaption)
+NS.opaqueCaption = "Visible opaque reassignment label"
+local function RenderChild(row) NS.Text(row.childCaption) end
+local nested = { items = { childCaption = "Visible escaped subtable label" } }
+RenderChild(nested.items)
+local written = {}
+written.items = { childCaption = "Visible assigned subtable label" }
+RenderChild(written.items)
+""", encoding="utf-8")
+    extractor = tool.Extractor(tree).run()
+    for label in ("Visible global list label", "Visible local record label", "Visible parameter record label",
+                  "Visible opaque namespace label", "Visible returned record label", "Visible exported record label",
+                  "Visible passed record label", "Visible alias record label", "Visible closure record label",
+                  "Visible global callback label", "Visible opaque reassignment label",
+                  "Visible escaped subtable label", "Visible assigned subtable label"):
+        check(label in extractor.found, "field ownership lost " + label)
+    for value in ("Private enum payload", "Private setting key"):
+        check(value not in extractor.found, "an unrelated global field tainted " + value)
 
 # File-level checks run against a temporary locale folder.
 with tempfile.TemporaryDirectory() as folder:
@@ -101,7 +215,9 @@ for locale, label in shape_labels.items():
         suffix = " n=6" if "n=6" in key else ""
         check(" ".join(entries[key].split()) == label + suffix,
               "%s: %s is not the translated rounded-square shape" % (locale, key))
-check(tool.read_locale("deDE")["Preset"] != "Preset", "German preset label stays English")
+# The retired skin-only Preset key has no current Suite reader; it must not
+# linger as an orphan overriding a host-owned label.
+check("Preset" not in tool.read_locale("deDE"), "retired skin preset key remained in the Suite pack")
 
 # Localized native features must not leave their English names inside translated help.
 native_terms = ("Burning Rush", "Great Vault", "Raid Manager")

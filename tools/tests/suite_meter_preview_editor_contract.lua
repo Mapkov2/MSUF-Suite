@@ -39,12 +39,13 @@ local c = P.S.Config("damageMeter")
 local ui, paints = nil, 0
 -- Native window-shaped sample; the real runtime's anchors are checked by
 -- suite_meter_menu_preview_contract. Navigation uses the real host below.
-P.S.DamageMeterDrawMenuPreview = function(parent, index)
+P.S.DamageMeterDrawMenuPreview = function(parent, index, details)
     assert(ui.ctx.wrapper:IsVisible() and M.activeKey == "suite_damageMeter", "preview painted before its owning page was shown")
     paints = paints + 1
     if parent.meterTestWindow then
         local win = parent.meterTestWindow
         win.index = index
+        win.previewTimerShown, win.detailsSample = c.timer, details == true
         return win
     end
     local function Frame(kind, owner, width, height, x, y)
@@ -53,6 +54,10 @@ P.S.DamageMeterDrawMenuPreview = function(parent, index)
         return frame
     end
     local win = { frame = Frame("Frame", parent, 260, 170), buttons = {}, rows = {}, capacity = 3, overall = false }
+    win.panel = Frame("Button", win.frame, 258, 148)
+    win.detailsSample = details == true
+    win.sampleTimer = Frame("Frame", parent, 104, 34)
+    win.previewTimerShown = c.timer
     win.header, win.body = Frame("Button", win.frame, 260, 22), Frame("Frame", win.frame, 258, 148, 1, -23)
     win.title, win.timer = win.header:CreateFontString(), win.header:CreateFontString()
     win.title:SetSize(100, 18); win.timer:SetSize(30, 18)
@@ -94,7 +99,7 @@ local function Capturing()
     for _, element in ipairs(preview.handles) do if element.keyboardOn then return true end end
     return false
 end
-assert(targets and preview.selection and #preview.layerButtons == 9, "interactive preview did not build")
+assert(targets and preview.selection and #preview.layerButtons == 11, "interactive preview did not build")
 assert(preview.selected() == 1 and paints > 0, "initial window 1 preview required a picker change")
 local priorPaints = paints
 assert(M.SelectPage("home"))
@@ -171,6 +176,40 @@ glossToggle:GetScript("OnClick")(glossToggle)
 mw:RunTimers()
 assert(c.glossEnabled == false and not P.RuleEnabled("damageMeter", glossRules.glossStrength), "Gloss toggle did not turn off the saved model and gate")
 Suite.HostBridge.GlossTexture = savedGlossTexture
+-- Each new section must be reachable through the real lazy workspace and
+-- its exact control identity; font roles and texture dependencies remain usable.
+for _, spec in ipairs({ { "surfaces", "bgTextured" }, { "borders", "borderStyle" },
+    { "iconBorder", "iconBorderCustom" }, { "separators", "rowSeparators" },
+    { "namesFont", "namesFontCustom" }, { "valuesFont", "valuesFontCustom" },
+    { "headerFont", "headerFontCustom" }, { "detailsFont", "detailsFontCustom" },
+    { "timerFont", "timerFontCustom" }, { "timerDock", "timerAnchor" } }) do
+    local section = "suite_damageMeter_" .. spec[1]
+    assert(ui:Focus(section), "styling section cannot be opened: " .. section)
+    mw:RunTimers()
+    local exact = P.Meta("suite_damageMeter", "damageMeter", spec[2], "setting", section)
+    local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_damageMeter", exact)
+    assert(widget and widget:IsVisible(), "styling control is missing or hidden: " .. spec[2])
+end
+assert(not P.RuleEnabled("damageMeter", glossRules.bgTexture), "texture picker enabled before its switch")
+assert(P.Set("damageMeter", "bgTextured", true))
+assert(P.RuleEnabled("damageMeter", glossRules.bgTexture), "texture picker never enabled")
+assert(P.Set("damageMeter", "headerVisible", false))
+ui.refreshPreview()
+assert(not targets.header:IsShown() and not targets.title:IsShown() and not targets.timer:IsShown(), "hidden header kept preview hit areas")
+assert(P.Set("damageMeter", "headerVisible", true))
+ui.refreshPreview()
+assert(targets.header:IsShown() and targets.title:IsShown(), "restored header lost hit areas")
+assert(P.SetMany("damageMeter", { timer = true, timerAnchor = 1 }))
+ui.refreshPreview()
+local floating = assert(targets.floatingTimer, "floating timer preview has no settings handle")
+assert(floating:IsShown() and floating.sizeSetting == "timerSize", "floating timer preview cannot select its size")
+Click(floating, "timerSize", "suite_damageMeter_timer")
+assert(P.Set("damageMeter", "timerAnchor", 3))
+ui.refreshPreview()
+assert(floating:IsShown(), "docked timer lost its settings handle")
+assert(P.Set("damageMeter", "timer", false))
+ui.refreshPreview()
+assert(not floating:IsShown(), "disabled timer left a hit area")
 local selectedIndex = preview.selected
 -- Change the page's actual picker closure, then exercise real exact preparation.
 debug.setupvalue(selectedIndex, 1, 2)
@@ -338,9 +377,14 @@ targets.body:GetScript("OnMouseUp")(targets.body, "LeftButton")
 assert(c.w1X == prior and c.w2X == P.catalog.damageMeter.rules.w2X.default, "preview background moved a live window")
 assert(not preview.kit.drag and not targets.header.canMove, "window/header retained an Edit Mode drag")
 for _, button in ipairs(preview.layerButtons) do
-    local key = button.key
+    local key, previous = button.key, preview.layers[button.key]
     button:GetScript("OnClick")(button, "LeftButton")
-    assert(preview.layers[key] == false, "layer failed to turn off")
+    assert(preview.layers[key] == not previous, "layer failed to toggle")
+    if key == "details" then
+        assert(preview.stage.meterTestWindow.panel:IsShown() and not targets.rows[1].name:IsVisible(),
+            "details sample did not replace the main rows")
+        Click(targets.details, "detailsFontCustom", "suite_damageMeter_detailsFont")
+    end
     if key == "name" then
         assert(not targets.rows[1].name:IsShown() and targets.rows[1].value:IsShown(), "name layer hid its sibling")
     end

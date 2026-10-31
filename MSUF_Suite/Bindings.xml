@@ -75,4 +75,6 @@
 		if MSUFSuite and MSUFSuite.Suite and MSUFSuite.Suite.ToggleCombatStatsFPS then MSUFSuite.Suite.ToggleCombatStatsFPS() end
 	</Binding>
 	<Binding name="CLICK MSUFSuiteQuestItem:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="CLICK MSUFSuiteFishing:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
+	<Binding name="CLICK MSUFSuiteFishingLure:LeftButton" category="BINDING_HEADER_MSUFSUITE"/>
 </Bindings>

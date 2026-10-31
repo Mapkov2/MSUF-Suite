@@ -35,6 +35,8 @@ local function World()
         Text = function(text) return text end,
         Print = function(text) w.lines[#w.lines + 1] = text end,
         SetFont = function(frame, _, size, flags) frame.fontSize, frame.fontFlags = size, flags end,
+        -- The QoL bootstrap's S.PlaceHost: the same anchor point of the frame and the screen.
+        PlaceHost = function(frame, config) frame:SetPoint("CENTER", UIParent, "CENTER", config.x, config.y) end,
         Install = function(_, module) w.module = module end,
         CreateFrame = function(kind, _, parent)
             assert(kind == "MessageFrame" and parent == UIParent, "alerts must own their message frame")
@@ -66,7 +68,7 @@ local function World()
     ns.InCombat = Support.InCombat(root, function() return w.combat end)
     assert(loadfile(source))("MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
     w.module.active, w.module.context = true, context
-    w.module.config = { screen = true, sound = true, chat = true }
+    w.module.config = { screen = true, sound = true, chat = true, scale = 100, point = 5, x = 0, y = 55 }
     function w:Fire(event, ...)
         local route = assert(self.events[event], "missing route " .. event)
         route.callback(self.module, event, ...)
@@ -94,7 +96,8 @@ function cases.visibility()
     w:Fire("UNIT_DIED", "Alice-GUID")
     w:Check("Alice died")
     local f, message = w.screen, w.screen.messages[1]
-    assert(f.point[2] == UIParent and f.point[3] == "CENTER" and f.point[5] == 160,
+    -- The frame stands on the screen center, its top edge 160 above it as it always did.
+    assert(f.point[2] == UIParent and f.point[3] == "CENTER" and f.point[5] + f.height / 2 == 160,
         "death alert follows the movable raid-warning anchor instead of screen center")
     assert(f.fontSize == 36 and f.fontFlags == "OUTLINE", "death alert needs large outlined text")
     assert(message[1]:find("UI-RaidTargetingIcon_8", 1, true) and message[2] == 1 and message[3] == .2,

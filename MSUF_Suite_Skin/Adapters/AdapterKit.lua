@@ -37,6 +37,72 @@ function AdapterKit.Isolate(callback, ...)
     return Dispatch(Finish, callback, ...)
 end
 
+-- Hidden windows retain only their latest request per owner. The native
+-- OnShow wakes it once; clean reopens do no work and need no timer.
+local hiddenRequests = AdapterKit.WeakSet()
+local hiddenOrder = 0
+
+local function Hidden(frame)
+    local visible = Read(frame, "IsVisible")
+    if visible == nil then visible = Read(frame, "IsShown") end
+    return visible == false
+end
+
+AdapterKit.IsHidden = Hidden
+
+local function EarlierHidden(left, right)
+    local first, second = left.job, right.job
+    if first.priority ~= second.priority then return first.priority < second.priority end
+    return first.order < second.order
+end
+
+local function OnDeferredShow(frame)
+    local requests = hiddenRequests[frame]
+    if not requests or not next(requests) or Hidden(frame) then return end
+    local ready = {}
+    for owner, job in pairs(requests) do
+        ready[#ready + 1] = { owner = owner, job = job, revision = job.revision }
+    end
+    table.sort(ready, EarlierHidden)
+    for index = 1, #ready do
+        if Hidden(frame) then return end
+        local item = ready[index]
+        local job = requests[item.owner]
+        if job == item.job and job.revision == item.revision then
+            requests[item.owner] = nil
+            Dispatch(job.callback, job.a, job.b, job.c)
+        end
+    end
+end
+
+function AdapterKit.DeferHidden(frame, owner, callback, a, b, c, priority)
+    local requests = hiddenRequests[frame]
+    if not Hidden(frame) then
+        if requests then requests[owner] = nil end
+        return false
+    end
+    if not Safety.HasMethod(frame, "HookScript") then return false end
+    if not requests then
+        requests = {}
+        frame:HookScript("OnShow", OnDeferredShow)
+        hiddenRequests[frame] = requests
+    end
+    local job = requests[owner]
+    if not job then
+        hiddenOrder = hiddenOrder + 1
+        job = { order = hiddenOrder }
+        requests[owner] = job
+    end
+    job.priority = priority or 0
+    job.revision = (job.revision or 0) + 1
+    job.callback, job.a, job.b, job.c = callback, a, b, c
+    return true
+end
+
+function AdapterKit.CancelHidden(owner)
+    for _, requests in pairs(hiddenRequests) do requests[owner] = nil end
+end
+
 -- value, or nil when it is secret.
 local function PublicValue(value)
     if Public(value) then return value end
@@ -208,6 +274,7 @@ end
 
 -- Cancels every pass state.deferred marks as pending.
 function AdapterKit.CancelDeferred(state)
+    AdapterKit.CancelHidden(state)
     for key in pairs(state.deferred) do
         NS.CombatGate.Cancel(key)
         state.deferred[key] = nil

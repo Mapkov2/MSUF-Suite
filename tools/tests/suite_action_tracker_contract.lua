@@ -91,6 +91,7 @@ S.RGB = function() return .5, .6, .7 end
 S.ResolveFont = function() return nil end
 S.GlobalFontPath = function() return "Fonts\\FRIZQT__.TTF" end
 S.SetFont = function(fontString) fontString.font = true end
+S.QoLStyleText = function(fontString) fontString.font = true end
 local module, mover
 S.Install = function(id, value) assert(id == "actionTracker"); module = value end
 S.RegisterOwnedMover = function(id, element, spec)

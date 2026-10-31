@@ -18,12 +18,14 @@ local COOLDOWN_FAMILY, AURA_FAMILY = K.FAMILY.COOLDOWN, K.FAMILY.AURA
 local issecret = _G.issecretvalue
 
 -- countedSet: the counted entries by entry, for SPELL_UPDATE_USES routing.
+-- gated: entries shown only while usable (asked by the usable sweep, Effects.GateUsable).
 local Index = { bySpell = {}, byBase = {}, byCategory = {}, byItem = {}, byEquip = {}, countedSet = {},
     cooldown = {}, gcd = {}, charged = {}, counted = {}, ranged = {}, usable = {}, proc = {}, ready = {},
-    items = {}, bags = {}, aura = {}, overlay = {}, assist = {} }
+    items = {}, bags = {}, aura = {}, overlay = {}, assist = {}, gated = {} }
 C.Index = Index
 
-local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist" }
+local ARRAYS = { "cooldown", "gcd", "charged", "counted", "ranged", "usable", "proc", "ready", "items", "bags", "aura", "overlay", "assist",
+    "gated" }
 local MAPS = { "bySpell", "byBase", "byCategory", "byItem", "byEquip" }
 local pool = {}
 -- entry -> stamp of the last two-list ForSpell call that reached it.
@@ -105,6 +107,33 @@ local function AddCooldown(entry, view)
     if spell and view and view.assist then Push(Index.assist, entry) end
 end
 
+-- Rare per-spell choices route in a pass of their own, only while a choice
+-- of any specialization uses one (C.routedChoices, Settings.DecodeData):
+-- "Show only when usable" (the gate list), "Show only during a spell alert"
+-- (the alert events) and an item's use buff (its aura overlay).
+local function RouteChoices()
+    local plans, views = C.plans, C.views
+    for i = 1, #SLOTS do
+        local slot = SLOTS[i].key
+        local plan, view = plans[slot], views[slot]
+        if plan and view and plan.kind == COOLDOWN then
+            local entries = plan.entries
+            for j = 1, #entries do
+                local entry = entries[j]
+                local ov, spell, src = entry.ov, entry.spell, entry.src
+                if ov and src ~= "p" and entry.family == COOLDOWN_FAMILY then
+                    if ov.usableOnly and spell and (src == "i" or not (entry.equipSlot or src == "e")) then
+                        Push(Index.gated, entry)
+                    end
+                    if ov.procOnly and spell and not K.Pick(ov, view, "procGlow") then Push(Index.proc, entry) end
+                    if ov.itemAura and entry.hasAura and entry.auraIDs and not view.cooldownDuration
+                        and not K.Pick(ov, view, "showAura") then Push(Index.overlay, entry) end
+                end
+            end
+        end
+    end
+end
+
 function Index.Rebuild()
     Index.hasSharedTimeSpells = false
     Index.usableInterval = .2
@@ -138,6 +167,7 @@ function Index.Rebuild()
             end
         end
     end
+    if C.routedChoices then RouteChoices() end
     -- Aliases and categories can converge on the same current spell. Enable
     -- within-flush snapshots only when the cold routing plan has sharing.
     for _, list in pairs(Index.bySpell) do

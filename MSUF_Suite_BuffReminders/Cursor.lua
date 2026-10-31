@@ -35,7 +35,7 @@ local function ReturnToAnchor(self)
     if not cursor.driver then return end
     R.StopCursor(self)
     if not cursor.displaced or NS.IsCombatLocked() then return end
-    local point = self.config.point == 2 and "TOP" or "CENTER"
+    local point = R.ScreenPoint(self.config)
     local host = self.view.host
     host:ClearAllPoints()
     host:SetPoint(point, UIParent, point, self.config.x, self.config.y)

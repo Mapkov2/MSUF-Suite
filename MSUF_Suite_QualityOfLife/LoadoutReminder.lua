@@ -20,42 +20,10 @@ local function CancelHide(self)
     self.context:Cancel(HideReminder)
 end
 
--- The chosen loadout. GetActiveConfigID() is the spec's base config, which
--- stays the same when the player switches loadouts; the talent frame reads
--- the selection from GetLastSelectedSavedConfigID(specID) and the starter
--- build from GetStarterBuildActive() (Blizzard_ClassTalentsFrame.lua:236,
--- :1549). Without a saved selection the base config stands for the build;
--- 0 is the starter build, which a saved expectation reads as "any".
-local function SelectedBuild(specID)
-    if C_ClassTalents.GetStarterBuildActive() == true then return 0, S.Text("Starter build") end
-    local configID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
-    if not S.Finite(configID) or configID <= 0 then configID = C_ClassTalents.GetActiveConfigID() end
-    if not S.Finite(configID) or configID <= 0 then return 0, S.Text("Starter build") end
-    local info = C_Traits.GetConfigInfo(configID)
-    local buildName = S.Public(info) and type(info) == "table" and S.PublicText(info.name) or nil
-    return configID, buildName or S.Text("Starter build")
-end
+local Current = S.LoadoutSnapshot
 
-local function Current()
-    local specIndex = C_SpecializationInfo.GetSpecialization()
-    if not S.Finite(specIndex) or specIndex < 1 then return nil end
-    local specID, specName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
-    if not S.Finite(specID) or not S.PublicText(specName) then return nil end
-
-    local configID, buildName = SelectedBuild(specID)
-
-    local lootID = GetLootSpecialization()
-    if not S.Finite(lootID) or lootID < 0 then return nil end
-    local lootName, effectiveLootID
-    if lootID == 0 then
-        lootName = S.Text("%s (current)"):format(specName)
-        effectiveLootID = specID
-    else
-        local _, name = GetSpecializationInfoByID(lootID)
-        lootName = S.PublicText(name)
-        effectiveLootID = lootID
-    end
-    return configID, buildName, effectiveLootID, lootName
+local function Place(self)
+    S.PlaceHost(self.host, self.config)
 end
 
 local function Create(self)
@@ -71,10 +39,10 @@ local function Create(self)
     detail:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -7)
     detail:SetJustifyH("LEFT")
     S.SetFont(detail, nil, 11, "")
-    host:SetPoint("TOP", UIParent, "TOP", 0, -155)
     host:Hide()
     self.host, self.background, self.border, self.title, self.detail =
         host, background, border, title, detail
+    Place(self)
 end
 
 local function Paint(self, mismatch)
@@ -89,7 +57,18 @@ local function Paint(self, mismatch)
     self.detail:SetTextColor(S.RGB(style.text))
 end
 
-local function Show(self)
+-- Edit Mode shows a sample so the reminder can be placed.
+local function Sample(self)
+    Create(self)
+    CancelHide(self)
+    self.title:SetText(S.Text("Current loadout"))
+    Paint(self, false)
+    self.detail:SetText(S.Text("%s  |  Loot: %s"):format(S.Text("Sample build"), S.Text("Current specialization")))
+    self.host:Show()
+end
+
+-- force: the "Show reminder now" test, which ignores the mismatch-only rule.
+local function Show(self, force)
     if not self.active then return end
     local configID, buildName, lootID, lootName = Current()
     if not configID or not lootName then return end
@@ -101,7 +80,7 @@ local function Show(self)
     local expectedLoot = sameCharacter and (self.config.expectedLootSpecID or 0) or 0
     local mismatch = (expectedConfig > 0 and expectedConfig ~= configID)
         or (expectedLoot > 0 and expectedLoot ~= lootID)
-    if self.config.onlyMismatch and not mismatch then
+    if self.config.onlyMismatch and not mismatch and not force then
         CancelHide(self)
         if self.host then self.host:Hide() end
         return true, configID, lootID
@@ -112,6 +91,7 @@ local function Show(self)
     Paint(self, mismatch)
     self.detail:SetText(S.Text("%s  |  Loot: %s"):format(buildName, lootName))
     self.host:Show()
+    if self.config.sound then S.QoLWarningSound() end
     self.context:After(self.config.duration, HideReminder)
     return true, configID, lootID
 end
@@ -143,6 +123,11 @@ local function OnZone(self, event)
     if shown then
         self.lastInstance, self.lastConfigID, self.lastLootID = instanceID, configID, lootID
     end
+end
+
+-- Shows the current loadout now, as a reminder would.
+function M:Test()
+    Show(self, true)
 end
 
 function M:SaveCurrent()
@@ -198,13 +183,21 @@ function M:Refresh()
     if self.host then
         S.SetFont(self.title, nil, 13, "OUTLINE")
         S.SetFont(self.detail, nil, 11, "")
+        Place(self)
+        Paint(self, self.lastMismatch)
     end
-    if self.host then Paint(self, self.lastMismatch) end
-    if not self.config.onReadyCheck and not self.config.onInstanceEntry and not self.config.onLfgProposal then
+    if S.editMode then
+        Sample(self)
+    elseif not self.config.onReadyCheck and not self.config.onInstanceEntry and not self.config.onLfgProposal then
         CancelHide(self)
         if self.host then self.host:Hide() end
     end
     if newlyWatching then OnZone(self) end
+end
+
+function M:HideEditPreview()
+    CancelHide(self)
+    if self.host then self.host:Hide() end
 end
 
 function M:Disable()
@@ -214,5 +207,22 @@ function M:Disable()
     if self.host then self.host:Hide() end
 end
 
+-- Edit Mode builds the frame when it asks for it: the reminder makes none
+-- before its first event.
+function M:RegisterMovers()
+    S.RegisterOwnedMover(ID, "reminder", {
+        label = "Loadout reminder", order = 653,
+        getFrame = function()
+            Create(self)
+            return self.host
+        end,
+        xKey = "x", yKey = "y", pointKey = "point",
+        point = function() return NS.AnchorPoints[self.config.point] or "TOP" end,
+        quickPosition = true, historyKeys = { "scale" },
+        sizeKeys = { "scale" },
+    })
+end
+
+M.Snapshot = Current
 S.LoadoutReminder = M
 S.Install(ID, M)

@@ -1,0 +1,3 @@
+local _, private = ...
+local suite = assert(_G.MSUFSuite, 'MSUF_Suite is required')
+private.NS, private.Suite = suite, suite.Suite

@@ -1,23 +1,10 @@
 local _, P = ...
 local M, Tr, HM = P.M, P.Tr, P.HM
 local PAGE, ID = "suite_chat", "chat"
--- A bubble source's own look shows only while that source uses it.
-local OWN_PARTS = { "bubbleFont", "bubbleSize", "bubbleText", "bubbleFill", "bubbleOpacity", "bubbleEdge",
-    "bubblePad", "bubbleWidth" }
-local OWNED = {}
-for _, source in ipairs(P.Suite.ChatBubbleSources) do
-    for _, part in ipairs(OWN_PARTS) do OWNED[part .. source.key] = "bubbleOwn" .. source.key end
-end
 P.Gates[ID] = function(rule)
     if rule.key == "panelTexture" then return not P.Get(ID, "panelGradient") end
-    local own = OWNED[rule.key]
-    if own then return P.Get(ID, own) == true end
-    if rule.key == "tabActiveBackground" or rule.key == "tabInactiveBackground"
-        or rule.key == "tabActiveAlpha" or rule.key == "tabInactiveAlpha"
-        or rule.key == "tabBorderSize" or rule.key == "tabActiveBorder"
-        or rule.key == "tabInactiveBorder" then
-        return P.Get(ID, "tabIndividualPanels") == true
-    end
+    -- The fade acts only while a delay is set; 0 is off, which an enableKey cannot say.
+    if rule.key == "idleAlpha" or rule.key == "idleFadeDuration" then return P.Get(ID, "idleSeconds") > 0 end
     if rule.key == "fontShadow" or rule.key == "fontShadowOpacity"
         or rule.key == "fontShadowDistance" then
         return P.Get(ID, "fontRendering") ~= P.Suite.FontRendering.SLUG
@@ -72,10 +59,40 @@ local function AskClearHistory()
     P.Confirm("clear-chat-history",
         Tr("Clear the saved chat history of this character in every chat window? This cannot be undone."), ClearHistory)
 end
+local function OpenHistory()
+    if P.Combat() then return end
+    if not P.S.instances.chat then C_AddOns.LoadAddOn("MSUF_Suite_Chat") end
+    local chat = P.S.instances.chat
+    if chat then chat:OpenHistory() end
+end
 
 local function Color(texture, hex, alpha)
     local r, g, b = P.RGB(hex)
     texture:SetVertexColor(r, g, b, (alpha or 100) / 100)
+end
+
+-- The sample's highlight line marks the first word of the list, else the
+-- player's name while that is on, else a stand-in word, in the chosen color.
+local function HighlightedWord()
+    local word = P.Get(ID, "highlightWords"):match("[^,;\r\n]+")
+    word = word and word:match("^%s*(.-)%s*$")
+    if not word or word == "" then
+        word = P.Get(ID, "highlightOwnName") and UnitName("player") or Tr("keyword")
+    end
+    local hex = P.Get(ID, "highlightColor"):match("^%x%x%x%x%x%x$") or "ffd100"
+    return "|cff" .. hex .. word .. "|r"
+end
+
+-- Each sample line is one translated text: languages order the channel, the
+-- name and the message their own way. The third line shows the keyword
+-- highlight while it is on.
+local function SampleText()
+    local text = Tr("|cff9fc3e7[Guild]|r %s: Welcome to MSUF."):format("Mapko") .. "\n"
+        .. Tr("|cffc9d4dd[Party]|r Chat links and channels stay native.")
+    if P.Get(ID, "highlightKeywords") then
+        text = text .. "\n" .. Tr("|cffc9d4dd[Raid]|r %s: Pull when %s is ready."):format("Mapko", HighlightedWord())
+    end
+    return text
 end
 
 local function RefreshSampleText(parts, fonts)
@@ -92,7 +109,7 @@ local function RefreshSampleText(parts, fonts)
     local ir, ig, ib = P.RGB(P.Get(ID, "tabInactiveColor"))
     label:SetTextColor(ar, ag, ab)
     otherTab:SetTextColor(ir, ig, ib)
-
+    lines:SetText(SampleText())
 end
 
 -- The sample's panel textures, in drawing order: fill, sidebar with its
@@ -150,10 +167,7 @@ local function SampleTexts(sample, width, parts)
     lines:SetPoint("TOPLEFT", sample, "TOPLEFT", 39, -43)
     lines:SetWidth(width - 50)
     lines:SetJustifyH("LEFT")
-    -- Each sample line is one translated text: languages order the channel,
-    -- the name and the message their own way.
-    lines:SetText(Tr("|cff9fc3e7[Guild]|r %s: Welcome to MSUF."):format("Mapko") .. "\n"
-        .. Tr("|cffc9d4dd[Party]|r Chat links and channels stay native."))
+    lines:SetText(SampleText())
     local input = sample:CreateTexture(nil, "BORDER")
     input:SetTexture(WHITE)
     input:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 36, 8)
@@ -281,6 +295,18 @@ local function ImmersiveButton(ctx)
     end
 end
 
+-- The sections after Chat tools: a sound per channel and the keyword highlight.
+local function BuildMessageSections(ctx, b)
+    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_sounds", Tr("Channel sounds"),
+        P.SectionRules(ID, "sounds"), {
+            help = "A channel plays a sound kit ID or a sound file (the file wins) for new messages. A burst plays once. Whisper is under Chat tools.",
+        })
+    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_highlight", Tr("Keyword highlight"),
+        P.SectionRules(ID, "highlight"), {
+            help = "Words from your list are colored inside chat messages, whatever their capitals. Links and URLs stay as they are.",
+        })
+end
+
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
     local preview = P.W.FixedPreviewSection(ctx, b, {
@@ -337,9 +363,14 @@ local function Build(ctx)
                 P.Button(ctx, body, "Clear saved chat history", 16, grid.bottomY, width, AskClearHistory,
                     function() return not P.Combat() end,
                     P.Meta(PAGE, ID, "clearHistory", "action", PAGE .. "_tools"))
-                return grid.bottomY - 40
+                P.Button(ctx, body, "Search saved chat", 16, grid.bottomY - 36, width, OpenHistory,
+                    function() return not P.Combat() end,
+                    P.Meta(PAGE, ID, "searchHistory", "action", PAGE .. "_tools"))
+                return grid.bottomY - 76
             end,
         })
+    BuildMessageSections(ctx, b)
+    P.BuildOwnedTool(ctx, b, "keywordAlerts")
     P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_bubbles", Tr("Speech bubbles"), P.SectionRules(ID, "bubbles"), {
         help = "Bubbles outside instances can take the MSUF look; Blizzard locks the ones inside instances. Each source keeps Blizzard's look or uses the MSUF one: the shared look or its own font, size, colors, spacing and width. A bubble is matched to the line it shows right after that line arrives. Turning bubbles off inside instances uses Blizzard's bubble settings and gives them back when you leave or turn it off.",
     })

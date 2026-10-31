@@ -40,6 +40,15 @@ local function CoreAPI()
     return coreAPI
 end
 
+-- The optional host font follows late publication and later font changes.
+-- No bundled fallback here: skin typography keeps its own saved face.
+function HostBridge.HostFontPath()
+    local getter = _G.MSUF_GetFontPath
+    if type(getter) ~= "function" then return nil end
+    local path = getter()
+    return Suite.Public(path) and type(path) == "string" and path ~= "" and path or nil
+end
+
 function HostBridge.HasCoreAPI()
     return CoreAPI() ~= nil
 end
@@ -766,6 +775,11 @@ end
 
 function HostBridge.BossTargetIndicator()
     return _G.MSUF_NS.BossTargetIndicator
+end
+
+function HostBridge.ProfileWorkbench()
+    local api = CoreAPI()
+    return api and api.GetProfileWorkbench and api.GetProfileWorkbench() or nil
 end
 
 return HostBridge

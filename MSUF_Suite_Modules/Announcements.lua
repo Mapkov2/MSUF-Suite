@@ -5,7 +5,7 @@ local IN_COMBAT = { inCombat = true }
 
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
 -- alerts for the enabled kinds are hidden; their content is shown here.
-local M = { queue = {} }
+local M = { queue = {}, achievementReceipts = setmetatable({}, { __mode = "k" }) }
 local COLORS = {
     zone = { .96, .88, .67 }, quest = { .98, .79, .39 },
     achievement = { .88, .69, .41 }, level = { .47, .81, .98 },
@@ -75,8 +75,8 @@ local function Theme(self)
     local c = self.config
     local skin = self.context and self.context:Skin()
     local font = S.ResolveFont(c.font) or S.GlobalFontPath()
-    S.SetStyledFont(self.title, font, c.titleSize or 31, "OUTLINE", 1, true, 80, 2)
-    S.SetStyledFont(self.subtitle, font, c.subtitleSize or 16, "OUTLINE", 1, true, 75, 1)
+    S.SetStyledFont(self.title, font, c.titleSize or 31, NS.HUDTextArgs(c, "banner"))
+    S.SetStyledFont(self.subtitle, font, c.subtitleSize or 16, NS.HUDTextArgs(c, "subtitle"))
     local dark = not skin or skin:GetLook() == "midnightDark"
     local custom = c.colorStyle == CUSTOM_COLORS
     self.kindColors = {}
@@ -159,18 +159,36 @@ local function ActiveScenario()
     return S.Finite(stage) and S.Finite(total) and stage >= 1 and stage <= total
 end
 
-local function Enqueue(self, kind, title, subtitle, key)
-    if not self.active or not Text(title) then return end
-    local now = GetTime()
-    if key and self.lastKey == key and now - (self.lastTime or 0) < 2 then return end
-    if kind == "quest" and key then
-        if self.current and self.current.key == key then return end
-        for i = 1, #self.queue do if self.queue[i].key == key then return end end
+local function HasQueuedKey(self, key)
+    if self.current and self.current.key == key then return true end
+    for i = 1, #self.queue do if self.queue[i].key == key then return true end end
+    return false
+end
+
+-- Keep up to eight queued achievements (Blizzard admits two active and six
+-- queued). Other banners keep their limit and never evict an achievement.
+local function ReserveQueue(self, kind)
+    local limit = kind == "achievement" and 8 or 4
+    if #self.queue < limit then return true end
+    for i = 1, #self.queue do
+        if self.queue[i].kind ~= "achievement" then
+            table.remove(self.queue, i)
+            return true
+        end
     end
+    return false
+end
+
+local function Enqueue(self, kind, title, subtitle, key)
+    if not self.active or not Text(title) then return false end
+    if key and (kind == "quest" or kind == "achievement") and HasQueuedKey(self, key) then return true end
+    local now = GetTime()
+    if kind ~= "achievement" and key and self.lastKey == key and now - (self.lastTime or 0) < 2 then return true end
+    if not ReserveQueue(self, kind) then return false end
     self.lastKey, self.lastTime = key, now
-    if #self.queue >= 4 then table.remove(self.queue, 1) end
     self.queue[#self.queue + 1] = { kind = kind, title = title, subtitle = subtitle, key = key }
     self:Next()
+    return true
 end
 
 -- Direct events win over the matching Blizzard toast that follows them.
@@ -241,11 +259,6 @@ local function Event(self, event, ...)
             Direct(self, "quest", title, event == "QUEST_ACCEPTED" and Tr("QUEST ACCEPTED") or Tr("QUEST COMPLETE"),
                 event .. ":" .. id)
         end
-    elseif event == "ACHIEVEMENT_EARNED" and self.config.achievements then
-        local id = ...
-        if not Number(id) then return end
-        local _, name = GetAchievementInfo(id)
-        if Text(name) then Direct(self, "achievement", name, Tr("ACHIEVEMENT EARNED"), "achievement:" .. id) end
     elseif event == "PLAYER_LEVEL_UP" and self.config.level then
         local level = ...
         if Number(level) then Direct(self, "level", Tr("LEVEL %d"):format(level), Tr("LEVEL UP"), "level:" .. level) end
@@ -342,6 +355,34 @@ local function NativeToasts(self)
     self.toastHooks[frame] = true
 end
 
+-- AchievementAlertFrame_SetUp stores the scalar ShowAlert argument as
+-- frame.id on Retail and Forever. Consume only alerts Blizzard elected to
+-- show, retaining its account-repeat and pet-battle rules (AlertFrames.lua).
+-- Pool release can refill this same frame inside OnHide. Reset at setup,
+-- before the new ShowAlert hook runs, so that refill keeps its own receipt.
+local function AchievementSetup(frame)
+    M.achievementReceipts[frame] = nil
+end
+
+local function CaptureAchievement(self, frame)
+    local id = frame.id
+    local receipt = self.achievementReceipts[frame]
+    if receipt ~= nil then return Number(id) and receipt == id end
+    -- A failed conversion stays native for this pooled lifetime. Otherwise
+    -- a later rescan could announce the same visible native alert again.
+    self.achievementReceipts[frame] = false
+    if not Number(id) or frame:IsProtected() then return false end
+    local key = "achievement:" .. id
+    local accepted = HasQueuedKey(self, key)
+    if not accepted then
+        local _, name = GetAchievementInfo(id)
+        accepted = Enqueue(self, "achievement", name, Tr("ACHIEVEMENT EARNED"), key)
+    end
+    if not accepted then return false end
+    self.achievementReceipts[frame] = id
+    return true
+end
+
 local function SuppressAlerts(self, system, kind)
     if not self.active or not self.config[kind] then return end
     local pool = system and system.alertFramePool
@@ -358,8 +399,14 @@ local function SuppressAlerts(self, system, kind)
     end
     for i = 1, count do
         local frame = frames[i]
-        if frame and not NS.Safety.IsForbidden(frame) and self.context:Mute(frame) then
-            self.alertFrames[frame] = kind
+        if frame and not NS.Safety.IsForbidden(frame) then
+            local accepted = kind ~= "achievements" or CaptureAchievement(self, frame)
+            if accepted and self.context:Mute(frame) then
+                self.alertFrames[frame] = kind
+            elseif not accepted then
+                self.context:Unmute(frame)
+                self.alertFrames[frame] = nil
+            end
         end
         frames[i] = nil
     end
@@ -377,6 +424,7 @@ local function OnShowAlert(system, data)
     local kind = self.alertHooks[system]
     if not kind then return end
     SuppressAlerts(self, system, kind)
+    if kind == "achievements" then return end
     if not self.active or not self.config[kind] or not S.Public(data) or type(data) ~= "table" then return end
     local title = kind == "quests" and Text(data.taskName) or kind == "scenario" and Text(data.name)
     local announcement = kind == "quests" and "quest" or kind
@@ -392,6 +440,7 @@ local function ShowAlertHook(system, data)
 end
 
 local function HookAlerts(self, system, kind)
+    if kind == "achievements" then hooksecurefunc(system, "setUpFunction", AchievementSetup) end
     self.alertHooks[system] = kind
     hooksecurefunc(system, "ShowAlert", ShowAlertHook)
 end
@@ -399,6 +448,9 @@ end
 local function NativeAlerts(self)
     self.alertHooks = self.alertHooks or setmetatable({}, { __mode = "k" })
     self.alertFrames = self.alertFrames or setmetatable({}, { __mode = "k" })
+    if not self.config.achievements then
+        for frame in pairs(self.achievementReceipts) do self.achievementReceipts[frame] = nil end
+    end
     for frame, kind in pairs(self.alertFrames) do
         if not self.config[kind] then
             self.context:Unmute(frame)
@@ -431,7 +483,7 @@ end
 
 local EVENTS = {
     "PLAYER_ENTERING_WORLD", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
-    "QUEST_ACCEPTED", "QUEST_TURNED_IN", "ACHIEVEMENT_EARNED", "PLAYER_LEVEL_UP", "SCENARIO_COMPLETED",
+    "QUEST_ACCEPTED", "QUEST_TURNED_IN", "PLAYER_LEVEL_UP", "SCENARIO_COMPLETED",
 }
 
 function M:Enable()
@@ -452,6 +504,7 @@ function M:Refresh()
     Theme(self)
     local signature = NativeSignature(self.config)
     if self.nativeSignature ~= signature then
+        if not self.config.achievements then ClearKind(self, "achievement") end
         NativeAnnouncements(self)
         self.nativeSignature = signature
     end
@@ -487,6 +540,7 @@ end
 
 -- The context's Release drops the dismissal and the zone read still due.
 function M:Disable()
+    for frame in pairs(self.achievementReceipts) do self.achievementReceipts[frame] = nil end
     self.enter:Stop()
     self.leave:Stop()
     self.queue, self.showing, self.current, self.expiresAt, self.previewing = {}, false, nil, nil, nil

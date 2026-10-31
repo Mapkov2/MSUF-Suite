@@ -4,15 +4,18 @@ local ID = "runSummary"
 local Public, Finite, Text = S.Public, S.Finite, S.PublicText
 local Field, Clock = S.PublicField, S.ClockText
 local Party = P.RunSummaryParty
+local RaidRecords = S.RaidRecords
 local Tr = S.Text
 local IN_COMBAT = { inCombat = true }
 local M = {}
 local DOT = "  \194\183  "
 -- A first click on "Delete run" arms it for this many seconds.
 local DELETE_WINDOW = 4
+local BUTTON_TEXT_SIZE = 12
 
--- The runs, splits and raid records of the current character
+-- The runs and the last result of the current character
 -- (MSUF_Suite/Core/CharacterData.lua); nil while the character is unknown.
+-- The raid records are shared with the tracker (RaidRecords.lua).
 local function Data()
     return S.CharacterData(ID)
 end
@@ -45,7 +48,7 @@ local function CreateHistoryButtons(self, host)
         button:SetPoint("BOTTOMLEFT", 14 + (index - 1) * 115, 8)
         local label = S.CreateFontString(button, nil, "OVERLAY")
         label:SetPoint("CENTER", 0, 0)
-        S.SetStyledFont(label, S.GlobalFontPath(), 12, "OUTLINE", 1, true, 70, 1)
+        S.SetStyledFont(label, S.GlobalFontPath(), BUTTON_TEXT_SIZE, NS.HUDTextArgs())
         label:SetText(Tr(spec[1]))
         button.label = label
         button:SetScript("OnClick", function()
@@ -168,8 +171,8 @@ local function PaintRows(self, rows, font, width, colors)
             row.value:ClearAllPoints()
             row.value:SetPoint("TOPLEFT", row.label, "TOPRIGHT", 8, 0)
             row.value:SetPoint("TOPRIGHT", self.host, "TOPRIGHT", -18, y)
-            S.SetStyledFont(row.label, font, c.detailSize or 14, "OUTLINE", 1, true, 70, 1)
-            S.SetStyledFont(row.value, font, c.detailSize or 14, "OUTLINE", 1, true, 70, 1)
+            S.SetStyledFont(row.label, font, c.detailSize or 14, NS.HUDTextArgs(c))
+            S.SetStyledFont(row.value, font, c.detailSize or 14, NS.HUDTextArgs(c))
             row.label:SetText(data[1])
             row.value:SetText(data[2])
             row.label:SetTextColor(unpack(colors.text))
@@ -193,9 +196,9 @@ local function Paint(self, result)
     local colors = Colors(self)
     self.background:SetColorTexture(colors.back[1], colors.back[2], colors.back[3], (c.backgroundOpacity or 92) / 100)
     self.accent:SetColorTexture(colors.accent[1], colors.accent[2], colors.accent[3], 1)
-    S.SetStyledFont(self.title, font, c.titleSize or 20, "OUTLINE", 1, true, 80, 1)
-    S.SetStyledFont(self.subtitle, font, c.detailSize or 14, "OUTLINE", 1, true, 75, 1)
-    S.SetStyledFont(self.closeText, font, 18, "OUTLINE", 1, true, 70, 1)
+    S.SetStyledFont(self.title, font, c.titleSize or 20, NS.HUDTextArgs(c, "title"))
+    S.SetStyledFont(self.subtitle, font, c.detailSize or 14, NS.HUDTextArgs(c, "subtitle"))
+    S.SetStyledFont(self.closeText, font, 18, NS.HUDTextArgs(c))
     self.title:SetText(result.kind == "raid" and Tr("RAID BOSS DEFEATED") or Tr("MYTHIC+ COMPLETE"))
     self.title:SetTextColor(unpack(colors.title))
     self.subtitle:SetText(result.subtitle or "")
@@ -212,7 +215,12 @@ local function Paint(self, result)
     self.host:SetWidth(math.max(width, tableWidth))
     local history = result.kind == "mythic" and result.historyID ~= nil
     for _, button in ipairs(self.historyButtons) do
-        if history then button:Show() else button:Hide() end
+        if history then
+            S.SetStyledFont(button.label, font, BUTTON_TEXT_SIZE, NS.HUDTextArgs(c))
+            button:Show()
+        else
+            button:Hide()
+        end
     end
     self.host:SetHeight(-y + (history and 46 or 12))
     self.host:SetScale((c.scale or 100) / 100)
@@ -323,9 +331,12 @@ function M:Browse(direction)
     Show(self, history[index], false)
 end
 
+-- True when there was a run to show.
 function M:ShowHistory()
     local history = History(self)
-    if history and history[1] then Show(self, history[1], false) end
+    if not (history and history[1]) then return false end
+    Show(self, history[1], false)
+    return true
 end
 
 function M:DeleteCurrent()
@@ -350,9 +361,30 @@ function M:ClearHistory()
     self:Close()
 end
 
+local function SaveRunSplits(result)
+    local owner = S.instances.objectives
+    local view = owner and owner.mplus
+    if not view or not owner.active or not (owner.mplusActive or view.completed)
+        or view.mapID ~= result.mapID or view.level ~= result.level
+        or type(view.splits) ~= "table" then return end
+    local splits, count = {}, 0
+    for criterion, value in pairs(view.splits) do
+        -- The view keys a split by its criterion ID as text (or by the criterion's
+        -- name when it has no ID); the history, and the planner that compares
+        -- two runs, key it by the ID as a number.
+        local id = tonumber(criterion)
+        if Finite(id) and Finite(value) and value >= 0 and count < 12 then
+            splits[id] = value
+            count = count + 1
+        end
+    end
+    result.splits = splits
+end
+
 local function SaveHistory(self, result, repeatEvent)
     local history, data = History(self)
     if not history then return end
+    SaveRunSplits(result)
     local index
     if repeatEvent and self.lastHistoryID then
         for i, previous in ipairs(history) do
@@ -363,6 +395,7 @@ local function SaveHistory(self, result, repeatEvent)
         end
     end
     if index then
+        if not result.splits then result.splits = history[index].splits end
         result.historyID, result.recordedAt = history[index].historyID, history[index].recordedAt
         history[index] = result
     elseif not repeatEvent then
@@ -540,21 +573,6 @@ local function MythicEvent(self, event)
     end
 end
 
-local function RaidRecord(data, key, elapsed)
-    local records = data and data.raidRecords
-    if data and type(records) ~= "table" then
-        records = {}
-        data.raidRecords = records
-    end
-    local previous = records and records[key]
-    local best = previous and previous.best
-    local newBest = elapsed and (not Finite(best) or elapsed < best)
-    if newBest then best = elapsed end
-    local kills = (previous and Finite(previous.kills) and previous.kills or 0) + 1
-    if records then records[key] = { best = best, kills = kills } end
-    return best, newBest == true, kills
-end
-
 local function RaidEvent(self, event, encounterID, encounterName, difficultyID, groupSize, success)
     if not self.config.showRaid then return end
     if not Finite(encounterID) or not Finite(difficultyID) then return end
@@ -577,7 +595,8 @@ local function RaidEvent(self, event, encounterID, encounterName, difficultyID, 
     self.pull = nil
     if not Finite(elapsed) or elapsed < 0 then elapsed = nil end
     local data = Data()
-    local best, newBest, kills = RaidRecord(data, key, elapsed)
+    -- The records are the store the tracker's raid view shares (RaidRecords.lua).
+    local best, newBest, kills = RaidRecords.Kill((RaidRecords.Store()), key, elapsed)
     local difficulty = Text(GetDifficultyInfo(difficultyID)) or Tr("Difficulty %d"):format(difficultyID)
     local result = { kind = "raid", subtitle = (Text(encounterName) or Tr("Raid encounter")) .. DOT .. difficulty,
         time = elapsed, best = best, newBest = newBest,
@@ -678,10 +697,12 @@ local function SyncEvents(self)
     context:Event("PLAYER_REGEN_DISABLED", OnEvent, IN_COMBAT)
 end
 
--- /msufruns opens the newest saved run. The command stays registered; it
--- does nothing while the module is off.
+-- /msufruns opens the newest saved run, or says there is none. The command
+-- stays registered; it does nothing while the module is off.
 local function RegisterCommand(self)
-    SlashCmdList.MSUFSUITERUNS = function() if self.active then self:ShowHistory() end end
+    SlashCmdList.MSUFSUITERUNS = function()
+        if self.active and not self:ShowHistory() then S.Print(Tr("No Mythic+ runs recorded yet.")) end
+    end
     _G.SLASH_MSUFSUITERUNS1 = "/msufruns"
 end
 

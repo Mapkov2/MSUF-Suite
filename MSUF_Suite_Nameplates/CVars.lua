@@ -200,6 +200,17 @@ local CHOICES = {
     { "plateEnemyMinus", "nameplateShowEnemyMinus" },
     { "plateFriendlyMinions", "nameplateShowFriendlyPlayerMinions" },
     { "plateOffscreen", "nameplateShowOffscreen" },
+    { "plateEnemies", "nameplateShowEnemies" },
+    { "plateFriendlyPlayers", "nameplateShowFriendlyPlayers" },
+    { "personalResource", "nameplateShowSelf" },
+    -- The combined minion choices above keep applying; these set each kind alone.
+    { "plateEnemyPets", "nameplateShowEnemyPets" },
+    { "plateEnemyGuardians", "nameplateShowEnemyGuardians" },
+    { "plateEnemyTotems", "nameplateShowEnemyTotems" },
+    { "plateFriendlyPets", "nameplateShowFriendlyPlayerPets" },
+    { "plateFriendlyGuardians", "nameplateShowFriendlyPlayerGuardians" },
+    { "plateFriendlyTotems", "nameplateShowFriendlyPlayerTotems" },
+    { "plateClampTarget", "clampTargetNameplateToScreen" },
 }
 
 local function Names(module, c)
@@ -214,6 +225,44 @@ local function Names(module, c)
     for i = 1, #CHOICES do
         local choice = CHOICES[i]
         Toggle(module, c[choice[1]] or KEEP, choice[2])
+    end
+end
+
+-- The "Customize" pairs of Distance and stacking: { mode setting, number
+-- setting, CVar, divisor from the shown unit (yards, percent) to the CVar's }.
+local PERCENT = 100
+local CUSTOM_VALUES = {
+    { "plateMaxDistanceMode", "plateMaxDistance", "nameplateMaxDistance", 1 },
+    { "plateOccludedMode", "plateOccludedPercent", "nameplateOccludedAlphaMult", PERCENT },
+    { "plateSpacingMode", "plateOverlapV", "nameplateOverlapV", PERCENT },
+    { "plateSpacingMode", "plateOverlapH", "nameplateOverlapH", PERCENT },
+    { "plateInsetMode", "plateTopInset", "nameplateOtherTopInset", PERCENT },
+    { "plateInsetMode", "plateBottomInset", "nameplateOtherBottomInset", PERCENT },
+}
+-- Its presets, { setting, CVar, value per choice }; choice 1 keeps Blizzard's.
+-- Fade and shrink set the far end of Blizzard's range (nameplateMinAlpha 0.6,
+-- nameplateMinScale 0.8): None, Subtle, Strong. Motion speed (0.025): Slow,
+-- Fast, Instant. Neither touches the current target's scale or the dimming
+-- of other plates (Size, Selection.lua): those are separate values.
+local PRESETS = {
+    { "plateFadeDistance", "nameplateMinAlpha", { [2] = 1, [3] = 0.8, [4] = 0.3 } },
+    { "plateShrinkDistance", "nameplateMinScale", { [2] = 1, [3] = 0.9, [4] = 0.6 } },
+    { "plateMotionSpeed", "nameplateMotionSpeed", { [2] = 0.01, [3] = 0.1, [4] = 1 } },
+}
+
+local function Space(module, c)
+    for i = 1, #CUSTOM_VALUES do
+        local row = CUSTOM_VALUES[i]
+        if c[row[1]] == CUSTOMIZE then
+            module.context:CVar(row[3], tostring(c[row[2]] / row[4]))
+        else
+            Restore(row[3])
+        end
+    end
+    for i = 1, #PRESETS do
+        local row = PRESETS[i]
+        local value = row[3][c[row[1]]]
+        if value then module.context:CVar(row[2], tostring(value)) else Restore(row[2]) end
     end
 end
 
@@ -234,4 +283,5 @@ function CVars.Apply(module)
     Auras(module, c)
     Signals(module, c)
     Names(module, c)
+    Space(module, c)
 end

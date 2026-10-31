@@ -11,11 +11,23 @@ local max, min = math.max, math.min
 local TIP_WIDTH, TIP_PAD, TIP_ROW = 260, 6, 17
 
 local function StyleTabs(panel, view)
+    if panel.tabView == view and panel.tabStyle == M.styleGen then return end
+    panel.tabView, panel.tabStyle = view, M.styleGen
     local selected = M.style
     panel.targetsTab.text:SetTextColor(view == "targets" and selected.leftR or .6,
         view == "targets" and selected.leftG or .6, view == "targets" and selected.leftB or .6)
     panel.spellsTab.text:SetTextColor(view == "spells" and selected.leftR or .6,
         view == "spells" and selected.leftG or .6, view == "spells" and selected.leftB or .6)
+end
+
+local function SetTitle(panel, name)
+    if not Public(name) then
+        panel.rawTitle, panel.titleStyle = nil, nil
+        panel.title:SetText(D.Short(name))
+    elseif panel.rawTitle ~= name or panel.titleStyle ~= M.styleGen then
+        panel.rawTitle, panel.titleStyle = name, M.styleGen
+        panel.title:SetText(D.Short(name))
+    end
 end
 
 local function StylePanel(win)
@@ -26,7 +38,7 @@ local function StylePanel(win)
     panel.back:ClearAllPoints()
     panel.back:SetSize(height, height)
     panel.back:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-    D.FontStyle(panel.title, style.leftSize)
+    D.FontStyle(panel.title, style.leftSize, "details")
     panel.title:SetTextColor(style.leftR, style.leftG, style.leftB)
     panel.title:ClearAllPoints()
     panel.title:SetPoint("LEFT", panel.back, "RIGHT", 3, style.baseline)
@@ -36,14 +48,14 @@ local function StylePanel(win)
     panel.targetsTab:ClearAllPoints()
     panel.targetsTab:SetSize(58, height)
     panel.targetsTab:SetPoint("RIGHT", panel.spellsTab, "LEFT", -2, 0)
-    D.FontStyle(panel.targetsTab.text, 10)
-    D.FontStyle(panel.spellsTab.text, 10)
+    D.FontStyle(panel.targetsTab.text, 10, "details")
+    D.FontStyle(panel.spellsTab.text, 10, "details")
     if D.targetTypes[win.meterType] then
         panel.title:SetPoint("RIGHT", panel.targetsTab, "LEFT", -3, style.baseline)
     else
         panel.title:SetPoint("RIGHT", panel, "RIGHT", -3, style.baseline)
     end
-    D.FontStyle(panel.message, style.leftSize)
+    D.FontStyle(panel.message, style.leftSize, "details")
     panel.message:SetTextColor(.8, .8, .8)
     local top = -(height + style.spacing + 6)
     panel.message:ClearAllPoints()
@@ -51,6 +63,8 @@ local function StylePanel(win)
     panel.message:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -6, top + style.baseline)
     for slot, row in pairs(win.bdRows) do D.AnchorRow(row, panel, slot + 1) end
 end
+
+D.StyleBreakdownPanel = StylePanel
 
 function D.EnsurePanel(win)
     local panel = win.panel
@@ -74,7 +88,7 @@ function D.EnsurePanel(win)
         button.text = S.CreateFontString(button, nil, "OVERLAY")
         button.text:SetAllPoints(button)
         button.text:SetJustifyH("CENTER")
-        D.FontStyle(button.text, 10)
+        D.FontStyle(button.text, 10, "details")
         button.text:SetText(S.Text(text))
         button:SetScript("OnClick", function() D.SetBreakdownView(win, view) end)
         return button
@@ -120,7 +134,7 @@ function D.OpenBreakdown(win, index)
         return
     end
     local bd = win.bd
-    bd.guid, bd.creature = D.Identity(source)
+    bd.guid, bd.creature = D.Identity(source, win)
     local class = source.classFilename
     bd.class = Public(class) and type(class) == "string" and class or ""
     bd.name, bd.duration, bd.listSource, bd.targetRevision = source.name, session.durationSeconds, source, nil
@@ -138,6 +152,9 @@ end
 function D.OpenRecap(win, source)
     local id = source.deathRecapID
     if not Finite(id) or id <= 0 then return end
+    if M.config.inlineRecap or not S.CanOpenNativeWindow() then
+        if D.OpenInlineRecap(win, source) then return end
+    end
     if Public(source.deathTimeSeconds) and S.CanOpenNativeWindow() then
         OpenDeathRecapUI(id)
         return
@@ -152,7 +169,7 @@ function D.CloseBreakdown(win, quiet)
     local bd = win.bd
     if not bd.open then return end
     bd.open, bd.source, bd.name, bd.guid, bd.creature, bd.duration = false, nil, nil, nil, nil, nil
-    bd.listSource, bd.view, bd.targetRevision = nil, nil, nil
+    bd.listSource, bd.view, bd.targetRevision, bd.recap, bd.paintedRecap = nil, nil, nil, nil, nil
     if win.bdRows then
         local owner = GameTooltip:GetOwner()
         for _, row in pairs(win.bdRows) do
@@ -179,7 +196,7 @@ local function RefreshTargetSession(win)
     local sources = session.combatSources
     for i = 1, D.Count(sources) do
         local source = sources[i]
-        local guid, creature = D.Identity(source)
+        local guid, creature = D.Identity(source, win)
         local name = source.name
         if (bd.guid and guid == bd.guid) or (bd.creature and creature == bd.creature)
             or (Public(bd.name) and Public(name) and name == bd.name) then
@@ -192,6 +209,7 @@ end
 -- Refetch with the stored plain identity (the window paint path while open).
 function D.RefreshBreakdown(win)
     local bd = win.bd
+    if bd.recap then D.RefreshRecap(win) return end
     if bd.blocked then
         bd.source = nil
         for _, row in pairs(win.bdRows) do row:Hide() end
@@ -205,6 +223,7 @@ end
 
 function D.RenderBreakdown(win)
     local bd, panel = win.bd, win.panel
+    if bd.recap then D.RenderRecap(win) return end
     if bd.blocked then return end
     if panel.styleGen ~= M.styleGen or panel.styledType ~= win.meterType then StylePanel(win) end
     local source = bd.source
@@ -219,7 +238,7 @@ function D.RenderBreakdown(win)
     end
     local spells = bd.view == "spells" and not groups and source and source.combatSpells
     if not groups then count = D.Count(spells) end
-    panel.title:SetText(D.Short(bd.name))
+    SetTitle(panel, bd.name)
     StyleTabs(panel, bd.view)
     bd.offset = min(bd.offset, max(0, count - capacity))
     local duration = Finite(bd.duration) and bd.duration or 0
@@ -280,7 +299,7 @@ local function EnsureTip()
     tip.message:SetPoint("TOPRIGHT", tip.title, "BOTTOMRIGHT", 0, -4)
     tip.message:SetJustifyH("LEFT")
     tip.section = S.CreateFontString(tip, nil, "OVERLAY")
-    D.FontStyle(tip.section, 11)
+    D.FontStyle(tip.section, 11, "details")
     tip.section:SetText(S.Text("Targets"))
     tip.section:Hide()
     tip.rows = {}
@@ -304,11 +323,9 @@ end
 local function TipContent(frame, win, source, session)
     frame.section:Hide()
     if win.meterType == D.TYPE.Deaths then
-        local id = source.deathRecapID
-        if not Finite(id) or id <= 0 then return 0, nil end
-        return 0, Public(source.deathTimeSeconds) and S.Text("Click to open the death recap.") or D.Blocked()
+        return D.RecapTip(frame, source, TipRow, TIP_PAD, TIP_ROW)
     end
-    local guid, creature = D.Identity(source)
+    local guid, creature = D.Identity(source, win)
     if not guid and not creature then return 0, D.Blocked() end
     local class = source.classFilename
     class = Public(class) and type(class) == "string" and class or ""
@@ -361,9 +378,9 @@ function D.ShowTip(win, row)
     local frame = EnsureTip()
     if frame.styleGen ~= M.styleGen then
         frame.styleGen = M.styleGen
-        D.FontStyle(frame.title, 12)
-        D.FontStyle(frame.message, 11)
-        D.FontStyle(frame.section, 11)
+        D.FontStyle(frame.title, 12, "details")
+        D.FontStyle(frame.message, 11, "details")
+        D.FontStyle(frame.section, 11, "details")
         frame.section:SetTextColor(M.style.leftR, M.style.leftG, M.style.leftB)
         frame.message:SetTextColor(.8, .8, .8)
         frame.title:ClearAllPoints()
@@ -383,8 +400,7 @@ function D.ShowTip(win, row)
     frame.message:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -TIP_PAD, messageY)
     frame:SetHeight(TIP_PAD * 2 + 16 + (message and 18 or 0) + shown * TIP_ROW + sectionHeight)
     frame:SetScale(M.config.tooltipScale / 100)
-    frame:ClearAllPoints()
-    frame:SetPoint("BOTTOMLEFT", row, "TOPLEFT", 0, 4)
+    D.PositionTip(frame, win, row)
     frame:Show()
 end
 

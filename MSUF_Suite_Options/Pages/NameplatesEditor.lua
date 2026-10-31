@@ -433,6 +433,8 @@ local function BuildKit(ui)
         select = function() ui:RefreshSelection() end,
         drag = function(handle, phase) ui.dragging = phase == "start" and handle or nil end,
         tip = function(handle, entering)
+            -- A sample health bar shows the mouseover highlight.
+            P.NameplatesPreviewDecor.Hover(handle, entering)
             if entering then
                 handle.outline(1, "4ebaff")
                 P.SetTranslatedText(ui.hint, Tr(handle._label) .. " · " .. Tr(handle._npSettingsTab

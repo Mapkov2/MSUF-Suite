@@ -24,7 +24,7 @@ S.Install("actionbars", M)
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local BAR_COUNT, BUTTONS = NS.ActionBarCount, 12
 AB.BAR_COUNT, AB.BUTTONS = BAR_COUNT, BUTTONS
-local BAR, START = AB.ENUM.BAR, AB.ENUM.START
+local BAR, START, FLYOUT = AB.ENUM.BAR, AB.ENUM.START, AB.ENUM.FLYOUT
 -- Retail reuses Blizzard's buttons on bars 2-8; Forever keeps suite buttons.
 AB.nativeReuse = not NS.Client.isForever
 
@@ -42,9 +42,9 @@ AB.NATIVE_BUTTONS = { "ActionButton", "MultiBarBottomLeftButton", "MultiBarBotto
 -- Every per-bar catalog rule has its suffix here (the action bar contract
 -- checks it against Core/Catalog/ActionBars.lua).
 local SUFFIXES = { "Visibility", "HideGamepad", "ResumeVisibility", "Layer",
-    "Alpha", "FadeAlpha", "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty",
-    "ClickThrough", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize", "CooldownSize",
-    "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX",
+    "Alpha", "FadeAlpha", "FadeDuration", "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty",
+    "FlyoutDirection", "ClickThrough", "Tooltip", "Point", "X", "Y", "Keybind", "KeybindSize", "Macro", "MacroSize", "CountSize",
+    "CooldownSize", "CooldownAutoSize", "KeybindPoint", "KeybindX", "KeybindY", "MacroPoint", "MacroX", "MacroY", "CountPoint", "CountX",
     "CountY", "CooldownPoint", "CooldownX", "CooldownY",
     "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY",
     "Background", "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX", "BackgroundPaddingY",
@@ -81,6 +81,17 @@ function S.ActionBarPreviewSlot(index, ordinal)
         if S.Public(slot) and type(slot) == "number" then return slot end
         return rec.slot
     end
+end
+
+-- Read-only preview seam: the color setting a bar's button paints its icon
+-- with now (range or usability, from the paint's own cache); nil while the
+-- bars are off or the cache holds no state (a reused Blizzard button paints
+-- its own usability and drops the cache with each update).
+function S.ActionBarPreviewTint(index, ordinal)
+    local bar = M.active and AB.bars[index]
+    local rec = bar and bar.buttons[ordinal]
+    if not (rec and rec.owned) then return nil end
+    return rec.outOfRange and "rangeColor" or rec.usable and AB.TINT_KEYS[rec.usable] or nil
 end
 
 -- Layout contract shared with the menu preview. n buttons, R = clamp(rows).
@@ -304,7 +315,12 @@ function AB.Build()
     end
 end
 
-local function FlyoutDirection(header, columns, rows)
+-- The flyoutDirection attribute of each explicit choice (Blizzard's
+-- ActionButton:UpdateFlyout reads the same four words).
+local FLYOUT_ATTRIBUTE = { [FLYOUT.UP] = "UP", [FLYOUT.DOWN] = "DOWN", [FLYOUT.LEFT] = "LEFT", [FLYOUT.RIGHT] = "RIGHT" }
+
+-- Automatic opens toward the middle of the screen, across the bar's short side.
+local function AutomaticFlyout(header, columns, rows)
     local x, y = header:GetCenter()
     local width, height = UIParent:GetWidth(), UIParent:GetHeight()
     if not (S.Public(x) and S.Public(y) and S.Public(width) and S.Public(height))
@@ -346,7 +362,7 @@ function AB.LayoutBar(bar)
     bar.count, bar.size, bar.height = count, size, height
     local mouse = not config[keys.ClickThrough]
     if bar.owned then
-        local direction = FlyoutDirection(header, columns, rows)
+        local direction = FLYOUT_ATTRIBUTE[config[keys.FlyoutDirection]] or AutomaticFlyout(header, columns, rows)
         for i = 1, #bar.buttons do
             local button = bar.buttons[i].button
             if button:GetAttribute("flyoutDirection") ~= direction then button:SetAttribute("flyoutDirection", direction) end

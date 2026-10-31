@@ -177,14 +177,7 @@ local function CursorSlot()
     if location:IsEquipmentSlot() then return 0, location:GetEquipmentSlot(), true, S.QoLLocationGUID(location) end
 end
 
--- An item still refundable, the way ContainerFrame_GetExtendedPriceString
--- decides it: a refund time and a price in gold, items or currencies.
-local function Refundable(bag, slot, equipped)
-    local info = C_Container.GetContainerItemPurchaseInfo(bag, slot, equipped)
-    if not S.Public(info) or type(info) ~= "table" or not S.Finite(info.refundSeconds) then return false end
-    return (S.Finite(info.money) and info.money > 0) or (S.Finite(info.itemCount) and info.itemCount > 0)
-        or (S.Finite(info.currencyCount) and info.currencyCount > 0)
-end
+local Refundable = S.QoLRefundable
 
 -- Declining keeps the item, as Blizzard's dialog does: it leaves the cursor.
 local function SameRefundCursor(question)

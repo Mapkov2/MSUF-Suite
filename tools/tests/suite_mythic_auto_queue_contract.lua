@@ -7,7 +7,7 @@ local function Finite(value)
     return Public(value) and type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 local reported, installed, notices = {}, {}, {}
-local calls, apiReads, state = { role = 0, invite = 0 }, 0, {}
+local calls, apiReads, state = { role = 0 }, 0, {}
 local S = {
     Install = function(id, module) installed[id] = module end,
     Public = Public, Finite = Finite,
@@ -71,9 +71,10 @@ C_LFGList = {
         local app = state.applications[resultID]
         if app then return app.id, app.status, app.pending end
     end,
+    -- The reported Retail client blocks this even outside combat. Like a
+    -- blocked native action, this records the attempt without raising Lua.
     AcceptInvite = function(resultID)
-        assert(Finite(resultID) and not NS.InCombat() and not InCombatLockdown(), "unsafe invitation acceptance")
-        calls.invite, calls.lastInvite = calls.invite + 1, resultID
+        calls.blocked = (calls.blocked or 0) + 1
     end,
 }
 -- Native role selection stays untouched; the helper confirms saved roles.
@@ -133,10 +134,17 @@ local function NoRole(why, change)
 end
 local function NoInvite(why, change, id, status)
     Reset(); state.leader = true; change()
-    local before = calls.invite
+    local before = #notices
     Invite(id, status); Frame()
-    assert(calls.invite == before, why)
+    assert(#notices == before, why)
 end
+
+-- Exact report route: application event -> next-frame timer -> native call.
+-- No combat state is involved, and Dispatch cannot make the call permitted.
+Reset(); state.grouped = false
+Invite(); Frame()
+assert((calls.blocked or 0) == 0, "ADDON_ACTION_BLOCKED: timer called C_LFGList.AcceptInvite outside combat")
+assert(#notices == 1, "a protected invitation needs a manual-acceptance reminder")
 
 Reset()
 assert(context.events.LFG_ROLE_CHECK_SHOW and context.events.LFG_ROLE_CHECK_HIDE
@@ -182,13 +190,13 @@ assert(calls.role == roleBefore, "a closed role check was answered later")
 
 for _, grouped in ipairs({ false, true }) do
     Reset(); state.grouped, state.leader = grouped, true
-    local before = calls.invite
+    local before = #notices
     Invite(); Invite()
-    assert(calls.invite == before, "invite acceptance ran before Blizzard handled its event")
+    assert(#notices == before, "invite acceptance ran before Blizzard handled its event")
     Frame()
-    assert(calls.invite == before + 1 and calls.lastInvite == 17, "solo or home-party leader M+ invite was not accepted")
+    assert(#notices == before + 1, "solo or home-party leader M+ invite did not produce one reminder")
     Invite(); Frame()
-    assert(calls.invite == before + 1, "duplicate application events accepted the same invitation twice")
+    assert(#notices == before + 1, "duplicate application events accepted the same invitation twice")
 end
 NoInvite("party member accepted the leader's invitation", function() state.leader = false end)
 NoInvite("ordinary dungeon invitation was accepted", function() end, 18)
@@ -215,52 +223,65 @@ NoInvite("unreadable first activity was accepted", function() state.results[17].
 NoInvite("unreadable M+ activity flag was accepted", function() state.activities[101].isMythicPlusActivity = SECRET end)
 
 Reset(); state.leader = true
-local inviteBefore = calls.invite
+local inviteBefore = #notices
 Invite(); Invite(17, "cancelled"); Frame()
-assert(calls.invite == inviteBefore, "cancelled application event retained a pending acceptance")
-Reset(); state.leader = true; inviteBefore = calls.invite
+assert(#notices == inviteBefore, "cancelled application event retained a pending acceptance")
+Reset(); state.leader = true; inviteBefore = #notices
 Invite(); state.applications[17].status = "cancelled"; Frame()
-assert(calls.invite == inviteBefore, "deferred acceptance ignored a cancelled application")
-Reset(); state.leader = true; inviteBefore = calls.invite
+assert(#notices == inviteBefore, "deferred acceptance ignored a cancelled application")
+Reset(); state.leader = true; inviteBefore = #notices
 Invite(); state.applications[17].pending = "inviteaccepted"; Frame()
-assert(calls.invite == inviteBefore, "deferred acceptance ignored a response already in flight")
-Reset(); state.leader = true; inviteBefore = calls.invite
+assert(#notices == inviteBefore, "deferred acceptance ignored a response already in flight")
+Reset(); state.leader = true; inviteBefore = #notices
 Invite(); state.results[17].activityIDs[1] = 202; Frame()
-assert(calls.invite == inviteBefore, "deferred acceptance ignored changed result activity")
-Reset(); state.leader = true; inviteBefore = calls.invite
+assert(#notices == inviteBefore, "deferred acceptance ignored changed result activity")
+Reset(); state.leader = true; inviteBefore = #notices
 Invite(); state.leader = false; Frame()
-assert(calls.invite == inviteBefore, "deferred acceptance ignored loss of party leadership")
-Reset(); state.leader = true; inviteBefore = calls.invite
+assert(#notices == inviteBefore, "deferred acceptance ignored loss of party leadership")
+Reset(); state.leader = true; inviteBefore = #notices
 Invite(); state.combat = true; Frame(); state.combat = false; Frame()
-assert(calls.invite == inviteBefore, "combat-start deferred invite was accepted or replayed")
+assert(#notices == inviteBefore, "combat-start deferred invite was accepted or replayed")
 
-Reset(); state.leader = true; inviteBefore = calls.invite
+Reset(); state.leader = true; inviteBefore = #notices
 Invite(18); Invite(17); Frame()
-assert(calls.invite == inviteBefore + 1 and calls.lastInvite == 17,
+assert(#notices == inviteBefore + 1,
     "a simultaneous non-M+ invitation hid the eligible M+ application")
-Reset(); state.leader = true; inviteBefore = calls.invite
+Reset(); state.leader = true; inviteBefore = #notices
 state.results[19] = { searchResultID = 19, activityIDs = { 101 } }
 state.applications[19] = { id = 19, status = "invited" }
 Invite(17); Invite(19); Frame()
-assert(calls.invite == inviteBefore + 1, "one event burst accepted competing applications")
+assert(#notices == inviteBefore + 1, "one event burst accepted competing applications")
 Invite(17); Invite(19); Frame()
-assert(calls.invite == inviteBefore + 1, "an outstanding join accepted a competing application")
+assert(#notices == inviteBefore + 1, "duplicate competing invitations repeated the reminder")
+
+-- A later invitation is not suppressed as if the reminder had joined a group.
+Reset(); state.leader = true; inviteBefore = #notices
+Invite(17); Frame()
+state.results[19] = { searchResultID = 19, activityIDs = { 101 } }
+state.applications[19] = { id = 19, status = "invited" }
+Invite(19); Frame()
+assert(#notices == inviteBefore + 2, "a reminder falsely left a join in progress")
+Invite(17, "cancelled"); Invite(17); Frame()
+assert(#notices == inviteBefore + 3, "a new invitation after cancellation was suppressed")
+assert(notices[#notices] == "Mythic+ invitation received. Accept it in Blizzard's dialog.",
+    "invitation reminder did not explain the required manual acceptance")
 
 -- The two switches operate independently.
 Reset(); M.config.invites = false; roleBefore = calls.role
 Role(); Frame()
 assert(calls.role == roleBefore + 1, "disabling invitations also disabled role checks")
-Reset(); M.config.roleCheck, state.leader = false, true; inviteBefore = calls.invite
+Reset(); M.config.roleCheck, state.leader = false, true; inviteBefore = #notices
 Invite(); Frame()
-assert(calls.invite == inviteBefore + 1, "disabling role checks also disabled invitations")
+assert(#notices == inviteBefore + 1, "disabling role checks also disabled invitations")
 for _, stop in ipairs({ "Refresh", "Disable" }) do
     Reset(); state.leader = true
-    roleBefore, inviteBefore = calls.role, calls.invite
+    roleBefore, inviteBefore = calls.role, #notices
     Role(); Invite()
     if stop == "Disable" then M.active = false end
     M[stop](M); Frame()
-    assert(calls.role == roleBefore and calls.invite == inviteBefore, stop .. " retained deferred queue actions")
+    assert(calls.role == roleBefore and #notices == inviteBefore, stop .. " retained deferred queue actions")
 end
 assert(next(context.events) == nil, "disabled helper retained queue listeners")
+assert((calls.blocked or 0) == 0, "queue helper attempted protected invitation acceptance")
 assert(#reported == 0, "queue callback raised: " .. tostring(reported[1]))
 print("suite_mythic_auto_queue_contract: PASS")

@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Skinning
 ## Notes: Suite-owned MapkoSkin skin engine.
 ## Author: Mapko
-## Version: 0.1.4-alpha
+## Version: 0.1.5-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -82,6 +82,7 @@ Adapters\Commerce.lua
 Adapters\GameMenu.lua
 Adapters\WorldMap.lua
 Adapters\PlayerSpells.lua
+Adapters\EncounterJournalPanels.lua
 Adapters\EncounterJournal.lua
 Adapters\ChatFrames.lua
 Adapters\DamageMeter.lua

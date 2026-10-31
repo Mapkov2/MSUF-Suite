@@ -121,7 +121,7 @@ local function Load(kind)
     assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", suite)
     MSUFSuite = suite
     local private = {}
-    for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceBar" }) do
+    for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBar" }) do
         assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
     end
     local module = runtime.instances.xpBar

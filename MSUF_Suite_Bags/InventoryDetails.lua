@@ -1,6 +1,8 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
-local Details = { dirty = true, sets = {}, overlays = setmetatable({}, { __mode = "k" }), maps = {} }
+local Marker, SORT = P.UpgradeMarker, NS.BagsSort
+local Details = { dirty = true, sets = {}, overlays = setmetatable({}, { __mode = "k" }),
+    markers = setmetatable({}, { __mode = "k" }), maps = {} }
 P.InventoryDetails = Details
 -- Slot keys of SlotCache.lua: bag * KEY + slot, no string per item.
 local KEY = P.SlotCache.KEY
@@ -91,20 +93,60 @@ local function MapTag(mapID)
     return Details.maps[mapID]
 end
 
-function Details.Index(index)
+-- The effective item level (upgrades and scaling included) replaces the
+-- item's base level: a level rule asks for it of every item, sorting and the
+-- upgrade marker of equipment only. Asked once per item link.
+local function ReadLevel(item)
+    local level = C_Item.GetDetailedItemLevelInfo(item.link)
+    item.ruleLevel = S.Finite(level) and level or nil
+    item.ruleLevelLink = item.ruleLevel and item.link or nil
+    item.itemLevel = item.ruleLevel
+end
+
+-- Toys are told apart by the toy box, asked once per item link and only while
+-- the Collectibles category is on.
+local function ReadToys(items)
+    for i = 1, #items do
+        local item = items[i]
+        if item.itemID and item.toyLink ~= item.link then
+            item.toy = C_ToyBox.GetToyInfo(item.itemID) ~= nil
+            item.toyLink = item.link
+        end
+    end
+end
+
+function Details.Index(index, query)
     local c = M.config
-    if c.groupEquipmentSets or c.showEquipmentSetNames then ReadSets() end
+    if Details.ruleText ~= c.customCategories or Details.ruleQuery ~= query then
+        local rules = (c.customCategories or ""):lower() .. " " .. (query or ""):lower()
+        Details.ruleSets = rules:find("set[:=]") or rules:find("is:set", 1, true)
+        Details.ruleLevel = rules:find("level", 1, true)
+        Details.ruleText, Details.ruleQuery = c.customCategories, query
+    end
+    local needsSets = c.groupEquipmentSets or c.showEquipmentSetNames
+        or Details.ruleSets
+    if needsSets then ReadSets() end
+    local ruleLevel, marker, track = Details.ruleLevel, c.showUpgradeMarker, c.showUpgradeTrack
+    local gearLevel = ruleLevel or marker or c.sortMode == SORT.ITEM_LEVEL
+    if c.category_collectibles then ReadToys(index.items) end
     local keyLevel, keyMap
     if not NS.Client.isForever and c.showKeystoneDetails then
         keyLevel, keyMap = C_MythicPlus.GetOwnedKeystoneLevel(), C_MythicPlus.GetOwnedKeystoneChallengeMapID()
     end
     for i = 1, #index.items do
         local item = index.items[i]
-        item.setNames = (c.groupEquipmentSets or c.showEquipmentSetNames)
+        item.setNames = needsSets
             and Details.sets[item.bag * KEY + item.slot] or nil
         item.setName = item.setNames and item.setNames[1] or nil
         item.setLabel = item.setNames and item.setNames.label or nil
-        if c.showUpgradeTrack and item.equipLoc and item.equipLoc ~= "" then ReadUpgrade(item) end
+        local equipLoc = item.equipLoc
+        if equipLoc and equipLoc ~= "" then
+            if gearLevel and item.ruleLevelLink ~= item.link then ReadLevel(item) end
+            if marker then Marker.Read(item) end
+            if track then ReadUpgrade(item) end
+        elseif ruleLevel and item.link and item.ruleLevelLink ~= item.link then
+            ReadLevel(item)
+        end
         item.keyLevel, item.keyMap = nil, nil
         if not item.bankType and item.itemID and S.Finite(keyLevel) and keyLevel > 0 and S.Finite(keyMap)
             and C_Item.IsItemKeystoneByID(item.itemID) then
@@ -138,6 +180,23 @@ local function Tooltip(tooltip)
 end
 TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, Tooltip)
 
+-- The arrow Blizzard's bags once drew on equipment that beats what is worn
+-- (ContainerFrame.xml UpgradeIcon, atlas bags-greenarrow).
+local function PaintMarker(button, shown)
+    local marker = Details.markers[button]
+    if not marker then
+        if not shown then return end
+        marker = S.CreateTexture(button, nil, "OVERLAY", nil, 6)
+        marker:SetAtlas("bags-greenarrow", true)
+        marker:SetPoint("TOPLEFT", 0, 0)
+        Details.markers[button] = marker
+    end
+    if marker.shownNow ~= shown then
+        marker.shownNow = shown
+        marker:SetShown(shown)
+    end
+end
+
 local function PaintText(label, value, font, size)
     if not value then
         label:Hide()
@@ -157,6 +216,10 @@ function Details.Paint(button, item, font)
     local name = c.showEquipmentSetNames and (item.setLabel or item.setName)
     local upgrade = c.showUpgradeTrack and item.upgrade
     local keyLevel = c.showKeystoneDetails and item.keyLevel
+    if c.showUpgradeMarker then
+        local better = item.beatsEquipped == true
+        if better or Details.markers[button] then PaintMarker(button, better) end
+    end
     local record = Details.overlays[button]
     if not record and not name and not upgrade and not keyLevel then return end
     if not record then
@@ -171,6 +234,13 @@ function Details.Paint(button, item, font)
     PaintText(record.keyMap, keyLevel and item.keyMap, font, c.keystoneDungeonSize)
 end
 
+function Details.HideMarkers()
+    for _, marker in pairs(Details.markers) do
+        marker:Hide()
+        marker.shownNow = false
+    end
+end
+
 function Details.Hide()
     for _, record in pairs(Details.overlays) do
         record.name:Hide()
@@ -179,5 +249,6 @@ function Details.Hide()
         record.keyMap:Hide()
         record.item = nil
     end
+    Details.HideMarkers()
     Details.dirty = true
 end

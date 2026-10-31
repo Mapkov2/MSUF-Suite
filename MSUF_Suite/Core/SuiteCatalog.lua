@@ -191,6 +191,21 @@ function Build.TextSection(id, extra)
     Build.LinkFontShadow(catalog[id].rules)
 end
 
+-- The text style of an on-screen list or window: outline, rendering and
+-- shadow, in the section a module already has for its text. Every surface
+-- starts with the text it always drew: outlined and smooth, with a shadow of
+-- shadowOpacity percent, or none when that is nil.
+function Build.TextStyle(id, section, sectionTitle, shadowOpacity)
+    Build.Section(id, section, sectionTitle, {
+        Build.Choice("fontOutline", "Text outline", 2, { "None", "Outline", "Thick outline" }),
+        Build.Choice("fontRendering", "Font rendering", RENDERING.SMOOTH, { "Smooth", "Sharp / pixel", "Slug" }),
+        Build.Bool("fontShadow", "Text shadow", shadowOpacity ~= nil),
+        Build.Number("fontShadowOpacity", "Shadow opacity (percent)", shadowOpacity or 100, 20, 100, 5),
+        Build.Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
+    })
+    Build.LinkFontShadow(catalog[id].rules)
+end
+
 -- Automation: settings that make the Suite act on the player's behalf without
 -- a confirmation each time. It spends or sells, opens or uses items, accepts,
 -- chooses or submits for the player, messages other players, sends inspect

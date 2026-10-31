@@ -10,7 +10,10 @@ local C = P.Chat
 -- this session added. Battle.net names (|K escapes) only resolve in the
 -- session that received them: a saved line keeps such a link's text without
 -- the link and shows a placeholder for the name.
+-- The same file also keeps the lines typed into the chat input boxes
+-- (saveInputHistory) and the scrollback limit of a window (maxLines).
 local M = C.M
+local NS = P.NS
 local MAX_TABS = 16
 local MAX_TEXT = 8192
 local PublicText, Finite = S.PublicText, S.Finite
@@ -32,7 +35,8 @@ local function Store()
 end
 
 local function LineLimit()
-    local value = M.config.historyLines
+    local config = M.config or S.Config("chat")
+    local value = config.historyLines
     return Finite(value) and math.max(20, math.min(1000, math.floor(value))) or 200
 end
 
@@ -129,10 +133,77 @@ function C.HistoryReplay(frame, ring)
     end
 end
 
+-- Lines kept per window (maxLines). Choice 1 leaves Blizzard's limit alone;
+-- a later choice owns it through the context, which hands it back on Disable.
+-- Blizzard's SetMaxLines keeps the newest lines the buffer holds
+-- (CircularBufferMixin:SetMaxNumElements), and Window.lua sets the limit
+-- before a window's ring replays, so the replay finds the larger room. The
+-- combat log keeps the limit Blizzard_CombatLog gives it.
+function C.ApplyLineLimit(self, frame)
+    if frame == ChatFrame2 then return end
+    local lines = NS.ChatLineLimits[self.config.maxLines - 1]
+    if lines then
+        self.context:Property(frame, "GetMaxLines", "SetMaxLines", lines)
+    else
+        self.context:RestoreProperty(frame, "SetMaxLines")
+    end
+end
+
+------------------------------------------------------------------ typed lines
+-- The lines typed into the chat input boxes, newest last, at most INPUT_LINES
+-- for the character. A box gets them back through its own AddHistoryLine once
+-- when its window is set up, and records what is typed through a secure
+-- post-hook on that same method: one hook per box, nothing shared. Blizzard's
+-- box recalls the 32 newest lines (historyLines in ChatFrameEditBox.xml).
+local INPUT_LINES, MAX_INPUT_BYTES = 50, 1280
+-- Lines that run code or print values stay out of the file.
+local KEPT_OUT = { script = true, run = true, dump = true }
+local inputBoxes = setmetatable({}, { __mode = "k" })
+
+local function InputLines()
+    local saved = Store()
+    if type(saved.input) ~= "table" then saved.input = {} end
+    return saved.input
+end
+
+local function Typed(text)
+    local line = PublicText(text)
+    if not line or #line > MAX_INPUT_BYTES then return end
+    local command = line:match("^%s*/(%a+)")
+    if command and KEPT_OUT[command:lower()] then return end
+    return line
+end
+
+-- Post-hook of AddHistoryLine; a hook cannot be removed, so it asks whether
+-- the module is still on and recording.
+local function RecordLine(_, text)
+    if not (M.active and M.config.saveInputHistory) then return end
+    local line, lines = Typed(text), InputLines()
+    if not line or lines[#lines] == line then return end
+    lines[#lines + 1] = line
+    if #lines > INPUT_LINES then table.remove(lines, 1) end
+end
+
+-- Cold path, per styled window (Window.lua). The hook goes in after the saved
+-- lines were fed back, so those are not recorded again.
+function C.ApplyInputHistory(self, frame)
+    local box = frame.editBox
+    if not (box and self.config.saveInputHistory) or inputBoxes[box] then return end
+    inputBoxes[box] = true
+    local lines = InputLines()
+    for i = 1, #lines do
+        local line = Typed(lines[i])
+        if line then box:AddHistoryLine(line) end
+    end
+    hooksecurefunc(box, "AddHistoryLine", RecordLine)
+end
+
 -- Empties this character's rings in place, so styled windows keep writing
 -- to the rings they already hold.
 function C.ClearHistory()
-    local tabs = Store().tabs
+    local saved = Store()
+    saved.input = nil
+    local tabs = saved.tabs
     for key, ring in pairs(tabs) do
         if type(ring) == "table" then
             ring.lines, ring.count, ring.next = {}, 0, 1
@@ -145,4 +216,29 @@ end
 -- The options page's "Clear saved chat history" button.
 function M:ClearHistory()
     C.ClearHistory()
+end
+
+-- Explicitly requested snapshot; no search index or copy is maintained per message.
+function C.HistorySnapshot()
+    local rows, tabs = {}, {}
+    for key, ring in pairs(Store().tabs) do
+        if #tabs >= MAX_TABS then break end
+        if PublicText(key) and type(ring) == "table" then tabs[#tabs + 1] = { key = key, ring = ring } end
+    end
+    table.sort(tabs, function(a, b) return a.key < b.key end)
+    for _, tab in ipairs(tabs) do
+        local ring = tab.ring
+        Fit(ring, LineLimit())
+        for offset = 1, ring.count do
+            local row = ring.lines[(ring.next - offset - 1) % ring.limit + 1]
+            if type(row) == "table" and PublicText(row.text) and #row.text <= MAX_TEXT then
+                local text = row.text:gsub("|H.-|h(.-)|h", "%1"):gsub("|c%x%x%x%x%x%x%x%x", "")
+                    :gsub("|cn[%w_]+:", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("|A.-|a", "")
+                local stamp = S.Text("Saved message")
+                rows[#rows + 1] = { key = tab.key .. ":" .. offset, label = text, text = text,
+                    detail = tab.key .. " · " .. stamp .. "\n" .. text, search = tab.key .. " " .. text }
+            end
+        end
+    end
+    return rows
 end

@@ -58,6 +58,21 @@ function R.Known(spellID)
     return Public(inBook) and inBook == true
 end
 
+function R.PlayerClass()
+    local _, class = UnitClass("player")
+    if Public(class) and type(class) == "string" then return class end
+end
+
+-- The specialization ID, nil while unreadable. C_SpecializationInfo directly:
+-- the global GetSpecialization shims exist only while Blizzard's deprecation
+-- fallbacks are loaded.
+function R.SpecID()
+    local index = C_SpecializationInfo.GetSpecialization()
+    if not Public(index) or type(index) ~= "number" or index <= 0 then return end
+    local specID = C_SpecializationInfo.GetSpecializationInfo(index)
+    if Public(specID) and type(specID) == "number" then return specID end
+end
+
 function R.ItemCount(itemID)
     local count = GetItemCount(itemID)
     if Public(count) and type(count) == "number" then return count end

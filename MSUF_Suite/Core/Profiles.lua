@@ -504,7 +504,7 @@ function P.Export(options)
     end
     local result = (skinText and "MSUFS3:" or P.prefix) .. frames .. "\n" .. modules
         .. (skinText and "\n" .. skinText or "")
-    if #result > P.maxBytes then return nil, "Suite profile is too large" end
+    if #result > IO.maxExportBytes then return nil, "Suite profile is too large" end
     return result
 end
 
@@ -604,16 +604,14 @@ function P.SaveAs(name)
     return Create(clean, frames, profile, skinProfile)
 end
 
-function P.Import(name, text)
-    local clean, reason = NewName(name)
-    if not clean then return false, reason end
+local function PrepareBundle(text)
     if type(text) ~= "string" or #text > P.maxBytes then return false, "Invalid suite profile" end
     text = text:match("^%s*(.-)%s*$"):gsub("\r\n", "\n")
     local version, frames, modules, skinText = text:match("^MSUFS(3):([^\n]+)\n([^\n]+)\n([^\n]+)$")
     if not version then version, frames, modules = text:match("^MSUFS([12]):([^\n]+)\n([^\n]+)$") end
     if not frames or not frames:match("^MSUF[234]:") then return false, "Invalid suite profile" end
     local decode = version == "1" and IO.PrepareLegacyProfile or IO.PrepareProfile
-    local profile, why = decode(modules)
+    local profile, why, marked = decode(modules)
     if not profile then return false, why end
     -- User preference belongs to the active profile, never to the incoming
     -- payload. Full imports carry this module forward when protection is on;
@@ -632,7 +630,17 @@ function P.Import(name, text)
         skinProfile, skinReason = SkinSnapshot(skin)
     end
     if skin and not skinProfile then return false, skinReason end
-    return Create(clean, frames, profile, skinProfile)
+    return { profile = profile, coreText = frames, modules = profile.suite.modules, characterBound = marked,
+        provider = { present = skin ~= nil, profile = skinProfile } }
+end
+
+function P.Import(name, text)
+    local clean, reason = NewName(name)
+    if not clean then return false, reason end
+    local bundle, why = PrepareBundle(text)
+    if not bundle then return false, why end
+    local profile = bundle.profile
+    return Create(clean, bundle.coreText, profile, bundle.provider.profile)
 end
 
 -- Installer-owned factory data is already bundled and validated by the same
@@ -736,12 +744,17 @@ function P.ImportModule(text)
         if not profile then return false, reason end
         local name = Suite.HostBridge.ActiveFrameProfileName() or skin.Database.GetActiveProfileName()
         local ok
+        ok, reason = Suite.ProfileWorkbenchBridge.Checkpoint("Before importing skin settings")
+        if not ok then return false, reason end
         ok, reason = skin.Database.SetProfile(name, profile)
         if not ok then return false, reason end
         return skin.Database.SetActiveProfile(name)
     end
     local id, settings, reason = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
+    -- The restore point comes first: a refused one leaves the variant overlay laid.
+    local checkpoint, checkpointWhy = Suite.ProfileWorkbenchBridge.Checkpoint("Before importing Suite settings")
+    if not checkpoint then return false, checkpointWhy end
     local name=DB.GetActiveProfileName()
     local allowed,mutationReason=Suite.ProfileVariants.BeforeMutation(name)
     if not allowed then return false,mutationReason end
@@ -778,3 +791,7 @@ function P.ImportModuleIntoNew(name, text)
     if skin and not skinProfile then return false, "Skin profile unavailable" end
     return Create(clean, frames, profile, skinProfile)
 end
+
+P.WorkbenchSkinEngine = SkinEngine
+P.WorkbenchPrepareBundle = PrepareBundle
+P.WorkbenchSkinSnapshot = SkinSnapshot

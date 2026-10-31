@@ -313,6 +313,22 @@ function Style.FontFlags(choice)
     return Style.Outline[choice or 1] or "OUTLINE"
 end
 
+-- The mouseover highlight: an additive wash over the whole health bar, above
+-- the role tint and below the texture finish and the native text.
+local HIGHLIGHT_ALPHA = 0.25
+function Style.CreateHighlight(owner)
+    local texture = owner:CreateTexture(nil, "ARTWORK", nil, 7)
+    texture:SetAllPoints(owner)
+    texture:SetBlendMode("ADD")
+    texture:Hide()
+    return texture
+end
+
+function Style.PaintHighlight(texture, hex)
+    local r, g, b = NS.RGB(hex)
+    texture:SetColorTexture(r, g, b, HIGHLIGHT_ALPHA)
+end
+
 function Style.CreateBorder(owner)
     local visual = { edges = {} }
     for i = 1, 4 do visual.edges[i] = owner:CreateTexture(nil, "OVERLAY", nil, 7) end
@@ -379,6 +395,9 @@ local Decor = {}
 Style.Decor = Decor
 local DECOR_MEDIA = "Interface\\AddOns\\MSUF_Suite\\Media\\Nameplates\\"
 local TEXTURES = { DECOR_MEDIA .. "Soft.tga", DECOR_MEDIA .. "Stripes.tga" }
+-- Opacity of the static effects: each has a firm inner and a faint outer ring.
+local SHADOW_ALPHA, SHADOW_SOFT_ALPHA, GLOW_ALPHA, GLOW_SOFT_ALPHA = 0.35, 0.12, 0.25, 0.1
+local THRESHOLD_WIDTH = 1
 
 local function Joined(c, prefix)
     if NS.Client.isForever and c.barGeometry ~= 2 then return false end
@@ -403,6 +422,7 @@ function Decor.Plan(c, prefix)
         texture = enabled and c[prefix .. "TextureEnabled"] and TEXTURES[c[prefix .. "FillTexture"] or 1] or nil,
         threshold = enabled and prefix == "enemy" and c.enemyThresholdEnabled == true,
         percent = (c.enemyThresholdPercent or 20) / 100, thresholdColor = c.enemyThresholdColor or "ffffff",
+        thresholdWidth = c.enemyThresholdWidth or THRESHOLD_WIDTH,
         focus = enabled and prefix == "enemy" and c.enemyFocusMarker == true,
         focusSize = c.enemyFocusMarkerSize or 12, focusColor = c.enemyFocusMarkerColor or "ff66ff",
         focusX = c.enemyFocusMarkerX or -56, focusY = c.enemyFocusMarkerY or 0,
@@ -470,10 +490,10 @@ local function Effects(state, p, last, target, focus, visible)
         Ring(state, "glow")
         Ring(state, "glowSoft")
     end
-    PaintRing(state, "shadow", state.health, last, size, 2, "000000", 0.35, p.shadow and visible)
-    PaintRing(state, "shadowSoft", state.health, last, size + 2, 2, "000000", 0.12, p.shadow and visible)
-    PaintRing(state, "glow", state.health, last, 1, size, p.glowColor, 0.25, glow and visible)
-    PaintRing(state, "glowSoft", state.health, last, size + 1, 2, p.glowColor, 0.1, glow and visible)
+    PaintRing(state, "shadow", state.health, last, size, 2, "000000", SHADOW_ALPHA, p.shadow and visible)
+    PaintRing(state, "shadowSoft", state.health, last, size + 2, 2, "000000", SHADOW_SOFT_ALPHA, p.shadow and visible)
+    PaintRing(state, "glow", state.health, last, 1, size, p.glowColor, GLOW_ALPHA, glow and visible)
+    PaintRing(state, "glowSoft", state.health, last, size + 1, 2, p.glowColor, GLOW_SOFT_ALPHA, glow and visible)
     PaintRing(state, "double", state.health, state.health, p.borderSize + 2, 1,
         p.borderColor, 1, p.border and p.borderSize > 0 and visible)
     PaintRing(state, "outer", state.health, last, 1, p.outerSize, p.outerColor, 1, p.outer and visible)
@@ -523,10 +543,13 @@ local function Threshold(state, p)
         marker:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
         marker:SetAlpha(0)
         line = host:CreateTexture(nil, "OVERLAY")
-        line:SetWidth(1)
         line:SetPoint("TOP", marker:GetStatusBarTexture(), "TOPRIGHT", 0, 0)
         line:SetPoint("BOTTOM", marker:GetStatusBarTexture(), "BOTTOMRIGHT", 0, 0)
         state.threshold, state.thresholdBar = line, marker
+    end
+    if state.thresholdWidth ~= p.thresholdWidth then
+        line:SetWidth(p.thresholdWidth)
+        state.thresholdWidth = p.thresholdWidth
     end
     if state.percent ~= p.percent then
         state.thresholdBar:SetValue(p.percent)

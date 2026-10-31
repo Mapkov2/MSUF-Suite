@@ -1,5 +1,5 @@
 local _, P = ...
-local Suite, W, Tr, HM = P.Suite, P.W, P.Tr, P.HM
+local Suite, M, W, Tr, HM = P.Suite, P.M, P.W, P.Tr, P.HM
 local PAGE = "suite_skin"
 local SearchRow = P.SkinSearchRow
 
@@ -50,6 +50,7 @@ local CHOICE_LABELS = {
     modern = "Modern", forever = "MSUF Forever", list = "List", classic = "Classic",
     always = "Always", combat = "In combat", outOfCombat = "Out of combat",
     mouseover = "On mouseover", never = "Never",
+    continuous = "Continuous", line = "Line",
 }
 
 -- Dropdown values; unknown camelCase values read as words ("outOfCombat" ->
@@ -126,6 +127,12 @@ local function ResetSkinSection(skin, id, rows, contextRows)
             if not skin.Theme.ApplyLook(defaults.theme.look) then return false end
         elseif id == "micro" then
             if not skin.MicroMenuSkin.ApplyPreset(defaults.icons.microMenu.preset) then return false end
+        elseif id == "fonts" then
+            -- The font choice also lives in followMSUF and the Shared Media
+            -- pick, which no row writes: the font owner sets the factory choice.
+            if not skin.Typography.SetSelection(skin.Typography.SelectionOf(defaults.typography)) then
+                return false
+            end
         end
         for _, item in ipairs(changes) do
             local path = item.row.id
@@ -154,6 +161,23 @@ local function ResetSkinSection(skin, id, rows, contextRows)
         skin.Registry.NotifyListeners("theme", "section-reset")
         return true
     end)
+end
+
+-- A row with `unavailable() -> reason | nil` stays visible but inert while it
+-- answers a reason, and says that reason on hover.
+local function GateRows(ctx, grid, rows)
+    for _, row in ipairs(rows) do
+        local widget, unavailable = row.unavailable and grid.controls[row.id], row.unavailable
+        if widget then
+            if W.SetControlDisabledReason then
+                W.SetControlDisabledReason(widget, function()
+                    local reason = unavailable()
+                    return reason and Tr(reason)
+                end)
+            end
+            M.TrackRefresh(ctx, function() W.SetControlEnabled(widget, unavailable() == nil) end)
+        end
+    end
 end
 
 -- One accordion: help, a settings grid of the non-color rows, an optional
@@ -185,6 +209,7 @@ local function Section(ctx, b, id, title, help, rows, open, extra, contextRows)
                 x = 16, y = y, width = width, columns = width >= 520 and 2 or 1, rows = visibleRows,
             })
             y = grid.bottomY
+            GateRows(ctx, grid, visibleRows)
         end
         if extra then y = extra(body, y, width) or y end
         P.AttachRowsSummary(ctx, body, visibleRows)

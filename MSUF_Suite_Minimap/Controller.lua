@@ -72,9 +72,11 @@ local function Commit(self)
 end
 
 local function AddonLoaded(_, _, name)
-    if name == "MinimapButtonButton" then
-        -- Yield any buttons already in our drawer before MBB collects them on
-        -- PLAYER_LOGIN. The normal Suite refresh defers protected work in combat.
+    if NS.IsMinimapButtonCollector(name) then
+        -- Yield any buttons already in our drawer before the collector takes
+        -- them (MBB on PLAYER_LOGIN). The normal Suite refresh defers protected
+        -- work in combat.
+        MM.ForgetButtonCollector()
         if M.active then
             MM.Force("drawer")
             MM.Force("input")
@@ -124,6 +126,7 @@ end)
 function M:Enable()
     self.applied, self.force, self.dirty = {}, {}, {}
     self.mapOwned = false
+    MM.ForgetButtonCollector()
     S.states.minimap.reloadRequired = nil
     MM.EnsureFrames()
     MM.HookMap()
@@ -151,7 +154,7 @@ function M:Refresh()
     if dirty.geometry or dirty.position then MM.ApplyHost() end
     if dirty.geometry then
         if self.mapOwned then MM.ApplyMap(true) end
-        if not MM.CollectsButtons() then MM.RefreshIcons() end
+        MM.RefreshIcons()
     end
     if not self.mapOwned then MM.Queue("claim") end
     if dirty.border or dirty.geometry or MM.style:IconSkinChanged(self.config) then MM.ApplyBorder() end

@@ -13,7 +13,7 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local ENUM = AB.ENUM
-local VIS, BAR = ENUM.VISIBILITY, ENUM.BAR
+local VIS, BAR, TOOLTIP = ENUM.VISIBILITY, ENUM.BAR, ENUM.TOOLTIP
 -- The state driver body of each visibility mode.
 local MODES = {
     [VIS.ALWAYS] = "show", [VIS.COMBAT] = "[combat] show; hide", [VIS.OUT_OF_COMBAT] = "[combat] hide; show",
@@ -83,16 +83,91 @@ local function AnyHover()
     return false
 end
 
+-- Recompute only on a visibility edge, never in the shared cooldown hook.
+-- With every reused bar asleep, the hook needs no native secret tests at all.
+local function UpdateFeedbackVisibility()
+    for index = 2, 8 do
+        local bar = AB.bars[index]
+        if bar and bar.native and not bar.paintDormant then
+            AB.nativeFeedbackVisible = true
+            return
+        end
+    end
+    AB.nativeFeedbackVisible = false
+end
+
+------------------------------------------------------------------ fade timing
+-- The "Fade duration" setting. A bar's move between its faded and revealed
+-- opacity is a native Alpha animation of its header: the engine ramps the
+-- opacity, no Lua runs per frame (no OnUpdate, no timer) and the one script
+-- is the animation's OnFinished. None of the calls is a protected function
+-- (Blizzard_APIDocumentationGenerated marks IsProtectedFunction on neither
+-- SimpleAnimGroup, SimpleAnim, SimpleAnimAlpha nor SetAlpha), so a fade also
+-- runs in combat. The group is created out of combat by the visibility pass,
+-- like every frame the suite makes. Blizzard fades its own frames the same
+-- way (StatusTrackingBarContainerTemplate: Alpha animations on the frame).
+-- The header's opacity is set to its final value when a fade starts, so
+-- every reader sees it at once and a stopped animation leaves nothing behind.
+local function FadeFinished(bar)
+    bar.fade.startedAt = nil
+    if M.active then AB.UpdateAlpha(bar) end
+end
+
+-- Out of combat: the header's animation group exists while the bar has a fade
+-- time, and its length follows the setting.
+local function PrepareFade(bar, seconds)
+    local fade = bar.fade
+    if not fade then
+        if seconds <= 0 then return end
+        local group = bar.header:CreateAnimationGroup()
+        fade = { group = group, alpha = group:CreateAnimation("Alpha"), seconds = 0 }
+        group:SetScript("OnFinished", function() FadeFinished(bar) end)
+        bar.fade = fade
+    end
+    if fade.seconds == seconds then return end
+    fade.seconds = seconds
+    if seconds > 0 then fade.alpha:SetDuration(seconds) else fade.group:Stop() end
+end
+
+local function StopFade(bar)
+    local fade = bar.fade
+    if fade and fade.startedAt then
+        fade.startedAt = nil
+        fade.group:Stop()
+    end
+end
+
+-- Moves the header from its last opacity to `alpha`, starting from wherever
+-- a fade in progress stands (the ramp is linear).
+local function StartFade(bar, last, alpha)
+    local fade, now = bar.fade, GetTime()
+    local from = last
+    if fade.startedAt then
+        local progress = (now - fade.startedAt) / fade.seconds
+        if progress < 1 then from = fade.from + (fade.to - fade.from) * progress end
+    end
+    fade.from, fade.to, fade.startedAt = from, alpha, now
+    fade.group:Stop()
+    bar.header:SetAlpha(alpha)
+    fade.alpha:SetFromAlpha(from)
+    fade.alpha:SetToAlpha(alpha)
+    fade.group:Play()
+end
+
 -- Alpha for one bar: bar opacity when shown; the fade opacity while a
--- mouseover bar is neither hovered nor revealed.
+-- mouseover bar is neither hovered nor revealed. With a fade time, the move
+-- between those two takes that long; every other change is instant.
 function AB.UpdateAlpha(bar)
     local config, keys = M.config, bar.key
     local alpha = config[keys.Alpha] / 100
     local textAlpha = 1
+    local state = bar.header:GetAttribute("state-vis")
+    local inFade = state == "fade"
     -- The panel reveal lives in the driver: out of combat it shows instead of
     -- fading, so a fade state never means an open spellbook.
-    if bar.header:GetAttribute("state-vis") == "fade" and not (S.editMode or AB.dragging or bar.hover
-        or (config.mouseoverShowAll and AnyHover())) then
+    local faded = inFade and not (S.editMode or AB.dragging or bar.hover
+        or (config.mouseoverShowAll and AnyHover()))
+    if faded then
         local fadeAlpha = config[keys.FadeAlpha] / 100
         textAlpha = fadeAlpha == 0 and 0 or 1
         -- Zero-alpha secure frames do not reliably take hover in Forever.
@@ -100,7 +175,24 @@ function AB.UpdateAlpha(bar)
         -- overlay so count updates cannot leave ghost stack/key text.
         alpha = math.max(0.01, fadeAlpha)
     end
-    if bar.textAlpha ~= textAlpha then
+    local fading = bar.alpha ~= alpha and inFade and bar.inFade and bar.faded ~= faded
+        and bar.fade ~= nil and bar.fade.seconds > 0
+    -- A zero fade is still a shown secure hit target. Park visual walks and
+    -- catch up before revealing it; Blizzard continues owning its buttons.
+    -- A bar fading out is still on screen and keeps painting until its fade
+    -- has ended (FadeFinished runs this pass again).
+    local wasDormant = bar.paintDormant
+    local dormant = textAlpha == 0 or (state == "hide"
+        and not bar.header:GetAttribute("forceshow") and not bar.header:GetAttribute("dragshow"))
+    if fading and textAlpha == 0 then dormant = wasDormant == true end
+    bar.paintDormant = dormant
+    if wasDormant ~= dormant then UpdateFeedbackVisibility() end
+    if wasDormant and not dormant and M.active then
+        S.Dispatch(bar.native and AB.RefreshNativeBar or AB.Painter.PaintBar, bar)
+    end
+    bar.inFade, bar.faded = inFade, faded
+    -- The text of a fading-out bar goes with the end of its fade (FadeFinished).
+    if bar.textAlpha ~= textAlpha and not (fading and textAlpha == 0) then
         bar.textAlpha = textAlpha
         for i = 1, #bar.buttons do
             local overlay = bar.buttons[i].button.TextOverlayContainer
@@ -108,8 +200,14 @@ function AB.UpdateAlpha(bar)
         end
     end
     if bar.alpha ~= alpha then
+        local last = bar.alpha
         bar.alpha = alpha
-        bar.header:SetAlpha(alpha)
+        if fading then
+            StartFade(bar, last, alpha)
+        else
+            StopFade(bar)
+            bar.header:SetAlpha(alpha)
+        end
     end
 end
 
@@ -138,6 +236,31 @@ local function SetHover(bar, on)
     end
 end
 
+-- Whether the bar's "Show tooltips" setting lets its buttons show one now.
+local function TooltipAllowed(bar)
+    local mode = M.config[bar.key.Tooltip]
+    return mode == TOOLTIP.ALWAYS or (mode == TOOLTIP.OUT_OF_COMBAT and not NS.InCombat())
+end
+
+local function KeybindModeOpen()
+    local frame = AB.Frame("QuickKeybindFrame")
+    return frame ~= nil and frame:IsShown()
+end
+
+-- The tooltip of the button the mouse entered. The suite shows its own
+-- buttons' (AB.ShowTooltip). Blizzard's reused buttons show theirs in their
+-- own OnEnter, so where the setting says no, this post-hook takes it away
+-- again; Quick Keybind mode keeps Blizzard's binding tooltip. No tooltip
+-- method is hooked.
+local function ButtonTooltip(rec)
+    local allowed = TooltipAllowed(rec.bar)
+    if rec.owned and not rec.native then
+        if allowed then AB.ShowTooltip(rec) end
+    elseif not allowed and GameTooltip:GetOwner() == rec.button and not KeybindModeOpen() then
+        GameTooltip:Hide()
+    end
+end
+
 -- Insecure post-hooks on suite headers and on every bar button (including
 -- the adopted Blizzard ones); they only change alpha and tooltips.
 local function Enter(frame)
@@ -146,7 +269,7 @@ local function Enter(frame)
     local bar = rec and rec.bar or AB.headers[frame]
     if not bar then return end
     SetHover(bar, true)
-    if rec and rec.owned and not rec.native then AB.ShowTooltip(rec) end
+    if rec then ButtonTooltip(rec) end
 end
 local function Leave(frame)
     if not M.active then return end
@@ -190,7 +313,10 @@ function AB.ApplyDrag()
     local show = dragging and M.config.showOnDrag
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
-        if bar and SetForced(bar, "dragshow", show and AB.Available(index)) then AB.Execute(bar.header, AB.SNIPPET.VIS) end
+        if bar and SetForced(bar, "dragshow", show and AB.Available(index)) then
+            AB.UpdateAlpha(bar)
+            AB.Execute(bar.header, AB.SNIPPET.VIS)
+        end
     end
 end
 
@@ -226,6 +352,7 @@ local function ApplyBarVisibility(bar, config, forms, gamepad)
     AB.HookHover(bar.header)
     for i = 1, #bar.buttons do AB.HookHover(bar.buttons[i].button) end
     if not fade then bar.hover = nil end
+    PrepareFade(bar, config[keys.FadeDuration])
     AB.UpdateAlpha(bar)
 end
 
@@ -253,7 +380,8 @@ function AB.StopVisibility()
             SetForced(bar, "dragshow", nil)
             bar.header:SetAttribute("state-vis", "hide")
             AB.Execute(bar.header, AB.SNIPPET.VIS)
-            bar.hover = nil
+            StopFade(bar)
+            bar.hover, bar.inFade, bar.faded = nil, nil, nil
         end
     end
     AB.dragging, AB.dragPending = nil, nil

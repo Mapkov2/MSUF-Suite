@@ -34,14 +34,6 @@
     },
     {
       "category": "locale",
-      "item": "Keystone level",
-      "basis": "moved",
-      "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Tooltips.lua: 'Keystone level' becomes 'Keystone level %d'.",
-      "reason": "Existing text retained through its replacement English key.",
-      "date": "2026-10-02"
-    },
-    {
-      "category": "locale",
       "item": "Loot: ",
       "basis": "moved",
       "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Specialization.lua: 'Loot: ' becomes 'Loot: %s'.",
@@ -70,14 +62,6 @@
       "basis": "moved",
       "evidence": "91e00e5920b2a1de50831785315d8fbe20c7abc1; git log -S on the quoted old literal; MSUF_Suite_Minimap/Tooltips.lua: 'World boss' becomes '%s (World boss)'.",
       "reason": "Existing text retained through its replacement English key.",
-      "date": "2026-10-02"
-    },
-    {
-      "category": "locale",
-      "item": "Equipment slot",
-      "basis": "moved",
-      "evidence": "652cc709bac31e6a262232a98faf802d5186ec2e; git log -S on the quoted old literal; MSUF_Suite_CooldownManager/Catalog.lua: 'Equipment slot' becomes 'Equipment slot %d'.",
-      "reason": "Existing text retained as one translatable format string.",
       "date": "2026-10-02"
     },
     {
@@ -2882,14 +2866,6 @@
     },
     {
       "category": "locale",
-      "item": "Target marker",
-      "basis": "owner",
-      "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
-      "reason": "Retired English source string of a reworded nameplate label or tab; the new wording carries the translations.",
-      "date": "2026-10-11"
-    },
-    {
-      "category": "locale",
       "item": "Target marker X (0 = outside left edge)",
       "basis": "owner",
       "evidence": "Owner request 2026-10-11 for a pro-level nameplate menu UX pass: setting keys and values are unchanged, only labels were reworded (target arrows, border/backdrop, aggro glow) and the enemy tabs were split into Bar/Text/Markers/Target arrows. suite_options_menu_contract and suite_nameplates_visibility_contract pin the new placement; the locale tool verifies every new string in all ten locales.",
@@ -3255,6 +3231,478 @@
       "date": "2026-10-17",
       "evidence": "MSUF_Suite/Core/Catalog/ActionBars.lua keeps the buttonShape key and default 1, and values 1 (Square) and 2 (Circle) keep their meaning (AB.ButtonShape, Decorations.lua); the choice extends from 2 to 6 values with MSUF's aura icon shapes Rounded, Diamond, Hexagon and Blizzard portrait (HostBridge.ApplyIconShape). On a host without MSUF's shapes, 3 to 6 draw square and 2 keeps the Suite's own circle.",
       "reason": "Owner request 2026-10-17: MSUF's aura icon shapes on the action bars extend the existing Button shape choice; no prior value or control is removed."
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:damageMeter.borderSize\",\"number\",false,0,4,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-26: implement all Damage Meter styling. MSUF_Suite/Core/Catalog/DamageMeter.lua expands borderSize maximum from 4 to 16; suite_damage_meter_styling_contract.lua covers a 16 px textured window border.",
+      "reason": "Range expansion for native material borders. Existing values 0-4 or 1-4, default, minimum and step remain supported; no setting or behavior removed.",
+      "date": "2026-10-26"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:damageMeter.rowBorderSize\",\"number\",false,1,4,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-26: implement all Damage Meter styling. MSUF_Suite/Core/Catalog/DamageMeter.lua expands rowBorderSize maximum from 4 to 16; suite_damage_meter_styling_contract.lua covers a 16 px textured window border.",
+      "reason": "Range expansion for native material borders. Existing values 0-4 or 1-4, default, minimum and step remain supported; no setting or behavior removed.",
+      "date": "2026-10-26"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.borderSize\",\"number\",false,0,4,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-26: implement all Damage Meter styling. MSUF_Suite/Core/Catalog/DamageMeter.lua expands borderSize maximum from 4 to 16; suite_damage_meter_styling_contract.lua covers a 16 px textured window border.",
+      "reason": "Range expansion for native material borders. Existing values 0-4 or 1-4, default, minimum and step remain supported; no setting or behavior removed.",
+      "date": "2026-10-26"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.rowBorderSize\",\"number\",false,1,4,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-26: implement all Damage Meter styling. MSUF_Suite/Core/Catalog/DamageMeter.lua expands rowBorderSize maximum from 4 to 16; suite_damage_meter_styling_contract.lua covers a 16 px textured window border.",
+      "reason": "Range expansion for native material borders. Existing values 0-4 or 1-4, default, minimum and step remain supported; no setting or behavior removed.",
+      "date": "2026-10-26"
+    },
+    {
+      "category": "locale",
+      "item": "Learned dungeon portals use secure buttons. Group suggestions require a verified dungeon map or an exact destination match. Unknown destinations show no suggestion; buttons hide in combat.",
+      "basis": "owner",
+      "evidence": "Owner request 2026-10-29 (Dungeon portals: current season or a custom set): MSUF_Suite_Options/Pages/QualityOfLife.lua HELP.dungeon_portals keeps every sentence of the old text and adds the new Portals to show choice (dungeonPortals.portalSet, customPortals); suite_dungeon_portals_contract keeps the secure buttons, verified suggestions and combat hiding, translated in all ten packs.",
+      "reason": "The help text was reworded to explain the new portal sets; the retired wording's translations went with it.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "locale",
+      "item": "%d rating  /  DR %.0f%%",
+      "basis": "dead",
+      "evidence": "Package skin-resets 2026-10-29 (uncommitted): rg over the whole Suite checkout finds STATS_DR_ROW only at its definition in MSUF_Suite_Skin/Locales/enUS.lua; no concatenated key (L[\"X_\" .. v]) builds it; tools/tests holds no reference.",
+      "reason": "The skin's English table key STATS_DR_ROW has no reader; the string is no longer shown anywhere (the translations in MSUF_Suite/Locales are orphans for the locale pass).",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "locale",
+      "item": "MapkoSkin",
+      "basis": "dead",
+      "evidence": "Package skin-resets 2026-10-29 (uncommitted): rg over the whole Suite checkout finds ADDON_NAME only at its definition in MSUF_Suite_Skin/Locales/enUS.lua; no concatenated key (L[\"X_\" .. v]) builds it; tools/tests holds no reference.",
+      "reason": "The skin's English table key ADDON_NAME has no reader; the string is no longer shown anywhere (the translations in MSUF_Suite/Locales are orphans for the locale pass).",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "locale",
+      "item": "No enchant",
+      "basis": "dead",
+      "evidence": "Package skin-resets 2026-10-29 (uncommitted): rg over the whole Suite checkout finds DOSSIER_NO_ENCHANT only at its definition in MSUF_Suite_Skin/Locales/enUS.lua; no concatenated key (L[\"X_\" .. v]) builds it; tools/tests holds no reference.",
+      "reason": "The skin's English table key DOSSIER_NO_ENCHANT has no reader; the string is no longer shown anywhere (the translations in MSUF_Suite/Locales are orphans for the locale pass).",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "locale",
+      "item": "Preset",
+      "basis": "dead",
+      "evidence": "Package skin-resets 2026-10-29 (uncommitted): rg over the whole Suite checkout finds PRESET only at its definition in MSUF_Suite_Skin/Locales/enUS.lua; no concatenated key (L[\"X_\" .. v]) builds it; tools/tests holds no reference.",
+      "reason": "The skin's English table key PRESET has no reader; the string is no longer shown anywhere (the translations in MSUF_Suite/Locales are orphans for the locale pass).",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "locale",
+      "item": "Skin refresh is blocked during combat.",
+      "basis": "dead",
+      "evidence": "Package skin-resets 2026-10-29 (uncommitted): rg over the whole Suite checkout finds REFRESH_BLOCKED_COMBAT only at its definition in MSUF_Suite_Skin/Locales/enUS.lua; no concatenated key (L[\"X_\" .. v]) builds it; tools/tests holds no reference.",
+      "reason": "The skin's English table key REFRESH_BLOCKED_COMBAT has no reader; the string is no longer shown anywhere (the translations in MSUF_Suite/Locales are orphans for the locale pass).",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:buffReminders.reminderSound\",\"choice\",false,1,4,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/BuffReminders.lua keeps buffReminders.reminderSound with choices 1-4 unchanged (None, Raid warning, Ready check, Quest log) and appends Alarm clock, Map ping and Whisper (max 4 -> 7); saved indexes stay valid. suite_buff_reminders_class_contract (sounds) pins each index to its sound kit.",
+      "reason": "Same option; the sound list was extended at its end.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:buffReminders.reminderSound\",\"choice\",false,1,4,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/BuffReminders.lua keeps buffReminders.reminderSound with choices 1-4 unchanged (None, Raid warning, Ready check, Quest log) and appends Alarm clock, Map ping and Whisper (max 4 -> 7); saved indexes stay valid. suite_buff_reminders_class_contract (sounds) pins each index to its sound kit.",
+      "reason": "Same option; the sound list was extended at its end.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:buffReminders.point\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/BuffReminders.lua keeps buffReminders.point with choices 1 Center and 2 Top unchanged and appends the other seven Suite anchors (max 2 -> 9); saved indexes stay valid. suite_buff_reminders_audit_contract (anchors) pins every index to its point.",
+      "reason": "Same option; the screen anchor now offers every Suite anchor.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:buffReminders.point\",\"choice\",false,1,2,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/BuffReminders.lua keeps buffReminders.point with choices 1 Center and 2 Top unchanged and appends the other seven Suite anchors (max 2 -> 9); saved indexes stay valid. suite_buff_reminders_audit_contract (anchors) pins every index to its point.",
+      "reason": "Same option; the screen anchor now offers every Suite anchor.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:minimap\",\"conflicts\",[[1,\"SexyMap\"],[2,\"EllesmereUIMinimap\"],[3,\"ElvUI\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua keeps SexyMap, EllesmereUIMinimap and ElvUI in the minimap conflicts and adds Chinchilla and BasicMinimap (replacement minimaps); suite_minimap_pack_contract.lua (conflicts) pins every entry.",
+      "reason": "Same trait; the conflict list was extended, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:minimap\",\"conflicts\",[[1,\"SexyMap\"],[2,\"EllesmereUIMinimap\"],[3,\"ElvUI\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Minimap.lua keeps SexyMap, EllesmereUIMinimap and ElvUI in the minimap conflicts and adds Chinchilla and BasicMinimap (replacement minimaps); suite_minimap_pack_contract.lua (conflicts) pins every entry.",
+      "reason": "Same trait; the conflict list was extended, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:bags\",\"conflicts\",[[1,\"EllesmereUIBags\"],[2,\"ElvUI\"],[3,\"Bagnon\"],[4,\"BetterBags\"],[5,\"AdiBags\"],[6,\"ArkInventory\"],[7,\"Inventorian\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua keeps all seven bag replacements in the bags conflicts and adds Baganator, Combuctor and LiteBag (replacement bag addons; Baganator is installed under that folder name in the _beta_ client, Combuctor and LiteBag use their CurseForge folder names); suite_bags_audit_contract.lua (S.Availability) switches Bags off for each of them.",
+      "reason": "Same trait; the conflict list was extended, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:bags\",\"conflicts\",[[1,\"EllesmereUIBags\"],[2,\"ElvUI\"],[3,\"Bagnon\"],[4,\"BetterBags\"],[5,\"AdiBags\"],[6,\"ArkInventory\"],[7,\"Inventorian\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua keeps all seven bag replacements in the bags conflicts and adds Baganator, Combuctor and LiteBag (replacement bag addons; Baganator is installed under that folder name in the _beta_ client, Combuctor and LiteBag use their CurseForge folder names); suite_bags_audit_contract.lua (S.Availability) switches Bags off for each of them.",
+      "reason": "Same trait; the conflict list was extended, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:dataTexts\",\"conflicts\",[]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/DataTexts.lua declares the DataTexts conflicts (Titan, ChocolateBar, Bazooka, EllesmereUIDataBars); suite_dt_progress_contract.lua (conflicts) pins them.",
+      "reason": "Same trait; the empty conflict list gained information bar addons, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:dataTexts\",\"conflicts\",[]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/DataTexts.lua declares the DataTexts conflicts (Titan, ChocolateBar, Bazooka, EllesmereUIDataBars); suite_dt_progress_contract.lua (conflicts) pins them.",
+      "reason": "Same trait; the empty conflict list gained information bar addons, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:threatMeter\",\"conflicts\",[]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLifeDetails.lua declares the threat meter conflict (Omen); suite_qol_audit_contract.lua (AlertCatalog) pins it.",
+      "reason": "Same trait; the empty conflict list gained Omen, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:threatMeter\",\"conflicts\",[]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLifeDetails.lua declares the threat meter conflict (Omen); suite_qol_audit_contract.lua (AlertCatalog) pins it.",
+      "reason": "Same trait; the empty conflict list gained Omen, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:objectives\",\"conflicts\",[]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/HUD.lua declares the objective tracker conflict (!KalielsTracker); suite_modules_audit_contract.lua pins it.",
+      "reason": "Same trait; the empty conflict list gained Kaliel's Tracker, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:objectives\",\"conflicts\",[]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/HUD.lua declares the objective tracker conflict (!KalielsTracker); suite_modules_audit_contract.lua pins it.",
+      "reason": "Same trait; the empty conflict list gained Kaliel's Tracker, no entry removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:objectives\",\"look.visualKeys\",[[\"achievementsColor\",true],[\"backgroundColor\",true],[\"bonusColor\",true],[\"campaignColor\",true],[\"completeColor\",true],[\"completeGroupColor\",true],[\"dividerColor\",true],[\"focusedColor\",true],[\"importantColor\",true],[\"mutedColor\",true],[\"questsColor\",true],[\"scenarioColor\",true],[\"textColor\",true],[\"titleColor\",true],[\"worldColor\",true]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/HUD.lua adds the colors recipesColor and lateColor to the objective tracker; suite_modules_audit_contract.lua pins both.",
+      "reason": "Same trait; the key list gained the two new colors, no key removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "locale",
+      "item": "The Suite draws its own tracker and hides Blizzard's while it runs. Entries are sorted into groups: the focused quest, campaign and important quests, quests ready to hand in, regular quests, world quests, nearby bonus objectives, scenario and delve steps, and tracked achievements. In a raid it can hide completely, only while a boss is engaged, or pause the regular list during any raid fight; the encounter view keeps running then. Quest symbols come as Suite letters or as Blizzard's icons, and the heading line can be switched off. The key binding Use tracked quest item uses the focused quest's item, else the first usable one, and picks a new item only outside combat. Left-click a group name to fold it or a quest to open its log entry; right-click for more actions.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/HUD.lua keeps this tracker help text; suite_modules_audit_contract.lua pins the added group names.",
+      "reason": "Existing text retained, now also naming the zone events, collectibles, Traveler's Log, Endeavors and recipes groups the tracker gained.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:damageMeter.mythicReset\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/DamageMeter.lua hides mythicReset on Forever like the window MythicSwap and MythicType choices; MSUF_Suite_DamageMeter/Navigation.lua D.WantsMythicEvents returns false on Forever, so no keystone event ever reaches the reset; suite_damage_meter_audit_contract.lua Forever.",
+      "reason": "Retains the saved setting and default; hides a control that has nothing to act on without Mythic+ keystones on Forever.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:nameplates\",\"conflicts\",[[1,\"Plater\"],[2,\"Platynator\"],[3,\"ElvUI\"],[4,\"EllesmereUINameplates\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua conflicts retains Plater, Platynator, ElvUI and EllesmereUINameplates and appends Kui_Nameplates, TidyPlates_ThreatPlates, TidyPlatesContinued and BetterBlizzPlates.",
+      "reason": "Extended native-nameplate conflict detection; every original conflicting addon remains covered.",
+      "date": "2026-10-30"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:nameplates\",\"conflicts\",[[1,\"Plater\"],[2,\"Platynator\"],[3,\"ElvUI\"],[4,\"EllesmereUINameplates\"]]]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Nameplates.lua conflicts retains Plater, Platynator, ElvUI and EllesmereUINameplates and appends Kui_Nameplates, TidyPlates_ThreatPlates, TidyPlatesContinued and BetterBlizzPlates.",
+      "reason": "Extended native-nameplate conflict detection; every original conflicting addon remains covered.",
+      "date": "2026-10-30"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"*:cooldownManager.*_glowStyle\",\"choice\",false,1,4,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/CooldownManager.lua appends Pixel and Autocast to GLOW_STYLES at indices 5 and 6 (glowStyle and pandemicStyle). Existing indices 1-4 and all keys stay unchanged; suite_cdm_look_render_contract.lua checks the labels 1-4, the styles they draw and the new ones.",
+      "reason": "Glow style choice upper bound grows from 4 to 6 for the requested glow styles; no previous choice or field is removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"*:cooldownManager.*_anchor\",\"choice\",false,1,15,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/CooldownManager.lua appends \"Other frame\" to the attach list at index 16 (ANCHOR_LABELS). Indices 1-15 (Free, the twelve bars, Player frame, Target frame) and every default stay; suite_cdm_layout_extras_contract.lua pins labels, indices and defaults.",
+      "reason": "The Attach to choice's upper bound grows from 15 to 16 for attaching to any frame by name; no previous choice is removed.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"*:cooldownManager.*_barWidth\",\"number\",false,60,480,1,\"\"]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/CooldownManager.lua widens the Bar width rule to 0..480; the default (200, Buff bars 220) and the maximum stay. suite_cdm_layout_extras_contract.lua pins range and defaults and the 0 = match the attached bar or frame behavior.",
+      "reason": "The lower bound drops from 60 to 0 so that 0 can mean \"match the attached frame\"; every previous width stays valid.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"*:cooldownManager.*_gap\",\"requiresChoice\",[[\"key\",\"*_anchor\"],[\"values\",[[2,true],*[15,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/CooldownManager.lua builds the Attach side and gap requirement from the whole attach list, which now ends with Other frame (index 16); the same choices 2-15 still enable them. suite_cdm_layout_extras_contract.lua pins the requirement for every bar.",
+      "reason": "The set of attach choices that enable Attach gap grows by the new Other frame choice; no choice stops enabling it.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"*:cooldownManager.*_side\",\"requiresChoice\",[[\"key\",\"*_anchor\"],[\"values\",[[2,true],*[15,true]]]]]",
+      "basis": "moved",
+      "evidence": "Core/Catalog/CooldownManager.lua builds the Attach side and gap requirement from the whole attach list, which now ends with Other frame (index 16); the same choices 2-15 still enable them. suite_cdm_layout_extras_contract.lua pins the requirement for every bar.",
+      "reason": "The set of attach choices that enable Attach side grows by the new Other frame choice; no choice stops enabling it.",
+      "date": "2026-10-29"
+    },
+    {
+      "category": "locale",
+      "item": "Copies buttons, rows, size, spacing, growth direction and empty slots. Position is never copied.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/ActionBars.lua retains the controls and now translates the complete replacement key: Copies buttons, rows, size, spacing, growth direction, empty slots and flyout direction. Position is never copied.",
+      "reason": "The copy-layout help adds flyout direction; the same buttons, rows, size, spacing, growth and empty-slot controls remain copied, while position remains excluded.",
+      "date": "2026-10-30"
+    },
+    {
+      "category": "locale",
+      "item": "Copies when the bar is shown, its opacity, fade and click-through.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/ActionBars.lua retains the controls and now translates the complete replacement key: Copies when the bar is shown, its opacity, fade, tooltips and click-through.",
+      "reason": "The copy-visibility help adds tooltips; visibility, opacity, fade and click-through controls remain copied.",
+      "date": "2026-10-30"
+    },
+    {
+      "category": "locale",
+      "item": "Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/Bags.lua retains the controls and now translates the complete replacement key: Keep Blizzard grid, or choose one Suite grid, physical bag groups or categories. Use Edit categories in the bag window to create, rename, reorder or disable your categories; drop items onto a sidebar category to assign them. Sort items by orders every Suite view; Name keeps the order each view has always had. Click a category header to hide or show its items. The footer counts free slots, and Mark items that beat what you wear puts a small arrow on equipment that beats what you wear in its slot. Scroll or use Previous and Next for larger inventories; in combat every slot is shown at once. Combined stack counts are visual only; physical stacks are always restored at the bank, guild bank, mail, trade, auction house and merchant.",
+      "reason": "The expanded help retains every existing bag view/category/stack safety action and explains sorting, folding, free slots and the opt-in upgrade marker.",
+      "date": "2026-10-30"
+    },
+    {
+      "category": "locale",
+      "item": "Switch between native tabs, combined bank, combined warbank and shared categories with the button below the bank window. Shared categories include accessible character and warbank tabs. Manage bank tabs returns to Blizzard purchases, deposits and tab settings. Every slot keeps its own item action and bank stacks are never merged; clicking a warband item selects Blizzard's Warband Bank tab first, and a refundable item asks before it enters the warband bank.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/Bags.lua retains the controls and now translates the complete replacement key: Switch between native tabs, combined bank, combined warbank and shared categories with the button below the bank window. Shared categories include accessible character and warbank tabs. Manage bank tabs returns to Blizzard purchases, deposits and tab settings. The bank views have the same smart search, free slot count and collapsible category headers. Every slot keeps its own item action and bank stacks are never merged; clicking a warband item selects Blizzard's Warband Bank tab first, and a refundable item asks before it enters the warband bank.",
+      "reason": "The expanded help retains every native/combined bank action and refundable-item safety rule, adding search/free-slot/folding descriptions.",
+      "date": "2026-10-30"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"forever:macroBuilder\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "module_metadata",
+      "item": "[\"retail:macroBuilder\",\"suite_qualityOfLife\",\"MSUF_Suite_QualityOfLife\"]",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:macroBuilder\",\"description\",\"Preview a mouseover or focus spell macro and create it on your character with /msufmacro.\"]",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:macroBuilder\",\"description\",\"Preview a mouseover or focus spell macro and create it on your character with /msufmacro.\"]",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Character macro name",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Character macro slots are full",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Create character macro",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Create macros after combat",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Created. Open /macro to drag it to an action bar.",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Enter a valid spell name or ID",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Focus enemy",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Macro builder (Retail)",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Macro preview (select text to copy)",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Mouseover ally",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Mouseover enemy",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Preview a mouseover or focus spell macro and create it on your character with /msufmacro.",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Preview ready. Press Create to save it.",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "The macro builder is available only in Retail",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Type /msufmacro to preview a mouseover ally, mouseover enemy or focus enemy macro. Enter a spell name or ID, then explicitly create a character macro outside combat. Drag it from /macro to your action bar.",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Type a spell, then preview the macro",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "WoW could not create the macro",
+      "basis": "moved",
+      "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
+      "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
+      "date": "2026-10-31"
     }
   ]
 }

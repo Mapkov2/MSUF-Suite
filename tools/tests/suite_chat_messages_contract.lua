@@ -23,7 +23,8 @@ local S = {
 }
 S.PublicText = function(v) return v ~= "secret" and type(v) == "string" and v ~= "" and v or nil end
 S.Queue = function() error("chat message tools queued the module for combat end") end
-local config = Support.CatalogDefaults(root, "chat")
+local config, catalogNS = Support.CatalogDefaults(root, "chat")
+NS.ChatSoundChannels = catalogNS.ChatSoundChannels
 config.saveHistory, config.historyLines, config.linkURLs, config.colorMentionNames = true, 20, true, true
 local events = {}
 local context = { removed = {}, combat = {} }

@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Cooldown manager
 ## Notes: Optional cooldown, buff and buff bar manager for Retail and Forever.
 ## Author: Mapko
-## Version: 0.1.4-alpha
+## Version: 0.1.5-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -13,14 +13,21 @@ Const.lua
 Presets.lua
 GuideProfiles.lua
 Catalog.lua
+CatalogSlices.lua
 EntryFill.lua
 Resolve.lua
+ResolveStages.lua
 Index.lua
 Icons.lua
+Masque.lua
 TrackingBars.lua
 Time.lua
+GlowLines.lua
 Effects.lua
+AssistIcon.lua
+KickMark.lua
 AuraGlows.lua
+AuraLooks.lua
 StackColors.lua
 AuraButtons.lua
 AuraPlaceholders.lua
@@ -29,8 +36,10 @@ AuraContainers.lua
 Auras.lua
 ActionGlows.lua
 ActionUsableGlows.lua
+ReadyPulse.lua
 Alerts.lua
 Grid.lua
+FrameAnchors.lua
 Layout.lua
 Visibility.lua
 Native.lua

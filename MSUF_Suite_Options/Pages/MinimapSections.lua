@@ -197,7 +197,7 @@ function Menu.BuildMinimapSections(ctx, builder, sections, help, skinStatus)
     BuildMinimapGroup(menu, "decoration", "Decoration", "Decoration", { "style_art", "style_glow", "style_backdrop" })
     BuildMinimapSection(menu, "behavior", { "behavior" })
     BuildMinimapGroup(menu, "buttons", "Blizzard buttons", "Button settings", { "elements", "landing", "dungeon", "specialization" })
-    BuildMinimapSection(menu, "addons", { "addons" })
+    BuildMinimapSection(menu, "addons", { "addons" }, P.MinimapKeptButtons(ctx, builder))
     local info = {}
     for _, field in ipairs(P.Suite.MinimapInfoFields) do info[#info + 1] = "info_" .. field:lower() end
     info[#info + 1], info[#info + 2] = "info_difficulty", "info_colors"

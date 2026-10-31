@@ -4,9 +4,10 @@ local _, NS = ...
 local Content = { records = setmetatable({}, { __mode = "k" }), active = {}, watchers = {} }
 NS.ContentMotion = Content
 local Safety, Motion = NS.Safety, NS.Motion
+local revision = 0
 
 local function Stop(record)
-    record.group:Stop()
+    if Content.active[record] then record.group:Stop() end
     record.token = nil
     Content.active[record] = nil
 end
@@ -40,7 +41,7 @@ function Content.Play(frame, owner, token)
         return false
     end
     if record and record.owner ~= nil and record.owner ~= owner then return false end
-    local unchanged = record and record.token == token
+    local unchanged = record and record.token == token and record.revision == revision
     if unchanged and Content.active[record] then return true end
     for active in pairs(Content.active) do
         if active ~= record then
@@ -71,7 +72,7 @@ function Content.Play(frame, owner, token)
         end
         record.group:Stop()
     end
-    record.owner, record.token = owner, token
+    record.owner, record.token, record.revision = owner, token, revision
     record.fromAlpha, record.toAlpha = from, alpha
     record.alpha:SetFromAlpha(from)
     record.alpha:SetToAlpha(alpha)
@@ -80,13 +81,18 @@ function Content.Play(frame, owner, token)
     return true
 end
 
+local function Release(record, owner)
+    if not record or record.owner ~= owner then return false end
+    Stop(record)
+    record.owner = nil
+    return true
+end
+
 function Content.StopOwner(owner, frame)
+    if frame ~= nil then return Release(Content.records[frame], owner) end
     local found = false
-    for target, record in pairs(Content.records) do
-        if record.owner == owner and (frame == nil or frame == target) then
-            Stop(record)
-            record.owner, found = nil, true
-        end
+    for _, record in pairs(Content.records) do
+        if Release(record, owner) then found = true end
     end
     return found
 end
@@ -126,7 +132,8 @@ function Content.UnwatchOwner(owner)
 end
 
 local function StopAll()
-    for _, record in pairs(Content.records) do Stop(record) end
+    revision = revision + 1
+    for record in pairs(Content.active) do Stop(record) end
 end
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")

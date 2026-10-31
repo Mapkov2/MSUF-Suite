@@ -59,7 +59,12 @@ for _, forever in ipairs({ false, true }) do
         plateEnemyMinus = 1, plateFriendlyMinions = 1, plateOffscreen = 1, plateSimpleMinion = 1,
         plateSimpleMinus = 1, plateSimpleFriendlyPlayer = 1, plateSimpleFriendlyNpc = 1,
         selectionBorder = 1, selectionTargetColor = "ffffff", selectionFocusColor = "ff66ff",
-        selectionDim = 1, selectionDimPercent = 50, enemyOtherTankEnabled = true, enemyOtherTankColor = "3fc77a" }
+        selectionDim = 1, selectionDimPercent = 50, enemyOtherTankEnabled = true, enemyOtherTankColor = "3fc77a",
+        plateEnemies = 1, plateFriendlyPlayers = 1, personalResource = 1, plateEnemyPets = 1, plateEnemyGuardians = 1,
+        plateEnemyTotems = 1, plateFriendlyPets = 1, plateFriendlyGuardians = 1, plateFriendlyTotems = 1,
+        plateMaxDistanceMode = 1, plateMaxDistance = 60, plateOccludedMode = 1, plateOccludedPercent = 40,
+        plateFadeDistance = 1, plateShrinkDistance = 1, plateSpacingMode = 1, plateOverlapV = 110, plateOverlapH = 80,
+        plateMotionSpeed = 1, plateInsetMode = 1, plateTopInset = 8, plateBottomInset = 10, plateClampTarget = 1 }
     for key, value in pairs(newer) do
         assert(expected[key] == nil, "the export already holds " .. key)
         assert(spec.rules[key] and spec.rules[key].default == value, "newer setting default changed: " .. key)
@@ -73,6 +78,14 @@ for _, forever in ipairs({ false, true }) do
     newer.enemyThresholdEnabled, newer.enemyThresholdPercent, newer.enemyThresholdColor = false, 20, "ffffff"
     newer.enemyFocusMarker, newer.enemyFocusMarkerSize, newer.enemyFocusMarkerColor = false, 12, "ff66ff"
     newer.enemyFocusMarkerX, newer.enemyFocusMarkerY = -56, 0
+    -- Nameplate looks: the mouseover highlight, the level color, the threshold
+    -- line width and the friendly cast sizes start on today's look.
+    local looks = { friendlyCastHeight = 0, friendlyCastIconSize = 0, friendlyCastTimeFormat = 1,
+        mouseoverHighlight = false, mouseoverHighlightColor = "ffffff", enemyLevelColor = false, enemyThresholdWidth = 1 }
+    for key, value in pairs(looks) do
+        assert(expected[key] == nil and spec.rules[key] and spec.rules[key].default == value, "look setting default changed: " .. key)
+        newer[key] = value
+    end
     for key, rule in pairs(spec.rules) do
         if not key:match("^auraColors") and newer[key] == nil then
             assert(rule.default == expected[key], "Mapko catalog default differs from export: " .. key)

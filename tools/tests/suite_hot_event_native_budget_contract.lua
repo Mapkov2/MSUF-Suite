@@ -346,7 +346,7 @@ do
     end
     members.player, names.player = false, "Player"
     local m = Start("groupDeathAlert", "GroupDeathAlert.lua",
-        { includePlayer = false, screen = true, chat = true, sound = false })
+        { includePlayer = false, screen = true, chat = true, sound = false, scale = 100, point = 5, x = 0, y = 55 })
     combat = true
     Fire("PLAYER_REGEN_DISABLED")
     -- raid1 is the player: watched only through "player" (not included here).

@@ -65,7 +65,7 @@ local suite = {}
 local context = Support.ModuleTimers(root, suite, ns)("combatMovementCue", nil, {})
 function context:Event(name, callback) events[name] = callback end
 function context:RemoveEvent(name) events[name] = nil end
-local config = { spellIDs = "invalid,0;101,101 102 10000000", combatOnly = true,
+local config = { spellIDs = "invalid,0;101,101 102 10000000", combatOnly = true, duration = 2.5,
     point = 5, x = 0, y = -120, scale = 100 }
 for key, value in pairs({
     Install = function(id, module)

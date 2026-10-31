@@ -7,7 +7,8 @@ local Border = Style.PaintBorder
 local Layout, Roles, Text, Power, Threat = private.Layout, private.Roles, private.Text, private.Power, private.Threat
 local Level, CastTime, CVars, Auras = private.Level, private.CastTime, private.CVars, private.Auras
 local KickReady, Selection, AuraColors = private.KickReady, private.Selection, private.AuraColors
-local Decor = private.Decor
+local Decor, Mouseover, Names = private.Decor, private.Mouseover, private.FriendlyNames
+local FilterFriendlyName, RestoreFriendlyName = Names.Filter, Names.Restore
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local IN_COMBAT = { inCombat = true }
 local M = {
@@ -84,11 +85,7 @@ local function HideVisual(visual)
     for i = 1, 4 do visual.edges[i]:Hide() end
 end
 
-local function Prefix(uf)
-    local value = uf.isFriend
-    if not S.Public(value) or type(value) ~= "boolean" then return nil end
-    return value and "friendly" or "enemy"
-end
+local Prefix = private.PlatePrefix
 
 -- The unit facts of one plate (its health bar), reused while the plate lives:
 -- marker, quest, kind (the type role) and the threat-independent part of the
@@ -221,45 +218,6 @@ local function PaintTarget(uf, health, visual, prefix)
     Style.PaintTarget(visual, health, visible, M.targetConfig, uf, rightGap, leftGap)
 end
 
-local function RestoreFriendlyName(name)
-    local alpha = name and M.friendlyNames[name]
-    if alpha == nil then return end
-    if Safe(name) then name:SetAlpha(alpha) end
-    M.friendlyNames[name] = nil
-end
-
-local function FilterFriendlyName(uf, prefix)
-    local name = uf.name
-    if not Safe(name) then return end
-    if M.config.friendlyNamesOnly ~= Mode.GROUP_NAMES_ONLY
-        or prefix ~= "friendly" or not S.Public(uf.isPlayer) or uf.isPlayer ~= true then
-        RestoreFriendlyName(name)
-        return
-    end
-    local health = uf.HealthBarsContainer and uf.HealthBarsContainer.healthBar
-    local unit = health and M.units[health]
-    if not unit then
-        RestoreFriendlyName(name)
-        return
-    end
-    local party, raid = UnitInParty(unit), UnitInRaid(unit)
-    if not S.Public(party) or not S.Public(raid) then
-        RestoreFriendlyName(name)
-        return
-    end
-    if party or raid then
-        RestoreFriendlyName(name)
-        return
-    end
-    if M.friendlyNames[name] == nil then
-        local alpha = name:GetAlpha()
-        if not NS.Finite(alpha) then return end
-        M.friendlyNames[name] = alpha
-        -- Alpha survives Blizzard's ordinary name Show()/Hide() refreshes.
-        name:SetAlpha(0)
-    end
-end
-
 local function PaintRaidIcon(uf, prefix)
     local frame = uf.RaidTargetFrame
     local icon = frame and frame.RaidTargetIcon
@@ -283,16 +241,14 @@ end
 
 local function PaintFonts(uf, health, cast, prefix)
     local c, keys = M.config, Key[prefix]
-    Text.Apply(uf.name, Text.styles[prefix], c[keys.NameSize] or 0)
-    if prefix == "enemy" then
-        Text.Apply(health.Text, Text.styles.enemy, c.enemyHealthTextSize or 0)
-        Text.Apply(health.LeftText, Text.styles.enemy, c.enemyHealthTextSize or 0)
-        Text.Apply(health.RightText, Text.styles.enemy, c.enemyHealthTextSize or 0)
-    else
-        RestoreFont(health.Text)
-        RestoreFont(health.LeftText)
-        RestoreFont(health.RightText)
-    end
+    local nameStyle = Text.styles[prefix]
+    Text.Apply(uf.name, nameStyle, c[keys.NameSize] or 0)
+    -- "Name and health text outline" styles both sides' health text; only
+    -- enemy plates have a health text size (friendly keeps Blizzard's).
+    local healthSize = prefix == "enemy" and c.enemyHealthTextSize or 0
+    Text.Apply(health.Text, nameStyle, healthSize)
+    Text.Apply(health.LeftText, nameStyle, healthSize)
+    Text.Apply(health.RightText, nameStyle, healthSize)
     if not cast then return end
     local style, size = Text.styles[keys.Cast], c[keys.CastSize] or 0
     Text.Apply(cast.Text, style, size)
@@ -337,6 +293,7 @@ local function RestorePlate(uf)
     AuraColors.Restore(uf)
     Threat.Restore(uf)
     RestoreFriendlyName(uf.name)
+    Mouseover.Restore(uf)
     Level.PaintNative(uf, nil)
     Level.Hide(uf)
     PaintRaidIcon(uf)
@@ -755,6 +712,7 @@ function M:Refresh()
     Threat.Refresh()
     KickReady.Configure()
     Selection.Configure(self.config)
+    Mouseover.Configure()
     AuraColors.Configure(self.config)
     if self.config.auraColorsEnabled then
         for _, event in ipairs(AURA_CONFIG_EVENTS) do Listen(self, event, OnAuraSpellsChanged) end
@@ -797,6 +755,7 @@ function M:Disable()
     Level.RestoreNative()
     Auras.Restore()
     KickReady.Disable()
+    Mouseover.Disable()
     Selection.RestoreAll()
 end
 
@@ -805,6 +764,8 @@ Text.Bind(M)
 Level.Bind(M)
 CastTime.Bind(M)
 KickReady.Bind(M, RepaintCasts)
+Mouseover.Bind(M)
+Names.Bind(M)
 Auras.Bind(M)
 AuraColors.Bind(M, RepaintAuraColors)
 S.Install("nameplates", M)

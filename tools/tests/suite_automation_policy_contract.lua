@@ -41,10 +41,12 @@ end
 -- Kept here on purpose: dropping a flag from the catalog fails this list, and
 -- an automation API call in an unflagged module fails the source scan.
 local MODULES = { "qol", "quests", "combatLog", "lootContainers", "trustedPartyInvites", "delveSolePower",
-    "professionAppearance", "collectionNewMarkers", "autoUprank", "mythicAutoQueue" }
+    "professionAppearance", "collectionNewMarkers", "autoUprank", "mythicAutoQueue", "fishingComfort", "autoResponses" }
 local SWITCHES = { "qol.repair", "qol.autoJunk", "loot.quickLoot", "dailyComfort.autoSkipCinematic",
     "groupRaidShortcuts.autoMarkTank", "groupRaidShortcuts.autoMarkHealer", "groupFinderDoubleClick.quickApply",
-    "mythicKeyShare.insertKey", "mythicResetReminder.announceReset", "tooltipDetails.inspectHovered", "autoUprank.replaceLowerRanks" }
+    "mythicKeyShare.insertKey", "mythicResetReminder.announceReset", "tooltipDetails.inspectHovered", "autoUprank.replaceLowerRanks",
+    "autoResponses.acceptSummon", "autoResponses.acceptResurrect", "autoResponses.declineDuel",
+    "autoResponses.declinePetDuel", "autoResponses.declineInvite" }
 local expected = {}
 for _, id in ipairs(MODULES) do
     Check(catalog[id] and catalog[id].automation == true, "automation module is not flagged: " .. id)
@@ -184,14 +186,19 @@ local APIS = {
 }
 -- Calls that run only after the player's own click or confirmation.
 local CONFIRMED = {
+    ["MSUF_Suite_DamageMeter/Report.lua SendChatMessage"] =
+        "the explicit Report channel selection; SendReport rejects combat, unavailable channels and secret rankings",
     ["MSUF_Suite_QualityOfLife/TrainerLearnAll.lua BuyTrainerService"] = "learns after the cost confirmation",
     ["MSUF_Suite_QualityOfLife/LootVendorRules.lua UseContainerItem"] = "sells after the sale confirmation",
-    ["MSUF_Suite_QualityOfLife/MacroBuilder.lua CreateMacro"] = "the explicit Create button",
+    ["MSUF_Suite/Core/Macros/Native.lua CreateMacro"] =
+        "the explicit Create button; managed refresh requires an existing fingerprint and only replaces that macro",
     ["MSUF_Suite_QualityOfLife/FlightTimer.lua TaxiRequestEarlyLanding"] = "the explicit Land button",
     ["MSUF_Suite_Minimap/Specialization.lua SetLootSpecialization"] = "the explicit menu choice",
     ["MSUF_Suite_QualityOfLife/MerchantList.lua BuyMerchantItem"] =
         "the player's click on a Suite merchant row; currency, item and high-price purchases ask first, like Blizzard's rows",
     ["MSUF_Suite_Bags/BankActions.lua UseContainerItem"] = "the player's right click on a Suite bank slot withdraws it",
+    ["MSUF_Suite_QualityOfLife/InventoryTransfers.lua UseContainerItem"] =
+        "one selected stack per explicit Move stack click; events only confirm or cancel, suite_inventory_tools_contract",
 }
 -- Addons whose files all belong to one catalog module.
 local ADDON_MODULE = {

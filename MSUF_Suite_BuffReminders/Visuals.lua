@@ -109,6 +109,54 @@ function R.StyleCount(button, config)
     S.SetFont(button.count, S.ResolveFont(config.countFont), config.countSize or 12, "OUTLINE")
 end
 
+-- The note texts (the ready check note, the notice lines) keep their Blizzard
+-- font object, and so the client's and the skin's fonts, while their size
+-- setting is 0, which is the look they always had. Another size draws the
+-- object's own face at that size; label.sized remembers it, so a return to 0
+-- restores the object.
+function R.StyleNote(label, object, size)
+    if size > 0 then
+        local path, _, flags = object:GetFont()
+        S.SetFont(label, path, size, flags)
+        label.sized = true
+    elseif label.sized then
+        label.sized = nil
+        label:SetFontObject(object)
+    end
+end
+
+-- The "Screen anchor" choice (catalog: point). Center and Top keep the
+-- numbers older profiles stored; the other seven anchors follow in the
+-- Suite's order, as the catalog lists them. The host is placed by this point
+-- of itself on the same point of the screen, so every anchor keeps that point
+-- of the row's box where it is while the icons fill the box from its top
+-- left.
+local SCREEN_POINTS = { "CENTER", "TOP", "TOPLEFT", "TOPRIGHT", "LEFT", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
+
+function R.ScreenPoint(config)
+    return SCREEN_POINTS[config.point] or "CENTER"
+end
+
+-- The note texts hang on the row's host: the notice lines below it, the ready
+-- check note above it. A bottom anchor leaves no room below the row, so every
+-- note hangs above it; this is the one rule for both.
+local BOTTOM_POINTS = { BOTTOM = true, BOTTOMLEFT = true, BOTTOMRIGHT = true }
+
+-- Whether a note that belongs below the row (below) hangs there.
+function R.NoteBelow(config, below)
+    return below and not BOTTOM_POINTS[R.ScreenPoint(config)]
+end
+
+-- anchor is what the note hangs on: the host, or a note already on that side.
+function R.PlaceNote(label, anchor, config, below, gap)
+    label:ClearAllPoints()
+    if R.NoteBelow(config, below) then
+        label:SetPoint("TOP", anchor, "BOTTOM", 0, -gap)
+    else
+        label:SetPoint("BOTTOM", anchor, "TOP", 0, gap)
+    end
+end
+
 function R.IconGeometry(config, count)
     local size, spacing, columns = config.size, config.spacing, config.columns
     local displayColumns = math.min(columns, math.max(1, count))
@@ -125,5 +173,5 @@ function R.PositionIcon(button, host, shown, config)
 end
 
 function R.PreviewCount(entry)
-    return entry.group and "2" or entry.kind ~= "spell" and not entry.notice and "5" or ""
+    return entry.group and not entry.ally and "2" or entry.kind ~= "spell" and not entry.notice and "5" or ""
 end

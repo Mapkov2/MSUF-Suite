@@ -107,6 +107,13 @@ function K.BarStacks(view, counts)
 end
 -- Text on top: stacks (true) unless the bar chose the countdown.
 function K.BarStacksTop(view) return view.textTop ~= COUNTDOWN_ON_TOP end
+-- The name a bar row shows (timer bars, buff bars, their stand-ins and
+-- timer rows): the entry's own (barText; "" the spell's), else the spell's.
+function K.EntryLabel(entry)
+    local text = entry and entry.ov and entry.ov.barText
+    if text and text ~= "" then return text end
+    return entry and entry.name or ""
+end
 
 ------------------------------------------------------------------ tints
 -- The usable states and their colors are S.USABLE and S.USABLE_TINT (shared
@@ -170,30 +177,57 @@ end
 local Recall = K.Recall
 
 ------------------------------------------------------------------ countdown
--- One countdown formatter per (warning seconds, warning color): whole
--- seconds (below the threshold in the warning color), m:ss from a minute,
--- hours from an hour. No threshold: plain seconds. Shared by the cooldown
--- swipes (SetCountdownFormatter) and the aura buttons' duration text
--- bindings, built on first use and kept (bounded).
+-- One countdown formatter per (warning seconds, warning color) and the
+-- Text section's tenths and urgent stage: whole seconds (below the warning
+-- threshold in the warning color, below the urgent one in the urgent color,
+-- below the tenths one with tenths), m:ss from a minute, hours from an hour.
+-- Nothing set: plain seconds. Shared by the cooldown swipes
+-- (SetCountdownFormatter) and the aura buttons' duration text bindings,
+-- built on first use and kept (bounded). Only breakpoints: the remaining
+-- time, secret in combat, stays in C.
 local countdowns = K.NewCache()
-function K.CountdownFormatter(seconds, r, g, b)
-    if type(seconds) ~= "number" or seconds <= 0 then
-        seconds = 0
-    else
-        seconds = floor(seconds + .5)
+local function Whole(value)
+    if type(value) ~= "number" or value <= 0 then return 0 end
+    return floor(value + .5)
+end
+local function Bytes(r, g, b) return floor((r or 1) * 255 + .5), floor((g or 1) * 255 + .5), floor((b or 1) * 255 + .5) end
+-- Where the look below a minute changes, rising, each value once.
+local function Cut(cuts, value)
+    if value <= 0 then return end
+    for i = 1, #cuts do
+        if cuts[i] == value then return end
     end
+    cuts[#cuts + 1] = value
+end
+-- The point from a cut up to the next: tenths (a 0.1 step, rounded up like
+-- the whole seconds) and the stage's color.
+local function Stage(from, seconds, tenths, urgent, warn, alarm, up)
+    local format, step = "%.0f", nil
+    if from < tenths then format, step = "%.1f", .1 end
+    local hex = from < urgent and alarm or from < seconds and warn or nil
+    if hex then format = "|cff" .. hex .. format .. "|r" end
+    return { threshold = from, format = format, rounding = up, step = step }
+end
+function K.CountdownFormatter(seconds, r, g, b, tenths, urgent, ur, ug, ub)
+    seconds, tenths, urgent = Whole(seconds), Whole(tenths), Whole(urgent)
     local R, G, B = 0, 0, 0
-    if seconds > 0 then R, G, B = floor((r or 1) * 255 + .5), floor((g or 1) * 255 + .5), floor((b or 1) * 255 + .5) end
+    if seconds > 0 then R, G, B = Bytes(r, g, b) end
     local key = seconds * 16777216 + R * 65536 + G * 256 + B
+    local UR, UG, UB = 0, 0, 0
+    if urgent > 0 then UR, UG, UB = Bytes(ur, ug, ub) end
+    if tenths > 0 or urgent > 0 then key = ("%d:%d:%d:%d"):format(key, tenths, urgent, UR * 65536 + UG * 256 + UB) end
     local formatter = countdowns.young[key] or Recall(countdowns, key)
     if formatter then return formatter end
     local rounding = Enum.NumericRuleFormatRounding
     local up, down = rounding.Up, rounding.Down
-    local points = { { threshold = 0, format = "%.0f", rounding = up } }
-    if seconds > 0 then
-        points[1].format = ("|cff%02x%02x%02x%%.0f|r"):format(R, G, B)
-        points[2] = { threshold = seconds, format = "%.0f", rounding = up }
-    end
+    local cuts = { 0 }
+    Cut(cuts, tenths)
+    Cut(cuts, urgent)
+    Cut(cuts, seconds)
+    table.sort(cuts)
+    local warn, alarm = ("%02x%02x%02x"):format(R, G, B), ("%02x%02x%02x"):format(UR, UG, UB)
+    local points = {}
+    for i = 1, #cuts do points[i] = Stage(cuts[i], seconds, tenths, urgent, warn, alarm, up) end
     points[#points + 1] = { threshold = 60, format = "%d:%02d", rounding = down,
         components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } }
     points[#points + 1] = { threshold = 3600, format = "%dh", rounding = down, components = { { div = 3600, rounding = down } } }
@@ -202,24 +236,114 @@ function K.CountdownFormatter(seconds, r, g, b)
     return Remember(countdowns, key, formatter)
 end
 
+-- The Text section's countdown stages for a warning threshold (seconds: an
+-- entry's own or the bar's): its formatter, nil while nothing asks for one
+-- (the swipe keeps Blizzard's own countdown text). C.state.cdExtra: tenths
+-- or an urgent stage set (Settings.ReadGlobals).
+function K.Countdown(seconds)
+    local state = C.state
+    if not (state.cdExtra or type(seconds) == "number" and seconds > 0) then return nil end
+    return K.CountdownFormatter(seconds, state.thR, state.thG, state.thB, state.tenths, state.urgent, state.urR, state.urG, state.urB)
+end
+
+-- Duration text options per countdown formatter: a binding template that
+-- Blizzard copies into each aura button, around the shared formatter. The
+-- fallbacks must ride on the binding, and without a formatter on it no text
+-- renders at all. Every entry of a sync asks for the same few signatures,
+-- so the last answer is kept: a repeat costs four compares. The Text
+-- section's tenths and urgent stage drop it (K.ForgetDurationText, the
+-- settings read).
+local textOpts = K.NewCache()
+local lastSeconds, lastR, lastG, lastB, lastOpts
+function K.DurationText(seconds)
+    local state = C.state
+    local r, g, b = state.thR, state.thG, state.thB
+    if lastOpts and seconds == lastSeconds and r == lastR and g == lastG and b == lastB then return lastOpts end
+    local formatter = K.CountdownFormatter(seconds, r, g, b, state.tenths, state.urgent, state.urR, state.urG, state.urB)
+    local opts = textOpts.young[formatter] or Recall(textOpts, formatter)
+    if not opts then
+        local binding = C_DurationUtil.CreateDurationTextBinding()
+        binding:SetFormatter(formatter)
+        binding:SetZeroDurationText("")
+        binding:SetExpiredText("")
+        binding:SetUpdateInterval(.1)
+        binding:SetEnabled(true)
+        opts = Remember(textOpts, formatter, { binding = binding })
+    end
+    lastSeconds, lastR, lastG, lastB, lastOpts = seconds, r, g, b, opts
+    return opts
+end
+function K.ForgetDurationText() lastOpts = nil end
+
+------------------------------------------------------------------ swipes and sparks
+-- A bar's swipe color ("Swipe color", or "Class-colored swipe" while the
+-- class color is readable); black where a view has none. Read where the
+-- swipe is styled, never per update.
+function K.SwipeRGB(view)
+    if view.swipeClass then
+        local r, g, b = K.ClassRGB()
+        if r then return r, g, b end
+    end
+    return view.swipeR or 0, view.swipeG or 0, view.swipeB or 0
+end
+-- The active buff's swipe over a cooldown icon: its bar's color; the gold
+-- it always had for the default value and where a view has none.
+local AURA_SWIPE = CDM.AURA_SWIPE
+function K.AuraSwipeRGB(view)
+    local hex = view.auraSwipeColor
+    if hex == nil or hex == AURA_SWIPE then return K.GLOW_GOLD[1], K.GLOW_GOLD[2], K.GLOW_GOLD[3] end
+    return view.auraSwipeR or 0, view.auraSwipeG or 0, view.auraSwipeB or 0
+end
+-- "Show a spark": a thin bright line on a timer bar's fill edge, anchored to
+-- the bar's fill texture, so the client moves it with the fill (draining or
+-- filling, the fill grows from the left and its right edge moves). Made on
+-- first use on owner (own: one of our frames, else a region inside an aura
+-- button) and kept in holder.spark; holder.sparkOn says whether it shows.
+function K.Spark(holder, on, owner, own, fill, height, px)
+    local spark = holder.spark
+    if on and not spark then
+        spark = own and S.CreateTexture(owner, nil, "ARTWORK", nil, 7) or owner:CreateTexture(nil, "ARTWORK", nil, 7)
+        spark:SetColorTexture(1, 1, 1, .9)
+        spark:SetBlendMode("ADD")
+        holder.spark = spark
+    end
+    holder.sparkOn = on
+    if not spark then return end
+    spark:SetShown(on)
+    if not on then return end
+    spark:ClearAllPoints()
+    spark:SetPoint("CENTER", fill, "RIGHT", 0, 0)
+    spark:SetSize(2 * px, height)
+end
+
 ------------------------------------------------------------------ glows
 -- 1 Blizzard alert and 2 marching ants are 6x5 flipbooks (30 frames, 1 s
 -- loop) scaled around the icon; 3 pulses a border, 4 is a static border.
+-- 5 Pixel and 6 Autocast: lines or sparks travelling around the border
+-- (GlowLines.lua; lap: seconds per round at 100 percent speed), a still
+-- border (edge) where they cannot run: a shaped icon, a glow built without
+-- them.
 K.GLOW = {
     { atlas = "UI-HUD-ActionBar-Proc-Loop-Flipbook", rows = 6, cols = 5, frames = 30, duration = 1, scale = 1.4 },
     { atlas = "rotationhelper_ants_flipbook", rows = 6, cols = 5, frames = 30, duration = 1, scale = 1.2 },
     { edge = 2, pulse = .6 },
     { edge = 2 },
+    { edge = 2, lines = "pixel", lap = 4 },
+    { edge = 2, lines = "spark", lap = 6 },
 }
+K.LINE_STYLES = CDM.LINE_STYLES
 K.ASSIST_STYLE = 2
 
 -- Style and color of an entry's glows: its per-spell choices (ov) first,
--- then the bar's style and tint. No color: the art's own gold.
+-- then the bar's style and tint (glowStyle 0 and glowColor "": the bar's,
+-- chosen by a specialization over a shared choice). No color: the art's
+-- own gold.
 function K.GlowSpec(ov, style, tint, r, g, b)
-    style = ov.glowStyle or style
+    local own = ov.glowStyle
+    if own ~= 0 then style = own or style end
     if not K.GLOW[style] then style = 1 end
     local hex = ov.glowColor
-    if hex then return style, K.HexRGB(hex) end
+    if hex and hex ~= "" then return style, K.HexRGB(hex) end
     if tint then return style, r or 1, g or 1, b or 1 end
     return style
 end
@@ -294,7 +418,7 @@ function K.Pixels(count) return count * K.Px() end
 -- Icon footprint in UI units, snapped to whole physical pixels.
 function K.IconSize(view)
     if view.kind == COOLDOWN and view.cooldownDuration then
-        return K.Snap(view.barWidth or 200), K.Snap(view.barHeight or 18)
+        return K.Snap(view.barW or view.barWidth or 200), K.Snap(view.barHeight or 18)
     end
     local px = K.Px()
     local size = view.size or 36

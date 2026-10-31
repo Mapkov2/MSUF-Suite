@@ -21,10 +21,10 @@ local function Hits(ui, win)
     Properties(targets.header, "headerHeight")
     Properties(targets.title, "titleSize", nil, "headerFontSize")
     Properties(targets.timer, "headerTimerSize", nil, "headerFontSize")
-    local sections = { settings = "general", reset = "damageMeter_module", session = "windows", type = "windows" }
+    local sections = { settings = "general", reset = "damageMeter_module", session = "windows", type = "windows", target = "details" }
     targets.buttons = {}
-    local buttonLabels = { settings = "Window settings", reset = "Reset combat data", session = "Fight", type = "Meter" }
-    local buttonKeys = { settings = "windowCount", reset = "action.reset_data", session = "w1Session", type = "w1Type" }
+    local buttonLabels = { settings = "Window settings", reset = "Reset combat data", session = "Fight", type = "Meter", target = "Filter damage by target" }
+    local buttonKeys = { settings = "windowCount", reset = "action.reset_data", session = "w1Session", type = "w1Type", target = "targetSelector" }
     for key, button in pairs(win.buttons) do
         button:SetFrameLevel(win.header:GetFrameLevel() + 8)
         local section = "suite_damageMeter_" .. sections[key]
@@ -63,6 +63,38 @@ local function Hits(ui, win)
     return targets
 end
 
+local function ExtraTargets(preview, win)
+    if win.panel and not preview.targets.details then
+        local handle = K.Jump(preview.ui, win.panel, win.panel, "suite_damageMeter_detailsFont")
+        E.Handle(preview, handle, win.panel, "window", "Details", "details", "suite_damageMeter_detailsFont", "detailsFontCustom")
+        preview.targets.details = handle
+    end
+    if not win.sampleTimer or preview.targets.floatingTimer then return end
+    local handle = K.Jump(preview.ui, win.sampleTimer, preview.stage, "suite_damageMeter_timer")
+    E.Handle(preview, handle, win.sampleTimer, "window", "Floating timer", "floatingTimer", "suite_damageMeter_timer", "timerSize")
+    handle.sizeSetting = "timerSize"
+    preview.targets.floatingTimer = handle
+end
+
+-- The stage shows the window at its own scale (its Window scale), so the
+-- preview grows and shrinks with it, down to what the viewport holds.
+local function Fit(preview, win)
+    local native = UIParent:GetEffectiveScale() / preview.ui.header:GetEffectiveScale()
+    local zoom = win.previewZoom or 1
+    local w, h = win.previewWidth or win.frame:GetWidth(), win.previewHeight or win.frame:GetHeight()
+    if not win.previewHeight and P.Get("damageMeter", "headerOutside") then h = h + P.Get("damageMeter", "headerHeight") end
+    local fit = math.min(1, preview.availableWidth / (w * native * zoom), 250 / (h * native * zoom))
+    local scale, height = native * fit * zoom, h * native * fit * zoom
+    if preview.scale ~= scale or preview.height ~= height or preview.width ~= w then
+        preview.scale, preview.height, preview.width = scale, height, w
+        preview.stage:SetScale(scale)
+        preview.stage:SetSize(w, h)
+        preview.viewport:SetHeight(height)
+        local percent = math.floor(fit * zoom * 100 + .5)
+        P.SetTranslatedText(preview.title, percent ~= 100 and Tr("Preview %d%%"):format(percent) or Tr("Preview"))
+    end
+end
+
 function P.BuildMeterMenuPreview(ui, selected, setSelected)
     if not ui then return end
     local width, choices = ui.width - 32, {}
@@ -91,20 +123,10 @@ function P.BuildMeterMenuPreview(ui, selected, setSelected)
             P.SetTranslatedText(footer, Tr("Preview is available outside combat."))
             return
         end
-        local win = P.S.DamageMeterDrawMenuPreview(stage, selected())
+        local win = P.S.DamageMeterDrawMenuPreview(stage, selected(), preview.layers.details)
         if not preview.targets then preview.targets = Hits(ui, win) end
-        local native = UIParent:GetEffectiveScale() / ui.header:GetEffectiveScale()
-        local w, h = win.frame:GetWidth(), win.frame:GetHeight()
-        if P.Get("damageMeter", "headerOutside") then h = h + P.Get("damageMeter", "headerHeight") end
-        local fit = math.min(1, preview.availableWidth / (w * native), 250 / (h * native))
-        local scale, height = native * fit, h * native * fit
-        if preview.scale ~= scale or preview.height ~= height or preview.width ~= w then
-            preview.scale, preview.height, preview.width = scale, height, w
-            stage:SetScale(scale)
-            stage:SetSize(w, h)
-            viewport:SetHeight(height)
-            P.SetTranslatedText(title, fit < .995 and Tr("Preview %d%%"):format(math.floor(fit * 100 + .5)) or Tr("Preview"))
-        end
+        ExtraTargets(preview, win)
+        Fit(preview, win)
         Layers.Paint(preview, win)
         E.Refresh(preview)
         local handle = viewport._selectedHandle
@@ -123,7 +145,7 @@ function P.BuildMeterMenuPreview(ui, selected, setSelected)
         preview.chips:SetPoint("TOPLEFT", viewport, "BOTTOMLEFT", 0, -8 - selectionHeight - propertiesHeight)
         footer:ClearAllPoints()
         footer:SetPoint("TOPLEFT", preview.chips, "BOTTOMLEFT", 0, -8)
-        P.MenuWorkspace.FitHeader(ui, 144 + height + selectionHeight + propertiesHeight
+        P.MenuWorkspace.FitHeader(ui, 144 + preview.height + selectionHeight + propertiesHeight
             + preview.chips:GetHeight() + math.ceil(footer:GetStringHeight() or 28))
     end)
     ui.header:HookScript("OnSizeChanged", function()

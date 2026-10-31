@@ -8,7 +8,9 @@ Suite.Skin = Skin
 local clients = {}
 local appearanceHooked = false
 -- The HUD modules read skin colors and fonts when they paint.
-local SKINNED_HUD = { "objectives", "announcements" }
+local SKINNED_HUD = { "objectives", "runSummary", "announcements" }
+-- Addons that restyle Blizzard's windows as the skin does (folder names).
+local WINDOW_SKIN_ADDONS = { "ElvUI", "NDui", "Aurora", "DarkMode" }
 
 local function HookOwnedHUD(api)
     -- hooksecurefunc raises when the hooked field is not a function.
@@ -111,6 +113,7 @@ function Skin.SetEnabled(enabled, deferApply)
     end
     Skin.enabled = enabled
     if Suite.RootDB then Suite.RootDB.skinEnabled = enabled end
+    if enabled then Skin.NoticeWindowSkinConflicts() end
     if not deferApply and Suite.Suite.started then Suite.Suite.ApplyAll() end
     return true
 end
@@ -121,6 +124,29 @@ local function LoadedEngine()
     if type(provider) == "table" and provider.addonName == "MSUF_Suite_Skin" then return provider end
 end
 
+-- Names an addon in chat once; RootDB.skinConflictNotices keeps who was told.
+local function TellOnce(root, name)
+    local told = root.skinConflictNotices
+    if not told then
+        told = {}
+        root.skinConflictNotices = told
+    end
+    if told[name] then return end
+    told[name] = true
+    Suite.Print(Suite.Text("%s also restyles Blizzard's windows and may clash with the MSUF skin. Pick one; MSUF changes nothing by itself."):format(name))
+end
+
+-- While the skin styles Blizzard's windows, each loaded addon that restyles
+-- them too is named once. The notice only informs: neither the skin nor the
+-- other addon is ever switched off for the player.
+function Skin.NoticeWindowSkinConflicts()
+    local root, provider = Suite.RootDB, LoadedEngine()
+    if not (root and provider and type(provider.DB) == "table" and provider.DB.enabled == true) then return end
+    for _, name in ipairs(WINDOW_SKIN_ADDONS) do
+        if Suite.Client.IsAddOnLoaded(name) then TellOnce(root, name) end
+    end
+end
+
 -- A module that replaces a Blizzard surface starts ("before") or stopped
 -- ("after"); see S.OwnsBlizzardSurface. The engine rebuilds only surfaces that
 -- changed hands.
@@ -129,6 +155,14 @@ function Skin.SurfacesChanged(phase)
     if not provider then return end
     local ownership = provider.SuiteOwnership
     if type(ownership) == "table" and type(ownership.Refresh) == "function" then ownership.Refresh(phase) end
+end
+
+-- Colors the border the skin draws on a Blizzard frame (a tooltip); false
+-- when the skin draws none there, so the caller colors Blizzard's own border.
+-- Without a color the skin's theme border is back.
+function Skin.TintEdge(frame, r, g, b)
+    local provider = LoadedEngine()
+    return provider ~= nil and provider.Surface.TintEdge(frame, r, g, b) == true
 end
 
 ------------------------------------------------------------------ chat colours

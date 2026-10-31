@@ -8,6 +8,8 @@ local CREST = NS.DataTextCrestMode
 -- Actions.lua owns what their clicks and tooltips do.
 local Sources = { bindings = {} }
 local ICON_SIZE, ICON_GAP, ICON_TEXT_GAP = 14, 2, 4
+-- A reputation step with its name and percentage: "Renown 12 · 45%".
+local STEP_PROGRESS = S.Text("%s · %d%%")
 P.DataTextSources = Sources
 S.DataTextExtraSources = Sources
 local broker, owner
@@ -22,6 +24,7 @@ local EVENTS = {
     PLAYER_LOOT_SPEC_UPDATED = { specLoot = true },
     PLAYER_LEVEL_UP = { progress = true },
     UPDATE_FACTION = { progress = true },
+    MAJOR_FACTION_RENOWN_LEVEL_CHANGED = { progress = true },
     PLAYER_XP_UPDATE = { progress = true },
     UPDATE_EXHAUSTION = { progress = true },
     CVAR_UPDATE = { audio = true },
@@ -37,7 +40,7 @@ Sources.kinds = {
 -- Places whose click runs a protected action through a secure button
 -- (Actions.lua). Their bars release it when combat starts.
 Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true, specLoot = true, travel = true,
-    currency = true, crests = true }
+    currency = true, crests = true, friends = true, guild = true }
 -- Built-in places that borrow the same secure overlay, and the window the
 -- Blizzard button it clicks opens (S.PanelButton).
 Sources.panelSources = { durability = "character", coordinates = "worldMap", location = "worldMap" }
@@ -83,6 +86,7 @@ function Sources.Bind(button, config, index, slot, kind)
     binding.kind, binding.button, binding.prefix = kind, button, prefix
     binding.broker = config[prefix .. "Broker"] or ""
     binding.currency = tonumber(config[prefix .. "Currency"]) or 0
+    binding.stat = config[prefix .. "Stat"]
     binding.maxWidth = config[prefix .. "MaxWidth"] or 180
     binding.padding = config[prefix .. "Padding"] or 5
     binding.iconR, binding.iconG, binding.iconB = S.RGB(config[prefix .. "IconColor"] or "ffffff")
@@ -181,6 +185,22 @@ end
 
 ------------------------------------------------------------------ values
 local FORMAT = {}
+local providers = {}
+-- provider: Format(binding, config) -> label, value (required); optional
+-- Rebind(module, wanted) and Disable() manage what it owns, Lines(tooltip,
+-- button) adds the detail lines of its tooltip, and delay (seconds) folds a
+-- burst of its events into one refresh.
+local function Nothing() end
+
+function Sources.Register(kind, provider, events)
+    Sources.kinds[kind], FORMAT[kind], providers[kind] = true, provider.Format, provider
+    provider.Rebind, provider.Disable, provider.Lines = provider.Rebind or Nothing, provider.Disable or Nothing,
+        provider.Lines or Nothing
+    for _, event in ipairs(events) do
+        EVENTS[event] = EVENTS[event] or {}
+        EVENTS[event][kind] = true
+    end
+end
 
 FORMAT.broker = function(binding)
     local object = Sources.BrokerObject(binding)
@@ -264,14 +284,15 @@ FORMAT.progress = function()
         local done = Number(xp) and Number(limit) and limit > 0
         return S.Text("XP"), done and math.floor(xp / limit * 100 + .5) .. "%" or NO_VALUE
     end
-    local info = C_Reputation.GetWatchedFactionData()
-    if type(info) == "table" and Text(info.name) and Number(info.currentStanding)
-        and Number(info.currentReactionThreshold) and Number(info.nextReactionThreshold)
-        and info.nextReactionThreshold > info.currentReactionThreshold then
-        local span = info.nextReactionThreshold - info.currentReactionThreshold
-        return info.name, math.floor((info.currentStanding - info.currentReactionThreshold) / span * 100 + .5) .. "%"
-    end
-    return S.Text("Reputation"), NO_VALUE
+    local info = S.ReputationProgress()
+    if not info then return S.Text("Reputation"), NO_VALUE end
+    -- Nothing left to earn: the standing itself ("Exalted", "Renown 25").
+    if info.capped then return info.name, info.label end
+    local percent = math.floor(info.current / info.maximum * 100 + .5)
+    -- A plain standing shows the percentage alone; renown, friendship ranks
+    -- and paragon name their step.
+    if info.kind == "standing" then return info.name, percent .. "%" end
+    return info.name, STEP_PROGRESS:format(info.label, percent)
 end
 
 FORMAT.crests = function(binding, c)
@@ -318,12 +339,35 @@ local function Refresh(kind)
     end
 end
 
+Sources.Refresh = Refresh
+
 local function BrokerChanged(_, name)
     if not owner or not owner.active then return end
     for key in pairs(owner.activeSources or {}) do
         local binding = Sources.bindings[key]
         if binding and binding.kind == "broker" and binding.broker == name then owner:UpdateSource(key, true) end
     end
+end
+
+-- A provider with a delay folds a burst of its events (a login's friend
+-- updates) into one refresh of its places, a job of the module's context.
+local flushes = {}
+local function Request(kind)
+    local provider = providers[kind]
+    if not (provider and provider.delay) then return Refresh(kind) end
+    if not owner or not owner.active then return end
+    local flush = flushes[kind]
+    if not flush then
+        flush = function() Refresh(kind) end
+        flushes[kind] = flush
+    end
+    owner.context:Coalesce(provider.delay, flush):Request()
+end
+
+-- The detail lines a registered kind adds to its tooltip.
+function Sources.AddLines(kind, tooltip, button)
+    local provider = providers[kind]
+    if provider then provider.Lines(tooltip, button) end
 end
 
 local function ActiveKind(kind)
@@ -362,7 +406,7 @@ function Sources.Changed(_, event)
     end
     local kinds = EVENTS[event]
     if kinds then
-        for kind in pairs(kinds) do Refresh(kind) end
+        for kind in pairs(kinds) do Request(kind) end
     end
     if event == "BAG_UPDATE_DELAYED" and WantsCrestItems() then Refresh("crests") end
     if event == "BAG_UPDATE_DELAYED" or event == "TOYS_UPDATED" then Sources.HearthsMayHaveChanged() end
@@ -438,6 +482,9 @@ function Sources.Rebind(module)
     if wantedKinds.crests then
         if module.config.crestMode ~= CREST.SELECTED and not Sources.seasonCosts then Sources.ObserveSeasonCosts() end
         SeasonSelection(module.config)
+    end
+    for kind, provider in pairs(providers) do
+        provider.Rebind(module, wantedKinds[kind] == true)
     end
     local lib = Broker()
     if wantedKinds.broker and lib and not Sources.brokerRegistered then
@@ -605,6 +652,7 @@ function Sources.Paint(button, relayout)
 end
 
 function Sources.Disable()
+    for _, provider in pairs(providers) do provider.Disable() end
     if broker and Sources.brokerRegistered then broker.UnregisterAllCallbacks(Sources) end
     Sources.brokerRegistered = nil
     owner = nil

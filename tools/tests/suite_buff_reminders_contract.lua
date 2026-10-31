@@ -165,11 +165,11 @@ local function RunAfter()
     return #queued
 end
 GameTooltip = Widget()
-function GameTooltip:SetOwner(owner) self.owner, self.spell, self.item = owner, nil, nil end
+function GameTooltip:SetOwner(owner) self.owner, self.spell, self.item, self.lines = owner, nil, nil, {} end
 function GameTooltip:IsOwned(frame) return self.owner == frame end
 function GameTooltip:SetSpellByID(id) self.spell = id end
 function GameTooltip:SetItemByID(id) self.item = id end
-function GameTooltip:AddLine(value) self.extraLine = value end
+function GameTooltip:AddLine(value) self.lines[#self.lines + 1] = value end
 
 -- Regions made through the shared Suite helpers (pixel layout).
 local mover, suiteRegions = nil, {}
@@ -859,7 +859,7 @@ assert(module.list.entries[1].id == 241325 and module.list.entries[1].restock an
     and module.view.buttons[1].icon.desaturated and module.view.buttons[1].count.text == "0",
     "out-of-stock category must be a gray, non-actionable reminder")
 module.view.buttons[1]:OnEnter()
-assert(GameTooltip.extraLine and GameTooltip.extraLine:find("restock", 1, true), "restock tooltip did not explain the disabled action")
+assert(table.concat(GameTooltip.lines, " "):find("restock", 1, true), "restock tooltip did not explain the disabled action")
 inventory[241325] = 4
 eventFrame.OnEvent(eventFrame, "BAG_UPDATE_DELAYED")
 assert(not module.list.entries[1].restock and module.view.buttons[1].attributes.item1 == "item:241325"

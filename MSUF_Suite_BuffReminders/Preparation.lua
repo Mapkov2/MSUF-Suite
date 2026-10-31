@@ -3,6 +3,7 @@ local NS, S = P.NS, P.Suite
 local R = P.BuffReminders
 local Public = S.Public
 local PREP_EVENTS = { "CHALLENGE_MODE_START", "CHALLENGE_MODE_RESET", "CHALLENGE_MODE_COMPLETED" }
+local READY_NOTE_GAP = 8
 
 -- Instance changes are cold. Blizzard's difficulty metadata avoids hardcoded
 -- raid sizes; Timewalking and keystone preparation use its named difficulty IDs.
@@ -59,6 +60,13 @@ function R.ReadEnvironment(self, event)
         key = "showScenarios"
     end
     environment.key = key
+    -- Nothing shows where the instance type is unreadable, in arenas and
+    -- battlegrounds, or while resting with that option on. Resting is read for
+    -- its own option only; PLAYER_UPDATE_RESTING keeps it current
+    -- (SyncPreparationEvents). Allowed asks this one flag.
+    local resting = self.config.hideResting == true and IsResting()
+    environment.hidden = instanceType == false or instanceType == "arena" or instanceType == "pvp"
+        or Public(resting) and resting == true
 end
 
 -- A profile saved before a setting existed lacks its key; the catalog default
@@ -110,6 +118,16 @@ function R.HideReadyCheck(self)
     if label then label:Hide() end
 end
 
+-- The note hangs above the row. Where the notice lines hang there too (a bottom
+-- anchor), it rises above them while they show, instead of over them.
+local function ReadyNoteAnchor(self)
+    local notices = self.notices
+    if notices.label and notices.text and notices.text ~= "" and not R.NoteBelow(self.config, true) then
+        return notices.label
+    end
+    return self.view.host
+end
+
 function R.ReadyCheck(self)
     R.HideReadyCheck(self)
     if not self.config.readyCheckMana or NS.IsCombatLocked() then return end
@@ -124,11 +142,11 @@ function R.ReadyCheck(self)
     local readyCheck = self.readyCheck
     local text = readyCheck.label
     if not text then
-        local host = self.view.host
-        text = S.CreateFontString(host, nil, "OVERLAY", "GameFontNormalLarge")
-        text:SetPoint("BOTTOM", host, "TOP", 0, 8)
+        text = S.CreateFontString(self.view.host, nil, "OVERLAY", "GameFontNormalLarge")
         readyCheck.label = text
     end
+    R.PlaceNote(text, ReadyNoteAnchor(self), self.config, false, READY_NOTE_GAP)
+    R.StyleNote(text, GameFontNormalLarge, NumberSetting(self.config, "readyCheckSize"))
     -- The note turns red once the mana is below half of the chosen limit.
     local percent = power / maximum * 100
     text:SetText(S.Text("Mana at the ready check: %d%%"):format(math.floor(percent + .5)))

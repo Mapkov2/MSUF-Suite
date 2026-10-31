@@ -77,7 +77,6 @@ local rootTabs = {
     "JourneysTab", "MonthlyActivitiesTab", "suggestTab", "dungeonsTab",
     "raidsTab", "LootJournalTab", "TutorialsTab",
 }
-local encounterTabs = { "overviewTab", "lootTab", "bossTab", "modelTab" }
 local themeBorderFields = { "Top", "Bottom", "Left", "Right", "FilterList" }
 
 local rowTitleFields = {
@@ -87,6 +86,7 @@ local rowTitleFields = {
 local rowTextFields = {
     "Description", "description", "ItemLevel", "JourneyCardLevel",
     "JourneyCardProgress", "HighlightDescription", "ConditionsText", "Label",
+    "armorType", "slot", "boss",
 }
 local rowMutedFields = {
     "SpecName", "HighlightLevel", "TimeLeft", "ProgressText", "Points",
@@ -260,30 +260,10 @@ local function SkinInstanceSelect(state)
 end
 
 local function SkinEncounterDetail(state)
-    local encounter = Field(state.frame, "encounter")
-    if not encounter or not CanCreateRegions(encounter) then
-        return
-    end
-    Attach(state, encounter, PANEL_SPEC)
-
-    local instance = Field(encounter, "instance")
-    if instance and CanCreateRegions(instance) then
-        Fade(state, Field(instance, "loreBG"))
-        Fade(state, Field(instance, "titleBG"))
-        Attach(state, instance, CARD_SPEC)
-        SetTextColor(state.textColors, Field(instance, "title"), "title")
-    end
-
-    local info = Field(encounter, "info")
-    if info and CanCreateRegions(info) then
-        FadeChrome(state, info)
-        Attach(state, info, PANEL_SPEC)
-        SetTextColor(state.textColors, Field(info, "instanceTitle"), "title")
-        SetTextColor(state.textColors, Field(info, "encounterTitle"), "title")
-        for index = 1, #encounterTabs do
-            SkinTab(state, Field(info, encounterTabs[index]))
-        end
-    end
+    NS.EncounterJournalPanels.Apply(state)
+    local info = Path(state.frame, "encounter", "info")
+    if not info or not CanCreateRegions(info) then return end
+    FadeChrome(state, info)
 end
 
 local function SkinMonthlyActivities(state)
@@ -451,7 +431,8 @@ SkinDynamicRow = function(state, row)
     if not state.active or not row or not CanCreateRegions(row) then
         return
     end
-    Attach(state, row, ROW_SPEC)
+    if NS.EncounterJournalPanels.Row(state, row) then return end
+    Kit.Ensure(state, row, ROW_SPEC)
 
     -- These are verified decorative card layers; icon, portrait, encounter
     -- image, reward and status textures are intentionally left untouched.
@@ -695,6 +676,7 @@ local function RestoreState(state)
     Kit.HideSurfaces(state)
     Kit.RestoreTextColors(state.textColors)
     state.rowLabels = Kit.WeakSet()
+    NS.EncounterJournalPanels.Reset(state)
     NS.Cosmetics.RestoreOwner(state.owner)
     NS.GenericWindows.Disable(state.owner)
     state.genericApplied = false

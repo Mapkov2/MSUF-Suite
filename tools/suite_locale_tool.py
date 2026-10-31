@@ -159,6 +159,8 @@ def lex(source):
                     body = body[2:]
                 elif body.startswith("\n"):
                     body = body[1:]
+                # Lua 5.1 normalizes all source newline spellings inside long literals.
+                body = re.sub(r"\r\n|\n\r|\r", "\n", body)
                 tokens.append(Token("str", decode_bytes(body), line))
                 line += source.count("\n", i, end)
                 i = end + len(long.group(1)) + 2
@@ -234,6 +236,7 @@ class LuaFile:
         self._declarations()
         self._calls()
         self._fields()
+        self._private_table_fields()
 
     # brackets and blocks
     def _match(self):
@@ -494,6 +497,71 @@ class LuaFile:
             break
         return targets, max(j, 0)
 
+    def local_table(self, name, owner):
+        """A concrete local table, rather than an opaque namespace alias."""
+        while True:
+            scope = self.scope_of(owner)
+            if name in scope.params or name in scope.loops:
+                return False
+            if name in scope.locals:
+                return (owner, name) in self.table_locals
+            if name in scope.declared or owner is None:
+                return False
+            owner = owner.parent
+
+    def _private_table_fields(self):
+        """Private containers are read through their own FIELD shape. Do not
+        broadcast their constructor fields to unrelated tables of that name.
+        An alias, argument, return, indexed read or closure capture may escape;
+        those containers keep the conservative addon-wide field fallback.
+        """
+        scopes = [(None, self.main)] + [(d, d.scope) for d in self.defs]
+        targets, declarations = {}, {}
+        for k, token in enumerate(self.tokens):
+            owner = self.owner[k]
+            if token.kw("local"):
+                names, end = self.names(k + 1)
+                for name in names:
+                    declarations.setdefault((owner, name), []).append(k)
+                targets.setdefault(owner, set()).update(
+                    p for p in range(k + 1, end) if self.tokens[p].kind == "name")
+            elif token.op("="):
+                assignments, _ = self.targets_before(k)
+                targets.setdefault(owner, set()).update(
+                    a for a, b in assignments if b - a == 1 and self.tokens[a].kind == "name")
+        self.table_locals, private = set(), []
+        for owner, scope in scopes:
+            for name, values in scope.locals.items():
+                tables = [value for value in values if len(value) == 2 and self.tokens[value[0]].op("{")]
+                if not tables:
+                    continue
+                declared = declarations.get((owner, name), ())
+                body = ("block", owner.start) if owner is not None else None
+                if len(declared) != 1 or self.inside[declared[0]] != body:
+                    continue  # Shadowed or block-local names retain the existing fallback.
+                self.table_locals.add((owner, name))
+                escaped = False
+                for k, token in enumerate(self.tokens[:-1]):
+                    if token.kind != "name" or token.value != name:
+                        continue
+                    current = self.owner[k]
+                    while current is not None and current is not owner:
+                        current = current.parent
+                    if current is not owner:
+                        continue
+                    if self.owner[k] is not owner:
+                        escaped = True
+                    elif k not in targets.get(owner, ()) and not self.tokens[k + 1].op(".") \
+                            and not (k and (self.tokens[k - 1].op(".", ":") or self.tokens[k - 1].kw("not"))):
+                        escaped = True
+                    if escaped:
+                        break
+                if not escaped:
+                    private.extend((owner, a, b) for a, b in tables)
+        self.fields = [(key, rng, owner) for key, rng, owner in self.fields
+                       if not any(owner is table_owner and self.inside[rng[0]] == ("bracket", a)
+                                  for table_owner, a, _ in private)]
+
     # calls
     def _calls(self):
         tokens = self.tokens
@@ -618,6 +686,8 @@ LIT = ("t",)
 # they are given (MSUF's Menu2: T.Font's SetText, W.Dropdown, the accordion
 # title, M.AddTooltip, M.ShowStatusFeedback, the search metadata label).
 BASE_SINKS = [
+    # Catalog color/texture labels reach the same translated rule widgets.
+    (CORE, re.compile(r"^(?:B|Build)\.(?:Color|Texture)$"), {1: "s"}),
     # Both authored help fields reach Menu2: the summary in the form, details on demand.
     ("MSUF_Suite_Options", re.compile(r"^P\.Help$"), {0: "s", 1: "s"}),
     (None, re.compile(r"(?:^|\.)Tr$"), {0: "s"}),
@@ -730,8 +800,9 @@ class Extractor:
                 self.changed = True
                 self.why.setdefault(("field", scope, field, shape), self.current)
 
-    def collect(self, f, k, sink, direct):
-        text = f.tokens[k].value
+    def collect(self, f, k, sink, direct, text=None):
+        if text is None:
+            text = f.tokens[k].value
         if not is_translatable(text):
             return
         # A plain lowercase word from a list that goes straight into a
@@ -751,6 +822,8 @@ class Extractor:
     def call_sinks(self, f, call):
         sinks = {}
         resolved = call.resolved
+        if f.rel.startswith("MSUF_Suite/Core/Catalog/") and call.callee in ("Color", "Texture"):
+            sinks[1] = {STR}
         for addon, pattern, indexes in BASE_SINKS:
             if addon and addon != f.addon:
                 continue
@@ -766,6 +839,12 @@ class Extractor:
         for d in targets:
             for index, shapes in self.param_sinks.get(d, {}).items():
                 sinks.setdefault(index - shift, set()).update(shapes)
+        # Catalog Font's first argument is always a saved key, even when a
+        # same-named renderer helper made the fallback resolver mark it as text.
+        if f.rel.startswith("MSUF_Suite/Core/Catalog/") and (resolved in ("B.Font", "Build.Font")
+                or call.callee in ("B.Font", "Build.Font")):
+            sinks.pop(0, None)
+            sinks.setdefault(1, set()).add(STR)
         return sinks
 
     def targets(self, f, call):
@@ -836,7 +915,11 @@ class Extractor:
         if f.has_top(start, end, ("==", "~=", "<", ">", "<=", ">=", "+", "-", "*", "/", "%", "#")):
             return
         if f.has_top(start, end, ("..",)):
-            # A concatenation cannot translate as a whole; report English
+            pieces = f.split(start, end, ("..",))
+            if shape in (STR, LIT) and all(b - a == 1 and tokens[a].kind == "str" for a, b in pieces):
+                self.collect(f, start, sink, direct, "".join(tokens[a].value for a, _ in pieces))
+                return
+            # A dynamic concatenation cannot translate as a whole; report English
             # literal parts that are left outside a translation.
             if shape in (STR, LIT):
                 kind = None
@@ -948,6 +1031,10 @@ class Extractor:
             self.resolve_name(shape, f, name, owner, sink, at)
             return
         kind, value = suffixes[-1]
+        if kind == "." and len(suffixes) == 1 and f.local_table(name, owner):
+            if value not in FIELD_NOT_SINKS:
+                self.resolve_name(FIELD(value, shape), f, name, owner, sink, at)
+            # Mixed opaque assignments and transferred fields keep the fallback.
         if kind == ".":
             # rule.label, spec.title, NS.AnchorLabels: every table field and
             # assignment of that name in the addon is a sink.
@@ -1051,6 +1138,8 @@ class Extractor:
                         merged.setdefault(field, set()).update(core.get(field, ()))
                     table = merged
                 for field, rng, owner in f.fields:
+                    if field == "summary" and f.rel.startswith("MSUF_Suite/Core/Catalog/"):
+                        continue  # Catalog summary ranks setting keys; it is not displayed prose.
                     self.current = (f.rel, f.tokens[rng[0]].line, "field:" + field)
                     for shape in list(table.get(field, ())):
                         self.apply(shape, f, rng, owner, "field:" + field, direct=False)

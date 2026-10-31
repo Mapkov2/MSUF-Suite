@@ -6,6 +6,7 @@ local S = NS.Suite
 -- intact: most modules draw with the MSUF font without a font setting of
 -- their own, so a hand-kept list of text modules cannot stay complete.
 local lastPath, lastEpoch
+S.FontRevision = 0
 local function ApplyBlizzardFont()
     local skin = NS.Skin
     if not skin or not skin.enabled then return end
@@ -25,6 +26,7 @@ function S.ApplyGlobalFont()
     local path, epoch = NS.GlobalFontPath(), _G.MSUF_FontApplyEpoch
     if path == lastPath and epoch == lastEpoch then return end
     lastPath, lastEpoch = path, epoch
+    S.FontRevision = S.FontRevision + 1
     ApplyBlizzardFont()
     local order = S.order
     for i = 1, #order do

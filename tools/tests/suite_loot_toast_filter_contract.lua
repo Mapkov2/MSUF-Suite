@@ -9,7 +9,7 @@ local function Widget(parent)
     widget.SetSize, widget.SetPoint, widget.SetAllPoints = noOp, noOp, noOp
     widget.SetColorTexture, widget.SetWidth, widget.SetJustifyH = noOp, noOp, noOp
     widget.SetWordWrap, widget.EnableMouse, widget.SetTexture = noOp, noOp, noOp
-    widget.SetTextColor = noOp
+    widget.SetTextColor, widget.SetScale, widget.ClearAllPoints = noOp, noOp, noOp
     function widget:Show() self.shown = true; shows = shows + 1 end
     function widget:Hide() self.shown = false end
     function widget:IsShown() return self.shown end
@@ -28,9 +28,10 @@ local function Widget(parent)
 end
 
 UIParent = Widget()
+-- The toasts hang on the host the notices stack on; only they count as frames.
 CreateFrame = function(_, _, parent)
     local frame = Widget(parent)
-    frames[#frames + 1] = frame
+    if parent ~= UIParent then frames[#frames + 1] = frame end
     return frame
 end
 GameFontHighlightSmall, GameFontNormalSmall = {}, {}
@@ -90,7 +91,7 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/LootToastFilter.lua"))(
     "MSUF_Suite_QualityOfLife", { NS = NS, Suite = S })
 module.context, module.active = context, true
 S.instances.lootToastFilter = module
-module.config = { minQuality = 4, itemIDs = "" }
+module.config = { minQuality = 4, itemIDs = "", scale = 100, point = 3, x = -24, y = -162 }
 module:Enable()
 local function Toast(kind, link, quantity, personal)
     context.events.SHOW_LOOT_TOAST(module, "SHOW_LOOT_TOAST", kind, link, quantity,

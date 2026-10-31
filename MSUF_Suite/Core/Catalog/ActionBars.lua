@@ -37,6 +37,9 @@ local ENUM = {
     HIGHLIGHT = { BORDER = 1, FILL = 2, BLIZZARD = 3, NONE = 4 },
     ENDCAP = { NONE = 1, DIAMOND = 2, CHEVRONS = 3 },
     PAGE_ARROW_SIDE = { LEFT = 1, RIGHT = 2 },
+    -- "Show tooltips" per bar, and the side a spell flyout opens to.
+    TOOLTIP = { ALWAYS = 1, OUT_OF_COMBAT = 2, NEVER = 3 },
+    FLYOUT = { AUTOMATIC = 1, UP = 2, DOWN = 3, LEFT = 4, RIGHT = 5 },
     -- "First button corner": the corner button 1 sits in.
     START = { TOP_LEFT = 1, TOP_RIGHT = 2, BOTTOM_LEFT = 3, BOTTOM_RIGHT = 4 },
     LOOK = { MIDNIGHT_BLUE = 1, MIDNIGHT_DARK = 2, FOREVER = 3, CUSTOM = 4, CLEAN_MODERN = 5, CLASS_STYLE = 6 },
@@ -176,6 +179,11 @@ B.Section(id, "cooldowns", "Cooldowns and states", {
     Number("cooldownAlpha", "Button opacity while on cooldown (percent)", 100, 0, 100, 5),
     Bool("rangeColoring", "Color out-of-range buttons", true),
     Color("rangeColor", "Out-of-range color", "cc1a1a"),
+    -- The defaults are Blizzard's own button tints (S.USABLE_TINT, shared with
+    -- the cooldown manager): 1/1/1, .5/.5/1 and .4/.4/.4.
+    Color("usableColor", "Usable color", "ffffff"),
+    Color("noPowerColor", "Not enough resources color", "8080ff"),
+    Color("unusableColor", "Unusable color", "666666"),
     Bool("hideEmptyCharges", "Hide the charge count at zero", false),
 })
 B.TextSection(id, {
@@ -235,6 +243,7 @@ for i = 1, BAR_COUNT do
             { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat" }),
         Number(p .. "Alpha", "Bar opacity (percent)", 100, 0, 100, 5),
         Number(p .. "FadeAlpha", "Opacity without mouseover (percent)", 0, 0, 100, 5),
+        Number(p .. "FadeDuration", "Fade duration (seconds; 0 is instant)", 0, 0, 2, 0.05),
         Number(p .. "Layer", "MSUF layer (-1 = Auto)", -1, -1, 30),
         Number(p .. "Buttons", "Buttons", maxButtons, 1, maxButtons),
         Number(p .. "Rows", "Rows", d[3] > 1 and d[3] or 1, 1, maxButtons),
@@ -244,7 +253,10 @@ for i = 1, BAR_COUNT do
         Bool(p .. "Vertical", "Fill columns first", d[3] > 1),
         Choice(p .. "Start", "First button corner", ENUM.START.TOP_LEFT, { "Top left", "Top right", "Bottom left", "Bottom right" }),
         Bool(p .. "ShowEmpty", "Show empty buttons", not special),
+        Choice(p .. "FlyoutDirection", "Spell flyout direction", ENUM.FLYOUT.AUTOMATIC,
+            { "Automatic", "Up", "Down", "Left", "Right" }),
         Bool(p .. "ClickThrough", "Click through", false),
+        Choice(p .. "Tooltip", "Show tooltips", ENUM.TOOLTIP.ALWAYS, { "Always", "Out of combat", "Never" }),
         Choice(p .. "Point", "Screen anchor", anchorIndex[d[4]], NS.AnchorLabels),
         Number(p .. "X", "Horizontal position", d[5], -4000, 4000),
         Number(p .. "Y", "Vertical position", d[6], -3000, 3000),
@@ -294,6 +306,8 @@ rules.disableSkyridingPaging.hidden = NS.Client.isForever or nil
 rules.borderColor.disabledBy = "borderClassColor"
 rules.interactionColor.disabledBy = "interactionClassColor"
 rules.rangeColor.enableKey = "rangeColoring"
+-- Recharge numbers are cooldown numbers (Style.lua needs both switches on).
+rules.rechargeNumbers.enableKey = "cooldownNumbers"
 -- Assisted combat exists on Retail only (Forever's Camelot UI has none:
 -- InterfaceOverrides.HasAssistedCombat() is false there), so Forever hides
 -- the recommendation options. The look options need a Suite style.
@@ -315,8 +329,13 @@ for i = 1, BAR_COUNT do
     -- Only Forever has a gamepad interface to hide bars for
     -- (InputUtil.IsGamepadUIEnabled); Retail never applies the option.
     rules[p .. "HideGamepad"].hidden = not NS.Client.isForever or nil
-    rules[p .. "FadeAlpha"].requiresChoice = { key = p .. "Visibility",
+    -- The fade options apply to the mouseover modes.
+    local mouseover = { key = p .. "Visibility",
         values = { [VISIBILITY.MOUSEOVER] = true, [VISIBILITY.MOUSEOVER_OR_COMBAT] = true } }
+    rules[p .. "FadeAlpha"].requiresChoice = mouseover
+    rules[p .. "FadeDuration"].requiresChoice = mouseover
+    -- Blizzard's stance and pet buttons open no spell flyouts.
+    rules[p .. "FlyoutDirection"].hidden = i > ENUM.BAR.LAST_ACTION or nil
     rules[p .. "KeybindSize"].enableKey = p .. "Keybind"
     rules[p .. "MacroSize"].enableKey = p .. "Macro"
     for _, suffix in ipairs({ "BackgroundColor", "BackgroundAlpha", "BackgroundPadding", "BackgroundPaddingX",

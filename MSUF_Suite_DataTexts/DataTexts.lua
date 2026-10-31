@@ -25,7 +25,8 @@ local VISIBILITY, LAYOUT, DOCK = NS.DataTextVisibility, NS.DataTextLayout, NS.Da
 local activeSetA, activeSetB, wantedEvents = {}, {}, {}
 -- Unit events the places read for the player only; group members' spec
 -- swaps (PLAYER_SPECIALIZATION_CHANGED carries their unit) never arrive.
-local PLAYER_UNIT_EVENTS = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true, PLAYER_SPECIALIZATION_CHANGED = true }
+local PLAYER_UNIT_EVENTS = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true, PLAYER_SPECIALIZATION_CHANGED = true,
+    UNIT_STATS = true, UNIT_SPELL_HASTE = true }
 local function Clear(t)
     for key in pairs(t) do t[key] = nil end
 end
@@ -112,7 +113,8 @@ local function NextClock()
 end
 
 local function NextSample(key, now)
-    return now + ((key == "clock" or key == "date") and NextClock() or INTERVAL[key])
+    if key == "clock" then return now + (M.config.clockSeconds and 1 or NextClock()) end
+    return now + (key == "date" and NextClock() or INTERVAL[key])
 end
 
 local TickDataTexts
@@ -420,6 +422,7 @@ function M:Refresh()
     end
     -- Popup rows describe the old binding; they cannot survive a rebind.
     Actions.ClosePopup()
+    Standard.Configure(self.config)
     if self.config.trackAltGold then GoldLedger.Capture() end
     self.styling = true
     Clear(self.values)
@@ -443,6 +446,14 @@ function M:Refresh()
     end
     self.styling = false
     self:UpdateVisibility()
+    -- A clock that now shows (or no longer shows) seconds samples again at
+    -- once, not at its old deadline.
+    local seconds = self.config.clockSeconds == true
+    if self.clockSeconds ~= nil and self.clockSeconds ~= seconds then
+        self.due.clock = nil
+        self:Schedule()
+    end
+    self.clockSeconds = seconds
     -- Every source can change while its secure overlay still holds the pointer.
     if not Extra.PrepareHearths() then Actions.Refresh() end
     NativeBagBar.Sync()

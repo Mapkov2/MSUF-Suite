@@ -19,7 +19,7 @@ and the MSUF host are excluded from the ZIP.
 
 | Platform | Version / channel | Required MSUF dependency |
 | --- | --- | --- |
-| GitHub | Regular release, tag `v0.1-alpha`, title `MSUF Suite 0.1 Alpha` | State that MSUF 6.5 (6.50) must be installed separately |
+| GitHub | Regular release, tag and title from `RELEASE_MANIFEST.json` | State that MSUF 6.5 (6.50) must be installed separately |
 | CurseForge | Alpha plus an additional Beta file for initial app listing | `midnightsimpleunitframes`, project `1384660`, **Required Dependency**, installed automatically by the client |
 | Wago | Alpha | Required by the addon TOC; public info links the MSUF project `XKq9aoKy` |
 
@@ -32,7 +32,7 @@ The owner also authorized a CurseForge client Beta file: new Alpha-only projects
 do not initially appear in the CurseForge app. Its addon runtime is byte-identical
 to the Alpha ZIP; only the public module/install README is added inside the core
 folder. This variant is for CurseForge only. It uses the Beta distribution channel
-while the addon version and product description remain **0.1 Alpha**. Wago remains
+while the addon version and product description remain **Alpha**, using the version declared in the core TOC. Wago remains
 Alpha. A new project and its files still require CurseForge moderation.
 
 The Suite upload destinations are CurseForge project **1743628**
@@ -62,3 +62,14 @@ yet a visible download.
 
 API references: [CurseForge Upload API](https://support.curseforge.com/support/solutions/articles/9000197321-curseforge-upload-api),
 [Wago Addons API](https://docs.wago.io/), [Wago game versions](https://addons.wago.io/api/data/game).
+
+The builder also supports a normal Beta package for both platforms:
+
+```text
+python tools/build_suite_release.py --release-channel beta --output dist/beta
+```
+
+Use the channel and destinations in that package's generated metadata consistently.
+Do not combine its files with `dist/alpha` or the CurseForge-only client variant.
+A successful package build performs no upload. Publication requires a separate
+release instruction.

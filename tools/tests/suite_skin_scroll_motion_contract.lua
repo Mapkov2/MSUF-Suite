@@ -12,6 +12,7 @@ local frames = {}
 local function Frame()
     local frame = { hooks = {}, callbacks = {}, scripts = {}, events = {}, shown = true }
     frames[#frames + 1] = frame
+    function frame:IsVisible() return self.shown end
     function frame:IsForbidden() return self.forbidden == true end
     function frame:IsProtected() return self.protected == true, self.protected == true end
     function frame:HookScript(event, callback)
@@ -24,6 +25,7 @@ local function Frame()
     end
     function frame:RegisterEvent(event) self.events[event] = true end
     function frame:Fire(event, ...)
+        if event == "OnShow" then self.shown = true elseif event == "OnHide" then self.shown = false end
         if self.scripts[event] then self.scripts[event](self, ...) end
         for _, callback in ipairs(self.hooks[event] or {}) do callback(self, ...) end
     end
@@ -184,6 +186,7 @@ bar:SetScrollPercentage(0.9)
 local before = positions
 bar:Fire("OnHide")
 Check(bar.interpolator.destination == nil and positions == before, "hidden scroller wrote position or continued moving")
+bar:Fire("OnShow")
 -- Paired source leases and owner leases may overlap without early restore.
 Check(providers.bar[1](bar, "addonList"), "verified native scrollbar did not opt in")
 Check(Motion.Track(box, "second"), "second owner could not share the scroll controller")
@@ -273,6 +276,7 @@ local deferred = Controller(false)
 Motion.Track(deferred, "deferred")
 deferred:SetScrollPercentage(0.75)
 deferred.protected = true
+deferred:Fire("OnHide")
 before = positions
 Motion.ReleaseOwner("deferred")
 Check(Motion.states[deferred].pending and deferred.interpolator.destination == nil and positions == before,
@@ -283,8 +287,25 @@ for _, frame in ipairs(frames) do
 end
 Check(deferred.canInterpolateScroll == false and not Motion.states[deferred].pending,
     "safe deferred release did not restore the exact native flag")
--- Every combat edge passes over every controller (2026-10-26 M+ trace: 146
--- per edge, 1.9-3.4 ms): the pass reads the configuration once and asks
+-- A new owner can reacquire before a previously unsafe restoration retries.
+local reacquired = Controller(false)
+Motion.Track(reacquired, "old-owner")
+reacquired:Fire("OnHide")
+reacquired.protected = true
+Motion.ReleaseOwner("old-owner")
+Check(Motion.states[reacquired].pending, "reacquire fixture did not defer restoration")
+reacquired.protected = false
+Check(Motion.Track(reacquired, "new-owner"), "new owner could not reacquire the safe controller")
+for _, frame in ipairs(frames) do
+    if frame.events.PLAYER_REGEN_ENABLED then frame:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
+end
+Check(Motion.states[reacquired].captured and not reacquired.canInterpolateScroll,
+    "stale deferred restoration revoked a new active lease")
+reacquired:Fire("OnShow")
+Check(reacquired.canInterpolateScroll, "reacquired controller lost smooth scrolling")
+Motion.ReleaseOwner("new-owner")
+Check(reacquired.canInterpolateScroll == false, "reacquired controller lost its original native baseline")
+-- Visible combat work reads the configuration once and asks
 -- each controller IsForbidden twice (Safe), not again for its flag.
 do
     local edge, reads = {}, 0
@@ -305,6 +326,101 @@ do
     Check(reads == 2 * #edge, "a combat edge asked IsForbidden more than twice per controller")
     for i = 1, #edge do Check(edge[i].canInterpolateScroll == true, "a combat edge changed a controller's flag") end
     Motion.ReleaseOwner("edge")
+end
+-- A parent can scroll a still-hidden child before its OnShow fires in combat.
+do
+    local hidden = Controller(false)
+    Check(Motion.Track(hidden, "combat-hidden"), "hidden combat fixture was refused")
+    hidden:Fire("OnHide")
+    NS.Motion.combat = true
+    for _, frame in ipairs(frames) do
+        if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+    end
+    hidden:SetScrollPercentage(0.8)
+    hidden:Fire("OnShow")
+    Check(hidden.position == 0.8 and not hidden.canInterpolateScroll,
+        "hidden controller interpolated in combat instead of reaching the requested row")
+    NS.Motion.combat = false
+    Motion.ReleaseOwner("combat-hidden")
+end
+-- A controller unsafe on Hide can become safe again while still hidden.
+do
+    local late = Controller(false)
+    Check(Motion.Track(late, "late-safe"), "late-safe fixture was refused")
+    late.protected = true
+    late:Fire("OnHide")
+    Check(late.canInterpolateScroll, "unsafe hidden controller was written")
+    late.protected = false
+    NS.Motion.combat = true
+    for _, frame in ipairs(frames) do
+        if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+    end
+    late:SetScrollPercentage(0.8)
+    Check(late.position == 0.8 and not late.canInterpolateScroll,
+        "previously unsafe hidden controller interpolated in combat")
+    NS.Motion.combat = false
+    Motion.ReleaseOwner("late-safe")
+end
+-- Preserve cancellation when protection persists across the combat edge.
+do
+    local stuck = Controller(false)
+    Check(Motion.Track(stuck, "still-unsafe"), "still-unsafe fixture was refused")
+    stuck.protected = true
+    stuck:Fire("OnHide")
+    stuck:SetScrollPercentage(0.8)
+    Check(stuck.interpolator.destination == 0.8, "fixture failed to restart native interpolation")
+    NS.Motion.combat = true
+    for _, frame in ipairs(frames) do
+        if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+    end
+    Check(stuck.interpolator.destination == nil,
+        "still-unsafe hidden controller retained interpolation across combat entry")
+    NS.Motion.combat, stuck.protected = false, false
+    Motion.ReleaseOwner("still-unsafe")
+end
+-- Hidden controllers must leave the combat working set and catch up on show.
+do
+    local initial = Controller(true)
+    initial:Fire("OnHide")
+    Check(Motion.Track(initial, "initial-hidden"), "initially hidden controller was refused")
+    Check(not initial.canInterpolateScroll, "initially hidden controller was unnecessarily updated")
+    initial:Fire("OnShow")
+    Check(initial.canInterpolateScroll, "initially hidden controller failed to catch up on show")
+    Motion.ReleaseOwner("initial-hidden")
+    local hidden, reads, writes = {}, 0, 0
+    for i = 1, 32 do
+        local controller = Controller(false)
+        function controller:IsForbidden() reads = reads + 1 return false end
+        local setter = controller.SetInterpolateScroll
+        function controller:SetInterpolateScroll(value) writes = writes + 1 setter(self, value) end
+        Check(Motion.Track(controller, "hidden-budget"), "hidden fixture was refused")
+        controller:Fire("OnHide")
+        hidden[i] = controller
+    end
+    reads, writes = 0, 0
+    for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
+        NS.Motion.combat = event == "PLAYER_REGEN_DISABLED"
+        for _, frame in ipairs(frames) do
+            if frame.events[event] then frame:Fire("OnEvent", event) end
+        end
+    end
+    Check(reads == 0 and writes == 0, "hidden controllers were probed or written at a combat edge")
+    NS.Motion.combat = true
+    hidden[1]:Fire("OnShow")
+    Check(not hidden[1].canInterpolateScroll, "show in combat retained smooth scrolling")
+    NS.Motion.combat = false
+    for _, frame in ipairs(frames) do
+        if frame.events.PLAYER_REGEN_ENABLED then frame:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
+    end
+    Check(hidden[1].canInterpolateScroll, "visible controller missed combat-end recovery")
+    hidden[1]:Fire("OnHide")
+    NS.DB.theme.smoothScrolling = false
+    Changed()
+    hidden[2]:Fire("OnShow")
+    Check(not hidden[2].canInterpolateScroll, "hidden configuration change was stale on show")
+    NS.DB.theme.smoothScrolling = nil
+    Changed()
+    Motion.ReleaseOwner("hidden-budget")
 end
 Check(scriptWrites == 0, "native wheel/update scripts were replaced")
 for _, frame in ipairs(frames) do Check(frame.scripts.OnUpdate == nil, "Suite installed an idle update loop") end

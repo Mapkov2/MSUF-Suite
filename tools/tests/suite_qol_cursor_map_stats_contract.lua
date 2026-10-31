@@ -145,6 +145,8 @@ assert(loadfile(root .. "/tools/tests/suite_test_support.lua"))().QoLStyleFixtur
     [1] = { background = "0a1220", border = "41627a", accent = "57c7df", text = "f4f7fb", muted = "aab5c2" },
     [5] = { background = "101010", border = "c41e3a", accent = "c41e3a", text = "f5f5f5", muted = "806060" },
 })
+-- The stat readers the strip shares with the DataTexts.
+assert(loadfile(root .. "/MSUF_Suite_Modules/PlayerReaders.lua"))("MSUF_Suite_Modules", { NS = ns, Suite = suite })
 for _, filename in ipairs({ "CursorEffects.lua",
     "CombatStatsHUD.lua", "CombatPetStatus.lua", "MapLandingShortcuts.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. filename))(
@@ -277,7 +279,7 @@ landing:Disable()
 local hud = assert(installed.combatStatsHUD)
 local TimerContext = Support.ModuleTimers(root, suite, ns)
 hud.active, hud.context = true, TimerContext("combatStatsHUD", hud, Context())
-hud.config = { point = 5, x = 0, y = 0, width = 300, scale = 100,
+hud.config = { point = 5, x = 0, y = 0, width = 300, scale = 100, fontSize = 15,
     backgroundColor = "000000", accentColor = "ffffff", opacity = 90, look = 5,
     showCrit = true, showHaste = true, showMastery = true, showVersatility = true,
     showLeech = false, showAvoidance = false, showSpeed = false, leechColor = "9cd7c9",

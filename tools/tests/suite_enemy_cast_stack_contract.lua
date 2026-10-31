@@ -157,7 +157,7 @@ local S = { Install = function(_, m) module = m end, Public = function(v) return
     CreateFrame = function(kind) Count("CreateFrame"); return Widget(kind) end,
     CreateTexture = function() return Widget("Texture") end,
     CreateFontString = function() return Widget("FontString") end,
-    SetStyledFont = function() Count("SetStyledFont") end, GlobalFontPath = function() return "font" end,
+    QoLStyleText = function() Count("SetStyledFont") end, GlobalFontPath = function() return "font" end,
     RegisterOwnedMover = function(_, element, spec) module.mover = { element = element, spec = spec } end,
     RGB = function(hex) return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255,
         tonumber(hex:sub(5, 6), 16) / 255 end }

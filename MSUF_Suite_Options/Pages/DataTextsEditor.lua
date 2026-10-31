@@ -136,10 +136,20 @@ local function BarActions(ctx, body, bar, section, reveal, y, width)
     return y - 78
 end
 
+-- Resets the bar's settings to their defaults but keeps it shown or hidden:
+-- Show bar is the bar's own switch, and its default is off for every bar
+-- but the first.
+function Editor.ResetBar(bar)
+    local shown = "bar" .. bar .. "Enabled"
+    return P.ResetRules(ID, P.Suite.DataTextBarControls(P.S.Config(ID), bar), function(key)
+        return key ~= shown and key or nil
+    end)
+end
+
 local function BarSectionActions(ctx, body, bar, section, select)
     local prefix = "bar" .. bar
     local more = P.AttachSectionReset(ctx, body, Tr("Bar %d"):format(bar),
-        function() return P.ResetPrefix(ID, prefix) end, nil, function(popup)
+        function() return Editor.ResetBar(bar) end, nil, function(popup)
             P.Button(ctx, popup, "Remove bar", 14, -76, 250, function()
                 popup:Hide()
                 Page.ChangeBars(P.Suite.DataTextBarRemovalValues(P.S.Config(ID), bar))

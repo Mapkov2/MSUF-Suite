@@ -1,5 +1,5 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local Finite = S.Finite
 local Tr = S.Text
 
@@ -143,7 +143,7 @@ local function PaintColumn(self, column, sorted, x, top, rowHeight, style)
     header:ClearAllPoints()
     header:SetPoint("TOPLEFT", x, top)
     header:SetSize(column.width - 5, rowHeight)
-    S.SetStyledFont(header.label, style.font, 10, "OUTLINE", 1, true, 70, 1)
+    S.SetStyledFont(header.label, style.font, 10, NS.HUDTextArgs(self.config))
     header.label:SetText(Tr(column.title))
     header:Show()
     for i, player in ipairs(sorted) do
@@ -153,7 +153,7 @@ local function PaintColumn(self, column, sorted, x, top, rowHeight, style)
         cell:SetWidth(column.width - 5)
         cell:SetJustifyH("LEFT")
         cell:SetWordWrap(column.field == "loot")
-        S.SetStyledFont(cell, style.font, style.size, "OUTLINE", 1, true, 70, 1)
+        S.SetStyledFont(cell, style.font, style.size, NS.HUDTextArgs(self.config))
         cell:SetText(CELLS[column.field](player) or "--")
         cell:SetTextColor(style.r, style.g, style.b)
         cell:Show()

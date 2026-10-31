@@ -84,6 +84,18 @@ do
     ]]
     local namespace = { Client = {}, MSUF2 = { Theme = {
         ReducedMotionEnabled = function(scrolling) return scrolling == true end } } }
+    local providers = { MSUF_PixelLayoutRegion = function(region) return region end }
+    local function Unused(name)
+        return function() error("scroll probe unexpectedly called " .. name) end
+    end
+    for _, name in ipairs({ "MSUF_SetFontChecked", "MSUF_SetIconTexture", "MSUF_ResolveSafeFontPath", "MSUF_ResolveFontKeyPath" }) do
+        providers[name] = Unused(name)
+    end
+    function namespace.Require(name) return assert(providers[name], name) end
+    function namespace.Optional(name)
+        assert(name == "MSUF_ResolveStatusbarTextureKey", name)
+        return nil
+    end
     assert(loadstring(source:sub(1, at - 1) .. "\n" .. probe))("MidnightSimpleUnitFrames", namespace)
 end
 print("MSUF skin bridges: migration/login, provider handoff and independent 7.0 motion/scroll policy passed")

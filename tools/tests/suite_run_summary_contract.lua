@@ -56,6 +56,9 @@ NS.Finite = function(value) return NS.Public(value) and type(value) == "number"
     and value == value and value > -math.huge and value < math.huge end
 NS.Number = NS.Finite
 NS.RGB = function() return .2, .3, .4 end
+-- The HUD text style reader (MSUF_Suite/Core/Catalog/HUD.lua); this contract
+-- draws no real fonts.
+NS.HUDTextArgs = function() end
 NS.ResolveFont = function() return nil end
 NS.GlobalFontPath = function() return "test.ttf" end
 S.Public, S.Finite = NS.Public, NS.Finite
@@ -72,13 +75,18 @@ S.CreateFontString = function(parent) return parent:CreateFontString() end
 S.SetStyledFont = function(widget, _, size) widget.size = size end
 S.RegisterOwnedMover = function(id, element, spec) movers[id] = { element = element, spec = spec } end
 S.Install = function(id, module) S.instances[id] = module end
--- Records belong to the character (MSUF_Suite/Core/CharacterData.lua).
-local state = {}
-S.CharacterData = function(owner) assert(owner == "runSummary"); return state end
+-- Records belong to the character (MSUF_Suite/Core/CharacterData.lua). The
+-- raid records are the tracker's store (RaidRecords.lua).
+local state, trackerState = {}, {}
+S.CharacterData = function(owner)
+    if owner == "objectives" then return trackerState end
+    assert(owner == "runSummary")
+    return state
+end
 S.Config = function() return S.instances.runSummary.config end
 S.Set = function(_, key, value) S.Config()[key] = value; return true end
 local private = { NS = NS, Suite = S }
-for _, file in ipairs({ "RunSummaryParty", "RunSummary" }) do
+for _, file in ipairs({ "RunSummaryParty", "RaidRecords", "RunSummary" }) do
     assert(loadfile(root .. "/MSUF_Suite_Modules/" .. file .. ".lua"))("MSUF_Suite_Modules", private)
 end
 local summary = S.instances.runSummary
@@ -181,14 +189,14 @@ clock = 200
 Event("ENCOUNTER_START", 9001, "Test Boss", 16, 20)
 clock = 220
 Event("ENCOUNTER_END", 9001, "Test Boss", 16, 20, 0)
-assert(not summary.host:IsVisible() and not state.raidRecords,
+assert(not summary.host:IsVisible() and not trackerState.raidRecords,
     "a wipe must not create a kill result")
 clock = 230
 Event("ENCOUNTER_START", 9001, "Test Boss", 16, 20)
 clock = 350
 Event("ENCOUNTER_END", 9001, "Test Boss", 16, 20, 1)
 assert(summary.host:IsVisible() and state.lastKind == "raid" and state.lastRaid.kind == "raid")
-assert(state.raidRecords["9001:16"].best == 120 and summary.rows[2].value.text:find("New best", 1, true))
+assert(trackerState.raidRecords["9001:16"].fastest == 120 and summary.rows[2].value.text:find("New best", 1, true))
 assert(summary.rows[3].value.text == "20" and summary.rows[4].value.text == "1")
 summary.config.showKills = false
 summary:Refresh()
@@ -196,14 +204,14 @@ assert(not summary.rows[4].label.shown, "raid kill count switch must remove its 
 summary.config.showKills = true
 serial = cards
 Event("ENCOUNTER_END", 9001, "Test Boss", 16, 20, 1)
-assert(cards == serial and state.raidRecords["9001:16"].kills == 1,
+assert(cards == serial and trackerState.raidRecords["9001:16"].kills == 1,
     "duplicate encounter end must count once")
 summary.config.autoHide = 5
 clock = 400
 Event("ENCOUNTER_START", 9001, "Test Boss", 16, 20)
 clock = 550
 Event("ENCOUNTER_END", 9001, "Test Boss", 16, 20, 1)
-assert(#timers == 1 and state.raidRecords["9001:16"].best == 120)
+assert(#timers == 1 and trackerState.raidRecords["9001:16"].fastest == 120)
 clock = 555
 timers[1]()
 timers = {}

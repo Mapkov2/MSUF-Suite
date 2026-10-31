@@ -31,24 +31,26 @@ local HELP = {
 -- Basics holds the most used ones (attachment complete) and stays open; the
 -- rest start closed. The bar's name and type sit in Basics.
 local SECTIONS = {
-    { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "side", "gap", "align",
+    { id = "basics", title = "Basics", open = true, suffixes = { "on", "size", "perRow", "anchor", "anchorFrame", "side", "gap", "align",
         "alpha", "cooldownDuration", "shareContents" } },
     { id = "layout", title = "Layout", suffixes = { "height", "spacing", "maxIcons", "cooldownFixed", "centerFirst", "overflow",
         "laterPerRow", "laterSize", "vertical", "grow", "x", "y" } },
-    { id = "look", title = "Look", suffixes = { "iconShape", "zoom", "border", "borderColor", "borderClass", "swipeAlpha",
-        "edge", "strata", "layer" } },
+    { id = "look", title = "Look", suffixes = { "iconShape", "masque", "zoom", "border", "borderColor", "borderClass", "swipeAlpha",
+        "swipeColor", "swipeClass", "edge", "strata", "layer" } },
     { id = "text", title = "Text", module = "text", suffixes = { "cdText", "cdSize", "stackText", "stackSize", "textTop",
         "stackPos", "keybind", "keybindSize", "keybindPos", "keybindBadge", "keybindBackground", "keybindBorder", "keybindPadding" } },
     { id = "effects", title = "Cooldown effects", suffixes = { "desat", "cdAlpha", "readyAlpha", "hideReady", "procGlow",
-        "readyGlow", "readyResources", "fullChargeGlow", "glowStyle", "glowTint", "glowColor", "usable", "range",
-        "rangeColor", "showAura", "charges", "chargeSwipe", "chargeEdge",
-        "assist", "bling" } },
+        "readyGlow", "readyResources", "fullChargeGlow", "glowStyle", "glowTint", "glowColor", "glowLines", "glowThickness", "glowSpeed", "usable", "range",
+        "rangeColor", "showAura", "auraSwipeColor", "charges", "chargeSwipe", "chargeEdge",
+        "assist", "kickMark", "bling", "readyPulse" } },
+    -- The pandemic window keeps its own look; line styling sits beside glow style.
     { id = "buffs", title = "Buffs", suffixes = { "showMissing", "keepSlots", "auraGlow", "pandemic", "pandemicStyle",
         "pandemicColor", "pandemicSize" } },
     { id = "barstyle", title = "Timer bar style", suffixes = { "barWidth", "barHeight", "barTexture", "barColor",
-        "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill",
+        "barClass", "barBgAlpha", "barIcon", "barIconSide", "barName", "barTime", "barFill", "barSpark",
         "barStacks", "barStackMax", "barStackEach", "barStackMarks", "barStackColorAt", "barStackColor", "barChargeSegments", "barChargeDim" } },
-    { id = "visibility", title = "Visibility", suffixes = { "vis", "oocAlpha", "hideMounted", "hideVehicle", "tooltips" } },
+    { id = "visibility", title = "Visibility", suffixes = { "vis", "oocAlpha", "hideMounted", "hideVehicle", "hideResting",
+        "hideSolo", "hideWorld", "hideFlying", "hideDead", "hiddenAlpha", "hoverShow", "fadeTime", "tooltips" } },
 }
 local CARD_SUFFIXES = { "name", "kind" }
 Page.SECTIONS, Page.CARD_SUFFIXES = SECTIONS, CARD_SUFFIXES
@@ -96,9 +98,26 @@ for i, name in ipairs(Page.KIND_NAMES) do kindValues[i] = { value = i, text = na
 -- Send excess cooldowns to: only another cooldown bar can take them (the
 -- runtime routes nothing else, Resolve.OverflowTarget).
 local overflowValues = {}
+function Page.OverflowReason(slot, choice)
+    local keys = KEYS[slot]
+    choice = choice or P.Get(ID, keys.overflow)
+    if not choice or choice == CDM.OVERFLOW.OFF then return nil end
+    if not Page.IsOn(slot) then return "Overflow is inactive because this bar is off." end
+    if P.Get(ID, keys.maxIcons) == 0 then return "Overflow is inactive because Maximum icons is unlimited (0). Set a limit first." end
+    local target = SLOTS[choice - CDM.OVERFLOW.OFF]
+    if not target then return nil end
+    if target.key == slot then return "A bar cannot send cooldowns to itself." end
+    if Page.Kind(target.key) ~= KIND.COOLDOWN then return "Only a cooldown bar can take excess cooldowns." end
+    if not Page.IsOn(target.key) then return "Overflow is inactive because the destination bar is off." end
+    if P.Get(ID, KEYS[target.key].overflow) ~= CDM.OVERFLOW.OFF then
+        return "Overflow is inactive because the destination also sends excess cooldowns. Turn off its overflow first."
+    end
+end
 local function OverflowTip(item)
     if item.own then return Tr("A bar cannot send cooldowns to itself.") end
     if item.notCooldown then return Tr("Only a cooldown bar can take excess cooldowns.") end
+    local reason = Page.OverflowReason(Page.selected, item.value)
+    return reason and Tr(reason)
 end
 for i, label in ipairs(RULES[KEYS.c1.overflow].choices) do
     overflowValues[i] = { value = i, text = label }
@@ -166,6 +185,15 @@ local function AnchorSet(value)
     P.Set(ID, key, value)
 end
 
+local function OverflowStatus(ctx, body, widget, width)
+    local note = P.Text(body, "", 0, 0, width, T.colors.muted)
+    note:ClearAllPoints()
+    note:SetPoint("TOPLEFT", widget, "BOTTOMLEFT", 0, -4)
+    M.TrackRefresh(ctx, function()
+        local reason = Page.Relevant(Page.selected, "overflow") and Page.OverflowReason(Page.selected)
+        Page.SetRaw(note, reason and Tr(reason) or "")
+    end)
+end
 local function RuleGrid(ctx, body, rules, y, width, sectionId)
     local rows, bound, strings = {}, {}, {}
     for _, rule in ipairs(rules) do
@@ -181,6 +209,7 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
                 row.set = function(value) AnchorSet(tonumber(value) or rule.default) end
             elseif rule.key == KEYS.c1.overflow then
                 row.values = overflowValues
+                row.height = 90
             elseif rule.key == "blizzard" and #blizzardValues > 0 then
                 row.values = blizzardValues
             end
@@ -190,9 +219,15 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
         end
     end
     local entries = {}
+    local columns = width >= 560 and 2 or 1
     if #rows > 0 then
-        local grid = W.SettingsRows(ctx, body, { x = 16, y = y, width = width, columns = 2, rows = rows })
-        for _, rule in ipairs(bound) do entries[#entries + 1] = { rule = rule, widget = grid.controls[rule.key] } end
+        local grid = W.SettingsRows(ctx, body, { x = 16, y = y, width = width, columns = columns, rows = rows })
+        for _, rule in ipairs(bound) do
+            local widget = grid.controls[rule.key]
+            entries[#entries + 1] = { rule = rule, widget = widget }
+            if rule.tooltip and widget then M.AddTooltip(widget, Tr(rule.label), Tr(rule.tooltip), { hook = true }) end
+            if rule.key == KEYS.c1.overflow and widget then OverflowStatus(ctx, body, widget, (width - (columns - 1) * 18) / columns) end
+        end
         y = grid.bottomY
     end
     for _, rule in ipairs(strings) do
@@ -207,6 +242,7 @@ local function RuleGrid(ctx, body, rules, y, width, sectionId)
         if input.SetMaxBytes and rule.maxLength then input:SetMaxBytes(rule.maxLength + 1) end
         entries[#entries + 1] = { rule = rule, widget = input }
         y = y - 58
+        if rule.key == KEYS.c1.anchorFrame then y = Page.Tools().PickButton(ctx, body, y, width, sectionId) end
     end
     P.GateControls(ctx, ID, entries, Page.KeyFn)
     return y, entries
@@ -275,12 +311,13 @@ local function LayoutButtons(ctx, body, y, width, sectionId)
     HM.SkipHistoryCheckpoint(P.Button(ctx, body, "Reset this bar's settings", 28 + half, y - 4, half, function() Page.ResetBar(Page.selected) end,
         function() return S.Availability(ID) and true or false end,
         P.Meta(PAGE, ID, "editor.reset", "action", sectionId)))
-    return y - 40
+    return Page.Tools().CopyButton(ctx, body, y - 40, width, sectionId)
 end
 
 -- A lazy host builds a closed section's controls on first open
 -- (P.LazySection). Its header (bar name, badge, "...") is there at once.
 local function ResetAnchor(values)
+    values[KEYS[Page.selected].on] = nil
     local key = KEYS[Page.selected].anchor
     local anchor = values[key]
     if anchor and anchor ~= P.Get(ID, key) and S.CooldownManagerConvertAnchor then
@@ -315,6 +352,7 @@ local function BuildSection(ctx, b, ui, spec)
         end
         P.AttachRuleColors(body, spec.title, ID, rules, Page.KeyFn, ColorEnabled)
         if spec.id == "layout" then y = LayoutButtons(ctx, body, y, width, sectionId) end
+        if spec.id == "visibility" then y = Page.BuildInspection(ctx, b, body, y, width, sectionId) end
         M.TrackRefresh(ctx, function()
             if P.Combat() then return end
             local state, why = SectionState(spec)
@@ -332,7 +370,7 @@ local function BuildSection(ctx, b, ui, spec)
         ui.sections[spec.id] = body
         P.AttachSectionReset(ctx, body, spec.title, function()
             return P.ResetRules(ID, rules, Page.ResetKeyFn, nil, spec.id == "basics" and ResetAnchor or nil)
-        end)
+        end, Page.SectionCopy(spec))
         M.TrackRefresh(ctx, function()
             if P.Combat() then return end
             local state = SectionState(spec)
@@ -356,6 +394,10 @@ function Page.Summary(slot)
     local anchor = P.Get(ID, keys.anchor)
     local parent = anchor > FREE and SLOTS[anchor - FREE]
     local target = parent and Page.BarName(parent.key) or CDM.FRAME_ANCHORS[anchor] and Tr(CDM.ANCHOR_LABELS[anchor])
+    if anchor == CDM.OTHER_ANCHOR then
+        local name = P.Get(ID, keys.anchorFrame)
+        target = type(name) == "string" and name ~= "" and name or Tr(CDM.ANCHOR_LABELS[anchor])
+    end
     if target then
         text = format(Tr(ATTACH_SUMMARY[P.Get(ID, keys.side)] or ATTACH_SUMMARY[1]), text, target)
         if parent and Page.InLoop(slot) then
@@ -392,6 +434,7 @@ local function BuildGeneral(ctx, card)
         if not seen[rule.key] then rules[#rules + 1] = rule end
     end
     HM.SetSectionCursor(card, RuleGrid(ctx, card, rules, y, width, MODULE_SECTION))
+    P.AttachRuleColors(card, "Basics", ID, rules)
 end
 
 -- The bar's name (custom bars) and type, next to the bar choice.
@@ -482,7 +525,8 @@ local CLEAR_TIPS = {
 }
 local function ClearEnter(self)
     local label = Page.ClearLabel(Page.selected)
-    Page.ShowTip(self, Tr(label), Tr(CLEAR_TIPS[label]))
+    Page.ShowTip(self, Tr(label), Tr(Page.SharedList(Page.selected)
+        and "Empties this shared group for all specializations. You can undo it." or CLEAR_TIPS[label]))
 end
 local function RestoreEnter(self)
     Page.ShowTip(self, Tr("Show removed spells"),
@@ -490,7 +534,8 @@ local function RestoreEnter(self)
 end
 local function CopyEnter(self)
     Page.ShowTip(self, Tr("Copy to other specializations"),
-        Tr("Copies the spells and items you added to this bar to the same bar in your other specializations. Blizzard's entries follow each specialization's own list. You can undo it."))
+        Tr(Page.SharedList(Page.selected) and "This shared group's list already applies to all specializations."
+            or "Copies the spells and items you added to this bar to the same bar in your other specializations. Blizzard's entries follow each specialization's own list. You can undo it."))
 end
 local function ImportEnter(self)
     Page.ShowTip(self, Tr("Import Blizzard CDM"),
@@ -546,28 +591,49 @@ local function PaintSpellButtons(body, buttons)
     buttons.copy:SetEnabled(not blocked and Page.HasOwnEntries(Page.selected))
     buttons.import:SetEnabled(not blocked and not Page.ForeignSpec() and type(S.CooldownManagerBlizzardSnapshot) == "function")
 end
+local function SpellHelpText(shared)
+    if shared then
+        return "These spells apply to all specializations. Clearing the group empties it for all of them; turning sharing off brings back each spec's own list."
+    end
+    return HELP.spells.details
+end
+local function SpellHelp(ctx, body, width)
+    local function Details() return SpellHelpText(Page.SharedList(Page.selected)) end
+    local details = W.DescriptionDetails
+    local label = P.Description(body, details and P.Help(HELP.spells.summary, Details) or SpellHelpText(false), 16, -18, width)
+    local height = max(14, ceil(label:GetStringHeight() or 14))
+    if not details then
+        Page.SetRaw(label, Tr(SpellHelpText(true)))
+        height = max(height, ceil(label:GetStringHeight() or 14))
+        M.TrackRefresh(ctx, function() Page.SetRaw(label, Tr(Details())) end)
+    end
+    return -18 - height - 8
+end
 
 local function BuildSpells(ctx, b, ui)
     local sectionId = "suite_cooldownManager_spells"
     local body = b:CollapsibleSection(sectionId, Tr("Spell list"), 120, false)
     local width = max(240, (HM.GetSectionWidth(body) or b.width or 720) - 32)
-    local y = Help(body, HELP.spells, -18, width)
+    local y = SpellHelp(ctx, body, width)
     local spec = P.Text(body, "", 16, y, width, T.colors.text)
     y = y - 22
     local grid = Page.CreateTileGrid(ctx, body, 16, y, width)
     grid.ui, ui.grid = ui, grid
     local note = T.Font(body, "GameFontHighlightSmall", "", T.colors.text)
+    ui.note = note
     note:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", 0, -12)
     note:SetWidth(width - 100)
     note:SetJustifyH("LEFT")
     local undo = Page.Button(body, "Undo", 80, 20, Page.RunUndo)
+    Page.BindUndo(undo)
     undo:SetPoint("TOPLEFT", grid.host, "BOTTOMLEFT", width - 84, -8)
     undo:Hide()
     local buttons = BuildSpellButtons(body, grid, width, sectionId)
     ui.spellButtons = buttons
     -- The note shows here and under the preview.
     ui.PaintNote = function()
-        Page.SetRaw(note, Page.note or "")
+        -- A search for a spell option says what to click next.
+        Page.SetRaw(note, Page.note or Page.SpellSearchHint() or "")
         if Page.noteError then note:SetTextColor(1, 0.4, 0.35) else note:SetTextColor(Page.TextColor()) end
         undo:SetShown(Page.undo ~= nil)
         if ui.PaintPreviewNote then ui.PaintPreviewNote() end
@@ -603,6 +669,7 @@ local function Build(ctx)
     if not (Page.ui and Page.ui.live) then Page.ui = ui end
     -- FixedPreviewSection releases the first builder slot from scroll flow.
     Page.BuildPreview(ctx, b, ui)
+    Page.BindUndo(ui.previewUndo)
     -- Eager: the page builds Basics and the bar list into the card below.
     local card = P.ModuleCard(ctx, b, PAGE, ID, {
         -- Edit Mode opens on a bar it can move: the selected one, or the first.

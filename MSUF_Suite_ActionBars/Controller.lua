@@ -116,7 +116,7 @@ Global({ "buttonShape" }, { style = true, allLayout = true, allGeometry = true }
 Global({ "borderColor", "borderClassColor" }, { style = true, allLayout = true })
 Global({ "assistStyle", "assistColor", "assistAlpha", "assistExpansion", "assistX", "assistY" }, { assist = true })
 Global({ "showOnPanels" }, { panels = true })
-Global({ "rangeColor" }, { style = true, tint = true })
+Global({ "rangeColor", "usableColor", "noPowerColor", "unusableColor" }, { style = true, tint = true })
 Global({ "castHighlight" }, { state = true, native = true })
 Global({ "hideEmptyCharges" }, { count = true, native = true })
 Global({ "desaturateCooldown", "cooldownAlpha" }, { curves = true, cooldown = true, native = true })
@@ -129,7 +129,8 @@ Global({ "disableFormPaging", "disableSkyridingPaging", "pagingModifiers", "page
     { paging = true })
 
 -- ResumeVisibility is only read when a bar is switched back on (the switch
--- writes Visibility too), so it needs no work of its own.
+-- writes Visibility too), and Tooltip when the mouse enters a button, so
+-- neither needs work of its own.
 local BAR_WORK = {
     Layer = { layout = true },
     Buttons = { layout = true, paint = true },
@@ -139,8 +140,11 @@ local BAR_WORK = {
     Visibility = { visible = true },
     HideGamepad = { visible = true, events = true },
     ResumeVisibility = {},
+    Tooltip = {},
     Alpha = { visible = true },
     FadeAlpha = { visible = true },
+    FadeDuration = { visible = true },
+    FlyoutDirection = { layout = true },
 }
 for _, suffix in ipairs({ "Rows", "Spacing", "Vertical", "Start", "ShowEmpty", "Point", "X", "Y", "Background",
     "LeftEndcap", "LeftEndcapSize", "LeftEndcapX", "LeftEndcapY", "RightEndcap", "RightEndcapSize", "RightEndcapX", "RightEndcapY",
@@ -163,7 +167,7 @@ local FULL = {
     drag = true, visible = true, panels = true, assist = true,
 }
 local FULL_BAR = { layout = true, style = true, visible = true, paint = true }
-AB.BAR_WORK = BAR_WORK
+AB.BAR_WORK, AB.GLOBAL_WORK = BAR_WORK, GLOBAL_WORK
 
 -- Every watched setting as parallel arrays: key, work, bar index (0: global).
 local WATCH_KEYS, WATCH_WORK, WATCH_BAR = {}, {}, {}

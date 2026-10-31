@@ -21,6 +21,10 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Choice("look", "MSUF style", NS.Client.isForever and 3 or 2,
         { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
     Choice("displayStyle", "Bar layout", 1, { "Framed", "Minimal", "Segmented" }),
+    -- Experience is the bar as it always was. The others replace its hide at
+    -- the level cap (hideAtMax) and, with "Hide all Blizzard progress bars",
+    -- Blizzard's own reputation and honor bars.
+    Choice("track", "Track", 1, { "Experience", "Reputation", "Honor", "Automatic" }),
     Number("width", "Bar width", 400, 220, 800, 5),
     Number("height", "Bar height", 18, 8, 40),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),
@@ -111,6 +115,8 @@ B.Section("innervateCue", "innervate_cue", "Innervate whisper cue", {
     Number("y", "Vertical position", 180, -3000, 3000),
 })
 NS.SuiteCatalog.innervateCue.rules.targetName.enableKey = "highlightTarget"
+-- Another player's name stays out of shared profiles, like mail recipients.
+NS.SuiteCatalog.innervateCue.rules.targetName.personal = true
 
 -- The warning reads equipped durability only when its events fire. Its own
 -- position is stored in the active Suite profile and exposed to MSUF Edit Mode.
@@ -122,6 +128,7 @@ B.Module("durabilityAlert", {
 })
 B.Section("durabilityAlert", "durability_warning", "Low durability warning", {
     Number("threshold", "Warn below (percent)", 40, 1, 99),
+    Bool("sound", "Play a warning sound"),
     Number("width", "Warning width", 250, 180, 500),
     Number("height", "Warning height", 62, 56, 90),
     Number("scale", "Scale (percent)", 100, 50, 200, 5),

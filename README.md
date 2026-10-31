@@ -1,6 +1,6 @@
 # MSUF Suite
 
-**MSUF Suite 0.1.3 Alpha** brings modular interface tools to World of Warcraft Retail and WoW Forever. Open `/msuf` to configure the Suite and choose the modules for your layout.
+**MSUF Suite Alpha** brings modular interface tools to World of Warcraft Retail and WoW Forever. Open `/msuf` to configure the Suite and choose the modules for your layout.
 
 **Midnight Simple Unit Frames (MSUF) is required. This Suite alpha is compatible with MSUF 6.5 (release 6.50).** MSUF is configured as a Required Dependency on CurseForge and is installed automatically with the Suite. When using Wago, install MSUF through the Wago client as well.
 
@@ -15,6 +15,7 @@
 - **DataTexts** - Configurable information bars.
 - **Damage Meter** - Damage Meter windows, display options, and previews.
 - **Nameplates** - Styling for Blizzard's native nameplates.
+- **Adventure Planner** - A separate load-on-demand addon for character progress, lockouts, keystones, preparation and personal notes. Open `/plan`; runtime loads only when enabled.
 - **Quality of Life** - Group and dungeon tools, encounter information, death alerts, incoming combat text, and reminders.
 - **Skinning** - Interface window appearance and controls, with short hover, click, selection, focus, opening and disclosure animations on Suite-owned artwork. Blizzard AddOn-list groups animate their arrows and visible row transitions, with brief clipped visual copies for collapsing children. Menu page changes and completed search/filter results fade in, and palette changes blend owned backgrounds and borders. Modern and legacy dropdowns can dim their skinned window beneath the popup. Blizzard Settings pages, native tabs, Suite dialogs and AceGUI/AceConfig menus share these transitions. Supported native ScrollBoxes and modern scrollbars use optional smooth scrolling with immediate thumb dragging; older ScrollFrames use a short visual easing of their native offset. The Suite menu-animation, smooth-scrolling and reduced-motion switches also govern the connected MSUF 7.0 menu. Custom addons can adopt the same behavior through the scoped RegisterMenu/AnimateContent API. Configure Menu animations, Smooth scrolling, Reduced motion and Dim background for dropdowns under Corners and hover.
 
@@ -36,4 +37,10 @@ The Suite is in its **Alpha phase**. Features and layouts may change, and bugs a
 
 Copyright (c) 2026 Mapko. All rights reserved. See [LICENSE.txt](https://github.com/Mapkov2/MSUF-Suite/blob/main/LICENSE.txt). Bundled third-party components retain their own terms; see [third-party notices](https://github.com/Mapkov2/MSUF-Suite/blob/main/MSUF_Suite_Skin/THIRD_PARTY_NOTICES.txt).
 
-Keep all bundled addon folders together when installing or updating. The Suite loads only the language pack selected in MSUF; the other language packs stay available for a later language change. English uses the normal text fallback.
+Keep all bundled addon folders together when installing or updating. **MSUF Suite - Locales** contains all translations and follows the menu language selected in MSUF. Disable this optional addon for English Suite text, then reload the interface. When updating from individual language addons, remove the old `MSUF_Suite_Locale_<locale>` folders.
+
+## Development
+
+See [architecture and validation](docs/ARCHITECTURE.md) for source ownership,
+required host fixtures and the boundary between offline checks and live testing.
+The addon version is declared in `MSUF_Suite/MSUF_Suite_Mainline.toc`.

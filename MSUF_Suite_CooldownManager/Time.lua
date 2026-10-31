@@ -93,7 +93,7 @@ local READY_MIN, GCD_MAX = 2, 1.5
 
 ------------------------------------------------------------------ curves
 -- Resolved on bind and on behavior/choice changes only, never per event.
-local function Curves(icon, entry, view)
+local function Curves(icon, entry, view, queries)
     local ov = entry.ov or EMPTY
     icon.curveEntry, icon.curveOv, icon.curveGen = entry, ov, view.behaviorGen
     local desat = ov.desat
@@ -113,6 +113,11 @@ local function Curves(icon, entry, view)
     local hide = ov.hideReady
     if hide == nil then hide = view.hideReady == true end
     icon.hideReady = hide
+    -- "Show only when usable" or "during a spell alert": the effect layer's
+    -- answer (entry.gated, Effects.Regate) hides the icon too.
+    local gate = (ov.usableOnly == true or ov.procOnly == true) or nil
+    icon.gate = gate
+    if gate or entry.gated then C.Effects.SeedGate(entry, queries) end
     -- The item memo holds curve results: new curves repaint on the next refresh.
     icon.itemStart = nil
 end
@@ -508,18 +513,23 @@ local function Request(slotKey)
 end
 
 -- Cooling edges drive ready alerts and ready glows; the start time is
--- plain GetTime at the edge, never a cooldown value.
-local function Edge(entry, cooling)
+-- plain GetTime at the edge, never a cooldown value. A start seen after a
+-- known ready state plays "Sound when used" (a new or rebound entry that is
+-- already cooling plays nothing).
+local function Edge(entry, cooling, usableQueries)
     local was = entry.cooling
     entry.cooling = cooling
     if cooling then
-        if not was then entry.coolStart = GetTime() end
+        if not was then
+            entry.coolStart = GetTime()
+            if was == false and entry.ov.usedSound then C.Alerts.Used(entry) end
+        end
     elseif was then
         local start = entry.coolStart
         entry.coolStart = nil
         if start and GetTime() - start >= READY_MIN then C.Alerts.Ready(entry) end
     end
-    if was ~= cooling then C.Effects.Update(entry) end
+    if was ~= cooling then C.Effects.Update(entry, usableQueries) end
 end
 
 -- reason: "cooldown" (SPELL_UPDATE_COOLDOWN, isOnGCD trustworthy),
@@ -527,7 +537,7 @@ end
 -- (SPELL_UPDATE_CHARGES: the charge part only, see SpellState), "charges"
 -- (state and count), "item" (bag events), "done", "expired" (the main swipe
 -- ran out, from Done), "full". Returns true when entry.hidden changed.
-function Time.Refresh(entry, reason)
+function Time.Refresh(entry, reason, usableQueries)
     local icon = entry.icon
     if not icon or icon.sim or entry.src == "p" then return false end
     local view = C.views[entry.slot]
@@ -542,7 +552,9 @@ function Time.Refresh(entry, reason)
         end
         return false
     end
-    if icon.curveEntry ~= entry or icon.curveOv ~= entry.ov or icon.curveGen ~= view.behaviorGen then Curves(icon, entry, view) end
+    if icon.curveEntry ~= entry or icon.curveOv ~= entry.ov or icon.curveGen ~= view.behaviorGen then
+        Curves(icon, entry, view, usableQueries)
+    end
     if reason == "full" then C.Icons.Apply(entry) end
     local full = entry.fullyCharged
     local cooling, empty
@@ -575,11 +587,12 @@ function Time.Refresh(entry, reason)
     -- entry.empty keeps that answer for the options page.
     empty = entry.hideEmpty == true and empty == true
     entry.empty = empty
-    local hidden = (not C.state.preview and ((icon.hideReady and not cooling) or empty)) and true or false
+    local hidden = (not C.state.preview and ((icon.hideReady and not cooling) or empty or (icon.gate and entry.gated)))
+        and true or false
     local changed = (entry.hidden == true) ~= hidden
     entry.hidden = hidden
     local was = entry.cooling
-    Edge(entry, cooling)
+    Edge(entry, cooling, usableQueries)
     -- A flip without a cooling edge (a Healthstone leaving or joining the
     -- bags) re-evaluates the glows as well; Edge covers the others. A charge
     -- spell stays "not cooling" while one charge is left: spending one from
@@ -587,7 +600,7 @@ function Time.Refresh(entry, reason)
     -- ready glow ("Glow when all charges are ready") follows.
     if was == cooling then
         if changed then
-            C.Effects.Update(entry)
+            C.Effects.Update(entry, usableQueries)
         elseif entry.fullyCharged ~= full then
             C.Effects.RefreshReady(entry)
         end
@@ -606,7 +619,12 @@ function Time.Done(icon, cooldown)
         return
     end
     local reason = "done"
-    if cooldown ~= nil and cooldown == icon.cd and icon.cdReal then reason = "expired" end
+    if cooldown ~= nil and cooldown == icon.cd and icon.cdReal then
+        reason = "expired"
+    elseif cooldown ~= nil and cooldown == icon.chargeCd and icon.chargeSet and entry.ov.chargeSound then
+        -- A running recharge ran out: a charge came back.
+        C.Alerts.Charge(entry)
+    end
     -- Guard: a swipe re-armed during the refresh must not re-enter. A
     -- raising refresh is reported (Dispatch) and the guard still clears.
     icon.inDone = true

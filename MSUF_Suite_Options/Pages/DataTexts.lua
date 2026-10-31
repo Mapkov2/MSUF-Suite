@@ -105,6 +105,18 @@ local function SharedRules(ctx, b, reveal, section, title, rules, opts)
     return body
 end
 
+-- The settings of the built-in Clock, FPS, Latency, Durability and
+-- Coordinates places.
+local function BuiltIn(ctx, b, reveal)
+    SharedRules(ctx, b, reveal, PAGE .. "_clock", Tr("Clock"), P.SectionRules(ID, "clock"), {
+        help = "Choose whether the Time place shows the realm clock or your computer's clock, in 12 or 24 hours, with or without seconds.",
+    })
+    SharedRules(ctx, b, reveal, PAGE .. "_warnings", Tr("Warning thresholds"), P.SectionRules(ID, "warnings"), {
+        help = "The Durability, FPS and Latency places, and FPS / latency, take the warning color at these limits.",
+    })
+    SharedRules(ctx, b, reveal, PAGE .. "_coordinates", Tr("Coordinates"), P.SectionRules(ID, "coordinates"), {})
+end
+
 local function Shared(ctx, b, reveal)
     SharedRules(ctx, b, reveal, PAGE .. "_appearance", Tr("Shared bar style"),
         P.SectionRules(ID, "appearance"), {
@@ -115,6 +127,27 @@ local function Shared(ctx, b, reveal)
         P.SectionRules(ID, "textStyle"), {
             help = "Choose an MSUF font, outline, shadow and Smooth, Sharp or Slug rendering. Slug has no shadow. Label, value and warning colors are separate.",
         })
+    BuiltIn(ctx, b, reveal)
+    if P.Suite.Client.isForever then
+        SharedRules(ctx, b, reveal, PAGE .. "_supplies", Tr("Supplies"), P.SectionRules(ID, "supplies"), {
+            help = [[Tracks carried ammunition and remembered reagents. Choose additional supplies from your bags;
+remembered reagents stay listed at zero. Bank items are excluded.]],
+            extra = function(body, y, width)
+                local button
+                button = P.Button(ctx, body, "Choose supplies from bags", 16, y, width,
+                    function() P.ComfortItemMenu(button, ID, "suppliesItems", "supplies", true) end,
+                    function() return not P.Combat() end, P.Meta(PAGE, ID, "action.supplies", "action", PAGE .. "_supplies"))
+                P.Button(ctx, body, "Forget remembered supplies", 16, y - 40, width, function()
+                    if P.Combat() then return end
+                    local saved = P.Suite.CharacterData("supplies")
+                    if saved then saved.items = {} end
+                    S.Apply(ID)
+                end, function() return not P.Combat() end,
+                    P.Meta(PAGE, ID, "action.forgetSupplies", "action", PAGE .. "_supplies"))
+                return y - 80
+            end,
+        })
+    end
     local bagRules = P.SectionRules(ID, "bags")
     if #bagRules > 0 then
         SharedRules(ctx, b, reveal, PAGE .. "_bags", Tr("Blizzard bag buttons"), bagRules, {

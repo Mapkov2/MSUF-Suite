@@ -22,6 +22,20 @@ function S.QoLColor(region, hex, alpha)
     region:SetColorTexture(r, g, b, alpha or 1)
 end
 
+-- The warning sound of the alerts that offer one ("Play a warning sound",
+-- config.sound).
+function S.QoLWarningSound()
+    PlaySound(SOUNDKIT.RAID_WARNING, "Master")
+end
+
+-- The text style choices of a surface (NS.AddQoLTextStyle: outline, rendering
+-- and shadow) on one font string. An unknown outline keeps the plain outline.
+local OUTLINES = { "", "OUTLINE", "THICKOUTLINE" }
+function S.QoLStyleText(fontString, config, font, size)
+    S.SetStyledFont(fontString, font, size, OUTLINES[config.fontOutline] or "OUTLINE", config.fontRendering,
+        config.fontShadow, config.fontShadowOpacity, config.fontShadowDistance)
+end
+
 ------------------------------------------------------------------ cards
 -- The palette alpha of each module card's fill and frame lines, as each
 -- module has always drawn them. Stripes and accent lines are opaque.

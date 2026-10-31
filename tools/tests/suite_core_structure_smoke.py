@@ -104,6 +104,7 @@ ordered("MSUF_Suite_Options", ["Pages/MinimapPreviewArt.lua", "Pages/MinimapPrev
 ordered("MSUF_Suite_Options", ["Pages/CooldownManagerData.lua", "Pages/CooldownManagerLists.lua",
                                "Pages/CooldownManagerBars.lua", "Pages/CooldownManagerWidgets.lua",
                                "Pages/CooldownManagerPicker.lua", "Pages/CooldownManagerSounds.lua",
+                               "Pages/CooldownManagerPopoverFields.lua", "Pages/CooldownManagerPopoverInputs.lua",
                                "Pages/CooldownManagerPopover.lua",
                                "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua",
                                "Pages/CooldownManager.lua"])

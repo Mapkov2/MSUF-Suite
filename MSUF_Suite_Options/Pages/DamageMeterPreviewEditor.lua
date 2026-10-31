@@ -6,7 +6,7 @@ P.MeterPreviewEditor = E
 local M, HM, Tr = P.M, P.HM, P.Tr
 local Properties = P.MeterPreviewProperties
 local TEXT_ANCHORS = { leftSize = "LEFT", rightSize = "RIGHT", rank = "LEFT", titleSize = "LEFT", headerTimerSize = "RIGHT" }
-local HIT_ORDER = { window = 0, header = 1, bars = 2, name = 4, value = 4, title = 5, timer = 5, buttons = 6, icon = 6 }
+local HIT_ORDER = { window = 0, header = 1, bars = 2, name = 4, value = 4, title = 5, timer = 5, floatingTimer = 5, details = 7, buttons = 6, icon = 6 }
 
 local function Anchor(handle, force)
     local region, anchor = handle.previewRegion, handle.textAnchor

@@ -194,10 +194,9 @@ local presetKnown = {}
 -- yet (RefillChanged, or the next build). By ID, what the last build read:
 -- for every plain spell entry its base spell, learned state, override (false:
 -- none) and charges flag (FillSpell); for every item key its icon (false: no
--- item data yet), spell and name (FillItem).
+-- item data yet), spell and name (FillItem); a staged build swaps in its own.
 local learnedStale = false
-local spellBase, spellKnown, spellOverride, spellCharges = {}, {}, {}, {}
-local itemIcon, itemSpell, itemName = {}, {}, {}
+local refill = { base = {}, known = {}, override = {}, charges = {}, icon = {}, item = {}, name = {} }
 local function PresetKnown(key)
     local active = C.M.active == true
     local known
@@ -230,17 +229,18 @@ local function RefillMoved()
         local spell = presetSpell[key]
         if spell and Known(spell) ~= known then return true end
     end
-    for id, base in pairs(spellBase) do
+    local r = refill
+    for id, base in pairs(r.base) do
         local now = BaseSpell(id)
         local override = OverrideOf(now)
-        if now ~= base or Known(now) ~= spellKnown[id] or (override or false) ~= spellOverride[id]
-            or Charged(override or now) ~= spellCharges[id] then
+        if now ~= base or Known(now) ~= r.known[id] or (override or false) ~= r.override[id]
+            or Charged(override or now) ~= r.charges[id] then
             return true
         end
     end
-    for id, icon in pairs(itemIcon) do
+    for id, icon in pairs(r.icon) do
         if (Catalog.ItemIcon(id) or false) ~= icon then return true end
-        if icon and ((Catalog.ItemSpell(id) or false) ~= itemSpell[id] or (Catalog.ItemName(id) or false) ~= itemName[id]) then
+        if icon and ((Catalog.ItemSpell(id) or false) ~= r.item[id] or (Catalog.ItemName(id) or false) ~= r.name[id]) then
             return true
         end
     end
@@ -295,7 +295,7 @@ local function Canon(key)
 end
 
 ------------------------------------------------------------------ claims and collection
-local claimed, used, keys, tmp, placed, planCache = {}, {}, {}, {}, {}, {}
+local claimed, used, keys, tmp, placed, planCache, shownNow = {}, {}, {}, {}, {}, {}, {}
 -- usedSlot: equipment slots the bar being collected lists (e13). slotHome:
 -- the bar that claimed each listed equipment slot, across all bars.
 local usedSlot, slotHome = {}, {}
@@ -330,7 +330,9 @@ local function ListOf(i, specLists, presets, defaultsOnly)
     local list = specLists and specLists[def.key]
     if type(list) == "table" and not (defaultsOnly and list.inherit) then return list, true end
     if def.key == "ess" or def.preset == "defensives" then return presets[def.key], false end
-    if C.state.raidEssentials ~= false then return Catalog.defaultByBar[def.key], false end
+    -- Spec defaults come with the spec's profile row (presets.ess); without
+    -- one (WoW Forever) every built-in bar follows Blizzard's layout.
+    if presets.ess then return Catalog.defaultByBar[def.key], false end
 end
 local function ClaimList(list, slot, family)
     for j = 1, #list do
@@ -541,12 +543,15 @@ local touched, auraTouched, was, wasIDs = {}, {}, {}, {}
 local SameSet, CopySet = C.Const.SameSet, C.Const.CopySet
 local wasChoices
 Resolve.touched, Resolve.auraTouched = touched, auraTouched
+-- A combat build in stages (ResolveStages.lua fills in the rest).
+Resolve.stage = { on = false, stale = false }
 local function Snapshot(entry)
     wasChoices = entry.ov
     for i = 1, #WATCH do was[i] = entry[WATCH[i]] end
     CopySet(wasIDs, entry.auraIDs or EMPTY)
 end
-local function Compare(entry)
+-- live: the entry Snapshot read (a staged fill compares its shadow).
+local function Compare(entry, live)
     -- Settings changes already refresh all affected behavior/auras. A spec
     -- change can keep the same entry list, so explicitly refresh its choices.
     local choicesChanged = overrideScopeChanged and wasChoices ~= entry.ov
@@ -559,15 +564,16 @@ local function Compare(entry)
     end
     local aura = was[UNIT_AT] ~= entry.unit or was[HASAURA_AT] ~= entry.hasAura or not SameSet(entry.auraIDs or EMPTY, wasIDs)
         or (choicesChanged and entry.hasAura)
-    if diff or aura then touched[#touched + 1] = entry end
-    if aura then auraTouched[entry] = true end
+    if diff or aura then touched[#touched + 1] = live end
+    if aura then auraTouched[live] = true end
 end
 
 ------------------------------------------------------------------ build
 -- Only what can show is filled: an unlearned Blizzard record (outside the
 -- previews) and an unlearned preset-only spell are dropped before any entry
--- table is made or any spell data is read.
-local function Materialize(key, slot, index, preview, spells)
+-- table is made or any spell data is read. A staged build (stage) fills a
+-- shadow and returns the live entry, which takes it on landing.
+local function Materialize(key, slot, index, preview, spells, stage)
     if placed[key] then return nil end
     if not preview and not Resolve.ConditionsAllow(spells[key]) then return nil end
     local src, id = Parse(key)
@@ -579,15 +585,16 @@ local function Materialize(key, slot, index, preview, spells)
     end
     local entries = C.entries
     local old = entries[key]
-    local entry = old or { key = key }
+    local entry = stage and old and stage.Shadow(old) or old or { key = key }
     if old then Snapshot(old) end
     local filled = Fill(entry, key)
+    local r = stage and stage.refill or refill
     if filled and src == "s" then
-        spellBase[id], spellKnown[id] = entry.base, entry.known
-        spellOverride[id], spellCharges[id] = entry.override or false, entry.charges
+        r.base[id], r.known[id] = entry.base, entry.known
+        r.override[id], r.charges[id] = entry.override or false, entry.charges
     elseif src == "i" then
-        itemIcon[id] = filled and entry.texture or false
-        if filled then itemSpell[id], itemName[id] = entry.spell or false, entry.name or false end
+        r.icon[id] = filled and entry.texture or false
+        if filled then r.item[id], r.name[id] = entry.spell or false, entry.name or false end
     end
     if not filled or not (entry.known or preview and not presetSpell[key]) then return nil end
     local ov = spells[key]
@@ -596,9 +603,11 @@ local function Materialize(key, slot, index, preview, spells)
     if chosen then entry.unit = chosen end
     entry.ov = ov
     C.AuraTimers.Classify(entry)
-    if old then Compare(old) end
+    if old then Compare(entry, old) end
     entry.slot, entry.index, entry.ov = slot, index, ov
-    entries[key], placed[key] = entry, true
+    placed[key] = true
+    if stage then return old or entry end
+    entries[key] = entry
     return entry
 end
 local function Placeholder(slot, n, family)
@@ -690,11 +699,9 @@ local function Commit(plans, entries)
     return any
 end
 
--- Returns C.plans and whether any bar's entry list changed. Each plan's gen
--- increments when its list changes; Resolve.touched lists entries that kept
--- their place but changed on refill. view.maxIcons is applied by the layout.
-function Resolve.Build()
-    local views, plans, entries = C.views, C.plans, C.entries
+-- The inputs of a build: conditions, presets and claims. A staged one
+-- keeps its refill inputs apart until it lands (Publish).
+local function Prepare(stage)
     local state = C.state
     if not NS.IsCombatLocked() and (conditionsPending or conditionSpec ~= state.specID) then
         wipe(conditionKnown)
@@ -704,30 +711,77 @@ function Resolve.Build()
         learnedStale = false
         wipe(presetKnown)
     end
-    wipe(spellBase)
-    wipe(itemIcon)
-    local preview = state.preview == true
-    -- The options canvas redraws only when entries may have changed.
-    state.entryGen = (state.entryGen or 0) + 1
+    local r = stage and stage.refill or refill
+    wipe(r.base)
+    wipe(r.icon)
+    overrideScopeChanged = buildSpec ~= state.specID
+    if not stage then
+        buildSpec = state.specID
+        -- The options canvas redraws only when entries may have changed.
+        state.entryGen = (state.entryGen or 0) + 1
+    end
     local specLists, hidden, replaced = SpecData()
-    overrideScopeChanged, buildSpec = buildSpec ~= state.specID, state.specID
-    local spells = C.Choices()
-    local presets = PresetLists()
+    local spells, presets = C.Choices(), PresetLists()
     Claim(specLists, presets)
     wipe(placed)
     wipe(touched)
     wipe(auraTouched)
-    local any = false
+    return state.preview == true, spells, specLists, hidden, replaced, presets
+end
+local function PlanOf(slot)
+    local plan = planCache[slot]
+    if not plan then
+        plan = { slot = slot, entries = {}, staging = {}, gen = 0 }
+        planCache[slot] = plan
+    end
+    return plan
+end
+-- The switch of a build: a staged one applies its shadows and refill
+-- inputs first; shown bars take their plans, hidden ones lose theirs.
+local function Publish(shown, stage)
+    local plans, any, state = C.plans, false, C.state
+    if stage then
+        refill, stage.refill = stage.refill, refill
+        stage.Apply()
+        buildSpec, state.entryGen = state.specID, (state.entryGen or 0) + 1
+    end
     for i = 1, #SLOTS do
         local slot = SLOTS[i].key
-        local view = views[slot]
+        local plan = shown[slot] and planCache[slot]
+        if plan then
+            if plans[slot] ~= plan then any = true end
+            plans[slot] = plan
+        elseif plans[slot] then
+            plans[slot] = nil
+            any = true
+        end
+    end
+    RouteOverflow(plans)
+    if Commit(plans, C.entries) then any = true end
+    return plans, any
+end
+Resolve.parts = { Prepare = Prepare, Collect = Collect, KindOf = KindOf, Materialize = Materialize, PlanOf = PlanOf,
+    Publish = Publish, SpecData = SpecData, PresetLists = PresetLists, Claim = Claim, PresetKnown = PresetKnown,
+    presetSpell = presetSpell, consumable = consumable }
+
+-- Returns C.plans and whether any bar's entry list changed. Each plan's gen
+-- increments when its list changes; Resolve.touched lists entries that kept
+-- their place but changed on refill. view.maxIcons is applied by the layout.
+-- sliced (combat): a staged build (ResolveStages.lua), nil until it lands;
+-- fresh: a resolve request since the last call. Other builds run now.
+function Resolve.Build(sliced, fresh)
+    if sliced and Resolve.Stage then
+        local plans, any = Resolve.Stage(fresh)
+        if plans ~= false then return plans, any end
+    end
+    Resolve.stage.on = false
+    local preview, spells, specLists, hidden, replaced, presets = Prepare()
+    wipe(shownNow)
+    for i = 1, #SLOTS do
+        local slot = SLOTS[i].key
+        local view = C.views[slot]
         if view and view.on then
-            local kind = KindOf(i)
-            local plan = planCache[slot]
-            if not plan then
-                plan = { slot = slot, entries = {}, staging = {}, gen = 0 }
-                planCache[slot] = plan
-            end
+            local kind, plan = KindOf(i), PlanOf(slot)
             local count = Collect(i, kind, specLists, hidden, replaced, preview, keys, presets)
             local n = 0
             for j = 1, count do
@@ -748,52 +802,8 @@ function Resolve.Build()
             local staging = plan.staging
             for j = 1, n do staging[j] = tmp[j] end
             for j = #staging, n + 1, -1 do staging[j] = nil end
-            plan.stagingKind = kind
-            if plans[slot] ~= plan then any = true end
-            plans[slot] = plan
-        elseif plans[slot] then
-            plans[slot] = nil
-            any = true
+            plan.stagingKind, shownNow[slot] = kind, true
         end
     end
-    RouteOverflow(plans)
-    if Commit(plans, entries) then any = true end
-    return plans, any
-end
-
------------------------------------------------------------------- options helpers
--- Keys a bar would hold for the current spec, shown or not, unlearned
--- Blizzard entries included (the page dims them). Cold.
-function Resolve.Keys(slot, out)
-    out = out or {}
-    local i = CDM.SLOT_INDEX[slot]
-    if not i then
-        wipe(out)
-        return out
-    end
-    local specLists, hidden, replaced = SpecData()
-    local presets = PresetLists()
-    Claim(specLists, presets)
-    local n = Collect(i, KindOf(i), specLists, hidden, replaced, true, out, presets)
-    -- Preset-only spells the character does not know, and healthstones the
-    -- client has no item for, never show (Materialize).
-    local m = 0
-    for j = 1, n do
-        local key = out[j]
-        local _, id = Parse(key)
-        if (not presetSpell[key] or PresetKnown(key)) and not (consumable[key] and not Catalog.ItemIcon(id)) then
-            m = m + 1
-            out[m] = key
-        end
-    end
-    for j = n, m + 1, -1 do out[j] = nil end
-    return out
-end
--- Fills a caller-owned table with the entry fields for one key without
--- touching the live entries. Nil when the key resolves to nothing.
-function Resolve.Describe(key, out)
-    out = out or {}
-    if not Fill(out, key) then return nil end
-    out.key = key
-    return out
+    return Publish(shownNow)
 end
