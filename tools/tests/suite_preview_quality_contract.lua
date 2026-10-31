@@ -7,8 +7,8 @@ local mutations = {
     warm = { "Pages/BagsPreview.lua", 'if not changed and preview.tab == ui.selected then return end', 'if false then return end' },
     cdmHidden = { "Pages/CooldownManagerPreview.lua", 'if not ui.previewBody:IsVisible() or P.Combat() then return end', 'if P.Combat() then return end' },
     skinHidden = { "Pages/AppearancePreview.lua", 'if frame:IsVisible() then refresh(value) end', 'refresh(value)' },
-    chatReady = { "Pages/Chat.lua", ' and parts.fontReady == ready', '' },
-    chatRegen = { "Pages/Chat.lua", 'P.PreviewCanvas.Watch({ header = sample, ctx = ctx }, Refresh)', 'M.TrackRefresh(ctx, Refresh)\n    Refresh()' },
+    chatReady = { "Pages/ChatPreviewPaint.lua", ' and parts.fontReady == ready', '' },
+    chatRegen = { "Pages/ChatPreview.lua", 'K.Watch({ header = ui.parts.sample, ctx = ui.ctx }, function() Refresh(ui) end)', 'M.TrackRefresh(ui.ctx, function() Refresh(ui) end)\n    Refresh(ui)' },
 }
 loadfile = function(path)
     local chunk = assert(originalLoad(path))
@@ -159,6 +159,8 @@ C_AddOns.LoadAddOn = function(addon)
     if addon ~= "MSUF_Suite_Chat" then return originalAddonLoad(addon) end
     chatLoads = chatLoads + 1
     P.S.ChatStylePreviewFonts = function() chatPaints = chatPaints + 1 end
+    P.S.ChatPreviewSnapshot = function() return false end
+    P.S.ChatWatchPreview = function() end
     return true
 end
 local chatCtx = Build("suite_chat")

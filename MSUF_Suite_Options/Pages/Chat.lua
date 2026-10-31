@@ -11,270 +11,47 @@ P.Gates[ID] = function(rule)
     end
     return true
 end
-local WHITE = "Interface\\Buttons\\WHITE8X8"
-local GLYPHS = "Interface\\AddOns\\MSUF_Suite_Chat\\Media\\MSUFChatGlyphs.png"
-
--- Blizzard owns chat timestamps through the global showTimestamps CVar. Keep
--- this row bound to that native setting so Suite profiles cannot silently
--- override a choice made in Blizzard's Social options.
-local TIMESTAMP_KEYS = {
-    "TIMESTAMP_FORMAT_HHMM", "TIMESTAMP_FORMAT_HHMMSS",
-    "TIMESTAMP_FORMAT_HHMM_AMPM", "TIMESTAMP_FORMAT_HHMMSS_AMPM",
-    "TIMESTAMP_FORMAT_HHMM_24HR", "TIMESTAMP_FORMAT_HHMMSS_24HR",
-}
-
-local function TimestampValues()
-    local values = { { value = "none", text = Tr("Off") } }
-    local example = { year = 2010, month = 12, day = 15, hour = 15, min = 27, sec = 32 }
-    local when = time(example)
-    for _, key in ipairs(TIMESTAMP_KEYS) do
-        local format = _G[key]
-        if type(format) == "string" and format ~= "" then
-            local label = TimeUtil.BetterDate(format, when) or format
-            values[#values + 1] = { value = format, text = label }
+-- Build native timestamps and history controls only when Chat tools opens.
+local function ToolsExtra(ctx, body, y, width)
+    local function TimestampValues()
+        local TIMESTAMP_KEYS = {
+            "TIMESTAMP_FORMAT_HHMM", "TIMESTAMP_FORMAT_HHMMSS",
+            "TIMESTAMP_FORMAT_HHMM_AMPM", "TIMESTAMP_FORMAT_HHMMSS_AMPM",
+            "TIMESTAMP_FORMAT_HHMM_24HR", "TIMESTAMP_FORMAT_HHMMSS_24HR",
+        }
+        local values = { { value = "none", text = Tr("Off") } }
+        local example = { year = 2010, month = 12, day = 15, hour = 15, min = 27, sec = 32 }
+        local when = time(example)
+        for _, key in ipairs(TIMESTAMP_KEYS) do
+            local format = _G[key]
+            if type(format) == "string" and format ~= "" then
+                local label = TimeUtil.BetterDate(format, when) or format
+                values[#values + 1] = { value = format, text = label }
+            end
         end
+        return values
     end
-    return values
-end
-
-local function TimestampSetting()
-    return C_CVar.GetCVar("showTimestamps") or "none"
-end
-
-local function SetTimestamp(value)
-    if type(value) == "string" then C_CVar.SetCVar("showTimestamps", value) end
-end
-
--- Saved lines live in the Chat addon's per-character saved variables. A
--- character whose Chat module is off loads the addon (load on demand) to
--- clear them; loading it enables nothing. The clear cannot be taken back,
--- so it asks first.
-local function ClearHistory()
-    if P.Combat() then return end
-    if not P.S.instances.chat then C_AddOns.LoadAddOn("MSUF_Suite_Chat") end
-    local chat = P.S.instances.chat
-    if chat then chat:ClearHistory() end
-end
-local function AskClearHistory()
-    P.Confirm("clear-chat-history",
-        Tr("Clear the saved chat history of this character in every chat window? This cannot be undone."), ClearHistory)
-end
-local function OpenHistory()
-    if P.Combat() then return end
-    if not P.S.instances.chat then C_AddOns.LoadAddOn("MSUF_Suite_Chat") end
-    local chat = P.S.instances.chat
-    if chat then chat:OpenHistory() end
-end
-
-local function Color(texture, hex, alpha)
-    local r, g, b = P.RGB(hex)
-    texture:SetVertexColor(r, g, b, (alpha or 100) / 100)
-end
-
--- The sample's highlight line marks the first word of the list, else the
--- player's name while that is on, else a stand-in word, in the chosen color.
-local function HighlightedWord()
-    local word = P.Get(ID, "highlightWords"):match("[^,;\r\n]+")
-    word = word and word:match("^%s*(.-)%s*$")
-    if not word or word == "" then
-        word = P.Get(ID, "highlightOwnName") and UnitName("player") or Tr("keyword")
+    local function History(clear)
+        if P.Combat() then return end
+        if not P.S.instances.chat then C_AddOns.LoadAddOn("MSUF_Suite_Chat") end
+        local chat = P.S.instances.chat
+        if not chat then return end
+        if clear then chat:ClearHistory() else chat:OpenHistory() end
     end
-    local hex = P.Get(ID, "highlightColor"):match("^%x%x%x%x%x%x$") or "ffd100"
-    return "|cff" .. hex .. word .. "|r"
-end
-
--- Each sample line is one translated text: languages order the channel, the
--- name and the message their own way. The third line shows the keyword
--- highlight while it is on.
-local function SampleText()
-    local text = Tr("|cff9fc3e7[Guild]|r %s: Welcome to MSUF."):format("Mapko") .. "\n"
-        .. Tr("|cffc9d4dd[Party]|r Chat links and channels stay native.")
-    if P.Get(ID, "highlightKeywords") then
-        text = text .. "\n" .. Tr("|cffc9d4dd[Raid]|r %s: Pull when %s is ready."):format("Mapko", HighlightedWord())
-    end
-    return text
-end
-
-local function RefreshSampleText(parts, fonts)
-    local label, otherTab, lines = parts.label, parts.otherTab, parts.lines
-    if parts.fontReady then
-        P.S.ChatStylePreviewFonts(parts, fonts, P.S.Config(ID))
-    end
-    local ar, ag, ab = P.RGB(P.Get(ID, "tabActiveColor"))
-    if P.Get(ID, "tabClassColor") then
-        local _, class = UnitClass("player")
-        local cr, cg, cb = P.S.ClassRGB(class)
-        if cr then ar, ag, ab = cr, cg, cb end
-    end
-    local ir, ig, ib = P.RGB(P.Get(ID, "tabInactiveColor"))
-    label:SetTextColor(ar, ag, ab)
-    otherTab:SetTextColor(ir, ig, ib)
-    lines:SetText(SampleText())
-end
-
--- The sample's panel textures, in drawing order: fill, sidebar with its
--- channel glyphs, the tab accent lines.
-local function SampleTextures(sample)
-    local parts = { icons = {} }
-    parts.fill = sample:CreateTexture(nil, "BACKGROUND")
-    parts.fill:SetAllPoints(sample)
-    parts.fill:SetTexture(WHITE)
-    parts.fadeLeft = sample:CreateTexture(nil, "BACKGROUND")
-    parts.fadeLeft:SetTexture(WHITE)
-    parts.fadeLeft:SetPoint("TOPLEFT")
-    parts.fadeLeft:SetPoint("BOTTOMRIGHT", sample, "BOTTOM")
-    parts.fadeRight = sample:CreateTexture(nil, "BACKGROUND")
-    parts.fadeRight:SetTexture(WHITE)
-    parts.fadeRight:SetPoint("TOPLEFT", sample, "TOP")
-    parts.fadeRight:SetPoint("BOTTOMRIGHT")
-    local sidebar = sample:CreateTexture(nil, "BORDER")
-    sidebar:SetTexture(WHITE)
-    sidebar:SetPoint("TOPLEFT")
-    sidebar:SetPoint("BOTTOMLEFT")
-    sidebar:SetWidth(28)
-    parts.sidebar = sidebar
-    for i, glyphIndex in ipairs({ 0, 1, 3, 4 }) do
-        local icon = sample:CreateTexture(nil, "ARTWORK")
-        icon:SetTexture(GLYPHS)
-        icon:SetTexCoord(glyphIndex / 8, (glyphIndex + 1) / 8, 0, 1)
-        icon:SetPoint("TOPLEFT", sample, "TOPLEFT", 5, -4 - (i - 1) * 25)
-        icon:SetSize(18, 18)
-        parts.icons[#parts.icons + 1] = icon
-    end
-    local top = sample:CreateTexture(nil, "BORDER")
-    top:SetTexture(WHITE)
-    top:SetPoint("TOPLEFT")
-    top:SetPoint("TOPRIGHT")
-    top:SetHeight(1)
-    parts.top = top
-    local accent = sample:CreateTexture(nil, "ARTWORK")
-    accent:SetTexture(WHITE)
-    accent:SetPoint("TOPLEFT", sample, "TOPLEFT", 38, -27)
-    accent:SetSize(42, 2)
-    parts.accent = accent
-    return parts
-end
-
--- The tab names, two chat lines and the input box with its prompt.
-local function SampleTexts(sample, width, parts)
-    local label = sample:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    label:SetPoint("TOPLEFT", sample, "TOPLEFT", 38, -8)
-    label:SetText(Tr("General"))
-    local otherTab = sample:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    otherTab:SetPoint("LEFT", label, "RIGHT", 16, 0)
-    otherTab:SetText(Tr("Party"))
-    local lines = sample:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    lines:SetPoint("TOPLEFT", sample, "TOPLEFT", 39, -43)
-    lines:SetWidth(width - 50)
-    lines:SetJustifyH("LEFT")
-    lines:SetText(SampleText())
-    local input = sample:CreateTexture(nil, "BORDER")
-    input:SetTexture(WHITE)
-    input:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 36, 8)
-    input:SetPoint("BOTTOMRIGHT", sample, "BOTTOMRIGHT", -8, 8)
-    input:SetHeight(17)
-    local prompt = sample:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    prompt:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 43, 10)
-    prompt:SetText(Tr("Say:"))
-    parts.label, parts.otherTab, parts.lines, parts.input, parts.prompt = label, otherTab, lines, input, prompt
-end
-
-local function PlaceSample(parts, minimal)
-    local sample = parts.sample
-    local x = P.Get(ID, "sidebarPanel") and 38 or 10
-    parts.label:ClearAllPoints()
-    local floating = P.Get(ID, "hideTabArt") and not P.Get(ID, "tabPanel")
-    if floating then
-        parts.label:SetPoint("BOTTOMLEFT", sample, "TOPLEFT", x, 3)
-    else
-        parts.label:SetPoint("TOPLEFT", sample, "TOPLEFT", x, -8)
-    end
-    parts.lines:ClearAllPoints()
-    parts.lines:SetPoint("TOPLEFT", sample, "TOPLEFT", x + 1, floating and -4 or -43)
-    parts.lines:SetWidth(parts.width - x - 12)
-    parts.input:ClearAllPoints()
-    parts.input:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", x - 2, 8)
-    parts.input:SetPoint("BOTTOMRIGHT", sample, "BOTTOMRIGHT", -8, 8)
-    parts.prompt:ClearAllPoints()
-    parts.prompt:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", x + 5, 10)
-    parts.accent:ClearAllPoints()
-    parts.accent:SetPoint("TOPLEFT", sample, "TOPLEFT", x, minimal and -4 or -27)
-    parts.accent:SetHeight(minimal and 1 or 2)
-    parts.fadeLeft:ClearAllPoints()
-    parts.fadeRight:ClearAllPoints()
-    parts.fadeLeft:SetPoint("TOPLEFT", sample, "TOPLEFT")
-    if minimal then
-        parts.fadeLeft:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT")
-        parts.fadeLeft:SetWidth(50)
-        parts.fadeRight:SetPoint("TOPLEFT", parts.fadeLeft, "TOPRIGHT")
-    else
-        parts.fadeLeft:SetPoint("BOTTOMRIGHT", sample, "BOTTOM")
-        parts.fadeRight:SetPoint("TOPLEFT", sample, "TOP")
-    end
-    parts.fadeRight:SetPoint("BOTTOMRIGHT", sample, "BOTTOMRIGHT")
-end
-
-local function PaintSample(parts, fonts)
-    if not parts.sample:IsVisible() then return end
-    local config = P.S.Config(ID)
-    local changed = P.PreviewCanvas.Changed(parts.settings, config, P.catalog[ID].rules)
-    local font = P.Suite.GlobalFontPath()
-    local ready = P.PreviewCanvas.Runtime("MSUF_Suite_Chat", "ChatStylePreviewFonts")
-    if not changed and parts.fontPath == font and parts.fontReady == ready then return end
-    parts.fontPath, parts.fontReady = font, ready
-    local minimal = P.Get(ID, "minimalChrome")
-    PlaceSample(parts, minimal)
-    Color(parts.fill, P.Get(ID, "panelColor"), P.Get(ID, "panelAlpha"))
-    local gradient = P.Get(ID, "panelGradient")
-    parts.fill:SetShown(not gradient)
-    parts.fadeLeft:SetShown(gradient)
-    parts.fadeRight:SetShown(gradient)
-    if gradient then
-        local r, g, b = P.RGB(P.Get(ID, "panelColor"))
-        local transparent = CreateColor(r, g, b, 0)
-        local solid = CreateColor(r, g, b, P.Get(ID, "panelAlpha") / 100)
-        parts.fadeLeft:SetGradient("HORIZONTAL", minimal and solid or transparent, solid)
-        parts.fadeRight:SetGradient("HORIZONTAL", solid, transparent)
-    end
-    Color(parts.sidebar, P.Get(ID, "panelColor"), math.min(100, P.Get(ID, "panelAlpha") + 8))
-    parts.sidebar:SetShown(P.Get(ID, "sidebarPanel"))
-    local r, g, b = P.RGB(P.Get(ID, "accentColor"))
-    for _, icon in ipairs(parts.icons) do
-        icon:SetVertexColor(r, g, b, P.Get(ID, "accentAlpha") / 100)
-        icon:SetShown(P.Get(ID, "sidebarPanel"))
-    end
-    local accentShown = P.Get(ID, "tabPanel") and P.Get(ID, "tabAccent") and P.Get(ID, "accentAlpha") > 0
-    Color(parts.top, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
-    parts.top:SetHeight(2)
-    parts.top:SetShown(accentShown and not minimal)
-    Color(parts.accent, P.Get(ID, "accentColor"), P.Get(ID, "accentAlpha"))
-    parts.accent:SetShown(accentShown)
-    RefreshSampleText(parts, fonts)
-    Color(parts.input, P.Get(ID, "inputColor"), P.Get(ID, "inputAlpha"))
-    parts.input:SetShown(P.Get(ID, "inputPanel"))
-end
-
-local function Sample(body, y, width, ctx)
-    local sample = CreateFrame("Frame", nil, body)
-    sample:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
-    sample:SetSize(width, 108)
-    local parts = SampleTextures(sample)
-    SampleTexts(sample, width, parts)
-    parts.sample, parts.width, parts.settings = sample, width, {}
-    ctx.chatPreview = parts
-    local fonts = {}
-    fonts.tab, fonts.tabSize, fonts.tabFlags = parts.label:GetFont()
-    fonts.message, fonts.messageSize, fonts.messageFlags = parts.lines:GetFont()
-    local _, _, _, alpha = parts.lines:GetShadowColor()
-    fonts.shadowAlpha = alpha or 0
-    fonts.shadowX = parts.lines:GetShadowOffset() or 1
-    local function Refresh() PaintSample(parts, fonts) end
-    sample:SetScript("OnShow", function()
-        parts.fontPath = nil
-        Refresh()
-    end)
-    P.PreviewCanvas.Watch({ header = sample, ctx = ctx }, Refresh)
-    return y - 121
+    local row = P.Meta(PAGE, ID, "timestamp", "setting", PAGE .. "_tools")
+    row.id, row.label, row.kind = "timestamp", Tr("Timestamps (Blizzard setting)"), "dropdown"
+    row.values = TimestampValues
+    row.get = function() return C_CVar.GetCVar("showTimestamps") or "none" end
+    row.set = function(value) if type(value) == "string" then C_CVar.SetCVar("showTimestamps", value) end end
+    row.settingKey = "showTimestamps"
+    local grid = P.W.SettingsRows(ctx, body, { x = 16, y = y, width = width, columns = 2, rows = { row } })
+    P.Button(ctx, body, "Clear saved chat history", 16, grid.bottomY, width, function()
+        P.Confirm("clear-chat-history",
+            Tr("Clear the saved chat history of this character in every chat window? This cannot be undone."), function() History(true) end)
+    end, function() return not P.Combat() end, P.Meta(PAGE, ID, "clearHistory", "action", PAGE .. "_tools"))
+    P.Button(ctx, body, "Search saved chat", 16, grid.bottomY - 36, width, function() History(false) end,
+        function() return not P.Combat() end, P.Meta(PAGE, ID, "searchHistory", "action", PAGE .. "_tools"))
+    return grid.bottomY - 76
 end
 
 local function ImmersiveButton(ctx)
@@ -297,11 +74,11 @@ end
 
 -- The sections after Chat tools: a sound per channel and the keyword highlight.
 local function BuildMessageSections(ctx, b)
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_sounds", Tr("Channel sounds"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_sounds", Tr("Channel sounds"),
         P.SectionRules(ID, "sounds"), {
             help = "A channel plays a sound kit ID or a sound file (the file wins) for new messages. A burst plays once. Whisper is under Chat tools.",
         })
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_highlight", Tr("Keyword highlight"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_highlight", Tr("Keyword highlight"),
         P.SectionRules(ID, "highlight"), {
             help = "Words from your list are colored inside chat messages, whatever their capitals. Links and URLs stay as they are.",
         })
@@ -309,69 +86,43 @@ end
 
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
-    local preview = P.W.FixedPreviewSection(ctx, b, {
-        title = Tr("Preview"), height = 176, gap = 8,
-    })
-    if preview then
-        local width = math.max(240, (HM.GetSectionWidth(preview) or b.width or 720) - 32)
-        Sample(preview, -48, width, ctx)
-    end
+    P.ChatPreview.Build(ctx, b)
     P.ModuleCard(ctx, b, PAGE, ID)
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_look", Tr("Choose a look"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
             help = P.Help("Choose a look, then adjust its colors.", "Clean Modern is the Retail default; MSUF Forever is the Forever default. Midnight Blue keeps the original blue glass. Open a section's three-dot menu to change its colors, or use MSUF Colors for the full palette. Your own color changes become Custom."),
             extra = P.LookPresetButtons(ctx, PAGE, ID, PAGE .. "_look", ImmersiveButton(ctx)),
         })
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_window", Tr("Chat window"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_window", Tr("Chat window"),
         P.SectionRules(ID, "window"), {
             open = true,
             help = "A click-through surface follows each Blizzard chat window. Blizzard and MSUF Edit Mode keep their normal move and resize controls.",
         })
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_tabs", Tr("Tabs and accent"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_tabs", Tr("Tabs and accent"),
         P.SectionRules(ID, "tabs"), {
             help = "Tabs stay clickable and keep Blizzard's dock and unread state. The dark strip connects them to the message panel.",
         })
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_sidebar", Tr("Button sidebar"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_sidebar", Tr("Button sidebar"),
         P.SectionRules(ID, "sidebar"), {
             help = "MSUF icons replace the scattered Blizzard chat controls. Friends, channels, text to speech and the chat menu keep their Blizzard actions; the bottom icon jumps to the newest message. Turn this off to restore the native buttons.",
         })
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_input", Tr("Input line"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_input", Tr("Input line"),
         P.SectionRules(ID, "input"), {
             help = "The native input box keeps autocomplete, links and chat commands.",
         })
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_text", Tr("Message text"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_text", Tr("Message text"),
         P.SectionRules(ID, "text"), {
             help = "The default font follows MSUF Fonts while the default size follows Blizzard's chat size. Choose Blizzard chat font to keep its own face. Slug has no shadow.",
         })
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_tools", Tr("Chat tools"),
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_tools", Tr("Chat tools"),
         P.SectionRules(ID, "tools"), {
             help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, move its button with X/Y, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on. The message tools leave the Combat Log alone (its own settings can add a timestamp to every line); its lines still wake the idle fade. Saved history belongs to this character.",
-            extra = function(body, y, width)
-                local row = P.Meta(PAGE, ID, "timestamp", "setting", PAGE .. "_tools")
-                row.id = "timestamp"
-                row.label = Tr("Timestamps (Blizzard setting)")
-                row.kind = "dropdown"
-                row.values = TimestampValues
-                row.get = TimestampSetting
-                row.set = SetTimestamp
-                row.settingKey = "showTimestamps"
-                local grid = P.W.SettingsRows(ctx, body, {
-                    x = 16, y = y, width = width, columns = 2,
-                    rows = { row },
-                })
-                P.Button(ctx, body, "Clear saved chat history", 16, grid.bottomY, width, AskClearHistory,
-                    function() return not P.Combat() end,
-                    P.Meta(PAGE, ID, "clearHistory", "action", PAGE .. "_tools"))
-                P.Button(ctx, body, "Search saved chat", 16, grid.bottomY - 36, width, OpenHistory,
-                    function() return not P.Combat() end,
-                    P.Meta(PAGE, ID, "searchHistory", "action", PAGE .. "_tools"))
-                return grid.bottomY - 76
-            end,
+            extra = function(body, y, width) return ToolsExtra(ctx, body, y, width) end,
         })
     BuildMessageSections(ctx, b)
     P.BuildOwnedTool(ctx, b, "keywordAlerts")
-    P.RuleSection(ctx, b, PAGE, ID, PAGE .. "_bubbles", Tr("Speech bubbles"), P.SectionRules(ID, "bubbles"), {
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_bubbles", Tr("Speech bubbles"), P.SectionRules(ID, "bubbles"), {
         help = "Bubbles outside instances can take the MSUF look; Blizzard locks the ones inside instances. Each source keeps Blizzard's look or uses the MSUF one: the shared look or its own font, size, colors, spacing and width. A bubble is matched to the line it shows right after that line arrives. Turning bubbles off inside instances uses Blizzard's bubble settings and gives them back when you leave or turn it off.",
     })
 end

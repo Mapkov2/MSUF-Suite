@@ -6,6 +6,7 @@ local S = {
     Text = function(v) return v end,
 }
 local C = { M = { active = true, config = { completeMessages = true } } }
+Load("MSUF_Suite_Chat/Positions.lua", { Chat = C, Suite = S })
 Load("MSUF_Suite_Chat/CompleteMessages.lua", { Chat = C, Suite = S })
 local function Line(top, bottom)
     return { top = top, bottom = bottom, color = { .2, .4, .6, 1 },

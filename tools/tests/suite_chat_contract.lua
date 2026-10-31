@@ -123,7 +123,7 @@ local function Frame(name)
     function frame:HasFocus() return self.focused == true end
     -- Only the input line's focus is followed (Fade.lua), never another script.
     function frame:HookScript(script, callback)
-        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost", "chat hooked the " .. script .. " script")
+        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost" or script == "OnSizeChanged", "chat hooked the " .. script .. " script")
         self.hooks = self.hooks or {}
         assert(not self.hooks[script], "chat hooked " .. script .. " twice")
         self.hooks[script] = callback
@@ -313,7 +313,7 @@ local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
 NS.ChatBubbleSources, NS.ChatSoundChannels = catalogNS.ChatBubbleSources, catalogNS.ChatSoundChannels
 NS.ChatLineLimits = catalogNS.ChatLineLimits
 local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
-    "Messages.lua", "CompleteMessages.lua", "Window.lua", "Bubbles.lua", "Controller.lua" }
+    "Messages.lua", "Positions.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
 for i = 1, #CHAT_FILES do

@@ -5,9 +5,9 @@ local watched = setmetatable({}, { __mode = "k" })
 -- upstream/ptr and Forever ScrollingMessageFrame: RefreshDisplay invokes
 -- this public callback after native fonts, text, alpha and wrapping settle.
 -- Native layout deliberately allocates one extra, partially clipped message.
-local function Refreshed(frame)
-    local self = C.M
-    if not (self.active and self.config.completeMessages) then return end
+function C.PaintMessageLines(self, frame)
+    C.PositionMessages(self, frame)
+    if not self.config.completeMessages then return end
     local top, bottom = frame:GetTop(), frame:GetBottom()
     if not (S.Finite(top) and S.Finite(bottom)) then return end
     for _, line in ipairs(frame.visibleLines) do
@@ -20,8 +20,13 @@ local function Refreshed(frame)
     end
 end
 
+local function Refreshed(frame)
+    if C.M.active then C.PaintMessageLines(C.M, frame) end
+end
+
 function C.ApplyCompleteMessages(self, frame)
-    if not watched[frame] and self.config.completeMessages then
+    local c = self.config
+    if not watched[frame] and (c.completeMessages or (c.messageTextX or 0) ~= 0 or (c.messageTextY or 0) ~= 0) then
         watched[frame] = true
         frame:AddOnDisplayRefreshedCallback(Refreshed)
     end
@@ -29,5 +34,6 @@ function C.ApplyCompleteMessages(self, frame)
 end
 
 function C.ReleaseCompleteMessages(frame)
+    C.ReleaseMessagePosition(C.M, frame)
     if watched[frame] then frame:MarkDisplayDirty() end
 end

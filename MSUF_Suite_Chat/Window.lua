@@ -203,8 +203,14 @@ function S.ChatStylePreviewFonts(parts, fonts, c)
     local shadow = c.fontRendering ~= 3 and (c.fontShadow == 2 or c.fontShadow == 1 and fonts.shadowAlpha > 0)
     local opacity = c.fontShadow == 1 and fonts.shadowAlpha * 100 or c.fontShadowOpacity
     local distance = c.fontShadow == 1 and fonts.shadowX or c.fontShadowDistance
-    S.SetStyledFont(parts.lines, path, c.fontSize > 0 and c.fontSize or fonts.messageSize,
-        outline, c.fontRendering, shadow, opacity, distance)
+    for _, line in ipairs(parts.messageLines) do
+        S.SetStyledFont(line, path, c.fontSize > 0 and c.fontSize or fonts.messageSize,
+            outline, c.fontRendering, shadow, opacity, distance)
+        if c.fontRendering ~= 3 and c.fontShadow == 1 and fonts.shadowY then
+            line:SetShadowColor(fonts.shadowR, fonts.shadowG, fonts.shadowB, fonts.shadowAlpha)
+            line:SetShadowOffset(fonts.shadowX, fonts.shadowY)
+        end
+    end
 end
 
 -- Keep Blizzard's tab FontString and title updates. Only its font tuple is
@@ -245,19 +251,8 @@ local function ApplyTabWidth(self, visual, tab)
     end
 end
 
--- Underline the native tab without copying its FontString. Its text and
--- clipping stay with Blizzard even when another addon repaints the title.
-local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
-    if not visual.tabLine then
-        visual.tabLabel = tab.Text
-        visual.tabLine = Fill(tab, "ARTWORK")
-    end
+function C.ApplyTabGeometry(self, visual, tab)
     local c, context = self.config, self.context
-    if c.tabIndividualPanels and c.tabPanel and c.panelAlpha > 0 and not visual.tabFill then
-        visual.tabFill = Fill(tab, "BACKGROUND")
-        visual.tabEdges = {}
-        for i = 1, 4 do visual.tabEdges[i] = Fill(tab, "BORDER") end
-    end
     if visual.tabFill then
         -- ChatTabArtTemplate is 32px tall and the native dock starts 3px
         -- above the message frame (upstream/live FloatingChatFrame.lua/xml).
@@ -275,6 +270,22 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
         visual.tabHeightOwned = nil
     end
     ApplyTabWidth(self, visual, tab)
+end
+
+-- Underline the native tab without copying its FontString. Its text and
+-- clipping stay with Blizzard even when another addon repaints the title.
+local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
+    if not visual.tabLine then
+        visual.tabLabel = tab.Text
+        visual.tabLine = Fill(tab, "ARTWORK")
+    end
+    local c, context = self.config, self.context
+    if c.tabIndividualPanels and c.tabPanel and c.panelAlpha > 0 and not visual.tabFill then
+        visual.tabFill = Fill(tab, "BACKGROUND")
+        visual.tabEdges = {}
+        for i = 1, 4 do visual.tabEdges[i] = Fill(tab, "BORDER") end
+    end
+    C.ApplyTabGeometry(self, visual, tab)
     M.tabs[tab], visual.tab = visual, tab
     ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
@@ -308,8 +319,8 @@ local function ApplyPanel(self, visual, frame, top)
         -- Match the Suite body's padded width and its border top so neither
         -- side leaves a short corner or a gap above the message area.
         strip:ClearAllPoints()
-        strip:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding, top)
-        strip:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", c.padding, 0)
+        strip:SetPoint("TOPLEFT", frame, "TOPLEFT", -c.padding + (c.tabX or 0), top + (c.tabY or 0))
+        strip:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", c.padding + (c.tabX or 0), c.tabY or 0)
         C.PaintDockGradient(strip, c)
         strip:SetShown(c.tabPanel and c.panelAlpha > 0)
     end
@@ -344,14 +355,19 @@ local function ApplyInput(self, visual, frame, input)
     inputHeight = math.min(inputHeight, 26)
     local context = self.context
     if (c.inputHeight or 0) > 0 then inputHeight = c.inputHeight end
-    if c.inputTop then
-        context:Anchor(input, "BOTTOMLEFT", frame, "TOPLEFT", -c.padding, HeaderTop(c, frame) + 2)
-        context:Property(input, "GetWidth", "SetWidth", frame:GetWidth() + 2 * c.padding)
-        visual.inputMoved = true
-    elseif visual.inputMoved then
+    if visual.inputMoved then
         context:RestorePoints(input)
         context:RestoreProperty(input, "SetWidth")
         visual.inputMoved = nil
+    end
+    local x, y = c.inputX or 0, c.inputY or 0
+    if c.inputTop then
+        context:Anchor(input, "BOTTOMLEFT", frame, "TOPLEFT", -c.padding + x, HeaderTop(c, frame) + 2 + y)
+        context:Property(input, "GetWidth", "SetWidth", frame:GetWidth() + 2 * c.padding)
+        visual.inputMoved = true
+    elseif x ~= 0 or y ~= 0 then
+        C.OffsetNative(self, input, x, y)
+        visual.inputMoved = true
     end
     if (c.inputHeight or 0) > 0 then
         context:Property(input, "GetHeight", "SetHeight", inputHeight)
@@ -361,8 +377,8 @@ local function ApplyInput(self, visual, frame, input)
         visual.inputHeightOwned = nil
     end
     visual.input:ClearAllPoints()
-    visual.input:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -c.padding, 0)
-    visual.input:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", c.padding, -(inputHeight + 4))
+    visual.input:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -c.padding + x, y)
+    visual.input:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", c.padding + x, y - (inputHeight + 4))
     if c.inputTop then
         visual.input:ClearAllPoints()
         visual.input:SetAllPoints(input)
@@ -377,6 +393,26 @@ local function ApplyInput(self, visual, frame, input)
         local edge = visual.inputEdges[i]
         ApplyEdge(edge, visual.input, i, math.max(1, c.borderSize), 0, 0, c.borderColor, math.min(60, c.borderAlpha))
         edge:SetShown(c.inputPanel and c.inputAlpha > 0 and c.borderSize > 0)
+    end
+end
+
+-- A translated input loses its native second stretch anchor. Follow native
+-- window resizing too, including an undocked window, without polling.
+local function ResizeInput(frame)
+    local visual = M.visuals[frame]
+    if not M.active or not visual or not visual.inputMoved then return end
+    if NS.InCombat() then
+        S.Queue("chat")
+        return
+    end
+    ApplyInput(M, visual, frame, frame.editBox)
+end
+
+function C.ApplyInputLayout(self, visual, frame, input)
+    ApplyInput(self, visual, frame, input)
+    if visual.inputMoved and not visual.inputSizeHooked then
+        frame:HookScript("OnSizeChanged", ResizeInput)
+        visual.inputSizeHooked = true
     end
 end
 
@@ -464,7 +500,7 @@ function C.ApplyWindow(self, frame)
     KeepTabVisible(self, frame)
     if primary then ApplySidebar(self, visual, frame) end
     ApplyCopyButton(self, visual, frame, top)
-    ApplyInput(self, visual, frame, input)
+    C.ApplyInputLayout(self, visual, frame, input)
     ApplyFont(self, frame, messageFont)
     ApplySizeLock(self, visual, frame, primary)
     ApplyPositionLock(self, visual, frame, primary)
@@ -522,8 +558,8 @@ local spacedTabs = setmetatable({}, { __mode = "k" })
 function C.DockGeometry()
     if not M.active then return end
     local padded = M.config.tabPadding and M.config.tabPadding > 0
-    if NS.IsCombatLocked() then
-        if padded or M.config.tabGap > 0 then S.Queue("chat") end
+    if NS.InCombat() then
+        S.Queue("chat")
         return
     end
     if padded then
@@ -535,10 +571,18 @@ function C.DockGeometry()
             context:RestorePoints(tab)
             spacedTabs[tab] = nil
         end
+        C.PositionTabs(M)
         return
     end
     -- GENERAL_CHAT_DOCK exists from the start on both clients (FloatingChatFrame.xml).
     local docked = _G.GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES
+    for tab in pairs(spacedTabs) do
+        local visual = M.tabs[tab]
+        if visual and not visual.frame.isDocked then
+            context:RestorePoints(tab)
+            spacedTabs[tab] = nil
+        end
+    end
     local lastStatic, lastDynamic
     for i = 1, math.min(#docked, 64) do
         local frame = docked[i]
@@ -554,4 +598,9 @@ function C.DockGeometry()
             end
         end
     end
+    C.PositionTabs(M)
 end
+
+-- The menu paints owned sample regions with the runtime surface painters.
+C.PreviewPanel, C.PreviewEdge = ApplyPanel, ApplyEdge
+C.PreviewInput = ApplyInput

@@ -131,8 +131,9 @@ for path in sorted((ROOT / "MSUF_Suite_Options").glob("**/*.lua")):
 
 # ------------------------------------------------------------ whole format strings
 FORMATS = [
-    ("|cff9fc3e7[Guild]|r %s: Welcome to MSUF.", OPTIONS + "Chat.lua"),
-    ("|cffc9d4dd[Party]|r Chat links and channels stay native.", OPTIONS + "Chat.lua"),
+    ("|cff9fc3e7[Guild]|r %s: Welcome to MSUF.", OPTIONS + "ChatPreviewPaint.lua"),
+    ("|cffc9d4dd[Party]|r Chat links and channels stay native.", OPTIONS + "ChatPreviewPaint.lua"),
+    ("|cffc9d4dd[Raid]|r %s: Pull when %s is ready.", OPTIONS + "ChatPreviewPaint.lua"),
     ("%s (off)", OPTIONS + "CooldownManager.lua"),
     ("Sound kit %s", OPTIONS + "CooldownManagerData.lua"),
     ("Sound file %s", OPTIONS + "CooldownManagerData.lua"),

@@ -753,6 +753,18 @@
    "symbol": "looks (= MSUFSuiteDemonLooks)"
   },
   {
+   "file": "MSUF_Suite_Chat/PreviewSnapshot.lua",
+   "kind": "state",
+   "reason": "Blizzard's current dock selection can be nil before a frame is selected, as in Chat/Shared.lua and Sidebar.lua. The read-only preview tries the dock selection, then SELECTED_DOCK_FRAME, then ChatFrame1; without a reference window it returns no snapshot.",
+   "symbol": "SELECTED_DOCK_FRAME"
+  },
+  {
+   "file": "MSUF_Suite_Chat/PreviewSnapshot.lua",
+   "kind": "state",
+   "reason": "Read-only native dock reference for the menu snapshot, not a client API capability probe. The guard permits an absent dock reference and falls back to SELECTED_DOCK_FRAME then ChatFrame1; it neither creates nor changes native UI state.",
+   "symbol": "dock (= GENERAL_CHAT_DOCK)"
+  },
+  {
    "file": "MSUF_Suite_Chat/Shared.lua",
    "kind": "state",
    "reason": "Blizzard chat's current selection; nil until the chat UI selects a frame",
@@ -3067,6 +3079,18 @@
    "symbol": "Store.OnChange",
    "kind": "lod",
    "reason": "The change subscriber is installed only by the load-on-demand MSUF_Suite_QualityOfLife/MacroBuilder.lua runtime. Core draft writes are valid before it loads and need no subscriber. Covered by suite_macros_runtime_contract."
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreview.lua",
+   "kind": "addon",
+   "reason": "2026-10-31: MSUF host accordion navigation is optional on older hosts. Chat preview opens the original section before requesting exact search; the no-SearchBridge integration case covers this fallback.",
+   "symbol": "P.W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewPaint.lua",
+   "kind": "lod",
+   "reason": "2026-10-31: ChatPaintMenuPreview is exported by the optional MSUF_Suite_Chat addon, not Options. Cold combat can defer that addon; the preview retries after combat and never enables the module.",
+   "symbol": "painter (= P.S.ChatPaintMenuPreview)"
   }
  ]
 }

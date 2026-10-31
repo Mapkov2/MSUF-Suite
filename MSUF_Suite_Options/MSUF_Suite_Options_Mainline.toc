@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
-## Version: 0.1.5-alpha
+## Version: 0.1.6-alpha
 ## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -69,6 +69,9 @@ Pages\BuffRemindersVisibility.lua
 Pages\BuffRemindersEditor.lua
 Pages\BuffRemindersPreview.lua
 Pages\BuffReminders.lua
+Pages\ChatPreviewPositions.lua
+Pages\ChatPreviewPaint.lua
+Pages\ChatPreview.lua
 Pages\Chat.lua
 Pages\NameplatesAuraDraft.lua
 Pages\NameplatesAuraColors.lua

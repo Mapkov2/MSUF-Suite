@@ -26,6 +26,11 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_chat_preview_native_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
+        for host in (MSUF_MAIN, MSUF_70)],
+    "suite_chat_positions_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
+    "suite_chat_preview_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
+        for host in (MSUF_MAIN, MSUF_70)],
     "suite_planner_lod_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_planner_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_player_aura_menu_contract.lua": [[flavor] for flavor in FLAVORS],

@@ -9,6 +9,9 @@ ROOT = Path(sys.argv[1]).resolve()
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 CONTRACT = ROOT / "tools/tests/suite_skin_motion_contract.lua"
 CASES = [
+    ("passive-tooltip-hover", "Rendering/SurfaceMotion.lua",
+     'if control or Safety.Read(target, "IsMouseMotionEnabled") == true then HookAll(target, hoverHooks) end',
+     'HookAll(target, hoverHooks)', "passive tooltip became a mouse target"),
     ("idle-driver", "Rendering/Motion.lua", 'clock:SetScript("OnUpdate", nil)',
      '-- driver wrongly left attached', "hover leave retained a driver"),
     ("combat-pressed", "Rendering/Motion.lua",

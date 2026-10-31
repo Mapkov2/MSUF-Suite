@@ -46,7 +46,7 @@ local function ForEachChatFrame(callback, arg)
 end
 
 local function ApplyAll(self)
-    if NS.IsCombatLocked() then
+    if NS.InCombat() then
         S.Queue("chat")
         return
     end
@@ -120,7 +120,7 @@ end
 
 local function NewWindowOpened()
     if not M.active then return end
-    if NS.IsCombatLocked() then
+    if NS.InCombat() then
         S.Queue("chat")
         return
     end

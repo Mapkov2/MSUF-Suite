@@ -119,6 +119,8 @@ B.Section(id, "window", "Chat window", {
     B.Number("padding", "Background padding", initial.padding, 0, 16),
 })
 B.Section(id, "tabs", "Tabs and accent", {
+    B.Number("tabX", "Horizontal position", 0, -400, 400),
+    B.Number("tabY", "Vertical position", 0, -300, 300),
     B.Number("tabHeight", "Tab height", 24, 18, 48),
     B.Number("tabPadding", "Tab text padding", 0, 0, 24),
     B.Number("tabGap", "Space between docked tabs", 0, 0, 24),
@@ -155,6 +157,8 @@ B.Section(id, "sidebar", "Button sidebar", {
     B.Bool("sidebarClassColor", "Use class color for sidebar icons", false),
 })
 B.Section(id, "input", "Input line", {
+    B.Number("inputX", "Horizontal position", 0, -400, 400),
+    B.Number("inputY", "Vertical position", 0, -300, 300),
     B.Bool("inputTop", "Place input above the chat panel", false),
     B.Number("inputHeight", "Input height (0 follows Blizzard)", 0, 0, 60),
     B.Bool("inputPanel", "Show input background", initial.inputPanel),
@@ -173,6 +177,8 @@ for index = 1, 5 do
     B.Add(id, B.Number(prefix .. "Y", NS.Text("Sidebar icon %d Y"):format(index), 0, -800, 800), "sidebar").enableKey = moved.key
 end
 B.Section(id, "text", "Message text", {
+    B.Number("messageTextX", "Horizontal position", 0, -400, 400),
+    B.Number("messageTextY", "Vertical position", 0, -300, 300),
     B.Bool("messageFading", "Fade individual messages", false),
     B.Number("messageTimeVisible", "Message visibility (seconds)", 20, 5, 120),
     B.Number("messageFadeDuration", "Message fade duration (seconds)", 3, 0.1, 10, 0.1),

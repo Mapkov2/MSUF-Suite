@@ -27,7 +27,7 @@ local function SidebarClassColor(c)
     return C.ClassHex(token)
 end
 
-local function RefreshSidebarButton(self, entry)
+function C.RefreshSidebarButton(self, entry)
     local c = self.config
     local hovered = entry.button.hovered
     local color = self.sidebarClassColor or (hovered and c.accentColor or c.tabActiveColor)
@@ -36,16 +36,24 @@ local function RefreshSidebarButton(self, entry)
     Tint(entry.highlight, self.sidebarClassColor or c.accentColor, hovered and 20 or 0)
 end
 
+local RefreshSidebarButton = C.RefreshSidebarButton
+C.SidebarClassColor = SidebarClassColor
+
+function C.SidebarFriendsText()
+    local _, bn = BNGetNumFriends()
+    local wow = C_FriendList.GetNumOnlineFriends()
+    if not S.Number(bn) or not S.Number(wow) then return end
+    local total = bn + wow
+    return total > 99 and "99+" or tostring(total)
+end
+
 -- Friend events also fire in combat; the count label is plain suite text.
 local function UpdateFriendsCount(self)
     local visual = self.visuals[_G.ChatFrame1]
     local label = visual and visual.friendCount
     if not label then return end
-    local _, bn = BNGetNumFriends()
-    local wow = C_FriendList.GetNumOnlineFriends()
-    if not S.Number(bn) or not S.Number(wow) then return end
-    local total = bn + wow
-    local value = total > 99 and "99+" or tostring(total)
+    local value = C.SidebarFriendsText()
+    if not value then return end
     if label.lastValue ~= value then
         label:SetText(value)
         label.lastValue = value
@@ -76,6 +84,11 @@ C.ReleaseNativeControls = ReleaseNativeControls
 -- Load-on-demand parts (Blizzard_QuickJoin) may not have built theirs yet.
 local function Native(definition)
     return definition.native and _G[definition.native]
+end
+
+function C.SidebarButtonAvailable(index)
+    local definition = SIDEBAR_BUTTONS[index]
+    return definition.scroll or Native(definition) ~= nil
 end
 
 local AttachDelegate, WatchCombat
@@ -294,10 +307,9 @@ local function SidebarLeave(button)
     Unhover(button)
 end
 
-local function CreateSidebarButton(sidebar, definition)
-    local button = S.CreateFrame("Button", nil, sidebar)
+function C.CreateSidebarArt(button, index)
+    local definition = SIDEBAR_BUTTONS[index]
     button:SetSize(24, 24)
-    button:RegisterForClicks("AnyUp")
     local highlight = Fill(button, "BACKGROUND")
     highlight:SetAllPoints(button)
     local glyph = S.CreateTexture(button, nil, "ARTWORK")
@@ -306,7 +318,19 @@ local function CreateSidebarButton(sidebar, definition)
     glyph:SetPoint("CENTER", button, "CENTER", 0, definition.glyph == 0 and 2 or 0)
     glyph:SetSize(definition.glyph == 0 and 24 or 25, definition.glyph == 0 and 24 or 25)
     local entry = { button = button, glyph = glyph, highlight = highlight, definition = definition }
-    button.entry = entry
+    button.entry, button.hovered = entry, false
+    if index == 1 then
+        entry.count = S.CreateFontString(button, nil, "OVERLAY", "GameFontHighlightSmall")
+        entry.count:SetPoint("BOTTOM", button, "BOTTOM", 0, -2)
+        entry.count:SetText("0")
+    end
+    return entry
+end
+
+local function CreateSidebarButton(sidebar, definition, index)
+    local button = S.CreateFrame("Button", nil, sidebar)
+    local entry = C.CreateSidebarArt(button, index)
+    button:RegisterForClicks("AnyUp")
     button:SetScript("OnEnter", SidebarEnter)
     button:SetScript("OnLeave", SidebarLeave)
     button:SetScript("OnClick", SidebarClick)
@@ -327,16 +351,11 @@ local function CreateSidebar(self, visual)
     visual.sidebarFrame = sidebar
     visual.buttons = {}
     for i, definition in ipairs(SIDEBAR_BUTTONS) do
-        local entry = CreateSidebarButton(sidebar, definition)
+        local entry = CreateSidebarButton(sidebar, definition, i)
         visual.buttons[i] = entry
         entry.button.sidebarIndex = i
         if i == 1 then
-            local count = S.CreateFontString(entry.button, nil, "OVERLAY", "GameFontHighlightSmall")
-            count:SetPoint("BOTTOM", entry.button, "BOTTOM", 0, -2)
-            count:SetText("0")
-            local r, g, b = RGB(self.config.tabActiveColor)
-            count:SetTextColor(r, g, b, 1)
-            visual.friendCount = count
+            visual.friendCount = entry.count
         end
     end
     return sidebar
@@ -358,21 +377,27 @@ function C.PlaceSidebar(self, sidebar, frame)
 end
 local PlaceSidebar = C.PlaceSidebar
 
+-- Shared by the live sidebar and the owned menu sample.
+function C.PlaceSidebarButton(button, c, index, sidebar, frame, scroll)
+    local prefix = "sidebarButton" .. index
+    button:ClearAllPoints()
+    if c[prefix .. "Moved"] then
+        button:SetPoint("CENTER", sidebar, "CENTER", c[prefix .. "X"] or 0, c[prefix .. "Y"] or 0)
+    elseif scroll and c.scrollButtonPlace == 2 then
+        button:SetPoint("BOTTOMRIGHT", frame or DockSelection() or _G.ChatFrame1, "BOTTOMRIGHT", -4, 4)
+    elseif scroll then
+        button:SetPoint("BOTTOM", sidebar, "BOTTOM", 0, 4)
+    else
+        button:SetPoint("TOP", sidebar, "TOP", 0, -5 - (index - 1) * (24 + (c.sidebarGap or 2)))
+    end
+end
+
 local function LayoutButtons(self, sidebar, visual)
     local c = self.config
     for i, entry in ipairs(visual.buttons) do
-        local button, prefix = entry.button, "sidebarButton" .. i
-        button:ClearAllPoints()
-        if c[prefix .. "Moved"] then
-            button:SetPoint("CENTER", sidebar, "CENTER", c[prefix .. "X"] or 0, c[prefix .. "Y"] or 0)
-        elseif entry.definition.scroll and c.scrollButtonPlace == 2 then
-            button:SetPoint("BOTTOMRIGHT", DockSelection() or _G.ChatFrame1, "BOTTOMRIGHT", -4, 4)
-        elseif entry.definition.scroll then
-            button:SetPoint("BOTTOM", sidebar, "BOTTOM", 0, 4)
-        else
-            button:SetPoint("TOP", sidebar, "TOP", 0, -5 - (i - 1) * (24 + (c.sidebarGap or 2)))
-        end
-        button:SetShown(entry.definition.scroll or Native(entry.definition) ~= nil)
+        local button = entry.button
+        C.PlaceSidebarButton(button, c, i, sidebar, nil, entry.definition.scroll)
+        button:SetShown(C.SidebarButtonAvailable(i))
         RefreshSidebarButton(self, entry)
     end
 end

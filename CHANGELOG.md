@@ -1,5 +1,19 @@
 # MSUF Suite Changelog
 
+## 0.1.6 Alpha - 2026-10-31
+
+### Skinning
+
+- Fixed passive tooltips becoming mouse targets when skin animations were attached, which could cause tooltip flicker and interfere with interactions beneath them. Opening animations remain available without adding mouse handlers to passive frames.
+- Reload the interface after updating so previously installed mouse handlers are cleared.
+
+### Chat
+
+- Added an interactive Chat preview: select and drag the window, message text, tabs, input bar, copy button and sidebar icons, or adjust their coordinates precisely.
+- Preview selections open the corresponding settings. Position edits support arrow nudges, undo/redo and resets, with guards against stale drags and edits after profile changes or during combat.
+- Shared the sidebar artwork and window painters with the live Chat display, including native icon availability, unlocked window dimensions, inherited fonts, input geometry and complete-message clipping.
+- Added saved offsets for message text, tabs and the input bar while preserving Blizzard's native chat interactions.
+
 ## 0.1.5 Alpha - 2026-10-31
 
 ### New Macro workshop

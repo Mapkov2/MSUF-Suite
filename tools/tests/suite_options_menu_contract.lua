@@ -301,6 +301,7 @@ M.PreviewSelectionBar = {
         local bar = Widget("SelectionBar")
         bar:SetSize(785, 24)
         bar.axisX, bar.axisY = Widget("AxisX"), Widget("AxisY")
+        bar.axisX.edit, bar.axisY.edit = false, false -- Legacy toolbar fixture has no edit children.
         bar.label, bar.swatch = Widget("SelectionLabel"), Widget("Texture")
         bar.axisX:SetSize(110, 22)
         bar.axisY:SetSize(110, 22)

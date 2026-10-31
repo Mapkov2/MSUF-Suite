@@ -4,9 +4,26 @@ local root = assert(arg[1])
 SUITE_OPTIONS_FIXTURE = true
 local F = dofile(root .. "/tools/tests/suite_options_menu_contract.lua")
 local P, S = F.optionsNS, F.S
+-- Use the runtime surface painters now shared by the interactive preview.
+local runtime = { NS = P.Suite, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
+assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
+for _, file in ipairs({ "Shared", "Appearance", "MinimalChrome", "Unread", "Sidebar", "Positions", "CompleteMessages", "Window", "PreviewSnapshot", "Preview" }) do
+    assert(loadfile(root .. "/MSUF_Suite_Chat/" .. file .. ".lua"))("MSUF_Suite_Chat", runtime)
+end
+local menuHook = hooksecurefunc
+hooksecurefunc = function(name, callback)
+    if name == "FCF_SetChatWindowFontSize" or name == "FCFDock_SelectWindow" or name == "FCFDock_UpdateTabs" then return end
+    return menuHook(name, callback)
+end
+BNGetNumFriends = function() return 0, 0 end
+C_FriendList = { GetNumOnlineFriends = function() return 0 end }
+-- Font API behavior belongs to the real-host interactive preview contract.
+S.ChatStylePreviewFonts = function() end
 local create, textures = CreateFrame, {}
 CreateFrame = function(...)
     local frame = create(...)
+    frame.CombatLogQuickButtonFrame, frame.visual, frame.visibleLines, frame.entry = false, false, false, false
     local texture = frame.CreateTexture
     function frame:CreateTexture(...)
         local part = texture(self, ...)
@@ -18,6 +35,7 @@ CreateFrame = function(...)
     end
     return frame
 end
+if SUITE_CHAT_OPTIONS_FIXTURE then return F end
 assert(P.Set("chat", "look", 2))
 local ctx = { key = "suite_chat", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
 F.SetCurrent(ctx)
@@ -33,10 +51,8 @@ local config = S.Config("chat")
 assert(config.look == 7 and config.panelGradient and config.messageFading and config.coloredUnreadTabs,
     "clicking Immersive did not apply its complete preset")
 assert(not P.Gates.chat(P.catalog.chat.rules.panelTexture), "gradient ignored an enabled texture selector")
-local gradients = {}
-for _, texture in ipairs(textures) do
-    if rawget(texture, "gradient") then gradients[#gradients + 1] = texture end
-end
+local visual = ctx.chatPreview.visual
+local gradients = { visual.gradientLeft, visual.gradientRight }
 assert(#gradients == 2 and gradients[1]:IsShown() and gradients[2]:IsShown(), "preview did not show two gradient halves")
 assert(gradients[1].gradient[2][4] == config.panelAlpha / 100 and gradients[2].gradient[3][4] == 0,
     "minimal preview did not fade its left background to the right")

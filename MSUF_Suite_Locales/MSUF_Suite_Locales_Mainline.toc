@@ -3,7 +3,7 @@
 ## Notes: Optional MSUF Suite translations. Disable for English; follows the language selected in MSUF.
 ## Author: Mapko
 ## Category: MSUF
-## Version: 0.1.5-alpha
+## Version: 0.1.6-alpha
 ## Dependencies: MidnightSimpleUnitFrames
 ## LoadOnDemand: 1
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga

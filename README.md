@@ -10,7 +10,7 @@
 - **Cooldown Manager** - Cooldown, buff, and buff bar displays.
 - **Buff Reminders** - Reminders for missing buffs and consumables.
 - **Bags & Bank** - Inventory and bank views.
-- **Chat** - Chat styling, history, fading, and unread tab indicators.
+- **Chat** - Chat styling, history, fading, and unread tab indicators. An interactive preview lets you select, move and position the window, text, tabs, input bar, copy button and sidebar icons, with matching settings, undo/redo and resets.
 - **Minimap** - Minimap layouts, appearance, and shortcuts.
 - **DataTexts** - Configurable information bars.
 - **Damage Meter** - Damage Meter windows, display options, and previews.

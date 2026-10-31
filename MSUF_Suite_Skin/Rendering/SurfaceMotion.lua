@@ -141,8 +141,8 @@ local function Show(target)
     Motion.Play(record, 0.16)
 end
 
+local hoverHooks = { OnEnter = Enter, OnLeave = Leave }
 local hooks = {
-    OnEnter = Enter, OnLeave = Leave,
     OnHide = Hide, OnDisable = Hide, OnShow = Show,
     OnEditFocusGained = FocusIn, OnEditFocusLost = FocusOut,
     OnClick = Click,
@@ -177,6 +177,9 @@ local function Bind(state)
         Anchor(state.hoverOverlay, state, 0, 0, 0, 0, 0)
     end
     HookAll(target, hooks)
+    -- Mouse hooks can opt passive tooltips into hit testing. Preserve their
+    -- native input policy while retaining the owned opening animation.
+    if control or Safety.Read(target, "IsMouseMotionEnabled") == true then HookAll(target, hoverHooks) end
     if control then HookAll(target, pressHooks) end
     return record
 end

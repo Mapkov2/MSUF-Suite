@@ -315,6 +315,7 @@ local frameScripts = { OnShow = true, OnHide = true, OnEnter = true, OnLeave = t
 for _, role in ipairs({ "shell", "popup" }) do
     local panel = Target("Frame", UIParent)
     function panel:HasScript(event) return frameScripts[event] == true end
+    function panel:IsMouseMotionEnabled() return true end
     Surface.Attach(panel, { role = role })
     Check(NS.Registry.GetSurface(panel).motion and panel.hooks.OnShow and panel.hooks.OnEnter,
         role .. " frame lost its opening or hover motion")
@@ -323,6 +324,48 @@ for _, role in ipairs({ "shell", "popup" }) do
 end
 Check(button.hooks.OnMouseDown and button.hooks.OnMouseUp and checkbox.hooks.OnMouseDown
     and edit.hooks.OnMouseDown, "skinned buttons and inputs lost their press feedback")
+-- Tooltip and passive shell adoption must not create a new mouse target.
+-- HasScript reports supported handlers, not whether native mouse input is on.
+-- Model the client enabling input when a mouse script is first attached.
+for _, kind in ipairs({ "GameTooltip", "Frame" }) do
+    for _, role in ipairs({ "popup", "shell" }) do
+        local tip = Target(kind, UIParent)
+        local nativeHook = tip.HookScript
+        tip.mouseMotion, tip.mouseClick = false, false
+        function tip:HasScript(event) return frameScripts[event] == true end
+        function tip:IsMouseMotionEnabled() return self.mouseMotion end
+        function tip:HookScript(event, callback)
+            if event == "OnEnter" or event == "OnLeave" then self.mouseMotion = true end
+            if event == "OnMouseDown" or event == "OnMouseUp" then self.mouseClick = true end
+            nativeHook(self, event, callback)
+        end
+        local tipState = Surface.Attach(tip, { role = role })
+        Check(tipState and tipState.motion and tip.hooks.OnShow and tip.hooks.OnHide,
+            "passive tooltip lost its skin or opening animation")
+        Check(not tip.mouseMotion and not tip.mouseClick and not tip.hooks.OnEnter and not tip.hooks.OnLeave,
+            "passive tooltip became a mouse target")
+        tip:Hide(); tip:Show()
+        Tick()
+        Surface.Refresh(tip)
+        Check(not tip.mouseMotion and not tip.mouseClick and tipState.fill:GetAlpha() == 1,
+            "tooltip repaint or opening changed mouse input")
+        NS.DB.theme.menuAnimations = false
+        Surface.Refresh(tip)
+        NS.DB.theme.menuAnimations = true
+        Surface.Refresh(tip)
+        Check(not tip.mouseMotion and not tip.mouseClick, "motion toggle changed tooltip mouse input")
+        tip:Hide()
+        Check(Motion.count == 0, "tooltip hide retained an animation driver")
+    end
+end
+-- Secret or unavailable native input state cannot opt a passive frame in.
+for _, motionState in ipairs({ secret, "missing" }) do
+    local tip = Target("GameTooltip", UIParent)
+    function tip:HasScript(event) return frameScripts[event] == true end
+    if motionState ~= "missing" then function tip:IsMouseMotionEnabled() return motionState end end
+    Surface.Attach(tip, { role = "popup" })
+    Check(not tip.hooks.OnEnter and not tip.hooks.OnLeave, "unreadable tooltip input state gained hover hooks")
+end
 -- Event-derived combat gate must win before lockdown turns true.
 button:Fire("OnEnter"); Tick(3)
 button:Fire("OnMouseDown"); Tick()

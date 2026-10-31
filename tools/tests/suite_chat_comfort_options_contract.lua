@@ -2,8 +2,8 @@
 -- the keyword notices, the keyword settings follow their switch, and the
 -- preview marks a word while the highlight is on.
 local root = assert(arg[1])
-SUITE_OPTIONS_FIXTURE = true
-local F = dofile(root .. "/tools/tests/suite_options_menu_contract.lua")
+SUITE_CHAT_OPTIONS_FIXTURE = true
+local F = dofile(root .. "/tools/tests/suite_chat_immersive_options_contract.lua")
 local P = F.optionsNS
 local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 local ctx = { key = "suite_chat", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }

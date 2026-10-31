@@ -105,6 +105,7 @@ end
 local config, catalogNS = Support.CatalogDefaults(root, "chat")
 local registered, applied, events, combat = {}, {}, {}, false
 local ns = { DB = {}, IsCombatLocked = function() return combat end,
+    InCombat = function() return combat end,
     Safety = { IsForbidden = function() return false end } }
 local suite = { catalog = catalogNS.SuiteCatalog, states = { chat = { active = true } }, instances = {},
     Text = function(text) return text end, Config = function() return config end,
