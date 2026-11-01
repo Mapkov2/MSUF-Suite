@@ -118,12 +118,11 @@ local function RegisterThemeListener()
     NS.Registry.AddListener(GameMenuSkin, function() NS.Registry.QueueJob(RefreshActiveFrames) end)
 end
 
--- Buttons appear when Blizzard shows the menu, which can happen in combat.
--- Their cosmetic skin waits for the next out-of-combat opening then; the
--- pooled buttons keep it for every later one.
+-- Blizzard rebuilds these unprotected buttons even in combat. Paint only
+-- while the menu is shown; each control keeps its own protection guard.
 local function OnButtonsInitialized(frame)
     local frameState = frameStates[frame]
-    if not frameState or not activeFrames[frame] or NS.IsCombatLocked() then return end
+    if not frameState or not activeFrames[frame] or Safety.Read(frame, "IsShown") ~= true then return end
     Safety.Dispatch(SkinActiveButtons, frame.buttonPool, frameState.owner)
     SkinDirectChildren(frame, frameState.owner)
     -- Other addons can create their button in an OnShow hook after InitButtons.
@@ -145,9 +144,6 @@ function GameMenuSkin.Apply(frame, owner)
     if not frame then
         return false, "missing-frame"
     end
-    if NS.IsCombatLocked() then
-        return false, "combat"
-    end
     if not Safety.CanDecorate(frame, false) then
         return false, "protected-frame"
     end
@@ -162,8 +158,7 @@ function GameMenuSkin.Apply(frame, owner)
         frameState = { textColors = Kit.NewTextColors() }
         frameState.refreshDirectChildren = function()
             frameState.directRefreshQueued = nil
-            if activeFrames[frame] and not NS.IsCombatLocked()
-                and Safety.Read(frame, "IsShown") == true then
+            if activeFrames[frame] and Safety.Read(frame, "IsShown") == true then
                 SkinDirectChildren(frame, frameState.owner)
             end
         end

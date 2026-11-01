@@ -1,5 +1,147 @@
 local _, NS = ...
 
+-- LFGList runs secret-data readers after updating its ScrollBox. Calling the
+-- Lua ScrollController setters here writes native fields from skin execution.
+-- Keep that state native and ease only the rendered content, with finite C
+-- animations and external ownership, as the legacy scroll renderer does.
+local NativeList = { states = setmetatable({}, { __mode = "k" }), targets = {}, owners = {} }
+do
+local Safety = NS.Safety
+
+function NativeList.IsTarget(target)
+    for _ = 1, 16 do
+        if Safety.Read(target, "GetName") == "LFGListFrame" then return true end
+        target = Safety.Read(target, "GetParent")
+        if target == nil then return false end
+    end
+    return false
+end
+
+local function Reset(state)
+    if state.group then state.group:Stop() end
+    state.offset = nil
+end
+
+local function Enabled(state)
+    local db = NS.DB
+    if not db or not db.enabled or db.theme.smoothScrolling == false or db.theme.reduceMotion == true
+        or NS.Motion.combat or NS.IsCombatLocked() then return false end
+    return next(state.leases) ~= nil and Safety.CanCreateRegions(state.box)
+        and (state.bar == nil or Safety.CanCreateRegions(state.bar))
+        and Safety.Read(state.box, "CanInterpolateScroll") ~= true
+        and Safety.Read(state.box, "IsVisible") == true
+        and Safety.Read(state.bar, "IsThumbMouseDown") ~= true
+end
+
+local function Scrolled(state, percentage, fraction)
+    if not Enabled(state) then Reset(state) return end
+    local height = Safety.Read(state.box, "GetHeight")
+    if not Safety.Public(percentage) or not Safety.Public(fraction)
+        or type(percentage) ~= "number" or type(fraction) ~= "number" or type(height) ~= "number"
+        or percentage < 0 or percentage > 1 or fraction <= 0 or fraction > 1 then
+        Reset(state)
+        return
+    end
+    local offset = height * (1 / fraction - 1) * percentage
+    local previous = state.offset
+    state.offset = offset
+    if previous == nil or previous == offset then return end
+    local child = Safety.Read(state.box, "GetScrollTarget")
+    if not Safety.CanCreateRegions(child) or Safety.GetProtection(child) then Reset(state) return end
+    if child ~= state.child then
+        Reset(state)
+        state.child = child
+        state.group = child:CreateAnimationGroup()
+        state.move = state.group:CreateAnimation("Translation")
+        state.move:SetDuration(0.11)
+        state.move:SetSmoothing("OUT")
+        state.offset = offset
+    end
+    state.group:Stop()
+    -- Pooled rows cover the new viewport. Limit the visual displacement so a
+    -- large jump cannot drag the recycled content across the clipping edge.
+    local distance = math.max(-8, math.min(8, previous - offset))
+    state.move:SetOffset(0, distance)
+    state.group:Play(true)
+end
+
+local function Hidden(box)
+    local state = NativeList.states[box]
+    if state then Reset(state) end
+end
+
+local function StopAll()
+    for _, state in pairs(NativeList.states) do Reset(state) end
+end
+
+local function Resolve(target)
+    if Safety.HasMethod(target, "GetScrollTarget") then return target, Safety.Field(target, "registeredScrollBar") end
+    local box = Safety.Field(target, "registeredScrollBox")
+    if Safety.Public(box) and Safety.HasMethod(box, "GetScrollTarget") then return box, target end
+end
+
+function NativeList.Track(target, owner)
+    local box, bar = Resolve(target)
+    if owner == nil or not box or not NativeList.IsTarget(box) or not Safety.CanCreateRegions(box)
+        or Safety.GetProtection(box) or not Safety.Public(bar)
+        or bar ~= nil and not Safety.CanCreateRegions(bar)
+        or not Safety.HasMethod(box, "RegisterCallback")
+        or not Safety.HasMethod(box, "UnregisterCallback") then return false end
+    local state = NativeList.states[box]
+    if not state then
+        state = { box = box, bar = bar, leases = {} }
+        NativeList.states[box] = state
+        box:HookScript("OnHide", Hidden)
+    end
+    local targets = NativeList.targets[target]
+    if not targets then targets = {} NativeList.targets[target] = targets end
+    if targets[owner] then return true end
+    local lease = { target = target, owner = owner, state = state }
+    targets[owner], state.leases[lease] = lease, true
+    local owned = NativeList.owners[owner]
+    if not owned then owned = {} NativeList.owners[owner] = owned end
+    owned[lease] = true
+    if not state.registered then
+        box:RegisterCallback(ScrollBoxListMixin.Event.OnScroll, Scrolled, state)
+        box:RegisterCallback(ScrollBoxListMixin.Event.OnLayout, Reset, state)
+        state.registered = true
+    end
+    return true
+end
+
+function NativeList.Release(target, owner)
+    local targets = NativeList.targets[target]
+    local lease = targets and targets[owner]
+    if not lease then return end
+    local state = lease.state
+    targets[owner], state.leases[lease] = nil, nil
+    if not next(targets) then NativeList.targets[target] = nil end
+    local owned = NativeList.owners[owner]
+    if owned then
+        owned[lease] = nil
+        if not next(owned) then NativeList.owners[owner] = nil end
+    end
+    if not next(state.leases) then
+        Reset(state)
+        state.box:UnregisterCallback(ScrollBoxListMixin.Event.OnScroll, state)
+        state.box:UnregisterCallback(ScrollBoxListMixin.Event.OnLayout, state)
+        state.registered = false
+    end
+end
+
+function NativeList.ReleaseOwner(owner)
+    local owned = NativeList.owners[owner]
+    if owned then
+        for lease in pairs(owned) do NativeList.Release(lease.target, owner) end
+    end
+end
+
+local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_REGEN_DISABLED")
+events:SetScript("OnEvent", StopAll)
+NS.Registry.AddListener(NativeList, StopAll)
+end
+
 -- Configure Blizzard's finite scroll interpolator through its public methods.
 -- No wheel handler, scroll method, native field or update script is replaced.
 local ScrollMotion = { states = setmetatable({}, { __mode = "k" }),
@@ -265,6 +407,9 @@ end
 function ScrollMotion.Track(target, owner)
     if owner == nil or not Supported(target) or NS.Motion.combat or NS.IsCombatLocked() then return false end
     local partner = Partner(target)
+    if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
+        return NativeList.Track(target, owner)
+    end
     if not Flag(target) or partner and (not Supported(partner) or not Flag(partner)) then return false end
     local targets = ScrollMotion.targets[target]
     if not targets then targets = {} ScrollMotion.targets[target] = targets end
@@ -282,6 +427,7 @@ function ScrollMotion.Track(target, owner)
 end
 
 function ScrollMotion.Release(target, owner)
+    NativeList.Release(target, owner)
     local targets = ScrollMotion.targets[target]
     local lease = targets and targets[owner]
     if not lease then return end
@@ -310,6 +456,7 @@ function ScrollMotion.Release(target, owner)
 end
 
 function ScrollMotion.ReleaseOwner(owner)
+    NativeList.ReleaseOwner(owner)
     local owned = ScrollMotion.owners[owner]
     if not owned then return end
     for lease in pairs(owned) do ScrollMotion.Release(lease.target, owner) end

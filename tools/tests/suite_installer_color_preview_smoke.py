@@ -20,12 +20,14 @@ local profiles = {}
 MSUF_TryDecodeCompactString = function(text)
     decodes = decodes + 1
     return Copy(text == Suite.RetailProfileModuleCompact:sub(8) and MODERN
-        or text == Suite.ModernDarkModuleCompact:sub(8) and DARK or FOREVER)
+        or text == Suite.ModernDarkModuleCompact:sub(8) and DARK or text == Suite.BlizzardModuleCompact:sub(8) and BLIZZARD or FOREVER)
 end
 Suite.ModernDarkModuleCompact = "MSUFM1:MSUF3:dark"
+Suite.BlizzardModuleCompact = "MSUFM1:MSUF3:blizzard"
 profiles.classic = assert(Suite.ProfileIO.PrepareProfile(Suite.RetailProfileModuleCompact, false))
 profiles.forever = assert(Suite.ProfileIO.PrepareProfile(Suite.ForeverFactoryModuleCompact, false))
 profiles.modernDark = assert(Suite.ProfileIO.PrepareProfile(Suite.ModernDarkModuleCompact, false))
+profiles.blizzard = assert(Suite.ProfileIO.PrepareProfile(Suite.BlizzardModuleCompact, false))
 local originals = Copy(profiles)
 local function Equal(a, b)
     if type(a) ~= type(b) then return false end
@@ -105,12 +107,13 @@ end
 local looks = { "authored", "midnight", "midnightDark", "foreverGlass", "cleanModern", "classColor" }
 local slots = { "bgColor", "borderColor", "barColor", "leftColor" }
 local paints = 0
-for _, layout in ipairs({ "classic", "forever", "modernDark" }) do
+for _, layout in ipairs({ "classic", "forever", "modernDark", "blizzard" }) do
     for _, look in ipairs(looks) do
         Suite.InstallerProfiles.Show(window, true, layout, look)
         CheckCard("classic", look)
         CheckCard("forever", look)
         CheckCard("modernDark", look)
+        CheckCard("blizzard", look)
         assert(window[layout].selected, "layout highlight lost")
         for index, control in ipairs(window.colors) do
             local expected = Expected(layout, looks[index])
@@ -132,8 +135,8 @@ for _, layout in ipairs({ "classic", "forever", "modernDark" }) do
             "preview visible outside the profile page")
     end
 end
-assert(reads == paints * 3, "hidden pages or palettes request extra factory profiles")
-assert(decodes == 3, "painting redecoded full profiles")
+assert(reads == paints * 4, "hidden pages or palettes request extra factory profiles")
+assert(decodes == 4, "painting redecoded full profiles")
 assert(Equal(originals, profiles), "preview modified the authored profiles")
 assert(Suite.DB == nil and MSUF_DB == nil and MSUFSuiteDB == nil, "preview initialized saved settings")
 assert(#reported == 0, tostring(reported[1]))
@@ -157,6 +160,7 @@ def main():
         forever_source, re.S).group(1)
     modern, forever = [decode(text, "MSUFM1:MSUF3:") for text in (modern_compact, forever_compact)]
     dark = decode(literal(core / "ModernDarkFactory.lua", "Suite.ModernDarkModuleCompact"), "MSUFM1:MSUF3:")
+    blizzard = decode(literal(core / "BlizzardFactory.lua", "Suite.BlizzardModuleCompact"), "MSUFM1:MSUF3:")
     setup = SETUP.split("local S, defaults")[0].replace("ENVELOPE", lua_literal(modern), 1)
     for client in ("retail", "forever"):
         for character in ("WARLOCK", "PALADIN"):
@@ -167,6 +171,7 @@ def main():
             script = fixture + setup + CHECK.replace("MODERN", lua_literal(modern), 1)
             script = script.replace("FOREVER", lua_literal(forever), 1)
             script = script.replace("DARK", lua_literal(dark), 1)
+            script = script.replace("BLIZZARD", lua_literal(blizzard), 1)
             run = subprocess.run([LUA, "-", str(root), client, "RetailProfile.lua"], input=script,
                 text=True, capture_output=True, errors="replace", cwd=root)
             if run.returncode:

@@ -344,6 +344,10 @@ local function OnCatalog(_, event)
     end
     Schedule()
 end
+-- Native data can settle after the first world-entry snapshot without a
+-- saved-layout change (notably equipped item readiness). Use the same
+-- notification as Blizzard's viewers, then let the catalog detect changes.
+Events.OnDataChanged = OnCatalog
 -- Blizzard's layout callbacks carry no payload here and also fire for its
 -- own in-memory merges: rebuild only when the saved layout string moved.
 function Events.OnLayoutChanged()

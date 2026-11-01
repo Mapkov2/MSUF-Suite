@@ -99,7 +99,7 @@ for id in pairs(Suite.Suite.instances) do
 end
 -- The shared notice owner and nine QoL tools are available on Forever.
 -- Craft shopping, bank transfer and mail templates remain Retail-only.
-assert(count == 77 and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
+assert(count == 78 and Suite.Suite.instances.glimmer and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
     and Suite.Suite.instances.playerAuraSkins and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
@@ -357,6 +357,24 @@ local S = Suite.Suite
 local function Saved(id, key)
     local recovery = Suite.RootDB.suiteRecovery and Suite.RootDB.suiteRecovery["Realm/Tester"]
     return recovery and recovery[id] and recovery[id][key]
+end
+-- Glimmer declares and restores every native interaction setting it owns.
+do
+    local glimmer = S.NewContext("glimmer")
+    local before = { SoftTargetInteract = "1", SoftTargetNameplateInteract = "0",
+        SoftTargetIconGameObject = "0", SoftTargetInteractRange = "10" }
+    for key, value in pairs(before) do
+        cvarValues[key] = value
+        assert(glimmer:CVar(key, key == "SoftTargetInteractRange" and "15" or "3"))
+        assert(Saved("glimmer", key), "Glimmer did not save the original " .. key)
+    end
+    cvarValues.SoftTargetInteractRange = "18" -- a later player choice wins
+    glimmer:Release()
+    for key, value in pairs(before) do
+        assert(cvarValues[key] == (key == "SoftTargetInteractRange" and "18" or value),
+            "Glimmer did not restore native setting " .. key)
+        assert(not Saved("glimmer", key), "Glimmer recovery record remained")
+    end
 end
 local minimap = S.NewContext("minimap")
 assert(S.instances.minimap == nil and not minimap:CVar("autoLootDefault", 1)

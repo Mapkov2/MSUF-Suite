@@ -1,9 +1,9 @@
 local _, P = ...
 local Paint, ID = {}, "chat"
 P.ChatPreviewPaint = Paint
-local Tr = P.Tr
 
 local function SampleText()
+    local Tr = P.Tr
     local lines = { Tr("|cff9fc3e7[Guild]|r %s: Welcome to MSUF."):format("Mapko"),
         Tr("|cffc9d4dd[Party]|r Chat links and channels stay native.") }
     if P.Get(ID, "highlightKeywords") then
@@ -20,15 +20,25 @@ local function SampleText()
             local hex = P.Get(ID, "highlightColor"):match("^%x%x%x%x%x%x$") or "ffd100"
             return "|cff" .. hex .. word .. "|r"
         end
-        lines[3] = Tr("|cffc9d4dd[Raid]|r %s: Pull when %s is ready."):format("Mapko", HighlightedWord())
+        lines[#lines + 1] = Tr("|cffc9d4dd[Raid]|r %s: Pull when %s is ready."):format("Mapko", HighlightedWord())
     end
     return table.concat(lines, "\n")
 end
 
 function Paint.Build(ui)
+    function Paint.EnsureTabs(ui)
+        local parts = ui.parts
+        for index = #parts.tabs + 1, parts.nativeTabCount or 2 do
+            local tab = CreateFrame("Frame", nil, parts.tabGroup)
+            tab.Text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            tab.Text:SetText(P.Tr("General"))
+            parts.tabs[index] = tab
+            ui.addHandle(ui, tab, ui.targets.tab.spec, 5)
+        end
+    end
     local function Font(owner, template, text)
         local label = owner:CreateFontString(nil, "OVERLAY", template)
-        label:SetText(Tr(text))
+        label:SetText(P.Tr(text))
         return label
     end
 
@@ -36,7 +46,7 @@ function Paint.Build(ui)
     sample:SetSize(420, 180)
     local parts = { sample = sample, settings = {}, tabs = {}, icons = {}, width = 420 }
     ui.parts, ui.ctx.chatPreview = parts, parts
-    parts.tabGroup = CreateFrame("Frame", nil, sample)
+    parts.tabGroup = CreateFrame("Frame", nil, ui.stage)
     for index, label in ipairs({ "General", "Party" }) do
         local tab = CreateFrame("Frame", nil, parts.tabGroup)
         tab.Text = Font(tab, "GameFontNormalSmall", label)
@@ -58,7 +68,7 @@ function Paint.Build(ui)
     parts.textHit = CreateFrame("Frame", nil, parts.textClip)
     parts.textHit:SetAllPoints(parts.lines)
     parts.text = SampleText()
-    parts.sidebar = CreateFrame("Frame", nil, sample)
+    parts.sidebar = CreateFrame("Frame", nil, ui.stage)
     for index = 1, 5 do
         local icon = CreateFrame("Button", nil, parts.sidebar)
         icon:SetSize(24, 24)
@@ -98,16 +108,25 @@ function Paint.Refresh(ui)
     local side = config.sidebarPanel and config.sidebarWidth or 0
     local top = config.tabHeight + config.tabPanelGap + (config.inputTop and math.max(26, config.inputHeight) or 0) + 12
     local bottom = config.inputTop and 12 or math.max(26, config.inputHeight) + 12
-    local scale = math.min(1, (ui.width - 24) / (width + side + 2 * config.padding), 216 / (height + top + bottom))
+    local nativeScale = parts.nativeScale or 1
+    local totalWidth = width * nativeScale + side + 2 * config.padding
+    local totalHeight = (height + top + bottom) * nativeScale
+    local scale = math.min(1, (ui.width - 24) / totalWidth, 216 / totalHeight)
     ui.stage:SetScale(scale)
-    ui.stage:SetSize(width + side + 2 * config.padding, height + top + bottom)
+    ui.stage:SetSize(totalWidth, totalHeight)
+    parts.sample:SetScale(nativeScale)
     parts.sample:ClearAllPoints()
-    parts.sample:SetPoint("TOPLEFT", ui.stage, "TOPLEFT", config.padding + (config.sidebarSide == 1 and side or 0), -top)
+    parts.sample:SetPoint("TOPLEFT", ui.stage, "TOPLEFT",
+        (config.padding + (config.sidebarSide == 1 and side or 0)) / nativeScale, -top)
     parts.sample:SetSize(width, height)
     for _, line in ipairs(parts.messageLines) do line:SetWidth(width) end
-    parts.width, ui.canvasHeight = width, (height + top + bottom) * scale
+    parts.width, ui.canvasHeight = width, totalHeight * scale
     ui.viewport:SetHeight(ui.canvasHeight)
     parts.text = SampleText()
+    Paint.EnsureTabs(ui)
     if ready then P.S.ChatStylePreviewFonts(parts, parts.fonts, config) end
-    if painter then painter(parts, config) end
+    if painter then
+        painter(parts, config)
+        P.S.ChatFitPreview(ui)
+    end
 end

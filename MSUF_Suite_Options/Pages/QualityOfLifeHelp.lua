@@ -3,6 +3,12 @@ local Tr = P.Tr
 -- The help of each settings section of the Quality of Life page, by section key:
 -- the "?" popup of a feature and the tooltip of its row show it (QualityOfLife.lua).
 local HELP = {
+    glimmer_objects = "Highlights one nearby interactable object selected by the game, outside combat. Ore, herbs and quest objects have "
+        .. "separate switches. The module temporarily enables the native interact target and its nameplate; disabling restores "
+        .. "settings still owned by the module. It does not move, interact or gather for you. Range follows the game's "
+        .. "interaction rules.",
+    glimmer_appearance = "Choose the color, size and effect around the selected object. Pulse is a native animation. Only the selected "
+        .. "interact target is highlighted; this is not a scanner for every object nearby.",
     auto_uprank = "Updates newly learned ranks after combat with an empty cursor. Lower ranks and macros are preserved by default.",
     self_combat_text = "Shows incoming damage and healing for you or your vehicle. Blizzard's own combat text is hidden while enabled and restored when disabled. Move the display in MSUF Edit Mode. During heavy bursts the oldest of the visible messages is replaced. The game may keep amounts private, so messages are never combined or filtered by their value.",
     character_extras = "A small summary sits beside the Character tab of your character sheet and leaves with it. It lists your gear with gem sockets and how many are filled, open ones in amber (click a line to open socketing), the total durability of your gear and, if you like, your PvP item level. Its buttons open the Great Vault and the current expansion page. It updates while the sheet is open, at most once per frame.",

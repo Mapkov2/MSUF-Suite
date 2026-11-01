@@ -1,5 +1,49 @@
 # MSUF Suite Changelog
 
+## 0.1.7 Alpha - 2026-11-01
+
+### Appearance
+
+- Added the optional MSUF Blizzard installer preset with gold portraits, centered cooldowns, party frames and gryphon endcaps.
+- Added two switchable, enlargable reference screenshots while keeping the interactive layout and module preview available.
+
+### Chat
+
+- Matched preview tabs, fonts, sidebar icons, message clipping and positioning more closely to the live chat window.
+
+### Cooldown Manager
+
+- Added replacement-buff tracking by spell name or ID while retaining the original spell cooldown.
+- Refresh native spell and item catalogs after equipment, talent, specialization and Blizzard cooldown-data changes.
+
+### Bags, bank and inventory tools
+
+- Corrected BoE, Warbound and Warbound-until-equipped badges and search filters using each item's current binding state.
+
+### Action Bars, Buff Reminders and HUD
+
+- Added rank-aware Shaman shield and weapon-imbue reminders on WoW Forever.
+- Added Blizzard gryphons as an action-bar endcap choice, with matching runtime and options previews.
+
+### Quality of Life
+
+- Added default-on Glimmer highlights for herbs, ore and quest objects selected by WoW Forever's native interact target.
+- Glimmer includes category, effect, range and color controls plus a settings preview, and pauses during combat.
+
+### Damage Meter
+
+- Added melee and environmental damage names and icons to death recaps and improved the related preview controls.
+
+### Skinning
+
+- Keep Group Finder scroll state native while easing its visuals, and improve skinning of the game menu opened during combat.
+- Improved native control detection, protected-frame guards and deferred skin updates.
+
+### Previews, loading and compatibility
+
+- Build native Nameplate options tabs on demand and prepare their controls before opening a search result.
+- Improved settings search, preview navigation and client-specific regression coverage for Retail and WoW Forever.
+
 ## 0.1.6 Alpha - 2026-10-31
 
 ### Skinning

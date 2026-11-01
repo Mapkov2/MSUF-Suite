@@ -8,6 +8,7 @@ local Suite = {
     RetailFactoryModuleCompact = "MSUFM1:MSUF3:retail",
     RetailProfileModuleCompact = "MSUFM1:MSUF3:modern-retail",
     ModernDarkModuleCompact = "MSUFM1:MSUF3:modern-dark",
+    BlizzardModuleCompact = "MSUFM1:MSUF3:blizzard",
     RetailProfileSkinCompact = "MSKIN1:modern-retail",
     ForeverFactoryScreenHeight = 1440,
     RetailFactorySkinCompact = "MSKIN1:modern",
@@ -115,7 +116,8 @@ Suite.ProfileIO = {
         decodes = decodes + 1
         assert(shared == false, "installer factory was sanitized as an external import")
         assert(text == Suite.RetailFactoryModuleCompact or text == Suite.ForeverFactoryModuleCompact
-            or text == Suite.RetailProfileModuleCompact or text == Suite.ModernDarkModuleCompact)
+            or text == Suite.RetailProfileModuleCompact or text == Suite.ModernDarkModuleCompact
+            or text == Suite.BlizzardModuleCompact)
         local modules = {}
         for _, id in ipairs(Suite.SuiteOrder) do modules[id] = { enabled = true } end
         modules.damageMeter = { enabled = true, bgColor = "101010", bgAlpha = 82,
@@ -453,7 +455,7 @@ Suite.Installer.Open()
 local window = assert(MSUFSuiteInstallFrame)
 copies = 0
 local function CheckLayout()
-    local panels = { window.classic, window.forever, window.modernDark, window.cooldowns, window.scaleToggle, window.keepFrames,
+    local panels = { window.classic, window.forever, window.modernDark, window.blizzard, window.cooldowns, window.scaleToggle, window.keepFrames,
         window.back, window.close, window.next, window.scaleSlider }
     for _, color in ipairs(window.colors) do panels[#panels + 1] = color end
     if rawget(window, "moduleScroll") then
@@ -542,7 +544,7 @@ window.next.scripts.OnClick() -- install
 assert(factoryCalls == 1 and Suite.RootDB.installation.profile == "forever")
 -- The legacy initial profile plus three authored card profiles decode once each.
 -- Module clicks, palette swatches and repeated page paints reuse the cache.
-assert(decodes == 4, "the installer decoded a factory profile " .. decodes .. " times")
+assert(decodes == 5, "the installer decoded a factory profile " .. decodes .. " times")
 -- The install copies the cached factory; nameplates are already bundled.
 assert(copies == 1, "the installer copied the factory profile " .. copies .. " times")
 assert(Suite.RootDB.installation.raidEssentials == true

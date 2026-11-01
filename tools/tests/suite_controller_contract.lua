@@ -190,7 +190,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "guildChatPrivacy" and id ~= "groupFinderExitReminder"
         and id ~= "groupRaidShortcuts" and id ~= "trainerLearnAll"
         and id ~= "characterUpgradeWindow" and id ~= "lootToastFilter"
-        and id ~= "threatMeter" and id ~= "flightTimer" and id ~= "characterExtras"
+        and id ~= "threatMeter" and id ~= "flightTimer" and id ~= "glimmer" and id ~= "characterExtras"
         and id ~= "merchantList" and id ~= "tooltipDetails" and id ~= "popupAttention"
         and id ~= "combatMovementCue" and id ~= "professionAppearance"
         and id ~= "trustedPartyInvites" and id ~= "burningRushCue" and id ~= "autoResponses"

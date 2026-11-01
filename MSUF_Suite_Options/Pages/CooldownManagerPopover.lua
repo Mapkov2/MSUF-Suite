@@ -654,12 +654,13 @@ function Page.PaintPopover()
     local top = PlaceActions(kind ~= "b")
     local barKind = Page.Kind(pop.slot)
     local bars = barKind == CDM.KIND.AURA_BAR or barKind == CDM.KIND.COOLDOWN and BarSetting("cooldownDuration") == true
+    local hasAura = pop.hasAura or fields and (fields.replaceAura or 0) > 0
     local y, section = 0, nil
     for _, header in pairs(pop.headers) do header:Hide() end
     for i = 1, #FIELDS do
         local field = FIELDS[i]
         local row = pop.rows[field.key]
-        if not field.inline and Applies(field, pop.family, kind, pop.hasAura, barKind, bars) then
+        if not field.inline and Applies(field, pop.family, kind, hasAura, barKind, bars) then
             if section ~= field.section then
                 section = field.section
                 Header(section, y)

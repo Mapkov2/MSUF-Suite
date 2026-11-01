@@ -102,11 +102,9 @@ end
 
 -- The help text of each settings section, read from the page's own file.
 local function HelpTexts()
-    local help = {}
-    for key, text in Read("MSUF_Suite_Options/Pages/QualityOfLifeHelp.lua"):gmatch('\n    ([%w_]+) = "([^\n]*)",') do
-        help[key] = text
-    end
-    return help
+    local page = { Tr = function(text) return text end }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/QualityOfLifeHelp.lua"))("MSUF_Suite_Options", page)
+    return setmetatable({}, { __index = function(_, key) return page.QoLHelpText(key) end })
 end
 
 -- The sections the page groups of Quality of Life modules list: each is a

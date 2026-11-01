@@ -142,6 +142,8 @@ Page.FIELDS = FIELDS
 -- bars: buff bars and cooldowns shown as timer bars.
 local function MoreFields()
     return {
+        { key = "replaceAura", label = "Replacement buff", kind = "spell", cd = true, spellOnly = true,
+          help = "Choose a buff or debuff by name or ID. Enable Show active buff duration to use it. Reset follows Blizzard's linked aura." },
         { key = "usableOnly", label = "Show only when usable", kind = "bool", cd = true, spellOnly = true, switch = true,
           help = "Hide the icon while the spell cannot be used: not enough resources or the wrong state." },
         { key = "procOnly", label = "Show only during a spell alert", kind = "bool", cd = true, spellOnly = true, switch = true,
@@ -226,7 +228,7 @@ function Page.PreparePopoverFields()
         { label = "Appearance",
           keys = "showGCD chargeSwipe chargeEdge swipe desat hideReady hideAvailableCharges usableOnly procOnly readyAlpha cdAlpha "
               .. "showMissing barColor barText icon" },
-        { label = "Buff and stacks", keys = "showAura itemAura auraUnit stackGlow stackGlowOp stackColorAt pandemic activeBorder" },
+        { label = "Buff and stacks", keys = "showAura replaceAura itemAura auraUnit stackGlow stackGlowOp stackColorAt pandemic activeBorder" },
         { label = "Action bars", keys = "actionUsableGlow actionGlowSpell actionGlowUnit actionGlowMode actionGlowRequireSpell" },
         { label = "Text", keys = "timeText stackText textTop threshold" },
         { label = "Custom timer", keys = "timerDuration timerSpell" },

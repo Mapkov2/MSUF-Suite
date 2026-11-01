@@ -77,7 +77,7 @@ CDM.SPELL_FIELDS = {
     procGlow = Bool01, readyGlow = Bool01, readyResources = Bool01, fullChargeGlow = Bool01,
     chargeSwipe = Bool01, chargeEdge = Bool01, auraGlow = Bool01, pandemic = Bool01, glowStyle = Range(0, 6), glowColor = OwnHex,
     desat = Range(1, 3), hideReady = Bool01, hideAvailableCharges = Bool01, readyAlpha = Range(0, 100), cdAlpha = Range(0, 100),
-    showAura = Bool01, swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
+    showAura = Bool01, replaceAura = Range(0, 2147483647), swipe = Range(1, 3), sound = Sound, lossSound = Sound, tts = Bool01,
     threshold = Range(0, 10), icon = Range(1, 2147483647), showMissing = Bool01,
     stackGlow = Range(0, 99), stackGlowOp = Range(1, 5), stackColorAt = Range(0, 99), stackColor = OwnHex,
     -- Where a buff-bar aura is looked for: 1 automatic (audited native aura
@@ -100,7 +100,7 @@ CDM.SPELL_FIELDS = {
     barColor = OwnHex, barText = Label, usedSound = Sound, chargeSound = Sound,
 }
 -- What an absent per-spell field means where no bar setting stands behind it.
-CDM.SPELL_DEFAULTS = { stackColor = "ff5a3c" }
+CDM.SPELL_DEFAULTS = { stackColor = "ff5a3c", replaceAura = 0 }
 CDM.LIMITS = { specs = 64, entries = 120, hidden = 400, spells = 600 }
 
 local function ValidSpec(value) return type(value) == "number" and value > 0 and value < 100000 and math.floor(value) == value end

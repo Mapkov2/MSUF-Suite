@@ -26,11 +26,21 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_cdm_native_data_refresh_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_glimmer_default_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_cdm_replacement_aura_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_nameplates_lazy_tabs_contract.lua": [
+        [flavor, str(host)] + (["fallback"] if fallback else [])
+        for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70) for fallback in (False, True)],
     "suite_chat_preview_native_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
         for host in (MSUF_MAIN, MSUF_70)],
+    "suite_chat_snapshot_parity_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
+    "suite_chat_sidebar_parity_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
     "suite_chat_positions_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
     "suite_chat_preview_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
         for host in (MSUF_MAIN, MSUF_70)],
+    "suite_damage_meter_recap_visuals_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_cdm_cold_catalog_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_planner_lod_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_planner_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_player_aura_menu_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -50,6 +60,7 @@ EXTRA = {
     "suite_skin_menu_discovery_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_menu_transitions_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_combat_cold_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_skin_game_menu_combat_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_skin_scroll_motion_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_nameplates_aura_colors_contract.lua": [[], ["secret"]],
     "suite_forever_character_contract.lua": [[], ["secret"]],

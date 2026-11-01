@@ -617,7 +617,9 @@ end
 function HostBridge.FactoryFramePreview(layout)
     local host = HostNamespace()
     local compact
-    if layout == "modernDark" then
+    if layout == "blizzard" then
+        compact = Suite.BlizzardFramesCompact
+    elseif layout == "modernDark" then
         compact = HostBridge.ModernDarkFrameCompact()
     elseif layout == "forever" then
         compact = Suite.Client.isForever and host and host.MSUF_FOREVER_FACTORY_DEFAULT_PROFILE_COMPACT

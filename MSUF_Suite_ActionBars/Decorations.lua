@@ -33,6 +33,11 @@ local function Endcap(bar, side)
     cap:SetSize(size, size)
     cap:ClearAllPoints()
     cap:SetPoint("CENTER", bar.header, anchor, direction * size * .6 + c[keys[names.x]], c[keys[names.y]])
+    if style == ENDCAP.BLIZZARD then
+        NS.PaintBlizzardActionBarEndcap(cap, side, size)
+        cap:Show()
+        return
+    end
     local r, g, b = AB.style.br, AB.style.bg, AB.style.bb
     for i = 1, 5 do
         local t = cap.pieces[i]

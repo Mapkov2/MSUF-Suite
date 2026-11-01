@@ -215,15 +215,13 @@ local function Paint(self, button, pending, info)
     record.label:Show()
 end
 
--- Enum.ItemBind (ItemConstantsDocumentation, Retail and Forever). Both
--- account bindings are Warbound; Bind on Equip and Warbound until equipped
--- show only while the item is not bound yet.
+-- SlotCache resolves the current instance's binding before choosing a badge.
+-- Account-bound items keep WB; Warbound until equipped uses its own WuE badge.
 local BIND = Enum.ItemBind
 local BIND_BADGES = {
     [BIND.OnEquip] = "BoE", [BIND.ToWoWAccount] = "WB", [BIND.ToBnetAccount] = "WB",
     [BIND.ToBnetAccountUntilEquipped] = "WuE",
 }
-local UNTIL_BOUND = { [BIND.OnEquip] = true, [BIND.ToBnetAccountUntilEquipped] = true }
 
 local function PaintBindBadge(self, button, pending, info)
     local record = self.overlays[button]
@@ -248,8 +246,11 @@ local function PaintBindBadge(self, button, pending, info)
         end
         record.bindType = bindType
     end
-    local text = BIND_BADGES[record.bindType]
-    if UNTIL_BOUND[record.bindType] and (not S.Public(info.isBound) or info.isBound ~= false) then text = nil end
+    if record.bindInfo ~= info then
+        record.binding = Slots.Binding(button:GetBagID(), button:GetID(), record.bindType)
+        if record.binding ~= nil then record.bindInfo = info end
+    end
+    local text = BIND_BADGES[record.binding]
     if not text then
         if record.bindBadge then record.bindBadge:Hide() end
         return

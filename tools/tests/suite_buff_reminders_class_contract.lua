@@ -14,7 +14,7 @@ local MUTATIONS = {
     known = { "Entries.lua", "return FirstKnown(plan.casts)", "return plan.casts[1]" },
     master = { "Entries.lua", "if c.classReminders == true and class then", "if class then" },
     forever = { "Data.lua", "if P.NS.Client.isForever then return def.forever end", "" },
-    imbue = { "Entries.lua", "Known(rule.spell) and SlotHolds(rule.slot, rule.equip)", "Known(rule.spell)" },
+    imbue = { "Entries.lua", "Known(spell) and SlotHolds(rule.slot, rule.equip)", "Known(spell)" },
     ally = { "Group.lua", "entry.allyMissing = not alone and OwnMissing(", "entry.allyMissing = false and OwnMissing(" },
     allyPlayer = { "Group.lua", "if ally and unit == \"player\" then return false end", "" },
     allySpell = { "Group.lua", "if Listed(aliases, spellID) then return true end", "if true then return true end" },
@@ -112,6 +112,12 @@ C_UnitAuras = {
     -- The ally reminders ask for the player's own aura on a member by name;
     -- memberAuras[unit] is the spell ID of that aura.
     GetAuraDataBySpellName = function(unit, name, filter)
+        if unit == "player" and filter == "HELPFUL" then
+            for id, data in pairs(playerAuras) do
+                if C_Spell.GetSpellName(id) == name then return data end
+            end
+            return nil
+        end
         assert(filter == "HELPFUL|PLAYER", "an ally reminder must ask for the player's own aura")
         local id = memberAuras[unit]
         if id and C_Spell.GetSpellName(id) == name then return { spellId = id } end
@@ -188,7 +194,7 @@ do
         local rule = assert(rules[def.key], def.key .. " has no catalog rule")
         assert(rule.default == true and rule.enableKey == "classReminders" and rule.hidden == nil,
             def.key .. " is not an on-by-default switch under the master switch")
-        assert(def.retail and (def.forever == nil or def.forever.kind == "aura"), def.key .. " has a Forever plan of another kind")
+        assert(def.retail and (def.forever == nil or def.forever.kind == "aura" or def.forever.kind == "imbue"), def.key .. " has a Forever plan of another kind")
     end
     -- Forever hides the reminders it lacks.
     local _, foreverNS = Support.CatalogDefaults(root, "buffReminders", nil, { isForever = true })
@@ -198,7 +204,7 @@ do
         eq(foreverRules[def.key].hidden, def.forever == nil or nil, def.key .. " Forever visibility")
         if def.forever then shown = shown + 1 end
     end
-    eq(shown, 2, "Forever keeps more or fewer than Shadowform and the stances")
+    eq(shown, 4, "Forever class preset count")
 end
 
 local function Owner(overrides)
@@ -514,6 +520,25 @@ do
     eq(ForeverPlan("classPaladinAura"), nil, "Forever has a Paladin aura plan")
     assert(ForeverPlan("classShadowform"), "Forever lost Shadowform")
     Reset({ "PRIEST", 258 })
+end
+
+-- Forever presets use local ranked spells and allow the same imbue on two weapons.
+do
+    Reset({ "SHAMAN", 1488 }, { [16] = WEAPON, [17] = WEAPON })
+    NS.Client.isForever, NS.Client.modernEquipment = true, false
+    SPELL_NAMES[324], SPELL_NAMES[325] = "Lightning Shield", "Lightning Shield"
+    SPELL_NAMES[408510], SPELL_NAMES[408511] = "Water Shield", "Water Shield"
+    Set(324, 408510, 8232)
+    local entries = R.BuildEntries(Owner({ classReminders = true }))
+    eq(Ids(entries), "8232@16,8232@17,408510", "Forever shields and both weapon slots")
+    eq(entries[1].spellName, C_Spell.GetSpellName(8232), "rank-safe weapon click")
+    assert(entries[3].ranked and entries[3].spellName == "Water Shield", "rank-safe shield click")
+    playerAuras[325] = { spellId = 325 }
+    assert(R.AuraPresent(entries[3]) == true, "another rank of either shield did not satisfy the reminder")
+    equipment[17] = SHIELD
+    eq(Ids(R.BuildEntries(Owner({ classReminders = true }))), "8232@16,408510", "physical shield got a weapon imbue")
+    Set(324)
+    eq(Ids(R.BuildEntries(Owner({ classReminders = true }))), "324", "Lightning Shield fallback")
 end
 
 -- The longer sound list: the old four keep their place.

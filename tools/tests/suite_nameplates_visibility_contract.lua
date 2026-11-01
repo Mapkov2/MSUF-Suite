@@ -324,6 +324,11 @@ P.SectionRules = function(_, section)
     return out
 end
 P.RegisterPage = function() end
+-- The page registers a cold exact-target preparer through the host adapter.
+P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
+    assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
+    return true
+end
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Nameplates.lua"))("MSUF_Suite_Options", P)
 local where = {}
 local function See(key, place)

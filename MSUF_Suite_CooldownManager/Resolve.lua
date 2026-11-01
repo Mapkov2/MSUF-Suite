@@ -599,6 +599,7 @@ local function Materialize(key, slot, index, preview, spells, stage)
     if not filled or not (entry.known or preview and not presetSpell[key]) then return nil end
     local ov = spells[key]
     ov = type(ov) == "table" and ov or EMPTY
+    if ov.replaceAura then C.EntryFill.ApplyReplacement(entry, ov) end
     local chosen = entry.unit and AURA_UNIT[ov.auraUnit]
     if chosen then entry.unit = chosen end
     entry.ov = ov

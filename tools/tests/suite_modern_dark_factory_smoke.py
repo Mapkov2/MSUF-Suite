@@ -282,7 +282,8 @@ def main():
                            ("ForeverFactory.lua", "ForeverFactoryModuleCompact"),
                            ("RetailFactory.lua", "RetailFactoryModuleCompact"),
                            ("ModernDarkFactory.lua", "ModernDarkModuleCompact"),
-                           ("ModernDarkFactory.lua", "ModernDarkFramesCompact")):
+                           ("ModernDarkFactory.lua", "ModernDarkFramesCompact"),
+                           ("BlizzardFactory.lua", "BlizzardModuleCompact")):
         value = literal(core / filename, "Suite." + name)
         is_module = "Module" in name
         fixtures[value[7:] if is_module else value] = decode(value, "MSUFM1:MSUF3:" if is_module else "MSUF3:")

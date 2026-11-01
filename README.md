@@ -7,8 +7,8 @@
 ## Modules
 
 - **Action Bars** - Layout and appearance settings for your action bars.
-- **Cooldown Manager** - Cooldown, buff, and buff bar displays.
-- **Buff Reminders** - Reminders for missing buffs and consumables.
+- **Cooldown Manager** - Cooldown, buff, and buff bar displays. A cooldown can track a replacement buff selected by name or spell ID; its original cooldown remains unchanged.
+- **Buff Reminders** - Reminders for missing buffs and consumables, including rank-aware Shaman shields and weapon imbues on Forever.
 - **Bags & Bank** - Inventory and bank views.
 - **Chat** - Chat styling, history, fading, and unread tab indicators. An interactive preview lets you select, move and position the window, text, tabs, input bar, copy button and sidebar icons, with matching settings, undo/redo and resets.
 - **Minimap** - Minimap layouts, appearance, and shortcuts.
@@ -19,7 +19,11 @@
 - **Quality of Life** - Group and dungeon tools, encounter information, death alerts, incoming combat text, and reminders.
 - **Skinning** - Interface window appearance and controls, with short hover, click, selection, focus, opening and disclosure animations on Suite-owned artwork. Blizzard AddOn-list groups animate their arrows and visible row transitions, with brief clipped visual copies for collapsing children. Menu page changes and completed search/filter results fade in, and palette changes blend owned backgrounds and borders. Modern and legacy dropdowns can dim their skinned window beneath the popup. Blizzard Settings pages, native tabs, Suite dialogs and AceGUI/AceConfig menus share these transitions. Supported native ScrollBoxes and modern scrollbars use optional smooth scrolling with immediate thumb dragging; older ScrollFrames use a short visual easing of their native offset. The Suite menu-animation, smooth-scrolling and reduced-motion switches also govern the connected MSUF 7.0 menu. Custom addons can adopt the same behavior through the scoped RegisterMenu/AnimateContent API. Configure Menu animations, Smooth scrolling, Reduced motion and Dim background for dropdowns under Corners and hover.
 
+On Forever, **Quality of Life > Map & Travel > Glimmer** is enabled by default and highlights the native interact target for herbs, ore and quest objects. Its mini preview shows the selected effect directly above the controls, even while the module is disabled. Choose its categories, range, color and effect; it pauses in combat and restores the interaction settings it owns when disabled.
+
 Modules can be enabled individually. The Suite includes shared profiles, setup presets, and previews in the MSUF options menu.
+
+The optional **MSUF Blizzard** setup preset adds gold portraits, centered cooldowns and party frames, a bottom action bar with gryphons, chat on the left and damage meters on the right. Its two example screenshots are marked as layout references; switch to Layout to preview your selected settings.
 
 ## Install
 

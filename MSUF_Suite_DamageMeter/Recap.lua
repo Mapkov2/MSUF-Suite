@@ -2,7 +2,17 @@ local _, P = ...
 local D, S, NS = P.DamageMeter, P.Suite, P.NS
 local M, Public, Finite = D.M, S.Public, S.Finite
 local max = math.max
-local fields = { "timestamp", "spellName", "spellId", "amount", "overkill", "currentHP", "event" }
+local fields = { "timestamp", "spellName", "spellId", "amount", "overkill", "currentHP", "event", "environmentalType" }
+-- Native recap mappings, independent of Blizzard_DeathRecap's load-on-demand UI.
+local environmentalDefault = { icon = "Interface\\Icons\\ability_creature_cursed_05" }
+local environmental = {
+    DROWNING = { name = ACTION_ENVIRONMENTAL_DAMAGE_DROWNING, icon = "Interface\\Icons\\spell_shadow_demonbreath" },
+    FALLING = { name = ACTION_ENVIRONMENTAL_DAMAGE_FALLING, icon = "Interface\\Icons\\ability_rogue_quickrecovery" },
+    FIRE = { name = ACTION_ENVIRONMENTAL_DAMAGE_FIRE, icon = "Interface\\Icons\\spell_fire_fire" },
+    LAVA = { name = ACTION_ENVIRONMENTAL_DAMAGE_LAVA, icon = "Interface\\Icons\\spell_fire_fire" },
+    SLIME = { name = ACTION_ENVIRONMENTAL_DAMAGE_SLIME, icon = "Interface\\Icons\\inv_misc_slime_01" },
+    FATIGUE = { name = ACTION_ENVIRONMENTAL_DAMAGE_FATIGUE, icon = environmentalDefault.icon },
+}
 
 function D.ReadRecap(id)
     if not Finite(id) or id <= 0 then return nil end
@@ -37,19 +47,31 @@ function D.RefreshRecap(win)
     D.RenderRecap(win)
 end
 
-local function EventName(event)
+local function Environmental(event)
+    local kind = event.event
+    if not Public(kind) or kind ~= "ENVIRONMENTAL_DAMAGE" then return nil end
+    local subtype = event.environmentalType
+    if not Public(subtype) then return nil end
+    if type(subtype) ~= "string" then return environmentalDefault end
+    return environmental[string.upper(subtype)] or environmentalDefault
+end
+
+local function EventName(event, environment)
     local name = event.spellName
     if not Public(name) then return name end
     if type(name) == "string" and name ~= "" then return name end
     local kind = event.event
     if Public(kind) and kind == "SWING_DAMAGE" then return S.Text("Melee") end
-    return S.Text("Unknown")
+    return environment and environment.name or S.Text("Unknown")
 end
 
-local function EventIcon(row, event)
-    local id = event.spellId
+local function EventIcon(row, event, environment)
+    local id, kind = event.spellId, event.event
+    if Public(kind) and kind == "ENVIRONMENTAL_DAMAGE" then id = nil
+    elseif Public(kind) and kind == "SWING_DAMAGE" then id = 88163 end
     row.spellID = Finite(id) and id > 0 and id or nil
-    local texture = row.spellID and C_Spell.GetSpellTexture(row.spellID)
+    local texture = environment and environment.icon
+    if not texture and row.spellID then texture = C_Spell.GetSpellTexture(row.spellID) end
     if texture then
         row.icon:SetTexture(texture)
         row.icon:SetTexCoord(.08, .92, .08, .92)
@@ -71,8 +93,9 @@ function D.PaintRecap(row, event, recap)
     if not Public(kind) then row.bar:SetStatusBarColor(.33, .33, .33)
     elseif heal then row.bar:SetStatusBarColor(.1, .5, .1)
     else row.bar:SetStatusBarColor(.6, .08, .08) end
-    EventIcon(row, event)
-    local name, seconds = EventName(event), EventTime(event, recap)
+    local environment = Environmental(event)
+    EventIcon(row, event, environment)
+    local name, seconds = EventName(event, environment), EventTime(event, recap)
     if seconds then row.nameText:SetFormattedText("-%.1fs %s", seconds, name) else row.nameText:SetText(name) end
     local hp, health = event.currentHP, recap.maxHealth
     D.SetBar(row, health, hp)

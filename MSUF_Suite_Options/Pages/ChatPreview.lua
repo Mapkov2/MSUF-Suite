@@ -1,15 +1,33 @@
 local _, P = ...
-local E, ID, PAGE = {}, "chat", "suite_chat"
+local E, ID = {}, "chat"
 P.ChatPreview = E
-local R, K, M, HM, Tr = P.ChatPreviewPositions, P.PreviewCanvas, P.M, P.HM, P.Tr
+local R, K, M, HM = P.ChatPreviewPositions, P.PreviewCanvas, P.M, P.HM
 local GEOMETRY
 
-local Open, Current, Write, Anchor
+local Open, Current, Write, Anchor, Scale, Refresh
 local function InitializeActions()
+    Refresh = function(ui)
+        if not ui.header:IsVisible() or not ui.ctx.wrapper:IsVisible() then return end
+        local drag = ui.kit.drag
+        if drag and not Current(ui, drag.entry.region) then ui.kit:Cancel() end
+        P.ChatPreviewPaint.Refresh(ui)
+        local selected = ui.viewport._selectedHandle
+        for _, handle in ipairs(ui.handles) do
+            if handle.spec.prefix == "tab" and handle.region ~= ui.parts.tabGroup then handle._label = handle.region.Text:GetText() end
+            if not ui.kit.drag or ui.kit.drag.entry.region ~= handle then Anchor(handle) end
+        end
+        E.Select(ui, selected and selected:IsVisible() and selected or nil)
+    end
+
+    Scale = function(ui, handle)
+        local spec = handle.spec
+        local factor = spec.icon and 1 or spec.prefix == "tab" and (ui.parts.dockScale or 1) or ui.parts.nativeScale or 1
+        return ui.stage:GetEffectiveScale() * factor
+    end
     Open = function(ui, handle)
         if not handle then return false end
         local spec = handle.spec
-        local section = PAGE .. "_" .. spec.section
+        local section = "suite_chat" .. "_" .. spec.section
         local body = ui.ctx.chatSections and ui.ctx.chatSections[section]
         if body then
             P.EnsureSectionContent(body)
@@ -17,14 +35,14 @@ local function InitializeActions()
         end
         local bridge = M.SearchBridge
         if not bridge or not bridge.OpenSearchTarget then return body ~= nil end
-        local exact = P.Meta(PAGE, ID, spec.control, "setting", section)
-        local called, opened, focused = bridge.OpenSearchTarget(PAGE, "", nil, nil, {}, exact)
+        local exact = P.Meta("suite_chat", ID, spec.control, "setting", section)
+        local called, opened, focused = bridge.OpenSearchTarget("suite_chat", "", nil, nil, {}, exact)
         return called == true and opened == true and focused == true
     end
 
     Current = function(ui, handle)
         local token = handle.dragToken
-        if not token or token.width ~= ui.width or token.scale ~= ui.stage:GetEffectiveScale() then return false end
+        if not token or token.width ~= ui.width or token.scale ~= Scale(ui, handle) then return false end
         for _, key in ipairs(GEOMETRY) do
             if token.geometry[key] ~= P.Get(ID, key) then return false end
         end
@@ -117,7 +135,7 @@ local function SelectionBar(ui)
 
     if not M.PreviewSelectionBar then return end
     ui.selection = M.PreviewSelectionBar.Create(ui.viewport, {
-        Tr = Tr, Theme = function() return P.T end,
+        Tr = P.Tr, Theme = function() return P.T end,
         HandleList = function() return ui.handles end,
         HandleLabel = function(handle) return handle._label end,
         IsPlaced = function(handle) return handle.canMove and handle:IsVisible() and R.Allowed(handle.spec) end,
@@ -137,39 +155,27 @@ local function SelectionBar(ui)
     GuardAxis(ui, ui.selection.axisY.edit)
 end
 
-local function Refresh(ui)
-    if not ui.header:IsVisible() or not ui.ctx.wrapper:IsVisible() then return end
-    local drag = ui.kit.drag
-    if drag and not Current(ui, drag.entry.region) then ui.kit:Cancel() end
-    P.ChatPreviewPaint.Refresh(ui)
-    local selected = ui.viewport._selectedHandle
-    for _, handle in ipairs(ui.handles) do
-        if not ui.kit.drag or ui.kit.drag.entry.region ~= handle then Anchor(handle) end
-    end
-    E.Select(ui, selected and selected:IsVisible() and selected or nil)
-end
-
-local function Drag(ui, handle, phase)
-    if phase == "press" then
-        local spec = handle.spec
-        handle.dragToken = { current = P.ProfileGuard(), config = P.S.Config(ID),
-            x = P.Get(ID, spec.prefix .. "X"), y = P.Get(ID, spec.prefix .. "Y"),
-            moved = spec.icon and P.Get(ID, spec.prefix .. "Moved"),
-            width = ui.width, scale = ui.stage:GetEffectiveScale(), nativeEpoch = ui.parts.nativeEpoch, geometry = {} }
-        handle.dragToken.draw = { handle.followRegion:GetPoint(1) }
-        for _, key in ipairs(GEOMETRY) do handle.dragToken.geometry[key] = P.Get(ID, key) end
-        E.Select(ui, handle)
-    elseif phase == "done" then
-        handle.dragToken = nil
-    end
-    if phase == "stop" or phase == "cancel" then
-        if handle.dragToken then handle.follow(handle, 0, 0) end
-        Anchor(handle)
-        if phase == "cancel" then handle.dragToken = nil end
-    end
-end
-
 local function Interactions(ui)
+    local function Drag(ui, handle, phase)
+        if phase == "press" then
+            local spec = handle.spec
+            handle.dragToken = { current = P.ProfileGuard(), config = P.S.Config(ID),
+                x = P.Get(ID, spec.prefix .. "X"), y = P.Get(ID, spec.prefix .. "Y"),
+                moved = spec.icon and P.Get(ID, spec.prefix .. "Moved"),
+                width = ui.width, scale = Scale(ui, handle), nativeEpoch = ui.parts.nativeEpoch, geometry = {} }
+            handle.dragToken.draw = { handle.followRegion:GetPoint(1) }
+            for _, key in ipairs(GEOMETRY) do handle.dragToken.geometry[key] = P.Get(ID, key) end
+            E.Select(ui, handle)
+        elseif phase == "done" then
+            handle.dragToken = nil
+        end
+        if phase == "stop" or phase == "cancel" then
+            if handle.dragToken then handle.follow(handle, 0, 0) end
+            Anchor(handle)
+            if phase == "cancel" then handle.dragToken = nil end
+        end
+    end
+
     local function Add(ui, region, spec, priority)
         local parent = region:IsObjectType("FontString") and region:GetParent() or region
         local handle = CreateFrame("Button", nil, parent)
@@ -190,11 +196,15 @@ local function Interactions(ui)
         if spec.prefix == "tab" and region ~= ui.parts.tabGroup then handle._label = region.Text:GetText() end
         ui.kit:Add(handle, handle, function() return R.Read(ui, spec) end,
             handle.canMove and function(x, y, dragged) return Write(ui, handle, x, y, dragged) end or nil,
-            { select = false, follow = handle.follow, scale = function() return ui.stage:GetEffectiveScale() end,
+            { select = false, follow = handle.follow, scale = function() return Scale(ui, handle) end,
                 can = function() return handle.canMove and R.Allowed(spec) end })
         HM.SkipHistoryCheckpoint(handle)
     end
 
+    ui.addHandle, ui.dragHandle = Add, Drag
+end
+
+local function BindInteractions(ui)
     ui.host = P.Suite.PreviewKit.NewHost(nil, { frame = ui.viewport })
     local bindings = { ownerName = "MSUF_SuiteChatPreview_NudgeOwner", activeName = "MSUF_SuiteChatPreview_ActiveNudgeBox",
         buttonPrefix = "MSUF_SuiteChatPreview_Nudge", onClick = function(_, dx, dy) return ui.kit:Arrow(dx, dy) end }
@@ -209,16 +219,16 @@ local function Interactions(ui)
             end
         end,
         click = function(handle, _, moved) if not moved then E.Select(ui, handle, true) end end,
-        drag = function(handle, phase) Drag(ui, handle, phase) end,
+        drag = function(handle, phase) ui.dragHandle(ui, handle, phase) end,
         select = function(handle) E.Selected(ui, handle) end,
     })
     ui.handles = ui.kit.list
     for _, spec in ipairs(R.elements) do
         local region = spec.region and ui.parts[spec.region] or spec.icon and ui.parts.icons[spec.icon]
             or spec.prefix == "window" and ui.parts.sample or ui.parts.copy
-        Add(ui, region, spec, spec.prefix == "window" and 0 or spec.prefix == "messageText" and 2 or 4)
+        ui.addHandle(ui, region, spec, spec.prefix == "window" and 0 or spec.prefix == "messageText" and 2 or 4)
         if spec.prefix == "tab" then
-            for _, tab in ipairs(ui.parts.tabs) do Add(ui, tab, spec, 5) end
+            for _, tab in ipairs(ui.parts.tabs) do ui.addHandle(ui, tab, spec, 5) end
         end
     end
     SelectionBar(ui)
@@ -284,7 +294,7 @@ function E.Build(ctx, builder)
         GEOMETRY = { "lockWindowSize", "windowWidth", "windowHeight", "padding", "sidebarSide", "sidebarWidth",
             "sidebarGap", "scrollButtonPlace", "tabHeight", "tabPanelGap", "inputTop", "inputHeight", "sidebarPanel", "panelAlpha" }
     end
-    local header = P.W.FixedPreviewSection(ctx, builder, { title = Tr("Preview"), height = 310, gap = 8 })
+    local header = P.W.FixedPreviewSection(ctx, builder, { title = P.Tr("Preview"), height = 310, gap = 8 })
     if not header then return end
     local ui = { ctx = ctx, header = header, spec = { height = 176 }, targets = {},
         width = math.max(240, (HM.GetSectionWidth(header) or builder.width or 720) - 32) }
@@ -301,6 +311,8 @@ function E.Build(ctx, builder)
     ui.hint = K.Text(header, "Click to select; drag or use arrow keys; edit exact X/Y below.", 16, -270, ui.width)
     P.ChatPreviewPaint.Build(ui)
     Interactions(ui)
+    BindInteractions(ui)
+    R.BindSearch(ui)
     Lifecycle(ui)
     return ui
 end

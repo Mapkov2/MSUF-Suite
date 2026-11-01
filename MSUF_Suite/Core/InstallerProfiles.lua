@@ -38,8 +38,8 @@ end
 
 local function Sample(parent)
     local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize(104, 12)
-    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 388, -30)
+    frame:SetSize(104, 10)
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 388, -27)
     frame.edge = frame:CreateTexture(nil, "BACKGROUND")
     frame.edge:SetTexture("Interface\\Buttons\\WHITE8X8")
     frame.edge:SetAllPoints(frame)
@@ -50,7 +50,7 @@ local function Sample(parent)
     frame.fill = frame:CreateTexture(nil, "ARTWORK", nil, 1)
     frame.fill:SetTexture("Interface\\Buttons\\WHITE8X8")
     frame.fill:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
-    frame.fill:SetSize(64, 10)
+    frame.fill:SetSize(64, 8)
     frame.caption = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.caption:SetAllPoints(frame)
     frame.caption:SetText(Text("Preview"))
@@ -87,7 +87,10 @@ local function PaintPreviews(window, layout, look)
     PaintSample(window.forever.preview, Colors(forever, look))
     local modernDark = window.previewProfile("modernDark")
     PaintSample(window.modernDark.preview, Colors(modernDark, look))
-    local profile = layout == "modernDark" and modernDark or layout == "forever" and forever or classic
+    local blizzard = window.previewProfile("blizzard")
+    PaintSample(window.blizzard.preview, Colors(blizzard, look))
+    local profile = layout == "blizzard" and blizzard or layout == "modernDark" and modernDark
+        or layout == "forever" and forever or classic
     local keys = { "bgColor", "borderColor", "barColor", "leftColor" }
     for _, control in ipairs(window.colors) do
         local colors = Colors(profile, control.look)
@@ -108,22 +111,26 @@ function Picker.Build(window, label, card, button, style, chooseLayout, chooseLo
     window.modernDark = card(window, 36, 149, function() chooseLayout("modernDark") end)
     window.modernDark.title:SetText(Text("Modern Dark"))
     window.modernDark.detail:SetText(Text("Dark unit frames, class colors and square cooldown icons."))
-    for _, control in ipairs({ window.classic, window.forever, window.modernDark }) do
-        control:SetHeight(50)
-        control.title:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -3)
-        control.title:SetHeight(15)
-        control.detail:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -18)
-        control.detail:SetHeight(30)
+    window.blizzard = card(window, 36, 149, function() chooseLayout("blizzard") end)
+    window.blizzard.title:SetText(Text("MSUF Blizzard"))
+    window.blizzard.detail:SetText(Text("Gold portraits, centered cooldowns and a familiar Blizzard layout."))
+    for _, control in ipairs({ window.classic, window.forever, window.modernDark, window.blizzard }) do
+        control:SetHeight(40)
+        control.title:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -2)
+        control.title:SetHeight(14)
+        control.detail:SetPoint("TOPLEFT", control, "TOPLEFT", 16, -16)
+        control.detail:SetHeight(22)
     end
     window.previewProfile = previewProfile
     window.classic.preview, window.forever.preview = Sample(window.classic), Sample(window.forever)
     window.modernDark.preview = Sample(window.modernDark)
-    window.colorLabel = label(window, "GameFontNormalSmall", 36, -326, 508, 16)
+    window.blizzard.preview = Sample(window.blizzard)
+    window.colorLabel = label(window, "GameFontNormalSmall", 36, -337, 508, 16)
     window.colorLabel:SetText(Text("Colors"))
     window.colors, window.colorStyle = {}, style
     for index, choice in ipairs(COLORS) do
         local key = choice[1]
-        local control = button(window, 36 + (index - 1) * 85, 116, 80, Text(choice[2]),
+        local control = button(window, 36 + (index - 1) * 85, 108, 80, Text(choice[2]),
             function() chooseLook(key ~= "authored" and key or nil) end)
         control.look = key
         control.caption:SetSize(74, 28)
@@ -137,11 +144,11 @@ end
 
 function Picker.Show(window, shown, layout, look)
     window.colorChoice = look
-    local cards = Suite.Client.isForever and { window.forever, window.classic, window.modernDark }
-        or { window.classic, window.forever, window.modernDark }
+    local cards = Suite.Client.isForever and { window.forever, window.classic, window.modernDark, window.blizzard }
+        or { window.classic, window.forever, window.modernDark, window.blizzard }
     for index, card in ipairs(cards) do
         card:ClearAllPoints()
-        card:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 36, 283 - (index - 1) * 52)
+        card:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 36, 293 - (index - 1) * 42)
         card:SetShown(shown)
     end
     window.colorStyle(window.classic, layout == "classic")
@@ -150,6 +157,8 @@ function Picker.Show(window, shown, layout, look)
     window.forever.mark:SetText(layout == "forever" and Text("SELECTED") or Text("CHOOSE"))
     window.colorStyle(window.modernDark, layout == "modernDark")
     window.modernDark.mark:SetText(layout == "modernDark" and Text("SELECTED") or Text("CHOOSE"))
+    window.colorStyle(window.blizzard, layout == "blizzard")
+    window.blizzard.mark:SetText(layout == "blizzard" and Text("SELECTED") or Text("CHOOSE"))
     if shown then PaintPreviews(window, layout, look) end
     window.colorLabel:SetShown(shown)
     for _, control in ipairs(window.colors) do

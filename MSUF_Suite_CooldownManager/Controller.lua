@@ -26,6 +26,38 @@ local ReadGlobals, ReadViews, DecodeData = Settings.ReadGlobals, Settings.ReadVi
 local UpdateSpec = Events.UpdateSpec
 local first, optionsPreview = true, false
 
+-- An editor can inspect the module while it is off. Native catalog changes
+-- then only invalidate the snapshot; its next read rebuilds once, outside
+-- combat. No catalog queries, timers or runtime refreshes run in this watcher.
+local coldFrame, coldWatching, coldDirty
+local COLD_EVENTS = { "SPELLS_CHANGED", "TRAIT_CONFIG_UPDATED", "ACTIVE_PLAYER_SPECIALIZATION_CHANGED",
+    "COOLDOWN_VIEWER_DATA_LOADED", "COOLDOWN_VIEWER_TABLE_HOTFIXED", "COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED",
+    "PLAYER_EQUIPMENT_CHANGED", "PLAYER_ENTERING_WORLD", "SPELL_UPDATE_ICON" }
+local COLD_CALLBACKS = { "CooldownViewerSettings.OnPendingChanges", "CooldownViewerSettings.OnHide",
+    "CooldownViewerSettings.OnDataChanged" }
+local function InvalidateCold() coldDirty = true end
+local function WatchCold()
+    if coldWatching then return end
+    coldWatching, coldDirty = true, true
+    if not coldFrame then
+        coldFrame = S.CreateFrame("Frame")
+        coldFrame:SetScript("OnEvent", InvalidateCold)
+    end
+    for i = 1, #COLD_EVENTS do
+        local event = COLD_EVENTS[i]
+        if NS.Client.SupportsEvent(event) then coldFrame:RegisterEvent(event) end
+    end
+    for i = 1, #COLD_CALLBACKS do
+        EventRegistry:RegisterCallback(COLD_CALLBACKS[i], InvalidateCold, coldFrame)
+    end
+end
+local function ReleaseCold()
+    if not coldWatching then return end
+    coldWatching, coldDirty = false, true
+    coldFrame:UnregisterAllEvents()
+    for i = 1, #COLD_CALLBACKS do EventRegistry:UnregisterCallback(COLD_CALLBACKS[i], coldFrame) end
+end
+
 ------------------------------------------------------------------ preview mode
 local function PreviewChanged()
     dirty.resolve, dirty.cooldowns, dirty.effects, dirty.layout, dirty.visibility = true, true, true, true, true
@@ -45,12 +77,14 @@ end
 
 ------------------------------------------------------------------ lifecycle
 function M:Enable()
+    ReleaseCold()
     Events.EnterWorld()
     C.Layout.InvalidateScale()
     C.Resolve.SpellsChanged()
     first = true
     Settings.BeginCapture(self.config)
     C.Native.WatchApex(self.context)
+    self.context:Callback("CooldownViewerSettings.OnDataChanged", Events.OnDataChanged)
     self.context:Callback("CooldownViewerSettings.OnPendingChanges", Events.OnLayoutChanged)
     self.context:Callback("CooldownViewerSettings.OnHide", Events.OnLayoutChanged)
     -- The suite action bars started, stopped or changed their form pages:
@@ -140,10 +174,11 @@ end
 -- are in Exports.lua.
 
 -- A loaded but inactive module answers from a cold snapshot of the saved
--- settings; nothing is flushed while it is off. No catalog events run then,
--- so the Blizzard snapshot is rebuilt whenever the specialization moved.
+-- settings. Native changes mark it stale; repeated reads reuse it until an
+-- input moves. A read in combat leaves the stale work for the next safe read.
 function C.Cold()
     if M.active then return end
+    WatchCold()
     local config = S.Config(ID)
     if type(config) ~= "table" then return end
     ReadGlobals(config, false)
@@ -151,7 +186,12 @@ function C.Cold()
     DecodeData(config)
     UpdateSpec()
     local catalog = C.Catalog
-    if catalog.generation == 0 or catalog.specTag ~= C.state.specTag then catalog.Rebuild() end
+    if not NS.IsCombatLocked() and (coldDirty or catalog.generation == 0 or catalog.specTag ~= C.state.specTag) then
+        local generation = catalog.generation
+        catalog.Rebuild()
+        -- Not-ready data (or a raising read) must never become a clean cache.
+        coldDirty = catalog.generation == generation
+    end
     if dirty.resolve then C.state.entryGen = (C.state.entryGen or 0) + 1 end
     ResetDirty()
 end

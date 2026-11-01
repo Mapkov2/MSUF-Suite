@@ -3703,6 +3703,1550 @@
       "evidence": "Owner-requested General > Macros workshop; MSUF_Suite/Core/Macros/{Model,Compile,Templates,Store}.lua and MSUF_Suite_Options/Pages/Macros*.lua preserve native creation, target rules and /msufmacro on Retail and Forever. Dedicated compiler, runtime and menu contracts cover replacements.",
       "reason": "Legacy standalone macro dialog moved into the rule/sequence/consumable workshop; old instructions/status labels replaced by matching controls and native-storage checks.",
       "date": "2026-10-31"
+    },
+    {
+      "category": "locale",
+      "item": "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, move its button with X/Y, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on. The message tools leave the Combat Log alone (its own settings can add a timestamp to every line); its lines still wake the idle fade. Saved history belongs to this character.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/Chat.lua replaces only the copy-position instruction with drag its button in the preview; all ten locale packs carry the replacement. tools/tests/suite_chat_preview_contract.lua covers all 20 coordinate targets, preview movement, history and section resets.",
+      "reason": "Owner requested removal of duplicate accordion X/Y fields; the same copy action and settings remain available through the interactive preview. This exact help key was renamed to describe its current editing surface.",
+      "date": "2026-10-31"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar10LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar10RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar11LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar11RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar12LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar12RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar1LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar1RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar2LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar2RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar3LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar3RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar4LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar4RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar5LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar5RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar6LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar6RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar7LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar7RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar8LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar8RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar9LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:actionbars.bar9RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar10LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar10RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar11LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar11RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar12LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar12RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar1LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar1RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar2LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar2RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar3LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar3RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar4LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar4RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar5LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar5RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar6LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar6RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar7LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar7RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar8LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar8RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar9LeftEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:actionbars.bar9RightEndcap\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar10LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar10LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar10LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar10LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar10LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar10LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar10RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar10RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar10RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar10RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar10RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar10RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar11LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar11LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar11LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar11LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar11LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar11LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar11RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar11RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar11RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar11RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar11RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar11RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar12LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar12LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar12LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar12LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar12LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar12LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar12RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar12RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar12RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar12RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar12RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar12RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar1LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar1LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar1LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar1LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar1LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar1LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar1RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar1RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar1RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar1RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar1RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar1RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar2LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar2LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar2LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar2LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar2LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar2LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar2RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar2RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar2RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar2RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar2RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar2RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar3LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar3LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar3LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar3LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar3LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar3LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar3RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar3RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar3RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar3RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar3RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar3RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar4LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar4LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar4LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar4LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar4LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar4LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar4RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar4RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar4RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar4RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar4RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar4RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar5LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar5LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar5LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar5LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar5LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar5LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar5RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar5RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar5RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar5RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar5RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar5RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar6LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar6LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar6LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar6LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar6LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar6LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar6RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar6RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar6RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar6RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar6RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar6RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar7LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar7LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar7LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar7LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar7LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar7LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar7RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar7RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar7RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar7RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar7RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar7RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar8LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar8LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar8LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar8LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar8LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar8LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar8RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar8RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar8RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar8RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar8RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar8RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar9LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar9LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar9LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar9LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar9LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar9LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar9RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar9RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar9RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar9RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"forever:actionbars.bar9RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar9RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar10LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar10LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar10LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar10LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar10LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar10LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar10RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar10RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar10RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar10RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar10RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar10RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar11LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar11LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar11LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar11LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar11LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar11LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar11RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar11RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar11RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar11RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar11RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar11RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar12LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar12LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar12LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar12LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar12LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar12LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar12RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar12RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar12RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar12RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar12RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar12RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar1LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar1LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar1LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar1LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar1LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar1LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar1RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar1RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar1RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar1RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar1RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar1RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar2LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar2LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar2LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar2LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar2LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar2LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar2RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar2RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar2RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar2RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar2RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar2RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar3LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar3LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar3LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar3LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar3LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar3LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar3RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar3RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar3RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar3RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar3RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar3RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar4LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar4LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar4LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar4LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar4LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar4LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar4RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar4RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar4RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar4RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar4RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar4RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar5LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar5LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar5LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar5LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar5LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar5LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar5RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar5RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar5RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar5RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar5RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar5RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar6LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar6LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar6LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar6LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar6LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar6LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar6RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar6RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar6RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar6RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar6RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar6RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar7LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar7LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar7LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar7LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar7LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar7LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar7RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar7RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar7RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar7RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar7RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar7RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar8LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar8LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar8LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar8LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar8LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar8LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar8RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar8RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar8RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar8RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar8RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar8RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar9LeftEndcapSize\",\"requiresChoice\",[[\"key\",\"bar9LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar9LeftEndcapX\",\"requiresChoice\",[[\"key\",\"bar9LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar9LeftEndcapY\",\"requiresChoice\",[[\"key\",\"bar9LeftEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar9RightEndcapSize\",\"requiresChoice\",[[\"key\",\"bar9RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar9RightEndcapX\",\"requiresChoice\",[[\"key\",\"bar9RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_traits",
+      "item": "[\"retail:actionbars.bar9RightEndcapY\",\"requiresChoice\",[[\"key\",\"bar9RightEndcap\"],[\"values\",[[2,true],[3,true]]]]]",
+      "basis": "owner",
+      "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
+      "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
+      "date": "2026-11-01"
     }
   ]
 }

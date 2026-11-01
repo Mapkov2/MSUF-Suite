@@ -117,7 +117,7 @@ local function Build(ctx)
         })
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_tools", Tr("Chat tools"),
         P.SectionRules(ID, "tools"), {
-            help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, move its button with X/Y, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on. The message tools leave the Combat Log alone (its own settings can add a timestamp to every line); its lines still wake the idle fade. Saved history belongs to this character.",
+            help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, drag its button in the preview, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on. The message tools leave the Combat Log alone (its own settings can add a timestamp to every line); its lines still wake the idle fade. Saved history belongs to this character.",
             extra = function(body, y, width) return ToolsExtra(ctx, body, y, width) end,
         })
     BuildMessageSections(ctx, b)

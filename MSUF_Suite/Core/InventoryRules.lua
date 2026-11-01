@@ -11,11 +11,18 @@ local COMPARISONS = { ["="] = true, [":"] = true, [">"] = true, ["<"] = true, ["
 local MAX_NUMBER = 10000000
 
 -- Enum.ItemBind (ItemConstantsDocumentation, Retail and Forever) and
--- Enum.ItemQuality.Poor. Both account bindings are Warbound; Bind on Equip and
--- Warbound until equipped are those states only while the item is not bound.
+-- Enum.ItemQuality.Poor. SlotCache supplies the current binding for live items;
+-- callers with only metadata retain the generic enum fallback.
 local BIND_ON_EQUIP, BIND_WARBOUND_UNTIL_EQUIPPED = 2, 9
 local WARBOUND = { [7] = true, [8] = true }
 local QUALITY_POOR = 0
+
+local function Binding(item)
+    if item.binding ~= nil then return item.binding end
+    local kind = item.bindType
+    if item.bound == true and (kind == BIND_ON_EQUIP or kind == BIND_WARBOUND_UNTIL_EQUIPPED) then return nil end
+    return kind
+end
 
 local FLAGS = {
     bound = function(item) return item.bound == true end,
@@ -24,9 +31,9 @@ local FLAGS = {
     equipment = function(item)
         return item.equipLoc and item.equipLoc ~= "" and item.equipLoc ~= "INVTYPE_NON_EQUIP_IGNORE"
     end,
-    boe = function(item) return item.bindType == BIND_ON_EQUIP and item.bound ~= true end,
-    wue = function(item) return item.bindType == BIND_WARBOUND_UNTIL_EQUIPPED and item.bound ~= true end,
-    warbound = function(item) return WARBOUND[item.bindType] == true end,
+    boe = function(item) return Binding(item) == BIND_ON_EQUIP end,
+    wue = function(item) return Binding(item) == BIND_WARBOUND_UNTIL_EQUIPPED end,
+    warbound = function(item) return WARBOUND[Binding(item)] == true end,
     junk = function(item) return item.quality == QUALITY_POOR end,
     set = function(item) return item.setNames ~= nil end,
 }

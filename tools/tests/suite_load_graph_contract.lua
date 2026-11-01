@@ -149,7 +149,11 @@ do
     owner.Suite.Config("runSummary").enabled = false
     owner.Suite.Config("announcements").enabled = false
     -- Secure ActionBars and the XP bar have their own contract fixtures.
-    if flavor == "Forever" then owner.Suite.Config("actionbars").enabled = false end
+    if flavor == "Forever" then
+        assert(owner.Suite.Config("glimmer").enabled, "Forever Glimmer must start enabled")
+        owner.Suite.Config("glimmer").enabled = false -- rendering has its own native-surface fixture
+        owner.Suite.Config("actionbars").enabled = false
+    end
     owner.Suite.Config("xpBar").enabled = false
 end
 frames[1]:callback("PLAYER_LOGIN")

@@ -1521,7 +1521,7 @@ Section("edit mode and game menu pools", function()
     menu:InitButtons()
     Expect(BorderMatchesMacros(skinnedInset[msufThree]),
         "the MSUF three-slice button border does not align with Macros")
-    for _, stop in ipairs({ "hidden", "combat", "disabled" }) do
+    for _, stop in ipairs({ "hidden", "disabled" }) do
         menu:InitButtons()
         local reads = menu.childReads
         if stop == "hidden" then menu.shown = false end

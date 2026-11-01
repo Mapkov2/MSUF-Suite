@@ -1,6 +1,6 @@
 local _, P = ...
 local S, K, Tr = P.S, P.PreviewCanvas, P.Tr
-local EXPORTS = { xpBar = "DrawExperienceBarPreview", skyriding = "DrawSkyridingPreview",
+local EXPORTS = { glimmer = "DrawGlimmerPreview", xpBar = "DrawExperienceBarPreview", skyriding = "DrawSkyridingPreview",
     actionTracker = "DrawActionTrackerPreview", battleRes = "DrawBattleResPreview", enemyCastStack = "DrawEnemyCastStackPreview" }
 local RETAIL = { skyriding = true, battleRes = true, enemyCastStack = true }
 local function GlossGate(rule)
@@ -54,7 +54,7 @@ local function Paint(ui)
     P.SetTranslatedText(ui.status, "")
     local config = S.Config(ui.id)
     local native = UIParent:GetEffectiveScale() / ui.stage:GetEffectiveScale()
-    ui.viewport.scale = native * config.scale / 100
+    ui.viewport.scale = native * (config.scale or 100) / 100
     local host = S[EXPORTS[ui.id]](ui.stage, config, ui.sample, ui.viewport)
     host:ClearAllPoints()
     host:SetPoint("CENTER", ui.stage, "CENTER")
@@ -70,7 +70,7 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
     y = y - math.max(16, math.ceil(title:GetStringHeight() or 16)) - 6
     local note = P.Text(parent, "Sample values. Changes update here even when the feature is off.", 16, y, room)
     y = y - math.max(28, math.ceil(note:GetStringHeight() or 28)) - 8
-    local height = id == "xpBar" and 90 or 230
+    local height = id == "xpBar" and 90 or id == "glimmer" and 190 or 230
     local stage = CreateFrame("Frame", nil, parent)
     stage:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
     stage:SetSize(room, height)
@@ -92,7 +92,10 @@ function P.BuildQoLIndicatorPreview(ctx, parent, id, width, y)
         stage:RegisterEvent("PLAYER_REGEN_ENABLED")
         ui.Paint()
     end)
-    stage:SetScript("OnHide", function() stage:UnregisterAllEvents() end)
+    stage:SetScript("OnHide", function()
+        stage:UnregisterAllEvents()
+        if id == "glimmer" and S.HideGlimmerPreview then S.HideGlimmerPreview(stage) end
+    end)
     stage:SetScript("OnEvent", ui.Paint)
     P.M.TrackRefresh(ctx, ui.Paint)
     ctx.qolIndicatorPreviews = ctx.qolIndicatorPreviews or {}

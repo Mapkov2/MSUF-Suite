@@ -220,6 +220,7 @@ local function SpellSearch()
     P.M.RegisterSearchTargetResolver = function(_, fn) resolver = fn; return true end
     P.AppendToolSearchActions, P.AppendGraphicsSearchRows = function() end, function() end
     P.QualityOfLifeSearchFeatures = {}
+    assert(originalLoad(root .. "/MSUF_Suite_Options/Pages/DamageMeterPreviewProperties.lua"))("test", P)
     assert(originalLoad(root .. "/MSUF_Suite_Options/Menu/SearchActions.lua"))("test", P)
     local rows, pages = {}, {}
     for _, page in ipairs(P.pages) do pages[page.key] = page end

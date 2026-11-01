@@ -142,11 +142,27 @@ end
 local AURA_UNIT = { nil, "player", "target", "both" }
 
 local function RefreshAuraUnit(entry, choices)
+    if choices and EntryFill.ApplyReplacement(entry, entry.ov or EMPTY) then return end
     entry.auraIDs = AuraSet(entry.auraIDs, entry.base, entry.override, entry.tooltip, entry.linked)
     local unit = AuraUnit(entry.base, entry.override, entry.tooltip, entry.linked, entry.id, entry.auraIDs)
     entry.auraHelpful = unit == "player"
     entry.unit = choices and AURA_UNIT[(entry.ov or EMPTY).auraUnit] or unit
     if not entry.unit then entry.unit = unit end
+end
+
+-- The chosen aura only changes the native overlay. Cooldown identity,
+-- charges and timing continue to belong to the original spell.
+function EntryFill.ApplyReplacement(entry, choices)
+    if entry.family ~= COOLDOWN_FAMILY or (entry.src ~= "b" and entry.src ~= "s") then return end
+    local id = choices.replaceAura
+    if not Public(id) or type(id) ~= "number" or id <= 0 or id >= 2147483648 or id % 1 ~= 0 then return end
+    if not Catalog.SpellName(id) then return end
+    entry.auraIDs = AuraSet(entry.auraIDs, id)
+    entry.hasAura = true
+    entry.auraHelpful = not Harmful(id)
+    entry.selfAura = entry.auraHelpful
+    entry.unit = AURA_UNIT[choices.auraUnit] or (entry.auraHelpful and "player" or "target")
+    return true
 end
 
 local function FillBlizzard(entry, rec)

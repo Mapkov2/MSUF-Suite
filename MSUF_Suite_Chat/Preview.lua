@@ -14,7 +14,7 @@ local function Surface(parts)
     local visual = { frame = parts.sample, panel = C.Fill(parts.sample, "BACKGROUND"),
         headerRule = C.Fill(parts.sample, "ARTWORK"), edges = Edges(parts.sample) }
     parts.visual = visual
-    parts.strip = C.Fill(parts.sample, "BACKGROUND")
+    parts.strip = C.Fill(parts.tabGroup, "BACKGROUND")
     parts.sidebarFill = C.Fill(parts.sidebar, "BACKGROUND")
     parts.sidebarFill:SetAllPoints(parts.sidebar)
     parts.copyFill = C.Fill(parts.copy, "BACKGROUND")
@@ -24,9 +24,10 @@ end
 
 local function Tabs(parts, c, top)
     parts.tabGroup:ClearAllPoints()
-    parts.tabGroup:SetPoint("BOTTOMLEFT", parts.sample, "TOPLEFT", 0, 3)
+    parts.tabGroup:SetScale(parts.dockScale or 1)
+    parts.tabGroup:SetPoint("BOTTOMLEFT", parts.sample, "TOPLEFT", parts.dockX or 0, parts.dockY or 3)
     C.OffsetNative(parts.previewOwner, parts.tabGroup, c.tabX or 0, c.tabY or 0)
-    parts.tabGroup:SetSize(parts.sample:GetWidth(), c.tabHeight)
+    parts.tabGroup:SetSize(parts.dockWidth or parts.sample:GetWidth(), parts.dockHeight or c.tabHeight)
     for index, tab in ipairs(parts.tabs) do
         local visual = tab.visual
         if not visual then
@@ -35,18 +36,25 @@ local function Tabs(parts, c, top)
             tab.visual = visual
         end
         local native = parts.nativeTabs and parts.nativeTabs[index]
+        tab:SetShown(not parts.nativeTabCount or index <= parts.nativeTabCount)
+        tab:SetScale(native and native.scale or 1)
+        tab.Text:ClearAllPoints()
+        tab.Text:SetPoint("CENTER", tab, "CENTER", native and native.textX or 0, native and native.textY or -5)
         tab:SetSize(native and native.width or 60, native and native.height or 32)
         visual.tabWidthOwned, visual.tabHeightOwned = nil, nil
         C.ApplyTabGeometry(parts.previewOwner, visual, tab)
         tab:ClearAllPoints()
-        if index == 1 then
+        if native and native.x then
+            tab:SetPoint("BOTTOMLEFT", parts.tabGroup, "BOTTOMLEFT", native.x / (native.scale or 1), native.y / (native.scale or 1))
+        elseif index == 1 then
             tab:SetPoint("BOTTOMLEFT", parts.tabGroup, "BOTTOMLEFT", 0, 0)
         else
             tab:SetPoint("LEFT", parts.tabs[index - 1], "RIGHT", 1 + c.tabGap, 0)
         end
         C.PlaceTabMarker(visual.tabLine, tab, c)
         C.Tint(visual.tabLine, c.accentColor, c.accentAlpha)
-        C.ColorTab(parts.previewOwner, visual, index == 1)
+        C.ColorTab(parts.previewOwner, visual, native and native.selected or not native and index == 1)
+        if native and native.r and not C.HasTabStyle(c) then tab.Text:SetTextColor(native.r, native.g, native.b, native.a) end
     end
 end
 
@@ -95,11 +103,12 @@ local function Messages(parts)
     local point, opposite = parts.insertTop and "TOPLEFT" or "BOTTOMLEFT", parts.insertTop and "BOTTOMLEFT" or "TOPLEFT"
     for index, line in ipairs(parts.messageLines) do
         line:ClearAllPoints()
-        if index == 1 then
-            line:SetPoint(point, parts.sample, point, 0, 0)
+        if index == 1 then line:SetPoint(point, parts.sample, point, 0, 0)
         else
-            line:SetPoint(point, parts.messageLines[index - 1], opposite, 0, (parts.messageSpacing or 0) * (parts.insertTop and -1 or 1))
+            line:SetPoint(point, parts.messageLines[index - 1], opposite, 0,
+                (parts.messageSpacing or 0) * (parts.insertTop and -1 or 1))
         end
+        line:SetSpacing(parts.messageSpacing or 0)
         line:SetText(index <= count and texts[count - index + 1] or "")
         line:SetTextColor(1, 1, 1, 1)
         line:SetShown(index <= count)
@@ -128,6 +137,13 @@ function S.ChatPaintMenuPreview(parts, c)
     parts.previewOwner = parts.previewOwner or PreviewOwner()
     parts.previewOwner.config = c
     Messages(parts)
+    if parts.quickHeight and parts.quickHeight > 0 then
+        parts.quickBar = parts.quickBar or CreateFrame("Frame", nil, parts.sample)
+        parts.quickBar:SetHeight(parts.quickHeight)
+        parts.sample.CombatLogQuickButtonFrame = parts.quickBar
+    else
+        parts.sample.CombatLogQuickButtonFrame = false
+    end
     local top = C.HeaderTop(c, parts.sample)
     C.PreviewPanel(parts.previewOwner, visual, parts.sample, top)
     parts.strip:ClearAllPoints()
@@ -146,6 +162,54 @@ function S.ChatPaintMenuPreview(parts, c)
     parts.fill, parts.fadeLeft, parts.fadeRight = visual.panel, visual.gradientLeft, visual.gradientRight
 end
 
+-- Fit the already-painted regions together; every element keeps its runtime scale.
+function S.ChatPreviewBounds(parts, stage)
+    local sample, visual = parts.sample, parts.visual
+    local stageScale, sampleScale = stage:GetEffectiveScale(), sample:GetEffectiveScale()
+    local sx, sy = sample:GetLeft(), sample:GetTop()
+    if not S.Finite(stageScale) or stageScale <= 0 or not S.Finite(sampleScale)
+        or not S.Finite(sx) or not S.Finite(sy) then return end
+    sx, sy = sx * sampleScale / stageScale, sy * sampleScale / stageScale
+    local left, right, top, bottom = 0, sample:GetWidth() * sampleScale / stageScale, 0, -sample:GetHeight() * sampleScale / stageScale
+    local function Include(region)
+        if not region or not region:IsShown() then return end
+        local owner = region:IsObjectType("Texture") and region:GetParent() or region
+        local scale = owner:GetEffectiveScale() / stageScale
+        local x, y, width, height = region:GetRect()
+        if not S.Finite(x) or not S.Finite(y) or not S.Finite(width) or not S.Finite(height) then return end
+        left, right = math.min(left, x * scale - sx), math.max(right, (x + width) * scale - sx)
+        bottom, top = math.min(bottom, y * scale - sy), math.max(top, (y + height) * scale - sy)
+    end
+    Include(visual.panel)
+    Include(visual.gradientLeft)
+    Include(visual.gradientRight)
+    Include(parts.strip)
+    Include(parts.sidebar)
+    Include(parts.input)
+    Include(parts.inputFill)
+    Include(parts.copy)
+    for _, edge in ipairs(visual.edges) do Include(edge) end
+    for _, edge in ipairs(parts.inputEdges) do Include(edge) end
+    if parts.sidebar:IsShown() then for _, icon in ipairs(parts.icons) do Include(icon) end end
+    for _, tab in ipairs(parts.tabs) do Include(tab) end
+    return left, right, top, bottom
+end
+
 function S.ChatPaintPreviewSidebarHover(parts, entry)
     C.RefreshSidebarButton(parts.previewOwner, entry)
+end
+
+function S.ChatFitPreview(ui)
+    local parts = ui.parts
+    local left, right, top, bottom = S.ChatPreviewBounds(parts, ui.stage)
+    if not left then return end
+    local width, height = right - left + 24, top - bottom + 24
+    local scale = math.min(1, (ui.width - 24) / width, 216 / height)
+    local native = parts.nativeScale or 1
+    ui.stage:SetSize(width, height)
+    parts.sample:ClearAllPoints()
+    parts.sample:SetPoint("TOPLEFT", ui.stage, "TOPLEFT", (12 - left) / native, -(12 + top) / native)
+    ui.stage:SetScale(scale)
+    ui.canvasHeight = height * scale
+    ui.viewport:SetHeight(ui.canvasHeight)
 end

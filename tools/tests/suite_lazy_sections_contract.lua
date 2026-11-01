@@ -447,6 +447,11 @@ P.Gates = P.Gates or {}
 -- The area header (NameplatesWorkspace.lua) needs host widgets these stubs
 -- lack: the page then shows every section, as on an older host.
 Load("Pages/NameplatesWorkspace.lua")
+-- The page registers a cold exact-target preparer through the host adapter.
+P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
+    assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
+    return true
+end
 Load("Pages/Nameplates.lua")
 -- Every tabbed nameplate accordion (Pages/Nameplates.lua SECTIONS) saved closed.
 local TABBED = { "enemy", "roleColors", "signals", "friendly", "auras" }

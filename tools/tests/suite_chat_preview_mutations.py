@@ -16,7 +16,7 @@ expected = {
     "reset": "reset did not restore automatic sidebar layout",
     "profile": "profile epoch revived a stale drag",
     "legacy": "legacy preview click did not open its accordion",
-    "inputProfile": "pending coordinate text wrote into another profile",
+    "accordion": "coordinate still lives in an accordion",
     "axisProfile": "pending toolbar text wrote into another profile",
 }
 for case, message in expected.items():

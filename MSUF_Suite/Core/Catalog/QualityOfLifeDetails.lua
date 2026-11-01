@@ -43,6 +43,41 @@ B.Section("flightTimer", "flight_route", "Flight route timer", {
     Number("x", "Horizontal position", 0, -4000, 4000), Number("y", "Vertical position", 180, -3000, 3000),
 })
 
+-- The Forever nameplate controller supplies the native soft-interact anchor.
+B.Module("glimmer", {
+    title = "Glimmer (Forever)",
+    prepareConfig = function(config)
+        -- Portable per-client stamp: Retail normalization must not consume it.
+        if NS.Client.isForever and config.foreverDefaultApplied ~= true then
+            config.enabled, config.foreverDefaultApplied = true, true
+        end
+    end,
+    description = "Highlight the nearby herb, ore or quest object selected by the game's interact target.",
+    optIn = true, defaultEnabled = NS.Client.isForever == true, page = "suite_qualityOfLife",
+    available = function()
+        if not NS.Client.isForever then return false, "Glimmer is available only in WoW Forever" end
+        -- These APIs belong to Forever's loaded native nameplate controller.
+        return true
+    end,
+    cvars = { SoftTargetInteract = true, SoftTargetNameplateInteract = true,
+        SoftTargetIconGameObject = true, SoftTargetInteractRange = true },
+})
+B.Add("glimmer", Bool("foreverDefaultApplied", "Enable module", false)).hidden = true
+B.Section("glimmer", "glimmer_objects", "Glimmer objects", {
+    Bool("ore", "Ore", true), Bool("herb", "Herbs", true), Bool("quest", "Quest objects", true),
+    Bool("other", "Other interactable objects", false),
+    Bool("hideInstances", "Hide in instances", true),
+    Number("range", "Interact target range", 15, 5, 20),
+})
+B.Section("glimmer", "glimmer_appearance", "Glimmer appearance", {
+    Choice("style", "Effect", 1, { "Glow", "Ring", "Sparkles", "Beam", "Brackets" }),
+    B.Color("color", "Effect color", "ffd166"),
+    Number("size", "Effect size", 80, 24, 200, 4),
+    Number("opacity", "Effect opacity", 85, 10, 100, 5),
+    Number("offsetY", "Vertical offset", -20, -120, 120, 2),
+    Bool("pulse", "Pulse effect", true),
+})
+
 local function RetailExtras()
     if not NS.Client.modernEquipment then return false, "This feature is available only in Retail" end
     return true

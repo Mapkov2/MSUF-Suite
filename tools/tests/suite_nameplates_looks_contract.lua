@@ -436,6 +436,11 @@ P.ModuleCard = function() end
 local resets = {}
 P.RuleSection = function(_, _, _, _, sectionId, _, _, opts) resets[sectionId] = opts.resetKeys; return {} end
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesWorkspace.lua"))("MSUF_Suite_Options", P)
+-- The page registers a cold exact-target preparer through the host adapter.
+P.Suite.HostBridge.RegisterSearchTargetResolver = function(_, name, resolver)
+    assert(name == "MSUF_Suite.NameplatesTabs" and type(resolver) == "function")
+    return true
+end
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Nameplates.lua"))("MSUF_Suite_Options", P)
 page.build({})
 local function Lists(keys, key)

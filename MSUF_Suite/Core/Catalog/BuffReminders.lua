@@ -32,11 +32,14 @@ NS.BuffReminderDemons = {
 --   ally  the player's own aura on a group member (casts, auras and specs as
 --         for aura; the icon casts on the player's target).
 -- specs is a set of specialization IDs. WoW Forever keeps only the reminders
--- whose spells have one rank (Shadowform, the warrior stances).
+-- whose spells are available; ranked plans resolve aura and click names.
 local PALADIN_AURAS = { 465, 317920, 32223 }
 local WARRIOR_STANCES = { 386164, 386208, 386196 }
 local FOREVER_STANCES = { 2457, 71, 2458 }
 local SHAMAN_SHIELDS = { 192106, 52127 }
+-- Forever SpellName 1.60.1.70009: Water Shield is 408510, not Retail's 52127.
+local FOREVER_SHIELDS = { 408510, 324 }
+local FOREVER_IMBUES = { 8232, 8024, 8017, 8033 }
 local ELEMENTAL, ENHANCEMENT, RESTORATION = { [262] = true }, { [263] = true }, { [264] = true }
 local SHIELD_SPECS = { [262] = true, [263] = true }
 NS.BuffReminderClassReminders = {
@@ -59,9 +62,13 @@ NS.BuffReminderClassReminders = {
             { slot = 16, spell = 318038, equip = "weapon", specs = ELEMENTAL },
             { slot = 16, spell = 382021, equip = "weapon", specs = RESTORATION },
             { slot = 17, spell = 462757, equip = "shield", specs = SHIELD_SPECS },
-            { slot = 17, spell = 457481, equip = "shield", specs = RESTORATION } } } },
+            { slot = 17, spell = 457481, equip = "shield", specs = RESTORATION } } },
+        forever = { kind = "imbue", ranked = true, imbues = {
+            { slot = 16, spells = FOREVER_IMBUES, equip = "weapon" },
+            { slot = 17, spells = FOREVER_IMBUES, equip = "weapon" } } } },
     { key = "classShamanShield", label = "Shaman: Lightning Shield or Water Shield", class = "SHAMAN",
-        retail = { kind = "aura", casts = SHAMAN_SHIELDS, auras = SHAMAN_SHIELDS, prefer = { [264] = 52127 } } },
+        retail = { kind = "aura", casts = SHAMAN_SHIELDS, auras = SHAMAN_SHIELDS, prefer = { [264] = 52127 } },
+        forever = { kind = "aura", ranked = true, casts = FOREVER_SHIELDS, auras = FOREVER_SHIELDS } },
     { key = "classEarthShield", label = "Shaman: Earth Shield on an ally", class = "SHAMAN",
         retail = { kind = "ally", casts = { 974 }, auras = { 974 }, specs = RESTORATION } },
     { key = "classSourceOfMagic", label = "Evoker: Source of Magic on an ally", class = "EVOKER",

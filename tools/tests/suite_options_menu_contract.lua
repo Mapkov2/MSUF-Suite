@@ -2776,6 +2776,13 @@ assert((hudSections.raidControl ~= nil) == (flavor == "Mainline")
         or hudSections.raidControl.meta.sectionId == "suite_hud_objectives_raid"),
     "raid encounter option must resolve to its own exact accordion")
 do
+    -- Inventory every tab after visiting it; unopened tab controls are lazy.
+    -- Restore the original view for the interaction assertions below.
+    for _, view in ipairs(contexts.suite_nameplates.tabControls) do
+        local selected = view.segment.value
+        for _, value in ipairs(view.segment.values) do view.segment:Choose(value.value) end
+        view.segment:Choose(selected)
+    end
     local plateControls = {}
     for _, widget in ipairs(contexts.suite_nameplates.widgets) do
         if widget.meta and widget.meta.settingKey then plateControls[widget.meta.settingKey] = true end
@@ -3403,7 +3410,7 @@ local qolFeaturesByCategory = {
     mapTravel = {
         "waypointLists_saved_waypoints",
         "mapLandingShortcuts_expansion_shortcuts",
-        "skyriding_flight_hud", "waypoints_waypoint_command", "flightTimer_flight_route",
+        "skyriding_flight_hud", "waypoints_waypoint_command", "flightTimer_flight_route", "glimmer_glimmer_objects",
     },
     interfaceChat = {
         "notificationHistory_notice_history",
@@ -3491,7 +3498,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == (flavor == "Forever" and 76 or 77) and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == (flavor == "Forever" and 77 or 78) and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated: expected " .. expectedQolFeatureCount .. ", rendered " .. actualQolFeatureCount)
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")

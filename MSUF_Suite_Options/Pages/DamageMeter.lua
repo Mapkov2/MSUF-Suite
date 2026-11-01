@@ -160,7 +160,8 @@ local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = ID, title = "Damage meter", height = 264,
         tabs = {
             { id = "shared", label = "General settings", sections = "damageMeter_module look general details" },
-            { id = "appearance", label = "Appearance", sections = "bars window surfaces borders iconBorder separators" },
+            { id = "appearance", label = "Appearance", sections = "bars window surfaces borders iconBorder separators "
+                .. "button_settings button_reset button_session button_type button_target" },
             { id = "text", label = "Text", sections = "text namesFont valuesFont headerFont detailsFont timerFont" },
             { id = "timer", label = "Combat timer", sections = "timer timerDock" },
             { id = "window", label = "Window settings", sections = "windows" },
@@ -190,6 +191,7 @@ local function Build(ctx)
                   end or nil })
         end
     end
+    P.MeterPreviewProperties.BuildSearchSections(ctx, b)
     BuildWindows(ctx, b)
     -- Windows above the configured count keep their settings but stay hidden.
     P.Gates[ID] = function(rule, key)

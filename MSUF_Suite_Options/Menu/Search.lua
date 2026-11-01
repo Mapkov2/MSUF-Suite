@@ -233,6 +233,7 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
     -- A rule without a section (the module switch) names its module when the
     -- page holds several.
     local sectionId, targetTitle, targetExact = RuleTarget(page, spec, rule)
+    if spec.id == "chat" and rule.key:match("[XY]$") then sectionId = page.key .. "_preview" end
     local section = feature and category and (Tr(category.title) .. " > " .. Tr(feature.title))
         or targetTitle and Tr(targetTitle)
         or not template and (rule.sectionTitle and Tr(rule.sectionTitle)

@@ -262,6 +262,10 @@ local function Endcap(ui, c, p, side, color)
     cap:ClearAllPoints()
     cap:SetPoint("CENTER", ui.canvas, side == "Left" and "LEFT" or "RIGHT",
         direction * size * .6 + c[p .. side .. "EndcapX"], c[p .. side .. "EndcapY"])
+    if style == Suite.ActionBarEnum.ENDCAP.BLIZZARD then
+        Suite.PaintBlizzardActionBarEndcap(cap, side, size)
+        return
+    end
     local diamond = style == Suite.ActionBarEnum.ENDCAP.DIAMOND
     for i, piece in ipairs(cap.pieces) do
         piece:SetShown(i <= (diamond and 2 or 4))

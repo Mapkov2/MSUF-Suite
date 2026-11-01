@@ -5,9 +5,9 @@ function R.Initialize()
     if R.elements then return end
     R.elements = {
         { prefix = "window", label = "Chat window", section = "window", control = "lockWindowPosition", gate = "lockWindowPosition" },
-        { prefix = "messageText", label = "Message text", section = "text", control = "messageTextX", region = "textHit", followRegion = "lines" },
-        { prefix = "tab", label = "Tabs and accent", section = "tabs", control = "tabX", region = "tabGroup" },
-        { prefix = "input", label = "Input line", section = "input", control = "inputX", region = "input" },
+        { prefix = "messageText", label = "Message text", section = "text", control = "fontSize", region = "textHit", followRegion = "lines" },
+        { prefix = "tab", label = "Tabs and accent", section = "tabs", control = "tabHeight", region = "tabGroup" },
+        { prefix = "input", label = "Input line", section = "input", control = "inputHeight", region = "input" },
         { prefix = "copyButton", label = "Copy", section = "tools", control = "copyMessages", gate = "copyMessages" },
     }
     local ICON_LABELS = { "Friends", "Channels and voice", "Text to speech", "Chat menu", "Newest messages" }
@@ -59,61 +59,61 @@ function R.Initialize()
 
 end
 
--- Keep every catalog/reset/search identity. Only the numeric presentation
--- changes: exact inputs replace coordinate sliders in their original section.
+-- Coordinate settings keep their identities and reset scope, while their only
+-- editing surface is the shared preview selection bar.
 function R.CoordinateSection(ctx, builder, section, title, rules, opts)
-    local function Input(ctx, body, rule, section, x, y, width)
-        local spec = R.keys[rule.key]
-        local current, config = P.ProfileGuard(), P.S.Config(ID)
-        local input = P.M.BindTextInputAt(ctx, body, P.Tr(rule.label), x, y, width,
-            function() return tostring(P.Get(ID, rule.key)) end,
-            function(text)
-                if not current or not current() or config ~= P.S.Config(ID) or not body:IsVisible() then return end
-                local value = tonumber(text)
-                if not P.Suite.Finite(value) or not P.RuleEnabled(ID, rule) then return end
-                local vx, vy = P.Get(ID, spec.prefix .. "X"), P.Get(ID, spec.prefix .. "Y")
-                if rule.key == spec.prefix .. "X" then vx = value else vy = value end
-                R.Write(spec, vx, vy)
-            end, true, P.Meta(PAGE, ID, rule.key, "setting", section))
-        input:HookScript("OnEditFocusGained", function() current, config = P.ProfileGuard(), P.S.Config(ID) end)
-        input:HookScript("OnHide", function() current = nil end)
-        P.HM.SetSearchTargetPrepare(input, function()
-            if ctx.chatPreviewUI then P.ChatPreview.Select(ctx.chatPreviewUI, spec.prefix) end
-            return true
-        end)
-        P.HM.SkipHistoryCheckpoint(input)
-        return { rule = rule, widget = input }
-    end
-
     local visible, positions = {}, {}
     for _, rule in ipairs(rules) do
-        if R.keys[rule.key] then positions[#positions + 1] = rule
+        if R.keys[rule.key] then positions[#positions + 1] = rule.key
         else visible[#visible + 1] = rule end
     end
-    ctx.chatSections = ctx.chatSections or {}
-    if #positions == 0 then
-        local body = P.RuleSection(ctx, builder, PAGE, ID, section, title, rules, opts)
-        ctx.chatSections[section] = body
-        return body
-    end
-    local options = {}
-    for key, value in pairs(opts or {}) do options[key] = value end
-    local extra = options.extra
-    options.resetKeys = {}
-    for _, rule in ipairs(positions) do options.resetKeys[#options.resetKeys + 1] = rule.key end
-    options.extra = function(body, y, width)
-        local entries, columns = {}, width >= 420 and 2 or 1
-        local cell = (width - (columns - 1) * 16) / columns
-        for index, rule in ipairs(positions) do
-            local slot = index - 1
-            entries[#entries + 1] = Input(ctx, body, rule, section, 16 + (slot % columns) * (cell + 16),
-                y - math.floor(slot / columns) * 58, cell)
-        end
-        P.GateControls(ctx, ID, entries)
-        y = y - math.ceil(#positions / columns) * 58
-        return extra and extra(body, y, width) or y
+    local options = opts
+    if #positions > 0 then
+        options = {}
+        for key, value in pairs(opts or {}) do options[key] = value end
+        options.resetKeys = positions
+        for _, key in ipairs(opts and opts.resetKeys or {}) do positions[#positions + 1] = key end
     end
     local body = P.RuleSection(ctx, builder, PAGE, ID, section, title, visible, options)
+    ctx.chatSections = ctx.chatSections or {}
     ctx.chatSections[section] = body
     return body
 end
+
+-- Noninteractive anchors preserve individual search identities without
+-- constructing a second set of controls, labels or refresh callbacks.
+function R.BindSearch(ui)
+    for key, spec in pairs(R.keys) do
+        local rule = P.catalog[ID].rules[key]
+        local target = CreateFrame("Frame", nil, ui.header)
+        local axis = key:sub(-1) == "X" and "axisX" or "axisY"
+        target:SetAllPoints(ui.selection and ui.selection[axis] or ui.viewport)
+        local function Prepare()
+            if P.Combat() or not ui.header:IsVisible() or not ui.ctx.wrapper:IsVisible() then return false end
+            P.ChatPreview.Select(ui, spec.prefix)
+            return true
+        end
+        local meta = P.Meta(PAGE, ID, key, "setting", PAGE .. "_preview")
+        P.HM.SetSearchTargetPrepare(target, Prepare)
+        P.RegisterWorkspaceSearch(target, meta, rule, "suiteWorkspace", Prepare, P.Tr(rule.label))
+    end
+end
+
+local function ResolvePosition(page, target)
+    if page ~= PAGE or not target then return end
+    R.Initialize()
+    local key = (target.settingKey or ""):match("^msufsuite%.chat%.(.+)$")
+    if not key and target.controlId then
+        for candidate in pairs(R.keys) do
+            if P.Meta(PAGE, ID, candidate, "setting").controlId == target.controlId then key = candidate break end
+        end
+    end
+    if not R.keys[key] then return end
+    local prepared = {}
+    for name, value in pairs(target) do prepared[name] = value end
+    prepared.controlId = P.Meta(PAGE, ID, key, "setting").controlId
+    prepared.settingKey, prepared.sectionId = "msufsuite.chat." .. key, PAGE .. "_preview"
+    prepared.prepareKind, prepared.prepareValue = "suiteWorkspace", key
+    return page, prepared
+end
+P.Suite.HostBridge.RegisterSearchTargetResolver(P.M, "MSUF_Suite.ChatPosition", ResolvePosition)

@@ -1613,9 +1613,34 @@ assert(stackGlow.value.text == "Off" and stackColor.value.text == "Off" and not 
 local trackOn = pop.rows.auraUnit
 assert(trackOn and trackOn.shown and trackOn.label.text == "Track on" and trackOn.choice.text == "Automatic"
     and not trackOn.reset.shown and trackOn.label.textColor[1] ~= 0.2, "a cooldown that shows its buff offers Track on, Automatic")
-assert(trackOn.points[1][5] == pop.rows.showAura.points[1][5] - 26 and stackGlow.points[1][5] == trackOn.points[1][5] - 26,
-    "Track on sits under Show active buff duration, right before Glow at stacks")
+local replacement = pop.rows.replaceAura
+assert(replacement and replacement.shown and replacement.label.text == "Replacement buff",
+    "cooldown entries offer a replacement buff")
+assert(replacement.points[1][5] < pop.rows.showAura.points[1][5]
+    and trackOn.points[1][5] < replacement.points[1][5]
+    and stackGlow.points[1][5] == trackOn.points[1][5] - 26,
+    "replacement selection sits before Track on and stack controls")
 assert(Page.POP_X + trackOn.choice.width <= resetLeft, "the Track on choice runs under the reset button")
+do
+    local nativeAura=pop.hasAura
+    pop.hasAura=false
+    Page.PaintPopover()
+    assert(not trackOn.shown, "an unlinked cooldown offers no aura unit yet")
+    replacement.edit:SetText("Arcane Intellect")
+    Fire(replacement.edit, "OnTextChanged", true)
+    Fire(replacement.edit, "OnEnterPressed")
+    pop.hasAura=false
+    Page.PaintPopover()
+    assert(Page.SpellField("b1", "replaceAura")==1459 and trackOn.shown,
+        "chosen buff does not expose its tracking controls")
+    Fire(replacement.reset,"OnClick")
+    pop.hasAura=false
+    Page.PaintPopover()
+    assert(Page.SpellField("b1", "replaceAura")==nil and not trackOn.shown,
+        "reset did not clear replacement tracking")
+    pop.hasAura=nativeAura
+    Page.PaintPopover()
+end
 -- The pandemic window per spell (owner request 2026-10-20): the last stack
 -- row (buffs, and cooldowns that show their buff), On or Off against the
 -- bar's switch; reset follows the bar again.

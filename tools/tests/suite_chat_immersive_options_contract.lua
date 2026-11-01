@@ -11,6 +11,7 @@ assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules
 for _, file in ipairs({ "Shared", "Appearance", "MinimalChrome", "Unread", "Sidebar", "Positions", "CompleteMessages", "Window", "PreviewSnapshot", "Preview" }) do
     assert(loadfile(root .. "/MSUF_Suite_Chat/" .. file .. ".lua"))("MSUF_Suite_Chat", runtime)
 end
+GENERAL_CHAT_DOCK = {}
 local menuHook = hooksecurefunc
 hooksecurefunc = function(name, callback)
     if name == "FCF_SetChatWindowFontSize" or name == "FCFDock_SelectWindow" or name == "FCFDock_UpdateTabs" then return end

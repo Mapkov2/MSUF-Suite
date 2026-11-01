@@ -194,10 +194,13 @@ local function ChosenFont(key)
 end
 
 function S.ChatStylePreviewFonts(parts, fonts, c)
-    local tab = ChosenFont(c.tabFont) or fonts.tab
-    local size = c.tabFontSize > 0 and c.tabFontSize or fonts.tabSize
-    parts.label:SetFont(tab, size, fonts.tabFlags)
-    parts.otherTab:SetFont(tab, size, fonts.tabFlags)
+    for index, tab in ipairs(parts.tabs) do
+        local native = parts.nativeTabs and parts.nativeTabs[index]
+        local path = ChosenFont(c.tabFont) or native and native.font or fonts.tab
+        local size = c.tabFontSize > 0 and c.tabFontSize or native and native.fontSize or fonts.tabSize
+        tab.Text:SetFont(path, size, native and native.fontFlags or fonts.tabFlags)
+        if native and native.label then tab.Text:SetText(native.label) end
+    end
     local path = ChosenFont(c.font) or fonts.message
     local outline = OUTLINES[c.fontOutline] or fonts.messageFlags
     local shadow = c.fontRendering ~= 3 and (c.fontShadow == 2 or c.fontShadow == 1 and fonts.shadowAlpha > 0)
@@ -285,9 +288,9 @@ local function ApplyTabVisual(self, visual, tab, selected, chosenFont)
         visual.tabEdges = {}
         for i = 1, 4 do visual.tabEdges[i] = Fill(tab, "BORDER") end
     end
+    ApplyTabFont(self, visual.tabLabel, chosenFont)
     C.ApplyTabGeometry(self, visual, tab)
     M.tabs[tab], visual.tab = visual, tab
-    ApplyTabFont(self, visual.tabLabel, chosenFont)
     local line = visual.tabLine
     C.PlaceTabMarker(line, tab, c)
     Tint(line, c.accentColor, c.accentAlpha)

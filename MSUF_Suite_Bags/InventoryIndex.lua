@@ -194,6 +194,9 @@ function Index.ReadButton(index, button, info, quest, version, bag, slot, bankTy
         -- upgrade ranks, qualities and bank scopes never share a stack.
         item.mergeKey = link .. (item.bound and "\031b\031" or "\031u\031") .. (bankType or "bags")
         if not item.loaded then ApplyMetadata(index, item) end
+        item.binding = Slots.Binding(bag, slot, item.bindType) or false
+        -- Retry unreadable instance state without slowing the cached common path.
+        if item.binding == false and item.loaded then item.version = nil end
     end
     index.items[#index.items + 1] = item
     if item.filtered then index.filtered = index.filtered + 1 end
@@ -303,6 +306,8 @@ function Index.Refresh(index, itemID)
         local item = index.items[i]
         if item.itemID == itemID and not item.loaded then
             ApplyMetadata(index, item)
+            item.binding = Slots.Binding(item.bag, item.slot, item.bindType) or false
+            if item.binding == false and item.loaded then item.version = nil end
             changed = changed or item.loaded
         end
     end

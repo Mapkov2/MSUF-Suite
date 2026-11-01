@@ -175,6 +175,7 @@ local function AddQualityOfLifeRows(Add)
 end
 
 function P.AppendSearchActionRows(rows, pagesByKey)
+    P.MeterPreviewProperties.AppendSearchRows(rows, pagesByKey)
     -- extra: optional { words = { ... }, section = "shown section" }.
     local function Add(id, key, label, sectionId, classification, kind, feature, extra)
         local spec = P.catalog[id]

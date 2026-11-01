@@ -328,6 +328,11 @@ local function TrackNativeAssets(button, owner)
     return actionKind
 end
 
+local function MarkApplied(state)
+    state.enabled = true
+    state.requestGeneration = (state.requestGeneration or 0) + 1
+end
+
 local function MarkWindowAction(state, actionKind)
     state.windowAction = true
     state.actionKind = actionKind
@@ -349,6 +354,7 @@ local function ApplyButtonNow(button, owner, kind, spec)
         local action, actionReason = WindowActionSkin.Apply(button, owner, actionKind)
         if not action then return nil, actionReason or "window action unavailable" end
         MarkWindowAction(state, actionKind)
+        MarkApplied(state)
         return state
     end
 
@@ -362,7 +368,7 @@ local function ApplyButtonNow(button, owner, kind, spec)
     end
     ApplyCosmetics(button, state, kind, spec)
 
-    state.enabled = true
+    MarkApplied(state)
     return state
 end
 
@@ -378,32 +384,26 @@ local function ApplySearchNow(searchBox, owner, spec)
         return nil, surfaceReason or "surface unavailable"
     end
     ApplyCosmetics(searchBox, state, "searchBox", spec)
-    state.enabled = true
+    MarkApplied(state)
     return state
 end
 
--- Runs apply(target, a, b, c) now, or once after combat under a per-control
--- key. Only the combat path allocates.
-local function RunOrDefer(target, allowImplicitProtected, operation, apply, a, b, c)
+-- Only genuinely unprotected controls pass during combat. Their cosmetic
+-- refresh stays on the opening/update path and needs no deferred job.
+local function RunForControl(target, allowImplicitProtected, apply, a, b, c)
     if not target then return nil, "invalid control" end
     if IsProtected(target, allowImplicitProtected) then
         return nil, "protected control"
     end
     if type(target.CreateTexture) ~= "function" then return nil, "invalid control" end
-    if not NS.IsCombatLocked() then
-        return apply(target, a, b, c)
-    end
-    local _, reason = NS.CombatGate.RunOrDefer("controlskin:" .. tostring(target), function()
-        apply(target, a, b, c)
-    end)
-    return nil, reason or operation
+    return apply(target, a, b, c)
 end
 
 local emptySpec = {}
 
 local function ApplyButtonKind(button, owner, spec, kind)
     spec = spec or emptySpec
-    return RunOrDefer(button, spec.allowImplicitProtected, "apply", ApplyButtonNow, owner, kind, spec)
+    return RunForControl(button, spec.allowImplicitProtected, ApplyButtonNow, owner, kind, spec)
 end
 
 function ControlSkin.ApplyThreeSliceButton(button, owner, spec)
@@ -433,7 +433,7 @@ end
 
 function ControlSkin.ApplySearchBox(searchBox, owner, spec)
     spec = spec or emptySpec
-    return RunOrDefer(searchBox, spec.allowImplicitProtected, "apply", ApplySearchNow, owner, spec)
+    return RunForControl(searchBox, spec.allowImplicitProtected, ApplySearchNow, owner, spec)
 end
 
 -- Button skins follow a native window action (returns nil and its kind) or
@@ -495,7 +495,7 @@ function ControlSkin.Refresh(target, active)
     if not state then
         return false, "unknown control"
     end
-    local refreshed, reason = RunOrDefer(target, AllowsImplicit(state), "refresh", RefreshNow, state, active)
+    local refreshed, reason = RunForControl(target, AllowsImplicit(state), RefreshNow, state, active)
     if refreshed == nil then
         return false, reason
     end
@@ -521,7 +521,7 @@ local function EnableNow(target, state, active)
         end
     end
     ApplyCosmetics(target, state, state.kind, state.cosmeticSpec)
-    state.enabled = true
+    MarkApplied(state)
     return true
 end
 
@@ -530,7 +530,7 @@ function ControlSkin.Enable(target, active)
     if not state then
         return false, "unknown control"
     end
-    local enabled, reason = RunOrDefer(target, AllowsImplicit(state), "enable", EnableNow, state, active)
+    local enabled, reason = RunForControl(target, AllowsImplicit(state), EnableNow, state, active)
     if enabled == nil then
         return false, reason
     end
@@ -558,7 +558,7 @@ function ControlSkin.Disable(target)
     if not state then
         return false, "unknown control"
     end
-    local disabled, reason = RunOrDefer(target, AllowsImplicit(state), "disable", DisableNow, state)
+    local disabled, reason = RunForControl(target, AllowsImplicit(state), DisableNow, state)
     if disabled == nil then
         return false, reason
     end
@@ -576,16 +576,18 @@ local function RefreshOwnerNow(owner)
     end
 end
 
-local function DisableOwnerNow(owner)
+local function DisableOwnerNow(owner, requests)
     local set = ControlSkin.owners[owner]
     if not set then return end
     for target in pairs(set) do
         local state = ControlSkin.states[target]
-        if state and not IsProtected(target, AllowsImplicit(state)) then
+        if state and (not requests or requests[target] == state.requestGeneration)
+            and not IsProtected(target, AllowsImplicit(state)) then
             DisableNow(target, state)
+            set[target] = nil
         end
     end
-    ControlSkin.owners[owner] = nil
+    if next(set) == nil then ControlSkin.owners[owner] = nil end
 end
 
 -- Owner-wide work shares one key per owner, so a later request replaces a
@@ -595,8 +597,17 @@ local function RunOwnerOperation(owner, operation)
         operation(owner)
         return true
     end
+    -- Snapshot only a deferred release. A control reapplied in combat keeps
+    -- its newer request; the owner's other controls still release normally.
+    local requests
+    if operation == DisableOwnerNow then
+        requests = {}
+        for target in pairs(ControlSkin.owners[owner]) do
+            requests[target] = ControlSkin.states[target].requestGeneration
+        end
+    end
     local ran, reason = NS.CombatGate.RunOrDefer("controlskin-owner:" .. tostring(owner), function()
-        operation(owner)
+        operation(owner, requests)
     end)
     return ran == true, reason
 end

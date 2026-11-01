@@ -13,7 +13,7 @@ local scale = 1
 local scalePreset = "custom"
 local page = 1
 local frame
-local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {} }
+local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {} }
 -- Above MSUF menu popups (DIALOG level 400); see CreateWindow.
 local INSTALLER_FRAME_LEVEL = 500
 
@@ -69,6 +69,7 @@ local function AppliedLook()
 end
 
 local function SkinPreset()
+    if selected == "blizzard" then return Suite.BlizzardSkinCompact end
     if selected == "modernDark" then return Suite.ModernDarkSkinCompact end
     if selected == "classic" then return Suite.RetailProfileSkinCompact end
     return (selected == "forever" or Suite.Client.isForever)
@@ -85,6 +86,7 @@ local function FactoryProfile(layout, authored)
         or (Suite.Client.isForever or layout == "forever")
             and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
     if layout == "modernDark" then compact = Suite.ModernDarkModuleCompact end
+    if layout == "blizzard" then compact = Suite.BlizzardModuleCompact end
     local cacheKey = layout .. (look or "authored") .. compact
     local profile = decodedFactories[cacheKey]
     if profile then return profile end
@@ -226,8 +228,9 @@ local function ApplyForever(profile, finish)
 end
 
 local function ApplyModernDark(profile, finish)
-    local frames = Suite.HostBridge.ModernDarkFrameCompact()
-    return Suite.SuiteProfiles.InstallFactory(NextFactoryName("Modern Dark"), frames, profile,
+    local frames = selected == "blizzard" and Suite.BlizzardFramesCompact or Suite.HostBridge.ModernDarkFrameCompact()
+    local name = selected == "blizzard" and "MSUF Blizzard" or "Modern Dark"
+    return Suite.SuiteProfiles.InstallFactory(NextFactoryName(name), frames, profile,
         Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and SkinPreset() or nil,
         AppliedLook(), finish, { screenHeight = false, preserveSkinLayout = true,
             frameColors = Suite.InstallerFrameColors.Choices() })
@@ -263,7 +266,7 @@ function Installer.Apply()
     local ok
     if keepFrames then
         ok, reason = ApplySuiteOnly(profile, ApplyScale)
-    elseif selected == "modernDark" then
+    elseif selected == "modernDark" or selected == "blizzard" then
         ok, reason = ApplyModernDark(profile, ApplyScale)
     elseif selected == "forever" then
         ok, reason = ApplyForever(profile, ApplyScale)
@@ -298,7 +301,9 @@ function Installer.Apply()
         Suite.RootDB.installation.newCharacterProfileOwned = true
     end
     Suite.SuiteProfiles.EnsureNewCharacterProfile()
-    if selected ~= "classic" and selected ~= "modernDark" then Suite.SuiteProfiles.EnsureRetailResourceStack(true) end
+    if selected ~= "classic" and selected ~= "modernDark" and selected ~= "blizzard" then
+        Suite.SuiteProfiles.EnsureRetailResourceStack(true)
+    end
     NotifyInstallerFinished()
     return true
 end
@@ -662,7 +667,7 @@ local function PaintReview(f)
     local profile = PreviewProfile(f)
     f.review[1].title:SetText(Text("Profile"))
     f.review[1].detail:SetText(Text("%s · Colors: %s · %s"):format(
-        selected == "modernDark" and Text("Modern Dark")
+        selected == "blizzard" and Text("MSUF Blizzard") or selected == "modernDark" and Text("Modern Dark")
             or selected == "forever" and Text("MSUF Suite Forever") or Text("Modern MSUF Suite"),
         Suite.InstallerProfiles.LookLabel(chosenLook),
         keepFrames and Text("Current MSUF frames") or Text("Factory MSUF frames")))
@@ -700,7 +705,7 @@ function Installer.Open()
         and active.suite.modules.cooldownManager
     useScale, scale, scalePreset, page = false, 1, "custom", 1
     useRaidEssentials = not (current and current.raidEssentials == false)
-    moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {} }
+    moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {} }
     Build().moduleTab = "modules"
     frame.moduleFocus, frame.moduleFocusPending, frame.layoutPreview.selectedModule = nil, nil, nil
     -- A reopened window still shows the last session's slider position.

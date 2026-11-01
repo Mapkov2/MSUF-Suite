@@ -40,13 +40,12 @@ local function File(path, addon, ns)
         parent = { "ChatPreview.lua", 'region:IsObjectType("FontString") and region:GetParent() or region', 'region' },
         static = { "ChatPreviewPositions.lua", '    if not spec.prefix then return 0, 0 end', '' },
         clipping = { "ChatPreview.lua", 'ui.canvas:SetClipsChildren(true)', 'ui.canvas:SetClipsChildren(true) ui.viewport:SetClipsChildren(true)' },
-        resize = { "ChatPreview.lua", 'if not token or token.width ~= ui.width or token.scale ~= ui.stage:GetEffectiveScale() then', 'if not token then' },
+        resize = { "ChatPreview.lua", 'if not token or token.width ~= ui.width or token.scale ~= Scale(ui, handle) then', 'if not token then' },
         origin = { "ChatPreviewPositions.lua", 'if spec.icon and not P.Get(ID, spec.prefix .. "Moved") then', 'if false then' },
         reset = { "ChatPreviewPositions.lua", 'if spec.icon then values[prefix .. "Moved"] = false end', '' },
         profile = { "ChatPreview.lua", 'token.current() and token.config == P.S.Config(ID)', 'true' },
         legacy = { "ChatPreview.lua", 'if P.W.FocusCollapsibleSection then P.W.FocusCollapsibleSection(body, { flash = true }) end', '' },
-        inputProfile = { "ChatPreviewPositions.lua",
-            'if not current or not current() or config ~= P.S.Config(ID) or not body:IsVisible() then return end', '' },
+        accordion = { "ChatPreviewPositions.lua", 'if R.keys[rule.key] then positions', 'if false then positions' },
         axisProfile = { "ChatPreview.lua", 'if Valid() then return handler(...) end', 'if true then return handler(...) end' },
     }
     local patch = patches[mutation]
@@ -87,6 +86,33 @@ for _, file in ipairs({ "Shared", "Appearance", "MinimalChrome", "Unread", "Side
 end
 if arg[4] == "positions" then return { runtime = runtime, env = env, Suite = Suite, world = world, c = c } end
 Load("MSUF_Suite_Options", P)
+-- Cold provider rows must agree with the preview-only coordinate controls,
+-- while searching for a whole section still opens that section's settings.
+do
+    local sections = {
+        [P.Tr("Tabs and accent")] = "suite_chat_tabs",
+        [P.Tr("Input line")] = "suite_chat_input",
+        [P.Tr("Message text")] = "suite_chat_text",
+    }
+    local positions, found = {}, {}
+    Check(not M.cache.suite_chat, "cold Chat search test started after page construction")
+    for _, row in ipairs(P.SearchRows()) do
+        if row.pageKey == "suite_chat" then
+            if row.settingKey and row.settingKey:match("^msufsuite%.chat%..+[XY]$") then
+                Check(row.sectionId == "suite_chat_preview", "cold Chat coordinate missed preview: " .. row.settingKey)
+                positions[row.settingKey] = true
+            elseif row.kind == "section" and sections[row.label] then
+                Check(row.sectionId == sections[row.label], "Chat section search was redirected to preview: " .. row.label)
+                found[row.label] = true
+            end
+        end
+    end
+    local count = 0
+    for _ in pairs(positions) do count = count + 1 end
+    Check(count == 20, "cold Chat provider omitted coordinate targets")
+    for label in pairs(sections) do Check(found[label], "cold Chat provider omitted section: " .. label) end
+    Check(not M.cache.suite_chat, "cold Chat provider built the page")
+end
 Check(P.ChatPreview ~= nil, "Chat interactive preview is missing")
 local ui, build = nil, P.ChatPreview.Build
 P.ChatPreview.Build = function(...)
@@ -114,7 +140,8 @@ local function Exact(key, section)
 end
 for key, spec in pairs(R.keys) do
     local input = Exact(key, spec.section)
-    Check(input:IsObjectType("EditBox"), "coordinate is still a slider: " .. key)
+    Check(ui.viewport._selectedHandle == ui.targets[spec.prefix], "exact search did not select preview target: " .. key)
+    Check(input:GetParent() == ui.header, "coordinate still lives in an accordion: " .. key)
     P.HM.GetSearchTargetPrepare(input)()
     Check(ui.viewport._selectedHandle == ui.targets[spec.prefix], "search preparation did not select preview target: " .. key)
 end
@@ -249,6 +276,16 @@ Check(P.Set("chat", "sidebarPanel", false), "sidebar off failed")
 mw:RunTimers()
 Check(not parts.sidebar:IsShown() and not R.Write(icon.spec, 1, 1), "hidden sidebar remains editable")
 Check(not next(runtime.Chat.M.visuals) and not next(runtime.Chat.M.tabs), "sample leaked into native state")
+Exact("sidebarButton1X", "sidebar")
+Check(not P.Get("chat", "sidebarPanel"), "position search enabled the sidebar")
+Check(ui.viewport._selectedHandle == icon, "disabled sidebar position is not selected in the preview")
+for key, spec in pairs(R.keys) do
+    local meta = P.Meta("suite_chat", "chat", key, "setting", "suite_chat_" .. spec.section)
+    meta.settingKey = nil
+    local called, opened, focused = bridge.OpenSearchTarget("suite_chat", "", nil, nil, {}, meta)
+    mw:RunTimers()
+    Check(called and opened and focused, "saved control-only position target failed: " .. key)
+end
 local function FocusEdit(input, text)
     input:GetScript("OnEditFocusGained")(input)
     input:SetText(text)
@@ -257,14 +294,15 @@ local function Enter(input)
     input:GetScript("OnEnterPressed")(input)
     mw:RunTimers()
 end
-local input = Exact("copyButtonX", "tools")
+Exact("copyButtonX", "tools")
+local input = ui.selection.axisX.edit
 FocusEdit(input, "123")
 Check(Suite.Database.Create("chat-preview-input", true), "input profile fixture could not be created")
 Check(Suite.Database.Activate("chat-preview-input"), "input profile fixture could not be activated")
 mw:RunTimers()
 local preserved = P.Get("chat", "copyButtonX")
 Enter(input)
-Check(P.Get("chat", "copyButtonX") == preserved, "pending coordinate text wrote into another profile")
+Check(P.Get("chat", "copyButtonX") == preserved, "pending toolbar text wrote into another profile")
 FocusEdit(input, "-17")
 Enter(input)
 Check(P.Get("chat", "copyButtonX") == -17, "fresh numeric input failed after profile change")
@@ -353,6 +391,16 @@ Check(tx == -23 and ty == 22, "combat repaint lost the saved sample tab position
 tx, ty = Point(parts.input)
 Check(tx == -5 + 31 and ty == -15, "combat repaint lost the saved sample input position")
 combat = false
+
+for _, body in pairs(ui.ctx.chatSections) do P.EnsureSectionContent(body) end
+mw:RunTimers()
+for _, widget in ipairs(world.widgets.frames) do
+    local meta = M.RuntimeControlCatalog.GetForWidget(widget)
+    local key = meta and (meta.settingKey or ""):match("^msufsuite%.chat%.(.+)$")
+    if key and R.keys[key] then
+        Check(widget:GetParent() == ui.header, "coordinate still lives in an accordion: " .. key)
+    end
+end
 
 print("Chat interactive preview " .. flavor .. ": " .. checks .. " checks passed")
 

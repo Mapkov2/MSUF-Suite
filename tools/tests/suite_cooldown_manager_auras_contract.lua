@@ -4478,6 +4478,67 @@ do (function()
     C_Spell.IsSpellHarmful=oldHarmful
     NS.Client.isForever=previousForever
 end)() end
+do (function()
+    -- A selected replacement reaches the real AuraContainer slot on the
+    -- original cooldown icon, with native duration/icon bindings intact.
+    local catalog = { records = {
+        [412001] = { id=412001, spell=412002, family=1, linked={412003},
+            known=true, selfAura=true, hasAura=true },
+    }, Num=function(v) return v end, RecordTexture=function(r) return r.spell end,
+        RecordName=function() return "Cooldown" end, SpellName=function() return "Buff" end }
+    local private={NS=NS,Suite=S,CDM={Const=C.Const,EMPTY=C.EMPTY,wipe=wipe,
+        Catalog=catalog,Presets={CONSUMABLES={}}}}
+    assert(loadfile(root.."/MSUF_Suite_CooldownManager/EntryFill.lua"))("MSUF_Suite_CooldownManager",private)
+    local fill, entry = private.CDM.EntryFill, {key="b412001",ov={showAura=true}}
+    local function Slot(rec)
+        for k,e in pairs(rec.entry) do
+            if e==entry and rec.on[k] then return rec.keys[k] end
+        end
+        error("no active replacement slot")
+    end
+    local oldRange,oldHarmful=C_Spell.SpellHasRange,C_Spell.IsSpellHarmful
+    C_Spell.SpellHasRange=function() return false end
+    C_Spell.IsSpellHarmful=function() return false end
+    COMBAT,ACCESS,AURAS_SECRET,FRIENDLY=false,true,false,false
+    C.state.preview=false
+    for _,version in ipairs({true,false}) do
+        A.ReleaseAll()
+        V125=version
+        C.views.ess=View("ess",1)
+        assert(fill.Fill(entry,entry.key))
+        entry.icon,entry.slot=Icon(),"ess"
+        for _,id in ipairs({412004,412005}) do
+            fill.ApplyReplacement(entry,{replaceAura=id})
+            Plan("ess",1,{entry});A.Sync("ess")
+            local native=assert(Live("ess","player",true),"replacement has no native overlay")
+            local data=R[native]
+            local key=Slot(C.AuraContainers.live.ess.over.player)
+            local slot=assert(data.slots[key])
+            assert(slot.cand.includeSpellIDs[id] and Count(slot.cand.includeSpellIDs)==1,
+                "replacement did not replace the native candidate set")
+            local button=R[Acquired(native,key)]
+            assert(button.allPoints==entry.icon and button.bind.icon and button.bind.text and button.bind.cooldown,
+                "replacement lost native icon, swipe, text or original anchor")
+            -- The native client controls visibility on aura loss; it keeps
+            -- the parent cooldown icon independent of the aura slot.
+            local buttonObject=Acquired(native,key)
+            R[buttonObject].shown=false
+            assert(not R[buttonObject].shown and entry.icon:IsShown(),
+                "aura loss hid the underlying cooldown icon")
+            R[buttonObject].shown=true
+        end
+        local icon=entry.icon
+        assert(fill.Fill(entry,entry.key))
+        entry.icon,entry.slot=icon,"ess"
+        Plan("ess",1,{entry});A.Sync("ess")
+        local key=Slot(C.AuraContainers.live.ess.over.player)
+        local restored=R[Live("ess","player",true)].slots[key].cand.includeSpellIDs
+        assert(restored[412003] and not restored[412004] and not restored[412005],
+            "clearing the replacement did not restore Blizzard's linked buff")
+    end
+    A.ReleaseAll()
+    C_Spell.SpellHasRange,C_Spell.IsSpellHarmful=oldRange,oldHarmful
+end)() end
 -- After the contract's timer setup: the cases with live timer rows.
 -- A bar's sample row in the preview hides a skinned stand-in's skin without
 -- forgetting it: closing the preview in combat shows the stand-in's skin

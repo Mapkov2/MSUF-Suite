@@ -15,6 +15,12 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_Bags/SlotCache.lua",
+   "kind": "client",
+   "reason": "Retail and Forever use C_Item.IsBoundToAccountUntilEquip in Mainline/ContainerFrame.lua. The capability check retains generic enum-only badges and search when that API is absent; suite_bags_contract and the older inventory fixtures exercise that fallback, while suite_bags_binding_contract exercises the native instance result and secrets.",
+   "symbol": "C_Item.IsBoundToAccountUntilEquip"
+  },
+  {
    "file": "MSUF_Suite/Core/API.lua",
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
@@ -751,18 +757,6 @@
    "kind": "state",
    "reason": "the addon's own SavedVariables table of learned demon looks: nil until the first look is learned (saved variables arrive after the files ran); suite_buff_reminders_restored_contract covers the empty start",
    "symbol": "looks (= MSUFSuiteDemonLooks)"
-  },
-  {
-   "file": "MSUF_Suite_Chat/PreviewSnapshot.lua",
-   "kind": "state",
-   "reason": "Blizzard's current dock selection can be nil before a frame is selected, as in Chat/Shared.lua and Sidebar.lua. The read-only preview tries the dock selection, then SELECTED_DOCK_FRAME, then ChatFrame1; without a reference window it returns no snapshot.",
-   "symbol": "SELECTED_DOCK_FRAME"
-  },
-  {
-   "file": "MSUF_Suite_Chat/PreviewSnapshot.lua",
-   "kind": "state",
-   "reason": "Read-only native dock reference for the menu snapshot, not a client API capability probe. The guard permits an absent dock reference and falls back to SELECTED_DOCK_FRAME then ChatFrame1; it neither creates nor changes native UI state.",
-   "symbol": "dock (= GENERAL_CHAT_DOCK)"
   },
   {
    "file": "MSUF_Suite_Chat/Shared.lua",
@@ -3091,6 +3085,12 @@
    "kind": "lod",
    "reason": "2026-10-31: ChatPaintMenuPreview is exported by the optional MSUF_Suite_Chat addon, not Options. Cold combat can defer that addon; the preview retries after combat and never enables the module.",
    "symbol": "painter (= P.S.ChatPaintMenuPreview)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/QualityOfLifePreview.lua",
+   "kind": "lod",
+   "reason": "The Glimmer LoD renderer may be absent when a cold combat preview closes before the QoL addon loads; the preview contract covers cleanup both before and after loading.",
+   "symbol": "S.HideGlimmerPreview"
   }
  ]
 }

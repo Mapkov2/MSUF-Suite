@@ -2,9 +2,42 @@
 -- the keyword notices, the keyword settings follow their switch, and the
 -- preview marks a word while the highlight is on.
 local root = assert(arg[1])
-SUITE_CHAT_OPTIONS_FIXTURE = true
-local F = dofile(root .. "/tools/tests/suite_chat_immersive_options_contract.lua")
-local P = F.optionsNS
+SUITE_OPTIONS_FIXTURE = true
+local F = dofile(root .. "/tools/tests/suite_options_menu_contract.lua")
+local P, S = F.optionsNS, F.S
+-- Use the runtime surface painters now shared by the interactive preview.
+local runtime = { NS = P.Suite, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
+assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
+for _, file in ipairs({ "Shared", "Appearance", "MinimalChrome", "Unread", "Sidebar", "Positions", "CompleteMessages", "Window", "PreviewSnapshot", "Preview" }) do
+    assert(loadfile(root .. "/MSUF_Suite_Chat/" .. file .. ".lua"))("MSUF_Suite_Chat", runtime)
+end
+GENERAL_CHAT_DOCK = {}
+local menuHook = hooksecurefunc
+hooksecurefunc = function(name, callback)
+    if name == "FCF_SetChatWindowFontSize" or name == "FCFDock_SelectWindow" or name == "FCFDock_UpdateTabs" then return end
+    return menuHook(name, callback)
+end
+BNGetNumFriends = function() return 0, 0 end
+C_FriendList = { GetNumOnlineFriends = function() return 0 end }
+-- Font API behavior belongs to the real-host interactive preview contract.
+S.ChatStylePreviewFonts = function() end
+local create, textures = CreateFrame, {}
+CreateFrame = function(...)
+    local frame = create(...)
+    frame.CombatLogQuickButtonFrame, frame.visual, frame.visibleLines, frame.entry = false, false, false, false
+    local texture = frame.CreateTexture
+    function frame:CreateTexture(...)
+        local part = texture(self, ...)
+        function part:SetGradient(direction, left, right)
+            self.gradient = { direction, left, right }
+        end
+        textures[#textures + 1] = part
+        return part
+    end
+    return frame
+end
+
 local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 local ctx = { key = "suite_chat", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
 F.SetCurrent(ctx)

@@ -276,14 +276,21 @@ end
 local function AddClassSpell(def, plan, specID)
     local cast = ClassCast(plan, specID)
     local entry = cast and AddSpell(cast, plan.auras[1], plan.auras)
+    if entry and plan.ranked then
+        entry.ranked, entry.spellName = true, R.RankName(cast)
+    end
     if entry and plan.kind == "ally" then entry.ally, entry.group = def, true end
 end
 
 local function AddImbues(plan, specID)
     for _, rule in ipairs(plan.imbues) do
-        if SpecFits(rule.specs, specID) and Known(rule.spell) and SlotHolds(rule.slot, rule.equip)
-            and not Full() and ClaimAura(rule.spell) then
-            Append("spell", rule.spell).slot = rule.slot
+        local spell = rule.spells and FirstKnown(rule.spells) or rule.spell
+        if spell and SpecFits(rule.specs, specID) and Known(spell) and SlotHolds(rule.slot, rule.equip)
+            and not Full() and not seenSlots[rule.slot] and (rule.spells or ClaimAura(spell)) then
+            seenSlots[rule.slot] = true
+            local entry = Append("spell", spell)
+            entry.slot = rule.slot
+            if plan.ranked then entry.spellName = R.RankName(spell) end
         end
     end
 end

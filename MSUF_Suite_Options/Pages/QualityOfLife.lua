@@ -103,6 +103,8 @@ local GROUPS = {
         sections = { "flight_hud", "flight_typography", "flight_colors" } },
     { id = "threatMeter", title = "Threat meter (Forever)", switch = "enabled", sections = { "threat_meter" },
         aliases = { "aggro meter", "threat list", "bedrohungsliste" } },
+    { id = "glimmer", title = "Glimmer (Forever)", switch = "enabled",
+        sections = { "glimmer_objects", "glimmer_appearance" } },
     { id = "flightTimer", title = "Flight route timer (Forever)", switch = "enabled", sections = { "flight_route" },
         aliases = { "taxi timer", "flight path timer" } },
     { id = "characterExtras", title = "Character sheet additions (Retail)", switch = "enabled",
@@ -163,7 +165,7 @@ local CATEGORIES = {
     } },
     { id = "mapTravel", title = "Map & Travel", keys = {
         "mapLandingShortcuts.enabled", "skyriding.enabled", "waypoints.enabled",
-        "flightTimer.enabled",
+        "flightTimer.enabled", "glimmer.enabled",
     } },
     { id = "interfaceChat", title = "Interface & Chat", keys = {
         "cursorEffects.enabled", "guildChatPrivacy.enabled", "quietPopups.enabled", "uiErrorFilter.enabled", "popupAttention.enabled",

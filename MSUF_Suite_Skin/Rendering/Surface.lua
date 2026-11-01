@@ -403,6 +403,10 @@ local function AttachNow(target, spec, deferRefresh)
     if not (spec or state and state.spec or {}).ownedArt then BlizzardYellow.TrackFrame(target) end
     if state then
         state.spec = spec or state.spec
+        if state.pendingVisible then
+            NS.CombatGate.Cancel(state.pendingVisible)
+            state.pendingVisible = nil
+        end
         if state.visible == false then NextPaintGeneration() end
         state.visible = true
         EnsureInteractiveHover(target, state)
@@ -455,12 +459,8 @@ function Surface.Attach(target, spec)
         return nil, "protected target"
     end
     if type(target.CreateTexture) ~= "function" then return nil, "invalid target" end
-    if NS.IsCombatLocked() then
-        local _, reason = NS.CombatGate.RunOrDefer("surface:" .. tostring(target), function()
-            Surface.Attach(target, spec)
-        end)
-        return nil, reason
-    end
+    -- CanPaint rejects protected targets in combat. Unprotected cosmetics
+    -- must also paint on a window's first combat opening.
     return AttachNow(target, spec)
 end
 
@@ -471,7 +471,7 @@ end
 function Surface.Ensure(target, spec)
     local state = target and NS.Registry.GetSurface(target)
     if state and state.spec == spec and state.visible ~= false and not state.syncNativeSelected
-        and state.paintGeneration == paintGeneration and not NS.IsCombatLocked() then
+        and state.paintGeneration == paintGeneration and (not NS.IsCombatLocked() or CanRefreshState(state)) then
         return state
     end
     return Surface.Attach(target, spec)
@@ -523,7 +523,13 @@ end
 -- repainting once for attach, again for active, and again for visibility.
 -- Existing two-argument callers retain their current selection/sync behavior.
 local function SetButtonPresentation(state, active, syncNativeSelected)
-    if active ~= nil then state.active = active == true end
+    if active ~= nil then
+        if state.pendingActive then
+            NS.CombatGate.Cancel(state.pendingActive)
+            state.pendingActive = nil
+        end
+        state.active = active == true
+    end
     if syncNativeSelected ~= nil then state.syncNativeSelected = syncNativeSelected == true end
 end
 
@@ -531,17 +537,15 @@ function Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
     if not button then return nil, "invalid button" end
     if not CanPaint(button, spec) then return nil, "protected button" end
     if not SupportsButtonStateTextures(button) then return nil, "invalid button" end
-    if NS.IsCombatLocked() then
-        local _, reason = NS.CombatGate.RunOrDefer("button:" .. tostring(button), function()
-            Surface.SkinOwnedButton(button, spec, active, syncNativeSelected)
-        end)
-        return nil, reason
-    end
     spec = spec or {}
     local state = NS.Registry.GetSurface(button)
     if state and state.kind == "button" then
         if not spec.ownedArt then BlizzardYellow.TrackFrame(button) end
         state.spec = spec
+        if state.pendingVisible then
+            NS.CombatGate.Cancel(state.pendingVisible)
+            state.pendingVisible = nil
+        end
         if state.visible == false then NextPaintGeneration() end
         state.visible = true
     else
@@ -561,14 +565,21 @@ function Surface.SetActive(target, active, repaint)
     if not state then
         return false
     end
-    if NS.IsCombatLocked() then
-        local _, reason = NS.CombatGate.RunOrDefer("surface-active:" .. tostring(target), function()
+    if NS.IsCombatLocked() and not CanRefreshState(state) then
+        local key = "surface-active:" .. tostring(target)
+        state.pendingActive = key
+        local _, reason = NS.CombatGate.RunOrDefer(key, function()
+            state.pendingActive = nil
             Surface.SetActive(target, active, repaint)
         end)
         return false, reason
     end
     if not CanRefreshState(state) then
         return false, "protected"
+    end
+    if state.pendingActive then
+        NS.CombatGate.Cancel(state.pendingActive)
+        state.pendingActive = nil
     end
     active = active == true
     -- Selection hooks run per row initialization and per native refresh: a
@@ -588,14 +599,21 @@ function Surface.SetVisible(target, visible)
     if not state then
         return false
     end
-    if NS.IsCombatLocked() then
-        local _, reason = NS.CombatGate.RunOrDefer("surface-visible:" .. tostring(target), function()
+    if NS.IsCombatLocked() and not CanRefreshState(state) then
+        local key = "surface-visible:" .. tostring(target)
+        state.pendingVisible = key
+        local _, reason = NS.CombatGate.RunOrDefer(key, function()
+            state.pendingVisible = nil
             Surface.SetVisible(target, visible)
         end)
         return false, reason
     end
     if not CanRefreshState(state) then
         return false, "protected"
+    end
+    if state.pendingVisible then
+        NS.CombatGate.Cancel(state.pendingVisible)
+        state.pendingVisible = nil
     end
     -- Repeated public reconciliation often requests the visibility that the
     -- preceding paint already established. Explicit Refresh/Attach still
@@ -619,7 +637,7 @@ end
 
 function Surface.Refresh(target)
     local state = NS.Registry.GetSurface(target)
-    if state and not NS.IsCombatLocked() then
+    if state and (not NS.IsCombatLocked() or CanRefreshState(state)) then
         state.refresh(state)
         return true
     end

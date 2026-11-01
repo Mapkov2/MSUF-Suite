@@ -2588,6 +2588,15 @@ do
         S.PlaceEdges=placeEdges
         assert(placed==1,"a background border tick placed its edges "..placed.." times")
     end
+    assert(S.SetMany("actionbars",{bar1LeftEndcap=4,bar1RightEndcap=4}))
+    for side,atlas in pairs({Left="ui-hud-actionbar-gryphon-left",Right="ui-hud-actionbar-gryphon-right"}) do
+        local cap=Bar(1)[side.."Endcap"]
+        assert(cap.pieces[1].shown and cap.pieces[1].atlas==atlas,"native gryphon art missing")
+        assert(not cap.pieces[2].shown and not cap.pieces[4].shown,"geometric pieces leaked behind gryphon")
+        assert(math.abs(cap.pieces[1].width/cap.pieces[1].height-104.5/98)<.001,"gryphon art stretched")
+    end
+    assert(S.SetMany("actionbars",{bar1LeftEndcap=2,bar1RightEndcap=3}))
+    assert(Bar(1).RightEndcap.pieces[4].shown,"switching from gryphons lost chevrons")
     -- Round buttons: a ring for the mouseover border and for the pixel glow.
     local highlightBefore=c.highlightStyle
     assert(S.SetMany("actionbars",{highlightStyle=1,procGlow=2}))

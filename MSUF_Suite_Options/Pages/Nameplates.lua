@@ -162,19 +162,23 @@ local function PositionKeys(spec)
 end
 
 -- Section id of every placed key; More settings holds the rest.
-local placed = {}
-for _, key in ipairs(MODULE_KEYS) do placed[key] = PAGE .. "_" .. ID .. "_module" end
+local placed, selectedTabs = {}, {}
+local function Place(keys, sectionId)
+    if not keys then return end
+    for _, key in ipairs(keys) do placed[key] = sectionId end
+end
+Place(MODULE_KEYS, PAGE .. "_" .. ID .. "_module")
 for _, spec in ipairs(SECTIONS) do
-    local function Place(keys)
-        for _, key in ipairs(keys or {}) do placed[key] = PAGE .. "_" .. spec.key end
+    local sectionId = PAGE .. "_" .. spec.key
+    Place(spec.keys, sectionId)
+    Place(spec.colors, sectionId)
+    if spec.tabs then
+        for _, tab in ipairs(spec.tabs) do Place(tab.keys, sectionId) end
     end
-    Place(spec.keys)
-    Place(spec.colors)
-    for _, tab in ipairs(spec.tabs or {}) do Place(tab.keys) end
     if spec.catalog then
         for _, rule in pairs(P.catalog[ID].rules) do
             if rule.section == spec.catalog and rule.key ~= "enabled" and not rule.previewOnly then
-                placed[rule.key] = placed[rule.key] or PAGE .. "_" .. spec.key
+                placed[rule.key] = placed[rule.key] or sectionId
             end
         end
     end
@@ -201,11 +205,17 @@ end
 -- One panel per tab with its rules; a search hit on a rule selects the
 -- rule's tab first (the preview's exact setting jump uses the same hook).
 local function Panels(ctx, body, width, spec, sectionId)
-    local panels, heights = {}, {}
+    local panels, heights, byTab = {}, {}, {}
     for _, tab in ipairs(spec.tabs) do
         local panel = CreateFrame("Frame", nil, body)
         panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -59)
         panel:SetSize(width + 32, 100)
+        panels[tab.id], byTab[tab.id] = panel, tab
+    end
+    local function Ensure(tabId)
+        if heights[tabId] then return end
+        local tab, panel = byTab[tabId], panels[tabId]
+        if not tab or P.Combat() then return end
         local y = -18
         if tab.help then
             local help = P.Description(panel, HELP[tab.help], 16, y, width, Tr(spec.title))
@@ -214,22 +224,17 @@ local function Panels(ctx, body, width, spec, sectionId)
         local entries
         y, entries = P.RuleGrid(ctx, panel, PAGE, ID, tab.rules, y, width, nil, sectionId)
         for _, entry in ipairs(entries or {}) do
-            if entry.widget then
-                HM.SetSearchTargetPrepare(entry.widget, function() spec.select(tab.id) end)
-            end
+            if entry.widget then HM.SetSearchTargetPrepare(entry.widget, function() spec.select(tab.id) end) end
         end
-        heights[tab.id] = -y + 14
-        panel:SetHeight(heights[tab.id])
-        panels[tab.id] = panel
+        heights[tabId] = -y + 14
+        panel:SetHeight(heights[tabId])
     end
-    return panels, heights
+    return panels, heights, Ensure
 end
-
-local selectedTabs = {}
 
 local function Tabs(ctx, builder, body, spec, sectionId)
     local width = math.max(240, (HM.GetSectionWidth(body) or builder.width or 720) - 32)
-    local panels, heights = Panels(ctx, body, width, spec, sectionId)
+    local panels, heights, ensure = Panels(ctx, body, width, spec, sectionId)
     local values = {}
     for _, tab in ipairs(spec.tabs) do values[#values + 1] = { value = tab.id, text = Tr(tab.label) } end
     local tabs, refresh, _, selectTab = P.W.SegmentTabs(ctx, body, {
@@ -240,7 +245,10 @@ local function Tabs(ctx, builder, body, spec, sectionId)
             selectedTabs[spec.key] = tab
             if spec.onTab then spec.onTab(tab) end
         end,
-        afterRefresh = function(tab) P.FinishBody(builder, body, -59 - heights[tab]) end, x = 16, y = -12,
+        afterRefresh = function(tab)
+            ensure(tab)
+            P.FinishBody(builder, body, -59 - (heights[tab] or 100))
+        end, x = 16, y = -12,
     })
     P.HideControlTitle(tabs)
     if P.M.RegisterControlMetadata then
@@ -249,9 +257,35 @@ local function Tabs(ctx, builder, body, spec, sectionId)
     return refresh, selectTab
 end
 
+-- Cold search must select the tab before the host looks up its widget.
+-- The full rule catalog remains searchable even while that tab has no controls.
+local function PrepareSearch(page, target)
+    if page ~= PAGE or not target then return end
+    local key = (target.settingKey or ""):match("^msufsuite%.nameplates%.(.+)$")
+    local sectionId = key and placed[key]
+    if not sectionId then return end
+    for _, spec in ipairs(SECTIONS) do
+        if spec.tabs and sectionId == PAGE .. "_" .. spec.key then
+            for _, tab in ipairs(spec.tabs) do
+                for _, tabKey in ipairs(tab.keys) do
+                    if tabKey == key then
+                        if P.Combat() then return false end
+                        selectedTabs[spec.key] = tab.id
+                        if spec.select then spec.select(tab.id) end
+                        return
+                    end
+                end
+            end
+            return
+        end
+    end
+end
+P.Suite.HostBridge.RegisterSearchTargetResolver(P.M, "MSUF_Suite.NameplatesTabs", PrepareSearch)
+
 -- A tabbed accordion. A lazy host builds the tabs on first open; selecting a
 -- tab from outside (search, preview) builds the section first.
 local function TabbedSection(ctx, builder, spec)
+    local pageEntry = P.M.cache and P.M.cache[PAGE]
     local sectionId, all = PAGE .. "_" .. spec.key, Rules(spec.colors)
     for _, tab in ipairs(spec.tabs) do
         tab.rules = Rules(tab.keys)
@@ -271,6 +305,12 @@ local function TabbedSection(ctx, builder, spec)
         end,
         shell = function(body)
             spec.select = function(tab)
+                if P.M.cache and P.M.cache[PAGE] ~= pageEntry then return end
+                if P.Combat() then return body end
+                if tab then selectedTabs[spec.key] = tab end
+                local entry = HM.GetSectionEntry(body)
+                local reveal = entry and HM.GetSectionEnsureVisible(entry)
+                if reveal then reveal() end
                 if not selectTab then P.EnsureSectionContent(body) end
                 if selectTab and tab then selectTab(tab) end
                 return body

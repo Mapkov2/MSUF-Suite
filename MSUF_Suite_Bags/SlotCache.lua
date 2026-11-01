@@ -13,15 +13,18 @@ local SlotCache = { info = {}, quest = {}, version = {}, sizes = {}, dirtyBags =
 P.SlotCache = SlotCache
 local KEY = SlotCache.KEY
 local Finite, Public = S.Finite, S.Public
+local bindings, bindLocation = {}, nil
+local BIND_NONE, BIND_ON_EQUIP, BIND_UNTIL_EQUIPPED = 0, 2, 9
 
 local function Forget(key)
-    SlotCache.info[key], SlotCache.quest[key], SlotCache.dirtySlots[key] = nil, nil, nil
+    SlotCache.info[key], SlotCache.quest[key], SlotCache.dirtySlots[key], bindings[key] = nil, nil, nil, nil
     SlotCache.version[key] = (SlotCache.version[key] or 0) + 1
 end
 
 local function Read(bag, slot)
     local key = bag * KEY + slot
     local info = C_Container.GetContainerItemInfo(bag, slot)
+    bindings[key] = nil
     SlotCache.version[key] = (SlotCache.version[key] or 0) + 1
     SlotCache.dirtySlots[key] = nil
     if not Public(info) then
@@ -67,6 +70,38 @@ function SlotCache.MarkBag(bag)
     if Finite(bag) then SlotCache.dirtyBags[bag] = true end
 end
 
+-- The slot instance, not GetItemInfo's generic enum, identifies Warbound until
+-- equipped (Blizzard ContainerFrame_ConsiderItemButtonForWarboundUntilEquipTutorial).
+-- Share one result per slot read between the badge and inventory search. Reuse
+-- the location object; neither a refresh nor a changed slot allocates one.
+function SlotCache.Binding(bag, slot, bindType)
+    local key = bag * KEY + slot
+    local known = bindings[key]
+    if known ~= nil then return known end
+    local info = SlotCache.info[key]
+    if not info or bindType == nil then return nil end
+    if C_Item.IsBoundToAccountUntilEquip then
+        if bindLocation then
+            bindLocation:SetBagAndSlot(bag, slot)
+        else
+            bindLocation = ItemLocation:CreateFromBagAndSlot(bag, slot)
+        end
+        local untilEquipped = C_Item.IsBoundToAccountUntilEquip(bindLocation)
+        if not Public(untilEquipped) or untilEquipped == nil then return nil end
+        if untilEquipped then
+            bindings[key] = BIND_UNTIL_EQUIPPED
+            return bindings[key]
+        end
+        if bindType == BIND_UNTIL_EQUIPPED then bindType = BIND_NONE end
+    end
+    if bindType == BIND_ON_EQUIP or bindType == BIND_UNTIL_EQUIPPED then
+        if not Public(info.isBound) then return nil end
+        if info.isBound ~= false then bindType = BIND_NONE end
+    end
+    bindings[key] = bindType
+    return bindType
+end
+
 -- Equipment slots report ITEM_LOCK_CHANGED(inventorySlot, nil); only a
 -- container slot changes cached contents.
 function SlotCache.MarkSlot(bag, slot)
@@ -78,6 +113,7 @@ function SlotCache.MarkAll()
 end
 
 function SlotCache.Reset()
+    for key in pairs(bindings) do bindings[key] = nil end
     for _, t in ipairs({ SlotCache.info, SlotCache.quest, SlotCache.sizes, SlotCache.dirtyBags, SlotCache.dirtySlots, SlotCache.bankTabs }) do
         for key in pairs(t) do t[key] = nil end
     end

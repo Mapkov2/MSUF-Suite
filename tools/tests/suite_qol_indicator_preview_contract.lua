@@ -39,8 +39,9 @@ local configs = { xpBar = { enabled = false, width = 800, height = 40, scale = 2
     skyriding = { enabled = false, width = 600, height = 300, scale = 200 },
     actionTracker = { enabled = false, width = 360, height = 120, scale = 200 },
     battleRes = { enabled = false, width = 120, height = 48, scale = 200 },
-    enemyCastStack = { enabled = false, width = 320, height = 180, scale = 200 } }
-local combat, loads, draws, skips = true, 0, 0, 0
+    enemyCastStack = { enabled = false, width = 320, height = 180, scale = 200 },
+    glimmer = { enabled = false, width = 160, height = 120 } }
+local combat, loads, draws, skips, glimmerHides = true, 0, 0, 0, 0
 local available = true
 local S = { Config = function(id) return configs[id] end }
 local P = { S = S, Suite = { Client = { isForever = false }, GlossMaterial = { Available = function() return available end } },
@@ -70,11 +71,23 @@ C_AddOns = { LoadAddOn = function(name)
     loads = loads + 1
     S.DrawExperienceBarPreview, S.DrawSkyridingPreview = Draw, Draw
     S.DrawActionTrackerPreview, S.DrawBattleResPreview, S.DrawEnemyCastStackPreview = Draw, Draw, Draw
+    S.DrawGlimmerPreview = Draw
+    S.HideGlimmerPreview = function() glimmerHides = glimmerHides + 1 end
 end }
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/PreviewCanvas.lua"))("MSUF_Suite_Options", P)
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/QualityOfLifePreview.lua"))("MSUF_Suite_Options", P)
+-- A first open in combat may close before the LoD renderer exists.
+do
+    local context = { refresh = {} }
+    P.BuildQoLIndicatorPreview(context, Widget(UIParent), "glimmer", 260, -42)
+    local ui = context.qolIndicatorPreviews.glimmer
+    assert(loads == 0 and not S.HideGlimmerPreview and ui.status.text ~= "")
+    ui.stage.scripts.OnHide()
+    assert(loads == 0 and glimmerHides == 0 and next(ui.stage.events) == nil,
+        "cold combat close loaded or called an absent preview renderer")
+end
 for _, width in ipairs({ 260, 720 }) do
-    for _, id in ipairs({ "xpBar", "skyriding", "actionTracker", "battleRes", "enemyCastStack" }) do
+    for _, id in ipairs({ "xpBar", "skyriding", "actionTracker", "battleRes", "enemyCastStack", "glimmer" }) do
         local parent, ctx = Widget(UIParent), { refresh = {} }
         parent.scale = .7
         local bottom = P.BuildQoLIndicatorPreview(ctx, parent, id, width, -42)
@@ -96,7 +109,8 @@ for _, width in ipairs({ 260, 720 }) do
         else
             assert(next(ui.sliders) == nil, "icon/cast preview showed unrelated flight sample controls")
         end
-        assert(configs[id].scale == 200 and not configs[id].enabled and not configs[id].xp)
+        assert((configs[id].scale == 200 or id == "glimmer" and configs[id].scale == nil)
+            and not configs[id].enabled and not configs[id].xp)
         parent.shown = false
         before = draws
         ctx.refresh[1]()
@@ -106,6 +120,7 @@ for _, width in ipairs({ 260, 720 }) do
     end
 end
 assert(loads == 1, "preview repeatedly loaded its renderer")
+assert(glimmerHides == 2, "Glimmer preview did not release on hide at both widths")
 P.Suite.Client.isForever = true
 for _, id in ipairs({ "skyriding", "battleRes", "enemyCastStack" }) do
     assert(P.BuildQoLIndicatorPreview({ refresh = {} }, Widget(), id, 720, -42) == -42)

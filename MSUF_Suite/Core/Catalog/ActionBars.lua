@@ -35,7 +35,7 @@ local ENUM = {
     ASSIST_STYLE = { BLIZZARD = 1, RING = 2, FILL = 3, RING_AND_FILL = 4 },
     -- "Mouseover highlight" and "Pressed highlight".
     HIGHLIGHT = { BORDER = 1, FILL = 2, BLIZZARD = 3, NONE = 4 },
-    ENDCAP = { NONE = 1, DIAMOND = 2, CHEVRONS = 3 },
+    ENDCAP = { NONE = 1, DIAMOND = 2, CHEVRONS = 3, BLIZZARD = 4 },
     PAGE_ARROW_SIDE = { LEFT = 1, RIGHT = 2 },
     -- "Show tooltips" per bar, and the side a spell flyout opens to.
     TOOLTIP = { ALWAYS = 1, OUT_OF_COMBAT = 2, NEVER = 3 },
@@ -75,6 +75,18 @@ function NS.ActionBarCell(i, columns, rows, r, vertical, start)
     return col, row
 end
 local VISIBILITY, HIGHLIGHT, LOOK = ENUM.VISIBILITY, ENUM.HIGHLIGHT, ENUM.LOOK
+
+function NS.PaintBlizzardActionBarEndcap(cap, side, size)
+    for _, piece in ipairs(cap.pieces) do piece:Hide() end
+    local piece = cap.pieces[1]
+    piece:ClearAllPoints()
+    piece:SetRotation(0)
+    piece:SetVertexColor(1, 1, 1, 1)
+    piece:SetAtlas(side == "Left" and "ui-hud-actionbar-gryphon-left" or "ui-hud-actionbar-gryphon-right")
+    piece:SetSize(size * 104.5 / 98, size)
+    piece:SetPoint("CENTER", cap, "CENTER")
+    piece:Show()
+end
 
 -- No client check: Blizzard_RestrictedAddOnEnvironment (secure handlers and
 -- state drivers) loads on Retail and on Forever.
@@ -279,11 +291,11 @@ for i = 1, BAR_COUNT do
         Choice(p .. "CooldownPoint", "Cooldown number anchor", 1, TEXT_ANCHORS),
         Number(p .. "CooldownX", "Cooldown number horizontal offset", 0, -80, 80),
         Number(p .. "CooldownY", "Cooldown number vertical offset", 0, -80, 80),
-        Choice(p .. "LeftEndcap", "Left endcap", ENUM.ENDCAP.NONE, { "None", "Diamond", "Chevrons" }),
+        Choice(p .. "LeftEndcap", "Left endcap", ENUM.ENDCAP.NONE, { "None", "Diamond", "Chevrons", "Blizzard" }),
         Number(p .. "LeftEndcapSize", "Left endcap size", 32, 8, 120),
         Number(p .. "LeftEndcapX", "Left endcap horizontal offset", 0, -200, 200),
         Number(p .. "LeftEndcapY", "Left endcap vertical offset", 0, -200, 200),
-        Choice(p .. "RightEndcap", "Right endcap", ENUM.ENDCAP.NONE, { "None", "Diamond", "Chevrons" }),
+        Choice(p .. "RightEndcap", "Right endcap", ENUM.ENDCAP.NONE, { "None", "Diamond", "Chevrons", "Blizzard" }),
         Number(p .. "RightEndcapSize", "Right endcap size", 32, 8, 120),
         Number(p .. "RightEndcapX", "Right endcap horizontal offset", 0, -200, 200),
         Number(p .. "RightEndcapY", "Right endcap vertical offset", 0, -200, 200),
@@ -346,7 +358,7 @@ for i = 1, BAR_COUNT do
     for _, side in ipairs({ "Left", "Right" }) do
         for _, suffix in ipairs({ "EndcapSize", "EndcapX", "EndcapY" }) do
             rules[p .. side .. suffix].requiresChoice = { key = p .. side .. "Endcap",
-                values = { [ENUM.ENDCAP.DIAMOND] = true, [ENUM.ENDCAP.CHEVRONS] = true } }
+                values = { [ENUM.ENDCAP.DIAMOND] = true, [ENUM.ENDCAP.CHEVRONS] = true, [ENUM.ENDCAP.BLIZZARD] = true } }
         end
     end
     for _, suffix in ipairs({ "Point", "X", "Y" }) do rules[p .. suffix].category = "advanced" end

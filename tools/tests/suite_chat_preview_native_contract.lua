@@ -24,7 +24,9 @@ env.SCROLLING_MESSAGE_FRAME_INSERT_MODE_TOP = "TOP"
 function frame:GetInsertMode() return "BOTTOM" end
 function frame:GetSpacing() return 0 end
 env.ChatFrame1, env.SELECTED_DOCK_FRAME = frame, frame
-env.GENERAL_CHAT_DOCK = { selected = frame }
+env.GENERAL_CHAT_DOCK = env.CreateFrame("Frame", "ParityNativeDock", env.UIParent)
+env.GENERAL_CHAT_DOCK.selected = frame
+env.GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES = { frame }
 for _, name in ipairs({ "QuickJoinToastButton", "ChatFrameChannelButton", "TextToSpeechButton", "ChatFrameMenuButton" }) do
     env[name] = env.CreateFrame("Button", name, frame.buttonFrame)
 end

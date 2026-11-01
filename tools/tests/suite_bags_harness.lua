@@ -793,7 +793,7 @@ function H.New(root, options)
     InCombatLockdown = function() return W.combat end
     UnitAffectingCombat = function(unit) return unit == "player" and (W.combat or W.fighting == true) end
     securecallfunction = function(fn, ...) return fn(...) end
-    issecretvalue = nil
+    issecretvalue = options.isSecret
     hooksecurefunc = function(target, key, hook)
         if type(target) == "string" then target, key, hook = _G, target, key end
         local original = target[key]
@@ -841,7 +841,11 @@ function H.New(root, options)
     IsShiftKeyDown = function() return false end
     IsModifiedClick = function(action) return W.modified == (action or true) or (action == nil and W.modified ~= nil) end
     HandleModifiedItemClick = function() return false end
-    ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot) return { bag = bag, slot = slot } end }
+    ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot)
+        local location = { bag = bag, slot = slot }
+        function location:SetBagAndSlot(nextBag, nextSlot) self.bag, self.slot = nextBag, nextSlot end
+        return location
+    end }
     END_REFUND = "The item will no longer be refundable."
     CONTAINER_OFFSET_Y = 85
     CursorHasItem = function() return W.cursor ~= nil end
@@ -1005,6 +1009,13 @@ function H.New(root, options)
         return W.newItems[bag * KEY + slot] == true
     end, RemoveNewItem = function(bag, slot) W.newItems[bag * KEY + slot] = nil end }
     C_Item = {
+        IsBoundToAccountUntilEquip = function(location)
+            W.calls.binding = (W.calls.binding or 0) + 1
+            local item = W.Item(location.bag, location.slot)
+            if not item then return false end
+            if item.wue ~= nil then return item.wue end
+            return Data(item.id).bind == 9 and item.bound ~= true
+        end,
         GetItemInfo = function(link)
             W.calls.itemInfo = W.calls.itemInfo + 1
             local id = tonumber(tostring(link):match("item:(%d+)") or link)
