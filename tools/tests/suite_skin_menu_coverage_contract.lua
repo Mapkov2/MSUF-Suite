@@ -134,8 +134,8 @@ local groups = #H.groups
 scroll.scrollOffset = 140
 scroll:Fire("OnVerticalScroll", 140)
 Check(#H.groups == groups, "warm legacy wheel created more animation groups")
--- Every mouse press in the game is watched only while a tracked bar shows, out of
--- combat and with the skin and smooth scrolling on.
+-- Global presses are watched only while a safe tracked bar shows and smooth
+-- scrolling is enabled; combat keeps safe visible interaction available.
 local function WatchingPresses() return legacyEvents.events.GLOBAL_MOUSE_DOWN == true end
 Check(WatchingPresses(), "a shown legacy bar did not watch for presses")
 bar:Hide()
@@ -143,7 +143,15 @@ Check(not WatchingPresses(), "hiding the last legacy bar kept watching every mou
 bar:Show() bar:Fire("OnShow")
 Check(WatchingPresses(), "a legacy bar shown again did not watch for presses")
 legacyEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
-Check(not WatchingPresses(), "combat kept watching every mouse press")
+Check(WatchingPresses() and travel.group:IsPlaying(), "combat removed safe legacy scrolling")
+bar.protected = true
+legacyEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+Check(not WatchingPresses(), "unsafe legacy bar kept watching every mouse press")
+bar.protected = false
+scroll.protected = true
+legacyEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+Check(not travel.group:IsPlaying(), "unsafe legacy root retained its animation")
+scroll.protected = false
 legacyEvents:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
 Check(WatchingPresses(), "combat end did not watch the shown legacy bar again")
 NS.DB.enabled = false
@@ -161,6 +169,59 @@ Legacy.ReleaseOwner(owner1)
 Check(not WatchingPresses(), "a released legacy owner kept watching every mouse press")
 scroll:Fire("OnVerticalScroll", 180)
 Check(not travel.group:IsPlaying(), "released legacy owner resumed animation")
+
+-- Cold registration and gestures use the same safe paths during lockdown.
+local wasLocked = NS.IsCombatLocked
+NS.IsCombatLocked = function() return true end
+NS.Motion.combat = true
+local combatWindow, combatChild = Frame(UIParent, true), Frame(nil, true)
+combatChild.parent, combatWindow.Content = combatWindow, combatChild
+combatWindow.children = { combatChild }
+Check(Menus.Track(combatWindow, "combat-window"), "cold safe menu registration failed during combat")
+combatWindow:Fire("OnShow")
+Check(Content.records[combatWindow].group:IsPlaying(), "cold combat menu did not animate opening")
+Menus.Release("combat-window", combatWindow)
+local coldScroll, coldChild = Frame(nil, true), Frame(nil, true)
+coldScroll.kind, coldScroll.scrollChild, coldChild.parent = "ScrollFrame", coldChild, coldScroll
+Legacy.Track(coldScroll, "combat-scroll")
+coldScroll:Fire("OnVerticalScroll", 50)
+Check(Legacy.states[coldScroll].current.group:IsPlaying(), "cold safe legacy scroll failed during combat")
+Legacy.states[coldScroll].current.group:Finish()
+Check(not next(Legacy.active), "completed legacy animation retained active combat work")
+coldScroll:Hide()
+Legacy.ReleaseOwner("combat-scroll")
+NS.Motion.combat, NS.IsCombatLocked = false, wasLocked
+
+-- Historical hidden scrolls contribute no combat native calls or scan cost.
+local function ScrollEdgeSteps()
+    local steps = 0
+    debug.sethook(function() steps = steps + 1 end, "", 1)
+    legacyEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+    legacyEvents:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+    debug.sethook()
+    return steps
+end
+local scrollBase, hiddenStops, hiddenProbes = ScrollEdgeSteps(), 0, 0
+for index = 1, 64 do
+    local hidden, child, rail = Frame(nil, true), Frame(nil, true), Frame(nil, true)
+    hidden.kind, hidden.scrollChild, child.parent = "ScrollFrame", child, hidden
+    Check(Legacy.Track(hidden, "hidden-scrolls", rail), "hidden-scroll budget fixture failed")
+    hidden:Fire("OnVerticalScroll", 40)
+    hidden:Hide() rail:Hide()
+    local group = Legacy.states[hidden].current.group
+    local stop = group.Stop
+    function group:Stop() hiddenStops = hiddenStops + 1 return stop(self) end
+    for _, frame in ipairs({ hidden, child, rail }) do
+        function frame:IsForbidden() hiddenProbes = hiddenProbes + 1 return false end
+    end
+end
+hiddenStops, hiddenProbes = 0, 0
+local scrollPopulated = ScrollEdgeSteps()
+Check(hiddenStops == 0 and hiddenProbes == 0, "combat touched historical hidden legacy scrolls")
+Check(scrollPopulated <= scrollBase + 32, "combat scanned historical hidden legacy scrolls")
+Check(not WatchingPresses(), "historical hidden scrolls retained a global input listener")
+print("BUDGET legacy-scroll hidden64 native=0 VM " .. scrollBase .. " -> " .. scrollPopulated)
+Legacy.ReleaseOwner("hidden-scrolls")
 
 -- ScrollFrameTemplate already owns a modern controller; never smooth it twice.
 local modernFrame, modernChild, modernBar = Frame(), Frame(), Frame()
@@ -223,6 +284,13 @@ PanelTemplates_DeselectTab(tab)
 Check(selected[tab] == false, "legacy programmatic deselection missed skin")
 PanelTemplates_SelectTab(tab)
 Check(selected[tab] == true, "legacy programmatic selection missed skin")
+NS.Motion.combat = true
+tab:SetTabSelected(false)
+Check(selected[tab] == false, "safe tab selection stopped updating during combat")
+tab.protected = true
+tab:SetTabSelected(true)
+Check(selected[tab] == false, "protected tab was animated during combat")
+tab.protected, NS.Motion.combat = false, false
 
 -- Finished Settings event picks the visible list/canvas, including addon pages.
 local changed, releaseSettings

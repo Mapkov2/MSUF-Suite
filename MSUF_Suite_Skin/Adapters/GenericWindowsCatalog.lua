@@ -134,17 +134,6 @@ local function EntryBlocker(entry, owner)
         SetEntryStatus(entry, owner, "unavailable")
         return "unavailable"
     end
-    if NS.IsCombatLocked() then
-        local ownerState = OwnerState(owner)
-        local key = "generic-entry:" .. entry.id .. ":" .. OwnerKey(owner)
-        ownerState.deferred[key] = true
-        SetEntryStatus(entry, owner, "queued")
-        NS.CombatGate.RunOrDefer(key, function()
-            ownerState.deferred[key] = nil
-            GenericWindows.ApplyEntry(entry, owner)
-        end)
-        return "combat"
-    end
     if entry.addon and not IsAddonLoaded(entry.addon) then
         AddPending(entry, owner)
         SetEntryStatus(entry, owner, "waiting")
@@ -165,7 +154,7 @@ local function AddMetrics(totals, metrics)
     totals.truncated = totals.truncated or metrics.truncated == true
 end
 
-local DeferredEntryFrame
+local DeferredEntryFrame, DeferEntryFrame
 
 local function EntryRequest(entry, owner)
     local ownerState = OwnerState(owner)
@@ -207,6 +196,14 @@ local function PaintEntryFrame(request, index)
         StoreFrameResult(request, index, false, "missing")
         return
     end
+    request.frames[index] = request.frames[index] or {}
+    request.frames[index].pending = nil
+    NS.WindowControls.TrackFocus(frame, owner)
+    if NS.IsCombatLocked() and not CanSkin(frame) then
+        StoreFrameResult(request, index, false, "waiting")
+        DeferEntryFrame(request, index)
+        return
+    end
     -- Only an unprotected window root waits for its OnShow. HUD and protected roots
     -- (EncounterTimeline, encounter warnings, ExtraActionBar, TargetFrame ...) show
     -- mostly in combat, where they cannot be painted: a deferral woke in combat and
@@ -220,6 +217,9 @@ local function PaintEntryFrame(request, index)
         and type(frameValue) == "string" and entry.frameModes[frameValue] or nil
     local ok, reason, metrics = ApplyFrameNow(frame, owner, CatalogMode(frameMode or entry.mode))
     StoreFrameResult(request, index, ok, reason, metrics)
+    -- Paint safe cosmetics now; finish protected descendants and window controls
+    -- once after combat, or on the next show if the window has closed again.
+    if NS.IsCombatLocked() then DeferEntryFrame(request, index) end
     -- Preserve the Macro adapter's specific artwork after this root's pass.
     if entry.id == "macros" then NS.MacroWindow.Apply(frame, owner) end
 end
@@ -263,18 +263,19 @@ local function FrameJob(request, index)
     return job
 end
 
+DeferEntryFrame = function(request, index)
+    local job = FrameJob(request, index)
+    request.frames[index].pending = true
+    request.ownerState.deferred[job.key] = true
+    NS.CombatGate.RunOrDefer(job.key, job.run)
+end
+
 local function RefreshEntryFrame(request, index)
     if not request.ownerState.active then return end
     local result, entry = request.frames[index], request.entry
-    if not result or result.reason ~= "waiting" then return end
+    if not result or (result.reason ~= "waiting" and not result.pending) then return end
     if not Enabled() or not GenericWindows.IsCategoryEnabled(entry.category) or SuiteOwnsEntry(entry) then
         SetEntryStatus(entry, request.owner, "disabled")
-        return
-    end
-    if NS.IsCombatLocked() then
-        local job = FrameJob(request, index)
-        request.ownerState.deferred[job.key] = true
-        NS.CombatGate.RunOrDefer(job.key, job.run)
         return
     end
     PaintEntryFrame(request, index)

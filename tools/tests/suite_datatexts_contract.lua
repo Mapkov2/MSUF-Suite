@@ -542,6 +542,33 @@ do
     assert(ornate.accent.points[1][1] == "TOPLEFT", "accent position toggle did not restore")
     assert(S.Set("dataTexts", "bar2Enabled", false))
 end
+-- Reference strip: independent Home/World samples, trusted symbols and gold FPS.
+assert(S.SetMany("dataTexts", { enabled = true, bar1Enabled = true, bar1StyleOverride = true,
+    bar1Layout = 2, bar1Visibility = 1, bar1CustomColors = true, bar1ValueColor = "ffffff",
+    bar1AccentColor = "ffd54a", bar1ValueClassColor = false, bar1ShowLabels = false,
+    bar1SourceIcons = true, bar1FpsAccent = true,
+    bar1Slot1 = W.Suite.DataTextSourceIndex.homeLatency, bar1Slot2 = 7, bar1Slot3 = 6,
+    bar1Slot4 = 9, bar1Slot5 = 4, bar1Slot6 = 1 }))
+local strip = M.bars[1].slots
+assert(strip[1].text == "30 ms" and strip[2].text == "50 ms", "Home and World latency were conflated")
+assert(strip[1].display:find("Home.tga", 1, true) and strip[2].display:find("World.tga", 1, true))
+assert(strip[3].display:find("|cffffd54a", 1, true) and strip[3].display:find(" fps", 1, true))
+assert(strip[4].display:find("Location.tga", 1, true) and strip[5].display:find("Durability.tga", 1, true))
+assert(not strip[1].extra and not strip[2].extra, "standard source clicks changed to broker actions")
+assert(S.Set("dataTexts", "bar1SourceIcons", false))
+assert(not M.bars[1].slots[1].display:find("|T", 1, true), "old icon markup remained after disabling")
+assert(S.Set("dataTexts", "enabled", false) and W.Pending() == 0)
+-- The shared painter keeps the preview's already-formatted bag percentage.
+do
+    local preview = { Suite = W.Suite, Tr = function(text) return text end }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/DataTextsPreviewData.lua"))("MSUF_Suite_Options", preview)
+    local style = W.Suite.DataTextEffectiveStyle(S.Config("dataTexts"), 1)
+    style.bagsPercent = true
+    local text = preview.DataTextsPreviewData.Text("bags", style, {}, "bar1Slot1")
+    assert(text:find("60%", 1, true), "bag preview replaced its sample with the missing-value mark")
+    local plain = W.Suite.FormatDataText("Bags", "unknown", nil, style, "bags")
+    assert(plain == "\226\128\148", "unknown bag values lost the existing missing-value mark")
+end
 -- Retail and WoW Forever always have the APIs DataTexts calls. The one
 -- client-specific hook target (Forever's MainActionBar_InitializeMKB) is a
 -- plain existence check, not a type guard.

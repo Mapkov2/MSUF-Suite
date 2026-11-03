@@ -67,7 +67,7 @@ NS.MinimapDungeonAnchors = {
 NS.MinimapTextAnchor = { ABOVE = #NS.AnchorLabels + 1, BELOW = #NS.AnchorLabels + 2 }
 NS.MinimapShape = { SQUARE = 1, CIRCLE = 2, WIDE = 3 }
 NS.MinimapStyleTexture = { NONE = 1, ARCANE_RING = 2, EMBER_RING = 3, ASTRAL_RING = 4, STEEL_FRAME = 5,
-    CUSTOM = 6, PARCHMENT_SCROLL = 7 }
+    CUSTOM = 6, PARCHMENT_SCROLL = 7, BLIZZARD = 8 }
 NS.MinimapStylePlacement = { ABOVE = 1, BEHIND = 2 }
 NS.MinimapStyleBlend = { NORMAL = 1, ADDITIVE = 2 }
 NS.MinimapWeatherIcons = { BLIZZARD = 1, FOREVER = 2 }
@@ -186,7 +186,7 @@ B.Section(id, "shape", "Shape, border and shadow", {
 -- The texture paths are Suite-owned original art; Custom accepts a local WoW
 -- texture path or a file ID. Existing profiles retain the clean default.
 NS.MinimapStyleTextureNames = { "None", "Arcane ring", "Ember ring", "Astral ring", "Steel frame",
-    "Custom texture", "Parchment scroll" }
+    "Custom texture", "Parchment scroll", "Blizzard" }
 NS.MinimapStylePresetNames = { "Custom", "Clean", "Arcane", "Ember", "Astral", "Steel",
     "MSUF Forever", "Midnight Blue", "Midnight Dark", "Antique Map", "Clean Modern", "Class Style" }
 local clean = {
@@ -309,6 +309,10 @@ B.Section(id, "elements", "Blizzard buttons", {
     Number("difficultyButtonX", "Difficulty icon horizontal offset", 0, -300, 300),
     Number("difficultyButtonY", "Difficulty icon vertical offset", 0, -300, 300),
     Bool("showCompartment", "Addon compartment", false),
+    Bool("queueStatusEnabled", "Anchor queue status to minimap", false),
+    Number("queueStatusSize", "Queue status eye size", 32, 16, 64),
+    Number("queueStatusX", "Queue status horizontal offset", -2, -600, 600),
+    Number("queueStatusY", "Queue status vertical offset", -52, -600, 600),
     Choice("elementRow", "Button row placement", 1, NS.MinimapRowLabels),
     Number("elementSize", "Button size", 21, 16, 40),
     Number("elementSpacing", "Button spacing", 2, -20, 40),
@@ -507,13 +511,14 @@ for key, rule in pairs(rules) do
     if prefix and type(rule.default) == "number" and (prefix:match("^info[%a]+$")
         or prefix:match("^button[%a]+$") or prefix == "zoomIn" or prefix == "zoomOut"
         or prefix == "drawer" or prefix == "landing" or prefix == "difficultyButton" or prefix == "dungeon"
-        or prefix == "style") then rule.previewOnly = true end
+        or prefix == "style" or prefix == "queueStatus") then rule.previewOnly = true end
 end
 rules.x.category, rules.y.category, rules.point.category = "advanced", "advanced", "advanced"
 for _, key in ipairs({ "zoomInX", "zoomInY", "zoomOutX", "zoomOutY", "drawerX", "drawerY" }) do
     rules[key].category = "advanced"
 end
 rules.borderColor.disabledBy = "borderClassColor"
+rules.queueStatusSize.enableKey = "queueStatusEnabled"
 rules.landingIcon.requiresChoice = { key = "showLanding", values = { [1] = true, [2] = true } }
 rules.zoomResetSeconds.enableKey = "scrollZoom"
 rules.hoverWidth.enableKey, rules.hoverHeight.enableKey = "hoverResize", "hoverResize"
@@ -534,5 +539,6 @@ for _, key in ipairs({ "styleGlowColor", "styleGlowAlpha", "styleGlowScale" }) d
 for _, key in ipairs({ "styleBackdropColor", "styleBackdropAlpha", "styleBackdropPadding" }) do rules[key].enableKey = "styleBackdrop" end
 for _, key in ipairs({ "styleColor", "styleAlpha", "styleScale", "styleX", "styleY", "stylePlacement", "styleBlend", "styleRotation" }) do
     rules[key].requiresChoice = { key = "styleTexture", values = { [ART.ARCANE_RING] = true, [ART.EMBER_RING] = true,
-        [ART.ASTRAL_RING] = true, [ART.STEEL_FRAME] = true, [ART.CUSTOM] = true, [ART.PARCHMENT_SCROLL] = true } }
+        [ART.ASTRAL_RING] = true, [ART.STEEL_FRAME] = true, [ART.CUSTOM] = true,
+        [ART.PARCHMENT_SCROLL] = true, [ART.BLIZZARD] = true } }
 end

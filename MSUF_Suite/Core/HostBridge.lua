@@ -49,9 +49,7 @@ function HostBridge.HostFontPath()
     return Suite.Public(path) and type(path) == "string" and path ~= "" and path or nil
 end
 
-function HostBridge.HasCoreAPI()
-    return CoreAPI() ~= nil
-end
+function HostBridge.HasCoreAPI() return CoreAPI() ~= nil end
 
 -- Read-only profile assignments. A character without a spec binding still
 -- appears, but its unknown class/spec is never guessed from the current player.
@@ -617,8 +615,8 @@ end
 function HostBridge.FactoryFramePreview(layout)
     local host = HostNamespace()
     local compact
-    if layout == "blizzard" then
-        compact = Suite.BlizzardFramesCompact
+    if layout == "darkRaid" or layout == "blizzard" then
+        compact = layout == "darkRaid" and Suite.DarkRaidFramesCompact or Suite.BlizzardFramesCompact
     elseif layout == "modernDark" then
         compact = HostBridge.ModernDarkFrameCompact()
     elseif layout == "forever" then
@@ -712,9 +710,7 @@ function HostBridge.ProfileVariantServices()
     return host.ProfileFields, host.ProfileVariants, host.ProfileSync, host.ProfileRuntime
 end
 
-function HostBridge.GroupFrames()
-    return HostNamespace().GF
-end
+function HostBridge.GroupFrames() return HostNamespace().GF end
 
 function HostBridge.FirstRunPending()
     local firstLoad = HostNamespace().FirstLoad6
@@ -766,22 +762,49 @@ HostBridge.Profiles = setmetatable({}, { __index = function(_, operation)
     local name = PROFILE_METHODS[operation]
     return name and _G[name] or nil
 end })
-
-function HostBridge.ActiveFrameProfileName()
-    return _G.MSUF_ActiveProfile
+function HostBridge.ActiveFrameProfileName() return _G.MSUF_ActiveProfile end
+function HostBridge.ProfileWasUnboundAtLogin() return _G.MSUF_ProfileWasUnboundAtLogin == true end
+local castbarObserved
+local CASTBAR_PREFIX = { player = "castbarPlayer", target = "castbarTarget", focus = "castbarFocus", boss = "bossCast", arena = "arenaCast" }
+function HostBridge.CastbarArtwork(callback, observe)
+    local host, g = HostNamespace(), _G
+    if not g.MSUF_RefreshCastbarFrame then g = host.PublicGlobals or g end
+    local bars, public = host.Castbars, host.PublicGlobals or g
+    local function Export(name) return g[name] or public[name] end
+    local function Emit(frame)
+        local unitFromFrame = bars and bars.Core and bars.Core.GetCastbarUnitFromFrame or Export("MSUF_GetCastbarUnitFromFrame")
+        local unit = frame and (unitFromFrame(frame) or frame.unit)
+        local prefix = CASTBAR_PREFIX[unit and unit:match("^%a+")]
+        local config = Export("MSUF_DB").general
+        local show = prefix == "bossCast" and "showBossCastName" or prefix == "arenaCast" and "showArenaCastName" or prefix and prefix .. "ShowSpellName"
+        local enabled = config[show]
+        if enabled == nil then enabled = config.castbarShowSpellName end
+        if prefix then callback(frame, frame.statusBar, frame.castText or frame.text,
+            enabled ~= false and config[prefix .. "SpellNamePosition"] == "BELOW") end
+    end
+    if observe and not castbarObserved then
+        local visual = bars and bars.Visuals
+        local owner = visual and visual.RefreshCastbarFrame and visual or g
+        local key = owner == g and "MSUF_RefreshCastbarFrame" or "RefreshCastbarFrame"
+        if owner[key] then hooksecurefunc(owner, key, Emit) end
+        castbarObserved = true
+    end
+    local frames = bars and bars.Frames
+    for _, name in ipairs({ "Player", "Target", "Focus" }) do
+        Emit(frames and frames[name:lower()] or Export("MSUF_" .. name .. "Castbar") or Export("MSUF_" .. name .. "CastBar"))
+        Emit(frames and frames[name:lower() .. "Preview"] or Export("MSUF_" .. name .. "CastbarPreview"))
+    end
+    for _, name in ipairs({ "Boss", "Arena" }) do
+        for _, frame in pairs(bars and bars.Pools and bars.Pools[name .. "Castbars"] or Export("MSUF_" .. name .. "Castbars") or {}) do Emit(frame) end
+        local previews = frames and frames.indexed and frames.indexed[name:lower() .. "Preview"]
+        for index = 1, 5 do
+            Emit(previews and previews[index] or Export("MSUF_" .. name .. "CastbarPreview" .. (index > 1 and index or "")))
+        end
+    end
 end
-
-function HostBridge.ProfileWasUnboundAtLogin()
-    return _G.MSUF_ProfileWasUnboundAtLogin == true
-end
-
-function HostBridge.BossTargetIndicator()
-    return _G.MSUF_NS.BossTargetIndicator
-end
-
+function HostBridge.BossTargetIndicator() return _G.MSUF_NS.BossTargetIndicator end
 function HostBridge.ProfileWorkbench()
     local api = CoreAPI()
     return api and api.GetProfileWorkbench and api.GetProfileWorkbench() or nil
 end
-
 return HostBridge

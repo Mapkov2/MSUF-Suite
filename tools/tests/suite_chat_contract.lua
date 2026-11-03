@@ -69,7 +69,13 @@ local function Frame(name)
     local frame = { name = name, font = { "Fonts/FRIZQT__.TTF", 12, "" }, shown = true, alpha = 1, mouse = true }
     function frame:CreateTexture() local texture = Texture(); texture.owner = self; return texture end
     function frame:CreateFontString()
-        return { SetPoint = function() end, SetText = function(label, value) label.value = value end,
+        return { SetPoint = function(label, ...) label.points = label.points or {}; label.points[#label.points + 1] = { ... } end,
+            ClearAllPoints = function(label) label.points = {} end,
+            SetText = function(label, value) label.value = value end,
+            SetShadowColor = function(label, ...) label.shadowColor = { ... } end,
+            SetShadowOffset = function(label, ...) label.shadowOffset = { ... } end,
+            Show = function(label) label.shown = true end, Hide = function(label) label.shown = false end,
+            IsShown = function(label) return label.shown ~= false end,
             GetText = function(label) return label.value end,
             GetUnboundedStringWidth = function(label) return #(label.value or "") * 6 end,
             SetTextColor = function(label, ...) label.color = { ... } end,
@@ -101,6 +107,7 @@ local function Frame(name)
     function frame:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
     function frame:SetShown(shown) self.shown = shown end
     function frame:IsShown() return self.shown end
+    function frame:IsVisible() return self.shown end
     function frame:Show() self.shown = true end
     function frame:Hide() self.shown = false end
     function frame:SetFrameStrata(strata) self.strata = strata end
@@ -123,7 +130,7 @@ local function Frame(name)
     function frame:HasFocus() return self.focused == true end
     -- Only the input line's focus is followed (Fade.lua), never another script.
     function frame:HookScript(script, callback)
-        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost" or script == "OnSizeChanged", "chat hooked the " .. script .. " script")
+        assert(script == "OnEditFocusGained" or script == "OnEditFocusLost" or script == "OnSizeChanged" or script == "OnShow" or script == "OnHide", "chat hooked the " .. script .. " script")
         self.hooks = self.hooks or {}
         assert(not self.hooks[script], "chat hooked " .. script .. " twice")
         self.hooks[script] = callback
@@ -312,7 +319,7 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
 NS.ChatBubbleSources, NS.ChatSoundChannels = catalogNS.ChatBubbleSources, catalogNS.ChatSoundChannels
 NS.ChatLineLimits = catalogNS.ChatLineLimits
-local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
+local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "HeaderClock.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
     "Messages.lua", "Positions.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
@@ -1334,6 +1341,66 @@ assert(module.dockStrip.gradient[2].a == module.dockStrip.gradient[3].a
 module.active = false
 module:Disable()
 assert(#reports == reportedBefore, "minimal window lifecycle reported an error")
+-- Header clock: native localized time, one minute deadline and no hidden work.
+do
+    local task, reads = nil, 0
+    local nativeTimestamps, beforeTimestamps = "[%H:%M]", nil
+    function ctx:CVar(key, value)
+        assert(key == "showTimestamps" and value == "none")
+        beforeTimestamps = beforeTimestamps or nativeTimestamps
+        nativeTimestamps = value
+    end
+    S.RestoreCVar = function(owner, key)
+        assert(owner == "chat")
+        if key ~= "showTimestamps" then return end
+        if beforeTimestamps then nativeTimestamps, beforeTimestamps = beforeTimestamps, nil end
+    end
+    TIME_TWELVEHOURAM, TIME_TWELVEHOURPM = "%d:%02d AM", "%d:%02d PM"
+    S.ReadInfoSource = function(key)
+        reads = reads + 1
+        if key == "clockTime" then return 9, 28 end
+        if key == "clockStamp" then return 125 end
+    end
+    S.ScheduleDataTick = function(owner, delay, callback)
+        assert(owner == "chat-header-clock")
+        task = { delay = delay, callback = callback }
+        function task:Cancel() self.cancelled = true end
+        return task
+    end
+    module.config.headerClock, module.config.headerClock24Hour = true, false
+    module.config.hideNativeTimestamps = true
+    module.active = true
+    ChatFrame1:Show()
+    module:Enable()
+    assert(#reports == reportedBefore, "header clock styling raised: " .. tostring(reports[#reports]))
+    local clock = module.visuals[ChatFrame1].headerClock
+    assert(clock:IsShown() and clock:GetText() == "9:28 AM" and task.delay == 55)
+    assert(nativeTimestamps == "none", "native message timestamps remain beside the header clock")
+    assert(clock.shadowOffset[1] == 1 and clock.shadowOffset[2] == -1)
+    assert(private.Chat.ClockText(module.config, 0, 0) == "12:00 AM")
+    assert(private.Chat.ClockText(module.config, 12, 0) == "12:00 PM")
+    module.config.headerClock24Hour = true
+    private.Chat.RefreshClocks()
+    assert(clock:GetText() == "09:28")
+    private.Chat.ApplyClock(module.visuals[ChatFrame1], ChatFrame1, module.config, 0)
+    assert(clock:GetText() == "09:28", "restyling a visible window cleared its clock")
+    assert(clock.points[1][5] > 0, "header clock overlaps messages without a tab-strip background")
+    newWindowHook()
+    assert(clock:GetText() == "09:28" and not task.cancelled, "new window did not refresh the clock")
+    for frame in pairs(module.visuals) do frame:Hide() end
+    local before = reads
+    private.Chat.RefreshClocks()
+    assert(task.cancelled and reads == before, "hidden clocks kept a read/timer")
+    ChatFrame1:Show()
+    ChatFrame1.hooks.OnShow()
+    assert(not task.cancelled and clock:GetText() == "09:28")
+    module.config.headerClock = false
+    module:Refresh()
+    assert(not clock:IsShown() and task.cancelled, "disabled header clock kept painting")
+    module.active = false
+    module:Disable()
+    assert(nativeTimestamps == "[%H:%M]", "disabling chat did not restore native timestamps")
+end
 -- Every runtime file starts with the shared private-table header, and
 -- Suite-created regions go through the shared S.CreateTexture/S.CreateFontString.
 for i = 2, #CHAT_FILES do

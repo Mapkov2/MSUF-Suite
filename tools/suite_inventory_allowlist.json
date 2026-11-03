@@ -5247,6 +5247,54 @@
       "evidence": "Blizzard installer preset request 2026-11-01; MSUF_Suite/Core/Catalog/ActionBars.lua appends ENDCAP.BLIZZARD=4 and keeps NONE=1, DIAMOND=2, CHEVRONS=3; tools/tests/suite_actionbars_contract.lua verifies the new art and switching back to Chevrons.",
       "reason": "Endcap choices extend from 1-3 to 1-4; size and offset controls retain choices 2 and 3 and also enable for choice 4. No previous setting, value or enabled state is removed.",
       "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:minimap.styleTexture\",\"choice\",false,1,7,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard preset correction request 2026-11-01; Core/Catalog/Minimap.lua appends native compass artwork at choice 8; suite_blizzard_factory_smoke.py exercises the live painter and switching back to artwork 2 on both clients.",
+      "reason": "Artwork choices extend from 1-7 to 1-8. All previous values and controls remain available.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:minimap.styleTexture\",\"choice\",false,1,7,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Blizzard preset correction request 2026-11-01; Core/Catalog/Minimap.lua appends native compass artwork at choice 8; suite_blizzard_factory_smoke.py exercises the live painter and switching back to artwork 2 on both clients.",
+      "reason": "Artwork choices extend from 1-7 to 1-8. All previous values and controls remain available.",
+      "date": "2026-11-01"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:battleRes.width\",\"number\",false,146,350,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Kuro UI reproduction request 2026-11-03; BattleRes.lua adds compact charge/countdown text. suite_battle_res_contract.lua checks text/card switching, native duration binding and unchanged stored dimensions.",
+      "reason": "Lower range extends for compact text. Previous sizes and the card default remain valid; card rendering retains an effective minimum of 146 by 44.",
+      "date": "2026-11-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:battleRes.height\",\"number\",false,44,80,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Kuro UI reproduction request 2026-11-03; BattleRes.lua adds compact charge/countdown text. suite_battle_res_contract.lua checks text/card switching, native duration binding and unchanged stored dimensions.",
+      "reason": "Lower range extends for compact text. Previous sizes and the card default remain valid; card rendering retains an effective minimum of 146 by 44.",
+      "date": "2026-11-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:battleRes.width\",\"number\",false,146,350,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Kuro UI reproduction request 2026-11-03; BattleRes.lua adds compact charge/countdown text. suite_battle_res_contract.lua checks text/card switching, native duration binding and unchanged stored dimensions.",
+      "reason": "Lower range extends for compact text. Previous sizes and the card default remain valid; card rendering retains an effective minimum of 146 by 44.",
+      "date": "2026-11-03"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:battleRes.height\",\"number\",false,44,80,1,\"\"]",
+      "basis": "owner",
+      "evidence": "Kuro UI reproduction request 2026-11-03; BattleRes.lua adds compact charge/countdown text. suite_battle_res_contract.lua checks text/card switching, native duration binding and unchanged stored dimensions.",
+      "reason": "Lower range extends for compact text. Previous sizes and the card default remain valid; card rendering retains an effective minimum of 146 by 44.",
+      "date": "2026-11-03"
     }
   ]
 }

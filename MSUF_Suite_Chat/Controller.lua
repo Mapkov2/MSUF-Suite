@@ -50,10 +50,12 @@ local function ApplyAll(self)
         S.Queue("chat")
         return
     end
+    C.ApplyClockSettings()
     ForEachChatFrame(ApplyWindow, self)
     C.DockGeometry()
     self.selectedChat = _G.SELECTED_CHAT_FRAME
     self.selectedDock = DockSelection()
+    C.RefreshClocks()
 end
 
 local function RecolorTab(self, frame, chat, dock)
@@ -127,6 +129,7 @@ local function NewWindowOpened()
     local frame = DockSelection()
     if frame then ApplyWindow(M, frame) end
     RefreshSelection(M)
+    C.RefreshClocks()
 end
 
 -- The FCF_* targets exist at login on both clients (Blizzard_ChatFrameBase);
@@ -163,6 +166,7 @@ function M:Refresh()
 end
 
 function M:Disable()
+    C.DisableClock()
     C.MessagesDisable()
     -- Faded alpha goes back before the context restores the tabs it owns.
     C.FadeDisable()

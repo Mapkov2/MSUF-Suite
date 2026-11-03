@@ -29,7 +29,7 @@ cases = [
     ("summary-eager", "MSUF_Suite_Options/Menu/Controls.lua",
      '-- One W.SettingsRows row for a catalog rule.',
      'for id in pairs(P.catalog) do P.SummaryPriority(id, "") end\n\n'
-     '-- One W.SettingsRows row for a catalog rule.', options, "Options load execution budget exceeded"),
+     '-- One W.SettingsRows row for a catalog rule.', options, "hidden summary ranks were compiled during load"),
     ("categories-eager", "MSUF_Suite_Options/Pages/QualityOfLife.lua",
      'P.QualityOfLifeCategories = CATEGORIES',
      'P.SortQualityOfLifeCategories()\nP.QualityOfLifeCategories = CATEGORIES',

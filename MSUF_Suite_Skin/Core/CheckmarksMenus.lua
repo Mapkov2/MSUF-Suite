@@ -50,13 +50,13 @@ local DROPDOWN_POPUP_SPEC = {
 
 -- DropdownButtonMixin passes the registration owner (the state) first.
 local function OnMenuOpen(state, dropdown)
-    if NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled then return end
+    if not NS.DB or not NS.DB.enabled then return end
     dropdown = dropdown or state.button
     BlizzardYellow.TrackDropdown(dropdown)
     local menu = Field(dropdown, "menu")
     focusSerial = focusSerial + 1
     FocusOpen(state, dropdown, menu)
-    if not menu or not Safety.CanDecorate(menu, true) then return end
+    if not menu or not CanTrack(menu) then return end
     -- Modern Blizzard_Menu proxies are compositor-managed: existing
     -- check/text regions remain safe to tint, but owned Surface creation is
     -- forbidden for their lifetime.
@@ -88,7 +88,7 @@ function Checkmarks.UntrackDropdown(button)
 end
 
 function Checkmarks.TrackDropdown(button, owner)
-    if NS.IsCombatLocked() or not LooksLikeDropdown(button) or not CanTrack(button) then
+    if not CanTrack(button) or not LooksLikeDropdown(button) then
         return false
     end
     -- Blizzard_Menu (DropdownButton.lua) loads first on Retail and Forever.
@@ -134,7 +134,7 @@ local function CategorySelected(row)
 end
 
 local function SkinSettingsCategoryRow(state, row)
-    if not state.active or NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled
+    if not state.active or not NS.DB or not NS.DB.enabled
         or not row or not CanTrack(row) then
         return false
     end
@@ -142,7 +142,7 @@ local function SkinSettingsCategoryRow(state, row)
     -- through the same initializer callback as actual category Buttons. Only
     -- SettingsCategoryListButtonTemplate owns this selection texture.
     local texture = Field(row, "Texture")
-    if not texture then return false end
+    if not CanTrack(texture) then return false end
     NS.Cosmetics.Fade(texture, state.owner)
     Checkmarks.TrackButton(Field(row, "Toggle"), state.owner)
     local applied = NS.ControlSkin.ApplyButton(row, state.owner, SETTINGS_CATEGORY_SPEC)
@@ -155,7 +155,7 @@ local function TrackSettingsButton(button, owner)
 end
 
 local function TrackSettingsControlTree(state, root)
-    if not state or not state.active or NS.IsCombatLocked() or not root then return false end
+    if not state or not state.active or not root then return false end
     return (WalkControlTree(root, state.owner, 4, 96, false, TrackSettingsButton))
 end
 
@@ -180,7 +180,7 @@ local function ForEachStateRow(state, scrollBox, visit)
 end
 
 local function RefreshSettingsCategories(state)
-    if not state or not state.active or NS.IsCombatLocked() then return false end
+    if not state or not state.active then return false end
     local scrollBox = state.scrollBox
     if type(Field(scrollBox, "ForEachFrame")) ~= "function" then return false end
     ForEachStateRow(state, scrollBox, SkinWalkedCategoryRow)
@@ -188,7 +188,7 @@ local function RefreshSettingsCategories(state)
 end
 
 local function RefreshSettingsControls(state)
-    if not state or not state.active or NS.IsCombatLocked() then return false end
+    if not state or not state.active then return false end
     local scrollBox = state.settingsScrollBox
     if type(Field(scrollBox, "ForEachFrame")) ~= "function" then return false end
     ForEachStateRow(state, scrollBox, TrackWalkedControlRow)
@@ -196,7 +196,7 @@ local function RefreshSettingsControls(state)
 end
 
 local function RefreshSettingsTabs(state)
-    if not state or not state.active or NS.IsCombatLocked() then
+    if not state or not state.active then
         return false
     end
     local panel = state.settingsPanel
@@ -293,7 +293,7 @@ local function RegisterSettingsCallbacks(state)
 end
 
 function Checkmarks.TrackSettingsCategories(categoryList, owner, settingsPanel)
-    if NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled or not categoryList
+    if not NS.DB or not NS.DB.enabled or not CanTrack(categoryList)
         or not CanTrack(categoryList) then
         return false
     end
@@ -391,7 +391,7 @@ local LEGACY_DROPDOWN_SPEC = {
 }
 
 function Checkmarks:OnLegacyDropdownShown(listFrame)
-    if NS.IsCombatLocked() or not NS.DB or not NS.DB.enabled or not listFrame then return end
+    if not NS.DB or not NS.DB.enabled or not CanTrack(listFrame) then return end
     NS.GenericWindows.ApplyFrame(listFrame, LEGACY_DROPDOWN_OWNER, LEGACY_DROPDOWN_SPEC)
     Checkmarks.TrackFrame(listFrame, LEGACY_DROPDOWN_OWNER)
     TrackLegacyFocus(listFrame)

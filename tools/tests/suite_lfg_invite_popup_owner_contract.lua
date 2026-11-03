@@ -35,6 +35,7 @@ local function Session(forever, groupFinderExists)
         IsCombatLocked = function() return false end,
         DB = { enabled = true, skins = { blizzardWindows = true }, skinCategories = { group = true } },
         GenericWindows = {},
+        WindowControls = { TrackFocus = Noop },
         AdapterKit = { Isolate = function(callback, ...) callback(...) return true end, CancelDeferred = Noop, DeferHidden = Noop, CancelHidden = Noop },
         -- GenericWindows.lua's private helpers; ApplyFrameNow paints one root.
         GenericWindowsShared = {

@@ -21,6 +21,8 @@ function Frame:GetNumRegions() return select("#", self:GetRegions()) end
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteProfileNames(arg[1])
 -- The chat adapter keeps its colour ledger in the Suite core's skin boundary.
 dofile(arg[1] .. "/tools/tests/suite_test_support.lua").SuiteSkinBoundary(arg[1])
+MSUFSuite.InCombat = dofile(arg[1] .. "/tools/tests/suite_test_support.lua").InCombat(
+    arg[1], function() return InCombatLockdown() end)
 -- The embedded skin's mandatory Suite dependency has both bridges before
 -- its TOC starts. Use real providers, including the equivalent public-value
 -- predicate from skin Safety, rather than an incomplete bootstrap table.

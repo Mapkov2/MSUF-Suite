@@ -846,6 +846,10 @@ D.CloseBreakdown(win,true)
 roster[1].recap=nil
 S.Set("damageMeter","w1Session",2)
 assert(Row(win,1).valueText.text=="" and win.title.text=="Deaths (Overall)","overall deaths must have no time: "..tostring(win.title.text))
+S.Set("damageMeter","overallTitlePrefix",true)
+assert(win.title.text=="Overall Deaths","overall title prefix was not applied")
+S.Set("damageMeter","overallTitlePrefix",false)
+assert(win.title.text=="Deaths (Overall)","default title format was not restored")
 S.SetMany("damageMeter",{w1Session=1,w1Type=11})
 Row(win,1).scripts.OnClick(Row(win,1),"LeftButton")
 assert(win.bd.open and api.lastCreature==99 and api.lastGUID=="Creature-0-99")
@@ -1174,17 +1178,14 @@ do
     C_DamageMeter.GetCombatSessionFromType=function() return {combatSources={{sourceGUID=Secret("guid"),totalAmount=1}}} end
     assert(S.ReadDamageMeterTotals()==nil,"secret snapshot GUID escaped public boundary")
     C_DamageMeter.GetCombatSessionFromType=nativeFetch
-    local configs=0
-    CreateAbbreviateConfig=function(points)
-        configs=configs+1
-        assert(#points==6 and points[1].breakpoint==1e10 and points[6].abbreviation=="K"
-            and points[6].abbreviationIsGlobal==false)
-        return points
-    end
+    local cachedOptions
+    CreateAbbreviateConfig=function() error("restricted abbreviation config used") end
     local formatter,plainEnglish=AbbreviateNumbers,0
     AbbreviateNumbers=function(value,options)
-        -- The English option decides plain and secret amounts alike.
-        assert(options.locale=="enUS" and options.config)
+        local points=assert(options.breakpointData)
+        assert(options.locale=="enUS" and #points==7 and points[7].breakpoint==0)
+        assert(not cachedOptions or cachedOptions==options,"native options were rebuilt")
+        cachedOptions=options
         if not IsSecret(value) then plainEnglish=plainEnglish+1;return "english" end
         return Secret("english")
     end
@@ -1192,7 +1193,7 @@ do
     assert(plainEnglish>0 and Row(win,1).valueText.text:find("english",1,true),
         "plain amounts ignored the English K/M/B option")
     assert(IsSecret(D.Abbreviate(Secret("amount"))))
-    D.ConfigureAbbreviation();assert(configs==1,"native abbreviation config was rebuilt")
+    D.ConfigureAbbreviation();D.Abbreviate(1)
     AbbreviateNumbers=formatter
     assert(S.SetMany("damageMeter",{rowBorderMode=3,rowBorderIcon=true,iconBorder=true}))
     local row=D.CreateRow(win.body,win,"tip")
@@ -1615,6 +1616,71 @@ do
     assert(win.header.points[1][1] == "TOPLEFT" and win.buttons.session.shown and win.buttons.type.shown,
         "header setting did not restore the original layout")
     assert(capacity >= win.capacity, "external header incorrectly consumes body rows")
+end
+-- Recycled tooltip and breakdown rows must follow the current pet identity,
+-- even when the spell ID remains unchanged across owners or sessions.
+do
+    api.secret = false
+    combat, M.inCombat = false, false
+    S.Set("damageMeter", "w1Type", 1)
+    local fetchType, fetchID = C_DamageMeter.GetCombatSessionSourceFromType, C_DamageMeter.GetCombatSessionSourceFromID
+    local spell = { spellID = 6603, totalAmount = 100, amountPerSecond = 10,
+        creatureName = "First pet", combatSpellDetails = {} }
+    local detail = { totalAmount = 100, maxAmount = 100, combatSpells = { spell } }
+    local requests = {}
+    local function Fetch(session, kind, guid)
+        requests[#requests + 1] = { session, kind, guid }
+        return detail
+    end
+    C_DamageMeter.GetCombatSessionSourceFromType = Fetch
+    C_DamageMeter.GetCombatSessionSourceFromID = Fetch
+    local sessionID = win.sessionID
+    win.sessionID = nil
+    D.CloseBreakdown(win, true)
+    D.ShowTip(win, Row(win, 1))
+    local tipRow = assert(M.tip.rows[1])
+    assert(tipRow.nameText.text == "Spell6603 (First pet)", "first pet tooltip label missing")
+    D.HideTip()
+    spell.creatureName = "Second pet"
+    D.ShowTip(win, Row(win, 2))
+    assert(requests[#requests][3] ~= requests[#requests - 1][3], "pet reuse test did not switch source owner")
+    assert(M.tip.rows[1] == tipRow and tipRow.nameText.text == "Spell6603 (Second pet)",
+        "same-spell tooltip retained the previous owner's pet")
+    D.HideTip()
+    win.sessionID = 73
+    spell.creatureName = "Later pet"
+    D.ShowTip(win, Row(win, 1))
+    assert(requests[#requests][1] == 73 and tipRow.nameText.text == "Spell6603 (Later pet)",
+        "same-spell tooltip retained the previous session's pet")
+    D.HideTip()
+    D.OpenBreakdown(win, 1)
+    local breakdownRow = assert(win.bdRows[1])
+    assert(breakdownRow.nameText.text == "Spell6603 (Later pet)", "breakdown pet label missing")
+    spell.creatureName = "New pet"
+    D.RefreshBreakdown(win)
+    assert(win.bdRows[1] == breakdownRow and breakdownRow.nameText.text == "Spell6603 (New pet)",
+        "same-spell breakdown retained the previous pet")
+    for _, pet in ipairs({ "", Secret("pet-name"), false }) do
+        spell.creatureName = pet
+        D.RefreshBreakdown(win)
+        assert(breakdownRow.nameText.text == "Spell6603", "unreadable or absent pet retained the previous suffix")
+    end
+    spell.creatureName = nil
+    D.RefreshBreakdown(win)
+    assert(breakdownRow.nameText.text == "Spell6603", "nil pet retained previous suffix")
+    spell.creatureName = "Returned pet"
+    D.RefreshBreakdown(win)
+    assert(breakdownRow.nameText.text == "Spell6603 (Returned pet)", "readable pet did not return after secret pet")
+    local nameGetter, nameReads = C_Spell.GetSpellName, 0
+    C_Spell.GetSpellName = function(id) nameReads = nameReads + 1 return nameGetter(id) end
+    local writes, textureReads = breakdownRow.nameText.writes, spellTextureCalls
+    for _ = 1, 100 do D.PaintSpell(breakdownRow, spell, detail, win.meterType, breakdownRow.class) end
+    C_Spell.GetSpellName = nameGetter
+    assert(nameReads == 0 and spellTextureCalls == textureReads and breakdownRow.nameText.writes == writes,
+        "warm unchanged spell label performed native reads or name writes")
+    D.CloseBreakdown(win, true)
+    win.sessionID = sessionID
+    C_DamageMeter.GetCombatSessionSourceFromType, C_DamageMeter.GetCombatSessionSourceFromID = fetchType, fetchID
 end
 if MSUF_DM_FEATURE_TESTS then
     MSUF_DM_FIXTURE={D=D,S=S,NS=Suite,M=M,api=api,Event=Event,RunPaint=RunPaint,

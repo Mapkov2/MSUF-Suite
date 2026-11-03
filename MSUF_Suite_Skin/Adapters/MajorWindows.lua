@@ -212,7 +212,7 @@ local function FadeNineSlice(state, target)
 end
 
 local function ApplyGeneric(root, owner, mode)
-    return NS.GenericWindows.ApplyFrame(root, owner, mode)
+    return NS.GenericWindows.ApplyFrame(root, owner, mode, true)
 end
 
 -- The profession name plates are unnamed $parentNameFrame globals whose
@@ -566,7 +566,7 @@ local function RefreshScoutingChrome()
     if MajorWindows.activeOwnerCount == 0 or not CategoryEnabled("expansion") then return end
     if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer("major-windows:scouting-map", RefreshScoutingChrome)
-        return
+        if not NS.Safety.CanCreateRegions(Field(_G, "CovenantMissionFrame")) then return end
     end
     local root = Field(_G, "CovenantMissionFrame")
     if not root then return end
@@ -616,7 +616,6 @@ end
 
 local function ApplyGroup(spec, state)
     if not state or not state.active then return false, "disabled" end
-    if NS.IsCombatLocked() then return false, "combat" end
     if not CategoryEnabled(spec.category) then return true, "disabled" end
     local root = _G[spec.root]
     if not root then return false, NS.Client.IsAddOnLoaded(spec.addon) and "missing" or "waiting" end
@@ -629,10 +628,11 @@ end
 
 ApplyGroupForOwners = function(spec)
     if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer("major-windows:load:" .. spec.id, function()
-            ApplyGroupForOwners(spec)
-        end)
-        return
+        if not spec.combatRefresh then
+            spec.combatRefresh = function() ApplyGroupForOwners(spec) end
+        end
+        NS.CombatGate.RunOrDefer("major-windows:load:" .. spec.id, spec.combatRefresh)
+        if not NS.Safety.CanCreateRegions(Field(_G, spec.root)) then return end
     end
     for _, state in pairs(MajorWindows.owners) do
         if state.active then ApplyGroup(spec, state) end

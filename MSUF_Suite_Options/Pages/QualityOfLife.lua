@@ -33,6 +33,7 @@ local GROUPS = {
     { id = "playerAuras", title = "Player aura layout", switch = "enabled", sections = { "player_auras" },
         aliases = { "player buffs", "minimap auras" } },
     { id = "playerAuraSkins", title = "Player aura skins", switch = "enabled", sections = { "player_aura_skins" }, aliases = { "buff skins" } },
+    { id = "castbarArt", title = "Castbar artwork", switch = "enabled", sections = { "castbar_art" } },
     { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" },
         aliases = { "exp bar", "erfahrungsleiste" } },
     { id = "mapLandingShortcuts", title = "Expansion shortcuts (Retail)", switch = "enabled",
@@ -138,7 +139,7 @@ local CATEGORIES = {
     { id = "characterGear", title = "Character & Gear", tabs = {
         { id = "character", title = "Character", keys = {
             "chatProfileLinks.enabled", "xpBar.enabled", "playerAuras.enabled", "playerAuraSkins.enabled", "loadoutReminder.enabled", "combatStatsHUD.enabled",
-            "targetDistance.enabled", "characterExtras.enabled",
+            "targetDistance.enabled", "characterExtras.enabled", "castbarArt.enabled",
         } },
         { id = "gear", title = "Gear", keys = {
             "characterUpgradeWindow.enabled", "socketGemSuggestions.enabled", "durabilityAlert.enabled",
@@ -183,8 +184,9 @@ for _, group in ipairs(GROUPS) do byKey[group.id .. "." .. group.switch] = group
 local function ResolveFeatures(keys, category, tab)
     local features = {}
     for _, key in ipairs(keys) do
-        local group = assert(byKey[key], "Unknown Quality of Life feature: " .. key)
-        assert(not group.category, "Duplicate Quality of Life feature: " .. key)
+        local group = byKey[key]
+        if not group then error("Unknown Quality of Life feature: " .. key) end
+        if group.category then error("Duplicate Quality of Life feature: " .. key) end
         group.category, group.categoryTitle = category.id, category.title
         group.tab, group.tabTitle = tab and tab.id or nil, tab and tab.title or nil
         features[#features + 1] = group
@@ -205,7 +207,7 @@ for _, category in ipairs(CATEGORIES) do
     category.keys = nil
 end
 for _, group in ipairs(GROUPS) do
-    assert(group.category, "Uncategorized Quality of Life feature: " .. group.title)
+    if not group.category then error("Uncategorized Quality of Life feature: " .. group.title) end
 end
 function P.SortQualityOfLifeCategories()
     table.sort(GROUPS, P.QoLTitleLess)

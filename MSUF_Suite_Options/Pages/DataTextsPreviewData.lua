@@ -9,7 +9,7 @@ local SAMPLES = {
     vault = { "Great Vault", "3 / 9" }, supplies = { "Supplies", "24 / 150" },
     gold = { "Gold", "12458g" }, sessionGold = { "Session", "+245g" },
     bags = { "Bags", "38/96" }, durability = { "Durability", "100%" },
-    clock = { "Time", "20:45" }, fps = { "FPS", "120" }, latency = { "World", "24 ms" },
+    homeLatency = { "Home latency", "18 ms" }, clock = { "Time", "20:45" }, fps = { "FPS", "120" }, latency = { "World", "24 ms" },
     coordinates = { "Coords", "48.2, 61.7" }, location = { "Zone", "Location" },
     memory = { "Addon memory", "14.59 MB" }, xp = { "XP", "64%" }, date = { "Date", "04/10" }, fpsLatency = { "FPS / World", "120 / 24 ms" },
     broker = { "Broker", "124" }, currency = { "Currency", "850" }, crests = { "Crests", "90 / 120" },
@@ -42,7 +42,7 @@ function Data.Sample(source, style, config, block)
     local name, value = Tr(sample[1]), sample[2]
     if WORD_VALUES[source] then value = Tr(WORD_VALUES[source]) end
     if source == "vault" then value = Tr("%d / %d slots"):format(3, 9) end
-    if source == "latency" then value = Tr("%d ms"):format(24) end
+    if source == "latency" or source == "homeLatency" then value = Tr("%d ms"):format(source == "latency" and 24 or 18) end
     if source == "fpsLatency" then value = "120 / " .. Tr("%d ms"):format(24) end
     if source == "specLoot" then value = Tr("%s / Loot: %s"):format(Tr("Specialization"), Tr("Default")) end
     if source == "travel" then value = Tr(Suite.Client.isForever and "Hearthstone" or "Hearthstone / portals") end
@@ -65,14 +65,9 @@ end
 
 function Data.Text(source, style, config, block)
     local name, value = Data.Sample(source, style, config, block)
-    if source == "fpsLatency" and style.performanceLabels then
-        return "|cff" .. style.labelColor .. Tr("FPS") .. ": |r|cff" .. style.valueColor .. "120|r |cff"
-            .. style.labelColor .. Tr("MS") .. ": |r|cff" .. style.valueColor .. "24|r"
-    elseif source == "memory" and style.colorMemoryUnit then
-        value = value:gsub(" MB$", " |cff" .. style.memoryUnitColor .. "MB|r")
-    end
-    local prefix = name ~= "" and ("|cff" .. style.labelColor .. name .. (style.labelColon and ": " or " ") .. "|r") or ""
-    return prefix .. "|cff" .. style.valueColor .. value .. "|r"
+    local format = (style.sourceIcons or style.fpsAccent) and Suite.DecoratedDataText or Suite.FormatDataText
+    local _, display = format(name, value, nil, style, source, value)
+    return display
 end
 
 function Data.Snap(value, pixel)

@@ -2,12 +2,13 @@ local _, NS = ...
 
 -- Short render transforms follow the native offset; no scroll write, wheel
 -- replacement, recurring timer or persistent update script is installed.
-local Legacy = { states = setmetatable({}, { __mode = "k" }) }
+local Legacy = { states = setmetatable({}, { __mode = "k" }), active = {} }
 NS.LegacyScrollMotion = Legacy
 local Safety = NS.Safety
 
 local function Stop(state)
     if state.current then state.current.group:Stop() end
+    Legacy.active[state] = nil
 end
 
 local function SmoothScrolling()
@@ -16,7 +17,7 @@ local function SmoothScrolling()
 end
 
 local function Enabled()
-    return SmoothScrolling() and not NS.Motion.combat and not NS.IsCombatLocked()
+    return SmoothScrolling()
 end
 
 local function Hidden(frame)
@@ -29,6 +30,10 @@ local function RangeChanged(frame)
     if state then Stop(state) state.offset = Safety.Read(frame, "GetVerticalScroll") end
 end
 
+local function Finished(group)
+    if group.owner.current and group.owner.current.group == group then Legacy.active[group.owner] = nil end
+end
+
 local function Changed(frame, offset)
     local state = Legacy.states[frame]
     if not state or not next(state.owners) or not Safety.Public(offset) or type(offset) ~= "number" then return end
@@ -36,15 +41,18 @@ local function Changed(frame, offset)
     state.offset = offset
     if previous == nil or previous == offset then return end
     local child = Safety.Read(frame, "GetScrollChild")
-    if not Enabled() or state.dragging or not Safety.CanCreateRegions(child) or Safety.GetProtection(child)
+    if not Enabled() or state.dragging or not Safety.CanCreateRegions(frame)
+        or not Safety.CanCreateRegions(child) or Safety.GetProtection(child)
         or Safety.Read(frame, "IsVisible") ~= true then Stop(state) return end
     local record = state.records[child]
     if not record then
         local group = child:CreateAnimationGroup()
+        group.owner = state
+        group:SetScript("OnFinished", Finished)
         local move = group:CreateAnimation("Translation")
         move:SetDuration(0.11)
         move:SetSmoothing("OUT")
-        record = { group = group, move = move }
+        record = { group = group, move = move, target = child }
         state.records[child] = record
     end
     local carry = 0
@@ -56,6 +64,7 @@ local function Changed(frame, offset)
     record.offset = previous - offset + carry
     record.move:SetOffset(0, record.offset)
     state.current = record
+    Legacy.active[state] = true
     record.group:Play(true)
 end
 
@@ -63,14 +72,20 @@ end
 -- both with GetScript on every non-Button of a panel it scans (Blizzard_Gamepad-
 -- SmartNavigation/Utility.lua:196-206), and a skin hook there is a tainted value in
 -- that secure scan. A drag starts on a global press over a shown bar and ends on the
--- global release. Presses are watched only while a tracked bar shows, out of combat
--- and with smooth scrolling on; the release only while a drag is held.
+-- global release. Presses are watched only while a tracked safe bar shows
+-- with smooth scrolling on; the release only while a drag is held.
 local events = CreateFrame("Frame")
 local bars = setmetatable({}, { __mode = "k" })
 local shownBars = setmetatable({}, { __mode = "k" })
 
-local function Watch(combat)
-    if not combat and next(shownBars) and SmoothScrolling() and not NS.IsCombatLocked() then
+local function Watch()
+    local available = false
+    if SmoothScrolling() then
+        for bar in pairs(shownBars) do
+            if Safety.CanCreateRegions(bar) then available = true break end
+        end
+    end
+    if available then
         events:RegisterEvent("GLOBAL_MOUSE_DOWN")
     else
         events:UnregisterEvent("GLOBAL_MOUSE_DOWN")
@@ -99,7 +114,7 @@ end
 local function DragDown(button)
     if not Safety.Public(button) or button ~= "LeftButton" or not Enabled() then return end
     for bar in pairs(shownBars) do
-        if Safety.Read(bar, "IsMouseOver") == true then
+        if Safety.CanCreateRegions(bar) and Safety.Read(bar, "IsMouseOver") == true then
             for _, state in pairs(Legacy.states) do
                 if state.bar == bar and next(state.owners) then state.dragging = true Stop(state) end
             end
@@ -155,14 +170,17 @@ function Legacy.ReleaseOwner(owner)
     end
     Watch()
 end
-local function StopAll()
-    for _, state in pairs(Legacy.states) do Stop(state) end
+local function StopAll(combat)
+    for state in pairs(Legacy.active) do
+        if not combat or not Safety.CanCreateRegions(state.target)
+            or not Safety.CanCreateRegions(state.current.target) then Stop(state) end
+    end
 end
 -- PLAYER_REGEN_DISABLED arrives before lockdown is on, so combat is passed in.
 local function OnEvent(_, event, button)
     if event == "GLOBAL_MOUSE_DOWN" then DragDown(button)
     elseif event == "GLOBAL_MOUSE_UP" then DragReleased(button)
-    elseif event == "PLAYER_REGEN_DISABLED" then StopAll() Watch(true)
+    elseif event == "PLAYER_REGEN_DISABLED" then StopAll(true) Watch()
     else Watch() end
 end
 local function SettingsChanged()

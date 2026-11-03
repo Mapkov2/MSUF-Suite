@@ -9,6 +9,8 @@ local Adapters = {
 NS.Adapters = Adapters
 local TrackMenuMotion, ReleaseMenuMotion = function() end, function() end
 function Adapters.SetMenuMotionProvider(track, release) TrackMenuMotion, ReleaseMenuMotion = track, release end
+local TrackCatalogFocus, StopCatalogFocus = function() end, function() end
+function Adapters.SetWindowFocusDiscovery(discover, stop) TrackCatalogFocus, StopCatalogFocus = discover, stop end
 
 local function IsValidDefinition(definition)
     return type(definition) == "table" and type(definition.id) == "string"
@@ -127,8 +129,18 @@ local function RunDefinition(definition, frame)
     return true, "applied"
 end
 
+local focusRoots = {
+    colorPicker = "ColorPickerFrame", settings = "SettingsPanel", addonList = "AddonList",
+    gameMenu = "GameMenuFrame", worldMap = "WorldMapFrame", playerSpells = "PlayerSpellsFrame",
+    encounterJournal = "EncounterJournal", communities = "CommunitiesFrame",
+}
+
 local function ApplyDefinition(definition)
     local id = definition.id
+    if id == "blizzardWindows" then
+        if NS.DB.enabled and DefinitionEnabled(definition) then TrackCatalogFocus(true, focusRoots)
+        else StopCatalogFocus() end
+    end
     if not NS.DB.enabled or not DefinitionEnabled(definition) or SuiteOwned(definition) then
         local previous = Adapters.status[id]
         local frame = previous and previous.frame
@@ -146,6 +158,7 @@ local function ApplyDefinition(definition)
         Adapters.status[id] = { state = waiting and "waiting" or "missing" }
         return false
     end
+    NS.WindowControls.TrackFocus(frame, id)
     if not NS.Safety.CanDecorate(frame, definition.allowImplicitProtected) then
         Adapters.status[id] = { state = "protected", frame = frame }
         return false
@@ -187,12 +200,36 @@ local function RunIsolated(operation, definition)
     return false
 end
 
+
+local function TrackCombatFocus(definition)
+    if definition and definition.id == "blizzardWindows" then
+        TrackCatalogFocus(NS.DB.enabled and DefinitionEnabled(definition), focusRoots)
+        return
+    end
+    local root = definition and focusRoots[definition.id]
+    if root and NS.DB.enabled and DefinitionEnabled(definition) then
+        local frame = NS.Safety.Field(_G, root)
+        NS.WindowControls.TrackFocus(frame, definition.id)
+        if not frame then ScheduleLoadOnDemand(definition) end
+        if definition.id == "colorPicker" then NS.WindowControls.TrackFocus(NS.Safety.Field(_G, "OpacityFrame"), definition.id) end
+    end
+end
+
+local function AttachCombatWindow(definition)
+    if definition and definition.id == "playerSpells" and NS.DB.enabled and DefinitionEnabled(definition) then
+        local frame = NS.Safety.Field(_G, "PlayerSpellsFrame")
+        if frame then NS.PlayerSpellsSkin.AttachWindowControls(frame, definition.id) end
+    end
+end
+
 function Adapters.Apply(id)
     local definition = Adapters.definitions[id]
     if not definition then
         return false
     end
     if NS.IsCombatLocked() then
+        TrackCombatFocus(definition)
+        AttachCombatWindow(definition)
         NS.CombatGate.RunOrDefer("adapter:" .. id, function() RunIsolated(ApplyDefinition, definition) end)
         return false
     end
@@ -201,6 +238,9 @@ end
 
 function Adapters.ApplyAll()
     if NS.IsCombatLocked() then
+        for id in pairs(focusRoots) do TrackCombatFocus(Adapters.definitions[id]) end
+        TrackCombatFocus(Adapters.definitions.blizzardWindows)
+        AttachCombatWindow(Adapters.definitions.playerSpells)
         NS.CombatGate.RunOrDefer("adapters:all", Adapters.ApplyAll)
         return false
     end

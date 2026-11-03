@@ -503,6 +503,7 @@ function C.ApplyWindow(self, frame)
     KeepTabVisible(self, frame)
     if primary then ApplySidebar(self, visual, frame) end
     ApplyCopyButton(self, visual, frame, top)
+    C.ApplyClock(visual, frame, c, top)
     C.ApplyInputLayout(self, visual, frame, input)
     ApplyFont(self, frame, messageFont)
     ApplySizeLock(self, visual, frame, primary)
@@ -518,6 +519,7 @@ function C.ApplyWindow(self, frame)
 end
 
 local function HideVisual(visual)
+    if visual.headerClock then visual.headerClock:Hide() end
     C.HideGradient(visual)
     C.ClearUnread(visual)
     C.ReleaseMessageFade(visual)

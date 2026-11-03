@@ -87,7 +87,8 @@ local function Row(kind, label, key, section, get, set, values, min, max, step)
 end
 
 local function SkinDefault(defaults, id)
-    if id == "theme.menuAnimations" or id == "theme.dropdownDimming" or id == "theme.smoothScrolling" then return true end
+    if id == "theme.menuAnimations" or id == "theme.dropdownDimming"
+        or id == "theme.windowFocusDimming" or id == "theme.smoothScrolling" then return true end
     if id == "theme.reduceMotion" then return false end
     if id == "suiteEnabled" then return true end
     if id == "enabled.windows" then return defaults.enabled end

@@ -275,7 +275,7 @@ walk = function(state, frame, depth)
 end
 
 function Menus.Track(root, owner, contentOnly)
-    if owner == nil or not Safe(root) or NS.Motion.combat or NS.IsCombatLocked() then return false end
+    if owner == nil or not Safe(root) then return false end
     -- Authored tab bodies already identify the exact content container.
     -- Watch it once; its descendants need neither discovery nor registration.
     if contentOnly then return Content.Watch(root, owner) end

@@ -32,7 +32,12 @@ local function Frame(name, parent)
     end
     function frame:CreateAnimationGroup()
         allocations = allocations + 1
-        local group = { playing = false, plays = 0 }
+        local group = { playing = false, plays = 0, scripts = {} }
+        function group:SetScript(event, callback) self.scripts[event] = callback end
+        function group:Finish()
+            self.playing = false
+            if self.scripts.OnFinished then self.scripts.OnFinished(self) end
+        end
         function group:Stop() self.playing = false end
         function group:Play(reverse) self.playing = true self.plays = self.plays + 1 self.reverse = reverse end
         function group:CreateAnimation()
@@ -115,7 +120,13 @@ NS.Motion.combat = true
 for _, frame in ipairs(frames) do
     if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
 end
-Check(not child.group.playing, "combat edge retained the render animation")
+Check(child.group.playing, "combat edge stopped safe render animation")
+child.protected = true
+for _, frame in ipairs(frames) do
+    if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+end
+Check(not child.group.playing, "protected content retained the render animation")
+child.protected = false
 NS.Motion.combat = false
 for _, key in ipairs({ "smoothScrolling", "reduceMotion" }) do
     NS.DB.theme[key] = key == "reduceMotion"

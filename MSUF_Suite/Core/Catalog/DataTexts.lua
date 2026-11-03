@@ -18,7 +18,8 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     { "Dungeon portals", "portals" }, { "Micro menu", "microMenu" },
     { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" }, { "Addon memory", "memory" },
     { "Great Vault", "vault" }, { "Supplies", "supplies" }, { "Friends online", "friends" },
-    { "Guild online", "guild" }, { "Secondary stat", "secondaryStat" }, { "Mythic+ rating", "mythicRating" } }) do
+    { "Guild online", "guild" }, { "Secondary stat", "secondaryStat" }, { "Mythic+ rating", "mythicRating" },
+    { "Home latency", "homeLatency" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
@@ -157,6 +158,8 @@ local textStyle = {
     Choice("fontShadowDistance", "Shadow distance", 1, { "1 px", "2 px" }),
     Choice("textAlign", "Text alignment", 2, { "Left", "Center", "Right" }),
     Bool("showLabels", "Show data names", true),
+    Bool("sourceIcons", "Show data icons", false),
+    Bool("fpsAccent", "Show FPS with unit and accent color", false),
     Bool("performanceLabels", "Separate FPS and latency labels", false),
     Bool("colorMemoryUnit", "Use a separate memory unit color", false),
     Color("memoryUnitColor", "Memory unit color", "28a6a1"),
@@ -678,12 +681,51 @@ function NS.DataTextEffectiveStyle(config, bar)
         fontRendering = Value("fontRendering"), fontShadow = Value("fontShadow"),
         fontShadowOpacity = Value("fontShadowOpacity"), fontShadowDistance = Value("fontShadowDistance"),
         textAlign = Value("textAlign"), showLabels = Value("showLabels"),
+        sourceIcons = Value("sourceIcons"), fpsAccent = Value("fpsAccent"),
         labelColon = Value("labelColon"), clockLabel = Value("clockLabel"), bagsPercent = Value("bagsPercent"),
         labelColor = ColorValue("label"), valueColor = ColorValue("value"), warningColor = ColorValue("warning"),
         valueClassColor = Value("valueClassColor"),
         performanceLabels = Value("performanceLabels"), colorMemoryUnit = Value("colorMemoryUnit"),
         memoryUnitColor = Value("memoryUnitColor"),
     }
+end
+
+local DATA_ICONS = {
+    homeLatency = "Home", latency = "World", location = "Location", durability = "Durability",
+}
+
+local FPS_LABEL, MS_LABEL = NS.Text("FPS"), NS.Text("MS")
+function NS.FormatDataText(label, value, severity, style, key, alternate)
+    if key == "bags" and style.bagsPercent then value = alternate or "\226\128\148" end
+    local valueColor = severity == "bad" and style.warningColor or style.valueColor
+    if key == "fpsLatency" and style.performanceLabels then
+        local fps, latency = value:match("^(%d+) / (%d+)")
+        if fps then
+            local plain = FPS_LABEL .. ": " .. fps .. " " .. MS_LABEL .. ": " .. latency
+            return plain, "|cff" .. style.labelColor .. FPS_LABEL .. ": |r|cff" .. valueColor .. fps
+                .. "|r |cff" .. style.labelColor .. MS_LABEL .. ": |r|cff" .. valueColor .. latency .. "|r"
+        end
+    elseif key == "memory" and style.colorMemoryUnit then
+        value = value:gsub(" MB$", " |cff" .. style.memoryUnitColor .. "MB|r")
+    end
+    if style.showLabels and (key ~= "clock" or style.clockLabel) then
+        local separator = style.labelColon and ": " or " "
+        return label .. separator .. value,
+            "|cff" .. style.labelColor .. label .. separator .. "|r|cff" .. valueColor .. value .. "|r"
+    end
+    return value, "|cff" .. valueColor .. value .. "|r"
+end
+
+function NS.DecoratedDataText(label, value, severity, style, key, alternate)
+    if key == "fps" and style.fpsAccent then value = value .. " fps" end
+    local plain, text = NS.FormatDataText(label, value, severity, style, key, alternate)
+    if key == "fps" and style.fpsAccent and severity ~= "bad" then
+        local suffix = "|cff" .. style.valueColor .. value .. "|r"
+        text = text:sub(1, #text - #suffix) .. "|cff" .. style.accentColor .. value .. "|r"
+    end
+    local icon = style.sourceIcons and DATA_ICONS[key]
+    if icon then text = "|TInterface\\AddOns\\MSUF_Suite\\Media\\DataTextIcons\\" .. icon .. ".tga:12:12|t " .. text end
+    return plain, text
 end
 
 if NS.Client.isForever then

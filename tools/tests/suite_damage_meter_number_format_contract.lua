@@ -1,7 +1,6 @@
 local root = assert(arg[1], "repository root required")
 -- The Damage Meter formats every amount, plain or secret, through the one
--- native formatter (AbbreviateNumbers), as Blizzard's own meter formats all
--- its values with one native call (DamageMeterEntry.lua, GetEntryValueText).
+-- native formatter (AbbreviateNumbers) with explicit small-value rounding.
 -- Out of combat the values are plain, in combat secret: a plain value
 -- formatted in Lua would change its look at every combat edge on a client
 -- whose abbreviations are not English. "Use English K/M/B" decides the
@@ -35,7 +34,7 @@ issecretvalue = IsSecret
 -- abbreviations; this client is German. A secret number gives a secret string.
 local GERMAN = { { 1e10, " Mrd.", 1e9, 1 }, { 1e9, " Mrd.", 1e8, 10 }, { 1e7, " Mio.", 1e6, 1 },
     { 1e6, " Mio.", 1e5, 10 }, { 1e4, " Tsd.", 1e3, 1 }, { 1e3, " Tsd.", 1e2, 10 } }
-local natives = 0
+local natives, lastOptions = 0, nil
 local function Format(value, points, comma)
     local number, suffix = tostring(value), ""
     for _, point in ipairs(points) do
@@ -49,21 +48,30 @@ local function Format(value, points, comma)
 end
 AbbreviateNumbers = function(value, options)
     natives = natives + 1
+    lastOptions = options
     assert(type(Reveal(value)) == "number", "AbbreviateNumbers takes a number")
     local text
     if options then
         local points = {}
-        for _, point in ipairs(assert(options.config, "options without the cached config").points) do
+        for _, point in ipairs(assert(options.breakpointData, "options without cached breakpoints")) do
             assert(point.abbreviationIsGlobal == false, "the English config must use raw suffixes")
             points[#points + 1] = { point.breakpoint, point.abbreviation, point.significandDivisor, point.fractionDivisor }
         end
-        text = Format(Reveal(value), points, false)
+        text = Format(Reveal(value), points, options.locale ~= "enUS")
     else
         text = Format(Reveal(value), GERMAN, true)
     end
     return IsSecret(value) and Secret(text) or text
 end
-CreateAbbreviateConfig = function(points) return { points = points } end
+CreateAbbreviateConfig = function() error("restricted native config must not be used") end
+C_StringUtil = { GetDefaultAbbreviationBreakpoints = function()
+    local points = {}
+    for i, point in ipairs(GERMAN) do
+        points[i] = {breakpoint=point[1], abbreviation=point[2], significandDivisor=point[3],
+            fractionDivisor=point[4], abbreviationIsGlobal=false}
+    end
+    return points
+end }
 
 ------------------------------------------------------------------ client
 Ambiguate = function(name) return name end
@@ -161,4 +169,73 @@ row, natives = Row(), 0
 D.SetValueText(row, TYPE.DamageDone, TOTAL, RATE, SHARE, false)
 D.SetValueText(row, TYPE.DamageDone, TOTAL, RATE, SHARE, false)
 assert(natives == 2, "the custom layout made " .. natives .. " native calls for one changed plain row, not 2")
+-- Explicit decimal precision stays inside the native formatter for combat secrets.
+Configure(true, {numberFormat = FORMAT.PARENTHESES})
+D.Abbreviate(1)
+local autoOptions, configs = lastOptions, {}
+for _, pair in ipairs({ {0, "107M (385K)"}, {1, "107.8M (385.3K)"}, {2, "107.89M (385.3K)"} }) do
+    D.M.config = { englishNumbers = true, englishDecimals = pair[1] }
+    D.M.style = { numberFormat = FORMAT.PARENTHESES }
+    D.ConfigureAbbreviation()
+    for _, meterType in ipairs({TYPE.DamageDone, TYPE.HealingDone}) do
+        local plain, secret = Row(), Row()
+        D.SetValueText(plain, meterType, 107890000, 385300, 1, false)
+        D.SetValueText(secret, meterType, Secret(107890000), Secret(385300), 1, false)
+        assert(plain.valueText.shown == pair[2] and secret.valueText.shown == pair[2],
+            "explicit decimals differ in or out of combat: " .. plain.valueText.shown)
+    end
+    local options = lastOptions
+    configs[pair[1]] = options
+    D.ConfigureAbbreviation()
+    D.Abbreviate(1)
+    assert(lastOptions == options, "precision options are not cached")
+end
+assert(configs[0] ~= configs[1] and configs[1] ~= configs[2], "precision cache keys collide")
+Configure(true, { numberFormat = FORMAT.PARENTHESES })
+assert(Paint(TYPE.DamageDone, false) == "12M (123K)" and lastOptions == autoOptions,
+    "returning to Auto changed legacy formatting or rebuilt its config")
+Configure(false, { numberFormat = FORMAT.PARENTHESES })
+assert(Paint(TYPE.DamageDone, true) == "12 Mio. (123 Tsd.)", "precision changed localized formatting")
+-- Fractional rates below K formerly escaped as 651.66666666667.
+for _, english in ipairs({false, true}) do
+    for _, precision in ipairs({-1, 0, 1, 2}) do
+        D.M.config = {englishNumbers=english, englishDecimals=precision}
+        D.M.style = {numberFormat=FORMAT.PARENTHESES}
+        D.ConfigureAbbreviation()
+        for _, amount in ipairs({3910/6, 0.25, 999.999, 0}) do
+            local expectedSmall = tostring(math.floor(amount))
+            assert(Reveal(D.Abbreviate(amount)) == expectedSmall)
+            assert(Reveal(D.Abbreviate(Secret(amount))) == expectedSmall)
+        end
+    end
+end
+D.M.config = {englishNumbers=true, englishDecimals=2, englishKDecimals=1}
+D.ConfigureAbbreviation()
+for _, restricted in ipairs({false,true}) do
+    local total, rate = 47512345, 424298
+    if restricted then total, rate = Secret(total), Secret(rate) end
+    local sample = Row()
+    D.SetValueText(sample, TYPE.HealingDone, total, rate, 1, false)
+    assert(sample.valueText.shown == "47.51M (424.2K)", sample.valueText.shown)
+end
+local distinctK = lastOptions
+D.M.config.englishKDecimals = -1
+D.ConfigureAbbreviation()
+assert(D.Abbreviate(424298) == "424.29K" and lastOptions ~= distinctK, "shared K precision was overwritten")
+-- The native default-breakpoint getter is an optional localized enhancement.
+-- An absent getter retains native locale output; English remains complete.
+local nativeStrings = C_StringUtil
+for missing = 1, 2 do
+    if missing == 1 then C_StringUtil = nil else C_StringUtil = {} end
+    local fresh = {NS=NS, Suite=S}
+    assert(loadfile(root .. "/MSUF_Suite_DamageMeter/Data.lua"))("MSUF_Suite_DamageMeter", fresh)
+    local renderer = fresh.DamageMeter
+    renderer.M.config = {englishNumbers=false}
+    renderer.ConfigureAbbreviation()
+    assert(Reveal(renderer.Abbreviate(Secret(12345678))) == "12 Mio.")
+    renderer.M.config = {englishNumbers=true, englishDecimals=2, englishKDecimals=1}
+    renderer.ConfigureAbbreviation()
+    assert(Reveal(renderer.Abbreviate(Secret(3910/6))) == "651")
+end
+C_StringUtil = nativeStrings
 print("Damage meter number format: plain and secret amounts share the native format, English K/M/B for both, memo passed")

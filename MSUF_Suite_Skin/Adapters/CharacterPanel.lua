@@ -169,13 +169,16 @@ local function CaptureGeometry(frame)
         or not HasMethod(frame, "SetPoint") or not HasMethod(frame, "SetSize") then
         return nil
     end
-    local count = frame:GetNumPoints()
-    if type(count) ~= "number" or count > 4 then return nil end
-    local snapshot = { width = frame:GetWidth(), height = frame:GetHeight(), points = {} }
+    local count = Safety.Read(frame, "GetNumPoints")
+    local width, height = Safety.Read(frame, "GetWidth"), Safety.Read(frame, "GetHeight")
+    if type(count) ~= "number" or count > 4 or type(width) ~= "number" or type(height) ~= "number" then return nil end
+    local snapshot = { width = width, height = height, points = {} }
     snapshot.strata = Safety.Read(frame, "GetFrameStrata")
-    if HasMethod(frame, "GetFrameLevel") then snapshot.level = frame:GetFrameLevel() end
+    if HasMethod(frame, "GetFrameLevel") then snapshot.level = Safety.Read(frame, "GetFrameLevel") end
     for index = 1, count do
-        snapshot.points[index] = { frame:GetPoint(index) }
+        local point, relativeTo, relativePoint, x, y = frame:GetPoint(index)
+        if not Public(point) or not Public(relativeTo) or not Public(relativePoint) or not Public(x) or not Public(y) then return nil end
+        snapshot.points[index] = { point, relativeTo, relativePoint, x, y }
     end
     return snapshot
 end
@@ -186,7 +189,7 @@ local function CanMoveForever(frame)
 end
 
 local function RestoreGeometry(frame, snapshot)
-    if not frame or not snapshot then return end
+    if not frame or not snapshot or not Safety.CanDecorate(frame, not NS.IsCombatLocked()) then return end
     frame:ClearAllPoints()
     for index = 1, #snapshot.points do
         frame:SetPoint(unpack(snapshot.points[index]))
@@ -202,12 +205,18 @@ end
 
 local function RestoreTitle(state, root)
     local title = Field(root, "TitleText")
-    if title then NS.Cosmetics.Restore(title, state.owner) end
+    if Safety.CanDecorate(title, not NS.IsCombatLocked()) then NS.Cosmetics.Restore(title, state.owner) end
+end
+
+local function SafeNav(nav)
+    if not CanMoveForever(nav.container) then return false end
+    for _, tab in ipairs(nav.tabs) do if not CanMoveForever(tab) then return false end end
+    return true
 end
 
 local function RestoreForeverTabs(state, root)
     local nav = root and foreverNavs[root]
-    if not nav or not nav.active then return end
+    if not nav or not nav.active or not SafeNav(nav) then return end
     nav.active, nav.restoring = false, true
     for index, tab in ipairs(nav.tabs) do
         RestoreGeometry(tab, nav.tabGeometry[index])
@@ -220,7 +229,7 @@ local function RestoreForeverTabs(state, root)
         if icon then NS.Cosmetics.Restore(icon, state.owner) end
     end
     RestoreGeometry(nav.container, nav.containerGeometry)
-    if HasMethod(root, "UpdateTabLayout") then root:UpdateTabLayout() end
+    if not NS.IsCombatLocked() and HasMethod(root, "UpdateTabLayout") then root:UpdateTabLayout() end
     if nav.header then nav.header:Hide() end
     if nav.headerRule then nav.headerRule:Hide() end
     RestoreTitle(state, root)
@@ -278,17 +287,18 @@ local function PositionForeverTabs(state, root)
     end
     local container = Field(root, "ModeTabs")
     local tabs = Field(container, "Tabs")
-    local width = HasMethod(root, "GetWidth") and root:GetWidth()
+    local width = Safety.Read(root, "GetWidth")
+    local level = Safety.Read(root, "GetFrameLevel")
     if type(tabs) ~= "table" or #tabs < 3 or #tabs > 8
         or type(width) ~= "number" or width < 550
         or not HasMethod(container, "SetFrameStrata")
         or not HasMethod(container, "SetFrameLevel")
-        or not HasMethod(root, "GetFrameLevel") then
+        or type(level) ~= "number" then
         RestoreForeverTabs(state, root)
         return false
     end
     local nav = EnsureForeverNav(root, container, tabs)
-    if not nav or nav.restoring then return false end
+    if not nav or nav.restoring or not SafeNav(nav) then return false end
     if not nav.header then
         nav.header = container:CreateTexture(nil, "ARTWORK", nil, -7)
         nav.headerRule = container:CreateTexture(nil, "ARTWORK", nil, -6)
@@ -314,7 +324,7 @@ local function PositionForeverTabs(state, root)
     -- The native reputation/currency lists use HIGH strata. Keep their native
     -- tabs above those panes when presenting the tabs inside the window.
     container:SetFrameStrata("HIGH")
-    container:SetFrameLevel(math.max(520, root:GetFrameLevel() + 50))
+    container:SetFrameLevel(math.max(520, level + 50))
     container:ClearAllPoints()
     container:SetPoint("TOPLEFT", root, "TOPLEFT", 8, -26)
     container:SetSize(tabWidth * visibleCount, 30)
@@ -349,7 +359,7 @@ local function SkinForeverPanes(state, root)
 end
 
 local function SkinForeverSubframes(state, root)
-    if not ForeverLook() or not state.active or NS.IsCombatLocked() then
+    if not ForeverLook() or not state.active then
         return
     end
     -- Camelot already supplies the faction, currency, skills, PvP and
@@ -368,7 +378,7 @@ local function SkinForeverSubframes(state, root)
 end
 
 local function SkinForeverModeTabs(state, root)
-    if not NS.Client.isForever or not state.active or NS.IsCombatLocked() then return end
+    if not NS.Client.isForever or not state.active then return end
     local container = Field(root, "ModeTabs")
     local tabs = Field(container, "Tabs")
     if type(tabs) ~= "table" then return end
@@ -379,7 +389,8 @@ local function SkinForeverModeTabs(state, root)
         if tab then
             local attached
             if tabRow then
-                attached = NS.Surface.Attach(tab, FOREVER_TAB_SPEC) ~= nil
+                attached = Safety.CanCreateRegions(tab, not NS.IsCombatLocked())
+                    and NS.Surface.Attach(tab, FOREVER_TAB_SPEC) ~= nil
                 if attached then Track(state, tab) end
             else
                 attached = Attach(state, tab, NAVIGATION_TAB_SPEC)
@@ -421,7 +432,7 @@ end
 
 local function FormatItemLevel(state, frame)
     local value = Field(frame, "Value")
-    if not HasMethod(value, "SetText") or not Safety.CanDecorate(value, true) then return end
+    if not HasMethod(value, "SetText") or not Safety.CanDecorate(value, not NS.IsCombatLocked()) then return end
     -- upstream/live 09b9db79 Mainline/PaperDollFrame.lua and upstream/forever
     -- Camelot/PaperDollFrame.lua use the first two native results for available
     -- and equipped level. Keep their precision; native stat updates also cover
@@ -445,9 +456,7 @@ end
 
 local function SkinStats(state)
     local pane = CharacterStatsPane
-    if not state.active or NS.IsCombatLocked() then
-        return false
-    end
+    if not state.active or not Safety.CanDecorate(pane, not NS.IsCombatLocked()) then return false end
 
     Fade(state, Field(pane, "ClassBackground"))
     -- Runs after every native stats update (the player's auras queue one):
@@ -488,15 +497,22 @@ local function RestoreModelColors(model)
     if not colors then return end
     for region, color in pairs(colors) do
         local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
-        if Safety.SameColor(r, g, b, a, 0.36, 0.44, 0.54, color[4]) then
-            region:SetVertexColor(unpack(color))
+        if Safety.CanDecorate(region, true) then
+            if Safety.SameColor(r, g, b, a, 0.36, 0.44, 0.54, color[4]) then
+                region:SetVertexColor(unpack(color))
+            end
+            colors[region] = nil
         end
     end
-    modelColors[model] = nil
+    if not next(colors) then modelColors[model] = nil end
 end
 
-local function SkinModel(state)
-    if not state.active or NS.IsCombatLocked() then return false end
+local function RestoreCurrentModelColors()
+    if not ForeverLook() then RestoreModelColors(CharacterModelScene) end
+end
+
+local function SkinModelArt(state)
+    if not state.active then return false end
     local model = CharacterModelScene
     local foreverLook = ForeverLook()
     if foreverLook then
@@ -507,30 +523,38 @@ local function SkinModel(state)
         end
         for index = 1, MODEL_BACKGROUND_COUNT do
             local region = _G[modelArtNames[index]]
-            if region and NS.Safety.CanDecorate(region, true)
+            if region and NS.Safety.CanDecorate(region, not NS.IsCombatLocked())
                 and HasMethod(region, "GetVertexColor") and HasMethod(region, "SetVertexColor") then
                 NS.Cosmetics.Restore(region, state.owner)
                 local r, g, b, a = Safety.ReadColor(region, "GetVertexColor")
                 local previous = saved[region]
                 if r and (not previous or not Safety.SameColor(r, g, b, a, 0.36, 0.44, 0.54, previous[4])) then
-                    previous = { r, g, b, a }
+                    previous = previous or {}
+                    previous[1], previous[2], previous[3], previous[4] = r, g, b, a
                     saved[region] = previous
                 end
                 if r and previous then region:SetVertexColor(0.36, 0.44, 0.54, previous[4]) end
             end
         end
-    else
+    elseif not NS.IsCombatLocked() then
         RestoreModelColors(model)
+    elseif modelColors[model] then
+        NS.CombatGate.RunOrDefer("character-model-colors", RestoreCurrentModelColors)
     end
     for index = foreverLook and MODEL_BACKGROUND_COUNT + 1 or 1, #modelArtNames do
         Fade(state, _G[modelArtNames[index]])
     end
-    return Attach(state, model, MODEL_SPEC)
+end
+
+local function SkinModel(state)
+    if not state.active then return false end
+    SkinModelArt(state)
+    return Attach(state, CharacterModelScene, MODEL_SPEC)
 end
 
 local function SkinSidebarTab(state, tab)
     local hider = Field(tab, "Hider")
-    if NS.Safety.CanControl(tab, true)
+    if NS.Safety.CanControl(tab, not NS.IsCombatLocked())
         and NS.ControlSkin.ApplyButton(tab, state.owner, sidebarControlSpecs[IsShown(hider) == false]) then
         Track(state, tab)
         return true
@@ -542,7 +566,7 @@ local function SkinSidebarTab(state, tab)
 end
 
 local function SkinSidebar(state)
-    if not state.active or NS.IsCombatLocked() then return false end
+    if not state.active then return false end
     local container = _G.PaperDollSidebarTabs
     Fade(state, Field(container, "DecorLeft"))
     Fade(state, Field(container, "DecorRight"))
@@ -572,7 +596,9 @@ local function RefreshForeverLook(state)
     SkinModel(state)
 end
 
-local function CharacterView() return NS.CharacterDetails.views[_G.CharacterFrame] end
+local function CharacterRoot() return _G.CharacterFrame end
+local function StatsPane() return _G.CharacterStatsPane end
+local function CharacterView() return NS.CharacterDetails.views[CharacterRoot()] end
 
 -- UpdateSize finishes the native PaperDoll resize. ShowSubFrame assigns
 -- activeSubframe AFTER showing the PaperDoll child, so reflow the existing
@@ -595,9 +621,13 @@ local panel
 local InstallHooks
 
 local function ApplyNow(state)
-    local root = _G.CharacterFrame
+    local root = CharacterRoot()
     if not root or not state.active then return false, "missing" end
-    if NS.IsCombatLocked() then return false, "combat" end
+    if Safety.IsForbidden(root) then return false, "forbidden" end
+    InstallHooks()
+    if NS.AdapterKit.DeferHidden(root, state, ApplyNow, state) then return true, "hidden" end
+    if NS.IsCombatLocked() then panel:RunOrDefer(state, "apply", ApplyNow) end
+    if not Safety.CanCreateRegions(root, not NS.IsCombatLocked()) then return false, "protected" end
 
     Fade(state, Field(root, "Background"))
     Chrome.FadePortraits(state, root, _G.CharacterFramePortrait)
@@ -613,7 +643,7 @@ local function ApplyNow(state)
     SkinSidebar(state)
     SkinForeverModeTabs(state, root)
     SkinForeverSubframes(state, root)
-    NS.EQoLCharacter.Apply(state.owner)
+    if not NS.IsCombatLocked() then NS.EQoLCharacter.Apply(state.owner) end
     InstallHooks()
     return true, "applied"
 end
@@ -622,6 +652,7 @@ end
 -- CharacterFrame exists before this skin loads: no wait for its addon.
 panel = Chrome.New({
     prefix = "character-panel",
+    safeCombatApply = true,
     addon = "Blizzard_UIPanels_Game",
     rootName = "CharacterFrame",
     slotNames = slotNames,
@@ -638,30 +669,40 @@ CharacterPanel = {
 }
 NS.CharacterPanel = CharacterPanel
 
--- During combat the layout pass waits for combat to end, while Blizzard's
--- resize already happened: the moved regions follow it at once (its own
--- error boundary).
+-- Native hooks must repaint safe targets immediately; only protected layout
+-- waits for combat end. A hidden panel has no work to catch up until it shows.
+local function RefreshShownOwners(suffix, callback, target)
+    if Safety.Read(target, "IsVisible") == false or Safety.Read(target, "IsShown") == false then return end
+    if NS.IsCombatLocked() and not Safety.CanDecorate(target, false) then
+        panel:ForActiveOwners(suffix, callback)
+        return
+    end
+    for _, state in pairs(panel.owners) do
+        if state.active then Safety.Dispatch(callback, state) end
+    end
+end
+
 local function OnUpdateSize()
     if NS.IsCombatLocked() then
         Safety.Dispatch(NS.GearAnnotations.FollowNativeSize, CharacterView())
+        RefreshShownOwners("stats", SkinStats, StatsPane())
     end
     panel:ForActiveOwners("layout", RelayoutPaperDoll)
 end
--- During combat the stats pass waits for combat to end; the skin's own stat
--- details follow the rows Blizzard just reassigned at once (paint only, its
--- own error boundary like every pass).
 local function OnStatsUpdated()
-    if NS.IsCombatLocked() then Safety.Dispatch(NS.CharacterStats.SyncDetails, _G.CharacterStatsPane) end
-    panel:ForActiveOwners("stats", SkinStats)
+    if NS.IsCombatLocked() then Safety.Dispatch(NS.CharacterStats.SyncDetails, StatsPane()) end
+    RefreshShownOwners("stats", SkinStats, StatsPane())
 end
 local function OnSlotUpdated(slot) panel:RefreshSlot(slot) end
-local function OnSidebarUpdated() panel:ForActiveOwners("sidebar", SkinSidebar) end
-local function OnModeTabSelected() panel:ForActiveOwners("mode-tabs", SkinForeverTabsAndViews) end
-local function OnTabLayout() panel:ForActiveOwners("mode-tabs-layout", RepositionForeverTabs) end
+local function OnSidebarUpdated() RefreshShownOwners("sidebar", SkinSidebar, CharacterRoot()) end
+local function OnModeTabSelected() RefreshShownOwners("mode-tabs", SkinForeverTabsAndViews, CharacterRoot()) end
+local function OnTabLayout() RefreshShownOwners("mode-tabs-layout", RepositionForeverTabs, CharacterRoot()) end
 
 local function OnPaperDollBackground(model)
     if model == _G.CharacterModelScene then
-        panel:ForActiveOwners("model", SkinModel)
+        for _, state in pairs(panel.owners) do
+            if state.active then Safety.Dispatch(SkinModelArt, state) end
+        end
     end
 end
 
@@ -679,7 +720,7 @@ local function HookOnce(key, target, method, callback)
 end
 
 InstallHooks = function()
-    local root = _G.CharacterFrame
+    local root = CharacterRoot()
     if root and CharacterPanel.layoutRoot ~= root and HasMethod(root, "UpdateSize") then
         hooksecurefunc(root, "UpdateSize", OnUpdateSize)
         CharacterPanel.layoutRoot = root
@@ -710,10 +751,10 @@ function CharacterPanel.Disable(owner)
 
     state.active = false
     RestoreModelColors(_G.CharacterModelScene)
-    RestoreForeverTabs(state, _G.CharacterFrame)
+    RestoreForeverTabs(state, CharacterRoot())
     NS.EQoLCharacter.Disable(owner)
-    NS.CharacterStats.Disable(_G.CharacterStatsPane, owner)
-    NS.CharacterDetails.Disable(_G.CharacterFrame, owner)
+    NS.CharacterStats.Disable(StatsPane(), owner)
+    NS.CharacterDetails.Disable(CharacterRoot(), owner)
     -- Gives back Blizzard's own item-level text from its last update rather
     -- than running PaperDoll code (which writes the stat frame's tooltip
     -- fields) from the skin.

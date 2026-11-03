@@ -398,6 +398,7 @@ end
 
 local function ApplyFrameNow(frame, owner, mode)
     if not frame then return false, "invalid", nil end
+    NS.WindowControls.TrackFocus(frame, owner)
     mode = OwnedMode(frame, mode)
     local allowImplicitProtected = ModeValue(mode, "allowImplicitProtected", false) == true
     if not CanSkin(frame, allowImplicitProtected) then
@@ -516,14 +517,15 @@ local RefreshVisibleRows
 -- Registered once per ScrollBox as callback(registration, row).
 local function OnRowInitialized(registration, row)
     local ownerState = registration.ownerState
-    -- Optional pooled-row cosmetics never justify combat work or a
-    -- post-combat backlog. A later OOC initialization handles the row.
-    if not ownerState.active or not row or NS.IsCombatLocked() then return end
+    -- Native row initialization can overwrite text and check colors in combat.
+    -- Refresh only safe targets; never queue a job for every pooled row.
+    if not ownerState.active or not Safety.Public(row) or not row then return end
     if Kit.IsHidden(registration.box[1]) then
         registration.catchUp = true
         Kit.DeferHidden(registration.box[1], registration, RefreshVisibleRows, registration)
         return
     end
+    if NS.IsCombatLocked() and not CanSkin(row, false) then return end
     if registration.catchUp then
         RefreshVisibleRows(registration)
         return
@@ -540,9 +542,8 @@ RefreshVisibleRows = function(registration)
     if not ownerState.active then return end
     local scrollBox = registration.box[1]
     if not scrollBox or Kit.DeferHidden(scrollBox, registration, RefreshVisibleRows, registration) then return end
-    -- This obligation began outside combat while hidden. Keep exactly one
-    -- continuation; ordinary in-combat row events still create no backlog.
-    if NS.IsCombatLocked() then
+    -- A protected ScrollBox keeps one continuation for its hidden obligation.
+    if NS.IsCombatLocked() and not CanSkin(scrollBox, false) then
         ownerState.deferred[registration.key] = true
         NS.CombatGate.RunOrDefer(registration.key, registration.refreshRows)
         return
@@ -580,11 +581,11 @@ end
 -- A pooled frame that Blizzard acquires after a root's pass (from its own
 -- pools, not a ScrollBox) takes the node pass that root's traversal gives
 -- every descendant: no root surface, root chrome or frame state of its own.
--- mode is the root's mode with limits for the frame's own subtree. Out of
--- combat only; the caller decides which frames still need it.
+-- mode is the root's mode with limits for the frame's own subtree. Each
+-- target retains its own combat guard; hidden pools perform no work.
 function GenericWindows.ApplyDescendant(frame, owner, mode)
     owner = owner or DEFAULT_OWNER
-    if not frame or NS.IsCombatLocked() then return false end
+    if not Safety.Public(frame) or not frame or Kit.IsHidden(frame) then return false end
     local allowImplicitProtected = ModeValue(mode, "allowImplicitProtected", false) == true
     if not CanSkin(frame, allowImplicitProtected) then return false end
     local metrics = NewMetrics(mode, allowImplicitProtected)
@@ -603,21 +604,27 @@ end
 -- pass (ApplyDescendant): its surfaces and faded regions stay, while
 -- Blizzard's gold text and native glyphs are tracked again. Allocation-free.
 function GenericWindows.RefreshDescendant(frame, owner, mode)
-    if not frame or NS.IsCombatLocked() then return false end
+    if not Safety.Public(frame) or not frame or Kit.IsHidden(frame)
+        or not CanSkin(frame, ModeValue(mode, "allowImplicitProtected", false)) then return false end
     RefreshTrackedRow(frame, owner or DEFAULT_OWNER, mode)
     return true
 end
 
-function GenericWindows.ApplyFrame(frame, owner, mode)
+function GenericWindows.ApplyFrame(frame, owner, mode, deferToOwner)
     owner = owner or DEFAULT_OWNER
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not deferToOwner then
         local ownerState = OwnerState(owner)
         local key = "generic-frame:" .. OwnerKey(owner) .. ":" .. tostring(frame)
         ownerState.deferred[key] = true
         NS.CombatGate.RunOrDefer(key, function()
             ownerState.deferred[key] = nil
-            ApplyFrameNow(frame, owner, mode)
+            if ownerState.active then
+                if not Kit.DeferHidden(frame, ownerState, GenericWindows.ApplyFrame, frame, owner, mode) then
+                    ApplyFrameNow(frame, owner, mode)
+                end
+            end
         end)
+        if CanSkin(frame) then return ApplyFrameNow(frame, owner, mode) end
         return false, "combat"
     end
     return ApplyFrameNow(frame, owner, mode)

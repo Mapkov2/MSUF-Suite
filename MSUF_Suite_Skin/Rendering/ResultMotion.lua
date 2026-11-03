@@ -81,8 +81,10 @@ function Results.ReleaseOwner(owner)
     end
 end
 
-local function StopAll()
-    for _, state in pairs(visible) do Cancel(state) end
+local function StopAll(_, event)
+    for _, state in pairs(visible) do
+        if event ~= "PLAYER_REGEN_DISABLED" or not Safety.CanCreateRegions(state.target) then Cancel(state) end
+    end
 end
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")

@@ -26,11 +26,12 @@ CASES = [
         Kit.DeferHidden(registration.box[1], registration, RefreshVisibleRows, registration)
         return
     end
+    if NS.IsCombatLocked() and not CanSkin(row, false) then return end
     if registration.catchUp then
         RefreshVisibleRows(registration)
         return
     end
-''', '' ,
+''', '    if NS.IsCombatLocked() and not CanSkin(row, false) then return end\n',
      "hidden row initializations painted", False),
     ("canceled-owner", "AdapterKit.lua",
      '    for _, requests in pairs(hiddenRequests) do requests[owner] = nil end', '',

@@ -179,9 +179,22 @@ end
 
 local Refundable = S.QoLRefundable
 
+-- The same protection applies to explicit sales on our own merchant surface.
+-- Cursor metadata may be unreadable; do not spend the protected item on a guess.
+local function ProtectedCursor(bag, slot, guid)
+    local protection = S.InventoryProtection
+    if not protection.active then return false end
+    local kind, id = GetCursorInfo()
+    if not S.Public(kind) or kind ~= "item" or not S.Finite(id) or id < 1
+        or not guid or not S.Finite(bag) or not S.Finite(slot) then return true end
+    protection:Prepare()
+    return protection:IsProtected(id, bag, slot)
+end
+
 -- Declining keeps the item, as Blizzard's dialog does: it leaves the cursor.
 local function SameRefundCursor(question)
-    if GetCursorInfo() ~= "item" then return false end
+    local kind = GetCursorInfo()
+    if not S.Public(kind) or kind ~= "item" then return false end
     local bag, slot, equipped, guid = CursorSlot()
     return guid ~= nil and guid == question.guid and bag == question.bag
         and slot == question.slot and equipped == question.equipped
@@ -197,7 +210,8 @@ local function RefundAccepted(question)
     if M.refundQuestion ~= question then return end
     M.refundQuestion = nil
     if not Showing(M) or NS.InCombat() or M.config ~= question.config or NS.DB ~= question.profile then return end
-    if SameRefundCursor(question) and Refundable(question.bag, question.slot, question.equipped) then
+    if SameRefundCursor(question) and not ProtectedCursor(question.bag, question.slot, question.guid)
+        and Refundable(question.bag, question.slot, question.equipped) then
         C_Container.ContainerRefundItemPurchase(question.bag, question.slot, question.equipped)
     end
 end
@@ -207,8 +221,10 @@ end
 -- first and is refunded (C_Container.ContainerRefundItemPurchase), the
 -- choice Blizzard's own merchant window offers.
 local function SellCursorItem()
-    if not Showing(M) or GetCursorInfo() ~= "item" then return end
+    local kind = GetCursorInfo()
+    if not Showing(M) or not S.Public(kind) or kind ~= "item" then return end
     local bag, slot, equipped, guid = CursorSlot()
+    if ProtectedCursor(bag, slot, guid) then return end
     if not slot or not Refundable(bag, slot, equipped) then
         PickupMerchantItem(0)
         return

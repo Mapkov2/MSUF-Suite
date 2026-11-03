@@ -57,6 +57,10 @@ end
 
 local FontPath = NS.AdapterKit.FontPath
 
+local function CanStyle(target)
+    return NS.Safety.Public(target) and NS.Safety.CanDecorate(target, not NS.IsCombatLocked())
+end
+
 -- Diminishing returns ---------------------------------------------------------------------
 
 -- C_CurveUtil.EvaluateGameCurve raises for a curve the client does not ship.
@@ -167,7 +171,7 @@ local function PublicPoints(font)
 end
 
 local function CaptureFont(font)
-    if not font or not NS.Safety.CanDecorate(font, true) then return nil end
+    if not CanStyle(font) then return nil end
     local path, size, flags = Read(font.GetFont, font)
     if type(path) ~= "string" or not Number(size) then return nil end
     local points = PublicPoints(font)
@@ -195,6 +199,7 @@ end
 -- A font is re-anchored only once its native anchors are held (MovePoints),
 -- so only a moved font is put back.
 local function MovePoints(saved)
+    if not CanStyle(saved.font) then return false end
     if not saved.points or saved.moved and not OwnPoint(saved) then
         local points = PublicPoints(saved.font)
         if not points then return false end
@@ -206,7 +211,7 @@ local function MovePoints(saved)
 end
 
 local function RestorePoints(saved)
-    if not saved or not saved.moved then return end
+    if not saved or not saved.moved or not CanStyle(saved.font) then return end
     local owned = OwnPoint(saved)
     saved.moved = nil
     if not owned then return end
@@ -229,7 +234,7 @@ local function RebaseFont(saved)
         saved.path, saved.size, saved.flags = path, size, flags or ""
         saved.object = Read(font.GetFontObject, font)
     end
-    return true
+    return true, path, size
 end
 
 local function RebaseColor(saved)
@@ -243,22 +248,23 @@ local function RebaseColor(saved)
 end
 
 local function Font(v, font, size, token)
-    if not font then return end
+    if not CanStyle(font) then return end
     local saved = v.fonts[font]
     if not saved then
         saved = CaptureFont(font)
         v.fonts[font] = saved
     end
     if not saved then return end
+    local readable, path, currentSize = RebaseFont(saved)
     size = math.max(saved.size, size)
-    if (saved.appliedPath ~= v.path or saved.appliedSize ~= size) and RebaseFont(saved) then
-        size = math.max(saved.size, size)
+    if readable and (path ~= v.path or currentSize ~= size) then
         font:SetFont(v.path, size, saved.flags)
-        saved.appliedPath, saved.appliedSize = v.path, size
     end
+    if readable then saved.appliedPath, saved.appliedSize = v.path, size end
     if token and saved.color then
         local r, g, b, a = NS.Theme.GetColor(token)
-        if (saved.r ~= r or saved.g ~= g or saved.b ~= b or saved.a ~= a) and RebaseColor(saved) then
+        local cr, cg, cb, ca = NS.Safety.ReadColor(font, "GetTextColor")
+        if cr and not NS.Safety.SameColor(cr, cg, cb, ca, r, g, b, a) and RebaseColor(saved) then
             saved.tinted = true
             font:SetTextColor(r, g, b, a)
             saved.r, saved.g, saved.b, saved.a = r, g, b, a
@@ -268,8 +274,11 @@ local function Font(v, font, size, token)
 end
 
 local function Height(v, frame, height)
-    if not v.heights[frame] then v.heights[frame] = { original = frame:GetHeight() } end
-    if frame:GetHeight() ~= height then frame:SetHeight(height) end
+    if not CanStyle(frame) then return end
+    local current = Number(Read(frame.GetHeight, frame))
+    if not current then return end
+    if not v.heights[frame] then v.heights[frame] = { original = current } end
+    if current ~= height then frame:SetHeight(height) end
     v.heights[frame].applied = height
 end
 
@@ -300,17 +309,18 @@ local function Paint(v)
     for _, record in pairs(v.rows) do
         Font(v, record.frame.Label, wide and 12 or 11, "muted")
         Font(v, record.frame.Value, record.definition and (wide and 18 or 16) or (wide and 13 or 12))
-        if record.fontPath ~= v.path then
+        if CanStyle(record.meta) and CanStyle(record.dr) and record.fontPath ~= v.path then
             record.meta:SetFont(v.path, 10, "")
             record.dr:SetFont(v.path, 9, "")
             record.fontPath = v.path
         end
         local token = record.result and Config().diminishingReturns and Token(record.result)
             or "muted"
-        record.meta:SetTextColor(NS.Theme.GetColor("muted"))
-        record.dr:SetTextColor(NS.Theme.GetColor(token))
-        record.accent:SetColorTexture(NS.Theme.GetColor(token))
+        if CanStyle(record.meta) then record.meta:SetTextColor(NS.Theme.GetColor("muted")) end
+        if CanStyle(record.dr) then record.dr:SetTextColor(NS.Theme.GetColor(token)) end
+        if CanStyle(record.accent) then record.accent:SetColorTexture(NS.Theme.GetColor(token)) end
     end
+    if not CanStyle(v.helpText) then return end
     if v.helpPath ~= v.path then
         v.helpText:SetFont(v.path, 9, "")
         v.helpPath = v.path
@@ -350,9 +360,11 @@ end
 -- The skin's own detail texts of one stat row; the accent marks a stat in
 -- diminishing returns.
 local function SetDetailsShown(record, shown)
-    record.meta:SetShown(shown)
-    record.dr:SetShown(shown)
-    record.accent:SetShown(shown and record.result.penalty ~= nil and record.result.penalty > 0)
+    if CanStyle(record.meta) then record.meta:SetShown(shown) end
+    if CanStyle(record.dr) then record.dr:SetShown(shown) end
+    if CanStyle(record.accent) then
+        record.accent:SetShown(shown and record.result.penalty ~= nil and record.result.penalty > 0)
+    end
 end
 
 local function HideDetails(v)
@@ -368,11 +380,12 @@ end
 
 local function HideMetadata(v)
     HideDetails(v)
-    v.help:Hide()
+    if CanStyle(v.help) then v.help:Hide() end
     HideHelpTooltip(v)
 end
 
 local function RestoreFont(font, saved)
+    if not CanStyle(font) then return false end
     local path, size, flags = Read(font.GetFont, font)
     local r, g, b, a = Read(font.GetTextColor, font)
     if path == saved.appliedPath and size == saved.appliedSize and (flags or "") == saved.flags then
@@ -388,17 +401,19 @@ local function RestoreFont(font, saved)
     if saved.appliedJustify and Read(font.GetJustifyH, font) == saved.appliedJustify then
         font:SetJustifyH(saved.justify)
     end
+    return true
 end
 
 local function RestoreNativeStyle(v)
     if NS.IsCombatLocked() then return end
     for font, saved in pairs(v.fonts) do
-        RestoreFont(font, saved)
-        v.fonts[font] = nil
+        if RestoreFont(font, saved) then v.fonts[font] = nil end
     end
     for frame, saved in pairs(v.heights) do
-        if frame:GetHeight() == saved.applied then frame:SetHeight(saved.original) end
-        v.heights[frame] = nil
+        if CanStyle(frame) then
+            if Read(frame.GetHeight, frame) == saved.applied then frame:SetHeight(saved.original) end
+            v.heights[frame] = nil
+        end
     end
 end
 
@@ -432,11 +447,8 @@ local function WatchPane(v, host)
             Stats.Refresh(v)
         end
     end)
-    -- Native PaperDoll updates reuse pooled rows without resetting their
-    -- heights. A close gives the rows Blizzard's geometry back, so a reopen
-    -- in combat starts with native dimensions; a close during combat does so
-    -- once combat ends (its rows keep their details, hidden with the pane,
-    -- for a reopen in the same fight).
+    -- Native pools retain geometry between uses. Release it on close; the
+    -- visible refresh restores the configured layout on a safe combat reopen.
     host:SetScript("OnHide", function()
         host:UnregisterEvent("PLAYER_REGEN_DISABLED")
         host:UnregisterEvent("PLAYER_REGEN_ENABLED")
@@ -528,14 +540,12 @@ local function Record(v, row)
     return record
 end
 
--- Every native stats update reassigns Blizzard's pooled rows, also in combat,
--- where the layout waits for combat to end. Showing or hiding the skin's own
--- detail texts is paint and follows at once: a row shows its details only
--- while it still shows the stat it was laid out for. Runs after every
--- update in combat: it compares the label kept by Record, no allocation.
+-- Before a full refresh, remove stale details from reused native rows. This
+-- also handles a protected pane whose geometry must wait for combat end.
+-- Compare the label kept by Record without allocating.
 function Stats.SyncDetails(pane)
     local v = pane and Stats.views[pane]
-    if not v then return end
+    if not v or not Enabled(v) or not Visible(v.pane) then return end
     for row, record in pairs(v.rows) do
         local expected = record.detailed and record.label
         SetDetailsShown(record, expected and Read(row.Label.GetText, row.Label) == expected or false)
@@ -553,8 +563,10 @@ local function CollectRows(v)
     for _ = 1, MAX_STAT_ROWS do
         local row = iterator(invariant, control)
         control = row
+        if not NS.Safety.Public(row) then break end
         if not row then break end
-        if Visible(row) and row.Label and row.Value and NS.Safety.CanCreateRegions(row, true) then
+        if Visible(row) and row.Label and row.Value and CanStyle(row)
+            and NS.Safety.CanCreateRegions(row, not NS.IsCombatLocked()) then
             count = count + 1
             local record = Record(v, row)
             v.ordered[count] = record
@@ -577,16 +589,16 @@ local function StyleHeaders(v, itemLevel)
     for _, field in ipairs(categories) do
         local category = v.pane[field]
         local saved = category and v.fonts[category.Title]
-        if saved then
+        if saved and CanStyle(category.Title) then
             PlaceFont(saved, "LEFT", category, "LEFT", 11, 0)
             local justify = Read(category.Title.GetJustifyH, category.Title)
             if saved.appliedJustify and justify and justify ~= saved.appliedJustify then saved.justify = justify end
             category.Title:SetJustifyH("LEFT")
             saved.appliedJustify = "LEFT"
-            NS.Surface.Ensure(category, v.headerSpec)
+            if CanStyle(category) then NS.Surface.Ensure(category, v.headerSpec) end
         end
     end
-    if itemLevel then NS.Surface.Ensure(itemLevel, v.ilvlSpec) end
+    if CanStyle(itemLevel) then NS.Surface.Ensure(itemLevel, v.ilvlSpec) end
 end
 
 local function StyleRow(v, record, detailed, wide, base, detailHeight)
@@ -615,7 +627,7 @@ local function StyleRow(v, record, detailed, wide, base, detailHeight)
             end
         end
     end
-    if detailed then
+    if detailed and CanStyle(record.meta) and CanStyle(record.dr) then
         record.meta:ClearAllPoints()
         record.meta:SetPoint("TOPLEFT", 11, wide and -28 or -22)
         record.dr:ClearAllPoints()
@@ -640,15 +652,16 @@ end
 
 function Stats.Refresh(v)
     if not Enabled(v) or not Visible(v.pane) then return end
-    if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer(v.deferKey, v.refresh)
+    if not CanStyle(v.pane) then
+        if NS.IsCombatLocked() then NS.CombatGate.RunOrDefer(v.deferKey, v.refresh) end
         return
     end
-    v.host:RegisterEvent("PLAYER_REGEN_DISABLED")
+    NS.CombatGate.Cancel(v.deferKey)
+    v.host:RegisterEvent(NS.IsCombatLocked() and "PLAYER_REGEN_ENABLED" or "PLAYER_REGEN_DISABLED")
     local count, coreCount = CollectRows(v)
     if not count then return end
     if count == 0 then
-        v.help:Hide()
+        if CanStyle(v.help) then v.help:Hide() end
         return
     end
     local wide = NS.GearAnnotations.IsWide()
@@ -666,7 +679,9 @@ function Stats.Refresh(v)
         Height(v, itemLevel, levelHeight)
         if Visible(itemLevel) then used = used + levelHeight end
     end
-    local room = math.max(0, v.pane:GetHeight() - used)
+    local paneHeight = Number(Read(v.pane.GetHeight, v.pane))
+    if not paneHeight then return end
+    local room = math.max(0, paneHeight - used)
     local diminishingReturns = Config().diminishingReturns
     local extra = diminishingReturns and coreCount * detailHeight or 0
     local base = math.min(wide and 28 or 24, math.max(15, math.floor((room - extra) / count)))
@@ -684,12 +699,12 @@ function Stats.Refresh(v)
         local record = v.ordered[index]
         StyleRow(v, record, showDR and record.definition ~= nil, wide, base, detailHeight)
     end
-    v.help:SetShown(diminishingReturns and Visible(v.pane.EnhancementsCategory))
+    if CanStyle(v.help) then v.help:SetShown(diminishingReturns and Visible(v.pane.EnhancementsCategory)) end
 end
 
 function Stats.Apply(pane, owner)
-    if NS.IsCombatLocked() or not pane or not pane.ItemLevelCategory or not pane.ItemLevelCategory.Title
-        or not NS.Safety.CanCreateRegions(pane, true) then
+    if not CanStyle(pane) or not pane.ItemLevelCategory or not pane.ItemLevelCategory.Title
+        or not NS.Safety.CanCreateRegions(pane, not NS.IsCombatLocked()) then
         return
     end
     local v = Stats.views[pane]

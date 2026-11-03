@@ -328,8 +328,7 @@ hooks.PaperDollItemSlotButton_Update(headSlot)
 hooks.PaperDollItemSlotButton_Update(headSlot)
 assert(#iconSpecs == specCount + 2 and iconSpecs[#iconSpecs] == iconSpecs[#iconSpecs - 1],
     "every PaperDoll slot update built a new icon spec")
--- A stats update during combat: the stats pass waits for combat to end, the
--- skin's stat details follow Blizzard's reassigned rows at once.
+-- Native combat updates immediately refresh safe rows and their details.
 local synced, statsPasses = {}, 0
 ns.CharacterStats.SyncDetails = function(pane) synced[#synced + 1] = pane end
 ns.CharacterStats.Apply = function() statsPasses = statsPasses + 1 end
@@ -337,10 +336,10 @@ assert(hooks.PaperDollFrame_UpdateStats, "native stats updates were not observed
 combatLocked = true
 hooks.PaperDollFrame_UpdateStats()
 combatLocked = false
-assert(#synced == 1 and synced[1] == CharacterStatsPane and statsPasses == 0,
-    "a stats update during combat did not sync the stat details, or ran the stats pass")
+assert(#synced == 1 and synced[1] == CharacterStatsPane and statsPasses == 1,
+    "a stats update during combat did not refresh the safe stat pane")
 hooks.PaperDollFrame_UpdateStats()
-assert(#synced == 1 and statsPasses == 1, "an out-of-combat stats update did not run the stats pass")
+assert(#synced == 1 and statsPasses == 2, "an out-of-combat stats update did not run the stats pass")
 
 assert(ns.CharacterPanel.Disable("blizzardWindows")
     and left.surfaceVisible == false and right.surfaceVisible == false

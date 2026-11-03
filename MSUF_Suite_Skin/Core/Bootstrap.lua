@@ -19,8 +19,8 @@ NS.publicAPIMajor = 2
 NS.publicAPIMinor = 1
 NS.path = "Interface\\AddOns\\MSUF_Suite_Skin\\"
 
-function NS.IsCombatLocked()
-    return InCombatLockdown()
+function NS.IsCombatLocked(event)
+    return NS.SuiteCore().InCombat(event)
 end
 
 -- Reported like a Lua error (BugSack shows it); the caller goes on.

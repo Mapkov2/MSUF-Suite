@@ -4,7 +4,7 @@ local _, NS = ...
 -- Lua ScrollController setters here writes native fields from skin execution.
 -- Keep that state native and ease only the rendered content, with finite C
 -- animations and external ownership, as the legacy scroll renderer does.
-local NativeList = { states = setmetatable({}, { __mode = "k" }), targets = {}, owners = {} }
+local NativeList = { states = setmetatable({}, { __mode = "k" }), targets = {}, owners = {}, active = {} }
 do
 local Safety = NS.Safety
 
@@ -20,17 +20,21 @@ end
 local function Reset(state)
     if state.group then state.group:Stop() end
     state.offset = nil
+    NativeList.active[state] = nil
 end
 
 local function Enabled(state)
     local db = NS.DB
-    if not db or not db.enabled or db.theme.smoothScrolling == false or db.theme.reduceMotion == true
-        or NS.Motion.combat or NS.IsCombatLocked() then return false end
+    if not db or not db.enabled or db.theme.smoothScrolling == false or db.theme.reduceMotion == true then return false end
     return next(state.leases) ~= nil and Safety.CanCreateRegions(state.box)
         and (state.bar == nil or Safety.CanCreateRegions(state.bar))
         and Safety.Read(state.box, "CanInterpolateScroll") ~= true
         and Safety.Read(state.box, "IsVisible") == true
         and Safety.Read(state.bar, "IsThumbMouseDown") ~= true
+end
+
+local function Finished(group)
+    if group.owner.group == group then NativeList.active[group.owner] = nil end
 end
 
 local function Scrolled(state, percentage, fraction)
@@ -52,6 +56,8 @@ local function Scrolled(state, percentage, fraction)
         Reset(state)
         state.child = child
         state.group = child:CreateAnimationGroup()
+        state.group.owner = state
+        state.group:SetScript("OnFinished", Finished)
         state.move = state.group:CreateAnimation("Translation")
         state.move:SetDuration(0.11)
         state.move:SetSmoothing("OUT")
@@ -62,6 +68,7 @@ local function Scrolled(state, percentage, fraction)
     -- large jump cannot drag the recycled content across the clipping edge.
     local distance = math.max(-8, math.min(8, previous - offset))
     state.move:SetOffset(0, distance)
+    NativeList.active[state] = true
     state.group:Play(true)
 end
 
@@ -70,8 +77,11 @@ local function Hidden(box)
     if state then Reset(state) end
 end
 
-local function StopAll()
-    for _, state in pairs(NativeList.states) do Reset(state) end
+local function StopAll(_, event)
+    for state in pairs(NativeList.active) do
+        if event ~= "PLAYER_REGEN_DISABLED" or not Enabled(state)
+            or not Safety.CanCreateRegions(state.child) then Reset(state) end
+    end
 end
 
 local function Resolve(target)
@@ -178,7 +188,6 @@ end
 local function Enabled()
     local db = NS.DB
     return db and db.enabled and db.theme.smoothScrolling ~= false and db.theme.reduceMotion ~= true
-        and not NS.Motion.combat and not NS.IsCombatLocked()
 end
 
 local function Cancel(target, snap)
@@ -189,8 +198,7 @@ local function Cancel(target, snap)
     if not Safety.Public(interpolator) or type(interpolator) ~= "table" then return end
     local destination = Safety.Read(interpolator, "GetInterpolateTo")
     Safety.Invoke(interpolator, "Cancel")
-    if snap and type(destination) == "number" and Safe(target) and not NS.Motion.combat
-        and not NS.IsCombatLocked() then
+    if snap and type(destination) == "number" and Safe(target) then
         target:SetScrollPercentage(math.max(0, math.min(1, destination)), true)
     end
 end
@@ -405,7 +413,7 @@ Partner = function(target)
 end
 
 function ScrollMotion.Track(target, owner)
-    if owner == nil or not Supported(target) or NS.Motion.combat or NS.IsCombatLocked() then return false end
+    if owner == nil or not Supported(target) then return false end
     local partner = Partner(target)
     if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
         return NativeList.Track(target, owner)
@@ -474,7 +482,7 @@ local function Refresh(_, domain, key)
             Capture(state)
             SyncVisible(state)
         end
-        if domain == "PLAYER_REGEN_DISABLED" and state.captured then Cancel(state.target, false) end
+        if domain == "PLAYER_REGEN_DISABLED" and state.captured and not Safe(state.target) then Cancel(state.target, false) end
         if state.pending and not next(state.leases) then Restore(state)
         else Update(state, enabled) end
     end

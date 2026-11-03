@@ -8,7 +8,7 @@ local P, S = F.optionsNS, F.S
 local runtime = { NS = P.Suite, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
 assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
-for _, file in ipairs({ "Shared", "Appearance", "MinimalChrome", "Unread", "Sidebar", "Positions", "CompleteMessages", "Window", "PreviewSnapshot", "Preview" }) do
+for _, file in ipairs({ "Shared", "HeaderClock", "Appearance", "MinimalChrome", "Unread", "Sidebar", "Positions", "CompleteMessages", "Window", "PreviewSnapshot", "Preview" }) do
     assert(loadfile(root .. "/MSUF_Suite_Chat/" .. file .. ".lua"))("MSUF_Suite_Chat", runtime)
 end
 GENERAL_CHAT_DOCK = {}

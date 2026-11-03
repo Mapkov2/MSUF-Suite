@@ -115,10 +115,15 @@ end
 
 local box, state, following, row, parent, child, header = View("current-collapse")
 Combat()
+assert(state.hadSnapshot and state.records[following].group:IsPlaying()
+    and state.records[row].ghost.group:IsPlaying(), "combat removed safe collapse animation")
+box.protected = true
+Combat()
 assert(not state.hadSnapshot and not state.records[following].group:IsPlaying()
-    and not state.records[row].ghost.group:IsPlaying(), "combat did not clean the active collapse view")
+    and not state.records[row].ghost.group:IsPlaying(), "combat did not clean the unsafe collapse view")
+box.protected = false
 Regen()
-assert(state.hadSnapshot, "combat end did not rebuild the visible collapse snapshot")
+assert(state.hadSnapshot, "safe recovery did not rebuild the visible collapse snapshot")
 parent.collapsed, following.top, box.rows = false, 360, { header, row, following }
 row:Show()
 box:TriggerEvent("layout")
@@ -127,7 +132,7 @@ box:Hide()
 NS.Motion.combat = true
 box:Show()
 box:Fire("OnShow")
-assert(not state.hadSnapshot, "showing in combat rebuilt native collapse state")
+assert(state.hadSnapshot, "safe tree shown in combat lost its collapse snapshot")
 NS.Motion.combat = false
 Regen()
 assert(state.hadSnapshot, "a tree shown during combat could not rebuild after combat")
@@ -149,7 +154,7 @@ for _, kind in ipairs({ "Track", "Attach", "TrackCollection" }) do
             function(_, collect) for _, row in ipairs(cached.rows) do collect(row) end end,
             function(_, row) return row.node, row.node.collapsed, row.node.parent end)
     end
-    assert(activated and not cachedState.hadSnapshot, "combat reactivation rebuilt collapse state")
+    assert(activated and cachedState.hadSnapshot, "safe combat reactivation lost collapse state")
     NS.Motion.combat = false
     Regen()
     assert(cachedState.hadSnapshot, kind .. ": a visible cached view re-enabled in combat stayed dormant")
@@ -158,7 +163,7 @@ for _, kind in ipairs({ "Track", "Attach", "TrackCollection" }) do
 end
 NS.Motion.combat = true
 local cold, coldState = View("cold-collapse", true)
-assert(coldState and not coldState.hadSnapshot, "cold combat registration created a snapshot")
+assert(coldState and coldState.hadSnapshot, "safe cold combat registration lost its snapshot")
 NS.Motion.combat = false
 Regen()
 assert(coldState.hadSnapshot, "a visible view first registered during combat stayed dormant")

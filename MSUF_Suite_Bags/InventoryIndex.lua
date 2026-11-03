@@ -318,6 +318,9 @@ function Index.Retry(index)
     -- Retry failed requests only on the next explicit window opening. A
     -- failure event must not cause an immediate request/failure loop.
     Loads.Retry(index.loads)
+    for _, item in pairs(index.records) do
+        if item.loaded == false then item.version = nil end
+    end
 end
 
 function Index.Reset(index)

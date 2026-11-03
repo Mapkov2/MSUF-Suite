@@ -8,7 +8,7 @@ local IN_COMBAT = { inCombat = true }
 -- shared with the teleport buttons over the rows.
 local M = { rows = {}, entries = {}, rowMaps = {}, rowCount = 0, page = 1,
     layout = { rows = 12, top = 48, step = 27, inset = 16, iconRoom = 26 } }
-local Command, RefreshGroup
+local Command, RefreshGroup, RefreshKeys
 local COMMAND = "MSUFSUITEKEYS"
 local PREFIX = "MSUFKEY1"
 -- Seconds, except MAX_ANSWERS.
@@ -33,14 +33,39 @@ local function Register()
     end
 end
 
+-- A key can arrive before the client has loaded its dungeon name.
+local function KeyName(mapID)
+    return S.PublicText(C_ChallengeMode.GetMapUIInfo(mapID)) or S.Text("Unknown")
+end
+
+local function BagKeystone()
+    local container = C_Container
+    for bag = 0, 5 do
+        local count = container.GetContainerNumSlots(bag)
+        if S.Finite(count) and count >= 0 and count <= 200 then
+            for slot = 1, count do
+                local link = S.PublicText(container.GetContainerItemLink(bag, slot))
+                if link then
+                    local map, level = link:match("|Hkeystone:%d+:(%d+):(%d+)")
+                    map, level = tonumber(map), tonumber(level)
+                    if map and map > 0 and map <= 100000 and level and level >= 2 and level <= 99 then
+                        return map, level
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function OwnKeystone()
-    local mythic, challenge = C_MythicPlus, C_ChallengeMode
+    local mythic = C_MythicPlus
     local mapID = mythic.GetOwnedKeystoneChallengeMapID()
     local level = mythic.GetOwnedKeystoneLevel()
-    if not S.Finite(mapID) or mapID < 1 or not S.Finite(level) or level < 2 then return nil end
-    local name = S.PublicText(challenge.GetMapUIInfo(mapID))
-    if not name then return nil end
-    return string.format(S.Text("Keystone: %s +%d"), name, math.floor(level)), mapID, level
+    if not S.Finite(mapID) or mapID < 1 or not S.Finite(level) or level < 2 then
+        mapID, level = BagKeystone()
+    end
+    if not mapID then return nil end
+    return string.format(S.Text("Keystone: %s +%d"), KeyName(mapID), math.floor(level)), mapID, level
 end
 
 local function GroupChannel()
@@ -105,11 +130,12 @@ local function PaintWindow(self)
         local row = rows[(self.page - 1) * perPage + i]
         local label = self.labels[i]
         S.SetStyledFont(label, S.GlobalFontPath(), size, "OUTLINE", 1, true, 70, 1)
-        label:SetText(row and (row[1] .. "  ·  " .. row[2]) or "")
+        label:SetText(row and (row[1] .. "  -  " .. row[2]) or "")
         local entry = row and self.entries[row[1]]
         self.rowMaps[i] = entry and entry.mapID or nil
     end
-    self.status:SetText(StatusText(self, pages))
+    -- Custom fonts may lack the middle dot used by existing translations.
+    self.status:SetText((StatusText(self, pages):gsub("\194\183", "-")))
     -- Combat locks the teleport buttons; PLAYER_REGEN_ENABLED paints again (AfterCombat).
     Teleport.Paint(self, self.rowMaps)
 end
@@ -149,6 +175,8 @@ local function CreateWindow(self)
     -- teleport layer (AfterCombat).
     host:SetScript("OnHide", function()
         self.context:RemoveEvent("GROUP_ROSTER_UPDATE")
+        self.context:RemoveEvent("CHALLENGE_MODE_MAPS_UPDATE")
+        self.context:RemoveEvent("BAG_UPDATE_DELAYED")
         if not Teleport.Follow(self) then self.context:RemoveEvent("PLAYER_REGEN_ENABLED") end
     end)
     local back = S.CreateTexture(host, nil, "BACKGROUND")
@@ -194,6 +222,9 @@ local function ShowWindow(self)
     if not self.host then CreateWindow(self) end
     Teleport.Reset(self)
     self.context:Event("PLAYER_REGEN_ENABLED", AfterCombat, IN_COMBAT)
+    self.context:Event("CHALLENGE_MODE_MAPS_UPDATE", RefreshKeys, IN_COMBAT)
+    self.context:Event("BAG_UPDATE_DELAYED", RefreshKeys, IN_COMBAT)
+    C_MythicPlus.RequestMapInfo()
     PaintWindow(self)
     self.host:Show()
 end
@@ -201,8 +232,28 @@ end
 local function AddOwn(self)
     local text, mapID, level = OwnKeystone()
     local you = S.Text("You")
-    self.rows[you] = text or S.Text("No owned keystone found")
+    local row, old = text or S.Text("No owned keystone found"), self.entries[you]
+    if self.rows[you] == row and (not mapID and not old or old and old.mapID == mapID and old.level == level) then
+        return false
+    end
+    self.rows[you] = row
     self.entries[you] = mapID and { mapID = mapID, level = level } or nil
+    return true
+end
+
+-- Map names can arrive after the first answer; bag changes can replace the
+-- player's key while the window is open. Keep both event driven and local.
+RefreshKeys = function(self, event)
+    if not self.active or not self.host or not self.host:IsShown() then return end
+    local changed = AddOwn(self)
+    if event == "CHALLENGE_MODE_MAPS_UPDATE" then
+        Teleport.Reset(self)
+        for name, entry in pairs(self.entries) do
+            if entry.source then self.rows[name] = KeyName(entry.mapID) .. " +" .. entry.level end
+        end
+        changed = true
+    end
+    if changed then PaintWindow(self) end
 end
 
 -- The "Name-Realm" of a sender (a bare name is a player of the own realm), or
@@ -234,9 +285,8 @@ end
 -- The one way in of every source: one entry per player (peer is a PeerName).
 -- Says in chat when a key is new or changed, if the request asked for that.
 local function Take(self, peer, mapID, level, source, now)
-    local dungeon
-    if peer and ValidKey(mapID, level) then dungeon = S.PublicText(C_ChallengeMode.GetMapUIInfo(mapID)) end
-    if not dungeon then return end
+    if not peer or not ValidKey(mapID, level) then return end
+    local dungeon = KeyName(mapID)
     local old, rank = self.entries[peer], RANK[source]
     if old then
         if not Supersedes(old, mapID, level, rank, now) then return end
@@ -330,7 +380,9 @@ local function RequestKeys(mode, quiet)
         return
     end
     if M.config and M.config.otherAddons == false then return end
-    if Sources.Request(mode, OnSourceAnswer) > 0 then M.sourcesExpireAt = now + SOURCE_WINDOW end
+    -- A provider may deliver an answer before its request call returns.
+    M.sourcesExpireAt = now + SOURCE_WINDOW
+    if Sources.Request(mode, OnSourceAnswer) == 0 then M.sourcesExpireAt = nil end
 end
 
 RefreshGroup = function(self)

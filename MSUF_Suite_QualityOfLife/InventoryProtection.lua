@@ -1,6 +1,6 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-local Lists, Data = NS.InventoryLists, S.InventoryData
+local Lists = NS.InventoryLists
 local M = { items = {}, locations = {} }
 local POOR = 0 -- Enum.ItemQuality.Poor: the quality native junk selling takes
 S.InventoryProtection = M
@@ -35,7 +35,7 @@ function M:HasProtectedJunk()
     if not self.active then return false end
     self:Prepare()
     if self.unknownSets then return true end
-    local items, _, complete = Data.Bags()
+    local items, _, complete = S.InventoryData.Bags()
     if not complete then return true end
     for i = 1, #items do
         local row = items[i]
@@ -48,8 +48,8 @@ function M:Open()
     S.ToolListWindow.Open(self, { title = "Never sell items",
         help = "Protect selected items and equipment sets from all Suite sale actions.",
         empty = "Your list is empty. Choose Add item to begin.", rows = function()
-            local rows = Data.QuantityRows(M.items)
-            for i = 1, #rows do rows[i].label = Data.Name(rows[i].itemID) end
+            local rows = S.InventoryData.QuantityRows(M.items)
+            for i = 1, #rows do rows[i].label = S.InventoryData.Name(rows[i].itemID) end
             return rows
         end, actions = {
             { label = "Add item", run = function(owner)

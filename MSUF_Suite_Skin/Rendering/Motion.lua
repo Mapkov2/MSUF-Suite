@@ -14,7 +14,6 @@ function Motion.Enabled(spec)
     local theme = db and db.theme
     return db ~= nil and db.enabled ~= false and theme ~= nil
         and theme.menuAnimations ~= false and theme.reduceMotion ~= true
-        and not Motion.combat and not NS.IsCombatLocked()
         and (not spec or spec.motion ~= false and (not spec.ownedArt or spec.motion == true))
 end
 
@@ -137,9 +136,14 @@ function Motion.StopAll(preservePalette)
     for record in pairs(Motion.engaged) do Motion.Clear(record) end
 end
 
+local function StopUnsafe(record)
+    if not record.safe(record) then Motion.Clear(record) end
+end
+
 clock:SetScript("OnEvent", function(_, event)
     Motion.combat = event == "PLAYER_REGEN_DISABLED"
-    Motion.StopAll()
+    for index = Motion.count, 1, -1 do StopUnsafe(Motion.active[index]) end
+    for record in pairs(Motion.engaged) do StopUnsafe(record) end
     if not Motion.combat then
         for record in pairs(Motion.deferred) do record.reset(record) end
     end

@@ -66,17 +66,18 @@ function Cosmetics.SuppressVertexAlpha(region, owner)
     return true
 end
 
-local function FadePieces(frame, pieces, owner)
+local function FadePieces(frame, pieces, owner, canPaint)
     if type(frame) ~= "table" then return end
     for index = 1, #pieces do
-        Cosmetics.Fade(frame[pieces[index]], owner)
+        local region = frame[pieces[index]]
+        if not canPaint or canPaint(region) then Cosmetics.Fade(region, owner) end
     end
 end
 
 local dialogHeaderPieces = { "LeftBG", "CenterBG", "RightBG" }
 
-function Cosmetics.FadeNineSlice(nineSlice, owner)
-    FadePieces(nineSlice, nineSlicePieces, owner)
+function Cosmetics.FadeNineSlice(nineSlice, owner, canPaint)
+    FadePieces(nineSlice, nineSlicePieces, owner, canPaint)
 end
 
 function Cosmetics.FadeDialogHeader(header, owner)

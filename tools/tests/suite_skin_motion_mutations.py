@@ -15,7 +15,7 @@ CASES = [
     ("idle-driver", "Rendering/Motion.lua", 'clock:SetScript("OnUpdate", nil)',
      '-- driver wrongly left attached', "hover leave retained a driver"),
     ("combat-pressed", "Rendering/Motion.lua",
-     'for record in pairs(Motion.engaged) do Motion.Clear(record) end',
+     'for record in pairs(Motion.engaged) do StopUnsafe(record) end',
      '-- settled gestures wrongly left pressed', "combat left an idle pressed control stuck"),
     ("disabled-hover", "Rendering/SurfaceMotion.lua",
      'and (not Safety.HasMethod(target, "IsEnabled") or Safety.Read(target, "IsEnabled") == true)',

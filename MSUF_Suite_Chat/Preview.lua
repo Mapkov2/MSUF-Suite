@@ -158,6 +158,7 @@ function S.ChatPaintMenuPreview(parts, c)
     parts.copy:SetPoint("TOPRIGHT", parts.sample, "TOPRIGHT", -4 + c.copyButtonX, math.max(21, top) - 3 + c.copyButtonY)
     C.Tint(parts.copyFill, c.panelColor, 95)
     parts.copy:SetShown(c.copyMessages)
+    C.PaintClock(visual, parts.sample, c, top, c.headerClock and C.ClockText(c, 9, 28) or "")
     -- Keep the older preview's inspection fields pointing to runtime art.
     parts.fill, parts.fadeLeft, parts.fadeRight = visual.panel, visual.gradientLeft, visual.gradientRight
 end
@@ -188,6 +189,7 @@ function S.ChatPreviewBounds(parts, stage)
     Include(parts.input)
     Include(parts.inputFill)
     Include(parts.copy)
+    Include(visual.headerClock)
     for _, edge in ipairs(visual.edges) do Include(edge) end
     for _, edge in ipairs(parts.inputEdges) do Include(edge) end
     if parts.sidebar:IsShown() then for _, icon in ipairs(parts.icons) do Include(icon) end end

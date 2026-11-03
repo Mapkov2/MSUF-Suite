@@ -222,7 +222,7 @@ local core = { HostBridge = {} }
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", core)
 NS.SuiteCore = function() return core end
 for _, file in ipairs({ "Core/Safety.lua", "Core/Defaults.lua", "Core/DefaultsLooks.lua",
-    "Rendering/WindowControlChrome.lua", "Rendering/WindowControls.lua" }) do
+    "Rendering/WindowControlPolicy.lua", "Rendering/WindowControlChrome.lua", "Rendering/WindowControls.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 local WindowControls = NS.WindowControls
@@ -382,11 +382,12 @@ UpdateScaleForFitForOpenPanels()
 Check(settings.scale == 0.8, "a UI scale change left Settings at Blizzard's fit scale")
 Check(At(settings, "TOPLEFT", 300 / 0.8, -120 / 0.8), "a UI scale change left Settings at Blizzard's place")
 Check(hookCalls.UpdateScaleForFitForOpenPanels == 1, "the UI scale hook was installed more than once")
--- In combat the skin leaves Blizzard's fit alone, and puts its scale and
--- place back once combat ends.
+-- An unprotected window keeps its chosen scale and place across native
+-- combat fits, without queueing an unnecessary post-combat refresh.
 combat = true
 UpdateScaleForFitForOpenPanels()
-Check(settings.scale == 1, "the skin rescaled a panel in combat")
+Check(settings.scale == 0.8 and At(settings, "TOPLEFT", 300 / 0.8, -120 / 0.8),
+    "the safe combat fit replaced the selected scale or place")
 EndCombat()
 Check(settings.scale == 0.8 and At(settings, "TOPLEFT", 300 / 0.8, -120 / 0.8),
     "after a UI scale change in combat Settings kept Blizzard's fit scale")

@@ -79,28 +79,50 @@ function D.Short(name)
     return name:sub(1, index - 1) .. (config.nameEllipsis and "..." or "")
 end
 
--- Every amount, plain or secret, goes through the one native formatter, as
--- Blizzard's own meter formats all its values with one native call
--- (DamageMeterEntry.lua, GetEntryValueText): a plain value formatted in Lua
--- would change its look at every combat edge, when the values turn secret.
--- The client's own abbreviations by default; "Use English K/M/B" picks the
--- English config for both. Rows call it only when a plain value changed (the
--- mA/mB memo) or for a secret value. Constant raw suffixes avoid
--- client-localized global strings; the config is created once on opt-in.
-local englishAbbreviation
+-- Every amount, plain or secret, goes through the same native formatter.
+-- Raw breakpoint data avoids CreateAbbreviateConfig's restricted-breakpoint
+-- precondition. The final rule truncates sub-1000 rates in the C sink, too.
+-- Options are cached on configuration changes; row paints allocate no tables.
+local englishAbbreviation, localizedAbbreviation
+local englishConfigs = {}
+local function AbbreviationOptions(points, locale)
+    points[#points + 1] = { breakpoint = 0, abbreviation = "",
+        significandDivisor = 1, fractionDivisor = 1, abbreviationIsGlobal = false }
+    return { locale = locale, breakpointData = points }
+end
+local function ConfigureLocalizedAbbreviation()
+    if localizedAbbreviation then return end
+    if C_StringUtil and C_StringUtil.GetDefaultAbbreviationBreakpoints then
+        local points = {}
+        for i, point in ipairs(C_StringUtil.GetDefaultAbbreviationBreakpoints()) do points[i] = point end
+        localizedAbbreviation = AbbreviationOptions(points)
+    end
+end
 function D.ConfigureAbbreviation()
-    if not M.config.englishNumbers or englishAbbreviation then return end
+    if not M.config.englishNumbers then ConfigureLocalizedAbbreviation() return end
+    local decimals, kDecimals = M.config.englishDecimals or -1, M.config.englishKDecimals or -1
+    local key = decimals * 10 + kDecimals
+    englishAbbreviation = englishConfigs[key]
+    if englishAbbreviation then return end
     local points = {}
     for _, unit in ipairs({ { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" } }) do
-        points[#points + 1] = { breakpoint = unit[1] * 10, abbreviation = unit[2],
-            significandDivisor = unit[1], fractionDivisor = 1, abbreviationIsGlobal = false }
-        points[#points + 1] = { breakpoint = unit[1], abbreviation = unit[2],
-            significandDivisor = unit[1] / 10, fractionDivisor = 10, abbreviationIsGlobal = false }
+        local precision = unit[2] == "K" and kDecimals >= 0 and kDecimals or decimals
+        if precision < 0 then
+            points[#points + 1] = { breakpoint = unit[1] * 10, abbreviation = unit[2],
+                significandDivisor = unit[1], fractionDivisor = 1, abbreviationIsGlobal = false }
+            points[#points + 1] = { breakpoint = unit[1], abbreviation = unit[2],
+                significandDivisor = unit[1] / 10, fractionDivisor = 10, abbreviationIsGlobal = false }
+        else
+            local fraction = 10 ^ precision
+            points[#points + 1] = { breakpoint = unit[1], abbreviation = unit[2],
+                significandDivisor = unit[1] / fraction, fractionDivisor = fraction, abbreviationIsGlobal = false }
+        end
     end
-    englishAbbreviation = { locale = "enUS", config = CreateAbbreviateConfig(points) }
+    englishAbbreviation = AbbreviationOptions(points, "enUS")
+    englishConfigs[key] = englishAbbreviation
 end
 function D.Abbreviate(value)
-    return AbbreviateNumbers(value, M.config.englishNumbers and englishAbbreviation or nil)
+    return AbbreviateNumbers(value, M.config.englishNumbers and englishAbbreviation or localizedAbbreviation)
 end
 
 function D.Clock(seconds)

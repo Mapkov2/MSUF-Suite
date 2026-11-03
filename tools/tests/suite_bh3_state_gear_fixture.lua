@@ -57,5 +57,7 @@ local function Run(kind, inlineGear)
 end
 
 assert(Run("character",true) and not Run("character",false), "S08-A1: Inline gear off retained character annotations")
+NS.IsCombatLocked = function() return true end
+assert(Run("character",true) and Run("inspect",true), "S08-A1: Cold safe combat annotations were refused")
 
 end)

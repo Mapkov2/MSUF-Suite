@@ -183,7 +183,8 @@ assert(opens == opensBeforeDisable, "disabled module still opened the dialog")
 local slash = support.SlashRegistry()
 local mapID, level = 101, 12
 local addonMessages = {}
-C_MythicPlus = {
+C_Container = { GetContainerNumSlots = function() return 0 end }
+C_MythicPlus = { RequestMapInfo = function() end,
     GetOwnedKeystoneChallengeMapID = function() return mapID end,
     GetOwnedKeystoneLevel = function() return level end,
 }

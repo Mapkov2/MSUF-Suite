@@ -869,7 +869,9 @@ do
     assert(T.Refresh(stone,"item")==false and T.Refresh(stoneCat,"full")==false,"no flip, no relayout")
     bag[5512]=1
     T.BagsChanged()
-    assert(T.Refresh(stone,"item")==false and stone.hidden==false and stone.icon.countOff==true,"one stone shows without a count")
+    assert(T.Refresh(stone,"item")==false and stone.hidden==false and stone.icon.countOff==false
+        and stone.icon.count.last.SetText==1,"the final healthstone use stays visible")
+    assert(T.Refresh(stoneCat,"item")==false and stoneCat.icon.count.last.SetText==1,"native and item counts agree at one use")
     -- Counts off: the bags are still read for the hide rule, no count shows.
     -- (A behavior change re-applies the icons' text switches.)
     uti.charges=false
@@ -933,7 +935,9 @@ do
     T.Refresh(stone,"item");T.Refresh(stone,"cooldown");T.Refresh(stone,"full")
     itemCd[5512]={now,60,0}
     T.Refresh(stone,"item")
-    assert(writes==quiet and countQueries==queries and stone.cooling==true,"a held cooldown writes and counts once")
+    -- Each healthstone refresh rechecks uses even while timing is unchanged;
+    -- event routing bounds bag refreshes. Unchanged answers write nothing.
+    assert(writes==quiet and countQueries==queries+4 and stone.cooling==true,"held uses refresh once per pass without repaint")
     -- Zero allocation while held.
     collectgarbage("collect")
     collectgarbage("stop")
@@ -1101,7 +1105,10 @@ do
     -- item timing with ItemState through ItemTiming and carry the modRate:
     -- one call and the rate compare per unchanged refresh. Wave 4: 387 -> 372 and
     -- 451 -> 436 with Time.lua testing secrets through issecretvalue directly.
-    Budget("time: an unchanged item cooldown refresh",Cost(function() T.Refresh(e13,"item");T.Refresh(b4,"item") end),372)
+    -- 2026-11-03: 372 -> 384 for healthstone-specific bag timing/count guards.
+    -- Ordinary items/potions gain no native reads; healthstones recheck uses
+    -- once per refresh, with bag bursts still coalesced at 0.1 seconds.
+    Budget("time: an unchanged item cooldown refresh",Cost(function() T.Refresh(e13,"item");T.Refresh(b4,"item") end),384)
     -- 2026-10-02: 427 -> 451, the same ItemTiming call and modRate as above.
     Budget("time: a new item cooldown",Cost(function() equip.start=equip.start+1;T.Refresh(e13,"item") end),436)
     equip.start,equip.length=0,0

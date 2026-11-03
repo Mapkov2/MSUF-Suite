@@ -45,14 +45,20 @@ local function CopyColor(target, source)
 end
 
 local function SetTextColor(object, color)
+    if not Safety.CanDecorate(object, not NS.IsCombatLocked()) then return false end
     object:SetTextColor(color[1], color[2], color[3], color[4])
+    return true
 end
 
 -- Text color as plain numbers. Secret or missing colors read as nil and are
 -- never compared or tracked.
 local function ReadTextColor(object)
-    if type(object) ~= "table" or type(object.SetTextColor) ~= "function" then return nil end
-    return ReadColor(object, "GetTextColor")
+    if not Safety.Public(object) or type(object) ~= "table" then return nil end
+    local r, g, b, a = ReadColor(object, "GetTextColor")
+    -- ReadColor rejects forbidden targets before any method lookup. Only
+    -- admitted colors need a setter or the protection check at paint time.
+    if r and type(object.SetTextColor) == "function" then return r, g, b, a end
+    return nil
 end
 
 -- A region's object type never changes. Surfaces rescan their regions on
@@ -92,8 +98,7 @@ local function RestoreObject(object, state)
     if not r or not ColorMatches(state.applied, r, g, b, a, COLOR_OWN) then
         return false
     end
-    SetTextColor(object, state.original)
-    return true
+    return SetTextColor(object, state.original)
 end
 
 -- Recolors native gold, or text still showing our previous color.
@@ -105,13 +110,14 @@ local function ApplyObject(object, states)
         if not ColorMatches(state.applied, r, g, b, a, COLOR_OWN) and not IsNativeYellow(r, g, b) then
             return false
         end
-    elseif IsNativeYellow(r, g, b) then
-        state = { original = { r, g, b, a }, applied = {} }
-        states[object] = state
-    else
+    elseif not IsNativeYellow(r, g, b) then
         return false
     end
-    SetTextColor(object, desired)
+    if not SetTextColor(object, desired) then return false end
+    if not state then
+        state = { original = { r, g, b, a }, applied = {} }
+        states[object] = state
+    end
     CopyColor(state.applied, desired)
     return true
 end
@@ -127,7 +133,7 @@ local function ApplyKnownNativeObject(object)
     end
     if not IsNativeYellow(r, g, b) and not ColorMatches(desired, r, g, b, a, COLOR_OWN) then return false end
 
-    SetTextColor(object, desired)
+    if not SetTextColor(object, desired) then return false end
     BlizzardYellow.directStates[object] = {
         original = { NATIVE_R, NATIVE_G, NATIVE_B, a },
         applied = CopyColor({}, desired),
@@ -160,7 +166,7 @@ function BlizzardYellow.Restore()
 end
 
 local function CanTrack(frame)
-    return NS.DB and NS.DB.enabled and not NS.IsCombatLocked()
+    return NS.DB and NS.DB.enabled and Safety.Public(frame)
         and type(frame) == "table" and not IsForbidden(frame)
 end
 
@@ -232,14 +238,15 @@ local function TrackNode(frame)
 end
 
 -- TrackFrame over frames[1..count] (a pooled row's subtree): the enable and
--- combat gates and the configured color are read once for the whole list.
+-- configured color are read once for the whole list; each text keeps its guard.
 function BlizzardYellow.TrackFrames(frames, count)
-    if not (NS.DB and NS.DB.enabled) or NS.IsCombatLocked() then return 0 end
+    if not (NS.DB and NS.DB.enabled) then return 0 end
     RefreshDesiredColor()
     local tracked = 0
     for index = 1, count do
         local frame = frames[index]
-        if type(frame) == "table" and not IsForbidden(frame) and type(frame.GetRegions) == "function" then
+        if Safety.Public(frame) and type(frame) == "table" and not IsForbidden(frame)
+            and type(frame.GetRegions) == "function" then
             tracked = tracked + TrackNode(frame)
         end
     end

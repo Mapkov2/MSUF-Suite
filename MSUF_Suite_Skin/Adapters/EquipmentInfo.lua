@@ -154,10 +154,37 @@ function Info.Invalidate(result)
     if result then result.settled = false end
 end
 
+-- Missing inventory links keep one request per occupied identity until the
+-- owning view closes. These helpers touch metadata, never the record's UI objects.
+function Info.RequestMissingLink(unit, slot, record, pending)
+    local itemID = Number(Read(GetInventoryItemID, unit, slot))
+    if not itemID or itemID <= 0 then record.pendingItemID = nil return end
+    local request = record.pendingItemID ~= itemID
+    record.pendingItemID, pending[itemID] = itemID, true
+    if request then C_Item.RequestLoadItemDataByID(itemID) end
+end
+
+-- Aggregate one cached audit and its outstanding item/gem data.
+function Info.Summarize(result, pending, missingItemID)
+    if missingItemID then pending[missingItemID] = true end
+    if not result or not result.link then return 0, 0, 0, 0 end
+    if result.pending and result.itemID then pending[result.itemID] = true end
+    for _, gem in ipairs(result.gemInfo) do
+        if gem.pending and gem.id then pending[gem.id] = true end
+    end
+    return result.missingEnchant and 1 or 0, result.lowEnchant and 1 or 0,
+        result.emptySockets or 0, result.unknown and 1 or 0
+end
+
+-- Releasing requests must remain possible when native parents protect the UI.
+function Info.ClearPending(records, pending)
+    for id in pairs(pending) do pending[id] = nil end
+    for _, record in ipairs(records) do record.pendingItemID = nil end
+end
+
 function Info.Read(link, unit, slot, result, identity)
     result = result or {}
     link = Text(link)
-    if NS.IsCombatLocked() then return result end
     if result.link == link and result.identity == identity and result.settled then return result end
     Reset(result)
     result.link, result.identity = link, identity

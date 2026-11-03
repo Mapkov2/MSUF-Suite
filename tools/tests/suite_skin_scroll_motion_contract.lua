@@ -52,7 +52,7 @@ hooksecurefunc = function(target, method, callback)
     end
 end
 local listeners, providers = {}, {}
-ScrollBoxListMixin = { Event = { OnLayout = "layout" } }
+ScrollBoxListMixin = { Event = { OnLayout = "layout", OnScroll = "scroll" } }
 local NS = { DB = { enabled = true, theme = {} }, Motion = { combat = false },
     IsCombatLocked = InCombatLockdown, Client = { isForever = arg[2] == "Forever" },
     Registry = { AddListener = function(owner, callback) listeners[owner] = callback end },
@@ -230,8 +230,15 @@ NS.Motion.combat = true -- Event-derived combat edge precedes lockdown.
 for _, frame in ipairs(frames) do
     if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
 end
-Check(not legacyBar.canInterpolateScroll and legacyBar.interpolator.destination == nil and positions == before,
-    "combat edge retained motion or wrote a scroll position")
+Check(legacyBar.canInterpolateScroll and legacyBar.interpolator.destination == 0.6 and positions == before,
+    "combat edge stopped safe motion or wrote a scroll position")
+legacyBar.protected = true
+for _, frame in ipairs(frames) do
+    if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+end
+Check(legacyBar.interpolator.destination == nil and positions == before,
+    "unsafe combat edge retained motion or wrote a scroll position")
+legacyBar.protected = false
 NS.Motion.combat = false
 for _, frame in ipairs(frames) do
     if frame.events.PLAYER_REGEN_ENABLED then frame:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
@@ -315,14 +322,16 @@ do
         Check(Motion.Track(controller, "edge"), "a combat edge controller was refused")
         edge[i] = controller
     end
-    local isLocked, locked = NS.IsCombatLocked, 0
-    NS.IsCombatLocked = function() locked = locked + 1 return isLocked() end
+    local configurationReads = 0
+    setmetatable(NS.DB.theme, { __index = function(_, key)
+        if key == "smoothScrolling" then configurationReads = configurationReads + 1 end
+    end })
     reads = 0
     for _, frame in ipairs(frames) do
         if frame.events.PLAYER_REGEN_ENABLED then frame:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
     end
-    NS.IsCombatLocked = isLocked
-    Check(locked == 1, "a combat edge read the configuration once per controller")
+    setmetatable(NS.DB.theme, nil)
+    Check(configurationReads == 1, "a combat edge read the configuration once per controller")
     Check(reads == 2 * #edge, "a combat edge asked IsForbidden more than twice per controller")
     for i = 1, #edge do Check(edge[i].canInterpolateScroll == true, "a combat edge changed a controller's flag") end
     Motion.ReleaseOwner("edge")
@@ -338,8 +347,8 @@ do
     end
     hidden:SetScrollPercentage(0.8)
     hidden:Fire("OnShow")
-    Check(hidden.position == 0.8 and not hidden.canInterpolateScroll,
-        "hidden controller interpolated in combat instead of reaching the requested row")
+    Check(hidden.position == 0.8 and hidden.canInterpolateScroll,
+        "hidden controller missed its immediate row or safe combat resume")
     NS.Motion.combat = false
     Motion.ReleaseOwner("combat-hidden")
 end
@@ -407,7 +416,7 @@ do
     Check(reads == 0 and writes == 0, "hidden controllers were probed or written at a combat edge")
     NS.Motion.combat = true
     hidden[1]:Fire("OnShow")
-    Check(not hidden[1].canInterpolateScroll, "show in combat retained smooth scrolling")
+    Check(hidden[1].canInterpolateScroll, "safe show in combat lost smooth scrolling")
     NS.Motion.combat = false
     for _, frame in ipairs(frames) do
         if frame.events.PLAYER_REGEN_ENABLED then frame:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
@@ -421,6 +430,98 @@ do
     NS.DB.theme.smoothScrolling = nil
     Changed()
     Motion.ReleaseOwner("hidden-budget")
+end
+-- LFG keeps all native controller fields and setters under Blizzard ownership.
+-- Only its safe rendered child moves, including first registration in combat.
+do
+    local stops, probes = 0, 0
+    local function LFG(owner)
+        local rootFrame, controller, child = Frame(), Controller(false), Frame()
+        function rootFrame:GetName() return "LFGListFrame" end
+        function controller:GetParent() return rootFrame end
+        function controller:GetHeight() return 300 end
+        function controller:GetScrollTarget() return child end
+        function controller:SetInterpolateScroll() error("LFG native interpolation ownership changed") end
+        function controller:SetScrollPercentage() error("LFG native scroll position was written") end
+        function controller:GetScrollInterpolator() error("LFG native interpolator was adopted") end
+        function child:CreateAnimationGroup()
+            local group = { scripts = {} }
+            self.group = group
+            function group:SetScript(event, callback) self.scripts[event] = callback end
+            function group:Stop() stops = stops + 1 self.playing = false end
+            function group:Play() self.playing = true end
+            function group:Finish()
+                self.playing = false
+                if self.scripts.OnFinished then self.scripts.OnFinished(self) end
+            end
+            function group:CreateAnimation()
+                local move = { SetDuration = Noop, SetSmoothing = Noop }
+                function move:SetOffset(_, y) self.offset = y end
+                self.move = move
+                return move
+            end
+            return group
+        end
+        Check(Motion.Track(controller, owner), "safe LFG renderer registration failed")
+        controller:Trigger("scroll", 0.1, 0.5)
+        controller:Trigger("scroll", 0.2, 0.5)
+        return controller, child
+    end
+    local function Edge()
+        for _, frame in ipairs(frames) do
+            if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+        end
+    end
+    combat, NS.Motion.combat = true, true
+    local cold, child = LFG("cold-lfg")
+    Check(child.group and child.group.playing, "cold safe LFG scroll did not animate in combat")
+    stops = 0
+    Edge()
+    Check(child.group.playing and stops == 0, "combat edge stopped safe LFG rendering")
+    cold:Trigger("scroll", 0.3, 0.5)
+    Check(child.group.playing and child.group.move.offset == -8, "combat LFG retarget lost bounded motion")
+    child.protected = true
+    Edge()
+    Check(not child.group.playing, "protected LFG content retained animation")
+    child.protected = false
+    cold:Trigger("scroll", 0.4, 0.5)
+    cold:Trigger("scroll", 0.5, 0.5)
+    Check(child.group.playing, "safe LFG content could not resume after protection changed")
+    child.group:Finish()
+    local childForbidden = child.IsForbidden
+    function child:IsForbidden() probes = probes + 1 return childForbidden(self) end
+    stops, probes = 0, 0
+    Edge()
+    Check(stops == 0 and probes == 0, "completed LFG rendering retained combat cleanup work")
+    child.IsForbidden = childForbidden
+    cold:Fire("OnHide")
+    Motion.ReleaseOwner("cold-lfg")
+    combat, NS.Motion.combat = false, false
+    -- Measure only the provider callbacks: a fixture frame inventory naturally grows.
+    local events = {}
+    for _, frame in ipairs(frames) do
+        if frame.events.PLAYER_REGEN_DISABLED then events[#events + 1] = frame end
+    end
+    local function Steps()
+        local steps = 0
+        debug.sethook(function() steps = steps + 1 end, "", 1)
+        for _, frame in ipairs(events) do frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+        debug.sethook()
+        return steps
+    end
+    local base = Steps()
+    for index = 1, 64 do
+        local hidden, hiddenChild = LFG("hidden-lfg")
+        hidden:Fire("OnHide")
+        function hidden:IsForbidden() probes = probes + 1 return false end
+        function hiddenChild:IsForbidden() probes = probes + 1 return false end
+    end
+    stops, probes = 0, 0
+    local populated = Steps()
+    Check(stops == 0 and probes == 0, "combat touched historical hidden LFG scrolls")
+    Check(populated <= base + 32, "combat scanned historical hidden LFG scrolls")
+    print("BUDGET LFG-scroll hidden64 native=0 VM " .. base .. " -> " .. populated)
+    Motion.ReleaseOwner("hidden-lfg")
 end
 Check(scriptWrites == 0, "native wheel/update scripts were replaced")
 for _, frame in ipairs(frames) do Check(frame.scripts.OnUpdate == nil, "Suite installed an idle update loop") end

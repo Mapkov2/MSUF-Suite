@@ -122,7 +122,9 @@ local function SkinGreatVault(root, state)
 end
 
 local function SkinExactItemServiceShell(root, state)
-    Attach(state, root, SHELL)
+    if Attach(state, root, SHELL) then
+        NS.WindowControls.Attach(root, state.owner)
+    end
     FadeNineSlice(state, root)
     FadeFields(state, root, ITEM_SERVICE_SHELL_ART)
     Fade(state, Path(root, "PortraitContainer", "portrait"))

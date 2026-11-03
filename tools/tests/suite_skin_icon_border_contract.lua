@@ -102,6 +102,7 @@ IconSkin.Repaint(button)
 IconSkin.Repaint(button)
 Check(calls.ClearAllPoints == 4 and calls.SetPoint == 8, "a thickness change did not anchor the lines once")
 theme.iconBorderThickness = 1
+IconSkin.Repaint(button)
 
 -- Looting in combat: the owned lines take the new quality as paint only.
 locked = true
@@ -131,7 +132,17 @@ locked = false
 deferred["icon-skin:repaint"]()
 Check(ShowsColor(guardedState, 0.1, 0.9, 0.1), "the repaint after combat skipped the protected border")
 locked = true
-Check(IconSkin.Apply(Button(), "bags", {}) == nil, "a border was created in combat")
+local cold = IconSkin.Apply(Button(), "bags", {})
+Check(cold and cold.linesShown, "safe cold icon border was refused in combat")
+for _, target in ipairs({ button.Icon, button.IconBorder }) do
+    target.IsProtected = function() return true, false end
+    Reset()
+    Check(not IconSkin.Apply(button, "bags", { allowImplicitProtected = true }),
+        "combat Apply accepted a protected native icon child")
+    Check(not IconSkin.Repaint(button) and (calls.SetColorTexture or 0) == 0
+        and (calls.SetPoint or 0) == 0, "combat repaint changed a protected icon child")
+    target.IsProtected = nil
+end
 locked = false
 
 -- Decorative native art (the white cooldown viewer overlay) is no quality

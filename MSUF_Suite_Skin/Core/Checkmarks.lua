@@ -174,7 +174,7 @@ end
 
 -- The texture is checked once, not once per getter as Safety.Read would.
 local function AssetRole(texture)
-    if not texture or type(texture) ~= "table" or Safety.IsForbidden(texture) then return false end
+    if not Safety.Public(texture) or type(texture) ~= "table" or Safety.IsForbidden(texture) then return false end
     local atlas = ReadString(texture, "GetAtlas")
     if atlas then
         atlas = lowerAtlases.values[atlas] or Remember(lowerAtlases, atlas, atlas:lower())
@@ -220,7 +220,8 @@ local function BindTexture(texture, state, owner)
 end
 
 local function ApplyTexture(texture, owner, forcedRole)
-    if not texture then return false end
+    if not NS.DB or not NS.DB.enabled or not Safety.Public(texture) or type(texture) ~= "table"
+        or not Safety.CanDecorate(texture, not NS.IsCombatLocked()) then return false end
     local colorRole = forcedRole or AssetRole(texture)
     if not colorRole or type(texture.SetVertexColor) ~= "function" then return false end
     local r, g, b, a = ReadVertex(texture)
@@ -257,6 +258,7 @@ local function ApplyTexture(texture, owner, forcedRole)
 end
 
 local function RestoreTexture(texture, state)
+    if not Safety.CanDecorate(texture, not NS.IsCombatLocked()) then return false end
     state = state or Checkmarks.states[texture]
     if not state then return false end
     local r, g, b, a = ReadVertex(texture)
@@ -282,7 +284,7 @@ end
 -- intentionally texture-scoped: callers remain responsible for proving that
 -- the region is decorative rather than semantic content.
 function Checkmarks.TrackTexture(texture, owner, colorRole)
-    if not NS.DB or not NS.DB.enabled or NS.IsCombatLocked()
+    if not NS.DB or not NS.DB.enabled
         or type(colorRole) ~= "string" then
         return false
     end
@@ -310,7 +312,7 @@ end
 function Checkmarks.StillApplied(texture, owner, colorRole, nativeDesaturated)
     local state = texture and Checkmarks.states[texture]
     if not state or state.owner ~= owner or state.boundRole ~= colorRole or state.colorRole ~= colorRole
-        or not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() then
+        or not NS.DB or not NS.DB.enabled or not Safety.CanDecorate(texture, not NS.IsCombatLocked()) then
         return false
     end
     if state.appliedDesaturated ~= true or ReadDesaturated(texture) ~= true
@@ -393,7 +395,7 @@ local function Field(object, name)
 end
 
 local function CanTrack(button)
-    return button and Safety.CanDecorate(button, true)
+    return Safety.Public(button) and Safety.CanDecorate(button, not NS.IsCombatLocked())
 end
 
 -- Getters of a button CanTrack accepted (a table that is not forbidden).
@@ -492,7 +494,7 @@ local function RememberArt(button, art, noRole)
 end
 
 function Checkmarks.TrackButton(button, owner)
-    if not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() or not CanTrack(button) then
+    if not NS.DB or not NS.DB.enabled or not CanTrack(button) then
         return false
     end
     local art = buttonArt[button]
@@ -662,7 +664,7 @@ end
 -- verified native-asset recoloring as generic windows.  No regions are
 -- created here and explicit protected subtrees are never entered.
 function Checkmarks.TrackControlTree(root, owner, options)
-    if not NS.DB or not NS.DB.enabled or NS.IsCombatLocked() or not root then
+    if not NS.DB or not NS.DB.enabled or not root then
         return false, 0
     end
     options = type(options) == "table" and options or {}

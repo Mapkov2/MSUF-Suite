@@ -114,7 +114,7 @@ local rowModes = {
 }
 
 local function CanSkin(frame, allowImplicitProtected)
-    return Safety.CanCreateRegions(frame, allowImplicitProtected)
+    return Safety.CanCreateRegions(frame, allowImplicitProtected and not NS.IsCombatLocked())
 end
 
 local function ObjectName(object)
@@ -182,6 +182,7 @@ end
 -- targets collects regions faded on a root so a later preserveRootArt pass
 -- can restore exactly those.
 local function Fade(owner, region, targets)
+    if NS.IsCombatLocked() and not Safety.CanDecorate(region) then return end
     if type(region) == "table" and NS.Cosmetics.Fade(region, owner) and targets then
         targets[region] = true
     end
@@ -192,9 +193,11 @@ end
 local function FadeFields(owner, object, fields, targets)
     if type(object) ~= "table" then return end
     local Cosmetics = NS.Cosmetics
+    local combat = NS.IsCombatLocked()
     for index = 1, #fields do
         local region = object[fields[index]]
-        if type(region) == "table" and Cosmetics.Fade(region, owner) and targets then
+        if type(region) == "table" and (not combat or Safety.CanDecorate(region))
+            and Cosmetics.Fade(region, owner) and targets then
             targets[region] = true
         end
     end

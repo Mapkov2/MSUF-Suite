@@ -206,10 +206,13 @@ end
 -- and kilobytes allocated. MSUF_BUDGET_MEASURE=1 prints the four and stops
 -- there; the base was measured that way against the files before this change.
 --   before:   9942 instructions, 471 skin calls, 359 natives, 0 KB
---   now:      6428 instructions, 210 skin calls, 272 natives, 0 KB
--- Budgets are "now" plus 2%. Lower them after an optimization; raise one only
--- with a dated reason.
-local ROW_BUDGET = { instructions = 6557, skinCalls = 214, natives = 277 }
+--   2026-11-03 pre-combat-parity: 6386 instructions, 204 skin calls, 272 natives.
+--   Combat parity: 7048 instructions, 232 skin calls, 299 natives, 0.03 KB/100.
+-- Accepted visible-row cost: 28 secret-first target checks (16 nodes, 8 text
+-- targets, 3 buttons, 1 absent Check texture), with one fewer combat query.
+-- Non-gold text does not pay protection checks: they run only before a write.
+-- The VM/call budgets retain 2% headroom; allocation and hidden work stay strict.
+local ROW_BUDGET = { instructions = 7189, skinCalls = 237, natives = 305 }
 do
     local nodes = {}
     for index = 1, 16 do

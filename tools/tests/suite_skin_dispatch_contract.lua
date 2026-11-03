@@ -28,7 +28,7 @@ local NS = {
     Client = { HasAddOn = function() return false end },
     IsCombatLocked = function() return false end,
     CombatGate = { RunOrDefer = function() error("no combat in this contract") end },
-    WindowControls = { DisableOwner = function() end, Attach = function() end },
+    WindowControls = { TrackFocus = function() end, DisableOwner = function() end, Attach = function() end },
     Cosmetics = { RestoreOwner = function() end },
     Surface = { Attach = function(frame) return frame end, SetVisible = function() end },
     Checkmarks = { TrackControlTree = function() end },

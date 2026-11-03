@@ -112,7 +112,7 @@ local NS = {
     Client = { HasAddOn = function() return false end },
     IsCombatLocked = function() return false end,
     CombatGate = { RunOrDefer = function() error("no combat in this contract") end },
-    WindowControls = { DisableOwner = function() end, Attach = function() end },
+    WindowControls = { TrackFocus = function() end, DisableOwner = function() end, Attach = function() end },
     Cosmetics = { RestoreOwner = function() end },
     Surface = { Attach = function(frame) return frame end, SetVisible = function() end },
     Checkmarks = { TrackControlTree = function() end },
@@ -174,6 +174,18 @@ ContainerFrameCombinedBags, ContainerFrame6 = {}, {}
 Check(Ownership.IsBagShell(ContainerFrameCombinedBags) and Ownership.IsBagShell(ContainerFrame6)
     and not Ownership.IsBagShell({}) and not Ownership.IsBagShell(nil),
     "the bag shell frames are misidentified")
+BankFrame, ContainerFrame1 = {}, {}
+owned.bagWindows = true
+Check(Ownership.OwnsWindowGeometry(BankFrame) and Ownership.OwnsWindowGeometry(ContainerFrameCombinedBags)
+    and Ownership.OwnsWindowGeometry(ContainerFrame6) and not Ownership.OwnsWindowGeometry(ContainerFrame1),
+    "the native bag geometry owners do not match the active Bags module")
+NS.Client.isForever = true
+Check(not Ownership.OwnsWindowGeometry(BankFrame) and Ownership.OwnsWindowGeometry(ContainerFrameCombinedBags)
+    and Ownership.OwnsWindowGeometry(ContainerFrame6), "Forever incorrectly handed bank geometry to Bags")
+owned.bagWindows = false
+Check(not Ownership.OwnsWindowGeometry(BankFrame) and not Ownership.OwnsWindowGeometry(ContainerFrameCombinedBags)
+    and not Ownership.OwnsWindowGeometry(ContainerFrame6) and not Ownership.OwnsWindowGeometry(nil),
+    "inactive Bags retained native window geometry")
 Check(Ownership.EntrySurface("hud-cooldown-viewers") == "cooldownViewers"
     and Ownership.EntrySurface("hud-bag-bar") == "bagBar"
     and Ownership.EntrySurface("static-popups") == "staticPopups"

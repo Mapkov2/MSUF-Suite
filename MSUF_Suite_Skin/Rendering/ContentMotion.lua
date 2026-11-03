@@ -131,9 +131,13 @@ function Content.UnwatchOwner(owner)
     Content.StopOwner(owner)
 end
 
-local function StopAll()
-    revision = revision + 1
-    for record in pairs(Content.active) do Stop(record) end
+local function StopAll(_, event)
+    local combat = event == "PLAYER_REGEN_DISABLED"
+    if not combat then revision = revision + 1 end
+    for record in pairs(Content.active) do
+        if not combat or not Safety.CanCreateRegions(record.target)
+            or Safety.Read(record.target, "IsVisible") ~= true then Stop(record) end
+    end
 end
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")

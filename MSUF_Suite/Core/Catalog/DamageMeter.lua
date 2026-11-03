@@ -138,6 +138,8 @@ B.Section(id, "bars", "Bars", {
 B.Section(id, "text", "Text and numbers", {
     Font("font", "Font"),
     Bool("englishNumbers", "Use English K/M/B abbreviations", false),
+    Number("englishDecimals", "English K/M/B decimal places (-1 = Auto)", -1, -1, 2),
+    Number("englishKDecimals", "English K decimal places (-1 = shared)", -1, -1, 2),
     Choice("outline", "Text style", 2, { "Shadow", "Outline", "Thick outline", "None", "Outline + shadow", "Thick outline + shadow" }),
     Choice("rendering", "Font rendering", NS.FontRendering.SLUG, { "Smooth", "Sharp / pixel", "Slug" }),
     Number("shadowOpacity", "Shadow opacity (percent)", 100, 20, 100, 5),
@@ -176,6 +178,7 @@ B.Section(id, "window", "Window and header", {
     Color("borderColor", "Border color", initial.borderColor),
     Bool("headerVisible", "Show header", true),
     Bool("headerOutside", "Place header above the window", false),
+    Bool("overallTitlePrefix", "Show Overall before the meter name", false),
     Bool("headerSelectors", "Show session and meter selectors", true),
     Number("headerHeight", "Header height", 22, 14, 40),
     Color("headerColor", "Header color", initial.headerColor),
@@ -367,6 +370,8 @@ rules.shadowDistance.requiresChoice = { key = "outline", values = SHADOWED }
 local CUSTOM = { [NS.DamageMeterValueFormat.CUSTOM] = true }
 rules.valueOrder.requiresChoice = { key = "numberFormat", values = CUSTOM }
 rules.valueSeparator.requiresChoice = { key = "numberFormat", values = CUSTOM }
+rules.englishDecimals.enableKey = "englishNumbers"
+rules.englishKDecimals.enableKey = "englishNumbers"
 rules.headerTimer.enableKey = "combatTime"
 for _, key in ipairs({ "headerTimerSize", "headerTimerOffsetX", "headerTimerOffsetY" }) do
     rules[key].enableKey = "headerTimer"

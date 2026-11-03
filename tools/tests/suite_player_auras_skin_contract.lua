@@ -116,6 +116,7 @@ local bridge = {
 local outline = {} -- button -> the module's outline frame
 local module
 local S = {
+    Finite = function(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end,
     CreateFrame = function(_, _, parent)
         local frame = Region()
         if parent then outline[parent] = frame end
@@ -129,6 +130,7 @@ local S = {
     Install = function(_, instance) module = instance end,
 }
 local NS = { IsCombatLocked = function() return combat end, IsSecret = function() return false end,
+    Safety = { IsForbidden = function() return false end },
     MSUFMedia = { font = "msuf.ttf" }, HostBridge = bridge }
 -- The skin-only piece (PlayerAuraSkins.lua) lets go of the buttons while this
 -- module runs: yields records its calls.
@@ -269,7 +271,7 @@ do
         local body = Body(head):lower()
         Check(not body:find("skin", 1, true) and not body:find("look", 1, true), head .. " must run Suite main's code")
     end
-    Check(Body("local function Sync("):find("Place(button, icon, slot, frame.AuraContainer, M.config)", 1, true),
+    Check(Body("local function Sync("):find("Place(button, icon, slot, frame.AuraContainer, c, list)", 1, true),
         "Sync must place a button as Suite main does")
 end
 print("suite player auras skin contract passed")

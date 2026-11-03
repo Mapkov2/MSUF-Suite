@@ -22,6 +22,7 @@ local generation, fontPath = 0, nil
 local unpack, select, floor, ceil, max = unpack, select, math.floor, math.ceil, math.max
 -- The client's secret test (Platform.lua), called directly on the aura path.
 local IsSecret = NS.IsSecret
+local Finite = S.Finite
 
 -- Blizzard_BuffFrame (live 12.1.5 and Forever 1.60.1): retain native buttons,
 -- aura updates, cancel clicks, private anchors and duration timers.
@@ -63,30 +64,63 @@ local BORDER = { size = true }
 local FRAME = { points = true }
 local CONTAINER = { points = true, size = true }
 
+local function Points(region)
+    local count = region:GetNumPoints()
+    if not Finite(count) or count < 0 or count ~= floor(count) then return end
+    local points = {}
+    for index = 1, count do
+        local point = Readable(region:GetPoint(index))
+        if not point or point.n ~= 5 or type(point[1]) ~= "string" or type(point[3]) ~= "string"
+            or not Finite(point[4]) or not Finite(point[5]) then return end
+        if point[2] and NS.Safety.IsForbidden(point[2]) then return end
+        points[index] = point
+    end
+    return points
+end
+
+local function Numbers(count, ...)
+    local values = { n = select("#", ...), ... }
+    if values.n ~= count then return end
+    for index = 1, count do
+        if not Finite(values[index]) then return end
+    end
+    return values
+end
+
 local function Remember(region, aspects)
-    if not region or saved[region] then return end
+    if saved[region] then return true end
+    if not region or NS.Safety.IsForbidden(region) then return false end
     local state = {}
     if aspects.points then
-        state.points = {}
-        for index = 1, region:GetNumPoints() do
-            state.points[index] = Readable(region:GetPoint(index))
-            if not state.points[index] then
-                state.points = nil
-                break
-            end
-        end
+        state.points = Points(region)
+        if not state.points then return false end
     end
-    if aspects.size then state.size = Readable(region:GetWidth(), region:GetHeight()) end
-    if aspects.scale then state.scale = Readable(region:GetScale()) end
-    if aspects.alpha then state.alpha = Readable(region:GetAlpha()) end
-    if aspects.coords then state.coords = Readable(region:GetTexCoord()) end
+    if aspects.size then
+        state.size = Numbers(2, region:GetWidth(), region:GetHeight())
+        if not state.size then return false end
+    end
+    if aspects.scale then
+        state.scale = Numbers(1, region:GetScale())
+        if not state.scale then return false end
+    end
+    if aspects.alpha then
+        state.alpha = Numbers(1, region:GetAlpha())
+        if not state.alpha then return false end
+    end
+    if aspects.coords then
+        state.coords = Numbers(4, region:GetTexCoord())
+        if not state.coords then return false end
+    end
     if aspects.text then
         state.font = Readable(region:GetFont())
-        state.color = Readable(region:GetTextColor())
-        state.shadow = Readable(region:GetShadowColor())
-        state.shadowOffset = Readable(region:GetShadowOffset())
+        state.color = Numbers(4, region:GetTextColor())
+        state.shadow = Numbers(4, region:GetShadowColor())
+        state.shadowOffset = Numbers(2, region:GetShadowOffset())
+        if not state.font or type(state.font[1]) ~= "string" or not Finite(state.font[2])
+            or not state.color or not state.shadow or not state.shadowOffset then return false end
     end
     saved[region] = state
+    return true
 end
 
 local function Put(region, setter, values)
@@ -149,7 +183,7 @@ local function Border(button, icon, c)
     end
     border:SetAllPoints(icon)
     local level = button:GetFrameLevel()
-    if not IsSecret(level) then border:SetFrameLevel(level + 1) end
+    if Finite(level) then border:SetFrameLevel(level + 1) end
     local r, g, b = S.RGB(c.borderColor)
     S.PlaceEdges(border.edges, border, c.borderSize, r, g, b, 1)
     border:SetShown(c.borderSize > 0)
@@ -171,7 +205,7 @@ end
 
 local function Font(region, c)
     if not (region and region.SetFont) then return end
-    Remember(region, TEXT)
+    if not Remember(region, TEXT) then return end
     region:SetFont(fontPath, c.fontSize, "OUTLINE")
     region:SetTextColor(1, 1, 1, 1)
     region:SetShadowColor(0, 0, 0, 1)
@@ -180,14 +214,14 @@ end
 
 local function Pin(region, button, point)
     if not (region and region.SetFont) then return end
-    Remember(region, TEXT)
+    if not Remember(region, TEXT) then return end
     region:ClearAllPoints()
     region:SetPoint(point, button, point, point == "BOTTOMRIGHT" and -2 or 2, 1)
 end
 
 local function NativeBorder(region, c)
     if not region then return end
-    Remember(region, BORDER)
+    if not Remember(region, BORDER) then return end
     region:SetSize(c.iconWidth + 2, c.iconHeight + 2)
 end
 
@@ -244,8 +278,16 @@ local function StyleSkinned(button, icon, c)
 end
 
 -- Native layout owns these: UpdateGridLayout resets them on each laid-out button.
-local function Place(button, icon, slot, container, c)
-    if not saved[button] then Remember(button, BUTTON) end
+local function Place(button, icon, slot, container, c, list)
+    local auraAnchor = button.isAuraAnchor
+    if not saved[button] and not Remember(button, BUTTON) then
+        list[slot] = nil
+        return
+    end
+    if not saved[icon] and not auraAnchor and not Remember(icon, ICON) then
+        list[slot] = nil
+        return
+    end
     local col, row = (slot - 1) % c.perRow, floor((slot - 1) / c.perRow)
     button:SetScale(1)
     button:SetSize(c.iconWidth, c.iconHeight)
@@ -254,8 +296,7 @@ local function Place(button, icon, slot, container, c)
         -row * (c.iconHeight + c.rowSpacing))
     -- Private aura artwork is registered with fixed native dimensions.
     -- Keep its native IconInfo; only place its public anchor in the row.
-    if button.isAuraAnchor then return end
-    if not saved[icon] then Remember(icon, ICON) end
+    if auraAnchor then return end
     icon:ClearAllPoints()
     icon:SetAllPoints(button)
     Pin(button.Duration, button, "BOTTOMLEFT")
@@ -268,13 +309,13 @@ end
 -- 9-17, 147-156), so it moves only after Blizzard moved it.
 local function Anchor(frame, list, count)
     local c, container = M.config, frame.AuraContainer
+    if not saved[container] and not Remember(container, CONTAINER) then return end
     if not list.framed then
-        Remember(frame, FRAME)
+        if not Remember(frame, FRAME) then return end
         frame:ClearAllPoints()
         frame:SetPoint("TOPRIGHT", Minimap, "TOPLEFT", c.x, c.y - (debuffs[frame] and c.debuffOffset or 0))
         list.framed = true
     end
-    Remember(container, CONTAINER)
     container:ClearAllPoints()
     container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     container:SetSize(c.perRow * (c.iconWidth + c.spacing) - c.spacing,
@@ -297,7 +338,7 @@ local function Sync(frame)
         generation, valid, list.restyle = generation + 1, 0, false
         list.anchored, list.framed = false, false
     end
-    local buttons, collect = frame.auraFrames, frame.ConsolidatedBuffs
+    local buttons, collect, c = frame.auraFrames, frame.ConsolidatedBuffs, M.config
     for index = collect and 0 or 1, #buttons do
         local button = index == 0 and collect or buttons[index]
         local shown = button:IsShown()
@@ -309,11 +350,11 @@ local function Sync(frame)
                     if locked and Refused(frame, list, slot) then return end
                 end
                 local icon = button.Icon
+                list[slot], seated = button, true
                 if icon then
                     if locked and Refused(button, list, slot) then return end
-                    Place(button, icon, slot, frame.AuraContainer, M.config)
+                    Place(button, icon, slot, frame.AuraContainer, c, list)
                 end
-                list[slot], seated = button, true
             end
         end
     end

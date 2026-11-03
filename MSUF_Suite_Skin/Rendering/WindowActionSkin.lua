@@ -3,7 +3,7 @@ local _, NS = ...
 -- Independent, reversible artwork for exact Blizzard window/action buttons.
 -- The native Button remains the sole owner of clicks, scripts, narration,
 -- visibility, enabled state, geometry and tooltips. We only replace its four
--- texture slots with project-owned glyph textures outside combat.
+-- texture slots with project-owned glyph textures on safe targets.
 local WindowActionSkin = {
     states = setmetatable({}, { __mode = "k" }),
     owners = {},
@@ -81,9 +81,26 @@ local function Settings()
         or NS.Defaults.icons.windowActions
 end
 
-local function CanApply(button)
-    return button and Safety.CanCreateRegions(button, true)
-        and type(Field(button, "CreateTexture")) == "function"
+local function CanStyle(target)
+    return Safety.Public(target) and (target == nil or Safety.CanDecorate(target, not NS.IsCombatLocked()))
+end
+
+local function CanApply(button, owner)
+    if owner ~= nil and blockedOwners[owner] then return false end
+    if not Safety.Public(button) or not Safety.CanCreateRegions(button, not NS.IsCombatLocked())
+        or type(Field(button, "CreateTexture")) ~= "function" then return false end
+    local state = WindowActionSkin.states[button]
+    for index = 1, #specialTextures do
+        local definition = specialTextures[index]
+        if not CanStyle(Getter(button, definition.getter)) then return false end
+        if state and (not CanStyle(state.native[definition.key])
+            or state.glyphs and not CanStyle(state.glyphs[definition.key])) then return false end
+    end
+    if not CanStyle(Field(button, "Border")) or not CanStyle(Field(button, "Icon")) then return false end
+    if state then
+        for region in pairs(state.extraRegions) do if not CanStyle(region) then return false end end
+    end
+    return true
 end
 
 local function OwnerSet(owner)
@@ -409,7 +426,7 @@ function WindowActionSkin.HasOwnedStates(button)
 end
 
 local function ApplyNow(button, owner, kind, motion)
-    if not CanApply(button) then return nil, "protected control" end
+    if not CanApply(button, owner) then return nil, "protected control" end
     if not validKinds[kind] then return nil, "unknown action" end
 
     local state = WindowActionSkin.states[button]
@@ -473,7 +490,7 @@ end
 function WindowActionSkin.Apply(button, owner, kind, motion)
     if not button then return nil, "invalid control" end
     BeginOwnerRequest(owner)
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not CanApply(button, owner) then
         local _, reason = DeferOwnerRequest("window-action:" .. tostring(button), owner, function()
             ApplyNow(button, owner, kind, motion)
         end)
@@ -492,6 +509,7 @@ function WindowActionSkin.Track(button, owner, kind)
 end
 
 local function SyncNativeVisualNow(button, owner, kind)
+    if not CanApply(button, owner) then return nil, "protected control" end
     local state = WindowActionSkin.states[button]
     if state and state.visible and state.owner ~= owner then
         return nil, "owned by another adapter"
@@ -505,7 +523,7 @@ end
 function WindowActionSkin.SyncNativeVisual(button, owner, kind)
     if not button then return nil, "invalid control" end
     BeginOwnerRequest(owner)
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not CanApply(button, owner) then
         local _, reason = DeferOwnerRequest("window-action:" .. tostring(button), owner, function()
             SyncNativeVisualNow(button, owner, kind)
         end)
@@ -518,6 +536,7 @@ end
 -- replaced the active state slots. Unknown changes still go through the normal
 -- compare-and-swap path and fail closed.
 local function AdoptNativeVisualNow(button, owner, kind)
+    if not CanApply(button, owner) then return nil, "protected control" end
     local state = WindowActionSkin.states[button]
     if state and state.visible and state.owner ~= owner then
         return nil, "owned by another adapter"
@@ -540,7 +559,7 @@ end
 function WindowActionSkin.AdoptNativeVisual(button, owner, kind)
     if not button then return nil, "invalid control" end
     BeginOwnerRequest(owner)
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not CanApply(button, owner) then
         local _, reason = DeferOwnerRequest("window-action:" .. tostring(button), owner, function()
             AdoptNativeVisualNow(button, owner, kind)
         end)
@@ -574,6 +593,7 @@ local function DisableNow(button, state)
 end
 
 local function SyncButtonArtKitNow(button, owner, artKit, kind)
+    if not CanApply(button, owner) then return nil, "protected control" end
     if not MatchesButtonArtKit(button, artKit) then
         return nil, "button art kit changed"
     end
@@ -607,7 +627,7 @@ function WindowActionSkin.SyncButtonArtKit(button, owner, artKit, kind)
     end
     if kind ~= nil and not validKinds[kind] then return nil, "unknown action" end
     BeginOwnerRequest(owner)
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not CanApply(button, owner) then
         local _, reason = DeferOwnerRequest("window-action:" .. tostring(button), owner,
             function()
                 SyncButtonArtKitNow(button, owner, artKit, kind)
@@ -621,7 +641,7 @@ function WindowActionSkin.Disable(button, owner)
     local state = WindowActionSkin.states[button]
     if not state or not state.visible then return true end
     if owner ~= nil and state.owner ~= owner then return false, "owner mismatch" end
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not CanApply(button) then
         local _, reason = NS.CombatGate.RunOrDefer("window-action:" .. tostring(button), function()
             WindowActionSkin.Disable(button, owner)
         end)
@@ -703,7 +723,7 @@ end
 function WindowActionSkin.OnNativeChanged(button)
     local state = WindowActionSkin.states[button]
     if not state or not state.visible then return false, "unknown action" end
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not CanApply(button) then
         local _, reason = NS.CombatGate.RunOrDefer("window-action:" .. tostring(button), function()
             WindowActionSkin.OnNativeChanged(button)
         end)

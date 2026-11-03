@@ -4,6 +4,7 @@ Suite.InstallerScreenshot = Shot
 local A, Text = Suite.InstallerAppearance, Suite.Text
 local MEDIA = "Interface\\AddOns\\MSUF_Suite\\Media\\"
 local MODERN = { art = MEDIA .. "ModernDarkPreview.tga", ratio = 2559 / 1439, bottom = 1152 / 2048 }
+local DARK_RAID = { art = MEDIA .. "DarkRaidPreview.tga", ratio = 2550 / 1438, bottom = 577 / 1024 }
 local BLIZZARD = {
     { art = MEDIA .. "BlizzardPreviewSolo.tga", ratio = 2560 / 1072, bottom = 429 / 512 },
     { art = MEDIA .. "BlizzardPreviewGroup.tga", ratio = 2560 / 1072, bottom = 429 / 512 },
@@ -46,7 +47,7 @@ local function Enlarge(panel)
     zoom:SetSize(width + 32, width / spec.ratio + 96)
     zoom.picture:SetSize(width, width / spec.ratio)
     zoom.title:SetWidth(width)
-    zoom.title:SetText(Text(panel.screenshotLayout == "blizzard"
+    zoom.title:SetText(Text(panel.screenshotLayout == "darkRaid" and "Dark Raid - layout reference" or panel.screenshotLayout == "blizzard"
         and "MSUF Blizzard - layout reference" or "Modern Dark - in-game screenshot"))
     Paint(zoom.art, spec)
     zoom:Show()
@@ -77,10 +78,10 @@ function Shot.Build(panel, refresh, window)
 end
 
 function Shot.Show(panel, layout, options)
-    local available = (layout == "modernDark" or layout == "blizzard") and options and options.layoutStep == true
+    local available = (layout == "modernDark" or layout == "blizzard" or layout == "darkRaid") and options and options.layoutStep == true
     local showing = available and not panel.showLayout
     panel.screenshotLayout = layout
-    panel.screenshotSpec = layout == "blizzard" and BLIZZARD[panel.screenshotIndex] or MODERN
+    panel.screenshotSpec = layout == "darkRaid" and DARK_RAID or layout == "blizzard" and BLIZZARD[panel.screenshotIndex] or MODERN
     panel.screenshotToggle:SetShown(available)
     panel.screenshotToggle.caption:SetText(Text(showing and "Layout" or "Screenshot"))
     panel.screenshot:SetShown(showing)
@@ -91,10 +92,10 @@ function Shot.Show(panel, layout, options)
         local spec = panel.screenshotSpec
         panel.screenshot:SetSize(312, 312 / spec.ratio)
         Paint(panel.screenshot.art, spec)
-        panel.viewport:SetText(Text(layout == "blizzard" and "Layout reference" or "In-game screenshot"))
-        panel.frameSource:SetText(Text(layout == "blizzard" and "MSUF Blizzard" or "Modern Dark"))
+        panel.viewport:SetText(Text(layout ~= "modernDark" and "Layout reference" or "In-game screenshot"))
+        panel.frameSource:SetText(Text(layout == "darkRaid" and "Dark Raid" or layout == "blizzard" and "MSUF Blizzard" or "Modern Dark"))
         panel.info:SetText(Text("Click the screenshot to enlarge."))
-        panel.note:SetText(Text(layout == "blizzard"
+        panel.note:SetText(Text(layout ~= "modernDark"
             and "Reference images from another UI. Use Layout to preview your MSUF settings."
             or "The screenshot shows an example character. Use Layout to preview your module and frame color choices."))
     end

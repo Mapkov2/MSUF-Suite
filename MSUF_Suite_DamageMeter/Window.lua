@@ -341,7 +341,8 @@ function D.UpdateTitle(win)
         local enemy = D.ThreatEnemyName()
         if enemy then text = format("%s - %s", text, enemy) end
     elseif win.overall then
-        text = format("%s (%s)", text, S.BlizzardText("DAMAGE_METER_OVERALL_SESSION", "Overall"))
+        local overall = S.BlizzardText("DAMAGE_METER_OVERALL_SESSION", "Overall")
+        text = M.config.overallTitlePrefix and format("%s %s", overall, text) or format("%s (%s)", text, overall)
     end
     if text ~= win.titleText then
         win.titleText = text

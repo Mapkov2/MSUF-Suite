@@ -32,6 +32,10 @@ local FontPath = NS.AdapterKit.FontPath
 -- Source: upstream/live 8ea15b61, CharacterFrameMixin:UpdateSize and
 -- PaperDollFrame.xml. Only the Character page grows; sidebar collapse stays native.
 
+local function CanLayout(frame)
+    return NS.Safety.CanCreateRegions(frame, not NS.IsCombatLocked())
+end
+
 local function Points(frame)
     local points = {}
     for index = 1, math.min(frame:GetNumPoints(), 4) do
@@ -77,7 +81,7 @@ end
 -- Anchors frame at one point (plus an optional second), remembering the
 -- native points the first time we move it.
 local function Place(v, frame, point, parent, relative, x, y, second)
-    if not frame then return end
+    if not CanLayout(frame) then return end
     local record = RecordGeometry(v, frame)
     if not SamePoints(frame, record.appliedPoints) then record.points = Points(frame) end
     local applied = record.appliedPoints
@@ -95,7 +99,7 @@ local function Place(v, frame, point, parent, relative, x, y, second)
 end
 
 local function Size(v, frame, width, height)
-    if not frame then return end
+    if not CanLayout(frame) then return end
     local record = RecordGeometry(v, frame)
     if width then
         local current = frame:GetWidth()
@@ -112,13 +116,14 @@ local function Size(v, frame, width, height)
 end
 
 local function Conceal(v, frame)
-    if not frame or not frame.IsShown then return end
+    if not CanLayout(frame) or not frame.IsShown then return end
     local record = RecordGeometry(v, frame)
     if record.shown == nil then record.shown = frame:IsShown() end
     if frame:IsShown() then frame:Hide() end
 end
 
 local function Scale(v, frame, value)
+    if not CanLayout(frame) then return end
     local record = RecordGeometry(v, frame)
     local current = frame:GetScale()
     if not Near(current, record.appliedScale, SCALE_EPSILON) then record.scale = current end
@@ -126,8 +131,12 @@ local function Scale(v, frame, value)
     record.appliedScale = value
 end
 
-local function RepositionPanels(root, oldWidth, oldHeight)
-    if root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight then
+local function RepositionPanels(v, oldWidth, oldHeight)
+    local root = v.root
+    v.repositionPending = v.repositionPending or root:GetWidth() ~= oldWidth or root:GetHeight() ~= oldHeight
+    -- Blizzard's panel manager writes secure attributes, even for a safe root.
+    if v.repositionPending and not NS.IsCombatLocked() then
+        v.repositionPending = nil
         UpdateUIPanelPositions(root)
     end
 end
@@ -136,7 +145,7 @@ end
 -- Keep its content intact; only suppress duplicate annotations in list mode.
 function Gear.SuppressListProvider(element, slotID)
     local v = NS.CharacterDetails.views[_G.CharacterFrame]
-    if not v or not v.list or not v.host:IsVisible() or NS.IsCombatLocked() then return end
+    if not v or not v.list or not v.host:IsVisible() then return end
     local slots = ProviderSlots()
     local row = slotID and v.bySlot[slotID]
     if not slots or not row or slots[slotID] ~= element
@@ -161,6 +170,7 @@ end
 -- Puts back what the layout changed on one frame. Only values we still own
 -- go back; a newer native change is kept.
 local function RestoreFrame(frame, record)
+    if not CanLayout(frame) then return false end
     if SamePoints(frame, record.appliedPoints) then
         frame:ClearAllPoints()
         for _, point in ipairs(record.points) do frame:SetPoint(unpack(point)) end
@@ -175,58 +185,51 @@ local function RestoreFrame(frame, record)
         frame:SetScale(record.scale)
     end
     if record.shown ~= nil and not frame:IsShown() then frame:SetShown(record.shown) end
+    return true
 end
 
 -- The view's own parts and flags back to Blizzard's layout.
 local function ClearLayoutState(v)
-    if (v.wide or v.list) and v.root.Inset then NS.Surface.SetVisible(v.root.Inset, true) end
-    if v.wideInfo then v.wideInfo:Hide() end
+    if (v.wide or v.list) and CanLayout(v.root.Inset) then NS.Surface.SetVisible(v.root.Inset, true) end
+    if v.wideInfo and CanLayout(v.wideInfo) then v.wideInfo:Hide() end
     v.wide, v.list, v.layoutMode = false, false, nil
-    for _, row in ipairs(v.rows) do row.icon:Show() end
+    for _, row in ipairs(v.rows) do if CanLayout(row.icon) then row.icon:Show() end end
 end
 
 function Gear.RestoreLayout(v)
-    if not v or not v.geometry then return end
-    if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer("character-gear-layout", function()
-            if not v.active or not v.host:IsVisible() then
-                Gear.RestoreLayout(v)
-            else
-                Gear.ApplyLayout(v)
-            end
-        end)
-        return
-    end
+    if not v or not v.geometry or NS.Safety.IsForbidden(v.root) then return end
     local oldWidth, oldHeight = v.root:GetWidth(), v.root:GetHeight()
     for frame, record in pairs(v.geometry) do
-        RestoreFrame(frame, record)
-        v.geometry[frame] = nil
+        if RestoreFrame(frame, record) then v.geometry[frame] = nil end
     end
-    ClearLayoutState(v)
-    if v.root:IsVisible() then RepositionPanels(v.root, oldWidth, oldHeight) end
+    if CanLayout(v.host) then ClearLayoutState(v) end
+    if next(v.geometry) and NS.IsCombatLocked() then
+        v.restoreLayout = v.restoreLayout or function()
+            if not v.active or not v.host:IsVisible() then Gear.RestoreLayout(v)
+            else Gear.ApplyLayout(v) end
+        end
+        NS.CombatGate.RunOrDefer("character-gear-layout", v.restoreLayout)
+    end
+    if v.root:IsVisible() then RepositionPanels(v, oldWidth, oldHeight) end
 end
 
--- CharacterFrameMixin:UpdateSize sets Blizzard's width again whenever the
--- window opens, expands or collapses. In combat the skin may not size the
--- window back (its size and position belong to the secure panel manager)
--- and the relayout waits for PLAYER_REGEN_ENABLED, so the slots, model and
--- stats it moved would hang outside the narrower window until then. They
--- follow Blizzard's width meanwhile: only unprotected regions below the
--- window go back. The window keeps its record, so the relayout after combat
--- widens it again from Blizzard's size.
+-- Blizzard resets its size on open/Expand/Collapse. Safe roots keep the
+-- configured layout in combat; only protected roots need the native fallback.
 function Gear.FollowNativeSize(v)
-    if not v or not v.geometry or not NS.IsCombatLocked() then return end
+    if not v or not v.geometry or NS.Safety.IsForbidden(v.root) or not NS.IsCombatLocked()
+        or not CanLayout(v.host) or not v.host:IsVisible() then return end
     local root = v.root
     local record = v.geometry[root]
-    if not record or Near(root:GetWidth(), record.appliedWidth, GEOMETRY_EPSILON) then return end
-    for frame, saved in pairs(v.geometry) do
-        if frame ~= root and not NS.Safety.GetProtection(frame) then
-            RestoreFrame(frame, saved)
-            v.geometry[frame] = nil
-        end
+    if not record or (Near(root:GetWidth(), record.appliedWidth, GEOMETRY_EPSILON)
+        and Near(root:GetHeight(), record.appliedHeight, GEOMETRY_EPSILON)) then return end
+    if CanLayout(root) then
+        Gear.ApplyLayout(v)
+        return
     end
-    Gear.Hide(v)
-    ClearLayoutState(v)
+    for frame, saved in pairs(v.geometry) do
+        if frame ~= root and RestoreFrame(frame, saved) then v.geometry[frame] = nil end
+    end
+    if CanLayout(v.host) then Gear.Hide(v) ClearLayoutState(v) end
 end
 
 -- "Wide layout" off keeps the modern view at Blizzard's size, with the
@@ -296,7 +299,8 @@ local function ApplyWideLayout(v)
 end
 
 function Gear.ApplyLayout(v)
-    if not v or v.kind ~= "character" or NS.IsCombatLocked() then return end
+    if not v or v.kind ~= "character" or not CanLayout(v.host) or not v.host:IsVisible()
+        or not CanLayout(v.root) then return end
     local config = NS.DB.characterDetails
     local mode = config.view or "modern"
     if not LayoutEnabled(v, config, mode) then
@@ -312,7 +316,7 @@ function Gear.ApplyLayout(v)
     else
         ApplyWideLayout(v)
     end
-    RepositionPanels(v.root, oldWidth, oldHeight)
+    RepositionPanels(v, oldWidth, oldHeight)
 end
 
 -- Annotations ----------------------------------------------------------------------------
@@ -326,7 +330,8 @@ local function Font(parent, size)
 end
 
 function Gear.UpdateSummary(v)
-    if not v.wide then return end
+    if not v.wide or not CanLayout(v.host) or not v.host:IsVisible() or not CanLayout(v.root)
+        or v.wideInfo and not CanLayout(v.wideInfo) then return end
     if not v.wideInfo then
         local host = NS.Safety.CreateChildFrame("Frame", v.host)
         v.wideInfo = host
@@ -359,7 +364,7 @@ local function Leave(owner)
 end
 
 local function HideAnnotation(a)
-    if not a then return end
+    if not a or not CanLayout(a.host) then return end
     a.host:Hide()
     Leave(a.status)
     for _, gem in ipairs(a.gems) do Leave(gem) end
@@ -583,7 +588,7 @@ end
 
 function Gear.Paint(v, row)
     local a = row.annotation
-    if not a then return end
+    if not a or not CanLayout(a.host) then return end
     local path = FontPath()
     if path ~= a.path then
         for _, font in ipairs(a.fonts) do font:SetFont(path, font.gearSize, "") end
@@ -719,7 +724,7 @@ local function UpdateGems(a, info, element)
 end
 
 function Gear.Update(v, row, slotName)
-    if NS.IsCombatLocked() then return end
+    if not CanLayout(v.host) or not v.host:IsVisible() then return end
     -- Inspect owns a separate set of native slots. Use the same read-only
     -- annotations beside those slots after INSPECT_READY has populated rows.
     local prefix = v.kind == "inspect" and "Inspect" or "Character"
@@ -728,7 +733,7 @@ function Gear.Update(v, row, slotName)
     local inline
     if v.kind == "inspect" then inline = config.inlineGear ~= false
     else inline = config.inlineGear ~= false and (config.view == "modern" or not config.view) end
-    if not inline or not slot or not NS.Safety.CanCreateRegions(slot, true) then
+    if not inline or not slot or not NS.Safety.CanCreateRegions(slot, not NS.IsCombatLocked()) then
         HideAnnotation(row.annotation)
         return
     end
@@ -738,6 +743,7 @@ function Gear.Update(v, row, slotName)
         return
     end
     local a = row.annotation or Create(v, row, slot)
+    if not CanLayout(a.host) then return end
     local slots = ProviderSlots()
     local element = slots and slots[row.slot]
     if element ~= slot then element = nil end

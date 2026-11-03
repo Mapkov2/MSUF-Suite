@@ -300,7 +300,11 @@ compositor.AttachFrame, compositor.AttachTemplate = Noop, Noop
 compositor.GetObjectType = function() error("compositor method inspected") end
 Check(not Menus.Track(compositor, owner), "compositor adopted")
 combat = true
-Check(not Menus.Track(Frame(), owner), "new root adopted in combat")
+local coldCombat = Frame()
+Check(Menus.Track(coldCombat, "combat-discovery"), "safe new root refused in combat")
+Menus.Release("combat-discovery", coldCombat)
+coldCombat.protected = true
+Check(not Menus.Track(coldCombat, "protected-combat"), "protected new root adopted in combat")
 combat = false
 
 -- Show beats an already queued resize; profile/adapter and owner transitions are cold.

@@ -23,6 +23,8 @@ function Native.Calendar() return Global("GameTimeFrame") end
 function Native.Mail() return Cluster("IndicatorFrame", "MailFrame") end
 function Native.Crafting() return Cluster("IndicatorFrame", "CraftingOrderFrame") end
 function Native.Compartment() return Global("AddonCompartmentFrame") end
+function Native.QueueStatus() return Global("QueueStatusButton") end
+function Native.QueueLayout(config) return config.queueStatusSize, config.queueStatusX, config.queueStatusY end
 function Native.Difficulty() return Cluster("InstanceDifficulty") end
 function Native.DayNight() return Cluster("DielFrame") end
 function Native.DayNightContainer() return Cluster("MinimapContainer") end
@@ -38,6 +40,7 @@ local READERS = {
     Tracking = Native.Tracking, Calendar = Native.Calendar, Mail = Native.Mail,
     Crafting = Native.Crafting, Compartment = Native.Compartment, Difficulty = Native.Difficulty,
     Landing = Native.Landing, ExternalEvent = Native.ExternalEvent,
+    QueueStatus = Native.QueueStatus,
 }
 function Native.Frame(key)
     local read = READERS[key]
@@ -61,6 +64,8 @@ function Native.Source(key)
         source = Global("MiniMapCraftingOrderIcon")
     elseif key == "ExternalEvent" then
         source = frame.Icon
+    elseif key == "QueueStatus" then
+        source = frame.Eye and frame.Eye.texture
     end
     local add = Usable(button) and button.AddTexture
     local border = key == "ExternalEvent" and frame.Border

@@ -1,5 +1,33 @@
 # MSUF Suite Changelog
 
+## 0.1.8 Alpha - 2026-11-03
+
+### Setup presets and appearance
+
+- Added the optional Dark Raid setup preset and refined the MSUF Blizzard preset, including frame artwork, castbars, party and raid settings, chat and damage meters.
+- Improved installer previews, reference images, minimap elements and native queue-button placement.
+
+### Windows and skinning
+
+- Improved native window focus highlights, popup layering and movable window controls.
+- Corrected combat-time skin updates and character equipment details, including delayed item information and native control handling.
+
+### Cooldown Manager and bags
+
+- Corrected Healthstone and Demonic Healthstone charges and cooldown refreshes during combat.
+- Improved shared cooldown ownership and editor identity when changing specialization or profile.
+- Corrected delayed bag and bank item information, inventory indexing and stale upgrade markers.
+
+### Quality of life
+
+- Fixed battle-resurrection text initialization, merchant protection checks and asynchronous loot-container handling.
+- Improved Adventure Planner combat readiness, keystone sharing and player-aura geometry.
+
+### Chat, data texts and damage meters
+
+- Added the chat header clock and updated data-text icons and source selection.
+- Corrected gamepad currency selection, damage-meter row identity and preview behavior.
+
 ## 0.1.7 Alpha - 2026-11-01
 
 ### Appearance

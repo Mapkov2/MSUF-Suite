@@ -22,17 +22,9 @@ local frameStates = setmetatable({}, { __mode = "k" })
 local activeFrames = setmetatable({}, { __mode = "k" })
 local listenerRegistered = false
 
+-- Core gives MSUF the same bounds as its native neighbor. Use those full
+-- bounds for every menu button, including the generic panel-skin first pass.
 local BUTTON_SPEC = {
-    role = "button",
-    activeRole = "buttonPrimary",
-    useControlShape = true,
-    pillHeight = 32,
-    inset = 2,
-}
--- MSUF anchors its button to the same 200x36 bounds as Blizzard's buttons.
--- Its visible border must use those bounds too, rather than losing two pixels
--- on each side to the generic Game Menu button inset.
-local MSUF_BUTTON_SPEC = {
     role = "button",
     activeRole = "buttonPrimary",
     useControlShape = true,
@@ -70,15 +62,9 @@ local function SkinDirectButtons(frame, owner, ...)
         -- the pool pass already handles them once per native rebuild.
         if Kit.ObjectType(button) == "Button" and not pool:IsActive(button) then
             if Field(button, "Left") and Field(button, "Center") and Field(button, "Right") then
-                if button == msufButton then
-                    if Safety.CanControl(button, false) then
-                        NS.ControlSkin.ApplyThreeSliceButton(button, owner, MSUF_BUTTON_SPEC)
-                    end
-                else
-                    SkinButton(button, owner)
-                end
+                SkinButton(button, owner)
             elseif button == msufButton and Safety.CanControl(button, false) then
-                NS.ControlSkin.ApplyButton(button, owner, MSUF_BUTTON_SPEC)
+                NS.ControlSkin.ApplyButton(button, owner, BUTTON_SPEC)
             end
         end
     end

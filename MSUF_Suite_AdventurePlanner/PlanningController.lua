@@ -13,6 +13,9 @@ local WEEK_EVENTS = { WEEKLY_REWARDS_UPDATE = true, UPDATE_INSTANCE_INFO = true,
 local VITAL_EVENTS = { PLAYER_MONEY = true, PLAYER_LEVEL_UP = true, PLAYER_EQUIPMENT_CHANGED = true, PLAYER_AVG_ITEM_LEVEL_UPDATE = true,
     ZONE_CHANGED_NEW_AREA = true }
 local VITAL_ONLY = { PLAYER_MONEY = true, PLAYER_LEVEL_UP = true }
+-- Server replies can arrive while work is suspended. Keep only their
+-- readiness flags; the existing post-combat refresh reads and saves the data.
+local READY_EVENTS = { UPDATE_INSTANCE_INFO = "lockoutsReady", CHALLENGE_MODE_MAPS_UPDATE = "seasonReady" }
 
 local function Refresh(self)
     if not self.active or self.suspended or self.leaving or NS.InCombat() then return end
@@ -27,7 +30,10 @@ end
 
 local function Queue(self, event)
     if event == "PLAYER_ENTERING_WORLD" then self.leaving = nil end
-    if not self.active or self.suspended or self.leaving or NS.InCombat(event) then return end
+    if not self.active or self.leaving then return end
+    local ready = READY_EVENTS[event]
+    if ready then Plan.Weekly[ready] = true end
+    if self.suspended or NS.InCombat(event) then return end
     if not event or WEEK_EVENTS[event] then self.weeklyDirty = true end
     if VITAL_EVENTS[event] then self.vitalsDirty = true end
     if event == "BAG_UPDATE_DELAYED" then self.keyDirty = true end
@@ -35,8 +41,6 @@ local function Queue(self, event)
         or event == "PLAYER_ENTERING_WORLD" then
         self.contextDirty = true
     end
-    if event == "UPDATE_INSTANCE_INFO" then Plan.Weekly.lockoutsReady = true end
-    if event == "CHALLENGE_MODE_MAPS_UPDATE" then Plan.Weekly.seasonReady = true end
     -- A finished key changes season bests; Blizzard sends them after a request.
     if event == "CHALLENGE_MODE_COMPLETED" and not NS.Client.isForever then C_MythicPlus.RequestMapInfo() end
     -- The server's lockout and map data is asked for on entering the world and
@@ -66,7 +70,8 @@ end
 
 local function Arm(self)
     for _, event in ipairs(UPDATE_EVENTS) do
-        if event ~= "PLAYER_ENTERING_WORLD" and (event ~= "BAG_UPDATE_DELAYED" or not NS.Client.isForever) then
+        if event ~= "PLAYER_ENTERING_WORLD" and not READY_EVENTS[event]
+            and (event ~= "BAG_UPDATE_DELAYED" or not NS.Client.isForever) then
             self.context:Event(event, Queue)
         end
     end
@@ -77,7 +82,7 @@ local function CombatStart(self)
     self.suspended = true
     self.context:Cancel(Refresh)
     for _, event in ipairs(UPDATE_EVENTS) do
-        if event ~= "PLAYER_ENTERING_WORLD" then self.context:RemoveEvent(event) end
+        if event ~= "PLAYER_ENTERING_WORLD" and not READY_EVENTS[event] then self.context:RemoveEvent(event) end
     end
     self.context:RemoveEvent("READY_CHECK")
     Plan.Board.Close(self)
@@ -105,6 +110,7 @@ function M:Enable()
     ConfigChanged(self)
     self.fontRevision = S.FontRevision
     self.context:Event("PLAYER_ENTERING_WORLD", Queue)
+    for event in pairs(READY_EVENTS) do self.context:Event(event, Queue, IN_COMBAT) end
     self.context:Event("PLAYER_LEAVING_WORLD", Leaving)
     self.context:Event("PLAYER_LOGOUT", Leaving)
     self.context:Event("PLAYER_REGEN_DISABLED", CombatStart, IN_COMBAT)

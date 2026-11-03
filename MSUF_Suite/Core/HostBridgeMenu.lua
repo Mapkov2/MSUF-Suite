@@ -277,6 +277,23 @@ function HostBridge.MenuMaterial(frame, material)
     return true
 end
 
+local FOCUS_TEXTURES = {
+    "_msuf2FocusDim", "_msuf2FocusHaze", "_msuf2FocusSmearA",
+    "_msuf2FocusSmearB", "_msuf2FocusWash", "_msuf2FocusGrain",
+}
+
+-- The translucent veil bypasses the material adapter, which paints panels.
+-- A cold host never loads Options just to supply this optional painter.
+function HostBridge.MenuFocusVeil(frame, variant)
+    local apply = AppearanceAction(HostBridge.MenuAppearance(), "ApplyFocusVeil")
+    if apply then apply(frame, variant or "dropdown") return true end
+    for index = 1, #FOCUS_TEXTURES do
+        local texture = frame[FOCUS_TEXTURES[index]]
+        if texture then texture:Hide() end
+    end
+    return false
+end
+
 function HostBridge.MenuButton(parent, width, height)
     local create = AppearanceAction(HostBridge.MenuAppearance(), "Button")
     return create and create(parent, "", width, height) or nil

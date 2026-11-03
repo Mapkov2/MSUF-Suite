@@ -102,7 +102,7 @@ for _, name in ipairs(PARTS) do
     end }
 end
 NS.GenericWindows = { Disable = function() return true end, IsCategoryEnabled = function() return true end }
-NS.WindowControls = { DisableOwner = function() end }
+NS.WindowControls = { TrackFocus = function() end, DisableOwner = function() end }
 NS.Client = { isForever = false }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/Blizzard.lua"))("MSUF_Suite_Skin", NS)
 local definition = NS.Adapters.definitions.blizzardWindows

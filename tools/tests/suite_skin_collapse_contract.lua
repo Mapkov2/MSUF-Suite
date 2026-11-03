@@ -349,12 +349,12 @@ local function CheckLifecycleAndBudget()
     list:TriggerEvent("layout")
     Check(not state.hadSnapshot, "view teardown retained an initialized collapse snapshot")
     NS.GenericWindows.releaseContent("offscreen-collapse")
-    for _, option in ipairs({ "menuAnimations", "reduceMotion", "combat" }) do
+    for _, option in ipairs({ "menuAnimations", "reduceMotion" }) do
         local other = List(UIParent, true)
         local parent, child = Node({}, nil, 1), Node({})
         child.parent = parent
         other.rows = { Row(other, parent, 400), Row(other, child, 380) }
-        if option == "combat" then NS.Motion.combat = true else NS.DB.theme[option] = option == "reduceMotion" end
+        NS.DB.theme[option] = option == "reduceMotion"
         frames, groups = #H.frames, #H.groups
         NS.GenericWindows.trackContent(other, option)
         Check(#H.frames == frames and #H.groups == groups, option .. " created collapse render objects while disabled")

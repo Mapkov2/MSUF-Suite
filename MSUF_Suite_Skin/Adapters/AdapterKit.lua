@@ -11,10 +11,10 @@ local COLOR_OWN = Safety.COLOR_OWN
 -- Shared helpers for the Blizzard window adapters. This file loads before
 -- every adapter that uses them (see the TOC). Visual helpers take the
 -- adapter's skin context: { owner = cosmetic/control owner key, surfaces =
--- optional weak set of surfaces to hide on disable }. They only act outside
--- combat, skip forbidden and protected targets, and never replace Blizzard
--- code. Adapters own implicitly protected Blizzard trees outside combat, so
--- every spec passed here is marked allowImplicitProtected.
+-- optional weak set of surfaces to hide on disable }. Visual helpers paint
+-- unprotected cosmetics in combat and skip forbidden or protected targets.
+-- Implicitly protected Blizzard trees can be decorated only outside combat;
+-- their specs remain marked allowImplicitProtected. Blizzard code stays native.
 local AdapterKit = {}
 NS.AdapterKit = AdapterKit
 local TrackMotionTarget, WatchContent = function() end, function() end
@@ -382,12 +382,11 @@ function AdapterKit.NewOwners(config)
 end
 
 local function CanPaint(target)
-    return type(target) == "table" and not NS.IsCombatLocked() and Safety.CanDecorate(target, true)
+    return type(target) == "table" and Safety.CanDecorate(target, not NS.IsCombatLocked())
 end
 
 local function CanCreateRegions(target)
-    return type(target) == "table" and not NS.IsCombatLocked()
-        and Safety.CanCreateRegions(target, true)
+    return type(target) == "table" and Safety.CanCreateRegions(target, not NS.IsCombatLocked())
 end
 
 function AdapterKit.Fade(context, region)
@@ -403,7 +402,7 @@ end
 -- Fades the nine standard pieces stored directly on nineSlice.
 function AdapterKit.FadeNineSlice(context, nineSlice)
     if not CanPaint(nineSlice) then return false end
-    NS.Cosmetics.FadeNineSlice(nineSlice, context.owner)
+    NS.Cosmetics.FadeNineSlice(nineSlice, context.owner, CanPaint)
     return true
 end
 
@@ -602,7 +601,7 @@ local function HasOriginal(colors, fontObject)
 end
 
 function AdapterKit.SetTextColor(colors, fontObject, role, recapture)
-    if Safety.IsForbidden(fontObject) or type((Field(fontObject, "SetTextColor"))) ~= "function" then
+    if not CanPaint(fontObject) or type((Field(fontObject, "SetTextColor"))) ~= "function" then
         return false
     end
     local r, g, b, a = Safety.ReadColor(fontObject, "GetTextColor")

@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Skinning
 ## Notes: Suite-owned MapkoSkin skin engine.
 ## Author: Mapko
-## Version: 0.1.7-alpha
+## Version: 0.1.8-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -42,8 +42,16 @@ Rendering\WindowActionSkin.lua
 Rendering\GlyphMotion.lua
 Rendering\FocusVeil.lua
 Rendering\WindowActionSettings.lua
+Rendering\WindowControlPolicy.lua
 Rendering\WindowControlChrome.lua
 Rendering\WindowControls.lua
+Rendering\WindowFocusContour.lua
+Rendering\WindowFocusVisual.lua
+Rendering\WindowFocusGeometry.lua
+Rendering\WindowFocusLayers.lua
+Rendering\WindowFocusChrome.lua
+Rendering\WindowFocusPopups.lua
+Rendering\WindowFocus.lua
 Rendering\MicroMenuPerformance.lua
 Rendering\MicroMenuVisual.lua
 Core\Cosmetics.lua
@@ -101,6 +109,7 @@ Rendering\CollapseRows.lua
 Adapters\AddonListMotion.lua
 Adapters\AddonListGhosts.lua
 Adapters\Blizzard.lua
+Rendering\WindowFocusDiscovery.lua
 Core\PublicAPI.lua
 Core\PublicAPIMethods.lua
 Rendering\ContentMotion.lua

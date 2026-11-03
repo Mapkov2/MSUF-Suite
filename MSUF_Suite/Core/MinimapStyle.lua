@@ -174,6 +174,7 @@ local function Assign(texture, path)
     if Stored(texture, "_msufStyleTexture") == path then return end
     texture._msufStyleTexture = path
     texture:SetTexture(path)
+    texture:SetTexCoord(0, 1, 0, 1)
 end
 local function Visible(layerOn, key)
     return not layerOn or layerOn(key)
@@ -213,6 +214,7 @@ end
 -- The ornament path of the chosen artwork (Custom is a file or ID).
 local function ArtPath(c)
     local choice = tonumber(c.styleTexture) or ART.NONE
+    if choice == ART.BLIZZARD then return "ui-hud-minimap-frame" end
     if choice == ART.CUSTOM and type(c.styleTexturePath) == "string" and c.styleTexturePath ~= "" then
         return tonumber(c.styleTexturePath) or c.styleTexturePath
     end
@@ -223,9 +225,18 @@ end
 local function PaintArt(self, texture, shown, path, c, scale, width, height, animate)
     texture:SetShown(shown)
     if shown then
-        Assign(texture, path)
+        local native = tonumber(c.styleTexture) == ART.BLIZZARD
+        if native then
+            -- Blizzard_Minimap/Mainline/Minimap.xml: the 215 x 226 compass
+            -- frame surrounds a 198 x 198 terrain disc. Paint on our texture.
+            texture:SetAtlas(path)
+            texture._msufStyleTexture = nil
+        else
+            Assign(texture, path)
+        end
         local factor = (tonumber(c.styleScale) or RULES.styleScale.default) / 100
-        texture:SetSize(width * factor, height * factor)
+        texture:SetSize(width * factor * (native and 215 / 198 or 1),
+            height * factor * (native and 226 / 198 or 1))
         texture:ClearAllPoints()
         -- The scroll is asymmetric. Keep its paper opening aligned as the map resizes.
         local scrollX = tonumber(c.styleTexture) == ART.PARCHMENT_SCROLL and width * (11 / 190) or 0

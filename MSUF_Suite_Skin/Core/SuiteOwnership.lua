@@ -70,6 +70,15 @@ function SuiteOwnership.IsBagShell(frame)
     return frame ~= nil and (frame == ContainerFrameCombinedBags or frame == ContainerFrame6)
 end
 
+-- Bags owns both bag-shell positions on both clients, and BankWindow only
+-- on Retail. Individual bags and Forever's native bank keep skin controls.
+function SuiteOwnership.OwnsWindowGeometry(frame)
+    if SuiteOwnership.IsBagShell(frame) or (frame ~= nil and frame == BankFrame and not NS.Client.isForever) then
+        return SuiteOwnership.Owns("bagWindows")
+    end
+    return false
+end
+
 -- "before" a module starts or stops, the skin lets go of surfaces that became
 -- owned; "after", it takes back surfaces that were freed. A surface the skin
 -- never asked about has nothing to undo.

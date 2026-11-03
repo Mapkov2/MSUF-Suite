@@ -318,10 +318,9 @@ local function SpellState(entry, icon, spell, reason)
 end
 
 ------------------------------------------------------------------ bag counts
--- Bag counts change only with the bag contents: they are read once per
--- BagsChanged (BAG_UPDATE_DELAYED, a fresh icon, a release), then served
--- from these caches. Potion and healthstone entries (Blizzard spellCategory)
--- sum every quality rank behind the category (Presets.CATEGORY_ITEMS).
+-- Bag contents invalidate these caches; healthstone uses also change while
+-- their combat cooldown is held, so those counts refresh with their timing.
+-- Category entries sum the item ranks in Presets.CATEGORY_ITEMS.
 local totals, counts, countsStale = {}, {}, true
 local selectedItems = {}
 function Time.BagsChanged() countsStale = true end
@@ -367,6 +366,7 @@ end
 -- even while counts are off.
 local function CategoryCount(icon, category, entry)
     local choose = C.state.potionStockIcon and (category == COMBAT_POTION or category == HEALTH_POTION)
+    if entry.hideEmpty then totals[category] = nil end
     local total = (icon.stackOn or entry.hideEmpty or choose) and Total(category) or 0
     local item = choose and selectedItems[category] or nil
     if entry.categoryItem ~= item then
@@ -469,9 +469,10 @@ local function ItemState(entry, icon, reason)
     end
     local cooling = ItemTiming(entry, icon, reason, start, length, enable, not slot and item or nil)
     ClearCharge(icon)
-    -- An empty healthstone (hideEmpty) shows no "0", not even in a preview.
+    -- Healthstone uses can change while the same combat cooldown stays held.
+    if entry.hideEmpty then counts[item] = nil end
     local count = not slot and (icon.stackOn or entry.hideEmpty) and ItemCount(item)
-    if count and count ~= 1 and icon.stackOn and not (count == 0 and entry.hideEmpty) then
+    if count and (count ~= 1 or entry.hideEmpty) and icon.stackOn and not (count == 0 and entry.hideEmpty) then
         ShowCount(icon, count)
     else
         icon.lastCount = nil
@@ -483,7 +484,9 @@ end
 -- Forever 70170 CooldownViewerItemData.lua prefers the last category item:
 -- its cover spell may have no cooldown. Older builds keep the spell fallback.
 local function CategoryState(entry, icon, reason, spell)
-    local info = entry.catItem and GetCategoryCooldown and GetCategoryCooldown(entry.catItem)
+    -- Each healthstone category has one item, even before its first use event.
+    local item = entry.catItem or (entry.hideEmpty and C.Presets.CATEGORY_ITEMS[entry.spellCategory][1])
+    local info = item and GetCategoryCooldown and GetCategoryCooldown(item)
     if not info then
         icon.itemStart, icon.itemLock = nil, nil
         if spell then return SpellState(entry, icon, spell, reason) end
@@ -496,7 +499,7 @@ local function CategoryState(entry, icon, reason, spell)
     ClearCharge(icon)
     if not issecret(start) and not issecret(length) and not issecret(enable) and not issecret(rate)
         and (rate == nil or type(rate) == "number" and rate > 0) then
-        return ItemTiming(entry, icon, reason, start, length, enable, entry.catItem, rate)
+        return ItemTiming(entry, icon, reason, start, length, enable, item, rate)
     end
     -- Duration setters reject tainted secret numbers. Keep the public cooling
     -- state without timing; isActive/isEnabled/isOnGCD are NeverSecret.
@@ -563,12 +566,12 @@ function Time.Refresh(entry, reason, usableQueries)
     else
         -- Category entries (potions, healthstones) follow the item that last
         -- started the category, with its cover spell as the legacy fallback.
-        -- Bag events only move their count: the category's cooldown arrives
-        -- with SPELL_UPDATE_COOLDOWN.
+        -- Healthstones also follow bag cooldowns while held in combat;
+        -- potion timing follows SPELL_UPDATE_COOLDOWN.
         local spell, category = entry.spell, entry.spellCategory
         if category == 0 then category = nil end
         if category then spell = entry.catSpell end
-        if category and reason == "item" then
+        if category and reason == "item" and not entry.hideEmpty then
             cooling = entry.cooling == true
         elseif category then
             cooling = CategoryState(entry, icon, reason, spell)

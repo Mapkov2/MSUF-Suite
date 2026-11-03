@@ -64,7 +64,13 @@ end
 local function Describe(key, family, saved)
     local kind, id = CDM.EntryKind(key), CDM.EntryID(key)
     local spell, base, override, linked, texture, name, hasAura
-    if kind == "b" then
+    saved = type(saved) == "table" and saved or EMPTY
+    if kind == "b" and saved ~= EMPTY then
+        -- Saved absence of an override, linked spell or aura belongs to this spec too.
+        base, override = Number(saved.spell), Number(saved.override)
+        spell = override or base
+        name, texture = Text(saved.name), Number(saved.texture)
+    elseif kind == "b" then
         local info = Plain(C_CooldownViewer.GetCooldownViewerCooldownInfo(id))
         if type(info) == "table" then
             base, override = Number(info.spellID), Number(info.overrideSpellID)
@@ -94,9 +100,8 @@ local function Describe(key, family, saved)
         name = string.format(S.Text("Trinket slot %d"), id - 12)
     end
     if spell then
-        name, texture = Text(C_Spell.GetSpellName(spell)), Number(C_Spell.GetSpellTexture(spell))
+        name, texture = name or Text(C_Spell.GetSpellName(spell)), texture or Number(C_Spell.GetSpellTexture(spell))
     end
-    saved = type(saved) == "table" and saved or EMPTY
     name, texture = name or Text(saved.name), texture or Number(saved.texture)
     return { key = key, family = family, spell = spell or Number(saved.spell), base = Number(saved.spell) or base,
         override = Number(saved.override) or override, linked = type(saved.linked) == "table" and saved.linked or linked, name = name or key,
@@ -185,6 +190,7 @@ local function Defaults(context)
     context.catalogCount = #context.order
     context.catalogUnavailable = not context.observed and context.catalogCount == 0
     local spellKey = {}
+    context.spellKey = spellKey
     for i = 1, #context.order do
         local row = context.records[context.order[i]]
         if not context.observed and row.slot ~= "ext" then
@@ -266,19 +272,33 @@ local function ListOf(context, def, defaultsOnly)
     -- As Resolve: spec defaults only with the spec's profile row.
     if context.presets.ess then return context.defaultByBar[slot], false end
 end
-local function Claim(context, list, slot)
+-- Resolve the shared row against this specialization's saved catalog only.
+local function ClaimKey(context, key, shared)
+    local native = CDM.EntryKind(key) == "s" and context.spellKey[CDM.EntryID(key)] or key
+    native = native or key
+    if shared then context.sharedClaims[native] = true end
+    return context.sharedClaims[native] and native or key
+end
+local function Claim(context, list, slot, shared)
     for i = 1, list and #list or 0 do
         local key = context.alias[list[i]] or list[i]
-        local row = context.records[key] or Add(context, key, slot, Family(context, slot))
-        if row and row.family == Family(context, slot) and not context.claims[key] then
-            context.claims[key] = slot
+        local kind, family = CDM.EntryKind(key), Family(context, slot)
+        if kind == "s" or kind == "i" or kind == "e" then
+            family = 1
+        elseif kind == "a" or kind == "d" then
+            family = 2
+        end
+        local row = context.records[key] or Add(context, key, slot, family)
+        local claim = ClaimKey(context, key, shared and row and row.family == Family(context, slot))
+        if row and row.family == Family(context, slot) and not context.claims[claim] then
+            context.claims[claim] = slot
             if CDM.EntryKind(key) == "e" then context.slotHome[CDM.EntryID(key)] = slot end
         end
     end
 end
 local function Claims(context)
     for _, def in ipairs(CDM.SLOTS) do
-        if def.custom and context.config[CDM.KEYS[def.key].shareContents] then Claim(context, ListOf(context, def), def.key) end
+        if def.custom and context.config[CDM.KEYS[def.key].shareContents] then Claim(context, ListOf(context, def), def.key, true) end
     end
     for _, def in ipairs(CDM.SLOTS) do
         local list, explicit = ListOf(context, def)
@@ -294,15 +314,16 @@ local function Claims(context)
 end
 local function Offer(context, slot, key, seen, rows, explicit, listed)
     key = listed and context.alias[key] or key
-    local row, owner = context.records[key], context.claims[key]
+    local claim = ClaimKey(context, key)
+    local row, owner = context.records[key], context.claims[claim]
     local hidden = (context.lists.hidden[context.spec] or EMPTY)[key]
-    if not row or row.family ~= Family(context, slot) or seen[key] or (owner and owner ~= slot) then return end
+    if not row or row.family ~= Family(context, slot) or seen[claim] or (owner and owner ~= slot) then return end
     if listed and owner ~= slot or hidden and not explicit then return end
     local stand = row.spellCategory and context.stand[row.spellCategory]
     if not listed and stand and context.claims[stand] then return end
     local equip = row.equipSlot
     if equip and (seen["e" .. equip] or context.slotHome[equip] and context.slotHome[equip] ~= slot) then return end
-    seen[key] = true
+    seen[claim] = true
     rows[#rows + 1] = row
 end
 local function CollectList(context, slot, list, explicit, seen, rows)
@@ -370,7 +391,7 @@ function Editor.Context(spec, classID, config, classToken)
         and cache.signature == signature then return cache end
     cache = { spec = spec, classID = classID, classToken = Text(classToken), views = {}, profile = profile, config = config, generation = C.Catalog.generation,
         listsText = config.listsData, spellsText = config.spellsData, raid = config.raidEssentials,
-        records = {}, order = {}, claims = {}, alias = {}, stand = {}, slotHome = {}, presets = {},
+        records = {}, order = {}, claims = {}, sharedClaims = {}, alias = {}, stand = {}, slotHome = {}, presets = {},
         defaultByBar = {}, knownSpells = EMPTY, bars = {}, signature = signature }
     cache.lists = CDM.Codec.DecodeLists(config.listsData)
     cache.choices = CDM.EffectiveSpells(CDM.Codec.DecodeSpells(config.spellsData), spec)

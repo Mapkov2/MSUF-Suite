@@ -260,11 +260,12 @@ local function CurrencyMenu(anchor, block)
                 if not Suite.IsSecret(info.isHeader) and info.isHeader then
                     local row = index
                     local expanded = not Suite.IsSecret(info.isHeaderExpanded) and info.isHeaderExpanded == true
-                    menu:CreateButton(info.name .. (expanded and " -" or " +"), function()
+                    local header = menu:CreateButton(info.name .. (expanded and " -" or " +"), function()
                         if detailSession ~= session or not Current(session) then return end
                         C_CurrencyInfo.ExpandCurrencyList(row, not expanded)
                         CurrencyMenu(anchor, block)
                     end)
+                    header:SetResponse(MenuResponse.Open)
                 else
                     local link = C_CurrencyInfo.GetCurrencyListLink(index)
                     local id = PublicString(link) and C_CurrencyInfo.GetCurrencyIDFromLink(link)

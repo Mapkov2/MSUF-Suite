@@ -199,7 +199,7 @@ local previous = requests
 Index.ReadButton(index, button, { itemID = 201, hyperlink = "missing", stackCount = 1 }, false, 4, 0, 1)
 assert(requests == previous, "failed metadata does not cause a request/failure loop")
 Index.Retry(index)
-Index.ReadButton(index, button, { itemID = 201, hyperlink = "missing", stackCount = 1 }, false, 5, 0, 1)
+Index.ReadButton(index, button, { itemID = 201, hyperlink = "missing", stackCount = 1 }, false, 4, 0, 1)
 assert(requests == previous + 1, "explicit reopening retries previously failed item data")
 -- An unchanged cached read keeps its record: no metadata lookup, no request.
 local record = Index.ReadButton(index, button, { itemID = 202, hyperlink = "late", stackCount = 1 }, false, 6, 0, 1)

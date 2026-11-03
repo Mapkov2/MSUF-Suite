@@ -11,7 +11,6 @@ local M = P.DataTexts
 local Bars, BarKeys = P.DataTextBars, P.DataTextBarKeys
 local ID = "dataTexts"
 local IN_COMBAT = { inCombat = true }
-local FPS_LABEL, MS_LABEL = S.Text("FPS"), S.Text("MS")
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local Snap, ApplyColor = Appearance.Snap, Appearance.Color
@@ -43,26 +42,6 @@ local function Visible(bar)
     return bar.frame:GetAlpha() > 0
 end
 
-local function Display(label, value, severity, style, key, alternate)
-    if key == "bags" and style.bagsPercent then value = alternate or NO_VALUE end
-    local valueColor = severity == "bad" and style.warningColor or style.valueColor
-    if key == "fpsLatency" and style.performanceLabels then
-        local fps, latency = value:match("^(%d+) / (%d+)")
-        if fps then
-            local plain = FPS_LABEL .. ": " .. fps .. " " .. MS_LABEL .. ": " .. latency
-            return plain, "|cff" .. style.labelColor .. FPS_LABEL .. ": |r|cff" .. valueColor .. fps
-                .. "|r |cff" .. style.labelColor .. MS_LABEL .. ": |r|cff" .. valueColor .. latency .. "|r"
-        end
-    elseif key == "memory" and style.colorMemoryUnit then
-        value = value:gsub(" MB$", " |cff" .. style.memoryUnitColor .. "MB|r")
-    end
-    if style.showLabels and (key ~= "clock" or style.clockLabel) then
-        local separator = style.labelColon and ": " or " "
-        return label .. separator .. value,
-            "|cff" .. style.labelColor .. label .. separator .. "|r|cff" .. valueColor .. value .. "|r"
-    end
-    return value, "|cff" .. valueColor .. value .. "|r"
-end
 
 local function Layout(bar)
     P.DataTextGeometry.Layout(bar, M.config, Extra)
@@ -87,13 +66,13 @@ function M:UpdateSource(key, force)
         if Visible(bar) then
             local relayout = false
             if key == "bags" and bar.badge:IsShown() then
-                bar.badge.text = Display(label, value, severity, bar.style, key, alternate)
+                bar.badge.text = bar.display(label, value, severity, bar.style, key, alternate)
             end
             local slots = bar.slots
             for i = 1, #slots do
                 local button = slots[i]
                 if button.source == key then
-                    local text, display = Display(label, value, severity, bar.style, key, alternate)
+                    local text, display = bar.display(label, value, severity, bar.style, key, alternate)
                     if button.display ~= display then
                         button.label:SetText(display)
                         button.text, button.display = text, display
@@ -359,6 +338,7 @@ local function BarStyle(c, index, vertical)
         local _, class = UnitClass("player")
         style.valueColor = S.Public(class) and S.ClassHex(class) or style.valueColor
     end
+    style.display = (style.sourceIcons or style.fpsAccent) and NS.DecoratedDataText or NS.FormatDataText
     if vertical then style.bagBadge = false end
     return style
 end
@@ -403,6 +383,7 @@ local function RefreshBar(index)
     S.ApplyOwnedChildLayer(bar.badge, frame, layer, 2, restored)
     PlaceBar(bar, c)
     bar.style = BarStyle(c, index, bar.vertical)
+    bar.display = bar.style.display
     Appearance.Paint(bar)
     local style = bar.style
     local font = S.ResolveFont(style.font) or S.GlobalFontPath()

@@ -660,7 +660,12 @@ C_Item={
     -- Item cooldowns by item ID ({start,length,enable}); none by default.
     cooldowns={},
     GetItemCooldown=function(item) local cd=C_Item.cooldowns[item];if cd then return cd[1],cd[2],cd[3] end return 0,0,true end,
-    GetItemCount=function(item) return bagCounts[item] or 2 end,
+    countReads={},
+    GetItemCount=function(item,bank,uses)
+        assert(bank==false and uses==true,"item counts must include remaining uses")
+        C_Item.countReads[item]=(C_Item.countReads[item] or 0)+1
+        return bagCounts[item] or 2
+    end,
     usableCalls={},
     IsUsableItem=function(item)
         local reads=C_Item.usableCalls
@@ -3756,6 +3761,7 @@ do (function()
     Run()
     assert(stone.hidden==false and stone.icon.shown and demonic.hidden==true and Calls("layout")==1 and Calls("layoutAll")==0,
         "a stone in the bags shows it with one relayout ("..Calls("layout")..")")
+    assert(stone.icon.count.text==1 and not stone.icon.countOff,"the final healthstone use must show 1")
     ResetCalls()
     bagCounts[5512]=3
     Fire("BAG_UPDATE_DELAYED")
@@ -3876,6 +3882,20 @@ do (function()
     Run()
     assert(stone.cooling==false and not stone.icon.cd.running and alerts==1,"its end is one ready edge")
     C.Alerts.Ready=realReady
+    -- A direct demonic item also keeps the last use visible when its held
+    -- timer does not change and no bag-contents event follows the use.
+    C_Item.cooldowns[224464]={now,60,false}
+    bagCounts[224464]=2
+    Run(.1)
+    Fire("BAG_UPDATE_COOLDOWN")
+    Run()
+    assert(demonic.cooling and demonic.icon.count.text==2,"direct demonic stone must enter the held state")
+    bagCounts[224464]=1
+    Fire("BAG_UPDATE_COOLDOWN")
+    Run(.1)
+    assert(demonic.cooling and demonic.icon.count.text==1 and not demonic.icon.countOff,
+        "direct held demonic stone must refresh its last use on bag cooldown alone")
+    C_Item.cooldowns[224464]=nil
     -- Removed from the bar (hidden set) the bag events go with the last one.
     config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"},c1={"s9001","i9002"}}},
         hidden={[62]={b52=true,b71=true,i5512=true,i224464=true}}}))
@@ -3883,6 +3903,91 @@ do (function()
     Run()
     assert(not C.entries.i5512 and #C.Index.items==0 and not Registered("BAG_UPDATE_DELAYED") and not Registered("BAG_UPDATE_COOLDOWN"),
         "no bag events without bag entries")
+    -- Native category owners must handle the same combat transitions without
+    -- a bag-contents event or a seeded last-category source.
+    do
+        local oldSet=sets[5]
+        Info(80,6262,5,{spellCategoryID=1711})
+        Info(81,452930,5,{spellCategoryID=2566})
+        sets[5]={80,81}
+        C.Flush.dirty.catalog=true
+        config.listsData=assert(Codec.EncodeLists({v=1,specs={[62]={ess={"b14","b11"}}},
+            hidden={[62]={b71=true}}}))
+        C_Item.cooldowns[5512]=nil
+        bagCounts[5512],bagCounts[224464]=3,3
+        module:Refresh()
+        Run()
+        local native,fel=C.entries.b80,C.entries.b81
+        assert(native and fel and not C.entries.i5512 and not C.entries.i224464,
+            "native healthstone categories must own their icons")
+        assert(native.icon.count.text==3 and not native.catItem,"native stone starts full before its first use")
+        assert(#C.Index.bags==2 and Registered("BAG_UPDATE_COOLDOWN"),
+            "native-only healthstones must listen for bag cooldown changes")
+        local ready,realReady=0,C.Alerts.Ready
+        C.Alerts.Ready=function(e,...) if e==native then ready=ready+1 end return realReady(e,...) end
+        combat=true
+        Fire("PLAYER_REGEN_DISABLED")
+        Run()
+        local held={startTime=now,duration=60,isEnabled=false,isActive=true,isOnGCD=false,modRate=1}
+        C_Spell.categoryCooldowns[5512]=held
+        bagCounts[5512]=2
+        Fire("SPELL_UPDATE_COOLDOWN",6262,nil,1711,nil,5512)
+        assert(native.cooling and native.icon.itemLock and not native.icon.cd.running and ready==0,
+            "native stone used in combat must stay held without a ready alert")
+        assert(native.icon.count.text==2,"native cooldown event must invalidate the cached healthstone total")
+        -- The demonic stone has no seeded source: a bag cooldown alone is enough.
+        C_Spell.categoryCooldowns[224464]=held
+        bagCounts[224464]=1
+        Run(.1)
+        Fire("BAG_UPDATE_COOLDOWN")
+        Run()
+        assert(fel.cooling and fel.icon.itemLock and not fel.icon.cd.running and fel.icon.fbDesat==1,
+            "first native demonic stone use must show held state from the bag cooldown event")
+        assert(fel.icon.count.text==1 and not fel.icon.countOff,
+            "native stone bag cooldown must update the remaining uses without a contents event")
+        -- An unchanged held timer can still lose a use; the trailing burst reads
+        -- only the final count once, with no repeated widget/layout work.
+        local reads=C_Item.countReads[5512]
+        bagCounts[5512]=1
+        for _=1,10 do Fire("BAG_UPDATE_COOLDOWN") end
+        Run(.05)
+        assert(C_Item.countReads[5512]==reads and native.icon.count.text==2,"native bag burst bypassed the throttle")
+        Run(.06)
+        assert(C_Item.countReads[5512]==reads+1 and native.icon.count.text==1,"native trailing refresh missed the final count")
+        ResetCalls()
+        local quiet=writes
+        Run(.1)
+        Fire("BAG_UPDATE_COOLDOWN")
+        Run()
+        assert(writes==quiet and Calls("layout")==0 and ready==0,"unchanged held stones repainted or signaled ready")
+        -- Restricted timing still reports used and refreshes the public count.
+        C_Spell.categoryCooldowns[224464]={startTime=SECRET_NUM,duration=SECRET_NUM,modRate=SECRET_NUM,
+            isEnabled=false,isActive=true,isOnGCD=false}
+        Fire("SPELL_UPDATE_COOLDOWN",452930,nil,2566,nil,224464)
+        assert(fel.cooling and not fel.icon.cd.running and fel.icon.count.text==1,"restricted stone timing lost its state/count")
+        combat=false
+        Fire("PLAYER_REGEN_ENABLED")
+        Run()
+        assert(native.cooling and ready==0,"combat end must wait for the real item cooldown")
+        held.startTime,held.isEnabled=now,true
+        Run(.1)
+        Fire("BAG_UPDATE_COOLDOWN")
+        Run()
+        assert(native.cooling and native.icon.cd.running and ready==0,"native stone must start its swipe after combat")
+        Run(61)
+        native.icon.cd.scripts.OnCooldownDone(native.icon.cd)
+        Run()
+        assert(not native.cooling and not native.icon.cd.running and ready==1,"native stone must emit one real ready edge")
+        bagCounts[5512]=0
+        Run(.1)
+        Fire("BAG_UPDATE_COOLDOWN")
+        Run()
+        assert(native.hidden and not native.icon.shown and native.icon.countOff,"empty native stone must leave its bar")
+        C.Alerts.Ready=realReady
+        C_Spell.categoryCooldowns[5512],C_Spell.categoryCooldowns[224464]=nil,nil
+        infos[80],infos[81],sets[5]=nil,nil,oldSet
+        C.Flush.dirty.catalog=true
+    end
     C_Item.cooldowns[5512],bagCounts[5512],bagCounts[224464]=nil,nil,nil
     C_Item.GetItemIconByID,C_Item.GetItemNameByID=getIcon,getName
     config.listsData,config.c1_on,config[chargesKey]=keptLists,true,keptCharges

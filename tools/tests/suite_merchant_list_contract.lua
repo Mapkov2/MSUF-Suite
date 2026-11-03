@@ -195,6 +195,8 @@ local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLoc
     Print = function(text) printed[#printed + 1] = text end, Dispatch = S.Dispatch }
 -- S.Debounce and the context timers (MSUF_Suite_Modules/Timers.lua).
 local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)
+-- The provider is present even while its user option is disabled.
+dofile(root .. "/tools/tests/suite_inventory_tools_fixture.lua").DisabledProtection(root, NS, S)
 -- Context:HideControl as MSUF_Suite_Modules/Runtime.lua runs it: alpha and
 -- mouse are recorded and restored, never Show/Hide; in combat it only queues.
 local queued = false

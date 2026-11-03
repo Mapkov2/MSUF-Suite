@@ -1,5 +1,5 @@
--- Real planning controller: no registered work, native reads, data writes or
--- scheduled refreshes between the combat edges; one catch-up after leaving.
+-- Real planning controller: no native reads, saved data writes or scheduled
+-- refreshes in combat. Two server replies only latch readiness for the catch-up.
 local root = arg[1] or "."
 local savedArgs = arg
 arg = { root, "--fixture" }
@@ -11,7 +11,7 @@ local function Equal(actual, expected, label)
     assert(actual == expected, label .. ": expected " .. tostring(expected) .. ", got " .. tostring(actual))
 end
 local WORK_EVENTS = { "ZONE_CHANGED_NEW_AREA", "WEEKLY_REWARDS_UPDATE",
-    "UPDATE_INSTANCE_INFO", "CHALLENGE_MODE_COMPLETED", "CHALLENGE_MODE_MAPS_UPDATE", "PLAYER_TALENT_UPDATE",
+    "CHALLENGE_MODE_COMPLETED", "PLAYER_TALENT_UPDATE",
     "PLAYER_AVG_ITEM_LEVEL_UPDATE", "PLAYER_SPECIALIZATION_CHANGED", "SELECTED_LOADOUT_CHANGED", "PLAYER_LOOT_SPEC_UPDATED",
     "EQUIPMENT_SETS_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "PLAYER_MONEY", "PLAYER_LEVEL_UP", "READY_CHECK" }
 local function Copy(value)
@@ -55,6 +55,9 @@ local function WorkRegistered(owner, expected, label)
     for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "PLAYER_LEAVING_WORLD", "PLAYER_LOGOUT" }) do
         Equal(owner.context.callbacks[event] ~= nil, true, "world lifecycle stays armed without combat work: " .. event)
     end
+    for _, event in ipairs({ "UPDATE_INSTANCE_INFO", "CHALLENGE_MODE_MAPS_UPDATE" }) do
+        Equal(owner.context.callbacks[event] ~= nil, true, "readiness-only listener stays armed: " .. event)
+    end
     Equal(owner.context.callbacks.ENCOUNTER_START, nil, "no planner encounter-start listener")
     Equal(owner.context.callbacks.ENCOUNTER_END, nil, "no planner encounter-end listener")
 end
@@ -86,6 +89,8 @@ local function CombatLifecycle(forever)
     local reads, scheduled, captures = Reads(), st.scheduled, Counts()
     for _ = 1, 50 do
         for _, event in ipairs(WORK_EVENTS) do st.Event(event) end
+        st.Event("UPDATE_INSTANCE_INFO")
+        st.Event("CHALLENGE_MODE_MAPS_UPDATE")
         st.Event("ENCOUNTER_START", 9, "Boss", 16)
         st.Event("ENCOUNTER_END", 9, "Boss", 16, 20, 0)
     end

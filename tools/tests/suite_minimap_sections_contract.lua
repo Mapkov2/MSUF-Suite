@@ -35,6 +35,48 @@ local function Same(config, before)
     for key, value in pairs(config) do Check(before[key] == value, "navigation changed " .. key) end
     for key, value in pairs(before) do Check(config[key] == value, "navigation removed " .. key) end
 end
+local function CheckPerformanceColors(menu, config)
+    local expected = { "infoGoodColor", "infoWarningColor", "infoBadColor" }
+    local original, targetsBySection = {}, {}
+    for _, key in ipairs(expected) do original[key] = config[key] end
+    for _, section in ipairs({ "info_fps", "info_latency" }) do
+        Check(menu:SelectMinimapSettings(section), "missing performance editor: " .. section)
+        local shortcut = assert(menu.groups.information.views[section].frame.colorShortcut)
+        local targets, byKey = shortcut.options.getTargets(), {}
+        Check(#targets == 5 and shortcut.options.maxTargets >= #targets, "performance colors omitted from shortcut")
+        for _, target in ipairs(targets) do
+            Check(not byKey[target.settingKey], "duplicate contextual color")
+            byKey[target.settingKey] = target
+        end
+        for _, key in ipairs(expected) do
+            local target = assert(byKey["msufsuite.minimap." .. key], "missing shared color: " .. key)
+            Check(target.sourceSettingKey == target.settingKey, "shared color uses a different search key")
+            Check(target.label == P.Tr(P.catalog.minimap.rules[key].label), "shared color label differs from Colors")
+        end
+        targetsBySection[section] = byKey
+    end
+    local fps, latency = targetsBySection.info_fps, targetsBySection.info_latency
+    for _, enabled in ipairs({ false, true }) do
+        local previous = config.infoStatusColors
+        config.infoStatusColors = enabled
+        for _, key in ipairs(expected) do
+            local settingKey = "msufsuite.minimap." .. key
+            latency[settingKey].set(0.2, 0.4, 0.6)
+            Check(config[key] == "336699", "shortcut wrote a disconnected color")
+            local r, g, b = fps[settingKey].get()
+            Check(math.abs(r - 0.2) < 0.001 and math.abs(g - 0.4) < 0.001 and math.abs(b - 0.6) < 0.001,
+                "FPS does not share the latency color")
+            local r0, g0, b0 = P.RGB(original[key])
+            fps[settingKey].set(r0, g0, b0)
+            Check(config[key] == original[key], "restoring a shared color did not restore its canonical setting")
+        end
+        config.infoStatusColors = previous
+    end
+    Check(menu:SelectMinimapSettings("info_clock"), "clock editor missing")
+    for _, target in ipairs(menu.groups.information.views.info_clock.frame.colorShortcut.options.getTargets()) do
+        Check(not fps[target.settingKey], "clock acquired unrelated performance colors")
+    end
+end
 for _, width in ipairs({ 360, 720, 1100 }) do
     local ctx = { key = "suite_minimap", width = width, refreshers = {}, widgets = {}, sections = {},
         pageItems = {}, entry = { sections = {} } }
@@ -54,6 +96,8 @@ for _, width in ipairs({ 360, 720, 1100 }) do
         Check(info.selected == section and info.views[section].frame:IsShown(), "wrong information editor")
         Check(info.selector:GetWidth() <= width - 32, "selector escapes narrow section")
     end
+    Same(config, before)
+    CheckPerformanceColors(menu, config)
     Same(config, before)
     local resolver = P.HM.GetMissingSectionResolver(ctx.entry)
     local parent = assert(resolver("suite_minimap_info_clock"), "cold section link did not resolve")

@@ -136,7 +136,8 @@ NS.DB.hud = { damageMeterRows = true }
 ScrollBoxListMixin = { Event = { OnInitializedFrame = "OnInitializedFrame" } }
 for _, file in ipairs({ "Adapters/AdapterKit.lua", "Adapters/Commerce.lua", "Adapters/DamageMeter.lua",
     "Adapters/PaperDollChrome.lua" }) do
-    assert(loadfile(root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
+    local override = file == "Adapters/PaperDollChrome.lua" and os.getenv("SUITE_ENSURE_CHROME_OVERRIDE")
+    assert(loadfile(override or root .. "/MSUF_Suite_Skin/" .. file))("MSUF_Suite_Skin", NS)
 end
 -- Auction House rows Blizzard initializes while scrolling.
 local callbacks = {}
@@ -175,7 +176,9 @@ rowEnsures, attaches = ensures, 0
 for _ = 1, 3 do meterCallbacks[1][1](meterCallbacks[1][2], meterRow) end
 Check(ensures == rowEnsures + 3 and attaches == 0, "damage meter row initialization did not attach through Ensure")
 -- Paper doll slot updates.
-local chrome = NS.PaperDollChrome.New({ prefix = "hot", slotNames = { "HotSlot" } })
+HotPaperDoll = Target()
+function HotPaperDoll:IsVisible() return self.shown ~= false end
+local chrome = NS.PaperDollChrome.New({ prefix = "hot", rootName = "HotPaperDoll", slotNames = { "HotSlot" } })
 local state = chrome:OwnerState("hot")
 state.active = true
 local slot = Target()
@@ -183,5 +186,17 @@ chrome.exactSlots[slot] = true
 local slotEnsures = ensures
 for _ = 1, 3 do chrome:SkinSlot(state, slot) end
 Check(ensures == slotEnsures + 3, "a paper doll slot update did not attach through Ensure")
+HotSlot = slot
+HotPaperDoll.shown = false
+slotEnsures = ensures
+for _ = 1, 64 do
+    chrome:SkinSlot(state, slot)
+    chrome:RefreshSlot(slot)
+    chrome:SkinAllSlots(state)
+end
+Check(ensures == slotEnsures and attaches == 0, "hidden PaperDoll updates traversed slot paint paths")
+HotPaperDoll.shown = true
+chrome:RefreshSlot(slot)
+Check(ensures == slotEnsures + 1, "visible PaperDoll slot failed to resume Ensure")
 
 print("Suite skin surface ensure: " .. checks .. " checks passed")

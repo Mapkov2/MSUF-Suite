@@ -12,15 +12,18 @@ MUTANTS = (
     ("hidden result scan", "ResultMotion.lua",
      "pairs(visible)", "pairs(Results.states)"),
     ("inactive animation scan", "ContentMotion.lua",
-     "for record in pairs(Content.active) do Stop(record) end",
-     "for _, record in pairs(Content.records) do Stop(record) end"),
+     "for record in pairs(Content.active) do\n        if not combat",
+     "for _, record in pairs(Content.records) do\n        if not combat"),
+    ("inactive focus veil", "FocusVeil.lua",
+     'if FocusVeil.pending or FocusVeil.root and not Safety.CanDecorate(FocusVeil.root) then FocusVeil.Clear() end',
+     'FocusVeil.Clear()'),
     ("targeted content release", "ContentMotion.lua",
      "if frame ~= nil then return Release(Content.records[frame], owner) end",
      "-- direct lookup removed"),
     ("reopened result cancellation", "ResultMotion.lua",
      'target:HookScript("OnShow", Shown)', "-- visibility resumption removed"),
     ("completed content invalidation", "ContentMotion.lua",
-     "revision = revision + 1", "-- invalidation removed"),
+     "revision = revision + 1", "revision = revision"),
 )
 
 

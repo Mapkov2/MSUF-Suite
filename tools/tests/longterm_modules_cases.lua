@@ -416,7 +416,7 @@ IsInGroup = function(category) return scenario~="ungrouped" and category == nil 
 IsInRaid = function() return false end
 Enum = { SendAddonMessageResult = { Success = 0 } }
 UISpecialFrames = {}
-C_MythicPlus = {
+C_MythicPlus = { RequestMapInfo = function() end,
     GetOwnedKeystoneChallengeMapID = function() return 101 end,
     GetOwnedKeystoneLevel = function() return 12 end,
 }
@@ -643,6 +643,8 @@ local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLoc
     Print = function(text) printed[#printed + 1] = text end, Dispatch = S.Dispatch }
 -- S.Debounce and the context timers (MSUF_Suite_Modules/Timers.lua).
 local TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)
+-- The protection provider is loaded by the real QoL TOC even when disabled.
+dofile(root .. "/tools/tests/suite_inventory_tools_fixture.lua").DisabledProtection(root, NS, S)
 -- Context:HideControl as MSUF_Suite_Modules/Runtime.lua runs it: alpha and
 -- mouse are recorded and restored, never Show/Hide; in combat it only queues.
 local queued = false

@@ -8,7 +8,7 @@ local methods = { "SetTabSelected", "SetSelected" }
 local function Update(tab, selected)
     local state = NS.ControlSkin.states[tab]
     if not state or not state.enabled or not Safety.Public(selected) or type(selected) ~= "boolean"
-        or Safety.IsForbidden(tab) or Safety.GetProtection(tab) or NS.IsCombatLocked() or NS.Motion.combat then return end
+        or Safety.IsForbidden(tab) or Safety.GetProtection(tab) then return end
     NS.ControlSkin.Refresh(tab, selected)
     if selected then NS.MenuMotion.SelectionChanged(tab) end
 end

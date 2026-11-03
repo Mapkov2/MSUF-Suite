@@ -3385,7 +3385,7 @@ local qolFeaturesByCategory = {
         "socketGemSuggestions_socket_gems", "loadoutReminder_loadout_reminder",
         "durabilityAlert_durability_warning", "professionAppearance_profession_outfits",
         "combatStatsHUD_secondary_stats",
-        "targetDistance_target_distance", "characterExtras_character_extras",
+        "targetDistance_target_distance", "characterExtras_character_extras", "castbarArt_castbar_art",
     },
     groupRaid = {
         "battleRes_battle_res", "groupBloodlust_bloodlust_lockout",
@@ -3498,7 +3498,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == (flavor == "Forever" and 77 or 78) and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == (flavor == "Forever" and 78 or 79) and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated: expected " .. expectedQolFeatureCount .. ", rendered " .. actualQolFeatureCount)
 local sourceCategories = assert(optionsNS.QualityOfLifeCategories,
     "Quality of Life category source was not published for search")
@@ -5920,6 +5920,43 @@ end)()
     end
     S.states.damageMeter.error, MapkoSkin, C_CVar = meterLoadError, nil, cvar
     W.PageBuilder, W.EnsureSectionContent, current = eager, previousEnsure, previous
+end)()
+
+-- The new focus switch remains independent of dropdown dimming and uses the
+-- same dynamic one-column height path in a narrow host menu.
+;(function()
+    local previous, previousSkin, rows = current, MapkoSkin, W.SettingsRows
+    local captured
+    local ctx = { key = "suite_skin", width = 360, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+    W.SettingsRows = function(context, parent, spec)
+        local grid = rows(context, parent, spec)
+        for _, row in ipairs(spec.rows) do
+            if row.id == "theme.windowFocusDimming" then
+                captured = { parent = parent, spec = spec, grid = grid, row = row }
+            end
+        end
+        return grid
+    end
+    current, MapkoSkin = ctx, skin
+    M.pages.suite_skin.build(ctx)
+    W.SettingsRows = rows
+    assert(captured and captured.spec.columns == 1 and captured.spec.width < 520,
+        "narrow Skinning menu omitted the focus switch or retained a two-column grid")
+    assert(captured.parent._msuf2CursorY == captured.grid.bottomY
+        and captured.parent:GetHeight() >= -captured.grid.bottomY,
+        "narrow Skinning accordion clipped the added focus switch")
+    local saved, dropdown = skin.DB.theme.windowFocusDimming, skin.DB.theme.dropdownDimming
+    skin.DB.theme.windowFocusDimming = nil
+    assert(captured.row.get(), "old profiles did not default to window focus dimming")
+    captured.row.set(false)
+    assert(captured.row.get() == false and skin.DB.theme.dropdownDimming == dropdown,
+        "window focus switch did not disable independently of dropdown dimming")
+    assert(optionsNS.SkinPageKit.ResetSkinSection(skin, "shape", { captured.row }),
+        "window focus switch did not participate in section reset")
+    assert(captured.row.get() and skin.DB.theme.windowFocusDimming == true
+        and skin.DB.theme.dropdownDimming == dropdown, "window focus reset did not restore its default")
+    skin.DB.theme.windowFocusDimming = saved
+    current, MapkoSkin = previous, previousSkin
 end)()
 
 print("Suite options menu: navigation, page and section reset, no inline Suite colors, color shortcuts and global Colors, per-bar/window keys, gating and locale isolation passed")

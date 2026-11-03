@@ -5,6 +5,8 @@ local frames = Support.EventFrames()
 local combat, shift, cursor = false, false, false
 local slots = { [0] = {}, [1] = {}, [2] = {}, [3] = {}, [4] = {}, [5] = {} }
 local deferred = {}
+GetTime = function() return 0 end
+local CompleteUse
 
 Enum = { BagIndex = { Backpack = 0, ReagentBag = 5 } }
 ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot) return { bag = bag, slot = slot } end }
@@ -16,6 +18,7 @@ C_Container = {
     end,
     UseContainerItem = function(bag, slot)
         calls[#calls + 1] = { bag = bag, slot = slot }
+        if CompleteUse and #module.pending == 0 then CompleteUse() end
     end,
 }
 C_Item = { GetItemGUID = function(location)
@@ -28,7 +31,10 @@ CursorHasItem = function() return cursor end
 local lootShown = false
 LootFrame = { IsShown = function() return lootShown end }
 local function Window(shown) return { shown = shown, IsShown = function(self) return self.shown end } end
-C_Timer = { After = function(_, callback) deferred[#deferred + 1] = callback end }
+-- Positive cancellation deadlines are exercised by the asynchronous contract.
+C_Timer = { After = function(delay, callback)
+    if delay == 0 then deferred[#deferred + 1] = callback end
+end }
 
 local S = {
     Public = function(value) return value ~= "secret" end,
@@ -63,7 +69,15 @@ module:Enable()
 assert(#calls == 0 and context.events.BAG_UPDATE and context.events.BAG_UPDATE_DELAYED,
     "the baseline opened an existing container or failed to register bag events")
 
+-- Normal successful native cycles in this legacy fixture complete explicitly.
+-- The async contract separately holds those events back to test pending use.
+CompleteUse = function()
+    local opened, closed = context.events.LOOT_OPENED, context.events.LOOT_CLOSED
+    if opened then opened(module, "LOOT_OPENED", true) end
+    if closed then closed(module, "LOOT_CLOSED") end
+end
 local function Settle(bag)
+    if not lootShown and context.events.LOOT_OPENED then CompleteUse() end
     context.events.BAG_UPDATE(module, "BAG_UPDATE", bag)
     context.events.BAG_UPDATE_DELAYED(module, "BAG_UPDATE_DELAYED")
 end
@@ -125,6 +139,8 @@ slots[3][1] = { guid = "locked", info = { itemID = 16, hasLoot = true, isLocked 
 slots[3][2] = { guid = "ordinary", info = { itemID = 17, hasLoot = false, isLocked = false } }
 Settle(3)
 assert(#calls == 2, "locked or non-container item was used")
+slots[3][1] = nil
+Settle(3) -- a disappeared locked candidate cannot block later batches
 
 slots[4][1] = { guid = "batch-one", info = { itemID = 18, hasLoot = true, isLocked = false } }
 slots[4][2] = { guid = "batch-two", info = { itemID = 19, hasLoot = true, isLocked = false } }
@@ -173,7 +189,7 @@ local accountBound = true
 C_Item.IsItemBindToAccount = function() return accountBound end
 C_Item.IsBoundToAccountUntilEquip = function() return false end
 local opened = 0
-C_Container.UseContainerItem = function() opened = opened + 1 end
+C_Container.UseContainerItem = function() opened = opened + 1; CompleteUse() end
 module:Enable()
 slots[5][2] = { guid = "warbound", info = { itemID = 31, hasLoot = true, isLocked = false } }
 Settle(5)
@@ -246,3 +262,211 @@ context:CancelTimers()
 local staleCallback = table.remove(deferred); staleCallback()
 assert(not next(module.held) and not context.events.CURRENCY_DISPLAY_UPDATE)
 assert(opened == 5, "disable must cancel a pending currency resume")
+
+
+-- Native unlocks complete discovery without another BAG_UPDATE. Existing,
+-- unreadable and deliberately cancelled containers must remain manual.
+do
+    local uses = {}
+    local function FlushJobs()
+        local queued = deferred
+        deferred = {}
+        for _, callback in ipairs(queued) do callback() end
+    end
+    local function Reset()
+        module.active = false
+        module:Disable()
+        context:CancelTimers()
+        deferred, uses = {}, {}
+        combat, shift, cursor, lootShown = false, false, false, false
+        MerchantFrame = nil
+        for bag = 0, 5 do slots[bag] = {} end
+        module.config, module.active = { skipWarbound = false }, true
+        C_Container.UseContainerItem = function(bag, slot)
+            uses[#uses + 1] = { bag = bag, slot = slot }
+            lootShown = true
+        end
+    end
+    local function Item(guid, locked)
+        return { guid = guid, info = { itemID = 500, hasLoot = true, isLocked = locked } }
+    end
+    local function Unlock(bag, slot)
+        slots[bag][slot].info.isLocked = false
+        local handler = context.events.ITEM_LOCK_CHANGED
+        if handler then handler(module, "ITEM_LOCK_CHANGED", bag, slot) end
+        FlushJobs()
+    end
+    Reset()
+    slots[0][1], slots[0][2] = Item("old-locked", true), { guid = "old-secret", info = "secret" }
+    module:Enable()
+    slots[0][3] = Item("new-locked", true)
+    Settle(0)
+    assert(#uses == 0, "new locked container was used early")
+    Unlock(0, 3)
+    assert(#uses == 1 and uses[1].slot == 3, "native unlock did not resume a new locked container")
+    assert(not context.events.ITEM_LOCK_CHANGED, "completed queue retained its lock listener")
+    lootShown = false
+    slots[0][1].info.isLocked = false
+    slots[0][2].info = Item("unused", false).info
+    Settle(0)
+    assert(#uses == 1, "baseline or resolved secret container became eligible")
+    Settle(0)
+    assert(#uses == 1, "opened unlocked GUID retried")
+
+    -- Unrelated native/equipment locks read no slots and allocate no deferred work.
+    Reset(); module:Enable()
+    slots[1][2] = Item("moving-lock", true); Settle(1)
+    local nativeRead, reads = C_Container.GetContainerItemInfo, 0
+    C_Container.GetContainerItemInfo = function(...) reads = reads + 1; return nativeRead(...) end
+    local onLock = assert(context.events.ITEM_LOCK_CHANGED)
+    onLock(module, "ITEM_LOCK_CHANGED", 1, nil)
+    onLock(module, "ITEM_LOCK_CHANGED", "secret", 2)
+    onLock(module, "ITEM_LOCK_CHANGED", 1, "secret")
+    onLock(module, "ITEM_LOCK_CHANGED", 1, 3)
+    assert(reads == 0 and #deferred == 0, "unrelated locks did work")
+    local minimumKB = math.huge
+    for pass = 1, 2 do
+        collectgarbage("collect"); collectgarbage("stop")
+        local beforeKB = collectgarbage("count")
+        for i = 1, 1000 do onLock(module, "ITEM_LOCK_CHANGED", 1, 3) end
+        minimumKB = math.min(minimumKB, collectgarbage("count") - beforeKB)
+        collectgarbage("restart")
+    end
+    assert(minimumKB == 0 and reads == 0 and #deferred == 0, "unrelated lock events allocated or queried the client")
+    for i = 1, 10 do onLock(module, "ITEM_LOCK_CHANGED", 1, 2) end
+    assert(#deferred == 1 and reads == 0, "matching lock burst did not coalesce")
+    FlushJobs()
+    assert(#uses == 0 and reads == 1, "still-locked retry did not stay bounded")
+    C_Container.GetContainerItemInfo = nativeRead
+    slots[2][4], slots[1][2] = slots[1][2], nil
+    context.events.BAG_UPDATE(module, "BAG_UPDATE", 1)
+    Settle(2)
+    Unlock(2, 4)
+    assert(#uses == 1 and uses[1].bag == 2 and uses[1].slot == 4, "moved locked GUID lost its location")
+    lootShown = false
+    Settle(2)
+    assert(#uses == 1, "moved opened GUID was used twice")
+
+    -- A locked candidate does not starve a later ready item or bypass loot pacing.
+    Reset(); module:Enable()
+    slots[0][1], slots[0][2] = Item("ready", false), Item("waiting", true)
+    Settle(0)
+    assert(#uses == 1 and uses[1].slot == 1, "locked queue member blocked a ready container")
+    Unlock(0, 2)
+    assert(#uses == 1, "unlock opened a second container while native loot was visible")
+    lootShown = false
+    context.events.LOOT_CLOSED(module, "LOOT_CLOSED")
+    FlushJobs()
+    assert(#uses == 2 and not context.events.ITEM_LOCK_CHANGED, "loot close did not drain the unlocked item")
+
+    -- Deliberate suppression is terminal even if the item is still locked then.
+    for _, reason in ipairs({ "shift", "merchant", "cursor" }) do
+        Reset(); module:Enable()
+        slots[0][1] = Item("cancel-" .. reason, true); Settle(0)
+        if reason == "shift" then shift = true
+        elseif reason == "merchant" then MerchantFrame = Window(true)
+        else cursor = true end
+        context.events.ITEM_LOCK_CHANGED(module, "ITEM_LOCK_CHANGED", 0, 1)
+        FlushJobs()
+        assert(#module.pending == 0 and not context.events.ITEM_LOCK_CHANGED, "locked cancellation kept eligibility")
+        shift, cursor, MerchantFrame = false, false, nil
+        Unlock(0, 1); Settle(0)
+        assert(#uses == 0, "unlock bypassed deliberate " .. reason .. " cancellation")
+    end
+
+    Reset(); module:Enable()
+    slots[0][1] = Item("combat-lock", true); Settle(0)
+    combat = true; Unlock(0, 1)
+    assert(#uses == 0 and context.events.PLAYER_REGEN_ENABLED, "unlock bypassed combat")
+    combat = false
+    context.events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    assert(#uses == 1, "unlocked combat candidate was not resumed")
+
+    Reset(); module:Enable()
+    slots[0][1] = Item("gone", true); Settle(0)
+    slots[0][1] = nil; Settle(0)
+    assert(#module.pending == 0 and not context.events.ITEM_LOCK_CHANGED and #uses == 0, "gone locked GUID remained pending")
+    slots[0][1] = Item("secret-later", true); Settle(0)
+    slots[0][1].info = "secret"
+    context.events.ITEM_LOCK_CHANGED(module, "ITEM_LOCK_CHANGED", 0, 1); FlushJobs()
+    slots[0][1].info = Item("unused", false).info
+    Settle(0)
+    assert(#uses == 0 and not context.events.ITEM_LOCK_CHANGED, "unreadable waiting item became eligible later")
+
+    -- Unlock retains the configured binding and currency-cap decisions.
+    Reset(); module.config.skipWarbound = true; module:Enable()
+    accountBound = true
+    slots[0][1] = Item("warbound-lock", true); Settle(0)
+    Unlock(0, 1)
+    assert(#uses == 0 and #module.pending == 0 and not context.events.ITEM_LOCK_CHANGED, "unlock bypassed warbound exclusion")
+    accountBound = false
+    Settle(0)
+    assert(#uses == 0, "excluded unlocked GUID retried")
+
+    Reset(); module.config.holdDundun = true; module:Enable()
+    currency.quantity, currency.useTotalEarnedForMaxQty, currency.quantityEarnedThisWeek = 8, false, 0
+    slots[0][1] = Item("currency-lock", true)
+    slots[0][1].info.itemID = 246585
+    Settle(0); Unlock(0, 1)
+    assert(#uses == 0 and module.held["currency-lock"] and not module.attempted["currency-lock"], "unlock bypassed currency cap")
+    assert(not context.events.ITEM_LOCK_CHANGED and context.events.CURRENCY_DISPLAY_UPDATE, "held currency retained lock work")
+    currency.quantity = 7
+    CurrencyEvent()
+    assert(#uses == 1 and not next(module.held), "unlocked payout did not resume after spending")
+
+    -- A payout held before the lock must retain its eligible identity too.
+    for _, condition in ipairs({ "released", "still-capped", "shift", "gone" }) do
+        Reset(); module.config.holdDundun = true; module:Enable()
+        currency.quantity = 8
+        slots[0][1] = Item("held-lock-" .. condition, false)
+        slots[0][1].info.itemID = 246585
+        Settle(0)
+        assert(next(module.held), "currency hold setup failed")
+        slots[0][1].info.isLocked = true
+        if condition ~= "still-capped" then currency.quantity = 7 end
+        if condition == "shift" then shift = true end
+        if condition == "gone" then slots[0][1] = nil end
+        CurrencyEvent()
+        if condition == "released" or condition == "still-capped" then
+            assert(#uses == 0 and #module.pending == 1 and context.events.ITEM_LOCK_CHANGED,
+                "currency-held payout lost eligibility while locked")
+            Unlock(0, 1)
+            if condition == "still-capped" then
+                assert(#uses == 0 and next(module.held), "unlock bypassed the still-full currency cap")
+                currency.quantity = 7; CurrencyEvent()
+            end
+            assert(#uses == 1 and not next(module.held) and #module.pending == 0, "held lock did not resume exactly once")
+        else
+            assert(#uses == 0 and not next(module.held) and #module.pending == 0,
+                "currency resume ignored cancellation or missing GUID")
+            shift = false
+            if condition ~= "gone" then Unlock(0, 1); Settle(0) end
+            assert(#uses == 0, "cancelled held lock was reopened")
+        end
+    end
+
+    Reset(); module:Enable()
+    slots[0][1] = Item("refused-lock", true); Settle(0)
+    C_Container.UseContainerItem = function()
+        frames.Fire("ADDON_ACTION_BLOCKED", "MSUF_Suite_QualityOfLife", "UseContainerItem()")
+    end
+    Unlock(0, 1)
+    assert(module.blocked and module.attempted["refused-lock"] and not context.events.ITEM_LOCK_CHANGED,
+        "refused unlocked item retained a retry route")
+
+    Reset(); module:Enable()
+    slots[0][1] = Item("cap-pending", true); Settle(0)
+    module.seenCount = 1024
+    slots[0][2] = Item("cap-hit", true); Settle(0)
+    assert(module.seenSaturated and #module.pending == 0 and not context.events.ITEM_LOCK_CHANGED, "history cap left unlock work")
+    Unlock(0, 1); Settle(0)
+    assert(#uses == 0, "unlock bypassed history saturation")
+
+    Reset(); module:Enable()
+    slots[0][1] = Item("disabled-lock", true); Settle(0)
+    context.events.ITEM_LOCK_CHANGED(module, "ITEM_LOCK_CHANGED", 0, 1)
+    module.active = false; module:Disable(); context:CancelTimers()
+    slots[0][1].info.isLocked = false; FlushJobs()
+    assert(#uses == 0 and not context.events.ITEM_LOCK_CHANGED and #module.pending == 0, "disable retained an unlock callback")
+    print("Suite loot containers: native unlock, bounded events, movement, cancellations and teardown passed")
+end

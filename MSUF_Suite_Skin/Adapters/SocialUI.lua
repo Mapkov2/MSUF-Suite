@@ -9,8 +9,8 @@ local _, NS = ...
 --
 -- Social-card data, icons, text, actions, pooled-tab state, ScrollBoxes,
 -- spinners and side-window content remain entirely Blizzard-owned. The adapter
--- paints only verified backgrounds plus explicit shell/divider/control fields,
--- outside combat and without changing geometry.
+-- paints only verified backgrounds and explicit shell/divider/control fields.
+-- Shared window controls own the root's saved position and scale.
 local SocialUISkin = {
     hooksInstalled = false,
     frameHooks = setmetatable({}, { __mode = "k" }),
@@ -281,6 +281,7 @@ local function ApplyState(state)
     if NS.IsCombatLocked() then return false, "combat" end
     if not NS.Safety.CanCreateRegions(frame, true) then return false, "protected" end
     if not Kit.Attach(state, frame, SHELL_SPEC) then return false, "shell" end
+    NS.WindowControls.Attach(frame, state.owner)
 
     Kit.FadeNineSlice(state, Field(frame, "NineSlice"))
     Kit.FadeFields(state, frame, SHELL_FIELDS)
@@ -311,7 +312,10 @@ end
 
 local function ApplyOrDefer(state, suffix)
     if not state or not state.active then return false, "disabled" end
-    if NS.IsCombatLocked() then return Owners.RunOrDefer(state, suffix, ApplyAfterCombat) end
+    if NS.IsCombatLocked() then
+        if not Kit.IsHidden(state.frame) then NS.WindowControls.Attach(state.frame, state.owner) end
+        return Owners.RunOrDefer(state, suffix, ApplyAfterCombat)
+    end
     return ApplyState(state)
 end
 
@@ -329,6 +333,7 @@ local function DisableNow(state)
     state.tabs = Kit.WeakSet()
     state.skinnedTabs = Kit.WeakSet()
 
+    NS.WindowControls.DisableOwner(state.owner)
     NS.ControlSkin.DisableOwner(state.owner)
     NS.Cosmetics.RestoreOwner(state.owner)
     Kit.HideSurfaces(state)

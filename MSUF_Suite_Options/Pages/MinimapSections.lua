@@ -74,7 +74,11 @@ local function BuildMinimapView(menu, group, source, width)
     end
     local rules, entries = MinimapRules({ source }), nil
     y, entries = P.RuleGrid(menu.ctx, panel, PAGE, ID, rules, y, width, nil, PAGE .. "_" .. source)
-    P.AttachRuleColors(panel, MinimapTitle(source), ID, rules)
+    local colorRules = rules
+    if source == "info_fps" or source == "info_latency" then
+        colorRules = MinimapRules({ source, "info_colors" })
+    end
+    P.AttachRuleColors(panel, MinimapTitle(source), ID, colorRules)
     panel:SetHeight(-y + 12)
     view = { frame = panel, height = -y + 12, entries = entries }
     group.views[source] = view

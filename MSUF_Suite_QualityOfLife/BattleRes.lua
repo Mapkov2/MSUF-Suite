@@ -68,21 +68,105 @@ local function Create(self)
         host, panel, edges, cooldown, title, count, maximum, icon
 end
 
+local function ClearTimer(self)
+    self.cooldown:Clear()
+    if self.durationBinding then
+        self.durationBinding:Disable()
+        self.time:Hide()
+        self.separator:Hide()
+    end
+end
+
+local function CreateText(self)
+    if self.time then return end
+    self.time = S.CreateFontString(self.host, nil, "OVERLAY")
+    self.separator = S.CreateFontString(self.host, nil, "OVERLAY")
+    S.SetFont(self.time, self.config.font, self.config.fontSize, "OUTLINE")
+    S.SetFont(self.separator, self.config.font, self.config.fontSize, "OUTLINE")
+    self.separator:SetText("+")
+    self.time:SetPoint("LEFT", self.host, "LEFT", 24, 0)
+    self.separator:SetPoint("LEFT", self.host, "LEFT", 13, 0)
+    local down = Enum.NumericRuleFormatRounding.Down
+    local formatter = C_StringUtil.CreateNumericRuleFormatter()
+    formatter:SetBreakpoints({ { threshold = 0, format = "%02d:%02d", rounding = down,
+        components = { { div = 60, rounding = down }, { mod = 60, rounding = down } } } })
+    local binding = C_DurationUtil.CreateDurationTextBinding()
+    binding:SetFontString(self.time)
+    binding:SetFormatter(formatter)
+    binding:SetUpdateInterval(1)
+    binding:SetZeroDurationText("")
+    binding:SetExpiredText("")
+    binding:Disable()
+    self.durationBinding = binding
+end
+
+local function TextLayout(self)
+    local c, compact = self.config, self.config.textOnly == true
+    if compact then CreateText(self) end
+    local method = compact and "Hide" or "Show"
+    self.panel[method](self.panel)
+    self.icon[method](self.icon)
+    self.title[method](self.title)
+    self.maximum[method](self.maximum)
+    self.cooldown[method](self.cooldown)
+    for i = 1, #self.edges do self.edges[i][method](self.edges[i]) end
+    self.count:ClearAllPoints()
+    if compact then
+        self.count:SetPoint("LEFT", self.host, "LEFT", 0, 0)
+        self.time:ClearAllPoints()
+        self.separator:ClearAllPoints()
+        self.time:SetPoint("LEFT", self.host, "LEFT", c.fontSize * 24 / 11, 0)
+        self.separator:SetPoint("LEFT", self.host, "LEFT", c.fontSize * 13 / 11, 0)
+        S.SetFont(self.count, c.font, c.fontSize, "OUTLINE")
+        S.SetFont(self.time, c.font, c.fontSize, "OUTLINE")
+        S.SetFont(self.separator, c.font, c.fontSize, "OUTLINE")
+        self.time:SetTextColor(1, 1, 1)
+        self.separator:SetTextColor(1, 1, 1)
+    else
+        self.count:SetPoint("BOTTOMLEFT", self.icon, "BOTTOMRIGHT", 7, 0)
+        S.SetFont(self.count, nil, 22, "OUTLINE")
+    end
+    ClearTimer(self)
+end
+
+local function BindTime(self, duration)
+    if not self.config.textOnly then return end
+    -- The duration's contents may be secret; the object itself must be public
+    -- for DurationTextBinding:SetDuration (AllowedWhenUntainted).
+    if not S.Public(duration) or duration == nil then return end
+    self.durationBinding:SetDuration(duration)
+    self.durationBinding:Enable()
+    self.time:Show()
+    self.separator:Show()
+end
+
+local function SampleTime(self)
+    if not self.config.textOnly then return end
+    self.durationBinding:Disable()
+    self.time:SetText("02:38")
+    self.time:Show()
+    self.separator:Show()
+end
+
 local function Place(self)
     local c = self.config
     local style = S.PaintQoLCard(ID, c, self.panel, self.edges)
     self.title:SetTextColor(S.RGB(style.muted))
     self.count:SetTextColor(S.RGB(style.text))
     self.maximum:SetTextColor(S.RGB(style.muted))
-    self.host:SetSize(c.width, c.height)
+    local width = math.max(c.width, c.textOnly and c.fontSize * 6 or 146)
+    local height = math.max(c.height, c.textOnly and c.fontSize + 2 or 44)
+    self.host:SetSize(width, height)
     if self.previewViewport then
         local viewport = self.previewViewport
-        self.host:SetScale(math.min(viewport.scale, viewport.width / c.width, viewport.height / c.height))
+        self.host:SetScale(math.min(viewport.scale, viewport.width / width, viewport.height / height))
     else
         S.PlaceHost(self.host, c)
     end
+    TextLayout(self)
     if c.glossEnabled or self.glossIconActive then
-        self.glossIconActive = NS.GlossMaterial.Icon(self.host, self.icon, c.glossEnabled, c.glossStrength, 38) or nil
+        self.glossIconActive = NS.GlossMaterial.Icon(self.host, self.icon,
+            c.glossEnabled and not c.textOnly, c.glossStrength, 38) or nil
     end
 end
 
@@ -116,6 +200,7 @@ Update = function(self)
         self.count:SetText("2")
         self.maximum:SetText("/3")
         self.cooldown:SetCooldown(GetTime(), 90)
+        SampleTime(self)
         self.host:Show()
         return
     end
@@ -123,7 +208,7 @@ Update = function(self)
     local inPool = InSharedPool(self)
     WatchCharges(self, inPool)
     if not inPool then
-        self.cooldown:Clear()
+        ClearTimer(self)
         self.host:Hide()
         return
     end
@@ -132,13 +217,13 @@ Update = function(self)
     -- fields guide Lua branches; Blizzard's display string goes to SetText.
     local info = C_Spell.GetSpellCharges(SPELL_ID)
     if not S.Public(info) or type(info) ~= "table" then
-        self.cooldown:Clear()
+        ClearTimer(self)
         self.host:Hide()
         return
     end
     local maximum = info.maxCharges
     if not S.Finite(maximum) or maximum < 1 then
-        self.cooldown:Clear()
+        ClearTimer(self)
         self.host:Hide()
         return
     end
@@ -148,15 +233,17 @@ Update = function(self)
     self.count:SetText(display)
     self.maximum:SetFormattedText("/%d", math.floor(maximum))
 
+    ClearTimer(self)
     if info.isActive == true then
         local duration = C_Spell.GetSpellChargeDuration(SPELL_ID)
-        if duration then
+        if not S.Public(duration) or duration ~= nil then
             self.cooldown:SetCooldownFromDurationObject(duration, true)
+            BindTime(self, duration)
         else
-            self.cooldown:Clear()
+            ClearTimer(self)
         end
     else
-        self.cooldown:Clear()
+        ClearTimer(self)
     end
     self.host:Show()
 end
@@ -214,7 +301,7 @@ function M:Disable()
     WatchGloss(self, false)
     if self.watching then WatchCharges(self, false) end
     if self.host then
-        self.cooldown:Clear()
+        ClearTimer(self)
         self.host:Hide()
     end
 end
@@ -242,6 +329,7 @@ function S.DrawBattleResPreview(parent, config, _, viewport)
     view.count:SetText("2")
     view.maximum:SetText("/3")
     view.cooldown:SetCooldown(0, 0)
+    SampleTime(view)
     view.host:Show()
     return view.host
 end

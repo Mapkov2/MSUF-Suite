@@ -327,6 +327,7 @@ Check(emptyProfile.theme.menuAnimations == nil and emptyProfile.theme.reduceMoti
     and emptyProfile.theme.dropdownDimming == nil and emptyProfile.theme.smoothScrolling == nil,
     "sanitizing an absent theme materialized motion defaults")
 local motionProfile = Profile(0.4)
+motionProfile.theme.windowFocusDimming = false
 motionProfile.theme.menuAnimations, motionProfile.theme.reduceMotion = false, true
 motionProfile.theme.dropdownDimming, motionProfile.theme.smoothScrolling = false, false
 Database.SetProfile("Motion", motionProfile)
@@ -334,24 +335,29 @@ Database.SetActiveProfile("Motion")
 Check(Database.CreateProfile("Motion Copy", true), "motion profile copy failed")
 local copied = Database.GetProfile("Motion Copy")
 Check(copied.theme.menuAnimations == false and copied.theme.reduceMotion == true
-    and copied.theme.dropdownDimming == false and copied.theme.smoothScrolling == false,
+    and copied.theme.dropdownDimming == false and copied.theme.smoothScrolling == false
+    and copied.theme.windowFocusDimming == false,
     "profile copy discarded explicit motion settings")
 local motionText = assert(IO.ExportProfile("Motion"))
 Check(IO.ImportProfile(motionText, "Motion Import"), "motion profile import failed")
 local imported = Database.GetProfile("Motion Import")
 Check(imported.theme.menuAnimations == false and imported.theme.reduceMotion == true
-    and imported.theme.dropdownDimming == false and imported.theme.smoothScrolling == false,
+    and imported.theme.dropdownDimming == false and imported.theme.smoothScrolling == false
+    and imported.theme.windowFocusDimming == false,
     "motion export/import discarded explicit settings")
 motionProfile.theme.menuAnimations, motionProfile.theme.reduceMotion = "false", 1
 motionProfile.theme.dropdownDimming, motionProfile.theme.smoothScrolling = 1, "false"
+motionProfile.theme.windowFocusDimming = "false"
 local sanitized = Database.SanitizeProfile(motionProfile)
 Check(sanitized.theme.menuAnimations == nil and sanitized.theme.reduceMotion == nil
-    and sanitized.theme.dropdownDimming == nil and sanitized.theme.smoothScrolling == nil,
+    and sanitized.theme.dropdownDimming == nil and sanitized.theme.smoothScrolling == nil
+    and sanitized.theme.windowFocusDimming == nil,
     "malformed imported motion flags were retained")
 Database.SetProfile("Motion Import", oldProfile)
 Check(Database.GetProfile("Motion Import").theme.menuAnimations == nil
     and Database.GetProfile("Motion Import").theme.reduceMotion == nil
     and Database.GetProfile("Motion Import").theme.dropdownDimming == nil
-    and Database.GetProfile("Motion Import").theme.smoothScrolling == nil,
+    and Database.GetProfile("Motion Import").theme.smoothScrolling == nil
+    and Database.GetProfile("Motion Import").theme.windowFocusDimming == nil,
     "copying absent settings retained stale motion overrides")
 print("Suite skin profile import: " .. checks .. " checks passed")

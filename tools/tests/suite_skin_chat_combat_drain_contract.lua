@@ -199,11 +199,13 @@ end
 
 ------------------------------------------------------- scoped deferral
 -- Two tab-colour hooks in combat: two tab skins after it, no full pass.
+Mark()
 locked = true
 FCFTab_UpdateColors(tabs[1], true)
 FCFTab_UpdateColors(tabs[2], false)
 Check(Gate.IsPending("chat-frames:refresh") and Is(tabs[1].ActiveLeft.vertex, { 1, 0.5, 0.25, 1 }),
     "the tab hooks did not defer their work in combat")
+Check(#SkinnedTabs() == 0 and VisitedWindows() == 0, "combat chat hooks read chrome before their deferred drain")
 Mark()
 EndCombat()
 local skinned = SkinnedTabs()
@@ -313,7 +315,12 @@ NS.DB.enabled = false
 Check(not Checkmarks.StillApplied(unchanged, "chat", "background", false), "a disabled skin counted as applied")
 NS.DB.enabled = true
 locked = true
-Check(not Checkmarks.StillApplied(unchanged, "chat", "background", false), "combat counted as applied")
+local combatWrites = unchanged.writes
+Check(Checkmarks.StillApplied(unchanged, "chat", "background", false) and unchanged.writes == combatWrites,
+    "safe combat ownership predicate lost unchanged art or wrote to it")
+unchanged.IsProtected = function() return true, false end
+Check(not Checkmarks.StillApplied(unchanged, "chat", "background", false), "protected combat art counted as safe")
+unchanged.IsProtected = nil
 locked = false
 
 -- A theme change still repaints on the next recapture.

@@ -232,6 +232,7 @@ end
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Defaults.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_Skin", NS)
+assert(loadfile(root .. "/MSUF_Suite_Skin/Rendering/WindowControlPolicy.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(arg[3] or root .. "/MSUF_Suite_Skin/Rendering/WindowControlChrome.lua"))("MSUF_Suite_Skin", NS)
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_Skin/Rendering/WindowControls.lua"))("MSUF_Suite_Skin", NS)
 
@@ -400,8 +401,10 @@ Check(not NS.WindowControls.Attach(protected, "blizzardWindows"), "protected fra
 combat = true
 local other = Frame("CharacterFrame", UIParent)
 other.CloseButton = Frame(nil, other, "Button")
-Check(not NS.WindowControls.Attach(other, "blizzardWindows"), "combat created frame controls")
+Check(NS.WindowControls.Attach(other, "combat-create"), "safe combat window lost its controls")
+other:Hide()
 combat = false
+NS.WindowControls.DisableOwner("combat-create")
 Check(NS.WindowControls.ResetScales() and character.scale == 1
     and NS.DB.windowControls.scales.CharacterFrame == nil, "reset failed")
 Check(NS.WindowControls.ResetPositions()
@@ -451,7 +454,6 @@ Check(state.grip.scripts.OnUpdate == nil and state.drag == nil
 mouseDown = true
 state.grip.scripts.OnMouseDown(state.grip, "LeftButton")
 character:Hide()
-state.grip.scripts.OnUpdate(state.grip)
 Check(state.grip.scripts.OnUpdate == nil and state.drag == nil,
     "hiding the panel left the scale drag running")
 character:Show()
@@ -485,13 +487,14 @@ Check(character.point[4] == 150 / character.scale,
     "the panel layout hook stayed suspended after a failed reset")
 UpdateUIPanelPositions = nativeLayout
 
--- Stored scales wait out combat and never touch a protected panel; a panel
--- that became protected loses its grip and title strip.
+-- Stored scales remain stable in combat for safe panels. Protected panels
+-- retain their native geometry and lose their controls outside combat.
 local scaleBefore = character.scale
 NS.DB.windowControls.scales.CharacterFrame = 1.25
 combat = true
 NS.WindowControls.Refresh()
-Check(character.scale == scaleBefore, "a profile refresh scaled a panel in combat")
+Check(character.scale == 1.25, "a safe combat profile refresh lost its selected scale")
+scaleBefore = character.scale
 combat = false
 character.protected = true
 NS.WindowControls.Refresh()
@@ -543,8 +546,8 @@ NS.Client.isForever = false
 spells.NineSlice = Frame(nil, spells)
 spells.NineSlice:SetFrameLevel(5500)
 Check(NS.WindowControls.Attach(spells, "blizzardWindows"), "the spellbook panel was not attached")
-Check(NS.WindowControls.states[spells].grip:GetFrameLevel() == spells:GetFrameLevel() + 20,
-    "Forever layering changed the Retail spellbook controls")
+Check(NS.WindowControls.states[spells].grip:GetFrameLevel() == spells.NineSlice:GetFrameLevel() + 20,
+    "Mainline spellbook grip stayed beneath native chrome")
 NS.Client.isForever = previousSpellsFlavor
 NS.DB.windowControls.scales.PlayerSpellsFrame = 0.8
 NS.DB.windowControls.positions.PlayerSpellsFrame = { x = 400, y = -100 }
@@ -566,13 +569,14 @@ Check(NS.WindowControls.Attach(spells, "blizzardWindows") and spells.scale == 0.
 NS.DB.windowControls.scales.PlayerSpellsFrame, NS.DB.windowControls.positions.PlayerSpellsFrame = nil, nil
 NS.WindowControls.Refresh()
 
--- Forever's portrait chrome is above its content pages: PlayerSpells sets
+-- Both clients raise portrait chrome above their content: PlayerSpells sets
 -- NineSlice to 5500; professions inherits the portrait level 500, above its
 -- CraftingPage/BookPage at 100. Our grip must render above that chrome and
 -- follow subsequent native frame-level changes without touching the pages.
 do
     local previousSpellbook = _G.PlayerSpellsFrame
-    NS.Client.isForever = true
+    for _, flavor in ipairs({ "Mainline", "Forever" }) do
+    NS.Client.isForever = flavor == "Forever"
     for _, name in ipairs({ "PlayerSpellsFrame", "ProfessionsFrame" }) do
         local panel = Frame(name, UIParent)
         panel.NineSlice = Frame(nil, panel)
@@ -590,9 +594,6 @@ do
             local impostor = Frame(name, UIParent)
             impostor.protected = true
             Check(not NS.WindowControls.Attach(impostor, "foreverBooks"), "a named impostor bypassed protection")
-            NS.Client.isForever = false
-            Check(not NS.WindowControls.Attach(panel, "foreverBooks"), "Retail gained the protected spellbook exception")
-            NS.Client.isForever = true
         else
             panel.CraftingPage = page
         end
@@ -684,6 +685,7 @@ do
         NS.DB.windowControls.positions[name] = nil
     end
     NS.WindowControls.DisableOwner("foreverBooks")
+    end
     _G.PlayerSpellsFrame = previousSpellbook
     NS.Client.isForever = false
 end
@@ -738,8 +740,10 @@ do
     combat = true
     lfgState.titleDrag.scripts.OnDragStart(lfgState.titleDrag)
     lfgState.grip.scripts.OnMouseDown(lfgState.grip, "LeftButton")
-    Check(not lfg.moving and not lfgState.grip.scripts.OnUpdate and lfg.scale == scale,
-        "Forever geometry changed during combat")
+    Check(lfg.moving and lfgState.grip.scripts.OnUpdate and lfg.scale == scale,
+        "safe Forever geometry controls were disabled in combat")
+    lfgState.grip.scripts.OnMouseUp(lfgState.grip)
+    lfgState.titleDrag.scripts.OnDragStop(lfgState.titleDrag)
     combat = false
     lfgState.minimize.scripts.OnClick(lfgState.minimize)
     combat = true
@@ -845,8 +849,9 @@ do
         NextFrame()
         combatEdge = true
         controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
-        Check(not controls.grip.scripts.OnUpdate and map.scale == scale,
-            flavor .. " map grip started at the combat edge")
+        Check(controls.grip.scripts.OnUpdate and map.scale == scale,
+            flavor .. " safe map grip failed at the combat edge")
+        controls.grip.scripts.OnMouseUp(controls.grip)
         combatEdge = false
         NS.WindowControls.DisableOwner(owner)
         Check(not controls.grip.shown and not controls.titleDrag.shown and map.scale == 1,
@@ -985,7 +990,9 @@ do
         combatEdge = true
         controls.titleDrag.scripts.OnDragStart(controls.titleDrag)
         controls.grip.scripts.OnMouseDown(controls.grip, "LeftButton")
-        Check(not panel.moving and not controls.grip.scripts.OnUpdate, name .. " wrote geometry at combat edge")
+        Check(panel.moving and controls.grip.scripts.OnUpdate, name .. " lost safe controls at combat edge")
+        controls.grip.scripts.OnMouseUp(controls.grip)
+        controls.titleDrag.scripts.OnDragStop(controls.titleDrag)
         combatEdge = false
         NS.WindowControls.DisableOwner(owner)
         Check(not controls.titleDrag.shown and not controls.grip.shown

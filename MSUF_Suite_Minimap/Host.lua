@@ -450,7 +450,8 @@ local function ClampOutside(c, reach)
     MM.style:Paint(c, 1, nil, true, MM.width, MM.height)
     local extent = math.max(MM.width, MM.height)
     if c.styleTexture ~= NS.MinimapStyleTexture.NONE and c.styleAlpha > 0 then
-        reach = math.max(reach, math.max(0, extent * (c.styleScale / 100 - 1) / 2)
+        local native = c.styleTexture == NS.MinimapStyleTexture.BLIZZARD and 226 / 198 or 1
+        reach = math.max(reach, math.max(0, extent * (c.styleScale / 100 * native - 1) / 2)
             + math.max(math.abs(c.styleX), math.abs(c.styleY)))
     end
     if c.styleGlow and c.styleGlowAlpha > 0 then

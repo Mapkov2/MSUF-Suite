@@ -77,7 +77,7 @@ local NS = {
     BlizzardYellow = { TrackFrame = Noop, TrackMenuSelection = Noop },
     Checkmarks = { TrackFrame = Noop, TrackDropdown = Noop, UntrackOwner = Noop },
     CharacterDetails = { IsHost = False }, CharacterStats = { IsHost = False }, EQoLCharacter = { IsHost = False },
-    WindowControls = { Attach = Noop },
+    WindowControls = { TrackFocus = function() end, Attach = Noop },
     ControlSkin = { DisableOwner = Noop }, IconSkin = { DisableOwner = Noop },
     ScrollBarSkin = { DisableOwner = Noop },
 }

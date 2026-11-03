@@ -5,6 +5,7 @@ B.Module("chat", {
     title = "Chat",
     description = "Style Blizzard's native chat windows, tabs and input line. Links, channels, filters, docking and message delivery remain Blizzard-owned.",
     page = "suite_chat", optIn = true,
+    cvars = { showTimestamps = true },
     conflicts = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy", "Prat-3.0", "Chattynator", "Chatter" },
     summary = "look fontSize tabFontSize tabAccent panelAlpha sidebarPanel sidebarWidth inputPanel inputAlpha"
         .. " copyMessages",
@@ -135,6 +136,9 @@ B.Section(id, "tabs", "Tabs and accent", {
     B.Color("tabInactiveBorder", "Inactive tab border", initial.borderColor),
     B.Bool("hideTabArt", "Hide Blizzard tab backgrounds", false),
     B.Bool("tabPanel", "Dark tab strip", initial.tabPanel),
+    B.Bool("headerClock", "Show clock in chat header", false),
+    B.Bool("headerClock24Hour", "Use 24-hour chat clock", false),
+    B.Bool("headerClockLocalTime", "Use local time for chat clock", false),
     B.Bool("tabAccent", "Underline chat tabs", initial.tabAccent),
     B.Bool("coloredUnreadTabs", "Color unread tabs by message type", false),
     B.Font("tabFont", "Font"),
@@ -202,6 +206,7 @@ B.Section(id, "tools", "Chat tools", {
         "Blizzard keeps 128 lines in each window. A higher limit lets you scroll back further and lets saved history fill the window."),
     B.Bool("linkURLs", "Clickable URLs with a copy box", false),
     B.Bool("allTimestamps", "Timestamp every public displayed message", false),
+    B.Bool("hideNativeTimestamps", "Hide Blizzard message timestamps", false),
     B.String("timestampFormat", "Custom timestamp format", "[%H:%M]", 64),
     B.Bool("shortenChannels", "Abbreviate channel prefixes", false),
     B.String("channelShortcuts", "World channel shortcuts (name=short; name=short)", "", 256),
@@ -324,6 +329,8 @@ textRules.inputColor.enableKey = "inputPanel"
 textRules.inputAlpha.enableKey = "inputPanel"
 -- The tab strip gap, and the individual tab backgrounds with their parts, need the dark tab strip.
 textRules.tabPanelGap.enableKey = "tabPanel"
+textRules.headerClock24Hour.enableKey = "headerClock"
+textRules.headerClockLocalTime.enableKey = "headerClock"
 textRules.tabIndividualPanels.enableKey = "tabPanel"
 for _, key in ipairs({ "tabActiveBackground", "tabInactiveBackground", "tabActiveAlpha", "tabInactiveAlpha",
     "tabBorderSize", "tabActiveBorder", "tabInactiveBorder" }) do

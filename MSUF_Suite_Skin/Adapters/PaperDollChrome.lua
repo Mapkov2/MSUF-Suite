@@ -86,23 +86,38 @@ function Chrome:ForActiveOwners(suffix, callback)
     end
 end
 
+local function Root(self) return _G[self.rootName] end
+
+local function VisibleRoot(self)
+    local root = Root(self)
+    return root and not Safety.IsForbidden(root) and Safety.Read(root, "IsVisible") ~= false
+        and Safety.Read(root, "IsShown") ~= false
+end
+
 function Chrome:SkinSlot(state, slot)
-    if not state.active or not slot or not self.exactSlots[slot] or NS.IsCombatLocked() then
+    if not state.active or not slot or not self.exactSlots[slot] or not VisibleRoot(self) then return false end
+    local combat = NS.IsCombatLocked()
+    if combat and not self.safeCombatApply or not Safety.CanCreateRegions(slot, not combat) then
+        if combat then self:RunOrDefer(state, "slots", self.skinAllSlots) end
         return false
     end
-    Chrome.Attach(state, slot, SLOT_SPEC, true)
     local icon = Field(slot, "Icon") or Field(slot, "icon")
         or (self.slotIcon and self.slotIcon(slot))
     local border = Field(slot, "IconBorder") or Field(slot, "iconBorder")
+    if icon and not Safety.CanDecorate(icon, not combat) or border and not Safety.CanDecorate(border, not combat) then
+        if combat then self:RunOrDefer(state, "slots", self.skinAllSlots) end
+        return false
+    end
+    Chrome.Attach(state, slot, SLOT_SPEC, true)
     if icon and border then
         -- The kit's scratch spec: slot updates allocate no table.
-        Kit.SkinItemIcon(slot, state.owner, icon, border, true)
+        Kit.SkinItemIcon(slot, state.owner, icon, border, not combat)
     end
     return true
 end
 
 function Chrome:SkinAllSlots(state)
-    if not state.active or NS.IsCombatLocked() then return false end
+    if not state.active or not VisibleRoot(self) or NS.IsCombatLocked() and not self.safeCombatApply then return false end
     local applied = false
     for index = 1, #self.slotNames do
         local name = self.slotNames[index]
@@ -116,19 +131,12 @@ function Chrome:SkinAllSlots(state)
     return applied
 end
 
--- Native slot updates: one slot now, or, in combat, one bounded pass over
--- all slots after PLAYER_REGEN_ENABLED for the whole combat window.
+-- Safe visible slots repaint immediately. Protected targets share one cached
+-- completion after combat; closed windows never enter a per-slot pass.
 function Chrome:RefreshSlot(slot)
-    if not self.exactSlots[slot] then return end
-    local skinAll = self.skinAllSlots
+    if not self.exactSlots[slot] or not VisibleRoot(self) then return end
     for _, state in pairs(self.owners) do
-        if state.active then
-            if NS.IsCombatLocked() then
-                self:RunOrDefer(state, "slots", skinAll)
-            else
-                Dispatch(Chrome.SkinSlot, self, state, slot)
-            end
-        end
+        if state.active then Dispatch(Chrome.SkinSlot, self, state, slot) end
     end
 end
 
@@ -157,10 +165,11 @@ function Chrome:Activate(owner)
     local state = self:OwnerState(owner)
     state.active = true
     if NS.IsCombatLocked() then
+        -- Full completion still owns optional integrations and protected descendants.
         self:RunOrDefer(state, "apply", self.applyOrWait)
-        return false, "combat"
+        if not self.safeCombatApply or not Safety.CanCreateRegions(Root(self)) then return false, "combat" end
     end
-    if not _G[self.rootName] then
+    if not Root(self) then
         if self:ScheduleLoad() then return true, "waiting" end
         return false, "missing"
     end

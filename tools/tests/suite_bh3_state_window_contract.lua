@@ -18,9 +18,12 @@ BH3("CX9-05",function()
     assert(NS.WindowControls.Attach(frame,"bh3-combat"))
     frame:Hide();NS.DB.windowControls.scales.GameMenuFrame=1.4
     _G.combat=true;frame:Show()
-    assert(frame.scale~=1.4,"CX9-05: panel geometry changed in combat")
-    _G.combat=false
-    local callback=assert(combatJobs["windowControls:show:GameMenuFrame"],"CX9-05: combat reopen queued no replay")
+    assert(frame.scale==1.4,"CX9-05: safe combat reopen lost the saved layout")
+    assert(not combatJobs["windowControls:show:GameMenuFrame"],"CX9-05: safe combat reopen queued work")
+    frame:Hide();frame.protected=true;frame.scale=0.9;frame:Show()
+    assert(frame.scale==0.9,"CX9-05: protected panel geometry changed in combat")
+    _G.combat=false;frame.protected=false
+    local callback=assert(combatJobs["windowControls:show:GameMenuFrame"],"CX9-05: protected reopen queued no replay")
     combatJobs["windowControls:show:GameMenuFrame"]=nil;callback()
     assert(frame.scale==1.4,"CX9-05: queued reopen did not restore the saved layout")
 end)

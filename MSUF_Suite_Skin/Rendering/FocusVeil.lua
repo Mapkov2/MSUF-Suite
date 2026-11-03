@@ -5,14 +5,21 @@ local _, NS = ...
 -- Native dropdown close callbacks retain ownership of every menu operation.
 local FocusVeil = { roots = setmetatable({}, { __mode = "k" }) }
 NS.FocusVeil = FocusVeil
+local WindowMenuOpened, WindowMenuClosed = function() end, function() end
+function FocusVeil.SetWindowFocusProvider(opened, closed) WindowMenuOpened, WindowMenuClosed = opened, closed end
 local Safety, Motion = NS.Safety, NS.Motion
+local combat = NS.IsCombatLocked()
 local strata = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
     FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
 
 local function Allowed()
     local db = NS.DB
     return db and db.enabled and db.theme.dropdownDimming ~= false
-        and not Motion.combat and not NS.IsCombatLocked()
+end
+
+local function Writable()
+    return not Safety.IsForbidden(FocusVeil.overlay)
+        and (not Safety.GetProtection(FocusVeil.overlay) or not combat and not NS.IsCombatLocked())
 end
 
 function FocusVeil.Clear()
@@ -21,6 +28,8 @@ function FocusVeil.Clear()
     FocusVeil.hiding = false
     if FocusVeil.group then FocusVeil.group:Stop() end
     if FocusVeil.overlay then
+        if not Writable() then FocusVeil.pending = true return end
+        FocusVeil.pending = nil
         FocusVeil.overlay:Hide()
         FocusVeil.overlay:SetAlpha(0)
         FocusVeil.overlay:ClearAllPoints()
@@ -51,6 +60,7 @@ local function EnsureOverlay()
 end
 
 local function Fade(to)
+    if not Writable() then FocusVeil.Clear() return end
     local overlay = FocusVeil.overlay
     local from = Safety.Read(overlay, "GetAlpha") or 0
     if Safety.Read(FocusVeil.group, "IsPlaying") then
@@ -92,12 +102,13 @@ local function FindRoot(dropdown)
 end
 
 function FocusVeil.Open(lease, dropdown, menu)
+    WindowMenuOpened(lease, dropdown, menu)
     if not Allowed() or not menu or Safety.IsForbidden(menu) then
         FocusVeil.Clear()
         return
     end
     local root = FindRoot(dropdown)
-    if not root or not Safety.CanDecorate(root, true) or Safety.Read(root, "IsVisible") ~= true then
+    if not root or not Safety.CanDecorate(root) or Safety.Read(root, "IsVisible") ~= true then
         FocusVeil.Clear()
         return
     end
@@ -107,6 +118,8 @@ function FocusVeil.Open(lease, dropdown, menu)
         return
     end
     local overlay = EnsureOverlay()
+    if not Writable() then FocusVeil.Clear() return end
+    FocusVeil.pending = nil
     FocusVeil.lease, FocusVeil.menu, FocusVeil.root = lease, menu, root
     FocusVeil.closingLease = nil
     FocusVeil.hiding = false
@@ -124,6 +137,7 @@ function FocusVeil.Open(lease, dropdown, menu)
 end
 
 function FocusVeil.Close(lease, menu)
+    WindowMenuClosed(lease, menu)
     if FocusVeil.lease ~= lease or menu and FocusVeil.menu ~= menu then return end
     FocusVeil.closingLease = lease
     FocusVeil.lease, FocusVeil.menu = nil, nil
@@ -137,7 +151,11 @@ end
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-eventFrame:SetScript("OnEvent", FocusVeil.Clear)
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:SetScript("OnEvent", function(_, event)
+    combat = event == "PLAYER_REGEN_DISABLED"
+    if FocusVeil.pending or FocusVeil.root and not Safety.CanDecorate(FocusVeil.root) then FocusVeil.Clear() end
+end)
 local function SettingsChanged(_, domain)
     if not FocusVeil.root then return end
     local surface = NS.Registry.GetSurface(FocusVeil.root)

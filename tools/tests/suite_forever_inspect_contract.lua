@@ -78,7 +78,7 @@ local ns = {
     CombatGate = { RunOrDefer = function(_, callback) callback(); return true end, Cancel = noop },
     GenericWindows = { IsCategoryEnabled = function() return true end },
     CharacterDetails = { Apply = noop, Disable = noop },
-    WindowControls = { Attach = noop },
+    WindowControls = { TrackFocus = function() end, Attach = noop },
 }
 ns.Safety = assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", ns) or ns.Safety
 for _, file in ipairs({ "AdapterKit", "PaperDollChrome", "InspectPanel" }) do

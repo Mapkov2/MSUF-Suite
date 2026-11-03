@@ -22,6 +22,8 @@ MUTANTS = (
      "if true or not Allowed() or domain == \"profile\" or not surface or surface.visible == false"),
     ("reduced motion dimming", "Rendering/FocusVeil.lua",
      "if not Motion.Enabled() then", "if false then"),
+    ("protected focus overlay", "Rendering/FocusVeil.lua",
+     "if not Writable() then FocusVeil.pending = true return end", "-- unsafe overlay written"),
     ("provider rebuild snap", "Adapters/AddonListMotion.lua",
      "provider ~= nil and provider == state.provider", "provider ~= nil"),
     ("pooled row release", "Adapters/AddonListMotion.lua",

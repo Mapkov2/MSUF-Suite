@@ -62,6 +62,15 @@ for pass = 1, 2 do
     end
     local world = run()
     local P = world.optionsNS
+    local summaryCache
+    for index = 1, 10 do
+        local name, value = debug.getupvalue(P.SummaryPriority, index)
+        if name == "SUMMARY_KEYS" then summaryCache = value break end
+    end
+    assert(summaryCache, "summary cache was not found")
+    for _, value in pairs(summaryCache) do
+        assert(type(value) ~= "table", "hidden summary ranks were compiled during load")
+    end
     -- Deferred rank compilation has exactly the same values and override rules.
     for id, spec in pairs(P.catalog) do
         local rank = 0

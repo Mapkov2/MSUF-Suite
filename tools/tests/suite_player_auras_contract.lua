@@ -65,9 +65,11 @@ function frame:RefreshConsolidationFrameVisibility()end
 frame.UpdateAuraButtons=NativeBuffUpdate
 function frame:UpdateGridLayout()for _,b in ipairs(self.auraFrames)do b:SetSize(30,40)end end
 _G.BuffFrame=frame
-local P={NS={IsCombatLocked=function()return false end,IsSecret=function()return false end,
+local P={NS={IsCombatLocked=function()return false end,IsSecret=function(v)return type(v)=='table' and v.secret==true end,
+ Safety={IsForbidden=function(r)return r.forbidden==true end},
  HostBridge={IconSkinLook=function()end,PaintIconSkin=function()return false end,WatchIconSkins=function()end}},Suite={}}
 local S=P.Suite
+S.Finite=function(v)return not P.NS.IsSecret(v) and type(v)=='number' and v==v and v>-math.huge and v<math.huge end
 S.CreateFrame=function()return Region()end
 S.CreateTexture=function()return Region()end
 S.RGB=function()return 0,0,0 end
@@ -80,6 +82,43 @@ P.PlayerAuraSkins={Yield=function()end} -- the skin-only piece (PlayerAuraSkins.
 assert(loadfile(root .. '/MSUF_Suite_QualityOfLife/PlayerAuras.lua'))('MSUF_Suite_QualityOfLife',P)
 captured.config={iconWidth=52,iconHeight=26,perRow=12,spacing=4,rowSpacing=8,x=-12,y=0,debuffOffset=80,borderColor='000000',borderSize=2,font='x',fontSize=16,showDuration=true}
 captured.context={Event=function()end}
+if arg[2] then
+ local mode=arg[2]
+ local b=frame.auraFrames[1]
+ local secret={secret=true}
+ local prior={GetNumPoints=b.GetNumPoints,GetPoint=b.GetPoint,GetWidth=b.GetWidth,GetScale=b.GetScale,GetFrameLevel=b.GetFrameLevel}
+ b:SetPoint('TOPLEFT',frame,'TOPLEFT',7,-9)
+ frame.auraFrames[2]:SetShown(true)
+ if mode=='count_nil' then b.GetNumPoints=function()end
+ elseif mode=='count_secret' then b.GetNumPoints=function()return secret end
+ elseif mode=='count_nan' then b.GetNumPoints=function()return 0/0 end
+ elseif mode=='point_empty' then b.GetPoint=function()end
+ elseif mode=='point_nil' then b.GetPoint=function()return nil end
+ elseif mode=='point_partial' then b.GetPoint=function()return 'TOPLEFT' end
+ elseif mode=='point_coord_nil' then b.GetPoint=function()return 'TOPLEFT',frame,'TOPLEFT',nil,0 end
+ elseif mode=='size_nil' then b.GetWidth=function()end
+ elseif mode=='scale_nil' then b.GetScale=function()end
+ elseif mode=='scale_secret' then b.GetScale=function()return secret end
+ elseif mode=='level_nil' then b.GetFrameLevel=function()end
+ elseif mode=='level_secret' then b.GetFrameLevel=function()return secret end
+ elseif mode=='forbidden' then b.forbidden=true
+ else error('Unknown geometry mode: '..mode) end
+ captured:Enable()
+ assert(frame.auraFrames[2].width==52,'one unavailable aura prevented the remaining row from laying out')
+ if not mode:match('^level_') then
+  assert(b.width==30 and b.scale==1 and #b.points==1 and b.points[1][4]==7,
+   'unavailable original geometry was overwritten')
+ end
+ for key,value in pairs(prior)do b[key]=value end
+ b.forbidden=nil
+ frame:UpdateGridLayout()
+ assert(b.width==52 and b.height==26,'readable geometry did not recover on the next native layout')
+ captured:Disable()
+ assert(b.width==30 and b.height==40 and b.scale==1 and #b.points==1 and b.points[1][4]==7,
+  'recovered aura did not restore its original native geometry')
+ print('Player aura geometry: '..mode..' preserved and recovered')
+ return
+end
 captured:Enable()
 assert(frame.auraFrames[1].width==52,'initial buff not styled')
 frame.auraInfo={{},{}}
@@ -111,4 +150,18 @@ assert(frame.auraFrames[2].TempEnchantBorder.width==54 and frame.auraFrames[2].T
 captured:Disable()
 assert(frame.auraFrames[1].width==30 and frame.auraFrames[1].Icon.width==30,'disabled native aura geometry was not restored')
 assert(frame.auraFrames[1].Duration.font[2]==10 and frame.auraFrames[1].DebuffBorder.width==40,'native font/border were not restored')
+-- Blizzard setup seats both native containers at the minimap, independent of saved Edit Mode positions.
+local debuff=Region();debuff.AuraContainer=Region();debuff.auraFrames={Button(true)}
+debuff.ShouldShowAura=frame.ShouldShowAura;debuff.IsEditing=frame.IsEditing;debuff.SetIsEditing=frame.SetIsEditing
+debuff.UpdateAuraButtons=NativeAuraUpdate;debuff.UpdateGridLayout=frame.UpdateGridLayout
+_G.DebuffFrame=debuff
+captured.config.iconWidth,captured.config.iconHeight,captured.config.fontSize=28,28,10
+captured.config.x,captured.config.y,captured.config.debuffOffset=-10,0,88
+captured:Enable()
+assert(frame.points[1][1]=='TOPRIGHT' and frame.points[1][2]==Minimap and frame.points[1][3]=='TOPLEFT')
+assert(frame.points[1][4]==-10 and frame.points[1][5]==0,'buffs did not move beside minimap')
+assert(debuff.points[1][2]==Minimap and debuff.points[1][4]==-10 and debuff.points[1][5]==-88,
+ 'debuffs did not follow the minimap below the buff rows')
+assert(frame.auraFrames[1].width==28 and debuff.auraFrames[1].width==28)
+captured:Disable()
 print('player aura gain, edit mode font reset, rectangular border and disable restore: OK')

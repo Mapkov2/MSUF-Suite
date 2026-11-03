@@ -192,7 +192,8 @@ local function Cooldowns(scene, modules)
     if not config or config.enabled == false then return end
     if config.ess_on == false then return end
     local size, gap = Number(config.ess_size, 40), Number(config.ess_spacing, 0)
-    local count = min((scene.layout == "modernDark" or scene.layout == "blizzard") and 8 or 6, max(1, Number(config.ess_perRow, 6)))
+    local compact = scene.layout == "modernDark" or scene.layout == "blizzard" or scene.layout == "darkRaid"
+    local count = min(compact and 8 or 6, max(1, Number(config.ess_perRow, 6)))
     local width, height = count * size + (count - 1) * gap, size
     -- The supplied Essential rows grow down from a TOP point on screen
     -- CENTER (CDM Grid.Point/Layout). Icon count stays an explicit sample.
@@ -231,28 +232,34 @@ function Model.Build(profile, frames, layout, overrides, viewport)
     scene.frameSettingsAvailable = frames ~= nil and (frames.player ~= nil or frames.target ~= nil or frames.focus ~= nil)
     local modules = PreviewModules(profile, layout, overrides)
     if not modules then return scene end
-    if layout == "modernDark" or layout == "blizzard" then Cooldowns(scene, modules) end
+    if layout == "modernDark" or layout == "blizzard" or layout == "darkRaid" then Cooldowns(scene, modules) end
     Frames(scene, frames)
     ActionBars(scene, modules.actionbars)
     Panels(scene, modules)
-    if layout ~= "modernDark" and layout ~= "blizzard" then Cooldowns(scene, modules) end
+    if layout ~= "modernDark" and layout ~= "blizzard" and layout ~= "darkRaid" then Cooldowns(scene, modules) end
     local resource, cooldown = scene.resource, scene.cooldowns
     if resource and cooldown and layout == "blizzard" and not scene.keepFrames then
         local player = frames.player
         local powerHeight = Number(player.detachedPowerBarHeight, 6)
+        resource.width = cooldown.width
         resource.x = cooldown.x + (cooldown.width - resource.width) / 2
-        resource.y = cooldown.y - 8 - powerHeight - resource.height
-        Add(scene, "playerPower", "Resources", resource.x,
-            resource.y + resource.height - Number(player.detachedPowerBarOffsetY, 0),
-            resource.width, powerHeight, "resource", player)
+        resource.y = cooldown.y - 4 - resource.height - Number(frames.bars.classPowerOffsetY, 0)
+        -- The detached power bar follows the player, so classes without a
+        -- class-resource container still keep their power below Essential.
+        local rect = scene.player
+        Add(scene, "playerPower", "Resources", rect.x + rect.width / 2
+            + Number(player.detachedPowerBarOffsetX, 0) - cooldown.width / 2,
+            rect.y + rect.height - Number(player.detachedPowerBarOffsetY, 0),
+            cooldown.width, powerHeight, "resource", player)
     end
-    if resource and cooldown and ((layout == "forever" and not Suite.Client.isForever) or layout == "modernDark") then
+    local resourceLayout = layout == "modernDark" or layout == "darkRaid" or layout == "forever" and not Suite.Client.isForever
+    if resource and cooldown and resourceLayout then
         -- Profiles.EnsureRetailResourceStack(true) is the installer's final
         -- Retail step. CP_AboveCooldownGap reserves attached power + 4 and
         -- a four-unit gap above Essential. Resolve this on the sample only.
         local player = frames.player
         local powerHeight = Number(player.detachedPowerBarHeight, 6)
-        resource.width = layout == "modernDark" and frames.bars.classPowerWidthMode == "custom"
+        resource.width = (layout == "modernDark" or layout == "darkRaid") and frames.bars.classPowerWidthMode == "custom"
             and Number(frames.bars.classPowerWidth, cooldown.width) or cooldown.width
         resource.x = cooldown.x + (cooldown.width - resource.width) / 2
         resource.y = cooldown.y - 8 - powerHeight - resource.height

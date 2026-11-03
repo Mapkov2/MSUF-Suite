@@ -21,7 +21,7 @@ local LAYER_SECTIONS = { map = "layout", border = "shape", shadow = "shape", orn
     clock = "info_clock", fps = "info_fps", latency = "info_latency", coordinates = "info_coordinates", durability = "info_durability",
     dungeon = "dungeon", calendarDay = "info_calendarday", location = "info_location", weather = "info_weather", difficultyText = "info_difficulty",
     tracking = "elements", calendar = "elements", mail = "elements", crafting = "elements",
-    compartment = "elements", difficulty = "elements", zoom = "behavior", compass = "behavior" }
+    compartment = "elements", difficulty = "elements", queueStatus = "elements", zoom = "behavior", compass = "behavior" }
 ------------------------------------------------------------------ offsets
 local function WriteOffsets(key, x, y)
     if P.Combat() then return false end

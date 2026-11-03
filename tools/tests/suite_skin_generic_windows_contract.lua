@@ -297,7 +297,7 @@ NS = {
         SyncNativeVisual = function() return nil end,
         DisableOwner = function() end,
     },
-    WindowControls = { Attach = function() end, DisableOwner = function() end },
+    WindowControls = { TrackFocus = function() end, Attach = function() end, DisableOwner = function() end },
     -- Adapters that load after the generic windows; none owns a frame here.
     CharacterDetails = { IsHost = function() return false end },
     CharacterStats = { IsHost = function() return false end },
@@ -414,9 +414,9 @@ do
     scrollBox:Initialize(rowOne)
     debug.sethook()
     print(("Visible row budget: %d VM; %d visibility reads"):format(instructions, visibilityReads))
-    -- Accepted: 97 -> at most 190 VM instructions and one native visibility
-    -- read for a visible row; hidden rows perform no cosmetic pass.
-    Check(instructions <= 190 and visibilityReads <= 1, "visible row exceeded its visibility gate budget")
+    -- Accepted: the public-row guard adds 20 VM instructions (175 -> 195).
+    -- One native visibility read; hidden rows perform no cosmetic pass.
+    Check(instructions <= 210 and visibilityReads <= 1, "visible row exceeded its visibility gate budget")
     scrollBox.IsVisible = nil
 end
 
@@ -424,7 +424,7 @@ locked = true
 rowOne.childReads, counters.yellow = 0, 0
 scrollBox:Initialize(rowOne)
 locked = false
-Check(rowOne.childReads == 0 and counters.yellow == 0, "pooled rows were painted in combat")
+Check(rowOne.childReads == 0 and counters.yellow > 0, "safe pooled native text was not repainted in combat")
 
 Check(type(listener) == "function", "row registration did not follow theme changes")
 counters.attach = 0
@@ -505,7 +505,7 @@ do
     forever.Client = { isForever = true,
         IsAddOnLoaded = function(addon) return loaded[addon] == true end,
         HasAddOn = function() return true end }
-    forever.WindowControls = {
+    forever.WindowControls = { TrackFocus = function() end,
         Attach = function(frame, owner) attached[frame] = owner end,
         DisableOwner = function() end,
     }
@@ -1501,19 +1501,11 @@ Section("edit mode and game menu pools", function()
     Expect(skinned[buttons[1]] == poolApplies, "the Game Menu late pass re-skinned active pooled buttons")
     Expect(skinned[late] and panelSkinned[msuf],
         "Game Menu buttons added after InitButtons did not receive the Suite skin")
-    Expect(skinnedInset[buttons[1]] == 2 and skinnedInset[late] == 2,
-        "the Game Menu pool or other direct buttons lost their normal inset")
-    -- The reported regression had identical 200x36 button frame bounds for
-    -- Macros and MSUF, but MSUF's painted edge lost two pixels per side.
-    -- Verify the rendered edge reaches those shared bounds after the late pass.
-    local macroBounds = { left = 1180, right = 1380, top = 400, bottom = 364 }
+    Expect(skinnedInset[buttons[1]] == 0 and skinnedInset[late] == 0,
+        "the Game Menu pool or direct buttons lost their shared full-width bounds")
+    -- Compare the painted border on both buttons, not a border to a raw frame.
     local function BorderMatchesMacros(inset)
-        if type(inset) ~= "number" then return false end
-        local msufBounds = { left = 1180, right = 1380, top = 400, bottom = 364 }
-        return msufBounds.left + inset == macroBounds.left
-            and msufBounds.right - inset == macroBounds.right
-            and msufBounds.top - inset == macroBounds.top
-            and msufBounds.bottom + inset == macroBounds.bottom
+        return type(inset) == "number" and inset == skinnedInset[buttons[1]]
     end
     Expect(BorderMatchesMacros(panelInset[msuf]),
         "the MSUF fallback button border does not align with Macros")
@@ -1916,11 +1908,11 @@ Section("prey scouting map", function()
     end
     locked = true
     frame:UpdateTextures()
-    Expect(frame.Border.alpha == 1, "scouting update mutated chrome during combat")
+    Expect(frame.Border.alpha == 0 and pending ~= nil, "safe scouting chrome waited for combat end")
     locked = false
     if pending then pending() end
     Expect(pending ~= nil and frame.Border.alpha == 0,
-        "scouting chrome did not replay after combat")
+        "scouting structural completion lost its styling")
     NS.CombatGate.RunOrDefer = previousDefer
     function frame:IsProtected() return true, true end
     frame:UpdateTextures()
@@ -2684,6 +2676,26 @@ Section("traversal tracks each button once", function()
     GenericWindows.ApplyDescendant(child, "track-once", MODE)
     Expect(tracked[child] == false and tracked[grandchild] == true,
         "a descendant pass skipped the button of its own root")
+    local pooledMode = { maxDepth = 3, maxNodes = 16 }
+    function child:IsProtected() return self.protected == true, false end
+    locked = true
+    tracked = {}
+    Expect(GenericWindows.ApplyDescendant(child, "track-once", pooledMode) and tracked[child] == false,
+        "safe native pooled descendant could not initialize during combat")
+    tracked = {}
+    Expect(GenericWindows.RefreshDescendant(child, "track-once", pooledMode) and tracked[child] ~= nil,
+        "safe native pooled descendant lost its combat recolor")
+    child.protected = true
+    tracked = {}
+    Expect(not GenericWindows.ApplyDescendant(child, "track-once", pooledMode)
+        and not GenericWindows.RefreshDescendant(child, "track-once", pooledMode) and next(tracked) == nil,
+        "protected descendant entered combat styling")
+    child.protected = false
+    child.IsVisible = function() return false end
+    Expect(not GenericWindows.ApplyDescendant(child, "track-once", pooledMode)
+        and not GenericWindows.RefreshDescendant(child, "track-once", pooledMode), "hidden descendant performed combat work")
+    child.IsVisible = nil
+    locked = false
     NS.Checkmarks.TrackFrame = trackFrame
     GenericWindows.Disable("track-once")
 end)
@@ -2915,17 +2927,28 @@ Section("hidden windows defer cosmetic work until visible", function()
     }
     panel = Window("PVPUIFrame")
     _G.PVPUIFrame = panel
+    local priorQueue, priorHonor, priorNativeLock = _G.PVPQueueFrame, _G.HonorFrame, InCombatLockdown
+    local specialCard = Frame("ProtectedHonorBonus")
+    function specialCard:IsProtected() return true, false end
+    _G.HonorFrame = { BonusFrame = specialCard }
+    _G.PVPQueueFrame = {}
+    InCombatLockdown = function() return false end
     NS.MajorWindows.Apply("cold-combat")
     before = Paints()
     locked = true
     panel:Display(true)
-    Expect(Paints() == before and next(pending) ~= nil, "first show painted during combat or lost its deferred work")
+    Expect(Paints() > before and next(pending) ~= nil, "first combat show lost safe styling or structural completion")
+    Expect(specialCard.surfaceSpec == nil, "combat show painted a protected specialized card")
+    before = Paints()
     panel:Display(false)
     locked = false
     for key, callback in pairs(pending) do pending[key] = nil; callback() end
     Expect(Paints() == before, "combat end painted a window that had hidden again")
     panel:Display(true)
     Expect(Paints() > before, "post-combat first show did not apply the latest skin")
+    Expect(specialCard.surfaceSpec and specialCard.surfaceSpec.role == "panel",
+        "post-combat completion lost the specialized protected card")
+    _G.PVPQueueFrame, _G.HonorFrame, InCombatLockdown = priorQueue, priorHonor, priorNativeLock
     NS.MajorWindows.Disable("cold-combat")
     NS.CombatGate = originalGate
     _G.PVPUIFrame = previous
@@ -2951,6 +2974,21 @@ Section("hidden windows defer cosmetic work until visible", function()
     before = Paints()
     frame:Display(true)
     Expect(Paints() == before, "hidden catalog job survived owner disable")
+
+    local combatWindow = Window("CombatFirstWindow")
+    local combatEntry = { id = "combat-first-window", category = "utility", frames = { combatWindow } }
+    GenericWindows.ApplyEntry(combatEntry, "combat-first-window")
+    before = Paints()
+    locked = true
+    combatWindow:Display(true)
+    Expect(combatWindow.surfaceSpec ~= nil and Paints() > before,
+        "unprotected catalog window lost its skin on first combat opening")
+    local combatReads, combatPaints = combatWindow.childReads, Paints()
+    for _ = 1, 100 do combatWindow:Display(false); combatWindow:Display(true) end
+    Expect(combatWindow.childReads == combatReads and Paints() == combatPaints,
+        "clean combat reopening repeated traversal or painting")
+    locked = false
+    GenericWindows.Disable("combat-first-window")
 
     -- Protected HUD roots (ExtraActionBarFrame, OverrideActionBar, SpellFlyout,
     -- TargetFrame ...) are decided at once, as before hidden deferral: they show
@@ -3092,6 +3130,47 @@ Section("hidden windows defer cosmetic work until visible", function()
         Cancel = function(key) deferred[key] = nil end,
         IsPending = function(key) return deferred[key] ~= nil end,
     }
+    local savedLockdown = InCombatLockdown
+    InCombatLockdown = function() return false end
+    local safe, guarded = Window("CombatLoadedSafe"), Window("CombatLoadedProtected")
+    safe.shown, guarded.shown = true, true
+    local nativeFade, guardedWrites = NS.Cosmetics.Fade, 0
+    local guardedArt = Frame("ProtectedNamedChrome")
+    function guardedArt:IsProtected() return true, false end
+    safe.Bg = guardedArt
+    NS.Cosmetics.Fade = function(region, ...)
+        if region == guardedArt then guardedWrites = guardedWrites + 1 end
+        return nativeFade(region, ...)
+    end
+    function guarded:IsProtected() return true, false end
+    local loadedEntry = { id = "combat-loaded", category = "utility", frames = { safe, guarded } }
+    locked = true -- InCombatLockdown is still false at this event edge.
+    GenericWindows.ApplyEntry(loadedEntry, "combat-loaded")
+    Expect(safe.surfaceSpec ~= nil and guarded.surfaceSpec == nil and guarded.childReads == 0,
+        "combat-loaded entry skipped its safe root or traversed its protected sibling")
+    Expect(guardedWrites == 0, "combat pass wrote protected named chrome")
+    local safeReads = safe.childReads
+    safe:Display(false)
+    locked = false
+    for key, callback in pairs(deferred) do deferred[key] = nil; callback() end
+    Expect(safe.childReads == safeReads and guarded.surfaceSpec ~= nil,
+        "combat completion painted a closed root or lost protected work")
+    safe:Display(true)
+    Expect(safe.childReads > safeReads, "post-combat reveal lost structural completion")
+    Expect(guardedWrites > 0, "post-combat reveal lost protected named chrome")
+    NS.Cosmetics.Fade = nativeFade
+    GenericWindows.Disable("combat-loaded")
+    local inactive = Window("CombatDisabled")
+    inactive.shown = true
+    locked = true
+    GenericWindows.ApplyEntry({ id = "combat-disabled", category = "utility", frames = { inactive } }, "combat-disabled")
+    GenericWindows.Disable("combat-disabled")
+    local inactiveReads = inactive.childReads
+    locked = false
+    for key, callback in pairs(deferred) do deferred[key] = nil; callback() end
+    Expect(inactive.childReads == inactiveReads, "disabled owner replayed a combat completion")
+
+    InCombatLockdown = savedLockdown
     local rows = { Frame("CatchupOne"), Frame("CatchupTwo") }
     local catchup = Window("CombatScrollBox")
     catchup.HasView, catchup.RegisterCallback = list.HasView, list.RegisterCallback
@@ -3100,10 +3179,23 @@ Section("hidden windows defer cosmetic work until visible", function()
     GenericWindows.ApplyFrame(Frame("CatchupHost", { catchup }), "catchup-rows", MODE)
     locked = true
     catchup:Display(true)
-    Expect(rows[1].surfaceSpec == nil and rows[2].surfaceSpec == nil, "row catchup painted during combat")
+    Expect(rows[1].surfaceSpec ~= nil and rows[2].surfaceSpec ~= nil, "safe row catchup lost combat first-show styling")
     locked = false
     for key, callback in pairs(deferred) do deferred[key] = nil; callback() end
     Expect(rows[1].surfaceSpec ~= nil and rows[2].surfaceSpec ~= nil, "combat first show lost the pending ScrollBox catchup")
+    catchup:Display(false)
+    rows = { Frame("ProtectedCatchupOne"), Frame("ProtectedCatchupTwo") }
+    rowCallback(rowOwner, rows[1])
+    function catchup:IsProtected() return true, false end
+    locked = true
+    catchup:Display(true)
+    Expect(rows[1].surfaceSpec == nil and rows[2].surfaceSpec == nil,
+        "protected ScrollBox catchup painted during combat")
+    locked = false
+    catchup.IsProtected = nil
+    for key, callback in pairs(deferred) do deferred[key] = nil; callback() end
+    Expect(rows[1].surfaceSpec ~= nil and rows[2].surfaceSpec ~= nil,
+        "combat first show lost the pending ScrollBox catchup")
     catchup:Display(false)
     rows = { Frame("NativeShowOne"), Frame("NativeShowTwo") }
     rowCallback(rowOwner, rows[1])

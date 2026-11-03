@@ -33,8 +33,17 @@ local function Result(owner, parent)
     target:TriggerEvent("layout")
     return target, assert(NS.ContentMotion.records[target])
 end
+local veilWrites = 0
+for _, method in ipairs({ "Hide", "SetAlpha", "ClearAllPoints" }) do
+    local native = NS.FocusVeil.overlay[method]
+    NS.FocusVeil.overlay[method] = function(self, ...)
+        veilWrites = veilWrites + 1
+        return native(self, ...)
+    end
+end
 Edge()
 local base = Steps(Edge)
+assert(veilWrites == 0, "inactive cached focus veil received combat writes")
 LeaveCombat()
 local hiddenStops = 0
 local hidden = {}
@@ -58,7 +67,11 @@ shown:TriggerEvent("layout")
 local record = NS.ContentMotion.records[shown]
 assert(record.group:IsPlaying(), "reopened results failed to animate")
 Edge()
-assert(not record.group:IsPlaying() and record.owner == nil, "visible result motion did not release on combat")
+assert(record.group:IsPlaying(), "safe visible result motion stopped on combat")
+shown.protected = true
+Edge()
+assert(not record.group:IsPlaying() and record.owner == nil, "unsafe visible result motion did not release on combat")
+shown.protected = false
 shown:Hide()
 NS.ResultMotion.ReleaseOwner("hidden-results")
 
@@ -76,8 +89,12 @@ child.provider = {}
 child:TriggerEvent("layout")
 assert(childRecord.group:IsPlaying(), "parent reopen lost result motion")
 Edge()
+assert(childRecord.group:IsPlaying(), "safe parent reopen lost animation at combat edge")
+child.protected = true
+Edge()
 assert(not childRecord.group:IsPlaying() and childRecord.owner == nil,
-    "parent reopen failed to rejoin combat cancellation")
+    "unsafe parent reopen failed to rejoin combat cancellation")
+child.protected = false
 NS.ResultMotion.ReleaseOwner("parent-results")
 LeaveCombat()
 local target, other = Frame(nil, true), Frame(nil, true)

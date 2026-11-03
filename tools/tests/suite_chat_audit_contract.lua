@@ -123,7 +123,7 @@ assert(loadfile(root .. "/MSUF_Suite_Modules/EditMode.lua"))("test", { NS = ns, 
 
 -- Window handling is the Window.lua file's business; the controller only
 -- needs these to start.
-local chat = { M = {}, DockGeometry = function() end, DockSelection = function() end,
+local chat = { M = {}, ApplyClockSettings = function() end, RefreshClocks = function() end, DisableClock = function() end, DockGeometry = function() end, DockSelection = function() end,
     MessagesRefresh = function() end, BubblesRefresh = function() end,
     ListenInCombat = function(context, event, callback) context:Event(event, callback) end }
 function suite.Install(id, module) eq(id, "chat"); eq(module, chat.M, "installed module") end

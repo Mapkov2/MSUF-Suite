@@ -2,14 +2,8 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.CDM
 -- Settings, spell lists and the Blizzard snapshot -> one plan per shown bar.
--- Rules: explicit list entries claim their key for the first bar that lists
--- them ("one spell, one home"); built-in bars use the current specialization's
--- stock categories for Suite profiles, or the saved Blizzard layout when that
--- mode is selected. Explicit legacy lists append new Blizzard entries; Suite
--- defaults and imported lists replace the built-in bar. Custom bars show
--- their list only; an entry of the wrong family for the bar is skipped.
--- Entry tables are reused by key so runtime fields (icon, cooling, glows)
--- survive a rebuild; what one key stands for is EntryFill.lua's. Cold path.
+-- Built-ins use spec categories or Blizzard layouts; legacy lists append
+-- and imports replace them. Custom lists skip incompatible families.
 local type, pairs = type, pairs
 local EMPTY = C.EMPTY
 local wipe = C.wipe
@@ -89,14 +83,10 @@ function Resolve.ConditionsAllow(ov)
     return true
 end
 ------------------------------------------------------------------ presets
--- Preset rows (Presets.lua): spell IDs become the Blizzard entry that tracks
--- the spell when the catalog has one (base, override or linked ID), so the
--- row claims it off Essential/Utility; otherwise a plain spell entry. Built
--- again only when the catalog's content changed (Catalog.content).
--- Unlearned spells drop out in Materialize before anything is read.
--- presetSpell: plain spell keys that come only from a preset, with their
--- base spell; unlearned ones stay hidden even in previews (every race's
--- racial, other specs' spells).
+-- Preset spell IDs resolve to catalog records (base, override or linked),
+-- else plain spell keys. Rebuilt per catalog content, spec and raid setting.
+-- presetSpell retains fallback bases: unknown preset spells stay hidden,
+-- including previews, before Materialize reads their data.
 -- The Potions and racials row starts with the Healthstones: each item key
 -- stands in for Blizzard's record of its category while the catalog has no
 -- learned one (covered: category -> the learned record with the lowest ID),
@@ -274,11 +264,8 @@ function Resolve.ResumeConditions()
     return false
 end
 
--- A healthstone has two keys, its item and Blizzard's record of its
--- category, and a user list can hold either (the page saves the keys a bar
--- shows). Both name the one that shows now: the learned record, else the
--- item that stands in for it. Claims and list places use this key, so the
--- healthstone keeps its list place and never shows twice. Needs PresetLists.
+-- Healthstone item/native keys share the learned record or its stand-in,
+-- retaining one list place. Needs PresetLists.
 local function Canon(key)
     local category = itemCategory[key]
     if category then
@@ -334,11 +321,22 @@ local function ListOf(i, specLists, presets, defaultsOnly)
     -- one (WoW Forever) every built-in bar follows Blizzard's layout.
     if presets.ess then return Catalog.defaultByBar[def.key], false end
 end
-local function ClaimList(list, slot, family)
+-- Shared rows own native aliases; ordinary spec lists retain independent keys.
+local sharedClaims, hasSharedClaims = {}, false
+local function ClaimKey(key, shared)
+    local src, id = Parse(key)
+    local native = src == "s" and (spellKey[id] or spellKey[BaseSpell(id)]) or key
+    native = native or key
+    if shared then sharedClaims[native], hasSharedClaims = true, true end
+    return sharedClaims[native] and native or key
+end
+local function ClaimList(list, slot, family, shared)
     for j = 1, #list do
         local key = Canon(list[j])
-        if claimed[key] == nil and FamilyOf(key) == family then
-            claimed[key] = slot
+        local claim = key
+        if shared or hasSharedClaims then claim = ClaimKey(key, shared and FamilyOf(key) == family) end
+        if claimed[claim] == nil and FamilyOf(key) == family then
+            claimed[claim] = slot
             local src, id = Parse(key)
             if src == "e" and slotHome[id] == nil then slotHome[id] = slot end
         end
@@ -349,12 +347,14 @@ end
 -- User lists claim first. Among Suite defaults, the dedicated Defensives row
 -- owns its spells before stock/guide Essential and Utility categories do.
 local function Claim(specLists, presets)
+    wipe(sharedClaims)
+    hasSharedClaims = false
     wipe(claimed)
     wipe(slotHome)
     for i, def in ipairs(SLOTS) do
         local view = C.views[def.key]
         if def.custom and view and view.shareContents then
-            ClaimList(C.lists and C.lists.shared and C.lists.shared[def.key] or EMPTY, def.key, KIND_FAMILY[KindOf(i)])
+            ClaimList(C.lists and C.lists.shared and C.lists.shared[def.key] or EMPTY, def.key, KIND_FAMILY[KindOf(i)], true)
         end
     end
     for pass = 1, 2 do
@@ -405,12 +405,12 @@ local function Offer(rec, slot, hidden, out, n)
     end
     return n
 end
--- The bar's own list: keys this bar claimed, in list order.
 local function CollectList(list, explicit, slot, hidden, out, n)
     for j = 1, #list do
         local key = Canon(list[j])
-        if claimed[key] == slot and not used[key] and (explicit or not hidden[key]) then
-            used[key] = true
+        local claim = hasSharedClaims and ClaimKey(key) or key
+        if claimed[claim] == slot and not used[claim] and (explicit or not hidden[key]) then
+            used[claim] = true
             n = n + 1
             out[n] = key
             local src, id = Parse(key)

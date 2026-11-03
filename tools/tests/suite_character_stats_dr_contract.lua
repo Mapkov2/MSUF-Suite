@@ -157,9 +157,10 @@ local function Object(fields)
     function object:IsVisible() return self.shown end
     function object:GetHeight() return self.height end
     function object:SetHeight(height)
-        assert(not combatLocked, "native stat height changed during lockdown")
+        assert(not combatLocked or not self.protected, "protected stat height changed during lockdown")
         self.height = height
     end
+    function object:IsProtected() return self.protected == true, false end
     function object:GetWidth() return self.width or 100 end
     function object:GetFrameLevel() return 1 end
     function object:GetName() return nil end
@@ -207,7 +208,7 @@ NS.IsCombatLocked = function() return combatLocked end
 
 -- PLAYER_REGEN_DISABLED fires before the lockdown starts. A stat pane shown
 -- at the pull keeps its layout (no jump back to Blizzard's rows); a refresh
--- asked for during combat waits for PLAYER_REGEN_ENABLED.
+-- triggered by native updates refreshes safe rows immediately.
 local enumerations = 0
 local statRow = Object({ Label = Object(), Value = Object() })
 local pane = Object({
@@ -237,11 +238,11 @@ assert(statRow.height == laidOut and view.heights[statRow],
     "a stat pane shown at the pull jumped back to Blizzard's row heights")
 combatLocked = true
 stats.Refresh(view)
-assert(statRow.height == laidOut and enumerations == rebuilt,
-    "combat refresh resized or enumerated the native pool")
+assert(statRow.height == laidOut and enumerations == rebuilt + 1,
+    "combat refresh failed to update the safe native pool")
 combatLocked = false
 host.scripts.OnEvent(host, "PLAYER_REGEN_ENABLED")
-assert(enumerations == rebuilt + 1 and not host.events.PLAYER_REGEN_ENABLED,
+assert(enumerations == rebuilt + 2 and not host.events.PLAYER_REGEN_ENABLED,
     "the stat rows were not refreshed after combat")
 
 -- A stat font whose anchoring is secret (its row shows a secret value)
@@ -354,14 +355,15 @@ reopen.host:Show()
 stats.Apply(nativePane, "reopen")
 -- The reopen's native stats update; CharacterPanel calls SyncDetails after
 -- every update during combat (suite_forever_character_contract). Rows
--- restored on close show no details.
+-- restored on close immediately regain details for their current identity.
 stats.SyncDetails(nativePane)
 local occupied = nativePane.ItemLevelFrame.height
     + nativePane.ItemLevelCategory.height + nativePane.AttributesCategory.height
     + nativePane.EnhancementsCategory.height + 8
 for _, row in ipairs(nativeRows) do
     occupied = occupied + row.height
-    assert(not reopen.rows[row].meta:IsShown(), "combat reopen showed stale DR details")
+    assert(reopen.rows[row].meta:IsShown() == (reopen.rows[row].definition ~= nil),
+        "combat reopen did not follow the current stat identity")
 end
 assert(occupied <= nativePane.height, "combat reopen overflowed native stat pane")
 combatLocked = false
@@ -407,9 +409,9 @@ reopen.host:Hide()
 reopen.host:Show()
 assert(Details(6) and not Details(5), "a close and reopen in one fight changed the row details")
 combatLocked = false
-assert(not reopen.host.events.PLAYER_REGEN_ENABLED and NS.CombatGate.GetPendingCount() == 1,
-    "combat reopen did not queue the refresh after its host event was unregistered")
-gateFrame.scripts.OnEvent(gateFrame, "PLAYER_REGEN_ENABLED")
+assert(reopen.host.events.PLAYER_REGEN_ENABLED and NS.CombatGate.GetPendingCount() == 0,
+    "safe combat reopen retained a deferred structural refresh")
+reopen.host.scripts.OnEvent(reopen.host, "PLAYER_REGEN_ENABLED")
 assert(Details(6), "combat close/reopen failed to resume detail rows")
 assert(NS.CombatGate.GetPendingCount() == 0 and not gateFrame.events.PLAYER_REGEN_ENABLED,
     "combat reopen left a pending refresh or event listener")
@@ -437,16 +439,15 @@ NS.GearAnnotations.IsWide = function() return false end
 local timers = {}
 C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
 local reads = 0
-NS.EquipmentInfo = {
-    Read = function(_, _, _, result)
-        reads = reads + 1
-        result = result or { gemInfo = {} }
-        result.itemLevel, result.link = 600, "item:1:0:"
-        return result
-    end,
-    Check = NOOP,
-    Invalidate = NOOP,
-}
+-- Keep real pending-load bookkeeping while instrumenting item reads.
+NS.EquipmentInfo = Fresh("EquipmentInfo.lua").EquipmentInfo
+NS.EquipmentInfo.Read = function(_, _, _, result)
+    reads = reads + 1
+    result = result or { gemInfo = {} }
+    result.itemLevel, result.link = 600, "item:1:0:"
+    return result
+end
+NS.EquipmentInfo.Check, NS.EquipmentInfo.Invalidate = NOOP, NOOP
 GetInventoryItemLink = function() return "item:1:0:" end
 -- No specialization chosen and no inspect data.
 C_SpecializationInfo = {
@@ -644,6 +645,17 @@ do
     snapshot = info.Read("item:1:0:", "player", 1, snapshot, "Player-1")
     assert(not snapshot.pending and snapshot.settled and snapshot.enchantText == "Contract Enchant"
         and snapshot.emptySockets == 1, "a loaded equipment snapshot stayed pending or lost its tooltip data")
+    combatLocked = true
+    snapshot = info.Read("item:2:0:", "player", 1, snapshot, "Player-1")
+    assert(snapshot.link == "item:2:0:" and snapshot.name == "Contract Helm",
+        "combat equipment read retained the previous item's identity")
+    snapshot = info.Read(nil, "player", 1, snapshot, "Player-1")
+    assert(snapshot.link == nil and snapshot.name == nil and snapshot.itemLevel == nil,
+        "combat empty slot retained cached equipment")
+    snapshot = info.Read("item:1:0:", "player", 1, nil, "Player-1")
+    assert(snapshot.name == "Contract Helm" and snapshot.itemLevel == 639,
+        "cold combat equipment read lost public metadata")
+    combatLocked = false
     info.AddTooltip(info.Check(snapshot, 90))
     assert(#added > 0 and added[2] == NS.L.GEAR_TOOLTIP_TITLE, "the equipment tooltip lines were not added")
     -- Theme.GetColor returns r, g, b, a; AddLine's fifth argument is wrap.

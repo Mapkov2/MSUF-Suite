@@ -13,7 +13,7 @@ local scale = 1
 local scalePreset = "custom"
 local page = 1
 local frame
-local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {} }
+local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {}, darkRaid = {} }
 -- Above MSUF menu popups (DIALOG level 400); see CreateWindow.
 local INSTALLER_FRAME_LEVEL = 500
 
@@ -64,11 +64,13 @@ local function DefaultLook()
 end
 
 local function AppliedLook()
+    if selected == "blizzard" then return nil end
     if selected == "suite" then return chosenLook or "cleanModern" end
     return chosenLook
 end
 
 local function SkinPreset()
+    if selected == "darkRaid" then return Suite.DarkRaidSkinCompact end
     if selected == "blizzard" then return Suite.BlizzardSkinCompact end
     if selected == "modernDark" then return Suite.ModernDarkSkinCompact end
     if selected == "classic" then return Suite.RetailProfileSkinCompact end
@@ -81,12 +83,14 @@ end
 local decodedFactories = {}
 local function FactoryProfile(layout, authored)
     layout = layout or selected
-    local look = not authored and (layout == "suite" and (chosenLook or "cleanModern") or chosenLook) or nil
+    local look = layout ~= "blizzard" and not authored
+        and (layout == "suite" and (chosenLook or "cleanModern") or chosenLook) or nil
     local compact = layout == "classic" and Suite.RetailProfileModuleCompact
         or (Suite.Client.isForever or layout == "forever")
             and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
     if layout == "modernDark" then compact = Suite.ModernDarkModuleCompact end
     if layout == "blizzard" then compact = Suite.BlizzardModuleCompact end
+    if layout == "darkRaid" then compact = Suite.DarkRaidModuleCompact end
     local cacheKey = layout .. (look or "authored") .. compact
     local profile = decodedFactories[cacheKey]
     if profile then return profile end
@@ -149,14 +153,16 @@ local function PreparedProfile()
         cooldowns.raidEssentials = useRaidEssentials
         -- Keep personal icon lists and spell choices when changing between
         -- Modern and Retail Forever. Fresh installs use the supplied preset.
+        -- The reference layouts need their authored rows; keep-frames still
+        -- retains the player's CDM choices with their current unit frames.
         local active = DB.GetProfile(DB.GetActiveProfileName())
         local old = active and active.suite and active.suite.modules
             and active.suite.modules.cooldownManager
-        if (selected ~= "classic" or keepFrames) and old and type(old.listsData) == "string"
+        if (selected ~= "classic" and selected ~= "blizzard" and selected ~= "darkRaid" or keepFrames) and old and type(old.listsData) == "string"
             and (selected ~= "forever" or old.listsData ~= "") then
             cooldowns.listsData = old.listsData
         end
-        if (selected ~= "classic" or keepFrames) and old and type(old.spellsData) == "string"
+        if (selected ~= "classic" and selected ~= "blizzard" and selected ~= "darkRaid" or keepFrames) and old and type(old.spellsData) == "string"
             and (selected ~= "forever" or old.spellsData ~= "") then
             cooldowns.spellsData = old.spellsData
         end
@@ -229,7 +235,8 @@ end
 
 local function ApplyModernDark(profile, finish)
     local frames = selected == "blizzard" and Suite.BlizzardFramesCompact or Suite.HostBridge.ModernDarkFrameCompact()
-    local name = selected == "blizzard" and "MSUF Blizzard" or "Modern Dark"
+    if selected == "darkRaid" then frames = Suite.DarkRaidFramesCompact end
+    local name = selected == "darkRaid" and "Dark Raid" or selected == "blizzard" and "MSUF Blizzard" or "Modern Dark"
     return Suite.SuiteProfiles.InstallFactory(NextFactoryName(name), frames, profile,
         Suite.Client.AddOnEnabled("MSUF_Suite_Skin") and SkinPreset() or nil,
         AppliedLook(), finish, { screenHeight = false, preserveSkinLayout = true,
@@ -262,11 +269,16 @@ function Installer.Apply()
     if not ready then return false, why end
     local profile, reason = PreparedProfile()
     if not profile then return false, reason end
+    local enableSkin = selected == "blizzard" and Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+    if enableSkin then
+        local loaded, skinReason = Suite.Skin.EnsureEngine()
+        if not loaded then return false, skinReason end
+    end
     local function ApplyScale() return Suite.HostBridge.ApplyScale(spec) end
     local ok
     if keepFrames then
         ok, reason = ApplySuiteOnly(profile, ApplyScale)
-    elseif selected == "modernDark" or selected == "blizzard" then
+    elseif selected == "modernDark" or selected == "blizzard" or selected == "darkRaid" then
         ok, reason = ApplyModernDark(profile, ApplyScale)
     elseif selected == "forever" then
         ok, reason = ApplyForever(profile, ApplyScale)
@@ -276,6 +288,7 @@ function Installer.Apply()
         ok, reason = ApplySuiteOnly(profile, ApplyScale)
     end
     if not ok then return false, reason end
+    if enableSkin then Suite.Skin.SetEnabled(true) end
     local previous = Suite.RootDB.installation
     local getDefault = Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters
     local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
@@ -283,11 +296,11 @@ function Installer.Apply()
     Suite.RootDB.installation = {
         revision = 4, status = "complete", profile = keepFrames and "suite" or selected,
         layout = selected == "forever" and "forever" or "retail",
-        look = chosenLook or DefaultLook(), keepFrames = keepFrames,
+        look = selected == "blizzard" and "authored" or chosenLook or DefaultLook(), keepFrames = keepFrames,
         frameColors = not keepFrames and Suite.InstallerFrameColors.Choices() or nil,
         modernMeterMenuRevision = selected ~= "suite" and 2 or nil,
         modernPanelAnchorRevision = selected ~= "forever" and 1 or nil,
-        resourceStackRevision = (selected == "classic" or selected == "modernDark") and 1 or nil,
+        resourceStackRevision = (selected == "classic" or selected == "modernDark" or selected == "darkRaid") and 1 or nil,
         frameProfileName = FrameProfileName(),
         moduleOverrides = moduleOverrides[selected],
         raidEssentials = RetailCooldowns() and useRaidEssentials,
@@ -301,7 +314,7 @@ function Installer.Apply()
         Suite.RootDB.installation.newCharacterProfileOwned = true
     end
     Suite.SuiteProfiles.EnsureNewCharacterProfile()
-    if selected ~= "classic" and selected ~= "modernDark" and selected ~= "blizzard" then
+    if selected ~= "classic" and selected ~= "modernDark" and selected ~= "blizzard" and selected ~= "darkRaid" then
         Suite.SuiteProfiles.EnsureRetailResourceStack(true)
     end
     NotifyInstallerFinished()
@@ -406,10 +419,11 @@ local function BuildProfileSteps(window)
     Suite.InstallerProfiles.Build(window, Label, ProfileCard, NavButton, Style,
         function(layout)
             selected = layout
+            if layout == "blizzard" then chosenLook = nil end
             Installer.Refresh()
         end,
         function(look)
-            chosenLook = look
+            chosenLook = selected ~= "blizzard" and look or nil
             Installer.Refresh()
         end, function(layout) return FactoryProfile(layout, true) end)
     local cooldowns = Panel(window, 36, 50, 508, 52, true)
@@ -667,7 +681,8 @@ local function PaintReview(f)
     local profile = PreviewProfile(f)
     f.review[1].title:SetText(Text("Profile"))
     f.review[1].detail:SetText(Text("%s · Colors: %s · %s"):format(
-        selected == "blizzard" and Text("MSUF Blizzard") or selected == "modernDark" and Text("Modern Dark")
+        selected == "darkRaid" and Text("Dark Raid") or selected == "blizzard" and Text("MSUF Blizzard")
+            or selected == "modernDark" and Text("Modern Dark")
             or selected == "forever" and Text("MSUF Suite Forever") or Text("Modern MSUF Suite"),
         Suite.InstallerProfiles.LookLabel(chosenLook),
         keepFrames and Text("Current MSUF frames") or Text("Factory MSUF frames")))
@@ -705,7 +720,7 @@ function Installer.Open()
         and active.suite.modules.cooldownManager
     useScale, scale, scalePreset, page = false, 1, "custom", 1
     useRaidEssentials = not (current and current.raidEssentials == false)
-    moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {} }
+    moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {}, darkRaid = {} }
     Build().moduleTab = "modules"
     frame.moduleFocus, frame.moduleFocusPending, frame.layoutPreview.selectedModule = nil, nil, nil
     -- A reopened window still shows the last session's slider position.

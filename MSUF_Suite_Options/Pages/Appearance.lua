@@ -387,6 +387,10 @@ local function BuildShape(ctx, b, skin)
         function() return skin.DB.theme.dropdownDimming ~= false end,
         function(value) Change(skin, "Dim background for dropdowns", "theme.dropdownDimming",
             function() return skin.Theme.SetAppearance("dropdownDimming", value) end) end)
+    shape[#shape + 1] = Row("toggle", "Dim inactive windows", "theme.windowFocusDimming", "shape",
+        function() return skin.DB.theme.windowFocusDimming ~= false end,
+        function(value) Change(skin, "Dim inactive windows", "theme.windowFocusDimming",
+            function() return skin.Theme.SetAppearance("windowFocusDimming", value) end) end)
     shape[#shape + 1] = Row("toggle", "Smooth scrolling", "theme.smoothScrolling", "shape",
         function() return skin.DB.theme.smoothScrolling ~= false end,
         function(value) Change(skin, "Smooth scrolling", "theme.smoothScrolling",

@@ -81,7 +81,7 @@ c.enabled, c.lockWindowPosition, c.copyMessages = true, true, true
 File("MSUF_Suite_Modules/Runtime.lua", "MSUF_Suite_Modules", {})
 File("MSUF_Suite_Modules/Surfaces.lua", "MSUF_Suite_Modules", {})
 local runtime = { NS = Suite, Suite = Suite.Suite }
-for _, file in ipairs({ "Shared", "Appearance", "MinimalChrome", "Unread", "Sidebar", "Positions", "CompleteMessages", "Window", "PreviewSnapshot", "Preview" }) do
+for _, file in ipairs({ "Shared", "HeaderClock", "Appearance", "MinimalChrome", "Unread", "Sidebar", "Positions", "CompleteMessages", "Window", "PreviewSnapshot", "Preview" }) do
     File("MSUF_Suite_Chat/" .. file .. ".lua", "MSUF_Suite_Chat", runtime)
 end
 if arg[4] == "positions" then return { runtime = runtime, env = env, Suite = Suite, world = world, c = c } end

@@ -99,10 +99,10 @@ local function AddCooldown(entry, view)
     if view and (K.Pick(ov, view, "readyGlow") or K.Pick(ov, view, "fullChargeGlow")) then Push(Index.ready, entry) end
     -- Item, equipment-slot (custom entries, or Blizzard's trinkets on whichever
     -- bar holds them, Essential by default) and potion-category entries follow
-    -- bag contents; only real items follow item cooldowns
-    -- (categories arrive through SPELL_UPDATE_COOLDOWN's category payload).
+    -- bag contents. Healthstone categories also follow bag cooldowns so their
+    -- held combat state and remaining uses update without a spell payload.
     if item or category then Push(Index.items, entry) end
-    if item then Push(Index.bags, entry) end
+    if item or entry.hideEmpty then Push(Index.bags, entry) end
     if entry.hasAura and entry.auraIDs and view and not view.cooldownDuration and K.Pick(ov, view, "showAura") then Push(Index.overlay, entry) end
     if spell and view and view.assist then Push(Index.assist, entry) end
 end

@@ -447,10 +447,38 @@ Veil.Open(otherLease, dropdown, menu)
 for _, frame in ipairs(frames) do
     if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
 end
-Check(not Veil.overlay.shown and not state.records[header].arrowGroup:IsPlaying() and NS.Motion.combat,
-    "combat event edge did not clean up before lockdown")
+Check(Veil.overlay.shown and state.hadSnapshot and NS.Motion.combat,
+    "combat event edge removed safe menu visuals")
+Veil.Clear()
 Veil.Open(otherLease, dropdown, menu)
-Check(not Veil.overlay.shown, "a menu reopened its veil on the combat event edge")
+Check(Veil.overlay.shown, "safe menu could not open its veil during combat")
+local veilRoot = Veil.root
+veilRoot.protected = true
+for _, frame in ipairs(frames) do
+    if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+end
+Check(not Veil.overlay.shown, "protected menu retained its focus veil")
+veilRoot.protected = false
+Veil.Open(otherLease, dropdown, menu)
+local veilWrites = 0
+for _, method in ipairs({ "Hide", "SetAlpha", "ClearAllPoints" }) do
+    local native = Veil.overlay[method]
+    Veil.overlay[method] = function(self, ...)
+        veilWrites = veilWrites + 1
+        return native(self, ...)
+    end
+end
+veilRoot.protected, Veil.overlay.protected = true, true
+for _, frame in ipairs(frames) do
+    if frame.events.PLAYER_REGEN_DISABLED then frame:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+end
+Check(veilWrites == 0 and Veil.pending and not Veil.group:IsPlaying(),
+    "combat wrote an overlay that inherited root protection")
+veilRoot.protected, Veil.overlay.protected = false, false
+for _, frame in ipairs(frames) do
+    if frame.events.PLAYER_REGEN_ENABLED then frame:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
+end
+Check(not Veil.overlay.shown and not Veil.pending and veilWrites == 3, "deferred veil cleanup did not resume safely")
 NS.Motion.combat = false
 scroll:TriggerEvent("layout")
 category.collapsed = true

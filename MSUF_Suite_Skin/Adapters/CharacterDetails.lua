@@ -23,7 +23,7 @@ local slots = {
 }
 local events = {
     "UNIT_INVENTORY_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "UPDATE_INVENTORY_DURABILITY",
-    "GET_ITEM_INFO_RECEIVED", "INSPECT_READY", "PLAYER_SPECIALIZATION_CHANGED",
+    "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT", "INSPECT_READY", "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_LEVEL_UP", "PLAYER_AVG_ITEM_LEVEL_UPDATE",
 }
 local OPTION_KEYS = {
@@ -72,6 +72,15 @@ local function Enabled(v)
         and ((v.kind == "character" and config.view and config.view ~= "classic") or config.enabled)
 end
 
+-- Owned frames inherit native protection: recheck each callback's targets.
+local function CanPaintView(v)
+    local allow = not NS.IsCombatLocked()
+    return NS.Safety.CanDecorate(v.host, allow) and NS.Safety.CanDecorate(v.panel, allow)
+        and NS.Safety.CanDecorate(v.toggle, allow)
+end
+
+local function VisibleHost(v) return NS.Safety.Read(v.host, "IsVisible") == true end
+
 local function Color(region, token)
     region:SetTextColor(NS.Theme.GetColor(token))
 end
@@ -96,9 +105,8 @@ local function RefreshFonts(v)
 end
 
 function Details.RefreshFonts()
-    if NS.IsCombatLocked() then return end
     for _, v in pairs(Details.views) do
-        if Enabled(v) and v.host:IsVisible() then
+        if Enabled(v) and VisibleHost(v) and CanPaintView(v) then
             RefreshFonts(v)
             for _, row in ipairs(v.rows) do NS.GearAnnotations.Paint(v, row) end
             NS.GearAnnotations.UpdateSummary(v)
@@ -107,9 +115,11 @@ function Details.RefreshFonts()
 end
 
 function Details.StyleChrome(root, owner)
-    if not root or NS.IsCombatLocked() then return end
+    if not root or not NS.Safety.CanDecorate(root, not NS.IsCombatLocked()) then return end
     local close = root.CloseButton or _G[(root:GetName() or "") .. "CloseButton"]
-    if close then NS.WindowActionSkin.Apply(close, owner, "close") end
+    if close and NS.Safety.CanControl(close, not NS.IsCombatLocked()) then
+        NS.WindowActionSkin.Apply(close, owner, "close")
+    end
 end
 
 local function Unit(v)
@@ -122,7 +132,7 @@ end
 
 local function Clear(v)
     v.unit, v.guid = nil, nil
-    for id in pairs(v.pending) do v.pending[id] = nil end
+    NS.EquipmentInfo.ClearPending(v.rows, v.pending)
     for _, row in ipairs(v.rows) do
         row.link, row.baseMeta, row.eqolMeta, row.eqolTrack = nil, nil, nil, nil
         row.icon:SetTexture(nil)
@@ -141,6 +151,7 @@ local function Clear(v)
 end
 
 local function Unregister(v)
+    NS.EquipmentInfo.ClearPending(v.rows, v.pending)
     if not v.registered then return end
     for _, event in ipairs(events) do v.host:UnregisterEvent(event) end
     v.registered = false
@@ -208,7 +219,7 @@ end
 
 function Details.RefreshEQoL(element, slotID)
     local v = Details.views[_G.CharacterFrame]
-    if NS.IsCombatLocked() or not v or not Enabled(v) or not v.host:IsVisible()
+    if not v or not Enabled(v) or not VisibleHost(v) or not CanPaintView(v)
         or not NeedsData(v) then
         return
     end
@@ -256,6 +267,9 @@ local function ReadRow(v, row, slot, dirtySlots)
     local texture = info.texture or Read(GetInventoryItemTexture, v.unit, id)
     local quality = info.quality or Number(Read(GetInventoryItemQuality, v.unit, id))
     row.inventoryTexture, row.quality = texture, quality
+    if not link and texture ~= nil then
+        NS.EquipmentInfo.RequestMissingLink(v.unit, id, row, v.pending)
+    else row.pendingItemID = nil end
     row.link = link
     row.icon:SetTexture(texture)
     local itemName, itemLevel, pending = info.name, info.itemLevel, info.pending
@@ -362,17 +376,8 @@ end
 local function UpdateCheckSummary(v)
     local missing, low, empty, unknown = 0, 0, 0, 0
     for _, row in ipairs(v.rows) do
-        local info = row.audit
-        if info and info.link then
-            if info.pending and info.itemID then v.pending[info.itemID] = true end
-            for _, gem in ipairs(info.gemInfo) do
-                if gem.pending and gem.id then v.pending[gem.id] = true end
-            end
-            if info.missingEnchant then missing = missing + 1 end
-            if info.lowEnchant then low = low + 1 end
-            empty = empty + (info.emptySockets or 0)
-            if info.unknown then unknown = unknown + 1 end
-        end
+        local m, l, e, u = NS.EquipmentInfo.Summarize(row.audit, v.pending, row.pendingItemID)
+        missing, low, empty, unknown = missing + m, low + l, empty + e, unknown + u
     end
     v.checkText:SetText(string.format(NS.L.GEAR_CHECK_SUMMARY, missing, low, empty, unknown))
     Color(v.checkText, (missing + empty) > 0 and "danger" or low > 0 and "warning"
@@ -408,21 +413,24 @@ end
 
 -- dirtySlots: nil for a full read, or the set of slot ids that changed.
 function Details.Refresh(v, dirtySlots, durabilityOnly)
-    if NS.IsCombatLocked() then
-        Queue(v)
-        return
-    end
     if not Enabled(v) then
-        v.host:Hide()
         Unregister(v)
-        Clear(v)
+        if CanPaintView(v) then
+            v.host:Hide()
+            Clear(v)
+        end
         return
     end
-    Details.StyleChrome(v.root, v.owner)
-    if not v.host:IsVisible() then
+    if not VisibleHost(v) then
         v.dirty = true
         return
     end
+    if not CanPaintView(v) then
+        if NS.IsCombatLocked() then Queue(v) end
+        return
+    end
+    NS.CombatGate.Cancel(v.deferKey)
+    Details.StyleChrome(v.root, v.owner)
     if durabilityOnly and v.unit and v.kind == "character" and NeedsData(v) then
         -- No item, tooltip, identity, annotation or summary refresh.
         RefreshDurability(v)
@@ -471,16 +479,10 @@ function Details.Refresh(v, dirtySlots, durabilityOnly)
 end
 
 local function OnShow(v)
-    if not Enabled(v) or not v.host:IsVisible() then return end
+    if not Enabled(v) or not VisibleHost(v) then return end
     if not v.observedVisible then
         v.observedVisible = true
         if v.kind == "inspect" then v.readyGUID = GUID(Unit(v)) end
-    end
-    if NS.IsCombatLocked() then
-        v.panel:Hide()
-        v.toggle:Hide()
-        Queue(v)
-        return
     end
     Details.Refresh(v)
 end
@@ -492,6 +494,7 @@ local function OnHide(v)
     NS.GearAnnotations.RestoreLayout(v)
     v.observedVisible = false
     v.readyGUID = nil
+    if not CanPaintView(v) then return end
     v.panel:Hide()
     v.toggle:Hide()
     Clear(v)
@@ -511,7 +514,7 @@ local function FlushRequests(v)
     local slots = v.refreshSlots
     v.refreshSlots, v.spareSlots = v.spareSlots, slots
     v.refreshAll, v.refreshDurability = false, false
-    if not Enabled(v) or not v.host:IsVisible() then
+    if not Enabled(v) or not VisibleHost(v) then
         WipeSlots(slots)
         return
     end
@@ -544,8 +547,9 @@ local function RequestRefresh(v, all, slot, durability)
 end
 
 local function OnEvent(v, event, arg1)
-    if not Enabled(v) or not v.host:IsVisible() then return end
-    if event == "GET_ITEM_INFO_RECEIVED" and not v.pending[Accessible(arg1)] then return end
+    if not Enabled(v) or not VisibleHost(v) then return end
+    if (event == "GET_ITEM_INFO_RECEIVED" or event == "ITEM_DATA_LOAD_RESULT")
+        and not v.pending[Accessible(arg1)] then return end
     if event == "INSPECT_READY" then
         local guid = GUID(Unit(v))
         if v.kind ~= "inspect" or not guid or Text(Accessible(arg1)) ~= guid then return end
@@ -693,7 +697,7 @@ local function Create(root, parent, kind, owner)
         refreshAll = false, refreshDurability = false, refreshScheduled = false,
     }
     v.deferredRefresh = function()
-        if v.active and v.host:IsVisible() then Details.Refresh(v) end
+        if v.active and VisibleHost(v) then Details.Refresh(v) end
     end
     v.flushRequests = function() FlushRequests(v) end
     local host = NS.Safety.CreateChildFrame("Frame", parent)
@@ -720,11 +724,12 @@ end
 
 function Details.Apply(root, kind, owner)
     Details.StyleChrome(root, owner)
-    if not NS.Client.modernEquipment or NS.IsCombatLocked() then return end
+    if not NS.Client.modernEquipment then return end
     -- InspectPaperDollFrame loads with Blizzard_InspectUI (load-on-demand).
     local parent = _G.InspectPaperDollFrame
     if kind == "character" then parent = PaperDollFrame end
-    if not root or not parent or not NS.Safety.CanCreateRegions(parent, true) then return end
+    if not NS.Safety.CanCreateRegions(root, not NS.IsCombatLocked())
+        or not NS.Safety.CanCreateRegions(parent, not NS.IsCombatLocked()) then return end
     local v = Details.views[root]
     if v and v.owner ~= owner and v.active then return end
     if not v then
@@ -735,6 +740,7 @@ function Details.Apply(root, kind, owner)
         Details.views[root] = v
     end
     v.owner, v.active = owner, true
+    if not CanPaintView(v) then return end
     if Enabled(v) then
         v.host:Show()
         OnShow(v)
@@ -754,8 +760,10 @@ function Details.Disable(root, owner)
         Unregister(v)
         HideTooltip(v)
         NS.GearAnnotations.Hide(v)
-        v.host:Hide()
-        Clear(v)
+        if CanPaintView(v) then
+            v.host:Hide()
+            Clear(v)
+        end
         NS.GearAnnotations.RestoreLayout(v)
         NS.WindowActionSkin.DisableOwner(v.actionOwner)
     end

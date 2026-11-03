@@ -14,7 +14,8 @@ local weak = { __mode = "k" }
 local mine, watched = setmetatable({}, weak), setmetatable({}, weak)
 local slots, items = {}, {}
 local BASE_SIZE = 21
-local landingBadge, landingButton
+local landingBadge, landingButton, queueFrame
+local QUEUE = { key = "QueueStatus", frame = Native.QueueStatus }
 
 -- Retail and WoW Forever share these names: MinimapCluster's parent keys
 -- and a few globals.
@@ -47,6 +48,7 @@ local SPECS = {
 }
 
 local function Spec(key)
+    if key == "QueueStatus" then return QUEUE end
     for i = 1, #SPECS do
         if SPECS[i].key == key then return SPECS[i] end
     end
@@ -271,6 +273,24 @@ local function HideSlot(key)
     if slot and not Locked(slot) then slot:Hide() end
 end
 
+local function LayoutQueue()
+    local frame, c = Native.QueueStatus(), M.config
+    if queueFrame and (queueFrame ~= frame or not c.queueStatusEnabled) then
+        MM.Release(queueFrame)
+        mine[queueFrame], queueFrame = nil, nil
+    end
+    if not c.queueStatusEnabled or not frame then
+        MM.SetExtent("queue", 0, 0, 0, 0)
+        return
+    end
+    local size, x, y = Native.QueueLayout(c)
+    Own(frame, MM.host, "CENTER", MM.host, "TOPLEFT", x, y, Fit(frame, size))
+    queueFrame = frame
+    local width, height = MM.Dimensions()
+    MM.SetExtent("queue", math.max(0, size / 2 - x), math.max(0, x + size / 2 - width),
+        math.max(0, y + size / 2), math.max(0, -y + size / 2 - height))
+end
+
 local function PlaceCorner(spec, c, frame)
     local slot, corner = Slot(spec.key), spec.corner
     if Locked(slot) then return end
@@ -287,6 +307,7 @@ local function PlaceCorner(spec, c, frame)
 end
 
 function MM.LayoutElements()
+    LayoutQueue()
     local c = M.config
     local size, count = MM.Snap(c.elementSize, MM.Pixel()), 0
     for i = 1, #SPECS do
@@ -369,4 +390,6 @@ function MM.ReleaseElements()
     for _, slot in pairs(slots) do slot:Hide() end
     MM.rowCount = nil
     MM.SetExtent("elements", 0, 0, 0, 0)
+    queueFrame = nil
+    MM.SetExtent("queue", 0, 0, 0, 0)
 end

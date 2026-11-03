@@ -5,9 +5,8 @@ local _, NS = ...
 -- query item data or replace scripts. Adapters repaint a border after
 -- Blizzard's own quality update (a SetItemButtonQuality post-hook, see
 -- DeepWindows.InstallItemQualityHook); this module installs no hooks itself.
--- Creating and anchoring the lines happens out of combat only. Their colour
--- and visibility are paint on the skin's own regions, so a quality update in
--- combat repaints them on an unprotected button (IconSkin.Repaint).
+-- Safe buttons and their exact icon/border regions can be decorated in combat.
+-- Protected targets wait for the existing deferred repaint path.
 local IconSkin = {
     states = setmetatable({}, { __mode = "k" }),
     owners = {},
@@ -91,19 +90,20 @@ local function Paint(state, theme)
     end
 end
 
--- In combat only paint, and only on an unprotected button; a protected one
--- waits for one repaint of every border after combat.
+-- All target regions remain safe before layout or paint; protected targets
+-- wait for one repaint after combat.
 local RefreshAll
 
 local function RefreshState(state)
     if not state then return false end
     local theme = NS.DB and NS.DB.theme or NS.Defaults.theme
-    if not NS.IsCombatLocked() then
-        Layout(state, theme)
-    elseif not NS.Safety.CanDecorate(state.button, false) then
-        NS.CombatGate.RunOrDefer(REPAINT_KEY, RefreshAll)
+    local combat = NS.IsCombatLocked()
+    if not NS.Safety.CanCreateRegions(state.button, not combat)
+        or not NS.Safety.CanDecorate(state.icon, not combat) or not NS.Safety.CanDecorate(state.nativeBorder, not combat) then
+        if combat then NS.CombatGate.RunOrDefer(REPAINT_KEY, RefreshAll) end
         return false
     end
+    Layout(state, theme)
     Paint(state, theme)
     return true
 end
@@ -140,8 +140,8 @@ end
 
 function IconSkin.Apply(button, owner, spec)
     spec = spec or emptySpec
-    if not button or NS.IsCombatLocked() then return nil, "combat" end
-    if not NS.Safety.CanCreateRegions(button, spec.allowImplicitProtected) then
+    local allowProtected = spec.allowImplicitProtected == true and not NS.IsCombatLocked()
+    if not NS.Safety.CanCreateRegions(button, allowProtected) then
         return nil, "protected"
     end
     local icon = spec.icon or button.Icon or button.icon or button.IconTexture
@@ -150,6 +150,9 @@ function IconSkin.Apply(button, owner, spec)
         return nil, "unsupported"
     end
 
+    if not NS.Safety.CanDecorate(icon, allowProtected) or not NS.Safety.CanDecorate(nativeBorder, allowProtected) then
+        return nil, "protected"
+    end
     local state = IconSkin.states[button]
     if state and state.enabled ~= false and state.owner ~= owner then
         return nil, "already owned"
@@ -196,7 +199,7 @@ function IconSkin.DisableOwner(owner)
 end
 
 -- Repaints the border of a button IconSkin owns from its native border, for
--- a quality update; in combat too (paint only, see RefreshState).
+-- a quality update; in combat too on safe targets (see RefreshState).
 function IconSkin.Repaint(button)
     local state = IconSkin.states[button]
     if not state or state.enabled == false then return false end

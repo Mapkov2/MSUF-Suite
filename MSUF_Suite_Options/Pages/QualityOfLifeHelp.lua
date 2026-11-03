@@ -3,6 +3,8 @@ local Tr = P.Tr
 -- The help of each settings section of the Quality of Life page, by section key:
 -- the "?" popup of a feature and the tooltip of its row show it (QualityOfLife.lua).
 local HELP = {
+    castbar_art = "Adds a thin castbar frame and a dark spell-name panel below it. The Blizzard setup enables this artwork. "
+        .. "Disable it to keep the MSUF castbar appearance.",
     glimmer_objects = "Highlights one nearby interactable object selected by the game, outside combat. Ore, herbs and quest objects have "
         .. "separate switches. The module temporarily enables the native interact target and its nameplate; disabling restores "
         .. "settings still owned by the module. It does not move, interact or gather for you. Range follows the game's "

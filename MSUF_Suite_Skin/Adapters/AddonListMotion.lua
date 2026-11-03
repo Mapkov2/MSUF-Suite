@@ -221,7 +221,8 @@ local function AnimateRow(state, record, changed, headerTop, stable)
 end
 
 OnLayout = function(state)
-    if not state.active or not Motion.Enabled() then StopState(state) return end
+    if not state.active or not Motion.Enabled() or not Safety.CanCreateRegions(state.root)
+        or not Safety.CanCreateRegions(state.scrollBox) then StopState(state) return end
     if Safety.Read(state.root, "IsVisible") ~= true then
         shownStates[state] = nil
         StopState(state)
@@ -283,8 +284,8 @@ end
 
 local function Register(state)
     if state.registered then return end
-    -- A cached visible root can acquire a new owner during combat, while
-    -- OnLayout is suspended; it must still rebuild at combat end.
+    -- Only visible owners enter the lifecycle working set. Hidden cached
+    -- views keep their reusable records without combat-edge work.
     if Safety.Read(state.root, "IsVisible") == true then shownStates[state] = true end
     local scrollBox = state.scrollBox
     if not state.collection then
@@ -403,8 +404,20 @@ local function SettingsChanged()
     end
 end
 local function CombatChanged(_, event)
-    if event == "PLAYER_REGEN_DISABLED" then StopAll()
-    else SettingsChanged() end
+    for state in pairs(pendingStates) do
+        if not Safety.CanCreateRegions(state.root) or not Safety.CanCreateRegions(state.scrollBox) then
+            StopState(state)
+        else
+            for _, record in pairs(state.records) do
+                if not SafeRow(record.row) then Ghost.Hidden(record) Stop(record) end
+            end
+        end
+    end
+    if event == "PLAYER_REGEN_ENABLED" then
+        for state in pairs(shownStates) do
+            if state.active and not state.hadSnapshot then OnLayout(state) end
+        end
+    end
 end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")

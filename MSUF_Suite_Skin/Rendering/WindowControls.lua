@@ -4,11 +4,17 @@ local _, NS = ...
 -- panels, native controls win, no global frame scans or permanent OnUpdate.
 local WindowControls = { states = setmetatable({}, { __mode = "k" }) }
 NS.WindowControls = WindowControls
+local TrackFocus, ReleaseFocus = function() end, function() end
+function WindowControls.SetFocusProvider(track, release) TrackFocus, ReleaseFocus = track, release end
+function WindowControls.TrackFocus(frame, owner) return TrackFocus(frame, owner) end
 
 local Safety = NS.Safety
+local Policy = NS.WindowControlPolicy
+local CanChangeFrameGeometry = Policy.CanControl
 
--- Panels placed by us, re-placed after Blizzard's panel layout runs.
 local positionedStates = setmetatable({}, { __mode = "k" })
+local activeStates = setmetatable({}, { __mode = "k" })
+local activeInventory = setmetatable({}, { __mode = "k" })
 -- Our grip, drag strip, minimize and restore frames -> panel state (shared handlers).
 local controlStates = setmetatable({}, { __mode = "k" })
 
@@ -18,13 +24,6 @@ local RESTORE_WIDTH = 154
 local CONTROL_LEVEL_OFFSET = 15
 local GRIP_LEVEL_OFFSET = 20
 
-local specialPanels = {
-    SettingsPanel = true, AddonList = true, PlayerSpellsFrame = true,
-    GameMenuFrame = true, ProfessionsFrame = true,
-    -- Forever's dedicated skin applies this outer container; its three
-    -- PortraitFrame panes follow it and are not generic catalog roots.
-    LFGParentFrame = true,
-}
 local nativeMinimize = {
     WorldMapFrame = true, PlayerSpellsFrame = true,
 }
@@ -36,14 +35,6 @@ local minimizablePanels = {
     SettingsPanel = true, AddonList = true,
     LFGParentFrame = true, LegacySystemFrame = true,
 }
-local excludedCategories = {
-    hud = true, inventory = true, tutorial = true, utility = true,
-}
-
-local function Limits()
-    return NS.WindowLayoutLimits
-end
-
 local function IsCombat()
     return NS.IsCombatLocked()
 end
@@ -62,43 +53,6 @@ local function CommitWithHistory(label, key, commit)
     return commit()
 end
 
-local function IsBag(name)
-    return name:find("^ContainerFrame") or name:find("^BankFrame")
-        or name:find("^Bag") or name:find("^Bags")
-end
-
-local function CanChangeFrameGeometry(frame)
-    if IsCombat() or Safety.IsForbidden(frame) then return false end
-    local protected, explicit = Safety.GetProtection(frame)
-    if explicit then return false end
-    -- Forever's plain spellbook root contains the native secure assisted-
-    -- combat button. Only this exact container may use public geometry APIs
-    -- out of combat; the secure button and all other protected roots stay out.
-    return not protected or (NS.Client.isForever and frame == Safety.Field(_G, "PlayerSpellsFrame"))
-end
-
-local function Eligible(frame)
-    if not frame or Safety.IsForbidden(frame) then return nil end
-    if not CanChangeFrameGeometry(frame) then return nil end
-    local name = Safety.Read(frame, "GetName")
-    if type(name) ~= "string" or name == "" or IsBag(name) then return nil end
-    if name == "LFGParentFrame" and not NS.Client.isForever then return nil end
-    local entry = NS.BlizzardCatalog.FindByFrame(name)
-    local standalone = specialPanels[name]
-    local panel = UIPanelWindows[name]
-    if not (entry or standalone) or not (panel or standalone) then return nil end
-    if panel and panel.area == "full" then return nil end
-    if entry and excludedCategories[entry.category] then return nil end
-    local parent = Safety.Read(frame, "GetParent")
-    if parent ~= UIParent and not (standalone and parent == nil) then return nil end
-    local width, height = Safety.Read(frame, "GetWidth"), Safety.Read(frame, "GetHeight")
-    -- The Game Menu is 1 high until its first opening lays out its buttons
-    -- (MainMenuFrameTemplate): listed panels need the width only.
-    if type(width) ~= "number" or type(height) ~= "number"
-        or width < 240 or height < 170 and not standalone then return nil end
-    return name, entry, panel
-end
-
 local function ValidClose(candidate)
     if candidate and Safety.Read(candidate, "GetObjectType") == "Button"
         and not Safety.GetProtection(candidate) then
@@ -114,17 +68,18 @@ local function FindClose(frame, name)
 end
 
 local function ClampScale(value)
-    local limits = Limits()
+    local limits = NS.WindowLayoutLimits
     return math.max(limits.minScale, math.min(limits.maxScale, value))
 end
 
-local function CanChangeGeometry(state)
-    return CanChangeFrameGeometry(state.frame)
+local function Controlled(state)
+    return Enabled() and next(state.owners) ~= nil and CanChangeFrameGeometry(state.frame)
 end
 
--- The controls are on for this panel: they are enabled, an owner skins it, it can be controlled.
-local function Controlled(state)
-    return Enabled() and next(state.owners) ~= nil and CanChangeGeometry(state)
+local function SafeControls(state)
+    local implicit = not IsCombat()
+    return Safety.CanDecorate(state.grip, implicit) and Safety.CanDecorate(state.titleDrag, implicit)
+        and (not state.minimize or Safety.CanDecorate(state.minimize, implicit))
 end
 
 local function Maximized(state)
@@ -134,12 +89,12 @@ end
 local InstallPanelPositionHook
 
 local function ApplyStoredScale(state)
-    if not CanChangeGeometry(state) then return end
+    if not CanChangeFrameGeometry(state.frame) then return end
     if Maximized(state) then
         if state.frame:GetScale() ~= state.originalScale then state.frame:SetScale(state.originalScale) end
         return
     end
-    local limits = Limits()
+    local limits = NS.WindowLayoutLimits
     local scales = NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales
     local stored = scales and scales[state.name]
     local scale
@@ -173,8 +128,23 @@ local function CaptureNativePoints(frame)
     return points
 end
 
-local function RestoreNativePosition(state)
-    if not CanChangeGeometry(state) then return end
+local function CaptureNativeBagLayout(state)
+    if state.name == "BankFrame" or not state.nativePoints or #state.nativePoints ~= 1 then return end
+    local frame, saved = state.frame, state.nativePoints[1]
+    local point, relative, relativePoint, x, y = frame:GetPoint(1)
+    local public = Safety.Public
+    if not public(point) or not public(relative) or not public(relativePoint) or not public(x) or not public(y) then return end
+    saved[1], saved[2], saved[3], saved[4], saved[5] = point, relative, relativePoint, x, y
+    state.originalScale = frame:GetScale()
+end
+
+local function RestoreNativePosition(state, releasing)
+    local mayChange = releasing and Policy.CanChangeGeometry or CanChangeFrameGeometry
+    if not mayChange(state.frame) then return end
+    if IsCombat() and state.panel and not state.panel.centerFrameSkipAnchoring and not NS.Client.IsGamepadUI() then
+        NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
+        return
+    end
     state.customPosition = false
     state.defaultPosition = false
     positionedStates[state.frame] = nil
@@ -195,7 +165,7 @@ local function RestoreNativePosition(state)
 end
 
 local function ApplyStoredPosition(state)
-    if not CanChangeGeometry(state) or not Enabled() or state.moving or Maximized(state) then return end
+    if not CanChangeFrameGeometry(state.frame) or not Enabled() or state.moving or Maximized(state) then return end
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
     local point = positions and positions[state.name]
     local defaultPosition = not point and state.name == "CharacterFrame"
@@ -211,17 +181,20 @@ local function ApplyStoredPosition(state)
     local ratio = state.frame:GetEffectiveScale() / uiScale
     if ratio <= 0 then return end
     local width, height = state.frame:GetWidth() * ratio, state.frame:GetHeight() * ratio
-    -- Keep the external map grip beside its scrollbar when a saved panel is moved right.
-    if state.name == "WorldMapFrame" then width = width + 21 * ratio end
+    local rightInset, bottomInset, topInset = NS.WindowControlChrome.Footprint(state)
+    width, height = width + rightInset * ratio, height + bottomInset * ratio
     local x = math.max(0, math.min(uiWidth - math.min(uiWidth, width), point.x))
-    local y = math.max(-math.max(0, uiHeight - height), math.min(0, point.y))
+    local y = math.max(-math.max(0, uiHeight - height), math.min(-topInset * ratio, point.y))
     state.frame:ClearAllPoints()
     state.frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x / ratio, y / ratio)
+    if SafeControls(state) then
+        NS.WindowControlChrome.PlaceGrip(state.grip, state)
+        NS.WindowControlChrome.PlaceTitleDrag(state.titleDrag, state)
+    end
     state.customPosition = true
     state.defaultPosition = defaultPosition == true
-    positionedStates[state.frame] = state
-    -- Whichever path placed it (attach, profile switch, reopen, save), the
-    -- panel layout hook keeps it there.
+    positionedStates[state.frame] = state.frame:IsShown() and state or nil
+    -- Keep custom placement after native panel layout.
     InstallPanelPositionHook()
 end
 
@@ -230,23 +203,21 @@ local suspendPositionHook = false
 
 -- Blizzard's panel layout re-anchors open panels; ours move back after it.
 local function OnPanelPositionsUpdated()
-    if suspendPositionHook or IsCombat() or not Enabled() then return end
-    for frame, state in pairs(positionedStates) do
-        if frame:IsShown() then
+    if suspendPositionHook or not Enabled() then return end
+    for frame, state in pairs(activeStates) do
+        if Controlled(state) and frame:IsShown() then
+            if not state.drag then ApplyStoredScale(state) end
             ApplyStoredPosition(state)
         end
     end
 end
 
--- A UI scale change fits the open panels to the screen inside the panel manager, past
--- that hook; a refresh puts ours back (after combat when the change comes in combat).
+-- Native fit changes reapply stored geometry only to visible, safe windows.
 InstallPanelPositionHook = function()
     if positionHooked then return end
     positionHooked = true
     hooksecurefunc("UpdateUIPanelPositions", OnPanelPositionsUpdated)
-    hooksecurefunc("UpdateScaleForFitForOpenPanels", function()
-        NS.CombatGate.RunOrDefer("windowControls:refresh", WindowControls.Refresh)
-    end)
+    hooksecurefunc("UpdateScaleForFitForOpenPanels", WindowControls.Refresh)
 end
 
 local function SavePosition(state)
@@ -266,7 +237,8 @@ local function SavePosition(state)
         return true
     end)
     state.customPosition = true
-    NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() ApplyStoredPosition(state) end)
+    if CanChangeFrameGeometry(frame) then ApplyStoredPosition(state)
+    else NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow) end
     return true
 end
 
@@ -327,6 +299,7 @@ local function OnRestoreClick(bar, mouseButton)
     if not state then return end
     if mouseButton == "RightButton" then
         state.minimized = false
+        activeStates[state.frame] = state.frame:IsShown() and state or nil
         bar:Hide()
     else
         Restore(state)
@@ -360,13 +333,14 @@ local function CreateRestore(state)
 end
 
 -- Scale grip. The drag follows the cursor from a transient OnUpdate that clears
--- itself as soon as the mouse button is up, combat starts or the panel hides.
+-- itself on release/hide, or if its panel becomes protected in combat.
 
 local function EndDrag(state)
     local grip, drag = state.grip, state.drag
     grip:SetScript("OnUpdate", nil)
     if not drag then return end
     state.drag = nil
+    if not CanChangeFrameGeometry(state.frame) or not Safety.CanDecorate(grip, not IsCombat()) then return end
     if grip:IsMouseOver() then grip:SetButtonState("NORMAL") end
     local scale = state.frame:GetScale()
     -- A press that changed nothing (a click, or A on the grip under Forever's
@@ -380,6 +354,10 @@ local function EndDrag(state)
         end)
         state.customScale = true
         InstallPanelPositionHook()
+        if SafeControls(state) then
+            NS.WindowControlChrome.PlaceGrip(grip, state)
+            NS.WindowControlChrome.PlaceTitleDrag(state.titleDrag, state)
+        end
     end
 end
 
@@ -390,7 +368,7 @@ local function UpdateDrag(state)
         EndDrag(state)
         return
     end
-    if not CanChangeGeometry(state) or not state.frame:IsShown() then
+    if not CanChangeFrameGeometry(state.frame) or not state.frame:IsShown() then
         EndDrag(state)
         return
     end
@@ -412,11 +390,12 @@ local function OnGripUpdate(grip)
 end
 
 local function BeginDrag(state)
-    if not CanChangeGeometry(state) or not Enabled() or Maximized(state) then return end
+    if not CanChangeFrameGeometry(state.frame) or not SafeControls(state) or not Enabled() or Maximized(state) then return end
+    if state.inventory and not state.customScale and not state.customPosition then CaptureNativeBagLayout(state) end
     local x, y = GetCursorPosition()
     local frame = state.frame
     local width, height = frame:GetWidth(), frame:GetHeight()
-    local parentScale = UIParent:GetEffectiveScale()
+    local parentScale = frame:GetEffectiveScale() / frame:GetScale()
     if type(x) ~= "number" or type(y) ~= "number"
         or not width or not height or not parentScale or parentScale <= 0 then return end
     local drag = state.dragStart or {}
@@ -446,43 +425,12 @@ local function OnGripLeave()
     GameTooltip:Hide()
 end
 
-local function ControlParent(state)
-    -- WorldMap's root can be LOW while its border and quest log are HIGH.
-    -- Inherit the visible border's strata without changing native frames.
-    if state.name == "WorldMapFrame" then
-        local border = Safety.Field(state.frame, "BorderFrame")
-        if Safety.CanDecorate(border, true) and Safety.Read(border, "GetParent") == state.frame then return border end
-    end
-    return state.frame
-end
-
-local function ControlBaseLevel(state)
-    local parent = ControlParent(state)
-    local level = parent:GetFrameLevel()
-    -- Map and all Forever portrait chrome sit above their root: our controls go
-    -- above the portrait border too; only our own frames change level.
-    if state.name == "WorldMapFrame" or NS.Client.isForever then
-        local borderLevel = Safety.Read(Safety.Field(parent, "NineSlice"), "GetFrameLevel")
-        if type(borderLevel) == "number" then level = math.max(level, borderLevel) end
-    end
-    return level
-end
-
 local function CreateGrip(state)
-    local grip = Safety.CreateChildFrame("Button", ControlParent(state))
+    local grip = Safety.CreateChildFrame("Button", NS.WindowControlChrome.Parent(state))
     controlStates[grip] = state
     grip:SetSize(20, 20)
-    grip:SetFrameLevel(ControlBaseLevel(state) + GRIP_LEVEL_OFFSET)
-    if state.name == "WorldMapFrame" then
-        -- Clear quest scrolling and keep the grip above a maximized map's bottom edge.
-        grip:SetPoint("BOTTOMLEFT", state.frame, "BOTTOMRIGHT", 1, 3)
-        grip:SetClampedToScreen(true)
-    elseif NS.Client.isForever and state.name == "ProfessionsFrame" then
-        -- Leave the Create button, right tab column and lower footer clear.
-        grip:SetPoint("TOPLEFT", state.frame, "BOTTOMRIGHT", 1, -1)
-    else
-        grip:SetPoint("BOTTOMRIGHT", state.frame, "BOTTOMRIGHT", -3, 3)
-    end
+    grip:SetFrameLevel(NS.WindowControlChrome.Level(state) + GRIP_LEVEL_OFFSET)
+    NS.WindowControlChrome.PlaceGrip(grip, state)
     if state.name == "WorldMapFrame" then
         NS.WindowControlChrome.StyleGrip(grip)
     else
@@ -499,13 +447,10 @@ local function CreateGrip(state)
     return grip
 end
 
--- Title-strip move.
-
 local function EndMove(state)
     if not state.moving then return end
     local frame = state.frame
-    -- Only a protected panel waits for the end of combat to stop; any other
-    -- stops where it was dropped, and in combat only its anchor waits.
+    -- Protected movement waits for combat end; safe panels stop and save at once.
     if IsCombat() and Safety.GetProtection(frame) then
         NS.CombatGate.RunOrDefer("windowControls:move:" .. state.name, function() EndMove(state) end)
         return
@@ -520,7 +465,8 @@ local function EndMove(state)
 end
 
 local function BeginMove(state)
-    if not CanChangeGeometry(state) or not Enabled() or Maximized(state) then return end
+    if not CanChangeFrameGeometry(state.frame) or not SafeControls(state) or not Enabled() or Maximized(state) then return end
+    if state.inventory and not state.customScale and not state.customPosition then CaptureNativeBagLayout(state) end
     local frame = state.frame
     local movable = Safety.Read(frame, "IsMovable")
     state.nativeMovable = movable
@@ -547,12 +493,10 @@ end
 local function CreateTitleDrag(state)
     -- The title area of standard Blizzard panels is clear (and below it on
     -- Forever): the drag target stays there, away from portraits and buttons.
-    local strip = Safety.CreateChildFrame("Frame", ControlParent(state))
+    local strip = Safety.CreateChildFrame("Frame", NS.WindowControlChrome.Parent(state))
     controlStates[strip] = state
-    strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 50, -1)
-    strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -110, -1)
-    strip:SetHeight(24)
-    strip:SetFrameLevel(ControlBaseLevel(state) + CONTROL_LEVEL_OFFSET)
+    NS.WindowControlChrome.PlaceTitleDrag(strip, state)
+    strip:SetFrameLevel(NS.WindowControlChrome.Level(state) + CONTROL_LEVEL_OFFSET)
     strip:EnableMouse(true)
     strip:RegisterForDrag("LeftButton")
     strip:SetScript("OnDragStart", OnTitleDragStart)
@@ -573,7 +517,9 @@ local function ShowControls(state)
         state.grip:Hide()
         return
     end
-    local level = ControlBaseLevel(state)
+    local level = NS.WindowControlChrome.Level(state)
+    NS.WindowControlChrome.PlaceGrip(state.grip, state)
+    NS.WindowControlChrome.PlaceTitleDrag(state.titleDrag, state)
     state.titleDrag:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
     state.grip:SetFrameLevel(level + GRIP_LEVEL_OFFSET)
     state.titleDrag:Show()
@@ -586,21 +532,27 @@ end
 
 -- Controls off: a panel the grip scaled gets Blizzard's scale back (the
 -- stored scale stays and returns with the controls).
-local function RestoreNativeScale(state)
-    if not state.customScale or not CanChangeGeometry(state) then return end
+local function RestoreNativeScale(state, releasing)
+    local mayChange = releasing and Policy.CanChangeGeometry or CanChangeFrameGeometry
+    if not state.customScale or not mayChange(state.frame) then return end
     state.customScale = false
     if type(state.originalScale) == "number" then state.frame:SetScale(state.originalScale) end
 end
 
-local function HideControls(state)
+local function HideControls(state, releasing)
+    activeInventory[state.frame] = nil
+    if IsCombat() and (not CanChangeFrameGeometry(state.frame) or not SafeControls(state)) then
+        NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
+        return
+    end
     if state.moving then EndMove(state) end
     if state.drag then EndDrag(state) end
     if state.minimized then Restore(state) end
     state.titleDrag:Hide()
     state.grip:Hide()
     if state.minimize then state.minimize:Hide() end
-    RestoreNativeScale(state)
-    if state.customPosition and not IsCombat() then RestoreNativePosition(state) end
+    RestoreNativeScale(state, releasing)
+    if state.customPosition and not IsCombat() then RestoreNativePosition(state, releasing) end
 end
 
 local function CanMinimize(name)
@@ -629,18 +581,17 @@ end
 -- Hooked once per panel. The invisible title strip takes the title area's clicks: it
 -- comes back only while the controls are on, an owner skins and it can be controlled.
 local OnPanelShow
-local function ReplayPanelShow(frame)
-    if frame:IsShown() then OnPanelShow(frame) end
-end
 OnPanelShow = function(frame)
     local state = WindowControls.states[frame]
-    if not state then return end
+    if not state or Safety.IsForbidden(frame) then return end
+    activeStates[frame] = state
+    if state.inventory then activeInventory[frame] = Controlled(state) and state or nil end
     if state.restore then
         state.minimized = false
         state.restore:Hide()
     end
-    if IsCombat() then
-        NS.CombatGate.RunOrDefer("windowControls:show:" .. state.name, function() ReplayPanelShow(frame) end)
+    if IsCombat() and (not CanChangeFrameGeometry(frame) or not SafeControls(state)) then
+        NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
         return
     end
     if Controlled(state) then
@@ -648,34 +599,64 @@ OnPanelShow = function(frame)
         -- Blizzard fits checkFit panels (PlayerSpellsFrame, ProfessionsFrame,
         -- Settings) to the screen with SetScale(1) as they open: the stored
         -- scale comes back first, then the position, which depends on it.
-        ApplyStoredScale(state)
+        if not state.drag then ApplyStoredScale(state) end
+        ApplyStoredPosition(state)
     else
-        state.titleDrag:Hide()
+        HideControls(state)
     end
-    ApplyStoredPosition(state)
+end
+
+-- Native bag layout resets the scale and anchors of every shown bag. Only
+-- owned, visible native inventory roots participate; closed history stays cold.
+local function OnContainerPositionsUpdated()
+    for frame, state in pairs(activeInventory) do
+        if Controlled(state) then
+            if state.customScale or state.customPosition then CaptureNativeBagLayout(state) end
+            if not state.drag then ApplyStoredScale(state) end
+            ApplyStoredPosition(state)
+        elseif IsCombat() and not Policy.CanChangeGeometry(frame) then
+            NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
+        else
+            activeInventory[frame] = nil
+        end
+    end
+end
+
+local containerHooked = false
+local function TrackInventory(state)
+    if not state.inventory then return end
+    if state.frame:IsShown() then activeInventory[state.frame] = state end
+    if not containerHooked and Safety.HasMethod(_G, "UpdateContainerFrameAnchors") then
+        hooksecurefunc("UpdateContainerFrameAnchors", OnContainerPositionsUpdated)
+        containerHooked = true
+    end
 end
 
 local function OnPanelHide(frame)
     local state = WindowControls.states[frame]
     if not state then return end
+    positionedStates[frame] = nil
+    activeInventory[frame] = nil
+    if not state.minimized then activeStates[frame] = nil end
+    if state.drag then EndDrag(state) end
     if state.moving then EndMove(state) end
     if state.restore and not state.minimized then state.restore:Hide() end
 end
 
 function WindowControls.Attach(frame, owner)
-    if not Enabled() or IsCombat() then return false end
-    local name, _, panel = Eligible(frame)
+    TrackFocus(frame, owner)
+    if not Enabled() then return false end
+    local name, _, panel = Policy.Eligible(frame)
     local state = WindowControls.states[frame]
     if not name then
         -- A panel that became protected keeps no grip or drag strip.
-        if state and Safety.GetProtection(frame) then HideControls(state) end
+        if state and (state.inventory or Safety.GetProtection(frame)) then HideControls(state) end
         return false
     end
     if state then
         state.owners[owner or "blizzardWindows"] = true
-        ApplyStoredScale(state)
-        ApplyStoredPosition(state)
-        ShowControls(state)
+        TrackInventory(state)
+        if frame:IsShown() then OnPanelShow(frame) end
         return true
     end
     local close = FindClose(frame, name)
@@ -683,11 +664,19 @@ function WindowControls.Attach(frame, owner)
         frame = frame,
         name = name,
         panel = panel,
+        inventory = Policy.IsInventory(frame),
         originalScale = frame:GetScale(),
         nativePoints = CaptureNativePoints(frame),
+        replayKey = "windowControls:show:" .. name,
         owners = { [owner or "blizzardWindows"] = true },
     }
     WindowControls.states[frame] = state
+    TrackInventory(state)
+    if frame:IsShown() then activeStates[frame] = state end
+    state.replayShow = function()
+        if frame:IsShown() then OnPanelShow(frame)
+        elseif state.minimized and not Controlled(state) then HideControls(state) end
+    end
     state.grip = CreateGrip(state)
     ApplyStoredScale(state)
     if close and CanMinimize(name) and not Safety.Field(frame, "MinimizeButton")
@@ -704,10 +693,11 @@ function WindowControls.Attach(frame, owner)
 end
 
 function WindowControls.DisableOwner(owner)
+    ReleaseFocus(owner)
     for _, state in pairs(WindowControls.states) do
         state.owners[owner] = nil
         if not next(state.owners) then
-            HideControls(state)
+            HideControls(state, true)
         end
     end
 end
@@ -721,16 +711,9 @@ function WindowControls.SetEnabled(enabled)
 end
 
 function WindowControls.Refresh()
-    if IsCombat() then return false, "combat" end
-    local enabled = Enabled()
-    for _, state in pairs(WindowControls.states) do
-        if enabled and Controlled(state) then
-            if not state.drag then ApplyStoredScale(state) end
-            if not state.moving then ApplyStoredPosition(state) end
-            ShowControls(state)
-        else
-            HideControls(state)
-        end
+    for frame in pairs(activeStates) do
+        if Safety.Read(frame, "IsShown") then OnPanelShow(frame)
+        elseif not Controlled(activeStates[frame]) then HideControls(activeStates[frame]) end
     end
     return true
 end
@@ -739,10 +722,13 @@ local function RefreshQueued() WindowControls.Refresh() end
 
 local function RecolorMinimize()
     local Chrome = NS.WindowControlChrome
-    for _, state in pairs(WindowControls.states) do
-        if state.name == "WorldMapFrame" then Chrome.RecolorGrip(state.grip) end
-        if state.minimize then Chrome.RecolorControl(state.minimize) end
-        if state.restore then Chrome.RecolorControl(state.restore) end
+    for _, state in pairs(activeStates) do
+        if SafeControls(state) then
+            if state.name == "WorldMapFrame" then Chrome.RecolorGrip(state.grip) end
+            if state.inventory then Chrome.RecolorControl(state.titleDrag) end
+            if state.minimize then Chrome.RecolorControl(state.minimize) end
+            if state.restore then Chrome.RecolorControl(state.restore) end
+        elseif IsCombat() then NS.CombatGate.RunOrDefer("windowControls:colors", RecolorMinimize) end
     end
 end
 
@@ -760,7 +746,7 @@ function WindowControls.ResetScales()
     if IsCombat() then return false, "combat" end
     NS.DB.windowControls.scales = {}
     for _, state in pairs(WindowControls.states) do
-        if type(state.originalScale) == "number" and CanChangeGeometry(state) then
+        if type(state.originalScale) == "number" and CanChangeFrameGeometry(state.frame) then
             state.frame:SetScale(state.originalScale)
         end
         state.customScale = false

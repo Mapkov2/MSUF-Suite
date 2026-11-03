@@ -1234,6 +1234,22 @@ for _, forever in ipairs({ false, true }) do
     bankButtons[2]:Refresh()
     assert(requests[1106] == 1 and not module.bankOverlays[bankButtons[2]].label.shown,
         "failed item lookup looped or displayed stale level")
+    bankPanel:GenerateItemSlotsForSelectedTab()
+    bankPanel.onShowHook(bankPanel)
+    assert(requests[1106] == 1, "native bank repaint retried a failed load")
+    context.events.BANKFRAME_OPENED(module, "BANKFRAME_OPENED")
+    bankPanel.onShowHook(bankPanel)
+    assert(requests[1106] == 2, "native bank reopening did not retry a failed load once")
+    context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 1106, false)
+    bankPanel:GenerateItemSlotsForSelectedTab()
+    assert(requests[1106] == 2, "second failure restarted a native bank load loop")
+    context.events.BANKFRAME_OPENED(module, "BANKFRAME_OPENED")
+    assert(requests[1106] == 3, "next native bank opening did not retry the second failure")
+    levels["pending-fail"] = 667
+    context.events.GET_ITEM_INFO_RECEIVED(module, "GET_ITEM_INFO_RECEIVED", 1106, true)
+    assert(module.bankOverlays[bankButtons[2]].label.text == "667"
+        and module.bankOverlays[bankButtons[2]].label.shown,
+        "native bank retry did not restore the item level")
     items[4].isFiltered = true
     bankPanel:UpdateSearchResults()
     assert(not module.bankOverlays[bankButtons[1]].label.shown,

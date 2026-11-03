@@ -217,6 +217,10 @@ Check(NS.Registry.GetSurface(standalone).hoverOverlay:IsShown()
 local r, g, b, alpha = NS.Theme.GetColor("buttonFill")
 Check(math.abs(select(4, state.fill:GetVertexColor()) * state.fill:GetAlpha() - alpha * 0.4) < 0.000001, "motion cleanup overwrote new material opacity")
 Check(NS.Theme.SetAppearance("menuAnimations", true), "animation switch failed")
+Check(NS.Theme.SetAppearance("windowFocusDimming", false) and NS.DB.theme.windowFocusDimming == false
+    and NS.DB.theme.dropdownDimming == nil, "window dimming setting is missing or changed dropdown dimming")
+Check(NS.Theme.SetAppearance("windowFocusDimming", true) and NS.DB.theme.windowFocusDimming == true,
+    "window dimming cannot be enabled again")
 Check(NS.Theme.SetAppearance("reduceMotion", true), "reduced motion failed")
 button:Fire("OnMouseDown")
 Check(Motion.count == 0, "reduced motion started a driver")
@@ -366,20 +370,31 @@ for _, motionState in ipairs({ secret, "missing" }) do
     Surface.Attach(tip, { role = "popup" })
     Check(not tip.hooks.OnEnter and not tip.hooks.OnLeave, "unreadable tooltip input state gained hover hooks")
 end
--- Event-derived combat gate must win before lockdown turns true.
+-- Combat changes protection, not the configured visual policy.
 button:Fire("OnEnter"); Tick(3)
-button:Fire("OnMouseDown"); Tick()
+button:Fire("OnMouseDown"); Tick(1)
 clock:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
-Check(not lockdown and Motion.count == 0, "combat edge did not stop active transitions")
-Check(state.motion.channels[6].value == 0, "combat left an idle pressed control stuck")
-local combatHighlightAlpha = state.highlight:GetAlpha()
+Check(not lockdown and Motion.count > 0 and state.motion.channels[6].target == 1,
+    "combat edge stopped safe active transitions")
 Surface.Refresh(button)
-button:Fire("OnMouseDown")
 button:Fire("OnMouseUp")
-Check(Motion.count == 0, "combat edge started a transition before lockdown")
+Check(Motion.count > 0, "combat refresh disabled safe gestures")
+lockdown = true
+local combatButton = Target("Button", parent)
+Surface.Attach(combatButton, { role = "button" })
+combatButton:Fire("OnEnter")
+Check(NS.Registry.GetSurface(combatButton).motion.index ~= nil, "cold combat control lost its animation")
+combatButton:Hide()
+button:Fire("OnLeave"); Tick()
+Check(Motion.count == 0 and clock:GetScript("OnUpdate") == nil, "combat gestures retained an idle driver")
+lockdown = false
 clock:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+button:Fire("OnMouseDown"); Tick()
+button.protected = true
+clock:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
 Check(state.motion.channels[6].value == 0, "combat left an idle pressed control stuck")
-Check(combatHighlightAlpha > 0, "combat removed native static hover feedback")
+clock:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+button.protected = false
 button:Fire("OnEnter")
 Check(Motion.count > 0, "combat-edge refresh permanently disabled a visible control")
 button:Fire("OnLeave"); Tick()

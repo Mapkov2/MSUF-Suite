@@ -19,12 +19,12 @@ P.DataTextStandard = Standard
 Standard.SOURCES = {
     gold = true, sessionGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
-    date = true, fpsLatency = true, memory = true,
+    date = true, fpsLatency = true, memory = true, homeLatency = true,
 }
-Standard.SAMPLED = { clock = true, fps = true, latency = true, coordinates = true, date = true, fpsLatency = true, memory = true }
-Standard.INTERVAL = { fps = 2, latency = 5, coordinates = 0.5, fpsLatency = 2, memory = 30 }
+Standard.SAMPLED = { clock = true, fps = true, latency = true, homeLatency = true, coordinates = true, date = true, fpsLatency = true, memory = true }
+Standard.INTERVAL = { fps = 2, latency = 5, homeLatency = 5, coordinates = 0.5, fpsLatency = 2, memory = 30 }
 -- Displays that read another shared data source.
-Standard.READER = { clock = "clockTime", sessionGold = "gold" }
+Standard.READER = { clock = "clockTime", sessionGold = "gold", homeLatency = "latency" }
 Standard.EVENT_SOURCES = {
     PLAYER_MONEY = { "gold", "sessionGold" },
     BAG_UPDATE_DELAYED = { "bags" },
@@ -46,6 +46,7 @@ local LABELS = {
     gold = S.Text("Gold"), sessionGold = S.Text("Session"), bags = S.Text("Bags"),
     durability = S.Text("Durability"), clock = S.Text("Time"), fps = S.Text("FPS"),
     latency = S.Text("World"), coordinates = S.Text("Coords"), location = S.Text("Zone"), xp = S.Text("XP"),
+    homeLatency = S.Text("Home latency"),
     date = S.Text("Date"), fpsLatency = S.Text("FPS / World"), memory = S.Text("Addon memory"),
 }
 Standard.LABELS = LABELS
@@ -136,6 +137,9 @@ local FORMATTERS = {
     latency = function(_, world)
         if Finite(world) then return Milliseconds(world), world >= latencyLimit and "bad" or nil end
     end,
+    homeLatency = function(home)
+        if Finite(home) then return Milliseconds(home), home >= latencyLimit and "bad" or nil end
+    end,
     coordinates = function(x, y)
         if Finite(x) and Finite(y) then return string.format(coordinateFormat, x * 100, y * 100) end
     end,
@@ -190,7 +194,7 @@ function Standard.TooltipLines(tooltip, button, config)
         end
         if config.trackAltGold then GoldLedger.AppendTooltip(tooltip, MoneyText, TEXT) end
         return true
-    elseif key == "latency" or key == "fpsLatency" then
+    elseif key == "latency" or key == "homeLatency" or key == "fpsLatency" then
         local home, world = S.ReadInfoSource("latency")
         if Finite(home) and Finite(world) then
             tooltip:AddDoubleLine(TEXT.homeWorld, floor(home + .5) .. " / " .. Milliseconds(world))

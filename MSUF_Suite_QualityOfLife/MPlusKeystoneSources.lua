@@ -57,8 +57,12 @@ end
 
 -- The library calls object[member] without self.
 function OPENRAID.OnUpdate(name, info)
-    if type(info) ~= "table" then return end
-    Deliver(OPENRAID.source, name, info.mythicPlusMapID, info.level, OpenRaidScope(name))
+    if not S.Public(info) or type(info) ~= "table" then return end
+    -- LibOpenRaid may not have its bag link yet; its challengeMapID comes
+    -- directly from GetOwnedKeystoneChallengeMapID and remains usable.
+    local mapID = info.mythicPlusMapID
+    if not S.Finite(mapID) or mapID < 1 then mapID = info.challengeMapID end
+    Deliver(OPENRAID.source, name, mapID, info.level, OpenRaidScope(name))
 end
 
 function OPENRAID.Attach(lib) lib.RegisterCallback(OPENRAID, "KeystoneUpdate", "OnUpdate") end

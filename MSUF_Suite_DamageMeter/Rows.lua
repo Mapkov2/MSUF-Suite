@@ -509,7 +509,8 @@ function D.PaintSpell(row, spell, source, meterType, class)
     row.unitSpellLabel = unitLabel
     local id = spell.spellID
     if Finite(id) then
-        if id ~= row.spellID then
+        local changed = id ~= row.spellID
+        if changed then
             row.spellID = id
             local texture, zoom = C_Spell.GetSpellTexture(id), M.style.zoom
             if texture then
@@ -519,9 +520,16 @@ function D.PaintSpell(row, spell, source, meterType, class)
             else
                 D.SetIconShown(row, false)
             end
-            local name, pet = C_Spell.GetSpellName(id), spell.creatureName
+        end
+        -- A pooled row can keep its spell while its pet or owner changes.
+        -- Cache only readable names; a secret pet drops the previous suffix.
+        local pet = spell.creatureName
+        if not Public(pet) or type(pet) ~= "string" then pet = "" end
+        if changed or pet ~= row.spellPet then
+            row.spellPet = pet
+            local name = C_Spell.GetSpellName(id)
             if not Public(name) or type(name) ~= "string" then name = "" end
-            if name ~= "" and Public(pet) and type(pet) == "string" and pet ~= "" then name = format("%s (%s)", name, pet) end
+            if name ~= "" and pet ~= "" then name = format("%s (%s)", name, pet) end
             row.spellName = name
             row.nameText:SetText(name)
         end

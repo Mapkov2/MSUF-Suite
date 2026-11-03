@@ -156,7 +156,7 @@ C_ChatInfo = {
     end,
     SendChatMessage = function() end,
 }
-C_MythicPlus = {
+C_MythicPlus = { RequestMapInfo = function() end,
     GetOwnedKeystoneChallengeMapID = function() return own.map end,
     GetOwnedKeystoneLevel = function() return own.level end,
 }
@@ -245,7 +245,7 @@ Check(not Row("Alice-Realm") and not keys.context.events.GROUP_ROSTER_UPDATE,
     "an unrequested answer was taken, or the roster was watched without a request")
 command("")
 Check(#messages == 0 and #log == 0 and keys.host.shown, "opening the window sent a request")
-Check(keys.status.text == "Page 1/1 · Suite users who answered this request", "the idle status line changed")
+Check(keys.status.text == "Page 1/1 - Suite users who answered this request", "the idle status line changed")
 Check(not keys.teleportLayer, "teleport buttons were built without a portal list")
 
 ------------------------------------------------------------------ the Suite protocol alone: wire format unchanged
@@ -253,10 +253,10 @@ now = 100
 command("group")
 Check(#messages == 1 and messages[1][1] == "MSUFKEY1" and messages[1][2] == "Q" and messages[1][3] == "PARTY",
     "the MSUFKEY1 request changed")
-Check(keys.status.text == "Page 1/1 · No answers yet", keys.status.text)
+Check(keys.status.text == "Page 1/1 - No answers yet", keys.status.text)
 Answer("Alice-Realm", "K:161:12")
 Check(Row("Alice-Realm") == "Skyreach +12" and notices[#notices] == "Alice-Realm: Skyreach +12", "the Suite answer was not listed")
-Check(keys.status.text == "Page 1/1 · Players who answered: 1 (Suite 1)", keys.status.text)
+Check(keys.status.text == "Page 1/1 - Players who answered: 1 (Suite 1)", keys.status.text)
 Answer("Bob-Realm", "Q")
 Check(#messages == 2 and messages[2][2] == "K:161:12" and messages[2][3] == "PARTY", "the MSUFKEY1 answer changed")
 local shareSource = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/MPlusKeystoneShare.lua", "rb")):read("*a")
@@ -342,13 +342,13 @@ local count = 0
 for name in pairs(keys.rows) do if name:find("^Alice") then count = count + 1 end end
 Check(count == 1, "a player has more than one row")
 libs["LibOpenRaid-1.0"].Answer("Carol", 10, 161)
-Check(keys.status.text == "Page 1/1 · Players who answered: 3 (Suite 1, LibKeystone 1, LibOpenRaid 1)", keys.status.text)
+Check(keys.status.text == "Page 1/1 - Players who answered: 3 (Suite 1, LibKeystone 1, LibOpenRaid 1)", keys.status.text)
 -- Windows: the Suite protocol closes after 5 seconds, the libraries after 12.
 now = 136
 Answer("Zed-Realm", "K:161:12")
 libs.LibKeystone.Answer(11, 161, "Yan", "PARTY")
 Check(not Row("Zed-Realm") and Row("Yan-Realm") == "Skyreach +11", "the answer windows are wrong")
-libs.LibKeystone.Answer(11, 99999, "Wil", "PARTY")
+libs.LibKeystone.Answer(11, 100001, "Wil", "PARTY")
 libs.LibKeystone.Answer(1, 161, "Vic", "PARTY")
 libs["LibOpenRaid-1.0"].Answer("Uma", 12, 0)
 libs["LibOpenRaid-1.0"].Answer("Tim", nil, 161)
@@ -550,6 +550,117 @@ Check(rule.default == true and rule.tooltip and module.rules.insertKey.default =
     "the other-addons option does not default on, has no tooltip, or insertKey changed")
 Check(module.available() == true and Catalog({ isForever = true }).available() == false,
     "the keystone window is offered on WoW Forever")
+
+------------------------------------------------------------------ cold data and font recovery
+keys:Enable()
+libs.LibKeystone, libs["LibOpenRaid-1.0"] = nil, nil
+local mapRequests, bagReads = 0, 0
+C_MythicPlus.RequestMapInfo = function() mapRequests = mapRequests + 1 end
+C_Container = {
+    GetContainerNumSlots = function(bag) return bag == 0 and 1 or 0 end,
+    GetContainerItemLink = function() bagReads = bagReads + 1 return "|Hkeystone:180653:375:8:0|h[Key]|h" end,
+}
+now = 300
+own.map, own.level, names[161] = 161, 12, nil
+command("group")
+Check(mapRequests == 1 and keys.context.events.CHALLENGE_MODE_MAPS_UPDATE,
+    "opening the key window did not request map data and watch its arrival")
+Check(keys.entries.You and keys.entries.You.mapID == 161 and keys.entries.You.level == 12 and bagReads == 0,
+    "missing map names hid the valid owned key or scanned bags despite ready IDs")
+Check(Row("You") == "Keystone: Unknown +12", "missing map data was called a missing owned key")
+Answer("Cold-Realm", "K:161:17")
+Check(keys.entries["Cold-Realm"] and keys.entries["Cold-Realm"].mapID == 161 and keys.rowCount == 1,
+    "missing map names discarded a valid peer answer")
+Check(Row("Cold-Realm") == "Unknown +17", "a pending dungeon name hid the peer key level")
+local sentBefore, noticesBefore = #messages, #notices
+now, names[161] = 320, "Skyreach"
+keys.context.events.CHALLENGE_MODE_MAPS_UPDATE(keys, "CHALLENGE_MODE_MAPS_UPDATE")
+Check(Row("You") == "Keystone: Skyreach +12" and Row("Cold-Realm") == "Skyreach +17",
+    "late map metadata did not refresh retained own and peer entries after the answer window")
+Check(#messages == sentBefore and #notices == noticesBefore and mapRequests == 1,
+    "metadata readiness sent another request or repeated chat announcements")
+for _, label in ipairs(keys.labels) do
+    Check(not label.text:find("·", 1, true), "a row still depends on the missing middle-dot glyph")
+end
+Check(not keys.status.text:find("·", 1, true), "the footer still depends on the missing middle-dot glyph")
+
+-- An unavailable owned-key API can recover from the exact keystone link.
+own.map, own.level = nil, nil
+local bagEvent = Check(keys.context.events.BAG_UPDATE_DELAYED, "the window does not watch bag readiness")
+bagEvent(keys, "BAG_UPDATE_DELAYED")
+Check(keys.entries.You and keys.entries.You.mapID == 375 and keys.entries.You.level == 8,
+    "the owned key was not recovered from its bag link")
+Check(Row("You") == "Keystone: Mists of Tirna Scithe +8" and Row("Cold-Realm") == "Skyreach +17",
+    "a bag refresh lost the peer keys or did not repaint the owned key")
+local safeLinks = { "secret", "|Hitem:180653:375:8|h[Not a key]|h", "|Hkeystone:180653:375:1|h[Invalid]|h" }
+for _, link in ipairs(safeLinks) do
+    C_Container.GetContainerItemLink = function() return link end
+    bagEvent(keys, "BAG_UPDATE_DELAYED")
+    Check(not keys.entries.You and Row("You") == "No owned keystone found", "an unreadable or invalid bag key was listed")
+end
+own.map, own.level = 161, 12
+bagEvent(keys, "BAG_UPDATE_DELAYED")
+Check(keys.entries.You and keys.entries.You.mapID == 161, "the owned API did not recover")
+
+-- A synchronous provider reply must enter the same request as later replies.
+libs.LibKeystone = FakeKeystone()
+local request = libs.LibKeystone.Request
+libs.LibKeystone.Request = function(channel)
+    request(channel)
+    libs.LibKeystone.Answer(14, 501, "Immediate", channel)
+end
+now = 330
+command("group")
+Check(Row("Immediate-Realm") == "The Stonevault +14", "a synchronous provider reply was lost before the window was armed")
+
+-- LibOpenRaid's bag-derived map can be empty although the native map is ready.
+libs.LibKeystone, libs["LibOpenRaid-1.0"] = nil, FakeOpenRaid()
+now = 340
+command("group")
+local callback = Check(libs["LibOpenRaid-1.0"].callbacks[1], "no OpenRaid callback")
+for _, missing in ipairs({ 0, "secret" }) do
+    callback.object[callback.member]("Fallback", { mythicPlusMapID = missing, challengeMapID = 375, level = 16 })
+    Check(Row("Fallback-Realm") == "Mists of Tirna Scithe +16", "the native OpenRaid challenge map was ignored")
+end
+callback.object[callback.member]("Unreadable", "secret")
+Check(not Row("Unreadable-Realm"), "an unreadable provider record was used")
+callback.object[callback.member]("Priority", { mythicPlusMapID = 501, challengeMapID = 375, level = 13 })
+Check(Row("Priority-Realm") == "The Stonevault +13", "the bag-derived challenge map lost precedence")
+
+-- Map-dependent learned portals must also recover without closing the window.
+local portalReady, portalReads = false, 0
+S.DungeonPortalChoices = function()
+    portalReads = portalReads + 1
+    return { season = { { id = 1254557, learned = true, map = portalReady and 161 or nil, icon = 12 } } }, true
+end
+now = 350
+command("group")
+local ownRow = RowIndex("You")
+Check(not keys.teleportButtons[ownRow].shown, "cold portal fixture unexpectedly mapped a dungeon")
+portalReady = true
+keys.context.events.CHALLENGE_MODE_MAPS_UPDATE(keys, "CHALLENGE_MODE_MAPS_UPDATE")
+Check(keys.teleportButtons[ownRow].shown and keys.teleportButtons[ownRow].attrs.spell == 1254557,
+    "late map data left a learned portal hidden until the window reopens")
+local readsBefore, writes = portalReads, 0
+local setText = keys.labels[ownRow].SetText
+keys.labels[ownRow].SetText = function(self, text) writes = writes + 1 setText(self, text) end
+local ownEntry = keys.entries.You
+for i = 1, 20 do bagEvent(keys, "BAG_UPDATE_DELAYED") end
+Check(writes == 0 and portalReads == readsBefore and keys.entries.You == ownEntry,
+    "unrelated bag events repainted the window, rescanned portals, or allocated own records")
+keys.labels[ownRow].SetText = setText
+
+-- Late metadata in combat keeps the teleport safety contract; hide is idle.
+EnterCombat()
+keys.context.events.CHALLENGE_MODE_MAPS_UPDATE(keys, "CHALLENGE_MODE_MAPS_UPDATE")
+Check(#blocked == 0, Blocked())
+keys.host:Hide()
+Check(not keys.context.events.CHALLENGE_MODE_MAPS_UPDATE and not keys.context.events.BAG_UPDATE_DELAYED,
+    "the hidden window keeps its data-readiness events")
+LeaveCombat()
+keys:Disable()
+Check(not keys.context.events.CHALLENGE_MODE_MAPS_UPDATE and not keys.context.events.BAG_UPDATE_DELAYED,
+    "disable left the data-readiness events behind")
 
 print("Keys interop: Suite protocol unchanged, LibKeystone and LibOpenRaid merged by player, " ..
     "throttled and optional, teleports for learned portals over a plain window that closes, moves and scales in combat passed")

@@ -180,6 +180,7 @@ local function InstallBankHooks(self)
 end
 
 local function BankOpened(self)
+    Loads.Retry(self.bankLoads)
     InstallBankHooks(self)
     self:UpdateBank()
 end

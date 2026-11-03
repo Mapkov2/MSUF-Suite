@@ -154,7 +154,10 @@ Getter(ALL, "GetHeight", function(self) return self.height end)
 Getter(ALL, "GetScale", function(self) return self.scale end)
 Getter(ALL, "GetAlpha", function(self) return self.alpha end)
 Method(ALL, "GetNumPoints", function(self) return #self.points end)
-Getter(ALL, "GetPoint", function(self, index) return unpack(self.points[index]) end)
+Getter(ALL, "GetPoint", function(self, index)
+    local point = self.points[index or 1]
+    if point then return point[1], point[2], point[3] or point[1], point[4] or 0, point[5] or 0 end
+end)
 Setter(ALL, "SetPoint", function(self, ...) self.points[#self.points + 1] = { ... } end)
 Setter(ALL, "ClearAllPoints", function(self) self.points = {} end)
 Setter(ALL, "SetAllPoints", function(self, other)
@@ -412,6 +415,8 @@ Shipped(PLATFORM, "\n(function Suite%.ResolveFont%(key%)\n.-\nend)\n", "local Su
 
 local combat, queued, module = false, {}, nil
 local S = { RGB = Platform.RGB, ResolveFont = Platform.ResolveFont }
+S.Finite = Shipped(PLATFORM, "\n(local function Finite%(value%)\n.-\nend)\n",
+    "local IsSecret, HUGE = ...", "return Finite", issecretvalue, math.huge)
 Shipped(SURFACES, "\n(function S%.PlaceEdges%(.-\nend)\n", "local S = ...", "", S)
 S.CreateFrame = Native("CreateFrame", function() return Widget("Frame") end)
 S.CreateTexture = function(parent) return parent:CreateTexture() end
@@ -419,6 +424,7 @@ S.Queue = function(id) queued[id] = true end
 S.Install = function(_, instance) module = instance end
 -- NS.IsCombatLocked is InCombatLockdown() (MSUF_Suite_Skin/Core/Bootstrap.lua).
 local NS = { IsSecret = issecretvalue, IsCombatLocked = Native("InCombatLockdown", function() return combat end),
+    Safety = { IsForbidden = function() return false end },
     MSUFMedia = { font = "msuf.ttf" },
     -- No MSUF host here: no icon skin look, nothing paints.
     HostBridge = { IconSkinLook = function() end, PaintIconSkin = function() return false end, WatchIconSkins = function() end } }
@@ -729,6 +735,7 @@ for _, button in ipairs(BuffFrame.auraFrames) do
 end
 module.active = true
 local first, second, third = BuffFrame.auraFrames[1], BuffFrame.auraFrames[2], BuffFrame.auraFrames[3]
+local originalCrop = table.concat(first.Icon.coords, ",")
 first.Icon.secret = { GetTexCoord = true }
 second.secret = { GetAlpha = true, GetScale = true, GetFrameLevel = true }
 third.Duration.secret = { GetTextColor = true }
@@ -738,7 +745,7 @@ module:Enable()
 UnitAura(6, 1)
 module:Disable()
 assert(aspectsAdded == 0, "a secret value reached SetTexCoord, SetAlpha or SetTextColor from addon code")
-assert(first.Icon.coords[2] ~= 1, "an unreadable crop must stay as it was, not be restored")
+assert(table.concat(first.Icon.coords, ",") == originalCrop, "an unreadable crop must remain untouched")
 assert(second.Count.font[1] == "native.ttf" and third.Duration.font[1] == "native.ttf",
     "readable aspects were not restored")
 BuffFrame.auraFrames[4].secret, BuffFrame.auraFrames[5].secret = nil, nil

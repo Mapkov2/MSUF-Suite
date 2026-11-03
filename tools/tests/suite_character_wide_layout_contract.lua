@@ -124,33 +124,54 @@ Check(Details.SetOption("wideLayout", true), "the Wide layout setter refused tru
 Gear.ApplyLayout(v)
 Check(Wide(), "turning Wide layout on again did not widen the modern view")
 
--- In combat CharacterFrameMixin:UpdateSize (open, Expand, Collapse) sets
--- Blizzard's width again and the skin's relayout waits for the combat end.
--- The regions it moved follow the narrower window meanwhile; the window
--- itself, the panel manager and protected regions are left alone, and the
--- relayout after combat widens the window again from Blizzard's size.
+-- Native UpdateSize must not collapse the configured safe layout in combat.
+-- Blizzard's secure panel manager is a separate boundary and waits for regen.
 local locked = true
 NS.IsCombatLocked = function() return locked end
+NS.CombatGate = { RunOrDefer = function(_, callback) NS.pendingLayout = callback end }
 Gear.FollowNativeSize(v)
 Check(Wide(), "an unchanged window gave up the wide layout in combat")
 CharacterFrame.width = 540
 CharacterFrame.InsetRight.IsProtected = function() return true, false end
 local beforeCombat = panelRepositions
 Gear.FollowNativeSize(v)
-local _, _, _, headX, headY = CharacterHeadSlot:GetPoint(1)
-Check(headX == 4 and headY == -2 and CharacterModelScene.width == 231 and not Gear.IsWide(),
-    "the moved regions kept the wide layout inside Blizzard's narrower window")
-Check(CharacterFrame.width == 540 and CharacterFrame.height == 540 and panelRepositions == beforeCombat,
-    "the window or the panel manager was changed in combat")
+Check(Wide(), "native UpdateSize collapsed the safe wide Character layout in combat")
+Check(panelRepositions == beforeCombat, "the secure panel manager was changed in combat")
 local _, _, _, insetX = CharacterFrame.InsetRight:GetPoint(1)
 Check(insetX == 704, "a protected region was moved in combat")
 locked = false
 CharacterFrame.InsetRight.IsProtected = nil
 Gear.ApplyLayout(v)
-Check(Wide(), "the relayout after combat did not widen the window again")
+Check(Wide() and panelRepositions == beforeCombat + 1, "deferred panel positioning did not finish")
 Gear.RestoreLayout(v)
 Check(Native(), "the layout after combat no longer restores Blizzard's geometry")
-NS.IsCombatLocked = function() return false end
+
+-- First combat open and hide/reopen use the same reversible layout.
+locked = true
+Gear.ApplyLayout(v)
+Check(Wide(), "first combat open lost the wide layout")
+Gear.RestoreLayout(v)
+Check(Native(), "combat close did not restore the safe native geometry")
+Gear.ApplyLayout(v)
+Check(Wide(), "combat reopen did not restore the configured layout")
+v.host.shown = false
+CharacterFrame.width = 540
+Gear.FollowNativeSize(v)
+Gear.ApplyLayout(v)
+Check(CharacterFrame.width == 540 and panelRepositions == beforeCombat + 2,
+    "hidden Character window performed layout work")
+v.host.shown = true
+Gear.ApplyLayout(v)
+
+-- If another addon makes the root protected, never resize it in combat.
+CharacterFrame.IsProtected = function() return true, true end
+CharacterFrame.width = 540
+Gear.FollowNativeSize(v)
+local _, _, _, headX, headY = CharacterHeadSlot:GetPoint(1)
+Check(CharacterFrame.width == 540 and headX == 4 and headY == -2 and not Gear.IsWide(),
+    "protected Character root was resized or unsafe overflow survived")
+locked = false
+CharacterFrame.IsProtected = nil
 Gear.ApplyLayout(v)
 Check(Wide(), "the wide layout did not come back for the next checks")
 
@@ -180,4 +201,45 @@ NS.DB.characterDetails = { enabled = true, inlineGear = false, wideLayout = true
 Gear.ApplyLayout(v)
 Check(Native(), "a profile without a view widened without its gear info")
 
+-- Cached owned annotations can inherit protection from their native anchors.
+-- The combat refusal must precede Hide/Show, fonts and geometry; once safe,
+-- ordinary combat cleanup still happens immediately.
+locked = true
+local annotationHost, writes = Region(1, 1), 0
+local protected = true
+function annotationHost:IsProtected() return protected, false end
+function annotationHost:Hide() writes = writes + 1 end
+GameTooltip = { IsOwned = function() return false end }
+GameFontNormal = { GetFont = function() return "Fonts\\FRIZQT__.TTF" end }
+local annotation = { host = annotationHost, status = {}, gems = {}, fonts = {
+    { SetFont = function() error("protected annotation font was written") end },
+} }
+local row = { annotation = annotation }
+local savedRows = v.rows
+v.rows = { row }
+Gear.Hide(v)
+Gear.Update(v, row, "HeadSlot")
+Check(writes == 0, "protected cached annotation received a combat write")
+Gear.Paint(v, row)
+protected = false
+Gear.Update(v, row, "HeadSlot")
+Check(writes == 1, "safe combat annotation cleanup was deferred")
+protected = true
+v.wideInfo, v.wide = annotationHost, true
+Gear.UpdateSummary(v)
+local icon = Region(1, 1)
+function icon:IsProtected() return true, false end
+function icon:Show() error("protected owned row icon was shown") end
+row.icon = icon
+Gear.RestoreLayout(v)
+Check(writes == 1, "protected summary was hidden during layout cleanup")
+v.rows, v.wideInfo = savedRows, nil
+local width = CharacterFrame.GetWidth
+v.geometry[CharacterFrame] = { appliedWidth = CharacterFrame.width, appliedHeight = CharacterFrame.height }
+function CharacterFrame:IsForbidden() return true end
+function CharacterFrame:GetWidth() error("forbidden Character geometry was read") end
+Gear.RestoreLayout(v)
+Gear.FollowNativeSize(v)
+CharacterFrame.IsForbidden, CharacterFrame.GetWidth = nil, width
+locked = false
 print("Suite character wide layout: " .. checks .. " checks passed")

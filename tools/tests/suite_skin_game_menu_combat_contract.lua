@@ -154,14 +154,22 @@ menu.shown = true
 local first = Button(menu)
 pool.active[first] = true
 menu:InitButtons()
-Check(Skinned(first, 2), "first combat-created pooled button kept native art")
+Check(Skinned(first, 0), "first combat-created pooled button kept native art")
 Check(NS.CombatGate.GetPendingCount() == 0, "safe first-open art was deferred until combat ended")
-Check(not NS.Registry.GetSurface(first).motion, "first combat paint installed animation work")
+Check(NS.Registry.GetSurface(first).motion ~= nil and NS.Motion.count == 0,
+    "first combat paint missed motion binding or installed an idle driver")
+first:Fire("OnEnter")
+Check(NS.Motion.count > 0, "first combat-open button could not animate hover")
+fixture.Tick(4)
+first:Fire("OnLeave")
+fixture.Tick(30)
+Check(NS.Motion.count == 0 and fixture.clock:GetScript("OnUpdate") == nil,
+    "combat hover did not finish and remove its animation driver")
 
 -- Rebuilding pooled buttons must repair their native state textures immediately.
 local originalSurface = NS.Registry.GetSurface(first)
 menu:InitButtons()
-Check(Skinned(first, 2) and NS.Registry.GetSurface(first) == originalSurface,
+Check(Skinned(first, 0) and NS.Registry.GetSurface(first) == originalSurface,
     "combat pool rebuild failed to restore existing cosmetic state")
 for _ = 1, 12 do menu:InitButtons() end
 Check(#pending == 1, "combat pool rebuilds did not coalesce the late direct-button pass")
@@ -172,7 +180,7 @@ NativeReset(late)
 NativeReset(msuf)
 local reads = enumerations
 Flush()
-Check(Skinned(late, 2) and Skinned(msuf, 0), "late addon/MSUF buttons missed the combat skin")
+Check(Skinned(late, 0) and Skinned(msuf, 0), "late addon/MSUF buttons missed the combat skin")
 Check(reads == enumerations, "late direct-button pass revisited the native pool")
 Check(NS.Motion.count == 0 and NS.CombatGate.GetPendingCount() == 0, "combat skin left animation/deferred work")
 
@@ -182,6 +190,67 @@ menu.MSUF = msufThree
 menu:InitButtons()
 Check(Skinned(msufThree, 0), "MSUF three-slice combat button lost its full-width border")
 Flush()
+
+-- Generic panel hooks may run before or after the game-menu adapter. Compare
+-- real fill, edge and interaction anchors, not just stored skin specifications.
+-- Equal 200x36 frames at scale 1.5 must paint equal 300x54 button bounds.
+local function CheckButtonBounds(button)
+    local surface = assert(NS.Registry.GetSurface(button))
+    for _, key in ipairs({ "fill", "edge", "highlight", "pushed", "disabled" }) do
+        local points = assert(surface[key]).points
+        local left = points.TOPLEFT or points.BOTTOMLEFT
+        local right = points.BOTTOMRIGHT or points.TOPRIGHT
+        Check(left and right and left.relative == button and right.relative == button
+            and left.x == 0 and left.y == 0 and right.x == 0 and right.y == 0,
+            key .. " does not use the full shared menu-button bounds")
+        Check((button.width + right.x - left.x) * button.scale == 300
+            and button.height * button.scale == 54,
+            key .. " differs from the neighboring visible button size")
+    end
+end
+local priorAnimations = NS.DB.theme.menuAnimations
+for _, animations in ipairs({ true, false }) do
+NS.DB.theme.menuAnimations = animations
+for _, genericFirst in ipairs({ true, false }) do
+for _, slices in ipairs({ true, false }) do
+    local custom = Button(menu, slices)
+    local genericSkin = slices and NS.ControlSkin.ApplyThreeSliceButton or NS.ControlSkin.ApplyButton
+    local pooled = Button(menu)
+    custom.width, custom.height, custom.scale = 200, 36, 1.5
+    pooled.width, pooled.height, pooled.scale = 200, 36, 1.5
+    NativeReset(custom)
+    NativeReset(pooled)
+    pool.active[pooled], menu.MSUF = true, custom
+    -- Native creation can show a generic panel skin before the menu pass.
+    if genericFirst then
+        Check(genericSkin(custom, "generic-panel") ~= nil, "generic custom skin failed")
+        Check(NS.ControlSkin.ApplyThreeSliceButton(pooled, "generic-panel") ~= nil, "generic pooled skin failed")
+    end
+    menu:InitButtons()
+    Flush()
+    Check(Skinned(custom, 0) and Skinned(pooled, 0)
+        and NS.ControlSkin.GetOwner(custom) == "combat-menu"
+        and NS.ControlSkin.GetOwner(pooled) == "combat-menu", "dedicated menu skin did not take ownership")
+    CheckButtonBounds(custom)
+    CheckButtonBounds(pooled)
+    -- A later native show hook must agree with the dedicated menu geometry.
+    Check(genericSkin(custom, "generic-panel") ~= nil, "generic custom skin failed")
+    Check(NS.ControlSkin.ApplyThreeSliceButton(pooled, "generic-panel") ~= nil, "generic pooled skin failed")
+    CheckButtonBounds(custom)
+    CheckButtonBounds(pooled)
+    local surface = NS.Registry.GetSurface(custom)
+    menu:InitButtons()
+    Flush()
+    Check(Skinned(custom, 0) and Skinned(pooled, 0)
+        and NS.ControlSkin.GetOwner(custom) == "combat-menu"
+        and NS.ControlSkin.GetOwner(pooled) == "combat-menu", "dedicated menu skin did not take ownership")
+    Check(NS.Registry.GetSurface(custom) == surface, "menu reopen recreated its surface")
+    CheckButtonBounds(custom)
+    CheckButtonBounds(pooled)
+end
+end
+end
+NS.DB.theme.menuAnimations = priorAnimations
 
 -- The same real shared layers apply a previously unseen safe surface in combat.
 local freshMenu = NewTarget("Frame")
@@ -248,9 +317,16 @@ for _, variant in ipairs(variants) do
     local themed = Button(menu)
     pool.active[themed] = true
     menu:InitButtons()
-    Check(Skinned(themed, 2), "combat pooled button missed " .. variant.kind .. " " .. variant.name)
-    Check(not NS.Registry.GetSurface(themed).motion and NS.Motion.count == 0,
-        "combat skin started motion for " .. variant.kind .. " " .. variant.name)
+    Check(Skinned(themed, 0), "combat pooled button missed " .. variant.kind .. " " .. variant.name)
+    Check(NS.Registry.GetSurface(themed).motion ~= nil and NS.Motion.count == 0,
+        "combat skin missed motion binding or started idle work for " .. variant.kind .. " " .. variant.name)
+    themed:Fire("OnEnter")
+    Check(not NS.Motion.Enabled() or NS.Motion.count > 0,
+        "configured combat hover did not animate for " .. variant.kind .. " " .. variant.name)
+    themed:Fire("OnLeave")
+    fixture.Tick(30)
+    Check(NS.Motion.count == 0 and fixture.clock:GetScript("OnUpdate") == nil,
+        "combat hover retained a driver for " .. variant.kind .. " " .. variant.name)
     Flush()
     pool.active[themed] = nil
 end
@@ -308,7 +384,16 @@ for _, group in ipairs(ownerGroups) do
 end
 
 menu:InitButtons()
+fixture.Tick(30)
+first:Fire("OnEnter")
+fixture.Tick(4)
+Check(NS.Motion.count > 0, "closed-menu fixture did not start an active hover")
 menu.shown = false
+-- Native OnHide also reaches a child when its ancestor hides.
+menu:Fire("OnHide")
+first:Fire("OnHide")
+Check(NS.Motion.count == 0 and fixture.clock:GetScript("OnUpdate") == nil,
+    "hiding the combat menu did not cancel its active hover immediately")
 savedWrites, reads = writes, childReads
 Flush()
 Check(writes == savedWrites and reads == childReads, "hidden menu's queued callback performed skin work")
@@ -344,7 +429,7 @@ end
 menu.shown = true
 menu:InitButtons()
 Flush()
-Check(Skinned(first, 2) and NS.Registry.GetSurface(first).motion ~= nil,
+Check(Skinned(first, 0) and NS.Registry.GetSurface(first).motion ~= nil,
     "out-of-combat reopen failed to restore normal motion binding")
 first:Fire("OnEnter")
 Check(NS.Motion.count > 0, "post-combat button hover did not animate")

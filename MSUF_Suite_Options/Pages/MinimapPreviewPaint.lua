@@ -25,6 +25,7 @@ local TEXTS = {
 -- { key, label, section, visibility setting (false: native state), layer, atlas, file }
 local ICONS = {
     { "dungeon", "Group finder", "dungeon", "dungeonButton", "blizzard", "groupfinder-eye-single" },
+    { "queueStatus", "Queue status", "elements", "queueStatusEnabled", "blizzard", "groupfinder-eye-single", nil, "QueueStatus" },
     { "tracking", "Tracking", "elements", "showTracking", "blizzard", "ui-hud-minimap-tracking-up", "Interface\\Minimap\\Tracking\\None" },
     { "calendar", "Calendar", "elements", "showCalendar", "blizzard", "ui-hud-minimap-calendar-up", "Interface\\Calendar\\UI-Calendar-Button" },
     { "mail", "Mail", "elements", "showMail", "blizzard", "ui-hud-minimap-mail-up", "Interface\\Minimap\\Tracking\\Mailbox" },
@@ -50,6 +51,7 @@ local LAYERS = {
     { "coordinates", "Coordinates" }, { "durability", "Durability" }, { "location", "Location" },
     { "weather", "Weather" }, { "difficultyText", "Difficulty text" },
     { "calendarDay", "Calendar day" }, { "dungeon", "Group finder" },
+    { "queueStatus", "Queue status" },
     { "tracking", "Tracking" }, { "calendar", "Calendar" }, { "mail", "Mail" },
     { "crafting", "Crafting" }, { "compartment", "Compartment" }, { "externalEvent", "External event" }, { "difficulty", "Difficulty" },
     { "zoom", "Zoom buttons" }, { "compass", "Compass" },
@@ -228,7 +230,7 @@ local function OffsetPrefix(key)
     if not key or key == "externalEvent" then return nil end
     if key:find("^info") then return key end
     if key == "folio" then return "landing" end
-    if key == "dungeon" then return "dungeon" end
+    if key == "dungeon" or key == "queueStatus" then return key end
     if key == "specialization" then return "spec" end
     if key == "difficulty" then return "difficultyButton" end
     if key == "drawer" or key == "zoomIn" or key == "zoomOut" then return key end
@@ -403,7 +405,8 @@ local function PaintNativeIcon(ui, config, item)
     local scale = ui.art.scale
     local width, height = frame and frame:GetWidth(), frame and frame:GetHeight()
     if frame and PublicNumber(width) and PublicNumber(height) and math.max(width, height) > 0 then
-        local fit = (config.elementSize or RULES.elementSize.default) / math.max(width, height)
+        local wantedSize = spec[1] == "queueStatus" and config.queueStatusSize or config.elementSize or RULES.elementSize.default
+        local fit = wantedSize / math.max(width, height)
         if CopyNativeTexture(button.previewIcon, source, frame, scale, fit) then
             if spec[1] == "externalEvent" then button.previewIconMask:SetSize(width * fit * scale, height * fit * scale) end
             CopyNativeTexture(parts.add, add, frame, scale, fit)
@@ -450,6 +453,12 @@ local function PaintIcons(ui, config)
                 if PublicNumber(texture) then icon = texture end
             end
             button.previewIcon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        elseif key == "queueStatus" then
+            local eyeSize, x, y = Native.QueueLayout(config)
+            button:SetSize(eyeSize * scale, eyeSize * scale)
+            button:ClearAllPoints()
+            button:SetPoint("CENTER", ui.map, "TOPLEFT", x * scale, y * scale)
+            PaintNativeIcon(ui, config, item)
         elseif key == "dungeon" then
             Suite.MinimapStyle.PaintDungeonButton(button, button.previewIcon, config.dungeonStyle, scale)
             button:SetSize(config.dungeonWidth * scale, config.dungeonHeight * scale)

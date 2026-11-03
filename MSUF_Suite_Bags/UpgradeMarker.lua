@@ -5,7 +5,7 @@ local NS, S, M = P.NS, P.Suite, P.BagsModule
 -- paints the arrow). What is worn is read when the first item asks after
 -- PLAYER_EQUIPMENT_CHANGED, never per repaint; an item's answer is kept until
 -- the worn equipment, its link or its level changes.
-local Marker = { levels = {}, revision = 0, dirty = true }
+local Marker = { levels = {}, pending = {}, requested = {}, revision = 0, dirty = true }
 P.UpgradeMarker = Marker
 local CLASS, ARMOR = Enum.ItemClass, Enum.ItemArmorSubclass
 
@@ -35,13 +35,45 @@ local CLASS_ARMOR = {
     [11] = ARMOR.Leather, [12] = ARMOR.Leather, [13] = ARMOR.Mail,
 }
 
+local function ItemEvents()
+    if not Marker.events or not Marker.listening then return end
+    if next(Marker.pending) then
+        Marker.events:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+        Marker.events:RegisterEvent("ITEM_DATA_LOAD_RESULT")
+    else
+        Marker.events:UnregisterEvent("GET_ITEM_INFO_RECEIVED")
+        Marker.events:UnregisterEvent("ITEM_DATA_LOAD_RESULT")
+    end
+end
+
+-- A missing link or level does not establish that a slot is empty. Only a
+-- public nil item ID and link do; false keeps occupied/secret slots unknown.
+local function MissingLevel(slot, link)
+    local itemID = GetInventoryItemID("player", slot)
+    if S.Public(link) and link == nil and S.Public(itemID) and itemID == nil then return nil end
+    if S.Finite(itemID) and itemID > 0 then
+        Marker.pending[itemID] = true
+        if not Marker.requested[itemID] then
+            Marker.requested[itemID] = true
+            C_Item.RequestLoadItemDataByID(itemID)
+        end
+    end
+    return false
+end
+
 local function Rebuild()
+    for itemID in pairs(Marker.pending) do Marker.pending[itemID] = nil end
     for i = 1, #WORN do
         local slot = WORN[i]
         local link = GetInventoryItemLink("player", slot)
         local level = S.Public(link) and link and C_Item.GetDetailedItemLevelInfo(link)
-        Marker.levels[slot] = S.Finite(level) and level or nil
+        if S.Finite(level) and level > 0 then
+            Marker.levels[slot] = level
+        else
+            Marker.levels[slot] = MissingLevel(slot, link)
+        end
     end
+    ItemEvents()
     Marker.dirty = false
     Marker.revision = Marker.revision + 1
 end
@@ -51,6 +83,7 @@ local function Lowest(slots)
     local lowest
     for i = 1, #slots do
         local worn = Marker.levels[slots[i]]
+        if worn == false then return nil end
         if worn or slots.filled then
             worn = worn or 0
             if not lowest or worn < lowest then lowest = worn end
@@ -84,13 +117,26 @@ function Marker.Read(item)
     end
     local slots = SLOTS[item.equipLoc]
     item.markLink, item.markRevision, item.markLevel = item.link, Marker.revision, item.itemLevel
-    item.beatsEquipped = slots ~= nil and item.itemLevel ~= nil and item.itemLevel > Lowest(slots) and CanEquip(item)
+    local lowest = slots and Lowest(slots)
+    item.beatsEquipped = lowest ~= nil and item.itemLevel ~= nil and item.itemLevel > lowest and CanEquip(item)
 end
 
 -- The worn equipment or the player's level changed (a level can make an item
 -- usable): the next pass works every answer out again, and the windows that
 -- show items paint again.
-local function EquipmentChanged()
+local function ClearWaiting()
+    for itemID in pairs(Marker.pending) do Marker.pending[itemID] = nil end
+    for itemID in pairs(Marker.requested) do Marker.requested[itemID] = nil end
+end
+
+local function EquipmentChanged(_, event, itemID, success)
+    if event == "GET_ITEM_INFO_RECEIVED" or event == "ITEM_DATA_LOAD_RESULT" then
+        if not S.Finite(itemID) or not Marker.pending[itemID] or not S.Public(success) or success ~= true then return end
+        Marker.pending[itemID] = nil
+    else
+        ClearWaiting()
+    end
+    ItemEvents()
     Marker.dirty = true
     local view, bank = P.InventoryView, P.BankInventory
     view.Request()
@@ -112,6 +158,7 @@ function Marker.Refresh()
         Marker.events:RegisterEvent("PLAYER_LEVEL_UP")
     else
         Marker.events:UnregisterAllEvents()
+        ClearWaiting()
         P.InventoryDetails.HideMarkers()
     end
 end
@@ -119,5 +166,6 @@ end
 function Marker.Disable()
     if Marker.events then Marker.events:UnregisterAllEvents() end
     Marker.listening, Marker.dirty = false, true
+    ClearWaiting()
     for slot in pairs(Marker.levels) do Marker.levels[slot] = nil end
 end

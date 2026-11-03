@@ -827,6 +827,9 @@ function H.New(root, options)
     -- Worn equipment for the upgrade marker: W.worn[slot] = link; the player is a mage.
     W.worn = {}
     GetInventoryItemLink = function(_, slot) return W.worn[slot] end
+    GetInventoryItemID = function(_, slot)
+        return tonumber(tostring(W.worn[slot]):match("item:(%d+)"))
+    end
     UnitClass = function() return "Mage", "MAGE", 8 end
     C_PlayerInfo = { CanUseItem = function() return true end }
     C_ToyBox = { GetToyInfo = function(id) return W.data[id] and W.data[id].toy and id or nil end }

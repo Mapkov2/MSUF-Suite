@@ -9,7 +9,9 @@ local function Widget()
     function w:CreateFontString() return Widget() end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetScale(value) self.scale = value end
-    function w:SetFrameStrata() end
+    function w:SetFrameStrata(value) self.strata = value end
+    function w:GetFrameStrata() return self.strata or "MEDIUM" end
+    function w:SetParent(value) self.parent = value end
     function w:EnableMouse(value) self.mouse = value end
     function w:SetAllPoints() end
     function w:SetColorTexture() end
@@ -19,10 +21,19 @@ local function Widget()
     function w:SetDrawEdge() end
     function w:SetHideCountdownNumbers(value) self.hideNumbers = value end
     function w:SetMinimumCountdownDuration(value) self.minimumCountdown = value end
-    function w:SetTextColor() end
-    function w:SetFont() end
-    function w:SetText(value) self.text = value end
+    function w:SetTextColor(...) self.color = { ... } end
+    function w:SetFont(path, size, flags)
+        assert(type(path) == "string" and path ~= "" and type(size) == "number" and size > 0)
+        self.fontPath, self.fontSize, self.fontFlags = path, size, flags
+        return true
+    end
+    function w:SetJustifyH() end
+    function w:SetText(value)
+        assert(self.fontPath, "FontString:SetText(): Font not set")
+        self.text = value
+    end
     function w:SetFormattedText(format, ...)
+        assert(self.fontPath, "FontString:SetFormattedText(): Font not set")
         self.text, self.formatted = format:format(...), (self.formatted or 0) + 1
     end
     function w:SetCooldown(start, duration) self.preview = { start, duration } end
@@ -74,7 +85,9 @@ S.CreateFrame = function() return Widget() end
 S.CreateTexture = function(parent) return parent:CreateTexture() end
 S.CreateFontString = function(parent) return parent:CreateFontString() end
 S.PlaceEdges = function() end
-S.SetFont = function(fontString) fontString:SetFont() end
+S.SetFont = function(fontString, path, size, flags)
+    fontString:SetFont(path or "MSUF.ttf", size, flags)
+end
 S.Install = function(id, module) assert(id == "battleRes"); installed.module = module end
 S.RegisterOwnedMover = function(id, element, spec)
     assert(id == "battleRes" and element == "charges")
@@ -86,6 +99,29 @@ S.Set = function(id, key, value)
     installed.module:Refresh()
     return true
 end
+
+local nativeBindings = {}
+Enum = { NumericRuleFormatRounding = { Down = 1 } }
+C_StringUtil = { CreateNumericRuleFormatter = function()
+    return { SetBreakpoints = function(self, rows) self.rows = rows end }
+end }
+C_DurationUtil = { CreateDurationTextBinding = function()
+    local b = {}
+    function b:SetFontString(value)
+        assert(value.fontPath, "duration binding attached before font initialization")
+        self.label, self.initialFont, self.initialSize = value, value.fontPath, value.fontSize
+    end
+    function b:SetFormatter(value) self.formatter = value end
+    function b:SetUpdateInterval(value) self.interval = value end
+    function b:SetZeroDurationText(value) self.zero = value end
+    function b:SetExpiredText(value) self.expired = value end
+    function b:SetDuration(value) assert(S.Public(value), 'secret object passed to restricted binding'); self.duration = value end
+    function b:Enable() self.enabled = true end
+    function b:Disable() self.enabled = false end
+    nativeBindings[#nativeBindings + 1] = b
+    return b
+end }
+
 local NS = {
     AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" },
     MSUFMedia = { font = "MSUF.ttf" },
@@ -216,4 +252,106 @@ assert(not M.host.shown and not callbacks.SPELL_UPDATE_CHARGES and chargeReads =
     "disabled tracker retained events or ran a deferred read")
 assert(displayReads > 0 and durationReads > 0)
 
-print("Battle resurrection: contextual charges, native timer, secrets, mover and teardown passed")
+
+-- Compact HUD mode uses the shared pool, not personal cooldowns or an aura.
+M.active = true
+M.config.textOnly, M.config.fontSize = true, 11
+M.config.width, M.config.height = 70, 16
+instanceType, challenge = 'party', true
+charges = { currentCharges = 1, maxCharges = 3, isActive = true, display = '1', duration = {} }
+M:Enable()
+local binding = assert(M.durationBinding, 'compact battle-res countdown is missing')
+assert(M.host.shown and not M.icon.shown and not M.panel.shown and not M.title.shown and not M.maximum.shown,
+    'compact text still draws the card, icon, title or pool maximum')
+assert(M.count.text == '1' and M.separator.text == '+' and M.separator.shown and M.time.shown,
+    'compact charge + countdown layout is missing')
+assert(binding.enabled and binding.duration == charges.duration and binding.label == M.time and binding.interval == 1,
+    'recharge is not driven by the native duration binding')
+local rule = binding.formatter.rows[1]
+assert(rule.threshold == 0 and rule.format == '%02d:%02d' and rule.components[1].div == 60
+    and rule.components[2].mod == 60 and rule.components[2].rounding == Enum.NumericRuleFormatRounding.Down,
+    'compact countdown does not preserve padded minutes and seconds')
+charges.display, charges.currentCharges, charges.duration = secret, secret, secret
+Event('SPELL_UPDATE_CHARGES')
+assert(M.count.text == secret and M.cooldown.duration == secret and not binding.enabled and not M.time.shown,
+    'secret object should keep native cooldown support without binding or fabricating a text duration')
+charges.display, charges.currentCharges, charges.duration = '0', 0, {}
+Event('SPELL_UPDATE_CHARGES')
+assert(binding.enabled and M.time.shown and M.count.text == '0', 'public duration did not recover after restriction')
+charges.isActive = false
+Event('SPELL_UPDATE_CHARGES')
+assert(not binding.enabled and not M.time.shown and not M.separator.shown, 'full pool kept a stale recharge text')
+S.editMode = true
+M:Refresh()
+assert(M.time.text == '02:38' and M.time.shown and M.separator.shown and not binding.enabled,
+    'compact preview does not use the live text layout')
+S.editMode = false
+M.config.fontSize = 24
+M:Refresh()
+assert(M.host.width >= 144 and M.host.height >= 26 and M.time.point[4] > 52
+    and M.separator.point[4] > 28, 'large font overlaps the compact charge and countdown')
+M.config.textOnly = false
+M:Refresh()
+assert(M.host.width >= 146 and M.host.height >= 44 and M.config.width == 70 and M.config.height == 16,
+    'card mode must fit its content without overwriting stored compact dimensions')
+assert(M.icon.shown and M.panel.shown and M.title.shown and M.maximum.shown and not M.time.shown,
+    'switching back to card mode retained compact layout')
+M:Disable()
+assert(not binding.enabled and not M.host.shown, 'disable retained the native text timer')
+
+-- A saved text-only setting must work on the very first live creation.
+local cold = { active = true, config = { textOnly = true, font = "Cold.ttf", fontSize = 13,
+    width = 70, height = 16, scale = 100, point = 5, x = 0, y = 0 } }
+cold.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, NS)("battleRes", cold, {
+    Event = function() end, RemoveEvent = function() end,
+})
+instanceType, challenge = "party", true
+charges = { maxCharges = 3, isActive = true, display = "1", duration = {} }
+assert(cold.host == nil and cold.time == nil and cold.separator == nil)
+M.Enable(cold)
+assert(cold.host.shown and cold.separator.text == "+" and cold.durationBinding.enabled
+    and cold.durationBinding.initialFont == "Cold.ttf" and cold.durationBinding.initialSize == 13,
+    "cold compact runtime did not initialize its configured font before binding")
+local function AssertFont(view, path, size)
+    for _, label in ipairs({ view.count, view.time, view.separator }) do
+        assert(label.fontPath == path and label.fontSize == size and label.fontFlags == "OUTLINE",
+            "compact font choice or size was not applied to every label")
+    end
+end
+AssertFont(cold, "Cold.ttf", 13)
+local coldHost, coldTime, coldSeparator, coldBinding = cold.host, cold.time, cold.separator, cold.durationBinding
+local bindingCount = #nativeBindings
+cold.config.font, cold.config.fontSize = "Warm.ttf", 24
+M.Refresh(cold)
+AssertFont(cold, "Warm.ttf", 24)
+assert(cold.host == coldHost and cold.time == coldTime and cold.separator == coldSeparator
+    and cold.durationBinding == coldBinding and #nativeBindings == bindingCount,
+    "warm font refresh recreated the compact text or duration binding")
+M.Disable(cold)
+cold.config.font, cold.config.fontSize = nil, 11
+M.Enable(cold)
+AssertFont(cold, "MSUF.ttf", 11)
+assert(cold.host == coldHost and cold.durationBinding == coldBinding and #nativeBindings == bindingCount
+    and cold.durationBinding.enabled, "re-enable did not reuse the initialized runtime")
+M.Disable(cold)
+
+-- A separate cold preview follows the same painter, including cached refreshes.
+local parent, viewport = Widget(), { width = 200, height = 60, scale = 1 }
+local previewConfig = { textOnly = true, font = "Preview.ttf", fontSize = 15,
+    width = 90, height = 18, scale = 100, point = 5, x = 0, y = 0 }
+local previewHost = S.DrawBattleResPreview(parent, previewConfig, nil, viewport)
+local preview = assert(parent.suiteBattleResPreview)
+assert(previewHost == preview.host and preview.host.parent == parent and preview.host.shown
+    and preview.time.text == "02:38" and preview.separator.text == "+"
+    and preview.durationBinding.initialFont == "Preview.ttf" and preview.durationBinding.initialSize == 15,
+    "cold compact preview used text or a duration binding before its configured font")
+AssertFont(preview, "Preview.ttf", 15)
+local previewBinding = preview.durationBinding
+bindingCount = #nativeBindings
+previewConfig.font, previewConfig.fontSize = "PreviewWarm.ttf", 20
+assert(S.DrawBattleResPreview(parent, previewConfig, nil, viewport) == previewHost)
+AssertFont(preview, "PreviewWarm.ttf", 20)
+assert(preview.durationBinding == previewBinding and #nativeBindings == bindingCount
+    and not preview.durationBinding.enabled, "cached preview recreated or enabled its sample timer")
+
+print("Battle resurrection: contextual charges, native timer, secrets, mover, font initialization and teardown passed")

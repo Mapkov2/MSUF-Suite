@@ -324,7 +324,7 @@ function WorldMapSkin:OnQuestLogModeChanged()
 end
 
 local function MapDisplayChanged()
-    NS.CombatGate.RunOrDefer("windowControls:worldMap", NS.WindowControls.Refresh)
+    NS.WindowControls.Refresh()
 end
 
 local function RegisterCallbacks()

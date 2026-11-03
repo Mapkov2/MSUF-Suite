@@ -406,7 +406,28 @@ end
 
 local function OnShown(frame)
     local state = PlayerSpellsSkin.states[frame]
+    if state and state.windowControlsRequested and frame == Field(_G, "PlayerSpellsFrame")
+        and NS.DB.skins.playerSpells ~= false and NS.WindowControls.Attach(frame, state.owner) then
+        state.windowControlsRequested = nil
+    end
     if state and state.pendingRefresh then PlayerSpellsSkin:QueueRefresh(frame) end
+end
+
+-- Load-on-demand can finish before Blizzard shows the root. Keep that one
+-- native show callback ready; geometry guards still reject protected combat roots.
+function PlayerSpellsSkin.AttachWindowControls(frame, owner)
+    if not frame or frame ~= Field(_G, "PlayerSpellsFrame") or Safety.IsForbidden(frame) then return false end
+    local state = GetState(frame, owner or "playerSpells")
+    state.windowControlsRequested = true
+    if not state.showHooked then
+        frame:HookScript("OnShow", Safety.Isolated(OnShown))
+        state.showHooked = true
+    end
+    if Safety.Read(frame, "IsShown") and NS.WindowControls.Attach(frame, state.owner) then
+        state.windowControlsRequested = nil
+        return true
+    end
+    return false
 end
 
 local function RefreshActiveColors()
@@ -477,11 +498,13 @@ function PlayerSpellsSkin.Apply(frame, owner)
     if not frame then
         return false, "missing"
     end
+    NS.WindowControls.TrackFocus(frame, owner)
     if not CanCreateRegions(frame) then
         return false, "protected"
     end
 
     if NS.IsCombatLocked() then
+        PlayerSpellsSkin.AttachWindowControls(frame, owner)
         NS.CombatGate.RunOrDefer("playerSpells:apply", function()
             PlayerSpellsSkin.Apply(_G.PlayerSpellsFrame or frame, owner)
         end)
@@ -523,6 +546,7 @@ function PlayerSpellsSkin.Disable(frame, owner)
 
     local state = PlayerSpellsSkin.states[frame]
     if state then
+        state.windowControlsRequested = nil
         RestoreState(state)
     elseif owner then
         NS.Cosmetics.RestoreOwner(owner)
