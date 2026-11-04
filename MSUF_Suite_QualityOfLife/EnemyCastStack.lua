@@ -68,6 +68,19 @@ local function Samples()
 end
 
 ------------------------------------------------------------------ interrupt readiness
+-- An absent pet is not proof of sacrifice: Command Demon's override names the granted ability.
+local function FelhunterInterrupt(pet)
+    if Public(pet) and pet == true then return 19647 end
+    local override = C_Spell.GetOverrideSpell
+    if override then
+        local spell = override(119898)
+        if Public(spell) and spell == 132409 then return spell end
+    else
+        local known = C_SpellBook.IsSpellKnown(132409, Enum.SpellBookSpellBank.Player)
+        if Public(known) and known == true then return 132409 end
+    end
+end
+
 local function Candidates(self)
     local list, c = self.candidates, self.config
     for i = #list, 1, -1 do list[i] = nil end
@@ -81,6 +94,10 @@ local function Candidates(self)
     for _, spell in ipairs(INTERRUPTS[S.PublicText(class) or ""] or EMPTY) do
         local own = C_SpellBook.IsSpellKnown(spell, Enum.SpellBookSpellBank.Player)
         local pet = C_SpellBook.IsSpellKnown(spell, Enum.SpellBookSpellBank.Pet)
+        if spell == 19647 then
+            spell = FelhunterInterrupt(pet)
+            own, pet = spell ~= nil, false
+        end
         if Public(own) and own == true or Public(pet) and pet == true then list[#list + 1] = spell end
     end
 end

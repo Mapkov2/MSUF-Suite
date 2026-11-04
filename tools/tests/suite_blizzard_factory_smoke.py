@@ -472,6 +472,23 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local nativeAuras = Host("MSUF_DB").auras3.shared
     assert(not nativeAuras.hideBlizzardBuffFrame and not nativeAuras.hideBlizzardDebuffFrame,
         "native top-right auras were hidden")
+    local focus = assert(UF.Config.GetSpec("focus"))
+    assert(focus.x == 358 and focus.y == -327 and focus.anchorFrameName == "UIParent",
+        "focus position differs from the imported global anchor")
+    for _, kind in ipairs({ "boss", "arena" }) do
+        if kind == "boss" or flavor ~= "Forever" then
+            for index = 1, kind == "boss" and 5 or 3 do
+                local lanes = assert(aura.ResolveUnitFrameConfig(kind .. index)).lanes
+                local buff, debuff = assert(lanes.buff), assert(lanes.debuff)
+                local boss = kind == "boss"
+                assert(buff.anchor == "BOTTOMRIGHT" and debuff.anchor == "TOPLEFT")
+                assert(buff.x == (boss and 78 or 25) and buff.y == (boss and -1 or 15),
+                    kind .. index .. " buff position differs from the imported layout")
+                assert(debuff.x == (boss and 0 or 2) and debuff.y == (boss and 43 or 10),
+                    kind .. index .. " debuff position differs from the imported layout")
+            end
+        end
+    end
     local lanes = assert(aura.ResolveUnitFrameConfig("target")).lanes
     local buff, debuff = assert(lanes.buff), assert(lanes.debuff)
     assert(buff.enabled and debuff.enabled and buff.anchor == "TOPLEFT" and debuff.anchor == "TOPLEFT")

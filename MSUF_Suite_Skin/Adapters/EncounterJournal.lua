@@ -612,6 +612,7 @@ local function RefreshActiveColors()
     if state and state.active and not NS.IsCombatLocked() then
         RefreshTextColors(state)
         NS.ControlSkin.RefreshOwner(state.owner)
+        NS.EncounterJournalPanels.RefreshTips(state)
     end
 end
 

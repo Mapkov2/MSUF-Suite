@@ -558,4 +558,140 @@ function HostBridge.RegisterSearchTargetResolver(menu, name, resolver)
     return true
 end
 
+-- Older supported menus already own Gameplay and its builder/history, but
+-- predate page extensions. Adapt those public page callbacks only while Suite
+-- is loaded; keep their settings, navigation identity and original build.
+local legacyExtensions = setmetatable({}, { __mode = "k" })
+
+local function ExtensionEnabled(record, key)
+    local provider = record.provider
+    return not provider.canReset or Suite.Dispatch(provider.canReset, key) == true
+end
+
+local function InstallExtensionResets(menu, records)
+    local reset, warning = menu.ResetPageToDefaults, menu.BuildPageResetWarning
+    menu.BuildPageResetWarning = function(key)
+        local message = warning(key)
+        local record = records[key]
+        if record and ExtensionEnabled(record, key) and record.provider.warning then
+            local extra = Suite.Dispatch(record.provider.warning, key)
+            if extra then message = message and (message .. "\n\n" .. extra) or extra end
+        end
+        return message
+    end
+    menu.ResetPageToDefaults = function(key)
+        local record = records[key]
+        if not record or not ExtensionEnabled(record, key) then return reset(key) end
+        local provider = record.provider
+        if Suite.InCombat() then return false end
+        if provider.prepare and Suite.Dispatch(provider.prepare, key) ~= true then return false end
+        menu.SyncExternalHistoryState()
+        local label = string.format(menu.Tr("Reset %s"), menu.Tr(menu.pages[key].title))
+        local translated = AppearanceAction(menu, "TranslatedHistoryLabel")
+        if translated then label = translated(label) end
+        local success = false
+        local committed = menu.RunWithHistory(label, "page:reset:" .. key, function()
+            if reset(key) ~= true then return false end
+            success = Suite.Dispatch(provider.reset, key) == true
+            -- The host may already have changed; retain one undo entry even
+            -- when the extension reports a partial failure.
+            return true
+        end)
+        if committed and provider.finish then Suite.Dispatch(provider.finish, key) end
+        return committed == true and success
+    end
+end
+
+local function BuildLegacyExtension(menu, record, ctx)
+    record.build(ctx)
+    for _, builder in ipairs(ctx._msuf2PageBuilders or {}) do
+        if builder.parent == ctx.wrapper then
+            Suite.Dispatch(record.provider.build, ctx, builder)
+            ctx:SetContentHeight(math.abs(builder.y) + 42)
+            return
+        end
+    end
+end
+
+local function RegisterLegacyExtension(menu, page, name, provider)
+    local spec = menu.pages and menu.pages[page]
+    if not AppearanceAction(spec, "build") or not AppearanceAction(menu, "ResetPageToDefaults") then return false end
+    local records = legacyExtensions[menu]
+    if not records then
+        records = {}
+        legacyExtensions[menu] = records
+        InstallExtensionResets(menu, records)
+    end
+    local record = records[page]
+    if record then
+        if record.name ~= name then return false end
+        if record.provider == provider then return true end
+        record.provider = provider
+    else
+        record = { name = name, provider = provider, build = spec.build }
+        records[page] = record
+        local extended = {}
+        for key, value in pairs(spec) do extended[key] = value end
+        extended.build = function(ctx) BuildLegacyExtension(menu, record, ctx) end
+        menu.RegisterPage(page, extended)
+        spec = extended
+    end
+    spec.version = (tonumber(spec.version) or 0) + 1
+    if not Suite.InCombat() and menu.activeKey == page and menu.RebuildPageKeepingScroll then
+        menu.RebuildPageKeepingScroll(page)
+    end
+    return true
+end
+
+-- Hosts that identify Suite controls by page name alone add raw module IDs
+-- to every detail after it moves to Gameplay. Suite already supplies its own
+-- feature aliases and detail terms; keep that ownership on embedded pages too.
+local searchContexts = setmetatable({}, { __mode = "k" })
+local function KeepSuiteSearchTerms(menu)
+    local text = menu.Search and menu.Search.Text
+    local context = AppearanceAction(text, "ControlContext")
+    if not context or searchContexts[text] then return end
+    searchContexts[text] = context
+    text.ControlContext = function(value, ...)
+        local key = tostring(value or "")
+        if key:sub(1, 10) == "msufsuite." or key:sub(1, 20) == "suite_qualityOfLife_" then return "" end
+        return context(value, ...)
+    end
+end
+
+-- Additive host capabilities keep extension runtimes in their owning addon.
+function HostBridge.RegisterPageExtension(menu, page, name, provider)
+    KeepSuiteSearchTerms(menu)
+    if not AppearanceAction(menu, "RegisterPageExtension") or not AppearanceAction(menu, "BuildPageExtensions") then
+        return RegisterLegacyExtension(menu, page, name, provider)
+    end
+    return menu.RegisterPageExtension(page, name, provider) == true
+end
+
+-- Some host pages do not call BuildPageExtensions. Append through their
+-- existing builder without requiring that opt-in, including on newer hosts.
+function HostBridge.RegisterPageTail(menu, page, name, provider)
+    KeepSuiteSearchTerms(menu)
+    return RegisterLegacyExtension(menu, page, name, provider)
+end
+
+local menuStateFallbacks = setmetatable({}, { __mode = "k" })
+function HostBridge.GetPersistentMenuState(menu, name)
+    if AppearanceAction(menu, "GetPersistentMenuStateTable") then return menu.GetPersistentMenuStateTable(name) end
+    local states = menuStateFallbacks[menu]
+    if not states then states = {} menuStateFallbacks[menu] = states end
+    if not states[name] then states[name] = {} end
+    return states[name]
+end
+
+-- A plain section can change height when a lazy view reveals its contents.
+-- Enrol it before later sections so the shared builder reflows those siblings.
+function HostBridge.TrackDynamicSection(builder, body, topY)
+    if builder._collapsibleStartY or not builder.layoutEntries then return end
+    builder._collapsibleStartY = topY
+    builder.layoutEntries[#builder.layoutEntries + 1] = {
+        kind = "section", frame = body, height = body:GetHeight(), gap = 12,
+    }
+end
+
 return HostBridge

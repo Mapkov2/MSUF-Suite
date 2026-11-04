@@ -95,14 +95,15 @@ for pass = 1, 2 do
             assert(P.Tr(list[index - 1].title) <= P.Tr(list[index].title), "visible QoL order changed")
         end
     end
-    Ordered(P.QualityOfLifeCategories)
-    for _, category in ipairs(P.QualityOfLifeCategories) do
+    local categoryOrder = { "character", "lootMerchants", "questsProfessions", "groups", "travel", "interface" }
+    assert(#P.QualityOfLifeCategories == #categoryOrder, "QoL primary categories changed")
+    for index, category in ipairs(P.QualityOfLifeCategories) do
+        assert(category.id == categoryOrder[index], "QoL primary categories lost their stable order")
         Ordered(category.features)
-        if category.tabs then
-            Ordered(category.tabs)
-            for _, tab in ipairs(category.tabs) do Ordered(tab.features) end
-        end
+        for _, subgroup in ipairs(category.subgroups) do Ordered(subgroup.features) end
     end
+    Ordered(P.QoLView.GameplayCategory.features)
+    for _, subgroup in ipairs(P.QoLView.GameplayCategory.subgroups) do Ordered(subgroup.features) end
 end
 print(string.format("BUDGET options-attach-execution vm=%d kb=%.3f native=%d", vm, kb, calls))
 if not os.getenv("SUITE_A7_MEASURE_ONLY") then

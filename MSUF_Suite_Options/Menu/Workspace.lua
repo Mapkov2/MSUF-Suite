@@ -151,7 +151,8 @@ function Workspace.Finish(ui)
             end)
         end
     end
-    if W.SegmentTabs and ui.width - 32 >= #values * 180 then
+    -- Keep page areas directly selectable; the shared tabs fit the header width.
+    if W.SegmentTabs then
         local tabs, refresh, _, choose = W.SegmentTabs(ui.ctx, ui.header, {
             label = "", values = values, frames = panels, width = ui.width - 32,
             defaultTab = ui.selected, get = function() return ui.selected end,

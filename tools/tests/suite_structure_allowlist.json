@@ -16,6 +16,12 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_QualityOfLife/EnemyCastStack.lua",
+   "kind": "client",
+   "reason": "Retail Command Demon resolution uses C_Spell.GetOverrideSpell (Blizzard_ActionBar/Mainline/AssistedCombatManager.lua). This capability guard mirrors MSUF interrupt readiness: only when the override reader is absent may a known player Spell Lock be used; an available reader remains authoritative. The module returns before this path on Forever. suite_enemy_cast_stack_contract covers absent-reader fallback, wrong demon, secret override and pet precedence.",
+   "symbol": "override (= C_Spell.GetOverrideSpell)"
+  },
+  {
    "file": "MSUF_Suite_DamageMeter/Data.lua",
    "kind": "client",
    "reason": "Optional localized integer-rate formatting on Retail/Forever: probe the native breakpoint getter before using it; without it retain AbbreviateNumbers locale defaults, while English/Kuro uses its own complete rules. No unconditional API availability inferred from generated docs. suite_damage_meter_number_format_contract covers absent namespace/getter and the supplied native getter; the independent small-rate probe covers copied defaults and secrets.",

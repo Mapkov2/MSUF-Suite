@@ -205,6 +205,28 @@ function Page.Navigation(ctx, builder)
     return navigation
 end
 
+-- The fixed header can be narrower than the scroll body's build-time width.
+local function FitNavigation(ctx, navigation, bars, buttons)
+    local width = navigation:GetWidth()
+    if width <= 0 or navigation.suiteTabsWidth == width then return end
+    navigation.suiteTabsWidth = width
+    local available = math.max(1, width - 32 - 114)
+    local size = math.floor(available / math.max(1, #bars))
+    for index, bar in ipairs(bars) do
+        local button = buttons[bar]
+        if button then
+            button:SetWidth(math.max(1, size - 6))
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", navigation, "TOPLEFT", 16 + (index - 1) * size, -12)
+        end
+    end
+    if ctx.dataTextBarSelector then
+        W.MoveWidget(ctx.dataTextBarSelector, navigation, 16, 12, math.max(1, available - 6))
+    end
+    buttons.add:ClearAllPoints()
+    buttons.add:SetPoint("TOPRIGHT", navigation, "TOPRIGHT", -16, -12)
+end
+
 function Page.Build(ctx, builder, shared, navigation)
     builtBarIDs = table.concat(P.Suite.DataTextBarIDs(P.S.Config(ID)), ",")
     local host = builder:Section(Tr("DataTexts"), 160)
@@ -259,6 +281,10 @@ function Page.Build(ctx, builder, shared, navigation)
         PAGE .. "_presets", function() choose("add") end)
     ctx.dataTextWorkspace = { deck = deck, choose = choose, buttons = buttons, navigation = navigation,
         presets = function(bar) return choose("preset" .. bar) end }
+    local function Fit() FitNavigation(ctx, navigation, bars, buttons) end
+    navigation:HookScript("OnSizeChanged", Fit)
+    navigation:HookScript("OnShow", Fit)
+    Fit()
     local present = InstallResolver(ctx, bars, choose)
     choose(present[Page.selectedBar] and Page.selectedBar or bars[1] or "add")
 end

@@ -9,12 +9,12 @@ lua = os.environ.get('MSUF_LUA51', r'C:\Users\Marco\AppData\Local\Temp\msuf-lua5
 test = root / 'tools/tests/suite_menu_ux_contract.lua'
 mutations = {
     'exactTab': 'search left the target in a hidden tab',
-    'narrowTabs': 'narrow host must use a dropdown',
+    'narrowTabs': 'workspace must keep direct tabs',
     'duplicate': 'leading zero bypassed duplicate validation',
     'combat': 'composer wrote settings in combat',
     'inheritance': 'global inheritance changed another reminder type',
     'inlineQoL': 'QoL details stayed below the whole feature list',
-    'lazyQoL': "attempt to index local 'record'",
+    'lazyQoL': "attempt to index local 'heading'",
     'itemSearch': 'item search left the consumable input hidden',
     'filteredSearch': 'search could not reveal a filtered feature without details',
     'filterTitle': 'QoL filter overlaps the section title',

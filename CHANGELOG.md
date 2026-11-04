@@ -1,5 +1,26 @@
 # MSUF Suite Changelog
 
+## 0.1.9 Alpha - 2026-11-04
+
+### Previews, loading and compatibility
+
+- Keep the Bags, Damage Meter, Buff Reminders and Skinning areas directly selectable as tabs when the settings window is narrow or resized.
+- Corrected DataTexts header sizing so bar choices and the add-bar button stay within the menu.
+- Updated Mail templates and shared inventory-tool windows to the current MSUF menu style, including search fields, buttons, lists and scrollbars.
+- Reorganized Quality of Life into searchable categories with enabled and disabled filters and inline feature settings.
+- On compatible hosts, show Suite combat helpers on Gameplay and castbar artwork under Cast Bars while preserving saved settings, search links and favorites.
+
+### Windows and skinning
+
+- Keep the Character and Item Upgrade windows undimmed when used together.
+- Corrected quest-panel background bounds to prevent the dimmed surface from extending beyond the native panel.
+- Matched Adventure Guide ability descriptions, role sections, headers and help tips to the dark menu style while preserving readable text and native ability links.
+
+### Cooldown Manager
+
+- Corrected Warlock interrupt readiness and preset selection for Spell Lock granted by Grimoire of Sacrifice.
+- Refined the MSUF Blizzard preset's focus position and boss and arena aura placement.
+
 ## 0.1.8 Alpha - 2026-11-03
 
 ### Setup presets and appearance

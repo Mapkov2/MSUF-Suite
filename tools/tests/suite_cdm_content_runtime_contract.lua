@@ -220,6 +220,19 @@ Presets.CATEGORY_CLASS.dispels[8] = { 475, 475, 30449 }
 mine[475] = true
 Check(List(S.CooldownManagerGroupKeys().dispels) == "s475", "a spell listed twice is one key")
 Presets.CATEGORY_CLASS.dispels[8] = dispels
+-- A sacrificed Felhunter exposes only the player Spell Lock in the picker.
+local originalClass = UnitClass
+UnitClass = function() return "Warlock", "WARLOCK", 9 end
+mine = { [132409] = true }
+Check(List(S.CooldownManagerGroupKeys().interrupts) == "s132409", "sacrifice missing from the interrupt group")
+Check(List(S.CooldownManagerGroupKeys(true).interrupts) == "s132409", "sacrifice missing from shared interrupt groups")
+records[9992] = { id = 9992, key = "b9992", spell = 132409, linked = C.EMPTY, family = 1, known = true }
+order[#order + 1] = 9992
+Check(List(S.CooldownManagerGroupKeys().interrupts) == "b9992", "sacrifice group ignored its native catalog entry")
+records[9992], order[#order] = nil, nil
+mine = { [19647] = true }
+Check(List(S.CooldownManagerGroupKeys().interrupts) == "s19647", "pet Spell Lock lost or unknown sacrifice added")
+UnitClass = originalClass
 -- A client that knows none of them (WoW Forever) adds nothing.
 for id in pairs(mine) do mine[id] = nil end
 groups = S.CooldownManagerGroupKeys()

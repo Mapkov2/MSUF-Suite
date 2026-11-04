@@ -29,6 +29,7 @@ EXTRA = {
     "suite_cdm_native_data_refresh_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_glimmer_default_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_replacement_aura_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_menu_geometry_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
     "suite_nameplates_lazy_tabs_contract.lua": [
         [flavor, str(host)] + (["fallback"] if fallback else [])
         for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70) for fallback in (False, True)],
@@ -43,6 +44,9 @@ EXTRA = {
     "suite_cdm_cold_catalog_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_planner_lod_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_planner_motion_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_gameplay_extension_contract.lua": [[flavor] for flavor in FLAVORS]
+        + [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_qol_navigation_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_player_aura_menu_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_history_owner_core_contract.lua": [[str(MSUF_70), flavor, mode]
         for flavor in FLAVORS for mode in ("contract", "overlay-contract")],

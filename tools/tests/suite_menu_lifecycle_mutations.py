@@ -30,7 +30,7 @@ cases = [
      '-- One W.SettingsRows row for a catalog rule.',
      'for id in pairs(P.catalog) do P.SummaryPriority(id, "") end\n\n'
      '-- One W.SettingsRows row for a catalog rule.', options, "hidden summary ranks were compiled during load"),
-    ("categories-eager", "MSUF_Suite_Options/Pages/QualityOfLife.lua",
+    ("categories-eager", "MSUF_Suite_Options/Pages/QualityOfLifeCatalog.lua",
      'P.QualityOfLifeCategories = CATEGORIES',
      'P.SortQualityOfLifeCategories()\nP.QualityOfLifeCategories = CATEGORIES',
      options, "hidden QoL categories were sorted during load"),

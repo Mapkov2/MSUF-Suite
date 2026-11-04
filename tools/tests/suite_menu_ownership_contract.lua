@@ -9,8 +9,8 @@ local pages = { keyAudit = "suite_actionbars", currencyGoals = "suite_bags", key
     bankTransfer = "suite_bags", planningTools = "suite_planningTools" }
 Check(M.pages.suite_planningTools ~= nil, "planner has no independent page")
 for id, page in pairs(pages) do Check(P.catalog[id].page == page, "wrong owner: " .. id) end
-local remaining = { inventoryProtection = "lootMerchants", mailTemplates = "everydayAutomation",
-    waypointLists = "mapTravel", soundProfiles = "everydayAutomation", notificationHistory = "interfaceChat" }
+local remaining = { inventoryProtection = "lootMerchants", mailTemplates = "interface",
+    waypointLists = "travel", soundProfiles = "interface", notificationHistory = "interface" }
 for _, category in ipairs(P.QualityOfLifeCategories) do
     Check(category.id ~= "planningCollections", "catchall category remains")
 end
@@ -97,6 +97,7 @@ for _, row in ipairs(cold) do
 end
 if flavor == "Mainline" then
     local qol = E.build("suite_qualityOfLife")
+    P.QoLView.FindFeature("mailTemplates").reveal(true)
     local row = assert(qol.qualityOfLifeFeatureRows.suite_qualityOfLife_mailTemplates_mailTemplates)
     E.inContext(qol, function() row.reveal(true) end)
     local found

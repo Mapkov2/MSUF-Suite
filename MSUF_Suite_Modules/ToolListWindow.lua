@@ -5,19 +5,71 @@ S.ToolListWindow = Tools
 local PAGE_ROWS, ROW_HEIGHT = 12, 27
 local current, editor
 local EDITOR_FONTS = { title = 14, hint = 12, input = 12, error = 11 }
+local fonts = {}
+local Restyle
+
+local function Theme()
+    return NS.HostBridge
+end
 
 local function Label(parent, text, size)
     local label = S.QoLLabel(parent, text or "", size or 12)
     label:SetJustifyH("LEFT")
+    fonts[label] = size or 12
     return label
 end
 
 local function Button(parent, text, width, action)
-    local button = S.CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    button:SetSize(width, 24)
+    local bridge = Theme()
+    local button = bridge and bridge.MenuButton(parent, width, 28)
+        or S.CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(width, 28)
     button:SetText(S.Text(text))
     button:SetScript("OnClick", action)
     return button
+end
+
+local function ButtonFont(button)
+    local bridge = Theme()
+    return bridge and bridge.MenuButtonLabel(button) or button:GetFontString()
+end
+
+local function Window(width, height)
+    local bridge = Theme()
+    if not bridge or not bridge.EnsureMenuTheme() then return S.QoLWindow(width, height, "") end
+    local panel = S.CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    panel.toolModern = true
+    panel:SetSize(width, height)
+    panel:SetPoint("CENTER", UIParent, "CENTER")
+    panel:SetFrameStrata("DIALOG")
+    panel:SetMovable(true)
+    panel:SetClampedToScreen(true)
+    panel:EnableMouse(true)
+    local drag = S.CreateFrame("Button", nil, panel)
+    drag:SetPoint("TOPLEFT")
+    drag:SetPoint("TOPRIGHT", -40, 0)
+    drag:SetHeight(36)
+    drag:RegisterForDrag("LeftButton")
+    drag:SetScript("OnDragStart", function() panel:StartMoving() end)
+    drag:SetScript("OnDragStop", function() panel:StopMovingOrSizing() end)
+    panel.dragHandle = drag
+    panel.close = bridge.MenuCloseButton(panel) or Button(panel, "X", 24)
+    panel.close:SetPoint("TOPRIGHT", -10, -8)
+    panel.close:SetScript("OnClick", function() panel:Hide() end)
+    panel.close.caption = bridge.MenuButtonLabel(panel.close)
+    bridge.MenuMaterial(panel, "shell")
+    bridge.MenuAtmosphere(panel)
+    return panel
+end
+
+local function PaintRow(button, row, selected)
+    if button.toolModern then
+        button:SetActive(selected)
+        button:SetEnabled(not row.disabled)
+    else
+        button.text:SetTextColor(row.disabled and .55 or .92, row.disabled and .55 or .94, row.disabled and .55 or .97)
+        button.fill:SetColorTexture(.2, .36, .46, selected and .85 or .18)
+    end
 end
 
 local function Valid(window)
@@ -67,8 +119,7 @@ local function DrawRows(window)
             button.icon:SetTexture(row.icon)
             button.icon:SetShown(row.icon ~= nil)
             button.text:SetPoint("LEFT", row.icon and 32 or 7, 0)
-            button.text:SetTextColor(row.disabled and .55 or .92, row.disabled and .55 or .94, row.disabled and .55 or .97)
-            button.fill:SetColorTexture(.2, .36, .46, row.key == window.selected and .85 or .18)
+            PaintRow(button, row, row.key == window.selected)
             button:Show()
         else
             button:Hide()
@@ -137,14 +188,21 @@ end
 local function CreateRows(window)
     window.buttons = {}
     for i = 1, PAGE_ROWS do
-        local row = S.CreateFrame("Button", nil, window)
+        local bridge = Theme()
+        local row = bridge and bridge.MenuNavButton(window, 720, ROW_HEIGHT - 2)
+        local modern = row ~= nil
+        row = row or S.CreateFrame("Button", nil, window)
+        row.toolModern = modern
         row:SetSize(720, ROW_HEIGHT - 2)
         row:SetPoint("TOPLEFT", 18, -153 - (i - 1) * ROW_HEIGHT)
         row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         row.index = i
-        row.fill = S.CreateTexture(row, nil, "BACKGROUND")
-        row.fill:SetAllPoints()
-        row.text = Label(row, "", 12)
+        if not modern then
+            row.fill = S.CreateTexture(row, nil, "BACKGROUND")
+            row.fill:SetAllPoints()
+        end
+        row.text = modern and bridge.MenuButtonLabel(row) or Label(row, "", 12)
+        if modern then row.text:ClearAllPoints() end
         row.text:SetPoint("LEFT", 7, 0)
         row.text:SetPoint("RIGHT", -7, 0)
         row.text:SetWordWrap(false)
@@ -193,7 +251,7 @@ local function CreateNavigation(window)
 end
 
 local function Create()
-    local window = S.QoLWindow(756, 650, "")
+    local window = Window(756, 650)
     window.title = Label(window, "", 15)
     window.title:SetPoint("TOPLEFT", 18, -12)
     window.title:SetWidth(680)
@@ -209,7 +267,7 @@ local function Create()
     window.search.Instructions:SetText(S.Text("Search this list"))
     window.search:SetScript("OnEscapePressed", function(edit) edit:ClearFocus() end)
     window.search:SetScript("OnTextChanged", function() window.offset = 0 window:Refresh() end)
-    local detailScroll = S.CreateFrame("ScrollFrame", nil, window, "UIPanelScrollFrameTemplate")
+    local detailScroll = S.CreateFrame("ScrollFrame", nil, window, "ScrollFrameTemplate")
     detailScroll:SetPoint("TOPLEFT", 18, -519)
     detailScroll:SetSize(692, 67)
     window.detailsChild = S.CreateFrame("Frame", nil, detailScroll)
@@ -220,6 +278,8 @@ local function Create()
     window.details:SetHeight(67)
     window.details:SetWordWrap(true)
     detailScroll:SetScrollChild(window.detailsChild)
+    window.detailScroll = detailScroll
+    if Theme() then Theme().MenuEditBox(window.search) end
     window.status = Label(window, "", 11)
     window.status:SetPoint("BOTTOMLEFT", 18, 48)
     window.status:SetSize(720, 25)
@@ -247,6 +307,8 @@ function Tools.Open(owner, spec)
     current.search:SetText("")
     current:Show()
     current:Refresh()
+    if Theme() then Theme().WatchMenuAppearance(Tools, Restyle) end
+    Restyle()
     return current
 end
 
@@ -266,9 +328,9 @@ end
 function Tools.RefreshFonts(owner)
     if not editor or editor.owner ~= owner or not editor:IsShown() or NS.InCombat() then return end
     for key, size in pairs(EDITOR_FONTS) do S.SetFont(editor[key], nil, size, "") end
-    S.SetFont(editor.save:GetFontString(), nil, 12, "")
-    S.SetFont(editor.cancel:GetFontString(), nil, 12, "")
-    S.SetFont(editor.close.caption, nil, 13, "")
+    S.SetFont(ButtonFont(editor.save), nil, 12, "")
+    S.SetFont(ButtonFont(editor.cancel), nil, 12, "")
+    if editor.close.caption then S.SetFont(editor.close.caption, nil, 13, "") end
 end
 
 local function SaveEdit()
@@ -293,7 +355,7 @@ local function SaveEdit()
 end
 
 local function CreateEditor()
-    local panel = S.QoLWindow(560, 330, "")
+    local panel = Window(560, 330)
     -- A prompt stays above the DIALOG tool windows that open it, however deep their content nests.
     panel:SetFrameStrata("FULLSCREEN_DIALOG")
     panel.title = Label(panel, "", 14)
@@ -302,7 +364,7 @@ local function CreateEditor()
     panel.hint:SetPoint("TOPLEFT", 16, -48)
     panel.hint:SetSize(520, 42)
     panel.hint:SetWordWrap(true)
-    local scroll = S.CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    local scroll = S.CreateFrame("ScrollFrame", nil, panel, "ScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 20, -98)
     scroll:SetSize(490, 148)
     panel.input = S.CreateFrame("EditBox", nil, scroll)
@@ -311,6 +373,7 @@ local function CreateEditor()
     panel.input:SetAutoFocus(false)
     S.SetFont(panel.input, nil, 12, "")
     scroll:SetScrollChild(panel.input)
+    panel.inputScroll = scroll
     panel.input:SetScript("OnEscapePressed", function() panel:Hide() end)
     panel.error = Label(panel, "", 11)
     panel.error:SetPoint("BOTTOMLEFT", 16, 45)
@@ -330,6 +393,27 @@ local function CreateEditor()
     return panel
 end
 
+Restyle = function()
+    if NS.InCombat() or not (current and current:IsShown() or editor and editor:IsShown()) then return end
+    local bridge = Theme()
+    if not bridge then return end
+    for label, size in pairs(fonts) do
+        S.SetFont(label, nil, size, "")
+        bridge.MenuFont(label, nil, size >= 14 and "title" or "body")
+    end
+    if current and current:IsShown() then
+        if current.toolModern then bridge.MenuMaterial(current, "shell") end
+        bridge.MenuEditBox(current.search)
+    end
+    if editor and editor:IsShown() then
+        if editor.toolModern then bridge.MenuMaterial(editor, "shell") end
+        bridge.MenuMaterial(editor.inputScroll, "card")
+        bridge.MenuFont(editor.input, nil, "body")
+        local color = bridge.MenuColor("danger", "text")
+        if color then editor.error:SetTextColor(unpack(color)) end
+    end
+end
+
 function Tools.Edit(owner, spec)
     if NS.InCombat() or owner.active == false then return end
     if not editor then editor = CreateEditor() end
@@ -342,6 +426,8 @@ function Tools.Edit(owner, spec)
     editor.error:SetText("")
     editor:Show()
     Tools.RefreshFonts(owner)
+    if Theme() then Theme().WatchMenuAppearance(Tools, Restyle) end
+    Restyle()
     editor.input:SetFocus()
     editor.input:HighlightText()
 end

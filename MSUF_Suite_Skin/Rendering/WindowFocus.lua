@@ -54,12 +54,11 @@ local function ChooseActive()
     return active
 end
 
-local function Paint(state, active)
-    if state == active or not state.readable then Hide(state, false) return end
+local function Paint(state)
+    if state.keepClear or not state.readable then Hide(state, false) return end
     if not Geometry.Begin(state) then Hide(state, true) return end
-    if not Geometry.SubtractWindow(state, active) then Hide(state, true) return end
     for _, other in pairs(visible) do
-        if other ~= state and other ~= active and other.readable and Geometry.Above(other, state)
+        if other ~= state and other.readable and (other.keepClear or Geometry.Above(other, state))
             and not Geometry.SubtractWindow(state, other) then Hide(state, true) return end
     end
     if not NS.WindowFocusPopups.Subtract(state) then Hide(state, true) return end
@@ -88,8 +87,17 @@ Reconcile = function()
             NS.WindowFocusLayers.Prepare(state)
         end
     end
+    -- Upgrading equipment uses both native windows at once. Keep the pair clear
+    -- while both are open, including when a third window receives input.
+    local character = visible[Safety.Field(_G, "CharacterFrame")]
+    local upgrade = visible[Safety.Field(_G, "ItemUpgradeFrame")]
+    local upgrading = character and upgrade
+    local clearBounds = active.readable and (not upgrading or character.readable and upgrade.readable)
     for _, state in pairs(visible) do
-        if active.readable then Paint(state, active) else Hide(state, true) end
+        state.keepClear = state == active or upgrading and (state == character or state == upgrade)
+    end
+    for _, state in pairs(visible) do
+        if clearBounds then Paint(state) else Hide(state, true) end
     end
     UpdateListeners()
 end

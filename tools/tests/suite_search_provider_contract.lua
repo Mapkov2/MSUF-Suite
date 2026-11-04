@@ -341,7 +341,7 @@ local function CheckDeathSearch(stage)
         "Todesmelder", "Todesansage", "Todesmeldungen" }) do
         local found
         for index, record in ipairs(Search(query)) do
-            if index <= 6 and record.key == "suite_qualityOfLife" and record.exactTarget
+            if index <= 6 and record.key == P.QoLView.GetFeaturePage(P.QoLView.FindFeature("groupDeathAlert")) and record.exactTarget
                 and record.exactTarget.settingKey == "msufsuite.groupDeathAlert.enabled" then
                 found = record
                 break
@@ -521,7 +521,7 @@ do
             "specialization search must target the exact Minimap accordion")
     end
 end
-local expectedQolRows, expectedQolCount, expectedCategories = {}, 0, {}
+local expectedQolRows, expectedQolPages, expectedQolCount, expectedCategories = {}, {}, 0, {}
 for _, feature in ipairs(Check(P.QualityOfLifeSearchFeatures,
     "the Quality of Life page did not publish its feature search inventory")) do
     local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
@@ -529,8 +529,11 @@ for _, feature in ipairs(Check(P.QualityOfLifeSearchFeatures,
         "duplicate Quality of Life feature inventory: " .. sectionId)
     if P.Available(feature.id) and feature.id ~= "macroBuilder" then
         expectedQolRows[sectionId] = "msufsuite." .. feature.id .. "." .. feature.switch
+        expectedQolPages[sectionId] = P.QoLView.GetFeaturePage(feature)
         expectedQolCount = expectedQolCount + 1
-        expectedCategories["suite_qualityOfLife_category_" .. feature.category] = true
+        if expectedQolPages[sectionId] == "suite_qualityOfLife" then
+            expectedCategories["suite_qualityOfLife_category_" .. feature.category] = true
+        end
     end
 end
 local macroSwitch
@@ -543,10 +546,10 @@ Check(macroSwitch and macroSwitch.sectionId == nil and macroSwitch.prepareKind =
     and macroSwitch.prepareValue == "consumable", "relocated macro updater lost its direct workspace target")
 local directQolRows, directQolCount, categoryRows = {}, 0, {}
 for _, row in ipairs(rows) do
-    if row.pageKey == "suite_qualityOfLife" and row.qolFeatureId then
+    if row.qolFeatureId then
         directQolCount = directQolCount + 1
         Check(row.kind == "toggle" and row.sectionId and not directQolRows[row.sectionId]
-            and row.settingKey == expectedQolRows[row.sectionId],
+            and row.settingKey == expectedQolRows[row.sectionId] and row.pageKey == expectedQolPages[row.sectionId],
             "Quality of Life feature search has no unique exact toggle target: " .. tostring(row.sectionId))
         directQolRows[row.sectionId] = row
     elseif row.pageKey == "suite_qualityOfLife" and row.kind == "section"
@@ -573,7 +576,7 @@ for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
     local expectedKey = expectedQolRows[sectionId]
     local exact
     for _, rec in ipairs(api.GetSearchRecords()) do
-        if rec.provided and rec.key == "suite_qualityOfLife" and rec.exactTarget
+        if rec.provided and rec.key == expectedQolPages[sectionId] and rec.exactTarget
             and rec.exactTarget.settingKey == expectedKey
             and rec.exactTarget.sectionId == sectionId then
             exact = rec
@@ -908,9 +911,11 @@ do
         end
 
         local function RouteExact(settingKey, expectedTab, expectedSection)
+            local moduleId = settingKey:match("^msufsuite%.([^.]+)%.")
+            local expectedPage = P.GameplayPage.Relocated(moduleId) and "gameplay" or "suite_qualityOfLife"
             local target
             for _, record in ipairs(api.GetSearchRecords()) do
-                if record.key == "suite_qualityOfLife"
+                if record.key == expectedPage
                     and record.exactTarget and record.exactTarget.settingKey == settingKey then
                     target = record
                     break
@@ -920,18 +925,19 @@ do
             local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
                 target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
             world.widgets:RunTimers(80)
-            local entry = M.cache and M.cache.suite_qualityOfLife
+            local entry = M.cache and M.cache[expectedPage]
             local feature = entry and entry.qualityOfLifeFeatureRows[expectedSection or target.exactTarget.sectionId]
-            local category = feature and entry.sections["suite_qualityOfLife_category_" .. feature.category]
+            local view = entry and entry.qualityOfLifeView
+            local category = feature and view and view.panels[feature.category]
             local _, widget = M.RuntimeControlCatalog.FindBySettingKey(
-                settingKey, "suite_qualityOfLife", target.exactTarget)
+                settingKey, expectedPage, target.exactTarget)
             Check(selected and anchored and exact and widget,
                 "Quality of Life search did not focus exact setting: " .. settingKey)
             Check(feature and feature.details and feature.tab == expectedTab
                 and feature.row:GetParent():IsShown() and feature.details:IsShown(),
                 "Quality of Life search did not reveal the correct feature tab: " .. settingKey)
-            Check(category and category._msuf2CollapsibleEntry.open == true,
-                "Quality of Life search left its category closed: " .. settingKey)
+            Check(category and category.frame:IsShown() and view.selected == feature.category,
+                "Quality of Life search left its category hidden: " .. settingKey)
         end
 
         Check(M.cache.suite_qualityOfLife == nil, "Quality of Life page unexpectedly warm before exact search")
@@ -946,59 +952,80 @@ do
         world.widgets:RunTimers(80)
         Check(selected and anchored and exact and deathConfig.enabled == false,
             "death announcer result did not navigate without enabling its module")
-        RouteExact("msufsuite.groupDeathAlert.enabled", "main")
-        RouteExact("msufsuite.groupDeathAlert.screen", "main", "suite_qualityOfLife_groupDeathAlert_group_death_alert")
+        RouteExact("msufsuite.groupDeathAlert.enabled", "groupCombat")
+        RouteExact("msufsuite.groupDeathAlert.screen", "groupCombat", "suite_qualityOfLife_groupDeathAlert_group_death_alert")
         CheckDeathSearch("visited disabled page")
         deathConfig.enabled = savedDeathEnabled
         P.Refresh()
-        RouteExact("msufsuite.releaseProtection.enabled", "main")
-        RouteExact("msufsuite.releaseProtection.modifier", "main", "suite_qualityOfLife_releaseProtection_release_protection")
-        RouteExact("msufsuite.actionTracker.rows", "main")
+        RouteExact("msufsuite.releaseProtection.enabled", "groupRaid")
+        RouteExact("msufsuite.releaseProtection.modifier", "groupRaid", "suite_qualityOfLife_releaseProtection_release_protection")
+        RouteExact("msufsuite.actionTracker.rows", "combatInformation")
         RouteExact("msufsuite.qol.junkReport", "merchants")
         if flavor == "Mainline" then
-            RouteExact("msufsuite.tooltipDetails.unitMount", "main", "suite_qualityOfLife_tooltipDetails_tooltip_details")
-            RouteExact("msufsuite.tooltipDetails.unitMountOwned", "main", "suite_qualityOfLife_tooltipDetails_tooltip_details")
+            RouteExact("msufsuite.tooltipDetails.unitMount", "tooltips", "suite_qualityOfLife_tooltipDetails_tooltip_details")
+            RouteExact("msufsuite.tooltipDetails.unitMountOwned", "tooltips", "suite_qualityOfLife_tooltipDetails_tooltip_details")
         end
         -- Edit Mode must scroll to the feature's settings card below the list,
         -- rather than the parent category header. Exercise the real host routing.
         do
-            local entry = M.cache.suite_qualityOfLife
-            local previousScroll, previousTop, previousHeight = M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight
+            local previousScroll, previousHeight = M.scrollFrame, M.scrollChild.GetHeight
             local offset
             M.scrollFrame = env.CreateFrame("ScrollFrame", nil, env.UIParent)
             M.scrollFrame:SetHeight(400)
             M.scrollFrame.SetVerticalScroll = function(_, value) offset = value end
             M.scrollChild.GetHeight = function() return 2400 end
-            entry.wrapper.GetTop = function() return 1200 end
             for _, case in ipairs({
-                { "combatStatsHUD", "secondary_stats", "character" },
+                { "combatStatsHUD", "secondary_stats", "combatInformation" },
                 { "durabilityAlert", "durability_warning", "gear" },
-                { "actionTracker", "action_tracker", "main" },
+                { "actionTracker", "action_tracker", "combatInformation" },
             }) do
+                local pageKey = P.QoLView.GetFeaturePage(P.QoLView.FindFeature(case[1]))
+                -- Changing viewport metrics can replace an inactive page's
+                -- cached layout. Resolve that layout before fixing geometry.
+                Check(Suite.Menu.Open(pageKey), "Edit Mode fixture could not open destination: " .. pageKey)
+                world.widgets:RunTimers(80)
+                local entry = M.cache[pageKey]
+                local previousTop = entry.wrapper.GetTop
+                entry.wrapper.GetTop = function() return 1200 end
                 local sectionId = "suite_qualityOfLife_" .. case[1] .. "_" .. case[2]
                 local details = entry._msuf2ResolveMissingSection(sectionId)
                 local previousDetailTop = details.GetTop
                 details.GetTop = function() return 700 end
-                local category = details._msuf2CollapsibleEntry
-                category.open = false
-                category.body:Hide()
+                local feature = entry.qualityOfLifeFeatureRows[sectionId]
+                local view = entry.qualityOfLifeView
+                local category = view.panels[feature.category]
+                feature.reveal(false)
+                Check(not details:IsShown(), "Edit Mode routing fixture left details open: " .. case[1])
                 offset = nil
                 Check(Suite.Menu.FocusQualityOfLifeModule(case[1]), "Edit Mode detail route failed: " .. case[1])
                 world.widgets:RunTimers(80)
-                local feature = entry.qualityOfLifeFeatureRows[sectionId]
-                Check(offset == 456 and category.open and details:IsShown()
+                Check(offset == 456 and category.frame:IsShown() and category.selected == feature.group and details:IsShown()
                     and feature.tab == case[3] and feature.row:GetParent():IsShown(),
-                    "Edit Mode did not scroll directly to its visible settings card: " .. case[1])
+                    "Edit Mode did not scroll directly to its visible settings card: " .. case[1]
+                        .. " offset=" .. tostring(offset) .. " selected=" .. tostring(category.selected == feature.group)
+                        .. " details=" .. tostring(details:IsShown()) .. " tab=" .. tostring(feature.tab))
+                Check(M.cache[pageKey] == entry, "Edit Mode warm focus rebuilt the destination page: " .. case[1])
+                Check(Suite.Menu.FocusQualityOfLifeModule(case[1]), "Edit Mode repeat focus failed: " .. case[1])
+                world.widgets:RunTimers(80)
+                Check(M.cache[pageKey] == entry and offset == 456 and category.selected == feature.group,
+                    "Edit Mode repeat focus changed the page or scroll target: " .. case[1])
                 details.GetTop = previousDetailTop
+                entry.wrapper.GetTop = previousTop
             end
-            M.scrollFrame, entry.wrapper.GetTop, M.scrollChild.GetHeight = previousScroll, previousTop, previousHeight
+            M.scrollFrame, M.scrollChild.GetHeight = previousScroll, previousHeight
         end
+        -- Restoring viewport metrics may select different cached layouts;
+        -- warm the controls used by the following availability assertions.
+        RouteExact("msufsuite.qol.junkReport", "merchants")
+        RouteExact("msufsuite.actionTracker.rows", "combatInformation")
         CheckReleaseSearch("visited page")
         CheckDeathSearch("visited page")
         for _, settingKey in ipairs({ "msufsuite.actionTracker.rows", "msufsuite.qol.junkReport" }) do
+            local moduleId = settingKey:match("^msufsuite%.([^.]+)%.")
+            local expectedPage = P.GameplayPage.Relocated(moduleId) and "gameplay" or "suite_qualityOfLife"
             local matches = 0
             for _, record in ipairs(api.GetSearchRecords()) do
-                if record.key == "suite_qualityOfLife" and record.exactTarget
+                if record.key == expectedPage and record.exactTarget
                     and record.exactTarget.settingKey == settingKey then
                     matches = matches + 1
                 end
@@ -1014,7 +1041,8 @@ do
         local moduleId = case[2]:match("^msufsuite%.([^.]+)%.")
         if P.Available(moduleId) then
             local first = Search(case[1])[1]
-            Check(first and first.key == "suite_qualityOfLife" and first.exactTarget
+            local expectedPage = P.GameplayPage.Relocated(moduleId) and "gameplay" or "suite_qualityOfLife"
+            Check(first and first.key == expectedPage and first.exactTarget
                 and first.exactTarget.settingKey == case[2],
                 "Quality of Life search did not put the feature first: " .. case[1])
         else

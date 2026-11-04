@@ -321,6 +321,49 @@ assert(module.candidates[1] == 89766 and #module.candidates == 1, "a pet swap ke
 petKnown = {}; Fire("UNIT_PET", "player")
 assert(#module.candidates == 0 and not module.context.events.SPELL_UPDATE_COOLDOWN and not module.ready,
     "no pet must mean no interrupt and no cooldown listener")
+-- Sacrifice grants a player interrupt while the pet spellbook is empty.
+local override, overrideReads = 119898, 0
+local function CommandOverride(id)
+    assert(id == 119898, "only Command Demon should be resolved")
+    overrideReads = overrideReads + 1
+    return override
+end
+C_Spell.GetOverrideSpell = CommandOverride
+known = { [19647] = true, [132409] = true }
+Fire("UNIT_PET", "player")
+assert(#module.candidates == 0, "stale player spellbook entries admitted an absent pet interrupt")
+override = 132409
+Fire("SPELLS_CHANGED")
+assert(#module.candidates == 1 and module.candidates[1] == 132409 and module.ready,
+    "sacrificed Felhunter's player Spell Lock was not detected")
+cooldowns[132409] = true
+Fire("SPELL_UPDATE_COOLDOWN", 132409, 119898)
+assert(not module.ready and not rowA.stripe.shown and wake.cooldown == cooldownDurations[132409],
+    "sacrifice used the pet cooldown or failed to arm its cooldown completion")
+cooldowns[132409] = false
+wake.scripts.OnCooldownDone()
+assert(module.ready and rowA.stripe.shown, "sacrifice cooldown completion did not restore readiness")
+local beforeOverride = overrideReads
+for i = 1, 10 do Fire("SPELL_UPDATE_COOLDOWN", 132409, 119898) end
+assert(overrideReads == beforeOverride, "cooldown paints re-resolved the sacrifice override")
+override = 132411
+Fire("SPELLS_CHANGED")
+assert(#module.candidates == 0 and not module.ready, "another sacrificed demon admitted Spell Lock")
+override = Secret()
+Fire("SPELLS_CHANGED")
+assert(#module.candidates == 0, "an unreadable override admitted Spell Lock")
+override, petKnown = 119910, { [19647] = true }
+Fire("UNIT_PET", "player")
+assert(#module.candidates == 1 and module.candidates[1] == 19647, "resummoned Felhunter retained sacrifice")
+override, petKnown = 119898, {}
+Fire("UNIT_PET", "player")
+assert(#module.candidates == 0, "dismissed Felhunter retained an interrupt")
+C_Spell.GetOverrideSpell = nil
+Fire("SPELLS_CHANGED")
+assert(#module.candidates == 1 and module.candidates[1] == 132409, "known sacrifice fallback missing without override API")
+known = {}
+Fire("SPELLS_CHANGED")
+assert(#module.candidates == 0, "fallback admitted an unknown sacrifice")
 module.config.interruptSpellID = 123; module:Refresh()
 assert(#module.candidates == 1 and module.candidates[1] == 123, "the interrupt spell ID was ignored")
 module.config.interruptSpellID, module.config.readyStripe = 0, false

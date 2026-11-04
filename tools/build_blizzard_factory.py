@@ -159,7 +159,8 @@ def frames():
             powerBarHeight=8, showPowerText=False, hpBarAlpha=1, hpBgAlpha=.8)
         frame_chassis(db[key], True, key == b"boss")
         put(db[key], directHealthCenterOffsetY=20)
-    put(db[b"focus"], offsetX=490, offsetY=160)
+    put(db[b"focus"], anchorToUnitframe="GLOBAL", offsetX=358, offsetY=-327,
+        screenPositionMode="relativeHeight", screenPositionHeight=960)
     put(db[b"boss"], height=28, point="CENTER", relativePoint="RIGHT", offsetX=-712, offsetY=220,
         bossLayoutMode="VERTICAL_DOWN", spacing=-112, portraitOffsetX=-12, portraitOffsetY=6, texLayerOffsetY=6,
         directNamePoint="LEFT", directNameRelativePoint="TOPLEFT", directNameOffsetX=4,
@@ -182,6 +183,13 @@ def frames():
         put(owner[b"layout"], buffGroupIconSize=24, debuffGroupIconSize=24,
             buffIconHeightPercent=100, debuffIconHeightPercent=100, buffSpacing=2, debuffSpacing=2,
             buffGroupOffsetY=48, debuffGroupOffsetY=76, buffCooldownTextSize=11, debuffCooldownTextSize=11)
+    for unit, owner in db[b"auras3"][b"perUnit"].items():
+        if unit.startswith(b"boss"):
+            put(owner[b"layout"], buffGroupOffsetX=78, buffGroupOffsetY=-1,
+                debuffGroupOffsetX=0, debuffGroupOffsetY=43)
+        elif unit.startswith(b"arena"):
+            put(owner[b"layout"], buffGroupOffsetX=25, buffGroupOffsetY=15,
+                debuffGroupOffsetX=2, debuffGroupOffsetY=10)
     # The native top-right aura frames remain visible. Duplicating Player's
     # buffs above this compact frame covers its dark name header.
     put(db[b"auras3"], showPlayer=False)

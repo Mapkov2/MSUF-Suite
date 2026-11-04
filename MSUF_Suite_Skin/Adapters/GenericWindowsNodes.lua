@@ -469,7 +469,25 @@ local function ChildPanelRole(name)
     return "card"
 end
 
+local questPages = {
+    QuestFrameRewardPanel = true, QuestFrameProgressPanel = true,
+    QuestFrameDetailPanel = true, QuestFrameGreetingPanel = true,
+}
+
+local function IsQuestPage(frame)
+    local name = ObjectName(frame)
+    return questPages[name] and frame == Field(_G, name)
+        and Safety.Read(frame, "GetParent") == Field(_G, "QuestFrame")
+end
+
 local function AttachChildSurface(owner, target, specs, metrics)
+    -- Mainline/Forever QuestFramePanelTemplate pages are 384x512 layout
+    -- containers inside a 338x496 shell. The shell supplies
+    -- their background; a page surface would extend 46px right and 16px down.
+    if IsQuestPage(target) then
+        NS.Surface.SetVisible(target, false)
+        return
+    end
     if metrics.childSurfaces
         and Attach(owner, target, specs[metrics.allowImplicitProtected], metrics) then
         metrics.childSurfaceTargets[target] = true

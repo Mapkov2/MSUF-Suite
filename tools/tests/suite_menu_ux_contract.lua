@@ -4,15 +4,18 @@
 local root = assert(arg[1], "repository root required")
 local mutations = {
     exactTab = { "Menu/Workspace.lua", "ui.select(body._suiteWorkspaceTab)", "-- missing tab reveal" },
-    narrowTabs = { "Menu/Workspace.lua", "#values * 180", "0" },
+    narrowTabs = { "Menu/Workspace.lua", "if W.SegmentTabs then",
+        "if W.SegmentTabs and ui.width - 32 >= #values * 180 then" },
     duplicate = { "Pages/BuffRemindersEditor.lua", "tostring(tonumber(token))", "token" },
     combat = { "Pages/BuffRemindersEditor.lua", "if P.Combat() then return false end", "-- missing combat refusal" },
     inheritance = { "Pages/BuffRemindersVisibility.lua", "values[rule.key] = true", "values[rule.key] = false" },
-    inlineQoL = { "Pages/QualityOfLife.lua", "0, -offset - 4", "0, -1000" },
-    lazyQoL = { "Pages/QualityOfLife.lua", "local function Select(group, force)", "P.M.TrackRefresh(ctx, Layout)\n    local function Select(group, force)" },
+    inlineQoL = { "Pages/QualityOfLifeNavigation.lua", "0, -offset - 4", "0, -1000" },
+    lazyQoL = { "Pages/QualityOfLifeNavigation.lua", "ui.panels[category.id], ui.frames[category.id] = panel, frame",
+        "ui.panels[category.id], ui.frames[category.id] = panel, frame\n    P.M.TrackRefresh(ui.ctx, function() Layout(ui) end)" },
     itemSearch = { "Pages/BuffRemindersEditor.lua", 'if key == "item" then state.kind = "item" end', 'if key == "item" then state.kind = "spell" end' },
-    filteredSearch = { "Pages/QualityOfLife.lua", "if hasDetails or ctx.suiteQoLActiveOnly then Select", "if hasDetails then Select" },
-    filterTitle = { "Pages/QualityOfLife.lua", "header.title:Hide()", "header.title:Show()" },
+    filteredSearch = { "Pages/QualityOfLifeNavigation.lua", "if panel.selected == group or ui.retained == group then return true end",
+        "if (panel.selected == group or ui.retained == group) and panel.records[group].hasDetails then return true end" },
+    filterTitle = { "Pages/QualityOfLifeNavigation.lua", "body.title:Hide()", "body.title:Show()" },
     copyWrap = { "Pages/ActionBars.lua", "popup:SetHeight(math.max(340, 264 + (popup.suiteCopySummary:GetStringHeight() or 42)))", "-- missing wrapped height" },
     meterDefault = { "Pages/DamageMeter.lua", '{ id = "shared", label = "General settings", sections = "damageMeter_module look general details" },',
         '{ id = "window", label = "Window settings", sections = "windows" },\n            { id = "shared", label = "General settings", sections = "damageMeter_module look general details" },' },
@@ -110,7 +113,7 @@ local focused = 0
 W.FocusCollapsibleSection = function(body) focused = focused + 1; body:Show() end
 local function Context(page, width)
     local ctx = { key = page, width = width, sections = {}, widgets = {}, refreshers = {}, pageItems = {},
-        wrapper = CreateFrame("Frame") }
+        wrapper = CreateFrame("Frame"), entry = { sections = {} } }
     active = ctx
     return ctx
 end
@@ -155,7 +158,12 @@ for _, page in ipairs({ "suite_bags", "suite_buffReminders", "suite_damageMeter"
             assert(ui.selected == "appearance", "damage meter lost the previously selected styling tab")
         end
         assert(ui.header:GetHeight() >= ui.spec.height, page .. ": fixed preview lost its height")
-        if width == 340 then assert(ui.selector, page .. ": narrow host must use a dropdown") end
+        assert(ui.chooseTab and not ui.selector, page .. ": workspace must keep direct tabs")
+        local tabs = assert(ctx.tabControls and ctx.tabControls[1], page .. ": missing area tabs")
+        assert(#tabs.segment.values == #ui.spec.tabs, page .. ": missing direct area choice")
+        for index, tab in ipairs(ui.spec.tabs) do
+            assert(tabs.segment.values[index].value == tab.id, page .. ": wrong area tab order")
+        end
         local target = page == "suite_bags" and (ui.sections.suite_bags_bank and "suite_bags_bank" or "suite_bags_categories")
             or page == "suite_buffReminders" and "suite_buffReminders_personalVisibility" or "suite_damageMeter_bars"
         local section = ui.sections[target]
@@ -325,72 +333,66 @@ do
     assert(ui.header:IsVisible(), "window picker scrolled into a feature tab")
 end
 -- Selected QoL details sit between their row and the following row. The
--- enabled-only filter updates already-built categories without rebuilding.
+-- Filters update built rows without rebuilding; exact search reveals a hidden row.
 do
     local ctx = Build("suite_qualityOfLife", 760)
-    Ensure(ctx)
-    local filterHeader
-    for _, frame in ipairs(frames) do
-        if frame.parent == ctx.wrapper and rawget(frame, "title") and not rawget(frame, "sectionId") then filterHeader = frame end
+    local ui = assert(ctx.entry.qualityOfLifeView)
+    assert(ui.body.title and not ui.body.title:IsShown(), "QoL filter overlaps the section title")
+    -- Deferred category construction must tolerate eager widget refreshers.
+    for _, category in ipairs(P.QoLView.GetCategories()) do
+        if not ui.panels[category.id] then
+            immediate = true
+            ui:SelectCategory(category.id)
+            immediate = false
+            break
+        end
     end
-    assert(filterHeader and not filterHeader.title:IsShown(), "QoL filter overlaps the section title")
-    local chosen
-    for _, record in pairs(ctx.qualityOfLifeFeatureRows) do
-        if record.hasDetails and record.settings then chosen = record; break end
-    end
-    assert(chosen and chosen.reveal(true), "QoL settings did not open")
+    ui:SelectCategory("interface")
+    local chosen = assert(ctx.qualityOfLifeFeatureRows.suite_qualityOfLife_dailyComfort_daily_comfort)
+    Control(ctx, ".view.enabled").set("enabled")
+    assert(chosen.reveal(true), "QoL settings did not open")
     M.RequestRefresh()
     local rowY, detailsY = chosen.row.points[1][5], chosen.details.points[1][5]
     assert(detailsY < rowY and rowY - detailsY < 90, "QoL details stayed below the whole feature list")
-    Control(ctx, ".view.enabled").set(true)
-    M.RequestRefresh()
     assert(chosen.row:IsShown() and chosen.details:IsShown(), "filter hid the currently edited feature")
     local point, moves = chosen.row.SetPoint, 0
     chosen.row.SetPoint = function(self, ...) moves = moves + 1; return point(self, ...) end
     M.RequestRefresh()
     assert(moves == 0, "unchanged QoL refresh repeated native layout writes")
     chosen.row.SetPoint = point
-    local checkedFilter = false
-    for _, group in ipairs(P.QualityOfLifeSearchFeatures) do
-        local record = ctx.qualityOfLifeFeatureRows["suite_qualityOfLife_" .. group.id .. "_" .. group.sections[1]]
-        if record and record ~= chosen then
-            local config, previous = P.S.Config(group.id), P.Get(group.id, group.switch)
-            config[group.switch] = false
-            M.RequestRefresh()
-            assert(not record.row:IsShown(), "enabled-only filter kept a disabled feature")
-            Control(ctx, ".view.enabled").set(false)
-            M.RequestRefresh()
-            assert(record.row:IsShown(), "All filter did not restore the feature")
-            config[group.switch] = previous
-            checkedFilter = true
-            break
-        end
-    end
-    assert(checkedFilter, "enabled-only filter case did not run")
-    local checkedSearch = false
-    for _, group in ipairs(P.QualityOfLifeSearchFeatures) do
-        local record = ctx.qualityOfLifeFeatureRows["suite_qualityOfLife_" .. group.id .. "_" .. group.sections[1]]
-        if record and not record.hasDetails then
-            local config, previous = P.S.Config(group.id), P.Get(group.id, group.switch)
-            config[group.switch] = false
-            Control(ctx, ".view.enabled").set(true)
-            M.RequestRefresh()
-            assert(not record.row:IsShown(), "disabled feature was not filtered")
-            record.reveal(true)
-            assert(record.row:IsShown(), "search could not reveal a filtered feature without details")
-            config[group.switch] = previous
-            checkedSearch = true
-            break
-        end
-    end
-    assert(checkedSearch, "filtered search case did not run")
+    local record = assert(ctx.qualityOfLifeFeatureRows.suite_qualityOfLife_tooltipClassColors_class_colors)
+    assert(not record.hasDetails, "filtered-search fixture no longer exercises a one-switch feature")
+    local config = P.S.Config("tooltipClassColors")
+    local previous = config.enabled
+    config.enabled = false
+    Control(ctx, ".view.enabled").set("enabled")
+    M.RequestRefresh()
+    assert(not record.row:IsShown(), "enabled-only filter kept a disabled feature")
+    Control(ctx, ".view.enabled").set("all")
+    M.RequestRefresh()
+    assert(record.row:IsShown(), "All filter did not restore the feature")
+    Control(ctx, ".view.enabled").set("enabled")
+    M.RequestRefresh()
+    assert(not record.row:IsShown(), "disabled feature was not filtered")
+    record.reveal(true)
+    assert(record.row:IsShown(), "search could not reveal a filtered feature without details")
+    config.enabled = true
+    Control(ctx, ".view.enabled").set("disabled")
+    M.RequestRefresh()
+    assert(not record.row:IsShown(), "disabled-only filter kept an enabled feature")
+    config.enabled = false
+    M.RequestRefresh()
+    assert(record.row:IsShown(), "disabled-only filter did not show a disabled feature")
+    config.enabled = previous
+    Control(ctx, ".view.enabled").set("all")
 end
 -- The skin tab route uses the same native skin surfaces and setting keys.
 if (arg[2] or "Mainline") == "Mainline" then
     assert(skin, "skin fixture missing")
     MapkoSkin = skin
     local _, ui = Build("suite_skin", 340)
-    assert(ui and #ui.spec.tabs == 4 and ui.selector and ui.header:GetHeight() >= 240, "skinning lacks narrow tabs or preview space")
+    assert(ui and #ui.spec.tabs == 4 and ui.chooseTab and not ui.selector and ui.header:GetHeight() >= 240,
+        "skinning lacks direct tabs or preview space")
     assert(ui:Focus("suite_skin_character") and ui.selected == "character", "skinning character link opened another tab")
     assert(ui:Focus("suite_skin_advanced") and ui.selected == "maintenance", "skinning maintenance link opened another tab")
     MapkoSkin = nil

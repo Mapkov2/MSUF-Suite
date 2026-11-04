@@ -5295,6 +5295,46 @@
       "evidence": "Kuro UI reproduction request 2026-11-03; BattleRes.lua adds compact charge/countdown text. suite_battle_res_contract.lua checks text/card switching, native duration binding and unchanged stored dimensions.",
       "reason": "Lower range extends for compact text. Previous sizes and the card default remain valid; card rendering retains an effective minimum of 146 by 44.",
       "date": "2026-11-03"
+    },
+    {
+      "category": "locale",
+      "item": "Character & Gear",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeCatalog.lua defines the replacement categories; QualityOfLifeNavigation.lua retains legacy section aliases. Module IDs and settings are unchanged.",
+      "reason": "Approved QoL navigation reorganization replaces this category label while preserving its features.",
+      "date": "2026-11-03"
+    },
+    {
+      "category": "locale",
+      "item": "Combat & Alerts",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeCatalog.lua defines the replacement categories; QualityOfLifeNavigation.lua retains legacy section aliases. Module IDs and settings are unchanged.",
+      "reason": "Approved QoL navigation reorganization replaces this category label while preserving its features.",
+      "date": "2026-11-03"
+    },
+    {
+      "category": "locale",
+      "item": "Everyday & Automation",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeCatalog.lua defines the replacement categories; QualityOfLifeNavigation.lua retains legacy section aliases. Module IDs and settings are unchanged.",
+      "reason": "Approved QoL navigation reorganization replaces this category label while preserving its features.",
+      "date": "2026-11-03"
+    },
+    {
+      "category": "locale",
+      "item": "Group Finder & Mythic+",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeCatalog.lua defines the replacement categories; QualityOfLifeNavigation.lua retains legacy section aliases. Module IDs and settings are unchanged.",
+      "reason": "Approved QoL navigation reorganization replaces this category label while preserving its features.",
+      "date": "2026-11-03"
+    },
+    {
+      "category": "locale",
+      "item": "Interface & Chat",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeCatalog.lua defines the replacement categories; QualityOfLifeNavigation.lua retains legacy section aliases. Module IDs and settings are unchanged.",
+      "reason": "Approved QoL navigation reorganization replaces this category label while preserving its features.",
+      "date": "2026-11-03"
     }
   ]
 }

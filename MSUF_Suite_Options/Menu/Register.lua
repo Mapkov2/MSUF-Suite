@@ -229,7 +229,8 @@ local function PageResetHandlers()
         local modules = PAGE_MODULES[key]
         if not modules then return false end
         for _, id in ipairs(modules) do
-            local moved = key == "suite_qualityOfLife" and P.PlayerAurasPage.Relocated(id)
+            local moved = key == "suite_qualityOfLife" and
+                (P.PlayerAurasPage.Relocated(id) or P.GameplayPage.Relocated(id) or P.CastbarArtworkPage.Relocated(id))
             if not moved and not S.Reset(id) then return false end
         end
         return true
@@ -246,6 +247,7 @@ local function InstallPageResets()
 end
 
 AddIcons()
+P.GameplayPage.Register()
 RegisterPages()
 
 Suite.HostBridge.WatchMenuContent(M, function(frame, token)

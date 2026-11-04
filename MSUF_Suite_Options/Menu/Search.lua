@@ -251,7 +251,8 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
         suiteModuleId = spec.id, suiteFeatureSwitch = feature and feature.switch or nil, suiteRuleKey = rule.key,
         section = section, keywords = keywords, help = rule.help and Tr(rule.help) or nil,
         settingKey = exact and ("msufsuite." .. spec.id .. "." .. rule.key) or nil,
-        sectionId = spec.id ~= "macroBuilder" and (feature and (page.key .. "_" .. feature.id .. "_" .. feature.sections[1]) or sectionId) or nil,
+        sectionId = spec.id ~= "macroBuilder" and
+            (feature and ("suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]) or sectionId) or nil,
         prepareKind = spec.id == "macroBuilder" and "suiteMacroTab" or nil,
         prepareValue = spec.id == "macroBuilder" and "consumable" or nil,
         anchorText = kind == "color" and (feature and Tr(feature.title) or section) or nil,
@@ -321,10 +322,9 @@ local function ModuleRows(rows, page, spec, instanceTitles)
     end
 end
 
--- Quality of Life has category accordions and feature tabs. Its old feature
--- section IDs remain the exact search targets; the page resolves them to the
--- category and tab before the setting widget is looked up. Keep the provider
--- inventory tied to the page's own taxonomy so new features need one owner.
+-- Both views share feature metadata and stable section IDs. The active host
+-- decides whether combat helpers live on Gameplay or remain in Quality of Life.
+local GAMEPLAY_PAGE = { key = "gameplay", title = "Gameplay" }
 local function QualityOfLifeRows(rows, page, modules, pageRow)
     local categories, features = P.QualityOfLifeCategories, P.QualityOfLifeSearchFeatures
     if type(categories) ~= "table" or type(features) ~= "table" then return false end
@@ -336,10 +336,12 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
     for _, category in ipairs(categories) do
         byCategory[category.id] = category
     end
+    byCategory.gameplay = P.QoLView.GameplayCategory
     for _, feature in ipairs(features) do
         local spec, category = installed[feature.id], byCategory[feature.category]
         if spec and category then
-            local sectionId = page.key .. "_" .. feature.id .. "_" .. feature.sections[1]
+            local featurePage = P.QoLView.GetFeaturePage(feature) == "gameplay" and GAMEPLAY_PAGE or page
+            local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
             local keywords = {}
             AddWords(keywords, feature.title)
             AddWords(keywords, category.title)
@@ -354,16 +356,16 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
                 for _, rule in ipairs(P.SectionRules(feature.id, sectionKey)) do
                     if rule.key ~= feature.switch and not rule.hidden and not seen[rule.key] then
                         seen[rule.key] = true
-                        AddWords(keywords, rule.label)
+                        if rule.color then AddWords(keywords, rule.label) end
                         if not rule.color then
-                            local row = RuleRow(page, spec, rule, nil, feature, category)
+                            local row = RuleRow(featurePage, spec, rule, nil, feature, category)
                             if row then ruleRows[#ruleRows + 1] = row end
                         end
                     end
                 end
             end
             rows[#rows + 1] = {
-                pageKey = page.key, kind = "toggle", label = Tr(feature.title),
+                pageKey = featurePage.key, kind = "toggle", label = Tr(feature.title),
                 suiteModuleId = spec.id, suiteFeatureSwitch = feature.switch, suiteModuleSwitch = true,
                 qolFeatureId = feature.id,
                 section = Tr(category.title), keywords = keywords,
@@ -373,7 +375,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
             for _, row in ipairs(ruleRows) do rows[#rows + 1] = row end
         end
     end
-    for _, category in ipairs(categories) do
+    for _, category in ipairs(P.QoLView.GetCategories()) do
         local enabled = false
         for _, feature in ipairs(features) do
             if feature.category == category.id and installed[feature.id] then
@@ -445,6 +447,7 @@ function P.SearchRows()
     for _, row in ipairs(P.SkinSearchRows()) do rows[#rows + 1] = row end
     P.AppendSearchActionRows(rows, pagesByKey)
     P.PlayerAurasPage.AppendSearchRows(rows, RuleRow)
+    P.CastbarArtworkPage.AppendSearchRows(rows, RuleRow)
     local visible = {}
     for _, row in ipairs(rows) do
         local available, inactive = P.SearchRowAvailable(row.pageKey, row.settingKey, row)
@@ -550,13 +553,14 @@ end
 
 function P.SearchRowAvailable(pageKey, settingKey, record)
     if type(pageKey) ~= "string" then return true end
+    record = record or {}
+    local row = record.providerRow or record
     local owner = type(settingKey) == "string" and settingKey:match("^msufsuite%.([^.]+)%.")
+    owner = owner or row.suiteModuleId or (row.sectionId or record.sectionId or ""):match("^suite_qualityOfLife_([^_]+)_")
     if owner == "skin" then pageKey = "suite_skin"
     elseif owner and P.catalog[owner] then pageKey = P.catalog[owner].page or pageKey end
     if pageKey:sub(1, 6) ~= "suite_" then return true end
     if pageKey == "suite_macros" and not owner then return true end
-    record = record or {}
-    local row = record.providerRow or record
     if record.kind == "page" or row.kind == "page" or record.kind == "faq" or row.kind == "faq" then
         return PageAvailable(pageKey)
     end

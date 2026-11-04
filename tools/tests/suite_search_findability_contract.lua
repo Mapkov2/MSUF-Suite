@@ -185,11 +185,12 @@ Expect("When to show", "suite_buffReminders", "When to show", 1)
 Expect("Move selected bar", "suite_actionbars", "Move selected bar", 1)
 Expect("Where are the nameplate settings?", "suite_nameplates", "Where are the nameplate settings?", 1)
 Expect("Where is the cooldown manager?", "suite_cooldownManager", "Where is the cooldown manager?", 2)
-if HasRow("suite_qualityOfLife", "Global cooldown") then
-    Expect("Global cooldown", "suite_qualityOfLife", "Global cooldown", 1)
+local combatPage = P.QoLView.GetFeaturePage(P.QoLView.FindFeature("cursorEffects"))
+if HasRow(combatPage, "Global cooldown") then
+    Expect("Global cooldown", combatPage, "Global cooldown", 1)
 end
 local interruptLabel = "Mark interruptible casts while your interrupt is ready"
-if HasRow("suite_qualityOfLife", interruptLabel) then Expect(interruptLabel, "suite_qualityOfLife", interruptLabel, 1) end
+if HasRow(combatPage, interruptLabel) then Expect(interruptLabel, combatPage, interruptLabel, 1) end
 
 -- Familiar feature names must resolve to the feature switch, including English
 -- names in translated clients and aliases of client-specific helpers.
@@ -216,7 +217,8 @@ local featureAliases = {
 -- A bare service or raid-progress query may lead directly to its switch on the
 -- same feature. General feature aliases must still find the feature enable switch.
 local function AliasTarget(case, query, record)
-    if record.key ~= "suite_qualityOfLife" or not record.exactTarget then return false end
+    local page = P.QoLView.GetFeaturePage(P.QoLView.FindFeature(case[1]))
+    if record.key ~= page or not record.exactTarget then return false end
     local prefix = "msufsuite." .. case[1] .. "."
     local service = case[3] and case[3][query]
     local setting = record.exactTarget.settingKey
@@ -328,18 +330,19 @@ for _, case in ipairs(featureAliases) do
         local settingKey = "msufsuite." .. case[1] .. ".enabled"
         local target
         for _, record in ipairs(ReadySearchRecords()) do
-            if record.key == "suite_qualityOfLife" and record.exactTarget
+            if record.key == P.QoLView.GetFeaturePage(P.QoLView.FindFeature(case[1])) and record.exactTarget
                 and record.exactTarget.settingKey == settingKey then target = record; break end
         end
         if Check(target, flavor .. ": missing feature route: " .. settingKey) then
             local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
                 target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
             world.widgets:RunTimers(80)
-            local page = M.cache.suite_qualityOfLife
+            local page = M.cache[target.key]
             local feature = page and page.qualityOfLifeFeatureRows[target.exactTarget.sectionId]
-            local category = feature and page.sections["suite_qualityOfLife_category_" .. feature.category]
+            local view = page and page.qualityOfLifeView
+            local category = feature and view and view.panels[feature.category]
             Check(selected and anchored and exact and feature and feature.details and feature.details:IsShown()
-                and category and category._msuf2CollapsibleEntry.open,
+                and category and category.frame:IsShown() and view.selected == feature.category,
                 flavor .. ": feature route did not reveal its settings: " .. settingKey)
             Check(Suite.Suite.Config(case[1]).enabled == false, flavor .. ": search enabled a feature: " .. settingKey)
         end
@@ -360,9 +363,10 @@ for _, case in ipairs(featureAliases) do
                 world.widgets:RunTimers(80)
                 local page = M.cache.suite_qualityOfLife
                 local feature = page and page.qualityOfLifeFeatureRows["suite_qualityOfLife_chatProfileLinks_profile_links"]
-                local category = feature and page.sections["suite_qualityOfLife_category_" .. feature.category]
+                local view = page and page.qualityOfLifeView
+                local category = feature and view and view.panels[feature.category]
                 Check(selected and anchored and exact and feature and feature.details and feature.details:IsShown()
-                    and category and category._msuf2CollapsibleEntry.open,
+                    and category and category.frame:IsShown() and view.selected == feature.category,
                     flavor .. ": service route did not reveal profile-link settings: " .. query)
                 local runtime = M.RuntimeControlCatalog.Get(target.exactTarget.controlId)
                 local prepare = runtime and runtime.widget and P.HM.GetSearchTargetPrepare(runtime.widget)
@@ -390,9 +394,10 @@ if P.Available("chatProfileLinks") then
         world.widgets:RunTimers(80)
         local page = M.cache.suite_qualityOfLife
         local feature = page and page.qualityOfLifeFeatureRows["suite_qualityOfLife_chatProfileLinks_profile_links"]
-        local category = feature and page.sections["suite_qualityOfLife_category_" .. feature.category]
+        local view = page and page.qualityOfLifeView
+        local category = feature and view and view.panels[feature.category]
         Check(selected and anchored and exact and feature and feature.details and feature.details:IsShown()
-            and category and category._msuf2CollapsibleEntry.open, flavor .. ": raid-progress control route failed")
+            and category and category.frame:IsShown() and view.selected == feature.category, flavor .. ": raid-progress control route failed")
         local runtime = M.RuntimeControlCatalog.Get(target.exactTarget.controlId)
         local prepare = runtime and runtime.widget and P.HM.GetSearchTargetPrepare(runtime.widget)
         Check(type(prepare) == "function" and prepare(runtime.widget, target.exactTarget) == true,

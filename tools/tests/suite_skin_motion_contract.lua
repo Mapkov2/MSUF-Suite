@@ -567,7 +567,7 @@ NS.Theme.SetAppearance("reduceMotion", false)
 local pageCallback, providedClient
 local compatibilitySuite = { SuiteOrder = {}, Menu = {}, Skin = { RegisterMenu = Noop, Acquire = function() return providedClient end },
     HostBridge = { WatchMenuContent = function(_, callback) pageCallback = callback end,
-        RegisterPageResets = function() return "test" end } }
+        RegisterPageResets = function() return "test" end, RegisterPageExtension = function() return false end } }
 local compatibilityOptions = { Suite = compatibilitySuite, M = { navItems = {} }, S = {}, catalog = {}, pages = {},
     Refresh = function() end }
 -- The actual Register file also registers icon-skin areas. Use its real
@@ -599,6 +599,7 @@ compatibilitySuite.HostBridge.ProfileWorkbench = function() end
 assert(loadfile(root .. "/MSUF_Suite/Core/ProfileWorkbenchBridge.lua"))("MSUF_Suite", compatibilitySuite)
 Check(type(compatibilitySuite.SuiteProfiles.CaptureWorkbenchSkin) == "function"
     and not compatibilitySuite.ProfileWorkbenchBridge.HistoryOwned(), "actual absent-host history bridge did not load")
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Gameplay.lua"))("MSUF_Suite_Options", compatibilityOptions)
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", compatibilityOptions)
 Check(skinAreaRegistrations == 1, "actual icon area registration was skipped")
 pageCallback(page, 20) -- No skin provider available.

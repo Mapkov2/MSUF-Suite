@@ -93,8 +93,8 @@ C_AddOns.LoadAddOn, S.NewContext = previousLoad, previousContext
 -- Never-sell, on the Quality of Life page: the reset restores "Protect items in
 -- equipment sets" and leaves protection on, with its list.
 local qol = E.build("suite_qualityOfLife")
+E.inContext(qol, function() P.QoLView.FindFeature("inventoryProtection").reveal(true) end)
 local record = assert(qol.qualityOfLifeFeatureRows.suite_qualityOfLife_inventoryProtection_inventoryProtection)
-E.inContext(qol, function() record.reveal(true) end)
 local protection = S.Config("inventoryProtection")
 protection.enabled, protection.sets, protection.items = true, false, "12=1"
 E.inContext(qol, function()

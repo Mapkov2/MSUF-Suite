@@ -257,8 +257,10 @@ do
         return register(widget, meta, label, ...)
     end
     local qol = Build("suite_qualityOfLife")
-    -- A feature's details (and its color shortcut) are built when it opens.
-    for _, record in pairs(qol.qualityOfLifeFeatureRows) do record.reveal(true) end
+    -- Visit every lazy category and feature, so all color shortcuts are checked.
+    for _, sectionId in ipairs(qol.qualityOfLifeFeatureOrder) do
+        assert(qol.entry._msuf2ResolveMissingSection(sectionId), "feature route missing: " .. sectionId)
+    end
     M.RegisterControlMetadata = register
     local cards = 0
     for id, label in pairs(labels) do

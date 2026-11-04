@@ -111,7 +111,7 @@ end
 -- heading with a help button, whether or not it holds settings.
 local function PageSections()
     local listed = {}
-    for _, page in ipairs({ "QualityOfLife", "QualityOfLifeComfort", "EverydayTools", "InventoryTools" }) do
+    for _, page in ipairs({ "QualityOfLifeCatalog", "QualityOfLifeComfort", "EverydayTools", "InventoryTools" }) do
         local source = Read("MSUF_Suite_Options/Pages/" .. page .. ".lua")
         for id, _, list in source:gmatch('{ id = "(%w+)"([^{}]*)sections = (%b{})') do
             if catalog[id] and catalog[id].page == "suite_qualityOfLife" then
