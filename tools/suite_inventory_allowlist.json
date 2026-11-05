@@ -5335,6 +5335,22 @@
       "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeCatalog.lua defines the replacement categories; QualityOfLifeNavigation.lua retains legacy section aliases. Module IDs and settings are unchanged.",
       "reason": "Approved QoL navigation reorganization replaces this category label while preserving its features.",
       "date": "2026-11-03"
+    },
+    {
+      "category": "locale",
+      "item": " - Unavailable",
+      "basis": "owner",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeAccordions.lua RefreshTitle uses %s: %s; no module, setting or availability gate removed.",
+      "reason": "The native feature header displays its precise unavailable reason through the existing whole-sentence format.",
+      "date": "2026-11-04"
+    },
+    {
+      "category": "locale",
+      "item": "%d/%d enabled",
+      "basis": "owner",
+      "evidence": "MSUF_Suite_Options/Pages/QualityOfLifeNavigation.lua retains category selection and enabled/disabled filters; all feature switches and defaults retained.",
+      "reason": "Owner selected compact native MSUF accordions without the redundant enabled-count banner.",
+      "date": "2026-11-04"
     }
   ]
 }

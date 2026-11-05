@@ -75,6 +75,15 @@ local failure = world:FirstFailure()
 Check(failure == nil, "MSUF did not boot: " .. tostring(failure and failure.file) .. " "
     .. tostring(failure and failure.message))
 local env = world.env
+-- Native visibility includes hidden ancestors. The shared fixture only
+-- checks the widget itself, hiding warm search regressions across categories.
+world.widgets.Methods.IsVisible = function(frame)
+    while frame do
+        if frame.IsShown and not frame:IsShown() then return false end
+        frame = frame.GetParent and frame:GetParent()
+    end
+    return true
+end
 world.core.MSUF2.frame = { IsShown = function() return true end }
 env.InCombatLockdown = function() return false end
 env.UnitAffectingCombat = function() return false end
@@ -335,6 +344,21 @@ local function CheckReleaseSearch(stage)
             stage .. " search did not find the exact release protection switch: " .. query)
     end
 end
+local function CheckGlimmerSearch(stage)
+    local first
+    for _, query in ipairs({ "Glimmer", "Questhelp", "Questhelper", "Funkeln", "Questobjekte", "Sammelobjekte" }) do
+        local found
+        for index, record in ipairs(Search(query)) do
+            if record.exactTarget and record.exactTarget.settingKey == "msufsuite.glimmer.enabled" then
+                Check(flavor == "Forever", stage .. " exposed Glimmer in Retail")
+                if index <= 6 and record.key == "suite_qualityOfLife" then found = record end
+            end
+        end
+        if flavor == "Forever" then Check(found, stage .. " missed Glimmer: " .. query) end
+        first = first or found
+    end
+    return first
+end
 local function CheckDeathSearch(stage)
     local first
     for _, query in ipairs({ "death announcer", "death announce", "death announcements", "death alert",
@@ -406,6 +430,7 @@ end
 Check(api.GetSearchProviderCache().skipped == 0, "the host skipped Suite rows as malformed")
 CheckReleaseSearch("unopened page")
 CheckDeathSearch("unopened page")
+CheckGlimmerSearch("unopened page")
 
 -- Every alias of every page is a search word of that page (Register.lua only
 -- fills M.ALIASES). Quality of Life aliases name features of both clients;
@@ -898,8 +923,8 @@ do
                     and section and section._msuf2CollapsibleEntry.open == true,
                     "Mythic+ search did not open the HUD section: " .. case.sectionId)
                 entry.sections.suite_hud_announcements_module._msufSuiteHUDReveal()
-                -- This native-host fixture aliases IsVisible to own shown;
-                -- inspect the actual PageBuilder feature parent explicitly.
+                -- Verify the PageBuilder feature parent itself is selected,
+                -- in addition to opening its content accordion.
                 local featureFrame = section._msuf2CollapsibleEntry.builder.parent
                 Check(not featureFrame:IsShown(), "HUD warm-routing setup did not hide the previous feature")
                 api.OpenSearchTarget(target.key, target.label,
@@ -912,7 +937,8 @@ do
 
         local function RouteExact(settingKey, expectedTab, expectedSection)
             local moduleId = settingKey:match("^msufsuite%.([^.]+)%.")
-            local expectedPage = P.GameplayPage.Relocated(moduleId) and "gameplay" or "suite_qualityOfLife"
+            local feature = P.QoLView.FindFeature(moduleId)
+            local expectedPage = feature and P.QoLView.GetFeaturePage(feature) or "suite_qualityOfLife"
             local target
             for _, record in ipairs(api.GetSearchRecords()) do
                 if record.key == expectedPage
@@ -999,15 +1025,15 @@ do
                 offset = nil
                 Check(Suite.Menu.FocusQualityOfLifeModule(case[1]), "Edit Mode detail route failed: " .. case[1])
                 world.widgets:RunTimers(80)
-                Check(offset == 456 and category.frame:IsShown() and category.selected == feature.group and details:IsShown()
+                Check(offset == 456 and category.frame:IsShown() and P.HM.GetSectionEntry(details).open and details:IsShown()
                     and feature.tab == case[3] and feature.row:GetParent():IsShown(),
                     "Edit Mode did not scroll directly to its visible settings card: " .. case[1]
-                        .. " offset=" .. tostring(offset) .. " selected=" .. tostring(category.selected == feature.group)
+                        .. " offset=" .. tostring(offset) .. " selected=" .. tostring(P.HM.GetSectionEntry(details).open)
                         .. " details=" .. tostring(details:IsShown()) .. " tab=" .. tostring(feature.tab))
                 Check(M.cache[pageKey] == entry, "Edit Mode warm focus rebuilt the destination page: " .. case[1])
                 Check(Suite.Menu.FocusQualityOfLifeModule(case[1]), "Edit Mode repeat focus failed: " .. case[1])
                 world.widgets:RunTimers(80)
-                Check(M.cache[pageKey] == entry and offset == 456 and category.selected == feature.group,
+                Check(M.cache[pageKey] == entry and offset == 456 and P.HM.GetSectionEntry(details).open,
                     "Edit Mode repeat focus changed the page or scroll target: " .. case[1])
                 details.GetTop = previousDetailTop
                 entry.wrapper.GetTop = previousTop
@@ -1020,9 +1046,29 @@ do
         RouteExact("msufsuite.actionTracker.rows", "combatInformation")
         CheckReleaseSearch("visited page")
         CheckDeathSearch("visited page")
+        if flavor == "Forever" then
+            local glimmer = Suite.Suite.Config("glimmer")
+            local enabled = glimmer.enabled
+            glimmer.enabled = false
+            P.Refresh()
+            local target = CheckGlimmerSearch("disabled module")
+            local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
+                target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
+            world.widgets:RunTimers(80)
+            Check(selected and anchored and exact and glimmer.enabled == false,
+                "Glimmer search changed the disabled feature instead of opening it")
+            RouteExact("msufsuite.glimmer.questSparkle", "travel", "suite_qualityOfLife_glimmer_glimmer_objects")
+            RouteExact("msufsuite.glimmer.style", "travel", "suite_qualityOfLife_glimmer_glimmer_objects")
+            CheckGlimmerSearch("visited disabled page")
+            glimmer.enabled = enabled
+            P.Refresh()
+        else
+            CheckGlimmerSearch("visited Retail page")
+        end
         for _, settingKey in ipairs({ "msufsuite.actionTracker.rows", "msufsuite.qol.junkReport" }) do
             local moduleId = settingKey:match("^msufsuite%.([^.]+)%.")
-            local expectedPage = P.GameplayPage.Relocated(moduleId) and "gameplay" or "suite_qualityOfLife"
+            local feature = P.QoLView.FindFeature(moduleId)
+            local expectedPage = feature and P.QoLView.GetFeaturePage(feature) or "suite_qualityOfLife"
             local matches = 0
             for _, record in ipairs(api.GetSearchRecords()) do
                 if record.key == expectedPage and record.exactTarget
@@ -1041,7 +1087,8 @@ do
         local moduleId = case[2]:match("^msufsuite%.([^.]+)%.")
         if P.Available(moduleId) then
             local first = Search(case[1])[1]
-            local expectedPage = P.GameplayPage.Relocated(moduleId) and "gameplay" or "suite_qualityOfLife"
+            local feature = P.QoLView.FindFeature(moduleId)
+            local expectedPage = feature and P.QoLView.GetFeaturePage(feature) or "suite_qualityOfLife"
             Check(first and first.key == expectedPage and first.exactTarget
                 and first.exactTarget.settingKey == case[2],
                 "Quality of Life search did not put the feature first: " .. case[1])

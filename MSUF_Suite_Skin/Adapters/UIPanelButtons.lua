@@ -333,6 +333,10 @@ local OnAdoptedArtKitChangedHook = Isolated(OnAdoptedArtKitChanged)
 -- Mixin copies and XML key values are plain instance fields: rawget reads them
 -- without running any foreign __index handler.
 local function AdoptFrame(frame)
+    -- SmartNavigation's helper forbids script bindings without IsForbidden.
+    -- Skip restricted or unreadable objects before inspecting native handlers.
+    local forbiddenAspects = Call(frame, "HasAnyForbiddenAspects")
+    if not NS.Safety.Public(forbiddenAspects) or forbiddenAspects then return end
     if native.setButtonArtKit and rawget(frame, "SetButtonArtKit") == native.setButtonArtKit then
         hooksecurefunc(frame, "SetButtonArtKit", OnAdoptedArtKitChangedHook)
         -- A later-created button reports its initial art kit from InitButton;

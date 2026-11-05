@@ -108,4 +108,50 @@ for _, button in ipairs(W.CF.Items) do
         assert(not overlay.bindBadge or not overlay.bindBadge.shown, "same-link soulbound instance inherited badge")
     end
 end
-print("bag binding: per-instance WuE, WB, BoE, search, slot reuse, secrets and cache passed")
+-- A merchant sale can empty a slot between the shared read and the view's
+-- binding lookup. The native binding API rejects that stale ItemLocation.
+local slots = W.P.SlotCache
+for _, bind in ipairs({ 0, 2, 9 }) do
+    W.Define(700 + bind, { name = "Sold item", equipLoc = "INVTYPE_WAIST", bind = bind })
+    W.Put(0, 1, 700 + bind, 1)
+    slots.MarkSlot(0, 1)
+    slots.Sync(0)
+    local cached, quest, version = slots.Get(0, 1)
+    assert(cached, "sale fixture did not cache the item")
+    W.items[0][1] = nil -- native sale, before BAG_UPDATE reaches the cache
+    local calls = W.calls.binding
+    local sold = W.P.InventoryIndex.ReadButton(index, W.CF.Items[1], cached, quest, version, 0, 1)
+    assert(sold.binding == false and sold.version == nil, "sold item cached a guessed binding")
+    assert(W.calls.binding == calls, "sold slot reached the native binding API")
+    assert(slots.dirtySlots[1], "sold slot was not scheduled for a fresh container read")
+    slots.Sync(0)
+    assert(slots.Get(0, 1) == nil, "next sync retained the sold item")
+    W.Put(0, 1, 502, 1, { bound = true, wue = true })
+    slots.MarkSlot(0, 1)
+    slots.Sync(0)
+    assert(slots.Binding(0, 1, 2) == 9, "reused sold slot did not recover its instance binding")
+    local existsCalls, bindingCalls = W.calls.itemExists, W.calls.binding
+    assert(slots.Binding(0, 1, 2) == 9, "cached recovered binding changed")
+    assert(W.calls.itemExists == existsCalls and W.calls.binding == bindingCalls,
+        "cached binding repeated native existence or binding queries")
+end
+-- Unknown existence stays retryable, just like unknown instance binding.
+local itemExists = C_Item.DoesItemExist
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+Secrets.Install()
+Secrets.GUARD_NAMES.falsy.Public = true
+secret = Secrets.New("boolean")
+local stopWatch = Secrets.Watch(root .. "/MSUF_Suite_Bags/SlotCache.lua", { strict = true })
+for _, result in ipairs({ secret, false }) do
+    slots.MarkSlot(0, 1)
+    slots.Sync(0)
+    C_Item.DoesItemExist = function() return result end
+    local calls = W.calls.binding
+    assert(slots.Binding(0, 1, 2) == nil and slots.dirtySlots[1], "unknown existence was cached as bound")
+    assert(W.calls.binding == calls, "unknown existence reached the native binding API")
+    C_Item.DoesItemExist = itemExists
+    assert(slots.Binding(0, 1, 2) == 9, "existence recovery required a cache reset")
+end
+local violations = stopWatch()
+assert(#violations == 0, "binding existence secret misuse: " .. table.concat(violations, "; "))
+print("bag binding: per-instance badges/search, merchant sale, slot reuse, secrets and cache passed")

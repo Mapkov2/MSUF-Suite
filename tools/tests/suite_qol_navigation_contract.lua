@@ -88,7 +88,7 @@ local function Watch(frame)
     frame.SetPoint = function(self, ...) moves = moves + 1; return previous(self, ...) end
 end
 for _, row in pairs(gameplay.rows) do Watch(row.row) end
-for _, heading in pairs(gameplay.panels.gameplay.headings) do Watch(heading) end
+for _, heading in pairs(gameplay.panels.gameplay.headings) do Watch(heading.frame) end
 M.RequestRefresh()
 assert(moves == 0, "unchanged refresh rewrote feature or heading positions")
 -- A first Edit Mode/module link must build the destination, not assume it is cached.

@@ -121,6 +121,7 @@ local function Build(ctx)
             extra = function(body, y, width) return ToolsExtra(ctx, body, y, width) end,
         })
     BuildMessageSections(ctx, b)
+    P.QoLOwners.Build(ctx, b, PAGE)
     P.BuildOwnedTool(ctx, b, "keywordAlerts")
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_bubbles", Tr("Speech bubbles"), P.SectionRules(ID, "bubbles"), {
         help = "Bubbles outside instances can take the MSUF look; Blizzard locks the ones inside instances. Each source keeps Blizzard's look or uses the MSUF one: the shared look or its own font, size, colors, spacing and width. A bubble is matched to the line it shows right after that line arrives. Turning bubbles off inside instances uses Blizzard's bubble settings and gives them back when you leave or turn it off.",

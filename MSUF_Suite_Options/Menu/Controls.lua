@@ -313,7 +313,7 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
 end
 
 -- Enables/disables every control of a grid from its rule on each page refresh.
-function P.GateControls(ctx, id, entries, keyFn)
+function P.GateControls(ctx, id, entries, keyFn, editWhileOff)
     local prepare = P.SearchPreparers[id]
     if prepare then
         for _, entry in ipairs(entries) do
@@ -328,7 +328,7 @@ function P.GateControls(ctx, id, entries, keyFn)
             if entry.widget then
                 local rule = entry.rule
                 W.SetControlDisabledReason(entry.widget, function()
-                    local _, reason = P.RuleEnabled(id, rule, keyFn, true)
+                    local _, reason = P.RuleEnabled(id, rule, keyFn, true, editWhileOff)
                     return reason
                 end)
             end
@@ -337,7 +337,7 @@ function P.GateControls(ctx, id, entries, keyFn)
     M.TrackRefresh(ctx, function()
         for i = 1, #entries do
             local entry = entries[i]
-            if entry.widget then W.SetControlEnabled(entry.widget, P.RuleEnabled(id, entry.rule, keyFn)) end
+            if entry.widget then W.SetControlEnabled(entry.widget, P.RuleEnabled(id, entry.rule, keyFn, false, editWhileOff)) end
         end
     end)
 end
@@ -365,7 +365,7 @@ end
 -- Adds a rule grid (two columns) plus full-width text inputs to `parent`,
 -- starting at y. Returns the next free y and the list of {rule, widget}.
 -- `built` (P.RuleRows of the same rules) skips building the rows again.
-function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId, columns, built)
+function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId, columns, built, editWhileOff)
     built = built or P.RuleRows(pageKey, id, rules, keyFn, sectionId)
     local rows, pending, strings = built.rows, built.pending, built.strings
     local entries = {}
@@ -393,7 +393,7 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
         entries[#entries + 1] = { rule = rule, widget = input }
         y = y - 58
     end
-    P.GateControls(ctx, id, entries, keyFn)
+    P.GateControls(ctx, id, entries, keyFn, editWhileOff)
     P.AttachRowsSummary(ctx, parent, rows)
     return y, entries
 end
@@ -500,7 +500,7 @@ function P.LazySection(b, sectionId, title, open, spec)
     return b:LazyCollapsibleSection(sectionId, title, 120, open, function(body)
         local y = spec.content(body)
         if spec.finish then spec.finish(body, y) end
-    end, { shell = function(body)
+    end, { deferWhileHidden = spec.deferWhileHidden, shell = function(body)
         -- In build order: the summary before "..." keeps its header place.
         if spec.head then spec.head(body) end
         if spec.summary then spec.summary(body) end

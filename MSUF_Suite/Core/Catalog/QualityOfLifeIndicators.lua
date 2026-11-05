@@ -76,14 +76,6 @@ B.Section("playerAuras", "player_auras", "Player aura layout", {
 NS.SuiteCatalog.playerAuras.rules.buffSkin.hidden = true
 NS.SuiteCatalog.playerAuras.rules.debuffSkin.hidden = true
 
-B.Module("castbarArt", {
-    title = "Castbar artwork", description = "A compact frame and dark name panel for MSUF castbars.",
-    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-})
-B.Section("castbarArt", "castbar_art", "Castbar artwork", {
-    Bool("namePanel", "Show dark cast name panel", true),
-})
-
 -- MSUF's icon skins on Blizzard's player buffs and debuffs at Blizzard's own
 -- size and layout. The choices stay Player aura layout's (that module paints
 -- them while on), so this one applies right after it (follows).

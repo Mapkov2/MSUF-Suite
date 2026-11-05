@@ -179,8 +179,8 @@ function P.AppendSearchActionRows(rows, pagesByKey)
     -- extra: optional { words = { ... }, section = "shown section" }.
     local function Add(id, key, label, sectionId, classification, kind, feature, extra)
         local spec = P.catalog[id]
-        local pageKey = feature and P.QoLView.GetFeaturePage(feature) or spec and spec.page
-        local extension = pageKey == "gameplay" and P.GameplayPage.registered
+        local pageKey = feature and P.QoLView.GetFeaturePage(feature) or P.QoLOwners.PageFor(id) or spec and spec.page
+        local extension = pageKey == "gameplay" and P.GameplayPage.registered or pageKey == "opt_misc"
         if not pageKey or not (pagesByKey[pageKey] or extension) or not P.Suite.Client.HasAddOn(spec.addon) then return end
         local meta = P.Meta(pageKey, id, key, classification or "action", sectionId)
         local keywords = { label, Tr(label), spec.title, Tr(spec.title) }

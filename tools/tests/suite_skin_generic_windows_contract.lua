@@ -2857,6 +2857,65 @@ Section("hidden windows defer cosmetic work until visible", function()
         return frame
     end
     local function Paints() return counters.attach + counters.yellow end
+    Load("SocialUI.lua")
+    local social = Window("SocialUIFrame")
+    social.FriendsList = { ScrollBox = RowBox() }
+    function social:EnumerateTabs() return function() end end
+    function social:RefreshTabs() end
+    function social:RefreshTabStates() end
+    _G.SocialUIFrame = social
+    local beforeSocial = Paints()
+    NS.SocialUISkin.Apply("hidden-social")
+    NS.SocialUISkin.Apply("hidden-social")
+    Expect(Paints() == beforeSocial and not social.surfaceSpec,
+        "closed social window was skinned before its native opening")
+    local socialState = NS.SocialUISkin.owners["hidden-social"]
+    Expect(next(socialState.scrollBoxes) == nil, "closed social list acquired row/motion callbacks")
+    Expect(#(social.hooks.OnShow or {}) == 1, "repeated hidden social applies duplicated its wake hook")
+    social.beforeShow = function()
+        Expect(Paints() == beforeSocial, "social skin ran before native OnShow")
+    end
+    social:Display(true)
+    social.beforeShow = nil
+    Expect(social.surfaceSpec ~= nil and next(socialState.scrollBoxes) ~= nil,
+        "native social opening did not acquire its full skin")
+    social:Display(false)
+    local afterSocial = Paints()
+    NS.SocialUISkin.Apply("hidden-social")
+    Expect(Paints() == afterSocial, "hidden social refresh mutated its native content")
+    NS.SocialUISkin.Disable("hidden-social")
+    social:Display(true)
+    Expect(Paints() == afterSocial and NS.SocialUISkin.owners["hidden-social"] == nil,
+        "cancelled social skin woke on a later opening")
+    _G.SocialUIFrame = nil
+    local combatSocial = Window("SocialUIFrame")
+    combatSocial.FriendsList = { ScrollBox = RowBox() }
+    combatSocial.EnumerateTabs = social.EnumerateTabs
+    combatSocial.RefreshTabs, combatSocial.RefreshTabStates = social.RefreshTabs, social.RefreshTabStates
+    _G.SocialUIFrame = combatSocial
+    local runOrDefer, cancel = NS.CombatGate.RunOrDefer, NS.CombatGate.Cancel
+    local queued = {}
+    NS.CombatGate.RunOrDefer = function(key, callback)
+        if locked then queued[key] = callback return false, "combat" end
+        callback()
+        return true
+    end
+    NS.CombatGate.Cancel = function(key) queued[key] = nil end
+    local combatPaints = Paints()
+    NS.SocialUISkin.Apply("combat-social")
+    locked = true
+    combatSocial:Display(true)
+    Expect(next(queued) ~= nil and Paints() == combatPaints,
+        "cold combat social opening lost its deferred skin or painted immediately")
+    combatSocial:Display(false)
+    locked = false
+    for key, callback in pairs(queued) do queued[key] = nil callback() end
+    Expect(Paints() == combatPaints, "combat-end replay skinned a closed social window")
+    combatSocial:Display(true)
+    Expect(combatSocial.surfaceSpec ~= nil, "social skin did not recover on the next native opening")
+    NS.SocialUISkin.Disable("combat-social")
+    NS.CombatGate.RunOrDefer, NS.CombatGate.Cancel = runOrDefer, cancel
+    _G.SocialUIFrame = nil
     local ordered, order = Window("OrderedSkin"), {}
     local function Order(value) order[#order + 1] = value end
     Kit.DeferHidden(ordered, {}, Order, "common", nil, nil, 20)

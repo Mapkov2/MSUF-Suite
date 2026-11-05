@@ -179,8 +179,8 @@ function S.RestoreCVar(id, key)
 end
 
 -- Sets a CVar the module declared. The first value seen is kept as the one
--- to restore; later calls only update the value this module applied.
-function Context:CVar(key, value)
+-- to restore; adoptCurrent remembers a later external edit before reapplying.
+function Context:CVar(key, value, adoptCurrent)
     if not OwnsCVar(self.id, key) then return false end
     local current = CVars.GetCVar(key)
     if not Public(current) or current == nil then return false end
@@ -197,6 +197,7 @@ function Context:CVar(key, value)
         record = { before = current }
         owned[key] = record
     end
+    if adoptCurrent then record.before = current end
     record.applied = value
     if current ~= value then CVars.SetCVar(key, value) end
     local applied = CVars.GetCVar(key)

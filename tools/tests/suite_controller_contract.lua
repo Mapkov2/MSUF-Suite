@@ -178,7 +178,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "mythicAutoQueue" and id ~= "questRewardValue" and id ~= "mailRecipients"
         and id ~= "groupFinderTools" and id ~= "fishingComfort"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
-        and id ~= "cursorEffects" and id ~= "playerAuras" and id ~= "castbarArt"
+        and id ~= "cursorEffects" and id ~= "playerAuras"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower" and id ~= "selfCombatText"
         and id ~= "enemyCastStack" and id ~= "dungeonPortals" and id ~= "targetDistance"
         and id ~= "mythicResetReminder" and id ~= "combatPetStatus"

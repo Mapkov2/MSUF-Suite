@@ -690,14 +690,40 @@ function HostBridge.GetPersistentMenuState(menu, name)
     return states[name]
 end
 
--- A plain section can change height when a lazy view reveals its contents.
--- Enrol it before later sections so the shared builder reflows those siblings.
-function HostBridge.TrackDynamicSection(builder, body, topY)
-    if builder._collapsibleStartY or not builder.layoutEntries then return end
-    builder._collapsibleStartY = topY
-    builder.layoutEntries[#builder.layoutEntries + 1] = {
-        kind = "section", frame = body, height = body:GetHeight(), gap = 12,
-    }
+-- Unpainted layout blocks let embedded options use the host's own accordions.
+-- They participate in the same flow as existing sections without a second card.
+function HostBridge.MenuFlowSection(builder, height, gap)
+    local frame = CreateFrame("Frame", nil, builder.parent)
+    frame:SetPoint("TOPLEFT", builder.parent, "TOPLEFT", builder.x or 0, builder.y)
+    frame:SetSize(builder.width, height)
+    frame._msuf2Width, frame._msuf2CursorY = builder.width, -height
+    builder._collapsibleStartY = builder._collapsibleStartY or builder.y
+    builder.layoutEntries[#builder.layoutEntries + 1] = { kind = "section", frame = frame, gap = gap or 8 }
+    builder.y = builder.y - height - (gap or 8)
+    return frame
+end
+
+-- Filter only the flow list, retaining each native accordion and its state.
+function HostBridge.SetMenuFlowEntries(builder, entries)
+    local layout = builder.layoutEntries
+    local count = #entries
+    -- Released hosts fall back to all collapsibles when the flow list is empty.
+    -- Keep an invisible zero-height entry so an empty filter stays empty.
+    if count == 0 and not builder._msufSuiteEmptyFlow then
+        local frame = CreateFrame("Frame", nil, builder.parent)
+        frame:SetSize(builder.width, 0)
+        frame:Hide()
+        builder._msufSuiteEmptyFlow = { kind = "section", frame = frame, gap = 0 }
+    end
+    count = math.max(1, count)
+    local changed = #layout ~= count
+    for index = 1, count do
+        local entry = entries[index] or builder._msufSuiteEmptyFlow
+        if layout[index] ~= entry then changed = true end
+        layout[index] = entry
+    end
+    for index = #layout, count + 1, -1 do layout[index] = nil end
+    if changed or builder._msuf2RelayoutPending then builder:RelayoutCollapsibles() end
 end
 
 return HostBridge

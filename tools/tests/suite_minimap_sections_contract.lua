@@ -83,7 +83,11 @@ for _, width in ipairs({ 360, 720, 1100 }) do
     F.SetCurrent(ctx)
     M.pages.suite_minimap.build(ctx)
     local menu = assert(ctx.minimapSections, "Minimap needs grouped sections")
-    Check(#ctx.sections == 10, "expected nine settings accordions plus the module card")
+    local owned = 0
+    for _, section in ipairs(ctx.sections) do
+        if section.sectionId:match("^suite_minimap_") then owned = owned + 1 end
+    end
+    Check(owned == 10, "expected nine settings accordions plus the module card")
     Check(ctx.pageItems[1] == "fixed-preview", "preview no longer precedes settings")
     Check(menu.groups.information and menu.groups.buttons and menu.groups.decoration, "group missing")
     local config, before = S.Config("minimap"), {}

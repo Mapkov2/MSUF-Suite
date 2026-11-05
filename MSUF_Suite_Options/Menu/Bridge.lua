@@ -338,12 +338,12 @@ local function Blocked(explain, template, label)
     if not explain then return false end
     return false, label and Tr(template):format(label) or Tr(template)
 end
-function P.RuleEnabled(id, rule, resolve, explain)
+function P.RuleEnabled(id, rule, resolve, explain, editWhileOff)
     if P.Combat() then return Blocked(explain, "Finish combat before editing the suite") end
     if rule.key == "enabled" then return true end
     local available, why = P.Available(id)
     if not available then return Blocked(explain, why or "Unavailable on this client.") end
-    if not P.Get(id, "enabled") then
+    if not editWhileOff and not P.Get(id, "enabled") then
         return Blocked(explain, "Turn on \"%s\" to change this.", explain and Tr(P.catalog[id].title))
     end
     local seen, current = 0, rule

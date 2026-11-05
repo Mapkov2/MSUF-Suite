@@ -70,6 +70,10 @@ P.Gates[ID] = function(rule)
     return false, Tr("Choose Categories for \"Default inventory view\" or Bank categories for \"Default bank view\".")
 end
 
+local function BuildHelpers(ctx, ui)
+    if ui then P.QoLOwners.Build(ctx, ui.groups.inventory.builder, PAGE, function() ui.select("inventory") end) end
+end
+
 local function Build(ctx)
     local b, ui = P.MenuWorkspace.Builder(ctx, WorkspaceSpec())
     P.MenuSamples.Bags(ui)
@@ -138,6 +142,7 @@ local function Build(ctx)
     for _, id in ipairs({ "inventoryArchive", "restockPlanner", "craftShopping", "bankTransfer", "currencyGoals" }) do
         P.BuildOwnedTool(ctx, b, id)
     end
+    BuildHelpers(ctx, ui)
     P.MenuWorkspace.Finish(ui)
 end
 

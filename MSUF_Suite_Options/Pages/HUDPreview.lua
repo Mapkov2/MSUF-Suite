@@ -136,7 +136,19 @@ end
 
 local function Select(ui, id)
     if ui.id ~= id then Preview.Stop(ui) end
-    ui.id = id
+    local wasAdditional = ui.additional == true
+    ui.id, ui.additional = id, id == nil
+    if not id then
+        ui.host:Hide()
+        ui.selection:Hide()
+        ui.playButton:Hide()
+        for _, picker in pairs(ui.pickers) do P.W.SetControlShown(picker, false) end
+        return
+    end
+    if wasAdditional then
+        ui.host:Show()
+        ui.selection:Show()
+    end
     if ui.selection then
         P.PreviewInteraction.Select(ui.selection, ui.canvas, P.catalog[id].title, function() Focus(ui) end)
     end

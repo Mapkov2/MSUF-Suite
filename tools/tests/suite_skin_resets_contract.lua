@@ -296,8 +296,9 @@ do
         Check(S.Config(id).enabled == not rule.default, "a page reset switched " .. id .. " back to its factory state")
         if probe[id] then
             probed = probed + 1
-            Check(S.Config(id)[probe[id]] == S.catalog[id].rules[probe[id]].default,
-                "a page reset left " .. id .. "." .. probe[id])
+            local expected = S.catalog[id].rules[probe[id]].default
+            if optionsNS.QoLOwners.PageFor(id) then expected = not expected end
+            Check(S.Config(id)[probe[id]] == expected, "page reset crossed owner for " .. id .. "." .. probe[id])
         end
     end
     Check(probed > 5, "fixture: too few modules had a second setting")

@@ -42,6 +42,13 @@ local fields = {
     QuestInfoTimerText = "text",
     QuestInfoSpellObjectiveLearnLabel = "text",
     QuestInfoRequiredMoneyText = "text",
+    QuestProgressTitleText = "title",
+    QuestProgressText = "text",
+    QuestProgressRequiredItemsText = "title",
+    QuestProgressRequiredMoneyText = "text",
+    GreetingText = "text",
+    CurrentQuestsText = "title",
+    AvailableQuestsText = "title",
 }
 
 local rewardFields = {
@@ -115,6 +122,17 @@ end
 local function PaintRewards(rewards)
     for key, role in pairs(rewardFields) do Paint(rewards[key], role) end
     Paint(rewards.XPFrame.ReceiveText, "text")
+    -- ShowRewards also runs independently for late item data; its font-string
+    -- pool reapplies the parchment color whenever a spell heading is acquired.
+    local pool = Safety.Field(rewards, "spellHeaderPool")
+    if Safety.HasMethod(pool, "EnumerateActive") then
+        local count = 0
+        for heading in pool:EnumerateActive() do
+            Paint(heading, "text")
+            count = count + 1
+            if count >= MAX_OBJECTIVES then break end
+        end
+    end
 end
 
 local function PaintGreetingButtons(pool)
@@ -181,6 +199,8 @@ end
 local PaintCurrentHook = Isolated(PaintCurrent)
 local globalHooks = {
     { "QuestInfo_Display", PaintCurrentHook },
+    { "QuestInfo_ShowRewards", PaintCurrentHook },
+    { "QuestFrameProgressItems_Update", PaintCurrentHook },
     { "QuestFrame_SetTextColor", Isolated(OnGreetingText) },
     { "QuestFrame_SetTitleTextColor", Isolated(OnGreetingTitle) },
     { "QuestFrameGreetingPanel_OnShow", PaintCurrentHook },
@@ -189,11 +209,17 @@ local globalHooks = {
 -- QuestFrame.xml binds the panel's OnShow as function="...", so the script
 -- holds the function value from load time and never reaches the global
 -- hook above. Opening the greeting is observed on the panel itself.
-local function EnsureGreetingShowHook()
-    local panel = QuestFrameGreetingPanel
-    if QuestText.hooks[panel] then return end
-    panel:HookScript("OnShow", PaintCurrentHook)
-    QuestText.hooks[panel] = true
+local questPanels = {
+    "QuestFrameGreetingPanel", "QuestFrameDetailPanel", "QuestFrameProgressPanel", "QuestFrameRewardPanel",
+}
+local function EnsurePanelShowHooks()
+    for index = 1, #questPanels do
+        local panel = Safety.Field(_G, questPanels[index])
+        if Safety.HasMethod(panel, "HookScript") and not QuestText.hooks[panel] then
+            panel:HookScript("OnShow", PaintCurrentHook)
+            QuestText.hooks[panel] = true
+        end
+    end
 end
 
 local function EnsureHooks()
@@ -204,7 +230,7 @@ local function EnsureHooks()
             QuestText.hooks[name] = true
         end
     end
-    EnsureGreetingShowHook()
+    EnsurePanelShowHooks()
 end
 
 function QuestText.Activate(root, owner)

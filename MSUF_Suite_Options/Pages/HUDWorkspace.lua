@@ -8,6 +8,7 @@ local FEATURES = {
     { id = "runSummary", label = "Run Summaries" },
     { id = "announcements", label = "Announcements" },
     { id = "afkScreen", label = "AFK Screen" },
+    { id = "extras", label = "Additional displays" },
 }
 
 local function Height(ui)
@@ -21,7 +22,11 @@ local function Choose(ui, id)
     for key, group in pairs(ui.groups) do group.frame:SetShown(key == id) end
     if ui.selector then ui.selector:SetValue(id) end
     Height(ui)
-    ui.preview:Select(id)
+    ui.preview:Select(id ~= "extras" and id or nil)
+    local height = id == "extras" and 62 or 326
+    HM.SetFixedPreviewHeight(ui.header, height)
+    ui.header:SetHeight(height)
+    if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
 end
 
 local function Child(ui, id)
@@ -108,12 +113,20 @@ function Page.PrepareControl(body, widget, key, kind, label)
         meta = P.Meta("suite_hud", id, key, kind, "suite_hud_" .. id .. "_module") } })
 end
 
+function Page.BuildHelpers(ctx)
+    local ui = ctx._msufSuiteHUDWorkspace
+    P.QoLOwners.Build(ctx, Child(ui, "extras"), "suite_hud", function() ui.select("extras") end)
+end
+
 function Page.Finish(ctx)
     local ui = ctx._msufSuiteHUDWorkspace
     local values, panels = {}, {}
+    if ui.selected == "extras" and not P.QoLOwners.HasFeatures("suite_hud") then ui.selected, selected = "objectives", "objectives" end
     for _, spec in ipairs(FEATURES) do
-        values[#values + 1] = { value = spec.id, text = Tr(spec.label) }
-        panels[spec.id] = ui.groups[spec.id].frame
+        if spec.id ~= "extras" or P.QoLOwners.HasFeatures("suite_hud") then
+            values[#values + 1] = { value = spec.id, text = Tr(spec.label) }
+            panels[spec.id] = ui.groups[spec.id].frame
+        end
     end
     for _, body in ipairs(ui.sections) do
         local entry = HM.GetSectionEntry(body)

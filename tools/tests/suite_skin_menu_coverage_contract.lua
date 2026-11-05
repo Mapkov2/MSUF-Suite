@@ -30,7 +30,8 @@ hooksecurefunc = function(target, key, callback)
 end
 PanelTemplates_SelectTab, PanelTemplates_DeselectTab = Noop, Noop
 local nativeTracks, nativeReleases = {}, {}
-NS.ScrollMotion = { Track = function(target, owner) nativeTracks[target] = owner end,
+NS.ScrollMotion = { IsQuestScroll = function() return false end,
+    Track = function(target, owner) nativeTracks[target] = owner end,
     ReleaseOwner = function(owner) nativeReleases[owner] = true end }
 NS.GenericWindows.SetMenuMotionProvider = function(track, release)
     NS.GenericWindows.menuTrack, NS.GenericWindows.menuRelease = track, release

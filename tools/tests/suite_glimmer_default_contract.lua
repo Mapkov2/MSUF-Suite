@@ -9,6 +9,7 @@ local Suite = Support.Load(root, "MSUF_Suite", {}, "Core/Suite.lua")
 local S = Suite.Suite
 local fresh={}
 S.Normalize(fresh)
+assert(fresh.suite.modules.glimmer.questSparkle and fresh.suite.modules.glimmer.style == 3, "wrong fresh sparkle defaults")
 assert(fresh.suite.modules.glimmer.enabled == (flavor=="Forever"), "wrong fresh Glimmer default")
 local previous={suite={schema=1,revision=S.MigrationRevision-1,modules={glimmer={enabled=false,style=5}}}}
 S.Normalize(previous)

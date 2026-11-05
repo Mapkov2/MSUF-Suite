@@ -1,7 +1,7 @@
 local _, NS = ...
 
--- LFGList runs secret-data readers after updating its ScrollBox. Calling the
--- Lua ScrollController setters here writes native fields from skin execution.
+-- LFGList and SocialUI run restricted data readers during native updates.
+-- Lua ScrollController setters write native fields from skin execution.
 -- Keep that state native and ease only the rendered content, with finite C
 -- animations and external ownership, as the legacy scroll renderer does.
 local NativeList = { states = setmetatable({}, { __mode = "k" }), targets = {}, owners = {}, active = {} }
@@ -10,7 +10,8 @@ local Safety = NS.Safety
 
 function NativeList.IsTarget(target)
     for _ = 1, 16 do
-        if Safety.Read(target, "GetName") == "LFGListFrame" then return true end
+        local name = Safety.Read(target, "GetName")
+        if name == "LFGListFrame" or name == "SocialUIFrame" then return true end
         target = Safety.Read(target, "GetParent")
         if target == nil then return false end
     end
@@ -159,6 +160,23 @@ local ScrollMotion = { states = setmetatable({}, { __mode = "k" }),
 NS.ScrollMotion = ScrollMotion
 local Safety = NS.Safety
 local Partner
+-- These ScrollFrameTemplate pages reset their native bar synchronously after
+-- replacing quest content. Never turn that reset into controller interpolation.
+local questScrollNames = {
+    "QuestDetailScrollFrame", "QuestProgressScrollFrame", "QuestRewardScrollFrame",
+    "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame",
+}
+function ScrollMotion.IsQuestScroll(target)
+    if not Safety.Public(target) or target == nil then return false end
+    for index = 1, #questScrollNames do
+        local frame = Safety.Field(_G, questScrollNames[index])
+        if Safety.Public(frame) and type(frame) == "table" then
+            local bar = Safety.Field(frame, "ScrollBar")
+            if target == frame or Safety.Public(bar) and target == bar then return true end
+        end
+    end
+    return false
+end
 local visible, pendingRestore, pendingPause = {}, {}, {}
 
 local function SyncVisible(state)
@@ -413,7 +431,7 @@ Partner = function(target)
 end
 
 function ScrollMotion.Track(target, owner)
-    if owner == nil or not Supported(target) then return false end
+    if owner == nil or ScrollMotion.IsQuestScroll(target) or not Supported(target) then return false end
     local partner = Partner(target)
     if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
         return NativeList.Track(target, owner)

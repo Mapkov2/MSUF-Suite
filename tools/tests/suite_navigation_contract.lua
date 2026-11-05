@@ -279,13 +279,14 @@ do
         local owners = { [addon] = true }
         for _, id in ipairs(Suite.SuiteOrder) do
             local spec = P.catalog[id]
-            if spec.page == key then owners[spec.addon] = true end
+            if (P.QoLOwners.PageFor(id) or spec.page) == key then owners[spec.addon] = true end
         end
         for _, state in ipairs({ disabled, missing }) do
             local prior = {}
             for owner in pairs(owners) do prior[owner] = state[owner] end
             state[addon] = true
-            local shared = key == "suite_bags" or key == "suite_chat" or key == "suite_actionbars"
+            local shared = false
+            for owner in pairs(owners) do if owner ~= addon then shared = true end end
             if shared then
                 local _, reason = rows[key].availability()
                 assert(reason ~= notice and M.PageHasReset(key), key .. ": styling disabled independent helper tools")

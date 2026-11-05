@@ -527,6 +527,7 @@ local function Build(ctx)
             { help = HELP[section], open = false, extra = section == "appearance" and SkinStatus(ctx) or nil })
     end
     P.BuildOwnedTool(ctx, b, "keyAudit")
+    P.ActionBarMenu.BuildHelpers(ctx)
     P.ActionBarMenu.Finish(ctx)
 end
 

@@ -21,7 +21,7 @@ CASES = (
      'if leaf then\n',
      'if false then\n', 'pooled row was scanned for full-menu rediscovery'),
     ("modern ScrollFrame delegation", "Rendering/LegacyScrollMotion.lua",
-     'if Safety.HasMethod(bar, "CanInterpolateScroll") then',
+     'if not nativeQuest and Safety.HasMethod(bar, "CanInterpolateScroll") then',
      'if false then', 'native modern ScrollFrame controller was smoothed twice'),
     ("legacy thumb drag", "Rendering/LegacyScrollMotion.lua",
      'if Safety.CanCreateRegions(bar) and Safety.Read(bar, "IsMouseOver") == true then',

@@ -59,6 +59,7 @@ local FAQ = {
 }
 -- Feature words, searchable in English and as their translation.
 local FEATURE_WORDS = {
+    glimmer = { "Quest item sparkle", "Quest objects", "Ore", "Herbs", "Sparkles" },
     dungeonPortals = { "dungeonportal", "dungeon portal", "dungeon portals" },
     characterExtras = { "character window" },
     flightTimer = { "flight time" },
@@ -82,7 +83,7 @@ local function PageAvailable(pageKey)
     if pageKey == "suite_macros" then return true end
     if pageKey == "suite_skin" then return SkinAvailable() end
     for _, id in ipairs(P.order) do
-        if P.catalog[id].page == pageKey and ModuleAvailable(id) then return true end
+        if (P.QoLOwners.PageFor(id) or P.catalog[id].page) == pageKey and ModuleAvailable(id) then return true end
     end
     return false
 end
@@ -324,7 +325,13 @@ end
 
 -- Both views share feature metadata and stable section IDs. The active host
 -- decides whether combat helpers live on Gameplay or remain in Quality of Life.
-local GAMEPLAY_PAGE = { key = "gameplay", title = "Gameplay" }
+local function FeatureOwner(feature, page, category)
+    local destination = P.QoLView.GetFeaturePage(feature)
+    local owner = M.pages[destination]
+    return { key = destination, title = owner and owner.title or page.title },
+        { title = P.QoLOwners.Title(feature.id) or category.title }
+end
+
 local function QualityOfLifeRows(rows, page, modules, pageRow)
     local categories, features = P.QualityOfLifeCategories, P.QualityOfLifeSearchFeatures
     if type(categories) ~= "table" or type(features) ~= "table" then return false end
@@ -340,7 +347,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
     for _, feature in ipairs(features) do
         local spec, category = installed[feature.id], byCategory[feature.category]
         if spec and category then
-            local featurePage = P.QoLView.GetFeaturePage(feature) == "gameplay" and GAMEPLAY_PAGE or page
+            local featurePage, visibleCategory = FeatureOwner(feature, page, category)
             local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
             local keywords = {}
             AddWords(keywords, feature.title)
@@ -358,7 +365,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
                         seen[rule.key] = true
                         if rule.color then AddWords(keywords, rule.label) end
                         if not rule.color then
-                            local row = RuleRow(featurePage, spec, rule, nil, feature, category)
+                            local row = RuleRow(featurePage, spec, rule, nil, feature, visibleCategory)
                             if row then ruleRows[#ruleRows + 1] = row end
                         end
                     end
@@ -368,7 +375,7 @@ local function QualityOfLifeRows(rows, page, modules, pageRow)
                 pageKey = featurePage.key, kind = "toggle", label = Tr(feature.title),
                 suiteModuleId = spec.id, suiteFeatureSwitch = feature.switch, suiteModuleSwitch = true,
                 qolFeatureId = feature.id,
-                section = Tr(category.title), keywords = keywords,
+                section = Tr(visibleCategory.title), keywords = keywords,
                 settingKey = "msufsuite." .. feature.id .. "." .. feature.switch,
                 sectionId = sectionId,
             }
@@ -447,7 +454,6 @@ function P.SearchRows()
     for _, row in ipairs(P.SkinSearchRows()) do rows[#rows + 1] = row end
     P.AppendSearchActionRows(rows, pagesByKey)
     P.PlayerAurasPage.AppendSearchRows(rows, RuleRow)
-    P.CastbarArtworkPage.AppendSearchRows(rows, RuleRow)
     local visible = {}
     for _, row in ipairs(rows) do
         local available, inactive = P.SearchRowAvailable(row.pageKey, row.settingKey, row)
@@ -618,6 +624,31 @@ function P.SearchRowAvailable(pageKey, settingKey, record)
     end
     return true, config.enabled ~= true or (featureSwitch and config[featureSwitch] ~= true)
 end
+
+-- Saved Suite artwork favourites now open the native MSUF controls.
+local artworkLinks = {}
+for _, page in ipairs({ "suite_qualityOfLife", "opt_castbar" }) do
+    local section = page == "opt_castbar" and "opt_castbar_castbarArt_module"
+        or "suite_qualityOfLife_castbarArt_castbar_art"
+    for _, key in ipairs({ "enabled", "namePanel", "action.settings.enabled", "action.reset.enabled" }) do
+        local kind = key:match("^action%.") and "action" or "setting"
+        artworkLinks[P.Meta(page, "castbarArt", key, kind, section).controlId] = key
+    end
+end
+local function ResolveFormerArtwork(_, target)
+    if not target then return end
+    local key = (target.settingKey or ""):match("^msufsuite%.castbarArt%.(.+)$") or artworkLinks[target.controlId]
+    if not key and target.sectionId ~= "suite_qualityOfLife_castbarArt_castbar_art"
+        and target.sectionId ~= "opt_castbar_castbarArt_module" then return end
+    local copy = {}
+    for field, value in pairs(target) do copy[field] = value end
+    copy.pageKey, copy.sectionId = "opt_castbar", "castbar_textures"
+    copy.controlId, copy.controlPath, copy.identityKey, copy.actionKey = nil, nil, nil, nil
+    copy.settingKey = key == "enabled" and "general.castbarArtworkEnabled"
+        or key == "namePanel" and "general.castbarArtworkNamePanel" or nil
+    return "opt_castbar", copy, {}
+end
+Suite.HostBridge.RegisterSearchTargetResolver(M, "MSUF_Suite.FormerCastbarArtwork", ResolveFormerArtwork)
 
 if M.RegisterSearchAvailability then M.RegisterSearchAvailability("MSUF_Suite", P.SearchRowAvailable) end
 if M.InvalidateSearchProvider then

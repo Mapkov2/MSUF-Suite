@@ -60,17 +60,19 @@ B.Module("glimmer", {
         return true
     end,
     cvars = { SoftTargetInteract = true, SoftTargetNameplateInteract = true,
-        SoftTargetIconGameObject = true, SoftTargetInteractRange = true },
+        SoftTargetIconGameObject = true, SoftTargetInteractRange = true, SoftTargetInteractOnlyInRange = true,
+        SoftTargetInteractArc = true, outlineModeShowLootEffectWhenDisabled = true },
 })
 B.Add("glimmer", Bool("foreverDefaultApplied", "Enable module", false)).hidden = true
 B.Section("glimmer", "glimmer_objects", "Glimmer objects", {
+    Bool("questSparkle", "Quest item sparkle", true),
     Bool("ore", "Ore", true), Bool("herb", "Herbs", true), Bool("quest", "Quest objects", true),
     Bool("other", "Other interactable objects", false),
     Bool("hideInstances", "Hide in instances", true),
     Number("range", "Interact target range", 15, 5, 20),
 })
 B.Section("glimmer", "glimmer_appearance", "Glimmer appearance", {
-    Choice("style", "Effect", 1, { "Glow", "Ring", "Sparkles", "Beam", "Brackets" }),
+    Choice("style", "Effect", 3, { "Glow", "Ring", "Sparkles", "Beam", "Brackets" }),
     B.Color("color", "Effect color", "ffd166"),
     Number("size", "Effect size", 80, 24, 200, 4),
     Number("opacity", "Effect opacity", 85, 10, 100, 5),

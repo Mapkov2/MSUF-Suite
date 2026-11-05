@@ -188,62 +188,19 @@ local function CheckFramePaint(world, UF, env, flavor, Host)
         assert(point == "TOPLEFT" and relative == "BOTTOMLEFT" and x == -44)
         assert(math.abs(y + 16) < .01, "boss cast does not match native boss layout")
     end
-    local Bridge = {}
-    local chunk = assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))
-    setfenv(chunk, env)("MSUF_Suite", Bridge)
-    Bridge.Safety = { IsForbidden = function(frame) return frame.forbidden == true end }
-    Bridge.HostBridge.CastbarArtwork(function(frame)
-        frame.IsProtected = function(self) return self.protected == true end
-    end)
     local preview = assert(world.core.Castbars.Pools.previews.boss:Create(1))
-    preview.IsProtected = function(self) return self.protected == true end
     world.core.Castbars.Pools.previews.boss:ApplyLayout(preview, 1)
     preview:Show()
-    local artwork, textures = nil, {}
-    local moduleSuite = {
-        Install = function(_, value) artwork = value end,
-        CreateTexture = function(parent, ...)
-            local texture = parent:CreateTexture(...)
-            textures[#textures + 1] = texture
-            return texture
-        end,
-    }
-    chunk = assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/CastbarArt.lua"))
-    setfenv(chunk, env)("MSUF_Suite_QualityOfLife", { NS = Bridge, Suite = moduleSuite })
-    artwork.config = { namePanel = true }
-    artwork:Enable()
-    assert(#textures >= 14, "cast artwork missed live player, target or boss pool")
-    local panels = 0
-    for _, texture in ipairs(textures) do
-        if texture:GetTexture():match("CastName.tga$") and texture:IsShown() then panels = panels + 1 end
-    end
-    assert(panels >= 2, "cast name panels were not painted")
-    local previewPanel, targetPanel
-    for _, texture in ipairs(textures) do
-        if texture:GetTexture():match("CastName.tga$") then
-            if texture:GetParent() == preview.statusBar then previewPanel = texture end
-            if texture:GetParent() == targetCast.statusBar then targetPanel = texture end
-        end
-    end
-    assert(previewPanel and previewPanel:IsShown(), "already visible boss preview missed its artwork")
-    assert(targetPanel:GetWidth() == targetCast:GetWidth(), "name panel does not span the full castbar")
     local config = Host("MSUF_DB").general
-    local globalName, targetName = config.castbarShowSpellName, config.castbarTargetShowSpellName
-    config.castbarShowSpellName, config.castbarTargetShowSpellName = false, nil
-    local refresh = world.core.Castbars.Visuals.RefreshCastbarFrame or Host("MSUF_RefreshCastbarFrame")
-    refresh(targetCast, "target", config)
-    assert(not targetPanel:IsShown(), "globally hidden cast name kept its dark panel")
-    config.castbarShowSpellName, config.castbarTargetShowSpellName = globalName, targetName
-    refresh(targetCast, "target", config)
-    assert(targetPanel:IsShown(), "live castbar refresh did not restore name artwork")
-    artwork.config.namePanel = false
-    artwork:Refresh()
-    for _, texture in ipairs(textures) do
-        if texture:GetTexture():match("CastName.tga$") then assert(not texture:IsShown()) end
+    assert(config.castbarArtworkEnabled and config.castbarArtworkNamePanel, "preset omitted native artwork")
+    for _, frame in ipairs({ playerCast, targetCast, preview }) do
+        local art = assert(frame._msufCastbarArtwork, "native artwork missing from live bar or preview")
+        assert(art.border:IsShown() and art.name:IsShown(), "native frame/name panel hidden")
+        assert(art.name:GetTexture():find("MidnightSimpleUnitFrames\\Media\\Castbars", 1, true),
+            "castbar still depends on Suite artwork")
+        assert(art.name:GetParent() == frame, "name panel no longer sits below cast text")
+        assert(art.name:GetWidth() == frame:GetWidth(), "name panel does not span the full castbar")
     end
-    artwork:Disable()
-    refresh(targetCast, "target", config)
-    for _, texture in ipairs(textures) do assert(not texture:IsShown(), "cast art survived disabling") end
     local GF = assert(world.core.GF)
     env.UnitIsPlayer = function(unit) return unit == "player" end
     env.UnitReaction = function(unit) return (unit:match("^party") or unit:match("^raid")) and 5 or 3 end
@@ -345,7 +302,9 @@ for _, forever in ipairs({ false, true }) do
         assert(modules.chat.hideNativeButtons and modules.chat.completeMessages, "chat keeps unused buttons or clipped lines")
         assert(modules.playerAuras.enabled and modules.playerAuras.x == -10 and modules.playerAuras.y == 0)
         assert(modules.playerAuras.iconWidth == 28 and modules.playerAuras.debuffOffset == 88)
-        assert(not modules.targetDistance.enabled and modules.castbarArt.enabled)
+        assert(not modules.targetDistance.enabled and modules.castbarArt == nil)
+        assert(frames.general.castbarArtworkEnabled and frames.general.castbarArtworkNamePanel)
+        assert(frames.general.castbarTexture == "MSUF Blizzard Cast")
         assert(modules.minimap.queueStatusEnabled and modules.minimap.queueStatusSize == 32)
         local data = modules.dataTexts
         assert(data.bar1SourceIcons and data.bar1FpsAccent)

@@ -39,6 +39,8 @@ local function Changed(frame, offset)
     if not state or not next(state.owners) or not Safety.Public(offset) or type(offset) ~= "number" then return end
     local previous = state.offset
     state.offset = offset
+    -- Quest page resets must reveal the new text/reward choices immediately.
+    if state.nativeQuest and offset == 0 then Stop(state) return end
     if previous == nil or previous == offset then return end
     local child = Safety.Read(frame, "GetScrollChild")
     if not Enabled() or state.dragging or not Safety.CanCreateRegions(frame)
@@ -134,7 +136,8 @@ function Legacy.Track(frame, owner, bar)
         or not Safety.HasMethod(frame, "GetScrollChild") then return false end
     bar = bar or Safety.Field(frame, "ScrollBar") or Safety.Field(frame, "scrollBar")
     local state = Legacy.states[frame]
-    if Safety.HasMethod(bar, "CanInterpolateScroll") then
+    local nativeQuest = NS.ScrollMotion.IsQuestScroll(frame)
+    if not nativeQuest and Safety.HasMethod(bar, "CanInterpolateScroll") then
         if state then wipe(state.owners) Stop(state) end
         return NS.ScrollMotion.Track(bar, owner)
     end
@@ -145,6 +148,7 @@ function Legacy.Track(frame, owner, bar)
         frame:HookScript("OnScrollRangeChanged", RangeChanged)
         frame:HookScript("OnHide", Hidden)
     end
+    state.nativeQuest = nativeQuest
     state.owners[owner] = true
     if Safety.CanCreateRegions(bar) and Safety.HasMethod(bar, "HookScript") then
         state.bar = bar

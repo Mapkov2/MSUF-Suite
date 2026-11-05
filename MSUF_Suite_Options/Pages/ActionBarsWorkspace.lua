@@ -216,6 +216,11 @@ local function InstallSelector(workspace, values, panels)
     if workspace.body.title then workspace.body.title:Hide() end
 end
 
+function Page.BuildHelpers(ctx)
+    local ui = ctx._msufSuiteActionBarWorkspace
+    if ui then P.QoLOwners.Build(ctx, ui.groups.shared.builder, "suite_actionbars", function() ui.select("shared") end) end
+end
+
 function Page.Finish(ctx)
     local workspace = ctx._msufSuiteActionBarWorkspace
     if not workspace then return end

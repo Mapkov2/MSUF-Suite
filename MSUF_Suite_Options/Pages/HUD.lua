@@ -183,6 +183,7 @@ local function Build(ctx)
     BuildObjectives(ctx, b)
     BuildSummary(ctx, b)
     BuildAnnouncements(ctx, b)
+    P.HUDMenu.BuildHelpers(ctx)
     P.HUDMenu.Finish(ctx)
 end
 

@@ -115,10 +115,22 @@ local suite = { catalog = catalogNS.SuiteCatalog, states = { chat = { active = t
 function suite.SetMany(_, values) for key, value in pairs(values) do config[key] = value end return true end
 function suite.Set(id, key, value) return suite.SetMany(id, { [key] = value }) end
 function suite.CommitEditPosition(id, values) return not combat and suite.SetMany(id, values) end
+local moverRefreshes = 0
 MSUF_EditModeAPI = {
+    RefreshOwner = function(owner)
+        assert(owner == "MSUFSuite.chat")
+        moverRefreshes = moverRefreshes + 1
+    end,
     RegisterElement = function(owner, element) registered[owner .. "/" .. element.id] = element return true end,
     RegisterSessionListener = function() end, IsActive = function() return false end,
 }
+local nativeEnabled = true
+local nativeRecord = { isEnabled = function() return nativeEnabled end }
+MSUF_EM2 = { ExternalElements = { GetRecord = function(key)
+    assert(key == "external:msuf.blizzard:chat", "chat suppressed an unrelated mover")
+    return nativeRecord
+end } }
+assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("test", ns)
 assert(loadfile(root .. "/MSUF_Suite_Modules/EditMode.lua"))("test", { NS = ns, Suite = suite })
 
 -- Window handling is the Window.lua file's business; the controller only
@@ -165,7 +177,13 @@ local element = registered["MSUFSuite.chat/window"]
 assert(element, "the chat window has no Edit Mode mover")
 eq(element.label, "Chat window", "mover label")
 assert(not element.isEnabled(), "a mover for a window Blizzard's Edit Mode still owns")
+assert(nativeRecord.isEnabled(), "unlocked native chat mover was suppressed")
 config.lockWindowPosition, config.windowX, config.windowY = true, 12, 12
+module:RegisterMovers()
+assert(not nativeRecord.isEnabled(), "native and Suite chat movers compete for the same frame")
+assert(moverRefreshes == 1, "claim transition did not synchronize visible host movers")
+module:RegisterMovers()
+assert(moverRefreshes == 1, "unchanged chat claim refreshes all host movers")
 assert(element.isEnabled(), "no mover for the anchored window")
 local controls = {}
 for _, control in ipairs(element.extraControls) do controls[control.id] = control end
@@ -186,9 +204,36 @@ eq(config.windowY, 2, "committed Y")
 assert(element.restoreState(state), "undo refused")
 eq(config.windowX, 12, "undone X")
 config.lockWindowPosition = false
+module:RegisterMovers()
+assert(nativeRecord.isEnabled(), "unlock did not hand the chat mover back to Blizzard")
+assert(moverRefreshes == 2, "unlock did not synchronize visible host movers")
 assert(not element.isEnabled(), "the mover stays after the anchor went off")
 config.lockWindowPosition, suite.states.chat.active = true, false
 assert(not element.isEnabled(), "the mover of a stopped module stays")
+
+-- Host records can be recreated after an adapter reload. The bridge claims
+-- the replacement at the next edit session; releasing preserves native policy.
+config.lockWindowPosition, suite.states.chat.active = true, true
+module:RegisterMovers()
+nativeRecord = { isEnabled = function() return nativeEnabled end }
+ns.HostBridge.RefreshSuppressedEditElements()
+assert(not nativeRecord.isEnabled(), "replacement native mover escaped the chat claim")
+chat.DisableClock, chat.MessagesDisable, chat.FadeDisable = function() end, function() end, function() end
+chat.BubblesDisable, chat.HistoryDisable = function() end, function() end
+module.visuals = {}
+-- Controller captures these two functions at load, so reload with release stubs.
+chat.ReleaseNativeControls, chat.HideCopyDialog = function() end, function() end
+assert(loadfile(root .. "/MSUF_Suite_Chat/Controller.lua"))("MSUF_Suite_Chat", { NS = ns, Suite = suite, Chat = chat })
+module:Disable()
+assert(nativeRecord.isEnabled(), "disabling Suite chat left the native mover suppressed")
+nativeEnabled = false
+assert(not nativeRecord.isEnabled(), "claim release overwrote native availability")
+nativeEnabled = true
+local registerMover = suite.RegisterOwnedMover
+suite.RegisterOwnedMover = function() return false end
+module:RegisterMovers()
+assert(nativeRecord.isEnabled(), "failed Suite mover registration stranded the native mover")
+suite.RegisterOwnedMover = registerMover
 
 ------------------------------------------------------------------ keyword notices
 -- A random dungeon, raid finder or battleground group talks on the instance

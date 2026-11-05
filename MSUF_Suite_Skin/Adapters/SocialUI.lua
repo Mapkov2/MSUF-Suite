@@ -275,10 +275,14 @@ local function InstallLifecycleHooks(frame)
     SocialUISkin.hooksInstalled = installed
 end
 
+local ApplyOrDefer
+
 local function ApplyState(state)
     local frame = state and state.frame
     if not state or not state.active or not frame then return false, "missing" end
     if NS.IsCombatLocked() then return false, "combat" end
+    -- Keep hidden social lists cold; Blizzard opens and initializes them first.
+    if Kit.DeferHidden(frame, state, ApplyOrDefer, state, "show") then return true, "deferred" end
     if not NS.Safety.CanCreateRegions(frame, true) then return false, "protected" end
     if not Kit.Attach(state, frame, SHELL_SPEC) then return false, "shell" end
     NS.WindowControls.Attach(frame, state.owner)
@@ -310,7 +314,7 @@ local function ApplyAfterCombat(state)
     end
 end
 
-local function ApplyOrDefer(state, suffix)
+ApplyOrDefer = function(state, suffix)
     if not state or not state.active then return false, "disabled" end
     if NS.IsCombatLocked() then
         if not Kit.IsHidden(state.frame) then NS.WindowControls.Attach(state.frame, state.owner) end

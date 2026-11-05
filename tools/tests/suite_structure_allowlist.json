@@ -2093,12 +2093,6 @@
   },
   {
    "file": "MSUF_Suite_Options/Pages/QualityOfLife.lua",
-   "kind": "addon",
-   "reason": "P.W is the external MSUF Menu2 widget API. New hosts provide the shared framed help button; older hosts retain a readable clickable fallback. suite_help_controls_contract exercises both host versions.",
-   "symbol": "P.W.HelpButton"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/QualityOfLife.lua",
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
    "symbol": "S.ResetXPSession"

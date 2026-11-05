@@ -185,5 +185,174 @@ Check(queued > beforeQueue and input:GetWidth() == 678, "input resize wrote at c
 frame.displayCallback(frame)
 At(line, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "message display moved at combat start")
 S.Queue, F.Suite.InCombat, F.Suite.IsCombatLocked = originalQueue, originalCombat, originalLockdown
+-- Native layout rewrites happen after ApplyAll (login/layout/UI changes).
+-- Exercise the actual reversible context, and defer until the complete
+-- multi-anchor burst has finished instead of rewriting inside SetPoint.
+local primary = Region("ReviewPrimaryChat")
+primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 160)
+local primaryVisual = { frame = primary }
+M.visuals[primary] = primaryVisual
+local timers, hookCount, writes = {}, 0, 0
+local positionHook
+local oldHook, oldTimer = env.hooksecurefunc, env.C_Timer
+local oldManager = env.EditModeManagerFrame
+local hiddenManager = Region("ReviewHiddenNativeEditMode")
+hiddenManager:Hide()
+env.EditModeManagerFrame = hiddenManager
+local rawPoint = primary.SetPoint
+function primary:SetPoint(...)
+    writes = writes + 1
+    return rawPoint(self, ...)
+end
+env.hooksecurefunc = function(object, method, callback)
+    Check(object == primary and method == "SetPoint", "only primary position writer is observed")
+    hookCount = hookCount + 1
+    positionHook = callback
+    local original = object[method]
+    object[method] = function(self, ...)
+        original(self, ...)
+        callback(self, ...)
+    end
+end
+env.C_Timer = { After = function(delay, callback)
+    Check(delay == 0, "position recovery must be a one-shot layout drain")
+    timers[#timers + 1] = callback
+end }
+local function Drain()
+    local callbacks = timers
+    timers = {}
+    for _, callback in ipairs(callbacks) do callback() end
+    Check(#timers == 0, "own anchor scheduled another correction")
+end
+local function Native(y)
+    primary:ClearAllPoints()
+    primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, y)
+end
+c.lockWindowPosition, c.windowX, c.windowY = true, 12, 52
+S.editMode = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 12, 52, "initial window placement")
+for _ = 1, 100 do C.ApplyWindowPosition(M, primaryVisual, primary, true) end
+Check(hookCount == 1 and #timers == 0, "warm refresh rehooks the anchor or schedules recovery")
+local stableWrites = writes
+for i = 1, 20 do Native(120 + i) end
+local instructions = 0
+local function CountInstruction() instructions = instructions + 1 end
+debug.sethook(CountInstruction, "", 1)
+for _ = 1, 1000 do positionHook(primary) end
+debug.sethook()
+Check(instructions < 90000, "coalesced layout callback exceeded 90 VM instructions per call")
+local allocated = math.huge
+for _ = 1, 2 do
+    collectgarbage("collect")
+    collectgarbage("stop")
+    local before = collectgarbage("count")
+    for _ = 1, 1000 do positionHook(primary) end
+    allocated = math.min(allocated, collectgarbage("count") - before)
+    collectgarbage("restart")
+end
+Check(allocated < 1, "coalesced layout callback allocates per event")
+print("Chat anchor burst budget: " .. instructions .. " VM/1000, " .. allocated .. " KB/1000")
+Check(#timers == 1 and writes == stableWrites + 20, "native layout burst was not deferred/coalesced")
+primary:SetPoint("TOPRIGHT", env.UIParent, "TOPRIGHT", -40, -100)
+Drain()
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 12, 52, "native late layout recovers without Edit Mode")
+Check(primary:GetNumPoints() == 1, "late second native point survived recovery")
+c.lockWindowPosition = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+Check(primary:GetNumPoints() == 2, "unlock lost latest complete native anchor set")
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 140, "unlock restores latest native layout")
+Native(180)
+Check(#timers == 0, "unlocked chat still schedules corrections")
+c.lockWindowPosition = true
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+Native(200)
+S.editMode = true
+Drain()
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 200, "pending correction yields to Edit Mode")
+Native(210)
+Check(#timers == 0, "mover drag scheduled a snap-back")
+c.windowX, c.windowY = 44, 66
+S.editMode = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 44, 66, "committed mover position retained")
+-- The real mover uses direct SetPoint during preview, then refreshes the
+-- saved coordinates on commit. It must not become the native restore base.
+c.lockWindowPosition = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 180, "mover commit preserves native restore base")
+c.lockWindowPosition = true
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+S.editMode = true
+Native(212.345)
+c.windowX, c.windowY = 30, 212.3
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+S.editMode = false
+c.lockWindowPosition = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 180, "rounded mover commit preserves native restore base")
+c.lockWindowPosition, c.windowX, c.windowY = true, 44, 66
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+local manager = Region("ReviewNativeEditMode")
+env.EditModeManagerFrame = manager
+manager:Hide()
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+manager:Show()
+Native(215)
+Check(#timers == 0, "native Edit Mode drag scheduled a snap-back")
+manager:Hide()
+manager:GetScript("OnHide")(manager)
+Check(#timers == 1, "native Edit Mode exit did not schedule recovery")
+Drain()
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 44, 66, "native Edit Mode exit restores Suite anchor")
+env.EditModeManagerFrame = hiddenManager
+-- A native no-op layout burst must not cause extra position writes.
+primary:SetPoint("BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 44, 66)
+stableWrites = writes
+Drain()
+Check(writes == stableWrites, "already-correct native layout rewrote the anchor")
+Native(220)
+F.Suite.InCombat = function() return true end
+S.Queue = function(id) Check(id == "chat", "wrong combat recovery owner") queued = queued + 1 end
+stableWrites = writes
+local priorQueue = queued
+Drain()
+Check(writes == stableWrites and queued == priorQueue + 1, "pending correction writes at combat edge")
+Native(230)
+Check(#timers == 0 and queued == priorQueue + 2, "combat layout does not defer through existing queue")
+F.Suite.InCombat = originalCombat
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 44, 66, "combat replay recovers position")
+c.lockWindowPosition = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 230, "combat replay retains latest native restore base")
+c.lockWindowPosition = true
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+Native(235)
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+Drain()
+c.lockWindowPosition = false
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 235, "refresh before timer retains native restore base")
+c.lockWindowPosition = true
+C.ApplyWindowPosition(M, primaryVisual, primary, true)
+Native(240)
+c.lockWindowPosition = false
+Drain()
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 240, "unlock cancels pending correction")
+c.lockWindowPosition = true
+Native(250)
+M.active = false
+Drain()
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 250, "disable cancels pending correction")
+M.active = true
+Native(260)
+local oldContext = M.context
+M.context = S.NewContext("chat")
+Drain()
+At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 260, "old context cannot write into replacement")
+M.context = oldContext
+S.Queue, env.hooksecurefunc, env.C_Timer = originalQueue, oldHook, oldTimer
+env.EditModeManagerFrame = oldManager
 print("Chat native positions: " .. checks .. " checks, " .. failures .. " failures")
 if failures > 0 then error("native ownership regression") end

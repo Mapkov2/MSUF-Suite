@@ -9,6 +9,9 @@ local NS = {
     RestrictedNotice = function() return "Blizzard blocks this right now." end,
 }
 local S = {}
+S.SuppressHostElement = function(id, key, claim)
+    assert(id == "chat" and key == "external:msuf.blizzard:chat" and claim == false)
+end
 local printed = {}
 S.Print = function(message) printed[#printed + 1] = message end
 S.Public = function(value) return value ~= "secret" end
@@ -246,6 +249,8 @@ GameTooltip = Frame("GameTooltip")
 GameTooltip.shown = false
 function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
 function GameTooltip:IsOwned(frame) return self.owner == frame end
+EditModeManagerFrame = Frame("EditModeManagerFrame")
+EditModeManagerFrame:Hide()
 local temporaryHook, selectHook, newWindowHook, tabAlphaHook, tabColorsHook, dockTabsHook
 -- Blizzard's chrome fades (FCF_FadeInChatFrame, FCF_FadeOutChatFrame in
 -- Blizzard_ChatFrameBase/Mainline/FloatingChatFrame.lua) start UIFrameFadeIn
@@ -288,6 +293,10 @@ S.RestoreCVar = function() end
 local messageHooks = 0
 hooksecurefunc = function(name, callback)
     if type(name) == "table" then
+        if callback == "SetPoint" then
+            assert(name == ChatFrame1, "position hook escaped the primary chat")
+            return
+        end
         assert(callback == "AddMessage", "chat hooked a native chat frame method other than AddMessage")
         messageHooks = messageHooks + 1
         return
@@ -446,6 +455,29 @@ local placed = ChatFrame1.points[1]
 assert(placed[1] == "BOTTOMLEFT" and placed[2] == UIParent and placed[3] == "BOTTOMLEFT"
     and placed[4] == 12 and placed[5] == 12, "profile did not anchor the main chat at the reference's screen margin")
 assert(ChatFrame1Tab.points == otherChatPoints, "anchoring the main chat moved another window")
+-- Native chat refreshes during a Suite drag must not replay the old saved
+-- anchor. Explicit refreshes still own commits, undo and discard.
+S.editMode = true
+ChatFrame1:ClearAllPoints()
+ChatFrame1:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 78, 90)
+for _, event in ipairs({ "UPDATE_CHAT_WINDOWS", "UPDATE_FLOATING_CHAT_WINDOWS" }) do
+    ctx.callbacks[event](module, event)
+    assert(ChatFrame1.points[1][4] == 78 and ChatFrame1.points[1][5] == 90,
+        event .. " snapped a Suite chat drag to the old saved anchor")
+end
+temporaryHook()
+assert(ChatFrame1.points[1][4] == 78, "temporary chat opening snapped a Suite drag")
+newWindowHook()
+assert(ChatFrame1.points[1][4] == 78, "new chat opening snapped a Suite drag")
+ctx.callbacks.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_ChatFrame")
+assert(ChatFrame1.points[1][4] == 78, "native addon refresh snapped a Suite drag")
+module.config.windowX, module.config.windowY = 78, 90
+module:Refresh()
+assert(ChatFrame1.points[1][4] == 78 and ChatFrame1.points[1][5] == 90, "drag commit lost its position")
+module.config.windowX, module.config.windowY = 12, 12
+module:Refresh()
+assert(ChatFrame1.points[1][4] == 12 and ChatFrame1.points[1][5] == 12, "explicit undo did not restore the saved anchor")
+S.editMode = false
 local anchorQueued, anchorQueue = {}, S.Queue
 S.Queue = function(id) anchorQueued[#anchorQueued + 1] = id end
 lockdown, module.config.windowX = true, 48

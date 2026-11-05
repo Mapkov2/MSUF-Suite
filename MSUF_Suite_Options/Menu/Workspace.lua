@@ -92,7 +92,11 @@ function Workspace.Builder(ctx, spec)
     local ui
     local header = spec.header or W.FixedPreviewSection and W.FixedPreviewSection(ctx, builder, {
         title = Tr(spec.title), height = height,
-        onActivate = function() if ui and ui.refreshPreview then ui.refreshPreview() end end,
+        onActivate = function()
+            if ui and ui.refreshPreview then ui.refreshPreview() end
+            -- OnShow can resize the preview before its sticky record is active.
+            if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
+        end,
     })
         or builder:Section(Tr(spec.title), height)
     HM.SetFixedPreviewHeight(header, height)

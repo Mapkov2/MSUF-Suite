@@ -5,21 +5,56 @@ P.GlimmerVisuals = Visuals
 local SEGMENTS = 32
 local TAU = math.pi * 2
 
+local HALO = "Interface\\GLUES\\Models\\UI_Draenei\\GenericGlow64"
+local STAR = "Interface\\Cooldown\\star4"
+local GLINTS = {
+    { -.28, -.15, .17 }, { .12, -.28, .12 }, { .30, -.02, .20 }, { -.10, .10, .13 },
+    { .20, .22, .16 }, { -.32, .26, .11 }, { .02, .37, .14 }, { .34, .34, .10 },
+}
+
+local function CreateGlints(frame)
+    frame.glints = {}
+    for index = 1, #GLINTS do
+        local texture = frame.parts[index]
+        local group = texture:CreateAnimationGroup()
+        group:SetLooping("REPEAT")
+        local delay = (index - 1) * .13
+        local rise = group:CreateAnimation("Translation")
+        rise:SetOrder(1)
+        rise:SetDuration(.70 + index * .025)
+        rise:SetStartDelay(delay)
+        local brighten = group:CreateAnimation("Alpha")
+        brighten:SetOrder(1)
+        brighten:SetStartDelay(delay)
+        brighten:SetFromAlpha(0)
+        brighten:SetToAlpha(.9)
+        brighten:SetDuration(.18)
+        local fade = group:CreateAnimation("Alpha")
+        fade:SetOrder(2)
+        fade:SetFromAlpha(.9)
+        fade:SetToAlpha(0)
+        fade:SetDuration(.45 + index * .035)
+        frame.glints[index] = { group = group, rise = rise }
+    end
+end
+
 function Visuals.Create(parent)
     local frame = S.CreateFrame("Frame", nil, parent or UIParent)
     frame:EnableMouse(false)
-    if not parent then frame:SetFrameStrata("HIGH") end
+    if not parent then frame:SetFrameStrata("BACKGROUND") end
     frame:Hide()
     frame.glow = S.CreateTexture(frame, nil, "OVERLAY")
-    frame.glow:SetTexture("Interface\\SpellActivationOverlay\\IconAlert")
+    local halo = GetFileIDFromPath(HALO)
+    frame.glow:SetTexture(S.Finite(halo) and halo > 0 and halo or STAR)
     frame.glow:SetBlendMode("ADD")
-    frame.glow:SetAllPoints()
+    frame.glow:SetPoint("CENTER", frame, "CENTER")
     frame.parts = {}
     for index = 1, SEGMENTS do
         local texture = S.CreateTexture(frame, nil, "OVERLAY")
         texture:SetColorTexture(1, 1, 1, 1)
         frame.parts[index] = texture
     end
+    CreateGlints(frame)
     frame.pulse = frame:CreateAnimationGroup()
     frame.pulse:SetLooping("BOUNCE")
     local alpha = frame.pulse:CreateAnimation("Alpha")
@@ -51,18 +86,38 @@ local function Ring(frame, size, r, g, b, count)
 end
 
 local function Sparkles(frame, size, r, g, b)
-    for index = 1, 8 do
-        local angle = TAU * index / 8
-        local radius = size * (index % 2 == 0 and .34 or .22)
+    for index, glint in ipairs(GLINTS) do
         local texture = frame.parts[index]
-        texture:SetTexture("Interface\\Cooldown\\star4")
+        texture:SetTexture(STAR)
         texture:SetBlendMode("ADD")
-        Part(frame, index, math.cos(angle) * radius, math.sin(angle) * radius,
-            size * .23, size * .23, angle, r, g, b)
+        Part(frame, index, glint[1] * size, glint[2] * size,
+            size * glint[3], size * glint[3], 0, r, g, b)
+        frame.glints[index].rise:SetOffset(0, size * .20)
+    end
+end
+
+local function Stop(frame)
+    frame.pulse:Stop()
+    for _, glint in ipairs(frame.glints) do glint.group:Stop() end
+end
+
+local function Animate(frame, config)
+    if not config.pulse then
+        Stop(frame)
+        for index = 1, #GLINTS do frame.parts[index]:SetAlpha(1) end
+        return
+    end
+    frame.pulse:Play()
+    if config.style == 1 or config.style == 3 then
+        for index, glint in ipairs(frame.glints) do
+            frame.parts[index]:SetAlpha(0)
+            glint.group:Play()
+        end
     end
 end
 
 function Visuals.Paint(frame, config)
+    Stop(frame)
     local size = config.size
     local r, g, b = S.RGB(config.color)
     frame:SetSize(size, size)
@@ -78,7 +133,10 @@ function Visuals.Paint(frame, config)
     end
     if config.style == 1 then
         frame.glow:SetVertexColor(r, g, b)
+        frame.glow:SetSize(size * 1.4, size * 1.4)
+        frame.glow:SetAlpha(.30)
         frame.glow:Show()
+        Sparkles(frame, size, r, g, b)
     elseif config.style == 2 then
         Ring(frame, size, r, g, b)
     elseif config.style == 3 then
@@ -100,17 +158,31 @@ function Visuals.Paint(frame, config)
 end
 
 function Visuals.Hide(frame)
-    frame.pulse:Stop()
+    if not frame.active then return end
+    Stop(frame)
     frame:Hide()
     frame:ClearAllPoints()
+    frame.active, frame.anchor = nil, nil
 end
 
 function Visuals.Show(frame, plate, config)
-    frame:ClearAllPoints()
-    frame:SetPoint("CENTER", plate, "CENTER", 0, config.offsetY)
-    Visuals.Paint(frame, config)
-    if config.pulse then frame.pulse:Play() else frame.pulse:Stop() end
-    frame:Show()
+    local changed = frame.style ~= config.style or frame.size ~= config.size
+        or frame.color ~= config.color or frame.opacity ~= config.opacity
+    if frame.anchor ~= plate or frame.offsetY ~= config.offsetY then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", plate, "CENTER", 0, config.offsetY)
+        frame.anchor, frame.offsetY = plate, config.offsetY
+    end
+    if changed then
+        Visuals.Paint(frame, config)
+        frame.style, frame.size, frame.color, frame.opacity = config.style, config.size, config.color, config.opacity
+    end
+    if changed or not frame.active or frame.animated ~= config.pulse then
+        Animate(frame, config)
+        frame.animated = config.pulse
+    end
+    if not frame.active then frame:Show() end
+    frame.active = true
 end
 
 -- The menu draws the same effect on a harmless sample, without a target or CVars.

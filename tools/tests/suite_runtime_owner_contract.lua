@@ -99,7 +99,7 @@ for id in pairs(Suite.Suite.instances) do
 end
 -- The shared notice owner and nine QoL tools are available on Forever.
 -- Craft shopping, bank transfer and mail templates remain Retail-only.
-assert(count == 79 and Suite.Suite.instances.castbarArt and Suite.Suite.instances.glimmer and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
+assert(count == 78 and not Suite.Suite.instances.castbarArt and Suite.Suite.instances.glimmer and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
     and Suite.Suite.instances.playerAuraSkins and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
     and Suite.Suite.instances.innervateCue and Suite.Suite.instances.merchantLevel
     and Suite.Suite.instances.vaultSpec and Suite.Suite.instances.tooltipIDs
@@ -361,11 +361,15 @@ end
 -- Glimmer declares and restores every native interaction setting it owns.
 do
     local glimmer = S.NewContext("glimmer")
+    cvarValues.graphicsOutlineMode, cvarValues.raidGraphicsOutlineMode = "2", "1"
+    assert(not glimmer:CVar("graphicsOutlineMode", "0") and not glimmer:CVar("raidGraphicsOutlineMode", "0"),
+        "Glimmer must not own the player's outline graphics settings")
     local before = { SoftTargetInteract = "1", SoftTargetNameplateInteract = "0",
-        SoftTargetIconGameObject = "0", SoftTargetInteractRange = "10" }
+        SoftTargetIconGameObject = "0", SoftTargetInteractRange = "10", SoftTargetInteractOnlyInRange = "1", SoftTargetInteractArc = "0", outlineModeShowLootEffectWhenDisabled = "0" }
     for key, value in pairs(before) do
         cvarValues[key] = value
-        assert(glimmer:CVar(key, key == "SoftTargetInteractRange" and "15" or "3"))
+        local applied = key == "SoftTargetInteractRange" and "15" or key == "SoftTargetInteractOnlyInRange" and "0" or "3"
+        assert(glimmer:CVar(key, applied))
         assert(Saved("glimmer", key), "Glimmer did not save the original " .. key)
     end
     cvarValues.SoftTargetInteractRange = "18" -- a later player choice wins
@@ -375,6 +379,47 @@ do
             "Glimmer did not restore native setting " .. key)
         assert(not Saved("glimmer", key), "Glimmer recovery record remained")
     end
+end
+-- Glimmer adopts later external choices, including combat flip-backs, without
+-- changing the behavior of ordinary two-argument CVar owners.
+do
+    local glimmer = S.NewContext("glimmer")
+    for _, key in ipairs({ "SoftTargetIconGameObject", "SoftTargetInteractOnlyInRange" }) do
+        local wanted = key == "SoftTargetIconGameObject" and "1" or "0"
+        local original = wanted == "1" and "0" or "1"
+        for _, choice in ipairs({ original, wanted }) do
+            cvarValues[key] = original
+            assert(glimmer:CVar(key, wanted))
+            cvarValues[key] = choice
+            assert(glimmer:CVar(key, wanted, true))
+            assert(Saved("glimmer", key).before == choice, "external restore choice was lost")
+            glimmer:Release()
+            assert(cvarValues[key] == choice, "Glimmer release lost the latest external choice")
+            assert(not Saved("glimmer", key), "adopted record survived release")
+        end
+    end
+end
+-- Exercise the shipped Disable and recovery together: the controller can stop
+-- Glimmer before its own regen callback has consumed pending external edits.
+do
+    local glimmer = S.instances.glimmer
+    local previousContext = glimmer.context
+    glimmer.context = S.NewContext("glimmer")
+    for _, key in ipairs({ "SoftTargetIconGameObject", "SoftTargetInteractOnlyInRange" }) do
+        local wanted = key == "SoftTargetIconGameObject" and "1" or "0"
+        local original = wanted == "1" and "0" or "1"
+        for _, choice in ipairs({ original, wanted }) do
+            cvarValues[key] = original
+            assert(glimmer.context:CVar(key, wanted))
+            glimmer.changedCVars[key], glimmer.pending = true, true
+            cvarValues[key] = choice
+            glimmer:Disable()
+            glimmer.context:Release()
+            assert(cvarValues[key] == choice, "disable before regen lost the latest choice: " .. key)
+            assert(not Saved("glimmer", key), "disabled Glimmer retained recovery")
+        end
+    end
+    glimmer.context = previousContext
 end
 local minimap = S.NewContext("minimap")
 assert(S.instances.minimap == nil and not minimap:CVar("autoLootDefault", 1)

@@ -435,9 +435,9 @@ end
 -- Only its safe rendered child moves, including first registration in combat.
 do
     local stops, probes = 0, 0
-    local function LFG(owner)
+    local function LFG(owner, rootName)
         local rootFrame, controller, child = Frame(), Controller(false), Frame()
-        function rootFrame:GetName() return "LFGListFrame" end
+        function rootFrame:GetName() return rootName or "LFGListFrame" end
         function controller:GetParent() return rootFrame end
         function controller:GetHeight() return 300 end
         function controller:GetScrollTarget() return child end
@@ -522,6 +522,34 @@ do
     Check(populated <= base + 32, "combat scanned historical hidden LFG scrolls")
     print("BUDGET LFG-scroll hidden64 native=0 VM " .. base .. " -> " .. populated)
     Motion.ReleaseOwner("hidden-lfg")
+    -- Social lists call protected Battle.net readers from native events.
+    -- Skin lifecycle must never seed their native controller/layout fields.
+    for _, locked in ipairs({ false, true }) do
+        combat, NS.Motion.combat = locked, locked
+        local social, content = LFG("social", "SocialUIFrame")
+        Check(content.group and content.group.playing, "social list lost visual scrolling")
+        Check(Motion.states[social] == nil and social.canInterpolateScroll == false,
+            "social list acquired addon-owned native interpolation state")
+        social:Trigger("layout")
+        Check(not content.group.playing, "social native layout kept a stale translation")
+        social:Trigger("scroll", 0.4, 0.5)
+        social:Trigger("scroll", 0.5, 0.5)
+        Check(content.group.playing, "social list did not resume visual scrolling")
+        social:Fire("OnHide")
+        Check(not content.group.playing, "hidden social list kept its animation")
+        social:Fire("OnShow")
+        social:Trigger("scroll", 0.6, 0.5)
+        social:Trigger("scroll", 0.7, 0.5)
+        Check(content.group.playing, "reopened social list lost visual scrolling")
+        NS.DB.theme.reduceMotion = true
+        for owner, callback in pairs(listeners) do callback(owner, "motion", "reduceMotion") end
+        Check(not content.group.playing, "social list ignored reduced motion")
+        NS.DB.theme.reduceMotion = false
+        Motion.ReleaseOwner("social")
+        Check(next(social.callbacks.scroll) == nil and next(social.callbacks.layout) == nil,
+            "social list retained callbacks after release")
+    end
+    combat, NS.Motion.combat = false, false
 end
 Check(scriptWrites == 0, "native wheel/update scripts were replaced")
 for _, frame in ipairs(frames) do Check(frame.scripts.OnUpdate == nil, "Suite installed an idle update loop") end

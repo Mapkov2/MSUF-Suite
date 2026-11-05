@@ -195,6 +195,14 @@ if HasRow(combatPage, interruptLabel) then Expect(interruptLabel, combatPage, in
 -- Familiar feature names must resolve to the feature switch, including English
 -- names in translated clients and aliases of client-specific helpers.
 local featureAliases = {
+    { "glimmer", { "glimmer", "glimmern", "Questhelp", "questhelper", "questobjekte", "questgegenstände", "questgegenstaende", "sammelobjekte", "funkeln",
+        "quest sparkle", "quest sparkles", "loot sparkle", "loot sparkles", "quest glow", "gathering",
+        "erz", "erze", "kräuter", "kraeuter", "herbs", P.Tr("Quest item sparkle"), P.Tr("Quest objects"),
+        P.Tr("Ore"), P.Tr("Herbs"), P.Tr("Sparkles") },
+        { erz = "ore", erze = "ore", ["kräuter"] = "herb", kraeuter = "herb", herbs = "herb", questobjekte = "quest",
+            [P.Tr("Ore")] = "ore", [P.Tr("Herbs")] = "herb",
+            [P.Tr("Quest objects")] = "quest", [P.Tr("Quest item sparkle")] = "questSparkle",
+            [P.Tr("Sparkles")] = "style" } },
     { "groupDeathAlert", { "death announcer", "death announce", "death announcements", "death alert",
         "Todesmelder", "Todesansage", "Todesmeldungen" } },
     { "battleRes", { "combat resurrection", "brez", "kampfwiederbelebung" } },
@@ -361,13 +369,15 @@ for _, case in ipairs(featureAliases) do
                 local selected, anchored, exact = api.OpenSearchTarget(target.key, target.label,
                     target.anchorFallback or target.label, target.anchor, target.route, target.exactTarget)
                 world.widgets:RunTimers(80)
-                local page = M.cache.suite_qualityOfLife
-                local feature = page and page.qualityOfLifeFeatureRows["suite_qualityOfLife_chatProfileLinks_profile_links"]
+                local page = M.cache[target.key]
+                local group = P.QoLView.FindFeature(case[1])
+                local sectionId = "suite_qualityOfLife_" .. case[1] .. "_" .. group.sections[1]
+                local feature = page and page.qualityOfLifeFeatureRows[sectionId]
                 local view = page and page.qualityOfLifeView
                 local category = feature and view and view.panels[feature.category]
                 Check(selected and anchored and exact and feature and feature.details and feature.details:IsShown()
                     and category and category.frame:IsShown() and view.selected == feature.category,
-                    flavor .. ": service route did not reveal profile-link settings: " .. query)
+                    flavor .. ": literal control route did not reveal its feature settings: " .. query)
                 local runtime = M.RuntimeControlCatalog.Get(target.exactTarget.controlId)
                 local prepare = runtime and runtime.widget and P.HM.GetSearchTargetPrepare(runtime.widget)
                 Check(type(prepare) == "function" and prepare(runtime.widget, target.exactTarget) == true,

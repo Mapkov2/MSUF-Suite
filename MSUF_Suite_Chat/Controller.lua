@@ -6,6 +6,7 @@ local C = P.Chat
 -- tab labels and moves the sidebar.
 local M = C.M
 local MAX_FRAMES = 64
+local HOST_CHAT = "external:msuf.blizzard:chat"
 local FRIEND_EVENTS = {
     "FRIENDLIST_UPDATE", "BN_FRIEND_LIST_SIZE_CHANGED", "BN_FRIEND_ACCOUNT_ONLINE",
     "BN_FRIEND_ACCOUNT_OFFLINE", "BN_CONNECTED", "BN_DISCONNECTED",
@@ -45,18 +46,22 @@ local function ForEachChatFrame(callback, arg)
     end
 end
 
-local function ApplyAll(self)
+local function ApplyNativeWindow(self, frame) ApplyWindow(self, frame, true) end
+
+local function ApplyAll(self, nativeRefresh)
     if NS.InCombat() then
         S.Queue("chat")
         return
     end
     C.ApplyClockSettings()
-    ForEachChatFrame(ApplyWindow, self)
+    ForEachChatFrame(nativeRefresh and S.editMode and ApplyNativeWindow or ApplyWindow, self)
     C.DockGeometry()
     self.selectedChat = _G.SELECTED_CHAT_FRAME
     self.selectedDock = DockSelection()
     C.RefreshClocks()
 end
+
+local function NativeWindowsUpdated(self) ApplyAll(self, true) end
 
 local function RecolorTab(self, frame, chat, dock)
     local visual = frame and self.visuals[frame]
@@ -94,14 +99,14 @@ end
 local function AddonLoaded(_, _, name)
     if CHAT_ADDONS[name] then S.Apply("chat") end
     if name == "Blizzard_QuickJoin" or name == "Blizzard_ChatFrame" or name == "Blizzard_CombatLog" then
-        ApplyAll(M)
+        ApplyAll(M, true)
     end
 end
 
 -- Temporary whisper frames are created after the usual chat-window update
 -- events. Hook only these cold window paths, never the message path.
 local function TemporaryWindowOpened()
-    if M.active then ApplyAll(M) end
+    if M.active then ApplyAll(M, true) end
 end
 
 local function DockSelectionChanged()
@@ -127,7 +132,7 @@ local function NewWindowOpened()
         return
     end
     local frame = DockSelection()
-    if frame then ApplyWindow(M, frame) end
+    if frame then ApplyWindow(M, frame, S.editMode) end
     RefreshSelection(M)
     C.RefreshClocks()
 end
@@ -142,8 +147,8 @@ end
 
 function M:Enable()
     self.geometry = true
-    self.context:Event("UPDATE_CHAT_WINDOWS", ApplyAll)
-    self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", ApplyAll)
+    self.context:Event("UPDATE_CHAT_WINDOWS", NativeWindowsUpdated)
+    self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", NativeWindowsUpdated)
     for _, event in ipairs(FRIEND_EVENTS) do C.ListenInCombat(self.context, event, UpdateFriendsCount) end
     self.context:Event("ADDON_LOADED", AddonLoaded)
     Hook(self, "hookedTemporary", "FCF_OpenTemporaryWindow", TemporaryWindowOpened)
@@ -166,6 +171,8 @@ function M:Refresh()
 end
 
 function M:Disable()
+    S.SuppressHostElement("chat", HOST_CHAT, false)
+    self.hostChatClaim = nil
     C.DisableClock()
     C.MessagesDisable()
     -- Faded alpha goes back before the context restores the tabs it owns.
@@ -178,15 +185,21 @@ function M:Disable()
 end
 
 -- The main window's position is the Suite's only while "Anchor the main chat
--- window" is on (Window.lua ApplyPositionLock); otherwise Blizzard's Edit Mode
+-- window" is on (Positions.lua ApplyWindowPosition); otherwise Blizzard's Edit Mode
 -- layout owns it and there is nothing to move here.
 function M:RegisterMovers()
-    S.RegisterOwnedMover("chat", "window", {
+    local registered = S.RegisterOwnedMover("chat", "window", {
         label = "Chat window", order = 870,
         getFrame = function() return ChatFrame1 end,
         xKey = "windowX", yKey = "windowY", point = "BOTTOMLEFT",
         isEnabled = function() return self.config.lockWindowPosition == true end,
     })
+    local claimed = registered == true and self.config.lockWindowPosition == true
+    S.SuppressHostElement("chat", HOST_CHAT, claimed)
+    if (self.hostChatClaim == true) ~= claimed then
+        self.hostChatClaim = claimed
+        S.RefreshOwnedMovers("chat")
+    end
 end
 
 S.Install("chat", M)

@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Options
 ## Notes: Suite pages for the MSUF options menu.
 ## Author: Mapko
-## Version: 0.1.10-alpha
+## Version: 0.1.11-alpha
 ## Dependencies: MSUF_Suite, MidnightSimpleUnitFrames_Options
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -58,11 +58,12 @@ Pages\EverydayTools.lua
 Pages\ToolIntegration.lua
 Pages\QualityOfLifeHelp.lua
 Pages\PlayerAuras.lua
-Pages\CastbarArtwork.lua
 Pages\Gameplay.lua
+Pages\QualityOfLifeOwners.lua
 Pages\QualityOfLifeCatalog.lua
 Pages\QualityOfLifeNavigation.lua
 Pages\QualityOfLife.lua
+Pages\QualityOfLifeAccordions.lua
 Pages\HUDWorkspace.lua
 Pages\HUDPreview.lua
 Pages\HUDPreviewSamples.lua

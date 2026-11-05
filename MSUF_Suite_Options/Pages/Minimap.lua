@@ -150,6 +150,7 @@ local function Build(ctx)
     })
     sections.style_presets = BuildStylePresets(ctx, b)
     P.MinimapSections.BuildMinimapSections(ctx, b, sections, HELP, SkinStatus(ctx))
+    P.QoLOwners.Build(ctx, b, PAGE)
 end
 
 P.RegisterPage({ key = PAGE, label = "Minimap", title = "Minimap", build = Build, icon = { 2, 0 },

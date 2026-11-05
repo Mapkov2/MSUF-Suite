@@ -60,34 +60,6 @@ def chassis(boss=False):
     return image
 
 
-def cast_fill():
-    image = Image.new("RGBA", (256, 32))
-    pixels = image.load()
-    for y in range(32):
-        vertical = .7 + .3 * math.sin(math.pi * (y + .5) / 32)
-        for x in range(256):
-            phase = (x * 184 / 256 + y * 14 / 32) % 9
-            value = round(255 * vertical * (.64 + .36 * math.exp(-((phase - 4.5) / 1.8) ** 2)))
-            pixels[x, y] = (value, value, value, 255)
-    return image
-
-
-def cast_name():
-    image = Image.new("RGBA", (256, 32))
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((0, 0, 255, 31), radius=6, fill=(0, 0, 0, 205))
-    return image
-
-
-def cast_frame():
-    image = Image.new("RGBA", (256, 32))
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((0, 0, 255, 31), radius=5, fill=(0, 0, 0, 245))
-    draw.rounded_rectangle((1, 1, 254, 30), radius=4, fill=(125, 120, 108, 255))
-    draw.rounded_rectangle((2, 3, 253, 28), radius=3, fill=(0, 0, 0, 0))
-    return image
-
-
 def tga(image):
     header = bytearray(18)
     header[2] = 2
@@ -100,8 +72,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    assets = (("UnitFrame", chassis()), ("BossFrame", chassis(True)), ("HealthFill", health_fill()),
-              ("CastFill", cast_fill()), ("CastName", cast_name()), ("CastFrame", cast_frame()))
+    assets = (("UnitFrame", chassis()), ("BossFrame", chassis(True)), ("HealthFill", health_fill()))
     for name, artwork in assets:
         data, path = tga(artwork), OUTPUT / (name + ".tga")
         if args.check:

@@ -666,6 +666,7 @@ end
 local function ApplyProfile(_, domain)
     if domain ~= "profile" then return end
     if NS.DB then Dispatch(S.Normalize, NS.DB) end
+    Dispatch(NS.HostBridge.MigrateLegacyCastbarArtwork, NS.RootDB)
     for i = 1, #S.order do S.states[S.order[i]].error = nil end
     S.ApplyAll()
 end
@@ -675,6 +676,7 @@ function S.Start()
     S.started = true
     -- Normalization never keeps the listener or the modules from starting.
     if NS.DB then Dispatch(S.Normalize, NS.DB) end
+    Dispatch(NS.HostBridge.MigrateLegacyCastbarArtwork, NS.RootDB)
     -- Saved CVars wait in the runtime until their owner hands them back.
     if NS.RootDB and type(NS.RootDB.suiteRecovery) == "table" and next(NS.RootDB.suiteRecovery) then
         C_AddOns.LoadAddOn(RUNTIME_ADDON)

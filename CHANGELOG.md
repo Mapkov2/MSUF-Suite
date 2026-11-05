@@ -1,5 +1,32 @@
 # MSUF Suite Changelog
 
+## 0.1.11 Alpha - 2026-11-05
+
+### Chat
+
+- Keep the anchored chat window at its saved Suite position after native layout updates.
+- Prevent chat from snapping back while dragging in Edit Mode; avoid competing Blizzard and Suite movers and preserve undo and native-position restoration.
+
+### Bags and native windows
+
+- Avoid stale item-binding queries when an item has just been sold or its bag slot has become empty.
+- Correct quest progress, turn-in and reward text refreshes while keeping native page resets immediate.
+- Preserve merchant-window focus during updates and avoid restricted gamepad-button inspection.
+- Defer hidden social-window styling and preserve native scrolling controls.
+
+### Menus and previews
+
+- Organize Quality of Life into directly selectable, wrapping groups with expandable feature settings.
+- Keep Suite gameplay helpers on the host Gameplay page and improve settings navigation and search.
+- Prevent the Buff Reminders preview from overlapping its settings.
+- Hand castbar artwork settings to compatible MSUF hosts while preserving existing saved choices. Native artwork requires MSUF 6.508 or a 7.0 build with artwork support; older hosts retain saved choices until upgraded.
+- Refine the MSUF Blizzard setup preset and its bundled artwork.
+
+### Glimmer
+
+- Preserve native quest sparkles and improve highlight recovery, animation behavior and settings previews on WoW Forever.
+- Improve Glimmer and Questhelp search discovery and retain deliberate opt-outs across setup presets.
+
 ## 0.1.10 Alpha - 2026-11-05
 
 ### Setup

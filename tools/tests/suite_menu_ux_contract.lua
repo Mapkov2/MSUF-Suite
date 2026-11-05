@@ -9,13 +9,14 @@ local mutations = {
     duplicate = { "Pages/BuffRemindersEditor.lua", "tostring(tonumber(token))", "token" },
     combat = { "Pages/BuffRemindersEditor.lua", "if P.Combat() then return false end", "-- missing combat refusal" },
     inheritance = { "Pages/BuffRemindersVisibility.lua", "values[rule.key] = true", "values[rule.key] = false" },
-    inlineQoL = { "Pages/QualityOfLifeNavigation.lua", "0, -offset - 4", "0, -1000" },
+    inlineQoL = { "Pages/QualityOfLifeAccordions.lua", "record.details = body",
+        'record.details = body\n        body:ClearAllPoints()\n        body:SetPoint("TOPLEFT", ui.body, "BOTTOMLEFT", 0, -1000)' },
     lazyQoL = { "Pages/QualityOfLifeNavigation.lua", "ui.panels[category.id], ui.frames[category.id] = panel, frame",
-        "ui.panels[category.id], ui.frames[category.id] = panel, frame\n    P.M.TrackRefresh(ui.ctx, function() Layout(ui) end)" },
+        "ui.panels[category.id], ui.frames[category.id] = panel, frame\n    panel.building = false\n    P.M.TrackRefresh(ui.ctx, function() Layout(ui) end)" },
     itemSearch = { "Pages/BuffRemindersEditor.lua", 'if key == "item" then state.kind = "item" end', 'if key == "item" then state.kind = "spell" end' },
-    filteredSearch = { "Pages/QualityOfLifeNavigation.lua", "if panel.selected == group or ui.retained == group then return true end",
-        "if (panel.selected == group or ui.retained == group) and panel.records[group].hasDetails then return true end" },
-    filterTitle = { "Pages/QualityOfLifeNavigation.lua", "body.title:Hide()", "body.title:Show()" },
+    filteredSearch = { "Pages/QualityOfLifeNavigation.lua", "if ui.retained == group then return true end",
+        "if ui.retained == group and ui.rows[V.FeatureSectionId(group)].hasDetails then return true end" },
+    filterTitle = { "Pages/QualityOfLifeNavigation.lua", "P.HideControlTitle(ui.filterControl)", "-- visible title" },
     copyWrap = { "Pages/ActionBars.lua", "popup:SetHeight(math.max(340, 264 + (popup.suiteCopySummary:GetStringHeight() or 42)))", "-- missing wrapped height" },
     meterDefault = { "Pages/DamageMeter.lua", '{ id = "shared", label = "General settings", sections = "damageMeter_module look general details" },',
         '{ id = "window", label = "Window settings", sections = "windows" },\n            { id = "shared", label = "General settings", sections = "damageMeter_module look general details" },' },
@@ -110,7 +111,12 @@ W.PageBuilder = function(ctx)
 end
 W.EnsureSectionContent = function(body) body._uxBuild() end
 local focused = 0
-W.FocusCollapsibleSection = function(body) focused = focused + 1; body:Show() end
+W.FocusCollapsibleSection = function(body)
+    focused = focused + 1
+    local entry = HM.GetSectionEntry(body)
+    if entry then entry.SetOpenByUser(true) else body:Show() end
+    if body._uxBuild then body._uxBuild() end
+end
 local function Context(page, width)
     local ctx = { key = page, width = width, sections = {}, widgets = {}, refreshers = {}, pageItems = {},
         wrapper = CreateFrame("Frame"), entry = { sections = {} } }
@@ -337,7 +343,8 @@ end
 do
     local ctx = Build("suite_qualityOfLife", 760)
     local ui = assert(ctx.entry.qualityOfLifeView)
-    assert(ui.body.title and not ui.body.title:IsShown(), "QoL filter overlaps the section title")
+    assert(not rawget(ui.body, "title") and not HM.GetControlTitle(ui.filterControl):IsShown(),
+        "QoL filter overlaps the section title")
     -- Deferred category construction must tolerate eager widget refreshers.
     for _, category in ipairs(P.QoLView.GetCategories()) do
         if not ui.panels[category.id] then
@@ -352,17 +359,26 @@ do
     Control(ctx, ".view.enabled").set("enabled")
     assert(chosen.reveal(true), "QoL settings did not open")
     M.RequestRefresh()
-    local rowY, detailsY = chosen.row.points[1][5], chosen.details.points[1][5]
-    assert(detailsY < rowY and rowY - detailsY < 90, "QoL details stayed below the whole feature list")
+    local point = chosen.details.points[1]
+    assert(chosen.details.parent == chosen.row and point and point[2] == chosen.row
+        and point[5] < 0 and point[5] > -90, "QoL details stayed below the whole feature list")
     assert(chosen.row:IsShown() and chosen.details:IsShown(), "filter hid the currently edited feature")
     local point, moves = chosen.row.SetPoint, 0
     chosen.row.SetPoint = function(self, ...) moves = moves + 1; return point(self, ...) end
     M.RequestRefresh()
     assert(moves == 0, "unchanged QoL refresh repeated native layout writes")
     chosen.row.SetPoint = point
-    local record = assert(ctx.qualityOfLifeFeatureRows.suite_qualityOfLife_tooltipClassColors_class_colors)
+    local plain
+    for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
+        local _, rules = P.QoLView.FeatureRules(feature)
+        if P.QoLView.GetFeaturePage(feature) == "suite_qualityOfLife" and P.Available(feature.id)
+            and not P.QoLView.HasDetails(feature, rules) then plain = feature break end
+    end
+    assert(plain, "filtered-search fixture needs a client-available one-switch feature")
+    ui:SelectCategory(plain.category)
+    local record = assert(ctx.qualityOfLifeFeatureRows[P.QoLView.FeatureSectionId(plain)])
     assert(not record.hasDetails, "filtered-search fixture no longer exercises a one-switch feature")
-    local config = P.S.Config("tooltipClassColors")
+    local config = P.S.Config(plain.id)
     local previous = config.enabled
     config.enabled = false
     Control(ctx, ".view.enabled").set("enabled")

@@ -1012,10 +1012,14 @@ function H.New(root, options)
         return W.newItems[bag * KEY + slot] == true
     end, RemoveNewItem = function(bag, slot) W.newItems[bag * KEY + slot] = nil end }
     C_Item = {
+        DoesItemExist = function(location)
+            W.calls.itemExists = (W.calls.itemExists or 0) + 1
+            return W.Item(location.bag, location.slot) ~= nil
+        end,
         IsBoundToAccountUntilEquip = function(location)
             W.calls.binding = (W.calls.binding or 0) + 1
             local item = W.Item(location.bag, location.slot)
-            if not item then return false end
+            assert(item, "IsBoundToAccountUntilEquip requires an existing item")
             if item.wue ~= nil then return item.wue end
             return Data(item.id).bind == 9 and item.bound ~= true
         end,

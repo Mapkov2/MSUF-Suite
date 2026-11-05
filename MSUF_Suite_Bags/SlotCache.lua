@@ -86,6 +86,12 @@ function SlotCache.Binding(bag, slot, bindType)
         else
             bindLocation = ItemLocation:CreateFromBagAndSlot(bag, slot)
         end
+        -- Selling or moving an item can empty the slot before its cached read expires.
+        local exists = C_Item.DoesItemExist(bindLocation)
+        if not Public(exists) or exists ~= true then
+            SlotCache.dirtySlots[key] = true
+            return nil
+        end
         local untilEquipped = C_Item.IsBoundToAccountUntilEquip(bindLocation)
         if not Public(untilEquipped) or untilEquipped == nil then return nil end
         if untilEquipped then

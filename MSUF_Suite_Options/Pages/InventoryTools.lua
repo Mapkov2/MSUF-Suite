@@ -18,6 +18,6 @@ function P.BuildInventoryToolActions(ctx, body, id, section, y, width)
     end, function()
         local runtime = NS.Suite.instances[id]
         return not P.Combat() and runtime and runtime.active
-    end, P.Meta(P.catalog[id].page, id, "action.open", "action", section))
+    end, P.Meta(P.QoLOwners.PageFor(id) or P.catalog[id].page, id, "action.open", "action", section))
     return y - 38
 end

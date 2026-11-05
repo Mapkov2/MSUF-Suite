@@ -90,9 +90,10 @@ for _, id in ipairs({ "notificationHistory", "inventoryProtection" }) do S.Set(i
 C_AddOns.LoadAddOn, S.NewContext = previousLoad, previousContext
 
 ------------------------------------------------------------------ section resets
--- Never-sell, on the Quality of Life page: the reset restores "Protect items in
+-- Never-sell, on the Bags page: the reset restores "Protect items in
 -- equipment sets" and leaves protection on, with its list.
-local qol = E.build("suite_qualityOfLife")
+Check(P.QoLOwners.PageFor("inventoryProtection") == "suite_bags", "never-sell has no inventory owner")
+local qol = E.build("suite_bags")
 E.inContext(qol, function() P.QoLView.FindFeature("inventoryProtection").reveal(true) end)
 local record = assert(qol.qualityOfLifeFeatureRows.suite_qualityOfLife_inventoryProtection_inventoryProtection)
 local protection = S.Config("inventoryProtection")

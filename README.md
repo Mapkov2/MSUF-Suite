@@ -4,6 +4,8 @@
 
 **Midnight Simple Unit Frames (MSUF) is required. This Suite alpha is compatible with MSUF 6.5 (release 6.50).** MSUF is configured as a Required Dependency on CurseForge and is installed automatically with the Suite. When using Wago, install MSUF through the Wago client as well.
 
+For native castbar artwork, update MSUF to 6.508 or a 7.0 build with artwork support. Older hosts retain the saved artwork choices until the host is upgraded.
+
 ## Modules
 
 - **Action Bars** - Layout and appearance settings for your action bars.

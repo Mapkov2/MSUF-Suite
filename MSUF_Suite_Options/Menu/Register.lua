@@ -37,9 +37,10 @@ end
 -- separate: dormant load-on-demand modules still need their settings page.
 local ADDON_NOTICE = "You need to turn on the module in Blizzard's AddOn list"
 -- Every catalog module per page; the page reset and the AddOn checks use it.
+P.QoLOwners.Register()
 local PAGE_MODULES = {}
 for _, id in ipairs(Suite.SuiteOrder) do
-    local key = P.catalog[id].page
+    local key = P.QoLOwners.PageFor(id) or P.catalog[id].page
     if key then
         local modules = PAGE_MODULES[key] or {}
         PAGE_MODULES[key] = modules
@@ -230,7 +231,7 @@ local function PageResetHandlers()
         if not modules then return false end
         for _, id in ipairs(modules) do
             local moved = key == "suite_qualityOfLife" and
-                (P.PlayerAurasPage.Relocated(id) or P.GameplayPage.Relocated(id) or P.CastbarArtworkPage.Relocated(id))
+                (P.PlayerAurasPage.Relocated(id) or P.GameplayPage.Relocated(id))
             if not moved and not S.Reset(id) then return false end
         end
         return true

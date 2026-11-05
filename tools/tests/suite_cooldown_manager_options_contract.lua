@@ -645,7 +645,7 @@ for _, file in ipairs({ "Menu/Bridge.lua", "Menu/Controls.lua", "Menu/PreviewCla
     "Pages/CooldownManagerSounds.lua", "Pages/CooldownManagerPopoverFields.lua",
     "Pages/CooldownManagerPopoverInputs.lua", "Pages/CooldownManagerPopover.lua",
     "Pages/CooldownManagerPreviewIcons.lua", "Pages/CooldownManagerPreview.lua", "Pages/CooldownManagerOverrides.lua", "Pages/CooldownManagerInspection.lua", "Pages/CooldownManager.lua",
-    "Pages/AppearanceKit.lua", "Pages/Appearance.lua", "Pages/Gameplay.lua", "Menu/Register.lua" }) do
+    "Pages/AppearanceKit.lua", "Pages/Appearance.lua", "Pages/Gameplay.lua", "Pages/QualityOfLifeOwners.lua", "Menu/Register.lua" }) do
     local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/" .. file))
     if file:find("CooldownManager", 1, true) then setfenv(chunk, strict) end
     chunk("MSUF_Suite_Options", P)

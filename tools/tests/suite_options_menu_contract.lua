@@ -552,6 +552,8 @@ W.SectionSwitch = function(section, label)
     local widget = Widget("Switch")
     widget.label = label
     section.headerSwitch = widget
+    local entry = section._msuf2CollapsibleEntry
+    if entry then widget.parent, entry.featureSwitch = entry.header, widget end
     return widget
 end
 W.AttachContextColorShortcut = function(section, opts)
@@ -594,13 +596,27 @@ W.RoleButton = function(parent, text, role)
 end
 W.PageBuilder = function(ctx)
     ctx.wrapper = ctx.wrapper or Widget("Frame")
-    local b = { width = ctx.width, y = -12, collapsibles = {}, layoutEntries = {} }
+    local b = { width = ctx.width, parent = ctx.wrapper, x = ctx._msuf2ContentX or 0,
+        y = -12 - (ctx._msuf2TopInset or 0), collapsibles = {}, layoutEntries = {} }
     function b:Header() ctx.headers = (ctx.headers or 0) + 1 end
-    if ctx.key == "suite_dataTexts" then
-        function b:RelayoutCollapsibles() self.relayouts = (self.relayouts or 0) + 1 end
+    function b:RelayoutCollapsibles()
+        self.relayouts = (self.relayouts or 0) + 1
+        local y = self._collapsibleStartY or -12
+        for _, entry in ipairs(#self.layoutEntries > 0 and self.layoutEntries or self.collapsibles) do
+            local frame = entry.kind == "section" and entry.frame or entry.outer
+            local height = entry.kind == "section" and frame:GetHeight()
+                or 32 + (entry.open and entry.body:GetHeight() or 0)
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", self.parent, "TOPLEFT", self.x, y)
+            frame:SetHeight(height)
+            y = y - height - (entry.gap or 8)
+        end
+        self.y = y
+        if ctx.SetContentHeight then ctx:SetContentHeight(-y + 42) end
     end
     if ctx.key == "suite_actionbars" or ctx.key == "suite_dataTexts" or ctx.key == "suite_hud" or ctx.key == "suite_macros"
-        or ctx.key == "suite_planningTools" or ctx.key == "suite_qualityOfLife" or ctx.key == "gameplay" then
+        or ctx.key == "suite_planningTools" or ctx.key == "suite_qualityOfLife" or ctx.key == "gameplay"
+        or ctx.key == "suite_chat" or ctx.key == "suite_minimap" or ctx.key == "suite_bags" then
         function b:Section(title, height)
             local body = Widget("Panel")
             body.title, body.parent = Widget("FontString"), ctx.wrapper
@@ -612,21 +628,26 @@ W.PageBuilder = function(ctx)
         end
     end
     function b:CollapsibleSection(id, title, _, defaultOpen)
-        local body = Widget("Section")
+        local body, outer, header = Widget("Section"), Widget("SectionOuter"), Widget("SectionHeader")
         body.sectionId, body.title, body.defaultOpen = id, title, defaultOpen
-        body._msuf2Width = ctx.width
-        body.parent = ctx.wrapper
-        body._msuf2CollapsibleEntry = { label = Widget("FontString"), body = body, builder = self, open = defaultOpen == true }
-        self.collapsibles[#self.collapsibles + 1] = body._msuf2CollapsibleEntry
-        self.layoutEntries[#self.layoutEntries + 1] = body._msuf2CollapsibleEntry
-        if ctx.key == "suite_dataTexts" then
-            body._msuf2CollapsibleEntry.header = Widget("SectionHeader")
-            body._msuf2CollapsibleEntry.outer = Widget("SectionOuter")
-            body.shown = defaultOpen == true
-            body._msuf2CollapsibleEntry.open = body.shown
-            function body:IsVisible() return self.shown ~= false and (not self.parent or self.parent:IsVisible()) end
-            if ctx.entry then ctx.entry.sections[id] = body end
+        body._msuf2Width, body.parent = ctx.width, ctx.category and outer or ctx.wrapper
+        outer.parent, header.parent = ctx.wrapper, outer
+        if ctx.category then body:SetPoint("TOPLEFT", outer, "TOPLEFT", 0, -32) end
+        local entry = { kind = "collapsible", label = Widget("FontString"), body = body, builder = self,
+            open = defaultOpen == true, outer = outer, header = header }
+        body._msuf2CollapsibleEntry = entry
+        self._collapsibleStartY = self._collapsibleStartY or self.y
+        self.collapsibles[#self.collapsibles + 1] = entry
+        self.layoutEntries[#self.layoutEntries + 1] = entry
+        if ctx.category or ctx.key == "suite_dataTexts" then body:SetShown(entry.open) end
+        function entry.SetOpenByUser(open)
+            entry.open = open == true
+            body:SetShown(entry.open)
+            if entry.open and entry._msuf2EnsureContent then entry._msuf2EnsureContent() end
+            b:RelayoutCollapsibles()
         end
+        header:SetScript("OnClick", function() entry.SetOpenByUser(not entry.open) end)
+        if ctx.entry then ctx.entry.sections[id] = body end
         ctx.sections[#ctx.sections + 1] = body
         ctx.pageItems[#ctx.pageItems + 1] = id
         return body
@@ -634,9 +655,33 @@ W.PageBuilder = function(ctx)
     function b:FinishSection(body)
         body.finished = true
         body:SetHeight(-(body._msuf2CursorY or -80) + 12)
-        if ctx.SetContentHeight then ctx:SetContentHeight(body:GetHeight() + 48) end
+        if ctx.category then self:RelayoutCollapsibles()
+        elseif ctx.SetContentHeight then ctx:SetContentHeight(body:GetHeight() + 48) end
+    end
+    -- QoL categories exercise the host's actual shell/content lifecycle;
+    -- the general fixture below also tests the eager fallback for other pages.
+    if ctx.category then
+        function b:LazyCollapsibleSection(id, title, height, open, build, opts)
+            local body = self:CollapsibleSection(id, title, height, open)
+            local entry, built = body._msuf2CollapsibleEntry, false
+            if opts and opts.shell then opts.shell(body, entry) end
+            entry._msuf2EnsureContent = function()
+                if not built then built = true; build(body, entry) end
+                return true
+            end
+            return body
+        end
     end
     return b
+end
+W.EnsureSectionContent = function(body)
+    local entry = body and body._msuf2CollapsibleEntry
+    return not (entry and entry._msuf2EnsureContent) or entry._msuf2EnsureContent()
+end
+W.FocusCollapsibleSection = function(body)
+    local entry = body and body._msuf2CollapsibleEntry
+    if entry then entry.SetOpenByUser(true) end
+    return entry ~= nil
 end
 W.FixedPreviewSection = function(ctx, b, spec)
     local section, toolbar, record = Widget("FixedPreview"), Widget("Toolbar"), {}
@@ -710,29 +755,31 @@ do (function()
     local previousAPI, previousCurrent = MSUF_EditModeAPI, current
     local previousBridge = M.SearchBridge
     local previousPrint = Suite.Print
-    local records, ctx, focused = {}, nil, nil
+    local records, contexts, ctx, focused = {}, {}, nil, nil
     MSUF_EditModeAPI = { RegisterElement = function(owner, record) records[owner] = record; return true end }
     local movers = setmetatable({ Text = Suite.Text }, { __index = S })
     assert(loadfile(root .. "/MSUF_Suite_Modules/EditMode.lua"))("MSUF_Suite_Modules", { NS = Suite, Suite = movers })
     M.cache = {}
     MSUF2_Open = function(page)
-        assert(page == "suite_qualityOfLife", "QoL mover opened another page")
+        assert(M.pages[page], "mover opened an unregistered page")
+        ctx = contexts[page]
         if not ctx then
             ctx = { key = page, width = 720, refreshers = {}, widgets = {}, sections = {},
                 pageItems = {}, entry = { sections = {} } }
             current = ctx
             M.pages[page].build(ctx)
-            M.cache[page] = ctx.entry
+            M.cache[page], contexts[page] = ctx.entry, ctx
         end
         return true
     end
     W.FocusCollapsibleSection = function(section)
+        if section and section._msuf2CollapsibleEntry then section._msuf2CollapsibleEntry.SetOpenByUser(true) end
         assert(section and section:IsShown(), "mover target is not a visible detail panel")
         focused = section
         return true
     end
     M.SearchBridge = { OpenSearchTarget = function(page, query, fallback, anchor, route)
-        assert(page == "suite_qualityOfLife" and query == "" and fallback == nil
+        assert(page == ctx.key and query == "" and fallback == nil
             and type(route) == "table" and next(route) == nil,
             "Edit Mode details must use their frame directly, without a text search or setting change")
         return true, true, W.FocusCollapsibleSection(anchor)
@@ -750,6 +797,10 @@ do (function()
         { "burningRushCue", "combat", "burning_rush_cue" },
         { "skyriding", "flight", "flight_hud" },
     }
+    for i = #targets, 1, -1 do
+        local id = targets[i][1]
+        if optionsNS.QoLOwners.PageFor(id) and not optionsNS.Available(id) then table.remove(targets, i) end
+    end
     for _, target in ipairs(targets) do
         assert(movers.RegisterOwnedMover(target[1], target[2], { quickPosition = false,
             label = target[1], getFrame = function() end }))
@@ -759,8 +810,9 @@ do (function()
             focused = nil
             local record = records["MSUFSuite." .. target[1]]
             assert(record.openSettings() == true, "Edit Mode settings failed: " .. target[1])
+            assert(ctx.key == optionsNS.QoLView.GetFeaturePage(optionsNS.QoLView.FindFeature(target[1])), "wrong mover destination")
             local row = assert(ctx.qualityOfLifeFeatureRows["suite_qualityOfLife_" .. target[1] .. "_" .. target[3]])
-            assert(row.details and focused == row.details and row.details.shown and row.row._msufSuiteSelected,
+            assert(row.details and focused == row.details and row.details.shown and row.body._msuf2CollapsibleEntry.open,
                 "Edit Mode did not reveal the exact feature: " .. target[1])
             assert(ctx.entry.qualityOfLifeView.selected == row.category
                 and ctx.entry.qualityOfLifeView.panels[row.category].frame:IsShown(),
@@ -770,6 +822,7 @@ do (function()
         end
     end
     Suite.Print = function() end
+    assert(MSUF2_Open(optionsNS.QoLView.GetFeaturePage(optionsNS.QoLView.FindFeature("combatStatsHUD"))))
     local resolve = ctx.entry._msuf2ResolveMissingSection
     ctx.entry._msuf2ResolveMissingSection = function() return nil end
     assert(records["MSUFSuite.combatStatsHUD"].openSettings() == false,
@@ -1212,6 +1265,7 @@ do (function()
     for _, section in ipairs(hud.sections) do hudSections[section.sectionId] = section end
     local ui = assert(hud._msufSuiteHUDWorkspace)
     local preview = assert(ui.preview)
+    ui.select("objectives")
     local saved, historyBefore = {}, historyWrites
     local timerAPI, now, pending = C_Timer, 0, {}
     C_Timer = { NewTimer = function(delay, callback)
@@ -1236,7 +1290,7 @@ do (function()
         end
         return count
     end
-    for id in pairs(ui.groups) do
+    for _, id in ipairs({ "objectives", "runSummary", "announcements", "afkScreen" }) do
         saved[id] = {}
         for key, value in pairs(S.Config(id)) do saved[id][key] = value end
         S.Config(id).enabled = false
@@ -1249,7 +1303,8 @@ do (function()
     end
     assert(hud.fixedPreview.record.heightResolver() == 326 and hud.fixedPreview.section:GetHeight() == 326,
         "HUD preview overlaps settings through the native compact height cap")
-    for id, group in pairs(ui.groups) do
+    for _, id in ipairs({ "objectives", "runSummary", "announcements", "afkScreen" }) do
+        local group = ui.groups[id]
         ui.select(id)
         assert(preview.id == id and group.frame.shown, "HUD feature selection did not select its preview")
         for other, sibling in pairs(ui.groups) do assert(sibling.frame.shown == (other == id)) end
@@ -1261,6 +1316,13 @@ do (function()
         assert(ui.selected == id and switch.registeredMeta.prepareExactSearchTarget,
             "warm exact search cannot reveal an independent HUD enable switch")
     end
+    ui.select("extras")
+    assert(ui.groups.extras.frame.shown and not preview.host.shown and not preview.selection.shown
+        and preview.id == nil and hud.fixedPreview.record.heightResolver() == 62,
+        "additional displays retained an unrelated large HUD preview")
+    ui.select("objectives")
+    assert(preview.host.shown and preview.selection.shown and hud.fixedPreview.record.heightResolver() == 326,
+        "returning to a native HUD feature did not restore its preview")
     local announcement = S.Config("announcements")
     ui.select("announcements")
     preview.pickers.announcements.set("quest")
@@ -1396,7 +1458,11 @@ do (function()
 end)() end
     for _, refresh in ipairs(hudCtx.refreshers) do refresh() end
     -- Forever offers the raid encounter view as well: one more accordion.
-    assert(#hudCtx.sections == (flavor == "Forever" and 14 or 17),
+    local topics = 0
+    for _, section in ipairs(hudCtx.sections) do
+        if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
+    end
+    assert(topics == (flavor == "Forever" and 14 or 17),
         "HUD topics must be separate accordions beneath four feature categories")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
@@ -1602,7 +1668,7 @@ local function Reattach()
         Suite = Suite, M = M, T = T, HM = optionsNS.HM, pages = optionsNS.pages, Tr = M.Tr, host = MSUF_NS,
         Refresh = function() end,
         BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
-        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage,
+        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage, QoLOwners = optionsNS.QoLOwners,
         S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
     })
 end
@@ -1687,7 +1753,7 @@ do
         Suite = Suite, M = M, T = T, HM = optionsNS.HM, pages = optionsNS.pages, Tr = Tr, host = MSUF_NS,
         Refresh = function() end,
         BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
-        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage,
+        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage, QoLOwners = optionsNS.QoLOwners,
         S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
         Get = optionsNS.Get, Set = Counted(optionsNS.Set), SetMany = Counted(optionsNS.SetMany),
         StatusText = optionsNS.StatusText,
@@ -1878,7 +1944,7 @@ assert(rawget(L, "Enable module") == "MSUF-eigene Übersetzung", "suite changed 
 local contexts = {}
 for _, key in ipairs(expected) do
     local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
-    if key == "suite_qualityOfLife" or key == "suite_dataTexts" or key == "suite_minimap" then ctx.entry = { sections = {} } end
+    ctx.entry = { sections = {} }
     current = ctx
     if key == "suite_macros" then optionsNS.MacroPage.PrepareSearch("consumable") end
     M.pages[key].build(ctx)
@@ -1886,8 +1952,8 @@ for _, key in ipairs(expected) do
     -- The dedicated navigation contract covers the cold, selected-category build.
     if ctx.entry and ctx.entry.qualityOfLifeView then
         local view = ctx.entry.qualityOfLifeView
-        for _, category in ipairs(optionsNS.QoLView.GetCategories()) do view:SelectCategory(category.id) end
-        view:SelectCategory("character")
+        for id in pairs(view.categories) do view:SelectCategory(id) end
+        if view.categories.character then view:SelectCategory("character") end
     end
     -- The broad inventory deliberately visits each lazy minimap editor.
     -- Cold construction and selection isolation have their own contract.
@@ -2018,33 +2084,15 @@ do
         "Quality of Life rebuilt already materialized settings")
     local combatLogId = "suite_qualityOfLife_combatLog_log_dungeons"
     local combatLog = assert(rows[combatLogId])
-    assert(action.row._msufSuiteSelected and action.row._msufSuiteStripe.shown,
-        "opened Quality of Life submenu has no selected-row highlight")
+    local actionEntry = action.body._msuf2CollapsibleEntry
+    assert(actionEntry.open and action.row == actionEntry.outer and action.toggle == actionEntry.featureSwitch,
+        "feature details must use the native accordion and header switch")
     resolver(combatLogId)
-    assert(combatLog.row._msufSuiteSelected and combatLog.row._msufSuiteStripe.shown
+    assert(combatLog.body._msuf2CollapsibleEntry.open and actionEntry.open
         and qol.entry.qualityOfLifeView.selected == "groups",
-        "Quality of Life navigation did not select the feature's category and row")
-    action.settings.scripts.OnClick(action.settings)
-    do
-        local colors = T.colors
-        local raised, hover = colors.panel2, colors.pillHover
-        colors.panel2, colors.pillHover = { .21, .19, .15, .88 }, { .32, .28, .20, .95 }
-        action.row.scripts.OnLeave(action.row)
-        local shade = action.row._msufSuiteShade.color
-        assert(shade[1] == .21 and shade[2] == .19 and shade[3] == .15,
-            "Quality of Life idle row retained a fixed blue shade")
-        action.row.scripts.OnEnter(action.row)
-        shade = action.row._msufSuiteShade.color
-        assert(shade[1] == .32 and shade[2] == .28 and shade[3] == .20 and shade[4] == .55,
-            "Quality of Life hover row ignored the active theme")
-        colors.pillHover = { .16, .17, .18, .95 }
-        action.row.scripts.OnEnter(action.row)
-        shade = action.row._msufSuiteShade.color
-        assert(shade[1] == .16 and shade[2] == .17 and shade[3] == .18,
-            "Quality of Life cached the old hover theme")
-        colors.panel2, colors.pillHover = raised, hover
-        action.row.scripts.OnLeave(action.row)
-    end
+        "feature navigation must keep independent native accordion state")
+    actionEntry.header.scripts.OnClick(actionEntry.header)
+    assert(not actionEntry.open and not action.details:IsShown(), "native header did not close details")
     resolver(actionId)
     local finderId = "suite_qualityOfLife_groupFinderDoubleClick_group_finder_double_click"
     local finder = assert(rows[finderId])
@@ -2063,8 +2111,8 @@ do
     assert(not simple.hasDetails and not simple.details and not simple.settings
         and resolver(simpleId) == simple.row,
         "one-switch Quality of Life feature should remain a direct compact row")
-    assert(qol.entry.sections[simpleId] == nil and qol.entry.sections[actionId] == nil,
-        "old Quality of Life feature IDs must remain virtual search routes")
+    assert(qol.entry.sections[simpleId] == nil and qol.entry.sections[actionId] == action.body,
+        "stable feature IDs must resolve to native sections or direct switch rows")
     local repairId = "suite_qualityOfLife_qol_repair"
     local repair = assert(rows[repairId])
     assert(resolver(repairId) == repair.details and repair.details,
@@ -2622,6 +2670,7 @@ do
     S.GamepadUI = function() return gamepad end
     S.PanelButton = function(panel) return panel == "bags" and backpack or nil end
     OpenAllBags = function() bagOpens = bagOpens + 1 end
+    contexts.suite_bags.suiteWorkspace.select("bags")
     local function RefreshBags()
         current = contexts.suite_bags
         M.RequestRefresh()
@@ -2706,6 +2755,8 @@ function optionsNS.MinimapColorSections(ctx)
 end
 local shortcutColors, shortcutColorCount = {}, 0
 for pageKey, ctx in pairs(contexts) do
+    current = ctx
+    for _, section in ipairs(ctx.qualityOfLifeFeatureOrder or {}) do ctx.entry._msuf2ResolveMissingSection(section) end
     for _, widget in ipairs(ctx.widgets) do
         assert(widget.rowKind ~= "color", pageKey .. " still renders an inline color box")
     end
@@ -2722,7 +2773,7 @@ for pageKey, ctx in pairs(contexts) do
             end
         end
     end
-    if pageKey == "suite_qualityOfLife" then
+    if ctx.qualityOfLifeFeatureRows then
         for sectionId, record in pairs(ctx.qualityOfLifeFeatureRows or {}) do
             if record.colorShortcut then
                 local targets = record.colorShortcut.options.getTargets()
@@ -2743,10 +2794,18 @@ local hudSections = {}
 for _, section in ipairs(contexts.suite_hud.sections) do
     hudSections[section.sectionId] = section
     local appearance = section.sectionId:match("_type$") or section.sectionId:match("_module$") and section.sectionId ~= "suite_hud_afkScreen_module"
-    assert((type(section.colorShortcut) == "table") == (appearance and true or false),
-        "HUD feature header lost its three-dot colors")
+    if section.sectionId:match("^suite_hud_") then
+        assert((type(section.colorShortcut) == "table") == (appearance and true or false),
+            "HUD feature header lost its three-dot colors")
+    end
 end
-assert(#contexts.suite_hud.sections == 17, "HUD topics lost their separate accordions")
+do
+    local topics = 0
+    for _, section in ipairs(contexts.suite_hud.sections) do
+        if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
+    end
+    assert(topics == 17, "HUD topics lost their separate accordions")
+end
 assert(hudSections.suite_hud_objectives_raid, "Retail raid encounter accordion missing")
 local raidPause
 for _, widget in ipairs(contexts.suite_hud.widgets) do
@@ -3130,8 +3189,8 @@ loaded.Bartender4 = nil
 M.RequestRefresh()
 local qolPage = contexts.suite_qualityOfLife
 function qolPage.Section(name)
-    local rows = qolPage.qualityOfLifeFeatureRows
-        or (qolPage.entry and qolPage.entry.qualityOfLifeFeatureRows)
+    local page = contexts[optionsNS.QoLOwners.PageFor(name:match("^([^_]+)_"))] or qolPage
+    local rows = page.qualityOfLifeFeatureRows or (page.entry and page.entry.qualityOfLifeFeatureRows)
     local row = rows and rows["suite_qualityOfLife_" .. name]
     assert(row and row.toggle, "missing Quality of Life feature: " .. name)
     -- The old tests exercise the same independent feature switches and color
@@ -3162,10 +3221,10 @@ do
         { "suite_bags", "bags.action.move", "bags", "combined" },
         { "suite_buffReminders", "buffReminders.action.edit", "buffReminders", "buffs" },
         { "suite_dataTexts", "dataTexts.bar1.move", "dataTexts", "bar1" },
-        { "suite_qualityOfLife", "xpBar.action.edit", "xpBar", "experience" },
+        { "suite_hud", "xpBar.action.edit", "xpBar", "experience" },
         { "suite_qualityOfLife", "combatMovementCue.action.edit", "combatMovementCue", "combat" },
         { "suite_qualityOfLife", "burningRushCue.action.edit", "burningRushCue", "combat" },
-        { "suite_qualityOfLife", "skyriding.action.edit", "skyriding", "flight" },
+        { "suite_hud", "skyriding.action.edit", "skyriding", "flight" },
     }
     local status, availability = S.Status, S.Availability
     assert(S.OpenEditMode == nil, "this fixture must not load the Suite runtime")
@@ -3397,15 +3456,15 @@ end
 do
 local qolFeaturesByCategory = {
     character = {
-        "chatProfileLinks_profile_links", "xpBar_xp_bar", "loadoutReminder_loadout_reminder",
-        "characterExtras_character_extras", "collectionNewMarkers_collection_markers", "autoUprank_auto_uprank",
+        "chatProfileLinks_profile_links",  "loadoutReminder_loadout_reminder",
+        "characterExtras_character_extras", "collectionNewMarkers_collection_markers",
         "playerAuras_player_auras", "playerAuraSkins_player_aura_skins",
         "characterUpgradeWindow_upgrade_equipment", "socketGemSuggestions_socket_gems", "durabilityAlert_durability_warning",
     },
     lootMerchants = {
-        "inventoryProtection_inventoryProtection", "loot_collection", "lootToastFilter_filtered_loot", "vaultSpec_vault_spec",
+         "loot_collection",  "vaultSpec_vault_spec",
         "loot_history", "merchantLevel_merchant_level", "lootContainers_open_containers",
-        "qol_repair", "qol_junk", "lootVendorRules_marked_sales", "merchantList_merchant_list",
+        "qol_repair", "qol_junk",  "merchantList_merchant_list",
     },
     questsProfessions = {
         "quests_automation", "questRewardValue_quest_reward_value", "trainerLearnAll_trainer_all",
@@ -3419,12 +3478,12 @@ local qolFeaturesByCategory = {
         "mythicAutoQueue_mythic_auto_queue", "mythicResetReminder_mythic_reset", "combatLog_log_dungeons", "delveSolePower_delve_sole_power",
     },
     travel = {
-        "waypointLists_saved_waypoints", "mapLandingShortcuts_expansion_shortcuts", "skyriding_flight_hud",
-        "waypoints_waypoint_command", "flightTimer_flight_route", "glimmer_glimmer_objects", "dungeonPortals_dungeon_portals",
+        "waypointLists_saved_waypoints",
+        "waypoints_waypoint_command",  "glimmer_glimmer_objects", "dungeonPortals_dungeon_portals",
     },
     interface = {
-        "dailyComfort_daily_comfort", "soundProfiles_sound_volumes", "castbarArt_castbar_art",
-        "mailRecipients_mail_recipients", "mailTemplates_mailTemplates", "guildChatPrivacy_guild_privacy",
+        "dailyComfort_daily_comfort", "soundProfiles_sound_volumes",
+        "mailRecipients_mail_recipients", "mailTemplates_mailTemplates",
         "quietPopups_quiet_popups", "uiErrorFilter_ui_error_filter", "popupAttention_popup_attention", "notificationHistory_notice_history",
         "tooltipClassColors_class_colors", "tooltipSpellCopy_copy_spell_id", "itemCounts_item_counts",
         "tooltipIDs_tooltip_ids", "tooltipVisibility_tooltip_visibility", "tooltipDetails_tooltip_details", "tooltipMPlusScore_mplus_score",
@@ -3476,12 +3535,12 @@ for category, features in pairs(qolFeaturesByCategory) do
             and row.toggle.meta.sectionId == targetSection,
             "Quality of Life feature has wrong category or no independent switch: " .. name)
         local search = row.toggle.searchMeta
+        local help = row.hasDetails and row.body._msuf2CollapsibleEntry.header.tooltip or row.toggle.tooltip
         assert(search and search.pageKey == targetPage and search.kind == "toggle"
             and search.sectionId == targetSection
             and search.settingKey == row.toggle.meta.settingKey
-            and row.row.tooltip and row.toggle.tooltip
-            and (not row.settings or row.settings.tooltip)
-            and type(row.row.tooltip.title) == "string",
+            and help and row.toggle.tooltip and not row.settings
+            and type(help.title) == "string",
             "Quality of Life feature lost its direct search entry or help: " .. name)
     end
 end
@@ -3515,7 +3574,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == (flavor == "Forever" and 77 or 78) and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 68 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated: expected " .. expectedQolFeatureCount .. ", rendered " .. actualQolFeatureCount)
 assert(#optionsNS.QualityOfLifeCategories == 6, "Quality of Life source should define six primary categories")
 local sourceSeen, sourceCount, subgroupCount, expectedRenderedOrder = {}, 0, 0, {}
@@ -3575,17 +3634,20 @@ local route = {
     ["msufsuite.battleRes.point"] = "battleRes_battle_res",
 }
 local routed = 0
-for _, widget in ipairs(qolPage.widgets) do
+for _, owner in pairs(contexts) do
+for _, widget in ipairs(owner.widgets) do
     local meta = widget.meta
     if meta and route[meta.settingKey] then
         assert(meta.sectionId == "suite_qualityOfLife_" .. route[meta.settingKey],
             "Quality of Life search route lost its stable feature section ID")
         local live = widget.searchMeta
-        assert(live and live.pageKey == "suite_qualityOfLife"
+        local page = optionsNS.QoLOwners.PageFor(meta.settingKey:match("^msufsuite%.([^.]+)%.")) or "suite_qualityOfLife"
+        assert(live and live.pageKey == page
             and live.settingKey == meta.settingKey and live.sectionId == meta.sectionId,
             "opened Quality of Life setting will duplicate its search-provider result")
         routed = routed + 1
     end
+end
 end
 assert(routed == 15, "Quality of Life settings lost their search routes: " .. routed)
 end
@@ -3636,7 +3698,7 @@ local skyride = qolPage.Section("skyriding_flight_hud").headerSwitch
 skyride.set(true)
 assert(skyride.get() and S.Config("skyriding").enabled, "Skyriding switch did not save its preference")
 local skyControls = {}
-for _, widget in ipairs(qolPage.widgets) do
+for _, widget in ipairs(contexts.suite_hud.widgets) do
     local key = widget.meta and widget.meta.settingKey
     if key and key:match("^msufsuite%.skyriding%.") then
         skyControls[key:match("%.([^.]+)$")] = widget
@@ -4086,10 +4148,12 @@ for _, widget in pairs(registeredControls) do
 end
 local checked = 0
 for _, id in ipairs(Suite.SuiteOrder) do
+    local available = Suite.SuiteCatalog[id].available
+    local absent = optionsNS.QoLOwners.PageFor(id) and available and not available()
     for key, rule in pairs(Suite.SuiteCatalog[id].rules) do
         local template = key:gsub("^bar%d+", "bar1"):gsub("^w%d+", "w1")
         if id == "cooldownManager" and rule.suffix then template = "c1_" .. rule.suffix end
-        if not rule.hidden and not rule.previewOnly then
+        if not absent and not rule.hidden and not rule.previewOnly then
             if id == "nameplates" and key:match("Offset[XY]$") then
                 assert(covered._nameplatePreviewPositions[key], "nameplate position has no preview handle: " .. key)
                 assert(not covered["msufsuite.nameplates." .. key],
@@ -5270,8 +5334,11 @@ assert(S.Config("actionbars").look == 1,
         assert(S.Config(id).enabled == not S.catalog[id].rules.enabled.default,
             "Quality of Life page reset switched a module back: " .. id)
         local key = probes[id]
-        assert(not key or S.Config(id)[key] == S.catalog[id].rules[key].default,
-            "Quality of Life page reset skipped a module of its page: " .. id)
+        if key then
+            local expected = S.catalog[id].rules[key].default
+            if optionsNS.QoLOwners.PageFor(id) then expected = not expected end
+            assert(S.Config(id)[key] == expected, "Quality of Life reset crossed a menu owner: " .. id)
+        end
     end
 end)()
 local actionRules = S.catalog.actionbars.rules
@@ -5620,7 +5687,7 @@ end)()
     for _, feature in ipairs(optionsNS.QualityOfLifeSearchFeatures) do
         if optionsNS.QualityOfLifeEditElements[feature.id] and optionsNS.Available(feature.id) then
             local sectionId = "suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]
-            local wanted = optionsNS.Meta("suite_qualityOfLife", feature.id, "action.edit", "action", sectionId).controlId
+            local wanted = optionsNS.Meta(optionsNS.QoLView.GetFeaturePage(feature), feature.id, "action.edit", "action", sectionId).controlId
             assert(controls[wanted], "the Edit Mode button of " .. feature.id .. " is not searchable")
         end
     end
@@ -5876,7 +5943,7 @@ end)()
         pending, lazy = {}, lazyHost
         W.PageBuilder = Builder
         local ctx = { key = key, width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
-        if key == "suite_qualityOfLife" or key == "suite_dataTexts" or key == "suite_minimap" then ctx.entry = { sections = {} } end
+        ctx.entry = { sections = {} }
         current = ctx
         M.pages[key].build(ctx)
         if ctx.fixedPreview and ctx.fixedPreview.record.onActivate then ctx.fixedPreview.record.onActivate() end
@@ -5901,6 +5968,10 @@ end)()
         while i <= #pending do
             pending[i]._msuf2EnsureContent()
             i = i + 1
+        end
+        -- Nested QoL category builders stay lazy in both fixture modes.
+        for _, record in pairs(ctx.qualityOfLifeFeatureRows or {}) do
+            if record.body then W.EnsureSectionContent(record.body) end
         end
         for _, fn in ipairs(ctx.refreshers) do fn() end
         return ctx, headers, #pending, built

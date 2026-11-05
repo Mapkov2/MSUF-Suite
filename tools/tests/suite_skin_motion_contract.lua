@@ -600,6 +600,10 @@ assert(loadfile(root .. "/MSUF_Suite/Core/ProfileWorkbenchBridge.lua"))("MSUF_Su
 Check(type(compatibilitySuite.SuiteProfiles.CaptureWorkbenchSkin) == "function"
     and not compatibilitySuite.ProfileWorkbenchBridge.HistoryOwned(), "actual absent-host history bridge did not load")
 assert(loadfile(root .. "/MSUF_Suite_Options/Pages/Gameplay.lua"))("MSUF_Suite_Options", compatibilityOptions)
+-- This Skin-only fixture has no native tooltip page or search router.
+compatibilitySuite.HostBridge.RegisterPageTail = function() return false end
+compatibilitySuite.HostBridge.RegisterSearchTargetResolver = function() return false end
+assert(loadfile(root .. "/MSUF_Suite_Options/Pages/QualityOfLifeOwners.lua"))("MSUF_Suite_Options", compatibilityOptions)
 assert(loadfile(root .. "/MSUF_Suite_Options/Menu/Register.lua"))("MSUF_Suite_Options", compatibilityOptions)
 Check(skinAreaRegistrations == 1, "actual icon area registration was skipped")
 pageCallback(page, 20) -- No skin provider available.

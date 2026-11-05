@@ -14,7 +14,7 @@ mutations = {
     'combat': 'composer wrote settings in combat',
     'inheritance': 'global inheritance changed another reminder type',
     'inlineQoL': 'QoL details stayed below the whole feature list',
-    'lazyQoL': "attempt to index local 'heading'",
+    'lazyQoL': "attempt to index local 'record'",
     'itemSearch': 'item search left the consumable input hidden',
     'filteredSearch': 'search could not reveal a filtered feature without details',
     'filterTitle': 'QoL filter overlaps the section title',

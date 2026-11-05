@@ -31,7 +31,6 @@ local GROUPS = {
     { id = "playerAuras", title = "Player aura layout", switch = "enabled", sections = { "player_auras" },
         aliases = { "player buffs", "minimap auras" } },
     { id = "playerAuraSkins", title = "Player aura skins", switch = "enabled", sections = { "player_aura_skins" }, aliases = { "buff skins" } },
-    { id = "castbarArt", title = "Castbar artwork", switch = "enabled", sections = { "castbar_art" } },
     { id = "xpBar", title = "Experience bar", switch = "enabled", sections = { "xp_bar" },
         aliases = { "exp bar", "erfahrungsleiste" } },
     { id = "mapLandingShortcuts", title = "Expansion shortcuts (Retail)", switch = "enabled",
@@ -103,7 +102,11 @@ local GROUPS = {
     { id = "threatMeter", title = "Threat meter (Forever)", switch = "enabled", sections = { "threat_meter" },
         aliases = { "aggro meter", "threat list", "bedrohungsliste" } },
     { id = "glimmer", title = "Glimmer (Forever)", switch = "enabled",
-        sections = { "glimmer_objects", "glimmer_appearance" } },
+        sections = { "glimmer_objects", "glimmer_appearance" },
+        aliases = { "glimmer", "glimmern", "questhelp", "quest help", "questhelper", "quest helper", "questhilfe",
+            "quest hilfe", "questobjekte", "questgegenstände", "questgegenstaende", "sammelobjekte", "funkeln",
+            "quest sparkle", "quest sparkles", "loot sparkle", "loot sparkles", "quest glow", "gathering",
+            "erz", "erze", "kräuter", "kraeuter", "ore", "herbs" } },
     { id = "flightTimer", title = "Flight route timer (Forever)", switch = "enabled", sections = { "flight_route" },
         aliases = { "taxi timer", "flight path timer" } },
     { id = "characterExtras", title = "Character sheet additions (Retail)", switch = "enabled",
@@ -120,7 +123,6 @@ local GROUPS = {
 -- Keep registration cheap: only identities are collected while Options loads.
 -- Feature widgets and translated sorting belong to the selected page.
 P.PlayerAurasPage.FilterQualityOfLife(GROUPS, {})
-P.CastbarArtworkPage.FilterQualityOfLife(GROUPS)
 P.ExtendQoLTools(GROUPS, {})
 local V = {}
 P.QoLView = V
@@ -161,7 +163,7 @@ return {
         Subgroup("travel", "Map & Travel", "mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals"),
     } },
     { id = "interface", title = "Interface", subgroups = {
-        Subgroup("interface", "Interface", "dailyComfort soundProfiles castbarArt"),
+        Subgroup("interface", "Interface", "dailyComfort soundProfiles"),
         Subgroup("chat", "Chat & Mail", "mailRecipients mailTemplates guildChatPrivacy"),
         Subgroup("notifications", "Notifications", "quietPopups uiErrorFilter popupAttention notificationHistory"),
         Subgroup("tooltips", "Tooltips", "tooltipClassColors tooltipSpellCopy itemCounts tooltipIDs tooltipVisibility tooltipDetails tooltipMPlusScore"),
@@ -194,7 +196,7 @@ local function Resolve(category, byKey)
                 subgroup.features[#subgroup.features + 1] = group
                 category.features[#category.features + 1] = group
             else
-                assert(P.PlayerAurasPage.Relocated(key) or P.CastbarArtworkPage.Relocated(key),
+                assert(P.PlayerAurasPage.Relocated(key),
                     "Unknown Quality of Life feature: " .. key)
             end
         end
@@ -230,13 +232,27 @@ end
 function V.GetFeaturePage(group)
     if group.id == "macroBuilder" then return "suite_macros" end
     if P.GameplayPage.Relocated(group.id) then return "gameplay" end
-    return "suite_qualityOfLife"
+    return P.QoLOwners.PageFor(group.id) or "suite_qualityOfLife"
 end
 
 function V.GetCategories()
     Initialize()
     local result = {}
-    for _, category in ipairs(CATEGORIES) do result[#result + 1] = category end
+    for _, category in ipairs(CATEGORIES) do
+        local view = { id = category.id, title = category.title, features = {}, subgroups = {} }
+        for _, subgroup in ipairs(category.subgroups) do
+            local group = { id = subgroup.id, title = subgroup.title, features = {} }
+            for _, feature in ipairs(subgroup.features) do
+                if V.GetFeaturePage(feature) == "suite_qualityOfLife" then
+                    group.features[#group.features + 1] = feature
+                    view.features[#view.features + 1] = feature
+                end
+            end
+            if #group.features > 0 then view.subgroups[#view.subgroups + 1] = group end
+        end
+        table.sort(view.features, P.QoLTitleLess)
+        if #view.features > 0 then result[#result + 1] = view end
+    end
     if not P.GameplayPage.registered then result[#result + 1] = V.GameplayCategory end
     return result
 end

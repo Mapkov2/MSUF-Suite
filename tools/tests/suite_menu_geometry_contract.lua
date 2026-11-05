@@ -136,6 +136,9 @@ local function CheckHeader(entry)
             "Add bar exceeds header gutter")
     end
 end
+if arg[4] == "fixture" then
+    return { env = env, M = M, world = world, mw = mw, P = P, MenuWorld = MenuWorld }
+end
 for _,page in ipairs({"suite_bags","suite_damageMeter","suite_dataTexts"}) do
     local first
     for _,size in ipairs({1300,680,950,620,1300}) do

@@ -38,7 +38,8 @@ def frames():
     db = envelope[b"payload"]
     put(db[b"general"], barMode="class", useClassColors=True, darkMode=False,
         enableHealthGradient=False, enableGradient=False, barTexture=HEALTH_FILL,
-        castbarTexture=CHASSIS.replace("UnitFrame", "CastFill"), castbarBackgroundTexture="Solid",
+        castbarTexture="MSUF Blizzard Cast", castbarBackgroundTexture="Solid",
+        castbarArtworkEnabled=True, castbarArtworkNamePanel=True,
         anchorToCooldown=False, anchorName="UIParent", fontKey="FRIZQT", powerColorMode="power",
         noOutline=True, boldText=False, fontSlug=False, fontMonochrome=False,
         textBackdrop=True, fontShadowOpacity=1, fontShadowDistance=1,
@@ -266,7 +267,7 @@ def modules():
     for i in range(2, 13):
         put(data, **{f"bar{i}Enabled": False})
     put(entries.setdefault(b"targetDistance", {}), enabled=False)
-    put(entries.setdefault(b"castbarArt", {}), enabled=True)
+    entries.pop(b"castbarArt", None)
     put(entries.setdefault(b"playerAuras", {}), enabled=True, iconWidth=28, iconHeight=28,
         perRow=12, spacing=4, rowSpacing=8, x=-10, y=0, debuffOffset=88,
         showDuration=True, borderSize=1, borderColor="000000", font="Fonts\\FRIZQT__.TTF",

@@ -1,11 +1,16 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local Visuals = P.GlimmerVisuals
-local M = { cursors = {} }
+local M = { cursors = {}, changedCVars = {} }
 local UNIT = "softinteract"
 local IN_COMBAT = { inCombat = true }
+local SPARKLE = "outlineModeShowLootEffectWhenDisabled"
 local CURSORS = { Mine = "ore", GatherHerbs = "herb", Quest = "quest", QuestTurnIn = "quest", QuestRepeatable = "quest" }
-local EVENTS = { "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED",
+local CURSOR_WORDS = { mine = "ore", herb = "herb", quest = "quest", important = "quest",
+    recurring = "quest", wrapper = "quest" }
+local OBJECT_CVARS = { softtargeticongameobject = "SoftTargetIconGameObject",
+    softtargetinteractonlyinrange = "SoftTargetInteractOnlyInRange" }
+local EVENTS = { "CVAR_UPDATE", "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED",
     "PLAYER_REGEN_ENABLED", "QUEST_LOG_UPDATE", "NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED" }
 
 local function CursorKinds(self)
@@ -17,19 +22,46 @@ local function CursorKinds(self)
     end
 end
 
+local function CursorCategory(self)
+    local hasCursor = SetUnitCursorTexture(self.probe, UNIT, nil, true)
+    if not S.Public(hasCursor) then return nil, true end
+    if not hasCursor then return nil end
+    local texture = self.probe:GetTexture()
+    if not S.Public(texture) then return nil, true end
+    local kind = self.cursors[texture]
+    if kind then return kind end
+    if type(texture) == "string" then
+        local name = texture:lower()
+        for word, category in pairs(CURSOR_WORDS) do
+            if name:find(word, 1, true) then return category end
+        end
+    end
+end
+
+local function QuestObjective()
+    local data = C_TooltipInfo.GetUnit(UNIT)
+    if not S.Public(data) or not data then return false end
+    local lines = data.lines
+    if not S.Public(lines) or not lines then return false end
+    for _, line in ipairs(lines) do
+        if S.Public(line) and line then
+            local kind = line.type
+            if S.Public(kind) and kind == Enum.TooltipDataLineType.QuestObjective then return true end
+        end
+    end
+    return false
+end
+
 local function Category(self)
-    local exists = UnitExists(UNIT)
-    if not S.Public(exists) or exists ~= true then return nil end
+    -- World objects are not normal units; the native nameplate controller checks this separately.
     local object = UnitIsGameObject(UNIT)
     if not S.Public(object) or object ~= true then return nil end
-    if SetUnitCursorTexture(self.probe, UNIT) then
-        local texture = self.probe:GetTexture()
-        if not S.Public(texture) then return nil end
-        local kind = self.cursors[texture]
-        if kind then return kind end
-    end
+    local kind, private = CursorCategory(self)
+    if private then return nil end
+    if kind then return kind end
     local related = C_QuestLog.UnitIsRelatedToActiveQuest(UNIT)
     if S.Public(related) and related == true then return "quest" end
+    if self.config.quest and QuestObjective() then return "quest" end
     return "other"
 end
 
@@ -50,22 +82,72 @@ local function Update(self, event)
     Visuals.Show(self.host, plate, self.config)
 end
 
+local function RememberCurrent(self, key)
+    local current = C_CVar.GetCVar(key)
+    if S.Public(current) and current ~= nil then self.context:CVar(key, current, true) end
+end
+
+local function ApplySparkle(self)
+    if NS.InCombat() then
+        self.pendingSparkle = true
+        return
+    end
+    self.pendingSparkle = nil
+    self.applying = true
+    if self.config.questSparkle ~= false then
+        self.context:CVar(SPARKLE, "1", self.changedCVars[SPARKLE])
+    else
+        self.context:Cancel(ApplySparkle)
+        if self.changedCVars[SPARKLE] then RememberCurrent(self, SPARKLE) end
+        S.RestoreCVar("glimmer", SPARKLE)
+    end
+    self.changedCVars[SPARKLE] = nil
+    self.applying = nil
+end
+
 local function Apply(self)
     if NS.InCombat() then
         self.pending = true
         return Visuals.Hide(self.host)
     end
     self.pending = nil
+    self.applying = true
     -- These native controls supply one nearby interactable object's anchor.
-    -- The context owns restoration; later external edits are not overwritten.
+    -- Reassert required object controls while remembering the latest external choice.
     if not S.GamepadUI() then self.context:CVar("SoftTargetInteract", "3") end
     self.context:CVar("SoftTargetNameplateInteract", "1")
-    self.context:CVar("SoftTargetIconGameObject", "1")
+    self.context:CVar("SoftTargetIconGameObject", "1", self.changedCVars.SoftTargetIconGameObject)
+    self.context:CVar("SoftTargetInteractOnlyInRange", "0", self.changedCVars.SoftTargetInteractOnlyInRange)
+    self.changedCVars.SoftTargetIconGameObject, self.changedCVars.SoftTargetInteractOnlyInRange = nil, nil
     self.context:CVar("SoftTargetInteractRange", self.config.range)
+    self.context:CVar("SoftTargetInteractArc", "2")
+    self.applying = nil
+    ApplySparkle(self)
     Update(self)
 end
 
 local function Event(self, event, unit)
+    if event == "CVAR_UPDATE" then
+        if self.applying or not S.Public(unit) or type(unit) ~= "string" then return end
+        local name = unit:lower()
+        if name == "graphicsquality" or name == "raidgraphicsquality" or name == SPARKLE:lower() then
+            if self.config.questSparkle == false then return end
+            if name == SPARKLE:lower() then
+                local value = C_CVar.GetCVar(SPARKLE)
+                if not S.Public(value) or value == nil or value == "1" then return end
+                self.changedCVars[SPARKLE] = true
+            end
+            return self.context:After(1, ApplySparkle)
+        end
+        local key = OBJECT_CVARS[name]
+        if not key then return end
+        local value = C_CVar.GetCVar(key)
+        local wanted = key == "SoftTargetIconGameObject" and "1" or "0"
+        if not S.Public(value) or value == nil or value == wanted then return end
+        -- The next safe apply adopts the current setting as the restore value.
+        self.changedCVars[key] = true
+        return Apply(self)
+    end
     if event == "NAME_PLATE_UNIT_REMOVED" or event == "NAME_PLATE_UNIT_ADDED" then
         local plate = S.Public(unit) and unit and C_NamePlate.GetNamePlateForUnit(unit)
         if S.Public(plate) and plate then
@@ -77,7 +159,7 @@ local function Event(self, event, unit)
             end
         end
     end
-    if event == "PLAYER_REGEN_ENABLED" and self.pending then return Apply(self) end
+    if event == "PLAYER_REGEN_ENABLED" and (self.pending or self.pendingSparkle) then return Apply(self) end
     Update(self, event)
 end
 
@@ -95,7 +177,15 @@ function M:Refresh()
 end
 
 function M:Disable()
-    self.pending, self.plate, self.removedPlate = nil, nil, nil
+    self.applying = true
+    -- The controller can disable us before our own combat-end callback runs.
+    -- Adopting an unchanged current value records it without a native write.
+    for key in pairs(self.changedCVars) do
+        RememberCurrent(self, key)
+        self.changedCVars[key] = nil
+    end
+    self.pending, self.pendingSparkle, self.plate, self.removedPlate, self.applying = nil, nil, nil, nil, nil
+    self.context:Cancel(ApplySparkle)
     if self.host then Visuals.Hide(self.host) end
 end
 

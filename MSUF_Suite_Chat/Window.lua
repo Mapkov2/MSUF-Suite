@@ -472,24 +472,9 @@ local function ApplySizeLock(self, visual, frame, primary)
     end
 end
 
--- The optional profile anchor uses the shared reversible geometry owner.
--- Mainline FloatingChatFrame leaves ChatFrame1 placement to Edit Mode; never
--- save over its native layout. Other chat windows retain their own positions.
-local function ApplyPositionLock(self, visual, frame, primary)
-    if not primary then return end
-    local c = self.config
-    if c.lockWindowPosition then
-        self.context:Anchor(frame, "BOTTOMLEFT", _G.UIParent, "BOTTOMLEFT", c.windowX or 12, c.windowY or 12)
-        visual.positionLocked = true
-    elseif visual.positionLocked then
-        self.context:RestorePoints(frame)
-        visual.positionLocked = nil
-    end
-end
-
 -- Every chat window is a ChatFrameN from Blizzard's floating chat frame
 -- template: a ChatFrameNTab tab (created with it) and an editBox parent key.
-function C.ApplyWindow(self, frame)
+function C.ApplyWindow(self, frame, keepPosition)
     if not frame or NS.Safety.IsForbidden(frame) then return end
     local c, primary = self.config, frame == _G.ChatFrame1
     local visual = M.visuals[frame] or CreateVisual(frame)
@@ -507,7 +492,7 @@ function C.ApplyWindow(self, frame)
     C.ApplyInputLayout(self, visual, frame, input)
     ApplyFont(self, frame, messageFont)
     ApplySizeLock(self, visual, frame, primary)
-    ApplyPositionLock(self, visual, frame, primary)
+    if not keepPosition then C.ApplyWindowPosition(self, visual, frame, primary) end
     C.ApplyCompleteMessages(self, frame)
     -- The scrollback limit comes first: the saved ring replays into its room.
     C.ApplyLineLimit(self, frame)
