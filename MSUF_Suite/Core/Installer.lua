@@ -732,11 +732,11 @@ function Installer.Open()
     Suite.Client.RaiseControllerCursor()
     return true
 end
--- At login, wait for Classic MSUF's welcome/Quick Setup/import to resolve.
--- The host hands off with MaybeShow(); /msufsuite opens setup at any time.
+-- At login, give a visible MSUF welcome/Quick Setup/import priority.
+-- Unopened Options must not hold setup; the host still hands off with MaybeShow().
 local function HostFirstRunPending()
     if Suite.Host.build ~= "Classic" then return false end
-    return Suite.HostBridge.FirstRunPending()
+    return Suite.HostBridge.FirstRunVisible()
 end
 
 function Installer.MaybeShow(reason)

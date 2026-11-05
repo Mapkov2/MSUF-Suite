@@ -452,6 +452,8 @@ do
     Suite.freshInstall, Suite.RootDB.installation = true, nil
     Suite.Host.build = "Classic"
     local due, asked = true, 0
+    local previousFrame = M.frame
+    M.frame = Widget("Frame")
     MSUF_NS.FirstLoad6 = { IsFirstRunPending = function(self)
         assert(self == MSUF_NS.FirstLoad6)
         asked = asked + 1
@@ -492,6 +494,7 @@ do
     window:Hide()
     Suite.RootDB.installation = { revision = 3, status = "complete" }
     assert(Suite.Installer.MaybeShow("login") == false, "completed installations must stay closed")
+    M.frame = previousFrame
 end
 
 -- Native UISpecialFrame closure follows OnHide, including Escape on Forever.

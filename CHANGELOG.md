@@ -1,5 +1,12 @@
 # MSUF Suite Changelog
 
+## 0.1.10 Alpha - 2026-11-05
+
+### Setup
+
+- Fixed automatic Suite setup on first login and when an unfinished setup resumes: an unopened MSUF welcome screen no longer prevents the installer from appearing.
+- Preserve priority for visible MSUF onboarding, combat deferral and completed or skipped installations.
+
 ## 0.1.9 Alpha - 2026-11-04
 
 ### Previews, loading and compatibility

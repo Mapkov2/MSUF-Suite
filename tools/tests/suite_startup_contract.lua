@@ -29,7 +29,7 @@ local lastMessage
 -- PLAYER_ENTERING_WORLD settles the chat colours an off skin left behind.
 local settled = 0
 local function Settle() settled = settled + 1 end
-local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing, combatBeforeDeferred)
+local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDemand, reloading, failing, combatBeforeDeferred, hostPending)
     local frame, loginFrame, starts, messages = nil, nil, 0, 0
     local afterWorldEntry, opened, fighting, tooltipRepairs, minimapRepairs = {}, 0, false, 0, 0
     C_Timer = { After = function(delay, callback)
@@ -47,10 +47,12 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     end
     IsLoggedIn = function() return loggedIn end
     MSUFSuiteDB, MapkoSkinDB = stored, legacy
+    MSUF2 = nil
+    MSUF_NS.FirstLoad6 = hostPending and { IsFirstRunPending = function() return true end } or nil
     MapkoSkin = oldRunning and { Suite = { started = true } } or nil
     local owner = {
         Client = { isForever = false },
-        Host = { build = "Main" },
+        Host = { build = hostPending and "Classic" or "Main" },
         IsCombatLocked = function() return combat == true end,
         InCombat = function() return combat == true or fighting end,
         Suite = { Start = function() starts = starts + 1 end,
@@ -104,6 +106,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     assert(loadfile(root .. "/MSUF_Suite/Core/Database.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", owner)
+    assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", owner)
     assert(loadfile(root .. "/MSUF_Suite/Core/ProfileVariants.lua"))("MSUF_Suite", owner)
     SlashCmdList = {}
     assert(loadfile(root .. "/MSUF_Suite/Core/InstallerProfiles.lua"))("MSUF_Suite", owner)
@@ -159,6 +162,12 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     assert(not next(frame.events), "startup left idle events registered")
     return owner, starts, messages
 end
+local coldHost = Scenario(nil, nil, false, false, false, nil, false, false, false, true)
+assert(coldHost.autoOpened == 1, "an unseen MSUF welcome blocked fresh automatic Suite setup")
+local coldReload = Scenario(coldHost.RootDB, nil, false, false, false, nil, true, false, false, true)
+assert(coldReload.autoOpened == 1, "an unseen MSUF welcome blocked pending setup after reload")
+local coldCombat = Scenario(nil, nil, false, false, false, nil, false, false, true, true)
+assert(coldCombat.autoOpened == 1, "an unseen MSUF welcome blocked setup after combat")
 local deferredCombat = Scenario(nil, nil, false, false, false, nil, false, false, true)
 assert(deferredCombat.autoOpened == 1, "auto setup never resumed after combat")
 local freshSkin = Scenario(nil, { profiles = { Default = { icons = {} } } }, true, false)

@@ -237,6 +237,12 @@ end
 -- paint time: caching an absent Menu2 would miss the menu loaded later.
 local function LoadedMenu() return _G.MSUF2 end
 
+-- A pending welcome lives in Options; until its menu opens it owns no screen.
+function HostBridge.FirstRunVisible()
+    local menu = LoadedMenu()
+    return menu and menu.frame and menu.frame:IsShown() and HostBridge.FirstRunPending() or false
+end
+
 -- A cold skin action need not load Options. A later menu supplies history;
 -- its result, including nil, is final and never runs the callback twice.
 function HostBridge.WithMenuHistory(label, source, callback)
