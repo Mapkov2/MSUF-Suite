@@ -44,6 +44,35 @@ for i=1,12 do
         "fallback layout did not start on mouseover: "..i)
 end
 
+-- A first install must keep unplaced/hidden bars reachable and reject a
+-- native anchor that would put the Suite-sized bar outside the screen.
+do
+    local function Native(x,y,shown,scale)
+        return {GetCenter=function() return x,y end, IsShown=function() return shown end,
+            GetEffectiveScale=function() return scale or 1 end,
+            numRows=1,numButtonsShowable=12,isHorizontal=true,buttonPadding=2}
+    end
+    local state={
+        {frame=Native(623,400,true)}, {frame=Native(9999,9999,false),toggle=false},
+        {frame=Native(-500,384,true),toggle=true}, {frame=Native(1000,400,true),toggle=true},
+        {frame=Native(768,576,true,2/3),toggle=true},
+    }
+    local values=AB.BuildImport(state)
+    local center=Suite.ActionBarEnum.POINT.CENTER
+    assert(values.imported and values.bar1Point==center and values.bar1X==111 and values.bar1Y==16,
+        "first install discarded valid Blizzard geometry")
+    for _,index in ipairs({2,3,4,6,7,8,9,10}) do
+        local p="bar"..index
+        assert(values[p.."Point"]==center and values[p.."X"]==0 and values[p.."Y"]==0,
+            "unplaced or offscreen first-install bar was not centered: "..index)
+        assert(values[p.."Visibility"]==nil,"position recovery changed visibility")
+    end
+    assert(values.bar5X==0 and values.bar5Y==0,"first import ignored effective scale")
+    state[1].frame=Native(0/0,400,true)
+    values=AB.BuildImport(state)
+    assert(values.bar1X==0 and values.bar1Y==0,"invalid native geometry lost center fallback")
+end
+
 ------------------------------------------------------------------ tables
 local expectedSlots={1,61,49,25,37,145,157,169,13,109}
 for i=1,10 do assert(AB.FIRST_SLOT[i]==expectedSlots[i],"slot table changed for bar "..i) end

@@ -7,7 +7,6 @@ local NS, S, M = P.NS, P.Suite, P.BagsModule
 -- the worn equipment, its link or its level changes.
 local Marker = { levels = {}, pending = {}, requested = {}, revision = 0, dirty = true }
 P.UpgradeMarker = Marker
-local CLASS, ARMOR = Enum.ItemClass, Enum.ItemArmorSubclass
 
 -- Equip location -> the inventory slots (INVSLOT_*) it can fill. Rings and
 -- trinkets are compared with the lower worn item and an empty slot counts as
@@ -24,16 +23,7 @@ local SLOTS = {
 }
 local WORN = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 }
 
--- Armor of another type than the class wears is not an upgrade, though the
--- class can equip it: the slots the armor type applies to, and the type each
--- class wears (class IDs of GetClassInfo).
-local ARMOR_SLOTS = { INVTYPE_HEAD = true, INVTYPE_SHOULDER = true, INVTYPE_CHEST = true, INVTYPE_ROBE = true,
-    INVTYPE_WAIST = true, INVTYPE_LEGS = true, INVTYPE_FEET = true, INVTYPE_WRIST = true, INVTYPE_HAND = true }
-local CLASS_ARMOR = {
-    [1] = ARMOR.Plate, [2] = ARMOR.Plate, [3] = ARMOR.Mail, [4] = ARMOR.Leather, [5] = ARMOR.Cloth,
-    [6] = ARMOR.Plate, [7] = ARMOR.Mail, [8] = ARMOR.Cloth, [9] = ARMOR.Cloth, [10] = ARMOR.Leather,
-    [11] = ARMOR.Leather, [12] = ARMOR.Leather, [13] = ARMOR.Mail,
-}
+-- PlayerGear owns the shared class armor and client usability policy.
 
 local function ItemEvents()
     if not Marker.events or not Marker.listening then return end
@@ -92,33 +82,22 @@ local function Lowest(slots)
     return lowest or 0
 end
 
-local function ArmorFits(item)
-    if item.classID ~= CLASS.Armor or not ARMOR_SLOTS[item.equipLoc] then return true end
-    Marker.armor = Marker.armor or CLASS_ARMOR[select(3, UnitClass("player"))] or false
-    return item.subclassID == Marker.armor
-end
-
--- Whether the player can wear the item: the client's class, proficiency and
--- level check, then the class's own armor type. Asked only for an item that
--- beats what is worn, when its answer is worked out (see Marker.Read).
-local function CanEquip(item)
-    local usable = C_PlayerInfo.CanUseItem(item.itemID)
-    return S.Public(usable) and usable == true and ArmorFits(item)
-end
-
 -- Sets item.beatsEquipped (InventoryDetails.lua calls this once per pass for
 -- every piece of equipment, after the item's effective level is read). An
 -- answer stands until the worn equipment or the player's level changes (both
 -- start a new revision), or the item's link or level does.
 function Marker.Read(item)
     if Marker.dirty then Rebuild() end
-    if item.markRevision == Marker.revision and item.markLink == item.link and item.markLevel == item.itemLevel then
+    local gearRevision = P.PlayerGear.revision
+    if item.markRevision == Marker.revision and item.markLink == item.link and item.markLevel == item.itemLevel
+        and item.markGearRevision == gearRevision and item.markLoaded == item.loaded then
         return
     end
     local slots = SLOTS[item.equipLoc]
     item.markLink, item.markRevision, item.markLevel = item.link, Marker.revision, item.itemLevel
+    item.markGearRevision, item.markLoaded = gearRevision, item.loaded
     local lowest = slots and Lowest(slots)
-    item.beatsEquipped = lowest ~= nil and item.itemLevel ~= nil and item.itemLevel > lowest and CanEquip(item)
+    item.beatsEquipped = lowest ~= nil and item.itemLevel ~= nil and item.itemLevel > lowest and P.PlayerGear.CanEquip(item)
 end
 
 -- The worn equipment or the player's level changed (a level can make an item

@@ -25,13 +25,11 @@ end
 local buildSpec, overrideScopeChanged
 local SLOTS = CDM.SLOTS
 local Catalog = C.Catalog
-
 local Resolve = {}
 C.Resolve = Resolve
 local conditionKnown, conditionsPending, conditionSpec = {}, false, nil
 local REQUIRE = { "requireSpell1", "requireSpell2", "requireSpell3" }
 local EXCLUDE = { "excludeSpell1", "excludeSpell2", "excludeSpell3" }
-
 -- Healthstones (Presets.CONSUMABLES): an item key and Blizzard's record of
 -- its category name the same healthstone (Canon). Keys are built once.
 local CONSUMABLES = C.Presets.CONSUMABLES
@@ -58,7 +56,7 @@ end
 local EntryFill = C.EntryFill
 local Parse, FamilyOf, Known, BaseSpell = EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell
 local OverrideOf, Charged = EntryFill.OverrideOf, EntryFill.Charged
-local Fill, Clear, SetOverride, AURA_UNIT = EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.AURA_UNIT
+local Fill, Clear, SetOverride, ChosenUnit = EntryFill.Fill, EntryFill.Clear, EntryFill.SetOverride, EntryFill.ChosenUnit
 
 -- Talent and spell conditions (requireSpell1..3, excludeSpell1..3): known in
 -- the player's or the pet's spell book (Known). The spell book is readable
@@ -600,7 +598,7 @@ local function Materialize(key, slot, index, preview, spells, stage)
     local ov = spells[key]
     ov = type(ov) == "table" and ov or EMPTY
     if ov.replaceAura then C.EntryFill.ApplyReplacement(entry, ov) end
-    local chosen = entry.unit and AURA_UNIT[ov.auraUnit]
+    local chosen = entry.unit and ChosenUnit(ov.auraUnit, entry.auraHelpful)
     if chosen then entry.unit = chosen end
     entry.ov = ov
     C.AuraTimers.Classify(entry)
@@ -625,12 +623,14 @@ local function Placeholder(slot, n, family)
 end
 local function Fold(plan, kind, n)
     local list = plan.entries
-    plan.hasTimers = false
+    plan.hasTimers, plan.hasRecipients = false, false
     local diff = plan.kind ~= kind or #list ~= n
     for j = 1, n do
-        if tmp[j].timer then plan.hasTimers = true end
-        if list[j] ~= tmp[j] then
-            list[j] = tmp[j]
+        local entry = tmp[j]
+        if entry.timer then plan.hasTimers = true end
+        if entry.unit == "group" then plan.hasRecipients = true end
+        if list[j] ~= entry then
+            list[j] = entry
             diff = true
         end
     end

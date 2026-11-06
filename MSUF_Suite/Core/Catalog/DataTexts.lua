@@ -99,7 +99,7 @@ B.Module("dataTexts", {
     title = "DataTexts",
     description = "Movable information bars with individually chosen data sources.",
     core = NS.Client.isForever, optIn = not NS.Client.isForever,
-    page = "suite_dataTexts",
+    page = "suite_dataTexts", follows = "bags",
     -- Information bar addons: Titan Panel (folder Titan), ChocolateBar and
     -- Bazooka are the CurseForge folder names (none is installed here to
     -- check); EllesmereUIDataBars is the installed folder.

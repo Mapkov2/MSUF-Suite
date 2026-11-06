@@ -40,9 +40,22 @@ local SHAMAN_SHIELDS = { 192106, 52127 }
 -- Forever SpellName 1.60.1.70009: Water Shield is 408510, not Retail's 52127.
 local FOREVER_SHIELDS = { 408510, 324 }
 local FOREVER_IMBUES = { 8232, 8024, 8017, 8033 }
+-- Fallback order only: an observed armor keeps the player's own choice.
+local MAGE_ARMORS = { 6117, 7302, 168 }
+local MAGE_ARMOR_RANKS = {
+    [6117] = { 22783, 22782, 6117 },
+    [7302] = { 10220, 10219, 7320, 7302 },
+    [168] = { 7301, 7300, 168 },
+}
 local ELEMENTAL, ENHANCEMENT, RESTORATION = { [262] = true }, { [263] = true }, { [264] = true }
 local SHIELD_SPECS = { [262] = true, [263] = true }
 NS.BuffReminderClassReminders = {
+    { key = "classMageArmor", label = "Mage: armor (Forever)", class = "MAGE", default = NS.Client.isForever == true, standalone = true,
+        forever = { kind = "aura", ranked = true, casts = MAGE_ARMORS, auras = MAGE_ARMORS,
+            remember = "mageArmor", ranks = MAGE_ARMOR_RANKS, missingOnly = true } },
+    { key = "classInnerFire", label = "Priest: Inner Fire (Forever)", class = "PRIEST", default = NS.Client.isForever == true, standalone = true,
+        forever = { kind = "aura", ranked = true, casts = { 10952, 10951, 1006, 602, 7128, 588 },
+            auras = { 588 }, missingOnly = true } },
     { key = "classShadowform", label = "Priest: Shadowform", class = "PRIEST",
         retail = { kind = "aura", casts = { 232698 }, auras = { 232698, 194249 } },
         forever = { kind = "aura", casts = { 15473 }, auras = { 15473 } } },
@@ -106,9 +119,14 @@ B.Section(id, "tracking", "What to remind", {
 })
 local classRules = { Bool("classReminders", "Remind me of my class and specialization buffs", false) }
 for _, def in ipairs(NS.BuffReminderClassReminders) do
-    classRules[#classRules + 1] = Bool(def.key, def.label, true)
+    local rule = Bool(def.key, def.label, def.default ~= false)
+    if def.standalone then B.Add(id, rule, "tracking") else classRules[#classRules + 1] = rule end
 end
 B.Section(id, "classReminders", "Class reminders", classRules)
+B.Tooltip(NS.SuiteCatalog[id].rules.classMageArmor,
+    "Shows one reminder while no Frost Armor, Ice Armor or Mage Armor is active. Click to cast the highest known rank of your last active armor.")
+B.Tooltip(NS.SuiteCatalog[id].rules.classInnerFire,
+    "Shows a reminder when Inner Fire expires or its charges are used up. Click to cast the highest known rank outside combat.")
 B.Section(id, "demons", "Warlock demon choice", {
     Bool("demonChoiceWarning", "Tell me when my demon is not one of the demons below", false),
 })
@@ -239,8 +257,8 @@ for _, demon in ipairs(NS.BuffReminderDemons) do rules[demon.key].enableKey = "d
 local sounds = {}
 for choice = 2, #rules.reminderSound.choices do sounds[choice] = true end
 rules.reminderSoundChannel.requiresChoice = { key = "reminderSound", values = sounds }
--- Each class reminder follows the master switch; one a client lacks is hidden.
+-- Shared class reminders follow their master; client-specific choices stay hidden elsewhere.
 for _, def in ipairs(NS.BuffReminderClassReminders) do
-    rules[def.key].enableKey = "classReminders"
-    rules[def.key].hidden = NS.Client.isForever and not def.forever or nil
+    rules[def.key].enableKey = not def.standalone and "classReminders" or nil
+    rules[def.key].hidden = (NS.Client.isForever and not def.forever or not NS.Client.isForever and not def.retail) or nil
 end

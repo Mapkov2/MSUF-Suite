@@ -1,11 +1,15 @@
--- Buying and selling use the merchant and every visible bag together.
+-- Merchant and auction trading use every visible bag together.
 local root = assert(arg[1], "Suite root required")
 local file = assert(io.open(root .. "/tools/tests/suite_window_focus_contract.lua", "rb"))
 local source = file:read("*a"); file:close()
 local stop = assert(source:find('    local a = Native("CharacterFrame"', 1, true))
 local body = [======[
-    local merchant = Native("MerchantFrame", 100, 100, 338, 496)
+    Load("Adapters/CatalogGlass.lua")
+    UIPanelWindows[tradingWindowName] = { area = "left" }
+    local merchant = Native(tradingWindowName, 100, 100, 338, 496)
     local bag = Native("ContainerFrameCombinedBags", 500, 100, 450, 500)
+    merchant.protected, merchant.explicitProtected = true, true
+    bag.protected, bag.explicitProtected = true, true
     local other = Native("ProfessionsFrame", 1100, 50, 400, 600)
     local bank = Native("BankFrame", 1600, 50, 300, 600)
     W.TrackFocus(merchant, "merchant")
@@ -78,6 +82,19 @@ local body = [======[
     Check(not Dimmed(other) and not Dimmed(bag), "disabling dimming leaves a shopping veil")
     NS.DB.theme.windowFocusDimming = true; listeners[F](F, "theme")
     Check(not Dimmed(merchant) and not Dimmed(bag), "reenabling dimming loses shopping")
+    local secondName = tradingWindowName == "MerchantFrame" and "AuctionHouseFrame" or "MerchantFrame"
+    UIPanelWindows[secondName] = { area = "left" }
+    local second = Native(secondName, 1500, 100, 338, 496)
+    W.TrackFocus(second, "second-trader")
+    Click(other); Tick()
+    Check(not Dimmed(merchant) and not Dimmed(second) and not Dimmed(bag), "one trader dims another")
+    merchant:Hide(); Tick()
+    Check(not Dimmed(second) and not Dimmed(bag), "closing one trader breaks the other pair")
+    second:Hide(); Click(other); Tick()
+    Check(Dimmed(bag), "closing both traders leaves bags exempt")
+    merchant:Show(); Tick()
+    Check(not Dimmed(merchant) and not Dimmed(bag), "reopening a trader did not restore the pair")
+    F.ReleaseOwner("second-trader")
     merchant:Hide(); bag:Hide(); bank:Hide(); other:Hide()
     local reads = 0
     merchant.GetWidth = function() reads = reads + 1; return 338 end
@@ -86,5 +103,8 @@ local body = [======[
     Check(reads == 0 and not driver.scripts.OnUpdate, "closed shopping windows poll geometry")
 end
 ]======]
-assert(loadstring(source:sub(1, stop - 1) .. body .. '\nprint("suite_window_focus_merchant_contract: " .. checks .. " checks passed")',
-    "@window_focus_merchant_contract"))()
+for _, name in ipairs({ "AuctionHouseFrame", "MerchantFrame" }) do
+    local prefix = ("local tradingWindowName = %q\n"):format(name)
+    local report = ('\nprint("suite_window_focus_merchant_contract (%s): " .. checks .. " checks passed")'):format(name)
+    assert(loadstring(prefix .. source:sub(1, stop - 1) .. body .. report, "@window_focus_merchant_contract:" .. name))()
+end

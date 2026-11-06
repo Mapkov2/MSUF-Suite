@@ -410,12 +410,13 @@ do
     assert(Catalog.generation==settledGeneration+1 and Catalog.content==settledContent,"reused catalog generation")
     local unchangedCost=Cost(Catalog.Rebuild)
     -- 2026-10-29 inline record readers (Copy): 8641 -> 6177 unchanged,
-    -- 11023 -> 8289 changed. Budgets +1%; native reads stay 17.
-    assert(unchangedCost<=6239,"unchanged catalog exceeded its reduced work budget")
+    -- 11023 -> 8289 changed. GroupBuff source (2026-11-06): 6297 / 8409;
+    -- one extra category set and cold source flag; budgets +1%, info reads stay 17.
+    assert(unchangedCost<=6360,"unchanged catalog exceeded its reduced work budget")
     -- Before: 10939 unchanged / 10945 changed with these API wrappers.
     queries=0;infos[101].isKnown=false
     local changedCost=Cost(Catalog.Rebuild)
-    assert(changedCost<=8371,"changed catalog exceeded its +1% work budget")
+    assert(changedCost<=8494,"changed catalog exceeded its +1% work budget")
     assert(queries==17,"changed data added or dropped native info reads")
     infos[101].isKnown=true;Fresh("restore budget change")
     print("CDM catalog VM: unchanged="..unchangedCost.." changed="..changedCost.."; native reads=17 each")
@@ -846,8 +847,8 @@ for id,count in pairs(harmfulCalls) do Same("asked once "..id,count,1) end
 -- Per-spell "Track on" (auraUnit): 1 automatic, 2 me, 3 target, 4 both.
 -- Stored values are whole numbers 1-4; the page's "Automatic" (0) clears
 -- the field.
-for _,v in ipairs({1,2,3,4}) do assert(F.auraUnit(v),"auraUnit "..v.." refused") end
-for _,v in ipairs({0,5,-1,2.5,0/0,math.huge,"3",true,{}}) do
+for _,v in ipairs({1,2,3,4,5}) do assert(F.auraUnit(v),"auraUnit "..v.." refused") end
+for _,v in ipairs({0,6,-1,2.5,0/0,math.huge,"3",true,{}}) do
     assert(not F.auraUnit(v),"auraUnit "..tostring(v).." accepted")
 end
 assert(CDM.CleanSpells({e={b202={auraUnit=0}}}).e.b202==nil,"Automatic (0) is never stored")

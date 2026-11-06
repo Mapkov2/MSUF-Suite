@@ -530,6 +530,7 @@ function Layout.FixedAuras(view, entries)
     local fixed = view.keepSlots == true or view.showMissing == true or centered
     if not fixed then
         for i = 1, #entries do
+            if entries[i].unit == "group" then fixed = true break end
             local ov = entries[i].ov
             if entries[i].timer and C.AuraTimers.Wants(entries[i], view) then
                 fixed = true

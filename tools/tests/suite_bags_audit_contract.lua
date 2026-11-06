@@ -189,11 +189,21 @@ end
 ---------------------------------------------------------------- the preview
 -- The bank tab previews the bank panel: its color, always opaque.
 do
-    local config = { font = "", itemCountSize = 12, inventoryView = 1, bankView = 1, showItemLevel = true,
-        showBankItemLevel = true, bankBackground = BACKGROUND.DARK, backgroundColor = "336699",
+    local config = { font = "", itemCountSize = 12, inventoryColumns = 12, inventoryView = 1, bankView = 1, showItemLevel = true,
+        windowScale = 1, showBankItemLevel = true, bankBackground = BACKGROUND.DARK, backgroundColor = "336699",
         backgroundOpacity = 50, accentColor = "ff8800" }
     local painted
     local S = { Config = function() return config end,
+        SetFont = function() end, ResolveFont = function() end, GlobalFontPath = function() return "Global.ttf" end,
+        BagsNewPreview = function() return { width = 700, model = {lineCount=2}, config = { inventoryColumns = 12 } } end,
+        BagsPreviewLayout = function() return {} end,
+        BagsPreviewIsPanel = function() return false end,
+        BagsFitPreviewRows = function() end,
+        BagsPreviewScale = function() return 1 end,
+        BagsPreviewGeometry = function(g)
+            g.width, g.height, g.rows, g.top, g.sidebar, g.panel, g.bottom = 620, 360, 5, 122, 12, false, 74
+        end,
+        BagsPaintPreviewTool = function() end,
         BagsPaintPreviewWindow = function(_, look) painted = { look.backgroundColor, look.backgroundOpacity,
             look.accentColor } end,
         BagsStylePreviewLabel = function() end }
@@ -202,15 +212,18 @@ do
     local function Region() return setmetatable({}, { __index = function(_, key) return methods[key] or Noop end }) end
     function methods:CreateTexture() return Region() end
     function methods:GetStringHeight() return 14 end
+function methods:GetHeight() return 304 end
     local paint
     local P = { S = S, Suite = setmetatable({ ResolveFont = function() end }, { __index = catalog }), Tr = function(text) return text end, SetTranslatedText = Noop,
         StylePreviewFont = Noop, MenuWorkspace = { FitHeader = Noop },
-        PreviewCanvas = { Button = function() return Region() end, Text = function() return Region() end, Jump = Noop,
+        PreviewCanvas = { Button = function() return Region() end, Text = function() return Region() end, Jump = function() return Region() end,
             Runtime = function() return true end, Changed = function() return true end,
             Watch = function(_, fn) paint = fn end },
         catalog = { bags = { rules = rules } } }
     C_Item = { GetItemQualityColor = function() return 1, 1, 1 end }
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/BagsPreview.lua"))("MSUF_Suite_Options", P)
+    local create = CreateFrame
+    CreateFrame = function() return Region() end
     local ui = { header = Region(), width = 600, selected = "bank", Focus = Noop }
     P.BuildBagsMenuPreview(ui)
     paint()
@@ -222,6 +235,7 @@ do
     ui.selected = "appearance"
     paint()
     assert(painted[1] == "336699" and painted[2] == 50, "the bag preview must keep the bag opacity")
+    CreateFrame = create
 end
 
 ---------------------------------------------------------------- the options page
@@ -263,6 +277,7 @@ do
     local VIEW, BANK_VIEW = Suite.BagsView, Suite.BagsBankView
     local config = S.Config("bags")
     config.enabled = true
+    config.windowPresentation = Suite.BagsPresentation.WINDOW
     local function Usable(key) return P.RuleEnabled("bags", pageRules[key]) end
     local function Reason(key)
         local ok, why = P.RuleEnabled("bags", pageRules[key], nil, true)
@@ -296,6 +311,12 @@ do
             equal(Usable(key), bankView == BANK_VIEW.CATEGORIES, label .. ": " .. key)
         end
     end
+    config.windowPresentation = Suite.BagsPresentation.PANEL
+    config.inventoryView = VIEW.CATEGORIES
+    equal(Usable("compactGroups"), false, "active side panel must use vertical groups")
+    config.inventoryView, config.bankView = VIEW.BLIZZARD_GRID, BANK_VIEW.CATEGORIES
+    equal(Usable("compactGroups"), true, "native bags leave the bank grouping setting available")
+    config.windowPresentation = Suite.BagsPresentation.WINDOW
     -- The bags' Categories view turns everything on.
     Check(VIEW.CATEGORIES, BANK_VIEW.TABS, true, true, "Categories")
     Check(VIEW.CATEGORIES, BANK_VIEW.CATEGORIES, true, true, "Categories and bank categories")

@@ -38,6 +38,7 @@ local function Widget(parent)
     function w:Show() Guard(self); self.shown = true end
     function w:Hide() Guard(self); self.shown = false end
     function w:SetParent(parent) Guard(self); self.parent = parent end
+    function w:SetShown(value) if value then self:Show() else self:Hide() end end
     function w:IsShown() return self.shown end
     function w:IsProtected() return self.protected == true end
     return w

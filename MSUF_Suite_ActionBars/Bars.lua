@@ -154,10 +154,10 @@ if action and IsPressHoldReleaseSpell then
     if hold~=nil and self:GetAttribute("pressAndHoldAction")~=hold then self:SetAttribute("pressAndHoldAction",hold) end
 end
 ]]
--- Header visibility from its "vis" driver state; placement previews and
--- drag reveals (both set out of combat) keep the bar shown.
+-- Header visibility from its "vis" driver state, with placement previews.
+-- Drag reveals use the driver so its native hide conditions still apply.
 AB.SNIPPET.VIS = [[
-if self:GetAttribute("state-vis")~="hide" or self:GetAttribute("forceshow") or self:GetAttribute("dragshow") then self:Show() else self:Hide() end
+if self:GetAttribute("state-vis")~="hide" or self:GetAttribute("forceshow") then self:Show() else self:Hide() end
 ]]
 -- Grid controller: sets or clears one reveal bit on every owned bar. The
 -- restricted environment has no bit library, so bits use division.

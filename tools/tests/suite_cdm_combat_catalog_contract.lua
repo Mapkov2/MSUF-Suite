@@ -114,7 +114,7 @@ end
 assert(Catalog.Rebuild() == true)
 W.Reset()
 local unchanged = W.Cost(Catalog.Rebuild)
-Check(W.natives.GetCooldownViewerCooldownInfo == INFOS and W.natives.GetCooldownViewerCategorySet == 8
+Check(W.natives.GetCooldownViewerCooldownInfo == INFOS and W.natives.GetCooldownViewerCategorySet == 9
     and W.natives.GetLayoutData == 1, "an immediate rebuild changed its native reads")
 W.infos[1003].isKnown = false
 local changedCost = W.Cost(Catalog.Rebuild)
@@ -122,9 +122,10 @@ W.infos[1003].isKnown = true
 Catalog.Rebuild()
 print(("CDM combat catalog: immediate rebuild vm unchanged=%d changed=%d (76 records)"):format(unchanged, changedCost))
 -- Measured 2026-10-29 with Num/Flag/Put per field: 22407 unchanged, 32589
--- changed; inline readers: 16540 / 25508. Budgets +1 %.
-Check(unchanged <= 16705, "unchanged 76-record rebuild exceeded its VM budget")
-Check(changedCost <= 25763, "changed 76-record rebuild exceeded its VM budget")
+-- changed; inline readers: 16540 / 25508. GroupBuff source (2026-11-06):
+-- 16940 / 25908, one extra category set and a cold identity flag. Budgets +1 %.
+Check(unchanged <= 17110, "unchanged 76-record rebuild exceeded its VM budget")
+Check(changedCost <= 26168, "changed 76-record rebuild exceeded its VM budget")
 
 ------------------------------------------------------------------ combat slices
 local function Pass(fresh)
@@ -163,13 +164,13 @@ do
     local settled = Catalog.content
     local value, count, peak, reads, total = Pass(true)
     Check(value == false and Catalog.content == settled, "an unchanged combat pass moved the content")
-    Check(W.natives.GetCooldownViewerCooldownInfo == INFOS and W.natives.GetCooldownViewerCategorySet == 8
+    Check(W.natives.GetCooldownViewerCooldownInfo == INFOS and W.natives.GetCooldownViewerCategorySet == 9
         and W.natives.GetLayoutData == 1, "a combat pass read more or less than an immediate rebuild")
     print(("CDM combat catalog: combat pass %d frames, max vm %d per frame (%d infos), total vm %d"):format(count, peak, reads,
         total))
     -- 2026-10-29: four frames, the landing one 10324 (16 infos and the
     -- compare of all 76 shadows) of the immediate 16540. Budget +1 %.
-    Check(count == 4 and peak <= 10427, "combat slices exceeded their per-frame VM budget")
+    Check(count == 4 and peak <= 10990, "combat slices exceeded their per-frame VM budget")
     print(("CDM combat catalog: changed pass %d frames, max vm %d"):format(frames, maxVM))
 end
 
@@ -178,9 +179,9 @@ end
 do
     W.Reset()
     Check(Catalog.Rebuild(true, true) == nil, "first slice")
-    Check(Catalog.Rebuild(true, true) == nil and W.natives.GetCooldownViewerCategorySet == 16,
+    Check(Catalog.Rebuild(true, true) == nil and W.natives.GetCooldownViewerCategorySet == 18,
         "a fresh catalog event did not restart the pass")
-    Check(Catalog.Rebuild(true, true) == nil and W.natives.GetCooldownViewerCategorySet == 24, "second restart")
+    Check(Catalog.Rebuild(true, true) == nil and W.natives.GetCooldownViewerCategorySet == 27, "second restart")
     W.Reset()
     Check(Catalog.Rebuild(true, true) == false and W.natives.GetCooldownViewerCooldownInfo == INFOS,
         "a third restart did not read everything at once")
@@ -188,7 +189,7 @@ do
     W.Reset()
     Check(Catalog.Rebuild(true, true) == nil, "pass for the override")
     Catalog.OnOverride(51001, 51999)
-    Check(Catalog.Rebuild(true, false) == nil and W.natives.GetCooldownViewerCategorySet == 16,
+    Check(Catalog.Rebuild(true, false) == nil and W.natives.GetCooldownViewerCategorySet == 18,
         "an override during a pass kept the slices read before it")
     local value = Pass(false)
     Check(value == true and Catalog.records[1001].override == nil, "the restarted pass did not read the override again")
@@ -198,7 +199,7 @@ do
     Check(Catalog.Rebuild(false, false) == false and W.natives.GetCooldownViewerCooldownInfo == INFOS,
         "an out-of-combat rebuild continued a combat pass")
     W.Reset()
-    Check(Catalog.Rebuild(true, false) == nil and W.natives.GetCooldownViewerCategorySet == 8,
+    Check(Catalog.Rebuild(true, false) == nil and W.natives.GetCooldownViewerCategorySet == 9,
         "a dropped pass was continued")
     Pass(false)
     -- Any override restarts a pass, also one no live record follows: a
@@ -206,7 +207,7 @@ do
     W.Reset()
     Check(Catalog.Rebuild(true, true) == nil, "pass for an untracked override")
     Catalog.OnOverride(424242, 1)
-    Check(Catalog.Rebuild(true, false) == nil and W.natives.GetCooldownViewerCategorySet == 16,
+    Check(Catalog.Rebuild(true, false) == nil and W.natives.GetCooldownViewerCategorySet == 18,
         "an override of a base no live record follows kept the pass")
     Pass(false)
 end
@@ -275,7 +276,7 @@ local count, peak, peakCatalog = Frames("combat change")
 Check(count > 5 and resolves == 1, "the combat pass and its staged resolve did not take frames of their own")
 -- 2026-10-29: 5601, 4003, 4003, then 19421 (landing with the derived
 -- lists); before, one frame of 25508 catalog and the resolve. Budget +1 %.
-Check(peakCatalog <= 19615, "a combat catalog frame exceeded its VM budget")
+Check(peakCatalog <= 20197, "a combat catalog frame exceeded its VM budget")
 print(("CDM combat catalog: combat frames max vm %d (catalog frames %d)"):format(peak, peakCatalog))
 -- 2026-10-29: the resolve was one frame of 78427 (with its routing index);
 -- staged its frames are 3877-13458 and the landing 24502 (with the index).

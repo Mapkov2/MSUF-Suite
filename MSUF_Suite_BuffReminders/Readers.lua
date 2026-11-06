@@ -153,7 +153,7 @@ function R.AuraPresent(entry)
             local instanceID = data.auraInstanceID
             if not Public(instanceID) or type(instanceID) ~= "number" then instanceID = nil end
             local expiration = AuraExpiry(data)
-            return true, instanceID, expiration, nil, expiration and data.duration or nil
+            return true, instanceID, expiration, nil, expiration and data.duration or nil, id
         end
     end
     if unknown then return nil end

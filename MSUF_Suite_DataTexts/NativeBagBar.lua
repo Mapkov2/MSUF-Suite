@@ -18,7 +18,10 @@ local function Sync()
         return
     end
     local frame = _G.BagsBar
-    if M.active and M.config and M.config.hideBlizzardBagBar == true and frame then
+    local bags = S.states.bags
+    local replacement = bags and bags.active and S.Config("bags").inventoryView ~= NS.BagsView.BLIZZARD_GRID
+        and S.OwnsBlizzardSurface("bagWindows")
+    if M.active and M.config and M.config.hideBlizzardBagBar == true and replacement and frame then
         if nativeBagBar ~= frame then
             nativeBagBar = frame
             nativeBagBarWasShown = frame:IsShown() == true

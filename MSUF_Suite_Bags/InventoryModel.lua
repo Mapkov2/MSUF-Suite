@@ -16,6 +16,7 @@ local floor, sort = math.floor, table.sort
 -- key, label, order, optional. An optional category exists only while its
 -- category_<key> setting is on, so a layout made without it does not move.
 local BUILTINS = {
+    { "myArmorSlot", "My Armor Slot", 35, true, true },
     { "equipment", "Equipment", 40 }, { "professionGear", "Profession gear", 45, true },
     { "consumables", "Consumables", 50 }, { "reagents", "Reagents", 60 }, { "recipes", "Recipes", 70 },
     { "collectibles", "Collectibles", 75, true }, { "containers", "Containers", 85, true },
@@ -173,7 +174,7 @@ local function EnabledOptional(config, out)
     for i = #out, 1, -1 do out[i] = nil end
     for i = 1, #BUILTINS do
         local entry = BUILTINS[i]
-        if entry[4] and config[entry.setting] == true then out[#out + 1] = entry end
+        if entry[4] and not entry[5] and config[entry.setting] == true then out[#out + 1] = entry end
     end
     return out
 end
@@ -286,7 +287,6 @@ end
 
 local function SortRows(a, b)
     a, b = a.item, b.item
-    if a.shuffle and b.shuffle and a.shuffle ~= b.shuffle then return a.shuffle < b.shuffle end
     if (a.name or "") ~= (b.name or "") then return (a.name or "") < (b.name or "") end
     if (a.itemID or 0) ~= (b.itemID or 0) then return (a.itemID or 0) < (b.itemID or 0) end
     if a.bag ~= b.bag then return a.bag < b.bag end
@@ -327,9 +327,8 @@ local SORTERS = {
 }
 
 -- The comparator for a group's rows, or nil for the order they were read in.
--- A shuffle outranks the mode; Name sorts Categories only, as it always has.
-local function RowOrder(config, shuffle, categories)
-    if shuffle then return SortRows end
+-- Name keeps physical order in All items and By bag; categories use names.
+local function RowOrder(config, categories)
     return SORTERS[config.sortMode] or categories and SortRows or nil
 end
 
@@ -414,6 +413,11 @@ local function Arrange(group, selected, collapsed, order)
     group.visible = all or selected == group.key
     group.collapsed = all and collapsed ~= nil and collapsed[group.key] == true
     group.hidden = 0
+    -- Character gear is an aggregate filter; All keeps the original groups.
+    if all and group.key == "myArmorSlot" then
+        group.visible = false
+        return
+    end
     if order then sort(group.rows, order) end
     for j = 1, #group.rows do
         local row = group.rows[j]
@@ -460,13 +464,16 @@ function Model.Build(model, items, config, state, context)
             -- An item can belong to several equipment sets. Each set filter
             -- includes it, while All keeps one physical native button only.
             if showSets and item.setNames then AddSets(model, config, item, key) end
+            if categories and config.category_myArmorSlot == true and item.myArmorSlot == true then
+                Add(model, Group(model, "myArmorSlot", "My Armor Slot", 35, nil, true), item, false, true)
+            end
         end
     end
     if categories and not config.hideEmptyCategories and not query and not searching then
         AddEmptyCategories(model, config)
     end
     sort(model.groups, SortGroups)
-    local order = RowOrder(config, context and context.shuffle, categories)
+    local order = RowOrder(config, categories)
     -- Collapsing applies to the Categories view; a search shows its matches.
     local collapsed = categories and not query and not searching and state.collapsed or nil
     for i = 1, #model.groups do Arrange(model.groups[i], selected, collapsed, order) end
@@ -492,6 +499,7 @@ function Model.Layout(model, columns, compact)
             local header = model.layoutPool[count] or {}
             model.layoutPool[count], layout[count] = header, header
             header.group, header.row, header.line, header.column, header.width = group, nil, line, column, span
+            header.height = 1 + math.ceil(#rows / span)
             for i = 1, #rows do
                 count = count + 1
                 local cell = model.layoutPool[count] or {}
@@ -505,4 +513,22 @@ function Model.Layout(model, columns, compact)
     end
     model.lineCount = line + bandHeight
     return layout
+end
+
+-- The organized bank and its representative menu sample share this projection.
+function Model.BankConfig(target, source)
+    for key, value in pairs(source) do target[key] = value end
+    target.inventoryView = source.bankView == P.NS.BagsBankView.CATEGORIES and VIEW.CATEGORIES or VIEW.ALL
+    target.groupExpansions = source.bankGroupExpansions
+    target.expansionFirst = source.bankGroupExpansions
+    target.groupEquipmentSlots = source.bankGroupEquipmentSlots
+    target.groupReagentTypes = source.bankGroupReagentTypes
+    target.hideEmptySlots = source.bankHideEmptySlots
+    target.showRecent = false
+    if P.BagPresentation.IsPanel(source) then target.compactGroups = false end
+end
+
+function Model.BankColumns(width, categories)
+    local sidebar = categories and 170 or 12
+    return math.max(4, math.floor((width - sidebar - 12) / 40))
 end

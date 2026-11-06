@@ -158,7 +158,7 @@ do
 end
 frames[1]:callback("PLAYER_LOGIN")
 frames[2]:callback("PLAYER_ENTERING_WORLD", true, false)
-assert(#deferred == 1)
+assert(#deferred == 2, "startup and installer each defer one callback")
 for _, callback in ipairs(deferred) do callback() end
 assert(owner.Suite.started and owner.RootDB == MSUFSuiteDB and owner.Skin.enabled)
 assert(owner.Suite.Config("combatLog").enabled == true

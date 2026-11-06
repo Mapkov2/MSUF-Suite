@@ -681,4 +681,19 @@ function Support.HostMediaProviders(providers)
     end
 end
 
+function Support.BagsWidgetsFixture(P)
+    return { Refresh = function() end,
+        Scroll = function(parent, width)
+            local scroll = P.ChildFrame("ScrollFrame", parent)
+            local child = P.ChildFrame("Frame", scroll)
+            scroll:SetWidth(width)
+            child:SetSize(width, 1)
+            scroll:SetScrollChild(child)
+            scroll.bagScrollBar = { accent = P.BagsModule.config.accentColor }
+            return scroll, child
+        end,
+        UpdateScroll = function() end,
+    }
+end
+
 return Support

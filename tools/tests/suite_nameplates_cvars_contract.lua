@@ -47,7 +47,7 @@ MSUFSuite = NS
 assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
 local private = { NS = NS, Suite = S }
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
-assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", private)
+assert(loadfile(arg[2] or root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", private)
 local CVars = private.CVars
 local context = S.NewContext("nameplates")
 local module = { context = context }
@@ -73,6 +73,7 @@ local BLIZZARD = {
     nameplateShowEnemyTotems = "0", nameplateShowFriendlyPlayerPets = "0", nameplateShowFriendlyPlayerGuardians = "0",
     nameplateShowFriendlyPlayerTotems = "0", nameplateShowEnemyMinions = "1", nameplateShowFriendlyPlayerMinions = "0",
     nameplateSelectedScale = "1.1",
+    nameplateShowFriendlyNpcs = "1", UnitNameNPC = "0",
 }
 local function Reset()
     for key in pairs(live) do live[key] = nil end
@@ -138,6 +139,102 @@ Apply()
 assert(setCalls == 0, "Keep Blizzard setting wrote a CVar")
 Same(BLIZZARD, "Keep Blizzard setting changed")
 assert(next(NS.RootDB) == nil, "Keep Blizzard setting left a recovery record")
+
+------------------------------------------------------------------ friendly NPC world names
+assert(rules.friendlyNPCs.default == 1 and #rules.friendlyNPCs.choices == 4
+    and rules.friendlyNPCs.choices[2] == "Show" and rules.friendlyNPCs.choices[3] == "Hide"
+    and spec.cvars.UnitNameNPC, "NPC names-only must preserve the old choices and declare its CVar")
+Apply({ friendlyNPCs = 4 })
+assert(live.nameplateShowFriendlyNpcs == "0" and live.UnitNameNPC == "1",
+    "NPC names-only must hide friendly NPC bars and enable native world names")
+Apply({ friendlyNPCs = 2 })
+assert(live.nameplateShowFriendlyNpcs == "1" and live.UnitNameNPC == "0", "Show did not restore world names")
+Apply({ friendlyNPCs = 4 })
+Apply({ friendlyNPCs = 3 })
+assert(live.nameplateShowFriendlyNpcs == "0" and live.UnitNameNPC == "0", "Hide kept the names-only override")
+Apply({ friendlyNPCs = 4 })
+Apply()
+Same(BLIZZARD, "Keep did not restore NPC display")
+combat = true
+Apply({ friendlyNPCs = 4 })
+Same(BLIZZARD, "NPC names-only wrote during combat")
+assert(module.cvarsPending, "NPC display did not defer combat writes")
+combat = false
+CVars.Apply(module)
+assert(live.nameplateShowFriendlyNpcs == "0" and live.UnitNameNPC == "1", "NPC display was not replayed after combat")
+context:Release()
+Same(BLIZZARD, "disable did not restore NPC names")
+live.UnitNameNPC = "1"
+Apply({ friendlyNPCs = 4 })
+Apply()
+assert(live.UnitNameNPC == "1", "Keep lost a previously enabled native name setting")
+Reset()
+
+------------------------------------------------------------------ native NPC preview
+do
+    -- Inspect the real renderer's helpers without constructing the full menu.
+    local function Upvalue(fn, name)
+        for index = 1, 60 do
+            local key, value = debug.getupvalue(fn, index)
+            if key == name then return value end
+            if not key then break end
+        end
+        error("missing preview helper: " .. name)
+    end
+    local values = Config({ friendlyNPCs = 4, friendlyNamesOnly = 2, friendlyTextEnabled = true })
+    local preview = { M = {}, Tr = NS.Text, Get = function(_, key) return values[key] end,
+        Suite = { NameplateStyle = NS.NameplateStyle, Public = NS.Public, Client = NS.Client } }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreview.lua"))("Options", preview)
+    local render = Upvalue(Upvalue(preview.BuildNameplatesPreview, "Sample"), "Render")
+    local metrics, visibility = Upvalue(render, "Metrics"), Upvalue(render, "RenderVisibility")
+    local raid, details = Upvalue(render, "RenderRaid"), Upvalue(render, "RenderCastAndAuras")
+    NamePlateSetupOptions = {}
+    NamePlateConstants = { DEBUFF_PADDING_CVAR = "debuffPadding" }
+    GetCVarNumberOrDefault = function() return 0 end
+    local editor = { friendlyElite = true, LayerOn = function() return true end }
+    local function Region()
+        local function Noop() end
+        return { SetShown = function(self, shown) self.shown = shown end, SetScale = Noop,
+            ClearAllPoints = Noop, SetPoint = Noop, SetWidth = Noop, SetTexture = Noop, SetAtlas = Noop,
+            SetText = Noop, GetHeight = function() return 14 end }
+    end
+    local sample = { prefix = "friendly", state = { cast = true }, bar = Region(), cast = Region(),
+        auras = Region(), buffs = Region(), control = Region() }
+    for _, key in ipairs({ "raid", "raidTexture", "classificationBase", "classification", "nativeElite",
+        "castName", "castTime", "castTimeText", "name", "softTarget", "power", "cell" }) do sample[key] = Region() end
+    sample.powerBorder = function() end
+    for _, forever in ipairs({ false, true }) do
+        NS.Client.isForever = forever
+        for _, look in ipairs({ 2, 4 }) do
+            values.look = look
+            local m = metrics(editor, sample, {})
+            assert(m.npcWorldName and m.namesOnly and not m.nativeLevel, "NPC world-name preview kept its level or bars")
+            visibility(editor, sample, m)
+            assert(not sample.bar.shown and not sample.cast.shown and not sample.auras.shown
+                and not sample.buffs.shown and not sample.control.shown, "NPC world-name preview kept a plate component")
+            for _, marked in ipairs({ false, true }) do
+                editor.raidMarked = marked
+                raid(editor, sample, m)
+                assert(not sample.raid.shown and not sample.classification.shown, "NPC world-name preview kept a native marker")
+            end
+            editor.softTargetSample = true
+            values.softTargetFriend, values.softTargetIconGate = 2, 2
+            details(editor, sample, m)
+            assert(not sample.softTarget.shown, "NPC world-name preview kept a soft-target icon")
+            values.friendlyNPCs = 2
+            assert(not metrics(editor, sample, {}).namesOnly, "NPC Show still previews names-only")
+            values.friendlyNPCs, sample.prefix = 4, "enemy"
+            assert(not metrics(editor, sample, {}).namesOnly, "NPC world names changed the enemy preview")
+            sample.prefix, editor.personal = "friendly", true
+            assert(not metrics(editor, sample, {}).namesOnly, "NPC world names changed the personal preview")
+            editor.personal, editor.friendlyElite = false, false
+            local player = metrics(editor, sample, {})
+            assert(player.namesOnly and not player.npcWorldName, "NPC choice changed the friendly player preview")
+            editor.friendlyElite = true
+        end
+    end
+    NS.Client.isForever = false
+end
 
 ------------------------------------------------------------------ values reach their CVars
 local ALL = {

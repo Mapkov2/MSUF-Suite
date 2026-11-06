@@ -524,7 +524,7 @@ do
         "    local lines = ceil(players / per)\n",
         "            local side = barMeta.split and (u == 1 and \"lead\" or \"tail\") or nil\n",
         "            Run(slot, \"aura\", unit, role, barMeta.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)\n",
-        "    if not fixed then Place(rec, offset, split) end\n    if Build(rec, view, n) then return end\n",
+        "    if not fixed then Place(rec, offset, split) end\n    if Build(rec, view, n) then return rec end\n",
     }) do
         assert(text:find(line,1,true),"Auras.lua SyncAura: "..line)
     end

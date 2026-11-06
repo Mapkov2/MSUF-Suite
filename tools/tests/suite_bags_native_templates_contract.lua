@@ -1,0 +1,27 @@
+local root = assert(arg[1])
+local H = dofile(root .. "/tools/tests/suite_bags_harness.lua")
+local W = H.New(root, {client=arg[2] or "Mainline",catalogPresentation=true})
+W.sizes[0], W.sizes[1], W.sizes[5] = 8, 4, 8
+W.Put(0,1,101,1)
+W.Apply()
+W.OpenBags()
+W.Settle()
+local E = W.P.EquippedBags
+E.Toggle()
+W.Settle()
+assert(E.frame:IsVisible() and #E.buttons==5, "intrinsic equipped slots missing")
+for _, button in ipairs(E.buttons) do
+    assert(button.kind=="ItemButton" and button.icon and button.Count and button.Count:GetFont(), "intrinsic item fields/font missing")
+end
+local ok, message = pcall(CreateFrame, "ItemButton", nil, nil, "ItemButtonTemplate")
+assert(not ok and message:find("couldn't find inherited node",1,true), "fixture silently accepts invented template")
+W.P.InventoryEditor.Show()
+assert(W.P.InventoryEditor.frame:IsShown(), "category editor template path failed")
+W.P.InventoryEditor.Hide()
+W.P.BagFinance.Show()
+assert(W.P.BagFinance.window:IsShown(), "gold window template path failed")
+W.P.BagFinance.window:Hide()
+W.S.Set("bags","enabled",false)
+W.Settle()
+assert(#W.errors==0 and #W.taint==0 and #W.combatLayout==0, "template startup error/taint")
+print("Strict client templates and intrinsic ItemButton boot/drawer/tools passed: "..(arg[2] or "Mainline"))

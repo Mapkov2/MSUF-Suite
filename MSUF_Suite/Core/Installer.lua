@@ -18,9 +18,9 @@ local moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {
 local INSTALLER_FRAME_LEVEL = 500
 
 function Installer.IsFirstRunPending()
-    local installation = Suite.RootDB and Suite.RootDB.installation
-    return type(installation) == "table" and installation.status == "pending"
-        or (Suite.RootDB ~= nil or Suite.freshInstall) and not installation or false
+    local status, guid = DB.GetCharacterInstallationStatus()
+    return Suite.RootDB ~= nil and status ~= "complete" and status ~= "skipped"
+        and not (guid and Suite.SuiteProfiles.NewCharacterDefault())
 end
 
 function Installer.IsOpen()
@@ -263,7 +263,8 @@ end
 -- second Forever profile.
 function Installer.Apply()
     if Suite.InCombat() then return false, "Finish combat first." end
-    if type(Suite.RootDB) ~= "table" then return false, "Suite database unavailable" end
+    local _, guid = DB.GetCharacterInstallationStatus()
+    if type(Suite.RootDB) ~= "table" or not guid then return false, "Suite database unavailable" end
     local spec = ScaleSpec()
     local ready, why = Suite.HostBridge.ScaleReady(spec)
     if not ready then return false, why end
@@ -289,10 +290,7 @@ function Installer.Apply()
     end
     if not ok then return false, reason end
     if enableSkin then Suite.Skin.SetEnabled(true) end
-    local previous = Suite.RootDB.installation
-    local getDefault = Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters
-    local carriedDefault = type(previous) == "table" and previous.newCharacterProfileOwned == true
-        and type(getDefault) == "function" and getDefault() == previous.frameProfileName
+    Suite.SuiteProfiles.EnsureNewCharacterProfile()
     Suite.RootDB.installation = {
         revision = 4, status = "complete", profile = keepFrames and "suite" or selected,
         layout = selected == "forever" and "forever" or "retail",
@@ -308,15 +306,25 @@ function Installer.Apply()
         uiScalePreset = useScale and scalePreset or nil,
         foreverAnchorRevision = RetailCooldowns() and selected == "forever" and 1 or nil,
     }
-    if carriedDefault and type(Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters) == "function"
-        and Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters(FrameProfileName()) == true then
-        Suite.RootDB.installation.newCharacterProfileRevision = 1
-        Suite.RootDB.installation.newCharacterProfileOwned = true
-    end
-    Suite.SuiteProfiles.EnsureNewCharacterProfile()
+    DB.SetCharacterInstallationStatus("complete")
     if selected ~= "classic" and selected ~= "modernDark" and selected ~= "blizzard" and selected ~= "darkRaid" then
         Suite.SuiteProfiles.EnsureRetailResourceStack(true)
     end
+    NotifyInstallerFinished()
+    return true
+end
+
+-- Reuse the existing profile transaction; no factory, scale or account
+-- default is changed by this character's choice.
+function Installer.UseExistingProfile(name)
+    if Suite.InCombat() then return false, "Finish combat first." end
+    local _, guid = DB.GetCharacterInstallationStatus()
+    if not Suite.RootDB or not guid then return false, "Suite database unavailable" end
+    local ok, reason = Suite.SuiteProfiles.Activate(name)
+    if not ok then return false, reason end
+    DB.SetCharacterInstallationStatus("complete")
+    page = 6
+    Installer.Refresh()
     NotifyInstallerFinished()
     return true
 end
@@ -381,6 +389,8 @@ local function CreateWindow()
     window:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
     window:Hide()
     window:SetScript("OnHide", function()
+        window.existingProfilesOpen = false
+        window.existingProfiles:Hide()
         if not Installer.IsFirstRunPending() then NotifyInstallerFinished() end
     end)
     Suite.Client.AttachControllerWindow(window)
@@ -416,6 +426,10 @@ local function BuildProfileSteps(window)
         InfoCard(window, 36, 83, Text("3. Set UI scale"),
             Text("Scaling starts off and changes only if you enable it.")),
     }
+    Suite.InstallerProfiles.BuildExisting(window, NavButton, function(name)
+        local ok, reason = Installer.UseExistingProfile(name)
+        if not ok then window.status:SetText("|cffff6666" .. ReasonText(reason) .. "|r") end
+    end)
     Suite.InstallerProfiles.Build(window, Label, ProfileCard, NavButton, Style,
         function(layout)
             selected = layout
@@ -541,7 +555,11 @@ local function BuildNavigation(window)
         -- Only a pending first run is skipped: setup reopened later through
         -- /msufsuite keeps its completed receipt.
         if Suite.RootDB and page ~= 6 and Installer.IsFirstRunPending() then
-            Suite.RootDB.installation = { revision = 2, status = "skipped" }
+            if not DB.SetCharacterInstallationStatus("skipped") then return end
+            local installation = Suite.RootDB.installation
+            if type(installation) ~= "table" or installation.status == "pending" then
+                Suite.RootDB.installation = { revision = 2, status = "skipped" }
+            end
         end
         window:Hide()
     end)
@@ -581,7 +599,9 @@ local function ShowPage(f)
     f.status:SetPoint("TOPLEFT", f, "TOPLEFT", 36, page == 2 and -143 or -403)
     f.step:SetText(complete and Text("DONE") or ("%d / 5"):format(page))
     Appearance.Progress(f, page)
-    SetShownAll(f.intro, page == 1)
+    Suite.InstallerProfiles.ShowExisting(f, page == 1)
+    SetShownAll(f.intro, page == 1 and not f.existingProfilesOpen)
+    f.next:SetShown(not (page == 1 and f.existingProfilesOpen))
     Suite.InstallerProfiles.Show(f, page == 2, selected, chosenLook or "authored")
     Suite.InstallerPreview.Show(f, page >= 2 and page <= 5, selected)
     f.cooldowns:SetShown(page == 2 and RetailCooldowns())
@@ -621,6 +641,10 @@ local function PreviewProfile(f)
 end
 
 local function PaintWelcome(f)
+    if f.existingProfilesOpen then
+        SetPageText(f, "Profile", "Use a saved profile for this character without running the layout setup.")
+        return
+    end
     SetPageText(f, "Welcome to MSUF Suite",
         "Set up your interface in a few steps. Nothing changes until you click Install.")
 end
@@ -722,6 +746,7 @@ function Installer.Open()
     useRaidEssentials = not (current and current.raidEssentials == false)
     moduleOverrides = { suite = {}, classic = {}, forever = {}, modernDark = {}, blizzard = {}, darkRaid = {} }
     Build().moduleTab = "modules"
+    frame.existingProfilesOpen = false
     frame.moduleFocus, frame.moduleFocusPending, frame.layoutPreview.selectedModule = nil, nil, nil
     -- A reopened window still shows the last session's slider position.
     frame.scaleSlider:SetValue(scale)
@@ -742,6 +767,10 @@ end
 function Installer.MaybeShow(reason)
     if not IsLoggedIn() then return false end
     if frame and frame:IsShown() then return false end
+    if Suite.SuiteProfiles.NewCharacterDefault() then
+        DB.SetCharacterInstallationStatus("complete")
+        return false
+    end
     if Installer.IsFirstRunPending() and not (reason == "login" and HostFirstRunPending()) then
         return Installer.Open()
     end

@@ -23,7 +23,9 @@ local function Font()
     end
     function font:SetShadowOffset(...) self.shadowOffset = { ... } end
     function font:SetShadowColor(...) self.shadowColor = { ... } end
+    function font:ClearAllPoints() self.point = nil end
     function font:SetPoint(...) self.point = { ... } end
+    function font:SetSize(width, height) self.width, self.height = width, height end
     function font:SetWidth(value) self.width = value end
     function font:SetWordWrap(value) self.wordWrap = value end
     function font:SetTextColor(...) self.color = { ... } end
@@ -36,6 +38,8 @@ end
 local textures = {}
 local function Texture(parent)
     local texture = { parent = parent, shown = true }
+    function texture:ClearAllPoints() self.points = {} end
+    function texture:SetShown(value) self.shown = value end
     function texture:SetPoint(...) self.points = self.points or {}; self.points[#self.points + 1] = { ... } end
     function texture:SetHeight(value) self.height = value end
     function texture:SetWidth(value) self.width = value end
@@ -63,6 +67,7 @@ local function VisualFrame(parent)
     function frame:GetNumPoints() return self.points and #self.points or 0 end
     function frame:ClearAllPoints() self.points = {} end
     function frame:GetFrameLevel() return self.level end
+    function frame:IsProtected() return true end
     function frame:SetFrameLevel(value) self.level = value end
     function frame:SetParent(value) self.parent = value end
     function frame:SetAllPoints(target) self.allPoints = target end
@@ -111,6 +116,8 @@ local reagentButton = {
     HasItem = function() return nil end,
     SetItemButtonTexture = buttons[1].SetItemButtonTexture,
 }
+for _, button in ipairs(buttons) do button.IsProtected = function() return true end end
+reagentButton.IsProtected = function() return true end
 UIParent = { GetScaledRect = function() return 0, 0, 1000, 800 end }
 -- Screen rect of a bag anchored by its BOTTOMRIGHT to UIParent's BOTTOMRIGHT
 -- or to another bag's BOTTOMLEFT (Blizzard's next bag column).
@@ -163,6 +170,7 @@ ContainerFrame6 = {
     HookScript = function(self, name, callback) hooks["Reagent" .. name] = callback end,
 }
 for _, frame in ipairs({ ContainerFrameCombinedBags, ContainerFrame6 }) do
+    frame.IsProtected = function() return true end
     frame.TitleContainer = VisualFrame(frame)
     frame.TitleContainer:SetPoint("TOPLEFT", frame, "TOPLEFT", 35, -1)
     frame.TitleContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -24, -1)
@@ -314,15 +322,17 @@ S.MoneyText = function(amount)
     moneyTexts = moneyTexts + 1
     return shared.Suite.MoneyText(amount)
 end
-local state = { IsCombatLocked = function() return combat end,
+local state = { IsCombatLocked = function() return combat end, InCombat = function() return combat end,
     Client = { isForever = false },
     RootDB = { suiteGold = { ["Player-test"] = 100000 } }, loginKind = "login",
     goldSessionCaptured = true, MSUFMedia = { font = "Interface\\AddOns\\Test\\Media\\MSUF.ttf" } }
 -- The session gold baseline is owned by the core (MSUF_Suite/Core/SessionGold.lua).
 state.Finite = S.Finite
+state.IsSecret = function() return false end
+state.Safety = {IsForbidden=function() return false end}
 state.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/SessionGold.lua"))("MSUF_Suite", state)
-local bagsPrivate = { NS = state, Suite = S,
+local bagsPrivate = { NS = state, Suite = S, BagWidgets = {Refresh=function() end}, BagResize = {active=false}, BagWindowMotion = {active=false},
     ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S) }
 -- The Bags catalog (always loaded): its sections, the gold ledger and the
 -- session gold baseline (MSUF_Suite/Core/Catalog/Bags.lua).
@@ -350,9 +360,16 @@ local function BagChanged()
     assert(cache.events and cache.events.events.BAG_UPDATE, "the slot cache does not listen for BAG_UPDATE")
     cache.events.scripts.OnEvent(cache.events, "BAG_UPDATE", 0)
 end
+assert(loadfile(root .. "/MSUF_Suite_Bags/Presentation.lua"))("MSUF_Suite_Bags", bagsPrivate)
+assert(loadfile(root .. "/MSUF_Suite_Bags/PanelAppearance.lua"))("MSUF_Suite_Bags", bagsPrivate)
+assert(loadfile(root .. "/MSUF_Suite_Bags/Appearance.lua"))("MSUF_Suite_Bags", bagsPrivate)
+bagsPrivate.InventoryView.Request = function() end
+bagsPrivate.BagMotion = { Play = function() end, Stop = function() end, StopAll = function() end }
+assert(loadfile(root .. "/MSUF_Suite_Bags/LayoutSafety.lua"))("Bags", bagsPrivate)
 for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
-        NS = state, Suite = S, BagsModule = module, ItemLoads = bagsPrivate.ItemLoads,
+        NS = state, Suite = S, BagsModule = module, BagResize={active=false}, BagWindowMotion={active=false}, ItemLoads = bagsPrivate.ItemLoads,
+        BagLayout = bagsPrivate.BagLayout, InventoryView = bagsPrivate.InventoryView, BagPresentation = bagsPrivate.BagPresentation, BagAppearance = bagsPrivate.BagAppearance, BagMotion = bagsPrivate.BagMotion,
         ChildFrame = bagsPrivate.ChildFrame, BankWindow = { mover = {} },
     })
 end
@@ -367,7 +384,8 @@ assert(catalogNS.SuiteCatalog.bags.cvars and catalogNS.SuiteCatalog.bags.cvars.c
 assert(catalogNS.SuiteCatalog.bags.rules.showBankItemLevel.default == true,
     "Retail bank item levels are not enabled by default")
 
-local context = { events = {} }
+state.Dispatch = function(callback, ...) return callback(...) end
+local context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, state)("bags", module, {events={}})
 function context:CVar(key, value)
     assert(key == "combinedBags" and value == 1)
     self.before = self.before or bagMode
@@ -414,6 +432,8 @@ function context:Release()
     end
     self.alphas, self.mouse, self.fields = {}, {}, {}
 end
+function context:RestorePoints() end
+function context:RestoreProperty() end
 function context:Scale(frame, value) frame:SetScale(value) end
 function context:Position(frame, point, x, y)
     frame:ClearAllPoints()
@@ -430,9 +450,9 @@ module.context, module.active = context, true
 module:Enable()
 assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or hooks missing")
 -- The explicit sub-module list replaces the files' post-hooks on the module.
-local REFRESH_ORDER = { "UpgradeMarker.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
+local REFRESH_ORDER = { "PlayerGear.Refresh", "UpgradeMarker.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
     "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh" }
-local STOP_ORDER = { "UpgradeMarker.Disable", "InventoryView.Disable", "BankInventory.Disable", "BankWindow.Disable",
+local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "InventoryView.Disable", "BankInventory.Disable", "BankWindow.Disable",
     "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore" }
 local function Ran(order)
     if #submoduleCalls ~= #order then return false end
@@ -441,7 +461,7 @@ local function Ran(order)
 end
 assert(Ran(REFRESH_ORDER), "a refresh did not run the sub-modules in Bags.lua's order: "
     .. table.concat(submoduleCalls, ", "))
-for _, file in ipairs({ "UpgradeMarker", "InventoryView", "BankInventory", "BankWindow", "Finance", "AutoSplit",
+for _, file in ipairs({ "PlayerGear", "UpgradeMarker", "InventoryView", "BankInventory", "BankWindow", "Finance", "AutoSplit",
     "StackSplitter", "SortDirection" }) do
     local handle = assert(io.open(root .. "/MSUF_Suite_Bags/" .. file .. ".lua", "rb"))
     local source = handle:read("*a")
@@ -726,6 +746,8 @@ assert(ContainerFrameCombinedBags.point[4] == -40 and ContainerFrameCombinedBags
     "reset did not restore Blizzard's native bag anchor and size")
 bagMode = "0"
 context.events.USE_COMBINED_BAGS_CHANGED(module, "USE_COMBINED_BAGS_CHANGED", false)
+assert(bagMode == "0", "native event wrote its CVar before dispatch completed")
+RunDeferred()
 assert(bagMode == "1", "native split mode was not restored while the module is active")
 combat, bagMode = true, "0"
 context.events.USE_COMBINED_BAGS_CHANGED(module, "USE_COMBINED_BAGS_CHANGED", false)
@@ -930,6 +952,7 @@ BagChanged()
 module.config.showItemLevel = true
 module:Refresh()
 buttons[4] = {
+    IsProtected = function() return true end,
     emptyBackgroundAtlas = "bags-item-slot64",
     ItemSlotBackground = VisualFrame(),
     GetBagID = function() return 0 end,

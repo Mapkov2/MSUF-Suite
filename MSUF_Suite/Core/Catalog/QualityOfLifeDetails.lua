@@ -43,6 +43,8 @@ B.Section("flightTimer", "flight_route", "Flight route timer", {
     Number("x", "Horizontal position", 0, -4000, 4000), Number("y", "Vertical position", 180, -3000, 3000),
 })
 
+NS.AddQoLTextStyle("flightTimer", "flight_route", "Flight route timer")
+
 -- The Forever nameplate controller supplies the native soft-interact anchor.
 B.Module("glimmer", {
     title = "Glimmer (Forever)",

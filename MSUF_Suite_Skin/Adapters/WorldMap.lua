@@ -371,6 +371,9 @@ function WorldMapSkin.Apply(frame, owner)
         questLogUpdateHooked = Kit.HookGlobal("QuestLogQuests_Update", OnQuestLogUpdatedHook)
     end
     NS.QuestText.Activate(frame, owner)
+    -- The map is a native scroll canvas, not a menu list. Forever also owns
+    -- overscroll layers; keep root fades and scroll translations off that tree.
+    if NS.Client.isForever then NS.GenericWindows.TrackMenuMotion(Field(frame, "QuestLog"), owner) end
     return true
 end
 

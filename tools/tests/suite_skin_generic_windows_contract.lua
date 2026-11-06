@@ -1798,6 +1798,87 @@ Section("major windows pvp categories", function()
     _G.PVPUIFrame, _G.WeeklyRewardsFrame = nil, nil
 end)
 
+Section("taxi map semantic artwork", function()
+    -- Shared/TaxiFrame.lua on Mainline and Forever paints the actual map into
+    -- InsetBg with SetTaxiMap; it is not the decorative inset of other panels.
+    local previousCosmetics, previousButton = NS.Cosmetics, NS.ControlSkin.ApplyButton
+    local previousAction, previousControls = NS.Checkmarks.GetWindowAction, NS.WindowControls.Attach
+    local previousTaxi, previousTrade = _G.TaxiFrame, _G.TradeFrame
+    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    local function Texture(parent, path)
+        local texture = { parent = parent, path = path, alpha = 1, writes = 0 }
+        function texture:GetObjectType() return "Texture" end
+        function texture:GetParent() return self.parent end
+        function texture:GetAlpha() return self.alpha end
+        function texture:SetAlpha(value) self.alpha = value; self.writes = self.writes + 1 end
+        return texture
+    end
+    local node = Frame("TaxiButton1")
+    function node:GetObjectType() return "Button" end
+    node.NormalTexture = Texture(node, "Interface\\TaxiFrame\\UI-Taxi-Icon-White")
+    local nativeClick = function() end
+    node.OnClick = nativeClick
+    local routeMap = Frame("TaxiRouteMap", { node })
+    routeMap.Route = Texture(routeMap, "Interface\\TaxiFrame\\UI-Taxi-Line")
+    local frame = Frame("TaxiFrame", { routeMap })
+    frame.InsetBg = Texture(frame, "native-eastern-kingdoms-map")
+    frame.Bg = Texture(frame, "native-window-background")
+    frame.CloseButton = Frame("TaxiFrameCloseButton")
+    function frame.CloseButton:GetObjectType() return "Button" end
+    frame.CloseButton.OnClick = nativeClick
+    frame.shown, frame.hooks = false, {}
+    function frame:IsShown() return self.shown end
+    function frame:HookScript(script, callback) self.hooks[script] = callback end
+    NS.ControlSkin.ApplyButton = function(button) button.skinned = true; return {} end
+    NS.Checkmarks.GetWindowAction = function(button) return button == frame.CloseButton and "close" or nil end
+    NS.WindowControls.Attach = function(target) target.controlsAttached = true end
+    _G.TaxiFrame = frame
+    local trade = Frame("TradeFrame")
+    trade.InsetBg = Texture(trade, "native-decorative-inset")
+    _G.TradeFrame = trade
+    local entry = NS.BlizzardCatalog.FindByFrame("TaxiFrame")
+    local owner = "contract:taxi-map"
+    GenericWindows.ApplyEntry(entry, owner)
+    Expect(frame.surfaceSpec == nil and frame.InsetBg.writes == 0 and frame.hooks.OnShow,
+        "hidden taxi map was skinned before its native opening")
+    frame.shown = true
+    frame.hooks.OnShow(frame)
+    local function CheckMap(stage)
+        Expect(frame.InsetBg.alpha == 1 and frame.InsetBg.writes == 0,
+            stage .. ": skin erased the native taxi map stored in InsetBg")
+        Expect(frame.surfaceSpec and frame.surfaceSpec.fillVisible == false,
+            stage .. ": taxi shell lays a material fill over semantic map art")
+        Expect(frame.InsetBg.path == "native-eastern-kingdoms-map"
+            and routeMap.Route.alpha == 1 and node.NormalTexture.alpha == 1,
+            stage .. ": native taxi texture, route or node art changed")
+        Expect(node.OnClick == nativeClick and frame.CloseButton.OnClick == nativeClick,
+            stage .. ": native taxi or close action changed")
+        Expect(frame.CloseButton.skinned and frame.controlsAttached,
+            stage .. ": taxi close skin or window controls were lost")
+        Expect(routeMap.surfaceSpec == nil and node.surfaceSpec == nil,
+            stage .. ": semantic taxi canvas or node gained an extra surface")
+    end
+    CheckMap("first opening")
+    Expect(trade.InsetBg.alpha == 0 and trade.surfaceSpec.fillVisible,
+        "taxi exception changed ordinary NPC window inset skinning")
+    GenericWindows.ApplyEntry(entry, owner)
+    CheckMap("reapply")
+    frame.shown = false
+    frame.shown = true
+    frame.hooks.OnShow(frame)
+    CheckMap("reopen")
+    GenericWindows.Disable(owner)
+    Expect(frame.InsetBg.alpha == 1 and frame.InsetBg.writes == 0 and frame.surfaceVisible == false,
+        "disabling the taxi skin changed native map opacity or retained the shell")
+    Expect(trade.InsetBg.alpha == 1, "disabling did not restore the ordinary decorative inset")
+    GenericWindows.ApplyEntry(entry, owner)
+    CheckMap("reenable")
+    GenericWindows.Disable(owner)
+    _G.TaxiFrame, _G.TradeFrame = previousTaxi, previousTrade
+    NS.Cosmetics, NS.ControlSkin.ApplyButton = previousCosmetics, previousButton
+    NS.Checkmarks.GetWindowAction, NS.WindowControls.Attach = previousAction, previousControls
+end)
+
 Section("prey scouting map", function()
     -- Retail/Forever reuse CovenantMissionFrame for the midnight texture kit.
     -- MapTab, its scroll child and detail tiles use the root's frame level;

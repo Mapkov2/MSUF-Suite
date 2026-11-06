@@ -5,8 +5,8 @@ local initialized = false
 local events = CreateFrame("Frame")
 
 local function ShowInstaller()
-    if Suite.startupError or not Suite.Installer.IsFirstRunPending() then return end
-    if Suite.InCombat() then
+    if Suite.startupError or not Suite.Suite.started then return end
+    if Suite.InCombat() and Suite.Installer.IsFirstRunPending() then
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
@@ -62,11 +62,12 @@ local function Step(owner, name, ...)
     Suite.Dispatch(owner[name], ...)
 end
 
-local function Start()
+local profilesPrepared = false
+local function PrepareProfiles()
     if not Initialize() then return end
     if Suite.InCombat() then
         events:RegisterEvent("PLAYER_REGEN_ENABLED")
-        return
+        return false
     end
     local legacy = _G.MapkoSkin and _G.MapkoSkin.Suite
     if legacy and legacy.started then
@@ -74,8 +75,9 @@ local function Start()
         -- development runtime. Reloading allows the owner guard to run first.
         Suite.startupError = "legacy-runtime-active"
         Suite.Print(Suite.Text("Reload the interface to start the standalone suite."))
-        return
+        return false
     end
+    if profilesPrepared then return true end
     local profiles = Suite.SuiteProfiles
     Step(Suite.Skin, "SetEnabled", Suite.RootDB.skinEnabled ~= false)
     Step(profiles, "EnsureNewCharacterProfile")
@@ -83,12 +85,39 @@ local function Start()
     Step(profiles, "SyncActive", Suite.HostBridge.ActiveFrameProfileName() or "Default")
     Step(Suite.ProfileVariants,"Start")
     Step(profiles, "EnsureRetailForeverCooldownLayout")
+    profilesPrepared = true
+    return true
+end
+
+local function Start()
+    if not PrepareProfiles() then return end
+    local profiles = Suite.SuiteProfiles
+    Suite.startingModules = true
     Step(Suite.Suite, "Start")
+    Suite.startingModules = nil
     Step(profiles, "EnsureModernPanelLayout")
     Step(profiles, "EnsureModernDarkTooltips")
     Step(profiles, "EnsureModernDarkMinimap")
     Step(profiles, "EnsureRetailResourceStack", false)
     Step(Suite.Installer, "MaybeShow", "login")
+end
+
+-- Finish the login dispatch before loading optional addons. AceAddon may
+-- enable unrelated addons on a nested ADDON_LOADED while login is in flight.
+local startQueued = false
+local function RunStart()
+    startQueued = false
+    Start()
+end
+local function QueueStart(beforeSkinLogin)
+    if startQueued then return end
+    -- An already loaded skin must see the selected profile on its login pass.
+    -- An unloaded skin stays in the deferred path: profile sync may load it.
+    if beforeSkinLogin and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin") and Suite.Skin.IsAvailable() then
+        if not PrepareProfiles() then return end
+    end
+    startQueued = true
+    C_Timer.After(0, RunStart)
 end
 
 events:SetScript("OnEvent", function(self, event, loadedAddon)
@@ -105,11 +134,11 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
         Step(Suite.Menu, "Watch")
         if IsLoggedIn() then
             self:UnregisterEvent("PLAYER_LOGIN")
-            Start()
+            QueueStart()
         end
     elseif event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then
         self:UnregisterAllEvents()
-        if event == "PLAYER_REGEN_ENABLED" and Suite.Suite.started then ShowInstaller() else Start() end
+        if event == "PLAYER_REGEN_ENABLED" and Suite.Suite.started then ShowInstaller() else QueueStart(event == "PLAYER_LOGIN") end
     end
 end)
 events:RegisterEvent("ADDON_LOADED")

@@ -6,6 +6,7 @@ local M = assert(Private.BagsModule, "Bags.lua must load before BagWindow.lua")
 local floor = math.floor
 local IN_COMBAT = { inCombat = true }
 local WindowTexture = M.WindowTexture
+local Layout = Private.BagLayout
 local TEXT = {
     session = S.Text("Session %s"),
     drag = S.Text("Drag to move"),
@@ -91,7 +92,8 @@ local function NewWindowStyle(frame, combined)
     left:SetWidth(1)
     local right = Edge(shell, "TOPRIGHT", "BOTTOMRIGHT")
     right:SetWidth(1)
-    return { shell = shell, shadow, body, header, line, footer, top, bottom, left, right, goldLabel = goldLabel }
+    return { shell = shell, shadow, body, header, line, footer, top, bottom, left, right,
+        goldLabel = goldLabel, combined = combined, moneyAnchor = frame.MoneyFrame }
 end
 
 -- Title drag handles share these scripts; handle.window is the bag frame.
@@ -155,23 +157,7 @@ local function NewDragHandle(frame)
     return handle
 end
 
-local function PaintWindow(textures, c)
-    local r, g, b = S.RGB(c.backgroundColor)
-    local accentR, accentG, accentB = S.RGB(c.accentColor)
-    local opacity = c.backgroundOpacity / 100
-    textures[1]:SetColorTexture(0, 0, 0, 0.6 * opacity)
-    textures[2]:SetColorTexture(r, g, b, opacity)
-    textures[3]:SetColorTexture(r + (1 - r) * 0.12, g + (1 - g) * 0.12, b + (1 - b) * 0.12, opacity)
-    textures[4]:SetColorTexture(accentR, accentG, accentB, 0.9)
-    if textures[5] then textures[5]:SetColorTexture(r * 0.7, g * 0.7, b * 0.7, opacity) end
-    textures[6]:SetColorTexture(accentR, accentG, accentB, 0.8)
-    for i = 7, 9 do
-        textures[i]:SetColorTexture(r + (1 - r) * 0.2, g + (1 - g) * 0.2, b + (1 - b) * 0.2, 0.95)
-    end
-    if textures.goldLabel then S.SetFont(textures.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
-end
-
-S.BagsPaintPreviewWindow = PaintWindow
+local PaintWindow = Private.BagAppearance.Window
 
 -- Blizzard's title router forwards to PortraitButton, so the bag menu
 -- remains available from the heading. Hide the full button: the Suite
@@ -180,6 +166,7 @@ local function OwnChrome(self, frame, textures)
     local context = self.context
     context:Alpha(frame.Bg, 0)
     context:Alpha(frame.NineSlice, 0)
+    if frame.MoneyFrame and frame.MoneyFrame.Border then context:Alpha(frame.MoneyFrame.Border, 0) end
     if frame.PortraitContainer then context:Alpha(frame.PortraitContainer, 0) end
     if frame.PortraitButton then context:HideControl(frame.PortraitButton, true) end
     local title = frame.TitleContainer
@@ -193,6 +180,33 @@ local function OwnChrome(self, frame, textures)
     if not textures.dragHandle then textures.dragHandle = NewDragHandle(frame) end
 end
 
+function M:UpdatePresentation()
+    local t = self.windows and self.windows[self.frame]
+    if not t then return end
+    local combat = Private.InventoryView.layout ~= "suite"
+    local panel = Private.BagPresentation.IsPanel(self.config) and not combat or false
+    if t.presentation == panel then return end
+    t.presentation, t.combat = panel, combat
+    PaintWindow(t, self.config)
+    local title = self.frame.TitleContainer
+    if title and title.TitleText then
+        if panel then
+            Layout.Alpha(self.context, title.TitleText, 0)
+        else
+            Layout.RestoreProperty(self.context, title.TitleText, "SetAlpha")
+        end
+    end
+    if t.dragHandle then
+        t.dragHandle:ClearAllPoints()
+        if panel then
+            t.dragHandle:SetPoint("TOPLEFT", self.frame, "TOPLEFT", Private.BagPresentation.RAIL + 12, -8)
+            t.dragHandle:SetPoint("BOTTOMRIGHT", self.frame, "TOPRIGHT", -176, -46)
+        else
+            t.dragHandle:SetAllPoints(title)
+        end
+    end
+end
+
 function M:StyleWindows()
     self.windows = self.windows or {}
     -- Blizzard_UIPanels_Game declares both windows in ContainerFrame.xml and
@@ -204,11 +218,13 @@ function M:StyleWindows()
     end
     for frame, textures in pairs(self.windows) do
         textures.shell:Show()
-        textures[1]:Show()
+        textures[1]:SetShown(not textures.panel)
         OwnChrome(self, frame, textures)
         if textures.dragHandle then textures.dragHandle:SetShown(not S.editMode) end
         PaintWindow(textures, self.config)
+        textures.presentation = nil
     end
+    self:UpdatePresentation()
 end
 
 function M:UpdateGold()
@@ -288,6 +304,16 @@ function M:CancelWindowDrag()
     if self.active and not NS.IsCombatLocked() then self:RefreshWindowLayout() end
 end
 
+local function PanelOffset(frame, x, y)
+    local ratio = UIParent:GetEffectiveScale() / frame:GetEffectiveScale()
+    local companion = Private.BagPresentation.CompanionWidth(M.config)
+    local reserve = companion > 0 and companion + 8 or 0
+    local horizontal = math.max(0, UIParent:GetWidth() * ratio - frame:GetWidth() - reserve)
+    local height = companion > 0 and math.max(frame:GetHeight(), ContainerFrame6:GetHeight()) or frame:GetHeight()
+    local vertical = math.max(0, UIParent:GetHeight() * ratio - height)
+    return math.max(-horizontal, math.min(0, x)), math.max(0, math.min(vertical, y))
+end
+
 function M:EndWindowDrag(frame)
     local drag = self.dragWindow
     if not drag or drag.frame ~= frame then return end
@@ -301,6 +327,7 @@ function M:EndWindowDrag(frame)
     end
     local x = floor((drag.x + (cursorX - drag.cursorX) / drag.scale) * 10 + 0.5) / 10
     local y = floor((drag.y + (cursorY - drag.cursorY) / drag.scale) * 10 + 0.5) / 10
+    if frame == self.frame and Private.BagPresentation.IsPanel(self.config) then x, y = PanelOffset(frame, x, y) end
     local values
     if frame == self.frame then
         values = { windowX = x, windowY = y, windowMoved = true }
@@ -331,8 +358,14 @@ end
 -- layout changes. Reapply the Suite adjustment after that native layout,
 -- while leaving the window's item grid and click handlers untouched.
 function M.AfterNativeWindowLayout()
-    if not M.active or NS.IsCombatLocked() then return end
+    if Private.BagResize.active then
+        Private.BagResize.Reassert()
+        return
+    end
+    if Private.BagWindowMotion.active then Private.BagWindowMotion.Cancel(true) end
+    if not M.active then return end
     local frame = M.frame
+    if NS.IsCombatLocked() and not Layout.Frame(frame) then return end
     if frame and frame:IsShown() then
         local scale = frame:GetScale()
         if Finite(scale) and scale > 0 then M.nativeScale = scale end
@@ -341,17 +374,39 @@ function M.AfterNativeWindowLayout()
 end
 
 function M:ApplyWindowLayout()
+    if Private.BagResize.active then return end
     local frame = self.frame
-    if not self.active or NS.IsCombatLocked() then return end
+    if not self.active then return end
+    if NS.IsCombatLocked() and not Layout.Frame(frame) then return end
     local c = self.config
     if frame and frame:IsShown() then
         local nativeScale = self.nativeScale or frame:GetScale()
-        if Finite(nativeScale) and nativeScale > 0 then self.context:Scale(frame, nativeScale * c.windowScale) end
-        if c.windowMoved then self.context:Position(frame, "BOTTOMRIGHT", c.windowX, c.windowY) end
+        local panel = Private.BagPresentation.IsPanel(c)
+        local combat = Private.InventoryView.layout == "combat" and self.combatScale
+        local scale = combat or (panel and Private.BagPresentation.Scale(c, Private.BagPresentation.CompanionWidth(c))
+            or nativeScale * c.windowScale)
+        if Finite(scale) and scale > 0 then Layout.Scale(self.context, frame, scale) end
+        if c.windowMoved then
+            local x, y = c.windowX, c.windowY
+            if panel or combat then x, y = PanelOffset(frame, x, y) end
+            Layout.Position(self.context, frame, "BOTTOMRIGHT", x, y)
+        elseif panel or combat then
+            Layout.Position(self.context, frame, "BOTTOMRIGHT", -12, 12)
+        else
+            Layout.RestorePoints(self.context, frame)
+        end
     end
     local reagent = ContainerFrame6
-    if reagent:IsShown() and c.reagentWindowMoved then
-        self.context:Position(reagent, "BOTTOMRIGHT", c.reagentWindowX, c.reagentWindowY)
+    local companion = Private.BagPresentation.CompanionWidth(c)
+    if companion > 0 then
+        Layout.Scale(self.context, reagent, frame:GetScale())
+        Layout.Anchor(self.context, reagent, "BOTTOMRIGHT", frame, "BOTTOMLEFT", -8, 0)
+    else
+        Layout.RestoreProperty(self.context, reagent, "SetScale")
+        Layout.RestorePoints(self.context, reagent)
+        if reagent:IsShown() and c.reagentWindowMoved then
+            Layout.Position(self.context, reagent, "BOTTOMRIGHT", c.reagentWindowX, c.reagentWindowY)
+        end
     end
 end
 
@@ -370,7 +425,10 @@ function M.NativeAnchorPass()
 end
 
 function M:RefreshWindowLayout()
-    if NS.IsCombatLocked() or not ((self.frame and self.frame:IsShown()) or ContainerFrame6:IsShown()) then
+    if Private.BagResize.active then return end
+    if not ((self.frame and self.frame:IsShown()) or ContainerFrame6:IsShown()) then return end
+    if NS.IsCombatLocked() then
+        self:ApplyWindowLayout()
         return
     end
     -- The post-hook reapplies the Suite layout after Blizzard's layout pass;
@@ -384,6 +442,7 @@ function M:RestoreWindows()
     for frame, textures in pairs(self.windows) do
         if textures.goldLabel then textures.goldLabel:Hide() end
         if textures.dragHandle then textures.dragHandle:Hide() end
+        Private.BagMotion.Stop(textures.shell)
         textures.shell:Hide()
         textures[1]:Hide()
         if textures.titlePoints and frame.TitleContainer and not NS.IsCombatLocked() then
@@ -402,12 +461,24 @@ function M:RegisterMovers()
         xKey = "windowX", yKey = "windowY", point = "BOTTOMRIGHT",
         capture = CaptureCombinedOffset,
         moveValues = { windowMoved = true }, resetKeys = { "windowMoved" },
-        historyKeys = { "windowMoved", "windowScale" },
+        historyKeys = { "windowMoved", "windowScale", "inventoryColumns", "inventoryRows", "autoSizeWindow", "panelFullHeight" },
         extraControls = {
             {
                 id = "size", label = "Size %", kind = "number", min = 65, max = 150, step = 1,
                 get = function() return floor(S.Config("bags").windowScale * 100 + 0.5) end,
                 set = function(value) return S.Set("bags", "windowScale", value / 100) end,
+            },
+            {
+                id = "columns", label = "Items per row", kind = "number", min = 8, max = 20, step = 1,
+                get = function() return S.Config("bags").inventoryColumns end,
+                set = function(value) return S.Set("bags", "inventoryColumns", value) end,
+            },
+            {
+                id = "rows", label = "Visible rows", kind = "number", min = 4, max = 16, step = 1,
+                get = function() return S.Config("bags").inventoryRows end,
+                set = function(value)
+                    return S.SetMany("bags", {inventoryRows=value, autoSizeWindow=false, panelFullHeight=false})
+                end,
             },
         },
     })

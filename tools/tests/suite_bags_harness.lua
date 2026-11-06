@@ -27,7 +27,7 @@ local function Clear(t) for key in pairs(t) do t[key] = nil end end
 -- Blizzard's ContainerFrameItemButtonTemplate: its scripts are native code.
 local function ItemButton(W, env, parent, index)
     local button = env.NewWidget("ItemButton", "ContainerFrameCombinedBagsItem" .. index, parent, true)
-    button.guarded = true
+    button.guarded = not W.unprotectedBags
     button.width, button.height = 37, 37
     button.Count = button:CreateFontString(nil, "ARTWORK")
     button.Count.shown = false
@@ -81,7 +81,7 @@ end
 
 local function CombinedBag(W, env)
     local frame = env.NewWidget("Frame", "ContainerFrameCombinedBags", W.UIParent, true)
-    frame.guarded = true
+    frame.guarded = not W.unprotectedBags
     frame.shown = false
     frame.Items, frame.pool, frame.width, frame.height = {}, {}, 400, 300
     frame.Bg, frame.NineSlice = frame:CreateTexture(), env.NewWidget("Frame", nil, frame, true)
@@ -92,6 +92,7 @@ local function CombinedBag(W, env)
     frame.TitleContainer = env.NewWidget("Frame", nil, frame, true)
     frame.TitleContainer:SetPoint("TOPLEFT", frame, "TOPLEFT", 58, -1)
     frame.TitleContainer:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -24, -1)
+    frame.TitleContainer.TitleText = frame.TitleContainer:CreateFontString()
     function frame:SetTitleOffsets(left, right)
         self.TitleContainer:SetPoint("TOPLEFT", self, "TOPLEFT", left, -1)
         self.TitleContainer:SetPoint("TOPRIGHT", self, "TOPRIGHT", right or -24, -1)
@@ -156,7 +157,7 @@ end
 
 local function ReagentBag(W, env)
     local frame = env.NewWidget("Frame", "ContainerFrame6", W.UIParent, true)
-    frame.guarded, frame.shown, frame.width, frame.height = true, false, 180, 200
+    frame.guarded, frame.shown, frame.width, frame.height = not W.unprotectedBags, false, 180, 200
     frame.Bg, frame.NineSlice = frame:CreateTexture(), env.NewWidget("Frame", nil, frame, true)
     frame.PortraitContainer = env.NewWidget("Frame", nil, frame, true)
     frame.PortraitButton = env.NewWidget("Button", nil, frame, true)
@@ -286,7 +287,12 @@ local function Bank(W, env)
     function panel:EnumerateValidItems() return function() end end
     function panel:UpdateSearchResults() end
     function panel:GenerateItemSlotsForSelectedTab() end
-    if env.forever then return bank end
+    function panel:GetActiveBankType() return self.bankType end
+    function bank:GetActiveBankType() return self.BankPanel:IsShown() and self.BankPanel:GetActiveBankType() or nil end
+    if env.forever then
+        panel.bankType = nil
+        return bank
+    end
     bank.TabSystem = env.NewWidget("Frame", nil, bank, true)
     bank.TabSystem:SetPoint("TOPLEFT", bank, "BOTTOMLEFT", 22, 2)
     bank.TabSystem.width, bank.TabSystem.height = 300, 32
@@ -298,7 +304,6 @@ local function Bank(W, env)
     panel.AutoSortButton.width, panel.AutoSortButton.height = 28, 26
     panel.AutoSortButton:SetPoint("LEFT", search, "RIGHT", 8, -1)
     bank.TabIDToBankType = { [1] = Enum.BankType.Character, [2] = Enum.BankType.Account }
-    function panel:GetActiveBankType() return self.bankType end
     function panel:SetBankType(kind) env.Taint("BankPanel:SetBankType"); self.bankType = kind end
     function bank:SetTab(id)
         W.calls.setTab = W.calls.setTab + 1
@@ -314,7 +319,6 @@ local function Bank(W, env)
         bank.tabButtons[id] = button
     end
     function bank:GetTabButton(id) return self.tabButtons[id] end
-    function bank:GetActiveBankType() return self.BankPanel:IsShown() and self.BankPanel:GetActiveBankType() or nil end
     -- The bank tabs a test buys: W.bankTabs[type] = { { ID =, name = }, ... }.
     W.bankTabs = { [Enum.BankType.Character] = {}, [Enum.BankType.Account] = {} }
     C_Bank = {
@@ -328,8 +332,6 @@ local function Bank(W, env)
     }
     -- BankItemButtonTemplate (BankPanelItemButtonMixin) for Suite-created buttons.
     W.templates.BankItemButtonTemplate = function(button)
-        button.Count = button:CreateFontString()
-        button.icon = button:CreateTexture()
         function button:Init(kind, tab, slot)
             self.bankType, self.bankTabID, self.containerSlotID = kind, tab, slot
             self:Refresh()
@@ -362,6 +364,9 @@ function H.BuildClient(W, env)
     W.GameTooltip = Tooltip(W, env)
     W.StackSplitFrame = StackSplit(W, env)
     W.CF = CombinedBag(W, env)
+    W.NativeSearch = env.NewWidget("EditBox", "BagItemSearchBox", W.CF, true)
+    W.NativeSort = env.NewWidget("Button", "BagItemAutoSortButton", W.CF, true)
+    W.NativeSearch.mouse, W.NativeSort.mouse = true, true
     W.Reagent = ReagentBag(W, env)
     W.BankFrame = Bank(W, env)
     -- UpdateUIPanelPositions (Blizzard_UIParentPanelManager): a pass anchors the
@@ -479,10 +484,10 @@ end
 
 function H.New(root, options)
     options = options or {}
-    local W = { root = root, secure = false, combat = false, taint = {}, combatLayout = {}, timers = {},
+    local W = { root = root, unprotectedBags = options.unprotectedBags == true, secure = false, combat = false, taint = {}, combatLayout = {}, timers = {},
         now = 1000, events = {}, calls = { info = 0, quest = 0, newItem = 0, itemInfo = 0, splits = {}, pickups = {},
         uses = {}, setTab = 0, sort = {} }, items = {}, sizes = {}, data = {}, newItems = {}, postCalls = {},
-        frames = {}, cursor = nil, money = options.money or 500000, popups = {}, errors = {} }
+        frames = {}, updates = {}, cursor = nil, money = options.money or 500000, popups = {}, errors = {} }
     W.client = options.client or "Mainline"
     local forever = W.client == "Forever"
 
@@ -533,6 +538,10 @@ function H.New(root, options)
     function Widget:GetParent() return self.parent end
     function Widget:SetParent(parent) self.parent = parent end
     function Widget:IsForbidden() return false end
+    function Widget:IsProtected()
+        if self.protection ~= nil then return self.protection end
+        return self.guarded == true
+    end
     function Widget:SetPoint(point, relative, relativePoint, x, y)
         GuardLayout(self, "SetPoint")
         if type(relative) == "number" then relative, relativePoint, x, y = nil, nil, relative, relativePoint end
@@ -569,6 +578,7 @@ function H.New(root, options)
         while frame do scale = scale * (frame.scale or 1); frame = frame.parent end
         return scale
     end
+    function Widget:SetRotation(value) self.rotation=value end
     function Widget:SetAlpha(alpha) self.alpha = alpha end
     function Widget:GetAlpha() return self.alpha end
     function Widget:SetFrameLevel(level) self.level = level end
@@ -587,7 +597,13 @@ function H.New(root, options)
     function Widget:SetMovable(value) self.movable = value end
     function Widget:IsMovable() return self.movable == true end
     function Widget:StartMoving() self.moving = true end
-    function Widget:StopMovingOrSizing() self.moving = false end
+    function Widget:SetResizable(value) self.resizable = value end
+    function Widget:SetResizeBounds(...) self.resizeBounds = { ... } end
+    function Widget:StartSizing(point)
+        assert(self.resizable and self.resizeBounds, "resizing requires bounds and a resizable frame")
+        self.sizing = point
+    end
+    function Widget:StopMovingOrSizing() self.moving, self.sizing = false, nil end
     function Widget:RegisterForDrag(...) self.drag = { ... } end
     function Widget:RegisterForClicks(...) self.clicks = { ... } end
     function Widget:EnableMouse(value) self.mouse = value end
@@ -618,7 +634,10 @@ function H.New(root, options)
         RunScript(self, "OnHide")
     end
     function Widget:SetShown(value) if value then self:Show() else self:Hide() end end
-    function Widget:SetScript(script, handler) self.scripts[script] = handler end
+    function Widget:SetScript(script, handler)
+        self.scripts[script] = handler
+        if script=="OnUpdate" then W.updates[self]=handler end
+    end
     function Widget:GetScript(script) return self.scripts[script] end
     function Widget:HookScript(script, handler)
         local previous = self.scripts[script]
@@ -658,6 +677,7 @@ function H.New(root, options)
         return text
     end
     function Widget:SetColorTexture(r, g, b, a) self.color = { r, g, b, a } end
+    function Widget:SetGradient(orientation, startColor, endColor) self.gradient = { orientation, startColor, endColor } end
     function Widget:SetTexture(texture) self.texture = texture end
     function Widget:GetTexture() return self.texture end
     function Widget:SetAtlas(atlas) self.atlas = atlas end
@@ -678,17 +698,55 @@ function H.New(root, options)
     function Widget:SetShadowOffset(...) self.shadowOffset = { ... } end
     function Widget:GetStringHeight() return 12 end
     function Widget:GetStringWidth() return #(self.text or "") * 6 end
-    function Widget:SetEnabled(value) self.enabled = value end
+    function Widget:SetEnabled(value)
+        local before=self:IsEnabled()
+        self.enabled=value
+        if before~=self:IsEnabled() then RunScript(self,value and "OnEnable" or "OnDisable") end
+    end
     function Widget:IsEnabled() return self.enabled ~= false end
-    function Widget:Enable() self.enabled = true end
-    function Widget:Disable() self.enabled = false end
+    function Widget:Enable() self:SetEnabled(true) end
+    function Widget:Disable() self:SetEnabled(false) end
     function Widget:SetChecked(value) self.checked = value end
     function Widget:GetChecked() return self.checked end
-    function Widget:SetNormalTexture(texture) self.normalTexture = texture end
-    function Widget:SetHighlightTexture() end
-    function Widget:SetPushedTexture() end
-    function Widget:SetScrollChild(child) self.scrollChild = child end
-    function Widget:SetVerticalScroll(value) self.verticalScroll = value end
+    local function StateTexture(self, field, asset)
+        assert(asset ~= nil, "bad argument #1 to button texture setter: asset required")
+        local texture = self[field]
+        if not texture then texture = self:CreateTexture(); self[field] = texture end
+        texture:SetTexture(asset)
+    end
+    function Widget:SetNormalTexture(asset) StateTexture(self, "normalTexture", asset) end
+    function Widget:SetPushedTexture(asset) StateTexture(self, "pushedTexture", asset) end
+    function Widget:SetDisabledTexture(asset) StateTexture(self, "disabledTexture", asset) end
+    function Widget:SetHighlightTexture(asset) StateTexture(self, "highlightTexture", asset) end
+    function Widget:GetNormalTexture() return self.normalTexture end
+    function Widget:GetPushedTexture() return self.pushedTexture end
+    function Widget:GetDisabledTexture() return self.disabledTexture end
+    function Widget:GetHighlightTexture() return self.highlightTexture end
+    function Widget:SetScrollChild(child)
+        self.scrollChild = child
+        child:ClearAllPoints()
+        child:SetPoint("TOPLEFT",self,"TOPLEFT",0,0)
+    end
+    function Widget:SetVerticalScroll(value)
+        local before=self.verticalScroll
+        self.verticalScroll = value
+        if before~=value and self.scripts.OnVerticalScroll then self.scripts.OnVerticalScroll(self,value) end
+    end
+    function Widget:GetVerticalScroll() return self.verticalScroll or 0 end
+    function Widget:GetScrollChild() return self.scrollChild end
+    function Widget:SetValueStep(value) self.valueStep=value end
+    function Widget:SetMinMaxValues(low,high) self.low,self.high=low,high end
+    function Widget:SetValue(value)
+        value=math.max(self.low or 0,math.min(self.high or value,value))
+        local before=self.value
+        self.value=value
+        if before~=value and self.scripts.OnValueChanged then self.scripts.OnValueChanged(self,value) end
+    end
+    function Widget:GetValue() return self.value or 0 end
+    function Widget:SetTextInsets(...) self.insets={...} end
+    function Widget:SetHitRectInsets(...) self.hitInsets={...} end
+    function Widget:SetCheckedTexture(asset) StateTexture(self,"checkedTexture",asset) end
+    function Widget:GetCheckedTexture() return self.checkedTexture end
     function Widget:SetAutoFocus(value) self.autoFocus = value end
     function Widget:SetMaxLetters(value) self.maxLetters = value end
     function Widget:SetMaxBytes(value) self.maxBytes = value end
@@ -756,6 +814,9 @@ function H.New(root, options)
     ---------------------------------------------------------------- globals
     W.screenWidth, W.screenHeight = options.screenWidth or 1366, options.screenHeight or 768
     W.UIParent = NewWidget("Frame", "UIParent", nil, true)
+    _G.GetInventoryItemTexture = function(_, id) return 1000 + id end
+    _G.SetItemButtonTexture = function(button, texture) button.icon:SetTexture(texture) end
+    _G.CreateColor = function(r,g,b,a) return {r=r,g=g,b=b,a=a} end
     W.UIParent.width, W.UIParent.height = W.screenWidth, W.screenHeight
     UIParent = W.UIParent
     function UIParent:GetWidth() return W.screenWidth end
@@ -764,10 +825,82 @@ function H.New(root, options)
     GetScreenWidth = function() return W.screenWidth end
     CreateFrame = function(kind, name, parent, template)
         local frame = NewWidget(kind, name, parent, false)
-        if template and W.templates[template] then W.templates[template](frame) end
+        -- Blizzard_ItemButton/Shared/ItemButtonTemplate.xml registers an
+        -- intrinsic type, not an inheritable ItemButtonTemplate node.
+        if kind == "ItemButton" then
+            frame.Count = frame:CreateFontString()
+            frame.Count:SetFont("Fonts/ARIALN.TTF", 14, "OUTLINE")
+            frame.icon = frame:CreateTexture()
+        end
+        if template then
+            for inherited in template:gmatch("[^,%s]+") do
+                local build = W.templates[inherited]
+                assert(build, "CreateFrame couldn't find inherited node '"..inherited.."'")
+                build(frame)
+            end
+        end
         return frame
     end
+    function Widget:CreateAnimationGroup()
+        local group = { animations = {}, playing = false, scripts = {}, target = self }
+        function group:CreateAnimation(kind)
+            local animation = { kind = kind }
+            for _, method in ipairs({ "SetFromAlpha", "SetToAlpha", "SetDuration", "SetSmoothing", "SetStartDelay" }) do
+                animation[method] = function(self, value) self["value" .. method] = value end
+            end
+            function animation:SetOffset(x, y) self.x, self.y = x, y end
+            function animation:GetSmoothProgress() return self.progress or 0 end
+            self.animations[#self.animations + 1] = animation
+            return animation
+        end
+        function group:SetToFinalAlpha(value) self.finalAlpha = value end
+        function group:SetScript(event, callback) self.scripts[event] = callback end
+        function group:IsPlaying() return self.playing end
+        function group:Play()
+            self.playing = true
+            for _, animation in ipairs(self.animations) do animation.progress = 0 end
+        end
+        function group:Stop()
+            self.playing = false
+            for _, animation in ipairs(self.animations) do animation.progress = 0 end
+        end
+        function group:Finish()
+            self.playing = false
+            for _, animation in ipairs(self.animations) do animation.progress = 1 end
+            if self.finalAlpha then
+                for _, animation in ipairs(self.animations) do
+                    if animation.kind == "Alpha" then self.target:SetAlpha(animation.valueSetToAlpha) end
+                end
+            end
+            if self.scripts.OnFinished then self.scripts.OnFinished(self) end
+        end
+        return group
+    end
+    function Widget:SetNormalFontObject(value) self.normalFontObject = value end
+    function Widget:SetHighlightFontObject(value) self.highlightFontObject = value end
+    function Widget:SetDisabledFontObject(value) self.disabledFontObject = value end
     W.templates = {
+        MSUFSuiteBagCheckTemplate = function(frame) frame.checkedTexture=frame:CreateTexture() end,
+        MSUFSuiteBagScrollSliderTemplate = function(frame)
+            frame.Thumb=frame:CreateTexture()
+            frame.Thumb:SetSize(5,38)
+        end,
+        UIPanelScrollFrameTemplate = function() end,
+        InputBoxTemplate = function() end,
+        UICheckButtonTemplate = function() end,
+        UIPanelButtonTemplate = function(frame)
+            -- SecureUIPanelTemplates.xml: these are different native sizes
+            -- until an authored small button overrides all three states.
+            frame.normalFontObject, frame.highlightFontObject, frame.disabledFontObject =
+                "GameFontNormal", "GameFontHighlight", "GameFontDisable"
+            frame.Left, frame.Middle, frame.Right = frame:CreateTexture(), frame:CreateTexture(), frame:CreateTexture()
+            frame:SetHighlightTexture("Interface\\Buttons\\UI-Panel-Button-Highlight")
+            frame.scripts.OnShow = function(self)
+                self.Left:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+                self.Middle:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+                self.Right:SetTexture("Interface\\Buttons\\UI-Panel-Button-Up")
+            end
+        end,
         InputBoxInstructionsTemplate = function(frame) frame.Instructions = frame:CreateFontString() end,
         BasicFrameTemplateWithInset = function(frame) frame.TitleText = frame:CreateFontString() end,
         -- SecureActionButtonTemplate (Blizzard_FrameXML/SecureTemplates.lua): a
@@ -840,7 +973,8 @@ function H.New(root, options)
     GOLD_AMOUNT_SYMBOL, SILVER_AMOUNT_SYMBOL, COPPER_AMOUNT_SYMBOL = "g", "s", "c"
     GetServerTime = function() return W.serverTime or 1790000000 end
     date, time = os.date, os.time
-    GetCursorPosition = function() return 500, 500 end
+    GetCursorPosition = function() return W.mouseX or 500, W.mouseY or 500 end
+    IsMouseButtonDown = function() return W.mouseDown == true end
     IsShiftKeyDown = function() return false end
     IsModifiedClick = function(action) return W.modified == (action or true) or (action == nil and W.modified ~= nil) end
     HandleModifiedItemClick = function() return false end
@@ -1001,6 +1135,8 @@ function H.New(root, options)
         UseContainerItem = function(bag, slot, unit, bankType)
             W.calls.uses[#W.calls.uses + 1] = { bag, slot, bankType }
         end,
+        ContainerIDToInventoryID = function(bag) return 19 + bag end,
+        SortBags = function() W.calls.cleanup = (W.calls.cleanup or 0) + 1 end,
         GetSortBagsRightToLeft = function() return W.sortRightToLeft == true end,
         SetSortBagsRightToLeft = function(value)
             W.calls.sort[#W.calls.sort + 1] = value
@@ -1071,6 +1207,9 @@ function H.New(root, options)
         local list = W.timers
         W.timers = {}
         for i = 1, #list do Insecure(list[i]) end
+        for frame, update in pairs(W.updates) do
+            if frame:IsVisible() then Insecure(update, frame, 1/60) end
+        end
     end
     function W.Advance(seconds)
         W.now = W.now + seconds
@@ -1081,8 +1220,8 @@ function H.New(root, options)
         for i = 1, #due do Insecure(due[i].callback) end
     end
     function W.Settle(limit)
-        for _ = 1, limit or 10 do
-            if #W.timers == 0 then return end
+        for _ = 1, limit or 30 do
+            if #W.timers == 0 and not W.P.BagWindowMotion.active then return end
             W.Frame()
         end
         assert(#W.timers == 0, "timers keep rescheduling")
@@ -1123,6 +1262,7 @@ function H.New(root, options)
     local configs = { bags = {}, dataTexts = { enabled = true, trackAltGold = options.trackAltGold == true } }
     for key, rule in pairs(NS.SuiteCatalog.bags.rules) do configs.bags[key] = rule.default end
     configs.bags.enabled = true
+    if not options.catalogPresentation then configs.bags.windowPresentation = NS.BagsPresentation.WINDOW end
     for key, value in pairs(options.config or {}) do configs.bags[key] = value end
     W.config = configs.bags
     W.moduleState = options.moduleState or {}
@@ -1176,8 +1316,15 @@ function H.New(root, options)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Timers.lua"))("MSUF_Suite_Modules", runtime)
     assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSuite)
     assert(loadfile(root .. "/MSUF_Suite_Modules/Surfaces.lua"))("MSUF_Suite_Modules", {})
+    S.GamepadUI=function() return false end
     W.S = S
 
+    NS.HostBridge = {
+        MenuReducedMotion = function() return options.reducedMotion == true end,
+        MenuMaterial=function() return false end, MenuAtmosphere=function() end,
+        MenuButton=function() end, MenuCloseButton=function() end, MenuCheckbox=function() end, MenuInput=function() return false end, EnsureMenuTheme=function() return false end,
+        WatchMenuAppearance=function() end,
+    }
     ---------------------------------------------------------------- the Bags addon
     W.P = {}
     for _, file in ipairs(Support.TocFiles(root, "MSUF_Suite_Bags", "Mainline")) do

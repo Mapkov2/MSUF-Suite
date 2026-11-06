@@ -1043,6 +1043,23 @@ assert(banner.title.fontPath == SUITE_FONT and tracker.font == SUITE_FONT,
     "HUD text must default to MSUF's shared font")
 assert(banner.subtitle.text == "Dornogal" and movers.announcements.spec.point() == "TOP"
     and banner.host.point[1] == "TOP", "new announcements should start at top center")
+do
+    local current, expires = banner.current, banner.expiresAt
+    assert(banner.background.shown and banner.accent.shown and banner.divider.shown,
+        "missing artwork setting must preserve existing announcement art")
+    for _, enabled in ipairs({ false, true, false, true }) do
+        banner.config.showBoxArt = enabled
+        banner:Refresh()
+        assert(banner.background.shown == enabled and banner.accent.shown == enabled
+            and banner.divider.shown == enabled, "announcement box art toggle did not hide or restore all artwork")
+        assert(banner.host.shown and banner.title.shown and banner.subtitle.shown
+            and banner.title.text == "The Coreway" and banner.subtitle.text == "Dornogal",
+            "announcement artwork switch hid or changed its text")
+        assert(banner.current == current and banner.expiresAt == expires,
+            "announcement artwork switch restarted the active announcement")
+    end
+    banner.config.showBoxArt = nil
+end
 banner.config.anchor, banner.config.y = 2, -170
 banner:Refresh()
 assert(movers.announcements.spec.point() == "CENTER" and banner.host.point[1] == "CENTER",
@@ -1102,6 +1119,15 @@ banner:Refresh()
 S.editMode = true
 banner:Refresh()
 assert(banner.host.shown and banner.title.text == "ANNOUNCEMENTS")
+banner.config.showBoxArt = false
+banner:Refresh()
+assert(not banner.background.shown and not banner.accent.shown and not banner.divider.shown
+    and banner.host.shown and banner.title.shown and banner.subtitle.shown,
+    "Edit Mode announcement preview ignored the artwork switch")
+banner.config.showBoxArt = nil
+banner:Refresh()
+assert(banner.background.shown and banner.accent.shown and banner.divider.shown,
+    "legacy artwork default did not restore the Edit Mode preview")
 tracker:Refresh()
 assert(tracker.host.shown, "tracker must remain visible for placement in Edit Mode")
 S.editMode = false

@@ -3,8 +3,8 @@ local originalLoad, P = loadfile
 local mutations = {
     meterText = { "Pages/DamageMeterPreview.lua", '"suite_damageMeter_text", "rightSize"', '"suite_damageMeter_bars", "rightSize"' },
     bank = { "Pages/BagsPreview.lua", 'ui.selected == "bank" and "suite_bags_bank" or "suite_bags_organisation"', '"suite_bags_organisation"' },
-    icons = { "Pages/BagsPreview.lua", 'slot.icon:SetTexture(item[1])', 'slot.icon:SetTexture(134400)' },
-    warm = { "Pages/BagsPreview.lua", 'if not changed and preview.tab == ui.selected then return end', 'if false then return end' },
+    icons = { "Pages/BagsPreview.lua", 'slot.icon:SetTexture(item.icon)', 'slot.icon:SetTexture(134400)' },
+    warm = { "Pages/BagsPreview.lua", 'if not changed and preview.tab == ui.selected and preview.viewportWidth == width and preview.viewportHeight == height then return end', 'if false then return end' },
     cdmHidden = { "Pages/CooldownManagerPreview.lua", 'if not ui.previewBody:IsVisible() or P.Combat() then return end', 'if P.Combat() then return end' },
     skinHidden = { "Pages/AppearancePreview.lua", 'if frame:IsVisible() then refresh(value) end', 'refresh(value)' },
     chatReady = { "Pages/ChatPreviewPaint.lua", ' and parts.fontReady == ready', '' },
@@ -81,6 +81,27 @@ assert(focused == "suite_damageMeter_timer", "meter clock did not open timer set
 local paints = 0
 P.S.BagsPaintPreviewWindow = function() paints = paints + 1 end
 P.S.BagsStylePreviewLabel = function() end
+P.S.SetFont = function() end
+P.S.ResolveFont = function() end
+P.S.GlobalFontPath = function() return "Global.ttf" end
+P.S.BagsPaintPreviewSection = function() end
+P.S.BagsNewPreview = function() return { width = 700, model = {lineCount=2}, config = { inventoryColumns = 12 } } end
+P.S.BagsPreviewIsPanel = function() return false end
+P.S.BagsFitPreviewRows = function() end
+P.S.BagsPreviewScale = function() return 1 end
+P.S.BagsPaintPreviewTool = function() end
+P.S.BagsPreviewGeometry = function(g)
+    g.width,g.height,g.rows,g.top,g.sidebar,g.panel,g.bottom=620,360,5,122,12,false,74
+end
+P.S.BagsPreviewLayout = function()
+    local layout = {}
+    local group = { key = "all", label = "All items", translate = true }
+    for i = 1, 6 do
+        layout[i] = { line = 1, column = i - 1, group = group,
+            row = { item = { itemID = i, icon = 134829 + i, itemLevel = 450, count = 1, quality = 3 } } }
+    end
+    return layout
+end
 C_Item.GetItemQualityColor = function(q) return q / 5, .5, 1 end
 ctx, ui = Build("suite_bags")
 ui.Focus = function(_, section) focused = section end

@@ -25,13 +25,14 @@ local function InitializeActions()
         return ui.stage:GetEffectiveScale() * factor
     end
     Open = function(ui, handle)
-        if not handle then return false end
+        if not handle or ui.inCombat or P.Combat() or not ui.header:IsVisible() or not ui.ctx.wrapper:IsVisible() then return false end
         local spec = handle.spec
         local section = "suite_chat" .. "_" .. spec.section
         local body = ui.ctx.chatSections and ui.ctx.chatSections[section]
         if body then
             P.EnsureSectionContent(body)
-            if P.W.FocusCollapsibleSection then P.W.FocusCollapsibleSection(body, { flash = true }) end
+            -- Keep this local jump on its section; exact search would select the page and scroll again.
+            if P.W.FocusCollapsibleSection and P.W.FocusCollapsibleSection(body, { persist = true, flash = true }) then return true end
         end
         local bridge = M.SearchBridge
         if not bridge or not bridge.OpenSearchTarget then return body ~= nil end
@@ -138,7 +139,7 @@ local function SelectionBar(ui)
         Tr = P.Tr, Theme = function() return P.T end,
         HandleList = function() return ui.handles end,
         HandleLabel = function(handle) return handle._label end,
-        IsPlaced = function(handle) return handle.canMove and handle:IsVisible() and R.Allowed(handle.spec) end,
+        IsPlaced = function(handle) return handle.canMove and handle:IsVisible() end,
         ReadOffsets = function(_, handle) return R.Read(ui, handle.spec) end,
         WriteOffsets = function(_, handle, x, y) return Write(ui, handle, x, y) end,
         NudgeDelta = function(_, dx, dy) return ui.kit:Nudge(dx, dy) end,
@@ -150,6 +151,14 @@ local function SelectionBar(ui)
         SelectHandle = function(_, handle) E.Select(ui, handle, true) return true end,
         UpdateHint = function() end,
     })
+    -- Navigation stays available while the selected element cannot be moved.
+    local setEnabled = ui.selection.MSUF2SetEnabled
+    function ui.selection:MSUF2SetEnabled(enabled)
+        local handle = ui.viewport._selectedHandle
+        setEnabled(self, enabled and handle and R.Allowed(handle.spec))
+        self.openButton:SetEnabled(enabled)
+        self.openButton:SetAlpha(enabled and 1 or .45)
+    end
     ui.selection:SetPoint("TOPLEFT", ui.viewport, "BOTTOMLEFT", 0, -8)
     GuardAxis(ui, ui.selection.axisX.edit)
     GuardAxis(ui, ui.selection.axisY.edit)

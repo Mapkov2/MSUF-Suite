@@ -341,14 +341,25 @@ print("PASS cold/warm actual exported preview/runtime font parity")
 do
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 GameFontHighlightSmall = { GetFont = function() return STANDARD_TEXT_FONT, 12, "" end }
-local config = { font="FancyFont", itemCountSize=12, fontRendering=2, qualityColor=false,
+local config = { windowScale=1, font="FancyFont", itemCountSize=12, inventoryColumns=12, fontRendering=2, qualityColor=false,
     inventoryView=1, bankView=1, showItemLevel=true, showBankItemLevel=true }
 local inherited, fancy = "Interface\\Fonts\\Global.ttf", "Interface\\Fonts\\Fancy.ttf"
 local S = { Config=function() return config end, BagsPaintPreviewWindow=function() end,
-    BagsStylePreviewLabel=function() end }
+    BagsStylePreviewLabel=function() end,
+    BagsPreviewIsPanel=function() return false end,
+    BagsFitPreviewRows=function() end,
+    BagsPreviewScale=function() return 1 end,
+    BagsPaintPreviewTool=function() end,
+    BagsPreviewGeometry=function(g)
+        g.width,g.height,g.rows,g.top,g.sidebar,g.panel,g.bottom=620,360,5,122,12,false,74
+    end,
+    BagsNewPreview=function() return { model={lineCount=2}, config={inventoryColumns=12} } end,
+    BagsPreviewLayout=function() return {
+        {line=1,column=0,row={item={itemID=1,icon=135274,itemLevel=450,count=5,quality=3}}}
+    } end }
 MSUFSuite = { Suite=S, Database={}, SuiteCatalog={bags={rules={}}},
     Registry={AddListener=function() end}, -- profile dialog behavior is outside this font probe
-    FontRendering={SLUG=3,SHARP=2}, HostBridge={Menu2=function() return {} end},
+    BagsView={BLIZZARD_GRID=4}, FontRendering={SLUG=3,SHARP=2}, HostBridge={Menu2=function() return {} end},
     GlobalFontPath=function() return inherited end,
     ResolveFont=function(key) if key == "FancyFont" then return fancy end end,
     FontFileApplied=function(label,path) return label.path == path end,
@@ -365,18 +376,22 @@ local function Region()
 end
 function methods:CreateTexture() return Region() end
 function methods:GetStringHeight() return 14 end
+function methods:GetHeight() return 304 end
 function methods:SetFont(path,size,flags)
     if type(path) ~= "string" or not path:match("%.TTF$") and not path:match("%.ttf$") then return false end
     self.path,self.size,self.flags=path,size,flags;return true
 end
 local paint
 P.PreviewCanvas = { Button=function() return Region() end, Text=function() return Region() end,
-    Jump=Noop, Runtime=function() return true end, Changed=function() return true end,
+    Jump=function() return Region() end, Runtime=function() return true end, Changed=function() return true end,
     Watch=function(_,fn) paint=fn end }
 P.SetTranslatedText=Noop
 P.MenuWorkspace={FitHeader=Noop}
 C_Item={GetItemQualityColor=function() return 1,1,1 end}
 assert(loadfile(root.."/MSUF_Suite_Options/Pages/BagsPreview.lua"))("MSUF_Suite_Options",P)
+local originalCreate,originalParent=CreateFrame,UIParent
+UIParent={GetWidth=function() return 1366 end,GetHeight=function() return 768 end}
+CreateFrame=function() return Region() end
 local ui={header=Region(),width=600,selected="inventory",Focus=Noop}
 P.BuildBagsMenuPreview(ui)
 paint()
@@ -388,6 +403,7 @@ print("bag count preview custom="..custom.." / inherited="..default)
 assert(custom==fancy,"bag count preview did not resolve selected media key")
 assert(default==inherited,"bag count preview did not inherit global font for empty key")
 print("PASS actual Bags preview selected/inherited font")
+CreateFrame,UIParent=originalCreate,originalParent
 
 end
 

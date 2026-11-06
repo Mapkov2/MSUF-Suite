@@ -20,7 +20,8 @@ end
 
 local WORKSPACE = { page = PAGE, module = ID, title = "Bags", height = 220,
         tabs = {
-            { id = "bags", label = "Bags", sections = "bags_module organisation categories collections finance currencyGoals_module window reagentWindow" },
+            { id = "bags", label = "Bags", sections = "bags_module organisation finance currencyGoals_module window reagentWindow" },
+            { id = "categories", label = "Categories", sections = "categories collections" },
             { id = "inventory", label = "Inventory organisation", sections = "inventoryArchive_module restockPlanner_module craftShopping_module" },
             { id = "bank", label = "Bank organisation", sections = "bank bankWindow bankTransfer_module" },
             { id = "appearance", label = "Appearance", sections = "look appearance itemLevels" },
@@ -48,7 +49,7 @@ end
 local function WorkspaceSpec()
     if #P.SectionRules(ID, "bank", function(rule) return not rule.hidden end) > 0 then return WORKSPACE end
     return { page = PAGE, module = ID, title = "Bags", height = WORKSPACE.height,
-        tabs = { WORKSPACE.tabs[1], WORKSPACE.tabs[2], WORKSPACE.tabs[4] } }
+        tabs = { WORKSPACE.tabs[1], WORKSPACE.tabs[2], WORKSPACE.tabs[3], WORKSPACE.tabs[5] } }
 end
 
 -- The built-in category switches, the equipment set grouping and the hiding of
@@ -65,6 +66,16 @@ local function CategoriesInUse()
 end
 
 P.Gates[ID] = function(rule)
+    local panel = P.Get(ID, "windowPresentation") == P.Suite.BagsPresentation.PANEL
+        and P.Get(ID, "inventoryView") ~= P.Suite.BagsView.BLIZZARD_GRID
+    if rule.key == "panelFullHeight" and not panel then return false, Tr("Unavailable with the current settings.") end
+    if (rule.key == "inventoryRows" or rule.key == "autoSizeWindow") and panel and P.Get(ID, "panelFullHeight") then
+        return false, string.format(Tr("Turn off \"%s\" to change this."), Tr("Use full screen height"))
+    end
+    if rule.key == "compactGroups" and P.Get(ID, "windowPresentation") == P.Suite.BagsPresentation.PANEL
+        and P.Get(ID, "inventoryView") ~= P.Suite.BagsView.BLIZZARD_GRID then
+        return false, string.format(Tr("Choose %s for \"%s\"."), Tr("Compact window"), Tr("Bag presentation"))
+    end
     if rule.section ~= "categories" and not SHARED_WITH_BANK[rule.key] or CategoriesInUse() then return true end
     if P.Suite.Client.isForever then return false, Tr("Choose Categories for \"Default inventory view\".") end
     return false, Tr("Choose Categories for \"Default inventory view\" or Bank categories for \"Default bank view\".")
@@ -109,7 +120,7 @@ local function Build(ctx)
         })
     local appearance = P.SectionRules(ID, "appearance")
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_appearance", Tr("Window appearance"), appearance, {
-        help = "The combined bag and reagent bag use a Suite panel with a distinct header, border, and accent line. Set background opacity to 0 for a transparent window; item slots stay visible.",
+        help = "Choose the bag colors and opacity. Bag animations offers Off, a simple fade or a full staggered reveal. Reduced motion turns animations off. Equipped bags opens the slots for replacing your bags; Clean up bags uses the native cleanup action.",
         open = true,
     })
     local rules = P.SectionRules(ID, "itemLevels")
@@ -119,7 +130,7 @@ local function Build(ctx)
     })
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_window", Tr("Combined bag window"),
         P.SectionRules(ID, "window"), {
-            help = P.Help("Drag the bag title to move it; click for options.", "Drag the title of an open bag to move it. Click the title for bag options. Each bag keeps its own position. Blizzard shows your current gold on the right; the optional Session value on the left shows the change since login and survives /reload. Adjust the combined bag size here or in its MSUF Edit Mode popup. Reset position in Edit Mode returns the window to Blizzard's normal anchor."),
+            help = P.Help("Drag the bag title to move it; click for options.", "Fit window to contents removes unused space. Items per row adjusts the width. Visible rows sets the height; turn off Fit window to contents to keep it fixed. Window size scales the whole window. Use full screen height restores the tall panel. These size controls are also available in MSUF Edit Mode."),
         })
     local bankRules = P.SectionRules(ID, "bank", function(rule) return not rule.hidden end)
     if #bankRules > 0 then

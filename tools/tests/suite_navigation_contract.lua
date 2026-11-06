@@ -420,9 +420,15 @@ do
     combat = false
     assert(second ~= first and metadataReads == 1, "overview must return a new table and read the version once")
     Suite.RootDB.installation = { revision = 2, status = "skipped" }
+    Suite.Database.SetCharacterInstallationStatus("skipped")
     assert(Suite.GetOverview().needsSetup == true, "a skipped setup still needs setup")
     Suite.RootDB.installation = { revision = 2, status = "complete", profile = "suite" }
+    Suite.Database.SetCharacterInstallationStatus("complete")
     assert(Suite.GetOverview().needsSetup == false, "a completed setup needs none")
+    local originalGUID = UnitGUID
+    UnitGUID = function() return "Player-New" end
+    assert(Suite.GetOverview().needsSetup == true, "overview inherited another character's completion")
+    UnitGUID = originalGUID
     Suite.Menu.attached = false
     assert(Suite.GetOverview().pageKey == nil, "pageKey without registered pages")
     Suite.Menu.attached = true
@@ -451,6 +457,7 @@ do
     assert(deferred == 1 and stepped == 1 and bare == 0, "startup must ask once after world entry and keep host login ordering")
     loggedIn = true
     Suite.freshInstall, Suite.RootDB.installation = true, nil
+    Suite.RootDB.characterInstallations = nil
     Suite.Host.build = "Classic"
     local due, asked = true, 0
     local previousFrame = M.frame
@@ -483,9 +490,11 @@ do
     assert(Suite.Installer.MaybeShow("login") == true, "a host without first-load state keeps today's behavior")
     window:Hide()
     Suite.RootDB.installation = { revision = 2, status = "skipped" }
+    Suite.Database.SetCharacterInstallationStatus("skipped")
     assert(Suite.Installer.MaybeShow() == false, "a recorded setup must not reopen the installer")
     Suite.freshInstall = false
     Suite.RootDB.installation = { revision = 3, status = "pending" }
+    Suite.Database.SetCharacterInstallationStatus("pending")
     assert(Suite.Installer.MaybeShow("login") == true,
         "a pending setup did not resume after SavedVariables were written")
     window:Hide()
@@ -494,6 +503,7 @@ do
         "an earlier first login without an installation receipt never recovered its automatic setup")
     window:Hide()
     Suite.RootDB.installation = { revision = 3, status = "complete" }
+    Suite.Database.SetCharacterInstallationStatus("complete")
     assert(Suite.Installer.MaybeShow("login") == false, "completed installations must stay closed")
     M.frame = previousFrame
 end
@@ -506,10 +516,12 @@ do
         finished = finished + 1
     end }
     Suite.RootDB.installation = { revision = 3, status = "complete" }
+    Suite.Database.SetCharacterInstallationStatus("complete")
     assert(Suite.Installer.Open())
     MSUFSuiteInstallFrame:Hide()
     assert(finished == 1, "native setup closure did not release the deferred CDM choice")
     Suite.RootDB.installation = { revision = 3, status = "pending" }
+    Suite.Database.SetCharacterInstallationStatus("pending")
     assert(Suite.Installer.Open())
     MSUFSuiteInstallFrame:Hide()
     assert(finished == 1, "unfinished setup released CDM consent")

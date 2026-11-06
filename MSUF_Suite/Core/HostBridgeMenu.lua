@@ -351,6 +351,20 @@ function HostBridge.EnsureMenuTheme()
     return MenuTheme() ~= nil
 end
 
+-- Reuse the complete MSUF toggle, including checked/disabled/hover feedback.
+function HostBridge.MenuCheckbox(parent, label)
+    local _, menu = MenuTheme()
+    local create = AppearanceAction(menu and menu.Widgets, "ToggleAt")
+    return create and create(parent, label or "", 0, 0, 320) or nil
+end
+
+function HostBridge.MenuInput(edit)
+    local skin = AppearanceAction(HostBridge.MenuAppearance(), "SkinEditBox")
+    if not skin then return false end
+    skin(edit)
+    return true
+end
+
 -- Menu2's backdrop textures and logo watermark across shell, host and rail.
 function HostBridge.MenuAtmosphere(frame, host, rail)
     local apply = AppearanceAction(MenuTheme(), "ApplyMenuAtmosphere")

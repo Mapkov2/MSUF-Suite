@@ -56,7 +56,7 @@ end
 
 function Timers.Classify(entry)
     entry.timer = entry.family == K.FAMILY.AURA and entry.src ~= "p" and entry.unit ~= "target" and entry.unit ~= "both"
-        and (Summon(entry) ~= nil or ((entry.ov or C.EMPTY).timerDuration or 0) > 0)
+        and entry.unit ~= "group" and (Summon(entry) ~= nil or ((entry.ov or C.EMPTY).timerDuration or 0) > 0)
 end
 
 function Timers.Reclassify(entry)

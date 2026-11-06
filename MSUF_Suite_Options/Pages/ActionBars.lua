@@ -210,15 +210,46 @@ local function ResetQuick()
     return P.ResetRules(ID, {}, nil, keys)
 end
 
-local function BuildPreview(ctx, parent, y, width, height)
-    return P.ActionBarPreview.Build(ctx, parent, y, width, height, function() return selected end)
+local function FindBar()
+    if P.Combat() or not P.Get(ID, "enabled") or not Available(selected) then return false end
+    local prefix = "bar" .. selected
+    if S.KeepActionBarPosition then S.KeepActionBarPosition(selected) end
+    P.SetMany(ID, { [prefix .. "Point"] = Suite.ActionBarEnum.POINT.CENTER, [prefix .. "X"] = 0, [prefix .. "Y"] = 0 })
+    if not BarOff(selected) then P.MoveOnScreen(ID, prefix) end
+end
+
+local function BuildKeybind(ctx, body, y)
+    local button = (W.RoleButton and W.RoleButton(body, "Keybind Mode", "success", 200, 24))
+        or W.TopButton(body, "Keybind Mode", 200, 24)
+    button:SetPoint("TOPRIGHT", body, "TOPRIGHT", -110, y)
+    HM.SkipHistoryCheckpoint(button)
+    button:SetScript("OnClick", function()
+        if not P.Combat() and S.OpenQuickKeybind then S.OpenQuickKeybind() end
+    end)
+    M.TrackRefresh(ctx, function() button:SetEnabled(not P.Combat() and S.OpenQuickKeybind ~= nil) end)
+    local meta = P.Meta(PAGE, ID, "header.bindings", "action", "suite_actionbars_actionbars_module")
+    if M.RegisterControlMetadata then M.RegisterControlMetadata(button, meta, "Keybind Mode", "button") end
+    P.ActionBarMenu.Prepare(body, { { widget = button, meta = meta, rule = { key = "header.bindings", label = "Keybind Mode" } } })
+end
+
+local function BuildPreview(ctx, parent, y, width, height, narrow)
+    local find = P.Button(ctx, parent, "Center Screen - Find my Bar", 16, y, narrow and width or width - 306, FindBar,
+        function() return P.Get(ID, "enabled") and Available(selected) end,
+        P.Meta(PAGE, ID, "editor.find", "action", "suite_actionbars_editor"))
+    P.ActionBarMenu.Prepare(parent, { { widget = find, rule = { key = "editor.find", label = "Center Screen - Find my Bar" },
+        meta = P.Meta(PAGE, ID, "editor.find", "action", "suite_actionbars_editor") } }, function()
+            local workspace = ctx._msufSuiteActionBarWorkspace
+            if workspace then workspace.select("layout") end
+        end)
+    P.ActionBarPreview.Build(ctx, parent, y - (narrow and 76 or 38), width, height, function() return selected end)
+    return find
 end
 
 -- The selected bar stays above the scroller, so every topic keeps its scope.
 local function BuildSelection(ctx, b, attachCopy)
     local body
     local narrow = (b.width or ctx.width or 720) - 32 < 560
-    local height = narrow and 294 or 256
+    local height = narrow and 370 or 294
     if W.FixedPreviewSection then
         body = W.FixedPreviewSection(ctx, b, { title = Tr("Selected bar"), height = height })
         -- The host caps compact previews at 180px; this header also contains
@@ -249,7 +280,9 @@ local function BuildSelection(ctx, b, attachCopy)
             SetBarOn(selected, value == true)
         end, meta)
     M.TrackRefresh(ctx, function() W.SetControlEnabled(toggle, Available(selected) and not P.Combat()) end)
-    local copyTo, copyButton = attachCopy(ctx, body, -44)
+    local toolbarY = narrow and -186 or -110
+    local copyTo, copyButton = attachCopy(ctx, body, toolbarY + 24)
+    BuildKeybind(ctx, body, toolbarY)
     if copyTo then M.TrackRefresh(ctx, function() copyTo.Refresh() end) end
     ctx._msufSuiteActionBarScopedControls = {
         suite_actionbars_bar_visibility = { widget = toggle, meta = meta,
@@ -258,12 +291,13 @@ local function BuildSelection(ctx, b, attachCopy)
             meta = P.Meta(PAGE, ID, "editor.copyTo", "ephemeral", "suite_actionbars_editor"),
             rule = { key = "editor.copyTo", label = "Copy To" } },
     }
-    BuildPreview(ctx, body, narrow and -148 or -110, width, 132)
+    local find = BuildPreview(ctx, body, narrow and -148 or -110, width, 132, narrow)
     function ctx.RefreshActionBarScope()
         local shared = P.ActionBarMenu.IsShared(ctx)
         local title = HM.GetControlTitle(picker)
         if title then P.SetTranslatedText(title, Tr(shared and "Preview bar" or "Selected bar")) end
         W.SetControlShown(toggle, not shared)
+        find:SetShown(not shared)
         if copyButton then
             copyButton:SetShown(not shared)
             if shared then copyTo.Hide() end

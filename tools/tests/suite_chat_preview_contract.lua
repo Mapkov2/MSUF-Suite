@@ -44,7 +44,15 @@ local function File(path, addon, ns)
         origin = { "ChatPreviewPositions.lua", 'if spec.icon and not P.Get(ID, spec.prefix .. "Moved") then', 'if false then' },
         reset = { "ChatPreviewPositions.lua", 'if spec.icon then values[prefix .. "Moved"] = false end', '' },
         profile = { "ChatPreview.lua", 'token.current() and token.config == P.S.Config(ID)', 'true' },
-        legacy = { "ChatPreview.lua", 'if P.W.FocusCollapsibleSection then P.W.FocusCollapsibleSection(body, { flash = true }) end', '' },
+        legacy = { "ChatPreview.lua", 'if P.W.FocusCollapsibleSection and P.W.FocusCollapsibleSection(body, { persist = true, flash = true }) then return true end', '' },
+        sectionJump = { "ChatPreview.lua", 'P.W.FocusCollapsibleSection(body, { persist = true, flash = true }) then return true end',
+            'P.W.FocusCollapsibleSection(body, { persist = true, flash = true }) then end' },
+        legacyPersistence = { "ChatPreview.lua", 'persist = true, flash = true', 'flash = true' },
+        navigationPlacement = { "ChatPreview.lua", 'handle.canMove and handle:IsVisible() end,',
+            'handle.canMove and handle:IsVisible() and R.Allowed(handle.spec) end,' },
+        navigationEnable = { "ChatPreview.lua", 'self.openButton:SetEnabled(enabled)',
+            'self.openButton:SetEnabled(enabled and handle and R.Allowed(handle.spec))' },
+        navigationCombat = { "ChatPreview.lua", 'ui.inCombat or P.Combat() or not ui.header:IsVisible()', 'not ui.header:IsVisible()' },
         accordion = { "ChatPreviewPositions.lua", 'if R.keys[rule.key] then positions', 'if false then positions' },
         axisProfile = { "ChatPreview.lua", 'if Valid() then return handler(...) end', 'if true then return handler(...) end' },
     }
@@ -130,6 +138,38 @@ Check(#parts.icons == 5 and #ui.handles == 12, "preview omitted interactive elem
 Check(ui.canvas.clipsChildren ~= false, "preview art has no clip owner")
 Check(not ui.viewport.clipsChildren, "selection toolbar is clipped below its own viewport")
 local bridge = M.SearchBridge
+-- A preview link opens its own section, including a previously closed one.
+for _, handle in ipairs(ui.handles) do
+    local section = "suite_chat_" .. handle.spec.section
+    local body = ui.ctx.chatSections[section]
+    local entry = P.HM.GetSectionEntry(body)
+    entry.SetOpenImmediate(false)
+    handle:GetScript("OnMouseDown")(handle, "LeftButton")
+    handle:GetScript("OnMouseUp")(handle, "LeftButton")
+    handle:GetScript("OnClick")(handle, "LeftButton")
+    mw:RunTimers()
+    local meta = P.Meta("suite_chat", "chat", handle.spec.control, "setting", section)
+    local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_chat", meta)
+    Check(entry.open and widget and widget:IsVisible(), "preview link missed its settings: " .. handle.spec.control)
+end
+-- Being unable to move an element must not prevent opening its settings.
+Check(P.Set("chat", "lockWindowPosition", false), "navigation fixture could not unlock window")
+E.Select(ui, ui.targets.window)
+Check(ui.selection:IsShown() and ui.selection.openButton:IsEnabled(), "Open settings is disabled for the unlocked chat window")
+Check(not ui.selection.resetButton:IsEnabled() and not ui.selection.axisX.minusButton:IsEnabled(), "unlocked window enables position edits")
+local windowSection = P.HM.GetSectionEntry(ui.ctx.chatSections.suite_chat_window)
+windowSection.SetOpenImmediate(false)
+ui.selection.openButton:GetScript("OnClick")(ui.selection.openButton, "LeftButton")
+mw:RunTimers()
+Check(windowSection.open and not P.Get("chat", "lockWindowPosition"), "settings link changed window anchoring or stayed closed")
+Check(P.Set("chat", "lockWindowPosition", true), "navigation fixture could not restore anchoring")
+-- The combat-edge flag applies to links as well as drag/position writes.
+local tabSection = P.HM.GetSectionEntry(ui.ctx.chatSections.suite_chat_tabs)
+tabSection.SetOpenImmediate(false)
+ui.viewport:GetScript("OnEvent")(ui.viewport, "PLAYER_REGEN_DISABLED")
+Check(ui.viewport._msuf2SelectionDeps.OpenSettings(ui.viewport, ui.targets.tab) == false and not tabSection.open,
+    "combat edge opened preview settings")
+ui.viewport:GetScript("OnEvent")(ui.viewport, "PLAYER_REGEN_ENABLED")
 local function Exact(key, section)
     local meta = P.Meta("suite_chat", "chat", key, "setting", "suite_chat_" .. section)
     local called, opened, focused = bridge.OpenSearchTarget("suite_chat", "", nil, nil, {}, meta)
@@ -255,7 +295,29 @@ local entry = P.HM.GetSectionEntry(shell)
 entry:SetOpenImmediate(false)
 ui.targets.messageText:GetScript("OnClick")(ui.targets.messageText, "LeftButton")
 Check(entry.open, "legacy preview click did not open its accordion")
+Check(M.SelectPage("suite_chat"), "legacy link could not refresh its page")
+mw:RunTimers()
+Check(entry.open, "legacy preview link closed on page refresh")
 M.SearchBridge = realBridge
+-- Section navigation must settle at the section, even if a cached exact
+-- control reports geometry elsewhere. The host's own focus helper owns this scroll.
+do
+    local section = P.HM.GetSectionEntry(ui.ctx.chatSections.suite_chat_tabs)
+    local child, scroll, outer = M.scrollChild, M.scrollFrame, section.outer
+    local childTop, outerTop, childScale, outerScale, scrollScale = child.GetTop, outer.GetTop,
+        child.GetEffectiveScale, outer.GetEffectiveScale, scroll.GetEffectiveScale
+    local childHeight = child:GetHeight()
+    child.GetTop, outer.GetTop = function() return 1000 end, function() return 500 end
+    child.GetEffectiveScale, outer.GetEffectiveScale, scroll.GetEffectiveScale =
+        function() return 1 end, function() return 1 end, function() return 1 end
+    child:SetHeight(5000)
+    ui.targets.tab:GetScript("OnClick")(ui.targets.tab, "LeftButton")
+    mw:RunTimers()
+    Check(math.abs(scroll:GetVerticalScroll() - 488) < .01, "Chat preview settings scroll was overwritten")
+    child.GetTop, outer.GetTop = childTop, outerTop
+    child.GetEffectiveScale, outer.GetEffectiveScale, scroll.GetEffectiveScale = childScale, outerScale, scrollScale
+    child:SetHeight(childHeight)
+end
 Check(P.SetMany("chat", { windowX = 97, windowY = -26, panelColor = "123456" }), "section setup failed")
 Check(ui.ctx.chatSections.suite_chat_window._msufSuiteSectionReset(), "window section reset failed")
 c = P.S.Config("chat")

@@ -18,7 +18,7 @@ local Flag = Catalog.Flag
 local type, wipe = type, C.wipe
 local SLICE, RESTARTS = 20, 2
 local FIELDS = { "spell", "override", "tooltip", "equipSlot", "spellCategory", "selfAura", "hasAura", "charges", "known",
-    "defaultCategory" }
+    "defaultCategory", "groupAura" }
 local pass = Catalog.pass
 pass.ids, pass.cats, pass.order, pass.seen = {}, {}, {}, {}
 pass.total, pass.at, pass.kept, pass.restarts = 0, 0, 0, 0

@@ -175,7 +175,7 @@ function Index.ReadButton(index, button, info, quest, version, bag, slot, bankTy
         and S.Public(info.hyperlink) and type(info.hyperlink) == "string"
     local link = valid and info.hyperlink or nil
     -- The same item in the same place keeps its record: what was derived from
-    -- the link (metadata, upgrade track, item level) and its shuffle key stay.
+    -- the link (metadata, upgrade track and item level) stays.
     -- Every field read from info is written again below.
     if item.link ~= link or item.bag ~= bag or item.slot ~= slot or item.bankType ~= bankType then
         for key in pairs(item) do item[key] = nil end

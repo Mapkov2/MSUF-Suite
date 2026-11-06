@@ -42,7 +42,8 @@ do
         local frame, listed = _G[name], false
         for _, special in ipairs(UISpecialFrames) do if special == name then listed = true end end
         assert(frame and frame.shown and listed, name .. " must close with Escape (UISpecialFrames)")
-        assert(frame:IsMovable() and frame.scripts.OnDragStart and frame.scripts.OnDragStop,
+        local drag = frame.dragHandle or frame
+        assert(frame:IsMovable() and drag.scripts.OnDragStart and drag.scripts.OnDragStop,
             name .. " must be movable by dragging")
     end
 end

@@ -226,6 +226,9 @@ local function Names(module, c)
         local choice = CHOICES[i]
         Toggle(module, c[choice[1]] or KEEP, choice[2])
     end
+    -- Blizzard's NPC Names = All (SettingsDefinitions_Frame/Nameplates.lua).
+    -- NPC_NAMES_ONLY already writes 0 for friendly plates through CHOICES.
+    Toggle(module, c.friendlyNPCs == Mode.NPC_NAMES_ONLY and SHOW or KEEP, "UnitNameNPC")
 end
 
 -- The "Customize" pairs of Distance and stacking: { mode setting, number

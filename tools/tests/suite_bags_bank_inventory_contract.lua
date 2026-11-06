@@ -1,9 +1,24 @@
 local root = assert(arg[1])
 local combat, timers, scans, actions = false, {}, {}, {}
 local methods = {}
-local function Widget()
-    return setmetatable({ shown = true, scripts = {} }, { __index = methods })
+function methods:GetNormalTexture() end
+function methods:GetPushedTexture() end
+function methods:GetDisabledTexture() end
+function methods:GetHighlightTexture() end
+local function Widget(_, _, _, template)
+    local widget = setmetatable({ shown = true, scripts = {} }, { __index = methods })
+    if template == "UIPanelButtonTemplate" then widget.Left, widget.Middle, widget.Right = Widget(), Widget(), Widget() end
+    return widget
 end
+function methods:SetNormalFontObject() end
+function methods:SetHighlightFontObject() end
+function methods:SetDisabledFontObject() end
+function methods:SetNormalTexture() end
+function methods:SetPushedTexture() end
+function methods:SetDisabledTexture() end
+function methods:SetHighlightTexture() end
+function methods:IsEnabled() return true end
+function methods:SetAlpha() end
 function methods:SetPoint(...) self.point = { ... }; self.moves = (self.moves or 0) + 1 end
 function methods:ClearAllPoints() self.point = nil end
 function methods:Show() self.shown = true end
@@ -99,8 +114,8 @@ local M = { active = true, config = c, Refresh = function() end, Disable = funct
     HideBankLevels = function(self) self.hiddenNativeLabels = true end,
     UpdateBank = function(self) self.nativeUpdates = (self.nativeUpdates or 0) + 1 end }
 local S = {
-    CreateFrame = function(kind)
-        local w = Widget()
+    CreateFrame = function(kind, name, parent, template)
+        local w = Widget(kind, name, parent, template)
         if kind == "ItemButton" then w.Count = Widget() end
         if kind == "EditBox" then w.Instructions = Widget() end
         return w
@@ -115,7 +130,7 @@ local S = {
 }
 local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
 local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
-    BagsView = catalog.BagsView, BagsBankView = catalog.BagsBankView, BagsSort = catalog.BagsSort,
+    BagsPresentation = catalog.BagsPresentation, BagsView = catalog.BagsView, BagsBankView = catalog.BagsBankView, BagsSort = catalog.BagsSort,
     BagsBankColor = catalog.BagsBankColor,
     Client = { SupportsEvent = function() return true end } }, BagsModule = M,
     StackSplitter = { OwnerHidden = function() end, OpenFor = function() end } }
@@ -133,12 +148,13 @@ do
     end
 end
 P.ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S)
+P.BagWidgets = dofile(root .. "/tools/tests/suite_test_support.lua").BagsWidgetsFixture(P)
 UnitGUID = function() return "Player-1" end
 -- The Bags module's context timers: bank passes are one coalesced job.
 P.NS.Dispatch = function(callback, ...) return callback(...) end
 M.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", M)
 assert(loadfile(root .. "/MSUF_Suite/Core/InventoryRules.lua"))("Core", P.NS)
-for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "UpgradeMarker", "GridView",
+for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "PlayerGear", "UpgradeMarker", "Presentation", "Appearance", "GridView",
     "InventoryDetails", "SavedSearches", "SmartSearch", "FreeSlots", "BankIndex", "BankActions", "BankInventory" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end

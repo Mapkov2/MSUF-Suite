@@ -810,6 +810,40 @@ assert(#CDM.SLOTS == 12 and #picker.values() == #CDM.SLOTS, "bar selector lists 
 assert(picker.values()[3].value == "def" and picker.values()[4].value == "ext" and picker.values()[7].value == "c1"
     and picker.values()[7].text:find("(off)", 1, true) and not picker.values()[6].text:find("(off)", 1, true),
     "bar selector order: built-in bars first, custom bars after, off custom bars marked")
+-- Enabling the module also shows the selected bar in one history change.
+-- Built-in and custom bars share this gesture; other bars keep their state.
+do
+    local toggle = ctx.sections[1].headerSwitch
+    local enabled, selected, saved = Config().enabled, Page.selected, {}
+    for _, slot in ipairs(CDM.SLOTS) do saved[slot.key] = Config()[CDM.KEYS[slot.key].on] end
+    for _, slot in ipairs(CDM.SLOTS) do
+        picker.set(slot.key)
+        local other = {}
+        for index, entry in ipairs(CDM.SLOTS) do
+            local key = CDM.KEYS[entry.key].on
+            Config()[key] = index % 2 == 0
+            if entry.key ~= slot.key then other[key] = Config()[key] end
+        end
+        Config().enabled, Config()[CDM.KEYS[slot.key].on] = false, false
+        local writes = historyWrites
+        toggle.set(true)
+        assert(toggle.get() and Control("on").get(), "Enable must show the selected bar: " .. slot.key)
+        assert(historyWrites == writes + 1, "Enable and Show this bar must share one history change")
+        for key, value in pairs(other) do assert(Config()[key] == value, "Enable changed another bar: " .. key) end
+        toggle.set(false)
+        assert(not toggle.get() and Control("on").get(), "Disable must retain the bar's visibility preference")
+        Config()[CDM.KEYS[slot.key].on] = false
+        toggle.set(false)
+        assert(not Control("on").get(), "Disable must keep an already hidden bar off")
+        combat = true
+        toggle.set(true)
+        combat = false
+        assert(not toggle.get() and not Control("on").get(), "Combat must refuse both enable writes")
+    end
+    Config().enabled = enabled
+    for _, slot in ipairs(CDM.SLOTS) do Config()[CDM.KEYS[slot.key].on] = saved[slot.key] end
+    picker.set(selected)
+end
 local size = Control("size")
 local c1Size = Config().c1_size
 picker.set("uti")
@@ -1668,10 +1702,10 @@ do
         "Track on is a stack row with one label and no bar value behind it")
     local choices = {}
     for i, item in ipairs(field.menu) do choices[i] = item.value .. "=" .. item.text end
-    assert(table.concat(choices, ",") == "0=Automatic,2=Me,3=Target,4=Both", "Track on choices: " .. table.concat(choices, ","))
+    assert(table.concat(choices, ",") == "0=Automatic,2=Me,3=Target,4=Both,5=Group", "Track on choices: " .. table.concat(choices, ","))
     local valid = CDM.SPELL_FIELDS.auraUnit
-    assert(not valid(0) and valid(1) and valid(2) and valid(3) and valid(4) and not valid(5) and not valid(2.5),
-        "the catalog stores 1 to 4; Automatic from the popover stores nothing")
+    assert(not valid(0) and valid(1) and valid(2) and valid(3) and valid(4) and valid(5) and not valid(6) and not valid(2.5),
+        "the catalog stores 1 to 5; Automatic from the popover stores nothing")
     -- The stored values mean what the runtime makes of them (EntryFill.lua).
     local file = assert(io.open(root .. "/MSUF_Suite_CooldownManager/EntryFill.lua", "rb"))
     local literal = file:read("*a"):match("AURA_UNIT%s*=%s*(%b{})")
@@ -1680,12 +1714,12 @@ do
     assert(units[1] == nil and units[2] == "player" and units[3] == "target" and units[4] == "both",
         "Me, Target and Both must be the runtime's player, target and both")
     -- Stack-row gating: Blizzard's buffs and cooldowns that show their buff,
-    -- never a plain cooldown or an item. Custom auras name their unit
-    -- themselves (a: on you, d: on your target), so Track on would break them.
+    -- never a plain cooldown or an item. Custom auras can override their
+    -- default unit, including the group recipient route for helpful buffs.
     local Applies = Page.FieldApplies
-    assert(Applies(field, 2, "b", false) and not Applies(field, 2, "a", false) and not Applies(field, 2, "d", false)
+    assert(Applies(field, 2, "b", false) and Applies(field, 2, "a", false) and Applies(field, 2, "d", false)
         and Applies(field, 1, "b", true) and not Applies(field, 1, "b", false) and not Applies(field, 1, "s", false)
-        and not Applies(field, 1, "s", true) and not Applies(field, 1, "i", false) and not Applies(field, 1, "e", false),
+        and Applies(field, 1, "s", true) and not Applies(field, 1, "i", false) and not Applies(field, 1, "e", false),
         "Track on must follow the stack rows of Blizzard's entries")
     local stackField = Page.FIELDS[index + 1]
     assert(Applies(stackField, 2, "a", false) and Applies(stackField, 2, "d", false), "custom auras keep their stack rows")
@@ -1727,7 +1761,7 @@ do
     assert(Page.SpellField("b1", "auraUnit") == nil, "Automatic must clear a stored 1")
     -- Values outside the catalog are refused, Automatic's 0 among them.
     writes = historyWrites
-    assert(not Page.SetSpellField("b1", "auraUnit", 0) and not Page.SetSpellField("b1", "auraUnit", 5)
+    assert(not Page.SetSpellField("b1", "auraUnit", 0) and not Page.SetSpellField("b1", "auraUnit", 6)
         and not Page.SetSpellField("b1", "auraUnit", 2.5) and not Page.SetSpellField("b1", "auraUnit", "3")
         and Page.SpellField("b1", "auraUnit") == nil and historyWrites == writes, "Track on stored an invalid value")
     -- Without Menu2's list, the choice steps through Me, Target, Both and
@@ -1735,12 +1769,12 @@ do
     local openList = W.OpenDropdown
     W.OpenDropdown = nil
     local stepped = {}
-    for i = 1, 4 do
+    for i = 1, 5 do
         Fire(trackOn.choice, "OnClick")
         stepped[i] = tostring((Page.SpellField("b1", "auraUnit"))) .. "=" .. trackOn.choice.text
     end
     W.OpenDropdown = openList
-    assert(table.concat(stepped, ",") == "2=Me,3=Target,4=Both,nil=Automatic",
+    assert(table.concat(stepped, ",") == "2=Me,3=Target,4=Both,5=Group,nil=Automatic",
         "Track on must step through its choices: " .. table.concat(stepped, ","))
     assert(Page.SpellOverrides().e.b1 == nil, "stepping back to Automatic must leave no spell options")
 end

@@ -485,6 +485,8 @@ Adapters.Register({
 Adapters.Register({
     id = "worldMap",
     labelKey = "SKIN_WORLD_MAP",
+    -- Forever owns the map canvas render transforms; animate only its quest log.
+    menuMotion = not NS.Client.isForever,
     allowImplicitProtected = true,
     trackIconTree = true,
     resolve = function() return _G.WorldMapFrame end,

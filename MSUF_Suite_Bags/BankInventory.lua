@@ -178,13 +178,9 @@ local function Create()
     BankInventory.free:SetPoint("LEFT", BankInventory.position, "RIGHT", 8, 0)
     BankInventory.free:SetPoint("RIGHT", BankInventory.native, "LEFT", -8, 0)
     P.InventorySearch.Create(BankInventory, Request, frame, PlaceSearch)
-    BankInventory.side = P.ChildFrame("ScrollFrame", frame, "UIPanelScrollFrameTemplate")
+    BankInventory.side, BankInventory.sideChild = P.BagWidgets.Scroll(frame, 133)
     BankInventory.side:SetPoint("TOPLEFT", 10, -40)
     BankInventory.side:SetPoint("BOTTOMLEFT", 10, 40)
-    BankInventory.side:SetWidth(133)
-    BankInventory.sideChild = P.ChildFrame("Frame", BankInventory.side)
-    BankInventory.sideChild:SetSize(132, 25)
-    BankInventory.side:SetScrollChild(BankInventory.sideChild)
     -- Below the bank window, opposite Blizzard's bank tabs (BankFrame.xml
     -- TabSystem): the search box and Clean Up button stay free in every view.
     BankInventory.modeButton = Button(BankFrame, MODES[BANK_VIEW.TABS], 142, NextMode)
@@ -204,8 +200,12 @@ local function PaintCell(cell, number, sidebar, font)
     if not cell.row then
         BankInventory.labelCount = BankInventory.labelCount + 1
         local toggle = M.config.bankView == BANK_VIEW.CATEGORIES and ToggleGroup or nil
-        Grid.PaintHeader(BankInventory.labels, BankInventory.labelCount, BankInventory.frame, BankInventory.frame,
+        local label = Grid.PaintHeader(BankInventory.labels, BankInventory.labelCount, BankInventory.frame, BankInventory.frame,
             x, y - 9, (cell.width or BankInventory.columns) * 40 - 4, cell.group, toggle)
+        local plate = P.BagAppearance.Section(label, BankInventory.frame)
+        local rows = math.min(cell.height, BankInventory.visibleRows - cell.line + BankInventory.scroll)
+        P.BagAppearance.PaintSection(plate, BankInventory.frame, x, y,
+            (cell.width or BankInventory.columns) * 40 - 4, rows * 40 - 5, nil, label)
         return number
     end
     number = number + 1
@@ -235,9 +235,9 @@ Render = function()
     if not BankInventory.active or not BankFrame:IsShown() or NS.IsCombatLocked() then return end
     local categories = M.config.bankView == BANK_VIEW.CATEGORIES
     local sidebar = categories and 170 or 12
-    BankInventory.columns = math.max(4, math.floor((BankInventory.frame:GetWidth() - sidebar - 12) / 40))
+    BankInventory.columns = Model.BankColumns(BankInventory.frame:GetWidth(), categories)
     BankInventory.visibleRows = math.max(2, math.floor((BankInventory.frame:GetHeight() - 84) / 40))
-    local layout = Model.Layout(BankInventory.model, BankInventory.columns, M.config.compactGroups)
+    local layout = Model.Layout(BankInventory.model, BankInventory.columns, BankInventory.config.compactGroups)
     BankInventory.maxScroll = math.max(0, BankInventory.model.lineCount - BankInventory.visibleRows)
     BankInventory.scroll = math.min(BankInventory.scroll, BankInventory.maxScroll)
     Grid.HideHeaders(BankInventory.labels)
@@ -261,14 +261,7 @@ Render = function()
 end
 
 local function PrepareModel(state)
-    for key, value in pairs(M.config) do BankInventory.config[key] = value end
-    BankInventory.config.inventoryView = M.config.bankView == BANK_VIEW.CATEGORIES and VIEW.CATEGORIES or VIEW.ALL
-    BankInventory.config.groupExpansions = M.config.bankGroupExpansions
-    BankInventory.config.expansionFirst = M.config.bankGroupExpansions
-    BankInventory.config.groupEquipmentSlots = M.config.bankGroupEquipmentSlots
-    BankInventory.config.groupReagentTypes = M.config.bankGroupReagentTypes
-    BankInventory.config.hideEmptySlots = M.config.bankHideEmptySlots
-    BankInventory.config.showRecent = false
+    Model.BankConfig(BankInventory.config, M.config)
     local tab = BankInventory.selected and tonumber(BankInventory.selected:match("^tab:(%-?%d+)$"))
     local items = BankInventory.index.items
     if tab then

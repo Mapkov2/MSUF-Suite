@@ -73,8 +73,8 @@ local function ValidState(state)
         and type(state.values) == "table"
 end
 
--- MSUF's external popup shows X/Y in its summary; owner controls make them
--- editable. Every Suite mover with numeric profile coordinates gets fields. A
+-- Owner controls edit profile coordinates on every supported host. The axis
+-- metadata replaces newer hosts' generic screen-position row. A
 -- native bag window starts at Blizzard's live position until first moved.
 local function PositionValues(id, spec)
     local config = S.Config(id)
@@ -100,6 +100,7 @@ local function PopupControls(id, spec)
         if rule and rule.min and rule.max then
             controls[#controls + 1] = {
                 id = key, label = label, kind = "number", min = rule.min, max = rule.max, step = 1,
+                positionAxis = key == spec.xKey and "x" or "y",
                 get = function() return PositionValues(id, spec)[key] end,
                 set = function(value) return SetPositionValue(id, spec, key, value) end,
             }

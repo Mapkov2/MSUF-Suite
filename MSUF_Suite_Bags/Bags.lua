@@ -52,7 +52,7 @@ local function StyleSlot(self, button)
     end
     local activating = not record.slotNativeActive
     if not record.slotOuter or activating then
-        if NS.IsCombatLocked() then
+        if NS.IsCombatLocked() and not Private.BagLayout.Frame(button) then
             self.needsItemRefresh = true
             S.Queue("bags")
             return
@@ -77,7 +77,7 @@ local function StyleSlot(self, button)
     local empty = not button:HasItem()
     if record.slotEmpty ~= empty then LayerSurface(record, empty) end
     if button.ItemSlotBackground and (activating or record.nativeBg ~= button.ItemSlotBackground) then
-        self.context:Alpha(button.ItemSlotBackground, 0)
+        Private.BagLayout.Alpha(self.context, button.ItemSlotBackground, 0)
         record.nativeBg = button.ItemSlotBackground
     end
     if record.slotStyle ~= self.slotStyle then
@@ -109,7 +109,7 @@ M.OverlayText = OverlayText
 local function EnsureLabel(self, button)
     local record = self.overlays[button]
     if record and record.label then return record end
-    if NS.IsCombatLocked() then
+    if NS.IsCombatLocked() and not Private.BagLayout.Frame(button) then
         self.needsItemRefresh = true
         S.Queue("bags")
         return nil
@@ -256,7 +256,7 @@ local function PaintBindBadge(self, button, pending, info)
         return
     end
     if not record.bindBadge then
-        if NS.IsCombatLocked() then
+        if NS.IsCombatLocked() and not Private.BagLayout.Frame(button) then
             self.needsItemRefresh = true
             S.Queue("bags")
             return
@@ -380,6 +380,8 @@ end
 local function CombinedShown()
     if not M.active then return end
     Loads.Retry(M.loads)
+    local style = M.windows and M.windows[M.frame]
+    if style then Private.BagMotion.Play(style.shell, M.config) end
     M:UpdateVisible()
     M:RefreshWindowLayout()
     RefreshMovers()
@@ -389,9 +391,15 @@ local function ReagentItemsUpdated()
     if M.active then StyleVisibleSlots(M, ContainerFrame6) end
 end
 
+local function ReagentHidden()
+    if M.active then Private.InventoryView.Request() end
+    RefreshMovers()
+end
+
 local function ReagentShown()
     if not M.active then return end
     StyleVisibleSlots(M, ContainerFrame6)
+    Private.InventoryView.Request()
     M:RefreshWindowLayout()
     RefreshMovers()
 end
@@ -404,21 +412,47 @@ local function InstallHooks(self)
     frame:HookScript("OnHide", RefreshMovers)
     hooksecurefunc(ContainerFrame6, "UpdateItems", ReagentItemsUpdated)
     ContainerFrame6:HookScript("OnShow", ReagentShown)
-    ContainerFrame6:HookScript("OnHide", RefreshMovers)
+    ContainerFrame6:HookScript("OnHide", ReagentHidden)
     hooksecurefunc("UpdateContainerFrameAnchors", M.AfterNativeWindowLayout)
     self.hooked = true
 end
 
-local function CombinedModeChanged(module)
+-- CVar events can run before GetCVar exposes the committed value. Never
+-- write from that event stack; an owned write also suppresses its own event.
+local function SetCombinedMode(module)
+    module.writingCombinedMode = true
+    local applied = module.context:CVar("combinedBags", 1)
+    module.writingCombinedMode = nil
+    return applied
+end
+
+local function ApplyCombinedMode(module)
+    if NS.InCombat() then
+        S.Queue("bags")
+        return
+    end
     local mode = C_CVar.GetCVar("combinedBags")
     if S.Public(mode) and mode == "0" then
-        if NS.IsCombatLocked() then
-            module.combinedBagConfigured = nil
-            S.Queue("bags")
-        else
-            module.context:CVar("combinedBags", 1)
-        end
+        SetCombinedMode(module)
+        mode = C_CVar.GetCVar("combinedBags")
     end
+    module.combinedBagConfigured = S.Public(mode) and mode == "1" or nil
+end
+
+local function CombinedModeChanged(module, _, useCombinedBags)
+    if module.writingCombinedMode then return end
+    if S.Public(useCombinedBags) and useCombinedBags == true then
+        module.combinedBagConfigured = true
+        if module.combinedModeJob then module.combinedModeJob:Cancel() end
+        return
+    end
+    module.combinedBagConfigured = nil
+    if NS.InCombat() then
+        S.Queue("bags")
+        return
+    end
+    module.combinedModeJob = module.combinedModeJob or module.context:Coalesce(0, ApplyCombinedMode)
+    module.combinedModeJob:Request()
 end
 
 local function CombatEnded(module)
@@ -430,6 +464,7 @@ end
 -- its stop method (nil: nothing to do there); retail: the file loads on
 -- Retail only. Their files load after this one.
 local SUBMODULES = {
+    { "PlayerGear", "Refresh", "Disable" },                   -- cached character eligibility
     { "UpgradeMarker", "Refresh", "Disable" },                -- worn equipment, for the upgrade arrow
     { "InventoryView", "Refresh", "Disable" },                -- the Suite grid of the combined bag
     { "BankInventory", "Refresh", "Disable", retail = true }, -- the organized bank view
@@ -464,7 +499,7 @@ end
 -- every setting of the catalog section "itemLevels" (MSUF_Suite/Core/Catalog/
 -- Bags.lua) except its switches, so a new text option joins it on its own.
 local SLOT_KEYS = { "backgroundColor", "accentColor" }
-local WINDOW_KEYS = { "backgroundOpacity" }
+local WINDOW_KEYS = { "backgroundOpacity", "windowPresentation" }
 local LEVEL_KEYS = { "showItemLevel", "showBindBadge", "showBankItemLevel" }
 local GOLD_KEYS = { "showSessionGold" }
 local LABEL_KEYS, VISUAL_KEYS = {}, {}
@@ -502,8 +537,13 @@ local function RememberVisuals(self, c)
 end
 
 function M:Refresh()
+    Private.BagMotion.StopAll()
     if not self.combinedBagConfigured then
-        if not self.context:CVar("combinedBags", 1) then
+        if NS.InCombat() then
+            S.Queue("bags")
+            return
+        end
+        if not SetCombinedMode(self) then
             error("MSUF Suite Bags could not enable Blizzard's combined bag")
         end
         self.combinedBagConfigured = true
@@ -522,6 +562,7 @@ function M:Refresh()
         if self.windows then
             for _, textures in pairs(self.windows) do
                 if textures.goldLabel then S.SetFont(textures.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
+                if textures.heading then S.SetFont(textures.heading, fontPath, 22, "") end
             end
         end
         self.labelStyle = (self.labelStyle or 0) + 1
@@ -545,6 +586,7 @@ function M:Refresh()
     self.needsItemRefresh = nil
     self:RefreshWindowLayout()
     RememberVisuals(self, c)
+    Private.BagWidgets.Refresh()
     RunSubmodules(REFRESH)
 end
 
@@ -552,7 +594,8 @@ end
 function M:Disable()
     Private.CurrencyPicker.Close()
     self:CancelWindowDrag()
-    self.combinedBagConfigured = nil
+    self.combinedBagConfigured, self.writingCombinedMode = nil, nil
+    if self.combinedModeJob then self.combinedModeJob:Cancel() end
     self.appliedVisual = nil
     self.context:RemoveEvent("PLAYER_MONEY")
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")

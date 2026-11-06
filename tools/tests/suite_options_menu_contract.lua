@@ -952,7 +952,7 @@ do
         local workspace = assert(bars._msufSuiteActionBarWorkspace, "action bar settings still use a flat accordion")
         assert(bars.pageItems[1] == "fixed-preview" and bars.fixedPreview,
             "selected bar preview does not precede the scrolling settings")
-        assert(bars.fixedPreview.record.heightResolver() == 256 and bars.fixedPreview.section:GetHeight() == 256,
+        assert(bars.fixedPreview.record.heightResolver() == 294 and bars.fixedPreview.section:GetHeight() == 294,
             "host compact-preview clamp leaves actionbar controls overlapping the settings viewport")
         local function Control(path)
             for _, widget in ipairs(bars.widgets) do
@@ -1049,6 +1049,65 @@ do
         toggle.set(true)
         assert(cfg.bar3Visibility == 4 and cfg.bar1Visibility == before.bar1Visibility, "selected switch hit the wrong bar")
         assert(historyWrites == historyBefore + 2, "selected bar switches do not form independent undo steps")
+        do
+            local find = assert(Control("editor.find"), "selected-bar recovery button missing")
+            local keybind = assert(Control("header.bindings"), "header keybind button missing")
+            assert(Control("editor.bindings"), "submenu keybind button was removed")
+            local oldBind, presses = S.OpenQuickKeybind, 0
+            S.OpenQuickKeybind = nil
+            M.RequestRefresh()
+            assert(not keybind.enabled, "header keybind enabled before runtime loads")
+            S.OpenQuickKeybind = function() presses = presses + 1; return true end
+            M.RequestRefresh()
+            local bindHistory = historyWrites
+            assert(keybind.enabled, "header keybind disabled with runtime loaded")
+            keybind.scripts.OnClick(keybind)
+            assert(presses == 1 and historyWrites == bindHistory, "keybind mode changed profile history")
+            workspace.select("shared")
+            assert(keybind.shown, "shared settings hide global keybind mode")
+            workspace.select("layout")
+            S.OpenQuickKeybind = oldBind
+            local opened, oldOpen, wasEnabled = nil, S.OpenEditMode, cfg.enabled
+            S.OpenEditMode = function(id, element) opened = {id,element}; return true end
+            cfg.enabled, cfg.bar3Visibility, cfg.bar3ResumeVisibility = true, 6, 5
+            cfg.bar3Point, cfg.bar3X, cfg.bar3Y = 9, 4000, -3000
+            local oldHistory = historyWrites
+            M.RequestRefresh()
+            assert(find.shown and find.enabled, "off bar cannot be recovered")
+            find.scripts.OnClick(find)
+            assert(cfg.bar3Point == Suite.ActionBarEnum.POINT.CENTER and cfg.bar3X == 0 and cfg.bar3Y == 0,
+                "recovery did not center the selected bar")
+            assert(cfg.bar3Visibility == 6 and cfg.bar3ResumeVisibility == 5,
+                "position recovery enabled an off bar or changed its remembered visibility")
+            assert(cfg.bar1X == before.bar1X and cfg.bar1Visibility == before.bar1Visibility,
+                "recovery touched a different bar")
+            assert(not opened, "off-bar recovery opened Edit Mode")
+            assert(historyWrites == oldHistory + 1, "recovery was not one undo step")
+            cfg.bar3Visibility = 5
+            find.scripts.OnClick(find)
+            assert(opened and opened[1] == "actionbars" and opened[2] == "bar3",
+                "enabled-bar recovery did not select its mover")
+            workspace.select("shared")
+            assert(not find.shown, "shared settings expose a selected-bar action")
+            find:_msuf2PrepareExactSearchTarget()
+            assert(workspace.selected == "layout" and find.shown, "search left the recovery action hidden")
+            local oldCombat, oldX, count = InCombatLockdown, cfg.bar3X, historyWrites
+            InCombatLockdown = function() return true end
+            M.RequestRefresh()
+            assert(not find.enabled and not keybind.enabled, "header actions enabled in combat")
+            S.OpenQuickKeybind = function() presses = presses + 1 end
+            keybind.scripts.OnClick(keybind)
+            assert(presses == 1, "header opened keybind mode in combat")
+            S.OpenQuickKeybind = oldBind
+            find.scripts.OnClick(find)
+            assert(cfg.bar3X == oldX and historyWrites == count, "combat recovery changed profile/history")
+            InCombatLockdown = oldCombat
+            cfg.enabled = false
+            M.RequestRefresh()
+            assert(not find.enabled, "recovery enabled while the whole module is off")
+            cfg.enabled, S.OpenEditMode = wasEnabled, oldOpen
+            workspace.select("appearance")
+        end
         local previousTabs, previousFixed = W.SegmentTabs, W.FixedPreviewSection
         W.SegmentTabs, W.FixedPreviewSection = nil, nil
         local narrow = { key = "suite_actionbars", width = 430, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
@@ -1063,7 +1122,7 @@ do
         W.SegmentTabs, W.FixedPreviewSection = previousTabs, previousFixed
         local narrowDocked = { key = "suite_actionbars", width = 430, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
         M.pages.suite_actionbars.build(narrowDocked)
-        assert(narrowDocked.fixedPreview.record.heightResolver() == 294
+        assert(narrowDocked.fixedPreview.record.heightResolver() == 370
             and narrowDocked._msufSuiteActionBarWorkspace.selector.points[1][5] == -12,
             "narrow host did not reserve the stacked controls and preview height")
         picker.set(oldBar)
@@ -1149,8 +1208,8 @@ do
         for _, candidate in ipairs(copyPopups) do
             if candidate.opts.controlPath == "actionbars.copy" and candidate.button.parent == bars.fixedPreview.section then copy = candidate end
         end
-        assert(copy and copy.button.points[1][1] == "TOPRIGHT" and copy.button.points[1][5] == -68,
-            "Copy To is not in the fixed header's upper-right corner")
+        assert(copy and copy.button.points[1][1] == "TOPRIGHT" and copy.button.points[1][5] == -110,
+            "Copy To is not in the fixed header action row")
         local timers, previousTimer = {}, C_Timer
         C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
         ui.host.events = {}
@@ -1334,6 +1393,25 @@ do (function()
         "banner example does not follow font size, type color and background opacity")
     assert(preview.fills[2].color[4] == .95 and preview.fills[3].color[4] == .62,
         "banner accents differ from the real feature")
+    do
+        local rule = optionsNS.catalog.announcements.rules.showBoxArt
+        assert(rule and rule.default == true, "announcement artwork switch must default on")
+        assert(Control("announcements", "showBoxArt"), "announcement artwork switch is absent from the menu")
+        for _, enabled in ipairs({ false, true, false, true }) do
+            announcement.showBoxArt = enabled
+            preview:Paint()
+            assert(preview.fillsUsed == (enabled and 3 or 0), "announcement preview ignored the artwork switch")
+            for index = 1, 3 do
+                assert(preview.fills[index].shown == enabled, "pooled preview artwork was not hidden or restored")
+            end
+            assert(preview.used == 2 and preview.labels[1].shown and preview.labels[2].shown,
+                "announcement artwork switch hid the preview text")
+        end
+        announcement.showBoxArt = nil
+        preview:Paint()
+        assert(preview.fillsUsed == 3, "missing artwork setting changed the legacy preview")
+        announcement.showBoxArt = true
+    end
     assert(preview.playButton.shown and not preview.playing, "banner playback must be explicitly started")
     -- The setting measures from playback start to fade-out start, just like
     -- the real banner. Exercise minimum/default/maximum without relying on

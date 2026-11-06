@@ -386,23 +386,23 @@ for id in pairs(S.catalog) do S.Config(id).enabled = false end
 W.Suite.DB.suite.modules.dataTexts = PAYLOAD
 S.Normalize(W.Suite.DB)
 S.Start()
-assert(M.active and not nativeBag.shown and nativeBag.driver == "hide", "preset leaves native bag buttons visible")
+assert(M.active and nativeBag.shown and not nativeBag.driver, "disabled Bags must preserve native equipped bag slots")
 assert(next(M.bars) == nil and next(M.activeSources) == nil and W.Pending() == 0,
     "bag-only owner allocated visible bars, active sources or a repeating timer")
 nativeBag:Show()
-assert(not nativeBag.shown, "native bag Show bypassed owner")
+assert(nativeBag.shown, "DataTexts cannot hide the only equipped bag slots")
 W.SetCombat(true)
 assert(not S.Set("dataTexts", "hideBlizzardBagBar", false), "combat menu edit was accepted")
 S.Config("dataTexts").hideBlizzardBagBar = false
 M:Refresh()
-assert(nativeBag.driver == "hide" and not nativeBag.shown, "protected bag write during combat")
+assert(nativeBag.shown and not nativeBag.driver, "disabled Bags changed native access during combat")
 W.SetCombat(false)
 assert(nativeBag.shown and not nativeBag.driver, "bag restore was not replayed after combat")
 assert(S.Set("dataTexts", "hideBlizzardBagBar", true))
-assert(not nativeBag.shown)
+assert(nativeBag.shown and not nativeBag.driver, "hide preference removed equipped slots without a replacement")
 assert(S.Set("dataTexts", "enabled", false))
 assert(nativeBag.shown and not nativeBag.driver, "profile disable did not restore native bag bar")
-print("PASS: Kuro hides native bags without strips/timers; native shows, combat deferral and restore work")
+print("PASS: DataTexts preserves native bags without a replacement; combat deferral and restore work")
 """
 
 def check_meter_and_bags(root, module):

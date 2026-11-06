@@ -138,7 +138,12 @@ Layers.Register, Layers.OpenSetting = Register, OpenSetting
 
 function Layers.On(ui, key) return ui.layers[key] ~= false end
 
+function Layers.NPCWorldNames(ui)
+    return ui.sampleKind == "friendly" and ui.friendlyElite and not ui.personal and P.Get(ID, "friendlyNPCs") == 4
+end
+
 function Layers.Available(ui, key)
+    if Layers.NPCWorldNames(ui) then return false end
     local skinned = P.Get(ID, "look") ~= 2
     if key == "threshold" or key == "focusMarker" then return skinned and ui.sampleKind == "enemy" end
     if key == "targetScale" then return not ui.personal end
@@ -230,6 +235,10 @@ function Layers.Active(ui, key)
 end
 
 local function FocusLayer(ui, section, key)
+    if Layers.NPCWorldNames(ui) then
+        OpenSetting("friendlyNPCs", key)
+        return
+    end
     if (section == "enemy" or key == "castTime") and ui.sampleKind == "friendly" then section = "friendly" end
     if section == "elements" and ui.sampleKind == "friendly"
         and (key == "name" or key == "level" or key == "healthText") then section = "friendly" end
@@ -377,6 +386,10 @@ local function LayerAction(key)
 end
 
 local function ToggleLayer(ui, key)
+    if Layers.NPCWorldNames(ui) then
+        OpenSetting("friendlyNPCs", key)
+        return
+    end
     local action = LayerAction(key)
     if action == "decor" and not ui:LayerAvailable(key) then
         FocusLayer(ui, key == "targetScale" and "native" or "enemy", key)

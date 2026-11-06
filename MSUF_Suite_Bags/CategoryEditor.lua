@@ -5,6 +5,7 @@ P.InventoryEditor = Editor
 local Refresh
 
 local function ClearSession()
+    P.BagTabSelection.HideList(Editor)
     Editor.profile, Editor.open = nil, nil
     NS.Registry.RemoveListener(Editor)
 end
@@ -22,25 +23,17 @@ local function Label(parent, text, x, y)
 end
 
 local function Input(parent, x, y, width)
-    local edit = S.CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
-    edit:SetSize(width, 24)
-    edit:SetPoint("TOPLEFT", x, y)
-    edit:SetAutoFocus(false)
-    edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    return edit
+    return P.BagWidgets.Input(parent, x, y, width)
 end
 
 local function Action(parent, text, x, y, width, callback)
-    local button = S.CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    button:SetSize(width, 24)
+    local button = P.BagWidgets.Button(parent, text, width, callback, 24)
     button:SetPoint("TOPLEFT", x, y)
-    button:SetText(S.Text(text))
-    button:SetScript("OnClick", callback)
     return button
 end
 
 local function Store()
-    if not Editor.open or NS.IsCombatLocked() or Editor.profile ~= NS.DB then
+    if not Editor.open or NS.InCombat() or Editor.profile ~= NS.DB then
         Editor.Hide()
         return false
     end
@@ -56,6 +49,7 @@ local function Store()
 end
 
 local function Select(button)
+    Editor.animateSelection = true
     Editor.selected = button.index
     Refresh()
 end
@@ -83,14 +77,20 @@ Refresh = function()
     for i = 1, #Editor.categories do
         local row = Editor.rows[i]
         if not row then
-            row = Action(Editor.child, "", 0, -(i - 1) * 27, 332, Select)
+            row = P.GridView.Button(Editor.child, "", 332, Select, 24)
+            row:SetPoint("TOPLEFT", 0, -(i - 1) * 27)
+            row.bagNavigation = true
+            row:SetFrameLevel(Editor.child:GetFrameLevel() + 1)
             Editor.rows[i] = row
         end
         row.index = i
-        row:SetText((i == Editor.selected and "> " or "") .. Editor.categories[i].name)
+        row:SetText(Editor.categories[i].name)
         row:Show()
     end
     Editor.child:SetHeight(math.max(27, #Editor.categories * 27))
+    P.BagWidgets.UpdateScroll(Editor.scroll)
+    P.BagTabSelection.List(Editor, Editor.child, Editor.rows, Editor.selected, S.Config("bags"), Editor.animateSelection)
+    Editor.animateSelection = false
     local category = Editor.categories[Editor.selected]
     Editor.name:SetText(category and category.name or "")
     Editor.items:SetText(category and ItemText(category.items) or "")
@@ -106,9 +106,9 @@ Refresh = function()
     Editor.enabled:SetEnabled(not Editor.editPins)
 end
 
-local function NewCategory()
-    if NS.IsCombatLocked() or Editor.editPins or #Editor.categories >= 24 then return end
-    Editor.categories[#Editor.categories + 1] = { name = S.Text("New category"), enabled = true, items = {} }
+local function AddCategory(query)
+    if NS.InCombat() or Editor.editPins or #Editor.categories >= 24 then return end
+    Editor.categories[#Editor.categories + 1] = { name = S.Text("New category"), enabled = true, items = {}, query = query }
     Editor.selected = #Editor.categories
     if Store() then
         Refresh()
@@ -117,9 +117,11 @@ local function NewCategory()
     end
 end
 
+local function NewCategory() AddCategory() end
+
 local function SaveCategory()
     local category = Editor.categories[Editor.selected]
-    if not category or NS.IsCombatLocked() then return end
+    if not category or NS.InCombat() then return end
     local name = Editor.name:GetText():gsub("[\r\n]", " ")
     if not name:find("%S") then
         Editor.status:SetText(S.Text("Enter a category name."))
@@ -151,32 +153,32 @@ local function SaveCategory()
 end
 
 local function RemoveCategory()
-    if NS.IsCombatLocked() or not Editor.categories[Editor.selected] then return end
+    if NS.InCombat() or not Editor.categories[Editor.selected] then return end
     table.remove(Editor.categories, Editor.selected)
     if Store() then Refresh() end
 end
 
 local function MoveCategory(button)
     local from, to = Editor.selected, Editor.selected + button.delta
-    if NS.IsCombatLocked() or not Editor.categories[to] then return end
+    if NS.InCombat() or not Editor.categories[to] then return end
     Editor.categories[from], Editor.categories[to] = Editor.categories[to], Editor.categories[from]
     Editor.selected = to
     if Store() then Refresh() end
 end
 
 local function Create()
-    local frame = P.GridView.Window("MSUFSuiteBagCategories", 410, 545, "Bag categories")
+    local frame = P.BagWidgets.Window("MSUFSuiteBagCategories", 410, 566, S.Text("Bag categories"))
     Editor.frame = frame
     frame:HookScript("OnHide", ClearSession)
+    frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+    frame:SetScript("OnEvent", function() Editor.Hide() end)
     Label(frame, "Name", 18, -40)
     Editor.name = Input(frame, 24, -61, 357)
     Editor.name:SetMaxLetters(64)
     Label(frame, "Item IDs (or drop items onto the sidebar)", 18, -93)
     Editor.items = Input(frame, 24, -115, 357)
     Editor.items:SetMaxLetters(5500)
-    Editor.enabled = S.CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
-    Editor.enabled:SetPoint("TOPLEFT", 15, -147)
-    Label(frame, "Show this category", 48, -153)
+    Editor.enabled = P.BagWidgets.Check(frame, 15, -147, "Show this category")
     P.InventorySearch.RuleControls(Editor, Label, Input, Action)
     Editor.save = Action(frame, "Save", 18, -245, 80, SaveCategory)
     Editor.add = Action(frame, "New", 104, -245, 80, NewCategory)
@@ -185,12 +187,9 @@ local function Create()
     Editor.up.delta = -1
     Editor.down = Action(frame, "Down", 333, -245, 59, MoveCategory)
     Editor.down.delta = 1
-    local scroll = S.CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 20, -286)
-    scroll:SetPoint("BOTTOMRIGHT", -40, 42)
-    Editor.child = S.CreateFrame("Frame", nil, scroll)
-    Editor.child:SetSize(340, 27)
-    scroll:SetScrollChild(Editor.child)
+    Editor.scroll, Editor.child = P.BagWidgets.Scroll(frame, 340)
+    Editor.scroll:SetPoint("TOPLEFT", 20, -286)
+    Editor.scroll:SetPoint("BOTTOMRIGHT", -40, 62)
     Label(frame, "Deleting a category never deletes its items.", 18, -512)
     Editor.status = Label(frame, "", 18, -530)
     Editor.status:SetWidth(375)
@@ -198,7 +197,7 @@ local function Create()
 end
 
 function Editor.Show(pinned)
-    if NS.IsCombatLocked() then return end
+    if NS.InCombat() then return end
     Editor.editPins = pinned == true
     if not Editor.frame then Create() end
     Editor.profile, Editor.open = NS.DB, true
@@ -218,4 +217,12 @@ end
 function Editor.Hide()
     ClearSession()
     if Editor.frame then Editor.frame:Hide() end
+end
+
+function Editor.FromSearch(query)
+    if NS.InCombat() then return end
+    local compiled = NS.InventoryRules.Compile(query)
+    if not compiled or not NS.InventoryRules.HasTerms(compiled) then return end
+    Editor.Show()
+    AddCategory(query)
 end

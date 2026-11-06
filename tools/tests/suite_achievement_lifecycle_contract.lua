@@ -44,6 +44,7 @@ end
 function Frame:Hide()
     if self.shown then self.shown = false; self:Run('OnHide') end
 end
+function Frame:SetShown(value) if value then self:Show() else self:Hide() end end
 function Frame:IsShown() return self.shown end
 function Frame:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function Frame:IsProtected() return false end

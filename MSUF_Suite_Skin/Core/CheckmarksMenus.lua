@@ -87,6 +87,21 @@ function Checkmarks.UntrackDropdown(button)
     return true
 end
 
+-- Native dropdowns restore their normal gold on hover, press and menu edges.
+-- Keep one post-hook per adopted control; released owners leave it inert.
+local dropdownStateHooks = setmetatable({}, { __mode = "k" })
+local function OnDropdownStateChanged(button)
+    if not CanTrack(button) or not Checkmarks.dropdowns[button]
+        or not NS.DB or not NS.DB.enabled then return end
+    BlizzardYellow.TrackDropdown(button)
+end
+
+local function TrackDropdownState(button)
+    if dropdownStateHooks[button] or not Safety.HasMethod(button, "OnButtonStateChanged") then return end
+    hooksecurefunc(button, "OnButtonStateChanged", Safety.Isolated(OnDropdownStateChanged))
+    dropdownStateHooks[button] = true
+end
+
 function Checkmarks.TrackDropdown(button, owner)
     if not CanTrack(button) or not LooksLikeDropdown(button) then
         return false
@@ -95,6 +110,7 @@ function Checkmarks.TrackDropdown(button, owner)
     local event = DropdownButtonMixin.Event.OnMenuOpen
     local closeEvent = DropdownButtonMixin.Event.OnMenuClose
     BlizzardYellow.TrackDropdown(button)
+    TrackDropdownState(button)
     local existing = Checkmarks.dropdowns[button]
     if existing and existing.owner == owner and existing.event == event then
         return true

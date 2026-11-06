@@ -102,7 +102,8 @@ local entries = {
             "GuildRegistrarFrame",
             "MasterLooterFrame",
         },
-        frameModes = { MasterLooterFrame = "dialog" },
+        -- Shared/TaxiFrame.lua uses InsetBg for SetTaxiMap on both clients.
+        frameModes = { TaxiFrame = semanticChromeMode, MasterLooterFrame = "dialog" },
     },
     {
         id = "dressing-room",
@@ -2023,6 +2024,15 @@ local homogeneousGlassKinds = {
 }
 
 local mixedGlassKinds = {
+    ["player-interaction"] = {
+        TradeFrame = "generic-shell",
+        TaxiFrame = "semantic-chrome",
+        ItemTextFrame = "generic-shell",
+        PetitionFrame = "generic-shell",
+        TabardFrame = "generic-shell",
+        GuildRegistrarFrame = "generic-shell",
+        MasterLooterFrame = "generic-shell",
+    },
     ["player-choice"] = {
         PlayerChoiceFrame = "generic-shell",
         PlayerChoiceTimeRemaining = "semantic-hud",

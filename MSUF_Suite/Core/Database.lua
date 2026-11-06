@@ -179,7 +179,8 @@ function Database.StageFactoryReset()
     -- Only the settings start over (the profiles, the root settings and the
     -- setup state). Runtime data the modules keep in the root stays: saved
     -- CVars a module still has to hand back, gold, run and XP history.
-    local settings = { profiles = true, installation = true, quarantinedProfiles = true, migration = true }
+    local settings = { profiles = true, installation = true, characterInstallations = true,
+        quarantinedProfiles = true, migration = true }
     for _, key in ipairs(Database.ROOT_SETTINGS) do settings[key] = true end
     for key, value in pairs(Suite.RootDB) do
         if root[key] == nil and not settings[key] then root[key] = value end
@@ -191,6 +192,23 @@ function Database.StageFactoryReset()
     _G.MSUFSuiteSkinDB = {}
     Suite.RootDB = root
     Suite.DB = root.profiles[root.activeProfile]
+    return true
+end
+
+-- Setup completion belongs to one player, independently of shared profiles.
+-- Unknown identity never borrows the account's old installation receipt.
+function Database.GetCharacterInstallationStatus()
+    local guid = Suite.PublicText(UnitGUID("player"))
+    local records = Suite.RootDB and Suite.RootDB.characterInstallations
+    return guid and type(records) == "table" and records[guid] or nil, guid
+end
+
+function Database.SetCharacterInstallationStatus(status)
+    local root = Suite.RootDB
+    local _, guid = Database.GetCharacterInstallationStatus()
+    if not root or not guid then return false end
+    if type(root.characterInstallations) ~= "table" then root.characterInstallations = {} end
+    root.characterInstallations[guid] = status
     return true
 end
 

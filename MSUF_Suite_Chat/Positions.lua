@@ -2,6 +2,19 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.Chat
 
+-- Start at the visible corner after native layout or screen clamping. Saved
+-- offsets remain the undo state; geometry is only the origin of this gesture.
+function C.CaptureWindowPosition(values)
+    local frame = C.M.positionFrame
+    if not frame or NS.Safety.IsForbidden(frame) then return end
+    local left, bottom, scale = frame:GetLeft(), frame:GetBottom(), frame:GetEffectiveScale()
+    local uiLeft, uiBottom, uiScale = UIParent:GetLeft(), UIParent:GetBottom(), UIParent:GetEffectiveScale()
+    if not (S.Finite(left) and S.Finite(bottom) and S.Finite(scale) and scale > 0
+        and S.Finite(uiLeft) and S.Finite(uiBottom) and S.Finite(uiScale) and uiScale > 0) then return end
+    values.windowX = left - uiLeft * uiScale / scale
+    values.windowY = bottom - uiBottom * uiScale / scale
+end
+
 -- Native Edit Mode can re-anchor the primary window after our refresh.
 -- Coalesce a layout burst after it finishes; never fight a mover drag or
 -- write Blizzard's saved layout/position-manager fields.

@@ -208,6 +208,13 @@ local function IsKit(value)
     return kind == "kit" and kitFiles[id] == nil
 end
 Alerts.IsKit = IsKit
+local function SensorSound(entry, value)
+    return IsKit(value) or entry.unit == "group" and type(value) == "string" and value ~= ""
+end
+function Alerts.AuraSensor(entry)
+    local ov = entry.ov or EMPTY
+    return SensorSound(entry, ov.sound) or SensorSound(entry, ov.lossSound)
+end
 
 -- A container was switched (retarget, pause, rebuild, bar or UI shown or
 -- hidden): its buttons shown or hidden now are no aura gains or losses.
@@ -240,7 +247,7 @@ local function Settle(key, at, loss, gate)
     else
         value = ov.sound
     end
-    if not IsKit(value) then return end
+    if not SensorSound(entry, value) then return end
     local state = C.state
     if state.muteSounds or at < (state.soundQuietUntil or 0) or Hushed(gate, at) or Hushed(anyGate, at) then return end
     local now = GetTime()
@@ -282,7 +289,7 @@ function Alerts.PlayAura(key, which, gate)
     local entry = type(key) == "string" and C.entries[key]
     local ov = entry and entry.ov
     if not ov or ov == EMPTY or entry.family == FAMILY.COOLDOWN then return false end
-    if not (IsKit(ov.sound) or IsKit(ov.lossSound)) then return false end
+    if not Alerts.AuraSensor(entry) then return false end
     local state = C.state
     local now = GetTime()
     if state.muteSounds or now < (state.soundQuietUntil or 0) then return false end
@@ -308,7 +315,8 @@ local function Wanted(set, unit, trigger, channel, value)
     end
 end
 local function Want(entry, trigger, value, channel)
-    if type(value) ~= "string" or value == "" then return end
+    if entry.unit == "group" or type(value) ~= "string" or value == "" then return end
+    -- Group buffs use caster-filtered button sensors for every sound kind.
     -- The shipped CDM kits resolve to files. Unknown kits still play from
     -- the aura button's sensor instead (PlayAura).
     local kind, id = Parse(value)

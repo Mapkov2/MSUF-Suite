@@ -1,5 +1,43 @@
 # MSUF Suite Changelog
 
+## 0.1.12 Alpha - 2026-11-06
+
+### Bags, bank and inventory tools
+
+- Add compact-window and side-panel layouts, adjustable window sizing, equipped-bag controls and optional bag animations.
+- Add a category for equipment usable by your character and improve search, filters, category controls and bank presentation.
+- Improve bag previews, native cleanup access, window resizing and native bag-bar ownership.
+
+### Cooldown Manager
+
+- Add group-buff tracking options and improve aura handling when targeting yourself or changing targets.
+- Improve cooldown entry layout and configuration previews.
+
+### Chat
+
+- Start chat dragging from the visible window position and preserve the other coordinate when editing an axis.
+- Improve chat mover controls and preview positioning.
+
+### Quality of life
+
+- Keep disabled action bars hidden when dragging actions and improve action-bar visibility controls.
+- Add WoW Forever reminders for Mage armor and Priest Inner Fire, including known spell ranks.
+- Keep the native XP bar hidden when Force Hide is enabled, including after late interface updates.
+- Improve flight-route tracking, damage-meter initialization and native name-only display for friendly NPCs.
+
+### Setup
+
+- Add character-specific setup status and an option to select an existing profile during setup.
+- Improve startup sequencing and profile synchronization with the skin module.
+- Known Alpha issue: automatic profile selection and installer appearance on alternate characters remain under investigation.
+
+### Skinning
+
+- Preserve native world-map canvas motion on WoW Forever to prevent missing map tiles.
+- Keep configured dropdown text colors through hover and menu state changes.
+- Improve window motion, merchant focus and quest reward-page refresh handling.
+- Known Alpha issue: quest reward selection can still fail after handing in quest items; this is not claimed as fully resolved.
+
 ## 0.1.11 Alpha - 2026-11-05
 
 ### Chat

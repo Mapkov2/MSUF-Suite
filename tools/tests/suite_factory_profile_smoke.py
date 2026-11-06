@@ -86,7 +86,13 @@ local function Check(profile, how)
         how .. ": the Damage Meter refreshes every " .. tostring(m.damageMeter.refreshRate) .. " s")
     assert(m.actionbars.bar1X == 0 and m.actionbars.bar2X == 0,
         how .. ": the main action bars are off center")
+    if client == "forever" then
+        assert(m.buffReminders.classMageArmor == true and m.buffReminders.classInnerFire == true,
+            how .. ": Forever armor reminders are not enabled by default")
+    end
     if factory == "ForeverFactory.lua" then
+        assert(m.buffReminders.enabled == true and m.buffReminders.classMageArmor == true
+            and m.buffReminders.classInnerFire == true, how .. ": Forever preset armor switches are not on")
         local map, text, tracker, meter = m.minimap, m.dataTexts, m.objectives, m.damageMeter
         assert(map.stylePreset == 10 and map.styleTexture == 7 and map.styleScale == 130,
             how .. ": the Antique Map factory was overwritten by the global look")
@@ -117,6 +123,19 @@ Check(Suite.DB, "the first profile")
 local compact = factory == "ForeverFactory.lua" and Suite.ForeverFactoryModuleCompact or Suite.RetailFactoryModuleCompact
 Check(assert(Suite.ProfileIO.PrepareProfile(compact, false)), "the installer's factory")
 assert(decodes >= 3, "the factory string was not decoded")
+-- Existing released profiles lack the new keys. Normalization supplies them,
+-- preserves the module state and never turns other class reminders on.
+local old = { suite = { schema = 1, revision = S.MigrationRevision,
+    modules = { buffReminders = { enabled = true, classReminders = false } } } }
+S.Normalize(old)
+local reminders = old.suite.modules.buffReminders
+assert(reminders.enabled and reminders.classReminders == false, "normalization changed an existing master switch")
+assert(reminders.classMageArmor == (client == "forever") and reminders.classInnerFire == (client == "forever"),
+    "existing profile did not receive the client defaults")
+reminders.classMageArmor, reminders.classInnerFire, reminders.enabled = false, false, false
+S.Normalize(old)
+assert(not reminders.classMageArmor and not reminders.classInnerFire and not reminders.enabled,
+    "normalization overwrote an explicit opt-out")
 assert(#reported == 0, "a call raised: " .. tostring(reported[1]))
 print(factory .. " on " .. client .. ": revision " .. data.revision .. ", Bags view "
     .. tostring(created.suite.modules.bags.inventoryView) .. ", Damage Meter "

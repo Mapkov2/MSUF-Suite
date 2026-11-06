@@ -693,32 +693,32 @@ assert(frameImports == beforeClassicFrames + 1 and P.Active() == "ClassicFactory
     and classicMenu.layoutY == 0
     and not next(skinProfiles.ClassicFactorySkin.windowControls.positions),
     "Classic installer did not import MSUF frames and stage its blue Skin look")
--- The first Suite install repairs a character that MSUF already bound to
--- Default, then leaves deliberate account defaults and later changes alone.
-local newCharacterDefault
+-- Setup never assigns a shared profile to the next character. Only a
+-- still-owned preference left by an older Suite is retired.
+local newCharacterDefault, defaultWrites = nil, 0
 MSUF_GetDefaultProfileForNewCharacters = function() return newCharacterDefault end
 MSUF_SetDefaultProfileForNewCharacters = function(name)
-    assert(MSUF_GlobalDB.profiles[name])
-    newCharacterDefault = name
+    assert(name == nil, "Suite assigned another account-wide default")
+    newCharacterDefault, defaultWrites = name, defaultWrites + 1
     return true
 end
 MSUF_ProfileWasUnboundAtLogin = true
 MSUF_SwitchProfile("Default")
 Suite.RootDB.installation = { status = "complete", profile = "suite", frameProfileName = "Raid" }
-assert(P.EnsureNewCharacterProfile() and newCharacterDefault == "Raid"
-    and MSUF_ActiveProfile == "Raid" and Suite.RootDB.installation.newCharacterProfileRevision == 1,
-    "new character did not receive the installed frame profile")
-assert(Suite.RootDB.installation.newCharacterProfileOwned == true)
-newCharacterDefault = nil
-MSUF_SwitchProfile("Default")
 assert(not P.EnsureNewCharacterProfile() and newCharacterDefault == nil
-    and MSUF_ActiveProfile == "Default", "a cleared preference was overwritten")
+    and MSUF_ActiveProfile == "Default" and defaultWrites == 0,
+    "Suite imposed the installed profile on a new character")
+newCharacterDefault = "Raid"
+Suite.RootDB.installation.newCharacterProfileOwned = true
+assert(P.EnsureNewCharacterProfile() and newCharacterDefault == nil
+    and MSUF_ActiveProfile == "Default" and defaultWrites == 1,
+    "Suite did not retire its old preference without switching the character")
+assert(Suite.RootDB.installation.newCharacterProfileOwned == nil)
 newCharacterDefault = "Shared"
-Suite.RootDB.installation = { status = "complete", profile = "suite", frameProfileName = "Raid" }
-assert(not P.EnsureNewCharacterProfile() and newCharacterDefault == "Shared"
-    and MSUF_ActiveProfile == "Default" and Suite.RootDB.installation.newCharacterProfileRevision == 1,
-    "an existing MSUF new-character preference was overwritten")
-assert(Suite.RootDB.installation.newCharacterProfileOwned ~= true)
+Suite.RootDB.installation.newCharacterProfileOwned = true
+assert(P.EnsureNewCharacterProfile() and newCharacterDefault == "Shared" and defaultWrites == 1,
+    "a changed user preference was cleared")
+assert(not P.EnsureNewCharacterProfile() and defaultWrites == 1, "migration repeated")
 Suite.Client.isMainline = true
 Suite.DB.suite.modules.cooldownManager = { enabled = true }
 MSUF_DB = { bars = { classPowerAnchorToCooldown = false, classPowerOffsetY = 280 },

@@ -14,28 +14,46 @@ local Finite = S.Finite
 local ENUM = AB.ENUM
 local BAR, VIS = ENUM.BAR, ENUM.VISIBILITY
 
+-- Test the resulting Suite grid, whose button sizes can differ from Blizzard.
+local function ImportFits(values, index, x, y, width, height)
+    local config, keys = S.Config("actionbars"), AB.KEYS[index]
+    local count, rows = values[keys.Buttons] or config[keys.Buttons], values[keys.Rows] or config[keys.Rows]
+    local vertical = values[keys.Vertical]
+    if vertical == nil then vertical = config[keys.Vertical] end
+    local columns, gridRows = AB.Grid(count, rows, vertical)
+    local size, spacing = AB.Snap(config[keys.Size]), AB.Snap(values[keys.Spacing] or config[keys.Spacing])
+    local buttonHeight = index <= BAR.LAST_ACTION and config.buttonShape == ENUM.BUTTON_SHAPE.SQUARE
+        and AB.Snap(config[keys.Size] * config[keys.HeightPercent] / 100) or size
+    local barWidth, barHeight = columns * size + (columns - 1) * spacing, gridRows * buttonHeight + (gridRows - 1) * spacing
+    return math.abs(x) + barWidth / 2 <= width / 2 and math.abs(y) + barHeight / 2 <= height / 2
+end
+
 -- Position (as a CENTER offset) and grid of a shown Blizzard bar.
 local function ImportGeometry(values, index, frame)
     local keys = AB.KEYS[index]
     local x, y = frame:GetCenter()
     local scale, root = frame:GetEffectiveScale(), UIParent:GetEffectiveScale()
     local width, height = UIParent:GetWidth(), UIParent:GetHeight()
-    if not (Finite(x) and Finite(y) and Finite(scale) and Finite(root) and root > 0
-        and Finite(width) and Finite(height)) then return end
+    if not (Finite(x) and Finite(y) and Finite(scale) and scale > 0 and Finite(root) and root > 0
+        and Finite(width) and width > 0 and Finite(height) and height > 0) then return end
     values[keys.Point] = ENUM.POINT.CENTER
     values[keys.X] = floor((x * scale / root - width / 2) * 10 + .5) / 10
     values[keys.Y] = floor((y * scale / root - height / 2) * 10 + .5) / 10
-    if index > BAR.LAST_NATIVE then return end
-    local rows, shown, horizontal = frame.numRows, frame.numButtonsShowable, frame.isHorizontal
-    if Finite(rows) and Finite(shown) and Public(horizontal) and type(horizontal) == "boolean" then
-        shown, rows = min(max(floor(shown), 1), 12), min(max(floor(rows), 1), 12)
-        values[keys.Buttons] = shown
-        values[keys.Vertical] = not horizontal
-        -- Blizzard counts columns for vertical bars; the suite counts rows.
-        values[keys.Rows] = horizontal and rows or ceil(shown / rows)
+    if index <= BAR.LAST_NATIVE then
+        local rows, shown, horizontal = frame.numRows, frame.numButtonsShowable, frame.isHorizontal
+        if Finite(rows) and Finite(shown) and Public(horizontal) and type(horizontal) == "boolean" then
+            shown, rows = min(max(floor(shown), 1), 12), min(max(floor(rows), 1), 12)
+            values[keys.Buttons] = shown
+            values[keys.Vertical] = not horizontal
+            -- Blizzard counts columns for vertical bars; the suite counts rows.
+            values[keys.Rows] = horizontal and rows or ceil(shown / rows)
+        end
+        local padding = frame.buttonPadding
+        if Finite(padding) then values[keys.Spacing] = min(max(floor(padding + .5), -10), 20) end
     end
-    local padding = frame.buttonPadding
-    if Finite(padding) then values[keys.Spacing] = min(max(floor(padding + .5), -10), 20) end
+    if not ImportFits(values, index, values[keys.X], values[keys.Y], width, height) then
+        values[keys.X], values[keys.Y] = 0, 0
+    end
 end
 
 -- Import Blizzard positions and grids without copying visibility. The suite's
@@ -45,9 +63,11 @@ function AB.BuildImport(state)
     for index = 1, AB.BAR_COUNT do
         local entry = state[index]
         local frame = entry and entry.frame
-        if entry and AB.Available(index) then
+        if AB.Available(index) then
+            local keys = AB.KEYS[index]
+            values[keys.Point], values[keys.X], values[keys.Y] = ENUM.POINT.CENTER, 0, 0
             local shown = frame ~= nil and frame:IsShown() == true
-            if index >= BAR.FIRST_NATIVE and index <= BAR.LAST_NATIVE and entry.toggle ~= nil then
+            if index >= BAR.FIRST_NATIVE and index <= BAR.LAST_NATIVE and entry and entry.toggle ~= nil then
                 shown = entry.toggle == true
             end
             if frame and shown then ImportGeometry(values, index, frame) end
@@ -58,10 +78,10 @@ end
 
 -- Settings are written after the current apply finished (S.SetMany re-runs
 -- Refresh); a combat start in between retries on the next refresh.
-local captureConfig, captureGeneration, captureRetry = nil, 0, nil
+local captureConfig, captureGeneration, captureRetry, captureValues = nil, 0, nil, nil
 local function SyncCapture(config)
     if captureConfig == config then return end
-    captureConfig, captureRetry = config, nil
+    captureConfig, captureRetry, captureValues = config, nil, nil
     captureGeneration = captureGeneration + 1
     AB.importQueued = nil
 end
@@ -70,7 +90,7 @@ local function QueueImport(values)
     SyncCapture(M.config)
     captureGeneration = captureGeneration + 1
     local config, generation = M.config, captureGeneration
-    AB.importQueued = generation
+    AB.importQueued, captureValues = generation, values
     local function Write()
         if AB.importQueued ~= generation or captureGeneration ~= generation then return end
         if not M.active or M.config ~= config or S.Config("actionbars") ~= config or config.imported then
@@ -82,10 +102,20 @@ local function QueueImport(values)
             S.Queue("actionbars")
             return
         end
-        AB.importQueued = nil
+        AB.importQueued, captureValues = nil, nil
         S.SetMany("actionbars", values)
     end
     C_Timer.After(0, Write)
+end
+
+-- An explicit recovery wins over the deferred first-enable position capture,
+-- even when the bar was already centered before the click.
+function S.KeepActionBarPosition(index)
+    SyncCapture(S.Config("actionbars"))
+    local keys = AB.KEYS[index]
+    if captureValues and keys then
+        captureValues[keys.Point], captureValues[keys.X], captureValues[keys.Y] = nil, nil, nil
+    end
 end
 
 ------------------------------------------------------------------ settings work

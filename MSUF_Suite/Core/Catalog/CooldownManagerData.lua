@@ -82,7 +82,7 @@ CDM.SPELL_FIELDS = {
     stackGlow = Range(0, 99), stackGlowOp = Range(1, 5), stackColorAt = Range(0, 99), stackColor = OwnHex,
     -- Where a buff-bar aura is looked for: 1 automatic (audited native aura
     -- identities, then cast polarity), 2 the player, 3 the target, 4 both.
-    auraUnit = Range(1, 4),
+    auraUnit = Range(1, 5),
     timerDuration = Range(0, 600), timerSpell = Range(1, 2147483647),
     -- Countdown and charge/stack text: 1 the bar's setting, 2 show, 3 hide.
     -- textTop: 1 the bar's setting, 2 stacks on top, 3 countdown on top.

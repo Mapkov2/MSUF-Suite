@@ -119,8 +119,8 @@ local function AuraGroup(parent, textures, reverse)
     return group
 end
 
-local function PreviewFont(region, prefix, size, outline, nativeSize)
-    local enabled = P.Get(ID, prefix .. "TextEnabled")
+local function PreviewFont(region, prefix, size, outline, nativeSize, nativeOnly)
+    local enabled = not nativeOnly and P.Get(ID, prefix .. "TextEnabled")
     local custom = P.Get(ID, prefix .. "CustomFont")
     local fontKey = prefix .. (prefix:sub(-4) == "Cast" and "Font" or "NameFont")
     local font = enabled and custom and Style.Font(P.Get(ID, fontKey)) or _G.STANDARD_TEXT_FONT
@@ -352,9 +352,10 @@ local function Metrics(editor, s, m)
     m.classificationScale = SetupNumber("classificationScale", m.horizontal)
     local inset = SetupNumber("insetWidth", 12 * m.horizontal)
     m.friendlyNPC = prefix == "friendly" and editor.friendlyElite and not editor.personal
+    m.npcWorldName = m.friendlyNPC and P.Get(ID, "friendlyNPCs") == 4
     local friendlyDisplay = P.Get(ID, "friendlyNamesOnly")
     m.groupOnly = prefix == "friendly" and not editor.personal and not m.friendlyNPC and friendlyDisplay == 3
-    m.namesOnly = prefix == "friendly" and not editor.personal and not m.friendlyNPC
+    m.namesOnly = m.npcWorldName or prefix == "friendly" and not editor.personal and not m.friendlyNPC
         and (friendlyDisplay == 2 or friendlyDisplay == 3 or friendlyDisplay == 1
             and Style.NativeToggle("nameplateShowOnlyNameForFriendlyPlayerUnits", false))
     m.nativeLevel = m.forever and not m.namesOnly
@@ -457,11 +458,15 @@ end
 
 local function RenderName(s, m)
     local prefix, name, bar = s.prefix, s.name, s.bar
+    name:EnableMouse(not m.npcWorldName)
     local size = P.Get(ID, prefix .. "NameSize")
     name:SetHeight(P.Get(ID, prefix .. "TextEnabled") and size > 0 and size
         or SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical))
     name:ClearAllPoints()
-    if m.namesOnly then
+    if m.npcWorldName then
+        name:SetPoint("CENTER", s.cell, "CENTER", 0, 0)
+        name:SetWidth(170)
+    elseif m.namesOnly then
         if m.nameAnchor == 1 then Place(s, name, "CENTER", bar, "CENTER", 0, 0, "Name")
         else Place(s, name, "BOTTOM", bar, "TOP", 0, 2, "Name") end
         name:SetWidth(170)
@@ -570,7 +575,7 @@ end
 local function RenderTarget(s, m)
     local prefix, level = s.prefix, s.level
     local arrows = (prefix == "enemy" or not P.Get(ID, "enemyTargetHideFriendly")) and s.state.target
-        and P.Get(ID, "enemyTargetMarker") and P.Get(ID, "look") ~= 2
+        and P.Get(ID, "enemyTargetMarker") and P.Get(ID, "look") ~= 2 and not m.npcWorldName
     local targetConfig = s.targetConfig
     for _, key in ipairs(TARGET_KEYS) do
         targetConfig["enemyTarget" .. key] = P.Get(ID, "enemyTarget" .. key)
@@ -598,7 +603,7 @@ local function RenderMarkers(editor, s, m)
         Style.PlaceMarker(marker.handle, s.bar, marker.kind, P.Get(ID, marker.x), P.Get(ID, marker.y),
             P.Get(ID, prefix .. (marker.kind == "elite" and "EliteMarkerAnchor" or "QuestMarkerAnchor")))
         Style.PaintMarker(marker.icon, marker.kind, size, P.Get(ID, marker.color), m.role == 4 and "boss" or "elite")
-        marker.handle:SetShown(editor:LayerOn(marker.kind .. "Marker") and P.Get(ID, "look") ~= 2
+        marker.handle:SetShown(not m.npcWorldName and editor:LayerOn(marker.kind .. "Marker") and P.Get(ID, "look") ~= 2
             and P.Get(ID, marker.enabled) and (prefix == "friendly" and m.friendlyNPC or marker.roles[m.role] == true))
         marker.handle:EnableMouse(true)
         marker.back:Hide()
@@ -610,7 +615,7 @@ local function RenderFonts(s, m)
     local nativeNameSize = SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical)
     local nativeCastSize = SetupNumber("castBarFontHeight", 10 * m.vertical)
     local castSize, castOutline = P.Get(ID, prefix .. "CastSize"), P.Get(ID, prefix .. "CastOutline")
-    PreviewFont(s.nameText, prefix, P.Get(ID, prefix .. "NameSize"), P.Get(ID, prefix .. "TextOutline"), nativeNameSize)
+    PreviewFont(s.nameText, prefix, P.Get(ID, prefix .. "NameSize"), P.Get(ID, prefix .. "TextOutline"), nativeNameSize, m.npcWorldName)
     PreviewFont(s.castText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
     PreviewFont(s.castTimeText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
     PreviewFont(s.castTargetText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
@@ -655,7 +660,7 @@ local function RenderCastAndAuras(editor, s, m)
     -- dragged health container.
     Place(s, s.softTarget, "BOTTOM", s.cell, "CENTER", 0, 34, "SoftTarget")
     local softKind = prefix == "enemy" and (editor.softInteract and "Interact" or "Enemy") or "Friend"
-    s.softTarget:SetShown(editor.softTargetSample and editor:LayerOn("softTarget")
+    s.softTarget:SetShown(not m.npcWorldName and editor.softTargetSample and editor:LayerOn("softTarget")
         and NativeToggle("softTargetIconGate", "SoftTargetNameplateSize")
         and NativeToggle("softTarget" .. softKind, "SoftTargetIcon" .. softKind))
     if prefix == "friendly" then
@@ -677,7 +682,7 @@ local function RenderRaid(editor, s, m)
             10 + P.Get(ID, prefix .. "RaidIconOffsetY") - P.Get(ID, prefix .. "NameOffsetY"))
     else Place(s, raid, "RIGHT", s.bar, "LEFT", m.classic and -3.5 * m.horizontal or 0, 0, "RaidIcon") end
     s.raidTexture:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_" .. (editor.raidIndex or 8))
-    raid:SetShown(editor:LayerOn("raidIcon") and editor.raidMarked
+    raid:SetShown(not m.npcWorldName and editor:LayerOn("raidIcon") and editor.raidMarked
         and (prefix ~= "enemy" or P.Get(ID, "look") == 2 or P.Get(ID, "enemyRaidIcon")))
     -- Hiding the icon with Suite alpha does not collapse Blizzard's frame.
     raid:SetWidth(editor.raidMarked and 22 or 0)
@@ -690,7 +695,7 @@ local function RenderRaid(editor, s, m)
     else s.nativeElite:SetAtlas("nameplates-icon-elite-gold") end
     local rarityMode = P.Get(ID, "look") == 2 and 1 or P.Get(ID, "enemyRarityIcon")
     local showRarity = rarityMode == 2 or rarityMode == 1 and NativeBit("nameplateInfoDisplay", 3, true)
-    local showClassification = not editor.raidMarked and editor:LayerOn("classification")
+    local showClassification = not m.npcWorldName and not editor.raidMarked and editor:LayerOn("classification")
         and (prefix == "enemy" and (role == 3 or role == 4) or m.friendlyNPC) and showRarity
     s.classification:SetShown(showClassification)
     s.classificationBase:SetWidth(showClassification and 20 or 0) -- Blizzard ClassificationFrame collapsesLayout.

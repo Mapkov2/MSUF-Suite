@@ -416,7 +416,11 @@ function S.OwnsBlizzardSurface(surface)
     local config = S.Config(id)
     if config.enabled ~= true then return false end
     -- DataTexts hides the bag bar only on request.
-    if surface == "bagBar" and config.hideBlizzardBagBar ~= true then return false end
+    if surface == "bagBar" then
+        if config.hideBlizzardBagBar ~= true or not S.states.bags.active then return false end
+        if S.Config("bags").inventoryView == NS.BagsView.BLIZZARD_GRID then return false end
+        if not S.OwnsBlizzardSurface("bagWindows") then return false end
+    end
     if surface == "staticPopups" and config.skin ~= true and config.dialogFont ~= true then return false end
     return S.Availability(id) == true
 end

@@ -29,7 +29,10 @@ local Public = S.Public
 local STRATA = K.STRATA
 -- The pandemic window's default color (the catalog's pandemicColor).
 local PAN_R, PAN_G, PAN_B = K.HexRGB("ff4d26")
-local HELP_MINE, HELP_ANY, HARM_MINE = "HELPFUL|PLAYER", "HELPFUL", "HARMFUL|PLAYER"
+-- Blizzard includes hidden tracking/proxy auras on every friendly unit,
+-- including the player; omitting this flag makes them appear target-only.
+local HELP_MINE, HELP_ANY = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY", "HELPFUL|INCLUDE_NAME_PLATE_ONLY"
+local HARM_MINE = "HARMFUL|PLAYER"
 local HELP_TARGET = "HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY"
 -- No aura passes this (maxDuration also drops permanent auras): 12.1.0
 -- slots have no enable flag.
@@ -83,11 +86,18 @@ local function FriendlyTarget()
     local assist = UnitCanAssist("player", "target")
     return Public(assist) and assist == true
 end
+local function TargetIsPlayer()
+    local same = UnitIsUnit("player", "target")
+    return Public(same) and same == true
+end
 -- Own helpful auras (any caster for custom "a" entries) or own harmful
 -- auras on the target.
 local function FilterOf(entry, unit)
     if unit == "target" then return entry.auraHelpful and HELP_TARGET or HARM_MINE end
-    return entry.src == "a" and HELP_ANY or HELP_MINE
+    -- Lifebloom includes a hidden caster-side tracking aura. It must never
+    -- inherit the any-caster behavior of ordinary custom buffs.
+    return entry.src == "a" and entry.unit ~= "group"
+        and not (entry.auraIDs and entry.auraIDs[33763]) and HELP_ANY or HELP_MINE
 end
 -- The part of an aura bar an entry takes: e.unit=="target" entries the
 -- target part; a per-spell "both" counts in the player part. Player and
@@ -116,6 +126,7 @@ end
 local function Apply(rec, k)
     local on = rec.on[k] == true and not rec.shut[k]
         and not (rec.friendly and rec.filter[k] == HARM_MINE)
+        and not (rec.sameAsPlayer and rec.entry[k].unit == "both")
     if rec.act[k] == on then return end
     rec.act[k] = on
     local container, key = rec.frame, rec.keys[k]
@@ -350,6 +361,8 @@ local function Retire(slot, fam, unit)
     local rec = byUnit and byUnit[unit]
     if not rec then return end
     byUnit[unit] = nil
+    C.AuraRecipients.Retire(rec)
+    rec.sameAsPlayer = nil
     rec.enabled, rec.shown = false, false
     Hush(rec)
     rec.frame:SetEnabled(false)
@@ -464,8 +477,10 @@ local function FitContainer(rec, bar, fam, unit, view)
     if rec.unit ~= unit then
         rec.unit = unit
         container:SetUnit(unit)
+        rec.sameAsPlayer = nil
     end
     rec.friendly = unit == "target" and FriendlyTarget()
+    if rec.sameAsPlayer == nil then rec.sameAsPlayer = unit == "target" and TargetIsPlayer() end
     local enabled = not rec.friendly or rec.helpfulTarget == true
     if rec.enabled ~= enabled then
         rec.enabled = enabled
@@ -476,7 +491,7 @@ end
 
 -- The live container of one bar, family and unit. fresh: a new container for
 -- buttons that refused a restyle (a pooled one would refuse it too).
-local function Ensure(slot, fam, unit, role, fixed, view, fresh)
+local function Ensure(slot, fam, unit, role, fixed, view, fresh, identity)
     local bar = Bar(slot)
     if not bar then return nil end
     local fams = live[slot]
@@ -486,16 +501,17 @@ local function Ensure(slot, fam, unit, role, fixed, view, fresh)
     end
     local byUnit = fams[fam]
     local bind = RegionSet(fam, role, fixed, view)
-    local rec = byUnit[unit]
+    local key = identity or unit
+    local rec = byUnit[key]
     if rec and rec.bind ~= bind then
-        Retire(slot, fam, unit)
+        Retire(slot, fam, key)
         rec = nil
     end
     if not rec then
         if not fresh then rec = Acquire(slot, fam, bind, unit) end
         rec = rec or NewContainer(bar, slot, fam, unit, role, fixed, bind, fresh)
         if not rec then return nil end
-        byUnit[unit] = rec
+        byUnit[key] = rec
     end
     FitContainer(rec, bar, fam, unit, view)
     return rec
@@ -555,6 +571,6 @@ local function Place(rec, offset, split)
 end
 
 AuraContainers.Ids, AuraContainers.UnitOf, AuraContainers.OnUnit, AuraContainers.TargetRow = Ids, UnitOf, OnUnit, TargetRow
-AuraContainers.FriendlyTarget = FriendlyTarget
+AuraContainers.FriendlyTarget, AuraContainers.TargetIsPlayer = FriendlyTarget, TargetIsPlayer
 AuraContainers.Apply, AuraContainers.Build, AuraContainers.Show, AuraContainers.Bar = Apply, Build, Show, Bar
 AuraContainers.Retire, AuraContainers.Ensure, AuraContainers.Place = Retire, Ensure, Place

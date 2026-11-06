@@ -991,6 +991,90 @@ end
 local function Bar(index) return assert(AB.bars[index],"bar "..index) end
 local function Button(index,i) return assert(Bar(index).buttons[i],"button "..index..":"..i) end
 
+local function TestDragLayout()
+    local saved, geometry = {}, {}
+    local function Change(values)
+        for key in pairs(values) do if saved[key] == nil then saved[key] = c[key] end end
+        assert(S.SetMany("actionbars", values))
+        RunTimers()
+    end
+    local function Remember(frame)
+        geometry[#geometry+1] = {frame, frame.parent, frame.width, frame.height, frame.points}
+    end
+    local function CheckGeometry()
+        for _, entry in ipairs(geometry) do
+            local frame = entry[1]
+            assert(frame.parent == entry[2] and frame.width == entry[3] and frame.height == entry[4]
+                and frame.points == entry[5], "cursor/panel reveal changed the configured actionbar geometry")
+        end
+        for i = 8, 12 do assert(not Button(2,i).button:IsVisible(), "drag revealed a slot beyond the button limit") end
+    end
+    -- An off bar may deliberately share the active bar's saved anchor.
+    -- Revealing it overlays its slots even though neither bar moved.
+    Change({showOnDrag=true,showOnPanels=true,bar1Visibility=1,bar2Visibility=2,
+        bar2Buttons=7,bar2Rows=3,bar2ShowEmpty=false,bar2X=-200,bar2Y=80,
+        bar6Visibility=6,bar6X=-200,bar6Y=80,bar6Buttons=12,bar6Rows=3})
+    for _, index in ipairs({1,2,6}) do
+        Remember(Bar(index).header)
+        for _, rec in ipairs(Bar(index).buttons) do Remember(rec.button) end
+    end
+    local function Cursor(kind, event)
+        cursor=kind
+        Event(event or "CURSOR_CHANGED")
+        RunTimers()
+        CheckGeometry()
+    end
+    assert(not Bar(2).header:IsVisible() and not Bar(6).header:IsVisible())
+    for _, kind in ipairs({"spell","item","macro","flyout"}) do
+        Cursor(kind,"ACTIONBAR_SHOWGRID")
+        assert(Bar(2).header:IsVisible(), "drag did not reveal the enabled conditional bar")
+        assert(not Bar(6).header:IsVisible() and Bar(6).paintDormant,
+            "drag revealed the disabled overlapping bar")
+        Cursor(nil,"ACTIONBAR_HIDEGRID")
+        assert(not Bar(2).header:IsVisible(), "dropping/cancelling retained the temporary reveal")
+    end
+    Cursor("spell")
+    Change({bar2Visibility=6})
+    assert(not Bar(2).header:IsVisible(), "switching a bar off with a held spell retained the reveal")
+    Change({bar2Visibility=2})
+    assert(Bar(2).header:IsVisible(), "switching a bar on with a held spell lost its reveal")
+    Change({showOnDrag=false})
+    assert(not Bar(2).header:IsVisible(), "showOnDrag=false retained a cursor reveal")
+    Change({showOnDrag=true})
+    for _, condition in ipairs({"vehicleui","petbattle"}) do
+        conditions[condition]=true;Drivers()
+        assert(not Bar(1).header:IsVisible() and not Bar(2).header:IsVisible(),
+            "drag bypassed the secure "..condition.." hide")
+        conditions[condition]=nil;Drivers()
+    end
+    local oldBook=PlayerSpellsFrame
+    PlayerSpellsFrame=NewFrame("Frame",nil,UIParent)
+    PlayerSpellsFrame.SpellBookFrame=NewFrame("Frame",nil,PlayerSpellsFrame)
+    AB.SyncPanelReveal()
+    Cursor(nil,"ACTIONBAR_HIDEGRID")
+    assert(Bar(2).header:IsVisible() and not Bar(6).header:IsVisible(),
+        "dropping a spell lost the independent spellbook reveal or exposed an off bar")
+    PlayerSpellsFrame:Hide()
+    assert(not Bar(2).header:IsVisible(), "closed spellbook retained the reveal")
+    PlayerSpellsFrame=oldBook
+    assert(S.OpenQuickKeybind())
+    Cursor("spell")
+    assert(Bar(2).header:IsVisible() and not Bar(6).header:IsVisible(),
+        "quick keybind plus a held spell exposed the disabled overlapping bar")
+    quick:Hide()
+    assert(Bar(2).header:IsVisible(), "closing keybind mode lost the independent cursor reveal")
+    Change({bar2Visibility=3})
+    combat=true;conditions.combat=true;Drivers()
+    assert(not Bar(2).header:IsVisible(), "combat retained the out-of-combat drag override")
+    Cursor(nil)
+    assert(AB.dragPending, "combat cursor change was not deferred")
+    combat=false;conditions.combat=nil;Event("PLAYER_REGEN_ENABLED");Drivers();RunTimers()
+    assert(not AB.dragPending and not Bar(6).header:IsVisible())
+    CheckGeometry()
+    assert(S.SetMany("actionbars",saved))
+    RunTimers()
+end
+
 local function TestQuickKeybind()
     assert(S.SetMany("actionbars",{showOnPanels=false,bar1Visibility=4,bar2Visibility=4,
         bar9Visibility=4,bar10Visibility=4,bar9ShowEmpty=false,bar9Buttons=12}))
@@ -1566,9 +1650,11 @@ if nativeReuse then
         actions[61].current=current;c.castHighlight=highlight;M:Refresh()
     end
     TestQuickKeybind()
+    TestDragLayout()
     TestGridCap()
     for index=2,8 do assert(S.Set("actionbars","bar"..index.."Visibility",6)) end
     assert(AB.nativeFeedbackVisible==false,"hidden native bars kept the shared observer awake")
+    assert(S.Set("actionbars","bar6Visibility",2))
     cursor="spell";AB.ApplyDrag()
     assert(Bar(6).header.shown and not Bar(6).paintDormant and AB.nativeFeedbackVisible,
         "drag reveal left native bars or the global feedback gate dormant")
@@ -1771,7 +1857,7 @@ assert(not empty.shown and Bar(5).header.attrs.gridmask==0)
 assert(S.Set("actionbars","bar6Visibility",6))
 assert(not Bar(6).header.shown)
 cursor="spell";Event("ACTIONBAR_SHOWGRID");RunTimers()
-assert(Bar(6).header.shown and not Bar(6).paintDormant,"showOnDrag must reveal and wake Never bars")
+assert(not Bar(6).header.shown and Bar(6).paintDormant,"showOnDrag must keep disabled bars hidden")
 cursor=nil;Event("ACTIONBAR_HIDEGRID");RunTimers()
 assert(not Bar(6).header.shown)
 combat=true;cursor="spell";Event("ACTIONBAR_SHOWGRID");RunTimers()
@@ -1817,6 +1903,14 @@ assert(Bar(1).header.shown and pet.header.shown,"pet bar needs a pet")
 -- Placement preview forces bars (except Never) visible at full alpha.
 S.SetEditMode(true)
 assert(h3.shown and not Bar(6).header.shown and Bar(5).header.attrs.gridmask==8 and h4.alpha==1)
+-- Switching an enabled bar off during placement must drop its force-show
+-- immediately, and subsequent Edit Mode sessions must not resurrect it.
+assert(S.Set("actionbars", "bar3Visibility", 6))
+assert(not h3.shown and not h3:GetAttribute("forceshow"), "off bar stayed visible in Edit Mode")
+S.SetEditMode(false)
+S.SetEditMode(true)
+assert(not h3.shown and not Bar(6).header.shown, "off bars returned on Edit Mode re-entry")
+assert(S.Set("actionbars", "bar3Visibility", 2))
 S.SetEditMode(false)
 assert(not h3.shown and Bar(5).header.attrs.gridmask==0)
 
@@ -3047,6 +3141,7 @@ assert(S.ActionBarAvailable(8) and not S.ActionBarAvailable(13))
 Fire(Bar(1).header,"OnLeave",true)
 Fire(Bar(9).header,"OnLeave",true)
 TestQuickKeybind()
+TestDragLayout()
 
 ------------------------------------------------------------------ disable and re-enable
 do

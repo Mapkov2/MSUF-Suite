@@ -281,18 +281,6 @@
   },
   {
    "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
-   "symbol": "Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
-   "kind": "addon",
-   "reason": "Finite late-resolved legacy MSUF profile adapter. The host operation can be absent on older hosts; this is an external capability check, not a missing Suite dependency. Moved from the same pre-existing profile/installer guard; profile, rename, installer and old/new host contracts retain the behavior.",
-   "symbol": "getDefault (= Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters)"
-  },
-  {
-   "file": "MSUF_Suite/Core/Installer.lua",
    "kind": "client",
    "reason": "Retail and Forever: FrameXML EventRegistry broadcasts completion after setup. Standalone host fixtures may omit the registry.",
    "symbol": "registry (= EventRegistry)"
@@ -1394,6 +1382,18 @@
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
    "symbol": "S.OpenQuickKeybind"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
+   "kind": "lod",
+   "reason": "MSUF_Suite_ActionBars/Controller.lua exports pending first-import preservation only while the runtime addon is loaded; options can configure saved positions without loading it.",
+   "symbol": "S.KeepActionBarPosition"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ActionBars.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export: older hosts can lack RegisterControlMetadata. The header action still works without optional search metadata registration.",
+   "symbol": "M.RegisterControlMetadata"
   },
   {
    "file": "MSUF_Suite_Options/Pages/ActionBars.lua",

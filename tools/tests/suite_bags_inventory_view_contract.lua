@@ -1,9 +1,15 @@
 local root = assert(arg[1], "repository root required")
 local combat, timers, calls, state = false, {}, { scans = 0, fonts = 0 }, {}
 local methods = {}
-local function Widget(_, _, _, template)
+function methods:GetNormalTexture() end
+function methods:GetPushedTexture() end
+function methods:GetDisabledTexture() end
+function methods:GetHighlightTexture() end
+local function Widget(kind, _, _, template)
     local widget = setmetatable({ shown = true, scripts = {}, font = { "Native", 14, "" } }, { __index = methods })
+    if kind == "ItemButton" then widget.Count, widget.icon = Widget("FontString"), Widget("Texture") end
     if template == "InputBoxInstructionsTemplate" then widget.Instructions = setmetatable({}, { __index = methods }) end
+    if template == "UIPanelButtonTemplate" then widget.Left, widget.Middle, widget.Right = Widget(), Widget(), Widget() end
     return widget
 end
 function methods:SetPoint(...) self.point = { ... }; self.moves = (self.moves or 0) + 1 end
@@ -26,12 +32,23 @@ function methods:GetBottom() return self.bottom end
 function methods:GetTop() return self.top end
 function methods:GetScale() return 1 end
 function methods:GetFrameLevel() return 10 end
+function methods:IsProtected() return true end
 function methods:SetScript(event, callback) self.scripts[event] = callback end
 function methods:SetParent(value) self.parent = value end
+function methods:GetParent() return self.parent end
 function methods:HookScript(event, callback)
     local previous = self.scripts[event]
     self.scripts[event] = function(...) if previous then previous(...) end; callback(...) end
 end
+function methods:CreateTexture() return Widget() end
+function methods:SetColorTexture(...) self.color = { ... } end
+function methods:SetAlpha(value) self.alpha = value end
+function methods:EnableMouse() end
+function methods:SetNormalFontObject() end
+function methods:SetPushedTexture() end
+function methods:SetDisabledTexture() end
+function methods:SetHighlightTexture() end
+function methods:IsEnabled() return self.enabled ~= false end
 function methods:SetEnabled(value) self.enabled = value end
 function methods:SetScrollChild(value) self.child = value end
 function methods:EnableMouseWheel(value) self.mouseWheel = value end
@@ -40,7 +57,7 @@ function methods:SetFont(...) self.font = { ... }; calls.fonts = calls.fonts + 1
 function methods:GetFont() return unpack(self.font) end
 function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
 function methods:UnregisterAllEvents() self.events = {} end
-for _, name in ipairs({ "SetJustifyH", "SetAllPoints", "SetFrameLevel", "RegisterForClicks", "RegisterForDrag", "SetNormalTexture" }) do
+for _, name in ipairs({ "SetHighlightFontObject", "SetDisabledFontObject", "SetTexture", "SetVertexColor", "SetJustifyH", "SetAllPoints", "SetFrameLevel", "RegisterForClicks", "RegisterForDrag", "SetNormalTexture" }) do
     methods[name] = function() end
 end
 for _, name in ipairs({ "SetAutoFocus", "SetMaxBytes", "SetTextColor", "SetWordWrap" }) do methods[name] = function() end end
@@ -74,6 +91,7 @@ local info = {
     { itemID = 10, hyperlink = "item:10", stackCount = 7, quality = 1 },
 }
 C_Container = {
+    ContainerIDToInventoryID = function(bag) return bag + 19 end,
     GetBagName = function() return "Backpack" end,
     GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 end,
     GetContainerItemInfo = function(_, slot) calls.scans = calls.scans + 1; return info[slot] end,
@@ -106,10 +124,10 @@ local c = { font = "Suite", inventoryColumns = 12, inventoryRows = 8, inventoryV
     itemCountSize = 12, mergeStacks = true, showPinned = true, showRecent = true,
     customCategories = "", hideEmptyCategories = true, compactGroups = true }
 local module = { active = true, frame = frame, config = c, Refresh = function() end,
-    RefreshWindowLayout = function() end, NativeAnchorPass = function() UpdateContainerFrameAnchors() end }
+    UpdatePresentation = function() end, RefreshWindowLayout = function() end, NativeAnchorPass = function() UpdateContainerFrameAnchors() end }
 function module:Disable() self.active = false end
 local S = {
-    CreateFrame = Widget, CreateFontString = Widget, Text = function(value) return value end,
+    CreateFrame = Widget, CreateFontString = Widget, CreateTexture = Widget, RGB = function() return .4, .6, .8 end, Text = function(value) return value end,
     SetFont = function(label, ...) label:SetFont(...) end,
     GlobalFontPath = function() return "Suite" end, ResolveFont = function() return "Suite" end,
     Public = function() return true end, Finite = function(v) return type(v) == "number" end,
@@ -117,8 +135,9 @@ local S = {
     ModuleState = function() return state end,
     Set = function(_, key, value) c[key] = value; module:Refresh(); return true end,
 }
+Constants = { InventoryConstants = { NumBagSlots = 4, NumReagentBagSlots = 1 } }
 local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
-local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, BagsView = catalog.BagsView,
+local P = { Suite = S, NS = { Safety = {IsForbidden=function() return false end}, IsSecret = function() return false end, IsCombatLocked = function() return combat end, BagsPresentation = catalog.BagsPresentation, BagsView = catalog.BagsView,
     BagsSort = catalog.BagsSort,
     InCombat = function(event)
         if event == "PLAYER_REGEN_DISABLED" then return true end
@@ -126,6 +145,9 @@ local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, Bag
         return combat
     end,
     Client = { SupportsEvent = function() return true end } }, BagsModule = module,
+    BagMotion = { StopAll = function() end },
+    -- This fixture isolates grid/coalescing; real tab motion uses the full harness.
+    BagTabSelection = { Refresh = function() end, List = function() end, HideList = function() end },
     BagFinance = { Refresh = function() end },
     InventoryEditor = { Show = function() end, Hide = function() end, ShowPinned = function() end } }
 -- WoW Forever's SmartNavigation post-hooks CreateFrame and rescans the open
@@ -142,6 +164,13 @@ do
     end
 end
 P.ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S)
+P.BagWidgets = dofile(root .. "/tools/tests/suite_test_support.lua").BagsWidgetsFixture(P)
+P.BagWindowMotion = {
+    Cancel = function() end,
+    Viewport = function(g) return g.columns, g.rows end,
+    Target = function(width,height) frame:SetSize(width,height) module:RefreshWindowLayout() end,
+}
+
 -- Renders are one coalesced job on the Bags module's context.
 P.NS.Dispatch = function(callback, ...) return callback(...) end
 module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, P.NS)("bags", module)
@@ -161,8 +190,8 @@ Enum = { TooltipDataType = { Item = 0 },
 -- Blizzard_SharedXMLGame defines the tooltip data processor at startup.
 TooltipDataProcessor = { AddTooltipPostCall = function() end }
 assert(loadfile(root .. "/MSUF_Suite/Core/InventoryRules.lua"))("Core", P.NS)
-for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "UpgradeMarker", "GridView",
-    "InventoryDetails", "SavedSearches", "SmartSearch", "FreeSlots", "InventoryView" }) do
+for _, file in ipairs({ "SlotCache", "ItemLoads", "InventoryModel", "InventoryIndex", "PlayerGear", "UpgradeMarker", "Presentation", "Appearance", "GridView", "LayoutSafety",
+    "InventoryDetails", "SavedSearches", "SmartSearch", "FreeSlots", "InventoryActions", "EquippedBags", "WindowResize", "InventoryControls", "InventoryRendering", "InventoryView" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("Bags", P)
 end
 -- Bags.lua runs the view from its sub-module list after its own refresh and stop.
@@ -171,6 +200,8 @@ function module:Disable()
     self.active = false
     P.InventoryView.Disable()
 end
+module.context.HideControl = function() end
+module.context.HideUnprotected = function() end
 module:Refresh()
 frame:UpdateItems()
 frame:UpdateItemLayout()

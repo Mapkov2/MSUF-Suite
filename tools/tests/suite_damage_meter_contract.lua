@@ -1683,7 +1683,7 @@ do
     C_DamageMeter.GetCombatSessionSourceFromType, C_DamageMeter.GetCombatSessionSourceFromID = fetchType, fetchID
 end
 if MSUF_DM_FEATURE_TESTS then
-    MSUF_DM_FIXTURE={D=D,S=S,NS=Suite,M=M,api=api,Event=Event,RunPaint=RunPaint,
+    MSUF_DM_FIXTURE={D=D,S=S,NS=Suite,M=M,api=api,Event=Event,RunPaint=RunPaint,RunAfters=RunAfters,
         Registered=Registered,Secret=Secret,Row=Row,Region=Region,Pick=Pick,
         SetCombat=function(value) combat=value end,
         SetZone=function(kind) inside=kind~="none";instanceType=kind end,

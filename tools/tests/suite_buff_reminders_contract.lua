@@ -217,6 +217,7 @@ catalogNS.Defaults = {}
 catalogNS.FinalizeCatalog()
 NS.Defaults = catalogNS.Defaults
 NS.IconShapeIds = catalogNS.IconShapeIds
+NS.BuffReminderClassReminders = catalogNS.BuffReminderClassReminders
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
 local private = { NS=NS, Suite=S }
 Support.Load(root, "MSUF_Suite_BuffReminders", private, nil, { ["Bootstrap.lua"] = true })
@@ -1482,7 +1483,10 @@ end
 -- (compile) instructions.
 do
     local AURA_BUDGET, MEMBER_BUDGET, COMPILE_BUDGET, BAG_BUDGET = 1526, 762, 6595, 3353
-    local COMBAT_END_BUDGET = 6082
+    -- 2026-11-05: missing-only class auras and remembered armor add 23 VM
+    -- instructions to the current 6078 combat-end case (6101, +0.38%).
+    -- No additional native reads or allocations; no recompile at combat end.
+    local COMBAT_END_BUDGET = 6101
     local roster = { player = "MAGE", party1 = "PRIEST", party2 = "WARRIOR", party3 = "DRUID", party4 = "ROGUE" }
     UnitClass = function(unit) return roster[unit], roster[unit] end
     knownSpell = function(id) return id == 1459 end

@@ -195,16 +195,14 @@ H.Enable(W, { infoFPS = true, infoClock = false, infoLocation = false })
 local before = reads.fps
 assert(S.Set("dataTexts", "enabled", true))
 if nativeBag then
-    assert(not nativeBag.shown and nativeBag.driver == "hide",
-        "native bag buttons remained visible beside the bag DataText")
-    nativeBag:Show()
-    assert(not nativeBag.shown, "Blizzard re-showed the bag bar")
-    assert(S.Set("dataTexts", "hideBlizzardBagBar", false))
     assert(nativeBag.shown and nativeBag.driver == nil,
-        "bag toggle did not restore Blizzard buttons")
+        "DataTexts must retain equipped bag buttons when no Bags replacement is running")
+    nativeBag:Show()
+    assert(nativeBag.shown, "DataTexts hid the bar without an equipped-bag replacement")
+    assert(S.Set("dataTexts", "hideBlizzardBagBar", false))
+    assert(nativeBag.shown and nativeBag.driver == nil, "visible native bag buttons were lost")
     assert(S.Set("dataTexts", "hideBlizzardBagBar", true))
-    assert(not nativeBag.shown and nativeBag.driver == "hide",
-        "bag toggle did not hide Blizzard buttons again")
+    assert(nativeBag.shown and nativeBag.driver == nil, "hide preference cannot remove the only equipped-bag access")
 end
 assert(S.states.dataTexts.active and M.bars[1].frame:IsShown()
     and M.bars[1].slots[1].text == "Gold: 10G"

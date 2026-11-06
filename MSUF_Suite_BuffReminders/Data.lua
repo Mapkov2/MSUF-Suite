@@ -50,6 +50,14 @@ function R.ClassPlan(def)
     if P.NS.Client.isForever then return def.forever end
     return def.retail
 end
+-- The Forever armor choices follow the module directly. Other class buffs
+-- keep their existing shared switch; explicit per-reminder opt-outs survive.
+function R.ClassReminderEnabled(config, def)
+    if not def.standalone and config.classReminders ~= true then return false end
+    local enabled = config[def.key]
+    if enabled == nil then return def.default ~= false end
+    return enabled == true
+end
 -- Spell IDs are game identifiers. Assassination favors Deadly Poison;
 -- Outlaw and Subtlety favor Instant Poison. Any active poison of the same
 -- category satisfies the reminder, including a player's talent choice.

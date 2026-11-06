@@ -405,6 +405,13 @@ local function Encounter(self, event)
     D.MarkAll()
     D.RequestPaint()
 end
+local roleLoginApplied = false
+local function ApplyLoginRole()
+    if roleLoginApplied then return end
+    roleLoginApplied = true
+    D.ApplyRoleMeters()
+end
+
 -- isInitialLogin: the first world entry of a session, when the role meters apply.
 local function World(self, _, isInitialLogin)
     D.ClearIdentities()
@@ -412,7 +419,7 @@ local function World(self, _, isInitialLogin)
     local combat = NS.IsCombatLocked()
     if combat and not M.inCombat then CombatStart(self) elseif not combat and M.inCombat then CombatEnd() end
     M.available, M.reason = S.DamageMeterAvailability()
-    if Public(isInitialLogin) and isInitialLogin == true then D.ApplyRoleMeters() end
+    if Public(isInitialLogin) and isInitialLogin == true then ApplyLoginRole() end
     D.EvaluateVisibility()
     D.MarkAll()
     D.RequestPaint()
@@ -556,6 +563,11 @@ function M:Enable()
     D.SessionTypes()
     D.TrackUIVisibility()
     self:Refresh()
+    -- Deferred startup can follow the first world entry; apply that login's
+    -- role once here when its event has already passed. Reload keeps picks.
+    if NS.startingModules and NS.loginKind == "login" and not roleLoginApplied then
+        ctx:After(0, ApplyLoginRole)
+    end
 end
 
 -- The meter hotkey can also hide the QoL action tracker. Its export repaints

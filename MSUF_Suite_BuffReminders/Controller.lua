@@ -400,14 +400,19 @@ local function RefreshPoisonEntry(self, index, entry)
     end
 end
 
-local function RefreshAuraEntry(self, entry, fullRefresh, updateInfo, foodDirty)
+local function RefreshAuraEntry(self, index, entry, fullRefresh, updateInfo, foodDirty)
     if entry.kind == "food" then
         if fullRefresh or foodDirty then
             entry.present, entry.expiresAt, entry.totalDuration = FoodPresent(self)
         end
     elseif fullRefresh or AuraChangeAffects(entry, updateInfo) then
+        local activeAura
         entry.present, entry.auraInstanceID, entry.expiresAt,
-            entry.instanceIDs, entry.totalDuration = AuraPresent(entry)
+            entry.instanceIDs, entry.totalDuration, activeAura = AuraPresent(entry)
+        if entry.missingOnly then entry.expiresAt = nil end
+        if entry.remember then
+            if activeAura and R.RememberClassAura(entry, activeAura) then BindButton(self.view.buttons[index], entry) end
+        end
     end
 end
 
@@ -438,7 +443,7 @@ local function Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
         elseif entry.slot then
             if weaponDirty then entry.present, entry.expiresAt = EnchantPresent(entry.slot) end
         elseif auraDirty then
-            RefreshAuraEntry(self, entry, fullRefresh, updateInfo, foodDirty)
+            RefreshAuraEntry(self, index, entry, fullRefresh, updateInfo, foodDirty)
         end
         -- A category follows its own content choices within the module-wide
         -- visibility filter.

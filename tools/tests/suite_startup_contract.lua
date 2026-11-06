@@ -51,7 +51,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     MSUF_NS.FirstLoad6 = hostPending and { IsFirstRunPending = function() return true end } or nil
     MapkoSkin = oldRunning and { Suite = { started = true } } or nil
     local owner = {
-        Client = { isForever = false },
+        Client = { isForever = false, IsAddOnLoaded = function() return false end },
         Host = { build = hostPending and "Classic" or "Main" },
         IsCombatLocked = function() return combat == true end,
         InCombat = function() return combat == true or fighting end,
@@ -69,7 +69,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         -- Installer.lua): no legacy skin database, nothing else to do here.
         Skin = { LoadLegacyDatabase = function() return false end, EnsureEngine = Noop, SetEnabled = Noop,
             SettleChatColors = Settle },
-        SuiteProfiles = { EnsureNewCharacterProfile = Noop, SyncActive = Noop,
+        SuiteProfiles = { NewCharacterDefault = Noop, EnsureNewCharacterProfile = Noop, SyncActive = Noop,
             EnsureModernDarkTooltips = function()
                 assert(starts == 1, "tooltip repair ran before module startup")
                 tooltipRepairs = tooltipRepairs + 1
@@ -131,10 +131,19 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     assert(owner.DB == nil and starts == 0)
     frame:callback("ADDON_LOADED", "MSUF_Suite")
     if not loggedIn and frame.events.PLAYER_LOGIN then frame:callback("PLAYER_LOGIN") end
+    -- Login listeners finish before the queued module start runs.
+    assert(starts == 0, "modules started inside the login/load dispatch")
+    local function FlushTimers()
+        local queued = afterWorldEntry
+        afterWorldEntry = {}
+        for _, callback in ipairs(queued) do callback() end
+    end
+    FlushTimers()
     if combat then
         assert(starts == 0 and frame.events.PLAYER_REGEN_ENABLED, "combat load started modules prematurely")
         combat = false
         frame:callback("PLAYER_REGEN_ENABLED")
+        FlushTimers()
     end
     assert(loginFrame and loginFrame.events.PLAYER_ENTERING_WORLD,
         "login kind listener was not registered")
@@ -147,7 +156,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
     -- resumes on the next frame, after readiness changes; no recurring retry.
     loggedIn = true
     if combatBeforeDeferred then fighting = true end
-    for _, callback in ipairs(afterWorldEntry) do callback() end
+    FlushTimers()
     if combatBeforeDeferred then
         assert(opened == 0 and frame.events.PLAYER_REGEN_ENABLED,
             "combat after world entry lost the automatic setup retry")
@@ -155,7 +164,7 @@ local function Scenario(stored, legacy, loggedIn, oldRunning, combat, legacyOnDe
         frame:callback("PLAYER_REGEN_ENABLED")
         assert(opened == 1 and starts == 1, "combat retry failed or restarted the Suite modules")
     end
-    assert(#afterWorldEntry <= 1, "startup queued repeated automatic setup attempts")
+    assert(#afterWorldEntry == 0, "startup queued repeated automatic setup attempts")
     assert(tooltipRepairs == starts, "tooltip repair did not run exactly once after module startup")
     assert(minimapRepairs == starts, "minimap repair did not run exactly once after module startup")
     owner.autoOpened = opened

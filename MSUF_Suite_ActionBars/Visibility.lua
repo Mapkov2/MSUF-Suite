@@ -40,7 +40,7 @@ end
 AB.HasForms = HasForms
 
 -- Driver string for one bar and visibility mode (catalog choice index).
--- reveal: the spellbook/macro reveal shows the bar out of combat. It follows
+-- reveal: panel and cursor reveals show enabled bars out of combat. They follow
 -- the implicit pet battle and vehicle hides; a bar that is hidden outright
 -- (Never, the gamepad rule, a stance bar without forms) stays hidden.
 function AB.VisibilityDriver(index, mode, forms, gamepad, reveal)
@@ -183,7 +183,7 @@ function AB.UpdateAlpha(bar)
     -- has ended (FadeFinished runs this pass again).
     local wasDormant = bar.paintDormant
     local dormant = textAlpha == 0 or (state == "hide"
-        and not bar.header:GetAttribute("forceshow") and not bar.header:GetAttribute("dragshow"))
+        and not bar.header:GetAttribute("forceshow"))
     if fading and textAlpha == 0 then dormant = wasDormant == true end
     bar.paintDormant = dormant
     if wasDormant ~= dormant then UpdateFeedbackVisibility() end
@@ -294,7 +294,19 @@ local function SetForced(bar, name, value)
     return true
 end
 
--- Drag reveal: empty slots appear (bit 2) and, with showOnDrag, hidden bars
+-- Blizzard's UpdateVisibility keeps externally disabled bars hidden before
+-- applying its grid reveal. Use the same driver for panels and cursor drags:
+-- Never/gamepad/form gates and secure pet-battle/vehicle conditions stay first.
+local function ApplyVisibilityDriver(bar, config, forms, gamepad)
+    local reveal = AB.panelsOpen or (AB.dragging and config.showOnDrag)
+    local driver = AB.VisibilityDriver(bar.index, config[bar.key.Visibility], forms, gamepad, reveal)
+    if bar.visDriver ~= driver then
+        bar.visDriver = driver
+        RegisterStateDriver(bar.header, "vis", driver)
+    end
+end
+
+-- Drag reveal: empty slots appear (bit 2) and, with showOnDrag, enabled bars
 -- show while something placeable is on the cursor. Out of combat only;
 -- combat drags from suite buttons use the secure bit 4 instead.
 function AB.ApplyDrag()
@@ -302,20 +314,20 @@ function AB.ApplyDrag()
     local kind = GetCursorInfo()
     local dragging = S.Public(kind) and PLACEABLE[kind] or false
     AB.dragging = dragging
-    AB.UpdateAllAlpha()
     if NS.IsCombatLocked() then
+        AB.UpdateAllAlpha()
         AB.dragPending = true
         return
     end
     AB.dragPending = nil
     AB.Reveal(2, dragging)
     if not dragging then AB.Reveal(4, false) end
-    local show = dragging and M.config.showOnDrag
+    local forms, gamepad = HasForms(), AB.GamepadHideActive()
     for index = 1, AB.BAR_COUNT do
         local bar = AB.bars[index]
-        if bar and SetForced(bar, "dragshow", show and AB.Available(index)) then
+        if bar then
+            ApplyVisibilityDriver(bar, M.config, forms, gamepad)
             AB.UpdateAlpha(bar)
-            AB.Execute(bar.header, AB.SNIPPET.VIS)
         end
     end
 end
@@ -336,12 +348,8 @@ end
 local function ApplyBarVisibility(bar, config, forms, gamepad)
     local keys = bar.key
     local mode = config[keys.Visibility]
-    local driver = AB.VisibilityDriver(bar.index, mode, forms, gamepad, AB.panelsOpen)
     local forced = SetForced(bar, "forceshow", S.editMode and mode ~= VIS.NEVER)
-    if bar.visDriver ~= driver then
-        bar.visDriver = driver
-        RegisterStateDriver(bar.header, "vis", driver)
-    end
+    ApplyVisibilityDriver(bar, config, forms, gamepad)
     -- The driver only re-runs the handler when its state changes.
     if forced then AB.Execute(bar.header, AB.SNIPPET.VIS) end
     local fade = mode == VIS.MOUSEOVER or mode == VIS.MOUSEOVER_OR_COMBAT
@@ -377,7 +385,6 @@ function AB.StopVisibility()
                 bar.visDriver = nil
             end
             SetForced(bar, "forceshow", nil)
-            SetForced(bar, "dragshow", nil)
             bar.header:SetAttribute("state-vis", "hide")
             AB.Execute(bar.header, AB.SNIPPET.VIS)
             StopFade(bar)

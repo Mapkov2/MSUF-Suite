@@ -232,11 +232,13 @@ end
 Finance.LINE = 18
 local function Place(combat)
     local offset = combat and 4 or 35
-    if Finance.offset == offset or NS.IsCombatLocked() then return end
-    Finance.offset = offset
+    local rail = not combat and P.BagPresentation.IsPanel(M.config) and P.BagPresentation.RAIL or 0
+    if Finance.offset == offset and Finance.rail == rail or NS.IsCombatLocked() then return end
+    Finance.offset, Finance.rail = offset, rail
     local money = M.frame.MoneyFrame
     Finance.button:ClearAllPoints()
-    Finance.button:SetPoint("BOTTOMLEFT", money, "TOPLEFT", 4, offset)
+    Finance.button:SetPoint("BOTTOMLEFT", money, "TOPLEFT",
+        rail + 4, offset)
     Finance.button:SetPoint("BOTTOMRIGHT", money, "TOPRIGHT", -4, offset)
 end
 

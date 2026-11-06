@@ -22,9 +22,8 @@ local function MapOpened(self)
     count = math.min(256, count)
     for i = 1, count do
         local name, kind = TaxiNodeName(i), TaxiNodeGetType(i)
-        local x, y = TaxiNodePosition(i)
-        if Text(name) and S.Public(kind) and S.Finite(x) and S.Finite(y) then
-            self.nodes[i] = { name = name, x = x, y = y }
+        if Text(name) and S.Public(kind) then
+            self.nodes[i] = { name = name }
             if kind == "CURRENT" then self.startName = name end
         end
     end
@@ -33,15 +32,10 @@ local function MapOpened(self)
         local routes = GetNumRoutes(index)
         if S.Finite(routes) and routes >= 0 and routes <= 32 then
             for part = 1, routes do
-                local x, y = TaxiGetDestX(index, part), TaxiGetDestY(index, part)
-                if S.Finite(x) and S.Finite(y) then
-                    local best, distance
-                    for _, candidate in pairs(self.nodes) do
-                        local d = math.abs(candidate.x - x) + math.abs(candidate.y - y)
-                        if not distance or d < distance then best, distance = candidate.name, d end
-                    end
-                    if best and distance < .0001 and best ~= names[#names] then names[#names + 1] = best end
-                end
+                -- Both native taxi maps use exact segment slots; positions can overlap.
+                local slot = TaxiGetNodeSlot(index, part, false)
+                local stop = S.Finite(slot) and self.nodes[slot]
+                if stop and stop.name ~= names[#names] then names[#names + 1] = stop.name end
             end
             if node.name ~= names[#names] then names[#names + 1] = node.name end
             self.routes[index] = { names = names, key = RouteKey(names), destination = node.name }
@@ -53,7 +47,7 @@ end
 local function AddRoute(self, index)
     local route = self.active and self.config.routePreview and self.routes[index]
     if route then
-        GameTooltip:AddLine(table.concat(route.names, " → "), 1, .85, .4, true)
+        GameTooltip:AddLine(table.concat(route.names, " > "), 1, .85, .4, true)
         GameTooltip:Show()
     end
 end
@@ -75,7 +69,7 @@ local function FlightPinShown(self, tooltip)
     end
 end
 
-local LABELS = { "title", "route", "time" }
+local LABELS = { "title", "route", "time", "status", "landText" }
 
 local function Create(self)
     if self.host then return end
@@ -84,21 +78,36 @@ local function Create(self)
     host.background:SetAllPoints()
     host.background:SetColorTexture(.035, .045, .06, .92)
     host.title = S.CreateFontString(host, nil, "OVERLAY")
-    host.title:SetPoint("TOPLEFT", 8, -7)
-    host.title:SetPoint("TOPRIGHT", -8, -7)
+    host.title:SetJustifyH("LEFT")
+    host.title:SetWordWrap(true)
+    host.title:SetMaxLines(2)
     host.route = S.CreateFontString(host, nil, "OVERLAY")
-    host.route:SetPoint("TOPLEFT", 8, -29)
-    host.route:SetPoint("TOPRIGHT", -8, -29)
     host.route:SetJustifyH("LEFT")
+    host.route:SetWordWrap(true)
+    host.route:SetMaxLines(2)
     host.time = S.CreateFontString(host, nil, "OVERLAY")
-    host.time:SetPoint("BOTTOMLEFT", 8, 8)
-    host.land = S.CreateFrame("Button", nil, host, "UIPanelButtonTemplate")
-    host.land:SetSize(132, 23)
-    host.land:SetPoint("BOTTOMRIGHT", -8, 5)
-    host.land:SetText(S.Text("Land at next stop"))
+    host.time:SetJustifyH("LEFT")
+    host.time:SetWordWrap(false)
+    host.status = S.CreateFontString(host, nil, "OVERLAY")
+    host.status:SetJustifyH("LEFT")
+    host.status:SetWordWrap(true)
+    host.land = S.CreateFrame("Button", nil, host)
+    local fill = S.CreateTexture(host.land, nil, "BACKGROUND")
+    fill:SetAllPoints()
+    fill:SetColorTexture(.16, .19, .23, .9)
+    local highlight = S.CreateTexture(host.land, nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetColorTexture(1, 1, 1, .08)
+    host.landText = S.CreateFontString(host.land, nil, "OVERLAY")
+    host.landText:SetPoint("LEFT", 6, 0)
+    host.landText:SetPoint("RIGHT", -6, 0)
+    host.landText:SetJustifyH("CENTER")
+    host.landText:SetWordWrap(true)
     host.land:SetScript("OnClick", function()
         local taxi = UnitOnTaxi("player")
-        if self.active and S.Public(taxi) and taxi then TaxiRequestEarlyLanding() end
+        if self.active and not self.earlyLanding and not S.editMode and S.Public(taxi) and taxi then
+            TaxiRequestEarlyLanding()
+        end
     end)
     self.duration = C_DurationUtil.CreateDuration()
     self.binding = C_DurationUtil.CreateDurationTextBinding()
@@ -114,11 +123,10 @@ local function Create(self)
     self.host = host
 end
 
--- Size, position, fonts and colors follow the settings: Enable and Refresh
--- only, never the taxi and control events.
+-- Font/style choices are applied only on Enable and Refresh; taxi events
+-- arrange the text only when the displayed route or flight state changes.
 local function Layout(self)
     local c, host = self.config, self.host
-    host:SetSize(c.width, c.showStops and 132 or 76)
     host:SetScale(c.scale / 100)
     host:ClearAllPoints()
     host:SetPoint("CENTER", UIParent, "CENTER", c.x, c.y)
@@ -126,10 +134,59 @@ local function Layout(self)
     local color = c.classColor and S.Public(class) and RAID_CLASS_COLORS[class]
     for i = 1, #LABELS do
         local label = host[LABELS[i]]
-        S.SetStyledFont(label, S.GlobalFontPath(), c.fontSize, "OUTLINE", 1, true, 80, 1)
+        local size = LABELS[i] == "time" and math.floor(c.fontSize * 1.5) or c.fontSize
+        S.QoLStyleText(label, c, S.GlobalFontPath(), size)
         label:SetTextColor(color and color.r or 1, color and color.g or 1, color and color.b or 1)
     end
-    host.route:SetShown(c.showStops)
+    host.landText:SetText(S.Text("Land at next stop"))
+end
+
+-- Only real intermediate stops get a second route line. Reserve measured text
+-- heights before the timer/footer so large fonts and narrow widths cannot overlap.
+local function Arrange(self)
+    local c, host, route = self.config, self.host, self.current
+    host.title:ClearAllPoints()
+    host.title:SetPoint("TOPLEFT", 10, -8)
+    host.title:SetWidth(c.width - 20)
+    local y = 8 + host.title:GetStringHeight() + 6
+    local stops = c.showStops and (route and #route.names > 2 or S.editMode and not route)
+    host.route:SetShown(stops == true)
+    if stops then
+        host.route:ClearAllPoints()
+        host.route:SetPoint("TOPLEFT", 10, -y)
+        host.route:SetWidth(c.width - 20)
+        y = y + host.route:GetStringHeight() + 6
+    end
+    host.time:ClearAllPoints()
+    host.time:SetPoint("TOPLEFT", 10, -y)
+    host.time:SetWidth(c.width - 20)
+    y = y + math.ceil(c.fontSize * 1.5) + 4
+    host.status:ClearAllPoints()
+    host.status:SetPoint("TOPLEFT", 10, -y)
+    host.status:SetWidth(c.width - 20)
+    y = y + host.status:GetStringHeight() + 8
+    host.land:ClearAllPoints()
+    host.land:SetPoint("TOPLEFT", 10, -y)
+    host.land:SetWidth(c.width - 20)
+    local height = host.landText:GetStringHeight() + 10
+    host.land:SetSize(c.width - 20, height)
+    host:SetSize(c.width, y + height + 8)
+end
+
+local function Elapsed(self)
+    if not self.active or not self.departed or not self.paintedVisible then return end
+    local seconds = math.max(0, math.floor(GetTime() - self.departed))
+    if seconds == self.elapsedSecond then return end
+    self.elapsedSecond = seconds
+    self.host.time:SetFormattedText("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+
+local function StopElapsed(self)
+    if self.elapsedTicker then
+        self.elapsedTicker:Cancel()
+        self.elapsedTicker = nil
+    end
+    self.elapsedSecond = nil
 end
 
 -- UNIT_FLAGS and the control events fire for much more than flights; the
@@ -146,25 +203,37 @@ local function Update(self, force)
     self.paintedVisible, self.paintedTaxi = visible, taxi
     self.paintedRoute, self.paintedDeparted = self.current, self.departed
     self.host:SetShown(visible)
-    self.host.land:SetEnabled(taxi and not S.editMode)
+    self.host.land:SetEnabled(taxi and not self.earlyLanding and not S.editMode)
+    self.host.landText:SetAlpha(taxi and not self.earlyLanding and not S.editMode and 1 or .45)
+    StopElapsed(self)
     if not visible then
         self.binding:SetEnabled(false)
         return
     end
     local route = self.current
-    local title = route and (route.names[1] .. " → " .. route.destination)
+    local title = route and (route.names[1] .. " > " .. route.destination)
         or S.Text(S.editMode and "Flight route preview" or "Flight route unavailable")
     self.host.title:SetText(title)
-    self.host.route:SetText(route and table.concat(route.names, " → ") or S.Text("Select a destination at the flight master."))
+    self.host.route:SetText(route and #route.names > 2 and table.concat(route.names, " > ", 2, #route.names - 1)
+        or S.editMode and S.Text("Select a destination at the flight master.") or "")
     local estimate = route and self.timings and self.timings[route.key]
-    if S.Finite(estimate) and estimate > 0 and self.departed then
+    if S.Finite(estimate) and estimate > 0 and self.departed and not self.earlyLanding then
         self.duration:SetTimeFromEnd(self.departed + estimate, estimate)
         self.binding:SetDuration(self.duration)
         self.binding:SetEnabled(true)
+        self.host.status:SetText(S.Text("Remaining time"))
     else
         self.binding:SetEnabled(false)
-        self.host.time:SetText(S.Text(S.editMode and "Estimated time" or "Learning flight time"))
+        self.host.status:SetText(S.Text(route and not self.earlyLanding and "Learning flight time" or "Elapsed time"))
+        if taxi and self.departed then
+            Elapsed(self)
+            self.elapsedTicker = self.context:Ticker(1, Elapsed)
+        else
+            self.host.time:SetText("0:00")
+            self.host.status:SetText(S.Text("Estimated time"))
+        end
     end
+    Arrange(self)
 end
 local function Forget(self)
     self.departed, self.current, self.earlyLanding, self.requested, self.onTaxi = nil, nil, nil, nil, nil
@@ -235,7 +304,12 @@ function M:Enable()
             self.requested = GetTime()
             Update(self)
         end)
-        hooksecurefunc("TaxiRequestEarlyLanding", function() if self.active then self.earlyLanding = true end end)
+        hooksecurefunc("TaxiRequestEarlyLanding", function()
+            if self.active then
+                self.earlyLanding = true
+                Update(self, true)
+            end
+        end)
         hooksecurefunc("TaxiNodeOnButtonEnter", function(button) AddRoute(self, button:GetID()) end)
         GameTooltip:HookScript("OnShow", function(tooltip) FlightPinShown(self, tooltip) end)
     end
@@ -247,6 +321,7 @@ function M:Enable()
     self.context:Event("PLAYER_ENTERING_WORLD", State, IN_COMBAT)
     Create(self)
     Layout(self)
+    State(self, "PLAYER_ENTERING_WORLD")
     Update(self, true)
 end
 -- The controller registers the movers after Enable and Refresh (S.RefreshEditMover).
@@ -261,9 +336,11 @@ function M:Refresh()
     self.timings = timings
     Create(self)
     Layout(self)
+    State(self, "PLAYER_ENTERING_WORLD")
     Update(self, true)
 end
 function M:Disable()
+    StopElapsed(self)
     Forget(self)
     self.mapOpen = nil
     self.paintedVisible = nil

@@ -83,11 +83,11 @@ function Suite.GetOverview()
     for i = 1, #order do
         if S.Config(order[i]).enabled == true then enabled = enabled + 1 end
     end
-    local installation = Suite.RootDB.installation
+    local installation = Suite.Database.GetCharacterInstallationStatus()
     return {
         version = displayVersion,
         total = #order,
         enabled = enabled,
-        needsSetup = type(installation) ~= "table" or installation.status ~= "complete",
+        needsSetup = installation ~= "complete" and not Suite.SuiteProfiles.NewCharacterDefault(),
     }
 end

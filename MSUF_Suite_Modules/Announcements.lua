@@ -83,6 +83,10 @@ local function Theme(self)
     for kind, key in pairs(COLOR_KEYS) do
         self.kindColors[kind] = custom and { S.RGB(c[key]) } or COLORS[kind]
     end
+    local showArt = c.showBoxArt ~= false
+    self.background:SetShown(showArt)
+    self.accent:SetShown(showArt)
+    self.divider:SetShown(showArt)
     local opacity = (c.backgroundOpacity or (dark and 57 or 50)) / 100
     if custom then
         local r, g, b = S.RGB(c.backgroundColor)

@@ -49,7 +49,9 @@ S.Config("dataTexts").enabled = true
 S.Config("dataTexts").hideBlizzardBagBar = false
 Check(not S.OwnsBlizzardSurface("bagBar"), "DataTexts owns a bag bar it keeps visible")
 S.Config("dataTexts").hideBlizzardBagBar = true
+S.Config("bags").enabled, S.states.bags.active = true, true
 Check(S.OwnsBlizzardSurface("bagBar"), "DataTexts does not own the bag bar it hides")
+S.states.bags.active = false
 Check(not S.OwnsBlizzardSurface("chatFrames") and not S.OwnsBlizzardSurface("minimap"),
     "a surface no module replaces is owned")
 S.Config("popupAttention").enabled=true
@@ -63,8 +65,9 @@ Check(S.OwnsBlizzardSurface("staticPopups"),"independent popup skin did not clai
 S.Config("popupAttention").enabled=false
 Check(not S.OwnsBlizzardSurface("staticPopups"),"disabled popup skin retained ownership")
 
--- Start and stop order around a surface module; other modules never notify.
+-- Start/stop also reconciles the DataTexts follower surface; unrelated modules never notify.
 Suite.Skin = { SurfacesChanged = function(phase) events[#events + 1] = "skin:" .. phase end }
+S.Config("dataTexts").enabled = false
 S.started = true
 S.NewContext = function() return { Release = function() end } end
 S.RefreshEditMover = function() end
@@ -76,12 +79,12 @@ S.instances.bags = {
 }
 S.Config("bags").enabled = true
 S.Apply("bags")
-Check(table.concat(events, ",") == "skin:before,enable,skin:after",
+Check(table.concat(events, ",") == "skin:before,enable,skin:after,skin:before,skin:after",
     "the skin did not let go before the Bags module started: " .. table.concat(events, ","))
 events = {}
 S.Config("bags").enabled = false
 S.Apply("bags")
-Check(table.concat(events, ",") == "skin:before,disable,skin:after",
+Check(table.concat(events, ",") == "skin:before,disable,skin:after,skin:before,skin:after",
     "the skin did not take the bag shell back after the Bags module stopped: " .. table.concat(events, ","))
 events = {}
 S.instances.chat = { Enable = function() end, Refresh = function() end, Disable = function() end }

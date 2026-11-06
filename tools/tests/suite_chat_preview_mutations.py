@@ -16,6 +16,11 @@ expected = {
     "reset": "reset did not restore automatic sidebar layout",
     "profile": "profile epoch revived a stale drag",
     "legacy": "legacy preview click did not open its accordion",
+    "sectionJump": "Chat preview settings scroll was overwritten",
+    "legacyPersistence": "legacy preview link closed on page refresh",
+    "navigationPlacement": "Open settings is disabled for the unlocked chat window",
+    "navigationEnable": "Open settings is disabled for the unlocked chat window",
+    "navigationCombat": "combat edge opened preview settings",
     "accordion": "coordinate still lives in an accordion",
     "axisProfile": "pending toolbar text wrote into another profile",
 }
@@ -24,7 +29,7 @@ for case, message in expected.items():
                str(root.parent / "MidnightSimpleUnitFrames"), case]
     result = subprocess.run(command, cwd=root, capture_output=True, text=True, errors="replace")
     assert result.returncode and message in result.stderr, f"{case}: unexpected result\n{result.stdout}\n{result.stderr}"
-print("Chat interactive preview: eleven causal regressions rejected")
+print("Chat interactive preview: sixteen causal regressions rejected")
 
 for case, message in {
     "messageRestore": "insertion corner after reset",

@@ -24,6 +24,7 @@ C.Catalog = Catalog
 -- Blizzard's categories by name (the client's Enum.CooldownViewerCategory).
 local CATEGORY = Enum.CooldownViewerCategory
 local ESSENTIAL, UTILITY, TRACKED_BUFF, TRACKED_BAR = CATEGORY.Essential, CATEGORY.Utility, CATEGORY.TrackedBuff, CATEGORY.TrackedBar
+local GROUP_BUFF = CATEGORY.GroupBuff
 local POTIONS, AGNOSTIC_TRACKED = CATEGORY.SpecAgnosticEssential, CATEGORY.SpecAgnosticTracked
 local EQUIP_ESSENTIAL, EQUIP_TRACKED = CATEGORY.EquipSlotEssential, CATEGORY.EquipSlotTracked
 -- The pseudo-categories of cooldowns and auras Blizzard hides by default are
@@ -31,22 +32,22 @@ local EQUIP_ESSENTIAL, EQUIP_TRACKED = CATEGORY.EquipSlotEssential, CATEGORY.Equ
 local HIDDEN_SPELL, HIDDEN_AURA = -1, -2
 local K = C.Const
 local FAMILY = K.FAMILY
--- Blizzard's fetch order (CooldownViewerSettingsDataProvider cooldownCategories).
-local CAT_ORDER = { ESSENTIAL, UTILITY, TRACKED_BUFF, TRACKED_BAR, EQUIP_ESSENTIAL, EQUIP_TRACKED, POTIONS, AGNOSTIC_TRACKED }
+-- Native category order plus the special group-buff source, which has no viewer.
+local CAT_ORDER = { ESSENTIAL, UTILITY, TRACKED_BUFF, TRACKED_BAR, GROUP_BUFF, EQUIP_ESSENTIAL, EQUIP_TRACKED, POTIONS, AGNOSTIC_TRACKED }
 -- HideByDefault moves bar categories into the hidden pseudo-categories; the
 -- item pools stay in their own category (that is their "not shown" state).
 local HIDDEN_OF = { [ESSENTIAL] = HIDDEN_SPELL, [UTILITY] = HIDDEN_SPELL, [TRACKED_BUFF] = HIDDEN_AURA,
-    [TRACKED_BAR] = HIDDEN_AURA, [POTIONS] = POTIONS, [AGNOSTIC_TRACKED] = AGNOSTIC_TRACKED,
+    [TRACKED_BAR] = HIDDEN_AURA, [GROUP_BUFF] = HIDDEN_AURA, [POTIONS] = POTIONS, [AGNOSTIC_TRACKED] = AGNOSTIC_TRACKED,
     [EQUIP_ESSENTIAL] = EQUIP_ESSENTIAL, [EQUIP_TRACKED] = EQUIP_TRACKED }
 local FAMILY_OF = { [HIDDEN_SPELL] = FAMILY.COOLDOWN, [ESSENTIAL] = FAMILY.COOLDOWN, [UTILITY] = FAMILY.COOLDOWN,
     [POTIONS] = FAMILY.COOLDOWN, [EQUIP_ESSENTIAL] = FAMILY.COOLDOWN, [HIDDEN_AURA] = FAMILY.AURA,
-    [TRACKED_BUFF] = FAMILY.AURA, [TRACKED_BAR] = FAMILY.AURA, [AGNOSTIC_TRACKED] = FAMILY.AURA, [EQUIP_TRACKED] = FAMILY.AURA }
+    [GROUP_BUFF] = FAMILY.AURA, [TRACKED_BUFF] = FAMILY.AURA, [TRACKED_BAR] = FAMILY.AURA, [AGNOSTIC_TRACKED] = FAMILY.AURA, [EQUIP_TRACKED] = FAMILY.AURA }
 -- Equipment slots (trinkets) join Essential; potions and healthstones (the
 -- spec-agnostic Essential pool) stay on Potions and racials. TAIL categories
 -- follow their bar's own entries, in Blizzard's order among themselves; a
 -- trinket moved into Essential in Blizzard's settings keeps its saved place.
 local BAR_OF = { [ESSENTIAL] = "ess", [UTILITY] = "uti", [TRACKED_BUFF] = "buf", [TRACKED_BAR] = "bar", [POTIONS] = "ext",
-    [EQUIP_ESSENTIAL] = "ess", [AGNOSTIC_TRACKED] = "buf", [EQUIP_TRACKED] = "buf" }
+    [GROUP_BUFF] = "buf", [EQUIP_ESSENTIAL] = "ess", [AGNOSTIC_TRACKED] = "buf", [EQUIP_TRACKED] = "buf" }
 local TAIL = { [EQUIP_ESSENTIAL] = true }
 Catalog.BAR_OF, Catalog.TAIL = BAR_OF, TAIL
 local HIDE_BY_DEFAULT = 2
@@ -185,7 +186,7 @@ function Catalog.Ready()
     -- A spec can have no Essential entry. Any populated spell or aura category
     -- proves the viewer data exists, including after a late module load.
     local populated = false
-    for category = ESSENTIAL, TRACKED_BAR do
+    for category = ESSENTIAL, GROUP_BUFF do
         local ids = get(category, true)
         if Public(ids) and type(ids) == "table" and #ids > 0 then
             populated = true
@@ -314,6 +315,8 @@ local function Copy(rec, info, category)
     local hidden = not issecret(flags) and type(flags) == "number" and floor(flags / HIDE_BY_DEFAULT) % 2 == 1
     local default = hidden and HIDDEN_OF[cat] or cat
     local diff = CopyLinked(rec, info.linkedSpellIDs)
+    local group = cat == GROUP_BUFF
+    if rec.groupAura ~= group then rec.groupAura, diff = group, true end
     local v = info.spellID
     v = not issecret(v) and type(v) == "number" and v > 0 and v or nil
     if rec.spell ~= v then rec.spell, diff = v, true end
@@ -645,6 +648,7 @@ local function Override(entry, base, override)
     if entry.auraIDs then
         C.EntryFill.RefreshAuraUnit(entry, true)
         C.AuraTimers.Reclassify(entry)
+        C.EntryFill.RefreshRecipients(entry)
     end
     local rec = entry.src == "b" and Catalog.records[entry.id]
     if rec then

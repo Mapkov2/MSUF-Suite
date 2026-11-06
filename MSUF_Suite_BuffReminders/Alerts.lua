@@ -92,10 +92,12 @@ function R.StopReminderAlerts(self)
     view.newAlert = nil
 end
 
--- A dismissed reminder stays hidden until the next reload. It is remembered by
--- the identity AlertTransition uses, so it survives recompiles and layout
--- changes.
+-- A dismissed reminder stays hidden until the next reload. Armor families
+-- keep one identity across learned ranks and Mage armor changes; other
+-- reminders retain their spell/item and slot identity across recompiles.
 local function DismissKey(entry)
+    if entry.remember then return entry.remember.remember end
+    if entry.missingOnly then return entry.kind .. ":" .. entry.aura .. ":0" end
     return entry.kind .. ":" .. entry.id .. ":" .. (entry.slot or entry.poisonRank or 0)
 end
 

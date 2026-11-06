@@ -2,7 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local Native = { enabled = false, all = false }
 P.NativeExperienceBar = Native
-local states, managerAlpha = {}, {}
+local states, managerAlpha, hiddenAlpha, alphaHooks = {}, {}, {}, {}
 local cleanupFrame, cleanupOwner
 
 local function CancelCleanup()
@@ -26,25 +26,42 @@ local function DeferCleanup(self)
     cleanupFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 end
 
--- Blizzard owns the shared containers, their fades and bar selection. Only
--- the XP child and the chrome of a container currently showing XP become
--- transparent. All snapshots live here, never on a Blizzard frame or table.
+-- Blizzard owns selection and container fades. Keep suppression in side
+-- tables so late native/skin alpha writes cannot reveal hidden XP or chrome.
+local function AlphaChanged(region, alpha)
+    local record = hiddenAlpha[region]
+    if not record or record.writing then return end
+    -- The requested alpha may be secret: retain it only for restoration.
+    record.alpha = alpha
+    record.writing = true
+    region:SetAlpha(0)
+    record.writing = nil
+end
+
 local function Fade(region, saved)
     if not region then return end
     local record = saved[region]
-    if not record then
-        record = { alpha = region:GetAlpha() }
-        saved[region] = record
+    if record then return record end
+    record = { alpha = region:GetAlpha(), writing = true }
+    saved[region], hiddenAlpha[region] = record, record
+    if not alphaHooks[region] then
+        alphaHooks[region] = true
+        hooksecurefunc(region, "SetAlpha", AlphaChanged)
     end
     region:SetAlpha(0)
+    record.writing = nil
+    return record
+end
+
+local function RestoreRegion(region, saved)
+    local record = saved[region]
+    -- Release before writing so the hook cannot suppress restoration.
+    saved[region], hiddenAlpha[region] = nil, nil
+    region:SetAlpha(record.alpha)
 end
 
 local function Restore(saved)
-    for region, record in pairs(saved) do
-        -- GetAlpha can be secret; its snapshot only returns to this C sink.
-        region:SetAlpha(record.alpha)
-        saved[region] = nil
-    end
+    for region in pairs(saved) do RestoreRegion(region, saved) end
 end
 
 local function Chrome(state, layoutChanged)
@@ -100,16 +117,14 @@ end
 local function SetBarHidden(state, bar, hidden)
     local saved = state.bars[bar]
     if hidden and not saved then
-        saved = { alpha = bar:GetAlpha(), mouse = HideMouse(bar) }
+        saved = Fade(bar, state.bars)
+        saved.mouse = HideMouse(bar)
         local tick = bar.ExhaustionTick or bar.Tick
         if tick then saved.tickMouse = HideMouse(tick) end
-        state.bars[bar] = saved
-        bar:SetAlpha(0)
     elseif not hidden and saved then
-        bar:SetAlpha(saved.alpha)
+        RestoreRegion(bar, state.bars)
         RestoreMouse(saved.mouse)
         if saved.tickMouse then RestoreMouse(saved.tickMouse) end
-        state.bars[bar] = nil
     end
 end
 

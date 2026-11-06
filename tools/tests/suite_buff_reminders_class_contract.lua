@@ -11,8 +11,18 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function eq(a, b, label) assert(a == b, label .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 
 local MUTATIONS = {
+    armorStandalone = { "Data.lua", "not def.standalone and config.classReminders ~= true", "config.classReminders ~= true" },
+    armorOptOut = { "Data.lua", "return enabled == true", "return true" },
+    armorPreview = { "Preview.lua", "(def.standalone or config.classReminders)", "config.classReminders" },
+    innerFireDismiss = { "Alerts.lua", '    if entry.missingOnly then return entry.kind .. ":" .. entry.aura .. ":0" end', "" },
+    armorMemory = { "Entries.lua", "memory[plan.remember] = auraID", "memory[plan.remember] = nil" },
+    armorLate = { "Entries.lua", " or a.memory ~= b.memory", "" },
+    armorRank = { "Entries.lua", "local cast = FirstKnown(plan.ranks[auraID])", "local cast = auraID" },
+    armorBind = { "Controller.lua", "then BindButton(self.view.buttons[index], entry) end", "then end" },
+    armorExpiry = { "Controller.lua", "if entry.missingOnly then entry.expiresAt = nil end", "" },
+    armorSecret = { "Readers.lua", "if R.AurasRestricted() then return nil end", "" },
     known = { "Entries.lua", "return FirstKnown(plan.casts)", "return plan.casts[1]" },
-    master = { "Entries.lua", "if c.classReminders == true and class then", "if class then" },
+    master = { "Data.lua", "not def.standalone and config.classReminders ~= true", "false" },
     forever = { "Data.lua", "if P.NS.Client.isForever then return def.forever end", "" },
     imbue = { "Entries.lua", "Known(spell) and SlotHolds(rule.slot, rule.equip)", "Known(spell)" },
     ally = { "Group.lua", "entry.allyMissing = not alone and OwnMissing(", "entry.allyMissing = false and OwnMissing(" },
@@ -187,24 +197,31 @@ local DEFS = NS.BuffReminderClassReminders
 do
     local rules = catalogNS.SuiteCatalog.buffReminders.rules
     eq(rules.classReminders.default, false, "the class reminders start switched on")
+    eq(rules.classMageArmor.default, false, "Mage Armor has no Retail default")
+    eq(rules.classInnerFire.default, false, "Inner Fire has no Retail default")
     eq(rules.hideResting.default, false, "Hide while resting starts switched on")
     eq(#rules.reminderSound.choices, 7, "the sound list did not grow")
     eq(rules.reminderSound.choices[4], "Quest log", "an old sound moved")
     for _, def in ipairs(DEFS) do
         local rule = assert(rules[def.key], def.key .. " has no catalog rule")
-        assert(rule.default == true and rule.enableKey == "classReminders" and rule.hidden == nil,
+        assert(rule.default == (def.default ~= false) and rule.enableKey == (not def.standalone and "classReminders" or nil) and rule.hidden == (def.retail == nil or nil),
             def.key .. " is not an on-by-default switch under the master switch")
-        assert(def.retail and (def.forever == nil or def.forever.kind == "aura" or def.forever.kind == "imbue"), def.key .. " has a Forever plan of another kind")
+        assert((def.retail or def.forever) and (def.forever == nil or def.forever.kind == "aura" or def.forever.kind == "imbue"), def.key .. " has a Forever plan of another kind")
     end
     -- Forever hides the reminders it lacks.
     local _, foreverNS = Support.CatalogDefaults(root, "buffReminders", nil, { isForever = true })
     local foreverRules = foreverNS.SuiteCatalog.buffReminders.rules
+    eq(foreverRules.classMageArmor.default, true, "Forever Mage Armor must default on")
+    eq(foreverRules.classInnerFire.default, true, "Forever Inner Fire must default on")
+    eq(foreverRules.classMageArmor.enableKey, nil, "Mage Armor still depends on the class master")
+    eq(foreverRules.classInnerFire.enableKey, nil, "Inner Fire still depends on the class master")
+    eq(foreverRules.classReminders.default, false, "other class reminders changed their default")
     local shown = 0
     for _, def in ipairs(foreverNS.BuffReminderClassReminders) do
         eq(foreverRules[def.key].hidden, def.forever == nil or nil, def.key .. " Forever visibility")
         if def.forever then shown = shown + 1 end
     end
-    eq(shown, 4, "Forever class preset count")
+    eq(shown, 6, "Forever class preset count")
 end
 
 local function Owner(overrides)
@@ -240,8 +257,8 @@ end
 do
     local all = {}
     for _, def in ipairs(DEFS) do
-        for _, id in ipairs(def.retail.casts or {}) do all[#all + 1] = id end
-        for _, rule in ipairs(def.retail.imbues or {}) do all[#all + 1] = rule.spell end
+        for _, id in ipairs(def.retail and def.retail.casts or {}) do all[#all + 1] = id end
+        for _, rule in ipairs(def.retail and def.retail.imbues or {}) do all[#all + 1] = rule.spell end
     end
     for _, spec in ipairs({ { "PRIEST", 258 }, { "PALADIN", 70 }, { "WARRIOR", 73 }, { "SHAMAN", 264 },
         { "EVOKER", 1473 }, { "DRUID", 105 }, { "MAGE", 62 } }) do
@@ -294,7 +311,7 @@ end
 -- Every aura reminder shows while its aura is missing and clears once present.
 for _, def in ipairs(DEFS) do
     local plan = def.retail
-    if plan.kind == "aura" then
+    if plan and plan.kind == "aura" then
         local spec = { def.class, def.class == "WARRIOR" and 71 or 62 }
         Reset(spec)
         Set(unpack(plan.casts))
@@ -573,6 +590,189 @@ do
     preview.config.classReminders = false
     eq(select(3, S.BuffRemindersDrawPreview(stage, preview.config, false, open, sample)), 3, "the sample ignored the master switch")
     eq(select(3, S.BuffRemindersDrawPreview(stage, preview.config, false, open)), 0, "the preview showed a reminder with the master switch off")
+end
+
+
+-- Forever's armor reminders use real entry compilation, aura deltas and
+-- secure buttons. No stack-count read is needed, including Inner Fire.
+do
+    local armorNames = { [6117] = "Mage Armor", [7302] = "Ice Armor", [168] = "Frost Armor" }
+    local mage = assert(ForeverPlan("classMageArmor"))
+    local fire = assert(ForeverPlan("classInnerFire"))
+    for base, ranks in pairs(mage.ranks) do
+        for _, id in ipairs(ranks) do SPELL_NAMES[id] = armorNames[base] end
+    end
+    for _, id in ipairs(fire.casts) do SPELL_NAMES[id] = "Inner Fire" end
+    S.PublicText = function(value) if S.Public(value) and type(value) == "string" then return value end end
+    UnitGUID = function() return "Player-armor-test" end
+    assert(loadfile(root .. "/MSUF_Suite/Core/CharacterData.lua"))("MSUF_Suite", S)
+    local function Forever(className)
+        Reset({ className, 62 })
+        NS.Client.isForever, NS.Client.modernEquipment = true, false
+        Set(168, 7300, 7301, 7302, 7320, 10219, 10220, 6117, 22782, 22783,
+            588, 7128, 602, 1006, 10951, 10952)
+    end
+    local function Buff(id, instance)
+        return { spellId = id, name = SPELL_NAMES[id], auraInstanceID = instance or id,
+            expirationTime = 110, duration = 1800, applications = { secret = true } }
+    end
+    local function Apply(id, instance)
+        local previous = module.list.entries[1].auraInstanceID
+        playerAuras = id and { [id] = Buff(id, instance) } or {}
+        Fire("UNIT_AURA", "player", id and { addedAuras = { playerAuras[id] } }
+            or { removedAuraInstanceIDs = { previous } })
+    end
+    local armorConfig = { classReminders = false, classMageArmor = true, classShadowform = false }
+    Forever("SHAMAN")
+    Set(324, 8232)
+    eq(#R.BuildEntries(Owner({ classReminders = false })), 0, "standalone choices enabled other class reminders")
+    Forever("MAGE")
+    Start({ classReminders = true, classMageArmor = false })
+    eq(#module.list.entries, 0, "explicit armor opt-out was ignored")
+    eq(events.UNIT_AURA, nil, "disabled armor registered an aura listener")
+    module:Disable()
+    local stage = Widget()
+    local preview = Owner(armorConfig)
+    local _, _, previewCount = S.BuffRemindersDrawPreview(stage, preview.config, true, function() end)
+    eq(previewCount, 1, "standalone armor preview depends on the class master")
+    preview.config.classMageArmor = false
+    eq(select(3, S.BuffRemindersDrawPreview(stage, preview.config, false, function() end)), 0,
+        "standalone armor preview ignored opt-out with the class master off")
+    preview.config.classMageArmor = true
+    local specReads, readSpec = 0, C_SpecializationInfo.GetSpecialization
+    C_SpecializationInfo.GetSpecialization = function() specReads = specReads + 1; return readSpec() end
+    R.BuildEntries(preview, R.NewEntryBuffer())
+    eq(specReads, 0, "standalone armor made an unnecessary specialization read")
+    C_SpecializationInfo.GetSpecialization = readSpec
+    eq(S.RootDB, nil, "a preview opened character storage")
+    Start(armorConfig)
+    eq(Shown(), "22783", "highest known fallback")
+    eq(module.list.entries[1].memory, nil, "the unavailable database was invented")
+    S.RootDB = {}
+    Fire("PLAYER_ENTERING_WORLD")
+    local memory = assert(S.RootDB.suiteCharacters["Player-armor-test"].buffReminders)
+    eq(module.list.entries[1].memory, memory, "late character storage was not adopted")
+    eq(module.view.buttons[1].attributes.spell1, "Mage Armor", "ranked native cast")
+    for _, base in ipairs(mage.casts) do
+        for _, id in ipairs(mage.ranks[base]) do
+            Apply(id)
+            eq(Shown(), "", "any active armor rank must satisfy the single reminder")
+            eq(module.list.entries[1].expiresAt, nil, "armor should not warn before expiration")
+            eq(memory.mageArmor, base, "remember the armor family, not its consumed rank")
+            Apply(nil)
+            eq(Shown(), tostring(mage.ranks[base][1]), "remembered armor's highest known rank")
+            eq(module.view.buttons[1].icon.texture, mage.ranks[base][1], "armor icon did not follow its action")
+            eq(module.view.buttons[1].attributes.spell1, armorNames[base], "armor click did not follow its action")
+        end
+    end
+    -- A low rank in use never downranks the click. New ranks are learned by
+    -- the existing spellbook event; no new event or full compile per aura.
+    Apply(7300)
+    local oldRead, spellReads, oldKnown, knownReads = C_UnitAuras.GetAuraDataBySpellName, 0, C_SpellBook.IsSpellKnown, 0
+    C_UnitAuras.GetAuraDataBySpellName = function(...) spellReads = spellReads + 1; return oldRead(...) end
+    C_SpellBook.IsSpellKnown = function(...) knownReads = knownReads + 1; return oldKnown(...) end
+    local unrelated = { addedAuras = { { name = "Unrelated", spellId = 999999, auraInstanceID = 99 } } }
+    for _ = 1, 100 do Fire("UNIT_AURA", "player", unrelated) end
+    eq(spellReads, 0, "unrelated aura changes scanned armor")
+    eq(knownReads, 0, "unrelated aura changes scanned the spellbook")
+    Fire("UNIT_AURA", "player", { isFullUpdate = true })
+    eq(knownReads, 0, "unchanged armor rechecked known ranks")
+    local full = { isFullUpdate = true }
+    local function RefreshArmor() Fire("UNIT_AURA", "player", full) end
+    local allocated = math.huge
+    for _ = 1, 2 do
+        collectgarbage("collect")
+        collectgarbage("stop")
+        local before = collectgarbage("count")
+        for i = 1, 1000 do RefreshArmor() end
+        allocated = math.min(allocated, collectgarbage("count") - before)
+        collectgarbage("restart")
+    end
+    assert(allocated < 1, "unchanged armor refresh allocated " .. allocated .. " KB per 1000 events")
+    eq(knownReads, 0, "unchanged armor refresh rechecked ranks")
+    assert(spellReads <= 6003, "an armor refresh exceeded three targeted native lookups")
+    print(("Forever armor: %.2f KB per 1000 refreshes; zero repeat spellbook reads"):format(allocated))
+    C_UnitAuras.GetAuraDataBySpellName, C_SpellBook.IsSpellKnown = oldRead, oldKnown
+    known[7301] = nil
+    Fire("SPELLS_CHANGED")
+    Apply(nil)
+    eq(Shown(), "7300", "lost rank fallback")
+    known[7301] = true
+    Fire("SPELLS_CHANGED")
+    eq(Shown(), "7301", "new highest rank without changing the armor line")
+    -- Spell and icon follow together; the stable family identity also keeps
+    -- a dismissed reminder dismissed when a rank is learned or armor changed.
+    local button = module.view.buttons[1]
+    eq(button.icon.texture, 7301, "icon follows the selected rank")
+    button.PostClick(button, "MiddleButton")
+    Apply(6117)
+    Apply(nil)
+    Fire("SPELLS_CHANGED")
+    eq(Shown(), "", "armor change or recompile lost dismissal")
+    module.view.dismissed = nil
+    module.list.entries[1].dismissed = nil
+    module.view.mask = nil
+    local before = memory.mageArmor
+    C_Secrets.ShouldAurasBeSecret = function() return true end
+    playerAuras = {}
+    Fire("UNIT_AURA", "player", { isFullUpdate = true })
+    eq(Shown(), "", "restricted absence became a reminder")
+    eq(memory.mageArmor, before, "restricted aura reads replaced the remembered armor")
+    C_Secrets.ShouldAurasBeSecret = function() return false end
+    -- The combat edge arrives before the native lockdown predicate changes.
+    local auraEvent = events.UNIT_AURA
+    Fire("PLAYER_REGEN_DISABLED")
+    eq(events.UNIT_AURA, nil, "combat retained armor aura events")
+    combat = true
+    playerAuras = { [168] = Buff(168) }
+    local originalAttribute = button.SetAttribute
+    button.SetAttribute = function(...) assert(not combat, "protected write in combat"); return originalAttribute(...) end
+    auraEvent(module, "UNIT_AURA", "player")
+    eq(memory.mageArmor, before, "combat aura event touched armor history")
+    combat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    eq(memory.mageArmor, 168, "combat end failed to observe the new armor")
+    module:Disable()
+    -- Recreate the entry compiler, just as a reload clears its local cache.
+    assert(loadfile(root .. "/MSUF_Suite_BuffReminders/Entries.lua"))("MSUF_Suite_BuffReminders", private)
+    playerAuras = {}
+    local reloaded = R.BuildEntries(Owner(armorConfig))
+    eq(reloaded[1].id, 7301, "character choice did not survive a reload")
+    memory.mageArmor = 999999
+    eq(R.BuildEntries(Owner(armorConfig))[1].id, 22783, "invalid saved family did not fall back")
+    memory.mageArmor = 7302
+    Set(168)
+    eq(R.BuildEntries(Owner(armorConfig))[1].id, 168, "unlearned saved family did not fall back")
+    Set()
+    eq(#R.BuildEntries(Owner(armorConfig)), 0, "unknown armors became clickable")
+    -- Inner Fire: every learned rank, aura expiration and consumed final
+    -- charge. Secret applications are never touched, nor is a max assumed.
+    Forever("PRIEST")
+    Start({ classReminders = false, classInnerFire = true, classShadowform = false })
+    eq(Shown(), "10952", "highest Inner Fire rank")
+    for _, id in ipairs(fire.casts) do
+        Apply(id)
+        eq(Shown(), "", "active Inner Fire rank was not recognized")
+        eq(module.list.entries[1].expiresAt, nil, "Inner Fire warned while still present")
+        Apply(nil)
+        eq(Shown(), "10952", "expired or consumed Inner Fire was not noticed")
+    end
+    Set(588)
+    Fire("SPELLS_CHANGED")
+    eq(Shown(), "588", "Inner Fire rank-one fallback")
+    button = module.view.buttons[1]
+    button.PostClick(button, "RightButton")
+    Set(588, 7128)
+    Fire("SPELLS_CHANGED")
+    eq(Shown(), "", "learning Inner Fire lost dismissal")
+    module:Disable()
+    Forever("MAGE")
+    eq(#R.BuildEntries(Owner({ classReminders = true, classInnerFire = true })), 0, "Mage received Inner Fire")
+    Forever("PRIEST")
+    eq(#R.BuildEntries(Owner({ classReminders = true, classMageArmor = true })), 0, "Priest received Mage Armor")
+    NS.Client.isForever = false
+    eq(#R.BuildEntries(Owner({ classReminders = true, classMageArmor = true, classInnerFire = true })), 0,
+        "Forever armor reminders leaked into Retail")
 end
 
 print("Suite buff reminders class: " .. (mutation and ("mutation " .. mutation .. " survived") or

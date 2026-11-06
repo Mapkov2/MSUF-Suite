@@ -208,32 +208,32 @@ function P.EnsureModernDarkTooltips()
     return ok
 end
 
--- MSUF resolves a new character's frame profile before Suite starts. Install
--- the chosen Suite profile as MSUF's new-character default once, and repair
--- this login if MSUF already assigned its historical "Default" fallback.
--- An existing MSUF preference (including one later cleared by the user) wins.
+-- A deliberate account default counts as setup only after both profile
+-- owners actually use it. An old automatic Suite default is not consent.
+function P.NewCharacterDefault()
+    local get = Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters
+    if type(get) ~= "function" then return nil end
+    local name = get()
+    if not DB.IsProfileName(name) or not DB.GetProfile(name) or not Suite.HostBridge.FrameProfile(name)
+        or Suite.HostBridge.ActiveFrameProfileName() ~= name or DB.GetActiveProfileName() ~= name then return nil end
+    local installation = Suite.RootDB.installation
+    if type(installation) == "table" and installation.newCharacterProfileOwned == true
+        and installation.frameProfileName == name then return nil end
+    return name
+end
+
+-- Retire only the new-character default an older Suite installed itself.
+-- Setup now asks each character; an explicit host preference remains owned
+-- by the player, and no login profile is switched here.
 function P.EnsureNewCharacterProfile()
     local installation = Suite.RootDB and Suite.RootDB.installation
-    if type(installation) ~= "table" or installation.status ~= "complete"
-        or installation.newCharacterProfileRevision == 1 then return false end
-    local name = installation.frameProfileName or DB.GetActiveProfileName()
-    if not DB.IsProfileName(name) or type(Suite.HostBridge.FrameProfile(name)) ~= "table" then return false end
-    if not installation.frameProfileName then installation.frameProfileName = name end
+    if type(installation) ~= "table" or installation.newCharacterProfileOwned ~= true then return false end
     local get = Suite.HostBridge.Profiles.GetDefaultProfileForNewCharacters
     local set = Suite.HostBridge.Profiles.SetDefaultProfileForNewCharacters
     if type(get) ~= "function" or type(set) ~= "function" then return false end
-    local chosen = get()
-    if chosen then
-        installation.newCharacterProfileRevision = 1
-        return false
-    end
-    if set(name) ~= true then return false end
-    installation.newCharacterProfileRevision = 1
-    installation.newCharacterProfileOwned = true
-    if Suite.HostBridge.ProfileWasUnboundAtLogin() and Suite.HostBridge.ActiveFrameProfileName() ~= name
-        and type(Suite.HostBridge.Profiles.SwitchProfile) == "function" and not Suite.IsCombatLocked() then
-        return Suite.HostBridge.Profiles.SwitchProfile(name) == true
-    end
+    if get() == installation.frameProfileName and set(nil) ~= true then return false end
+    installation.newCharacterProfileOwned = nil
+    installation.newCharacterProfileRevision = 2
     return true
 end
 

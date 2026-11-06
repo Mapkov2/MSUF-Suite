@@ -11,6 +11,11 @@ local first=Suite.DB
 local firstName=Suite.Database.GetActiveProfileName()
 local a=first.suite.modules.actionbars
 a.enabled=true;a.imported=false;a.bar1X=-101
+if scenario=="keep_center" then
+    a.bar1Point,a.bar1X,a.bar1Y=Suite.ActionBarEnum.POINT.CENTER,0,0
+elseif scenario=="keep_off" then
+    a.bar1Visibility,a.bar1ResumeVisibility=6,5
+end
 local second=Suite.CopyValue(first)
 local b=second.suite.modules.actionbars
 b.bar1X=-202
@@ -32,7 +37,23 @@ local function Activate(name,x)
     assert(Suite.Database.Activate(name),"real profile activation refused")
     assert(M.config==S.Config("actionbars"),"profile listener did not apply new config")
 end
-if scenario=="a_to_b_false" then
+if scenario=="keep_center" or scenario=="keep_off" then
+    S.KeepActionBarPosition(1)
+    S.SetMany("actionbars",{bar1Point=Suite.ActionBarEnum.POINT.CENTER,bar1X=0,bar1Y=0})
+    RunTimers()
+    assert(a.imported and a.bar1X==0 and a.bar1Y==0 and a.bar1Point==Suite.ActionBarEnum.POINT.CENTER,
+        "deferred first import overwrote explicit center recovery")
+    assert(#writes==1 and writes[1].x==nil,"pending capture retained selected coordinates")
+    if scenario=="keep_off" then
+        assert(a.bar1Visibility==6 and a.bar1ResumeVisibility==5,"centering changed off-bar visibility")
+        for i=1,2 do
+            S.SetEditMode(true)
+            assert(not AB.bars[1].header:IsShown(),"off recovered bar showed in Edit Mode")
+            S.SetEditMode(false)
+            assert(not AB.bars[1].header:IsShown(),"off recovered bar showed after Edit Mode")
+        end
+    end
+elseif scenario=="a_to_b_false" then
     Activate("Second",734)
     RunTimers()
     assert(a.imported==false and a.bar1X==-101,"A changed while B active")
@@ -47,11 +68,11 @@ elseif scenario=="a_to_b_true" then
 elseif scenario=="a_to_b_to_a" or scenario=="a_to_imported_b_to_a" then
     if scenario=="a_to_imported_b_to_a" then b.imported=true end
     Activate("Second",734)
-    Activate(firstName,845)
+    Activate(firstName,767)
     RunTimers()
-    assert(a.imported==true and a.bar1X==333,"A returning before old timer retained stale capture")
+    assert(a.imported==true and a.bar1X==255,"A returning before old timer retained stale capture")
     assert(b.bar1X==-202 and b.imported==(scenario=="a_to_imported_b_to_a"),"B changed while A active")
-    assert(#writes==1 and writes[1].profile==first and writes[1].x==333,"obsolete generation persisted")
+    assert(#writes==1 and writes[1].profile==first and writes[1].x==255,"obsolete generation persisted")
 elseif scenario=="same_config_reenable" then
     assert(S.Set("actionbars","enabled",false))
     MainBar.cx=734

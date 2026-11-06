@@ -676,7 +676,10 @@ local function Build(ctx)
         { "Move bars on screen", function() P.MoveOnScreen(ID, Page.MoveTarget()) end,
             function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.MoveTarget() ~= nil end, key = "move" },
         { "Open Blizzard's Cooldown Settings", Page.OpenBlizzardSettings, Page.CanOpenBlizzardSettings, key = "blizzard" },
-    }, { eager = true })
+    }, { eager = true, setEnabled = function(value)
+        if value == true then return P.SetMany(ID, { enabled = true, [Page.Key("on")] = true }) end
+        return P.Set(ID, "enabled", false)
+    end })
     -- These actions navigate, or record their own history entry (reset), so
     -- a click never takes Menu2's full settings snapshot.
     if card and card.GetChildren then

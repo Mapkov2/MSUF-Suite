@@ -142,6 +142,7 @@ local function Append(kind, id)
     entry.category = buildingCategory
     entry.group, entry.notice, entry.missingCount = nil, nil, nil
     entry.ranked, entry.spellName = nil, nil
+    entry.remember, entry.memory, entry.rememberedAura, entry.missingOnly = nil, nil, nil, nil
     entry.ally, entry.allyMissing, entry.dismissed = nil, nil, nil
     entry.bit, entry.present, entry.expiresAt, entry.totalDuration = nil, nil, nil, nil
     entry.auraInstanceID, entry.instanceIDs, entry.actionID, entry.count = nil, nil, nil, nil
@@ -207,7 +208,7 @@ function R.SameEntries(left, right)
             or a.slot ~= b.slot or a.aliases ~= b.aliases or a.poison ~= b.poison
             or a.poisonRank ~= b.poisonRank or a.restock ~= b.restock or a.group ~= b.group or a.notice ~= b.notice
             or a.category ~= b.category or a.ranked ~= b.ranked or a.spellName ~= b.spellName
-            or a.ally ~= b.ally then
+            or a.ally ~= b.ally or a.remember ~= b.remember or a.memory ~= b.memory or a.missingOnly ~= b.missingOnly then
             return false
         end
         if a.candidates or b.candidates then
@@ -261,8 +262,7 @@ end
 
 -- The plan of a def that is switched on for this class and exists here.
 local function Wanted(c, def, class)
-    local plan = ClassPlan(def)
-    if plan and def.class == class and c[def.key] ~= false then return plan end
+    if def.class == class and R.ClassReminderEnabled(c, def) then return ClassPlan(def) end
 end
 
 -- The spell an aura or ally reminder casts: the specialization's own pick
@@ -273,11 +273,45 @@ local function ClassCast(plan, specID)
     return FirstKnown(plan.casts)
 end
 
-local function AddClassSpell(def, plan, specID)
-    local cast = ClassCast(plan, specID)
+-- Character history is outside profiles. Only an enabled runtime entry opens
+-- it; menu previews may read the cached choice but never create or update it.
+local rememberedAuras
+local function RememberedCast(plan, preview)
+    if not rememberedAuras and not preview then rememberedAuras = S.CharacterData("buffReminders") end
+    local previous = rememberedAuras and rememberedAuras[plan.remember]
+    local ranks = Public(previous) and type(previous) == "number" and plan.ranks[previous]
+    local cast = ranks and FirstKnown(ranks)
+    if not cast then
+        for _, id in ipairs(plan.casts) do
+            cast = FirstKnown(plan.ranks[id])
+            if cast then break end
+        end
+    end
+    return cast, rememberedAuras
+end
+
+-- Called only after a readable aura match, using its static alias, never an
+-- aura's possibly secret spell ID. Existing UNIT_AURA refreshes own the work.
+function R.RememberClassAura(entry, auraID)
+    local plan, memory = entry.remember, entry.memory
+    if memory and memory[plan.remember] ~= auraID then memory[plan.remember] = auraID end
+    if entry.rememberedAura == auraID then return false end
+    local cast = FirstKnown(plan.ranks[auraID])
+    if cast then entry.rememberedAura = auraID end
+    if not cast or cast == entry.id then return false end
+    entry.id, entry.spellName = cast, R.RankName(cast)
+    return true
+end
+
+local function AddClassSpell(def, plan, specID, preview)
+    local cast, memory
+    if plan.remember then cast, memory = RememberedCast(plan, preview) else cast = ClassCast(plan, specID) end
     local entry = cast and AddSpell(cast, plan.auras[1], plan.auras)
     if entry and plan.ranked then
         entry.ranked, entry.spellName = true, R.RankName(cast)
+    end
+    if entry then
+        entry.remember, entry.memory, entry.missingOnly = plan.remember and plan, memory, plan.missingOnly
     end
     if entry and plan.kind == "ally" then entry.ally, entry.group = def, true end
 end
@@ -295,12 +329,15 @@ local function AddImbues(plan, specID)
     end
 end
 
-local function AddClassReminders(c, class)
-    local specID = SpecID()
+local function AddClassReminders(c, class, preview)
+    local specID, specRead
     for _, def in ipairs(NS.BuffReminderClassReminders) do
         local plan = Wanted(c, def, class)
+        if plan and not specRead and (plan.specs or plan.prefer or plan.kind == "imbue") then
+            specID, specRead = SpecID(), true
+        end
         if plan and SpecFits(plan.specs, specID) then
-            if plan.kind == "imbue" then AddImbues(plan, specID) else AddClassSpell(def, plan, specID) end
+            if plan.kind == "imbue" then AddImbues(plan, specID) else AddClassSpell(def, plan, specID, preview) end
         end
     end
 end
@@ -622,7 +659,7 @@ function R.BuildEntries(self, previewBuffer)
             end
         end
     end
-    if c.classReminders == true and class then AddClassReminders(c, class) end
+    if class and (c.classReminders == true or NS.Client.isForever) then AddClassReminders(c, class, previewBuffer) end
     buildingCategory = "personal"
     if NS.Client.modernEquipment and c.autoRoguePoisons and class == "ROGUE" then AddRoguePoisons() end
     local mainID, offID = AddConfigured(c)

@@ -42,13 +42,18 @@ local function AddSaved(menu, edit)
 end
 
 function Search.Menu(button, edit)
-    S.ContextMenu(button, function(_, menu)
+    P.BagFilterMenu.Show(button, function(_, menu)
         menu:CreateTitle(S.Text("Smart search presets"))
         for i = 1, #PRESETS do
             local preset = PRESETS[i]
             menu:CreateButton(S.Text(preset[1]), function() Apply(edit, preset[2]) end)
         end
         AddSaved(menu, edit)
+        local query = edit:GetText()
+        local compiled = NS.InventoryRules.Compile(query)
+        local create = menu:CreateButton(S.Text("Create category from this search"), function() P.InventoryEditor.FromSearch(query) end)
+        create:SetEnabled(compiled ~= nil and NS.InventoryRules.HasTerms(compiled)
+            and #P.InventoryModel.DecodeCategories(S.Config("bags").customCategories) < 24)
     end)
 end
 
@@ -69,20 +74,20 @@ function Search.Create(view, request, parent, place)
     edit:SetAutoFocus(false)
     edit:SetMaxBytes(512)
     edit.Instructions:SetText(S.Text("Smart search: name, quality>=3, !is:bound"))
-    -- What is typed in combat is kept for the view, which builds on it when
-    -- combat ends (both views repaint on PLAYER_REGEN_ENABLED).
+    -- Each view checks its native frames before rendering. Safe bag layouts
+    -- can filter immediately; protected/bank layouts retain the query for later.
     edit:SetScript("OnTextChanged", function(self)
         local query = self:GetText()
         local compiled = NS.InventoryRules.Compile(query)
         self:SetTextColor(compiled and 1 or 1, compiled and 1 or .4, compiled and 1 or .3)
         view.smartQuery, view.scroll = query, 0
-        if not NS.IsCombatLocked() then request() end
+        request()
     end)
     edit:SetScript("OnEscapePressed", function(self) self:SetText("") self:ClearFocus() end)
     local button = P.GridView.Button(parent, "Filters", 80, function(self) Search.Menu(self, edit) end)
     place = place or PlaceInBag
     place(edit, button)
-    view.smartSearch = edit
+    view.smartSearch, view.filterButton = edit, button
 end
 
 function Search.RuleControls(editor, label, input, action)

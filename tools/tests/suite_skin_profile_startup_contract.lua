@@ -12,13 +12,18 @@ CreateFrame = function()
     frames[#frames + 1] = frame
     return frame
 end
+local deferred = {}
+C_Timer = { After = function(delay, callback)
+    assert(delay == 0)
+    deferred[#deferred + 1] = callback
+end }
 IsLoggedIn = function() return false end
 -- MSUF is a dependency: Platform.lua asserts its namespace before any Core file.
 MSUF_NS = {}
 MSUF_ActiveProfile = "mapko final"
 MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
 
-local starts, initializations, notifications = 0, 0, 0
+local starts, initializations, notifications, skinPasses = 0, 0, 0, 0
 local Suite = {
     IsCombatLocked = function() return false end,
     InCombat = function() return false end,
@@ -28,6 +33,7 @@ local Suite = {
     Client = {
         HasAddOn = function() return false end,
         AddOnEnabled = function() return true end,
+        IsAddOnLoaded = function(name) return name == "MSUF_Suite_Skin" end,
     },
     Suite = { Start = function() starts = starts + 1 end },
     Menu = { Watch = function() end },
@@ -57,9 +63,18 @@ C_AddOns = { LoadAddOn = function(name)
         addonName = name,
         ProfileIO = {},
         InitializeLocalization = function() end,
-        PublicAPI = { OnDatabaseReady = function() notifications = notifications + 1 end },
+        PublicAPI = { OnDatabaseReady = function() notifications = notifications + 1 end,
+            OnPlayerLogin = function() end },
         GetAPI = function() return {} end,
     }
+    local function Noop() end
+    provider.Safety = { Dispatch = function(callback, ...) return callback(...) end }
+    provider.Theme, provider.BlizzardYellow = { RefreshDynamicLook = Noop }, { Apply = Noop }
+    provider.Checkmarks, provider.Typography = { Apply = Noop }, { ApplyConfigured = Noop }
+    provider.Adapters = { ApplyAll = function()
+        assert(provider.RootDB.activeProfile == "mapko final", "skin login painted the previous character's profile")
+        skinPasses = skinPasses + 1
+    end }
     provider.Database = {
         Initialize = function()
             initializations = initializations + 1
@@ -77,6 +92,9 @@ C_AddOns = { LoadAddOn = function(name)
         SetActiveProfile = function(name)
             assert(provider.RootDB.profiles[name])
             provider.RootDB.activeProfile = name
+            -- The real provider applies adapters on a profile change once
+            -- its login pass is over (DatabaseProfiles.ApplyActiveSettings).
+            if not provider.Database.loginPassPending then provider.Adapters.ApplyAll() end
             return true, name
         end,
     }
@@ -93,9 +111,13 @@ assert(provider and skinFrame.events.ADDON_LOADED and provider.RootDB
     and initializations == 1 and notifications == 1,
     "loading the skin provider did not prepare its database before profile sync")
 suiteFrame:callback("PLAYER_LOGIN")
+assert(starts == 0 and #deferred == 1, "module loading ran inside PLAYER_LOGIN")
+skinFrame:callback("PLAYER_LOGIN")
+table.remove(deferred, 1)()
 assert(starts == 1 and provider.RootDB.activeProfile == "mapko final"
     and provider.RootDB.profiles["mapko final"],
     "skin profile race stopped the Suite before its modules started")
+assert(skinPasses == 1, "deferred module startup repeated the full skin login pass")
 skinFrame:callback("ADDON_LOADED", "MSUF_Suite_Skin")
 assert(initializations == 1 and notifications == 1,
     "the later skin lifecycle event initialized the database twice")

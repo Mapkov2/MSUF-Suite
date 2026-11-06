@@ -1,0 +1,12 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+    <Slider name="MSUFSuiteBagScrollSliderTemplate" orientation="VERTICAL" virtual="true">
+        <Size x="14" y="100"/>
+        <ThumbTexture parentKey="Thumb" file="Interface\Buttons\WHITE8X8">
+            <Size x="5" y="38"/>
+        </ThumbTexture>
+    </Slider>
+    <CheckButton name="MSUFSuiteBagCheckTemplate" virtual="true">
+        <Size x="24" y="24"/>
+        <CheckedTexture file="Interface\Buttons\UI-CheckBox-Check"/>
+    </CheckButton>
+</Ui>

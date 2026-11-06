@@ -27,6 +27,10 @@ local function Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function Round(v) return math.floor(v + 0.5) end
 
 local function Focus(ui, handle)
+    if Layers.NPCWorldNames(ui) then
+        OpenSetting("friendlyNPCs", handle and handle._label)
+        return
+    end
     local section = handle and ui.sections and ui.sections[handle.section]
     if handle and handle._npSettingsTab then
         section = P.SelectNameplatesEnemyTab(handle._npSettingsTab) or section
@@ -46,7 +50,7 @@ local function Focus(ui, handle)
     end
 end
 local function Write(ui, handle, x, y)
-    if P.Combat() then return false end
+    if P.Combat() or Layers.NPCWorldNames(ui) then return false end
     local rules = P.catalog[ID].rules
     local xr, yr = rules[handle.keyX], rules[handle.keyY]
     if not xr or not yr then return false end
@@ -54,8 +58,9 @@ local function Write(ui, handle, x, y)
         [handle.keyY] = Clamp(Round(y), yr.min, yr.max) }) ~= false
 end
 local function Read(handle) return P.Get(ID, handle.keyX), P.Get(ID, handle.keyY) end
+local function CanEdit(handle) return not Layers.NPCWorldNames(handle.previewUI) end
 
-function Editor:Select(handle) self.kit:Select(handle) end
+function Editor:Select(handle) self.kit:Select(not Layers.NPCWorldNames(self) and handle or nil) end
 
 function Editor:RefreshSelection()
     local selected = self.body._selectedHandle
@@ -119,7 +124,8 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
         self.zoom = Clamp(self.zoom + delta * 0.1, 0.5, 2)
         self:Paint()
     end)
-    self.kit:Add(id, handle, function() return Read(handle) end, function(x, y) return Write(self, handle, x, y) end)
+    self.kit:Add(id, handle, function() return Read(handle) end, function(x, y) return Write(self, handle, x, y) end,
+        { can = CanEdit })
     Register(handle, id, label)
 end
 
@@ -154,7 +160,7 @@ function Editor:Paint()
         button:SetShown(self.sampleKind == "friendly" and not self.personal)
     end
     local selected = self.body._selectedHandle
-    if selected and not selected:IsShown() then self:Select(nil) end
+    if selected and (not selected:IsShown() or Layers.NPCWorldNames(self)) then self:Select(nil) end
     self:RefreshSelection()
 end
 
@@ -321,7 +327,7 @@ local function BuildSelection(ui)
         local bar = SB.Create(body, {
             Tr = Tr, Theme = function() return T end, HandleList = function() return ui.handles end,
             HandleLabel = function(handle) return handle._label end,
-            IsPlaced = function(handle) return handle:IsShown() end,
+            IsPlaced = function(handle) return not Layers.NPCWorldNames(ui) and handle:IsShown() end,
             ReadOffsets = function(_, handle) return Read(handle) end,
             WriteOffsets = function(_, handle, x, y)
                 local ok = Write(ui, handle, x, y)
@@ -333,6 +339,7 @@ local function BuildSelection(ui)
                 return true
             end,
             ResetOffsets = function(_, handle)
+                if Layers.NPCWorldNames(ui) then return false end
                 local rules = P.catalog[ID].rules
                 local values = {
                     [handle.keyX] = rules[handle.keyX].default,

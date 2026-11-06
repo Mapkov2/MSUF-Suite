@@ -23,7 +23,7 @@ function Motion.New(state, paint, safe, reset, record)
     record = record or {}
     if record.channels then return record end
     record.state, record.paint, record.safe, record.reset = state, paint, safe, reset
-    record.channels = {}
+    record.channels = { moving = {} }
     for index = 1, 7 do
         record.channels[index] = { value = 0, target = 0, velocity = 0 }
     end
@@ -55,9 +55,9 @@ local function Remove(record)
     end
 end
 
-function Motion.Stop(record)
+local function FinishStop(record, first)
     Remove(record)
-    for index = 1, #record.channels do
+    for index = first, #record.channels do
         local channel = record.channels[index]
         channel.value, channel.velocity = channel.target, 0
     end
@@ -65,11 +65,18 @@ function Motion.Stop(record)
     record.reset(record)
 end
 
+function Motion.Stop(record)
+    FinishStop(record, 1)
+end
+
 function Motion.Clear(record)
-    for index = 1, 6 do Motion.Set(record, index, 0, 0) end
-    Motion.Set(record, 7, 1, 1)
+    for index = 1, 7 do
+        local channel, target = record.channels[index], index == 7 and 1 or 0
+        channel.target, channel.value, channel.velocity = target, target, 0
+    end
     record.focused, record.state.hovered = false, false
-    Motion.Stop(record)
+    -- The seven skin channels already reached their rest pose above.
+    FinishStop(record, 8)
 end
 
 local function Step(_, elapsed)
@@ -81,8 +88,9 @@ local function Step(_, elapsed)
         else
             record.age = record.age + elapsed
             local moving = false
-            for channelIndex = 1, #record.channels do
-                local channel = record.channels[channelIndex]
+            local channels = record.channels.moving
+            for channelIndex = 1, #channels do
+                local channel = channels[channelIndex]
                 local delta = channel.value - channel.target
                 local carry = channel.velocity + 65 * delta
                 channel.value = channel.target + (delta + carry * elapsed) * decay
@@ -100,6 +108,35 @@ function Motion.Set(record, index, target, seed)
     local channel = record.channels[index]
     channel.target = target
     if seed ~= nil then channel.value, channel.velocity = seed, 0 end
+    -- A live retarget also accepts Set without a following Play. Keep the
+    -- same channel order; resting entries may stay until the next gesture.
+    if record.index and not channel.scheduled and (channel.value ~= channel.target or channel.velocity ~= 0) then
+        local list, position = record.channels.moving, 1
+        for earlier = 1, index - 1 do
+            if record.channels[earlier].scheduled then position = position + 1 end
+        end
+        for cursor = #list, position, -1 do
+            list[cursor + 1] = list[cursor]
+        end
+        list[position], channel.scheduled = channel, true
+    end
+end
+
+-- Small residuals keep evolving; only exact rest is omitted. The list is
+-- prepared per gesture and reused without allocations during its frames.
+local function PrepareChannels(record)
+    local list, count, moving = record.channels.moving, 0, false
+    for index = 1, #record.channels do
+        local channel = record.channels[index]
+        channel.scheduled = channel.value ~= channel.target or channel.velocity ~= 0
+        if channel.scheduled then
+            count = count + 1
+            list[count] = channel
+            moving = moving or abs(channel.value - channel.target) > 0.001 or abs(channel.velocity) > 0.01
+        end
+    end
+    for index = count + 1, #list do list[index] = nil end
+    return moving
 end
 
 function Motion.Play(record, duration)
@@ -107,12 +144,7 @@ function Motion.Play(record, duration)
         Motion.Clear(record)
         return
     end
-    local moving = false
-    for index = 1, #record.channels do
-        local channel = record.channels[index]
-        moving = moving or abs(channel.value - channel.target) > 0.001 or abs(channel.velocity) > 0.01
-    end
-    if not moving then
+    if not PrepareChannels(record) then
         Motion.Stop(record)
         return
     end

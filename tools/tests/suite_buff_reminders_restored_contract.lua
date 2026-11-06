@@ -125,6 +125,7 @@ catalogNS.Defaults = {}
 catalogNS.FinalizeCatalog()
 NS.Defaults = catalogNS.Defaults
 NS.IconShapeIds = catalogNS.IconShapeIds
+NS.BuffReminderClassReminders = catalogNS.BuffReminderClassReminders
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
 local private = { NS = NS, Suite = S }
 Support.Load(root, "MSUF_Suite_BuffReminders", private, nil, { ["Bootstrap.lua"] = true })

@@ -16,7 +16,7 @@ local inputWindow
 local Reconcile, UpdateListeners, QueueGeometry, GamepadChanged
 local gamepadRegistry
 local GAMEPAD_FOCUS_EVENT = "Gamepad.RefreshFrameFocus"
-local merchantBags = {
+local tradingBags = {
     ContainerFrameCombinedBags = true,
     ContainerFrame1 = true, ContainerFrame2 = true, ContainerFrame3 = true,
     ContainerFrame4 = true, ContainerFrame5 = true, ContainerFrame6 = true,
@@ -86,6 +86,7 @@ Reconcile = function()
         return
     end
     local merchant = visible[Safety.Field(_G, "MerchantFrame")]
+    local auction = visible[Safety.Field(_G, "AuctionHouseFrame")]
     local shopping = false
     for frame, state in pairs(visible) do
         state.readable = IsVisible(frame) and Geometry.Read(frame, state.rect) and Geometry.Layer(state)
@@ -93,7 +94,7 @@ Reconcile = function()
             NS.WindowFocusChrome.Update(state)
             NS.WindowFocusLayers.Prepare(state)
         end
-        if merchant and merchantBags[state.name] then shopping = true end
+        if (merchant or auction) and tradingBags[state.name] then shopping = true end
     end
     -- Shopping and upgrading each use multiple native windows together. Keep
     -- those windows clear even when another window receives input.
@@ -103,7 +104,7 @@ Reconcile = function()
     local clearBounds = active.readable
     for _, state in pairs(visible) do
         state.keepClear = state == active or upgrading and (state == character or state == upgrade)
-            or shopping and (state == merchant or merchantBags[state.name])
+            or shopping and (state == merchant or state == auction or tradingBags[state.name])
         if state.keepClear and not state.readable then clearBounds = false end
     end
     for _, state in pairs(visible) do

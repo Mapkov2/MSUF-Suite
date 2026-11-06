@@ -37,6 +37,11 @@ local SECTIONS = {
 }
 
 P.Gates[ID] = function(rule)
+    if rule.key == "classMageArmor" or rule.key == "classInnerFire" then
+        local _, class = UnitClass("player")
+        local expected = rule.key == "classMageArmor" and "MAGE" or "PRIEST"
+        return P.Suite.Client.isForever == true and P.Suite.Public(class) and class == expected
+    end
     if rule.key == "campfireBuff" then return P.Suite.Client.isForever == true end
     return true
 end

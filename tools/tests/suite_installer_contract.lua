@@ -102,6 +102,13 @@ Suite.Client.AttachControllerWindow = function() end
 Suite.Client.ResumeControllerWindow = function() end
 Suite.Client.RaiseControllerCursor = function() end
 Suite.Database = {
+    GetCharacterInstallationStatus = function()
+        return Suite.RootDB.characterInstallations and Suite.RootDB.characterInstallations.Tester, "Tester"
+    end,
+    SetCharacterInstallationStatus = function(status)
+        Suite.RootDB.characterInstallations = { Tester = status }
+        return true
+    end,
     IsProfileName = function(name) return type(name) == "string" and name ~= "" end,
     GetActiveProfileName = function() return "Default" end,
     GetProfile = function(name) return Suite.RootDB.profiles[name] end,
@@ -177,6 +184,8 @@ local function FinishInstall(finish, undo, name)
     return true, name
 end
 Suite.SuiteProfiles = {
+    NewCharacterDefault = function() return nil end,
+    Names = function() return {} end,
     -- The follow-up repairs belong to suite_profiles_contract.
     EnsureNewCharacterProfile = function() return false end,
     EnsureRetailResourceStack = function() resourceRepairs = resourceRepairs + 1; return false end,
@@ -826,6 +835,7 @@ do
         "Not now on a reopened setup replaced the completed installation receipt")
     for _, pending in ipairs({ { status = "pending" }, false }) do
         Suite.RootDB.installation = pending or nil
+        Suite.RootDB.characterInstallations = nil
         Suite.Installer.Open()
         window.close.scripts.OnClick()
         assert(Suite.RootDB.installation and Suite.RootDB.installation.status == "skipped",

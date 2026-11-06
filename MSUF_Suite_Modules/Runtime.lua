@@ -247,6 +247,20 @@ function Context:Property(frame, getter, setter, value)
     SetOwnedProperty(self, frame, getter, setter, value)
 end
 
+local function Unprotected(frame)
+    if not Accessible(frame) then return false end
+    local protected = frame:IsProtected()
+    return Public(protected) and protected == false
+end
+
+-- Explicit ownership for native frames that remain unprotected in combat.
+-- Other modules keep the ordinary deferred Property/Anchor entry points.
+function Context:UnprotectedProperty(frame, getter, setter, value)
+    if NS.IsCombatLocked() and not Unprotected(frame) then return false end
+    SetOwnedProperty(self, frame, getter, setter, value)
+    return true
+end
+
 function Context:Scale(frame, value)
     self:Property(frame, "GetScale", "SetScale", value)
 end
@@ -413,7 +427,7 @@ end
 -- HideControl for a native frame that is not protected: its alpha and mouse
 -- are not restricted, so this applies in combat too.
 function Context:HideUnprotected(frame, hidden)
-    if not Accessible(frame) or frame:IsProtected() then return end
+    if not Unprotected(frame) then return end
     if hidden then
         SetOwnedProperty(self, frame, "GetAlpha", "SetAlpha", 0)
         SetOwnedProperty(self, frame, "IsMouseEnabled", "EnableMouse", false)
@@ -423,11 +437,7 @@ function Context:HideUnprotected(frame, hidden)
     end
 end
 
-function Context:Anchor(frame, point, relative, relativePoint, x, y)
-    if NS.IsCombatLocked() then
-        S.Queue(self.id)
-        return
-    end
+local function SetOwnedAnchor(self, frame, point, relative, relativePoint, x, y)
     if not Accessible(frame) or not frame.GetNumPoints then return end
     local record = self.points[frame]
     if not record then
@@ -442,6 +452,20 @@ function Context:Anchor(frame, point, relative, relativePoint, x, y)
         record.point, record.x, record.y = actualPoint, actualX, actualY
         record.relative, record.relativePoint = actualRelative, actualRelativePoint
     end
+end
+
+function Context:Anchor(frame, point, relative, relativePoint, x, y)
+    if NS.IsCombatLocked() then
+        S.Queue(self.id)
+        return
+    end
+    SetOwnedAnchor(self, frame, point, relative, relativePoint, x, y)
+end
+
+function Context:UnprotectedAnchor(frame, point, relative, relativePoint, x, y)
+    if NS.IsCombatLocked() and not Unprotected(frame) then return false end
+    SetOwnedAnchor(self, frame, point, relative, relativePoint, x, y)
+    return true
 end
 
 function Context:Position(frame, point, x, y)

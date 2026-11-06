@@ -1015,6 +1015,14 @@ ChatFrame11Tab.Text = ChatFrame11Tab:CreateFontString()
 ChatFrame11.chatType = "WHISPER"
 ChatFrame11.isTemporary = true
 ChatFrame11Tab.Text:SetText("secret")
+-- Native temporary tab layout (FloatingChatFrame.lua/xml, live/forever):
+-- Left starts at -2 with width16; Text starts another10px beyond its right.
+ChatFrame11Tab.conversationIcon = Texture()
+ChatFrame11Tab.Left:SetSize(16, 32)
+ChatFrame11Tab.Left:SetPoint("BOTTOMLEFT", ChatFrame11Tab, "BOTTOMLEFT", -2, 0)
+ChatFrame11Tab.Text:SetPoint("LEFT", ChatFrame11Tab.Left, "RIGHT", 10, -6)
+ChatFrame11Tab.Text:SetWidth(60)
+ChatFrame11Tab:SetWidth(90)
 CHAT_FRAMES[11] = "ChatFrame11"
 temporaryHook()
 assert(ChatFrame11Tab.Text.value == "secret" and ChatFrame11Tab.Text.alpha == 1
@@ -1033,6 +1041,45 @@ assert(module.visuals[ChatFrame11].tabLabel.value == "Mapko"
     and ChatFrame11Tab.Text.alpha == 1 and ChatFrame11Tab.Left.alpha == 0
     and not module.visuals[ChatFrame11].tabOverlay,
     "a reused whisper tab kept its previous title")
+-- Padding must leave the whole native whisper button clickable, including
+-- its LEFT-anchored name. Native dynamic tabs own their width and overflow
+-- slots; do not measure secret names or grow beyond those allocated slots.
+module.config.tabPadding = 1
+temporaryHook()
+assert(ChatFrame11Tab:GetWidth() >= 54, "Mapko is drawn beyond the whisper click target")
+local whisperExtent = ChatFrame11Tab.Text.GetUnboundedStringWidth
+local whisperText = ChatFrame11Tab.Text.GetText
+ChatFrame11Tab.Text.GetUnboundedStringWidth = function() error("measured a whisper name") end
+ChatFrame11Tab.Text.GetText = function() error("copied a whisper name") end
+local whisperLabelPoint = ChatFrame11Tab.Text.points[1]
+for _, chatType in ipairs({ "WHISPER", "BN_WHISPER" }) do
+    ChatFrame11.chatType = chatType
+    for _, padding in ipairs({ 1, 6, 15, 24 }) do
+        module.config.tabPadding = padding
+        temporaryHook()
+        assert(ChatFrame11Tab:GetWidth() == 90,
+            "tab padding shrank the whisper name hit area or grew beyond its dock slot")
+        -- The name's right edge (24+60) and the icon both fit the button.
+        assert(ChatFrame11Tab:GetWidth() >= 84 and ChatFrame11Tab.Text.points[1] == whisperLabelPoint,
+            "native whisper title is outside its unchanged click target")
+        -- A narrow/overflowing dock assigns a fresh slot and clips its text.
+        ChatFrame11Tab.Text:SetWidth(2)
+        ChatFrame11Tab:SetWidth(32)
+        dockTabsHook(GENERAL_CHAT_DOCK)
+        assert(ChatFrame11Tab:GetWidth() == 32,
+            "whisper padding overrode a narrow native dock slot")
+        ChatFrame11Tab.Text:SetWidth(60)
+        ChatFrame11Tab:SetWidth(90)
+        dockTabsHook(GENERAL_CHAT_DOCK)
+        assert(ChatFrame11Tab:GetWidth() == 90,
+            "whisper name lost its clickable width after dock layout")
+    end
+end
+module.config.tabPadding = 0
+module:Refresh()
+ChatFrame11Tab.Text.GetUnboundedStringWidth = whisperExtent
+ChatFrame11Tab.Text.GetText = whisperText
+assert(#reports == 0, "whisper padding read a secret name: " .. tostring(reports[1]))
 CHAT_FRAMES[11] = nil
 assert(module.visuals[ChatFrame2].tabLabel.value == "Combat Log"
     and ChatFrame2Tab.Text.alpha == 1 and ChatFrame2Tab.Left.alpha == 0,

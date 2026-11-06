@@ -506,6 +506,7 @@ Enum={StatusBarTimerDirection={ElapsedTime=0,RemainingTime=1},StatusBarInterpola
     TtsVoiceType={Standard=0,Alternate=1}}
 RAID_CLASS_COLORS={MAGE={r=.25,g=.78,b=.92}}
 function UnitClass() return "Mage","MAGE",8 end
+function UnitIsUnit(a,b) return a==b end
 local FRIENDLY,assistCalls=false,0
 function UnitCanAssist(a,b)
     assert(a=="player" and b=="target","assist check on the target only")
@@ -713,6 +714,7 @@ LoadRuntime("AuraPlaceholders.lua")
 LoadRuntime("AuraTimers.lua")
 LoadRuntime("AuraContainers.lua")
 LoadRuntime("Auras.lua")
+LoadRuntime("AuraRecipients.lua")
 LoadRuntime("ReadyPulse.lua")
 LoadRuntime("Alerts.lua")
 local A,Alerts=C.Auras,C.Alerts
@@ -786,7 +788,9 @@ end
 local function Plan(slot,kind,entries)
     local timed=false
     for i,e in ipairs(entries) do e.index=i;C.AuraTimers.Classify(e);timed=timed or e.timer end
-    C.plans[slot]={slot=slot,kind=kind,entries=entries,gen=1,hasTimers=timed}
+    local recipients=false
+    for _,entry in ipairs(entries) do recipients=recipients or entry.unit=="group" end
+    C.plans[slot]={slot=slot,kind=kind,entries=entries,gen=1,hasTimers=timed,hasRecipients=recipients}
     return C.plans[slot]
 end
 local function Count(t) local n=0 for _ in pairs(t) do n=n+1 end return n end
@@ -852,7 +856,7 @@ assert(pc and tc and pc~=tc,"player and target containers")
 local ps,ts=R[pc],R[tc]
 assert(ps.editPreview==false and ts.editPreview==false,"12.1.5: Edit Mode preview switched off")
 assert(ps.order[1]=="g1" and ps.order[2]=="g2" and #ps.order==2,"player groups per entry")
-assert(ps.groups.g1.filter=="HELPFUL|PLAYER" and ps.groups.g2.filter=="HELPFUL","player filters by entry type")
+assert(ps.groups.g1.filter=="HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY" and ps.groups.g2.filter=="HELPFUL|INCLUDE_NAME_PLATE_ONLY","player filters by entry type")
 assert(ts.groups.g1.filter=="HARMFUL|PLAYER" and ts.groups.g2.filter=="HARMFUL|PLAYER","target filters")
 local inc=ps.groups.g1.cand.includeSpellIDs
 assert(Count(inc)==4 and inc[1001] and inc[1004],"Blizzard entry includes all its IDs")
@@ -957,7 +961,7 @@ for i=mark+1,#ps.log do
     if row[2]=="g2" and row[1]=="GroupFilter" then filterAt=i end
 end
 assert(candAt and filterAt and candAt<filterAt,"spell list before filter string")
-assert(ps.groups.g2.filter=="HELPFUL|PLAYER")
+assert(ps.groups.g2.filter=="HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY")
 -- an entry leaves: its group is switched off, then back on
 Plan("buf",2,{e1,e2c,e3})
 A.Sync("buf")
@@ -1626,7 +1630,7 @@ A.Sync("ess")
 assert(#containers==count+2,"overlay container per unit")
 local oc,ot=Live("ess","player",true),Live("ess","target",true)
 local os=R[oc]
-assert(#os.order==1 and os.slots.s1.filter=="HELPFUL|PLAYER" and os.slots.s1.cand.includeSpellIDs[3102],"one slot per aura entry")
+assert(#os.order==1 and os.slots.s1.filter=="HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY" and os.slots.s1.cand.includeSpellIDs[3102],"one slot per aura entry")
 assert(#R[ot].order==1 and R[ot].slots.s1.filter=="HARMFUL|PLAYER","target overlay")
 local ob=R[Acquired(oc,"s1")]
 assert(ob.allPoints==o1.icon,"overlay covers its cooldown icon")
@@ -2118,7 +2122,7 @@ local bp,bt=R[bothP],R[bothT]
 assert(#bp.order==3 and #bt.order==3,"each unit: its own entries plus the both entries")
 assert(bp.groups.g1.cand.includeSpellIDs[8101] and bp.groups.g2.cand.includeSpellIDs[8201] and bp.groups.g3.cand.includeSpellIDs[8301])
 assert(bt.groups.g1.cand.includeSpellIDs[8101] and bt.groups.g2.cand.includeSpellIDs[8201] and bt.groups.g3.cand.includeSpellIDs[8401])
-assert(bp.groups.g1.filter=="HELPFUL|PLAYER" and bp.groups.g3.filter=="HELPFUL","player side: own buffs, any caster for custom")
+assert(bp.groups.g1.filter=="HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY" and bp.groups.g3.filter=="HELPFUL|INCLUDE_NAME_PLATE_ONLY","player side: own buffs, any caster for custom")
 assert(bt.groups.g1.filter=="HARMFUL|PLAYER" and bt.groups.g3.filter=="HARMFUL|PLAYER","target side: own debuffs only")
 assert(bp.groups.g2.layout.layoutIndex==2 and bt.groups.g2.layout.layoutIndex==2 and bt.groups.g3.layout.layoutIndex==4,
     "a both entry keeps its plan place in both rows")
@@ -3720,7 +3724,9 @@ do
     end
     -- Aura sync: an unchanged structural sync of a compact bar and of a
     -- buff bar (every flush that marks them runs it).
-    Budget("aura sync: an unchanged compact bar",Cost(A.Sync,"buf"),15415)
+    -- 2026-11-06: Both self-target dedup and own-only Lifebloom add cold
+    -- slot/filter checks; native aura events still run no Lua. Measured 15766.
+    Budget("aura sync: an unchanged compact bar",Cost(A.Sync,"buf"),15766)
     C.views.c6=View("c6",3)
     local rows={}
     for i=1,4 do rows[i]=Aura("c6","a"..(6300+i),"a","player",Set(6300+i)) end
@@ -4455,7 +4461,7 @@ do (function()
                 local pk,tk=KeyFor(playerRec,envenom),KeyFor(targetRec,kingsbane)
                 local pg=(ps.groups[pk] or ps.slots[pk])
                 local tg=(ts.groups[tk] or ts.slots[tk])
-                assert(pg.filter=="HELPFUL|PLAYER" and pg.cand.includeSpellIDs[32645],"Envenom matches its own buff")
+                assert(pg.filter=="HELPFUL|PLAYER|INCLUDE_NAME_PLATE_ONLY" and pg.cand.includeSpellIDs[32645],"Envenom matches its own buff")
                 assert(tg.filter=="HARMFUL|PLAYER" and tg.cand.includeSpellIDs[385627],"Kingsbane keeps its DoT binding")
                 local bind=R[Acquired(player,pk)].bind
                 assert(bind.text and (kind==2 and bind.cooldown or kind==3 and bind.bar),

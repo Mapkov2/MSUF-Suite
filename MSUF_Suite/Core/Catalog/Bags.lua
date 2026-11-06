@@ -27,6 +27,8 @@ B.Module("bags", {
 
 -- The choice values of the view and sorting settings below (each is its
 -- label's position there); the Bags runtime names its modes through these.
+NS.BagsAnimation = { OFF = 1, SIMPLE = 2, FULL = 3 }
+NS.BagsPresentation = { WINDOW = 1, PANEL = 2 }
 NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4 }
 NS.BagsBankView = { TABS = 1, CHARACTER = 2, WARBANK = 3, CATEGORIES = 4 }
 NS.BagsSortDirection = { BLIZZARD = 1, FROM_TOP = 2, FROM_BOTTOM = 3 }
@@ -75,6 +77,7 @@ B.Section("bags", "appearance", "Window appearance", {
     B.Color("backgroundColor", "Background color", initial.backgroundColor),
     B.Number("backgroundOpacity", "Background opacity (percent)", initial.backgroundOpacity, 0, 100, 1),
     B.Color("accentColor", "Accent color", initial.accentColor),
+    B.Choice("animationMode", "Bag animations", NS.BagsAnimation.SIMPLE, { "Off", "Simple", "Full" }),
 })
 
 B.Section("bags", "itemLevels", "Item levels", {
@@ -93,6 +96,8 @@ B.Section("bags", "itemLevels", "Item levels", {
 B.LinkFontShadow(NS.SuiteCatalog.bags.rules)
 
 B.Section("bags", "window", "Combined bag window", {
+    B.Choice("windowPresentation", "Bag presentation", NS.BagsPresentation.PANEL, { "Compact window", "Side panel" }),
+    B.Bool("panelFullHeight", "Use full screen height", false),
     B.Bool("showSessionGold", "Show gold change since login", true),
     B.Number("windowScale", "Window size", 1, 0.65, 1.5, 0.05),
     B.Bool("windowMoved", "Use custom window position", false),
@@ -100,7 +105,7 @@ B.Section("bags", "window", "Combined bag window", {
     B.Number("windowY", "Vertical offset", 0, -4096, 4096),
 })
 B.Section("bags", "organisation", "Inventory organisation", {
-    B.Choice("inventoryView", "Default inventory view", 1, { "All items", "By bag", "Categories", "Blizzard grid" }),
+    B.Choice("inventoryView", "Default inventory view", NS.BagsView.ALL, { "All items", "By bag", "Categories", "Blizzard grid" }),
     B.Choice("sortMode", "Sort items by", NS.BagsSort.NAME,
         { "Name", "Quality", "Item level", "Type", "Expansion", "Stack count", "Vendor price" }),
     B.Number("inventoryColumns", "Items per row", 12, 8, 20),
@@ -130,6 +135,7 @@ B.Section("bags", "organisation", "Inventory organisation", {
     B.String("customCategories", "Custom category data", "", 16000),
 })
 B.Section("bags", "categories", "Built-in categories", {
+    B.Bool("category_myArmorSlot", "My Armor Slot", true),
     B.Bool("category_equipment", "Equipment category", true),
     B.Bool("category_consumables", "Consumables category", true),
     B.Bool("category_reagents", "Reagents category", true),
@@ -190,6 +196,7 @@ local bankCategoriesOnly = { key = "bankView", values = { [NS.BagsBankView.CATEG
 for _, key in ipairs({ "bankGroupEquipmentSlots", "bankGroupExpansions", "bankGroupReagentTypes" }) do
     rules[key].requiresChoice = bankCategoriesOnly
 end
+rules.panelFullHeight.requiresChoice = { key = "windowPresentation", values = { [NS.BagsPresentation.PANEL] = true } }
 rules.showKeystoneDetails.hidden = NS.Client.isForever
 rules.keystoneLevelSize.hidden = NS.Client.isForever
 rules.keystoneDungeonSize.hidden = NS.Client.isForever

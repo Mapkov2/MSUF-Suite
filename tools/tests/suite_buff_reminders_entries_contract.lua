@@ -64,6 +64,8 @@ local S = {
 }
 local NS = { IsCombatLocked = function() return false end,
     Client = { isForever = false, modernEquipment = true, SupportsEvent = function() return true end } }
+local _, catalogNS = Support.CatalogDefaults(root, "buffReminders")
+NS.BuffReminderClassReminders = catalogNS.BuffReminderClassReminders
 local private = { NS = NS, Suite = S }
 Support.Load(root, "MSUF_Suite_BuffReminders", private, nil, { ["Bootstrap.lua"] = true })
 local R = private.BuffReminders

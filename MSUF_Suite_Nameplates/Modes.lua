@@ -13,6 +13,8 @@ private.Mode = {
     -- friendlyNamesOnly: Keep, Names only (all friendly players), Names only
     -- (party / raid), Health bars.
     ALL_NAMES_ONLY = 2, GROUP_NAMES_ONLY = 3,
+    -- friendlyNPCs: Keep, Show, Hide, Names only (world names).
+    NPC_NAMES_ONLY = 4,
 }
 
 -- Setting keys that are a prefix or a color role plus a suffix. A key is built

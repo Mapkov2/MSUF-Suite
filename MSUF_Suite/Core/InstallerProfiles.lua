@@ -13,6 +13,53 @@ local COLORS = {
     { "classColor", "Class Style" },
 }
 
+local function ExistingRows(window, button, choose)
+    local names = Suite.SuiteProfiles.Names()
+    local height = math.max(177, #names * 36)
+    window.existingProfileContent:SetHeight(height)
+    for index, name in ipairs(names) do
+        local row = window.existingProfileRows[index]
+        if not row then
+            row = button(window.existingProfileContent, 0, 0, 484, "", function(self)
+                if window:IsShown() and window.existingProfilesOpen then choose(self.profileName) end
+            end)
+            window.existingProfileRows[index] = row
+        end
+        row.profileName = name
+        row.caption:SetText(Text("Use profile: %s"):format(name))
+        row:ClearAllPoints()
+        row:SetPoint("BOTTOMLEFT", window.existingProfileContent, "BOTTOMLEFT", 0, height - index * 36 + 6)
+        row:Show()
+    end
+    for index = #names + 1, #window.existingProfileRows do window.existingProfileRows[index]:Hide() end
+    window.existingProfiles:SetVerticalScroll(0)
+    return #names > 0
+end
+
+function Picker.BuildExisting(window, button, choose)
+    window.existingProfileRows = {}
+    local scroll = CreateFrame("ScrollFrame", nil, window, "ScrollFrameTemplate")
+    scroll:SetPoint("BOTTOMLEFT", window, "BOTTOMLEFT", 36, 110)
+    scroll:SetSize(484, 177)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(484, 177)
+    scroll:SetScrollChild(content)
+    scroll:Hide()
+    window.existingProfiles, window.existingProfileContent = scroll, content
+    window.existingProfileButton = button(window, 36, 300, 508, Text("Use an existing profile"), function()
+        window.existingProfilesOpen = not window.existingProfilesOpen and ExistingRows(window, button, choose) or false
+        Suite.Installer.Refresh()
+        Suite.Client.ResumeControllerWindow(window)
+    end)
+end
+
+function Picker.ShowExisting(window, shown)
+    if not shown then window.existingProfilesOpen = false end
+    window.existingProfileButton:SetShown(shown and #Suite.SuiteProfiles.Names() > 0)
+    window.existingProfileButton.caption:SetText(window.existingProfilesOpen and Text("Back") or Text("Use an existing profile"))
+    window.existingProfiles:SetShown(shown and window.existingProfilesOpen)
+end
+
 function Picker.LookLabel(look)
     for _, choice in ipairs(COLORS) do
         if choice[1] == look then return Text(choice[2]) end

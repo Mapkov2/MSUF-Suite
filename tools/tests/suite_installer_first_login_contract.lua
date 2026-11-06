@@ -54,9 +54,11 @@ for _, host in ipairs({ "MidnightSimpleUnitFrames", "MidnightSimpleUnitFrames-7.
         MSUF2.frame:Hide()
         for _, status in ipairs({ "complete", "skipped" }) do
             suite.RootDB.installation = { revision = 3, status = status }
+            suite.Database.SetCharacterInstallationStatus(status)
             Check(suite.Installer.MaybeShow("login") == false, status .. " installation reopened")
         end
         suite.RootDB.installation = nil
+        suite.RootDB.characterInstallations = nil
         Check(suite.Installer.MaybeShow("login") == true, "missing receipt did not recover setup")
         MSUFSuiteInstallFrame:Hide()
         suite.RootDB.installation = { revision = 3, status = "pending" }

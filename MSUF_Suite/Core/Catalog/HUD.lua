@@ -229,6 +229,7 @@ B.Section("announcements", "layout", "Timing and position", {
     B.Number("y", "Vertical position", -90, -3000, 3000),
 })
 B.Section("announcements", "type", "Announcement text", {
+    B.Bool("showBoxArt", "Show box art", true),
     B.Font("font", "Font"),
     B.Number("titleSize", "Headline size", 31, 20, 42),
     B.Number("subtitleSize", "Subtitle size", 16, 10, 24),

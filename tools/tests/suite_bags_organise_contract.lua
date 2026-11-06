@@ -129,6 +129,9 @@ do
     end
     P.Suite = { Text = function(text) return text end, ModuleState = function() return state end,
         ContextMenu = function(owner, generator) menu = Node("root"); generator(owner, menu) end }
+    P.BagFilterMenu = { Show = P.Suite.ContextMenu }
+    P.Suite.Config = function() return {customCategories=""} end
+    P.InventoryModel = { DecodeCategories=function() return {} end }
     assert(loadfile(root .. "/MSUF_Suite_Bags/SmartSearch.lua"))("Bags", P)
     local edit = { text = "quality>=3", GetText = function(self) return self.text end,
         SetText = function(self, value) self.text = value end }
@@ -217,10 +220,10 @@ do
     local small = { bag = 1, slot = 1, itemID = 5, link = "e", name = "Egg", count = 30, quality = 1, maxStack = 100 }
     equal((Order({ small, bread, second }, { inventoryView = 1, sortMode = SORT.STACK, mergeStacks = true })),
         "Bread,Egg", "merged stacks sort by their total")
-    -- A shuffle outranks the mode (quality alone would give Bread, Cherry, Apple).
+    -- Stale item metadata can never override the chosen deterministic sort.
     apple.shuffle, bread.shuffle, cherry.shuffle = 0.1, 0.9, 0.5
-    equal((Order(items, { inventoryView = 1, sortMode = SORT.QUALITY }, { shuffle = true })), "Apple,Cherry,Bread",
-        "the shuffle outranks the sort mode")
+    equal((Order(items, { inventoryView = 1, sortMode = SORT.QUALITY }, { shuffle = true })), "Bread,Cherry,Apple",
+        "the selected sort ignores obsolete random keys")
     apple.shuffle, bread.shuffle, cherry.shuffle = nil, nil, nil
 end
 

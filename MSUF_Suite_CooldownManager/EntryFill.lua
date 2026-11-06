@@ -111,7 +111,8 @@ end
 
 -- The unit a Blizzard aura entry is looked for on: the target when any of its
 -- aura IDs is a harmful spell (a DoT, Deathstalker's Mark), else the player
--- (a buff). Mixed damage/buff spells need their aura unit explicitly.
+-- (a buff). Native group buffs follow their recipient. Mixed damage/buff
+-- spells need their aura unit explicitly.
 -- Blizzard's selfAura flag is not used for aura lookups by
 -- Blizzard itself. Cold: cached per spell ID.
 local harmfulCache = {}
@@ -136,17 +137,25 @@ local function AuraUnit(base, override, tooltip, linked, recordID, ids)
             return "target"
         end
     end
+    local rec = Catalog.records[recordID]
+    if rec and rec.groupAura then return "group" end
     return "player"
 end
--- Per-spell "Track on" (auraUnit): 2 me, 3 target, 4 both.
-local AURA_UNIT = { nil, "player", "target", "both" }
+-- Per-spell "Track on" (auraUnit): 2 me, 3 target, 4 both, 5 group buffs.
+local AURA_UNIT = { nil, "player", "target", "both", "group" }
+local function ChosenUnit(choice, helpful)
+    local unit = AURA_UNIT[choice]
+    if unit == "group" and not helpful then return "target" end
+    return unit
+end
+EntryFill.ChosenUnit = ChosenUnit
 
 local function RefreshAuraUnit(entry, choices)
     if choices and EntryFill.ApplyReplacement(entry, entry.ov or EMPTY) then return end
     entry.auraIDs = AuraSet(entry.auraIDs, entry.base, entry.override, entry.tooltip, entry.linked)
     local unit = AuraUnit(entry.base, entry.override, entry.tooltip, entry.linked, entry.id, entry.auraIDs)
-    entry.auraHelpful = unit == "player"
-    entry.unit = choices and AURA_UNIT[(entry.ov or EMPTY).auraUnit] or unit
+    entry.auraHelpful = unit ~= "target"
+    entry.unit = choices and ChosenUnit((entry.ov or EMPTY).auraUnit, entry.auraHelpful) or unit
     if not entry.unit then entry.unit = unit end
 end
 
@@ -161,7 +170,7 @@ function EntryFill.ApplyReplacement(entry, choices)
     entry.hasAura = true
     entry.auraHelpful = not Harmful(id)
     entry.selfAura = entry.auraHelpful
-    entry.unit = AURA_UNIT[choices.auraUnit] or (entry.auraHelpful and "player" or "target")
+    entry.unit = ChosenUnit(choices.auraUnit, entry.auraHelpful) or (entry.auraHelpful and "player" or "target")
     return true
 end
 
@@ -283,6 +292,25 @@ local function Fill(entry, key)
         return FillAura(entry, src, id)
     end
     return false
+end
+
+-- Direct talent overrides can change the aura route without rebuilding the
+-- plan. Keep its consumer flag current for the following aura sync.
+function EntryFill.RefreshRecipients(entry)
+    local plan = C.plans[entry.slot]
+    if not plan then return end
+    if entry.unit == "group" then
+        plan.hasRecipients = true
+        return
+    end
+    if not plan.hasRecipients then return end
+    plan.hasRecipients = false
+    for i = 1, #plan.entries do
+        if plan.entries[i].unit == "group" then
+            plan.hasRecipients = true
+            return
+        end
+    end
 end
 
 EntryFill.Parse, EntryFill.FamilyOf, EntryFill.Known, EntryFill.BaseSpell = Parse, FamilyOf, Known, BaseSpell

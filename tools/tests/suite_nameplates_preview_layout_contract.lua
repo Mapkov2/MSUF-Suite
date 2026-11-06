@@ -141,7 +141,8 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         end
         M.TrackRefresh = Noop
         M.PreviewSelectionBar = {
-            Create = function(body)
+            Create = function(body, options)
+                body.selectionOptions = options
                 local bar = Frame(body); bar:SetHeight(24); body.selection = bar; return bar
             end,
             CreatePicker = function(body, tools)
@@ -192,7 +193,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         P.HM = bridge.HostBridge.Menu2(M)
         assert(loadfile(arg[2] or root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewLayout.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", P)
-        assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
+        assert(loadfile(arg[3] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
         local ui = P.NameplatesEditor.Create(ctx, builder, {})
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", P)
@@ -221,6 +222,36 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             button.scripts.OnClick(button, "LeftButton")
         end
         assert(writes == before, "unavailable friendly sample changed enemy settings")
+        -- NPC world names have no movable or adjustable nameplate elements.
+        P.NameplatesEditorMarkers.ToggleTarget = function() writes = writes + 1 end
+        values.friendlyNPCs, ui.friendlyElite = 4, true
+        for _, key in ipairs({ "level", "target", "name", "targetScale", "raidIcon" }) do
+            local button = Layer(key)
+            button.scripts.OnClick(button, "LeftButton")
+            assert(not ui:LayerAvailable(key), "NPC world-name layer remained editable: " .. key)
+        end
+        assert(writes == before, "NPC world-name layer chips changed nameplate settings")
+        local function Upvalue(fn, name)
+            for index = 1, 60 do
+                local key, value = debug.getupvalue(fn, index)
+                if key == name then return value end
+                if not key then break end
+            end
+            error("missing editor helper " .. name)
+        end
+        local handle = { previewUI = ui }
+        assert(not Upvalue(P.NameplatesEditor.Bind, "Write")(ui, handle, 20, 30),
+            "NPC world-name nudge wrote nameplate offsets")
+        assert(not Upvalue(P.NameplatesEditor.Bind, "CanEdit")(handle), "NPC world name remained selectable")
+        handle.IsShown = function() return true end
+        assert(not ui.body.selectionOptions.IsPlaced(handle), "NPC world name remained in the element picker")
+        local savedSelect = ui.kit.Select
+        ui.kit.Select = function(_, selected) assert(selected == nil, "NPC world name accepted a picker selection") end
+        ui:Select(handle)
+        ui.kit.Select = savedSelect
+        assert(ui.body.selectionOptions.ResetOffsets(nil, handle) == false, "NPC world-name reset changed nameplate offsets")
+        values.friendlyNPCs, ui.friendlyElite = 1, false
+        assert(Upvalue(P.NameplatesEditor.Bind, "CanEdit")(handle), "switching back did not restore nameplate interaction")
         ui.sampleKind = "enemy"
         -- Combat start drops the selection only while the preview shows: with
         -- the menu closed the event stays unregistered, and no pull repaints.

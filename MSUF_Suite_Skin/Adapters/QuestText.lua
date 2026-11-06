@@ -30,6 +30,22 @@ local function CanPaint(region)
     return false
 end
 
+-- These two shared objects also belong to the detail page's reading fade.
+-- Once Blizzard has moved them into a visible reward page, that old opacity
+-- must not conceal the completion text or the native reward choices.
+local function IsCurrentReward(region)
+    return QuestText.roots[QuestFrame] ~= nil
+        and Safety.Read(QuestFrameRewardPanel, "IsVisible") == true
+        and Safety.Read(region, "GetParent") == QuestRewardScrollChildFrame
+        and Safety.Read(region, "IsShown") == true
+end
+
+local function RevealReward(region)
+    if not IsCurrentReward(region) or not CanPaint(region) then return end
+    local alpha = Safety.Read(region, "GetAlpha")
+    if type(alpha) == "number" and alpha < 1 then Safety.Invoke(region, "SetAlpha", 1) end
+end
+
 local fields = {
     QuestInfoTitleHeader = "title",
     QuestInfoDescriptionHeader = "title",
@@ -74,7 +90,7 @@ end
 local function Release(region, record)
     if not CanPaint(region) then return end
     local r, g, b, a = Safety.ReadColor(region, "GetTextColor")
-    local owned = Safety.ColorMatches(record.applied, r, g, b, a, Safety.COLOR_OWN)
+    local owned = Safety.ColorMatches(record.applied, r, g, b, 1, Safety.COLOR_OWN)
     if record.fixed then
         -- Blizzard uses a fixed font color only with light quest text.
         local native = QuestTextContrast.UseLightText() == true
@@ -82,7 +98,7 @@ local function Release(region, record)
     end
     if owned then
         local original = record.original
-        Safety.Invoke(region, "SetTextColor", original[1], original[2], original[3], original[4])
+        Safety.Invoke(region, "SetTextColor", original[1], original[2], original[3], a)
     end
     QuestText.colors[region] = nil
 end
@@ -102,20 +118,22 @@ local function Paint(region, role, fixed)
     if not currentR then return end
     local record = QuestText.colors[region]
     if not record then
-        record = { original = { currentR, currentG, currentB, currentA }, applied = {} }
+        record = { original = { currentR, currentG, currentB }, applied = {} }
         QuestText.colors[region] = record
-    elseif not Safety.ColorMatches(record.applied, currentR, currentG, currentB, currentA, Safety.COLOR_OWN) then
-        -- Blizzard has repainted for a different quest/material since our pass.
+    elseif not Safety.ColorMatches(record.applied, currentR, currentG, currentB, 1, Safety.COLOR_OWN) then
+        -- A material change replaces RGB; a reading fade only changes opacity
+        -- and must never replace the saved native RGB with our theme color.
         local original = record.original
-        original[1], original[2], original[3], original[4] = currentR, currentG, currentB, currentA
+        original[1], original[2], original[3] = currentR, currentG, currentB
     end
     local r, g, b = NS.Theme.GetColor(role)
     -- Blizzard applies the fixed-color mode before setting the text color.
     -- Keep that order for quest buttons and registered gossip FontStrings.
     if fixed and Safety.Invoke(region, "SetFixedColor", true) then record.fixed = true end
+    if region == QuestInfoRewardText and IsCurrentReward(region) then currentA = 1 end
     if Safety.Invoke(region, "SetTextColor", r, g, b, currentA) then
         local applied = record.applied
-        applied[1], applied[2], applied[3], applied[4] = r, g, b, currentA
+        applied[1], applied[2], applied[3], applied[4] = r, g, b, 1
     end
 end
 
@@ -176,6 +194,15 @@ PaintCurrent = function()
     Paint(QuestInfoSealFrame.Text, "text")
     PaintGreetingButtons(QuestFrameGreetingPanel.titleButtonPool)
     PaintGossip()
+    RevealReward(QuestInfoRewardText)
+    RevealReward(QuestInfoRewardsFrame)
+end
+
+local function PaintPage()
+    PaintCurrent()
+    -- Shared widgets can be reparented/repainted again later in the native
+    -- page callback. Recheck their current owner once after that callback.
+    if next(QuestText.roots) then NS.Registry.QueueJob(PaintCurrent) end
 end
 
 local function RestoreRoot(root)
@@ -196,7 +223,7 @@ end
 
 -- These Blizzard functions are called through their globals. QUEST_LOG_UPDATE
 -- also refreshes the greeting list through QuestFrameGreetingPanel_OnShow.
-local PaintCurrentHook = Isolated(PaintCurrent)
+local PaintCurrentHook = Isolated(PaintPage)
 local globalHooks = {
     { "QuestInfo_Display", PaintCurrentHook },
     { "QuestInfo_ShowRewards", PaintCurrentHook },
@@ -243,7 +270,7 @@ function QuestText.Activate(root, owner)
     owners[owner] = true
     EnsureHooks()
     EnsureGossipHooks(root)
-    PaintCurrent()
+    PaintPage()
     return true
 end
 

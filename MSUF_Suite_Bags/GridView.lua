@@ -9,7 +9,8 @@ P.GridView = GridView
 -- The chosen bag font, else the global MSUF font. A path (never nil), so a
 -- changed global font is noticed by the cached comparison below.
 function GridView.FontPath()
-    return S.ResolveFont(M.config.font) or S.GlobalFontPath()
+    local config = M.active and M.config or S.Config("bags")
+    return S.ResolveFont(config.font) or S.GlobalFontPath()
 end
 
 local function ApplyFont(text, path)
@@ -28,6 +29,7 @@ end
 
 -- Runs on every module refresh, which a global MSUF font change triggers.
 function GridView.RefreshFonts()
+    P.BagAppearance.Refresh()
     local path = GridView.FontPath()
     for text in pairs(GridView.texts) do ApplyFont(text, path) end
 end
@@ -39,6 +41,7 @@ function GridView.Button(parent, label, width, callback, height)
     button:SetSize(width, height or 22)
     button:SetText(S.Text(label))
     button:SetScript("OnClick", callback)
+    P.BagAppearance.MakeButton(button)
     return button
 end
 
@@ -113,7 +116,9 @@ function GridView.PaintHeader(pool, index, parent, anchor, x, y, width, group, t
     end
     local text = GridView.GroupLabel(group)
     local shift = toggle and group.collapsed and COLLAPSE_ICON or 0
-    if shift > 0 then text = GridView.CountLabel(text, group.hidden) end
+    if shift > 0 or P.BagPresentation.IsPanel(M.config) then
+        text = GridView.CountLabel(text, group.collapsed and group.hidden or #group.rows)
+    end
     label:ClearAllPoints()
     label:SetPoint("TOPLEFT", anchor, "TOPLEFT", x + shift, y)
     label:SetWidth(width - shift)
@@ -128,6 +133,7 @@ function GridView.HideHeaders(pool)
     for i = 1, #pool do
         pool[i]:Hide()
         if pool[i].hit then pool[i].hit:Hide() end
+        if pool[i].plate then pool[i].plate:Hide() end
     end
 end
 
@@ -143,19 +149,7 @@ end
 -- A movable Suite window that Escape closes. Blizzard's CloseSpecialWindows
 -- walks UISpecialFrames through securecall (UIParentPanelManager.lua).
 function GridView.Window(name, width, height, title)
-    local frame = S.CreateFrame("Frame", name, UIParent, "BasicFrameTemplateWithInset")
-    frame:SetSize(width, height)
-    frame:SetPoint("CENTER")
-    frame:SetFrameStrata("DIALOG")
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-    frame.TitleText:SetText(S.Text(title))
-    UISpecialFrames[#UISpecialFrames + 1] = name
-    return frame
+    return P.BagWidgets.Window(name, width, height, title)
 end
 
 -- Builds the model; a selected custom or emptied group that vanished returns

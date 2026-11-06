@@ -302,12 +302,9 @@ do
         for _, item in ipairs(V.index.items) do if item.bag == 0 and item.slot == slot then return item end end
     end
     assert(Record(1).upgrade == "3/8" and Record(1).loaded, "the helm's upgrade track was not read")
-    V.shuffle, V.shufflePending = true, true
     W.BagChanged(0)
     W.Settle()
     local helm, potion = Record(1), Record(2)
-    local helmKey, potionKey = helm.shuffle, potion.shuffle
-    assert(helmKey and potionKey, "shuffling gave the items no shuffle key")
     upgradeReads, itemInfo = 0, W.calls.itemInfo
     -- A record that already holds its metadata never copies it again.
     local cached = V.index.metadata["item:20"]
@@ -323,8 +320,7 @@ do
     assert(W.calls.itemInfo == itemInfo and helm.name == "Helm",
         "BAG_UPDATE looked up or copied the item metadata of unchanged items again")
     V.index.metadata["item:20"] = cached
-    assert(helm.shuffle == helmKey and potion.shuffle == potionKey,
-        "BAG_UPDATE re-rolled the shuffle keys of unchanged items")
+    assert(Record(1) == helm and Record(2) == potion, "unchanged physical slots retain their records")
     assert(Record(3).count == 5 and Record(3).loaded, "a changed stack lost its new count or its metadata")
     -- A different item in the same slot is a new record.
     W.Put(0, 1, 21, 1)
@@ -332,7 +328,7 @@ do
     W.Settle()
     assert(Record(1).upgrade == "1/6" and Record(1).upgradeTrack == "Champion" and upgradeReads == 1,
         "a new item in the slot kept the previous item's upgrade track")
-    assert(Record(1).name == "Chest" and Record(1).shuffle ~= helmKey, "a new item kept the previous item's record")
+    assert(Record(1).name == "Chest", "a new item kept the previous item's record")
     C_Item.GetItemUpgradeInfo = read
 end
 
@@ -419,12 +415,13 @@ do
     local V = W.P.InventoryView
     local count = ButtonFor(W, 0, 3).Count
     local nativeFont = V.nativeCountFonts[count] and V.nativeCountFonts[count][1]
+    local nativeWheel = V.nativeMouseWheel
     assert(nativeFont, "the Suite did not take over the count font")
     W.EnterCombat()
     -- A module error stops the module in combat (Suite.lua Stop).
     W.M.active = false
     W.M:Disable()
-    assert(count.font[1] == nativeFont and W.CF.wheel == V.nativeMouseWheel,
+    assert(count.font[1] == nativeFont and W.CF.wheel == nativeWheel and V.nativeMouseWheel == nil,
         "count fonts and the mouse wheel must return at once")
     assert(#W.combatLayout == 0, "the restore moved Blizzard's bag in combat: " .. table.concat(W.combatLayout, ", "))
     W.LeaveCombat()

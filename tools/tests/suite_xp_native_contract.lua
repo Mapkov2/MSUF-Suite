@@ -13,7 +13,12 @@ local function Widget(alpha, click, motion)
     return frame
 end
 function methods:GetAlpha() return data[self].alpha end
-function methods:SetAlpha(value) data[self].alpha = value; alphaWrites = alphaWrites + 1 end
+function methods:SetAlpha(value)
+    data[self].alpha = value
+    alphaWrites = alphaWrites + 1
+    local callback = data[self].hooks.SetAlpha
+    if callback then callback(self, value) end
+end
 function methods:IsMouseClickEnabled() return data[self].click end
 function methods:IsMouseMotionEnabled() return data[self].motion end
 function methods:EnableMouse(value)
@@ -144,7 +149,7 @@ for _, forever in ipairs({ false, true }) do
     -- Child animation/skinning can repaint chrome; the ancestor still hides it.
     main.BarFrameTexture:SetAlpha(1)
     assert(StatusTrackingBarManager:GetAlpha() == 0, "child repaint exposed native progress chrome")
-    main.BarFrameTexture:SetAlpha(0)
+    main.BarFrameTexture:SetAlpha(secret)
     module.config.hideBlizzardTracking=false
     native.Sync(module,true)
     assert(StatusTrackingBarManager:GetAlpha() == 1, "all-to-XP retained the hidden manager")
@@ -226,4 +231,59 @@ for _, forever in ipairs({ false, true }) do
         "an old cleanup undid a later valid enable")
     native.Sync(module, false)
 end
-print("suite_xp_native_contract: OK (Retail/Forever, combat swaps, restore, bounded native work)")
+-- Late native/skin alpha writes must not reveal an already adopted bar.
+-- These occur without another settings refresh or a container selection edge.
+for _, forever in ipairs({ false, true }) do
+    local native, module, main, xp, rep, tick, secondary, xp2, rep2 = Load(forever)
+    native.Sync(module, true)
+    local m = mouseWrites
+    combat = true
+    local a = alphaWrites
+    xp:SetAlpha(secret)
+    assert(xp:GetAlpha() == 0, "a late alpha write revealed hidden Blizzard XP")
+    assert(alphaWrites == a + 2, "XP alpha enforcement recursed or repeated writes")
+    main.BarFrameTexture:SetAlpha(secret)
+    assert(main.BarFrameTexture:GetAlpha() == 0, "a late alpha write revealed XP chrome")
+    rep:SetAlpha(.42)
+    assert(rep:GetAlpha() == .42, "XP-only suppression intercepted reputation alpha")
+    if forever then
+        for divider in pairs(data[main].active) do
+            divider:SetAlpha(.35)
+            assert(divider:GetAlpha() == 0, "a pooled divider alpha reset revealed XP chrome")
+        end
+    end
+    assert(mouseWrites == m, "alpha enforcement changed protected mouse state in combat")
+    combat = false
+    native.Sync(module, false)
+    assert(xp:GetAlpha() == secret and main.BarFrameTexture:GetAlpha() == secret,
+        "disable lost the latest native alpha, including secret snapshots")
+    if forever then
+        for divider in pairs(data[main].active) do
+            assert(divider:GetAlpha() == .35, "disable restored stale pooled divider alpha")
+        end
+    end
+    xp:SetAlpha(.8)
+    main.BarFrameTexture:SetAlpha(.55)
+    assert(xp:GetAlpha() == .8 and main.BarFrameTexture:GetAlpha() == .55,
+        "disabled hooks continued suppressing native alpha")
+    module.config.hideBlizzardTracking = true
+    native.Sync(module, true)
+    combat = true
+    StatusTrackingBarManager:SetAlpha(secret)
+    rep:SetAlpha(.27)
+    rep2:SetAlpha(.31)
+    assert(StatusTrackingBarManager:GetAlpha() == 0 and rep:GetAlpha() == 0 and rep2:GetAlpha() == 0,
+        "all-progress mode allowed a late native alpha reset")
+    combat = false
+    module.config.hideBlizzardTracking = false
+    native.Sync(module, true)
+    assert(StatusTrackingBarManager:GetAlpha() == secret and rep:GetAlpha() == .27 and rep2:GetAlpha() == .31,
+        "all-to-XP mode lost the latest native alpha requests")
+    assert(xp:GetAlpha() == 0, "all-to-XP mode revealed XP")
+    local h = hooks
+    native.Sync(module, false)
+    native.Sync(module, true)
+    assert(hooks == h, "re-enabling installed duplicate alpha hooks")
+    native.Sync(module, false)
+end
+print("suite_xp_native_contract: OK (Retail/Forever, combat swaps, late alpha writes, restore, bounded native work)")

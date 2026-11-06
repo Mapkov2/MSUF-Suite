@@ -70,6 +70,8 @@ GetServerTime = function() return now end
 hooksecurefunc = function() end
 UISpecialFrames = {}
 P.ChildFrame = dofile(root .. "/tools/tests/suite_test_support.lua").BagsChildFrame(root, S)
+assert(loadfile(root .. "/MSUF_Suite_Bags/Presentation.lua"))("Bags", P)
+assert(loadfile(root .. "/MSUF_Suite_Bags/Appearance.lua"))("Bags", P)
 assert(loadfile(root .. "/MSUF_Suite_Bags/GridView.lua"))("Bags", P)
 -- A client in UTC: local calendar days are the UTC days below.
 date = function(format, time)
@@ -214,6 +216,8 @@ do
             TitleText = { SetText = Noop } }
     end
     S.CreateFrame = Frame
+    -- Ledger/font test; full-TOC UI tests validate the shared window shell.
+    P.BagWidgets = {Window=function() return Frame() end}
     S.CreateFontString = function()
         return { SetPoint = Noop, SetWidth = Noop, SetAllPoints = Noop,
             SetJustifyH = Noop, SetWordWrap = Noop, Show = Noop, Hide = Noop,

@@ -90,7 +90,7 @@ CDM.SLOTS = {
     { key = "def", title = "Defensives", kind = KIND.COOLDOWN, builtin = true, categories = {}, preset = "defensives" },
     { key = "ext", title = "Potions and racials", kind = KIND.COOLDOWN, builtin = true, categories = { 5 },
         preset = "racials" },
-    { key = "buf", title = "Buffs", kind = KIND.AURA_ICON, builtin = true, categories = { 2, 6, 8 } },
+    { key = "buf", title = "Buffs", kind = KIND.AURA_ICON, builtin = true, categories = { 2, 4, 6, 8 } },
     { key = "bar", title = "Buff bars", kind = KIND.AURA_BAR, builtin = true, categories = { 3 } },
 }
 for i = 1, 6 do

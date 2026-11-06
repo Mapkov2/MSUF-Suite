@@ -7,7 +7,7 @@ SUITE_OPTIONS_FIXTURE = true
 local F = dofile(root .. "/tools/tests/suite_options_menu_contract.lua")
 local P, S, Suite = F.optionsNS, F.S, F.Suite
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
+local function eq(a, b, label) assert(a == b or type(a) == "number" and type(b) == "number" and math.abs(a - b) < 0.000001, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 
 local CONFLICTS = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy", "Prat-3.0", "Chattynator", "Chatter" }
 
@@ -142,7 +142,9 @@ function suite.Install(id, module) eq(id, "chat"); eq(module, chat.M, "installed
 hooksecurefunc = function() end
 Constants = { ChatFrameConstants = { MaxChatWindows = 0 } }
 CHAT_FRAMES = {}
-assert(loadfile(root .. "/MSUF_Suite_Chat/Controller.lua"))("MSUF_Suite_Chat", { NS = ns, Suite = suite, Chat = chat })
+local chatNS = { NS = ns, Suite = suite, Chat = chat }
+assert(loadfile(root .. "/MSUF_Suite_Chat/Positions.lua"))("MSUF_Suite_Chat", chatNS)
+assert(loadfile(root .. "/MSUF_Suite_Chat/Controller.lua"))("MSUF_Suite_Chat", chatNS)
 local module = chat.M
 module.config, module.active = config, true
 module.context = {
@@ -167,11 +169,19 @@ eq(#applied, 0, "an unrelated addon re-evaluated the chat module")
 -- The mover: the main window's position belongs to the Suite while it is
 -- anchored, as offsets of its bottom left corner from the screen's.
 local frame = { points = {} }
-function frame:GetScale() return 1 end
+function frame:GetScale() return self.scale or 1 end
+function frame:GetEffectiveScale() return self:GetScale() * UIParent:GetEffectiveScale() end
+function frame:GetLeft() return self.left or config.windowX end
+function frame:GetBottom() return self.bottom or config.windowY end
 function frame:ClearAllPoints() self.points = {} end
 function frame:SetPoint(...) self.points = { ... } end
 ChatFrame1 = frame
 UIParent = UIParent or {}
+function UIParent:GetLeft() return 10 end
+function UIParent:GetBottom() return 20 end
+function UIParent:GetEffectiveScale() return 0.75 end
+-- No geometry before the first position refresh: retain saved-coordinate fallback.
+module.positionFrame = nil
 module:RegisterMovers()
 local element = registered["MSUFSuite.chat/window"]
 assert(element, "the chat window has no Edit Mode mover")
@@ -203,6 +213,37 @@ eq(config.windowX, 42, "committed X")
 eq(config.windowY, 2, "committed Y")
 assert(element.restoreState(state), "undo refused")
 eq(config.windowX, 12, "undone X")
+for _, scale in ipairs({ 0.5, 1, 1.5 }) do
+    frame.scale, frame.left, frame.bottom = scale, 30 + 10 / scale, 210 + 20 / scale
+    module.positionFrame = frame
+    local liveState = element.captureState()
+    eq(liveState.values.windowX, 12, "capture retains saved undo X")
+    eq(liveState.values.windowY, 12, "capture retains saved undo Y")
+    assert(element.movePosition({ state = liveState, deltaX = 30 * scale, deltaY = -10 * scale, phase = "drag" }))
+    eq(frame.points[4], 60, "drag starts at visible X")
+    eq(frame.points[5], 200, "drag starts at visible Y")
+    eq(config.windowX, 12, "visible-origin preview does not save")
+    assert(element.movePosition({ state = liveState, deltaX = 30 * scale, deltaY = -10 * scale, phase = "commit" }))
+    eq(config.windowX, 60, "visible-origin committed X")
+    eq(config.windowY, 200, "visible-origin committed Y")
+    assert(element.restoreState(liveState))
+    eq(config.windowX, 12, "visible-origin undo X")
+    eq(config.windowY, 12, "visible-origin undo Y")
+    eq(controls.windowX.get(), 30, "popup reads visible X")
+    eq(controls.windowY.get(), 210, "popup reads visible Y")
+    assert(controls.windowX.set(60))
+    eq(config.windowX, 60, "numeric X applies requested value")
+    eq(config.windowY, 210, "numeric X preserves visible Y")
+    assert(element.restoreState(liveState))
+    assert(controls.windowY.set(200))
+    eq(config.windowX, 30, "numeric Y preserves visible X")
+    eq(config.windowY, 200, "numeric Y applies requested value")
+    assert(element.restoreState(liveState))
+end
+frame.scale, frame.left, frame.bottom, module.positionFrame = nil, nil, nil, nil
+eq(controls.windowX.positionAxis, "x", "X control identifies its coordinate axis")
+eq(controls.windowY.positionAxis, "y", "Y control identifies its coordinate axis")
+
 config.lockWindowPosition = false
 module:RegisterMovers()
 assert(nativeRecord.isEnabled(), "unlock did not hand the chat mover back to Blizzard")

@@ -51,7 +51,7 @@ local function Read(path)
 end
 AuraContainerSortMethod={ExpirationOnly=5}
 local ORDER={"Bootstrap.lua","Const.lua","Presets.lua","GuideProfiles.lua","Catalog.lua","CatalogSlices.lua","EntryFill.lua","Resolve.lua","ResolveStages.lua","Index.lua","Icons.lua","Masque.lua",
-    "TrackingBars.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua", "KickMark.lua","AuraGlows.lua","AuraLooks.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","ActionGlows.lua",
+    "TrackingBars.lua","Time.lua","GlowLines.lua","Effects.lua","AssistIcon.lua", "KickMark.lua","AuraGlows.lua","AuraLooks.lua","StackColors.lua","AuraButtons.lua","AuraPlaceholders.lua","AuraTimers.lua","AuraContainers.lua","Auras.lua","AuraRecipients.lua","ActionGlows.lua",
     "ActionUsableGlows.lua","ReadyPulse.lua","Alerts.lua","Grid.lua","FrameAnchors.lua","Layout.lua","Visibility.lua","Native.lua","Keybinds.lua","Preview.lua","Flush.lua","Settings.lua","Events.lua","Controller.lua","Editor.lua","Exports.lua"}
 local tocFiles=Support.TocFiles(root,ADDON)
 assert(#tocFiles==#ORDER,"runtime TOC must list all cooldown manager files")
@@ -447,6 +447,7 @@ GetRealmName=function() return "Realm" end
 UnitClass=function() return "Mage","MAGE",8 end
 -- The target is never friendly here (the aura contract drives that rule).
 UnitCanAssist=function() return false end
+UnitIsUnit=function(a,b) return a==b end
 RAID_CLASS_COLORS={MAGE={r=.25,g=.78,b=.92}}
 SlashCmdList={}
 local cvars={cooldownViewerEnabled="1",assistedCombatHighlight="0"}
@@ -2690,7 +2691,7 @@ do (function()
             label..": the conversion sizes "..(lines+1).." lines ("..tostring(conv.c2_y)..")")
     end
     -- Values outside 1..4 never reach the data string: automatic.
-    for _,bad in ipairs({0,5,2.5,"4",true}) do
+    for _,bad in ipairs({0,6,2.5,"4",true}) do
         Track(bad)
         assert(Codec.DecodeSpells(config.spellsData).e.b32==nil and b32.ov.auraUnit==nil and b32.unit=="target",
             "an invalid Track on value is dropped ("..tostring(bad)..")")

@@ -240,9 +240,12 @@ end
 -- sides. Blizzard sizes docked tabs again whenever it lays the dock out
 -- (FCFDock_UpdateTabs -> PanelTemplates_TabResize -> tab:SetWidth, also on
 -- a tab click), so C.DockGeometry puts the padded width back after it.
+-- Temporary tabs anchor their title 24px from the left for the conversation
+-- icon. Keep their native width: it includes that offset and fits the dock,
+-- while Blizzard bounds whisper text without measuring a secret name.
 local function ApplyTabWidth(self, visual, tab)
     local c, context = self.config, self.context
-    if c.tabPadding and c.tabPadding > 0 then
+    if c.tabPadding and c.tabPadding > 0 and not tab.conversationIcon then
         local width = visual.tabLabel:GetUnboundedStringWidth()
         if Finite(width) then
             context:Property(tab, "GetWidth", "SetWidth", width + 2 * c.tabPadding)

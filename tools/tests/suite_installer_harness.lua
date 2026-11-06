@@ -9,7 +9,13 @@ local function Widget(kind)
     local methods = {}
     function methods:SetScript(name, callback) self.scripts[name] = callback end
     function methods:GetScript(name) return self.scripts[name] end
-    function methods:HookScript(name, callback) self.scripts[name] = callback end
+    function methods:HookScript(name, callback)
+        local previous = self.scripts[name]
+        self.scripts[name] = function(...)
+            if previous then previous(...) end
+            callback(...)
+        end
+    end
     function methods:Show() self.shown = true end
     function methods:Hide()
         local was = self.shown
@@ -187,7 +193,7 @@ function H.Setup(options)
         if suite and suite.OnMSUFProfileLifecycle then suite.OnMSUFProfileLifecycle("delete", name) end
         return true
     end
-    MSUF_GetDefaultProfileForNewCharacters = function() return "Default" end
+    MSUF_GetDefaultProfileForNewCharacters = function() return options.default end
     MSUF_SetDefaultProfileForNewCharacters = function() return true end
     local Suite = {}
     for _, file in ipairs(TocFiles(options.root)) do

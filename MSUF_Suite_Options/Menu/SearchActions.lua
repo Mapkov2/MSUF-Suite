@@ -33,6 +33,8 @@ local EDITOR_ACTIONS = {
     { "actionbars", "editor", "editor.preset.grid", "Three rows" },
     { "actionbars", "editor", "editor.preset.column", "One column" },
     { "actionbars", "editor", "editor.move", "Move selected bar" },
+    { "actionbars", "editor", "editor.find", "Center Screen - Find my Bar" },
+    { "actionbars", "actionbars_module", "header.bindings", "Keybind Mode" },
     { "actionbars", "editor", "editor.bindings", "Key bindings" },
     { "actionbars", "editor", "editor.extraAbility", "Move extra action button" },
     { "damageMeter", "windows", "window.selected", "Window", "ephemeral", "dropdown" },

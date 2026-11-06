@@ -40,7 +40,7 @@ local Unholds, Placeholders = AuraButtons.Unholds, AuraButtons.Placeholders
 -- loads first); the tables it shares with the bar sync come along.
 local Containers = C.AuraContainers
 local Ids, UnitOf, OnUnit, TargetRow = Containers.Ids, Containers.UnitOf, Containers.OnUnit, Containers.TargetRow
-local FriendlyTarget = Containers.FriendlyTarget
+local FriendlyTarget, TargetIsPlayer = Containers.FriendlyTarget, Containers.TargetIsPlayer
 local Apply, Build, Show, Bar = Containers.Apply, Containers.Build, Containers.Show, Containers.Bar
 local Retire, Ensure, Place = Containers.Retire, Containers.Ensure, Containers.Place
 local live, overIcon, unseen = Containers.live, Containers.overIcon, Containers.unseen
@@ -86,8 +86,8 @@ local function RefreshTargets()
 end
 
 local function ReleaseFam(slot, fam)
-    Retire(slot, fam, "player")
-    Retire(slot, fam, "target")
+    local byUnit = live[slot] and live[slot][fam]
+    for unit in pairs(byUnit or EMPTY) do Retire(slot, fam, unit) end
 end
 
 -- hideReady of a cooldown entry, as the time layer reads it; placeholders
@@ -190,13 +190,13 @@ local function Needs(entries, aura, view)
     if need.label then need.timers = need.timers .. "L" end
 end
 
-local function Run(slot, fam, unit, role, fixed, view, n, force, offset, split)
-    local rec = Ensure(slot, fam, unit, role, fixed, view, false)
+local function Run(slot, fam, unit, role, fixed, view, n, force, offset, split, identity)
+    local rec = Ensure(slot, fam, unit, role, fixed, view, false, identity)
     if not rec then return end
     -- Filters, groups and new buttons change what shows: not aura events.
     Hush(rec)
     if not fixed then Place(rec, offset, split) end
-    if Build(rec, view, n) then return end
+    if Build(rec, view, n) then return rec end
     -- Sealed buttons refused the restyle; the structure is current. While
     -- auras are secret (M+ key, PvP match) the look waits for them to open
     -- (FlushPending): a new container per change would leak, since none is
@@ -205,13 +205,14 @@ local function Run(slot, fam, unit, role, fixed, view, n, force, offset, split)
     if not (force and quiet) then
         Auras.pending[slot] = true
         if quiet then Debounce() end
-        return
+        return rec
     end
-    Retire(slot, fam, unit)
-    rec = Ensure(slot, fam, unit, role, fixed, view, true)
+    Retire(slot, fam, identity or unit)
+    rec = Ensure(slot, fam, unit, role, fixed, view, true, identity)
     if not rec then return end
     if not fixed then Place(rec, offset, split) end
     Build(rec, view, n)
+    return rec
 end
 
 local function SyncAura(slot, view, plan, force)
@@ -272,6 +273,9 @@ local function SyncAura(slot, view, plan, force)
             Run(slot, "aura", unit, role, barMeta.fixed, view, n, force, (u == 2 and not side) and lines or 0, side)
         end
     end
+    if plan.hasRecipients or C.AuraRecipients.slots[slot] then
+        C.AuraRecipients.Sync(slot, "aura", view, plan, force, Run, Needs)
+    end
     Placeholders(slot, view, plan, barMeta, Containers.preview == true)
 end
 
@@ -329,6 +333,9 @@ function Auras.SyncOverlays(slot, force)
             Run(slot, "over", unit, "over", true, view, n, force, 0)
         end
     end
+    if plan.hasRecipients or C.AuraRecipients.slots[slot] then
+        C.AuraRecipients.Sync(slot, "over", view, plan, force, Run, Needs)
+    end
     RefreshTargets()
 end
 
@@ -360,18 +367,19 @@ end
 -- Target containers pause while the target is friendly (FriendlyTarget).
 -- SetEnabled is container-level (legal in combat), refreshes the container
 -- when it turns on and makes no call while the state holds.
-local function TargetEnabled(rec, friendly)
-    if rec.friendly ~= friendly then
-        rec.friendly = friendly
+local function TargetEnabled(rec, friendly, same)
+    if rec.friendly ~= friendly or rec.sameAsPlayer ~= same then
+        rec.friendly, rec.sameAsPlayer = friendly, same
         for k = 1, #rec.keys do Apply(rec, k) end
     end
     return not friendly or rec.helpfulTarget == true
 end
 local function React()
     local friendly = FriendlyTarget()
+    local same = TargetIsPlayer()
     for i = 1, #targets do
         local rec = targets[i]
-        local enabled = TargetEnabled(rec, friendly)
+        local enabled = TargetEnabled(rec, friendly, same)
         if rec.enabled ~= enabled then
             rec.enabled = enabled
             Hush(rec)
@@ -388,9 +396,10 @@ end
 function Auras.TargetChanged()
     if targets[1] == nil then return end
     local friendly = FriendlyTarget()
+    local same = TargetIsPlayer()
     for i = 1, #targets do
         local rec = targets[i]
-        local enabled = TargetEnabled(rec, friendly)
+        local enabled = TargetEnabled(rec, friendly, same)
         Hush(rec)
         if rec.enabled ~= enabled then
             rec.enabled = enabled
@@ -423,14 +432,14 @@ function Auras.OverlayShown(entry, on, icon)
     local fams = slot and live[slot]
     if not fams then return end
     local byUnit = fams.over
-    for u = 1, 2 do
-        local rec = byUnit[UNITS[u]]
-        local k = rec and rec.byAnchor[icon]
+    for _, rec in pairs(byUnit) do
+        local k = rec.byAnchor[icon]
         if k then
             local shut = not (on == true and entry ~= nil and rec.entry[k] == entry)
             if rec.shut[k] ~= shut then
                 rec.shut[k] = shut
                 Apply(rec, k)
+                C.AuraRecipients.Visibility(rec)
             end
         end
     end
@@ -449,6 +458,7 @@ function Auras.SetBarMouse(slot, on)
     if not fams then return end
     for _, rec in pairs(fams.aura) do Show(rec) end
     for _, rec in pairs(fams.over) do Show(rec) end
+    C.AuraRecipients.Watch()
 end
 
 -- PLAYER_REGEN_ENABLED, ADDON_RESTRICTION_STATE_CHANGED while something is
@@ -491,4 +501,5 @@ function Auras.SetPreview(on)
             Unholds(slot)
         end
     end
+    C.AuraRecipients.Watch()
 end

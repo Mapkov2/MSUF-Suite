@@ -191,7 +191,9 @@ function M:RegisterMovers()
     local registered = S.RegisterOwnedMover("chat", "window", {
         label = "Chat window", order = 870,
         getFrame = function() return ChatFrame1 end,
-        xKey = "windowX", yKey = "windowY", point = "BOTTOMLEFT",
+        xKey = "windowX", yKey = "windowY", point = "BOTTOMLEFT", capture = C.CaptureWindowPosition,
+        -- Numeric edits retain the other visible axis after a native layout change.
+        moveValues = {},
         isEnabled = function() return self.config.lockWindowPosition == true end,
     })
     local claimed = registered == true and self.config.lockWindowPosition == true

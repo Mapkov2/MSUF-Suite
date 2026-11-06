@@ -18,12 +18,10 @@ local function SelectionChanged(state, config)
             settings[key], changed = config[key], true
         end
     end
-    -- The class reminders' own switches matter while the master switch is on.
-    if config.classReminders then
-        for _, def in ipairs(NS.BuffReminderClassReminders) do
-            if settings[def.key] ~= config[def.key] then
-                settings[def.key], changed = config[def.key], true
-            end
+    -- Standalone Forever armor choices also matter with class reminders off.
+    for _, def in ipairs(NS.BuffReminderClassReminders) do
+        if (def.standalone or config.classReminders) and settings[def.key] ~= config[def.key] then
+            settings[def.key], changed = config[def.key], true
         end
     end
     return changed
@@ -46,8 +44,8 @@ local function SampleSpell(plan)
     return plan.casts[1]
 end
 
--- A sample class shows its class buff, two sample spells and, with the class
--- reminders on, one icon for each of that class's switched-on reminders.
+-- A sample class shows its class buff, two sample spells and one icon for
+-- each enabled reminder, including standalone Forever armor choices.
 local function ClassSample(state, sample, config)
     local entries = state.menuPreview.classEntries
     if not entries then entries = {}
@@ -65,16 +63,14 @@ local function ClassSample(state, sample, config)
             entry.group = i == 1 and buff ~= nil
         end
     end
-    if config.classReminders then
-        for _, def in ipairs(NS.BuffReminderClassReminders) do
-            local plan = R.ClassPlan(def)
-            if plan and def.class == sample[1] and config[def.key] ~= false then
-                count = count + 1
-                local entry = entries[count] or {}
-                entries[count] = entry
-                entry.kind, entry.category, entry.id = "spell", "class", SampleSpell(plan)
-                entry.previewTexture, entry.group = sample[6], false
-            end
+    for _, def in ipairs(NS.BuffReminderClassReminders) do
+        local plan = R.ClassPlan(def)
+        if plan and def.class == sample[1] and R.ClassReminderEnabled(config, def) then
+            count = count + 1
+            local entry = entries[count] or {}
+            entries[count] = entry
+            entry.kind, entry.category, entry.id = "spell", "class", SampleSpell(plan)
+            entry.previewTexture, entry.group = sample[6], false
         end
     end
     for i = #entries, count + 1, -1 do entries[i] = nil end

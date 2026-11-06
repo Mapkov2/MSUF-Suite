@@ -92,6 +92,7 @@ Check(reloaded.chatHistory == history and reloaded.profiles.Default ~= saved.pro
 local oldRoot = Suite.RootDB
 oldRoot.suiteGold = { ["Realm-Player"] = 1000 }
 oldRoot.installation, oldRoot.skinEnabled = { status = "complete" }, false
+oldRoot.characterInstallations = { Player = "complete", Alt = "skipped" }
 oldRoot.quarantinedProfiles = { { name = "Old", profile = {} } }
 local oldSkin = { profiles = { Raid = { theme = { private = "skin" } } } }
 MSUFSuiteDB, MSUFSuiteSkinDB = oldRoot, oldSkin
@@ -115,6 +116,7 @@ Check(MSUF_GlobalDB.profiles.Raid.player == "untouched" and legacy.profiles.Raid
 Check(oldRoot.suiteRecovery and Suite.RootDB.suiteRecovery == oldRoot.suiteRecovery
     and Suite.RootDB.suiteRuns == oldRoot.suiteRuns and Suite.RootDB.suiteChat == oldRoot.suiteChat
     and Suite.RootDB.suiteGold == oldRoot.suiteGold, "factory reset deleted the modules' runtime data")
-Check(Suite.RootDB.installation == nil and Suite.RootDB.skinEnabled == nil and Suite.RootDB.migration == nil
+Check(Suite.RootDB.installation == nil and Suite.RootDB.characterInstallations == nil
+    and Suite.RootDB.skinEnabled == nil and Suite.RootDB.migration == nil
     and Suite.RootDB.quarantinedProfiles == nil, "factory reset kept the old settings")
 print("Standalone suite database: " .. checks .. " checks passed")

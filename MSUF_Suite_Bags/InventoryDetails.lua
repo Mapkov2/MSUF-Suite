@@ -128,6 +128,8 @@ function Details.Index(index, query)
     if needsSets then ReadSets() end
     local ruleLevel, marker, track = Details.ruleLevel, c.showUpgradeMarker, c.showUpgradeTrack
     local gearLevel = ruleLevel or marker or c.sortMode == SORT.ITEM_LEVEL
+    local myArmor = c.category_myArmorSlot == true and (c.inventoryView == NS.BagsView.CATEGORIES
+        or not NS.Client.isForever and c.bankView == NS.BagsBankView.CATEGORIES)
     if c.category_collectibles then ReadToys(index.items) end
     local keyLevel, keyMap
     if not NS.Client.isForever and c.showKeystoneDetails then
@@ -141,6 +143,7 @@ function Details.Index(index, query)
         item.setLabel = item.setNames and item.setNames.label or nil
         local equipLoc = item.equipLoc
         if equipLoc and equipLoc ~= "" then
+            if myArmor then item.myArmorSlot = P.PlayerGear.Matches(item) end
             if gearLevel and item.ruleLevelLink ~= item.link then ReadLevel(item) end
             if marker then Marker.Read(item) end
             if track then ReadUpgrade(item) end
