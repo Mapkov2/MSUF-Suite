@@ -457,9 +457,14 @@ do
     module:RegisterMovers()
     local legacy = registered["MSUFSuite.chat/floating5"]
     assert(legacy.extraControls and #legacy.extraControls == 2, "legacy host has no numeric detached position fields")
-    local nativeDeleted = 0
+    local nativeDeleted, renames, layouts, title = 0, 0, 0, "Loot"
     function suite.PublicText(value) return type(value) == "string" end
-    function GetChatWindowInfo(index) return index == 4 and "Loot" or "Guild" end
+    function GetChatWindowInfo(index) return index == 4 and title or "Guild" end
+    function FCF_SetWindowName(frame, name)
+        eq(frame, loot, "rename changed another chat frame")
+        title, renames = name, renames + 1
+    end
+    function FCF_DockUpdate() layouts = layouts + 1 end
     function FCF_IsChatWindowIndexReserved(index) return index <= 3 end
     function FCF_IsChatWindowIndexActive(index) return _G["ChatFrame" .. index]:IsShown() end
     function IsBuiltinChatWindow() return false end
@@ -471,11 +476,21 @@ do
     eq(choices[1].index, 4, "wrong native tab eligible for deletion")
     combat = true
     suite.ChatDeleteTabs(choices)
+    assert(not suite.ChatRenameTab(choices[1], "Raid"), "rename accepted in combat")
     combat = false
     eq(nativeDeleted, 0, "delete accepted in combat")
+    assert(not suite.ChatRenameTab(choices[1], "  "), "rename accepted a blank name")
+    assert(suite.ChatRenameTab(choices[1], "Loot") and renames == 0 and layouts == 0, "same name caused a native write")
+    title = "Renamed elsewhere"
+    assert(not suite.ChatRenameTab(choices[1], "Raid"), "rename used a stale name snapshot")
+    title = "Loot"
     chat.FloatingWindowClosed(loot)
     suite.ChatDeleteTabs(choices)
     eq(nativeDeleted, 0, "delete accepted a reused native slot")
+    assert(not suite.ChatRenameTab(choices[1], "Raid"), "rename accepted a reused slot with the same title")
+    suite.ChatDeletableTabs(choices)
+    assert(suite.ChatRenameTab(choices[1], "  Raid Loot  "), "valid native rename was refused")
+    assert(title == "Raid Loot" and renames == 1 and layouts == 1, "rename did not save through Blizzard and update the dock")
     local rebuilt = 0
     CURRENT_CHAT_FRAME_ID, DEFAULT_CHAT_FRAME = 4, { GetID = function() return 1 end }
     ChatConfigFrame = {

@@ -90,11 +90,15 @@ local function Tabs(parts, dock, frame)
         nativeFrame = nativeFrame or index == 1 and frame
         local name = nativeFrame and nativeFrame:GetName()
         local tab = S.PublicText(name) and _G[name .. "Tab"]
+        local info = parts.nativeTabs[index]
+        local tabID
         if tab then
             local width, height = tab:GetWidth(), tab:GetHeight()
             if S.Finite(width) and width > 0 and S.Finite(height) and height > 0 then
-                local info = parts.nativeTabs[index] or {}
+                info = info or {}
                 parts.nativeTabs[index] = info
+                local id = nativeFrame:GetID()
+                if S.Finite(id) then tabID = id end
                 changed = Store(info, "width", width) or changed
                 changed = Store(info, "height", height) or changed
                 changed = Store(info, "selected", nativeFrame == frame) or changed
@@ -103,6 +107,10 @@ local function Tabs(parts, dock, frame)
                 local label = tab.Text:GetText()
                 if S.PublicText(label) then changed = Store(info, "label", label) or changed end
             end
+        end
+        if info then
+            changed = Store(info, "tabID", tabID) or changed
+            changed = Store(info, "generation", tabID and C.TabGeneration(tabID)) or changed
         end
     end
     for index = count + 1, #parts.nativeTabs do parts.nativeTabs[index] = nil end
@@ -181,6 +189,7 @@ end
 function S.ChatWatchPreview(owner, callback, frame)
     listeners[owner] = callback
     if callback and not hooked then
+        C.WatchFloatingClosures()
         hooked = true
         hooksecurefunc("FCF_SetChatWindowFontSize", NativeChanged)
         hooksecurefunc("FCFDock_SelectWindow", NativeChanged)

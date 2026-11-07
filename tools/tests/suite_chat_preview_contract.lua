@@ -681,6 +681,13 @@ nav:GetScript("OnSizeChanged")(nav, nav:GetWidth(), nav:GetHeight())
 Check(nav:GetHeight() > 26 and (ui.navigationHeight or 0) > 0, "narrow Chat topics do not wrap")
 local _, _, _, _, viewportY = ui.viewport:GetPoint(1)
 Check(viewportY == -42 - ui.navigationHeight, "wrapped topics cover the preview")
+local divider = assert(topics.toolbar and topics.toolbar.divider, "Chat is missing the tab divider")
+local _, owner, anchor, _, gap = divider:GetPoint(1)
+local _, _, _, _, rowTop = nav:GetPoint(1)
+Check(topics.toolbar:IsVisible() and divider:IsShown() and owner == nav and anchor == "BOTTOMLEFT" and gap < 0,
+    "Chat divider is not below the wrapped topics")
+Check(rowTop - nav:GetHeight() + gap - divider:GetHeight() >= viewportY,
+    "Chat divider overlaps the preview")
 for _, item in ipairs(nav.items) do
     local _, _, _, x, y = item.button:GetPoint(1)
     Check(x >= 0 and x + item.button:GetWidth() <= nav:GetWidth() and y <= 0, "wrapped topic escaped its row")
@@ -919,7 +926,8 @@ do
     Check(rail.create._msuf2Success and rail.create:IsEnabled(), "preview lacks a green native tab action")
     rail.create:GetScript("OnClick")(rail.create, "LeftButton")
     Check(tabDialogs == 1, "preview create did not open the naming dialog")
-    Check(rail.delete._msuf2Danger and not rail.delete:IsEnabled(), "preview delete is active with reserved tabs only")
+    Check(rail.delete._msuf2Danger and not rail.delete:IsEnabled() and not rail.rename:IsEnabled(),
+        "preview tab actions are active with reserved tabs only")
     tabSlot = false
     ui.runtimeRefresh()
     rail.create:GetScript("OnClick")(rail.create, "LeftButton")
@@ -963,6 +971,65 @@ do
     env.ChatFrame5 = trade
     local names = { [3] = "Guild", [4] = "Loot", [5] = "Trade" }
     env.GetChatWindowInfo = function(index) return names[index] end
+    do
+        local actions, rename, writes = {}, nil, 0
+        local oldMenu, oldAsk = P.AnchoredContextMenu, P.AskText
+        local edit = env.CreateFrame("EditBox", nil, env.UIParent)
+        edit.HighlightText = function(self) self.highlighted = true end
+        P.AnchoredContextMenu = function(owner, generator)
+            Check(owner == rail.rename, "rename list opened under the wrong button")
+            generator(owner, { CreateTitle = function() end, CreateButton = function(_, label, pick) actions[label] = pick end })
+        end
+        P.AskText = function(key, _, onAccept, max)
+            Check(key == "chat-rename-tab" and max == 31, "rename missed the chat name prompt or limit")
+            rename = onAccept
+            return { GetEditBox = function() return edit end }
+        end
+        env.FCF_SetWindowName = function(frame, name)
+            local index = frame == trade and 5 or frame == loot and 4
+            Check(index, "rename tried to change a built-in or temporary tab")
+            names[index], writes = name, writes + 1
+        end
+        ui.runtimeRefresh()
+        Check(rail.rename:IsEnabled(), "the fixed rename action was disabled with custom tabs")
+        rail.rename:GetScript("OnClick")(rail.rename, "LeftButton")
+        Check(actions["Loot  #4"] and actions["Trade  #5"] and not actions["Guild  #3"] and not rename,
+            "the picker did not list exactly the docked and detached custom tabs")
+        actions["Trade  #5"]()
+        Check(rename and edit:GetText() == "Trade" and edit.highlighted and writes == 0, "the current name was not prefilled")
+        rename("Trade News")
+        Check(names[5] == "Trade News" and names[4] == "Loot" and writes == 1, "the picker renamed the wrong tab")
+        function trade:GetID() return 5 end
+        runtime.Chat.FloatingWindowClosed(trade)
+        rename = nil
+        actions["Trade  #5"]()
+        Check(not rename and writes == 1, "a stale chooser row opened a prompt for the reused slot")
+
+        local tab = parts.tabs[2]
+        local handle
+        for _, candidate in ipairs(ui.handles) do if candidate.region == tab then handle = candidate break end end
+        assert(handle, "the visible tab has no handle")
+        local function RightClick()
+            handle:GetScript("OnMouseDown")(handle, "RightButton")
+            handle:GetScript("OnMouseUp")(handle, "RightButton")
+            handle:GetScript("OnClick")(handle, "RightButton")
+        end
+        tab.previewTabID, tab.previewTabGeneration = 4, runtime.Chat.TabGeneration(4)
+        rename = nil
+        RightClick()
+        Check(rename and edit:GetText() == "Loot" and ui.viewport._selectedHandle == handle,
+            "right-click did not rename the exact tab directly in the preview")
+        rename("Raid Loot")
+        Check(names[4] == "Raid Loot" and rail.card:GetText() == "Raid Loot  #4" and writes == 2,
+            "renaming did not immediately update the detached preview")
+        tab.previewTabID, tab.previewTabGeneration = 4, runtime.Chat.TabGeneration(4) - 1
+        rename = nil
+        RightClick()
+        Check(not rename, "a stale painted tab opened a prompt for its replacement")
+        names[4], names[5] = "Loot", "Trade"
+        ui.runtimeRefresh()
+        P.AnchoredContextMenu, P.AskText = oldMenu, oldAsk
+    end
     local confirm, question
     local popped = {}
     local context, confirmDialog, openPicker = P.ContextMenu, P.Confirm, P.OpenDeletePicker

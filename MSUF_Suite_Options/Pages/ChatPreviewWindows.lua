@@ -21,6 +21,52 @@ local function OpenDeleteMenu(ui, button)
     end)
 end
 
+local function Rename(ui, row)
+    if ui.inCombat or P.Combat() or not ui.header:IsVisible() or not ui.ctx.wrapper:IsVisible() then return false end
+    local dialog = P.AskText("chat-rename-tab", Tr("Rename Chat Tab"), function(name)
+        if S.ChatRenameTab(row, name) then
+            ui.runtimeRefresh()
+        elseif P.M.ShowStatusFeedback then
+            P.M.ShowStatusFeedback(Tr("Action failed"), "danger", 1.5)
+        end
+    end, 31)
+    if not dialog then return false end
+    local edit = dialog:GetEditBox()
+    edit:SetText(row.title)
+    edit:HighlightText()
+    return true
+end
+
+local function FindTab(id, generation)
+    local rows = {}
+    S.ChatDeletableTabs(rows)
+    for _, row in ipairs(rows) do
+        if row.index == id and row.generation == generation then return row end
+    end
+end
+
+function E.RenamePreviewTab(ui, tab)
+    if not tab.previewTabID or ui.inCombat or P.Combat() then return false end
+    local row = FindTab(tab.previewTabID, tab.previewTabGeneration)
+    return row and Rename(ui, row) or false
+end
+
+local function OpenRenameMenu(ui, button)
+    if ui.inCombat or P.Combat() then return end
+    local rows = {}
+    if S.ChatDeletableTabs(rows) == 0 then return end
+    P.AnchoredContextMenu(button, function(_, root)
+        root:CreateTitle(Tr("Rename Chat Tab"))
+        for _, row in ipairs(rows) do
+            root:CreateButton(row.title .. "  #" .. row.index, function()
+                if ui.inCombat or P.Combat() then return end
+                local current = FindTab(row.index, row.generation)
+                if current then Rename(ui, current) end
+            end)
+        end
+    end)
+end
+
 local function PaintCard(rail)
     local row = rail.selected
     if not row then return end
@@ -46,6 +92,9 @@ function E.Build(ui)
         end
     end)
     P.HM.SkipHistoryCheckpoint(rail.create)
+    rail.rename = T.Button(panel, Tr("Rename Chat Tab"), 236, 26)
+    rail.rename:SetScript("OnClick", function(button) OpenRenameMenu(ui, button) end)
+    P.HM.SkipHistoryCheckpoint(rail.rename)
     rail.delete = T.RoleButton(panel, Tr("Delete Chat Tabs"), "destructive", 236, 26)
     rail.delete:SetScript("OnClick", function(button) OpenDeleteMenu(ui, button) end)
     P.HM.SkipHistoryCheckpoint(rail.delete)
@@ -67,7 +116,9 @@ end
 function E.Refresh(ui)
     local rail = ui.windowRail
     rail.create:SetEnabled(not ui.inCombat and S.ChatCanCreateTab and S.ChatCanCreateTab() or false)
-    rail.delete:SetEnabled(not ui.inCombat and S.ChatDeletableTabs and S.ChatDeletableTabs() > 0 or false)
+    local editable = not ui.inCombat and S.ChatDeletableTabs and S.ChatDeletableTabs() > 0 or false
+    rail.rename:SetEnabled(editable)
+    rail.delete:SetEnabled(editable)
     local previous = rail.selected and rail.selected.value
     local count = S.ChatDetachedWindows and S.ChatDetachedWindows(rail.rows) or 0
     local selected
@@ -92,15 +143,18 @@ function E.Layout(ui, offset)
     rail.panel:SetPoint("TOPLEFT", ui.viewport, "BOTTOMLEFT", 0, -8 - offset)
     if rail.width ~= width then
         rail.width = width
-        local wide = width >= 535
-        local inline = not wide and width >= 400
-        local buttonWidth = inline and (width - 6) / 2 or math.min(236, width)
+        local wide = width >= 900
+        local inline = width >= 552
+        local buttonWidth = inline and ((wide and 552 or width) - 12) / 3 or math.min(236, width)
         rail.create:SetWidth(buttonWidth)
+        rail.rename:ClearAllPoints()
+        rail.rename:SetPoint("TOPLEFT", rail.panel, "TOPLEFT", inline and buttonWidth + 6 or 0, inline and 0 or -30)
+        rail.rename:SetWidth(buttonWidth)
         rail.delete:ClearAllPoints()
-        rail.delete:SetPoint("TOPLEFT", rail.panel, "TOPLEFT", inline and buttonWidth + 6 or 0, inline and 0 or -30)
+        rail.delete:SetPoint("TOPLEFT", rail.panel, "TOPLEFT", inline and 2 * (buttonWidth + 6) or 0, inline and 0 or -60)
         rail.delete:SetWidth(buttonWidth)
-        rail.actionHeight = inline and 26 or 56
-        local x, y = wide and 244 or 0, wide and 0 or -(rail.actionHeight + 6)
+        rail.actionHeight = inline and 26 or 86
+        local x, y = wide and 560 or 0, wide and 0 or -(rail.actionHeight + 6)
         local available = width - x
         local pickerWidth = math.min(172, math.floor(available * .57))
         rail.cardWidth = available - pickerWidth - 8

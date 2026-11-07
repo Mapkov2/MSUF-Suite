@@ -77,6 +77,7 @@ Check(promptX == 15, "native input header inset differs")
 
 -- Native dock origins and selection are data, not always first-tab/(0,3).
 local second = env.CreateFrame("Frame", "ParitySnapshotSecond", env.UIParent)
+function second:GetID() return 7 end
 second:SetSize(610, 360)
 second:SetFont("NativeMessage.ttf", 18, "")
 second:SetShadowColor(.2, .3, .4, .7)
@@ -103,6 +104,8 @@ Check(not ui.parts.tabs[1].visual.tabLine:IsShown() and ui.parts.tabs[2].visual.
 local _, _, _, groupX, groupY = ui.parts.tabGroup:GetPoint(1)
 Check(groupX == dock:GetLeft() - second:GetLeft() and groupY == dock:GetBottom() - second:GetTop(), "native dock origin is replaced by fixed (0,3)")
 Check(ui.parts.tabs[1].Text:GetText() == tab.Text:GetText() and ui.parts.tabs[2].Text:GetText() == secondTab.Text:GetText(), "native tab labels differ")
+Check(ui.parts.tabs[2].previewTabID == 7 and ui.parts.tabs[2].previewTabGeneration == C.TabGeneration(7),
+    "the second displayed tab did not keep its native ID and generation")
 c.tabPadding = 1
 C.ApplyTabGeometry(M, { tabLabel = tab.Text }, tab)
 C.ApplyTabGeometry(M, { tabLabel = secondTab.Text }, secondTab)

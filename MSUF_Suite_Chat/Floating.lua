@@ -45,24 +45,34 @@ function S.ChatDetachedWindows(rows)
     return count
 end
 
-local function Deletable(index)
+function C.TabGeneration(index)
+    return generations[index] or 0
+end
+
+local function Editable(index)
     local frame = _G["ChatFrame" .. index]
     if frame and not NS.Safety.IsForbidden(frame) and not frame.isTemporary
         and not FCF_IsChatWindowIndexReserved(index) and not IsBuiltinChatWindow(frame)
         and FCF_IsChatWindowIndexActive(index) then return frame end
 end
 
--- The preview's availability check needs only the count. Snapshot names and
--- generations when the user opens the delete menu.
+local function CurrentTab(row)
+    local index = row.index
+    local frame = Editable(index)
+    if frame and row.generation == C.TabGeneration(index) and row.title == FloatingTitle(index) then return frame end
+end
+
+-- The preview's availability check needs only the count. Capture the name and
+-- slot generation before offering an action that can outlive the current tab.
 function S.ChatDeletableTabs(rows)
     if rows then C.WatchFloatingClosures() end
     local count = 0
     for index = 2, C.MaxFloatingWindows() do
-        if Deletable(index) then
+        if Editable(index) then
             count = count + 1
             if rows then
                 local row = rows[count] or {}
-                row.index, row.title, row.generation = index, FloatingTitle(index), generations[index] or 0
+                row.index, row.title, row.generation = index, FloatingTitle(index), C.TabGeneration(index)
                 rows[count] = row
             end
         end
@@ -78,15 +88,28 @@ function S.ChatDeleteTabs(rows)
     local selected = FCF_GetCurrentChatFrameID()
     local closed, selectedClosed
     for _, row in ipairs(rows) do
-        local index = row.index
-        local frame = Deletable(index)
-        if frame and row.generation == (generations[index] or 0) and row.title == FloatingTitle(index) then
+        local frame = CurrentTab(row)
+        if frame then
             FCF_PopInWindow(frame)
             closed = true
-            if selected == index then selectedClosed = true end
+            if selected == row.index then selectedClosed = true end
         end
     end
     if closed then C.RefreshTabFilters(selectedClosed) end
+end
+
+function S.ChatRenameTab(row, name)
+    if NS.InCombat() or not S.PublicText(name) then return false end
+    name = name:match("^%s*(.-)%s*$")
+    if name == "" then return false end
+    local frame = CurrentTab(row)
+    if not frame then return false end
+    if name ~= row.title then
+        FCF_SetWindowName(frame, name)
+        FCF_DockUpdate()
+        C.RefreshTabFilters(false)
+    end
+    return true
 end
 
 function S.ChatOpenDetachedMover(index)

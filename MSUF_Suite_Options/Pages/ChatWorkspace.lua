@@ -78,7 +78,8 @@ function E.Begin(ctx)
     local preview = P.ChatPreview.Build(ctx, builder)
     local grouped, ui = P.MenuWorkspace.Builder(ctx, {
         page = PAGE, module = ID, title = "Chat", builder = builder,
-        header = preview and preview.header, height = preview and preview.header:GetHeight() or 310,
+        header = preview and preview.header, toolbar = preview and preview.toolbar,
+        height = preview and preview.header:GetHeight() or 310,
         tabs = TABS, buildSelector = Selector,
     })
     ctx.chatWorkspace = ui

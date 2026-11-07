@@ -39,6 +39,7 @@ local function Tabs(parts, c, top)
             tab.visual = visual
         end
         local native = parts.nativeTabs and parts.nativeTabs[index]
+        tab.previewTabID, tab.previewTabGeneration = native and native.tabID, native and native.generation
         tab:SetShown(not parts.nativeTabCount or index <= parts.nativeTabCount)
         tab:SetScale(native and native.scale or 1)
         tab.Text:ClearAllPoints()

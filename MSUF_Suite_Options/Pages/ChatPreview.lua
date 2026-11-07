@@ -273,7 +273,11 @@ local function BindInteractions(ui)
                 P.S.ChatPaintPreviewSidebarHover(ui.parts, handle.region.entry)
             end
         end,
-        click = function(handle, _, moved) if not moved then E.Select(ui, handle, true) end end,
+        click = function(handle, button, moved)
+            if moved then return end
+            local rename = button == "RightButton" and Windows.RenamePreviewTab(ui, handle.region)
+            E.Select(ui, handle, not rename)
+        end,
         drag = function(handle, phase) ui.dragHandle(ui, handle, phase) end,
         select = function(handle) E.Selected(ui, handle) end,
     })
@@ -359,9 +363,9 @@ function E.Build(ctx, builder)
             "sidebarGap", "scrollButtonPlace", "tabHeight", "tabPanelGap", "inputTop", "inputHeight",
             "inputWidth", "sidebarPanel", "panelAlpha" }
     end
-    local header = P.W.FixedPreviewSection(ctx, builder, { title = P.Tr("Preview"), height = 310, gap = 8 })
+    local header, toolbar = P.W.FixedPreviewSection(ctx, builder, { title = P.Tr("Preview"), height = 310, gap = 8 })
     if not header then return end
-    local ui = { ctx = ctx, header = header, spec = { height = 176 }, targets = {},
+    local ui = { ctx = ctx, header = header, toolbar = toolbar, spec = { height = 176 }, targets = {},
         width = math.max(240, (HM.GetSectionWidth(header) or builder.width or 720) - 32) }
     ctx.chatPreviewUI = ui
     ui.viewport = CreateFrame("Frame", nil, header)
