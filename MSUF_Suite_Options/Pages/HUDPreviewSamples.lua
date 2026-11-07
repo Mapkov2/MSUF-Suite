@@ -164,7 +164,7 @@ local function Announcement(ui, mode)
     local art = ui.bannerArt
     Art.Layout(art, c)
     local r, g, b = Color(c, "backgroundColor", { .02, .025, .035 }, "surface")
-    art.background:SetColorTexture(r, g, b, c.backgroundOpacity / 100)
+    Art.PaintBackground(art, r, g, b, c.backgroundOpacity / 100)
     Art.Tint(art, unpack(color))
     local inset = art.inset
     local title = mode == "level" and string.format(Tr("LEVEL %d"), 70) or Tr(sample[1])

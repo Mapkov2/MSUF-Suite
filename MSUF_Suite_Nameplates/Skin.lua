@@ -179,7 +179,8 @@ local function PaintHealth(health, visual, prefix)
         Color(visual.back, backColor, backAlpha)
         visual.backColor, visual.backAlpha = backColor, backAlpha
     end
-    Border(visual, health, c[keys.BorderEnabled] == false and 0 or c[keys.BorderSize], c[keys.BorderColor])
+    local borderSize = (c.hideHealthBarBorders or c[keys.BorderEnabled] == false) and 0 or c[keys.BorderSize]
+    Border(visual, health, borderSize, c[keys.BorderColor])
     visual.back:SetShown(c[keys.BackdropEnabled] ~= false and backAlpha > 0)
     PaintFill(health, visual, prefix)
     local facts = M.facts[health]
@@ -273,7 +274,8 @@ local function Paint(uf)
     Level.PaintNative(uf, prefix)
     Level.Paint(uf, prefix, unit)
     Layout.Apply(uf, prefix, M.config)
-    if M.config.look == LOOK_BLIZZARD or not prefix or not M.config[prefix] then
+    local styled = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix] == true
+    if not styled then
         if M.targetUF == uf then M.targetUF = nil end
         HideVisual(M.visuals[health])
         if Text.shared and prefix and M.config[prefix] then
@@ -281,14 +283,13 @@ local function Paint(uf)
         else
             RestorePlateFonts(uf, health, cast)
         end
-        if Selection.inUse then Selection.Apply(health, false) end
     else
         local visual = Visual(health, uf)
         PaintHealth(health, visual, prefix)
         PaintTarget(uf, health, visual, prefix)
         PaintFonts(uf, health, cast, prefix)
-        if Selection.inUse then Selection.Apply(health, true, uf, prefix) end
     end
+    if Selection.inUse then Selection.Apply(health, styled == true, uf, prefix) end
     if Decor.inUse then Decor.Paint(uf, health, cast, prefix, unit) end
     -- Last: the role tint, arrows and fonts come first whatever the DoT
     -- colors do (AuraColors.lua).

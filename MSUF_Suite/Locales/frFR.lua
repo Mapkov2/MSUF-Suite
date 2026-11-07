@@ -5897,4 +5897,5 @@ T("Choose how Blizzard chat scrolls, colors names, shows whispers and fades mess
 T("Delete bars", "Supprimer des barres")
 T("Delete selected bars", "Supprimer les barres sélectionnées")
 T("Delete these bars?", "Supprimer ces barres ?")
+T("Hide health bar borders", "Masquer les bordures des barres de vie")
 T("Show Blizzard health bar border", "Afficher la bordure Blizzard de la barre de vie")

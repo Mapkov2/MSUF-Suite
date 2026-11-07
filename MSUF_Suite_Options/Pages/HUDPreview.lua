@@ -115,12 +115,16 @@ local function Paint(ui)
     if not ui.id or not ui.host:IsVisible() then return end
     ui.config, ui.used, ui.fillsUsed = S.Config(ui.id), 0, 0
     if ui.afk then ui.afk.host:Hide() end
-    local previousArt = ui.bannerArt and ui.bannerArt.requested
+    local art = ui.bannerArt
+    local previousArt = art and art.requested
+    local previousOpacity = art and art.backgroundOpacity
     local width, height = Preview.Render[ui.id](ui, modes[ui.id])
     if ui.id == "announcements" then
-        if previousArt ~= ui.bannerArt.requested then Preview.Stop(ui) end
-    elseif ui.bannerArt then
-        Art.Layout(ui.bannerArt)
+        art = ui.bannerArt
+        if previousArt ~= art.requested or previousOpacity ~= art.backgroundOpacity then Preview.Stop(ui) end
+    elseif art then
+        Art.Layout(art)
+        art.background:Hide()
     end
     for i = ui.used + 1, #ui.labels do ui.labels[i]:Hide() end
     for i = ui.fillsUsed + 1, #ui.fills do ui.fills[i]:Hide() end

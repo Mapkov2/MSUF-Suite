@@ -584,6 +584,13 @@ do
     module:Refresh()
     assert(visual.back:IsShown() and visual.borderSize == 1 and visual.edges[1]:IsShown(),
         "skin backdrop/border switches did not restore the live layers")
+    module.config.hideHealthBarBorders = true
+    module:Refresh()
+    assert(visual.back:IsShown() and visual.borderSize == 0 and not visual.edges[1]:IsShown(),
+        "borderless mode did not remove the live Suite border while keeping the bar backdrop")
+    module.config.hideHealthBarBorders = false
+    module:Refresh()
+    assert(visual.borderSize == 1 and visual.edges[1]:IsShown(), "borderless mode changed the stored Suite border")
     scans = settingsScans
 end
 do

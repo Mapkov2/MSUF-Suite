@@ -40,6 +40,7 @@
 - Select, drag, and nudge text directly in the XP preview. Edit offsets and jump to the selected text's settings from the preview.
 - Start a fresh XP session on a new login and preserve it across a UI reload, including when the optional XP module is enabled after login. Keep preview samples separate from live session statistics.
 - Add Classic Lines, Twin Arrows, Gilded Edges, and Soft Glow artwork for announcement banners. The HUD preview can switch artwork, hide it, and replay the banner with the same artwork as the live HUD.
+- Give announcement artwork its own frame and keep the banner background opacity independent. Edits preserve a live banner's display time and bring the static sample back after preview playback.
 
 #### WoW Forever world map and gathering
 
@@ -63,6 +64,7 @@
 - On older compatible hosts, support full, clipped, abbreviated, and abbreviated-and-clipped names, with a configurable character limit, clip direction, and ellipsis. Friendly and enemy name colors can be customized independently.
 - Apply shared text formatting and typography consistently between live nameplates and the preview, including supported character-name display options.
 - Add castbar width adjustments and keep the native castbar border, height, and spell icon aligned. Add separate friendly and enemy Blizzard health bar border toggles on Forever.
+- Add Hide Health Bar Borders for Blizzard and styled nameplates, including health, target, and selection borders. Find it from search and see the result in the preview.
 - Improve level-number and badge behavior on name-only plates and refresh name styling as Blizzard reuses plates. Update preview castbar sizing, target decoration, and text positioning.
 
 #### Bags, Macros, and other tools

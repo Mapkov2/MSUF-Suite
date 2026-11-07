@@ -19,7 +19,7 @@ local plates = setmetatable({}, { __mode = "k" })
 local badges = setmetatable({}, { __mode = "k" })
 local hookedBadges = setmetatable({}, { __mode = "k" })
 local border, dim, dimAlpha, targetRGB, focusRGB = KEEP, KEEP, 1, nil, nil
-local active, hideEnemyBackground, hideFriendlyBackground = false, false, false
+local active, hideAll, hideEnemyBackground, hideFriendlyBackground = false, false, false, false
 local revision, hooked = 0, false
 local original
 
@@ -48,17 +48,28 @@ local function CustomColor(health)
     return (isFocus and not isTarget) and focusRGB or targetRGB
 end
 
+-- The textures stay anchored and Blizzard still owns their shown state.
+local function HiddenAlpha(texture, originalAlpha, hide)
+    if hide and originalAlpha == nil then
+        local alpha = texture:GetAlpha()
+        if NS.Finite(alpha) then
+            texture:SetAlpha(0)
+            return alpha
+        end
+    elseif not hide and originalAlpha ~= nil then
+        texture:SetAlpha(originalAlpha)
+        return nil
+    end
+    return originalAlpha
+end
+
 local function PaintBorder(owner, state, colorOnly, badge)
     local frame = owner.selectedBorder
     if Safe(frame) then
         if not colorOnly then
-            local alpha = border == HIDE and 0 or 1
-            if state.border ~= alpha then
-                frame:SetAlpha(alpha)
-                state.border = alpha
-            end
+            state.border = HiddenAlpha(frame, state.border, state.mode == HIDE)
         end
-        if border == CUSTOM then
+        if state.mode == CUSTOM then
             local rgb = CustomColor(owner)
             frame:SetVertexColor(rgb[1], rgb[2], rgb[3])
             state.colored = true
@@ -72,9 +83,11 @@ end
 
 local function Paint(health, state, colorOnly)
     PaintBorder(health, state, colorOnly)
+    if colorOnly then return end
+    local mode = state.styled and dim or KEEP
     local overlay = health.deselectedOverlay
-    if not colorOnly and Safe(overlay) then
-        local alpha = dim == HIDE and 0 or dim == CUSTOM and dimAlpha or 1
+    if (mode ~= KEEP or state.dim) and Safe(overlay) then
+        local alpha = mode == HIDE and 0 or mode == CUSTOM and dimAlpha or 1
         if state.dim ~= alpha then
             overlay:SetAlpha(alpha)
             state.dim = alpha
@@ -84,14 +97,14 @@ end
 
 local function OnUpdateBadge(badge)
     local state = badges[badge]
-    if state and border == CUSTOM then PaintBorder(badge, state, true, true) end
+    if state and state.mode == CUSTOM then PaintBorder(badge, state, true, true) end
 end
 
 local function RestoreBorder(owner, state, badge)
     if not Safe(owner) then return end
     local frame = owner.selectedBorder
     if not Safe(frame) then return end
-    if state.border == 0 then frame:SetAlpha(1) end
+    HiddenAlpha(frame, state.border, false)
     if state.colored then
         local color = NativeColor(owner, badge)
         if color then frame:SetVertexColor(color.r, color.g, color.b) end
@@ -99,20 +112,21 @@ local function RestoreBorder(owner, state, badge)
 end
 
 local function PaintBadge(state, badge)
-    if state.badge and (state.badge ~= badge or border == KEEP) then
+    if state.badge and (state.badge ~= badge or state.mode == KEEP) then
         RestoreBorder(state.badge, badges[state.badge], true)
         badges[state.badge], state.badge = nil, nil
     end
-    if border == KEEP or not Safe(badge) or not Safe(badge.selectedBorder) then return end
+    if state.mode == KEEP or not Safe(badge) or not Safe(badge.selectedBorder) then return end
     local visual = badges[badge]
     if not visual then
         visual = {}
         badges[badge], state.badge = visual, badge
     end
-    if border == CUSTOM and not hookedBadges[badge] and badge.UpdateSelectionBorder then
+    if state.mode == CUSTOM and not hookedBadges[badge] and badge.UpdateSelectionBorder then
         hooksecurefunc(badge, "UpdateSelectionBorder", OnUpdateBadge)
         hookedBadges[badge] = true
     end
+    visual.mode = state.mode
     PaintBorder(badge, visual, false, true)
 end
 
@@ -121,23 +135,14 @@ end
 local function PaintBackground(health, state, hide)
     local texture = health.bgTexture
     if not Safe(texture) then return end
-    if hide and state.background == nil then
-        local alpha = texture:GetAlpha()
-        if NS.Finite(alpha) then
-            state.background = alpha
-            texture:SetAlpha(0)
-        end
-    elseif not hide and state.background ~= nil then
-        texture:SetAlpha(state.background)
-        state.background = nil
-    end
+    state.background = HiddenAlpha(texture, state.background, hide)
 end
 
 -- Runs after Blizzard's own update on every target or focus change: only a
 -- styled plate repaints, and only its border color (Blizzard just set it).
 local function OnUpdateSelection(health)
     local state = plates[health]
-    if state and border == CUSTOM then Paint(health, state, true) end
+    if state and state.mode == CUSTOM then Paint(health, state, true) end
 end
 
 -- One hook per method and session (a secure hook cannot be removed), first
@@ -156,7 +161,7 @@ end
 
 local function Restore(health, state)
     plates[health] = nil
-    if not active and not hideEnemyBackground and not hideFriendlyBackground and next(plates) == nil then
+    if not active and not hideAll and not hideEnemyBackground and not hideFriendlyBackground and next(plates) == nil then
         Selection.inUse = false
     end
     RestoreBorder(health, state)
@@ -176,9 +181,10 @@ function Selection.Configure(config)
     dim = skin and config.selectionDim or KEEP
     dimAlpha = (config.selectionDimPercent or 50) / 100
     active = border ~= KEEP or dim ~= KEEP
+    hideAll = config.hideHealthBarBorders == true
     hideEnemyBackground = skin and NS.Client.isForever and config.enemy and config.enemyNativeBorderEnabled == false
     hideFriendlyBackground = skin and NS.Client.isForever and config.friendly and config.friendlyNativeBorderEnabled == false
-    Selection.inUse = active or hideEnemyBackground or hideFriendlyBackground or next(plates) ~= nil
+    Selection.inUse = active or hideAll or hideEnemyBackground or hideFriendlyBackground or next(plates) ~= nil
     -- Profiles saved before these settings existed have no colors yet.
     targetRGB = { NS.RGB(config.selectionTargetColor or "ffffff") }
     focusRGB = { NS.RGB(config.selectionFocusColor or "ff66ff") }
@@ -189,8 +195,9 @@ end
 -- checked: styled is false for a plate whose side the skin leaves alone.
 function Selection.Apply(health, styled, uf, prefix)
     local state = plates[health]
-    local hideBackground = prefix == "enemy" and hideEnemyBackground or prefix == "friendly" and hideFriendlyBackground
-    if not styled or not (active or hideBackground) then
+    local sideBackground = prefix == "enemy" and hideEnemyBackground or prefix == "friendly" and hideFriendlyBackground
+    local hideBackground = hideAll or styled and sideBackground
+    if not hideAll and not (styled and (active or hideBackground)) then
         if state then Restore(health, state) end
         return
     end
@@ -202,9 +209,11 @@ function Selection.Apply(health, styled, uf, prefix)
     if (hideBackground == true) ~= (state.background ~= nil) then
         PaintBackground(health, state, hideBackground)
     end
-    if state.revision ~= revision then
-        if active then Hook(health) end
-        if active or state.border or state.dim then Paint(health, state) end
+    if state.revision ~= revision or state.styled ~= styled then
+        state.styled = styled
+        state.mode = hideAll and HIDE or border
+        if state.mode == CUSTOM then Hook(health) end
+        Paint(health, state)
         PaintBadge(state, NS.Client.isForever and uf and uf.PlayerLevelDiffFrame)
         state.revision = revision
     end

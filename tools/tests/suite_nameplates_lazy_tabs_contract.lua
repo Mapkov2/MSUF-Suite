@@ -157,6 +157,14 @@ local function Open(case)
     assert(built[case[2]]==1,'tab was rebuilt: '..case[2])
 end
 for _,case in ipairs(cases) do Open(case); Open(case) end
+do
+    local record = assert(records["msufsuite.nameplates.hideHealthBarBorders"], "the border switch has no cold search route")
+    local selected, anchored, exact = (M.Search._RoutingAPI or api).OpenSearchTarget(record.key,
+        record.label, record.label, record.anchor, record.route, record.exactTarget)
+    mw:RunTimers(1000)
+    assert(selected and anchored and exact and widgets.hideHealthBarBorders:IsVisible(),
+        "search did not reveal the border switch in General")
+end
 -- Direct preview handles retain the legacy enemy aliases.
 assert(P.SelectNameplatesEnemyTab('appearance'))
 assert(panels['enemy:bar']:IsVisible(),'legacy appearance did not select bar')

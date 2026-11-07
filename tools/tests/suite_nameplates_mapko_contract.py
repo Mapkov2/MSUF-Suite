@@ -66,6 +66,7 @@ for _, forever in ipairs({ false, true }) do
         plateFadeDistance = 1, plateShrinkDistance = 1, plateSpacingMode = 1, plateOverlapV = 110, plateOverlapH = 80,
         plateMotionSpeed = 1, plateInsetMode = 1, plateTopInset = 8, plateBottomInset = 10, plateClampTarget = 1 }
     newer.targetScaleEnabled, newer.targetScalePercent = false, 120
+    newer.hideHealthBarBorders = false
     newer.nameFormattingEnabled, newer.nameTextUseCustomSettings = false, false
     for _, side in ipairs({ "enemy", "friendly" }) do
         newer[side .. "CastWidthDelta"] = 0

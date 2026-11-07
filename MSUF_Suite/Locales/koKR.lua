@@ -5887,4 +5887,5 @@ T("Choose how Blizzard chat scrolls, colors names, shows whispers and fades mess
 T("Delete bars", "바 삭제")
 T("Delete selected bars", "선택한 바 삭제")
 T("Delete these bars?", "이 바를 삭제할까요?")
+T("Hide health bar borders", "생명력 바 테두리 숨기기")
 T("Show Blizzard health bar border", "블리자드 생명력 바 테두리 표시")

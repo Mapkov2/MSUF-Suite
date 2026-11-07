@@ -26,7 +26,7 @@ end
 local function PaintSelection(editor, s, texture, visible, badge)
     local mode = Styled(s.prefix) and P.Get(ID, "selectionBorder") or 1
     local target, focus = s.state.target, editor.focusSample
-    texture:SetShown(visible and mode ~= 3 and (target or focus == true))
+    texture:SetShown(visible and not P.Get(ID, "hideHealthBarBorders") and mode ~= 3 and (target or focus == true))
     if mode == 2 then
         texture:SetVertexColor(P.RGB(P.Get(ID, target and "selectionTargetColor" or "selectionFocusColor")))
     else
@@ -50,18 +50,26 @@ function Preview.PaintHealthChrome(editor, s, m)
     if m.classic then
         art:SetTexture("Interface\\Tooltips\\Nameplate-Border")
         art:SetTexCoord(0, 1, 0.5, 1)
-        art:SetPoint("TOPLEFT", bar, "TOPLEFT", -3.5 * m.horizontal, 2)
-        art:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 20.75 * m.horizontal, -3)
+        -- The Classic art is centered on the container, not stretched over the fill.
+        art:SetDrawLayer("ARTWORK", 1)
+        art:SetSize(128 * m.horizontal, 16 * m.vertical)
+        art:SetPoint("CENTER", bar, "CENTER", 8.625 * m.horizontal, -0.5 * m.vertical)
     else
         art:SetAtlas("UI-HUD-CoolDownManager-Bar-BG")
+        art:SetDrawLayer("BACKGROUND", 0)
         art:SetTexCoord(0, 1, 0, 1)
         art:SetPoint("TOPLEFT", bar, "TOPLEFT", -2, 3)
         art:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 6, -6)
     end
     local show = editor:LayerOn("health") and not m.namesOnly
-    art:SetShown(m.forever and show and (not Styled(s.prefix) or P.Get(ID, s.prefix .. "NativeBorderEnabled")))
-    s.selectedBar:SetAtlas(m.forever and "UI-HUD-CoolDownManager-Selected-yellow" or "UI-HUD-Nameplates-Selected")
-    PaintSelection(editor, s, s.selectedBar, show and not m.classic)
+    local showNative = not m.forever or not Styled(s.prefix) or P.Get(ID, s.prefix .. "NativeBorderEnabled") ~= false
+    art:SetShown(show and showNative and not P.Get(ID, "hideHealthBarBorders"))
+    local selected = s.selectedBar
+    selected:SetAtlas(m.forever and "UI-HUD-CoolDownManager-Selected-yellow" or "UI-HUD-Nameplates-Selected")
+    selected:ClearAllPoints()
+    selected:SetPoint("TOPLEFT", art, "TOPLEFT", m.forever and -3 or -1, m.forever and 2 or 1)
+    selected:SetPoint("BOTTOMRIGHT", art, "BOTTOMRIGHT", m.forever and 0 or -3, m.forever and 2 or 3)
+    PaintSelection(editor, s, selected, show and not m.classic)
 end
 
 local function SampleLevel(m, prefix)

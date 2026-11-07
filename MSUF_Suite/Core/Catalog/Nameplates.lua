@@ -102,6 +102,7 @@ local generalRules = {
     B.Number("targetScalePercent", "Current target size (%)", 120, 100, 160, 5),
     B.Choice("look", "Look", 4, { "Jundies", "Blizzard", "Custom", "Mapko" }),
     B.Choice("barGeometry", "Bar dimensions", 1, { "Client default", "Same on Retail and Forever" }),
+    B.Bool("hideHealthBarBorders", "Hide health bar borders", false),
     B.Bool("enemy", "Skin enemy nameplates", true),
     B.Bool("friendly", "Skin friendly nameplates", true),
     B.Choice("nativeStyle", "Blizzard plate style", 2,

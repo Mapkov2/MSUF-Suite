@@ -53,7 +53,7 @@ local SECTIONS = {
         "friendlyNameColorEnabled" }, colors = { "enemyNameColor", "friendlyNameColor" } },
     { key = "native", area = "general", title = "Blizzard plates",
       keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
-            "classColors", "playerGuildNames", "playerTitles" } },
+            "hideHealthBarBorders", "classColors", "playerGuildNames", "playerTitles" } },
     { key = "visibility", area = "general", catalog = "visibility" },
     { key = "distance", area = "general", catalog = "distance" },
     { key = "personal", area = "general", catalog = "personal", positions = "personal" },
@@ -206,6 +206,12 @@ function P.NameplateSearchTarget(rule)
     if rule.section ~= "auraColors" and rule.key ~= "enabled" then return PAGE .. "_more" end
 end
 
+local function RevealSection(body)
+    local entry = body and HM.GetSectionEntry(body)
+    local reveal = entry and HM.GetSectionEnsureVisible(entry)
+    if reveal then reveal() end
+end
+
 -- A preview click already has a setting key. Use the live catalog directly,
 -- even before the host has finished building its global search index.
 function P.OpenNameplateSetting(key)
@@ -214,10 +220,7 @@ function P.OpenNameplateSetting(key)
     local sectionId, _, exact = P.NameplateSearchTarget(rule)
     if not sectionId or exact == false then return false end
     local page = P.M.cache and P.M.cache[PAGE]
-    local body = page and page.sections and page.sections[sectionId]
-    local entry = body and HM.GetSectionEntry(body)
-    local reveal = entry and HM.GetSectionEnsureVisible(entry)
-    if reveal then reveal() end
+    RevealSection(page and page.sections and page.sections[sectionId])
     return P.Suite.HostBridge.OpenExactMenuSetting(P.M, PAGE, sectionId, "msufsuite.nameplates." .. key)
 end
 
@@ -366,6 +369,15 @@ local function KickReadyLink(ctx)
     end
 end
 
+local function PrepareNativeSearch(body, entries)
+    for _, entry in ipairs(entries or {}) do
+        if entry.widget and entry.rule.key == "hideHealthBarBorders" then
+            HM.SetSearchTargetPrepare(entry.widget, function() RevealSection(body) end)
+            return
+        end
+    end
+end
+
 -- An accordion of one key list or one catalog section.
 local function PlainSection(ctx, builder, spec, rules)
     local fonts = P.NameplateFonts
@@ -377,6 +389,7 @@ local function PlainSection(ctx, builder, spec, rules)
     if #rules == 0 then return nil end
     return P.RuleSection(ctx, builder, PAGE, ID, PAGE .. "_" .. spec.key, Tr(spec.title or rules[1].sectionTitle), rules,
         { help = HELP[spec.key], open = spec.open, resetKeys = PositionKeys(spec),
+          onBuilt = spec.key == "native" and PrepareNativeSearch or nil,
           extra = spec.key == "castbar" and KickReadyLink(ctx) or nil })
 end
 

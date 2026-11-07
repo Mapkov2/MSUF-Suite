@@ -85,18 +85,18 @@ local function Theme(self)
         self.kindColors[kind] = custom and { S.RGB(c[key]) } or COLORS[kind]
     end
     LayoutArt(self, c)
-    local background = self.art.background
+    local art = self.art
     local opacity = (c.backgroundOpacity or (dark and 57 or 50)) / 100
     if custom then
         local r, g, b = S.RGB(c.backgroundColor)
-        background:SetColorTexture(r, g, b, opacity)
+        Art.PaintBackground(art, r, g, b, opacity)
         self.subtitle:SetTextColor(S.RGB(c.subtitleColor))
     elseif skin then
         local r, g, b = skin:GetColor("surface")
-        background:SetColorTexture(r, g, b, opacity)
+        Art.PaintBackground(art, r, g, b, opacity)
         self.subtitle:SetTextColor(skin:GetColor("text"))
     else
-        background:SetColorTexture(dark and .02 or .03, dark and .025 or .05, dark and .035 or .075, opacity)
+        Art.PaintBackground(art, dark and .02 or .03, dark and .025 or .05, dark and .035 or .075, opacity)
         self.subtitle:SetTextColor(.91, .93, .96)
     end
     self.host:SetScale(c.scale / 100)

@@ -172,12 +172,16 @@ end
 M.SelectPage("home")
 M.InvalidatePage("suite_dataTexts")
 Suite.Suite.Config("dataTexts").barIds="1,2,3,4,5,6"
-for _,size in ipairs({1300,680,950,620,1300}) do
+for _,size in ipairs({1300,680,480,950,620,1300}) do
     M.SelectPage("home")
     width=size
     assert(M.SelectPage("suite_dataTexts"))
     mw:RunTimers(1000)
-    CheckHeader(M.cache.suite_dataTexts)
+    local entry = M.cache.suite_dataTexts
+    if size == 480 then
+        Check(entry.context.dataTextWorkspace.navigation:GetWidth()<520, "fixture did not exercise compact DataTexts")
+    end
+    CheckHeader(entry)
 end
 local W=M.Widgets
 local captured={}

@@ -141,8 +141,10 @@ local function Texture()
     function t:SetShown(shown) self.shown = shown end
     function t:SetTexture(texture) self.texture = texture end
     function t:SetAtlas(atlas) self.atlas = atlas end
-    function t:ClearAllPoints() end
-    function t:SetPoint() end
+    function t:ClearAllPoints() self.points = {} end
+    function t:SetPoint(...) self.points[#self.points + 1] = { ... } end
+    function t:SetDrawLayer(layer, sublayer) self.layer, self.sublayer = layer, sublayer end
+    function t:SetSize(width, height) self.width, self.height = width, height end
     function t:SetTexCoord() end
     function t:SetVertexColor(r, g, b) self.color, self.writes = { r, g, b }, self.writes + 1 end
     return t
@@ -209,6 +211,41 @@ assert(Selection.inUse, "a styled plate must still get its restore pass")
 Selection.Apply(health, true)
 assert(health.deselectedOverlay.alpha == 1 and not Selection.inUse, "Keep did not restore Blizzard's dimming")
 
+------------------------------------------------------------------ Borderless health bars
+do
+    local config = Config({ look = 2, hideHealthBarBorders = true })
+    local retail = Health()
+    retail.bgTexture = Texture()
+    retail.bgTexture.alpha, retail.selectedBorder.alpha, retail.deselectedOverlay.alpha = 0.68, 0.72, 0.55
+    Selection.Configure(config)
+    assert(Selection.inUse, "borderless mode must work on the Blizzard look")
+    Selection.Apply(retail, false, nil, "friendly")
+    assert(retail.bgTexture.alpha == 0 and retail.selectedBorder.alpha == 0,
+        "Retail native borders remained on an unskinned plate")
+    assert(retail.deselectedOverlay.alpha == 0.55 and retail.deselectedOverlay.writes == 0,
+        "borderless mode took over the independent native dimming")
+    local writes = retail.bgTexture.writes + retail.selectedBorder.writes
+    Selection.Apply(retail, false, nil, "friendly")
+    assert(retail.bgTexture.writes + retail.selectedBorder.writes == writes, "warm plate pass rewrote hidden borders")
+    config.hideHealthBarBorders = false
+    Selection.Configure(config)
+    Selection.Apply(retail, false, nil, "friendly")
+    assert(retail.bgTexture.alpha == 0.68 and retail.selectedBorder.alpha == 0.72,
+        "turning borders back on did not restore their original opacity")
+
+    config = Config({ enemyBorderStyle = 2, enemyOuterFrame = true, enemyShadowEnabled = true,
+        enemyGlowEnabled = true, enemyThresholdEnabled = true, enemyTargetStyle = 14 })
+    local style = NS.NameplateStyle
+    local framed = style.Decor.Plan(config, "enemy")
+    assert(framed.border and framed.outer and framed.shadow and framed.glow ~= 1)
+    config.hideHealthBarBorders = true
+    local plain = style.Decor.Plan(config, "enemy")
+    assert(not plain.border and not plain.outer and not plain.shadow and plain.glow == 1 and plain.threshold,
+        "borderless mode left Suite frames visible or removed the health threshold")
+    local target = style.TargetConfig(config)
+    assert(target.hideBorder and target.bossTargetStyle == "BORDER_ARROW", "the target arrow must retain its shape")
+end
+
 ------------------------------------------------------------------ Forever chrome and level preview
 do
     NS.Client.isForever = true
@@ -216,6 +253,8 @@ do
     assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", foreverCatalog)
     assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", foreverCatalog)
     local forever = foreverCatalog.SuiteCatalog.nameplates.rules
+    assert(rules.hideHealthBarBorders.default == false and forever.hideHealthBarBorders.default == false
+        and not spec.look.visualKeys.hideHealthBarBorders, "the common border preference must be opt-in and independent of look")
     assert(forever.enemyNativeBorderEnabled.default and forever.friendlyNativeBorderEnabled.default,
         "Forever's native bar border must keep its old default")
     assert(not rules.enemyNativeBorderEnabled and not rules.friendlyNativeBorderEnabled,
@@ -270,6 +309,17 @@ do
     assert(enemy.bgTexture.alpha == 0.67 and badge.selectedBorder.alpha == 1,
         "disabling the module did not restore the backdrop and badge border")
 
+    config.hideHealthBarBorders, config.look = true, 2
+    Selection.Configure(config)
+    Selection.Apply(enemy, false, uf, "enemy")
+    Selection.Apply(friendly, false, {}, "friendly")
+    assert(enemy.bgTexture.alpha == 0 and friendly.bgTexture.alpha == 0 and badge.selectedBorder.alpha == 0,
+        "Forever left a border on a disabled side or level badge")
+    Selection.RestoreAll()
+    assert(enemy.bgTexture.alpha == 0.67 and friendly.bgTexture.alpha == 1 and badge.selectedBorder.alpha == 1,
+        "module disable did not restore all native Forever borders")
+    config.hideHealthBarBorders, config.look = false, 3
+
     local preview = { Suite = NS, Get = function(_, key) return config[key] end, RGB = NS.RGB }
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", preview)
     local draw = preview.NameplatesPreviewDecor
@@ -309,6 +359,26 @@ do
     config.look = 2
     draw.PaintHealthChrome(editor, sample, metrics)
     assert(sample.nativeBorder.shown and sample.selectedBar.shown, "Blizzard look did not restore its native preview chrome")
+    assert(sample.selectedBar.atlas == "UI-HUD-CoolDownManager-Selected-yellow"
+        and sample.selectedBar.points[1][2] == sample.nativeBorder
+        and sample.selectedBar.points[1][4] == -3 and sample.selectedBar.points[1][5] == 2,
+        "Forever target art does not follow the native backdrop")
+    config.hideHealthBarBorders = true
+    draw.PaintHealthChrome(editor, sample, metrics)
+    assert(not sample.nativeBorder.shown and not sample.selectedBar.shown,
+        "the common border switch did not clear the Forever preview")
+    metrics.forever, config.hideHealthBarBorders = false, false
+    draw.PaintHealthChrome(editor, sample, metrics)
+    assert(sample.nativeBorder.shown and sample.selectedBar.atlas == "UI-HUD-Nameplates-Selected"
+        and sample.selectedBar.points[1][4] == -1 and sample.selectedBar.points[1][5] == 1,
+        "Retail preview did not use its native borders")
+    metrics.classic, metrics.reserve, metrics.horizontal, metrics.vertical = true, 20, 1.25, 1.5
+    draw.PaintHealthChrome(editor, sample, metrics)
+    assert(sample.nativeBorder.width == 160 and sample.nativeBorder.height == 24
+        and sample.nativeBorder.layer == "ARTWORK" and sample.nativeBorder.sublayer == 1
+        and sample.nativeBorder.points[1][4] == 8.625 * 1.25 and sample.nativeBorder.points[1][5] == -0.75
+        and not sample.selectedBar.shown,
+        "Classic preview did not keep the fixed-size Blizzard border and disabled target ring")
     assert(draw.LevelMode(editor, "enemy", true, false) == "badge", "Forever Blizzard look lost its native level badge")
     NS.Client.isForever = false
     Enum = { GameRule = { PlayerNameplateDifficultyIcon = 1 } }
@@ -361,6 +431,7 @@ assert(gate(rules.enemyNameSize, "enemyNameSize") == true and gate(rules.plateSh
 options.look = 2
 local ok, reason = gate(rules.enemyNameSize, "enemyNameSize")
 assert(ok == false and reason:find("Blizzard"), "Blizzard's look left skin controls live")
+assert(gate(rules.hideHealthBarBorders, "hideHealthBarBorders"), "the common border switch is disabled on Blizzard look")
 assert(gate(rules.friendlyNamesOnly, "friendlyNamesOnly") == true and gate(rules.plateStackEnemy, "plateStackEnemy") == true,
     "Blizzard's own options were greyed under Blizzard's look")
 options.look, options.enemy = 4, false

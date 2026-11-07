@@ -1053,15 +1053,32 @@ do
     for _, enabled in ipairs({ false, true, false, true }) do
         banner.config.showBoxArt = enabled
         banner:Refresh()
-        assert(art.background.shown == enabled and top.shown == enabled and bottom.shown == enabled,
-            "announcement box art toggle did not hide or restore all artwork")
+        assert(art.background.shown and top.shown == enabled and bottom.shown == enabled,
+            "artwork toggle must leave the runtime background visible")
+        for _, edge in ipairs(art.border) do
+            assert(edge.shown == enabled, "runtime frame did not follow the artwork toggle")
+        end
         assert(banner.host.shown and banner.title.shown and banner.subtitle.shown
             and banner.title.text == "The Coreway" and banner.subtitle.text == "Dornogal",
             "announcement artwork switch hid or changed its text")
         assert(banner.current == current and banner.expiresAt == expires,
             "announcement artwork switch restarted the active announcement")
     end
-    banner.config.showBoxArt = nil
+    for _, enabled in ipairs({ false, true }) do
+        banner.config.showBoxArt = enabled
+        banner.config.backgroundOpacity = 0
+        banner:Refresh()
+        assert(not art.background.shown and top.shown == enabled and bottom.shown == enabled,
+            "zero background opacity must leave artwork visibility independent")
+        assert(#art.border == 4, "runtime banner has no dedicated frame")
+        for _, edge in ipairs(art.border) do
+            assert(edge.shown == enabled and edge.color[4] > 0,
+                "background opacity changed the runtime frame")
+        end
+        assert(banner.current == current and banner.expiresAt == expires,
+            "background opacity edit restarted the active announcement")
+    end
+    banner.config.showBoxArt, banner.config.backgroundOpacity = nil, nil
     local oldTexture = C_Texture
     C_Texture = { GetAtlasInfo = function() return {} end }
     for _, choice in ipairs({
@@ -1148,9 +1165,9 @@ banner:Refresh()
 assert(banner.host.shown and banner.title.text == "ANNOUNCEMENTS")
 banner.config.showBoxArt = false
 banner:Refresh()
-assert(not banner.art.background.shown and not banner.art.accents[1].shown and not banner.art.accents[2].shown
-    and banner.host.shown and banner.title.shown and banner.subtitle.shown,
-    "Edit Mode announcement preview ignored the artwork switch")
+assert(banner.art.background.shown and not banner.art.accents[1].shown and not banner.art.accents[2].shown
+    and not banner.art.border[1].shown and banner.host.shown and banner.title.shown and banner.subtitle.shown,
+    "Edit Mode artwork switch must keep the background and text visible")
 banner.config.showBoxArt = nil
 banner:Refresh()
 assert(banner.art.background.shown and banner.art.accents[1].shown and banner.art.accents[2].shown,

@@ -161,15 +161,14 @@ local function BuildBar(editor, s, cell)
     s.bar = bar
     s.back = Fill(bar, "BACKGROUND")
     s.back:SetAllPoints(bar)
-    s.nativeBorder = bar:CreateTexture(nil, "BACKGROUND", nil, -1)
+    s.back:SetDrawLayer("BACKGROUND", 1)
+    s.nativeBorder = bar:CreateTexture(nil, "BACKGROUND")
     s.progress = Fill(bar, "ARTWORK")
     s.progress:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
     s.progress:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
     s.progress:SetWidth(100)
     Tint(s.progress, prefix == "enemy" and "c64b52" or "52a873")
     s.selectedBar = bar:CreateTexture(nil, "OVERLAY")
-    s.selectedBar:SetPoint("TOPLEFT", bar, "TOPLEFT", -3, 2)
-    s.selectedBar:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 2)
     s.aggro = Fill(bar, "OVERLAY")
     s.aggro:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, 0)
     s.aggro:SetPoint("BOTTOMRIGHT", bar, "TOPRIGHT", 0, 0)
@@ -540,16 +539,17 @@ local function RenderHealth(editor, s, m)
     s.value:SetText(showValue and (amount .. (showPercent and " " .. health .. "%" or ""))
         or (showPercent and health .. "%" or ""))
     s.value:SetShown(not m.namesOnly and editor:LayerOn("healthText") and (showPercent or showValue))
-    s.border((P.Get(ID, "look") == 2 or not editor:LayerOn("border")
-        or not P.Get(ID, prefix .. "BorderEnabled")) and 0 or P.Get(ID, prefix .. "BorderSize"),
-        P.Get(ID, prefix .. "BorderColor"))
+    local border = not P.Get(ID, "hideHealthBarBorders") and P.Get(ID, "look") ~= 2
+        and P.Get(ID, prefix) and editor:LayerOn("border") and P.Get(ID, prefix .. "BorderEnabled")
+    s.border(border and P.Get(ID, prefix .. "BorderSize") or 0, P.Get(ID, prefix .. "BorderColor"))
 end
 
 local function RenderTarget(s, m)
     local prefix, level = s.prefix, s.level
     local arrows = (prefix == "enemy" or not P.Get(ID, "enemyTargetHideFriendly")) and s.state.target
-        and P.Get(ID, "enemyTargetMarker") and P.Get(ID, "look") ~= 2 and not m.npcWorldName
+        and P.Get(ID, prefix) and P.Get(ID, "enemyTargetMarker") and P.Get(ID, "look") ~= 2 and not m.npcWorldName
     local targetConfig = s.targetConfig
+    targetConfig.hideHealthBarBorders = P.Get(ID, "hideHealthBarBorders")
     for _, key in ipairs(TARGET_KEYS) do
         targetConfig["enemyTarget" .. key] = P.Get(ID, "enemyTarget" .. key)
     end

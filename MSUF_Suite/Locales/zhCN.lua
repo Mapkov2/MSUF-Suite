@@ -5888,4 +5888,5 @@ T("Choose how Blizzard chat scrolls, colors names, shows whispers and fades mess
 T("Delete bars", "删除栏")
 T("Delete selected bars", "删除所选栏")
 T("Delete these bars?", "删除这些栏？")
+T("Hide health bar borders", "隐藏生命条边框")
 T("Show Blizzard health bar border", "显示暴雪生命条边框")

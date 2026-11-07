@@ -1415,8 +1415,11 @@ do (function()
         for _, enabled in ipairs({ false, true, false, true }) do
             announcement.showBoxArt = enabled
             preview:Paint()
-            assert(art.background.shown == enabled and top.shown == enabled and bottom.shown == enabled,
-                "announcement preview ignored the artwork switch")
+            assert(art.background.shown and top.shown == enabled and bottom.shown == enabled,
+                "artwork toggle must leave the preview background visible")
+            for _, edge in ipairs(art.border) do
+                assert(edge.shown == enabled, "preview frame did not follow the artwork toggle")
+            end
             assert(preview.used == 2 and preview.labels[1].shown and preview.labels[2].shown,
                 "announcement artwork switch hid the preview text")
         end
@@ -1429,13 +1432,24 @@ do (function()
         preview.finished = true
         preview.canvas:SetAlpha(0)
         picker.set(0)
-        assert(picker.get() == 0 and not announcement.showBoxArt and not art.background.shown,
-            "preview picker could not hide the artwork")
+        assert(picker.get() == 0 and not announcement.showBoxArt and art.background.shown,
+            "preview picker must hide artwork independently of the background")
+        local opacityControl = Control("announcements", "backgroundOpacity")
+        preview.finished = true
+        preview.canvas:SetAlpha(0)
+        opacityControl.set(0)
+        assert(not art.background.shown and not art.border[1].shown,
+            "opacity must still control the preview background with artwork off")
         assert(preview.canvas.alpha == 1 and not preview.finished,
-            "artwork edits after playback must bring back the static sample")
+            "opacity edits after playback must bring back the static sample")
         picker.set(1)
         assert(picker.get() == 1 and announcement.showBoxArt and art.style == 1,
             "preview picker could not restore the same style")
+        assert(not art.background.shown and art.border[1].shown and art.border[1].color[4] > 0,
+            "preview frame must remain visible with zero background opacity")
+        opacityControl.set(20)
+        assert(art.background.shown and art.background.color[4] == .2 and art.border[1].shown,
+            "preview background could not be restored independently")
         picker.set(2)
         assert(artControl.get() == 2 and art.style == 2 and preview.labels[1].width == 530
             and top.atlas == "NPE_ArrowRight" and bottom.atlas == "NPE_ArrowLeft",
@@ -1444,8 +1458,8 @@ do (function()
         assert(picker.get() == 3 and top.atlas == "levelup-bar-gold", "accordion did not update the preview picker")
         picker.set(4)
         assert(top.atlas == "levelup-glow-gold" and art.style == 4, "preview picker did not show the glow")
-        assert(historyWrites == historyBefore + 5 and announcement.enabled == enabled,
-            "each artwork edit must have one undo step and retain the module state")
+        assert(historyWrites == historyBefore + 7 and announcement.enabled == enabled,
+            "each artwork or opacity edit must have one undo step and retain the module state")
         C_Texture.GetAtlasInfo = atlasInfo
         announcement.artStyle = 1
         preview:Paint()

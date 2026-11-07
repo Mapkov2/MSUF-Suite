@@ -214,6 +214,7 @@ function Style.TargetConfig(config)
         atlas = not TARGET_SHAPES[config.enemyTargetStyle or 1]
             and Style.TargetAtlases[config.enemyTargetStyle == 15 and 8 or (config.enemyTargetStyle or 1) - 1] or nil,
         color = config.enemyTargetColor or "ffffff",
+        hideBorder = config.hideHealthBarBorders == true,
     }
 end
 
@@ -291,7 +292,7 @@ function Style.PaintTarget(visual, owner, visible, cfg, parent, rightLevelGap, l
         -- Invalidate only our owned marker when entering/leaving an atlas.
         host._msufBossTargetIndicator._style = nil
     end
-    Style.PaintBorder(visual.targetBorder, host, indicator.HasBorder(cfg) and 1 or 0, cfg.color)
+    Style.PaintBorder(visual.targetBorder, host, not cfg.hideBorder and indicator.HasBorder(cfg) and 1 or 0, cfg.color)
     local marker = indicator.Apply(host, cfg, 1)
     if not marker then return end
     marker:Show()
@@ -425,14 +426,15 @@ end
 
 function Decor.Plan(c, prefix)
     local enabled = c.look ~= 2 and c[prefix] ~= false
+    local framed = enabled and not c.hideHealthBarBorders
     local p = {
         joined = Joined(c, prefix),
-        border = enabled and c[prefix .. "BorderEnabled"] ~= false and c[prefix .. "BorderStyle"] == 2,
+        border = framed and c[prefix .. "BorderEnabled"] ~= false and c[prefix .. "BorderStyle"] == 2,
         borderSize = c[prefix .. "BorderSize"] or 1, borderColor = c[prefix .. "BorderColor"] or "000000",
-        shadow = enabled and c[prefix .. "ShadowEnabled"] == true,
-        glow = enabled and c[prefix .. "GlowEnabled"] and ((c[prefix .. "GlowMode"] or 1) + 1) or 1,
+        shadow = framed and c[prefix .. "ShadowEnabled"] == true,
+        glow = framed and c[prefix .. "GlowEnabled"] and ((c[prefix .. "GlowMode"] or 1) + 1) or 1,
         glowColor = c[prefix .. "GlowColor"] or "ffffff", effectSize = c[prefix .. "EffectSize"] or 4,
-        outer = enabled and c[prefix .. "OuterFrame"] == true,
+        outer = framed and c[prefix .. "OuterFrame"] == true,
         outerSize = c[prefix .. "OuterFrameSize"] or 1, outerColor = c[prefix .. "OuterFrameColor"] or "000000",
         texture = enabled and c[prefix .. "TextureEnabled"] and TEXTURES[c[prefix .. "FillTexture"] or 1] or nil,
         threshold = enabled and prefix == "enemy" and c.enemyThresholdEnabled == true,
