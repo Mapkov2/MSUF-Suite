@@ -87,17 +87,23 @@ Reconcile = function()
     end
     local merchant = visible[Safety.Field(_G, "MerchantFrame")]
     local auction = visible[Safety.Field(_G, "AuctionHouseFrame")]
-    local shopping = false
+    local bank = visible[Safety.Field(_G, "BankFrame")]
+    local bagsOpen = false
     for frame, state in pairs(visible) do
         state.readable = IsVisible(frame) and Geometry.Read(frame, state.rect) and Geometry.Layer(state)
         if state.readable then
             NS.WindowFocusChrome.Update(state)
             NS.WindowFocusLayers.Prepare(state)
         end
-        if (merchant or auction) and tradingBags[state.name] then shopping = true end
+        if tradingBags[state.name] then bagsOpen = true end
     end
-    -- Shopping and upgrading each use multiple native windows together. Keep
-    -- those windows clear even when another window receives input.
+    -- Banking, shopping and upgrading use several windows together. Keep
+    -- all their participants clear even when another window receives input.
+    local shopping = bagsOpen and (merchant or auction)
+    local banking = bagsOpen and bank
+    local backpack = visible[Safety.Field(_G, "ContainerFrameCombinedBags")]
+    local reagent = visible[Safety.Field(_G, "ContainerFrame6")]
+    local bagPair = backpack and reagent
     local character = visible[Safety.Field(_G, "CharacterFrame")]
     local upgrade = visible[Safety.Field(_G, "ItemUpgradeFrame")]
     local upgrading = character and upgrade
@@ -105,6 +111,8 @@ Reconcile = function()
     for _, state in pairs(visible) do
         state.keepClear = state == active or upgrading and (state == character or state == upgrade)
             or shopping and (state == merchant or state == auction or tradingBags[state.name])
+            or banking and (state == bank or tradingBags[state.name])
+            or bagPair and (state == backpack or state == reagent)
         if state.keepClear and not state.readable then clearBounds = false end
     end
     for _, state in pairs(visible) do

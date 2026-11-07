@@ -15,6 +15,10 @@ local body = [======[
     W.TrackFocus(merchant, "merchant")
     W.TrackFocus(other, "other")
     Check(Dimmed(merchant), "a merchant without bags became exempt")
+    W.TrackFocus(bank, "bank")
+    Click(other); Tick()
+    Check(Dimmed(bank), "a bank without bags became exempt")
+    bank:Hide()
     Check(W.TrackFocus(bag, "bags"), "combined backpack was not enrolled")
     Check(not Dimmed(merchant) and not Dimmed(bag), "opening bags dims the merchant")
     Click(merchant); Tick()
@@ -23,9 +27,6 @@ local body = [======[
     Check(not Dimmed(merchant) and not Dimmed(bag), "bag input dims the merchant")
     Click(other); Tick()
     Check(not Dimmed(merchant) and not Dimmed(bag), "third-window input dims the shopping pair")
-    W.TrackFocus(bank, "bank")
-    Click(other); Tick()
-    Check(Dimmed(bank), "shopping exempts the bank")
     other.left, other.width = 50, 1000
     Click(merchant); Tick()
     for _, veil in ipairs(F.records[other].veils) do
@@ -41,7 +42,7 @@ local body = [======[
     Check(not Dimmed(merchant) and not Dimmed(bag) and not Dimmed(bank), "unreadable bag leaves a stale veil")
     bag.GetWidth = width
     listeners[F](F, "geometry")
-    Check(not Dimmed(merchant) and not Dimmed(bag) and Dimmed(bank), "readable bag did not restore shopping")
+    Check(not Dimmed(merchant) and not Dimmed(bag), "readable bag did not restore shopping")
     bag:Hide(); Click(other); Tick()
     Check(Dimmed(merchant), "closing the last bag leaves the merchant exempt")
     merchant:Hide(); bag:Show(); Click(other); Tick()
@@ -95,7 +96,26 @@ local body = [======[
     merchant:Show(); Tick()
     Check(not Dimmed(merchant) and not Dimmed(bag), "reopening a trader did not restore the pair")
     F.ReleaseOwner("second-trader")
-    merchant:Hide(); bag:Hide(); bank:Hide(); other:Hide()
+    merchant:Hide()
+    bank:Show()
+    bags[6].left = 975
+    bags[6]:Show()
+    W.TrackFocus(bags[6], "bags")
+    Click(bags[6]); Tick()
+    Check(not Dimmed(bank) and not Dimmed(bag) and not Dimmed(bags[6]), "reagent bag input dims banking windows")
+    Click(bank); Tick()
+    Check(not Dimmed(bank) and not Dimmed(bag) and not Dimmed(bags[6]), "bank input dims the reagent bag")
+    Click(other); Tick()
+    Check(not Dimmed(bank) and not Dimmed(bag) and not Dimmed(bags[6]), "another window dims the banking group")
+    bank:Hide(); Click(bag); Tick()
+    Check(not Dimmed(bag) and not Dimmed(bags[6]), "backpack input dims the separate reagent bag")
+    Click(bags[6]); Tick()
+    Check(not Dimmed(bag) and not Dimmed(bags[6]), "reagent bag input dims the backpack")
+    Click(other); Tick()
+    Check(not Dimmed(bag) and not Dimmed(bags[6]), "a third window dims the bag pair")
+    bag:Hide(); Click(other); Tick()
+    Check(Dimmed(bags[6]), "closing the backpack leaves a standalone reagent bag exempt")
+    bags[6]:Hide(); other:Hide()
     local reads = 0
     merchant.GetWidth = function() reads = reads + 1; return 338 end
     bag.GetWidth = function() reads = reads + 1; return 450 end
