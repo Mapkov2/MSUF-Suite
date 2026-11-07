@@ -967,10 +967,26 @@ Section("common menus", function()
     Load("CommonMenus.lua")
     local itemSkins = {}
     local raiseFor
-    NS.ControlSkin.ApplyButton = function(button)
-        if button == raiseFor then error("contract: item skin raised") end
-        itemSkins[button] = (itemSkins[button] or 0) + 1
-        return {}
+    local attach, fade = NS.Surface.Attach, NS.Cosmetics.Fade
+    local applyButton = NS.ControlSkin.ApplyButton or function() return {} end
+    local buttonSkinCalls, faded = 0, {}
+    NS.ControlSkin.ApplyButton = function(button, ...)
+        if button.GetBagID then
+            buttonSkinCalls = buttonSkinCalls + 1
+            return {}
+        end
+        return applyButton(button, ...)
+    end
+    NS.Surface.Attach = function(button, spec)
+        if button.GetBagID then
+            if button == raiseFor then error("contract: item skin raised") end
+            itemSkins[button] = (itemSkins[button] or 0) + 1
+        end
+        return attach(button, spec)
+    end
+    NS.Cosmetics.Fade = function(region, owner)
+        faded[region] = owner
+        return fade(region, owner)
     end
     NS.ControlSkin.ApplySearchBox = function() return {} end
     -- IconSkin reads the native quality border while it skins.
@@ -1020,6 +1036,9 @@ Section("common menus", function()
     _G.ContainerFrame_GenerateFrame(bag, 16, 0)
     Expect(calls[bag] == 1 and itemSkins[items[1]] == 1,
         "one bag opening skinned the bag window or its items twice")
+    local slotSpec = items[1].surfaceSpec
+    Expect(buttonSkinCalls == 0 and slotSpec and slotSpec.interactive == false and slotSpec.motion == false,
+        "the bag skin must leave native slot button states and click scripts alone")
     Expect(items[1].skinnedQuality == "common",
         "a bag button took its quality border before UpdateItems had set it")
     local added = Item()
@@ -1034,7 +1053,7 @@ Section("common menus", function()
     -- Initialize gives a button moved into the combined bag an ItemSlotBackground.
     items[2].ItemSlotBackground = {}
     _G.ContainerFrame_GenerateFrame(bag, 16, 0)
-    Expect(itemSkins[items[2]] == 2 and itemSkins[items[1]] == 1,
+    Expect(itemSkins[items[2]] == 2 and itemSkins[items[1]] == 1 and faded[items[2].ItemSlotBackground] == "menus",
         "a reused bag button's new ItemSlotBackground was not faded")
 
     -- BAG_UPDATE, or item data that loads after opening, updates an open bag
@@ -1079,6 +1098,8 @@ Section("common menus", function()
     Expect(ok and items[1].IconBorder.quality == "epic" and #reported == before + 1,
         "a raising bag border repaint escaped into Blizzard's item update")
     NS.CommonMenus.Disable("menus")
+    Expect(items[1].surfaceVisible == false, "disabling the bag skin left a slot surface visible")
+    NS.Surface.Attach, NS.ControlSkin.ApplyButton, NS.Cosmetics.Fade = attach, applyButton, fade
     restore()
     NS.IconSkin.GetState, NS.IconSkin.GetOwner, NS.IconSkin.Repaint = getState, getOwner, repaint
     _G.ContainerFrame_GenerateFrame, _G.SetItemButtonQuality = nil, nil

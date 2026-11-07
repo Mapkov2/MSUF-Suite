@@ -308,6 +308,7 @@ end
 local hoverHooked = setmetatable({}, { __mode = "k" })
 
 local function EnsureInteractiveHover(target, state)
+    if state.spec.interactive == false then return end
     local role = state.spec.role
     local interactive = state.spec.interactive or state.spec.listItem
         or role == "button" or role == "navigation"

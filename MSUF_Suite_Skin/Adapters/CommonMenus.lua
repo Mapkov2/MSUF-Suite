@@ -31,14 +31,14 @@ local BAG_MODE = {
 
 local BAG_ITEM_SPEC = {
     role = "button",
-    activeRole = "buttonPrimary",
     useControlShape = false,
     shape = "continuous",
     radius = 4,
     inset = 1,
-    regions = { "NormalTexture", "ItemSlotBackground" },
-    allowImplicitProtected = true,
+    interactive = false,
+    motion = false,
 }
+local BAG_SLOT_ART = { "NormalTexture", "ItemSlotBackground" }
 
 local BAG_MONEY_SPEC = {
     role = "status",
@@ -89,12 +89,14 @@ local function SkinBagItem(state, frame, button)
     local qualityBorder = Field(button, "IconBorder")
     if not icon or not qualityBorder then return false end
 
-    local control = NS.ControlSkin.ApplyButton(button, state.owner, BAG_ITEM_SPEC)
-    local iconSkinned = Kit.SkinItemIcon(button, state.owner, icon, qualityBorder, true)
-    return control ~= nil and iconSkinned
+    -- Blizzard owns the slot's input scripts and button-state textures.
+    -- Paint a plate and quality border with independent texture regions.
+    if not Kit.Attach(state, button, BAG_ITEM_SPEC) then return false end
+    Kit.FadeFields(state, button, BAG_SLOT_ART)
+    return Kit.SkinItemIcon(button, state.owner, icon, qualityBorder, true)
 end
 
--- A pooled item button keeps its control skin while Blizzard reuses it, so
+-- A pooled item button keeps its slot surface while Blizzard reuses it, so
 -- that takes one pass per skin generation, or again when Initialize gave the
 -- button an ItemSlotBackground (combined bags) after that pass. Its quality
 -- border follows its contents: the SetItemButtonQuality post-hook

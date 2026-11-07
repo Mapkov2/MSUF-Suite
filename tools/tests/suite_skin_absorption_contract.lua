@@ -465,6 +465,16 @@ for _, frameName in ipairs({ "CharacterFrame", "PVEFrame", "ProfessionsFrame",
     assert(coverage and coverage.support ~= "none",
         "Midnight Dark does not cover Blizzard menu root " .. frameName)
 end
+do
+    local slot = CreateFrame("Button", "NativeBagSlot")
+    function slot:HasScript() return true end
+    function slot:HookScript(script)
+        error("bag slot surface registered an input hook: " .. script)
+    end
+    local surface = namespace.Surface.Attach(slot, { role = "button", interactive = false, motion = false })
+    assert(surface and surface.fill and surface.edge and not surface.hoverOverlay and not surface.motion,
+        "native bag slot did not receive a passive themed surface")
+end
 if not simulateForever then
     assert(namespace.Theme.ApplyLook("midnightDark"))
     local hover = namespace.Theme.GetColorTable("hover")
