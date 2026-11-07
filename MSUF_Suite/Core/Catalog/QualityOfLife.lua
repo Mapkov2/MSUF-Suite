@@ -380,6 +380,7 @@ B.Section("uiErrorFilter", "ui_error_filter", "UI error messages", {
     Bool("target", "Hide no valid target"),
     Bool("mana", "Hide not enough mana"),
     Bool("item", "Hide item cooldown and cannot use item"),
+    Bool("resources", "Hide other resource errors (energy, rage, etc.)"),
 })
 
 B.Module("cursorEffects", {

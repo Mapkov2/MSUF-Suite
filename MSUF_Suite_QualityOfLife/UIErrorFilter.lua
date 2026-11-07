@@ -10,6 +10,26 @@ local MESSAGE_TYPES = {
     target = { "LE_GAME_ERR_GENERIC_NO_VALID_TARGETS" },
     mana = { "LE_GAME_ERR_OUT_OF_MANA" },
     item = { "LE_GAME_ERR_ITEM_COOLDOWN", "LE_GAME_ERR_CANT_USE_ITEM" },
+    -- Forever replaces Mainline's default blacklist, so these can be visible there.
+    resources = {
+        "LE_GAME_ERR_OUT_OF_ENERGY",
+        "LE_GAME_ERR_OUT_OF_RAGE",
+        "LE_GAME_ERR_OUT_OF_FOCUS",
+        "LE_GAME_ERR_OUT_OF_COMBO_POINTS",
+        "LE_GAME_ERR_OUT_OF_RUNES",
+        "LE_GAME_ERR_OUT_OF_RUNIC_POWER",
+        "LE_GAME_ERR_OUT_OF_HOLY_POWER",
+        "LE_GAME_ERR_OUT_OF_SOUL_SHARDS",
+        "LE_GAME_ERR_OUT_OF_ARCANE_CHARGES",
+        "LE_GAME_ERR_OUT_OF_CHI",
+        "LE_GAME_ERR_OUT_OF_PAIN",
+        "LE_GAME_ERR_OUT_OF_LUNAR_POWER",
+        "LE_GAME_ERR_OUT_OF_INSANITY",
+        "LE_GAME_ERR_OUT_OF_FURY",
+        "LE_GAME_ERR_OUT_OF_MAELSTROM",
+        "LE_GAME_ERR_OUT_OF_ESSENCE",
+        "LE_GAME_ERR_OUT_OF_POWER_DISPLAY",
+    },
 }
 local QUERY_SENTINEL = {}
 
