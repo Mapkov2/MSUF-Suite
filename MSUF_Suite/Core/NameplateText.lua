@@ -9,11 +9,34 @@ Text.StyleSuffixes = { "TextEnabled", "CustomFont", "NameFont", "NameSize", "Tex
 
 function Text.Limited(value) return value == 2 or value == 4 end
 
-function Text.Shared(config)
+local function FontProvider(config)
     local formatter = NS.HostBridge.NameFormatter()
-    if formatter and formatter.Nameplates then return formatter.Nameplates({}) end
-    if config.nameTextUseCustomSettings == true then return nil end
-    if formatter and formatter.Shared then return formatter.Shared({}) end
+    return formatter and (formatter.Nameplates or config.nameTextUseCustomSettings ~= true and formatter.Shared)
+end
+
+function Text.UsesSharedFont(config)
+    return not not FontProvider(config)
+end
+
+function Text.Shared(config)
+    local resolve = FontProvider(config)
+    if resolve then return resolve({}) end
+end
+
+local SIZE_OVERRIDES = {
+    enemyNameSize = "enemyNameSizeOverride",
+    friendlyNameSize = "friendlyNameSizeOverride",
+    enemyHealthTextSize = "enemyHealthTextSizeOverride",
+    enemyCastSize = "enemyCastSizeOverride",
+    friendlyCastSize = "friendlyCastSizeOverride",
+}
+Text.SizeOverrides = SIZE_OVERRIDES
+
+function Text.ResolveSize(config, key, shared)
+    if not shared then return config[key] or 0 end
+    local override = config[SIZE_OVERRIDES[key]]
+    if override and override > 0 then return override end
+    return key:match("NameSize$") and shared.nameFontSize or shared.fontSize
 end
 
 function Text.Compile(config, prefix)
@@ -83,17 +106,17 @@ function Text.FontStyle(config, prefix, shared)
     local cast = prefix:sub(-4) == "Cast"
     local Style = NS.NameplateStyle
     local formatter = NS.HostBridge.NameFormatter()
+    local sizeKey = prefix .. (cast and "Size" or "NameSize")
     local style = { enabled = config[prefix .. "TextEnabled"] ~= false,
         font = config[prefix .. "CustomFont"] ~= false and Style.Font(config[prefix .. (cast and "Font" or "NameFont")]) or nil,
         flags = Style.FontFlags(config[prefix .. (cast and "Outline" or "TextOutline")]),
         shadow = config[prefix .. "TextShadow"] == true,
-        size = config[prefix .. (cast and "Size" or "NameSize")] or 0,
+        size = Text.ResolveSize(config, sizeKey, shared),
         healthSize = prefix == "enemy" and config.enemyHealthTextSize or 0,
         fontScale = formatter and formatter.ApplyScale }
     if shared then
         style.enabled, style.font, style.flags = true, shared.font, shared.fontFlags
-        style.size = cast and shared.fontSize or shared.nameFontSize
-        style.healthSize = shared.fontSize
+        style.healthSize = prefix == "enemy" and Text.ResolveSize(config, "enemyHealthTextSize", shared) or shared.fontSize
         style.shadow, style.shadowAlpha = shared.fontShadow, shared.fontShadowAlpha
         style.shadowX, style.shadowY = shared.fontShadowX, shared.fontShadowY
         style.shadowKey = tostring(shared.fontShadow) .. ":" .. shared.fontShadowAlpha
@@ -102,19 +125,22 @@ function Text.FontStyle(config, prefix, shared)
     return style
 end
 
-function Text.PaintFont(label, config, prefix, nativeSize, nativeFont, painter)
+function Text.PaintFont(label, config, prefix, nativeSize, nativeFont, painter, health)
     local style = Text.FontStyle(config, prefix, Text.Shared(config))
     local face = style.enabled and style.font or nativeFont
-    local size = style.enabled and style.size > 0 and style.size or nativeSize
+    local requested = health and style.healthSize or style.size
+    local size = style.enabled and requested > 0 and requested or nativeSize
     local flags = style.enabled and style.flags or "OUTLINE"
     local shadow = style.enabled and style.shadow
     painter(label, face or nativeFont, size, flags, nil, shadow, (style.shadowAlpha or 1) * 100, style.shadowX or 1)
+    return size
 end
 
 -- A disabled local control still shows its effective inherited value.
 function Text.InheritedValue(config, key)
     local shared = Text.Shared(config)
     if not shared then return nil, false end
+    if SIZE_OVERRIDES[key] then return Text.ResolveSize(config, key, shared), true end
     local suffix = key:match("^enemyCast(.+)$") or key:match("^friendlyCast(.+)$")
         or key:match("^enemy(.+)$") or key:match("^friendly(.+)$")
     if suffix == "NameFormat" then
@@ -124,7 +150,6 @@ function Text.InheritedValue(config, key)
     elseif suffix == "NameClipSide" then return shared.nameDisplaySide == "LEFT" and 2 or 1, true
     elseif suffix == "NameNoEllipsis" then return not shared.nameDisplayDots, true
     elseif suffix == "NameFont" or suffix == "Font" then return "", true
-    elseif suffix == "NameSize" or suffix == "Size" then return shared.nameFontSize, true
     elseif suffix == "TextOutline" or suffix == "Outline" then return 7, true
     elseif suffix == "TextShadow" then return shared.fontShadow, true
     elseif suffix == "TextEnabled" or suffix == "CustomFont" then return true, true end

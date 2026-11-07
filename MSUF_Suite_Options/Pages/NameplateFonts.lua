@@ -8,12 +8,13 @@ local function NativeScope()
     return provider and provider.Nameplates ~= nil
 end
 local function LegacyTextKey(key)
-    if key == "nameFormattingEnabled" or key == "nameTextUseCustomSettings" or key == "enemyHealthTextSize" then return true end
+    if Text.SizeOverrides[key] then return false end
+    if key == "nameFormattingEnabled" or key == "nameTextUseCustomSettings" then return true end
     for _, prefix in ipairs({ "enemy", "friendly", "enemyCast", "friendlyCast" }) do
         for _, suffix in ipairs(Text.Suffixes) do if key == prefix .. suffix then return true end end
         for _, suffix in ipairs(Text.StyleSuffixes) do if key == prefix .. suffix then return true end end
     end
-    return key == "enemyCastFont" or key == "friendlyCastFont" or key == "enemyCastSize" or key == "friendlyCastSize"
+    return key == "enemyCastFont" or key == "friendlyCastFont"
         or key == "enemyCastOutline" or key == "friendlyCastOutline"
 end
 P.Gates.nameplates = function(rule, key)
@@ -24,12 +25,21 @@ function P.RuleRow(page, id, rule, ...)
     local row = RuleRow(page, id, rule, ...)
     if id == "nameplates" and row then
         local stored = row.get
+        local override = Text.SizeOverrides[rule.key]
+        if override and Text.UsesSharedFont(P.S.Config(id)) then row.label = P.Tr("Font size") end
         row.get = function()
-            if NativeScope() then
+            if NativeScope() or override and Text.UsesSharedFont(P.S.Config(id)) then
                 local value, resolved = Text.InheritedValue(P.S.Config(id), rule.key)
                 if resolved then return value end
             end
             return stored()
+        end
+        if override then
+            local set = row.set
+            row.set = function(value)
+                if Text.UsesSharedFont(P.S.Config(id)) then return P.Set(id, override, tonumber(value) or 0) end
+                return set(value)
+            end
         end
     end
     return row

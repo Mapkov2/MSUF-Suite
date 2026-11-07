@@ -155,6 +155,8 @@ local function PositionKeys(spec)
     local keys = {}
     for _, rule in ipairs(spec.positions and P.SectionRules(ID, spec.positions) or {}) do
         if IsPositionRule(rule) then keys[#keys + 1] = rule.key end
+        local override = rule.previewFontSizeOverride
+        if override then keys[#keys + 1] = override end
     end
     for _, element in ipairs(spec.positionElements or {}) do
         for _, side in ipairs({ "enemy", "friendly" }) do

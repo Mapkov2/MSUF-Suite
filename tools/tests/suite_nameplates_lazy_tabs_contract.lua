@@ -178,6 +178,84 @@ M.InvalidatePage('suite_nameplates')
 built,widgets,panels={},{},{}
 Open({'enemyOuterFrame','enemy:frame'})
 
+-- Clicking a movable sample can reveal a settings section on the same page.
+-- Reflow must preserve the selected handle and the X/Y edit that owns focus.
+do
+    M.SetFixedPreviewExpandedPreference(true)
+    assert(M.SelectPage("suite_nameplates"))
+    mw:RunTimers(1000)
+    assert(not preview.compact, "fixture did not expand the nameplate preview")
+    preview:ShowSample("enemy")
+    local arrow = assert(preview.kit.entries["enemy.target"]).region
+    local bar = preview.selection
+    assert(arrow:IsVisible() and bar:IsVisible(), "fixture target arrow or X/Y toolbar is hidden")
+    arrow:GetScript("OnMouseDown")(arrow, "LeftButton")
+    arrow:GetScript("OnMouseUp")(arrow, "LeftButton")
+    arrow:GetScript("OnClick")(arrow, "LeftButton")
+    mw:RunTimers(1000)
+    assert(preview.body._selectedHandle == arrow and bar.editX:IsEnabled() and bar.editY:IsEnabled(),
+        "same-page settings navigation dropped the preview selection and disabled X/Y")
+    local x, y = P.Get("nameplates", arrow.keyX), P.Get("nameplates", arrow.keyY)
+    bar.editX:GetScript("OnEditFocusGained")(bar.editX)
+    bar.editX:SetText(tostring(x + 9))
+    local headers = assert(M.cache.suite_nameplates.pageHeaders)
+    for _, record in ipairs(headers) do
+        if record.previewExpander then record.previewExpander:Relayout("XY_EDIT_TEST") end
+    end
+    assert(bar.editX:GetText() == tostring(x + 9), "same-mode layout overwrote a pending X edit")
+    bar.editX:GetScript("OnEnterPressed")(bar.editX)
+    assert(P.Get("nameplates", arrow.keyX) == x + 9 and P.Get("nameplates", arrow.keyY) == y,
+        "X field did not update only the selected arrow X")
+    bar.editY:GetScript("OnEditFocusGained")(bar.editY)
+    bar.editY:SetText(tostring(y - 6))
+    bar.editY:GetScript("OnEditFocusLost")(bar.editY)
+    assert(P.Get("nameplates", arrow.keyX) == x + 9 and P.Get("nameplates", arrow.keyY) == y - 6,
+        "Y field did not update only the selected arrow Y")
+    assert(preview.body._selectedHandle == arrow, "committing the X/Y fields dropped the selection")
+    assert(M.SelectPage("home"))
+    assert(not preview.body._selectedHandle, "leaving the page retained its preview selection")
+    assert(M.SelectPage("suite_nameplates"))
+    mw:RunTimers(1000)
+end
+
+-- The preview Font field must edit the size that the shared renderer reads.
+do
+    local text = P.Suite.NameplateText
+    local config, general = P.S.Config("nameplates"), M.EnsureDB().general
+    local previous = general.fontSize
+    general.fontSize = 17
+    if text.Shared(config) then
+        preview:ShowSample("enemy")
+        local spell = assert(preview.kit.entries["enemy.CastText"]).region
+        local field = preview.sizeFields[1].edit
+        assert(spell:IsVisible(), "fixture spell name is hidden")
+        local paint, drawn = P.StylePreviewFont
+        P.StylePreviewFont = function(region, font, size, ...)
+            if region:GetParent() == spell then drawn = size end
+            return paint(region, font, size, ...)
+        end
+        local legacy = config.enemyCastSize
+        preview:Select(spell)
+        assert(field:GetText() == "17", "Font field showed a stored legacy size instead of the displayed size")
+        field:GetScript("OnEditFocusGained")(field)
+        field:SetText("21")
+        field:GetScript("OnEnterPressed")(field)
+        assert(drawn == 21 and field:GetText() == "21", "Font edit did not repaint the selected spell name")
+        local shared = text.Shared(config)
+        assert(text.FontStyle(config, "enemyCast", shared).size == 21 and config.enemyCastSize == legacy,
+            "preview font size failed to reach runtime or overwrote the legacy setting")
+        assert(text.FontStyle(config, "friendlyCast", shared).size == 17 and general.fontSize == 17,
+            "enemy cast text size changed the shared or friendly size")
+        local values = {}
+        P.NameplatesSize.ResetValues(spell, values, P.catalog.nameplates.rules)
+        assert(P.SetMany("nameplates", values))
+        preview:Paint()
+        assert(drawn == 17 and field:GetText() == "17", "reset did not restore the inherited font size")
+        P.StylePreviewFont = paint
+    end
+    general.fontSize = previous
+end
+
 -- 7.0's generic exact link queues navigation until the static index is ready.
 -- Preview and interrupt links already know the live control and must land now.
 do

@@ -458,6 +458,14 @@ B.Section(id, "enemyColors", "Enemy colors", colors)
 
 -- Capture the existing Jundies preset before applying the supplied Mapko export.
 local spec = NS.SuiteCatalog[id]
+-- The shared font owns typography. Only an explicit preview edit supplies a
+-- local size, so older profiles keep their current inherited appearance.
+for _, key in ipairs({ "enemyNameSize", "friendlyNameSize", "enemyHealthTextSize", "enemyCastSize", "friendlyCastSize" }) do
+    local base = spec.rules[key]
+    base.previewFontSizeOverride = key .. "Override"
+    B.Add(id, B.Number(base.previewFontSizeOverride, "Font size", 0, base.min, base.max),
+        base.section, base.sectionTitle, { hidden = true, previewOnly = true })
+end
 local appearanceSections = { enemy = true, friendly = true, roleColors = true, castbar = true,
     enemyColors = true, auras = true, signals = true, personal = true }
 local preset, visual = {}, { nativeStyle = true, nativeSize = true, barGeometry = true, auraClickthrough = true }
@@ -483,6 +491,9 @@ local overrides = {
 for key, value in pairs(overrides) do mapko[key] = value end
 for key, value in pairs(mapko) do spec.rules[key].default = value end
 spec.rules.enemyPreviewRole.default = 4
+for key, rule in pairs(spec.rules) do
+    if rule.previewOnly and key:match("SizeOverride$") then native[key] = rule.default end
+end
 spec.look = { key = "look", presets = { [1] = preset, [2] = native, [4] = mapko }, visualKeys = visual, custom = 3 }
 
 -- Settings that act only while another one is on or set. The options page

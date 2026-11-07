@@ -39,6 +39,8 @@ Frame = function(parent)
     function f:SetSize(w, h) self.width, self.height = w, h end
     function f:SetWidth(w) self.width = w end
     function f:SetHeight(h) self.height = h end
+    function f:SetClipsChildren(value) self.clipsChildren = value end
+    function f:DoesClipChildren() return self.clipsChildren == true end
     function f:GetWidth() local a, b = Resolve(self, 1); return b - a end
     function f:GetHeight() local a, b = Resolve(self, 2); return b - a end
     function f:SetText(t) self.text = t end
@@ -291,6 +293,33 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         fixed.onActivate()
         assert(expander.expanded and section:GetHeight() == 526 and not ui.compact,
             "page activation did not expand the fixed header")
+        if host == "MidnightSimpleUnitFrames" then
+            local click = expander.button:GetScript("OnClick")
+            click()
+            local driver = assert(expander.motion, "Compact click needs a height transition")
+            assert(driver.duration == 0.150 and section:GetHeight() == 526 and section:DoesClipChildren())
+            driver:GetScript("OnUpdate")(driver, 0.075)
+            local midway = section:GetHeight()
+            assert(midway > 162 and midway < 526 and select(4, Rect(section)) == anchorY)
+            assert(not ui.compact and body:GetHeight() == 480, "motion tick rebuilt the preview")
+            click()
+            assert(driver.duration > 0.150 and section:GetHeight() == midway, "Expand must reverse from its current height")
+            driver:GetScript("OnUpdate")(driver, driver.duration)
+            assert(section:GetHeight() == 526 and not section:DoesClipChildren())
+            click()
+            driver:GetScript("OnUpdate")(driver, 0.150)
+            assert(ui.compact and section:GetHeight() == 162 and not section:DoesClipChildren())
+            assert(not driver:GetScript("OnUpdate"), "completed Compact kept its motion tick")
+            click()
+            driver:GetScript("OnUpdate")(driver, 0.100)
+            click()
+            fixed:Deactivate()
+            assert(ui.compact and not driver:GetScript("OnUpdate") and not section:DoesClipChildren(),
+                "leaving during Compact kept motion or expanded presentation")
+            M.SetFixedPreviewExpandedPreference(true)
+            fixed:Activate(headerHost, 0)
+            fixed.onActivate()
+        end
         local originalWidths = {}
         for i, button in ipairs(ui.layerButtons) do originalWidths[i] = button:GetWidth() end
         for _, width in ipairs({ 640, 885, 1120, 700, 885 }) do

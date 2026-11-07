@@ -70,8 +70,10 @@ for _, forever in ipairs({ false, true }) do
     newer.enemyTargetMirrorOffsetX, newer.enemyTargetMirrorOffsetY = 0, 0
     newer.hideHealthBarBorders = false
     newer.nameFormattingEnabled, newer.nameTextUseCustomSettings = false, false
+    newer.enemyHealthTextSizeOverride = 0
     for _, side in ipairs({ "enemy", "friendly" }) do
         newer[side .. "CastWidthDelta"] = 0
+        newer[side .. "NameSizeOverride"], newer[side .. "CastSizeOverride"] = 0, 0
         if forever then newer[side .. "NativeBorderEnabled"] = true end
         for suffix, default in pairs({ NameFormat = 2, NameMaxChars = 12, NameClipSide = 1,
             NameNoEllipsis = false, NameColorEnabled = false, NameColor = "ffffff" }) do

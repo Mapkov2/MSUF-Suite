@@ -42,9 +42,14 @@ function Layout.Attach(ui, section, toolbar, record)
     end
     body.Refresh = Refresh
     function body:ApplyCompactPreviewPresentation(compact)
-        ui:CancelDrag()
-        ui:Select(nil)
-        ui.compact = compact == true
+        compact = compact == true
+        -- Settings links and header resizing reapply the current presentation.
+        -- Keep the selected element and its X/Y input during a reflow.
+        if ui.compact ~= compact then
+            ui:CancelDrag()
+            ui:Select(nil)
+            ui.compact = compact
+        end
         Refresh()
     end
     -- Use the same page ownership lifecycle as UF/GF. The fixed section owns

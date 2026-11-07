@@ -1,11 +1,18 @@
 local _, P = ...
 local ID = "nameplates"
 local T, Tr = P.T, P.Tr
+local Text = P.Suite.NameplateText
 local Size = {}
 P.NameplatesSize = Size
 
 local function Clamp(value, low, high) return math.max(low, math.min(high, value)) end
 local function Round(value) return math.floor(value + 0.5) end
+
+local function FontKey(side, key, enableKey)
+    if not P.Get(ID, side) then return end
+    if Text.UsesSharedFont(P.S.Config(ID)) then return Text.SizeOverrides[key], nil, "Font" end
+    if P.Get(ID, enableKey) then return key, nil, "Font" end
+end
 
 -- Size controls describe real runtime settings. Native badges, raid icons
 -- and power bars have no independent width/height override.
@@ -30,23 +37,24 @@ function Size.Keys(handle)
         if element == "Cast" then return prefix .. "CastWidthDelta", prefix .. "CastHeight", "W", "H" end
         if element == "CastIcon" then return prefix .. "CastIconSize", nil, "Size" end
     end
-    if element == "Name" and P.Get(ID, prefix .. "TextEnabled") then
-        return prefix .. "NameSize", nil, "Font"
-    end
+    if element == "Name" then return FontKey(prefix, prefix .. "NameSize", prefix .. "TextEnabled") end
     if element == "Level" and handle._npLevelMode == "number" then
         return prefix .. "LevelSize", nil, "Font"
     end
-    if element == "HealthText" and prefix == "enemy" and P.Get(ID, "enemyTextEnabled") then
-        return "enemyHealthTextSize", nil, "Font"
+    if element == "HealthText" and prefix == "enemy" then
+        return FontKey(prefix, "enemyHealthTextSize", "enemyTextEnabled")
     end
-    if (element == "CastText" or element == "CastTime" or element == "CastTarget")
-        and P.Get(ID, prefix .. "CastTextEnabled") then
-        return prefix .. "CastSize", nil, "Font"
+    if element == "CastText" or element == "CastTime" or element == "CastTarget" then
+        return FontKey(prefix, prefix .. "CastSize", prefix .. "CastTextEnabled")
     end
 end
 
 function Size.Value(handle, key)
     local value = P.Get(ID, key)
+    if value == 0 and key:match("SizeOverride$") then
+        local config = P.S.Config(ID)
+        return Text.ResolveSize(config, key:sub(1, -9), Text.Shared(config))
+    end
     if key:match("WidthDelta$") then return (handle._npNativeWidth or 0) + value end
     if value == 0 and (key:match("CastHeight$") or key:match("CastIconSize$")) then
         return handle:GetHeight()

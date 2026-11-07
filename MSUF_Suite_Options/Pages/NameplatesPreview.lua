@@ -120,20 +120,14 @@ local function AuraGroup(parent, textures, reverse)
     return group
 end
 
-local function PreviewFont(region, prefix, size, outline, nativeSize, nativeOnly)
+local function PreviewFont(region, prefix, nativeSize, nativeOnly, health)
     if not nativeOnly then
-        P.Suite.NameplateText.PaintFont(region, P.S.Config(ID), prefix, nativeSize, NATIVE_TEXT_FONT, P.StylePreviewFont)
-        return
+        return P.Suite.NameplateText.PaintFont(
+            region, P.S.Config(ID), prefix, nativeSize, NATIVE_TEXT_FONT, P.StylePreviewFont, health)
     end
-    local enabled = not nativeOnly and P.Get(ID, prefix .. "TextEnabled")
-    local custom = P.Get(ID, prefix .. "CustomFont")
-    local fontKey = prefix .. (prefix:sub(-4) == "Cast" and "Font" or "NameFont")
-    local font = enabled and custom and Style.Font(P.Get(ID, fontKey)) or NATIVE_TEXT_FONT
-    P.StylePreviewFont(region, font, enabled and size > 0 and size or nativeSize,
-        enabled and Style.FontFlags(outline) or "OUTLINE")
-    local shadow = enabled and P.Get(ID, prefix .. "TextShadow")
-    region:SetShadowColor(0, 0, 0, shadow and 1 or 0)
-    region:SetShadowOffset(shadow and 1 or 0, shadow and -1 or 0)
+    P.StylePreviewFont(region, NATIVE_TEXT_FONT, nativeSize, "OUTLINE")
+    region:SetShadowColor(0, 0, 0, 0)
+    region:SetShadowOffset(0, 0)
 end
 
 -- Moves a sample element by its saved offset from a native-style base.
@@ -462,8 +456,10 @@ end
 local function RenderName(s, m)
     local prefix, name, bar = s.prefix, s.name, s.bar
     name:EnableMouse(not m.npcWorldName)
-    local size = P.Get(ID, prefix .. "NameSize")
-    name:SetHeight(P.Get(ID, prefix .. "TextEnabled") and size > 0 and size
+    local config = P.S.Config(ID)
+    local shared = not m.npcWorldName and P.Suite.NameplateText.Shared(config)
+    local size = P.Suite.NameplateText.ResolveSize(config, prefix .. "NameSize", shared)
+    name:SetHeight(not m.npcWorldName and (shared or P.Get(ID, prefix .. "TextEnabled")) and size > 0 and size
         or SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical))
     name:ClearAllPoints()
     if m.npcWorldName then
@@ -566,14 +562,15 @@ local function RenderFonts(s, m)
     local prefix = s.prefix
     local nativeNameSize = SetupNumber("healthBarFontHeight", (m.classic and 10 or m.forever and 14 or 12) * m.vertical)
     local nativeCastSize = SetupNumber("castBarFontHeight", 10 * m.vertical)
-    local castSize, castOutline = P.Get(ID, prefix .. "CastSize"), P.Get(ID, prefix .. "CastOutline")
-    PreviewFont(s.nameText, prefix, P.Get(ID, prefix .. "NameSize"), P.Get(ID, prefix .. "TextOutline"), nativeNameSize, m.npcWorldName)
-    PreviewFont(s.castText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
-    PreviewFont(s.castTimeText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
-    PreviewFont(s.castTargetText, prefix .. "Cast", castSize, castOutline, nativeCastSize)
-    -- Both sides style their health text; only enemy plates size it (Skin.lua PaintFonts).
-    PreviewFont(s.value, prefix, prefix == "enemy" and P.Get(ID, "enemyHealthTextSize") or 0,
-        P.Get(ID, prefix .. "TextOutline"), nativeNameSize)
+    PreviewFont(s.nameText, prefix, nativeNameSize, m.npcWorldName)
+    local castSize = PreviewFont(s.castText, prefix .. "Cast", nativeCastSize)
+    PreviewFont(s.castTimeText, prefix .. "Cast", nativeCastSize)
+    PreviewFont(s.castTargetText, prefix .. "Cast", nativeCastSize)
+    if not m.classicCast then s.castName:SetHeight(math.max(14, castSize)) end
+    s.castTime:SetHeight(math.max(14, castSize))
+    s.castTarget:SetHeight(math.max(14, castSize))
+    local healthSize = PreviewFont(s.value, prefix, nativeNameSize, false, true)
+    s.healthText:SetHeight(math.max(18, healthSize))
 end
 
 local function CastText(s, m)
