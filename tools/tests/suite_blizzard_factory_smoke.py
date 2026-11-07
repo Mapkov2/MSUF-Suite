@@ -432,8 +432,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     assert(not nativeAuras.hideBlizzardBuffFrame and not nativeAuras.hideBlizzardDebuffFrame,
         "native top-right auras were hidden")
     local focus = assert(UF.Config.GetSpec("focus"))
-    assert(focus.x == 358 and focus.y == -327 and focus.anchorFrameName == "UIParent",
-        "focus position differs from the imported global anchor")
+    local referenceHeight = frameData.payload.focus.screenPositionHeight
+    local scale = env.UIParent:GetHeight() / referenceHeight
+    assert(focus.x == 358 * scale and focus.y == -327 * scale and focus.anchorFrameName == "UIParent",
+        "focus position differs from the height-adjusted global anchor")
     for _, kind in ipairs({ "boss", "arena" }) do
         if kind == "boss" or flavor ~= "Forever" then
             for index = 1, kind == "boss" and 5 or 3 do
