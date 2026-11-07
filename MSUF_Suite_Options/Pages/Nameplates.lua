@@ -51,7 +51,7 @@ local SECTIONS = {
         "nameFormattingEnabled", "nameTextUseCustomSettings", "enemyNameFormat", "enemyNameMaxChars", "enemyNameClipSide", "enemyNameNoEllipsis",
         "enemyNameColorEnabled", "friendlyNameFormat", "friendlyNameMaxChars", "friendlyNameClipSide", "friendlyNameNoEllipsis",
         "friendlyNameColorEnabled" }, colors = { "enemyNameColor", "friendlyNameColor" } },
-    { key = "native", area = "general", title = "Blizzard plates",
+    { key = "native", area = "general", title = "Nameplate styling",
       keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
             "hideHealthBarBorders", "classColors", "playerGuildNames", "playerTitles" } },
     { key = "visibility", area = "general", catalog = "visibility" },

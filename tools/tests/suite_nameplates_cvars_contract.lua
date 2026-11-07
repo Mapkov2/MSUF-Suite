@@ -112,7 +112,8 @@ for key, expected in pairs(NEW) do
         assert(not (spec.look.presets[index] and spec.look.presets[index][key]) and not spec.look.visualKeys[key],
             key .. " is a Blizzard option, not part of a look or Quick Setup")
     end
-    assert(rule.section == "distance" or rule.section == "visibility", key .. " sits in no Distance or Visibility section")
+    assert(rule.section == "distance" or rule.section == "visibility" or key == "personalResource" and rule.section == "personal",
+        key .. " sits outside the Blizzard options sections")
     manifestSize = manifestSize + 1
 end
 assert(not spec.look.presets[4].plateEnemies and not spec.look.presets[4].plateMaxDistance,

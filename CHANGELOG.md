@@ -1,8 +1,8 @@
 # MSUF Suite Changelog
 
-### Unreleased
+## 0.1.13 Alpha - 2026-11-07
 
-#### Highlights
+### Highlights
 
 - Chat has a new settings workspace, an optional header toolbar, and Edit Mode support for detached chat windows.
 - DataTexts gains a Modern data bar, a standalone game-menu button, progress indicators, and a more interactive bar editor.
@@ -10,7 +10,7 @@
 - WoW Forever gains opt-in world map information and gathering skill tooltips. Skinning also offers a compact quest list layout.
 - An opt-in Quality of Life tool keeps supported Blizzard windows open together. The merchant Buyback tab now has item search.
 
-#### Chat
+### Chat
 
 - Organize settings into Basics, Appearance, Input Line, Messages, and Extras. Topic buttons wrap as the settings window narrows and share a persistent preview.
 - Add an optional header toolbar with New Tab, Chat Input, Copy Chat, a move and resize lock, and Chat Settings. The toolbar reserves space in the tab strip and remains accessible while hovered in minimal mode.
@@ -22,7 +22,7 @@
 - Let preview layers reflect the live chat layout and provide direct links from selectable preview elements to their settings. Improve hover, text fading, copy, clock, sidebar, and tab overflow behavior.
 - Move mouse-wheel scrolling, class-colored names, whisper window behavior, and message fading into Chat Behavior under Messages. Existing profiles and legacy Daily UI Comforts imports carry their saved chat choices forward.
 
-#### DataTexts
+### DataTexts
 
 - Add the Modern data bar preset with a centered clock and slots for the game menu, progress, durability, professions, gold, FPS, latency, and location.
 - Add the standalone Micro Menu Button preset and a customizable caption for any slot using that source.
@@ -32,7 +32,7 @@
 - Align the bar selector with Add Bar and Delete Bars in wide layouts. Keep the actions on a separate row in narrow layouts.
 - Refresh active sources when their bindings change, keep their event subscriptions in sync, and update the Hearthstone menu as available hearth items change. Improve native bag-bar visibility, dock geometry, and weekly rewards integration.
 
-#### Experience Bar and HUD
+### Experience Bar and HUD
 
 - Add independent foreground and background textures for the XP bar.
 - Configure Level, Current XP, Percentage, Session XP, XP per Hour, and Time to Level independently. Each text element has font, size, outline, anchor, offsets, and applicable visibility and display formats.
@@ -42,14 +42,14 @@
 - Add Classic Lines, Twin Arrows, Gilded Edges, and Soft Glow artwork for announcement banners. The HUD preview can switch artwork, hide it, and replay the banner with the same artwork as the live HUD.
 - Give announcement artwork its own frame and keep the banner background opacity independent. Edits preserve a live banner's display time and bring the static sample back after preview playback.
 
-#### WoW Forever world map and gathering
+### WoW Forever world map and gathering
 
 - Add an opt-in World Map Information module with zone level ranges, flight points, boats, zeppelins, skycutters, dungeon entrances and approaches, and roads to neighboring zones.
 - Configure each map overlay separately, filter travel markers by faction, and adjust marker size. Click a marker to place a map pin.
 - Add opt-in gathering skill information for known herbs and ore deposits. World-object and minimap-node tooltips can be enabled independently and can color the requirement by your skill margin.
 - Add an optional Glimmer highlight for skinnable corpses. Refresh the highlight after looting as the interaction changes.
 
-#### Skinning and Blizzard windows
+### Skinning and Blizzard windows
 
 - Add a Blizzard or Compact quest list selector under Skinning. Compact shows level, title, and objective progress while retaining quest search, tracking, selection, and native tooltips.
 - Style the world map's quest search, count area, and row hover without replacing Blizzard's map highlight or tooltip behavior.
@@ -58,16 +58,18 @@
 - Skin Blizzard's Chat Settings, including its categories, tabs, checkboxes, and channel and filter lists.
 - Smooth AddOn List row and group transitions when filtering or rapidly toggling sections. Refine shared control glyphs and menu transitions.
 
-#### Nameplates
+### Nameplates
 
 - Use MSUF's existing Fonts > Nameplates scope when the host provides it. Nameplate settings and search link to the corresponding formatting and color sections.
 - On older compatible hosts, support full, clipped, abbreviated, and abbreviated-and-clipped names, with a configurable character limit, clip direction, and ellipsis. Friendly and enemy name colors can be customized independently.
 - Apply shared text formatting and typography consistently between live nameplates and the preview, including supported character-name display options.
 - Add castbar width adjustments and keep the native castbar border, height, and spell icon aligned. Add separate friendly and enemy Blizzard health bar border toggles on Forever.
 - Add Hide Health Bar Borders for Blizzard and styled nameplates, including health, target, and selection borders. Find it from search and see the result in the preview.
+- Position the primary and right target arrows independently with draggable preview handles or numeric offsets. Existing pair spacing carries forward.
+- Make the personal resource display toggle available with the Blizzard look and improve border and offset handling for its power and alternate power bars.
 - Improve level-number and badge behavior on name-only plates and refresh name styling as Blizzard reuses plates. Update preview castbar sizing, target decoration, and text positioning.
 
-#### Bags, Macros, and other tools
+### Bags, Macros, and other tools
 
 - Search the merchant Buyback tab by item name. Non-matching entries dim so their original positions and native buyback actions remain available.
 - Create a spell macro from the spellbook picker and optionally publish it straight to Blizzard's macro list. Use the spell's icon automatically.
@@ -78,14 +80,14 @@
 - Start the flight countdown reliably when taxi state updates arrive during or after takeoff. Reuse the running countdown until its timing changes.
 - Smooth rapid open and close interactions in Adventure Planner groups and improve the size of its navigation rows. Refine Cooldown Manager preview chips and compact Action Bars navigation.
 
-#### Setup, profiles, and settings
+### Setup, profiles, and settings
 
 - Resume Suite startup and installer checks when combat ends, including logins where the player's combat flag settles after the combat-end event.
 - Improve settings search and preview links so they open the relevant topic, expand the matching section, and focus the setting on supported hosts. Keep old Chat Behavior search targets usable after the move.
 - Add per-feature reset actions in Quality of Life and improve help affordances for truncated descriptions.
 - Update localized labels and descriptions for the new settings and add automated coverage for the new runtime, profile, and preview behavior.
 
-#### Alpha issues carried forward
+### Alpha issues carried forward
 
 - Automatic profile selection and installer appearance on alternate characters still need live verification.
 - Quest reward selection after handing in items remains an open issue. The quest list changes cover the world map layout and its controls.

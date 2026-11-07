@@ -46,6 +46,8 @@ for _, key in ipairs({ "plateShowAll", "plateStackEnemy", "plateSimpleFriendlyNp
     assert(rules[key].section == "visibility" and rules[key].default == 1, key .. " must keep Blizzard's value by default")
     assert(not spec.look.visualKeys[key], key .. " is a Blizzard option, not part of a look")
 end
+assert(rules.personalResource.section == "personal" and not spec.look.visualKeys.personalResource,
+    "personal visibility must sit next to the skin and stay independent of look presets")
 for _, key in ipairs({ "selectionBorder", "selectionDim", "selectionDimPercent", "selectionTargetColor" }) do
     assert(rules[key].section == "signals" and spec.look.visualKeys[key], key .. " must belong to the looks")
 end

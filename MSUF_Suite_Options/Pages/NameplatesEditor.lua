@@ -100,8 +100,8 @@ local function BindSetting(handle, id)
         handle._npSettingKey = id == "friendly.Level" and "friendlyLevelEnabled" or "friendlyNamesOnly"
     elseif id == "personal.Power" then
         handle._npSettingKey = "personalPowerSkin"
-    elseif id == "enemy.target" or id == "friendly.target" then
-        handle._npSettingKey = id == "enemy.target" and "enemyTargetMarker" or "enemyTargetHideFriendly"
+    elseif id:match("%.target$") or id:match("%.targetRight$") then
+        handle._npSettingKey = id:match("^enemy") and "enemyTargetMarker" or "enemyTargetHideFriendly"
     elseif id == "enemy.elite" or id == "enemy.quest"
         or id == "friendly.elite" or id == "friendly.quest" then
         handle._npSettingKey = id:match("^enemy") and (id:find("elite") and "enemyEliteMarker" or "enemyQuestMarker")
@@ -129,15 +129,19 @@ function Editor:Bind(handle, id, label, keyX, keyY, section)
     Register(handle, id, label)
 end
 
+local function InDungeon()
+    local inInstance, instanceType = _G.IsInInstance()
+    return P.Suite.Public(instanceType) and P.Suite.Public(inInstance)
+        and inInstance == true and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
+end
+
 function Editor:Paint()
     if self.dragging or self.panning then return end
+    self.inDungeon = InDungeon()
     self.stage:ClearAllPoints()
     self.stage:SetPoint("CENTER", self.canvas, "CENTER", self.panX, self.panY)
     self.stage:SetScale(self.zoom)
     for _, render in ipairs(self.renderers) do render() end
-    if self.contextButton then
-        self.contextButton:SetText(self.inDungeon and "Dungeon / raid" or "Outdoor")
-    end
     if self.zoomLabel then self.zoomLabel:SetText(string.format("%d%%", Round(self.zoom * 100))) end
     self:LayoutLayerRail()
     for _, button in ipairs(self.layerButtons or {}) do
@@ -198,10 +202,6 @@ local function BuildZoomTools(ui)
     ui.zoomLabel:SetPoint("TOPLEFT", tools, "TOPLEFT", 112, -4)
     Button(ui, tools, "zoomIn", "+", 24, 156, function()
         ui.zoom = Clamp(ui.zoom + 0.1, 0.5, 2)
-        ui:Paint()
-    end)
-    ui.contextButton = Button(ui, tools, "context", "Outdoor", 128, 188, function()
-        ui.inDungeon = not ui.inDungeon
         ui:Paint()
     end)
     return tools
@@ -465,14 +465,10 @@ Editor.BuildKit = BuildKit
 function Editor.Create(ctx, builder, sections)
     local section, toolbar, record = W.FixedPreviewSection(ctx, builder, { title = Tr("Nameplate preview"), height = 162, gap = 8 })
     if not section then return end
-    local inInstance, instanceType = _G.IsInInstance()
-    local inDungeon = P.Suite.Public(instanceType) and P.Suite.Public(inInstance)
-        and inInstance == true and (instanceType == "party" or instanceType == "raid" or instanceType == "scenario")
     local ui = setmetatable({ ctx = ctx, sections = sections, renderers = {}, layers = {},
         sampleKind = "enemy", zoom = 1, panX = 0, panY = 0, compact = true,
         softTargetSample = true, aggroSample = true,
         layoutWidth = math.max(640, (HM.GetSectionWidth(section) or builder.width or 720) - 28),
-        inDungeon = inDungeon,
         help = "Select an element for X/Y and available size · Drag or arrow keys: move · Tab: select · Wheel: zoom",
     }, { __index = Editor })
     ui.previewRole, ui.previewRoleSource = nil, P.Get(ID, "enemyPreviewRole")

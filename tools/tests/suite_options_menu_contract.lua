@@ -2684,14 +2684,27 @@ end
     target.scripts.OnMouseDown(target, "LeftButton")
     cx = cx + 20
     target.scripts.OnMouseUp(target, "LeftButton")
-    assert(plates.enemyTargetOffsetX == 20, "target arrow drag did not save its position")
+    local right = assert(Control("enemy.targetRight"))
+    assert(right:IsShown() and plates.enemyTargetPrimaryOffsetX == 20 and plates.enemyTargetMirrorOffsetX == 0,
+        "primary arrow drag moved the pair")
+    right.scripts.OnMouseDown(right, "LeftButton")
+    cx, cy = cx + 11, cy + 6
+    right.scripts.OnMouseUp(right, "LeftButton")
+    assert(plates.enemyTargetPrimaryOffsetX == 20 and plates.enemyTargetMirrorOffsetX == 11
+        and plates.enemyTargetMirrorOffsetY == 6, "right arrow cannot move independently")
     savedRoot = assert(Suite.Database.Prepare(Suite.CopyValue(Suite.RootDB), nil))
     S.Normalize(savedRoot.profiles[savedRoot.activeProfile])
-    assert(savedRoot.profiles[savedRoot.activeProfile].suite.modules.nameplates.enemyTargetOffsetX == 20,
-        "target arrow position was lost while preparing a reload")
+    local savedPlates = savedRoot.profiles[savedRoot.activeProfile].suite.modules.nameplates
+    assert(savedPlates.enemyTargetPrimaryOffsetX == 20 and savedPlates.enemyTargetMirrorOffsetX == 11,
+        "independent arrow positions were lost while preparing a reload")
     ui.body.selectionDeps.ResetOffsets(ui.body, target)
-    assert(plates.enemyTargetOffsetX == S.catalog.nameplates.rules.enemyTargetOffsetX.default,
-        "target arrow reset did not restore its Mapko factory position")
+    assert(plates.enemyTargetPrimaryOffsetX == 0 and plates.enemyTargetMirrorOffsetX == 11,
+        "resetting one arrow moved the other")
+    ui.body.selectionDeps.ResetOffsets(ui.body, right)
+    assert(optionsNS.Set("nameplates", "enemyTargetLayout", 1))
+    ui:Paint()
+    assert(target:IsShown() and not right:IsShown(), "single layout retained an invisible second drag target")
+    assert(optionsNS.Set("nameplates", "enemyTargetLayout", 2))
     ui.sampleKind, ui.personal = previousSampleKind, previousPersonal
     ui:Paint()
     cast.scripts.OnMouseDown(cast, "LeftButton")
@@ -2708,8 +2721,6 @@ end
     ui.canvas.scripts.OnMouseUp(ui.canvas, "LeftButton")
     assert(ui.panX == 20 and S.Config("nameplates").enemyCastOffsetX == 0,
         "background pan must move only the viewport")
-    Control("context").scripts.OnClick()
-    assert(ui.inDungeon, "outdoor/dungeon sample control failed")
     -- Every color role, the twelve EQoL ones and the other tank, then back to the first.
     for role = 2, #Suite.NameplateStyle.Roles do
         Control("role").scripts.OnClick()
@@ -4349,7 +4360,8 @@ for _, id in ipairs(Suite.SuiteOrder) do
         if id == "cooldownManager" and rule.suffix then template = "c1_" .. rule.suffix end
         if not absent and not rule.hidden and not rule.previewOnly then
             if id == "nameplates" and key:match("Offset[XY]$") then
-                assert(covered._nameplatePreviewPositions[key], "nameplate position has no preview handle: " .. key)
+                local legacyPairBase = key == "enemyTargetOffsetX" or key == "enemyTargetOffsetY"
+                assert(legacyPairBase or covered._nameplatePreviewPositions[key], "nameplate position has no preview handle: " .. key)
                 assert(not covered["msufsuite.nameplates." .. key],
                     "nameplate X/Y slider survived outside the preview: " .. key)
             else

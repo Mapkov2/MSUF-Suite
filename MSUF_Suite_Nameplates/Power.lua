@@ -7,7 +7,7 @@ private.Power = Power
 
 local owner
 local visuals = setmetatable({}, { __mode = "k" })
-local hooked
+local hooked, hookedDisplay
 
 local function Requested()
     local config = owner and owner.config
@@ -20,54 +20,78 @@ local function Accessible(bar)
     return bar and not NS.Safety.IsForbidden(bar)
 end
 
-local function Paint(bar, force, targetX, targetY)
+local function Paint(bar, force, x, y, size, color)
     if not Accessible(bar) then return end
-    local config = owner.config
-    local active = owner.active and config.look ~= LOOK_BLIZZARD
-    local x = active and (targetX or 0) or 0
-    local y = active and (targetY or 0) or 0
     local visual = visuals[bar]
-    if active and (config.personalPowerSkin or x ~= 0 or y ~= 0) and not visual then
+    if not visual and x == 0 and y == 0 and size == 0 then return end
+    local oldX, oldY = visual and visual.offsetX or 0, visual and visual.offsetY or 0
+    local move = oldX ~= x or oldY ~= y or force and (x ~= 0 or y ~= 0)
+    local resize = (visual and visual.borderSize or 0) ~= size
+        or size > 0 and visual.borderColor ~= color
+    if not move and not resize then return end
+    if NS.IsCombatLocked() then
+        owner.needsRefresh = true
+        return
+    end
+    if not visual then
         visual = {}
         visuals[bar] = visual
     end
-    if active and config.personalPowerSkin and visual and not visual.edges then
-        if NS.IsCombatLocked() then
-            owner.needsRefresh = true
-            return
-        end
-        visual.edges = Style.CreateBorder(bar).edges
+    if resize then
+        if not visual.edges then visual.edges = Style.CreateBorder(bar).edges end
+        Style.PaintBorder(visual, bar, size, color)
     end
-    if visual and visual.edges then
-        if NS.IsCombatLocked() then
-            owner.needsRefresh = true
-            return
-        end
-        Style.PaintBorder(visual, bar,
-            active and config.personalPowerSkin and config.personalPowerBorderSize or 0,
-            config.personalPowerBorderColor)
-    end
-    if visual and (force or (visual.offsetX or 0) ~= x or (visual.offsetY or 0) ~= y) then
-        if x ~= 0 or y ~= 0 or (visual.offsetX or 0) ~= 0 or (visual.offsetY or 0) ~= 0 then
-            if NS.IsCombatLocked() then
-                owner.needsRefresh = true
-                return
-            end
-            bar:SetPointsOffset(x, y)
-        end
+    if move then
+        bar:SetPointsOffset(x, y)
         visual.offsetX, visual.offsetY = x, y
     end
+end
+
+local function PaintPower(bar, force, inheritOffset)
+    local config = owner.config
+    local x = not inheritOffset and config.personalPowerOffsetX or 0
+    local y = not inheritOffset and config.personalPowerOffsetY or 0
+    local size = config.personalPowerSkin and config.personalPowerBorderSize or 0
+    Paint(bar, force, x, y, size, config.personalPowerBorderColor)
+end
+
+local function PaintDisplayAlternate(display, force)
+    local hidden = display.hidePower
+    if not NS.Public(hidden) then return end
+    -- Both native clients attach the alternate bar to PowerBar when enabled.
+    PaintPower(display.AlternatePowerBar, force, not hidden)
+end
+
+local function OnDisplayPowerAnchor(display)
+    if Requested() and Accessible(display) then PaintPower(display.PowerBar, true) end
+end
+
+local function OnDisplayAlternateAnchor(display)
+    if Requested() and Accessible(display) then PaintDisplayAlternate(display, true) end
+end
+
+local function RefreshDisplay(force)
+    local display = PersonalResourceDisplayFrame
+    if not Accessible(display) then return end
+    if not hookedDisplay then
+        hooksecurefunc(display, "UpdatePowerBarAnchor", OnDisplayPowerAnchor)
+        hooksecurefunc(display, "UpdateAdditionalBarAnchors", OnDisplayAlternateAnchor)
+        hookedDisplay = true
+    end
+    PaintPower(display.PowerBar, force)
+    PaintDisplayAlternate(display, force)
 end
 
 -- Paints the personal power bars; force writes their offsets again.
 local function Refresh(force)
     if not owner then return end
     if not Requested() then
-        for bar in pairs(visuals) do Paint(bar) end
+        for bar in pairs(visuals) do Paint(bar, false, 0, 0, 0) end
         return
     end
+    RefreshDisplay(force)
     local driver = NamePlateDriverFrame
-    if NS.Safety.IsForbidden(driver) then return end
+    if not Accessible(driver) then return end
     if not hooked then
         hooksecurefunc(driver, "SetupClassNameplateBars", function()
             if Requested() then Power.Reapply() end
@@ -76,13 +100,12 @@ local function Refresh(force)
     end
     local mana = driver:GetClassNameplateManaBar()
     local alternate = driver:GetClassNameplateAlternatePowerBar()
-    local x, y = owner.config.personalPowerOffsetX or 0, owner.config.personalPowerOffsetY or 0
-    Paint(mana, force, x, y)
+    PaintPower(mana, force)
     -- Blizzard anchors alternate power to mana when mana is shown. Moving
     -- both would apply the displacement twice to the alternate bar.
     local manaShown = Accessible(mana) and mana:IsShown()
     local altRoot = not mana or (NS.Public(manaShown) and manaShown == false)
-    Paint(alternate, force, altRoot and x or 0, altRoot and y or 0)
+    PaintPower(alternate, force, not altRoot)
 end
 Power.Refresh = Refresh
 
@@ -99,6 +122,6 @@ end
 
 function Power.Disable()
     if not owner then return end
-    for bar in pairs(visuals) do Paint(bar) end
+    for bar in pairs(visuals) do Paint(bar, false, 0, 0, 0) end
     owner = nil
 end

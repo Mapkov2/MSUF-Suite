@@ -312,7 +312,8 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
                 CheckAbove(ui.tools, ui.selection, 5, "zoom tools overlap selection")
                 CheckAbove(ui.canvas, ui.tools, 4, "canvas overlaps toolbar")
                 assert(ui.canvas:GetHeight() > 80, "layer flow left no usable canvas")
-                for _, control in ipairs({ ui.targetStateButton, ui.focusStateButton, body.picker, ui.contextButton }) do
+                assert(not ui.contextButton, "preview still has the outdoor/dungeon switch")
+                for _, control in ipairs({ ui.targetStateButton, ui.focusStateButton, body.picker }) do
                     CheckInside(control, ui.tools, "preview toolbar child clipped")
                 end
                 local _, fbottom, _, ftop = Rect(ui.focusStateButton)

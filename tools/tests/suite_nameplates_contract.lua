@@ -375,6 +375,11 @@ hooksecurefunc = function(frame, method, callback)
         return
     end
     if frame == NamePlateDriverFrame and method == "SetupClassNameplateBars" then powerHook = callback; return end
+    if frame == PersonalResourceDisplayFrame then
+        assert(method == "UpdatePowerBarAnchor" or method == "UpdateAdditionalBarAnchors")
+        SecureWrap(frame, method, callback)
+        return
+    end
     if frame == cast then error("do not hook native cast logic") end
     if frame == uf and method == "UpdateAnchors" then
         layoutCallbacks[#layoutCallbacks + 1] = callback
@@ -849,6 +854,20 @@ assert(freshTarget.offsetX == freshTargetConfig.bossTargetX
     and freshTarget.offsetY == freshTargetConfig.bossTargetY
     and freshTarget.mirror.offsetX == -freshTargetConfig.bossTargetX,
     "fresh target renderer lost saved arrow position after reload")
+local function RepaintTarget()
+    local settings = NS.NameplateStyle.TargetConfig(module.config)
+    NS.NameplateStyle.PaintTarget(freshTargetVisual, bar, true, settings, uf, 0, 0)
+end
+module.config.enemyTargetPrimaryOffsetX, module.config.enemyTargetPrimaryOffsetY = 8, 5
+RepaintTarget()
+assert(freshTarget.offsetX == -2 and freshTarget.offsetY == 1
+    and freshTarget.mirror.offsetX == 10 and freshTarget.mirror.offsetY == -4, "primary drag also moved the mirror")
+module.config.enemyTargetMirrorOffsetX, module.config.enemyTargetMirrorOffsetY = 6, -7
+RepaintTarget()
+assert(freshTarget.offsetX == -2 and freshTarget.offsetY == 1
+    and freshTarget.mirror.offsetX == 16 and freshTarget.mirror.offsetY == -11, "mirror drag also moved the primary")
+module.config.enemyTargetPrimaryOffsetX, module.config.enemyTargetPrimaryOffsetY = nil, nil
+module.config.enemyTargetMirrorOffsetX, module.config.enemyTargetMirrorOffsetY = nil, nil
 targetUnit = nil
 targetFontReads = name.fontReads
 events.PLAYER_TARGET_CHANGED(module, "PLAYER_TARGET_CHANGED")
@@ -2088,6 +2107,12 @@ do
         GetClassNameplateAlternatePowerBar = function() return alternate end,
         SetupClassNameplateBars = function() end,
     }
+    local displayPower, displayAlt = Region(), Region()
+    PersonalResourceDisplayFrame = {
+        PowerBar = displayPower, AlternatePowerBar = displayAlt, hidePower = false,
+        UpdatePowerBarAnchor = function() displayPower:SetPointsOffset(0, 0) end,
+        UpdateAdditionalBarAnchors = function() displayAlt:SetPointsOffset(0, 0) end,
+    }
     local c = module.config
     c.personalPowerSkin, c.personalPowerBorderSize = true, 1
     c.personalPowerBorderColor = "000000"
@@ -2097,6 +2122,30 @@ do
         and mana.offsetX == 12 and mana.offsetY == -3 and alternate.offsetX == nil
         and nativeMana.texture == "native-mana",
         "personal bars were not skinned without replacing native fill")
+    assert(displayPower.created == 4 and displayAlt.created == 4 and displayPower.offsetX == 12
+        and displayAlt.offsetX == nil, "Blizzard PersonalResourceDisplay was not skinned")
+    local display = PersonalResourceDisplayFrame
+    local offsetWrites = displayPower.offsetWrites
+    local edge = displayPower.textures[1]
+    local show, repeatedShows = edge.Show, 0
+    function edge:Show()
+        repeatedShows = repeatedShows + 1
+        show(self)
+    end
+    local driver = NamePlateDriverFrame
+    NamePlateDriverFrame = nil
+    for i = 1, 100 do private.Power.Refresh() end
+    NamePlateDriverFrame = driver
+    assert(displayPower.offsetWrites == offsetWrites and repeatedShows == 0,
+        "unchanged personal power settings repeated native offset or border writes")
+    display:UpdatePowerBarAnchor()
+    assert(displayPower.offsetX == 12 and displayPower.created == 4, "display layout reset lost the power offset")
+    display.hidePower = true
+    display:UpdateAdditionalBarAnchors()
+    assert(displayAlt.offsetX == 12 and displayAlt.offsetY == -3, "standalone alternate display did not move")
+    display.hidePower = false
+    display:UpdateAdditionalBarAnchors()
+    assert(displayAlt.offsetX == 0 and displayAlt.offsetY == 0, "chained display moved the alternate bar twice")
     mana:Hide()
     private.Power.Reapply()
     assert(alternate.offsetX == 12 and alternate.offsetY == -3,
@@ -2112,6 +2161,9 @@ do
     private.Power.Refresh()
     assert(mana.offsetX == 0 and mana.offsetY == 0 and not mana.textures[1]:IsShown()
         and nativeMana.texture == "native-mana", "personal power state was not restored")
+    assert(displayPower.offsetX == 0 and not displayPower.textures[1]:IsShown()
+        and not displayAlt.textures[1]:IsShown(), "native resource display was not restored")
+    PersonalResourceDisplayFrame = nil
 end
 do
     module.config.look, module.config.enemy, module.config.enemyCastTimeEnabled = 1, true, true

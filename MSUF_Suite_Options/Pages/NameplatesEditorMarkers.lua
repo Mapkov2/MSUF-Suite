@@ -2,6 +2,42 @@ local _, P = ...
 local ID = "nameplates"
 local Markers = {}
 P.NameplatesEditorMarkers = Markers
+local Style, Tr = P.Suite.NameplateStyle, P.Tr
+
+function Markers.BindTarget(editor, sample)
+    local prefix, cell = sample.prefix, sample.cell
+    local primary = CreateFrame("Button", nil, cell)
+    local right = CreateFrame("Button", nil, cell)
+    sample.targetVisual = {}
+    sample.primaryArrow, sample.rightArrow = primary, right
+    editor:Bind(primary, prefix .. ".target", Tr("Primary target arrow"),
+        "enemyTargetPrimaryOffsetX", "enemyTargetPrimaryOffsetY", "enemy")
+    editor:Bind(right, prefix .. ".targetRight", Tr("Right target arrow"),
+        "enemyTargetMirrorOffsetX", "enemyTargetMirrorOffsetY", "enemy")
+end
+
+local function PlaceHandle(handle, marker, size)
+    handle:SetShown(marker ~= nil)
+    if not marker then return end
+    handle:ClearAllPoints()
+    handle:SetPoint("CENTER", marker, "CENTER", 0, 0)
+    handle:SetSize(size, size)
+    handle:SetFrameLevel(marker:GetFrameLevel() + 1)
+end
+
+function Markers.PaintTarget(sample, targeted, rightGap, leftGap)
+    local config = P.S.Config(ID)
+    local prefix = sample.prefix
+    local visible = targeted and config.look ~= 2 and config[prefix] and config.enemyTargetMarker
+        and (prefix == "enemy" or not config.enemyTargetHideFriendly)
+    local target = visible and Style.TargetConfig(config)
+    local marker = Style.PaintTarget(sample.targetVisual, sample.bar, visible, target, sample.cell, rightGap, leftGap)
+    local size = target and target.bossTargetSize
+    PlaceHandle(sample.primaryArrow, marker, size)
+    local right
+    if marker and target.bossTargetLayout ~= "SINGLE" then right = marker.mirror end
+    PlaceHandle(sample.rightArrow, right, size)
+end
 
 function Markers.TargetActive(ui)
     return P.Get(ID, "enemyTargetMarker")

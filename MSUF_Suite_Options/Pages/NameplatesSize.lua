@@ -16,7 +16,7 @@ function Size.Keys(handle)
         local prefix = id:match("^(%a+)%.")
         return prefix .. "HealthWidthDelta", prefix .. "HealthHeightDelta", "W", "H"
     end
-    if id == "enemy.target" or id == "friendly.target" then return "enemyTargetMarkerSize", nil, "Size" end
+    if id:match("%.target$") or id:match("%.targetRight$") then return "enemyTargetMarkerSize", nil, "Size" end
     if id:match("^[a-z]+%.elite$") or id:match("^[a-z]+%.quest$") then
         local prefix, kind = id:match("^(%a+)%.(%a+)$")
         return prefix .. (kind == "elite" and "Elite" or "Quest") .. "MarkerSize", nil, "Size"

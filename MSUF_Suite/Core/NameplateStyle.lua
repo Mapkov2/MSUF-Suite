@@ -202,13 +202,16 @@ function Style.TargetConfig(config)
     local r, g, b = NS.RGB(config.enemyTargetColor or "ffffff")
     local layout = Style.TargetLayouts[config.enemyTargetLayout or 2]
     local anchor = NS.AnchorPoints[config.enemyTargetAnchor or 4] or "LEFT"
+    -- Keep saved pair spacing as the base for the two independent offsets.
+    local x = (config.enemyTargetOffsetX or 0) - ((layout ~= "SINGLE" or anchor == "LEFT") and size + 3 or 0)
+    local y = config.enemyTargetOffsetY or 0
     return {
         bossTarget = true, bossTargetStyle = TARGET_SHAPES[config.enemyTargetStyle or 1] or "ARROW",
         bossTargetSize = size, bossTargetLayout = layout, bossTargetAnchor = anchor,
         bossTargetDirection = Style.TargetDirections[config.enemyTargetDirection or 1],
-        -- Preserve the existing nameplate X offset: zero puts the marker just outside the bar.
-        bossTargetX = (config.enemyTargetOffsetX or 0) - ((layout ~= "SINGLE" or anchor == "LEFT") and size + 3 or 0),
-        bossTargetY = config.enemyTargetOffsetY or 0,
+        bossTargetX = x, bossTargetY = y,
+        primaryX = x + (config.enemyTargetPrimaryOffsetX or 0), primaryY = y + (config.enemyTargetPrimaryOffsetY or 0),
+        mirrorX = -x + (config.enemyTargetMirrorOffsetX or 0), mirrorY = y + (config.enemyTargetMirrorOffsetY or 0),
         bossTargetR = r, bossTargetG = g, bossTargetB = b,
         -- Append new choices without renumbering saved MSUF shape choices 9-14.
         atlas = not TARGET_SHAPES[config.enemyTargetStyle or 1]
@@ -247,18 +250,19 @@ local function TargetLevelGaps(marker, cfg, rightGap, leftGap, reanchored)
     if paired or anchor:find("LEFT", 1, true) then primary = -(leftGap or 0)
     elseif anchor:find("RIGHT", 1, true) then primary = rightGap or 0 end
     local scale = marker._scale or 1
-    local y = (cfg.bossTargetY or 0) * scale
-    local x = ((cfg.bossTargetX or -28) - (marker._leftExtent or 0)) * scale + primary
+    local x = (cfg.primaryX - (marker._leftExtent or 0)) * scale + primary
+    local y = cfg.primaryY * scale
     if reanchored or marker._suiteTargetX ~= x or marker._suiteTargetY ~= y then
         marker:SetPointsOffset(x, y)
         marker._suiteTargetX, marker._suiteTargetY = x, y
     end
     local mirror = marker.mirror
     if mirror and paired then
-        local mx = (-(cfg.bossTargetX or -28) + (marker._rightExtent or 0)) * scale + (rightGap or 0)
-        if reanchored or mirror._suiteTargetX ~= mx or mirror._suiteTargetY ~= y then
-            mirror:SetPointsOffset(mx, y)
-            mirror._suiteTargetX, mirror._suiteTargetY = mx, y
+        local mx = (cfg.mirrorX + (marker._rightExtent or 0)) * scale + (rightGap or 0)
+        local my = cfg.mirrorY * scale
+        if reanchored or mirror._suiteTargetX ~= mx or mirror._suiteTargetY ~= my then
+            mirror:SetPointsOffset(mx, my)
+            mirror._suiteTargetX, mirror._suiteTargetY = mx, my
         end
     end
 end

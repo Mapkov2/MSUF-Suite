@@ -1,6 +1,30 @@
 {
   "removed": [
     {
+      "category": "locale",
+      "item": "Dungeon / raid",
+      "basis": "owner",
+      "evidence": "NameplatesEditor.lua and NameplatesEditorMarkers.lua with the preview-layout and menu contracts.",
+      "reason": "Owner removed the preview-only environment selector. The example follows the current instance and the real role-color settings remain.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "locale",
+      "item": "Outdoor",
+      "basis": "owner",
+      "evidence": "NameplatesEditor.lua and NameplatesEditorMarkers.lua with the preview-layout and menu contracts.",
+      "reason": "Owner removed the preview-only environment selector. The example follows the current instance and the real role-color settings remain.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "locale",
+      "item": "target arrows",
+      "basis": "moved",
+      "evidence": "NameplatesEditor.lua and NameplatesEditorMarkers.lua with the preview-layout and menu contracts.",
+      "reason": "The shared preview handle became Primary target arrow and Right target arrow. Each has its own X/Y and old pair offsets still provide the saved starting positions.",
+      "date": "2026-11-07"
+    },
+    {
       "category": "rules",
       "item": "[\"forever:dailyComfort.chatClassColors\"]",
       "basis": "moved",

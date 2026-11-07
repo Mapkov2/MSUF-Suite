@@ -137,6 +137,24 @@ local function AddEnemyNativeRules(appearance)
     appearance[#appearance + 1] = B.Bool("enemyRaidIcon", "Blizzard raid target icon on enemy plates", true)
 end
 
+local function AddTargetArrowRules(appearance)
+    appearance[#appearance + 1] = B.Bool("enemyTargetMarker", "Show target arrows", true)
+    appearance[#appearance + 1] = B.Bool("enemyTargetHideFriendly", "Hide target arrows on friendly plates", true)
+    appearance[#appearance + 1] = B.Choice("enemyTargetStyle", "Arrow style", 1, NS.NameplateStyle.TargetLabels)
+    appearance[#appearance + 1] = B.Choice("enemyTargetLayout", "Arrow layout", 2,
+        { "Single", "Both sides inward", "Both sides outward" })
+    appearance[#appearance + 1] = B.Choice("enemyTargetAnchor", "Single arrow anchor", 4, NS.AnchorLabels)
+    appearance[#appearance + 1] = B.Choice("enemyTargetDirection", "Single arrow direction", 1,
+        { "Right", "Left", "Up", "Down" })
+    appearance[#appearance + 1] = B.Number("enemyTargetMarkerSize", "Arrow size", 16, 8, 96)
+    appearance[#appearance + 1] = B.Number("enemyTargetOffsetX", "Arrow X (0 = outside left edge)", 0, -POSITION_LIMIT, POSITION_LIMIT)
+    appearance[#appearance + 1] = B.Number("enemyTargetOffsetY", "Arrow Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
+    appearance[#appearance + 1] = B.Number("enemyTargetPrimaryOffsetX", "Primary target arrow X", 0, -POSITION_LIMIT, POSITION_LIMIT)
+    appearance[#appearance + 1] = B.Number("enemyTargetPrimaryOffsetY", "Primary target arrow Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
+    appearance[#appearance + 1] = B.Number("enemyTargetMirrorOffsetX", "Right target arrow X", 0, -POSITION_LIMIT, POSITION_LIMIT)
+    appearance[#appearance + 1] = B.Number("enemyTargetMirrorOffsetY", "Right target arrow Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
+end
+
 -- Enemy plates only: the threshold line's width (a decoration knob like the
 -- outer frame's thickness) and the level number's difficulty color (Level.lua).
 local function AddEnemyLookRules(appearance)
@@ -241,17 +259,7 @@ local function Side(prefix, title, size)
         appearance[#appearance + 1] = B.Bool("enemyColorsOutside", "Role colors outdoors", true)
         appearance[#appearance + 1] = B.Bool("enemyQuestColors", "Quest objective colors", true)
         appearance[#appearance + 1] = B.Bool("enemyTankMode", "Tank mode: safe aggro color", false)
-        appearance[#appearance + 1] = B.Bool("enemyTargetMarker", "Show target arrows", true)
-        appearance[#appearance + 1] = B.Bool("enemyTargetHideFriendly", "Hide target arrows on friendly plates", true)
-        appearance[#appearance + 1] = B.Choice("enemyTargetStyle", "Arrow style", 1, NS.NameplateStyle.TargetLabels)
-        appearance[#appearance + 1] = B.Choice("enemyTargetLayout", "Arrow layout", 2,
-            { "Single", "Both sides inward", "Both sides outward" })
-        appearance[#appearance + 1] = B.Choice("enemyTargetAnchor", "Single arrow anchor", 4, NS.AnchorLabels)
-        appearance[#appearance + 1] = B.Choice("enemyTargetDirection", "Single arrow direction", 1,
-            { "Right", "Left", "Up", "Down" })
-        appearance[#appearance + 1] = B.Number("enemyTargetMarkerSize", "Arrow size", 16, 8, 96)
-        appearance[#appearance + 1] = B.Number("enemyTargetOffsetX", "Arrow X (0 = outside left edge)", 0, -POSITION_LIMIT, POSITION_LIMIT)
-        appearance[#appearance + 1] = B.Number("enemyTargetOffsetY", "Arrow Y", 0, -POSITION_LIMIT, POSITION_LIMIT)
+        AddTargetArrowRules(appearance)
         appearance[#appearance + 1] = B.Bool("enemyEliteMarker", "Boss and rare marker", false)
         appearance[#appearance + 1] = B.Choice("enemyEliteMarkerAnchor", "Boss and rare marker anchor", 1, NS.NameplateStyle.AnchorLabels)
         appearance[#appearance + 1] = B.Number("enemyEliteMarkerSize", "Boss and rare marker size", 14, 8, 48)
@@ -347,8 +355,6 @@ local COMBINED_NOTE = "Blizzard's combined switch for pets, guardians and totems
 B.Section(id, "visibility", "Visibility", {
     Writes("nameplateShowEnemies", B.Choice("plateEnemies", "Show enemy nameplates", 1, SHOW_HIDE)),
     Writes("nameplateShowFriendlyPlayers", B.Choice("plateFriendlyPlayers", "Show friendly player nameplates", 1, SHOW_HIDE)),
-    Writes("nameplateShowSelf", B.Choice("personalResource", "Show personal resource display", 1, SHOW_HIDE),
-        "PersonalResourceDisplayDisabled"),
     B.Choice("plateShowAll", "Always show nameplates", 1, { "Keep Blizzard setting", "On", "Off" }),
     B.Choice("plateStackEnemy", "Enemy nameplate stacking", 1, STACK),
     B.Choice("plateStackFriendly", "Friendly nameplate stacking", 1, STACK),
@@ -399,6 +405,8 @@ B.Section(id, "distance", "Distance and stacking", {
 })
 
 B.Section(id, "personal", "Personal power bar", {
+    Writes("nameplateShowSelf", B.Choice("personalResource", "Show personal resource display", 1, SHOW_HIDE),
+        "PersonalResourceDisplayDisabled"),
     B.Bool("personalPowerSkin", "Skin Blizzard personal mana and alternate power bars", false),
     B.Number("personalPowerBorderSize", "Power border (px)", 1, 0, 3),
     B.Color("personalPowerBorderColor", "Power border", "000000"),
@@ -455,7 +463,7 @@ local appearanceSections = { enemy = true, friendly = true, roleColors = true, c
 local preset, visual = {}, { nativeStyle = true, nativeSize = true, barGeometry = true, auraClickthrough = true }
 if NS.Client.isForever then visual.levelAppearance = true end
 for key, rule in pairs(spec.rules) do
-    if visual[key] or appearanceSections[rule.section] and key ~= "enemyPreviewRole" then
+    if visual[key] or appearanceSections[rule.section] and not rule.cvar and key ~= "enemyPreviewRole" then
         preset[key], visual[key] = rule.default, true
     end
 end

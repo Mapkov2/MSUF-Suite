@@ -17,7 +17,7 @@ local AURA_SAMPLES = {
 }
 local SIZE_SCALE = { [2] = { 0.75, 0.8 }, [3] = { 1, 1 },
     [4] = { 1.25, 1.25 }, [5] = { 1.4, 1.4 }, [6] = { 1.6, 1.6 } }
-local TARGET_KEYS = { "Style", "Layout", "Anchor", "Direction", "MarkerSize", "OffsetX", "OffsetY", "Color" }
+local Markers = P.NameplatesEditorMarkers
 
 local function NativeCastDetail(key, index, fallback)
     if P.Get(ID, "look") ~= 2 and P.Get(ID, "enemyCastDisplay") == 2 then
@@ -209,10 +209,6 @@ local function BuildNameAndLevel(s, cell)
     s.levelText = s.level:CreateFontString(nil, "OVERLAY", "SystemFont_NamePlateLevel")
     s.levelText:SetAllPoints(s.level)
     s.levelText:SetJustifyH("RIGHT")
-    s.arrowGroup = CreateFrame("Button", nil, cell)
-    s.arrowGroup:SetSize(222, 30)
-    s.arrowGroup:SetPoint("CENTER", s.bar, "CENTER", 0, 0)
-    s.targetVisual = {}
 end
 
 local function Marker(editor, s, cell, kind, color, keyX, keyY)
@@ -338,10 +334,7 @@ local function BindElements(editor, s)
         editor:Bind(s.power, "personal.Power", "Personal power bar",
             "personalPowerOffsetX", "personalPowerOffsetY", "personal")
     end
-    -- The left arrow is a small hit target; it must not cover name/health.
-    s.arrowGroup:SetSize(20, 24)
-    editor:Bind(s.arrowGroup, prefix .. ".target", side:format(Tr("target arrows")), "enemyTargetOffsetX",
-        "enemyTargetOffsetY", "enemy")
+    Markers.BindTarget(editor, s)
 end
 
 ----------------------------------------------------------------- sample render
@@ -545,27 +538,12 @@ local function RenderHealth(editor, s, m)
 end
 
 local function RenderTarget(s, m)
-    local prefix, level = s.prefix, s.level
-    local arrows = (prefix == "enemy" or not P.Get(ID, "enemyTargetHideFriendly")) and s.state.target
-        and P.Get(ID, prefix) and P.Get(ID, "enemyTargetMarker") and P.Get(ID, "look") ~= 2 and not m.npcWorldName
-    local targetConfig = s.targetConfig
-    targetConfig.hideHealthBarBorders = P.Get(ID, "hideHealthBarBorders")
-    for _, key in ipairs(TARGET_KEYS) do
-        targetConfig["enemyTarget" .. key] = P.Get(ID, "enemyTarget" .. key)
-    end
+    local level = s.level
     local rightGap = level:IsShown() and (m.levelMode == "badge" and m.forever and m.nativeLevelWidth + 5
         or m.levelMode == "classic" and SetupNumber("levelIconWidth", 15 * m.horizontal) + 4) or 0
     local leftGap = level:IsShown() and (m.levelMode == "number" and m.forever and level:GetWidth() + 4
         or m.levelMode == "badge" and not m.forever and level:GetWidth() + 4) or 0
-    local marker = Style.PaintTarget(s.targetVisual, s.bar, arrows, Style.TargetConfig(targetConfig), s.cell,
-        rightGap, leftGap)
-    s.arrowGroup:SetShown(arrows and marker ~= nil)
-    if marker then
-        s.arrowGroup:ClearAllPoints()
-        s.arrowGroup:SetPoint("CENTER", marker, "CENTER", 0, 0)
-        s.arrowGroup:SetSize(targetConfig.enemyTargetMarkerSize, targetConfig.enemyTargetMarkerSize)
-        s.arrowGroup:SetFrameLevel(marker:GetFrameLevel() + 1)
-    end
+    Markers.PaintTarget(s, not m.npcWorldName and s.state.target, rightGap, leftGap)
 end
 
 local function RenderMarkers(editor, s, m)
@@ -744,7 +722,7 @@ local function Render(editor, s)
 end
 
 local function Sample(editor, prefix, x)
-    local s = { prefix = prefix, metrics = {}, targetConfig = {},
+    local s = { prefix = prefix, metrics = {},
         state = { health = prefix == "enemy" and 53 or 100, target = prefix == "enemy", cast = true } }
     local cell = CreateFrame("Frame", nil, editor.stage)
     cell:SetSize(260, 124)

@@ -23,7 +23,8 @@ local current = "general"
 -- change the preview.
 local SKIN_SECTIONS = { enemy = "enemy", roleColors = "enemy", enemyColors = "enemy", friendly = "friendly",
     castbar = true, auras = true, signals = true, personal = true, auraColors = true }
-local ANY_LOOK = { friendlyNamesOnly = true, friendlyNameClassColor = true, friendlyRealm = true, enemyPreviewRole = true }
+local ANY_LOOK = { friendlyNamesOnly = true, friendlyNameClassColor = true, friendlyRealm = true,
+    enemyPreviewRole = true, personalResource = true }
 local LOOK_REASON = "Choose a nameplate look other than Blizzard under Look."
 local SIDE_REASONS = { enemy = "Skin enemy nameplates", friendly = "Skin friendly nameplates" }
 
