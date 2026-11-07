@@ -7,9 +7,10 @@ local config=S.Config(ID)
 assert(config.specPositions==true,"spec layouts must save automatically without opting in")
 
 -- The previous installed attempt stored false plus an empty layout in every
--- existing profile. Changing the catalog default alone cannot repair that.
+-- existing profile. Revision 22 is the last one before the CDM migration.
 do
-    local old={suite={schema=1,revision=S.MigrationRevision-1,modules={cooldownManager={
+    local beforeSpecLayouts = 22
+    local old={suite={schema=1,revision=beforeSpecLayouts,modules={cooldownManager={
         specPositions=false,positionsData="",ess_x=123,ess_y=-456,defaultsVersion=3,captured=true}}}}
     S.Normalize(old)
     local migrated=old.suite.modules.cooldownManager
@@ -20,7 +21,7 @@ do
     S.Normalize(old)
     assert(migrated.specPositions==false,"a later explicit shared-layout choice survives normalization")
     local saved=assert(Codec.EncodePositions({specs={[62]={ess={x=8,y=9}}}}))
-    old.suite.revision=S.MigrationRevision-1
+    old.suite.revision=beforeSpecLayouts
     migrated.positionsData=saved
     S.Normalize(old)
     assert(migrated.specPositions==false and migrated.positionsData==saved,

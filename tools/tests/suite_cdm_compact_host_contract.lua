@@ -44,6 +44,13 @@ local function Bottom(frame)
     local top = anchor:find('BOTTOM', 1, true) and Bottom(parent) or Bottom(parent) - parent:GetHeight()
     return top - (point[5] or 0) + frame:GetHeight()
 end
+-- Older hosts resize immediately. Newer hosts finish the same layout on OnUpdate.
+local function FinishPreviewMotion(expander)
+    local motion = expander.motion
+    local tick = motion and motion:GetScript('OnUpdate')
+    if tick then tick(motion, motion.duration) end
+end
+
 local function Build(width, host, mode)
     local wrapper, headerHost = CreateFrame('Frame'), CreateFrame('Frame')
     wrapper:SetSize(width, 900); headerHost:SetSize(width, 900)
@@ -89,8 +96,10 @@ local function Build(width, host, mode)
     Check('initial compact',true)
     for i=1,3 do
         assert(expander:Open('FIXED_PREVIEW_BUTTON'),'actual host expander did not open')
+        FinishPreviewMotion(expander)
         Check('expanded '..i,false)
         expander:Close('FIXED_PREVIEW_BUTTON')
+        FinishPreviewMotion(expander)
         Check('collapsed '..i,true)
         fixed:Deactivate()
         fixed:Activate(headerHost,0)
