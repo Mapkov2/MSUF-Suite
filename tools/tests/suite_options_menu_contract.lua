@@ -1434,6 +1434,8 @@ do (function()
         picker.set(0)
         assert(picker.get() == 0 and not announcement.showBoxArt and art.background.shown,
             "preview picker must hide artwork independently of the background")
+        assert(preview.canvas.alpha == 1 and not preview.finished,
+            "artwork edits after playback must bring back the static sample")
         local opacityControl = Control("announcements", "backgroundOpacity")
         preview.finished = true
         preview.canvas:SetAlpha(0)
@@ -1447,15 +1449,17 @@ do (function()
             "preview picker could not restore the same style")
         assert(not art.background.shown and art.border[1].shown and art.border[1].color[4] > 0,
             "preview frame must remain visible with zero background opacity")
-        opacityControl.set(20)
-        assert(art.background.shown and art.background.color[4] == .2 and art.border[1].shown,
-            "preview background could not be restored independently")
         picker.set(2)
         assert(artControl.get() == 2 and art.style == 2 and preview.labels[1].width == 530
             and top.atlas == "NPE_ArrowRight" and bottom.atlas == "NPE_ArrowLeft",
             "preview picker did not show the arrows and update the accordion")
         artControl.set(3)
         assert(picker.get() == 3 and top.atlas == "levelup-bar-gold", "accordion did not update the preview picker")
+        assert(not art.background.shown and top.shown and art.border[1].shown,
+            "gilded edges must remain visible on a transparent background")
+        opacityControl.set(20)
+        assert(art.background.shown and art.background.color[4] == .2 and art.border[1].shown,
+            "preview background could not be restored independently")
         picker.set(4)
         assert(top.atlas == "levelup-glow-gold" and art.style == 4, "preview picker did not show the glow")
         assert(historyWrites == historyBefore + 7 and announcement.enabled == enabled,
