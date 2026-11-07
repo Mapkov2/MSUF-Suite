@@ -49,8 +49,8 @@ local function BuildSimple(ui, panel, record)
     toggle:SetPoint("RIGHT", row, "RIGHT", -22, 0)
     record.row, record.toggle = row, toggle
     record.flow = panel.builder.layoutEntries[#panel.builder.layoutEntries]
-    record.keywords = V.BindFeatureSwitch(ui.ctx, toggle, record.group, record.sectionId,
-        function(group) ui.retained = group end)
+    record.keywords = V.BindFeatureSwitch(ui.ctx, record.group, record.sectionId,
+        function(group) ui.retained = group end, toggle)
     RefreshTitle(ui.ctx, record.group, label)
 end
 
@@ -67,10 +67,8 @@ local function BuildAccordion(ui, panel, record)
     local function Shell(body)
         local entry = HM.GetSectionEntry(body)
         record.body, record.row, record.flow = body, entry.outer, entry
-        local toggle = W.SectionSwitch(body, Tr(group.title), Tr("Enable"))
-        record.toggle = toggle
-        record.keywords = V.BindFeatureSwitch(ui.ctx, toggle, group, record.sectionId,
-            function(feature) ui.retained = feature end)
+        record.keywords, record.toggle = V.BindFeatureSwitch(ui.ctx, group, record.sectionId,
+            function(feature) ui.retained = feature end, nil, body)
         if #record.allRules > 0 then
             -- The detail rules leave the feature switch out of the reset.
             local more = P.AttachSectionReset(ui.ctx, body, V.FeatureTitle(group), function()

@@ -503,6 +503,28 @@ Case("styled menus", function()
         local W = World(client, client == "Forever")
         local owner = W.New("Button", nil, W.UIParent)
         local state = {}
+        local tooltip = {
+            SetOwner = function(self, frame) self.owner = frame end,
+            IsOwned = function(self, frame) return self.owner == frame end,
+            SetItemByID = function(self, item) self.item = item end,
+            Show = function(self) self.shown = true end,
+            Hide = function(self) self.shown = false end,
+        }
+        W.G.GameTooltip = tooltip
+        local generate = Generator(state)
+        local function Build(ownerFrame, root)
+            generate(ownerFrame, root)
+            root:CreateButton("Fishing rod", function() end):SetTooltip(function(tip) tip:SetItemByID(41) end)
+        end
+        local tooltipMenu = assert(W.S.StyledContextMenu(owner, palette, Build))
+        local item = assert(Row(tooltipMenu, "Fishing rod"))
+        W.Fire(item, "OnEnter")
+        assert(tooltip.shown and tooltip.owner == item and tooltip.item == 41, "anchored picker lost item tooltips")
+        W.Fire(item, "OnLeave")
+        assert(not tooltip.shown, "item tooltip outlived hover")
+        W.Fire(item, "OnEnter")
+        tooltipMenu:Hide()
+        assert(not tooltip.shown, "item tooltip outlived its menu")
         local panel = assert(W.S.StyledContextMenu(owner, palette, Generator(state)))
         assert(panel.background.color[3] == palette.panel[3] and InsecureCalls(W) == "",
             "styled dropdown lost its panel palette or opened a native menu")

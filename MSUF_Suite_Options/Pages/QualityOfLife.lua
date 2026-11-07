@@ -230,15 +230,22 @@ local function PrepareFeatureSwitch(toggle, group)
     end)
 end
 
-local function BindFeatureSwitch(ctx, toggle, group, sectionId, onChanged)
+local function BindFeatureSwitch(ctx, group, sectionId, onChanged, toggle, body)
     local meta = FeatureSwitchMeta(group, sectionId)
     meta.keywords = FeatureKeywords(group, true)
-    P.M.BindBoolWidget(ctx, toggle, function() return GroupEnabled(group) end,
-        function(value)
-            if P.Combat() then return end
-            onChanged(group)
-            SetGroupEnabled(group, value == true)
-        end, meta)
+    local function GetEnabled() return GroupEnabled(group) end
+    local function SetEnabled(value)
+        if P.Combat() then return end
+        onChanged(group)
+        SetGroupEnabled(group, value == true)
+    end
+    if body then
+        toggle = P.BindSectionSwitch(ctx, body, {
+            label = Tr(group.title), displayLabel = Tr("Enable"), get = GetEnabled, set = SetEnabled, meta = meta,
+        })
+    else
+        P.M.BindBoolWidget(ctx, toggle, GetEnabled, SetEnabled, meta)
+    end
     local searchMeta = FeatureSwitchMeta(group, sectionId)
     searchMeta.pageKey, searchMeta.kind = V.GetFeaturePage(group), "toggle"
     searchMeta.label, searchMeta.keywords = Tr(group.title), meta.keywords
@@ -246,7 +253,7 @@ local function BindFeatureSwitch(ctx, toggle, group, sectionId, onChanged)
     PrepareFeatureSwitch(toggle, group)
     P.M.AddTooltip(toggle, Tr(group.title), P.QoLHelpText(group.sections[1]), { hook = true })
     P.M.TrackRefresh(ctx, function() P.W.SetControlEnabled(toggle, not P.Combat()) end)
-    return FeatureKeywords(group)
+    return FeatureKeywords(group), toggle
 end
 
 V.GroupEnabled = GroupEnabled
@@ -262,7 +269,6 @@ local function Build(ctx)
     P.SortQualityOfLifeCategories()
     local builder = P.W.PageBuilder(ctx)
     V.BuildSelected(ctx, builder, V.GetCategories(), PAGE)
-    P.BuildGraphicsPerformance(ctx, builder)
 end
 
 P.RegisterPage({ key = PAGE, label = "Quality of Life", title = "Quality of Life", build = Build, notice = P.BuildGraphicsNotice, icon = { 7, 1 },

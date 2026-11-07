@@ -216,6 +216,7 @@ function Element:CreateDivider() return AddElement(self, "divider") end
 function Element:CreateSpacer() return AddElement(self, "divider") end
 function Element:SetEnabled(enabled) self.enabled = enabled end
 function Element:SetResponse(response) self.response = response end
+function Element:SetTooltip(initializer) self.tooltip = initializer end
 
 local function ElementEnabled(element)
     return element.enabled ~= false
@@ -274,6 +275,26 @@ local function PadPanel(name)
     return panel
 end
 
+local function HideRowTooltip(row)
+    local tooltip = row.panel.rowTooltip
+    if not tooltip or row.panel.tooltipRow ~= row then return end
+    row.panel.rowTooltip, row.panel.tooltipRow = nil, nil
+    if not Private.NS.Safety.IsForbidden(tooltip) and tooltip:IsOwned(row) then tooltip:Hide() end
+end
+
+local function ShowRowTooltip(row)
+    local entry = row.entry
+    local element = entry and entry.element
+    local initializer = element and element.tooltip
+    if not initializer then return end
+    local tooltip = GameTooltip
+    if not tooltip or Private.NS.Safety.IsForbidden(tooltip) then return end
+    tooltip:SetOwner(row, "ANCHOR_RIGHT")
+    row.panel.rowTooltip, row.panel.tooltipRow = tooltip, row
+    S.Dispatch(initializer, tooltip, element)
+    tooltip:Show()
+end
+
 local PickPadRow
 local function PadRow(panel, index)
     local row = panel.rows[index]
@@ -296,6 +317,9 @@ local function PadRow(panel, index)
     label:SetWordWrap(false)
     row.line, row.label, row.panel, row.highlight = line, label, panel, highlight
     row:SetScript("OnClick", function(self) PickPadRow(self) end)
+    row:SetScript("OnEnter", ShowRowTooltip)
+    row:SetScript("OnLeave", HideRowTooltip)
+    row:SetScript("OnHide", HideRowTooltip)
     panel.rows[index] = row
     return row
 end
@@ -388,6 +412,7 @@ end
 local menuPanel, styledMenuPanel
 
 local function ShowMenuBranch(panel, branch)
+    if panel.tooltipRow and panel.branch ~= branch then HideRowTooltip(panel.tooltipRow) end
     local entries = {}
     if branch.parent then entries[1] = { back = true, label = "<  " .. S.BlizzardText("BACK", "Back") } end
     for _, element in ipairs(branch.children) do entries[#entries + 1] = { element = element } end
@@ -425,6 +450,7 @@ end
 
 local function ClearMenu(panel)
     panel:UnregisterAllEvents()
+    if panel.tooltipRow then HideRowTooltip(panel.tooltipRow) end
     panel.generator, panel.owner, panel.args, panel.branch = nil, nil, nil, nil
     for _, row in ipairs(panel.rows) do row.entry = nil end
     panel.entries = nil

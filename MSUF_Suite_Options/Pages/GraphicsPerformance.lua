@@ -1,6 +1,7 @@
 local _, P = ...
 local Graphics, Tr = P.GraphicsPerformance, P.Tr
 local PAGE, SECTION = "suite_qualityOfLife", "suite_qualityOfLife_graphics_performance"
+P.GraphicsPerformanceSection = SECTION
 local TITLE = "Graphics & performance"
 local HELP = [[Apply a graphics preset once. Balanced changes your general settings and keeps your separate raid settings.
 Raid / Dungeon changes only the separate instance settings and enables them.
@@ -22,6 +23,9 @@ local function Meta(key, kind)
     if kind == "action" then
         meta.suiteAlways = true
         meta.keywords = Keywords(key == "apply" and ACTIONS[1].label or ACTIONS[2].label)
+        -- Old providers only construct exact targets from a setting-key
+        -- lookup. Give these actions an alias in that lookup.
+        if not P.M.InvalidateSearchProvider then meta.settingKey = meta.controlId end
     end
     return meta
 end
@@ -130,8 +134,10 @@ local function Content(ctx, builder, body)
     return bottom
 end
 
-function P.BuildGraphicsPerformance(ctx, builder)
-    P.LazySection(builder, SECTION, Tr(TITLE), false, {
+function P.BuildGraphicsPerformance(ctx, builder, reveal)
+    return P.LazySection(builder, SECTION, Tr(TITLE), false, {
+        deferWhileHidden = reveal ~= nil,
+        head = reveal and function(body) P.HM.SetSectionEnsureVisible(P.HM.GetSectionEntry(body), reveal) end,
         content = function(body) return Content(ctx, builder, body) end,
         finish = function(body, y) P.FinishBody(builder, body, y) end,
     })
@@ -146,8 +152,9 @@ end
 
 function P.AppendGraphicsSearchRows(rows)
     for _, action in ipairs(ACTIONS) do
+        local meta = Meta(action.key, "action")
         rows[#rows + 1] = {
-            pageKey = PAGE, sectionId = SECTION, controlId = Meta(action.key, "action").controlId,
+            pageKey = PAGE, sectionId = SECTION, controlId = meta.controlId, settingKey = meta.settingKey,
             label = Tr(action.label), kind = "button", section = Tr(TITLE), suiteAlways = true,
             keywords = Keywords(action.label),
         }

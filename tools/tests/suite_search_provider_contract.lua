@@ -1145,6 +1145,7 @@ do
             return originalSet(...)
         end
         for _, addonOff in ipairs({ false, true }) do
+            local legacyTarget
             for _, entry in pairs(Suite.SuiteCatalog) do
                 if entry.page == "suite_qualityOfLife" then disabled[entry.addon] = addonOff end
             end
@@ -1166,6 +1167,9 @@ do
                         end
                     end
                     Check(target, "graphics query missing: " .. query)
+                    if not M.InvalidateSearchProvider and not addonOff and stage == 1 and query == "optimize fps" then
+                        legacyTarget = target
+                    end
                     -- Old IndexQuery carries the cold accordion route but no
                     -- action control IDs or warm accordion routes. Its warm
                     -- coverage is aliases and real controls, not exact routing.
@@ -1184,6 +1188,17 @@ do
                     local _, widget = M.RuntimeControlCatalog.ResolveExactTarget("suite_qualityOfLife", { controlId = wanted })
                     Check(widget, "graphics result has no real action control: " .. query)
                 end
+            end
+            if legacyTarget then
+                local entry = M.cache.suite_qualityOfLife
+                local view = entry.qualityOfLifeView
+                Check(view:SelectCategory("character"), "legacy graphics fixture could not leave Interface")
+                Check(legacyTarget.exactTarget, "legacy graphics provider dropped the exact target")
+                api.OpenSearchTarget(legacyTarget.key, legacyTarget.label, nil, nil, legacyTarget.route, legacyTarget.exactTarget)
+                world.widgets:RunTimers(80)
+                local section = entry.sections.suite_qualityOfLife_graphics_performance
+                Check(M.cache.suite_qualityOfLife == entry and view.selected == "interface"
+                    and section._msuf2CollapsibleEntry.open, "warm legacy graphics search did not reveal Interface")
             end
         end
         Check(writes == 0, "graphics search applied CVars")

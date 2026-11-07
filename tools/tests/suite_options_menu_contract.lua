@@ -3707,6 +3707,8 @@ assert(qolRows.suite_qualityOfLife_partyEffects_party_effects == nil, "Celebrati
 assert(qolRows.suite_qualityOfLife_macroBuilder_macro_builder == nil,
     "Macro builder still has a duplicate QoL row instead of its dedicated workspace")
 local graphics
+local qolView = qolPage.entry and qolPage.entry.qualityOfLifeView
+if qolView then qolView:SelectCategory("interface") end
 for _, section in ipairs(qolPage.sections) do
     if section.sectionId == "suite_qualityOfLife_graphics_performance" then graphics = section end
     assert(not (section.sectionId and section.sectionId:find("^suite_qualityOfLife_category_")),

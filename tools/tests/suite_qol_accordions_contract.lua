@@ -187,7 +187,7 @@ local function Exact(target,why)
     Check(called and opened and focused,why)
 end
 S.Config("dailyComfort").enabled=false
-S.Config("quietPopups").enabled=false
+S.Config("quietPopups").enabled=true
 Select("suite_qualityOfLife")
 local view=M.cache.suite_qualityOfLife.qualityOfLifeView
 Check(view and view.selector,"existing category navigation missing")
@@ -195,12 +195,14 @@ view:SelectCategory(Feature("dailyComfort").category)
 Settle()
 local first,second=Native("dailyComfort"),Native("quietPopups")
 Check(not first.open and not second.open,"fresh accordions did not default closed")
+Check(first.outer:GetAlpha() == 0.6 and second.outer:GetAlpha() == 1, "closed accordions start with their saved state")
 Check(not assert(first._msufSuiteResetButton, "missing QoL reset action"):IsShown(),
     "closed QoL section exposes its action button")
 Check(not Widget("msufsuite.dailyComfort."..FindDetail("dailyComfort").key),"closed content eagerly instantiated")
 local before=CountWidgets()
 ClickHeader(first)
 Check(first.open and not S.Config("dailyComfort").enabled,"opening enabled disabled feature")
+Check(first.outer:GetAlpha() == 0.6, "opening an off accordion must keep its dimming")
 do
     local setting = "msufsuite.parallelWindows.enabled"
     local toggle = Widget(setting)
@@ -257,15 +259,23 @@ ClickHeader(first)
 Check(first.open and CountWidgets()==stableCount,"reopening duplicated detail controls")
 -- Direct master click must not open/close its header.
 local wasOpen=first.open
+local switchMoves, setPoint = 0, first.featureSwitch.SetPoint
+first.featureSwitch.SetPoint = function(self, ...)
+    switchMoves = switchMoves + 1
+    return setPoint(self, ...)
+end
 first.featureSwitch:SetChecked(true)
 first.featureSwitch:GetScript("OnClick")(first.featureSwitch,"LeftButton")
 Settle()
 Check(S.Config("dailyComfort").enabled and first.open==wasOpen,"master toggle changed accordion state")
+Check(first.outer:GetAlpha() == 1 and second.outer:GetAlpha() == 1, "enabling an accordion restores its opacity")
 first.featureSwitch:SetChecked(false)
 first.featureSwitch:GetScript("OnClick")(first.featureSwitch,"LeftButton")
 Settle()
 Check(not S.Config("dailyComfort").enabled,"master did not switch back off")
+Check(first.outer:GetAlpha() == 0.6, "disabling the feature dims its accordion again")
 Check(first.open and second.open,"master change closed an accordion")
+Check(switchMoves == 0, "refresh moved the accordion switch during a click")
 -- Host persistence survives page reconstruction while module remains off.
 M.InvalidatePage("suite_qualityOfLife")
 Select("suite_qualityOfLife")
@@ -424,6 +434,28 @@ end
 Select("suite_qualityOfLife")
 view=M.cache.suite_qualityOfLife.qualityOfLifeView
 view:SetFilter("all")
+do
+    local id = "suite_qualityOfLife_graphics_performance"
+    local entry = M.cache.suite_qualityOfLife
+    for _, category in ipairs(P.QoLView.GetCategories()) do
+        view:SelectCategory(category.id)
+        local body = entry.sections[id]
+        local frame = body and P.HM.GetSectionEntry(body).outer
+        while frame and frame:IsShown() do frame = frame:GetParent() end
+        local visible = body ~= nil and frame == nil
+        Check(visible == (category.id == "interface"), "graphics accordion leaked outside Interface")
+    end
+    view:SetFilter("disabled")
+    view:SelectCategory("character")
+    local graphicsResults = {}
+    P.AppendGraphicsSearchRows(graphicsResults)
+    Exact(graphicsResults[1], "the graphics preset search result did not focus its action")
+    local body = entry.sections[id]
+    Check(body and view.selected == "interface" and P.HM.GetSectionEntry(body).outer:IsVisible(),
+        "exact graphics route failed to reveal Interface under a filter")
+    Check(view.filter == "disabled", "graphics navigation replaced the user's filter")
+    view:SetFilter("all")
+end
 local plain
 for _,feature in ipairs(P.QualityOfLifeSearchFeatures) do
     local _,rules=P.QoLView.FeatureRules(feature)

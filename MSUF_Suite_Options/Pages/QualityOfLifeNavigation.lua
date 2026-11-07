@@ -1,6 +1,7 @@
 local _, P = ...
 local V, HM, Tr = P.QoLView, P.HM, P.Tr
 local FILTERS = { all = true, enabled = true, disabled = true, unavailable = true }
+local QOL_PAGE, GRAPHICS_CATEGORY = "suite_qualityOfLife", "interface"
 
 local function Matches(ui, group)
     if ui.retained == group then return true end
@@ -58,6 +59,15 @@ local function Layout(ui)
             end
         end
     end
+    if panel.graphics then
+        local graphics = HM.GetSectionEntry(panel.graphics)
+        local visible = ui.filter == "all" or ui.retained == panel.graphics
+        graphics.outer:SetShown(visible)
+        if visible then
+            index, count = index + 1, count + 1
+            flow[index] = graphics
+        end
+    end
     for item = #flow, index + 1, -1 do flow[item] = nil end
     P.Suite.HostBridge.SetMenuFlowEntries(panel.builder, flow)
     ui.emptyShown = count == 0
@@ -73,6 +83,14 @@ local function Layout(ui)
         end
     end
     Resize(ui)
+end
+
+local function RevealGraphics(ui)
+    if not ui:SelectCategory(GRAPHICS_CATEGORY) then return nil end
+    local section = ui.panels[GRAPHICS_CATEGORY].graphics
+    ui.retained = section
+    ui:Layout()
+    return section
 end
 
 local function BuildPanel(ui, category)
@@ -97,6 +115,11 @@ local function BuildPanel(ui, category)
             panel.headings[subgroup.id] = { frame = body, flow = panel.builder.layoutEntries[#panel.builder.layoutEntries] }
         end
         for _, group in ipairs(subgroup.features) do V.BuildAccordionRecord(ui, panel, group) end
+    end
+    if ui.page == QOL_PAGE and category.id == GRAPHICS_CATEGORY then
+        panel.graphics = P.BuildGraphicsPerformance(ui.ctx, panel.builder, function()
+            return RevealGraphics(ui)
+        end)
     end
     panel.building = false
     return panel
@@ -126,6 +149,13 @@ end
 
 local function InstallRoutes(ui, categories)
     local entry = ui.ctx.entry
+    if ui.page == QOL_PAGE then
+        ui.routes[P.GraphicsPerformanceSection] = function()
+            local section = RevealGraphics(ui)
+            P.EnsureSectionContent(section)
+            return section
+        end
+    end
     for _, category in ipairs(categories) do
         local function RevealCategory()
             if not ui:SelectCategory(category.id) then return nil end

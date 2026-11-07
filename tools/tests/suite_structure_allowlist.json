@@ -1344,12 +1344,6 @@
   {
    "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
    "kind": "addon",
-   "reason": "MSUF Menu2 export that Main and Classic MSUF both provide; older MSUF menus lack it, so the Suite checks it before use",
-   "symbol": "M.TrackRefresh"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/SectionActions.lua",
-   "kind": "addon",
    "reason": "MSUF Menu2 export: the Retail (Main) and Classic MSUF menus do not provide the same widgets",
    "symbol": "W.StyleSectionActionButton"
   },
@@ -1364,12 +1358,6 @@
    "kind": "addon",
    "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
    "symbol": "M.RelayoutPageHeaderHost"
-  },
-  {
-   "file": "MSUF_Suite_Options/Menu/Workspace.lua",
-   "kind": "addon",
-   "reason": "Optional public MSUF host presentation API; the menu UX contract exercises tabs and exact navigation with the legacy API absent.",
-   "symbol": "W.FixedPreviewSection"
   },
   {
    "file": "MSUF_Suite_Options/Menu/Workspace.lua",
@@ -1850,6 +1838,12 @@
    "kind": "addon",
    "reason": "Retail and Forever Menu2 navigation export rebuilds an active page after its effective bar list changes, including undo. Older hosts invalidate it for the next visit instead.",
    "symbol": "M.RebuildPageKeepingScroll"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/GraphicsPerformance.lua",
+   "kind": "addon",
+   "reason": "Legacy Menu2 search providers lack InvalidateSearchProvider and use a setting-key lookup to find the existing Graphics actions.",
+   "symbol": "P.M.InvalidateSearchProvider"
   },
   {
    "file": "MSUF_Suite_Options/Pages/HUD.lua",
@@ -3122,6 +3116,12 @@
    "kind": "addon",
    "reason": "MSUF Menu2 exact-search bridge method can be absent on older hosts. The preview falls back to local section focus without changing values; covered by suite_chat_preview_contract.",
    "symbol": "bridge.OpenSearchTarget (= P.M.SearchBridge)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewWindows.lua",
+   "kind": "addon",
+   "reason": "Older Menu2 hosts can omit the status feedback helper. Native rename validation works on either host.",
+   "symbol": "P.M.ShowStatusFeedback"
   },
   {
    "file": "MSUF_Suite_Options/Pages/ChatPreviewWindows.lua",

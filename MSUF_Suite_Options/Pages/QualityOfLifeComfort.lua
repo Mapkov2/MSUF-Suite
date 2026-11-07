@@ -42,12 +42,15 @@ function P.BuildQoLComfortActions(ctx, body, id, section, y, width)
         return y - 38
     end
     if id ~= "fishingComfort" or not NS.Client.isForever then return y end
-    local function Add(title, key, kind, fallback)
-        local button
-        button = P.Button(ctx, body, title, 16, y, width,
-            function() P.ComfortItemMenu(button, id, key, kind) end,
-            function() return not P.Combat() end, P.Meta("suite_qualityOfLife", id, "action." .. key, "action", section))
-        P.ComfortSelectedItem(ctx, body, button, id, key, fallback, y - 28, width)
+    local function Add(title, key, fallback)
+        local dropdown = P.W.Dropdown(body, Tr(title), {}, width)
+        P.W.MoveWidget(dropdown, body, 16, y, width)
+        dropdown:SetScript("OnClick", function(self)
+            if not P.Combat() then P.ComfortItemMenu(self, id, key, key) end
+        end)
+        local meta = P.Meta("suite_qualityOfLife", id, "action." .. key, "action", section)
+        P.M.RegisterControlMetadata(dropdown, meta, title, "dropdown")
+        P.ComfortSelectedItem(ctx, dropdown, id, key, fallback)
         y = y - 58
     end
     local status = P.Text(body, "", 16, y, width, P.T.colors.muted)
@@ -56,8 +59,8 @@ function P.BuildQoLComfortActions(ctx, body, id, section, y, width)
         P.SetTranslatedText(status, NS.Finite(fishing) and "" or Tr("Learn Fishing first."))
     end)
     y = y - 22
-    Add("Choose fishing rod from bags", "rod", "rod", "Equipped fishing rod")
-    Add("Choose lure from bag consumables", "lure", "lure", "No lure")
+    Add("Choose fishing rod from bags", "rod", "Equipped fishing rod")
+    Add("Choose lure from bag consumables", "lure", "No lure")
     P.Button(ctx, body, "Open fishing key bindings", 16, y, width,
         function() if not P.Combat() then Settings.OpenToCategory(Settings.KEYBINDINGS_CATEGORY_ID, "MSUF Suite") end end,
         function() return not P.Combat() end,

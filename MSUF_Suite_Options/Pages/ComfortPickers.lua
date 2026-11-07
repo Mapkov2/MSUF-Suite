@@ -23,6 +23,11 @@ local function Rod(class, subclass)
     return NS.Finite(class) and NS.Finite(subclass) and class == Enum.ItemClass.Weapon
         and subclass == Enum.ItemWeaponSubclass.Fishingpole
 end
+local function RodItem(id)
+    local _, _, _, _, _, class, subclass = C_Item.GetItemInfoInstant(id)
+    if not Rod(class, subclass) then return nil end
+    return NS.PublicText(C_Item.GetItemInfo(id)) or Tr("Item %d"):format(id)
+end
 local function ItemRows(kind)
     local rows, seen = {}, {}
     for bag = 0, NUM_BAG_SLOTS do
@@ -32,12 +37,16 @@ local function ItemRows(kind)
                 local item = C_Container.GetContainerItemID(bag, slot)
                 if NS.Finite(item) and not seen[item] and #rows < 200 then
                     seen[item] = true
-                    local name, _, _, _, _, _, _, _, _, icon, _, class, subclass = C_Item.GetItemInfo(item)
-                    local rod = Rod(class, subclass)
-                    local consumable = NS.Finite(class) and class == Enum.ItemClass.Consumable
-                    if NS.PublicText(name) and (kind == "rod" and rod or kind == "lure" and consumable or kind == "supplies") then
-                        rows[#rows + 1] = { id = item, name = name, icon = icon }
+                    local name
+                    if kind == "rod" then
+                        name = RodItem(item)
+                    else
+                        local itemName, _, _, _, _, _, _, _, _, _, _, class = C_Item.GetItemInfo(item)
+                        if kind == "supplies" or NS.Finite(class) and class == Enum.ItemClass.Consumable then
+                            name = NS.PublicText(itemName)
+                        end
                     end
+                    if name then rows[#rows + 1] = { id = item, name = name } end
                 end
             end
         end
@@ -79,7 +88,8 @@ end
 function P.ComfortItemMenu(anchor, id, key, kind, multiple)
     local valid, save, read = Session(id, key)
     local rows = ItemRows(kind)
-    P.ContextMenu(anchor, function(_, root)
+    local open = kind == "supplies" and P.ContextMenu or P.AnchoredContextMenu
+    open(anchor, function(_, root)
         if kind == "lure" then root:CreateTitle(Tr("Choose your lure; other consumables are also listed.")) end
         root:CreateButton(Tr("Clear selection"), function() save("") end)
         if #rows == 0 then root:CreateTitle(Tr("No matching items in your bags.")) end
@@ -115,16 +125,16 @@ local function NativeItemID(text)
     local id = type(text) == "string" and tonumber(text)
     return NS.Finite(id) and id > 0 and id < 2147483647 and id % 1 == 0 and id or nil
 end
-function P.ComfortSelectedItem(ctx, body, button, id, key, fallback, y, width)
-    local label = P.Text(body, "", 20, y, width, P.T.colors.muted)
+function P.ComfortSelectedItem(ctx, button, id, key, fallback)
     P.M.TrackRefresh(ctx, function()
         local item = NativeItemID(P.Get(id, key))
-        local name = item and C_Item.GetItemInfo(item)
-        if item and key == "rod" then
-            local _, _, _, _, _, class, subclass = C_Item.GetItemInfoInstant(item)
-            if not Rod(class, subclass) then name = Tr("Choose a valid fishing rod.") end
+        local name = Tr(fallback)
+        if item then
+            if key == "rod" then name = RodItem(item) or Tr("Choose a valid fishing rod.")
+            else name = NS.PublicText(C_Item.GetItemInfo(item)) or Tr("Item %d"):format(item) end
         end
-        P.SetTranslatedText(label, NS.PublicText(name) or Tr(fallback))
+        P.SetButtonText(button, name)
+        P.W.SetControlEnabled(button, not P.Combat())
     end)
     button:HookScript("OnEnter", function()
         local item = NativeItemID(P.Get(id, key))
