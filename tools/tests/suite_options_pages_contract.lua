@@ -204,8 +204,7 @@ if not F.Suite.Client.isForever then
     S.DataTextExtraSources = nil
 end
 
--- DataTexts: a bar whose name the player cleared reads "Bar N" in its tab,
--- its header and its preview, as the layer overview and search show it.
+-- DataTexts: an unnamed bar reads "Bar N" in its header, selector and preview.
 do
     local NS = F.optionsNS
     assert(NS.Set("dataTexts", "bar1Name", ""), "fixture: the name field commits an empty name")
@@ -225,6 +224,8 @@ do
     local preview
     for _, ui in ipairs(previews) do if ui.barId == 1 then preview = ui end end
     assert(preview and preview.status.text:find("^Bar 1"), "the bar's preview title is blank")
+    assert(NS.Set("dataTexts", "bar1Name", "Raid Status"))
+    assert(header.text == "Raid Status", "renaming the bar left its accordion title stale")
     assert(NS.Set("dataTexts", "bar1Name", "Bar 1"))
 end
 

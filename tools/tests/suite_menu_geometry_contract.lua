@@ -81,11 +81,21 @@ local width, checks = 1300, 0
 M.GetContentMetrics=function() return width,900 end
 M.Theme.ReducedMotionEnabled=function() return true end
 local function Check(ok,message) checks=checks+1; assert(ok,message) end
+local function CheckTabDivider(toolbar, selector)
+    local divider = toolbar and toolbar.divider
+    Check(divider and toolbar:IsVisible() and divider:IsShown(), "preview tab divider is hidden")
+    for i, side in ipairs({ "LEFT", "RIGHT" }) do
+        local point, relative, anchor, _, y = divider:GetPoint(i)
+        Check(point == "TOP" .. side and relative == selector and anchor == "BOTTOM" .. side and y < 0,
+            "preview divider is not anchored below the tab row")
+    end
+end
 local function CheckHeader(entry)
     Check(entry.pageHeaders and #entry.pageHeaders>0, "page has no navigation header")
     local workspace=entry.context.suiteWorkspace
     if workspace then
         Check(workspace.chooseTab and not workspace.selector,"workspace replaced direct tabs with dropdown")
+        CheckTabDivider(workspace.toolbar, workspace.tabs)
     end
     local choices=0
     for _,record in ipairs(entry.pageHeaders or {}) do
@@ -122,6 +132,19 @@ local function CheckHeader(entry)
     if ui then
         local panel = ui.navigation
         local selector = assert(entry.context.dataTextBarSelector)
+        local bar = P.DataTextPage.selectedBar
+        local body = assert(entry.sections["suite_dataTexts_bar" .. bar])
+        local barEntry = P.HM.GetSectionEntry(body)
+        Check(barEntry.label:GetText() == P.DataTextPage.BarName(bar) and barEntry.featureSwitch:IsVisible(),
+            "DataTexts bar accordion lost its name or switch")
+        local basic
+        for _, region in ipairs({ panel:GetRegions() }) do
+            if region:IsShown() and region:GetObjectType() == "FontString" and region:GetText() == P.Tr("Basic") then
+                basic = region
+                break
+            end
+        end
+        Check(basic and ui.buttons.enabled:IsVisible(), "DataTexts module switch is not in the Basic panel")
         local function Bounds(widget, name)
             local point, relative, anchor, x, y = widget:GetPoint()
             Check(point=="TOPLEFT" and relative==panel and anchor=="TOPLEFT", name.." lost its header anchor")
@@ -143,7 +166,32 @@ local function CheckHeader(entry)
     end
 end
 if arg[4] == "fixture" then
-    return { env = env, M = M, world = world, mw = mw, P = P, MenuWorld = MenuWorld }
+    return { env = env, M = M, world = world, mw = mw, P = P, MenuWorld = MenuWorld, CheckTabDivider = CheckTabDivider }
+end
+world.widgets.Methods.SetDrawBling = world.widgets.Methods.SetDrawBling or function() end
+world.widgets.Methods.SetSwipeColor = world.widgets.Methods.SetSwipeColor or function() end
+world.widgets.Methods.GetCountdownFontString = world.widgets.Methods.GetCountdownFontString or function(self)
+    if not self.countdownFont then self.countdownFont = self:CreateFontString(nil, "OVERLAY") end
+    return self.countdownFont
+end
+for _,page in ipairs({"suite_actionbars", "suite_hud"}) do
+    for _,size in ipairs({1300, 620}) do
+        M.SelectPage("home")
+        M.InvalidatePage(page)
+        width = size
+        assert(M.SelectPage(page), page)
+        mw:RunTimers(1000)
+        local ctx = M.cache[page].context
+        local ui = assert(ctx._msufSuiteActionBarWorkspace or ctx._msufSuiteHUDWorkspace)
+        local selector = ui.selector
+        if not selector then
+            for _, child in ipairs({ (ui.navigation or ui.header):GetChildren() }) do
+                if child._msuf2ControlKind == "segment" then selector = child break end
+            end
+        end
+        Check(selector, page .. " has no topic selector")
+        CheckTabDivider(ctx._msufSuiteActionBarToolbar or ui.toolbar, selector)
+    end
 end
 for _,page in ipairs({"suite_bags","suite_damageMeter","suite_dataTexts"}) do
     local first

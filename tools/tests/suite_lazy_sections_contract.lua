@@ -322,7 +322,12 @@ end
 P.Button = function() Log("button"); return Frame() end
 P.Available, P.StatusText = function() return true end, function() return "Active" end
 P.SetTranslatedText = function(fontString, text) fontString.text = text end
-P.W.SectionSwitch = function(body) Log("switch"); return Frame(body) end
+P.BindSectionSwitch = function(ctx, body, spec)
+    Log("switch")
+    local toggle = Frame(body)
+    P.M.BindBoolWidget(ctx, toggle, spec.get, spec.set, spec.meta)
+    return toggle
+end
 P.M.BindBoolWidget = Noop
 P.catalog.demo.description = "Demo"
 local function Card(ctx, b, opts)

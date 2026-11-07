@@ -245,8 +245,8 @@ local function BuildFrameBasics(ctx, b, skin)
             "suite_skin_frame_basic", Tr("Basics"))
         return
     end
-    local enable = W.SectionSwitch(basics, Tr("Enable Skinning"), Tr("Enable"))
-    M.BindBoolWidget(ctx, enable, P.SkinningEnabled, P.SetSkinningEnabled, Meta("enabled", "frame_basic"))
+    local enable = P.BindSectionSwitch(ctx, basics, { label = Tr("Enable Skinning"), displayLabel = Tr("Enable"),
+        get = P.SkinningEnabled, set = P.SetSkinningEnabled, meta = Meta("enabled", "frame_basic") })
     M.TrackRefresh(ctx, function() W.SetControlEnabled(enable, not P.Combat()) end)
 end
 
@@ -784,9 +784,9 @@ local function Build(ctx)
     end
     -- FixedPreviewSection must own the first builder slot so its reserved
     -- header space contains the preview instead of leaving a blank gap.
-    local header = Preview(ctx, b, skin)
+    local header, toolbar = Preview(ctx, b, skin)
     local workspace, ui = P.MenuWorkspace.Builder(ctx, { page = PAGE, module = "skin", title = "Skinning",
-        builder = b, header = header, height = 380, tabY = -22, tabs = {
+        builder = b, header = header, toolbar = toolbar, height = 380, tabY = -22, tabs = {
             { id = "style", label = "Style", sections = "frame_basic basic material shape fonts icons" },
             { id = "windows", label = "Blizzard windows", sections = "micro hud window_controls windows coverage" },
             { id = "character", label = "Character and equipment", sections = "character" },

@@ -247,11 +247,11 @@ end
 
 -- The selected bar stays above the scroller, so every topic keeps its scope.
 local function BuildSelection(ctx, b, attachCopy)
-    local body
+    local body, toolbar
     local narrow = (b.width or ctx.width or 720) - 32 < 560
     local height = narrow and 370 or 294
     if W.FixedPreviewSection then
-        body = W.FixedPreviewSection(ctx, b, { title = Tr("Selected bar"), height = height })
+        body, toolbar = W.FixedPreviewSection(ctx, b, { title = Tr("Selected bar"), height = height })
         -- The host caps compact previews at 180px; this header also contains
         -- navigation and bar controls. Reserve its full height in the dock.
         HM.SetFixedPreviewHeight(body, height)
@@ -259,7 +259,7 @@ local function BuildSelection(ctx, b, attachCopy)
     else
         body = b:Section(Tr("Selected bar"), height)
     end
-    ctx._msufSuiteActionBarHeader = body
+    ctx._msufSuiteActionBarHeader, ctx._msufSuiteActionBarToolbar = body, toolbar
     if body.title then body.title:Hide() end
     local width = (HM.GetSectionWidth(body) or b.width or 720) - 32
     local half, bars = math.floor((width - 12) / 2), {}

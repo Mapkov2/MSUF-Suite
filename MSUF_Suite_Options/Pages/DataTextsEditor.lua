@@ -203,10 +203,12 @@ local function Header(ctx, builder, bar, select)
     local section, prefix = PAGE .. "_bar" .. bar, "bar" .. bar
     local body = builder:CollapsibleSection(section, Page.BarName(bar), 120, true)
     local width = (HM.GetSectionWidth(body) or builder.width) - 32
-    local toggle = W.SectionSwitch(body, Tr("Show bar"), Tr("Show bar"))
-    M.BindBoolWidget(ctx, toggle, function() return P.Get(ID, prefix .. "Enabled") end,
-        function(value) P.Set(ID, prefix .. "Enabled", value == true) end,
-        P.Meta(PAGE, ID, prefix .. "Enabled", "setting", section))
+    local toggle = P.BindSectionSwitch(ctx, body, {
+        label = Tr("Show bar"), displayLabel = Tr("Show bar"),
+        get = function() return P.Get(ID, prefix .. "Enabled") end,
+        set = function(value) P.Set(ID, prefix .. "Enabled", value == true) end,
+        meta = P.Meta(PAGE, ID, prefix .. "Enabled", "setting", section),
+    })
     Page.Prepare({ { widget = toggle, rule = P.catalog[ID].rules[prefix .. "Enabled"] } }, section, select)
     M.TrackRefresh(ctx, function() W.SetControlEnabled(toggle, not P.Combat()) end)
     local y, entries = P.RuleGrid(ctx, body, PAGE, ID, Rules(bar, function(_, suffix) return suffix == "Name" end),

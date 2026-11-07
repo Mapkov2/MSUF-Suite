@@ -193,6 +193,7 @@ local function InstallSelector(workspace, values, panels)
     local body = ctx._msufSuiteActionBarHeader or workspace.body
     workspace.navigation = body
     local width = workspace.width - 32
+    local selector
     if W.SegmentTabs and width >= 650 then
         local tabs, refresh, _, selectTab = W.SegmentTabs(ctx, body, {
             label = "", compact = true, values = values, width = width, frames = panels, defaultTab = values[1].value,
@@ -204,6 +205,7 @@ local function InstallSelector(workspace, values, panels)
             x = 16, y = 12,
         })
         P.HideControlTitle(tabs)
+        selector = tabs
         workspace.chooseTab = selectTab
         refresh()
     else
@@ -212,6 +214,7 @@ local function InstallSelector(workspace, values, panels)
             P.Meta("suite_actionbars", "actionbars", "view.settings", "ephemeral"))
         P.HideControlTitle(workspace.selector)
     end
+    P.MenuWorkspace.PlaceTabDivider(ctx._msufSuiteActionBarToolbar, selector or workspace.selector)
     if body.title then body.title:Hide() end
     if workspace.body.title then workspace.body.title:Hide() end
 end

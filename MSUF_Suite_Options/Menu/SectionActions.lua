@@ -18,7 +18,7 @@ local function OffTargetText(text, label)
         math.floor(c[3] * 255 + 0.5), text)
 end
 -- The "..." button in a section header; the feature switch moves left of it.
-local function SectionActionButton(ctx, entry)
+local function SectionActionButton(entry)
     local more = W.TopButton(entry.header, "...", 24, 22)
     if W.StyleSectionActionButton then W.StyleSectionActionButton(more) end
     more:SetPoint("RIGHT", entry.header, "RIGHT", -10, 0)
@@ -26,14 +26,11 @@ local function SectionActionButton(ctx, entry)
     HM.SkipHistoryCheckpoint(more)
     HM.ReserveSectionActions(entry, more, 34, true)
     entry._msufSuiteResetButton = more
-    local function AlignSwitch()
-        if entry.featureSwitch then
-            entry.featureSwitch:ClearAllPoints()
-            entry.featureSwitch:SetPoint("RIGHT", entry.header, "RIGHT", -48, 0)
-        end
+    if entry.featureSwitch then
+        -- The relative anchor already follows layout and scale changes.
+        entry.featureSwitch:ClearAllPoints()
+        entry.featureSwitch:SetPoint("RIGHT", entry.header, "RIGHT", -48, 0)
     end
-    AlignSwitch()
-    if ctx and M.TrackRefresh then M.TrackRefresh(ctx, AlignSwitch) end
     HM.RefreshSectionLayout(entry)
     return more
 end
@@ -159,7 +156,7 @@ function P.AttachSectionReset(ctx, body, title, reset, copy, extend)
     local entry = HM.GetSectionEntry(body)
     if not (entry and entry.header and W.TopButton and M.CreateMenuPopupPanel) then return end
     if entry._msufSuiteResetButton then return entry._msufSuiteResetButton end
-    local more = SectionActionButton(ctx, entry)
+    local more = SectionActionButton(entry)
     local state = { body = body, title = title, entry = entry, more = more, extend = extend }
     more:SetScript("OnClick", function() ToggleSectionPopup(state) end)
     state.getPopup = function() return state.popup end

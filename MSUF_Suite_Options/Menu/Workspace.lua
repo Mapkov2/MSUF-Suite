@@ -3,6 +3,14 @@ local W, M, HM, Tr = P.W, P.M, P.HM, P.Tr
 local Workspace, selections = {}, {}
 P.MenuWorkspace = Workspace
 
+function Workspace.PlaceTabDivider(toolbar, selector)
+    local divider = toolbar and rawget(toolbar, "divider")
+    if not divider then return end
+    divider:ClearAllPoints()
+    divider:SetPoint("TOPLEFT", selector, "BOTTOMLEFT", -4, -3)
+    divider:SetPoint("TOPRIGHT", selector, "BOTTOMRIGHT", 4, -3)
+end
+
 function Workspace.FitHeader(ui, required)
     local height = math.max(ui.spec.height or 62, required)
     if ui.header:GetHeight() == height then return end
@@ -90,21 +98,24 @@ function Workspace.Builder(ctx, spec)
     if not builder.Section then return builder, nil end
     local height = spec.height or 62
     local ui
-    local header = spec.header or W.FixedPreviewSection and W.FixedPreviewSection(ctx, builder, {
-        title = Tr(spec.title), height = height,
-        onActivate = function()
-            if ui and ui.refreshPreview then ui.refreshPreview() end
-            -- OnShow can resize the preview before its sticky record is active.
-            if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
-        end,
-    })
-        or builder:Section(Tr(spec.title), height)
+    local header, toolbar = spec.header, spec.toolbar
+    if W.FixedPreviewSection and not header then
+        header, toolbar = W.FixedPreviewSection(ctx, builder, {
+            title = Tr(spec.title), height = height,
+            onActivate = function()
+                if ui and ui.refreshPreview then ui.refreshPreview() end
+                -- OnShow can resize the preview before its sticky record is active.
+                if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
+            end,
+        })
+    end
+    header = header or builder:Section(Tr(spec.title), height)
     HM.SetFixedPreviewHeight(header, height)
     header:SetHeight(height)
     local body = builder:Section(Tr("Settings"), 120)
     if header.title then header.title:Hide() end
     if body.title then body.title:Hide() end
-    ui = { ctx = ctx, spec = spec, builder = builder, body = body, header = header,
+    ui = { ctx = ctx, spec = spec, builder = builder, body = body, header = header, toolbar = toolbar,
         width = HM.GetSectionWidth(body) or builder.width or 720, groups = {}, sections = {},
         selected = selections[spec.page] or spec.tabs[1].id }
     ctx.suiteWorkspace = ui
@@ -183,6 +194,7 @@ function Workspace.Finish(ui)
             P.Meta(ui.spec.page, ui.spec.module, "view.topic", "ephemeral"))
         P.HideControlTitle(ui.selector)
     end
+    Workspace.PlaceTabDivider(ui.toolbar, ui.tabs or ui.selector)
     ui.finished = true
     Choose(ui, ui.selected)
     if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end

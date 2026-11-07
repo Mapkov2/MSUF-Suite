@@ -285,7 +285,7 @@ end
 local function Navigation(ctx, builder, bars, choose, selection)
     local navigation = builder:Section(Tr("DataTexts"), 82)
     if navigation.title then navigation.title:Hide() end
-    P.Text(navigation, "DataTexts", 16, -12, 160, T.colors.text, "heading")
+    P.Text(navigation, "Basic", 16, -12, 160, T.colors.text, "heading")
     local toggle = W.SwitchAt(navigation, Tr("Enable"), 0, 0, 68, "LEFT")
     toggle:ClearAllPoints()
     toggle:SetPoint("TOPRIGHT", navigation, "TOPRIGHT", -16, -12)

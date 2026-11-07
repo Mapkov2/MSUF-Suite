@@ -708,11 +708,12 @@ end
 
 -- The module card's switch, in its header: a closed card shows it.
 local function ModuleSwitch(ctx, body, pageKey, id, sectionId, opts)
-    local toggle = W.SectionSwitch(body, Tr("Enable"), Tr("Enable"))
-    M.BindBoolWidget(ctx, toggle,
-        function() return P.Get(id, "enabled") == true end,
-        opts.setEnabled or function(value) P.Set(id, "enabled", value == true) end,
-        P.Meta(pageKey, id, "enabled", "setting", sectionId))
+    local toggle = P.BindSectionSwitch(ctx, body, {
+        label = Tr("Enable"), displayLabel = Tr("Enable"),
+        get = function() return P.Get(id, "enabled") == true end,
+        set = opts.setEnabled or function(value) P.Set(id, "enabled", value == true) end,
+        meta = P.Meta(pageKey, id, "enabled", "setting", sectionId),
+    })
     if opts.prepareControl then opts.prepareControl(body, toggle, "enabled", "setting", "Enable") end
     return toggle
 end

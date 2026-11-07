@@ -320,6 +320,18 @@ function P.ContextMenu(owner, generator, ...)
     return MenuUtil.CreateContextMenu(owner, generator, ...)
 end
 
+function P.AnchoredContextMenu(owner, generator)
+    if SuiteDialogs() and S.StyledContextMenu then
+        local c = T.colors
+        return S.StyledContextMenu(owner, {
+            panel = { c.panel[1], c.panel[2], c.panel[3], 1 },
+            border = c.border, accent = c.accent, text = c.text,
+            idle = c.panel, hover = c.panel2, selected = c.panel2,
+        }, generator)
+    end
+    return P.ContextMenu(owner, generator)
+end
+
 -- "Save setup as…": the MSUF frames, the Suite and the skin of the active
 -- profiles saved together under a new profile name (SuiteProfiles.SaveAs).
 -- Refused in combat, when asked and when the name comes back.
@@ -428,6 +440,28 @@ function P.Meta(pageKey, id, key, classification, sectionId)
     if M.ControlMeta then return M.ControlMeta(pageKey, "suite", id .. "." .. key, classification, exact) end
     exact.classification = classification
     return exact
+end
+
+-- Use the outer frame so the disclosure animation can own the body's alpha.
+local function DimSectionWithSwitch(toggle, outer)
+    if toggle._msufSuiteDimsSection then return end
+    local setChecked, lastChecked = toggle.SetChecked
+    toggle._msufSuiteDimsSection = true
+    function toggle:SetChecked(checked)
+        checked = checked and true or false
+        setChecked(self, checked)
+        if lastChecked ~= checked then outer:SetAlpha(checked and 1 or 0.6) end
+        lastChecked = checked
+    end
+end
+
+function P.BindSectionSwitch(ctx, body, spec)
+    local toggle = P.W.SectionSwitch(body, spec.label, spec.displayLabel)
+    local entry = HM.GetSectionEntry(body)
+    if entry and entry.outer and entry.outer.SetAlpha then DimSectionWithSwitch(toggle, entry.outer) end
+    M.BindBoolWidget(ctx, toggle, spec.get, spec.set, spec.meta)
+    toggle:SetChecked(spec.get() and true or false)
+    return toggle
 end
 
 -- Menu2's font strings and buttons translate what they are given (T.Font,

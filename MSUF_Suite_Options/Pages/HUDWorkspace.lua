@@ -50,16 +50,16 @@ end
 
 function Page.Builder(ctx)
     local builder = W.PageBuilder(ctx)
-    local header
+    local header, toolbar
     if W.FixedPreviewSection then
-        header = W.FixedPreviewSection(ctx, builder, { title = Tr("Preview"), height = 310 })
+        header, toolbar = W.FixedPreviewSection(ctx, builder, { title = Tr("Preview"), height = 310 })
         HM.SetFixedPreviewHeight(header, 310)
         header:SetHeight(310)
     else header = builder:Section(Tr("Preview"), 310) end
     local body = builder:Section(Tr("Settings"), 120)
     if header.title then header.title:Hide() end
     if body.title then body.title:Hide() end
-    local ui = { ctx = ctx, builder = builder, body = body, header = header,
+    local ui = { ctx = ctx, builder = builder, body = body, header = header, toolbar = toolbar,
         width = HM.GetSectionWidth(body) or builder.width, selected = selected, groups = {}, sections = {} }
     ctx._msufSuiteHUDWorkspace = ui
     ui.select = function(id)
@@ -140,6 +140,7 @@ function Page.Finish(ctx)
         end
     end
     ui.preview = P.HUDPreview.Build(ctx, ui.header, ui.width - 32)
+    local selector
     if W.SegmentTabs and ui.width - 32 >= 650 then
         local tabs, refresh, _, selectTab = W.SegmentTabs(ctx, ui.header, {
             label = "", compact = true, values = values, width = ui.width - 32, frames = panels, defaultTab = selected,
@@ -147,6 +148,7 @@ function Page.Finish(ctx)
             afterRefresh = function(id) Choose(ui, id) end, x = 16, y = 12,
         })
         P.HideControlTitle(tabs)
+        selector = tabs
         ui.chooseTab = selectTab
         refresh()
     else
@@ -155,6 +157,7 @@ function Page.Finish(ctx)
             P.Meta("suite_hud", "objectives", "view.feature", "ephemeral"))
         P.HideControlTitle(ui.selector)
     end
+    P.MenuWorkspace.PlaceTabDivider(ui.toolbar, selector or ui.selector)
     ui.finished = true
     Choose(ui, ui.selected)
     if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end

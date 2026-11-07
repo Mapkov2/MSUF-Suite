@@ -98,5 +98,5 @@ function P.BuildSkinMenuPreview(ctx, b, skin)
     P.M.TrackRefresh(ctx, Paint)
     section:HookScript("OnShow", Paint)
     Paint()
-    return section
+    return section, toolbar
 end

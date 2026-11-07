@@ -55,6 +55,7 @@ for _,height in ipairs({94, 180, 38, 120}) do
     mw:RunTimers(1000)
     local ui = contexts[M.cache.suite_buffReminders].suiteWorkspace
     local record = M.cache.suite_buffReminders.pageHeaders[1]
+    F.CheckTabDivider(ui.toolbar, ui.tabs)
     local expected = math.min(180, math.max(38, height * ui.reminderPreview.stage:GetScale()))
     Check(ui.reminderPreview.viewport:GetHeight() == expected, "reminder sample did not resize")
     Check(record.hostHeight >= record.headerTopInset + ui.header:GetHeight() + record.stickyGap,
