@@ -72,48 +72,83 @@ local function Ready(uf, setup)
     return container, health, cast
 end
 
+local function CastSize(container, cast, inside, height, iconWidth, iconHeight)
+    container:SetHeight(height + (inside and 0 or iconHeight))
+    cast:SetHeight(height)
+    cast.Icon:SetSize(iconWidth, iconHeight)
+end
+
+local function CastBorderSize(cast, setup, width, height)
+    if not setup.useClassicCastBar then return true end
+    local border = cast.Border
+    if not border or NS.Safety.IsForbidden(border) or not NS.Finite(setup.castBarBorderWidth)
+        or not NS.Finite(setup.castBarBorderHeight) then return false end
+    border:SetSize(setup.castBarBorderWidth + width, setup.castBarBorderHeight + height)
+    return true
+end
+
 function G.Restore(state, uf, setup)
-    if not state.geometry then return true end
+    local old = state.geometry
+    if not old then return true end
     local container, health, cast = Ready(uf, setup)
-    local reserve = G.LevelReserve(uf, setup)
-    if not container or not reserve then return false end
-    G.Point(container, "BOTTOMLEFT", uf, "BOTTOMLEFT", setup.insetWidth, 0)
-    G.Point(container, "BOTTOMRIGHT", uf, "BOTTOMRIGHT", -setup.insetWidth, 0)
-    G.Point(health, "BOTTOMRIGHT", container, "TOPRIGHT", -reserve, setup.castBarToHealthBarSpacing)
-    health:SetHeight(setup.healthBarHeight)
-    container:SetHeight(setup.castBarHeight + (setup.spellNameInsideCastBar and 0 or setup.castIconHeight))
-    cast:SetHeight(setup.castBarHeight)
-    cast.Icon:SetSize(setup.castIconWidth, setup.castIconHeight)
+    if not container then return false end
+    local reserve = old.inset and G.LevelReserve(uf, setup)
+    if old.inset and not reserve then return false end
+    if old.borderWidth and not CastBorderSize(cast, setup, 0, 0) then return false end
+    if old.inset then
+        G.Point(container, "BOTTOMLEFT", uf, "BOTTOMLEFT", setup.insetWidth, 0)
+        G.Point(container, "BOTTOMRIGHT", uf, "BOTTOMRIGHT", -setup.insetWidth, 0)
+        G.Point(health, "BOTTOMRIGHT", container, "TOPRIGHT", -reserve, setup.castBarToHealthBarSpacing)
+        health:SetHeight(setup.healthBarHeight)
+    end
+    CastSize(container, cast, setup.spellNameInsideCastBar, setup.castBarHeight, setup.castIconWidth, setup.castIconHeight)
     state.geometry = nil
     return true
 end
 
 function G.Apply(state, uf, setup, config, force, prefix)
-    if config.barGeometry ~= SAME_GEOMETRY then
-        return G.Restore(state, uf, setup) and setup.healthBarHeight or nil
+    local keys, old = Key[prefix], state.geometry
+    local height, icon, width = config[keys.CastHeight] or 0, config[keys.CastIconSize] or 0, config[keys.CastWidthDelta] or 0
+    local uniform = config.barGeometry == SAME_GEOMETRY
+    local classicBorder = setup.useClassicCastBar and (width ~= 0 or height ~= 0)
+    local customCast = height ~= 0 or icon ~= 0 or classicBorder
+    if not uniform and (not customCast or old and old.inset ~= nil) then
+        if not G.Restore(state, uf, setup) then return end
+        if not customCast then return setup.healthBarHeight end
+        old = nil
     end
     local container, health, cast = Ready(uf, setup)
     if not container then return end
-    local totalWidth, healthHeight, castHeight, iconHeight = NS.NameplateStyle.BarDimensions(
-        config.barGeometry, config.nativeStyle, setup.horizontalScale, setup.verticalScale)
-    local keys = Key[prefix]
-    castHeight, iconHeight = NS.NameplateStyle.CastDimensions(config.barGeometry,
-        config[keys.CastHeight], config[keys.CastIconSize], castHeight, iconHeight)
-    local nativeWidth = NativeWidth(setup.useClassicHealthBar == true)
-    if not NS.Finite(nativeWidth) then return end
-    local inset = setup.insetWidth + (nativeWidth * setup.horizontalScale - totalWidth) / 2
-    local old = state.geometry
-    if force or not old or old[1] ~= inset or old[2] ~= healthHeight or old[3] ~= castHeight or old[4] ~= iconHeight then
-        G.Point(container, "BOTTOMLEFT", uf, "BOTTOMLEFT", inset, 0)
-        G.Point(container, "BOTTOMRIGHT", uf, "BOTTOMRIGHT", -inset, 0)
-        -- The level badge remains a separate element and cannot shrink the bar.
-        G.Point(health, "BOTTOMRIGHT", container, "TOPRIGHT", 0, setup.castBarToHealthBarSpacing)
-        if force or not old or old[2] ~= healthHeight then health:SetHeight(healthHeight) end
-        container:SetHeight(castHeight + (setup.spellNameInsideCastBar and 0 or iconHeight))
-        cast:SetHeight(castHeight)
-        cast.Icon:SetSize(iconHeight, iconHeight)
+    local inset, healthHeight = nil, setup.healthBarHeight
+    local castHeight, iconWidth, iconHeight = setup.castBarHeight, setup.castIconWidth, setup.castIconHeight
+    if uniform then
+        local totalWidth
+        totalWidth, healthHeight, castHeight, iconHeight = NS.NameplateStyle.BarDimensions(
+            config.barGeometry, config.nativeStyle, setup.horizontalScale, setup.verticalScale)
+        local nativeWidth = NativeWidth(setup.useClassicHealthBar == true)
+        if not NS.Finite(nativeWidth) then return end
+        inset = setup.insetWidth + (nativeWidth * setup.horizontalScale - totalWidth) / 2
+        iconWidth = iconHeight
+    end
+    castHeight, iconWidth, iconHeight = NS.NameplateStyle.CastDimensions(height, icon, castHeight, iconWidth, iconHeight)
+    local borderWidth = classicBorder and width or nil
+    if force or not old or old.inset ~= inset or old.healthHeight ~= healthHeight or old.castHeight ~= castHeight
+        or old.iconWidth ~= iconWidth or old.iconHeight ~= iconHeight or old.borderWidth ~= borderWidth then
+        if borderWidth or old and old.borderWidth then
+            local borderHeight = borderWidth and castHeight - setup.castBarHeight or 0
+            if not CastBorderSize(cast, setup, borderWidth or 0, borderHeight) then return end
+        end
+        if inset then
+            G.Point(container, "BOTTOMLEFT", uf, "BOTTOMLEFT", inset, 0)
+            G.Point(container, "BOTTOMRIGHT", uf, "BOTTOMRIGHT", -inset, 0)
+            -- The level badge remains a separate element and cannot shrink the bar.
+            G.Point(health, "BOTTOMRIGHT", container, "TOPRIGHT", 0, setup.castBarToHealthBarSpacing)
+            if force or not old or old.inset == nil or old.healthHeight ~= healthHeight then health:SetHeight(healthHeight) end
+        end
+        CastSize(container, cast, setup.spellNameInsideCastBar, castHeight, iconWidth, iconHeight)
         old = old or {}
-        old[1], old[2], old[3], old[4] = inset, healthHeight, castHeight, iconHeight
+        old.inset, old.healthHeight, old.castHeight = inset, healthHeight, castHeight
+        old.iconWidth, old.iconHeight, old.borderWidth = iconWidth, iconHeight, borderWidth
         state.geometry = old
     end
     return healthHeight

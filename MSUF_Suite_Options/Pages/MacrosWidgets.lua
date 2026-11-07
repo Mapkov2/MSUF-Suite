@@ -1,6 +1,7 @@
 local _, P = ...
 local Page = {}
 P.MacroPage = Page
+Page.AUTO_ICON = 134400
 Page.helpers = {}
 -- Widget and editor closures are created only when the macro section opens.
 Page.initializers = {}
@@ -41,6 +42,7 @@ Page.initializers[#Page.initializers + 1] = function()
     end
 
     function Page.Begin(ui)
+        if Page.picker then Page.picker:Hide() end
         for kind, pool in pairs(ui.pools) do
             for _, control in pairs(pool) do
                 if kind == "edit" then control:ClearFocus() end
@@ -220,7 +222,6 @@ Page.initializers[#Page.initializers + 1] = function()
         end)
         button:ClearAllPoints()
         button:SetPoint("TOPLEFT", x + (ui.offsetX or 0), y)
-        button.texture:SetTexture(Page.document.icon)
         return button
     end
 

@@ -37,10 +37,6 @@ Sources.kinds = {
     broker = true, currency = true, crests = true, itemLevel = true, professions = true, specialization = true,
     audio = true, hearth = true, progress = true, portals = true, microMenu = true, specLoot = true, travel = true,
 }
--- Places whose click runs a protected action through a secure button
--- (Actions.lua). Their bars release it when combat starts.
-Sources.secureKinds = { hearth = true, specialization = true, portals = true, microMenu = true, specLoot = true, travel = true,
-    currency = true, crests = true, friends = true, guild = true }
 -- Built-in places that borrow the same secure overlay, and the window the
 -- Blizzard button it clicks opens (S.PanelButton).
 Sources.panelSources = { durability = "character", coordinates = "worldMap", location = "worldMap" }
@@ -90,6 +86,7 @@ function Sources.Bind(button, config, index, slot, kind)
     binding.maxWidth = config[prefix .. "MaxWidth"] or 180
     binding.padding = config[prefix .. "Padding"] or 5
     binding.iconR, binding.iconG, binding.iconB = S.RGB(config[prefix .. "IconColor"] or "ffffff")
+    if kind == "microMenu" then binding.caption = NS.DataTextMenuCaption(config[prefix .. "MenuLabel"]) end
     Sources.bindings[key] = binding
     button.source, button.extra = key, binding
     return key
@@ -312,8 +309,8 @@ FORMAT.portals = function()
     return S.Text("Dungeon portals"), S.Text("Open")
 end
 
-FORMAT.microMenu = function()
-    return S.Text("Menu"), S.Text("Open")
+FORMAT.microMenu = function(binding)
+    return nil, binding.caption
 end
 
 FORMAT.travel = function()
@@ -420,7 +417,6 @@ function Sources.WantedEvents(active, wanted)
     if ConfiguredKind("crests") then wanted.ITEM_UPGRADE_MASTER_SET_ITEM = true end
     if ConfiguredKind("hearth") then
         wanted.BAG_UPDATE_DELAYED, wanted.TOYS_UPDATED = true, true
-        wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
     end
     for key in pairs(active) do
         local binding = Sources.bindings[key]
@@ -428,15 +424,6 @@ function Sources.WantedEvents(active, wanted)
             for event, kinds in pairs(EVENTS) do
                 if kinds[binding.kind] then wanted[event] = true end
             end
-            -- PLAYER_REGEN_DISABLED runs before lockdown: the secure button of
-            -- these places is released there and offered again after combat.
-            -- Forever may switch to its Gamepad UI at any time.
-            if Sources.secureKinds[binding.kind]
-                or NS.Client.isForever and Sources.gamepadPanelKinds[binding.kind] then
-                wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
-            end
-        elseif Sources.panelSources[key] or NS.Client.isForever and Sources.gamepadPanelSources[key] then
-            wanted.PLAYER_REGEN_DISABLED, wanted.PLAYER_REGEN_ENABLED = true, true
         end
     end
 end
@@ -472,17 +459,18 @@ function Sources.PruneConfigured(module, sources)
 end
 
 local wantedKinds = {}
-function Sources.Rebind(module)
+function Sources.Rebind(module, resample)
     owner = module
     for kind in pairs(wantedKinds) do wantedKinds[kind] = nil end
     for key in pairs(module.activeSources or {}) do
         local binding = Sources.bindings[key]
         if binding then wantedKinds[binding.kind] = true end
     end
-    if wantedKinds.crests then
-        if module.config.crestMode ~= CREST.SELECTED and not Sources.seasonCosts then Sources.ObserveSeasonCosts() end
-        SeasonSelection(module.config)
+    if module.config.crestMode ~= CREST.SELECTED
+        and (wantedKinds.crests and not Sources.seasonCosts or resample and ConfiguredKind("crests")) then
+        Sources.ObserveSeasonCosts()
     end
+    if wantedKinds.crests then SeasonSelection(module.config) end
     for kind, provider in pairs(providers) do
         provider.Rebind(module, wantedKinds[kind] == true)
     end
@@ -537,10 +525,7 @@ local function ReadHearths()
     return changed
 end
 
--- The travel popup uses the same configured, owned items as the existing
--- Hearthstone source. This read happens on opening the menu, never on a tick.
-function Sources.OwnedHearths()
-    ReadHearths()
+local function HearthChoices()
     local choices = {}
     for i = 1, #hearthIDs do
         if hearthOwned[i] then choices[#choices + 1] = { id = hearthIDs[i], toy = hearthToys[i] } end
@@ -549,18 +534,18 @@ function Sources.OwnedHearths()
     return choices
 end
 
+-- The travel popup uses the same choices as the Hearthstone place.
+function Sources.OwnedHearths()
+    ReadHearths()
+    return HearthChoices()
+end
+
 -- Chooses the Hearthstone each Hearthstone place uses next (data only;
 -- Actions.lua hands it to the secure button out of combat). Every configured
 -- place chooses, also one on a hidden or not yet hovered Mouseover bar:
--- showing it only rebinds. In combat the overlay is hidden: only mark the
--- choice stale; DataTexts.lua checks it again at PLAYER_REGEN_ENABLED.
-function Sources.PrepareHearths()
-    if not ConfiguredKind("hearth") then return end
-    if NS.IsCombatLocked() then
-        Sources.hearthDirty = true
-        return
-    end
-    local choices = Sources.OwnedHearths()
+-- showing it only rebinds. DataTexts checks ownership again after combat.
+local function ApplyHearthChoices()
+    local choices = HearthChoices()
     for _, binding in pairs(Sources.bindings) do
         if binding.kind == "hearth" and binding.button.extra == binding then
             local pick = owner.config.randomHearth and #choices > 1 and math.random(#choices) or 1
@@ -572,17 +557,18 @@ function Sources.PrepareHearths()
     return true -- The controller need not rebind the same overlay twice.
 end
 
+function Sources.PrepareHearths()
+    if not ConfiguredKind("hearth") or NS.IsCombatLocked() then return end
+    ReadHearths()
+    return ApplyHearthChoices()
+end
+
 -- Bag and toy updates choose again only when the owned Hearthstones changed:
 -- a random variant stays until it is used (Actions.lua OverlayPostClick) or
--- lost, and an unrelated loot builds nothing. The overlay is hidden in
--- combat, so a combat update only marks the choice for PLAYER_REGEN_ENABLED.
+-- lost, and unrelated loot builds nothing. Data events are paused in combat.
 function Sources.HearthsMayHaveChanged()
-    if not ConfiguredKind("hearth") then return end
-    if NS.IsCombatLocked() then
-        Sources.hearthDirty = true
-        return
-    end
-    if ReadHearths() then Sources.PrepareHearths() end
+    if not ConfiguredKind("hearth") or NS.IsCombatLocked() then return end
+    if ReadHearths() then ApplyHearthChoices() end
 end
 
 ------------------------------------------------------------------ icons

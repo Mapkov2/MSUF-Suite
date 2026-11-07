@@ -12,7 +12,9 @@
 Bootstrap.lua
 Shared.lua
 HeaderClock.lua
+InputAnimation.lua
 Appearance.lua
+Comfort.lua
 MinimalChrome.lua
 FadeAnimation.lua
 Unread.lua
@@ -23,6 +25,9 @@ HistoryBrowser.lua
 Fade.lua
 Messages.lua
 Positions.lua
+Floating.lua
+ToolbarGeometry.lua
+Toolbar.lua
 CompleteMessages.lua
 Window.lua
 PreviewSnapshot.lua

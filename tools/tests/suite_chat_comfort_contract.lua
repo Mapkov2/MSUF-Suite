@@ -234,6 +234,14 @@ do
     local visual = {}
     C.ApplyCopyButton(M, visual, frame, 24)
     C.ApplyCopyButton(M, visual, frame, 24)
+    config.headerToolbar = true
+    C.ApplyCopyButton(M, visual, frame, 24)
+    assert(visual.copyButton:IsShown(), "floating window lost its copy action to the dock toolbar")
+    frame.isDocked = 1
+    C.ApplyCopyButton(M, visual, frame, 24)
+    assert(not visual.copyButton:IsShown(), "docked window retained a duplicate copy action")
+    frame.isDocked, config.headerToolbar = nil, false
+    C.ApplyCopyButton(M, visual, frame, 24)
     eq(frame.infoCalls, 0, "the copy button read the buffer before any click")
     visual.copyButton.scripts.OnClick(visual.copyButton)
     local panel = M.copyDialog

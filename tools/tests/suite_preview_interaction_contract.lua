@@ -96,6 +96,14 @@ view:SetSelectedSlot(2)
 view.selection.button:GetScript("OnClick")(view.selection.button)
 assert(chosen == 2 and view.selection._suitePreviewTarget == view.slots[2], "external slot selection left the settings action stale")
 assert(not view.slots[1]._suitePreviewSelectionEdges[1]:IsShown(), "external slot selection left its former marker")
+data.bar1Slot2 = P.Suite.DataTextSourceIndex.progressBar
+view:Refresh()
+local progress = assert(view.slots[2].dataProgress)
+assert(progress.track:IsShown() and progress.fill:GetWidth() == progress.width * .32
+    and progress.bonus:GetWidth() == progress.width * .42, "the progress preview did not paint the XP and rested layers")
+data.bar1Slot2 = 2
+view:Refresh()
+assert(not progress.track:IsShown(), "a different preview source retained the progress track")
 data.bar1Slot2 = 0
 view:Refresh()
 assert(not view.selection.button.enabled, "removed data source kept a stale selection action")

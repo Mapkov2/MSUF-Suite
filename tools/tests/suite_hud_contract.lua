@@ -53,7 +53,7 @@ local function Widget(parent, fontString)
         self.attributes[key] = value
     end
     function w:GetAttribute(key) return self.attributes and self.attributes[key] end
-    function w:SetColorTexture(...) self.color = { ... } end
+    function w:SetColorTexture(...) self.color, self.atlas = { ... }, nil end
     function w:SetTexture(value) self.texture = value end
     function w:SetAtlas(value) self.atlas = value end
     function w:SetTexCoord() end
@@ -391,6 +391,7 @@ end
 suite.Dispatch = S.Dispatch
 TimerContext = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, S, suite)
 local private = { NS = suite, Suite = S }
+assert(loadfile(root .. "/MSUF_Suite/Core/AnnouncementArt.lua"))("MSUF_Suite", suite)
 -- Native recipe tracking remains separate from watched quest identities.
 local trackedRecipes, trackedRecrafts, recipeReads = {}, {}, 0
 local recipeInventory, recipeName = 0, "Glimmering Gemdust"
@@ -1045,13 +1046,15 @@ assert(banner.subtitle.text == "Dornogal" and movers.announcements.spec.point() 
     and banner.host.point[1] == "TOP", "new announcements should start at top center")
 do
     local current, expires = banner.current, banner.expiresAt
-    assert(banner.background.shown and banner.accent.shown and banner.divider.shown,
+    local art = banner.art
+    local top, bottom = unpack(art.accents)
+    assert(art.background.shown and top.shown and bottom.shown,
         "missing artwork setting must preserve existing announcement art")
     for _, enabled in ipairs({ false, true, false, true }) do
         banner.config.showBoxArt = enabled
         banner:Refresh()
-        assert(banner.background.shown == enabled and banner.accent.shown == enabled
-            and banner.divider.shown == enabled, "announcement box art toggle did not hide or restore all artwork")
+        assert(art.background.shown == enabled and top.shown == enabled and bottom.shown == enabled,
+            "announcement box art toggle did not hide or restore all artwork")
         assert(banner.host.shown and banner.title.shown and banner.subtitle.shown
             and banner.title.text == "The Coreway" and banner.subtitle.text == "Dornogal",
             "announcement artwork switch hid or changed its text")
@@ -1059,6 +1062,30 @@ do
             "announcement artwork switch restarted the active announcement")
     end
     banner.config.showBoxArt = nil
+    local oldTexture = C_Texture
+    C_Texture = { GetAtlasInfo = function() return {} end }
+    for _, choice in ipairs({
+        { 2, "NPE_ArrowRight", "NPE_ArrowLeft", 65 },
+        { 3, "levelup-bar-gold", "levelup-bar-gold", 14 },
+        { 4, "levelup-glow-gold", nil, 14 },
+        { 1, nil, nil, 14 },
+    }) do
+        banner.config.artStyle = choice[1]
+        banner:Refresh()
+        assert(top == art.accents[1] and bottom == art.accents[2]
+            and top.atlas == choice[2] and bottom.atlas == choice[3],
+            "live banner did not reuse its textures for the selected artwork")
+        assert(art.inset == choice[4] and banner.title.point[2] == -choice[4],
+            "banner headline did not reserve space for the arrows")
+        assert(banner.current == current and banner.expiresAt == expires,
+            "artwork selection restarted the current banner")
+    end
+    C_Texture = { GetAtlasInfo = function() return nil end }
+    banner.config.artStyle = 2
+    banner:Refresh()
+    assert(art.style == 1 and art.inset == 14 and not top.atlas, "missing atlas did not fall back to classic lines")
+    banner.config.artStyle = nil
+    C_Texture = oldTexture
 end
 banner.config.anchor, banner.config.y = 2, -170
 banner:Refresh()
@@ -1081,7 +1108,7 @@ local function DismissPending()
     return false
 end
 assert(banner.expiresAt == expires and DismissPending() and banner.title.textColor[2] == 1
-    and math.abs(banner.background.color[1] - 17 / 255) < .001,
+    and math.abs(banner.art.background.color[1] - 17 / 255) < .001,
     "announcement color changes must repaint without restarting the display timer")
 EventToastManagerFrame:DisplayToast({ eventType = 25, eventToastID = 7,
     title = "Flight point discovered", subtitle = "Dornogal" })
@@ -1121,12 +1148,12 @@ banner:Refresh()
 assert(banner.host.shown and banner.title.text == "ANNOUNCEMENTS")
 banner.config.showBoxArt = false
 banner:Refresh()
-assert(not banner.background.shown and not banner.accent.shown and not banner.divider.shown
+assert(not banner.art.background.shown and not banner.art.accents[1].shown and not banner.art.accents[2].shown
     and banner.host.shown and banner.title.shown and banner.subtitle.shown,
     "Edit Mode announcement preview ignored the artwork switch")
 banner.config.showBoxArt = nil
 banner:Refresh()
-assert(banner.background.shown and banner.accent.shown and banner.divider.shown,
+assert(banner.art.background.shown and banner.art.accents[1].shown and banner.art.accents[2].shown,
     "legacy artwork default did not restore the Edit Mode preview")
 tracker:Refresh()
 assert(tracker.host.shown, "tracker must remain visible for placement in Edit Mode")

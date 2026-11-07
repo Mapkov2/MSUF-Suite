@@ -408,7 +408,7 @@ function C.ApplySidebar(self, visual, frame)
         if visual.sidebar then visual.sidebar:Hide() end
         if visual.sidebarFrame then visual.sidebarFrame:Hide() end
         C.ReleasePanelDelegate()
-        SyncNativeControls(self, c.hideNativeButtons == true)
+        SyncNativeControls(self, c.hideNativeButtons == true or c.headerToolbar == true)
         return
     end
     self.sidebarClassColor = SidebarClassColor(c)

@@ -18,6 +18,7 @@ local ENEMY_ELEMENT_SETTINGS = { Name = true, Level = true, HealthText = true, C
     RaidIcon = true, Cast = true, CastText = true, CastTime = true,
     CastIcon = true, CastShield = true, CastTarget = true }
 local ELEMENT_SETTING = {
+    CastShield = "enemyCastEnabled",
     Name = "enemyTextMode", Level = "enemyLevelEnabled", HealthText = "enemyTextMode", Cast = "enemyCastEnabled",
     CastText = "enemyCastSpellName", CastTime = "enemyCastTimeEnabled", RaidIcon = "enemyRaidIcon",
     Classification = "enemyRarityIcon", CastIcon = "enemyCastSpellIcon",
@@ -27,27 +28,26 @@ local function Clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 local function Round(v) return math.floor(v + 0.5) end
 
 local function Focus(ui, handle)
+    if not handle or P.Combat() then return end
     if Layers.NPCWorldNames(ui) then
-        OpenSetting("friendlyNPCs", handle and handle._label)
+        OpenSetting("friendlyNPCs")
         return
     end
-    local section = handle and ui.sections and ui.sections[handle.section]
-    if handle and handle._npSettingsTab then
+    local key = handle._npSettingKey
+    local kind = handle._key and AURA_ELEMENT[handle._key:match("%.([%a]+)$")]
+    if kind and AURA_KIND[kind] then
+        local group = AuraGroup(ui)
+        key = group and group .. AURA_KIND[kind] or "friendlyNpcDebuffs"
+    elseif handle._key and handle._key:find("%.SoftTarget$", 1, false) then
+        key = ui.sampleKind == "enemy" and (ui.softInteract and "softTargetInteract" or "softTargetEnemy")
+            or "softTargetFriend"
+    end
+    if OpenSetting(key) then return end
+    local section = ui.sections and ui.sections[handle.section]
+    if handle._npSettingsTab then
         section = P.SelectNameplatesEnemyTab(handle._npSettingsTab) or section
     end
     if section and W.FocusCollapsibleSection then W.FocusCollapsibleSection(section, { persist = true, flash = true }) end
-    if handle then
-        local key = handle._npSettingKey
-        local kind = handle._key and AURA_ELEMENT[handle._key:match("%.([%a]+)$")]
-        if kind and AURA_KIND[kind] then
-            local group = AuraGroup(ui)
-            key = group and group .. AURA_KIND[kind] or "friendlyNpcDebuffs"
-        elseif handle._key and handle._key:find("%.SoftTarget$", 1, false) then
-            key = ui.sampleKind == "enemy" and (ui.softInteract and "softTargetInteract" or "softTargetEnemy")
-                or "softTargetFriend"
-        end
-        OpenSetting(key, handle._label)
-    end
 end
 local function Write(ui, handle, x, y)
     if P.Combat() or Layers.NPCWorldNames(ui) then return false end
@@ -242,7 +242,7 @@ local function BuildSampleButtons(ui)
     end)
     ui.questButton = Button(ui, samples, "questSample", "Quest", 58, 472, function()
         if P.Get(ID, "look") == 2 then
-            OpenSetting("look", "Look")
+            OpenSetting("look")
             return
         end
         ui.enemyPlayer = false
@@ -254,7 +254,7 @@ local function BuildSampleButtons(ui)
     end)
     ui.friendlyButtons = {}
     ui.friendlyButtons[1] = Button(ui, samples, "friendlyMode", "Friendly player display", 146, 130, function()
-        OpenSetting("friendlyNamesOnly", "Friendly player display")
+        OpenSetting("friendlyNamesOnly")
     end)
     ui.friendlyButtons[2] = Button(ui, samples, "friendlyGroup", "Group / outsider", 114, 282, function()
         ui.friendlyOutsider = not ui.friendlyOutsider

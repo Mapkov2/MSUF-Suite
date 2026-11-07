@@ -27,11 +27,11 @@ local function NativeAlpha(uf, frame, hide)
     if not Safe(frame) then return end
     local previous = M.nativeLevelAlphas[frame]
     if hide then
-        if previous ~= nil and frame:GetAlpha() == 0 then return end
+        local alpha = frame:GetAlpha()
+        if not S.Finite(alpha) then return end
+        if previous ~= nil and alpha == 0 then return end
         if previous == nil then
-            previous = frame:GetAlpha()
-            if not S.Finite(previous) then return end
-            M.nativeLevelAlphas[frame] = previous
+            M.nativeLevelAlphas[frame] = alpha
         end
         if NS.IsCombatLocked() then
             M.pendingPlates[uf] = true
@@ -79,16 +79,26 @@ function Level.RestoreNative()
     end
 end
 
--- Whether the plate shows Blizzard's level instead of the Suite number.
-local function NativeShown(uf, prefix, unit)
+-- A new plate can keep its native badge until the post-combat repaint.
+local function NativeHidden(frame)
+    if not frame then return true end
+    if not Safe(frame) then return false end
+    local alpha = frame:GetAlpha()
+    if not S.Finite(alpha) then return false end
+    return alpha == 0
+end
+
+local function ShowsNumber(uf, prefix, unit)
+    if not prefix or not unit or M.config.look == LOOK_BLIZZARD or not M.config[prefix]
+        or not M.config[Key[prefix].LevelEnabled] then return false end
     local setup = NamePlateSetupOptions
     local classic = S.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
     local namesOnly = S.Public(uf.showOnlyName) and uf.showOnlyName == true
-    if not prefix or M.config.look == LOOK_BLIZZARD or not M.config[prefix]
-        or not M.config[Key[prefix].LevelEnabled] or not unit then return true end
-    if NS.Client.isForever then return M.config.levelAppearance == LEVEL_BADGE or namesOnly end
-    -- Retail's own badge appears only for some players; it keeps its place.
-    return classic or LevelBadgeShown(uf, unit) ~= false
+    local forever = NS.Client.isForever
+    local badge
+    if not forever and not classic then badge = LevelBadgeShown(uf, unit) end
+    local mode = NS.NameplateStyle.LevelMode(forever, classic, true, true, M.config.levelAppearance, badge, namesOnly)
+    return mode == "number" and (not forever or NativeHidden(uf.PlayerLevelDiffFrame) and NativeHidden(uf.LevelFrame))
 end
 
 local function Label(uf)
@@ -125,7 +135,7 @@ local function DifficultyColor(unit)
 end
 
 function Level.Paint(uf, prefix, unit)
-    if NativeShown(uf, prefix, unit) then
+    if not ShowsNumber(uf, prefix, unit) then
         Level.Hide(uf)
         return
     end

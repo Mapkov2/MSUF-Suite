@@ -34,8 +34,9 @@ local function ReadTarget(record, material)
     local first, last = Theme.GetColorTable(material.from), Theme.GetColorTable(material.to)
     local strength = NS.DB.theme.gradient and (NS.DB.theme.gradientStrength or 1) or 0
     local opacity = Theme.GetMaterialOpacity(material) * (tonumber(state.spec.fillAlphaScale) or 1)
-    local edge = Theme.GetColorTable(material.border)
-    local borderOpacity, changed = Theme.GetBorderOpacity(), false
+    local edgeColor, borderOpacity = NS.Surface.GetEdgePaint(state, material)
+    local edge = Theme.GetColorTable(edgeColor)
+    local changed = false
     for index = 1, 4 do
         local from = first[index]
         local to = from + (last[index] - from) * strength

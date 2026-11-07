@@ -331,13 +331,14 @@ W.SetCombat(true)
 assert(not overlay.shown and #overlay.points == 0, "the secure overlay still depends on a place in combat")
 assert(not popup.shown and #popup.points == 0, "the secure popup still depends on a place in combat")
 assert(not outOfCombat.frame.shown and inCombat.frame.shown, "combat visibility did not switch in combat")
--- A Fit-text bar relayouts in combat when the clock changes its width.
-local width = bar.frame.width
+assert(inCombat.slots[1].text and inCombat.slots[1].text:find("Gold", 1, true),
+    "a combat-only bar was not seeded out of combat")
+-- The clock and its Fit-text layout freeze while combat is active.
+local width, oldTime = bar.frame.width, clock.text
 minute, hour = 4, 23
 G.GetGameTime = function() return hour, minute end
 W.Advance(61)
-assert(clock.text == "Time: 23:04", "the clock did not update in combat")
-assert(bar.frame.width ~= nil and bar.frame.width >= width, "the Fit-text bar did not relayout in combat")
+assert(clock.text == oldTime and bar.frame.width == width, "the clock repainted or relaid out in combat")
 hearth.mouseOver = false
 W.Fire(hearth, "OnLeave")
 spec.mouseOver = true
@@ -353,6 +354,7 @@ W.Click(hearth)
 assert(#W.secureActions == actions and not overlay.shown, "a place performed a protected action in combat")
 -- After combat the place under the pointer gets its overlay again.
 W.SetCombat(false)
+assert(clock.text == "Time: 23:04", "the clock did not catch up after combat")
 assert(overlay.shown and overlay.points[1][2] == hearth, "the overlay was not offered again after combat")
 assert(outOfCombat.frame.shown and not inCombat.frame.shown, "combat visibility did not switch back")
 
@@ -374,14 +376,14 @@ assert(hearthReads == 0 and hearth.extra.hearth == nil, "bag updates in combat r
 hearth.mouseOver = true
 W.Fire(hearth, "OnEnter")
 W.SetCombat(false)
-assert(hearthReads > 0 and hearth.extra.hearth and hearth.extra.hearth.id == 6948,
-    "a Hearthstone looted in combat was not chosen after combat")
+assert(hearthReads == 1 and hearth.extra.hearth and hearth.extra.hearth.id == 6948,
+    "a Hearthstone looted in combat was not chosen with one post-combat read")
 assert(overlay.shown and overlay.points[1][2] == hearth and overlay:GetAttribute("item1") == "item:6948",
     "the Hearthstone looted in combat was not offered right after combat")
 hearthReads = 0
 W.SetCombat(true)
 W.SetCombat(false)
-assert(hearthReads == 0, "a combat without bag updates rescanned the Hearthstone items")
+assert(hearthReads == 1, "post-combat reconciliation did not check the configured Hearthstone once")
 
 assert(S.Set("dataTexts", "enabled", false))
 assert(not overlay.shown and #overlay.points == 0 and not popup.shown, "disabling DataTexts kept a secure frame")

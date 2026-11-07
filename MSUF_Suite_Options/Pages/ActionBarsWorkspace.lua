@@ -195,7 +195,7 @@ local function InstallSelector(workspace, values, panels)
     local width = workspace.width - 32
     if W.SegmentTabs and width >= 650 then
         local tabs, refresh, _, selectTab = W.SegmentTabs(ctx, body, {
-            label = "", values = values, width = width, frames = panels, defaultTab = values[1].value,
+            label = "", compact = true, values = values, width = width, frames = panels, defaultTab = values[1].value,
             get = function() return workspace.selected end,
             set = function(key) Choose(workspace, key) end,
             afterRefresh = function(key) Choose(workspace, key) end,

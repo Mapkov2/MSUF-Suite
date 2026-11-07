@@ -756,9 +756,9 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
     P.NameplatesAuraUI.Build({ key = "suite_nameplates", refreshers = {} }, { width = 720 }, Widget())
     assert(#fonts > 1, host .. ": nameplate labels bypassed the real theme")
     for _, font in ipairs(fonts) do
-        local color, muted = font.textColor, M.Theme.colors.muted
-        assert(color and color[1] == muted[1] and color[2] == muted[2] and color[3] == muted[3],
-            host .. ": supporting text lost the muted theme color")
+        local color, text = font.textColor, M.Theme.colors.text
+        assert(color and color[1] == text[1] and color[2] == text[2] and color[3] == text[3],
+            host .. ": supporting text lost the readable card text color")
     end
     local specMeta = metas["action.auraSpec"]
     assert(specMeta and specMeta.classification == "action" and specMeta.historyMode == "none"

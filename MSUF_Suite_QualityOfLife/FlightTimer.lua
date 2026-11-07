@@ -112,6 +112,7 @@ local function Create(self)
     self.duration = C_DurationUtil.CreateDuration()
     self.binding = C_DurationUtil.CreateDurationTextBinding()
     self.binding:SetFontString(host.time)
+    self.binding:SetEnabled(false)
     -- The client's seconds formatter writes the units in the player's language.
     local formatter = C_StringUtil.CreateSecondsFormatter()
     formatter:SetDesiredUnitCount(2)
@@ -189,12 +190,16 @@ local function StopElapsed(self)
     self.elapsedSecond = nil
 end
 
+local function StopCountdown(self)
+    if not self.countdownStart then return end
+    self.countdownStart, self.countdownDuration = nil, nil
+    self.binding:SetEnabled(false)
+end
+
 -- UNIT_FLAGS and the control events fire for much more than flights; the
 -- display is drawn again only when what it shows changed (force: settings).
-local function Update(self, force)
+local function Update(self, taxi, force)
     if not self.active then return end
-    local taxi = UnitOnTaxi("player")
-    taxi = S.Public(taxi) and taxi == true
     local visible = not self.config.hideDisplay and (taxi or S.editMode)
     if not force and visible == self.paintedVisible and taxi == self.paintedTaxi
         and self.current == self.paintedRoute and self.departed == self.paintedDeparted then
@@ -207,7 +212,7 @@ local function Update(self, force)
     self.host.landText:SetAlpha(taxi and not self.earlyLanding and not S.editMode and 1 or .45)
     StopElapsed(self)
     if not visible then
-        self.binding:SetEnabled(false)
+        StopCountdown(self)
         return
     end
     local route = self.current
@@ -218,12 +223,16 @@ local function Update(self, force)
         or S.editMode and S.Text("Select a destination at the flight master.") or "")
     local estimate = route and self.timings and self.timings[route.key]
     if S.Finite(estimate) and estimate > 0 and self.departed and not self.earlyLanding then
-        self.duration:SetTimeFromEnd(self.departed + estimate, estimate)
-        self.binding:SetDuration(self.duration)
-        self.binding:SetEnabled(true)
+        if self.countdownStart ~= self.departed or self.countdownDuration ~= estimate then
+            self.duration:SetTimeFromEnd(self.departed + estimate, estimate)
+            self.binding:SetDuration(self.duration)
+            self.binding:SetEnabled(true)
+            self.binding:UpdateFontString()
+            self.countdownStart, self.countdownDuration = self.departed, estimate
+        end
         self.host.status:SetText(S.Text("Remaining time"))
     else
-        self.binding:SetEnabled(false)
+        StopCountdown(self)
         self.host.status:SetText(S.Text(route and not self.earlyLanding and "Learning flight time" or "Elapsed time"))
         if taxi and self.departed then
             Elapsed(self)
@@ -263,15 +272,17 @@ local function Land(self, now)
     Forget(self)
 end
 
--- Takeoff order: TakeTaxiNode returns before the flight starts, then
--- PLAYER_CONTROL_LOST arrives while UnitOnTaxi("player") is still false and
--- the taxi flag follows with UNIT_FLAGS. Control returns at landing.
+-- Control can be lost before the taxi flag appears. Sample the flag once per
+-- event and read the clock only when starting or ending a flight.
 local function State(self, event)
     local taxi = UnitOnTaxi("player")
-    if not S.Public(taxi) then return end
-    local now = GetTime()
+    if not S.Public(taxi) then
+        if not event then Update(self, false, true) end
+        return
+    end
     if taxi then
         if not self.departed then
+            local now = GetTime()
             -- A flight seen without its takeoff (after a /reload) has no known route.
             if not Fresh(self, now) then self.current = nil end
             self.departed = now
@@ -279,11 +290,13 @@ local function State(self, event)
         self.onTaxi = true
     elseif self.departed then
         -- Control lost after a choice ends only with the taxi flag or control again.
-        if self.onTaxi or event == "PLAYER_CONTROL_GAINED" then Land(self, now) end
-    elseif event == "PLAYER_CONTROL_LOST" and Fresh(self, now) then
-        self.departed = now
+        if self.onTaxi or event == "PLAYER_CONTROL_GAINED" then Land(self, GetTime()) end
+    elseif event == "PLAYER_CONTROL_LOST" and self.requested then
+        local now = GetTime()
+        if Fresh(self, now) then self.departed = now end
     end
-    Update(self)
+    -- A direct call follows a configuration or button-state change.
+    Update(self, taxi == true, not event)
 end
 -- Learned times are runtime state of the active profile (S.ModuleState),
 -- never exported or offered as settings.
@@ -299,15 +312,24 @@ function M:Enable()
         self.hooked = true
         hooksecurefunc("TakeTaxiNode", function(index)
             if not self.active then return end
+            local taxi = UnitOnTaxi("player")
+            taxi = S.Public(taxi) and taxi == true
+            local now = GetTime()
+            -- A flag event inside TakeTaxiNode may have observed takeoff already.
+            local observed = taxi and self.onTaxi and not self.current and self.departed
             Forget(self)
             self.current = S.Finite(index) and self.routes[index] or nil
-            self.requested = GetTime()
-            Update(self)
+            self.requested = now
+            if taxi then
+                self.departed = observed and now - observed <= REQUEST_WINDOW and observed or now
+                self.onTaxi = true
+            end
+            Update(self, taxi)
         end)
         hooksecurefunc("TaxiRequestEarlyLanding", function()
             if self.active then
                 self.earlyLanding = true
-                Update(self, true)
+                State(self)
             end
         end)
         hooksecurefunc("TaxiNodeOnButtonEnter", function(button) AddRoute(self, button:GetID()) end)
@@ -321,8 +343,7 @@ function M:Enable()
     self.context:Event("PLAYER_ENTERING_WORLD", State, IN_COMBAT)
     Create(self)
     Layout(self)
-    State(self, "PLAYER_ENTERING_WORLD")
-    Update(self, true)
+    State(self)
 end
 -- The controller registers the movers after Enable and Refresh (S.RefreshEditMover).
 function M:RegisterMovers()
@@ -336,8 +357,7 @@ function M:Refresh()
     self.timings = timings
     Create(self)
     Layout(self)
-    State(self, "PLAYER_ENTERING_WORLD")
-    Update(self, true)
+    State(self)
 end
 function M:Disable()
     StopElapsed(self)
@@ -345,7 +365,7 @@ function M:Disable()
     self.mapOpen = nil
     self.paintedVisible = nil
     if self.host then
-        self.binding:SetEnabled(false)
+        StopCountdown(self)
         self.host:Hide()
     end
 end

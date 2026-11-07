@@ -1,8 +1,41 @@
 local _, P = ...
 local W, M, T, Tr, HM = P.W, P.M, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_dataTexts", "dataTexts"
+local MODULE_SECTION = PAGE .. "_dataTexts_module"
+local DELETE_BARS = { title = Tr("Delete bars"), action = Tr("Delete selected bars"),
+    key = "datatext-delete-bars", question = Tr("Delete these bars?") }
 local Page = { selectedBar = 1, selections = {} }
 P.DataTextPage = Page
+
+local function OpenMenuTarget(page, id, key, kind, section)
+    local bridge = M.SearchBridge
+    if not bridge or not bridge.OpenSearchTarget then return end
+    bridge.OpenSearchTarget(page, "", nil, nil, {}, P.Meta(page, id, key, kind, section))
+end
+
+local MENU_ACTION = { role = "success", fontRole = "heading", height = 48, wrap = true }
+local function OpenMicroMenuPreset()
+    OpenMenuTarget(PAGE, ID, "preset.microMenu", "action", PAGE .. "_presets")
+end
+
+function Page.MicroMenuPresetLink(ctx, body, y, width, prepare)
+    if not ctx.searchRows then
+        local question = P.Text(body, "Prefer a single menu button?", 16, y - 8, width, nil, "heading")
+        y = y - math.max(20, math.ceil(question:GetStringHeight() or 20)) - 14
+        local help = P.Text(body, "Opens the same game menus as the Modern data bar.", 16, y, width, nil, "section")
+        y = y - math.max(18, math.ceil(help:GetStringHeight() or 18)) - 12
+    end
+    local button = P.SkinSearchButton(ctx, body, "Open the micro menu button preset", 16, y, width,
+        OpenMicroMenuPreset, function() return P.Suite.Client.AddOnEnabled("MSUF_Suite_DataTexts") end,
+        P.Meta("suite_skin", "skin", "micro.dataTexts", "action", "suite_skin_micro"), MENU_ACTION)
+    if button then HM.SetSearchTargetPrepare(button, prepare) end
+    return y - (button and button:GetHeight() or MENU_ACTION.height) - 14
+end
+
+function Page.OpenMicroMenuSkin()
+    OpenMenuTarget("suite_skin", "skin", "skins.microMenu", "setting", "suite_skin_micro")
+end
+
 -- A bar the player cleared the name of reads "Bar N", as in the layer
 -- overview and search (Menu/Register.lua).
 function Page.BarName(bar)
@@ -10,7 +43,7 @@ function Page.BarName(bar)
     if type(name) ~= "string" or name == "" then return Tr("Bar %d"):format(bar) end
     return name
 end
-local builtBarIDs
+local builtBarIDs, barRevision = nil, 0
 
 -- Views are built on first selection. Selecting a tab never writes the profile.
 function Page.Deck(ctx, parent, width, y, changed, compact)
@@ -82,19 +115,11 @@ function Page.Button(ctx, body, label, x, y, width, click, key, section, reveal,
     return button
 end
 
-function Page.Tab(body, label, x, y, width, click)
-    local button = T.Button(body, label, width, 28)
-    button:SetPoint("TOPLEFT", body, "TOPLEFT", x, y)
-    HM.SkipHistoryCheckpoint(button)
-    button:SetScript("OnClick", click)
-    return button
-end
-
 function P.RefreshDataTextPageShape()
     if builtBarIDs == nil or P.Combat() then return end
     local ids = table.concat(P.Suite.DataTextBarIDs(P.S.Config(ID)), ",")
     if builtBarIDs == ids then return end
-    builtBarIDs = nil
+    builtBarIDs, barRevision = nil, barRevision + 1
     local rebuilt = M.activeKey == PAGE and M.RebuildPageKeepingScroll and M.RebuildPageKeepingScroll(PAGE)
     if not rebuilt and M.InvalidatePage then M.InvalidatePage(PAGE) end
 end
@@ -105,6 +130,43 @@ function Page.ChangeBars(values, bar)
     if P.SetMany(ID, values) then return true end
     Page.selectedBar = previous
     return false
+end
+
+local function RemoveBars(ids, removed)
+    local kept, values, nextBar = {}, {}, nil
+    for _, bar in ipairs(ids) do
+        if removed[bar] then
+            values["bar" .. bar .. "Enabled"] = false
+        else
+            kept[#kept + 1] = bar
+            if not nextBar and bar > Page.selectedBar then nextBar = bar end
+        end
+    end
+    values.barIds = #kept > 0 and table.concat(kept, ",") or "0"
+    local selected = Page.selectedBar
+    if removed[selected] then selected = nextBar or kept[#kept] end
+    Page.ChangeBars(values, selected)
+end
+
+function Page.OpenBarRemoval(anchor, selected)
+    if P.Combat() then return end
+    local config = P.S.Config(ID)
+    local ids, revision = P.Suite.DataTextBarIDs(config), barRevision
+    local signature, rows = table.concat(ids, ","), {}
+    for _, bar in ipairs(ids) do
+        local name = Page.BarName(bar)
+        rows[#rows + 1] = { bar = bar, name = name, text = name .. "  #" .. bar, selected = bar == selected }
+    end
+    P.OpenDeletePicker(anchor, rows, DELETE_BARS, function(picks)
+        if config ~= P.S.Config(ID) or revision ~= barRevision
+            or signature ~= table.concat(P.Suite.DataTextBarIDs(config), ",") then return end
+        local removed = {}
+        for _, item in ipairs(picks) do
+            if Page.BarName(item.bar) ~= item.name then return end
+            removed[item.bar] = true
+        end
+        RemoveBars(ids, removed)
+    end)
 end
 
 function Page.Rules(ctx, builder, sectionId, title, rules, reveal, opts)
@@ -158,7 +220,8 @@ end
 function P.DataTextSearchTarget(rule)
     local bar, slot = rule.key:match("^bar(%d+)Slot(%d+)")
     if bar then
-        local suffix = rule.key == "bar" .. bar .. "Slot" .. slot and "" or "_details"
+        local block = "bar" .. bar .. "Slot" .. slot
+        local suffix = (rule.key == block or rule.key == block .. "MenuLabel") and "" or "_details"
         return PAGE .. "_bar" .. bar .. "_slot" .. slot .. suffix
     end
     bar = rule.key:match("^bar(%d+)")
@@ -195,50 +258,95 @@ local function InstallResolver(ctx, bars, choose)
     return present
 end
 
--- The bar selector owns the fixed page header; editors stay in scroll flow.
-function Page.Navigation(ctx, builder)
-    local navigation = builder:Section(Tr("DataTexts"), 52)
-    if navigation.title then navigation.title:Hide() end
-    if W.AttachStickyPageHeader then
-        W.AttachStickyPageHeader(navigation, { ctx = ctx, builder = builder, gap = 8 })
-    end
-    return navigation
-end
+local ACTION_ROW_Y, ACTION_HEIGHT = -42, 28
+-- MoveWidget positions the dropdown 24 px below its hidden title.
+local SELECTOR_TITLE_Y = ACTION_ROW_Y + 24
 
--- The fixed header can be narrower than the scroll body's build-time width.
-local function FitNavigation(ctx, navigation, bars, buttons)
+local function FitNavigation(ctx, navigation, buttons)
     local width = navigation:GetWidth()
     if width <= 0 or navigation.suiteTabsWidth == width then return end
     navigation.suiteTabsWidth = width
-    local available = math.max(1, width - 32 - 114)
-    local size = math.floor(available / math.max(1, #bars))
-    for index, bar in ipairs(bars) do
-        local button = buttons[bar]
-        if button then
-            button:SetWidth(math.max(1, size - 6))
-            button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", navigation, "TOPLEFT", 16 + (index - 1) * size, -12)
-        end
+    local compact = width < 520
+    local actionWidth = compact and (width - 38) / 2 or 146
+    local selectorWidth = width - 32 - (compact and 0 or 2 * (actionWidth + 6))
+    local selector = ctx.dataTextBarSelector
+    local titleY = SELECTOR_TITLE_Y + (selector:GetHeight() - ACTION_HEIGHT) / 2
+    W.MoveWidget(selector, navigation, 16, titleY, math.max(1, selectorWidth))
+    for index, button in ipairs(buttons) do
+        button:SetWidth(math.max(1, actionWidth))
+        button:ClearAllPoints()
+        local x = compact and 16 or 22 + selectorWidth
+        button:SetPoint("TOPLEFT", navigation, "TOPLEFT", x + (index - 1) * (actionWidth + 6), compact and -76 or ACTION_ROW_Y)
     end
-    if ctx.dataTextBarSelector then
-        W.MoveWidget(ctx.dataTextBarSelector, navigation, 16, 12, math.max(1, available - 6))
-    end
-    buttons.add:ClearAllPoints()
-    buttons.add:SetPoint("TOPRIGHT", navigation, "TOPRIGHT", -16, -12)
+    navigation:SetHeight(compact and 116 or 82)
 end
 
-function Page.Build(ctx, builder, shared, navigation)
+-- Navigation and module activation share one fixed panel above the scrolling editor.
+local function Navigation(ctx, builder, bars, choose, selection)
+    local navigation = builder:Section(Tr("DataTexts"), 82)
+    if navigation.title then navigation.title:Hide() end
+    P.Text(navigation, "DataTexts", 16, -12, 160, T.colors.text, "heading")
+    local toggle = W.SwitchAt(navigation, Tr("Enable"), 0, 0, 68, "LEFT")
+    toggle:ClearAllPoints()
+    toggle:SetPoint("TOPRIGHT", navigation, "TOPRIGHT", -16, -12)
+    M.BindBoolWidget(ctx, toggle, function() return P.Get(ID, "enabled") end,
+        function(value) P.Set(ID, "enabled", value == true) end, P.Meta(PAGE, ID, "enabled", "setting", MODULE_SECTION))
+    if ctx.entry then
+        ctx.entry.sections = ctx.entry.sections or {}
+        ctx.entry.sections[MODULE_SECTION] = navigation
+    end
+    local function Values()
+        local values = {}
+        for _, bar in ipairs(bars) do values[#values + 1] = { value = bar, text = Page.BarName(bar), translate = false } end
+        values[#values + 1] = { value = "shared", text = Tr("All bars"), translate = false }
+        return values
+    end
+    local picker = M.BindDropdownAt(ctx, navigation, "Bar", 16, SELECTOR_TITLE_Y, Values, 180,
+        selection, choose, P.Meta(PAGE, ID, "view.bar", "ephemeral"))
+    P.HideControlTitle(picker)
+    ctx.dataTextBarSelector = picker
+    local add = T.RoleButton(navigation, "+ " .. Tr("Add bar"), "success", 146, ACTION_HEIGHT)
+    local delete = T.RoleButton(navigation, Tr("Delete bars"), "destructive", 146, ACTION_HEIGHT)
+    add:SetScript("OnClick", function() if not P.Combat() then choose("add") end end)
+    delete:SetScript("OnClick", function(button) Page.OpenBarRemoval(button) end)
+    HM.SkipHistoryCheckpoint(add)
+    HM.SkipHistoryCheckpoint(delete)
+    Page.Prepare({ { widget = add, label = "Add bar",
+        meta = P.Meta(PAGE, ID, "action.addBar", "action", PAGE .. "_presets") } },
+        PAGE .. "_presets", function() choose("add") end)
+    if M.RegisterControlMetadata then
+        M.RegisterControlMetadata(delete, P.Meta(PAGE, ID, "action.deleteBars", "action", MODULE_SECTION), Tr("Delete bars"), "button")
+    end
+    M.TrackRefresh(ctx, function()
+        local editable = not P.Combat()
+        W.SetControlEnabled(toggle, editable)
+        W.SetControlEnabled(picker, editable)
+        add:SetEnabled(editable and #bars < P.Suite.DataTextBarLimit)
+        delete:SetEnabled(editable and #bars > 0)
+    end)
+    local actions = { add, delete }
+    local function Fit() FitNavigation(ctx, navigation, actions) end
+    if W.AttachStickyPageHeader then
+        W.AttachStickyPageHeader(navigation, { ctx = ctx, builder = builder, gap = 8, dynamicHeight = true })
+    end
+    navigation:HookScript("OnSizeChanged", Fit)
+    navigation:HookScript("OnShow", Fit)
+    Fit()
+    return navigation, { add = add, delete = delete, enabled = toggle }
+end
+
+function Page.Build(ctx, builder, shared)
     builtBarIDs = table.concat(P.Suite.DataTextBarIDs(P.S.Config(ID)), ",")
+    local bars = P.Suite.DataTextBarIDs(P.S.Config(ID))
+    local choose, selection
+    local navigation, buttons = Navigation(ctx, builder, bars, function(...) return choose(...) end,
+        function() return selection end)
     local host = builder:Section(Tr("DataTexts"), 160)
     if host.title then host.title:Hide() end
     local width = HM.GetSectionWidth(host) or builder.width or 720
-    local bars, buttons = P.Suite.DataTextBarIDs(P.S.Config(ID)), {}
-    local selected, choose, deck
-    local navWidth = width - 32
     local function Resize(height) P.FinishBody(builder, host, -height, 0) end
-    deck = Page.Deck(ctx, host, width, 0, Resize)
+    local deck = Page.Deck(ctx, host, width, 0, Resize)
     choose = function(key, mode, slot)
-        selected = key
         if type(key) == "number" then Page.selectedBar = key end
         local target = type(key) == "string" and tonumber(key:match("^preset(%d+)$"))
         local view = deck:Select(key, function(item, child, childBuilder)
@@ -248,43 +356,12 @@ function Page.Build(ctx, builder, shared, navigation)
             else P.DataTextEditor.Build(child, childBuilder, key, item, function(m, s) choose(key, m, s) end) end
         end)
         if view.select then view.select(mode, slot) end
-        for id, button in pairs(buttons) do button:SetActive(id == key) end
-        if ctx.dataTextBarSelector and type(key) == "number" then ctx.dataTextBarSelector:SetValue(key) end
+        selection = (type(key) == "number" or key == "shared") and key or nil
+        ctx.dataTextBarSelector:SetValue(selection)
         return view
     end
-    local available = navWidth - 114
-    if #bars <= 5 and available / math.max(1, #bars) >= 84 then
-        local size = math.floor(available / math.max(1, #bars))
-        for index, bar in ipairs(bars) do
-            local button = Page.Tab(navigation, "", 16 + (index - 1) * size, -12, size - 6, function() choose(bar) end)
-            buttons[bar] = button
-            M.TrackRefresh(ctx, function()
-                P.SetButtonText(button, Page.BarName(bar))
-            end)
-        end
-    else
-        local function Values()
-            local values = {}
-            for _, bar in ipairs(bars) do
-                values[#values + 1] = { value = bar, text = Page.BarName(bar) }
-            end
-            return values
-        end
-        ctx.dataTextBarSelector = M.BindDropdownAt(ctx, navigation, "Bar", 16, 12, Values, available - 6,
-            function() return Page.selectedBar end, function(bar) choose(bar) end,
-            P.Meta(PAGE, ID, "view.bar", "ephemeral"))
-        P.HideControlTitle(ctx.dataTextBarSelector)
-    end
-    buttons.add = Page.Tab(navigation, "+ " .. Tr("Add bar"), 16 + available, -12, 108, function() choose("add") end)
-    Page.Prepare({ { widget = buttons.add, label = "Add bar",
-        meta = P.Meta(PAGE, ID, "action.addBar", "action", PAGE .. "_presets") } },
-        PAGE .. "_presets", function() choose("add") end)
     ctx.dataTextWorkspace = { deck = deck, choose = choose, buttons = buttons, navigation = navigation,
         presets = function(bar) return choose("preset" .. bar) end }
-    local function Fit() FitNavigation(ctx, navigation, bars, buttons) end
-    navigation:HookScript("OnSizeChanged", Fit)
-    navigation:HookScript("OnShow", Fit)
-    Fit()
     local present = InstallResolver(ctx, bars, choose)
     choose(present[Page.selectedBar] and Page.selectedBar or bars[1] or "add")
 end

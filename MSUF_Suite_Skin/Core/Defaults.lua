@@ -173,6 +173,7 @@ NS.Defaults = {
     characterDetails = { view = "modern", enabled = true, expanded = true, styleEQoL = true, inlineGear = true, wideLayout = true },
     characterStats = { enabled = true, diminishingReturns = true },
     windowControls = { enabled = true, scales = {}, positions = {} },
+    questLog = { layout = "blizzard" },
     theme = {
         colors = darkColors,
         gradient = false,

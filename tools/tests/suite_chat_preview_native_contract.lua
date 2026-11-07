@@ -119,9 +119,10 @@ Check(r == .1 and g == .2 and b == .3 and a == .6 and x == 2 and y == -3, "nativ
 Check(parts.tabs[1]:GetWidth() == tab:GetWidth() and parts.tabs[1]:GetHeight() == tab:GetHeight(), "native default tab dimensions differ")
 path, size, flags = parts.label:GetFont()
 Check(size == 17 and flags == "OUTLINE", "native tab font differs")
-Check(parts.input:GetWidth() == frame.editBox:GetWidth() and parts.input:GetHeight() == frame.editBox:GetHeight(), "native input dimensions differ")
+Check(parts.input:GetWidth() == parts.sample:GetWidth() + 2 * c.padding and parts.input:GetHeight() == frame.editBox:GetHeight(),
+    "automatic preview input differs from the panel width or native height")
 local point, _, relativePoint, ix, iy = parts.input:GetPoint(1)
-Check(point == "TOPLEFT" and relativePoint == "BOTTOMLEFT" and ix == -5 and iy == -2, "native input anchor differs")
+Check(point == "TOPLEFT" and relativePoint == "BOTTOMLEFT" and ix == -c.padding and iy == -c.padding - 2, "preview input is not aligned to the padded panel")
 path, size, flags = parts.prompt:GetFont()
 Check(size == 19 and flags == "OUTLINE", "native input font differs")
 -- An unoutlined native font returns the valid empty flags string.

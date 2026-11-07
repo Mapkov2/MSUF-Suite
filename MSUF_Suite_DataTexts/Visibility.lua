@@ -4,7 +4,7 @@ local Finite = S.Finite
 local VISIBILITY = NS.DataTextVisibility
 -- When a DataTexts bar shows (DataTexts.lua owns the bars). The visibility
 -- mode, the load conditions and the Edit Mode reveal run as state drivers, so
--- combat itself needs no handler; zone and housing events re-evaluate the
+-- combat visibility needs no Lua handler. Zone and housing events re-evaluate the
 -- conditions the client cannot (instance, housing). An injured-only bar fades
 -- through a health curve and lets the pointer through at full health.
 local Visibility = {}

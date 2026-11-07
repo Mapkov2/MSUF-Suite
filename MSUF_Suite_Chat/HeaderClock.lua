@@ -35,9 +35,10 @@ function C.PaintClock(visual, frame, config, top, text)
     label:SetShadowColor(0, 0, 0, 1)
     label:SetShadowOffset(1, -1)
     label:ClearAllPoints()
-    label:SetPoint("RIGHT", frame, "TOPRIGHT", config.copyMessages and -56 or -8,
+    local tools = config.headerToolbar and (visual.previewToolbar or frame == ChatFrame1 or frame.isDocked)
+    label:SetPoint("RIGHT", frame, "TOPRIGHT", tools and -108 or config.copyMessages and -56 or -8,
         math.max(21, top) - (config.tabHeight or 24) / 2 + (config.tabY or 0))
-    label:SetWidth(94)
+    label:SetWidth(tools and 80 or 94)
     label:SetJustifyH("RIGHT")
     label:SetTextColor(S.RGB(config.tabActiveColor))
     if text ~= nil then label:SetText(text) end

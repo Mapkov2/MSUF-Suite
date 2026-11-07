@@ -11,6 +11,7 @@ local function ItemEvents(wanted)
     end
 end
 local function Leave()
+    if not owner then return end
     owner = nil
     if events then ItemEvents(false) end
 end

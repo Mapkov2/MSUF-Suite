@@ -34,6 +34,9 @@ local function Hits(ui, win)
         targets.buttons[key] = target
         E.Handle(preview, target, button, key .. "Offset", buttonLabels[key], "buttons", section, buttonKeys[key])
         Properties(target, key .. "Size", nil, "headerIconSize")
+        if key == "session" then
+            target.openSample = function(owner) P.S.DamageMeterOpenPreviewFight(win, owner, ui.refreshPreview) end
+        end
         P.HM.SkipHistoryCheckpoint(button)
     end
     targets.rows = {}

@@ -1,6 +1,534 @@
 {
   "removed": [
     {
+      "category": "rules",
+      "item": "[\"forever:dailyComfort.chatClassColors\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:dailyComfort.chatWheel\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:dailyComfort.noChatFade\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rules",
+      "item": "[\"forever:dailyComfort.whisperWindows\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:dailyComfort.chatClassColors\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:dailyComfort.chatWheel\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:dailyComfort.noChatFade\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rules",
+      "item": "[\"retail:dailyComfort.whisperWindows\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:dailyComfort.chatClassColors\",\"boolean\",false]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:dailyComfort.chatWheel\",\"boolean\",false]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:dailyComfort.noChatFade\",\"boolean\",false]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"forever:dailyComfort.whisperWindows\",\"number\",1]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:dailyComfort.chatClassColors\",\"boolean\",false]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:dailyComfort.chatWheel\",\"boolean\",false]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:dailyComfort.noChatFade\",\"boolean\",false]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "defaults",
+      "item": "[\"retail:dailyComfort.whisperWindows\",\"number\",1]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dailyComfort.whisperWindows\",1,\"Follow Blizzard settings\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dailyComfort.whisperWindows\",2,\"Separate window\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "choices",
+      "item": "[\"forever:dailyComfort.whisperWindows\",3,\"Window and main chat\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dailyComfort.whisperWindows\",1,\"Follow Blizzard settings\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dailyComfort.whisperWindows\",2,\"Separate window\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "choices",
+      "item": "[\"retail:dailyComfort.whisperWindows\",3,\"Window and main chat\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:dailyComfort.chatClassColors\",\"Color chat names by class\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:dailyComfort.chatWheel\",\"Scroll chat with the mouse wheel\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:dailyComfort.noChatFade\",\"Keep chat messages visible\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:dailyComfort.whisperWindows\",\"Whisper windows\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:dailyComfort.chatClassColors\",\"Color chat names by class\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:dailyComfort.chatWheel\",\"Scroll chat with the mouse wheel\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:dailyComfort.noChatFade\",\"Keep chat messages visible\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:dailyComfort.whisperWindows\",\"Whisper windows\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.alternateScreenFlash\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.chatClassColors\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.chatWheel\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.cursorMapCoords\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.hideLowHealthFlash\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.keepMapVisible\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.muteAmbience\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.muteDialog\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.muteErrorSpeech\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.muteMusic\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.noChatFade\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.playerMapCoords\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"forever:dailyComfort.whisperWindows\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.alternateScreenFlash\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.chatClassColors\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.chatWheel\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.cursorMapCoords\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.hideLowHealthFlash\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.keepMapVisible\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.muteAmbience\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.muteDialog\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.muteErrorSpeech\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.muteMusic\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.noChatFade\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.playerMapCoords\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars retains this setting and labels the section Map, screen and sound.",
+      "reason": "The existing Daily UI comforts section was relabeled to describe map, screen and sound.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "sections",
+      "item": "[\"retail:dailyComfort.whisperWindows\",\"daily_cvars\",\"Chat, map and sound\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dailyComfort.chatClassColors\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dailyComfort.chatWheel\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dailyComfort.noChatFade\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:dailyComfort.whisperWindows\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:dailyComfort.chatClassColors\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:dailyComfort.chatWheel\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:dailyComfort.noChatFade\",\"boolean\",false,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"retail:dailyComfort.whisperWindows\",\"choice\",false,1,3,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Chat.lua chatComfort; Steps.ChatComfort migrates both client profiles and the old search identity resolves to Chat.",
+      "reason": "The same setting moved from Daily UI comforts to Chat behavior with its default, choices and saved value.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "locale",
+      "item": "Chat, map and sound",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars and MSUF_Suite_Options/Pages/QualityOfLifeHelp.lua; both replacements are translated in all Suite locale packs.",
+      "reason": "The section name and help now describe the map, screen and sound choices after the four chat settings moved.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "locale",
+      "item": "Optional Blizzard settings for chat, map, sound and low-health or alternate screen flashes. MSUF restores the previous value when you turn a choice or this helper off. Changes you make yourself in Blizzard settings while this helper runs are respected.",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua daily_cvars and MSUF_Suite_Options/Pages/QualityOfLifeHelp.lua; both replacements are translated in all Suite locale packs.",
+      "reason": "The section name and help now describe the map, screen and sound choices after the four chat settings moved.",
+      "date": "2026-11-07"
+    },
+    {
       "category": "labels",
       "item": "[\"forever:minimap.infoClockDate\",\"Show date (day-month-year)\"]",
       "basis": "moved",

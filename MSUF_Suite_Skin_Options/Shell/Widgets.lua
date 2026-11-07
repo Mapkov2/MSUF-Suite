@@ -263,7 +263,7 @@ function O.CreateSectionTitle(parent, titleText, description)
     local title = O.CreateText(parent, titleText, 20, "title")
     title:SetPoint("TOPLEFT", 4, -2)
     if description then
-        local subtitle = O.CreateText(parent, description, 12, "muted")
+        local subtitle = O.CreateText(parent, description, 15, "text")
         subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -7)
         subtitle:SetPoint("RIGHT", -8, 0)
         subtitle:SetJustifyV("TOP")

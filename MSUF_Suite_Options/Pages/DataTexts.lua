@@ -182,9 +182,7 @@ end
 
 local function Build(ctx)
     local b = P.W.PageBuilder(ctx)
-    local navigation = P.DataTextPage.Navigation(ctx, b)
-    P.ModuleCard(ctx, b, PAGE, ID, {}, { title = "DataTexts", open = false })
-    P.DataTextPage.Build(ctx, b, Shared, navigation)
+    P.DataTextPage.Build(ctx, b, Shared)
 end
 
 P.RegisterPage({ key = PAGE, label = "DataTexts", title = "DataTexts", build = Build, icon = { 5, 2 },

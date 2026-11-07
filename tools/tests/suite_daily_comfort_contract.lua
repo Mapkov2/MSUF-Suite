@@ -1,6 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
-local module
+local module, chat
 local restored, reported = {}, {}
 local deferredFrame
 -- Suite-created regions remember their parent.
@@ -20,7 +20,9 @@ local suite = {
     -- MSUF_Suite_Modules/Dialogs.lua: WoW Forever's Gamepad UI.
     GamepadUI = function() return gamepadUI end,
     Dispatch = Support.Dispatcher(reported),
-    Install = function(_, value) module = value end,
+    Install = function(id, value)
+        if id == "dailyComfort" then module = value else assert(id == "chatComfort"); chat = value end
+    end,
     RestoreCVar = function(_, key) restored[key] = (restored[key] or 0) + 1 end,
     Finite = function(value) return type(value) == "number" and value == value end,
     Public = function() return true end,
@@ -37,10 +39,12 @@ local suite = {
         return deferredFrame
     end,
 }
-local combat = false
+local combat, queued = false, 0
+suite.Queue = function(id) assert(id == "chatComfort"); queued = queued + 1 end
 local ns = {
     Safety = { IsForbidden = function() return false end },
     IsCombatLocked = function() return combat end,
+    InCombat = function() return combat end,
     Client = { isForever = false },
     Finish = function(callback, ...) return true, callback(...) end,
 }
@@ -127,32 +131,43 @@ module.id, module.active, module.context = "dailyComfort", true, Context()
 module.config = {
     hideTutorials = true, fillDelete = true,
     hideScreenshotSuccess = true, vendorCharacter = true, auctionExpansion = true,
-    chatWheel = true, chatClassColors = true, playerMapCoords = true, muteMusic = true,
+    playerMapCoords = true, muteMusic = true,
     hideLowHealthFlash = true, alternateScreenFlash = true,
-    noChatFade = true, whisperWindows = 2,
 }
 module:Enable()
 assert(module.context.applied.showTutorials == "0"
-    and module.context.applied.chatMouseScroll == "1"
-    and module.context.applied.chatClassColorOverride == "0"
     and module.context.applied.doNotFlashLowHealthWarning == "1"
     and module.context.applied.overrideScreenFlash == "1"
     and module.context.applied.worldMapShowPlayerCoords == "1"
     and module.context.applied.Sound_EnableMusic == "0"
-    and module.context.applied.whisperMode == "popout",
+    and not module.context.applied.whisperMode and ChatFrame1.fading,
     "selected native settings were not applied")
+local chatNS = { NS = ns, Suite = suite, Chat = {} }
+assert(loadfile(root .. "/MSUF_Suite_Chat/Appearance.lua"))("MSUF_Suite_Chat", chatNS)
+assert(loadfile(root .. "/MSUF_Suite_Chat/Comfort.lua"))("MSUF_Suite_Chat", chatNS)
+chat.id, chat.active, chat.context = "chatComfort", true, Context()
+chat.config = { chatWheel = true, chatClassColors = true, noChatFade = true, whisperWindows = 2 }
+chat:Enable()
+assert(chat.context.applied.chatMouseScroll == "1" and chat.context.applied.chatClassColorOverride == "0"
+    and chat.context.applied.whisperMode == "popout", "Chat behavior did not apply its native settings")
 assert(ChatFrame1.fading == false and ChatFrame1.calls == 1
-    and module.context.events.UPDATE_CHAT_WINDOWS,
-    "chat fading was not changed through the native message frame")
-local initialCVarCalls = module.context.calls
-module:Refresh()
-assert(module.context.calls == initialCVarCalls,
+    and chat.context.events.UPDATE_CHAT_WINDOWS and not module.context.events.UPDATE_CHAT_WINDOWS,
+    "chat fading did not transfer to the Chat helper")
+local initialCVarCalls = chat.context.calls
+chat:Refresh()
+assert(chat.context.calls == initialCVarCalls,
     "refresh reapplied CVars after the player could have changed them")
-module.config.whisperWindows = 3
-module:Refresh()
-assert(module.context.applied.whisperMode == "popout_and_inline"
-    and module.context.calls == initialCVarCalls + 1,
+chat.config.whisperWindows = 3
+chat:Refresh()
+assert(chat.context.applied.whisperMode == "popout_and_inline"
+    and chat.context.calls == initialCVarCalls + 1,
     "changing the whisper choice did not update its native CVar")
+combat = true
+FCF_OpenNewWindow()
+assert(queued == 1 and ChatFrame2.fading, "native chat hook wrote fading in combat")
+combat = false
+chat:Refresh()
+assert(not ChatFrame2.fading, "the deferred Chat refresh did not cover the new window")
 assert(not ActionStatus:IsEventRegistered("SCREENSHOT_SUCCEEDED"),
     "successful screenshot notice remained registered")
 assert(module.context.events.MERCHANT_SHOW and module.context.events.MERCHANT_CLOSED,
@@ -244,10 +259,11 @@ CharacterFrame:Hide()
 
 module.config.hideTutorials, module.config.fillDelete = false, false
 module.config.hideScreenshotSuccess = false
-module.config.vendorCharacter, module.config.muteMusic, module.config.chatClassColors = false, false, false
+module.config.vendorCharacter, module.config.muteMusic = false, false
 module.config.hideLowHealthFlash, module.config.alternateScreenFlash = false, false
-module.config.noChatFade, module.config.whisperWindows = false, 1
+chat.config.noChatFade, chat.config.whisperWindows, chat.config.chatClassColors = false, 1, false
 module:Refresh()
+chat:Refresh()
 assert(restored.showTutorials and restored.Sound_EnableMusic and restored.chatClassColorOverride
     and restored.doNotFlashLowHealthWarning and restored.overrideScreenFlash
     and restored.whisperMode and ChatFrame1.fading == true and ChatFrame2.fading == true
@@ -258,10 +274,13 @@ edit.text = nil
 StaticPopupDialogs.DELETE_GOOD_ITEM.postHook(dialog)
 assert(edit.text == nil,
     "permanent post-hooks ran after their choice was disabled")
-module.config.noChatFade = true
-module:Refresh()
-assert(ChatFrame1.fading == false and ChatFrame2.fading == false and not module.context.events.ADDON_LOADED,
+chat.config.noChatFade = true
+chat:Refresh()
+assert(ChatFrame1.fading == false and ChatFrame2.fading == false and not chat.context.events.ADDON_LOADED,
     "chat fade did not apply to the existing chat frames at once")
+chat:Disable()
+chat.active = false
+assert(ChatFrame1.fading and ChatFrame2.fading, "disabling Chat behavior did not release chat fading")
 -- Cinematics as the client builds them (Blizzard_FrameXML/Shared/CinematicFrame
 -- .lua/.xml): the frame's OnEvent script is the function CinematicFrame.xml
 -- bound at load, the confirm dialog's Yes runs CinematicFrame_CancelCinematic,
@@ -368,8 +387,7 @@ assert(ActionStatus:IsEventRegistered("SCREENSHOT_SUCCEEDED"),
     "disabling the module did not preserve the screenshot event")
 
 -- Native chat fading has two owners: "Keep chat messages visible" here and
--- the Chat module's "Fade individual messages" (MSUF_Suite_Chat/Appearance.lua),
--- each in an addon that loads on its own. Whatever order they take and let go
+-- the style module's "Fade individual messages". Whatever order they take and let go
 -- of a window, its native fading comes back; while both hold it, keeping the
 -- messages visible wins, and the one left holding gets its own value at once.
 do
@@ -377,24 +395,22 @@ do
     local visual = { frame = frame }
     local fadeConfig = { messageFading = true, messageTimeVisible = 20, messageFadeDuration = 5 }
     local function Keep(on)
-        module.config.noChatFade = on
-        module:Refresh()
+        chat.config.noChatFade = on
+        chat:Refresh()
     end
-    module.active, module.config = true, {}
-    -- The exact report: keep on, then the Chat addon loads and fades, keep
-    -- off, fading off.
+    chat.active, chat.config = true, {}
+    chat:Enable()
+    -- Keeping messages visible wins even if the style starts fading later.
     frame.fading = true
     Keep(true)
-    local chat = { Suite = suite, Chat = {} }
-    assert(loadfile(root .. "/MSUF_Suite_Chat/Appearance.lua"))("MSUF_Suite_Chat", chat)
-    local Chat = chat.Chat
+    local Chat = chatNS.Chat
     Chat.ApplyMessageFade(visual, fadeConfig)
     local both = frame.fading
     Keep(false)
     local left = frame.fading
     Chat.ReleaseMessageFade(visual)
     assert(frame.fading == true, "keep, fade, keep off, fade off: native fading was not restored")
-    assert(both == false and left == true, "the Chat addon loaded later broke the hand-over")
+    assert(both == false and left == true, "the style starting later broke the hand-over")
     local switch = {
         keep = Keep,
         fade = function(on)
@@ -423,7 +439,7 @@ do
             end
         end
     end
-    module.active = false
-    module:Disable()
+    chat.active = false
+    chat:Disable()
 end
-print("Suite daily comfort lifecycle passed")
+print("Suite daily and chat comfort lifecycles passed")

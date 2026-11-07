@@ -48,7 +48,7 @@ local function ChromeAlpha(visual, focused)
     if not M.config.minimalChrome then return 1 end
     if not visual then return 0 end
     if focused == nil then focused = visual.frame.editBox:HasFocus() end
-    return (visual.hovered or focused) and 1 or 0
+    return (visual.hovered or visual.toolbarHovered or focused) and 1 or 0
 end
 
 -- Background art appears only when the chat is in use. Incoming text keeps
@@ -66,5 +66,14 @@ function C.UpdateMinimalChrome(visual, focused)
         local dockFocus
         if selected == visual then dockFocus = focused end
         M.dockStrip:SetAlpha(ChromeAlpha(selected, dockFocus))
+    end
+    if M.toolbar then
+        local selected = M.visuals[C.DockSelection() or ChatFrame1]
+        local focus
+        if selected == visual then focus = focused end
+        local toolsAlpha = ChromeAlpha(selected, focus)
+        M.toolbar:SetAlpha(toolsAlpha)
+        if M.toolbarDrag then M.toolbarDrag:SetAlpha(toolsAlpha) end
+        if M.toolbarResize then M.toolbarResize:SetAlpha(toolsAlpha) end
     end
 end

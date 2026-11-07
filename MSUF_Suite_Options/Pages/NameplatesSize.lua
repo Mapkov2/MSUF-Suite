@@ -7,8 +7,8 @@ P.NameplatesSize = Size
 local function Clamp(value, low, high) return math.max(low, math.min(high, value)) end
 local function Round(value) return math.floor(value + 0.5) end
 
--- Size controls describe real runtime settings. Native cast geometry, badges,
--- raid icons and power bars have no independent safe width/height override.
+-- Size controls describe real runtime settings. Native badges, raid icons
+-- and power bars have no independent width/height override.
 function Size.Keys(handle)
     local id = handle and handle._key
     if not id or P.Get(ID, "look") == 2 then return end
@@ -26,12 +26,14 @@ function Size.Keys(handle)
     end
     local prefix, element = id:match("^(%a+)%.(%a+)$")
     if not prefix then return end
+    if P.Get(ID, prefix) and P.Get(ID, "enemyCastEnabled") ~= 3 then
+        if element == "Cast" then return prefix .. "CastWidthDelta", prefix .. "CastHeight", "W", "H" end
+        if element == "CastIcon" then return prefix .. "CastIconSize", nil, "Size" end
+    end
     if element == "Name" and P.Get(ID, prefix .. "TextEnabled") then
         return prefix .. "NameSize", nil, "Font"
     end
-    if element == "Level" and P.Get(ID, prefix .. "LevelEnabled")
-        and not (P.Suite.Client.isForever and P.Get(ID, "levelAppearance") == 2)
-        and not P.Suite.NameplateStyle.ClassicNativePlate(P.Get(ID, "nativeStyle")) then
+    if element == "Level" and handle._npLevelMode == "number" then
         return prefix .. "LevelSize", nil, "Font"
     end
     if element == "HealthText" and prefix == "enemy" and P.Get(ID, "enemyTextEnabled") then
@@ -45,7 +47,10 @@ end
 
 function Size.Value(handle, key)
     local value = P.Get(ID, key)
-    if key:match("HealthWidthDelta$") then return (handle._npNativeWidth or 0) + value end
+    if key:match("WidthDelta$") then return (handle._npNativeWidth or 0) + value end
+    if value == 0 and (key:match("CastHeight$") or key:match("CastIconSize$")) then
+        return handle:GetHeight()
+    end
     if key:match("HealthHeightDelta$") then return (handle._npNativeHeight or 0) + value end
     if key == "auraScalePercent" and P.Get(ID, "auraScaleMode") ~= 2 then
         local native = C_CVar.GetCVar("nameplateAuraScale")
@@ -61,7 +66,7 @@ function Size.Write(ui, handle, key, value)
     if P.Combat() or not handle or not handle:IsShown() then return false end
     local rule = P.catalog[ID].rules[key]
     if not rule or type(value) ~= "number" or value ~= value then return false end
-    if key:match("HealthWidthDelta$") then value = value - (handle._npNativeWidth or 0)
+    if key:match("WidthDelta$") then value = value - (handle._npNativeWidth or 0)
     elseif key:match("HealthHeightDelta$") then value = value - (handle._npNativeHeight or 0) end
     local step = rule.step or 1
     local rounded = Clamp(math.floor(value / step + 0.5) * step, rule.min, rule.max)

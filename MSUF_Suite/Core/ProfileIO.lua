@@ -264,6 +264,14 @@ function IO.PrepareModuleProfile(text, preservePersonal)
     for key, rule in pairs(spec.rules) do
         if preservePersonal and rule.personal and (envelope.characterBound ~= true or key == spec.personalExport) then settings[key] = nil end
     end
+    -- Old Daily UI comforts exports carried both the interface and chat choices.
+    if id == "dailyComfort" then
+        for _, rule in ipairs(Suite.SuiteCatalog.chatComfort.controls) do
+            if rule.key ~= "enabled" and envelope.settings[rule.key] ~= nil then
+                return id, settings, nil, clean.suite.modules.chatComfort
+            end
+        end
+    end
     return id, settings
 end
 

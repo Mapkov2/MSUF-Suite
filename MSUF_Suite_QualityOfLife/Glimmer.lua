@@ -5,7 +5,8 @@ local M = { cursors = {}, changedCVars = {} }
 local UNIT = "softinteract"
 local IN_COMBAT = { inCombat = true }
 local SPARKLE = "outlineModeShowLootEffectWhenDisabled"
-local CURSORS = { Mine = "ore", GatherHerbs = "herb", Quest = "quest", QuestTurnIn = "quest", QuestRepeatable = "quest" }
+local CURSORS = { Mine = "ore", GatherHerbs = "herb", Quest = "quest", QuestTurnIn = "quest", QuestRepeatable = "quest",
+    Skin = "skinning", SkinAlliance = "skinning", SkinHorde = "skinning" }
 local CURSOR_WORDS = { mine = "ore", herb = "herb", quest = "quest", important = "quest",
     recurring = "quest", wrapper = "quest" }
 local OBJECT_CVARS = { softtargeticongameobject = "SoftTargetIconGameObject",
@@ -16,7 +17,11 @@ local EVENTS = { "CVAR_UPDATE", "PLAYER_SOFT_INTERACT_CHANGED", "PLAYER_ENTERING
 local function CursorKinds(self)
     for name, kind in pairs(CURSORS) do
         for _, prefix in ipairs({ "", "Unable" }) do
-            local id = GetFileIDFromPath("Interface\\Cursor\\" .. prefix .. name)
+            local stem = prefix .. name
+            self.cursors[stem:lower()] = kind
+            local path = "Interface\\Cursor\\" .. stem
+            local id = GetFileIDFromPath(path)
+            if not S.Finite(id) or id <= 0 then id = GetFileIDFromPath(path .. ".blp") end
             if S.Finite(id) and id > 0 then self.cursors[id] = kind end
         end
     end
@@ -32,36 +37,61 @@ local function CursorCategory(self)
     if kind then return kind end
     if type(texture) == "string" then
         local name = texture:lower()
+        local file = name:match("[^\\/]+$")
+        if file then
+            local stem = file:gsub("^cursor ", "")
+            stem = stem:match("^crosshair_(.+)_64$") or stem:gsub("%.blp$", "")
+            kind = self.cursors[stem]
+            if kind then return kind end
+        end
         for word, category in pairs(CURSOR_WORDS) do
             if name:find(word, 1, true) then return category end
         end
     end
 end
 
-local function QuestObjective()
+local function TooltipHasLine(field, expected)
     local data = C_TooltipInfo.GetUnit(UNIT)
     if not S.Public(data) or not data then return false end
     local lines = data.lines
     if not S.Public(lines) or not lines then return false end
     for _, line in ipairs(lines) do
         if S.Public(line) and line then
-            local kind = line.type
-            if S.Public(kind) and kind == Enum.TooltipDataLineType.QuestObjective then return true end
+            local value = line[field]
+            if S.Public(value) then
+                if value == expected then return true end
+                if field == "leftText" and type(value) == "string"
+                    and value:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") == expected then return true end
+            end
         end
     end
     return false
 end
 
+local function SkinningCategory(self)
+    local dead = UnitIsDead(UNIT)
+    if not S.Public(dead) or dead ~= true then return nil end
+    local kind, private = CursorCategory(self)
+    if private then return nil end
+    if kind == "skinning" then return kind end
+    local label = UNIT_SKINNABLE_LEATHER
+    if label and TooltipHasLine("leftText", label) then return "skinning" end
+end
+
 local function Category(self)
     -- World objects are not normal units; the native nameplate controller checks this separately.
     local object = UnitIsGameObject(UNIT)
-    if not S.Public(object) or object ~= true then return nil end
+    if not S.Public(object) then return nil end
+    if object ~= true then
+        if self.config.skinning then return SkinningCategory(self) end
+        return nil
+    end
     local kind, private = CursorCategory(self)
     if private then return nil end
     if kind then return kind end
     local related = C_QuestLog.UnitIsRelatedToActiveQuest(UNIT)
     if S.Public(related) and related == true then return "quest" end
-    if self.config.quest and QuestObjective() then return "quest" end
+    if self.config.quest and TooltipHasLine("type", Enum.TooltipDataLineType.QuestObjective) then return "quest" end
     return "other"
 end
 
@@ -80,6 +110,12 @@ local function Update(self, event)
     if not S.Public(forbidden) or forbidden then return Visuals.Hide(self.host) end
     self.plate = plate
     Visuals.Show(self.host, plate, self.config)
+end
+
+local function LootClosed(self, event)
+    Update(self, event)
+    -- The interaction state can settle after the loot window closes.
+    if not NS.InCombat(event) then self.context:After(0.1, Update) end
 end
 
 local function RememberCurrent(self, key)
@@ -123,6 +159,13 @@ local function Apply(self)
     self.context:CVar("SoftTargetInteractArc", "2")
     self.applying = nil
     ApplySparkle(self)
+    -- Looting or skinning can change the cursor without changing the interact target.
+    if self.config.skinning then
+        self.context:Event("LOOT_CLOSED", LootClosed, IN_COMBAT)
+    else
+        self.context:RemoveEvent("LOOT_CLOSED")
+        self.context:Cancel(Update)
+    end
     Update(self)
 end
 
@@ -186,6 +229,7 @@ function M:Disable()
     end
     self.pending, self.pendingSparkle, self.plate, self.removedPlate, self.applying = nil, nil, nil, nil, nil
     self.context:Cancel(ApplySparkle)
+    self.context:Cancel(Update)
     if self.host then Visuals.Hide(self.host) end
 end
 

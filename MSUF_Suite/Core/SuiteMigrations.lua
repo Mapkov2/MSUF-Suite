@@ -331,6 +331,26 @@ function Steps.CooldownSpecLayouts(modules)
     end
 end
 
+function Steps.ChatComfort(modules)
+    local old = Module(modules, "dailyComfort")
+    if not old then return end
+    local chat
+    for _, key in ipairs({ "chatWheel", "chatClassColors", "noChatFade", "whisperWindows" }) do
+        if old[key] ~= nil then
+            if not chat then
+                chat = EnsureModule(modules, "chatComfort")
+            end
+            if chat[key] == nil then chat[key] = old[key] end
+            old[key] = nil
+        end
+    end
+    if chat and chat.enabled == nil then
+        local whisper = chat.whisperWindows
+        chat.enabled = old.enabled == true and (chat.chatWheel == true or chat.chatClassColors == true
+            or chat.noChatFade == true or whisper == 2 or whisper == 3)
+    end
+end
+
 function Steps.RecordModuleLooks(modules, db)
     -- Profiles saved before db.moduleLooks: each module the global look
     -- styles gets the record its settings show (SuiteCatalog.lua

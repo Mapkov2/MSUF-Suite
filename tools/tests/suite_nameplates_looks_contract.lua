@@ -227,7 +227,7 @@ for key, value in pairs(TODAY) do
         assert(preset[key] == nil or preset[key] == value, "a look preset changes " .. key)
     end
 end
-assert(spec.rules.friendlyCastHeight.requiresChoice.key == "barGeometry"
+assert(spec.rules.friendlyCastHeight.requiresChoice.key == "enemyCastEnabled"
     and spec.rules.friendlyCastTimeFormat.enableKey == "friendlyCastTimeEnabled", "friendly cast controls are not gated")
 local conflicts = {}
 for _, name in ipairs(spec.conflicts) do conflicts[name] = true end
@@ -257,6 +257,9 @@ local S = { Public = NS.Public, Finite = NS.Finite, RGB = RGB,
     SetFont = function(region, path, size, flags) region:SetFont(path, size, flags) end,
     Install = function(_, owner) module = owner end }
 NS.Suite = S
+NS.HostBridge = NS.HostBridge or {}
+NS.HostBridge.NameFormatter = function() return nil end
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
 local private = { NS = NS, Suite = S }
 local function Component(name, methods)
     local component = {}
@@ -274,7 +277,7 @@ Component("CVars", "Apply")
 Component("Auras", "Bind Apply Restore")
 Component("Selection", "Apply Restore Configure RestoreAll")
 Component("AuraColors", "Bind Configure Apply Restore SetEditMode")
-for _, file in ipairs({ "Text", "Level", "CastTime", "KickReady", "Mouseover", "FriendlyNames", "Decor", "Skin" }) do
+for _, file in ipairs({ "Text", "NameText", "Level", "CastTime", "KickReady", "Mouseover", "FriendlyNames", "Decor", "Skin" }) do
     Load(file)
 end
 local stopWatch = Secrets.Watch(root .. "/MSUF_Suite_Nameplates/Level.lua", { strict = true })
@@ -367,6 +370,30 @@ module:Refresh()
 assert(events.UPDATE_MOUSEOVER_UNIT == nil and not highlightA.shown, "the highlight stayed registered or shown when off")
 
 ------------------------------------------------------------------ level color
+do
+    local badge = Region("Frame", ufA)
+    ufA.PlayerLevelDiffFrame = badge
+    local previousForever, previousLevel, previousAppearance = NS.Client.isForever, c.enemyLevelEnabled, c.levelAppearance
+    NS.Client.isForever, c.enemyLevelEnabled = true, false
+    badge:SetAlpha(0.65)
+    private.Level.PaintNative(ufA, "enemy")
+    assert(badge.alpha == 0, "the hidden level kept its native badge")
+    badge.alpha = Secret(0)
+    private.Level.PaintNative(ufA, "enemy")
+    assert(issecretvalue(badge.alpha), "a restricted badge alpha was overwritten")
+    private.Level.PaintNative(ufA, nil)
+    assert(badge.alpha == 0.65, "native badge release lost its original alpha")
+    c.enemyLevelEnabled, c.levelAppearance = true, 1
+    private.Level.Paint(ufA, "enemy", "nameplate1")
+    assert(not module.levelLabels[ufA] or not module.levelLabels[ufA].shown,
+        "the Suite number showed while the native badge was still visible")
+    private.Level.PaintNative(ufA, "enemy")
+    private.Level.Paint(ufA, "enemy", "nameplate1")
+    assert(module.levelLabels[ufA].shown, "the Suite number did not take over after masking the native badge")
+    private.Level.PaintNative(ufA, nil)
+    NS.Client.isForever, c.enemyLevelEnabled, c.levelAppearance = previousForever, previousLevel, previousAppearance
+    ufA.PlayerLevelDiffFrame = nil
+end
 c.enemyLevelEnabled, c.friendlyLevelEnabled = true, true
 attackable.nameplate1, difficulty.nameplate1 = true, 2
 module:Refresh()

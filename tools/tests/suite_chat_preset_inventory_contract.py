@@ -28,5 +28,5 @@ for client in ("retail", "forever"):
             assert encoded in current, "a pre-existing look choice changed index or label"
     old = next(json.loads(row) for row in baseline["rule_metadata"] if json.loads(row)[0] == client + ":chat.look")
     actual = next(row[1:] for row in rows if row[0] == "rule_metadata" and row[1] == client + ":chat.look")
-    assert old[4] == 6 and actual[4] == 7 and old[:4] + old[5:] == actual[:4] + actual[5:], "look limits changed beyond appending one choice"
+    assert old[4] == 6 and actual[4] == 8 and old[:4] + old[5:] == actual[:4] + actual[5:], "look limits changed beyond appending choices"
 print("Both clients retain frozen chat palette values, conflict IDs, visual keys and choice indices")

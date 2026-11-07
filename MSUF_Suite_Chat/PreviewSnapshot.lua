@@ -112,18 +112,13 @@ end
 local function Input(parts, frame)
     local input = frame.editBox
     if not input then return false end
-    local changed, width, height = false, input:GetWidth(), input:GetHeight()
-    if S.Finite(width) and width > 0 then changed = Store(parts, "nativeInputWidth", width) or changed end
-    if S.Finite(height) and height > 0 then changed = Store(parts, "nativeInputHeight", height) or changed end
-    local point, relative, relativePoint, x, y = input:GetPoint(1)
-    local record = OwnedPoint(input)
-    if record and record.before[1] then point, relative, relativePoint, x, y = unpack(record.before[1]) end
-    if S.PublicText(point) and S.Public(relative) and S.PublicText(relativePoint)
-        and relative == frame and S.Finite(x) and S.Finite(y) then
-        changed = Store(parts, "nativeInputPoint", point) or changed
-        changed = Store(parts, "nativeInputRelativePoint", relativePoint) or changed
-        changed = Store(parts, "nativeInputX", x) or changed
-        changed = Store(parts, "nativeInputY", y) or changed
+    local changed, height = false, input:GetHeight()
+    local context = C.M.context
+    local properties = context and context.properties[input]
+    local record = properties and properties.SetHeight
+    if S.Finite(height) and height > 0 then
+        if record and height == record.applied then height = record.before end
+        changed = Store(parts, "nativeInputHeight", height) or changed
     end
     if input.header then changed = Font(parts, input.header, "input") or changed end
     return changed
@@ -190,6 +185,9 @@ function S.ChatWatchPreview(owner, callback, frame)
         hooksecurefunc("FCF_SetChatWindowFontSize", NativeChanged)
         hooksecurefunc("FCFDock_SelectWindow", NativeChanged)
         hooksecurefunc("FCFDock_UpdateTabs", NativeChanged)
+        hooksecurefunc("FCF_StopDragging", NativeChanged)
+        hooksecurefunc("FCF_SetWindowName", NativeChanged)
+        hooksecurefunc("FCF_Close", NativeChanged)
     end
     if callback and frame and not watched[frame] then
         watched[frame] = true

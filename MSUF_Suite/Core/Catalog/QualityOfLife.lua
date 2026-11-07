@@ -289,11 +289,24 @@ B.Section("waypoints", "waypoint_command", "Waypoint command", {
     Bool("superTrack", "Track the new waypoint", true),
 })
 
+local parallelWindows = B.Module("parallelWindows", {
+    title = "Keep Blizzard windows open",
+    description = "Keep supported Blizzard windows open together, such as the auction house, bags and quest details.",
+    optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
+})
+parallelWindows.rules.enabled.label = parallelWindows.title
+B.Tooltip(parallelWindows.rules.enabled, parallelWindows.description)
+B.Section("parallelWindows", "parallel_windows", parallelWindows.title, {
+    B.Tooltip(Number("windowLimit", "Blizzard window limit", 0, 0, 20),
+        "At the limit, opening another supported window closes the oldest window the Suite can safely close. Bags count as one. 0 means no limit."),
+})
+
 B.Module("dailyComfort", {
     title = "Daily UI comforts",
     description = "Optional shortcuts for tutorials, item deletion and screenshot notices.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     cvars = {
+        -- Legacy chat CVar recovery still accepts records from this owner.
         showTutorials = true, chatMouseScroll = true, chatClassColorOverride = true, mapFade = true,
         worldMapShowPlayerCoords = true, worldMapShowCursorCoords = true,
         doNotFlashLowHealthWarning = true, overrideScreenFlash = true,
@@ -315,12 +328,7 @@ B.Section("dailyComfort", "daily_comfort", "Daily UI comforts", {
     Bool("vendorCharacter", "Open equipment window at merchants"),
     Bool("auctionExpansionHint", "Mark the auction house filter while Current Expansion Only is off"),
 })
-B.Section("dailyComfort", "daily_cvars", "Chat, map and sound", {
-    Bool("chatWheel", "Scroll chat with the mouse wheel"),
-    Bool("chatClassColors", "Color chat names by class"),
-    Bool("noChatFade", "Keep chat messages visible"),
-    Choice("whisperWindows", "Whisper windows", 1,
-        { "Follow Blizzard settings", "Separate window", "Window and main chat" }),
+B.Section("dailyComfort", "daily_cvars", "Map, screen and sound", {
     Bool("keepMapVisible", "Keep world map visible while moving"),
     Bool("playerMapCoords", "Show player coordinates on the world map"),
     Bool("cursorMapCoords", "Show cursor coordinates on the world map"),

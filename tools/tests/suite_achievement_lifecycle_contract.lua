@@ -129,6 +129,7 @@ function native:ShowAlert(id)
     self.last = frame
     return true
 end
+assert(loadfile(root .. "/MSUF_Suite/Core/AnnouncementArt.lua"))("MSUF_Suite", NS)
 assert(loadfile(sourceOverride or root..'/MSUF_Suite_Modules/Announcements.lua'))('MSUF_Suite_Modules', { NS = NS, Suite = S })
 local m = S.module
 m.context = context

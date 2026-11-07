@@ -6,13 +6,49 @@ local _, P = ...
 local Suite = assert(_G.MSUFSuite, "MSUF_Suite is required")
 local M = assert(_G.MSUF2, "MSUF options are required")
 P.Suite, P.S, P.M = Suite, Suite.Suite, M
-P.W, P.T = M.Widgets, M.Theme
+local widgets, theme = M.Widgets, M.Theme
+P.W, P.T = setmetatable({}, { __index = widgets }), setmetatable({}, { __index = theme })
 -- Menu2's widget protocol (MSUF_Suite/Core/HostBridgeMenu.lua): the pages set
 -- and read Menu2's per-widget state only through these functions.
 P.HM = Suite.HostBridge.Menu2(M)
 P.catalog, P.order = Suite.SuiteCatalog, Suite.SuiteOrder
 P.pages = {}
 local S, T, HM = P.S, P.T, P.HM
+
+-- Suite-owned menu chrome uses the host's font roles and selected font.
+-- Gameplay samples and native Blizzard frames keep their own renderers.
+local COPY_ROLES = { caption = true, supporting = true }
+local SMALL_TEMPLATES = { GameFontHighlightSmall = true, GameFontDisableSmall = true }
+local function ApplyMenuFont(label, role)
+    if label and theme.ApplyMenuFont then theme.ApplyMenuFont(label, nil, role) end
+end
+
+function T.Font(parent, template, text, color, role)
+    if COPY_ROLES[role] or (not role and SMALL_TEMPLATES[template]) then
+        role = "card"
+        if color == theme.colors.muted then color = theme.colors.text end
+    end
+    return theme.Font(parent, template, text, color, role)
+end
+
+function P.StyleMenuControl(widget)
+    local title, label = HM.GetControlTitle(widget), HM.GetControlLabel(widget)
+    ApplyMenuFont(title, "card")
+    if label ~= title then ApplyMenuFont(label, "card") end
+    return widget
+end
+
+function T.Button(parent, text, width, height, opts)
+    return P.StyleMenuControl(theme.Button(parent, text, width, height, opts))
+end
+
+function P.W.SettingsRows(ctx, parent, spec)
+    local grid = widgets.SettingsRows(ctx, parent, spec)
+    if grid then
+        for _, widget in pairs(grid.list or grid.controls) do P.StyleMenuControl(widget) end
+    end
+    return grid
+end
 
 function P.Tr(text)
     if type(text) ~= "string" then return text end
@@ -415,8 +451,8 @@ function P.HideControlTitle(widget)
 end
 
 -- English text; Menu2's font string translates it.
-function P.Text(parent, text, x, y, width, color)
-    local label = T.Font(parent, "GameFontHighlightSmall", text or "", color or T.colors.muted, "supporting")
+function P.Text(parent, text, x, y, width, color, role)
+    local label = T.Font(parent, "GameFontHighlight", text or "", color or T.colors.text, role or "card")
     label:SetPoint("TOPLEFT", x or 16, y or 0)
     label:SetWidth(width or 300)
     label:SetJustifyH("LEFT")
@@ -433,13 +469,30 @@ function P.Description(parent, text, x, y, width, title)
         -- Older hosts keep all instructions visible until they support detail help.
         if not P.W.DescriptionDetails then text, details = details, nil end
     end
-    if P.W.Description then return P.W.Description(parent, text, x, y, width, title, details) end
-    return P.Text(parent, text, x, y, width)
+    if P.W.Description then
+        local label = P.W.Description(parent, text, x, y, width, title, details)
+        if label and theme.StyleFontString then theme.StyleFontString(label, T.colors.text, nil, "section")
+        else ApplyMenuFont(label, "section") end
+        Suite.HostBridge.RefreshMenuDescriptionHelp(label, details)
+        return label
+    end
+    return P.Text(parent, text, x, y, width, nil, "section")
 end
 
 -- Buttons follow the page's enable rules: pass `enabled` (function) to gate.
-function P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta)
-    local button = T.Button(parent, label, width or 180, 26)
+function P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta, options)
+    local height = options and options.height or 26
+    local button = T.Button(parent, label, width or 180, height)
+    if options then
+        if options.role == "success" and T.SkinSuccessButton then T.SkinSuccessButton(button)
+        elseif options.role and T.ApplyButtonRole then T.ApplyButtonRole(button, options.role) end
+        local text = HM.GetControlLabel(button)
+        if options.fontRole then ApplyMenuFont(text, options.fontRole) end
+        if text and options.wrap then
+            text:SetWordWrap(true)
+            button:SetHeight(math.max(height, math.ceil(text:GetStringHeight()) + 16))
+        end
+    end
     button:SetPoint("TOPLEFT", x, y)
     button:SetScript("OnClick", function()
         if P.Combat() then return end

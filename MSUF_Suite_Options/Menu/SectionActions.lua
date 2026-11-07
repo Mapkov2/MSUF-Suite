@@ -24,7 +24,7 @@ local function SectionActionButton(ctx, entry)
     more:SetPoint("RIGHT", entry.header, "RIGHT", -10, 0)
     more:SetFrameLevel(entry.header:GetFrameLevel() + 4)
     HM.SkipHistoryCheckpoint(more)
-    HM.ReserveSectionActions(entry, more, 34)
+    HM.ReserveSectionActions(entry, more, 34, true)
     entry._msufSuiteResetButton = more
     local function AlignSwitch()
         if entry.featureSwitch then
@@ -124,6 +124,7 @@ local function BuildSectionPopup(state, spec)
         end
     end
     if state.extend then state.extend(popup) end
+    HM.SetSectionPopupGetter(state.more, state.getPopup, popup)
 end
 
 local function ToggleSectionPopup(state)
@@ -161,7 +162,8 @@ function P.AttachSectionReset(ctx, body, title, reset, copy, extend)
     local more = SectionActionButton(ctx, entry)
     local state = { body = body, title = title, entry = entry, more = more, extend = extend }
     more:SetScript("OnClick", function() ToggleSectionPopup(state) end)
-    HM.SetSectionPopupGetter(more, function() return state.popup end)
+    state.getPopup = function() return state.popup end
+    HM.SetSectionPopupGetter(more, state.getPopup)
     -- The Suite's own handles on the popup (the DataTexts bar actions).
     more._msufSuiteEnsureSectionPopup = function()
         if not state.popup then
@@ -171,6 +173,7 @@ function P.AttachSectionReset(ctx, body, title, reset, copy, extend)
         return state.popup
     end
     more._msufSuiteOpenSectionPopup = function()
+        if not entry.open then W.FocusCollapsibleSection(body, { scroll = false, flash = false }) end
         if not state.popup or not state.popup:IsShown() then ToggleSectionPopup(state) end
     end
     if M.AddTooltip then M.AddTooltip(more, "Section actions", nil, { hook = true }) end

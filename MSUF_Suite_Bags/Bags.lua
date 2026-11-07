@@ -473,6 +473,7 @@ local SUBMODULES = {
     { "AutoSplit", nil, "Stop" },                             -- a running automatic split
     { "StackSplitter", "Refresh", "Close" },                  -- split presets beside Blizzard's window
     { "SortDirection", "Refresh", "Restore" },                -- Blizzard's bag sorting direction
+    { "BuybackSearch", "Refresh", "Disable" },                -- search the merchant buyback tab
 }
 M.SUBMODULES = SUBMODULES
 local REFRESH, STOP = 2, 3

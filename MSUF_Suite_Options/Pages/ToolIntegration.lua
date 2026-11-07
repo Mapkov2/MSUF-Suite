@@ -38,17 +38,20 @@ function P.BuildNewToolActions(ctx, details, id, section, y, width)
     return P.BuildEverydayToolActions(ctx, details, id, section, y, width)
 end
 
-local function Prepare(body, widget, page, id, key, kind, label)
+local function Prepare(body, widget, page, id, key, kind, label, reveal)
     if key == "enabled" then label = P.catalog[id].title end
     local entry = { widget = widget, rule = { key = key, label = label },
         meta = P.Meta(page, id, key, kind, page .. "_" .. id .. "_module") }
-    if page == "suite_actionbars" then P.ActionBarMenu.Prepare(body, { entry })
+    if reveal then
+        P.HM.SetSearchTargetPrepare(widget, reveal)
+        P.RegisterWorkspaceSearch(widget, entry.meta, entry.rule, "suiteWorkspace", reveal, label)
+    elseif page == "suite_actionbars" then P.ActionBarMenu.Prepare(body, { entry })
     elseif body._suiteWorkspace then P.MenuWorkspace.Prepare(body, { entry })
     else P.RegisterWorkspaceSearch(widget, entry.meta, entry.rule) end
 end
 
 -- Helpers keep their own switch and reset even when the page's styling is off.
-function P.BuildOwnedTool(ctx, builder, id)
+function P.BuildOwnedTool(ctx, builder, id, reveal)
     if not P.Available(id) then return end
     local spec, rules = P.catalog[id], {}
     for _, rule in ipairs(spec.controls) do
@@ -61,7 +64,7 @@ function P.BuildOwnedTool(ctx, builder, id)
     }, { title = spec.title, open = false,
         -- The switch stays the player's choice; a tool without settings has nothing to reset.
         reset = function() return #rules == 0 or P.ResetRules(id, rules) end,
-        prepareControl = function(body, widget, key, kind, label) Prepare(body, widget, page, id, key, kind, label) end,
+        prepareControl = function(body, widget, key, kind, label) Prepare(body, widget, page, id, key, kind, label, reveal) end,
         buildBody = function(body, y, width)
             local bottom, entries = P.RuleGrid(ctx, body, page, id, rules, y, width, nil, section)
             for _, entry in ipairs(entries) do

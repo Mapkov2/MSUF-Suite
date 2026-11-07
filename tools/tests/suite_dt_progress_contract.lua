@@ -337,7 +337,6 @@ assert(wanted.FRIENDLIST_UPDATE and wanted.BN_FRIEND_INFO_CHANGED, "friends need
 assert(wanted.GUILD_ROSTER_UPDATE and wanted.COMBAT_RATING_UPDATE and wanted.MASTERY_UPDATE and wanted.UNIT_STATS,
     "guild and stat events")
 assert(wanted.CHALLENGE_MODE_COMPLETED, "the rating event")
-assert(wanted.PLAYER_REGEN_DISABLED, "social places release their secure overlay in combat")
 -- A burst of events refreshes the place once, after the context's wait.
 M.updates = {}
 for _ = 1, 40 do X.Changed(M, "BN_FRIEND_INFO_CHANGED") end
@@ -388,7 +387,6 @@ A.Click(friendsButton, "LeftButton")
 eq(panelClicks[#panelClicks], "friends", "the friends place opens the friends panel")
 A.Click(guildButton, "LeftButton")
 eq(panelClicks[#panelClicks], "guild", "the guild place opens the guild panel")
-assert(X.secureKinds.friends and X.secureKinds.guild, "the social places borrow the secure overlay")
 
 -- Guild: online members; the roster is requested on hover only, throttled.
 eq(Value(guild), DASH, "no roster yet")

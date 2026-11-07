@@ -32,12 +32,15 @@ function Animation:SetScaleTo(x, y) self.toX, self.toY = x, y end
 function Animation:SetDuration(value) self.duration = value end
 local Group = {}
 Group.__index = Group
-function Group:CreateAnimation() return setmetatable({}, Animation) end
+function Group:CreateAnimation() return setmetatable({ group = self }, Animation) end
+function Animation:GetSmoothProgress() return self.group.progress end
+function Animation:SetSmoothing(value) self.smoothing = value end
 function Group:SetScript(event, fn) self.scripts[event] = fn end
 function Group:GetParent() return self.parent end
 function Group:Stop() self.playing = nil end
 function Group:IsPlaying() return self.playing == true end
-function Group:Play()
+function Group:Play(reverse)
+    self.reverse, self.progress = reverse, reverse and 1 or 0
     animations.playing = animations.playing + 1
     self.playing = true
     if animations.hold then return end
@@ -195,6 +198,7 @@ function GameTooltip:SetText(text) self.lines = { text } end
 function GameTooltip:GetOwner() return self.owner end
 function GameTooltip:IsOwned(owner) return self.owner == owner end
 _G.SlashCmdList = {}
+assert(loadfile(root .. "/MSUF_Suite/Core/DisclosureMotion.lua"))("Test", NS)
 assert(loadfile(root .. "/MSUF_Suite/Core/PlannerCommand.lua"))("Test", NS)
 assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("Test", P)
 for _, name in ipairs({ "PlanningOverview", "PlanningBoard", "PlanningBoardAppearance", "PlanningBoardScroll",
@@ -277,7 +281,8 @@ local function Geometry(window)
             local entry = window.spec.tabs[tab.index]
             if locale == "deDE" then Check(translations[entry.label] ~= nil, "German navigation label missing: " .. entry.label) end
             local text = (tab.text.text or ""):gsub("[\128-\191]", "")
-            Check(#text * 12 * .6 <= tab.width - 20, "rail label estimate exceeds one line: " .. tab.text.text)
+            Check(tab.text.plannerFontSize == 14 and tab.height == 28, "Adventure navigation has undersized tabs")
+            Check(#text * tab.text.plannerFontSize * .6 <= tab.width - 20, "rail label estimate exceeds one line: " .. tab.text.text)
         end
     end
     return hitboxes

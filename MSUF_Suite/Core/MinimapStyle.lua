@@ -71,6 +71,20 @@ function Style.PaintDungeonButton(button, icon, style, scale)
     icon:SetTexCoord(l + (r - l) * x, r - (r - l) * x, t + (b - t) * y, b - (b - t) * y)
 end
 
+-- The drawer glyph and its border tint are identical at any preview zoom.
+function Style.PaintDrawerToggle(button, back, dots, size, scale, r, g, b)
+    local dot = math.max(2, math.floor(size * 0.2 + 0.5))
+    local offset = (dot + math.max(1, math.floor(size * 0.12 + 0.5))) * scale / 2
+    button:SetSize(size * scale, size * scale)
+    for i = 1, 4 do
+        local texture = dots[i]
+        texture:SetSize(dot * scale, dot * scale)
+        texture:ClearAllPoints()
+        texture:SetPoint("CENTER", button, "CENTER", i % 2 == 1 and -offset or offset, i <= 2 and offset or -offset)
+    end
+    back:SetColorTexture(r, g, b, 0.8)
+end
+
 -- Shared by the live weather entry and the options preview. WeatherType and
 -- Blizzard's weather auras come from upstream/forever WeatherConstantsDocumentation
 -- and Blizzard_PetBattleUI/Shared/Blizzard_PetBattleUI.lua respectively.

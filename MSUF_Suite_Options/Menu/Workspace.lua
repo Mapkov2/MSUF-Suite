@@ -109,7 +109,7 @@ function Workspace.Builder(ctx, spec)
         selected = selections[spec.page] or spec.tabs[1].id }
     ctx.suiteWorkspace = ui
     ui.select = function(key)
-        if ui.chooseTab then ui.chooseTab(key) else Choose(ui, key) end
+        if ui.chooseTab then return ui.chooseTab(key) else return Choose(ui, key) end
     end
     function ui:Focus(sectionId)
         local section = self.sections[sectionId]
@@ -140,6 +140,15 @@ end
 
 function Workspace.Finish(ui)
     if not ui then return end
+    local entry = ui.ctx.entry or ui.ctx
+    local previousResolver = HM.GetMissingSectionResolver(entry)
+    HM.SetMissingSectionResolver(entry, function(sectionId)
+        local section = ui.sections[sectionId]
+        if not section then return previousResolver and previousResolver(sectionId) end
+        ui.select(section._suiteWorkspaceTab)
+        P.EnsureSectionContent(section)
+        return section
+    end)
     local values, panels = {}, {}
     for _, tab in ipairs(ui.spec.tabs) do
         values[#values + 1] = { value = tab.id, text = Tr(tab.label) }
@@ -156,15 +165,17 @@ function Workspace.Finish(ui)
         end
     end
     -- Keep page areas directly selectable; the shared tabs fit the header width.
-    if W.SegmentTabs then
+    if ui.spec.buildSelector then
+        ui.tabs, ui.chooseTab = ui.spec.buildSelector(ui, values, function(id) return Choose(ui, id) end)
+    elseif W.SegmentTabs then
         local tabs, refresh, _, choose = W.SegmentTabs(ui.ctx, ui.header, {
-            label = "", values = values, frames = panels, width = ui.width - 32,
+            label = "", compact = true, values = values, frames = panels, width = ui.width - 32,
             defaultTab = ui.selected, get = function() return ui.selected end,
             set = function(id) Choose(ui, id) end, afterRefresh = function(id) Choose(ui, id) end,
             x = 16, y = ui.spec.tabY or 12,
         })
         P.HideControlTitle(tabs)
-        ui.chooseTab = choose
+        ui.tabs, ui.chooseTab = tabs, choose
         refresh()
     else
         ui.selector = M.BindDropdownAt(ui.ctx, ui.header, ui.spec.title, 16, ui.spec.tabY or 12, values, ui.width - 32,

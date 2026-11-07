@@ -348,6 +348,51 @@ end
 -- Opens Blizzard's Quick Keybind mode through the restricted environment.
 -- Its OnShow reveals every Blizzard grid; run insecurely it would taint
 -- MainActionBar's grid state and block a later combat Show.
+local keybindHooked, keybindSettings, keybindPending, keybindExit
+local keybindSettingsHooks = {}
+local function ClearKeybindReturn()
+    keybindPending = nil
+    if keybindExit then keybindExit:UnregisterEvent("PLAYER_REGEN_ENABLED") end
+end
+local function CloseKeybindReturn()
+    if NS.IsCombatLocked() then return end
+    local settings = keybindPending
+    ClearKeybindReturn()
+    if settings and settings:IsShown() then HideUIPanel(settings) end
+end
+local function QuickKeybindHidden()
+    local settings = keybindSettings
+    keybindSettings = nil
+    if not settings or not settings:IsShown() then return end
+    keybindPending = settings
+    if NS.IsCombatLocked() then
+        keybindExit:RegisterEvent("PLAYER_REGEN_ENABLED")
+    else
+        CloseKeybindReturn()
+    end
+end
+-- Native OnHide opens SettingsPanel even for a Suite entry. Let its binding
+-- and grid cleanup finish, then close only that return panel. HideUIPanel
+-- also clears panel-manager occupancy; SettingsPanel:Close opens GameMenu.
+local function PrepareKeybindReturn(frame)
+    if keybindHooked ~= frame then
+        frame:HookScript("OnHide", QuickKeybindHidden)
+        keybindHooked = frame
+    end
+    if frame:IsShown() then return end
+    ClearKeybindReturn()
+    local settings = AB.Frame("SettingsPanel")
+    keybindSettings = settings and not settings:IsShown() and settings or nil
+    if not keybindSettings then return end
+    if not keybindExit then
+        keybindExit = S.CreateFrame("Frame", nil, UIParent)
+        keybindExit:SetScript("OnEvent", CloseKeybindReturn)
+    end
+    if not keybindSettingsHooks[settings] then
+        settings:HookScript("OnHide", ClearKeybindReturn)
+        keybindSettingsHooks[settings] = true
+    end
+end
 local OPEN_QUICK_KEYBIND = [[
 local frame=self:GetFrameRef("quickkeybind")
 if frame then frame:Show() end
@@ -360,6 +405,7 @@ function S.OpenQuickKeybind()
         control = S.CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
         AB.control = control
     end
+    PrepareKeybindReturn(frame)
     SecureHandlerSetFrameRef(control, "quickkeybind", frame)
     SecureHandlerExecute(control, OPEN_QUICK_KEYBIND)
     return true

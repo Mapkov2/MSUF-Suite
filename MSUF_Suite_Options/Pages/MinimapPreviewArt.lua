@@ -243,8 +243,29 @@ end
 local Art = {}
 Art.__index = Art
 
+-- Retain one settings view for preview-only samples. The live profile stays
+-- the source of every value the user has configured.
+local function SampleStyle(art, config, layers)
+    local sample = art.sampleStyle
+    art.sampleFallback.__index = config
+    local texture = config.styleTexture or P.Suite.MinimapStyleTexture.NONE
+    local artwork = P.Suite.MinimapStyleTexture
+    local hasPath = texture ~= artwork.NONE and (texture ~= artwork.CUSTOM or config.styleTexturePath ~= "")
+    sample.styleTexture = layers.ornament and not hasPath and artwork.ARCANE_RING or nil
+    sample.styleAlpha = layers.ornament and (config.styleAlpha or 0) <= 0 and 60 or nil
+    sample.styleGlow = layers.glow and true or nil
+    sample.styleGlowAlpha = layers.glow and (config.styleGlowAlpha or 0) <= 0 and 50 or nil
+    sample.styleBackdrop = layers.backdrop and true or nil
+    sample.styleBackdropAlpha = layers.backdrop and (config.styleBackdropAlpha or 0) <= 0 and 85 or nil
+    sample.borderSize = layers.border and (config.borderSize or 0) <= 0 and 2 or nil
+    sample.borderAlpha = layers.border and (config.borderAlpha or 0) <= 0 and 100 or nil
+    sample.shadowSize = layers.shadow and (config.shadowSize or 0) <= 0 and 8 or nil
+    sample.shadowAlpha = layers.shadow and (config.shadowAlpha or 0) <= 0 and 45 or nil
+    return sample
+end
+
 -- layerOn(key): whether a preview layer (map, border, shadow, ...) is shown.
-function Art:Paint(config, scale, layerOn)
+function Art:Paint(config, scale, layerOn, layers, shown)
     local size = math.max(100, tonumber(config.size) or P.catalog.minimap.rules.size.default)
     local shape = tonumber(config.shape) or 1
     local round = shape == P.Suite.MinimapShape.CIRCLE
@@ -253,20 +274,34 @@ function Art:Paint(config, scale, layerOn)
     self.map:SetSize(width, height)
     self.width, self.height, self.scale = width, height, scale
 
+    if layers then config = SampleStyle(self, config, layers) end
     local showMap = layerOn("map")
     self.clip:SetShown(showMap)
     self.mask:SetTexture(round and CIRCLE or SQUARE_MASK)
     PaintTerrain(self, width, showMap)
     self.arrow:SetShown(showMap and layerOn("player"))
 
-    local skinned = self.style:PaintIconSkin(config, width, height, self.map, showMap and layerOn("border"))
+    local showSkin = layerOn("border") and (showMap or layers and layers.border == true)
+    local skinned = self.style:PaintIconSkin(config, width, height, self.map, showSkin)
     local border = PaintBorder(self, config, scale, width, height, round, layerOn("border") and not skinned)
-    PaintShadow(self, config, scale, width, height, round, border, layerOn("shadow") and not skinned)
+    PaintShadow(self, config, scale, width, height, round, border, layerOn("shadow") and (not skinned or layers and layers.shadow))
     self.style:Paint(config, scale, layerOn, false)
+    if shown then
+        shown.player = showMap and layerOn("player")
+        shown.border = layerOn("border") and (skinned and showSkin == true or not skinned
+            and ((config.borderSize or 0) > 0 and (config.borderAlpha or 0) > 0 or (config.outerBorderSize or 0) > 0))
+        shown.shadow = layerOn("shadow") and (not skinned or layers.shadow == true)
+            and (config.shadowSize or 0) > 0 and (config.shadowAlpha or 0) > 0
+        shown.backdrop = self.style.backdrop:IsShown()
+        shown.glow = self.style.glow:IsShown()
+        shown.ornament = self.style.artOver:IsShown() or self.style.artUnder:IsShown()
+    end
 end
 
 function P.CreateMinimapPreviewArt(canvas)
     local art = setmetatable({}, Art)
+    art.sampleFallback = {}
+    art.sampleStyle = setmetatable({}, art.sampleFallback)
     local canvasLevel = tonumber((canvas:GetFrameLevel())) or 0
     BuildMap(art, canvas, canvasLevel)
     BuildFrame(art, canvas)

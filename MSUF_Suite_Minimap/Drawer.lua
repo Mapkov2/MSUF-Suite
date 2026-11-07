@@ -279,18 +279,8 @@ local function EnsureDrawer()
 end
 
 local function StyleToggle(c)
-    local size = c.elementSize
-    local dot = math.max(2, math.floor(size * 0.2 + 0.5))
-    local offset = (dot + math.max(1, math.floor(size * 0.12 + 0.5))) / 2
-    toggle:SetSize(size, size)
-    for i = 1, 4 do
-        local texture = toggle.dots[i]
-        texture:SetSize(dot, dot)
-        texture:ClearAllPoints()
-        texture:SetPoint("CENTER", toggle, "CENTER", i % 2 == 1 and -offset or offset, i <= 2 and offset or -offset)
-    end
     local r, g, b = MM.BorderRGB()
-    toggle.back:SetColorTexture(r, g, b, 0.8)
+    NS.MinimapStyle.PaintDrawerToggle(toggle, toggle.back, toggle.dots, c.elementSize, 1, r, g, b)
     -- An opaque one-pixel outline inside the panel, in the border color.
     S.PlaceEdges(panel.edges, panel, 1, r, g, b, 1)
 end
@@ -427,6 +417,14 @@ function S.MinimapRescanButtons()
     Scan()
     MM.LayoutDrawer()
     return true
+end
+
+-- A closed drawer can have a grid toggle, a single addon button, or no row item.
+-- Mouseover changes the grid's visibility without releasing its row position.
+function S.MinimapDrawerPreviewSource()
+    if not M.active then return end
+    if not MM.CollectsButtons() or #visible == 0 then return false end
+    return true, #visible == 1 and visible[1] or nil
 end
 
 -- The frame names of the buttons in the drawer: what the options page offers

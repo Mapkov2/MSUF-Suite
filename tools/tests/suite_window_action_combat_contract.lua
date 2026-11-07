@@ -100,6 +100,17 @@ Drain()
 Check(not state.visible, "combat callback revived a disabled action owner")
 H.SetCombat(false)
 Check(W.Apply(button, "combat", "close") == state, "safe owner reactivation lost reusable artwork")
+local compact = Button()
+compact.width, compact.height = 16, 12
+function compact:GetWidth() return self.width end
+function compact:GetHeight() return self.height end
+local settings = NS.DB.icons.windowActions
+settings.closeGlyphSize, settings.glyphOffsetX, settings.glyphOffsetY = 24, 5, -5
+local compactState = W.Apply(compact, "compact", "close")
+local glyph = compactState.glyphs.normal
+local center = glyph.points.CENTER
+Check(math.abs(center.x) + glyph.width * 1.04 / 2 <= 8.001 and math.abs(center.y) + glyph.height * 1.04 / 2 <= 6.001,
+    "native close glyph or its hover growth crossed the compact button")
 H.SetCombat(true)
 Check(W.Disable(button, "combat") and not state.visible, "safe per-button disable waited for combat")
 button:Hide(); H.Tick()

@@ -106,7 +106,9 @@ Case("announcements", function()
         Number = function(v) return type(v) == "number" end, ReadText = function(fn, ...) return fn(...) end,
         Dispatch = function(fn, ...) return fn(...) end, Text = function(v) return v end,
         Install = function(_, value) module = value end }
-    Load("MSUF_Suite_Modules/Announcements.lua", { Suite = suite, NS = { Safety = { IsForbidden = function() return false end } } })
+    local NS = { Safety = { IsForbidden = function() return false end } }
+    Load("MSUF_Suite/Core/AnnouncementArt.lua", NS)
+    Load("MSUF_Suite_Modules/Announcements.lua", { Suite = suite, NS = NS })
     local event, alert = Upvalue(module.Enable, "Event"), Upvalue(module.ApplyNative, "OnShowAlert")
     local label = { SetText = function() end, SetTextColor = function() end }
     module.active, module.config = true, { quests = true, duration = 4 }
@@ -114,7 +116,7 @@ Case("announcements", function()
     module.host = { SetAlpha = function() end, Show = function() end }
     module.enter = { Stop = function() end, Play = function() end }; module.leave = module.enter
     module.title, module.subtitle = label, label
-    module.accent, module.divider = { SetColorTexture = function() end }, { SetColorTexture = function() end }
+    module.art = { style = 0 }
     module.kindColors = { quest = { 0, 1, 0 }, zone = { 1, 0, 0 } }
     C_QuestLog = { GetTitleForQuestID = function() return "Same title" end }
     local system = {}

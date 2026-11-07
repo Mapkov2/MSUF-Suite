@@ -5,9 +5,9 @@ function R.Initialize()
     if R.elements then return end
     R.elements = {
         { prefix = "window", label = "Chat window", section = "window", control = "lockWindowPosition", gate = "lockWindowPosition" },
-        { prefix = "messageText", label = "Message text", section = "text", control = "fontSize", region = "textHit", followRegion = "lines" },
+        { prefix = "messageText", label = "Message text", section = "text", control = "fontSize", followRegion = "lines" },
         { prefix = "tab", label = "Tabs and accent", section = "tabs", control = "tabHeight", region = "tabGroup" },
-        { prefix = "input", label = "Input line", section = "input", control = "inputHeight", region = "input" },
+        { prefix = "input", label = "Input line", section = "input", control = "inputWidth", region = "input" },
         { prefix = "copyButton", label = "Copy", section = "tools", control = "copyMessages", gate = "copyMessages" },
     }
     local ICON_LABELS = { "Friends", "Channels and voice", "Text to speech", "Chat menu", "Newest messages" }
@@ -21,6 +21,7 @@ function R.Initialize()
     end
 
     function R.Allowed(spec)
+        if not spec.prefix then return false end
         local rule = P.catalog[ID].rules[spec.gate or spec.prefix .. "X"]
         return not P.Combat() and (not spec.gate or P.Get(ID, spec.gate) == true)
             and P.RuleEnabled(ID, rule)
@@ -74,7 +75,7 @@ function R.CoordinateSection(ctx, builder, section, title, rules, opts)
         options.resetKeys = positions
         for _, key in ipairs(opts and opts.resetKeys or {}) do positions[#positions + 1] = key end
     end
-    local body = P.RuleSection(ctx, builder, PAGE, ID, section, title, visible, options)
+    local body = P.MenuWorkspace.Rules(ctx, builder, PAGE, ID, section, title, visible, options)
     ctx.chatSections = ctx.chatSections or {}
     ctx.chatSections[section] = body
     return body

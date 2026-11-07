@@ -195,8 +195,14 @@ function E.Build(preview)
         tip = function(handle, entering)
             P.PreviewInteraction.Outline(handle, entering or owner._selectedHandle == handle)
         end,
-        click = function(handle, button)
-            if button == "RightButton" then E.Open(preview, handle) else E.Select(preview, handle, true) end
+        click = function(handle, button, moved)
+            if handle.openSample and button == "LeftButton" then
+                if not moved and not preview.inCombat and not P.Combat() then handle.openSample(handle) end
+            elseif button == "RightButton" then
+                E.Open(preview, handle)
+            else
+                E.Select(preview, handle, true)
+            end
         end,
         drag = function(handle, phase) Dragged(preview, handle, phase) end,
         select = function(handle) Selected(preview, handle) end,

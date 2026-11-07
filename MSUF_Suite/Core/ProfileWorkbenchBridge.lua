@@ -198,12 +198,13 @@ local function PrepareWorkbenchImport(text)
         snapshot.present, snapshot.profile = true, profile
         return { provider = snapshot }
     end
-    local id, settings, reason = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, chat = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
     -- Only the string's settings change, as in P.ImportModule (SetMany): it
     -- leaves out character-bound ones, and an old helper string names seven
     -- Minimap settings.
     for key, value in pairs(settings) do snapshot.suite.modules[id][key] = value end
+    if chat then snapshot.suite.modules.chatComfort = chat end
     return { provider = snapshot }
 end
 

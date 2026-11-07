@@ -16,7 +16,7 @@ local SAMPLES = {
     itemLevel = { "Item level", "275.5" }, professions = { "Professions", "100 / 100" },
     specialization = { "Specialization", "Specialization" }, audio = { "Volume", "75%" },
     hearth = { "Hearthstone", "Ready" }, progress = { "XP", "64%" },
-    portals = { "Dungeon portals", "Open" }, microMenu = { "Menu", "Open" },
+    portals = { "Dungeon portals", "Open" },
     specLoot = { "Specialization / loot", "Specialization" }, travel = { "Travel cooldowns", "Ready" },
     friends = { "Friends", "6" }, guild = { "Guild", "14" }, secondaryStat = { "Crit", "28.5%" },
     mythicRating = { "Mythic+ rating", "2850" },
@@ -25,7 +25,7 @@ local SAMPLES = {
 local STAT_SAMPLES = { { "Crit", "28.5%" }, { "Haste", "21.3%" }, { "Mastery", "34.2%" }, { "Vers", "6.8%" },
     { "Leech", "3.1%" } }
 local WORD_VALUES = { location = "Location", specialization = "Specialization", hearth = "Ready",
-    portals = "Open", microMenu = "Open" }
+    portals = "Open" }
 
 -- The Time place at 20:45:30 in the chosen format (Standard.lua): the
 -- client's 12-hour format (TIME_TWELVEHOURPM) puts the PM word where the
@@ -37,6 +37,8 @@ local function ClockSample(config)
 end
 
 function Data.Sample(source, style, config, block)
+    if source == "microMenu" then return nil, Suite.DataTextMenuCaption(config[block .. "MenuLabel"]) end
+    if source == "progressBar" then return "", Tr("%d%% to level %d"):format(32, 12) end
     local sample = SAMPLES[source]
     if not sample then return "", "" end
     local name, value = Tr(sample[1]), sample[2]

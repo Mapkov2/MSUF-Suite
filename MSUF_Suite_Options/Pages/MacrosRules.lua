@@ -40,10 +40,15 @@ Page.initializers[#Page.initializers + 1] = function()
         end
         local picker = command == "cast" or command == "use" or command == "cancelaura"
             or command == "equip" or command == "equipslot" or command:find("petautocast", 1, true)
-        Page.Edit(ui, key .. ":action", "Then", branch.value, 16, y, width - (picker and 104 or 32), function(value)
+        local function ApplySpell(value)
+            branch.value = value
+            Page.Changed(true)
+        end
+        local edit = Page.Edit(ui, key .. ":action", "Then", branch.value, 16, y, width - (picker and 104 or 32), function(value)
             branch.value = value
             Page.Changed(false)
         end)
+        Page.SpellDrop(ui, edit, (command == "cast" or command == "cancelaura") and ApplySpell or nil)
         if picker then
             local choose
             choose = Page.Button(ui, key .. ":pick", "Choose", width - 82, y - 23, 78, function()
@@ -51,14 +56,17 @@ Page.initializers[#Page.initializers + 1] = function()
                 if command == "use" or command == "equip" or command == "equipslot" then kind = "item" end
                 if command:find("petautocast", 1, true) then kind = "pet" end
                 Page.Pick(choose, kind, function(value)
-                    branch.value = command == "equipslot" and "16 " .. value or value
-                    Page.Changed(true)
+                    ApplySpell(command == "equipslot" and "16 " .. value or value)
                 end)
             end)
         end
         return y - 61
     end
 
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Helpers, Tr = P.MacroPage.helpers, P.Tr
     Helpers.WorldMarkers = function(clear)
         local key = clear and "clearWorldMarkers" or "worldMarkers"
         if Helpers[key] then return Helpers[key] end
@@ -267,8 +275,9 @@ Page.initializers[#Page.initializers + 1] = function()
         local key = "step:" .. stepIndex .. ":sequence:" .. index
         local inputWidth = width - 235
         local narrow = inputWidth < 160
-        Page.Edit(ui, key, string.format(Tr("Step %d"), index), step.sequence[index], 16, y,
+        local edit = Page.Edit(ui, key, string.format(Tr("Step %d"), index), step.sequence[index], 16, y,
             narrow and width - 32 or inputWidth, function(value) step.sequence[index] = value Page.Changed(false) end)
+        Page.SpellDrop(ui, edit, function(value) step.sequence[index] = value Page.Changed(true) end)
         local actionY, actionX = narrow and y - 54 or y - 23, narrow and 16 or inputWidth + 24
         local pick
         pick = Page.Button(ui, key .. ":pick", "Choose", actionX, actionY, 76, function()

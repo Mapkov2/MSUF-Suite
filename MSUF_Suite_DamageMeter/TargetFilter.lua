@@ -144,5 +144,5 @@ local function TargetMenu(_, root, win)
 end
 
 function D.OpenTargetMenu(win, owner)
-    if D.damageTypes[win.meterType] then S.ContextMenu(owner, TargetMenu, win) end
+    if D.damageTypes[win.meterType] then D.OpenDropdown(owner, TargetMenu, win) end
 end

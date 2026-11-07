@@ -5,12 +5,16 @@ local _, NS = ...
 local AddonListMotion = { states = {}, scrollStates = {}, records = setmetatable({}, { __mode = "k" }) }
 NS.AddonListMotion = AddonListMotion
 local Safety, Motion, Rows = NS.Safety, NS.Motion, NS.CollapseRows
+local ConfigureDisclosure = NS.SuiteCore().ConfigureDisclosure
 -- Shown owners can rebuild after combat; only pending snapshots need a
 -- stop pass. Cached hidden views keep their reusable records outside both.
 local shownStates, pendingStates = {}, {}
 local abs = math.abs
 local Noop = function() end
-local Ghost = { Capture = Noop, Released = Noop, Layout = Noop, Stop = Noop, Release = Noop, AfterLayout = Noop, Hidden = Noop, Initialized = Noop }
+local Ghost = {
+    Take = Noop, Capture = Noop, Released = Noop, Layout = Noop, Stop = Noop,
+    Release = Noop, AfterLayout = Noop, Hidden = Noop, Initialized = Noop,
+}
 function AddonListMotion.SetGhostProvider(provider) Ghost = provider end
 
 local function Stop(record)
@@ -66,15 +70,13 @@ local function CreateGroup(record)
     if record.group then return end
     local group = record.row:CreateAnimationGroup()
     local translation = group:CreateAnimation("Translation")
-    translation:SetDuration(0.16)
-    translation:SetSmoothing("IN_OUT")
+    ConfigureDisclosure(translation)
     local alpha = group:CreateAnimation("Alpha")
-    alpha:SetDuration(0.16)
-    alpha:SetSmoothing("IN_OUT")
+    ConfigureDisclosure(alpha)
     record.group, record.translation, record.alpha = group, translation, alpha
 end
 
-local function Animate(record, offset, reveal)
+local function Animate(record, offset, startAlpha)
     if not SafeRow(record.row) then Stop(record) return end
     local alpha = Safety.Read(record.row, "GetAlpha")
     if type(alpha) ~= "number" then Stop(record) return end
@@ -82,17 +84,21 @@ local function Animate(record, offset, reveal)
     local carry = 0
     if Safety.Read(record.group, "IsPlaying") then
         local progress = Safety.Read(record.translation, "GetSmoothProgress")
-        if type(progress) == "number" then carry = (record.offset or 0) * progress end
+        if type(progress) == "number" then
+            carry = record.offset * progress
+            startAlpha = record.alphaFrom + (record.alphaTo - record.alphaFrom) * progress
+        end
     end
     record.group:Stop()
     record.offset = offset + carry
     record.translation:SetOffset(0, record.offset)
-    record.alphaFrom, record.alphaTo = alpha, reveal and 0 or alpha
-    record.alpha:SetFromAlpha(alpha)
-    record.alpha:SetToAlpha(reveal and 0 or alpha)
+    record.alphaFrom, record.alphaTo = alpha, startAlpha or alpha
+    record.alpha:SetFromAlpha(record.alphaFrom)
+    record.alpha:SetToAlpha(record.alphaTo)
     -- Reverse playback starts at the old render position and settles at the
     -- native layout, with no SetPoint/SetAlpha or final-alpha ownership.
     record.group:Play(true)
+    return record.offset
 end
 
 local function AnimateArrow(record, collapsed)
@@ -101,8 +107,7 @@ local function AnimateArrow(record, collapsed)
     if not record.arrowGroup then
         record.arrowGroup = arrow:CreateAnimationGroup()
         record.rotation = record.arrowGroup:CreateAnimation("Rotation")
-        record.rotation:SetDuration(0.16)
-        record.rotation:SetSmoothing("IN_OUT")
+        ConfigureDisclosure(record.rotation)
     end
     local degrees = collapsed and -90 or 90
     if Safety.Read(record.arrowGroup, "IsPlaying") then
@@ -181,6 +186,10 @@ local function Changes(state, eligible)
         if old ~= nil and record.collapsed ~= nil and old ~= record.collapsed then
             changed, top = true, record.top
             state.changes[record.node] = record.collapsed
+            if not state.generic and not record.collapsed then
+                local height = Safety.Read(record.row, "GetHeight")
+                state.currentTops[record.node] = record.top - (height or 0)
+            end
             AnimateArrow(record, record.collapsed)
         end
     end
@@ -201,6 +210,17 @@ local function Changes(state, eligible)
 end
 
 local function RevealTop(state, record, fallback)
+    if not state.generic then
+        -- Virtualization can bring unrelated rows into view after a collapse.
+        -- Only descendants of an opening category reveal from its boundary.
+        local parent = Safety.Read(record.node, "GetParent")
+        for _ = 1, 16 do
+            if not parent then break end
+            if state.changes[parent] == false then return state.currentTops[parent] end
+            parent = Safety.Read(parent, "GetParent")
+        end
+        return nil
+    end
     local parent = record.parent
     for _ = 1, 16 do
         if not parent then break end
@@ -210,13 +230,42 @@ local function RevealTop(state, record, fallback)
     return fallback
 end
 
-local function AnimateRow(state, record, changed, headerTop, stable)
+local function AnimateRow(state, record, changed, headerTop, stable, reflow)
     local parent = state.model == "encounter" and state.records[Safety.Read(record.row, "GetParent")]
-    if parent and parent.group and Safety.Read(parent.group, "IsPlaying") then Stop(record) return end
-    local oldTop = state.previous[record.node]
+    local movingParent = parent and parent.group and Safety.Read(parent.group, "IsPlaying")
+    local previousTop = state.previous[record.node]
+    local oldTop, startAlpha = previousTop
+    if state.ghostActive and state.ghostActive > 0 then
+        local top, opacity = Ghost.Take(state, record.node, changed and not oldTop and not movingParent)
+        if top then oldTop, startAlpha = top, opacity end
+    end
+    if movingParent then Stop(record) return end
     if changed then
-        local delta = oldTop and oldTop - record.top or RevealTop(state, record, headerTop) - record.top
-        if abs(delta) > 0.25 then Animate(record, delta, oldTop == nil) end
+        if not oldTop then
+            oldTop = RevealTop(state, record, headerTop)
+            if oldTop then
+                startAlpha = 0
+            elseif reflow and abs(reflow) > 0.25 then
+                -- Match the moving neighbor at full opacity. This row merely
+                -- entered the viewport when another category changed.
+                oldTop = record.top + reflow
+            else
+                Stop(record)
+                return
+            end
+        end
+        local delta = oldTop - record.top
+        local offset = 0
+        if abs(delta) > 0.25 or startAlpha
+            or not state.generic and record.group and Safety.Read(record.group, "IsPlaying") then
+            offset = Animate(record, delta, startAlpha) or 0
+        end
+        if not state.generic then
+            if state.changes[record.node] == false then
+                state.currentTops[record.node] = state.currentTops[record.node] + offset
+            end
+            if previousTop then return offset end
+        end
     elseif not stable then Stop(record) end
 end
 
@@ -267,7 +316,10 @@ OnLayout = function(state)
     state.context = context
     if changed and type(headerTop) ~= "number" then changed = nil wipe(state.changes) end
     Ghost.AfterLayout(state, changed)
-    for index = 1, state.count do AnimateRow(state, state.rows[index], changed, headerTop, stable) end
+    local reflow
+    for index = 1, state.count do
+        reflow = AnimateRow(state, state.rows[index], changed, headerTop, stable, reflow) or reflow
+    end
     Snapshot(state)
     state.lastWidth, state.lastHeight, state.lastScale, state.hadSnapshot = width, height, scale, true
     return changed == true

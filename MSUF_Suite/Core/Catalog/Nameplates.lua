@@ -164,6 +164,7 @@ local function AddFriendlyRules(appearance)
     end
     local friendlyCastFont = B.Font("friendlyCastFont", "Friendly cast font")
     for _, rule in ipairs({
+        B.Number("friendlyCastWidthDelta", "Friendly castbar width change in pixels (0 = automatic)", 0, -30, 160),
         B.Number("friendlyCastHeight", "Friendly castbar height (0 = automatic)", 0, 0, 48),
         B.Number("friendlyCastIconSize", "Friendly spell icon size (0 = automatic)", 0, 0, 72),
         B.Bool("friendlyCastTextEnabled", "Customize friendly cast text", false),
@@ -193,6 +194,9 @@ local function AddDecorRules(appearance, prefix)
             { "Soft gradient", "Fine stripes" }),
     }
     for i = 1, #extra do appearance[#appearance + 1] = extra[i] end
+    if NS.Client.isForever then
+        appearance[#appearance + 1] = B.Bool(prefix .. "NativeBorderEnabled", "Show Blizzard health bar border", true)
+    end
 end
 
 local function Side(prefix, title, size)
@@ -423,6 +427,7 @@ local castRules = {
     B.Bool("enemyCastTextEnabled", "Customize cast text", true),
     B.Bool("enemyCastTimeEnabled", "Show cast time", true),
     B.Choice("enemyCastTimeFormat", "Cast time format", 1, { "Remaining time", "Elapsed / total" }),
+    B.Number("enemyCastWidthDelta", "Castbar width change in pixels (0 = automatic)", 0, -30, 160),
     B.Number("enemyCastHeight", "Castbar height (0 = automatic)", 0, 0, 48),
     B.Number("enemyCastIconSize", "Spell icon size (0 = automatic)", 0, 0, 72),
     B.Bool("enemyCastCustomFont", "Override Blizzard cast font (empty font = MSUF)", true),
@@ -476,6 +481,22 @@ spec.look = { key = "look", presets = { [1] = preset, [2] = native, [4] = mapko 
 -- controls live. Each pair mirrors the runtime: Text.Configure, Skin.lua
 -- PaintHealth/PaintMarker, Roles.Base, CVars.lua Casts/Auras/Signals,
 -- Threat.lua and Selection.lua.
+local nameTextRules = {
+    B.Bool("nameFormattingEnabled", "Use name formats on nameplates", false),
+    B.Bool("nameTextUseCustomSettings", "Use custom nameplate text settings", false),
+}
+for _, prefix in ipairs({ "enemy", "friendly" }) do
+    nameTextRules[#nameTextRules + 1] = B.Choice(prefix .. "NameFormat", "Name format", 2,
+        { "Full name", "Shorten to length", "Abbreviate words", "Abbreviate and shorten" })
+    nameTextRules[#nameTextRules + 1] = B.Number(prefix .. "NameMaxChars", "Maximum name length", 12, 1, 40)
+    nameTextRules[#nameTextRules + 1] = B.Choice(prefix .. "NameClipSide", "Keep characters from", 1,
+        { "Beginning of name", "End of name" })
+    nameTextRules[#nameTextRules + 1] = B.Bool(prefix .. "NameNoEllipsis", "Hide ellipsis", false)
+    nameTextRules[#nameTextRules + 1] = B.Bool(prefix .. "NameColorEnabled", "Use custom name color", false)
+    nameTextRules[#nameTextRules + 1] = B.Color(prefix .. "NameColor", prefix == "enemy" and "Enemy name color" or "Friendly name color", "ffffff")
+end
+B.Section(id, "nameText", "Name formats and colors", nameTextRules)
+
 local rules, CUSTOM = spec.rules, { [2] = true }
 local function Requires(keys, choiceKey, values)
     for _, key in ipairs(keys) do rules[key].requiresChoice = { key = choiceKey, values = values or CUSTOM } end
@@ -504,13 +525,18 @@ for _, side in ipairs({ "enemy", "friendly" }) do
     for _, switch in ipairs(SIDE_SWITCHES) do
         for i = 2, #switch do rules[side .. switch[i]].enableKey = side .. switch[1] end
     end
+    if NS.Client.isForever then
+        Requires({ side .. "LevelSize" }, "levelAppearance", { [1] = true })
+    end
     -- Hidden castbars show no text or time (CastTime.Paint).
     Requires({ side .. "CastTextEnabled", side .. "CastTimeEnabled" }, "enemyCastEnabled", { [1] = true, [2] = true })
-    -- Explicit cast dimensions apply to the portable bar dimensions only (Geometry.Apply).
-    Requires({ side .. "CastHeight", side .. "CastIconSize" }, "barGeometry")
+    local castDimensions = { side .. "CastWidthDelta", side .. "CastHeight", side .. "CastIconSize" }
+    Requires(castDimensions, "enemyCastEnabled", { [1] = true, [2] = true })
+    EnabledBy(castDimensions, side)
 end
 EnabledBy({ "enemyHealthTextSize" }, "enemyTextEnabled")
 EnabledBy({ "enemyLevelColor" }, "enemyLevelEnabled")
+if NS.Client.isForever then Requires({ "enemyLevelColor" }, "levelAppearance", { [1] = true }) end
 EnabledBy({ "mouseoverHighlightColor" }, "mouseoverHighlight")
 EnabledBy({ "enemyTargetHideFriendly", "enemyTargetStyle", "enemyTargetLayout", "enemyTargetAnchor",
     "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetColor" }, "enemyTargetMarker")
@@ -541,6 +567,15 @@ Requires({ "plateTopInset", "plateBottomInset" }, "plateInsetMode")
 EnabledBy({ "personalPowerBorderSize", "personalPowerBorderColor" }, "personalPowerSkin")
 
 EnabledBy({ "targetScalePercent" }, "targetScaleEnabled")
+for _, prefix in ipairs({ "enemy", "friendly" }) do
+    rules[prefix .. "NameFormat"].enableKey = "nameFormattingEnabled"
+    for _, suffix in ipairs({ "NameMaxChars", "NameClipSide", "NameNoEllipsis" }) do
+        local rule = rules[prefix .. suffix]
+        rule.enableKey = prefix .. "NameFormat"
+        rule.requiresChoice = { key = prefix .. "NameFormat", values = { [2] = true, [4] = true } }
+    end
+    rules[prefix .. "NameColor"].enableKey = prefix .. "NameColorEnabled"
+end
 EnabledBy({ "enemyThresholdPercent", "enemyThresholdWidth", "enemyThresholdColor" }, "enemyThresholdEnabled")
 EnabledBy({ "enemyFocusMarkerSize", "enemyFocusMarkerColor", "enemyFocusMarkerX", "enemyFocusMarkerY" }, "enemyFocusMarker")
 

@@ -127,3 +127,60 @@ function Interaction.Bar(ctx, parent, width, help)
     Interaction.Refresh(bar)
     return bar
 end
+
+-- Shared preview layer rail used by the meter and chat. Layer state is local
+-- to the preview; command actions and mouse clicks use the same callbacks.
+function Interaction.BuildLayerRail(owner, parent, specs, toggle, open)
+    local chips = CreateFrame("Frame", nil, parent)
+    owner.chips, owner.layerButtons = chips, {}
+    local H = P.M.PreviewHelpers or {}
+    if H.ApplyPreviewChrome then H.ApplyPreviewChrome(chips, "sidebar", T) end
+    local title = T.Font(chips, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
+    title:SetPoint("TOPLEFT", chips, "TOPLEFT", 10, -5)
+    local measure = T.Font(chips, "GameFontDisableSmall", "", T.colors.muted)
+    measure:Hide()
+    local opts
+    if H.LayerChipButtonOpts then
+        opts = H.LayerChipButtonOpts(Tr, T.colors, H.PreviewChromePalette(T), {
+            IsOn = function(ui, key) return ui.layers[key] ~= false end,
+        })
+    end
+    for index, spec in ipairs(specs) do
+        local key, label, button = spec[1], spec[2]
+        if H.CreateLayerButton and opts then
+            button = H.CreateLayerButton(chips, owner, { key = key, label = label, color = { .30, .74, 1 } }, index, 95, opts)
+        else
+            P.SetTranslatedText(measure, Tr(label))
+            button = T.Button(chips, label, math.max(64, measure:GetUnboundedStringWidth() + 30), 20)
+            button.key = key
+        end
+        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        button:SetScript("OnClick", function(_, mouse)
+            if mouse == "RightButton" then return open(spec) end
+            return toggle(key, owner.layers[key] == false)
+        end)
+        HM.SkipHistoryCheckpoint(button)
+        HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
+            get = function() return owner.layers[key] ~= false end,
+            set = function(value) return toggle(key, value == true) end })
+        owner.layerButtons[index] = button
+    end
+end
+
+function Interaction.LayoutLayerRail(owner, width)
+    local chips, x, row = owner.chips, 10, 0
+    for _, button in ipairs(owner.layerButtons) do
+        local size = button:GetWidth()
+        if x > 10 and x + size > width - 10 then x, row = 10, row + 1 end
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", chips, "TOPLEFT", x, -25 - row * 24)
+        x = x + size + 5
+    end
+    chips:SetSize(width, 50 + row * 24)
+end
+
+function Interaction.RefreshLayerRail(owner)
+    for _, button in ipairs(owner.layerButtons) do
+        if button.Refresh then button:Refresh() else button:SetAlpha(owner.layers[button.key] == false and .42 or 1) end
+    end
+end

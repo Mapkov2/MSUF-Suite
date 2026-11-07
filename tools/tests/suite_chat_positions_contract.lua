@@ -10,7 +10,8 @@ local mutations = {
         '        return\n    end\n    if padded then' },
     floatingGap = { "Window", "        C.PositionTabs(M)\n        return", "        return" },
     messageOffset = { "Positions", 'local x, y = self.config.messageTextX or 0, self.config.messageTextY or 0', 'local x, y = 0, 0' },
-    inputOffset = { "Window", 'local x, y = c.inputX or 0, c.inputY or 0', 'local x, y = 0, 0' },
+    inputOffset = { "Window", 'local x, y = -c.padding + c.inputX, c.inputY', 'local x, y = -c.padding, 0' },
+    inputOverhang = { "Window", 'return width + 2 * c.padding', 'return width + 28' },
 }
 local mutation = mutations[mode]
 if mutation then
@@ -28,6 +29,8 @@ end
 local function Region(name, width)
     local o = env.CreateFrame("Frame", name, env.UIParent)
     o.reviewPoints, o.reviewWidth = {}, width or 100
+    function o:IsClampedToScreen() return self.reviewClamped == true end
+    function o:SetClampedToScreen(value) self.reviewClamped = value end
     function o:GetNumPoints() return #self.reviewPoints end
     function o:ClearAllPoints() self.reviewPoints = {} end
     function o:SetPoint(p, r, rp, x, y)
@@ -130,25 +133,39 @@ input:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -5, -2)
 input:SetPoint("RIGHT", frame, "RIGHT", 23, 0)
 local visual = { frame = frame }
 M.visuals[frame], frame.editBox = visual, input
-c.inputTop, c.inputHeight, c.inputX, c.inputY = false, 0, 30, 12
+c.padding, c.inputTop, c.inputHeight, c.inputX, c.inputY = 4, false, 0, 0, 0
 C.ApplyInputLayout(M, visual, frame, input)
-At(input, "TOPLEFT", frame, "BOTTOMLEFT", 25, 10, "input offset preserves native origin")
-Check(input:GetWidth() == 628, "input offset preserves native stretched width")
+At(input, "TOPLEFT", frame, "BOTTOMLEFT", -4, -6, "default input aligns with padded panel")
+Check(input:GetWidth() == 608, "default input overhangs the chat panel")
+Check(visual.input.allPoints == input or select(2, visual.input:GetPoint(1)) == input, "input art ignores the native edit rectangle")
+c.inputX, c.inputY = 30, 12
+C.ApplyInputLayout(M, visual, frame, input)
+At(input, "TOPLEFT", frame, "BOTTOMLEFT", 26, 6, "input offset preserves aligned origin")
 local resize = frame:GetScript("OnSizeChanged")
 Check(resize ~= nil, "input has no native resize callback")
 frame:SetWidth(650)
 resize(frame, 650, 180)
-Check(input:GetWidth() == 678, "input resize follows native width")
+Check(input:GetWidth() == 658, "automatic input width did not follow resize")
+c.inputWidth, c.inputHeight = 312, 38
 C.ApplyInputLayout(M, visual, frame, input)
 Check(frame:GetScript("OnSizeChanged") == resize, "input resize callback installed twice")
-c.inputTop = true
-C.PreviewInput(M, visual, frame, input)
-At(input, "BOTTOMLEFT", frame, "TOPLEFT", -c.padding + 30, C.HeaderTop(c, frame) + 14, "top input uses configured offset")
-c.inputTop, c.inputX, c.inputY = false, 0, 0
-C.PreviewInput(M, visual, frame, input)
-Check(input:GetNumPoints() == 2, "input reset restores two anchors")
-At(input, "TOPLEFT", frame, "BOTTOMLEFT", -5, -2, "input reset restores native origin")
-Check(input:GetWidth() == 678, "input reset restores native stretch")
+Check(input:GetWidth() == 312 and input:GetHeight() == 38, "custom dimensions did not reach native input")
+frame:SetWidth(700)
+resize(frame, 700, 180)
+Check(input:GetWidth() == 312, "chat resize overwrote the explicit input width")
+c.inputTop, c.inputWidth = true, 0
+C.ApplyInputLayout(M, visual, frame, input)
+At(input, "BOTTOMLEFT", frame, "TOPLEFT", 26, C.HeaderTop(c, frame) + 14, "top input uses configured offset")
+Check(input:GetWidth() == 708, "top input did not restore matched width")
+c.inputTop, c.inputX, c.inputY, c.inputHeight = false, 0, 0, 0
+C.ApplyInputLayout(M, visual, frame, input)
+Check(input:GetHeight() == 32, "height reset lost native height")
+M.context:RestoreProperty(input, "SetWidth")
+M.context:RestorePoints(input)
+Check(input:GetNumPoints() == 2, "input release did not restore both native anchors")
+At(input, "TOPLEFT", frame, "BOTTOMLEFT", -5, -2, "input release lost the native origin")
+Check(input:GetWidth() == 728, "input release lost the native stretch")
+C.ApplyInputLayout(M, visual, frame, input)
 local callbacks = 0
 local complete = assert(loadfile(root .. "/MSUF_Suite_Chat/CompleteMessages.lua"))
 setfenv(complete, env)("MSUF_Suite_Chat", F.runtime)
@@ -179,9 +196,9 @@ c.tabPadding, c.tabGap, c.tabX, c.tabY = 0, 0, 20, 10
 C.DockGeometry()
 Check(queued > 0, "combat native tab rebuild schedules offset recovery without padding/gap")
 local beforeQueue = queued
-visual.inputMoved = true
-resize(frame, 700, 180)
-Check(queued > beforeQueue and input:GetWidth() == 678, "input resize wrote at combat start")
+frame:SetWidth(650)
+resize(frame, 650, 180)
+Check(queued > beforeQueue and input:GetWidth() == 708, "input resize wrote at combat start")
 frame.displayCallback(frame)
 At(line, "BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0, "message display moved at combat start")
 S.Queue, F.Suite.InCombat, F.Suite.IsCombatLocked = originalQueue, originalCombat, originalLockdown
@@ -354,5 +371,17 @@ At(primary, "BOTTOMLEFT", env.UIParent, "BOTTOMLEFT", 30, 260, "old context cann
 M.context = oldContext
 S.Queue, env.hooksecurefunc, env.C_Timer = originalQueue, oldHook, oldTimer
 env.EditModeManagerFrame = oldManager
+-- A chat at the lower edge still has a visible, matching native input.
+do
+    c.lockWindowPosition, c.inputTop, c.inputX, c.inputY = true, false, 0, 0
+    C.ApplyInputLayout(M, visual, frame, input)
+    Check(input:IsClampedToScreen(), "anchored input may disappear below screen")
+    local _, relative = visual.input:GetPoint(1)
+    Check(relative == input or visual.input.allPoints == input, "input backdrop ignores the clamped native rectangle")
+    c.lockWindowPosition = false
+    C.ApplyInputLayout(M, visual, frame, input)
+    Check(not input:IsClampedToScreen(), "unlocked chat retained Suite input clamping")
+end
+
 print("Chat native positions: " .. checks .. " checks, " .. failures .. " failures")
 if failures > 0 then error("native ownership regression") end

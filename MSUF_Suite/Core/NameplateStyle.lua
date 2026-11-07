@@ -75,6 +75,23 @@ function Style.ClassicNativePlate(choice)
     return Style.NativeStyleValue(choice) == 6
 end
 
+-- The native badge can replace the Suite number. Its space in the native
+-- layout is independent from its visibility when a skin hides it.
+function Style.LevelMode(forever, classic, styled, enabled, appearance, badgeShown, namesOnly)
+    if namesOnly then return end
+    if forever then
+        if styled and not enabled then return end
+        if not styled or appearance == 2 then return badgeShown ~= false and "badge" or nil end
+    elseif classic then
+        return "classic"
+    elseif badgeShown ~= false then
+        return "badge"
+    elseif not styled or not enabled then
+        return
+    end
+    return "number"
+end
+
 -- Stable Retail geometry for portable profiles. The native clients use
 -- different constants (upstream/live vs upstream/forever Camelot); offsets
 -- alone cannot carry a plate's dimensions between them. Preview and runtime
@@ -89,14 +106,12 @@ function Style.BarDimensions(mode, choice, horizontal, vertical)
         cast * vertical, (classic and 14 or 12) * vertical
 end
 
--- Explicit dimensions are opt-in. Old profiles keep their portable native
--- bases; the same overrides drive the real cast and its options preview.
-function Style.CastDimensions(mode, height, icon, castHeight, iconHeight)
-    if mode == 2 then
-        if type(height) == "number" and height > 0 then castHeight = height end
-        if type(icon) == "number" and icon > 0 then iconHeight = icon end
-    end
-    return castHeight, iconHeight
+-- Zero keeps the current geometry base. A custom icon is square; automatic
+-- icons use Blizzard's independent width and height.
+function Style.CastDimensions(height, icon, castHeight, iconWidth, iconHeight)
+    if type(height) == "number" and height > 0 then castHeight = height end
+    if type(icon) == "number" and icon > 0 then iconWidth, iconHeight = icon, icon end
+    return castHeight, iconWidth, iconHeight
 end
 -- The native percent-only header can be mirrored without reading its text.
 function Style.MirrorHeader(enabled, mode, anchor, namesOnly)

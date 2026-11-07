@@ -69,6 +69,7 @@ B.Add("glimmer", Bool("foreverDefaultApplied", "Enable module", false)).hidden =
 B.Section("glimmer", "glimmer_objects", "Glimmer objects", {
     Bool("questSparkle", "Quest item sparkle", true),
     Bool("ore", "Ore", true), Bool("herb", "Herbs", true), Bool("quest", "Quest objects", true),
+    Bool("skinning", "Skinnable corpses", true),
     Bool("other", "Other interactable objects", false),
     Bool("hideInstances", "Hide in instances", true),
     Number("range", "Interact target range", 15, 5, 20),

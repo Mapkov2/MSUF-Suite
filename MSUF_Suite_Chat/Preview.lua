@@ -11,7 +11,7 @@ end
 
 local function Surface(parts)
     if parts.visual then return parts.visual end
-    local visual = { frame = parts.sample, panel = C.Fill(parts.sample, "BACKGROUND"),
+    local visual = { frame = parts.sample, previewToolbar = true, panel = C.Fill(parts.sample, "BACKGROUND"),
         headerRule = C.Fill(parts.sample, "ARTWORK"), edges = Edges(parts.sample) }
     parts.visual = visual
     parts.strip = C.Fill(parts.tabGroup, "BACKGROUND")
@@ -28,6 +28,9 @@ local function Tabs(parts, c, top)
     parts.tabGroup:SetPoint("BOTTOMLEFT", parts.sample, "TOPLEFT", parts.dockX or 0, parts.dockY or 3)
     C.OffsetNative(parts.previewOwner, parts.tabGroup, c.tabX or 0, c.tabY or 0)
     parts.tabGroup:SetSize(parts.dockWidth or parts.sample:GetWidth(), parts.dockHeight or c.tabHeight)
+    if c.headerToolbar and not C.ToolbarWrap(c, parts.sample) then
+        parts.tabGroup:SetWidth(parts.sample:GetWidth() - 108 - (c.headerClock and 80 or 0))
+    end
     for index, tab in ipairs(parts.tabs) do
         local visual = tab.visual
         if not visual then
@@ -81,15 +84,11 @@ local function Sidebar(parts, c)
     if count then parts.friendCount:SetText(count) end
 end
 
-local function Input(parts, c, top)
+local function Input(parts)
     local input = parts.input
-    input:ClearAllPoints()
-    input:SetSize(parts.nativeInputWidth or parts.sample:GetWidth() + 28, parts.nativeInputHeight or 32)
-    input:SetPoint(parts.nativeInputPoint or "TOPLEFT", parts.sample, parts.nativeInputRelativePoint or "BOTTOMLEFT",
-        parts.nativeInputX or -5, parts.nativeInputY or -2)
+    input:SetHeight(parts.nativeInputHeight or 32)
     local fonts = parts.fonts
     if fonts.input then parts.prompt:SetFont(fonts.input, fonts.inputSize, fonts.inputFlags) end
-    parts.visual.inputMoved, parts.visual.inputHeightOwned = nil, nil
     C.PreviewInput(parts.previewOwner, parts.visual, parts.sample, input)
     parts.inputFill, parts.inputEdges = parts.visual.input, parts.visual.inputEdges
 end
@@ -115,10 +114,6 @@ local function Messages(parts)
     end
     parts.sample.visibleLines = parts.messageLines
     C.PaintMessageLines(parts.previewOwner, parts.sample)
-    local first, last = parts.lines, parts.messageLines[math.max(1, count)]
-    parts.textHit:ClearAllPoints()
-    parts.textHit:SetPoint("TOPLEFT", parts.insertTop and first or last, "TOPLEFT", 0, 0)
-    parts.textHit:SetPoint("BOTTOMRIGHT", parts.insertTop and last or first, "BOTTOMRIGHT", 0, 0)
 end
 
 local function PreviewOwner()
@@ -144,7 +139,7 @@ function S.ChatPaintMenuPreview(parts, c)
     else
         parts.sample.CombatLogQuickButtonFrame = false
     end
-    local top = C.HeaderTop(c, parts.sample)
+    local top = C.HeaderTop(c, parts.sample, true)
     C.PreviewPanel(parts.previewOwner, visual, parts.sample, top)
     parts.strip:ClearAllPoints()
     parts.strip:SetPoint("TOPLEFT", parts.sample, "TOPLEFT", -c.padding + (c.tabX or 0), top + (c.tabY or 0))
@@ -153,11 +148,32 @@ function S.ChatPaintMenuPreview(parts, c)
     parts.strip:SetShown(c.tabPanel and c.panelAlpha > 0)
     Tabs(parts, c, top)
     Sidebar(parts, c)
-    Input(parts, c, top)
+    Input(parts)
+    if c.animateInput ~= parts.inputAnimationEnabled
+        or c.animateInput and c.inputAnimationDuration ~= parts.inputAnimationDuration then
+        if c.animateInput or parts.inputAnimationEnabled then S.ChatPreviewInputAnimation(parts.input, c) end
+        parts.inputAnimationEnabled, parts.inputAnimationDuration = c.animateInput, c.inputAnimationDuration
+    end
     parts.copy:ClearAllPoints()
     parts.copy:SetPoint("TOPRIGHT", parts.sample, "TOPRIGHT", -4 + c.copyButtonX, math.max(21, top) - 3 + c.copyButtonY)
     C.Tint(parts.copyFill, c.panelColor, 95)
-    parts.copy:SetShown(c.copyMessages)
+    parts.copy:SetShown(c.copyMessages and not c.headerToolbar)
+    if c.headerToolbar then
+        parts.toolbar = parts.toolbar or S.CreateFrame("Frame", nil, parts.sample)
+        C.PaintToolbar(parts.toolbar, c, false)
+        parts.toolbar:ClearAllPoints()
+        parts.toolbar:SetPoint("TOPRIGHT", parts.sample, "TOPRIGHT", c.padding + (c.tabX or 0),
+            math.max(22, top) + (c.tabY or 0))
+        parts.toolbar:Show()
+        parts.resizeGrip = parts.resizeGrip or S.CreateFrame("Frame", nil, parts.sample)
+        C.PaintChatResizeGrip(parts.resizeGrip)
+        parts.resizeGrip:SetPoint("BOTTOMRIGHT", parts.sample, "BOTTOMRIGHT", c.padding, -c.padding)
+        parts.resizeGrip:SetSize(16, 16)
+        parts.resizeGrip:SetShown(not c.toolbarLocked)
+    elseif parts.toolbar then
+        parts.toolbar:Hide()
+        if parts.resizeGrip then parts.resizeGrip:Hide() end
+    end
     C.PaintClock(visual, parts.sample, c, top, c.headerClock and C.ClockText(c, 9, 28) or "")
     -- Keep the older preview's inspection fields pointing to runtime art.
     parts.fill, parts.fadeLeft, parts.fadeRight = visual.panel, visual.gradientLeft, visual.gradientRight

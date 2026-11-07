@@ -61,7 +61,11 @@ local collapsedChild
 for _, region in ipairs(window.foldRegions) do
     if region.foldChild then collapsedChild = region break end
 end
-Check(collapsedChild and collapsedChild.plannerFoldMotion.scale.toY == .001, "child content collapses vertically")
+Check(collapsedChild and collapsedChild.plannerFoldMotion.scale.fromY == .001, "child content collapses vertically")
+local foldGroup = collapsedChild.plannerFoldMotion
+Check(window.foldMotion.fade.duration == 0.150 and window.foldMotion.reverse
+    and foldGroup.shift.duration == window.foldMotion.fade.duration and foldGroup.shift.smoothing == "IN"
+    and foldGroup.reverse, "planner does not share the disclosure curve and duration")
 Finish(window.foldMotion)
 Check(#view.rows < rows and not window.foldActive, "close completion commits folded layout")
 section.toggle:Click()
@@ -77,8 +81,13 @@ Check(window.foldActive, "navigation expansion uses same motion")
 Finish(window.foldMotion)
 -- Rapid reversals, scrolling and reduced motion settle cleanly.
 section.toggle:Click()
+local folding = assert(window.foldRegions[2])
+local group = folding.plannerFoldMotion
+group.progress = .5
+local displayedOffset = group.foldTarget + group.foldDelta * .5
 section.toggle:Click()
 Check(window.foldActive, "rapid toggle reverses into an active entrance")
+Equal(group.foldTarget + group.foldDelta, displayedOffset, "planner reversal jumps to a previous endpoint")
 Finish(window.foldMotion)
 Equal(Plan.Account().overviewFolded.character, nil, "rapid toggle keeps requested open state")
 E.hostTheme.ReducedMotionEnabled = function() return true end

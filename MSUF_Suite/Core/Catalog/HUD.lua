@@ -211,7 +211,7 @@ B.Section("runSummary", "colors", "Summary colors", {
 B.Module("announcements", {
     title = "Announcements", page = "suite_hud", core = true,
     description = "Cinematic zone and event announcements in the Suite look.",
-    summary = "duration anchor titleSize subtitleSize colorStyle backgroundOpacity",
+    summary = "duration anchor titleSize subtitleSize colorStyle backgroundOpacity artStyle",
 })
 B.Section("announcements", "content", "Announcements", {
     B.Bool("zone", "Zone and subzone", true),
@@ -228,8 +228,12 @@ B.Section("announcements", "layout", "Timing and position", {
     B.Number("x", "Horizontal position", 0, -4000, 4000),
     B.Number("y", "Vertical position", -90, -3000, 3000),
 })
-B.Section("announcements", "type", "Announcement text", {
+B.Section("announcements", "artwork", "Banner artwork", {
     B.Bool("showBoxArt", "Show box art", true),
+    B.Choice("artStyle", "Artwork style", 1, { "Classic lines", "Twin arrows", "Gilded edges", "Soft glow" }),
+})
+NS.SuiteCatalog.announcements.rules.artStyle.enableKey = "showBoxArt"
+B.Section("announcements", "type", "Announcement text", {
     B.Font("font", "Font"),
     B.Number("titleSize", "Headline size", 31, 20, 42),
     B.Number("subtitleSize", "Subtitle size", 16, 10, 24),

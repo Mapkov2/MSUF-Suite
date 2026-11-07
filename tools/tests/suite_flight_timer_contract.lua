@@ -1,7 +1,7 @@
 local root=assert(arg[1])
 local function Widget(parent)
     local w={shown=true,parent=parent}
-    for _,key in ipairs({"SetAllPoints","SetJustifyH","ClearAllPoints","SetFontString","SetExpiredText","SetUpdateInterval",
+    for _,key in ipairs({"SetAllPoints","SetJustifyH","ClearAllPoints","SetExpiredText","SetUpdateInterval",
         "SetDesiredUnitCount","SetMinInterval","SetDefaultAbbreviation","SetWordWrap","SetMaxLines"}) do w[key]=function() end end
     function w:SetPoint(...)
         self.point={...}
@@ -31,14 +31,23 @@ local function Widget(parent)
     function w:Hide() self.shown=false end
     function w:SetEnabled(v) self.enabled=v end
     function w:SetTimeFromEnd(finish,duration) self.finish,self.duration=finish,duration end
-    function w:SetDuration(v) self.bound=v end
+    function w:SetFontString(v) self.fontString=v end
+    function w:SetDuration(v)
+        self.bound=v
+        self.binds=(self.binds or 0)+1
+    end
+    function w:UpdateFontString()
+        self.fontString:SetText(tostring(math.ceil(self.bound.finish-GetTime())))
+        self.paints=(self.paints or 0)+1
+    end
     function w:SetFormatter(v) self.formatter=v end
     function w:GetID() return 3 end
     return w
 end
 local now,taxi=100,false
-GetTime=function() return now end
-UnitOnTaxi=function() return taxi end
+local timeReads,taxiReads=0,0
+GetTime=function() timeReads=timeReads+1;return now end
+UnitOnTaxi=function() taxiReads=taxiReads+1;return taxi end
 UnitClass=function() return "Warrior","WARRIOR" end
 RAID_CLASS_COLORS={WARRIOR={r=.7,g=.5,b=.3}}
 UIParent=Widget()
@@ -203,6 +212,40 @@ assert(not m.binding.enabled and Running()==1 and m.host.status.text=="Elapsed t
     "early landing kept an invalid full-route estimate")
 Landed(215)
 assert(state.timings["A > B > C"]==60,"early landing overwrote full route duration")
+-- The client can report the taxi flag from inside TakeTaxiNode, before the
+-- secure post-hook has supplied the route. Play the saved duration immediately
+-- from the already observed departure, without waiting for another event.
+now=220;taxi=true;events.UNIT_FLAGS(m,"UNIT_FLAGS","player")
+now=221;hooks.TakeTaxiNode(3)
+assert(m.departed==220 and m.duration.finish==280 and m.binding.enabled,
+    "a taxi flag before the post-hook lost the observed start or saved countdown")
+assert(m.host.time.text=="59" and m.host.status.text=="Remaining time",
+    "the saved countdown was not painted immediately")
+assert(Running()==0 and not m.host.OnUpdate,"a known route runs a Lua timer")
+local binds,paints=m.binding.binds,m.binding.paints
+m:Refresh()
+assert(m.binding.binds==binds and m.binding.paints==paints,"a visual refresh restarted the native countdown")
+local timeBefore,taxiBefore=timeReads,taxiReads
+collectgarbage("collect");collectgarbage("stop")
+local memory=collectgarbage("count")
+for _=1,1000 do
+    events.UNIT_FLAGS(m,"UNIT_FLAGS","player")
+    events.PLAYER_CONTROL_GAINED(m,"PLAYER_CONTROL_GAINED")
+end
+local allocated=collectgarbage("count")-memory
+collectgarbage("restart")
+assert(timeReads==timeBefore and taxiReads-taxiBefore==2000,
+    "steady taxi events read the clock or sampled the flag more than once")
+assert(m.binding.binds==binds and m.binding.paints==paints and Running()==0 and allocated<1,
+    "steady taxi events restarted the known countdown or added Lua work")
+Landed(280)
+assert(not m.binding.enabled,"landing left the native countdown running")
+-- A flag that is already true without an earlier Lua event also seeds the
+-- departure at the hook. This flight must bind even at the same duration.
+now=285;taxi=true;hooks.TakeTaxiNode(3)
+assert(m.departed==285 and m.duration.finish==345 and m.binding.binds==binds+1,
+    "the hook failed to seed an already active taxi or reuse the saved route")
+m.host.land.OnClick();Landed(290)
 -- A refused choice followed by an unrelated loss of control (a stun) never
 -- reaches the taxi flag; that is no journey.
 now=300;hooks.TakeTaxiNode(3)

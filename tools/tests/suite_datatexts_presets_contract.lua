@@ -3,10 +3,11 @@
 local root = assert(arg[1])
 local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
 for _, flavor in ipairs({ "Mainline", "Forever" }) do
-    local W = H.New(root, flavor, { beforeModules = function(world)
+    local xp, level, rested, fps, xpReads = 50, 20, 20, 120, 0
+    local W = H.New(root, flavor, { clientCombatOrder = true, beforeModules = function(world)
         local G = world.G
         G.GetGameTime = function() return 12, 34 end
-        G.GetFramerate = function() return 120 end
+        G.GetFramerate = function() return fps end
         G.GetNetStats = function() return 0, 0, 18, 24 end
         G.GetMoney = function() return 420000 end
         G.GetInventoryItemDurability = function() return 80, 100 end
@@ -16,10 +17,15 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         }
         G.GetProfessions = function() return 1, nil end
         G.GetProfessionInfo = function() return "Alchemy", 123, 50, 100 end
-        G.UnitLevel = function() return 20 end
-        G.UnitXP = function() return 50 end
+        G.UnitLevel = function() return level end
+        G.UnitXP = function()
+            xpReads = xpReads + 1
+            return xp
+        end
         G.UnitXPMax = function() return 100 end
         G.GetMaxPlayerLevel = function() return 80 end
+        G.GetXPExhaustion = function() return rested end
+        G.HONOR_LEVEL_LABEL = "Honor Level %d"
         G.C_SpecializationInfo = {
             GetSpecialization = function() return 1 end,
             GetSpecializationInfo = function() return 62, "Arcane", "", 123 end,
@@ -53,7 +59,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     assert(#M.bars[1].slots == 6, "legacy bars must retain their six-place allocation")
     local count = flavor == "Forever" and 9 or 10
     local full = NS.DataTextPresetSources("infoTop")
-    assert(#full == count and #NS.DataTextPresets == 6, "preset gallery lost a starting purpose")
+    assert(#full == count and #NS.DataTextPresets == 7, "preset gallery lost a starting purpose")
     assert(NS.DataTextSourceAvailable("specLoot") == (flavor == "Mainline"))
     local beforeName, beforeSource = c.bar1Name, c.bar1Slot1
     local values = NS.DataTextPresetValues("infoTop", 1, c)
@@ -74,17 +80,89 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         end
     end
     assert(NS.DataTextPresetValues("infoBottom", 1, c).bar1Dock == NS.DataTextDock.BOTTOM)
-    assert(S.SetMany("dataTexts", { bar1Slot12 = NS.DataTextSourceIndex.fps, bar1Slot12Scale = 125,
-        bar1Slot12Broker = "Keep me", bar1Slot12Currency = 202, bar1Slot12MaxWidth = 410,
+    local menu = NS.DataTextPresetValues("microMenu", 1, c)
+    assert(menu.bar1Width == 180 and menu.bar1Height == 26 and menu.bar1Look == 5 and not menu.bar1FullScreen)
+    assert(menu.bar1Slot1 == NS.DataTextSourceIndex.microMenu and menu.bar1Slot2 == NS.DataTextSourceIndex.none)
+    assert(S.SetMany("dataTexts", menu))
+    assert(bar.slots[1].text == NS.Text("Menu") and not M.timer, "the menu-only preset did not render a static button")
+    assert(S.SetMany("dataTexts", { bar1Slot1MenuLabel = "  Character | options  ", bar1ShowLabels = true }))
+    assert(bar.slots[1].text == "Character || options", "the custom button label was prefixed or parsed as markup")
+    assert(S.Set("dataTexts", "bar1Slot1MenuLabel", "   "))
+    assert(bar.slots[1].text == NS.Text("Menu"), "an empty caption did not restore the default")
+    local modern = NS.DataTextPresetValues("modern", 1, c)
+    assert(modern.bar1Dock == NS.DataTextDock.TOP and modern.bar1FullScreen and modern.bar1Height == 26)
+    assert(modern.bar1Slot2 == NS.DataTextSourceIndex.progressBar and modern.bar1Slot4Placement == NS.DataTextPlacement.CENTER)
+    assert(modern.bar1Look == 5 and not modern.bar1AccentEnabled and not modern.bar1BorderEnabled)
+    assert(S.SetMany("dataTexts", modern))
+    local progress = bar.slots[2]
+    local visual = assert(progress.dataProgress)
+    assert(progress.text == "50% to level 21" and visual.track.shown, "Modern progress did not render")
+    assert(visual.fill.width == visual.width * .5, "Modern XP fill is incorrect")
+    assert(visual.bonus.width == visual.width * .7, "Modern rested XP fill is incorrect")
+    assert(S.Set("dataTexts", "bar1Layout", NS.DataTextLayout.FIT))
+    local sizes = W.calls["SetSize:Button"]
+    xp, rested = 57, 0
+    W.Event("PLAYER_XP_UPDATE", "player")
+    assert(progress.text == "57% to level 21" and not visual.bonus.shown)
+    assert(W.calls["SetSize:Button"] == sizes, "changing XP moved the slots of a Fit bar")
+    rested = W.secret
+    W.Event("UPDATE_EXHAUSTION")
+    assert(progress.text == "57% to level 21" and not visual.bonus.shown, "secret rested XP altered the bar")
+    xp, rested = W.secret, 0
+    W.Event("PLAYER_XP_UPDATE", "player")
+    assert(not visual.track.shown, "secret XP left a stale fill")
+    xp = 57
+    W.Event("PLAYER_XP_UPDATE", "player")
+
+    assert(M.timer and M.context.callbacks.PLAYER_XP_UPDATE)
+    W.SetCombat(true)
+    assert(not M.timer and not next(M.events) and W.ContextPending(M.context) == 0,
+        "a DataTexts timer or data event stayed armed in combat")
+    for event in pairs(M.context.callbacks) do
+        assert(event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED", event .. " stayed registered")
+    end
+    assert(not bar.frame.scripts.OnShow and not bar.frame.scripts.OnHide, "visibility still dispatches Lua in combat")
+    local xpBefore = xpReads
+    xp, fps = 80, 91
+    W.Event("PLAYER_XP_UPDATE", "player")
+    W.Event("PLAYER_MONEY")
+    W.Event("UPDATE_FACTION")
+    W.Advance(70)
+    assert(xpReads == xpBefore and progress.text == "57% to level 21" and bar.slots[7].text == "120 fps",
+        "DataTexts read or painted data in combat")
+    W.SetCombat(false)
+    assert(M.timer and M.context.callbacks.PLAYER_XP_UPDATE and bar.frame.scripts.OnShow,
+        "combat exit did not restore sampling and visibility")
+    assert(xpReads == xpBefore + 1 and progress.text == "80% to level 21" and bar.slots[7].text == "91 fps",
+        "the post-combat refresh did not catch up in one pass")
+
+    local rep = { name = "Test Faction", label = "Friendly", current = 25, maximum = 100 }
+    S.ReputationProgress = function() return rep end
+    level = 80
+    W.Event("PLAYER_LEVEL_UP")
+    assert(progress.text == "Test Faction · 25%" and visual.fill.width == visual.width * .25)
+    rep = nil
+    S.HonorProgress = function() return 60, 100, 7 end
+    W.Event("UPDATE_FACTION")
+    assert(progress.text == "Honor Level 7 · 60%" and visual.fill.width == visual.width * .6)
+    S.HonorProgress = function() end
+    W.Event("HONOR_XP_UPDATE")
+    assert(not visual.track.shown, "no progress left a stale fill")
+    level = 20
+    assert(S.SetMany("dataTexts", values))
+    assert(not visual.track.shown, "switching presets left a stale progress track")
+    assert(S.SetMany("dataTexts", { bar1Slot12 = NS.DataTextSourceIndex.microMenu, bar1Slot12Scale = 125,
+        bar1Slot12MenuLabel = "Character", bar1Slot12Broker = "Keep me", bar1Slot12Currency = 202, bar1Slot12MaxWidth = 410,
         bar1Slot12Placement = 3, bar1Slot12Padding = 9, bar1Slot12Background = "123456",
         bar1Slot12Alpha = 70, bar1Slot12IconColor = "abcdef" }))
-    assert(#bar.slots == 12 and bar.slots[12].text, "twelfth slot must render")
+    assert(#bar.slots == 12 and bar.slots[12].text == "Character", "the twelfth slot lost its caption")
     local moved = NS.DataTextMoveSlotValues(c, 1, 12, 1)
     for _, suffix in ipairs(NS.DataTextSlotSuffixes) do
         assert(moved["bar1Slot1" .. suffix] == c["bar1Slot12" .. suffix], "move lost slot field " .. suffix)
         assert(moved["bar1Slot2" .. suffix] == c["bar1Slot1" .. suffix], "move broke stable ordering " .. suffix)
     end
     assert(S.SetMany("dataTexts", moved))
+    assert(bar.slots[1].text == "Character", "reordering lost the menu caption")
     local removed = NS.DataTextRemoveSlotValues(c, 1, 1)
     for _, suffix in ipairs(NS.DataTextSlotSuffixes) do
         assert(removed["bar1Slot1" .. suffix] == c["bar1Slot2" .. suffix], "remove lost following slot field " .. suffix)

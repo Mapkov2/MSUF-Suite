@@ -1,5 +1,5 @@
 local _, P = ...
-local Layers, Tr, T = {}, P.Tr, P.T
+local Layers = {}
 P.MeterPreviewLayers = Layers
 local SPECS = {
     { "window", "Window" }, { "header", "Header" }, { "bars", "Bars" },
@@ -8,64 +8,22 @@ local SPECS = {
 }
 
 function Layers.Layout(preview)
-    local width = preview.availableWidth
-    local x, row = 10, 0
-    for _, button in ipairs(preview.layerButtons) do
-        if x > 10 and x + button:GetWidth() > width - 10 then x, row = 10, row + 1 end
-        button:ClearAllPoints()
-        button:SetPoint("TOPLEFT", preview.chips, "TOPLEFT", x, -25 - row * 24)
-        x = x + button:GetWidth() + 5
-    end
-    preview.chips:SetSize(width, 50 + row * 24)
+    P.PreviewInteraction.LayoutLayerRail(preview, preview.availableWidth)
 end
 
 function Layers.Build(preview)
-    preview.layers, preview.layerButtons = {}, {}
-    local chips = CreateFrame("Frame", nil, preview.ui.header)
-    preview.chips = chips
-    local H = P.M.PreviewHelpers or {}
-    if H.ApplyPreviewChrome then H.ApplyPreviewChrome(chips, "sidebar", T) end
-    local title = T.Font(chips, "GameFontDisableSmall", "Preview Layers", T.colors.muted)
-    title:SetPoint("TOPLEFT", chips, "TOPLEFT", 10, -5)
-    local measure = T.Font(chips, "GameFontDisableSmall", "", T.colors.muted)
-    measure:Hide()
-    local opts
-    if H.LayerChipButtonOpts then
-        opts = H.LayerChipButtonOpts(Tr, T.colors, H.PreviewChromePalette(T), {
-            IsOn = function(owner, key) return owner.layers[key] end,
-        })
-    end
-    for i, spec in ipairs(SPECS) do
-        local key, label, button = spec[1], spec[2]
-        preview.layers[key] = key ~= "details"
-        if H.CreateLayerButton and opts then
-            button = H.CreateLayerButton(chips, preview, { key = key, label = label, color = { .30, .74, 1 } }, i, 95, opts)
-        else
-            P.SetTranslatedText(measure, Tr(label))
-            button = T.Button(chips, label, math.max(64, measure:GetUnboundedStringWidth() + 30), 20)
-            button.key = key
+    preview.layers = {}
+    for _, spec in ipairs(SPECS) do preview.layers[spec[1]] = spec[1] ~= "details" end
+    P.PreviewInteraction.BuildLayerRail(preview, preview.ui.header, SPECS, function(key, enabled)
+        preview.layers[key] = enabled
+        preview.ui.refreshPreview()
+        return true
+    end, function(spec)
+        for _, handle in ipairs(preview.handles) do
+            if handle._previewLayerKey == spec[1] then return P.MeterPreviewEditor.Open(preview, handle) end
         end
-        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        button:SetScript("OnClick", function(_, mouse)
-            if mouse == "RightButton" then
-                for _, handle in ipairs(preview.handles) do
-                    if handle._previewLayerKey == key then return P.MeterPreviewEditor.Open(preview, handle) end
-                end
-                return false
-            end
-            preview.layers[key] = not preview.layers[key]
-            preview.ui.refreshPreview()
-        end)
-        P.HM.SkipHistoryCheckpoint(button)
-        P.HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
-            get = function() return preview.layers[key] end,
-            set = function(value)
-                preview.layers[key] = value == true
-                preview.ui.refreshPreview()
-                return true
-            end })
-        preview.layerButtons[i] = button
-    end
+        return false
+    end)
     Layers.Layout(preview)
 end
 
@@ -122,7 +80,5 @@ function Layers.Paint(preview, win)
         Show(targets.rows[i].value, layers.value)
         Show(targets.rows[i].icon, layers.icon and c.iconStyle ~= 1)
     end
-    for _, button in ipairs(preview.layerButtons) do
-        if button.Refresh then button:Refresh() else button:SetAlpha(layers[button.key] and 1 or .42) end
-    end
+    P.PreviewInteraction.RefreshLayerRail(preview)
 end

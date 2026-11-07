@@ -624,6 +624,7 @@ function Database.Normalize(db)
     NormalizeToggles(db)
     NormalizeWindowActions(db.icons.windowActions, revision)
     NormalizeWindowControls(db.windowControls)
+    if db.questLog.layout ~= "compact" then db.questLog.layout = "blizzard" end
     local microMenu = db.icons.microMenu
     for index = 1, #MICRO_MENU_MIGRATIONS do
         MICRO_MENU_MIGRATIONS[index](db, microMenu, revision)

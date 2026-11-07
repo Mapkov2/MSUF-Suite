@@ -244,21 +244,52 @@ local function OnAnchors(uf)
     Layout.Reapply(uf, uf.isFriend and "friendly" or "enemy", module.config)
 end
 
+-- Rebuild the native castbar edges with the configured width and position.
+-- Its parent anchors the health bar and keeps its own size.
+local function CastWidth(state, cast, container, setup, plan)
+    local half = plan.castWidth / 2
+    local x, y = plan.Cast[1], plan.Cast[2]
+    if setup.useClassicCastBar then
+        local h, baseY = setup.horizontalScale, .5 * setup.verticalScale
+        Link(state, cast, "TOPLEFT", container, "TOPLEFT", 20.75 * h, baseY, half - x, -y)
+        Link(state, cast, "BOTTOMRIGHT", container, "BOTTOMRIGHT", -3.5 * h, baseY, -half - x, -y)
+    elseif setup.spellNameInsideCastBar then
+        Link(state, cast, "TOPLEFT", container, "TOPLEFT", 0, 0, half - x, -y)
+        Link(state, cast, "BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0, -half - x, -y)
+    else
+        local iconX, iconY = plan.CastIcon[1], plan.CastIcon[2]
+        Link(state, cast, "LEFT", container, "BOTTOMLEFT", 0, 0, half - x, -y)
+        Link(state, cast, "RIGHT", container, "BOTTOMRIGHT", 0, 0, -half - x, -y)
+        Link(state, cast.Icon, "BOTTOMLEFT", container, "BOTTOMLEFT", 0, 0, half - iconX, -iconY)
+        Link(state, cast, "BOTTOM", cast.Icon, "TOP", 0, 0, iconX - half - x, iconY - y)
+    end
+end
+
 local function CastOffsets(state, uf, plan, setup, force)
-    local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
-    if not cast then return end
+    local container = uf.CastBarsContainer
+    local cast = container and container.castBar
+    local customWidth = plan.castWidth ~= 0
+    local classic, inside = setup.useClassicCastBar == true, setup.spellNameInsideCastBar == true
+    if customWidth and (not Accessible(container) or not Accessible(cast)
+        or not classic and not inside and not Accessible(cast.Icon)) then
+        Defer(uf)
+        return false
+    end
+    if not cast then return true end
     local bar, text, time, icon = plan.Cast, plan.CastText, plan.CastTime, plan.CastIcon
     local shield, target = plan.CastShield, plan.CastTarget
-    local classic, inside = setup.useClassicCastBar == true, setup.spellNameInsideCastBar == true
-    Offset(state, cast, bar[1], bar[2], force)
+    Offset(state, cast, customWidth and 0 or bar[1], customWidth and 0 or bar[2], force)
     Offset(state, cast.Border, classic and bar[1] or 0, classic and bar[2] or 0, force)
     if classic or inside then
         -- Classic's icon follows Border; Modern-inside follows the bar.
         Offset(state, cast.Icon, icon[1] - bar[1], icon[2] - bar[2], force)
+    elseif customWidth then
+        Offset(state, cast.Icon, 0, 0, force)
     else
         Offset(state, cast.Icon, icon[1], icon[2], force)
         Link(state, cast, "BOTTOM", cast.Icon, "TOP", 0, 0, icon[1], icon[2])
     end
+    if customWidth then CastWidth(state, cast, container, setup, plan) end
     local parent = classic and bar or icon
     Offset(state, cast.Text, text[1] - parent[1], text[2] - parent[2], force)
     local castTime = module.castTimes[cast]
@@ -269,6 +300,7 @@ local function CastOffsets(state, uf, plan, setup, force)
         Link(state, cast.CastTargetNameText, "LEFT", cast.Text, "RIGHT", 2, 0,
             text[1] - bar[1], text[2] - bar[2])
     end
+    return true
 end
 
 -- The native level frames and the Suite's own level number. The badge is
@@ -276,17 +308,16 @@ end
 -- aura reservation below depend on it too.
 local function LevelOffsets(state, uf, prefix, plan, setup, config, force)
     local level = plan.Level
-    local nativeLevel = setup.useClassicHealthBar == true
-    if NS.Client.isForever then
-        nativeLevel = config.levelAppearance == Mode.LEVEL_BADGE and config[Key[prefix].LevelEnabled]
-    end
-    local classicLevel = nativeLevel and setup.useClassicHealthBar == true and not NS.Client.isForever
-    Offset(state, uf.LevelFrame, classicLevel and level[1] or 0, classicLevel and level[2] or 0, force)
+    local classic = NS.Public(setup.useClassicHealthBar) and setup.useClassicHealthBar == true
+    local namesOnly = NS.Public(uf.showOnlyName) and uf.showOnlyName == true
     local badgeShown = Geometry.LevelBadgeShown(uf, uf.unit)
-    local moveBadge = badgeShown == true
-        and (NS.Client.isForever and nativeLevel or not NS.Client.isForever and not classicLevel)
+    local mode = NS.NameplateStyle.LevelMode(NS.Client.isForever, classic, true,
+        config[Key[prefix].LevelEnabled], config.levelAppearance, badgeShown, namesOnly)
+    local classicLevel = mode == "classic"
+    Offset(state, uf.LevelFrame, classicLevel and level[1] or 0, classicLevel and level[2] or 0, force)
+    local moveBadge = badgeShown == true and mode == "badge"
     Offset(state, uf.PlayerLevelDiffFrame, moveBadge and level[1] or 0, moveBadge and level[2] or 0, force)
-    local ownLevel = not nativeLevel and config[Key[prefix].LevelEnabled]
+    local ownLevel = mode == "number"
     Offset(state, module.levelLabels[uf], ownLevel and level[1] or 0, ownLevel and level[2] or 0, force)
     return badgeShown
 end
@@ -404,7 +435,8 @@ local function Apply(uf, prefix, config, force)
     force = force or state.nativeReset
     if not RestoreHeader(state, uf) then return end
     RestoreLinks(state, uf)
-    local geometryChanged = (config.barGeometry == Mode.SAME_GEOMETRY) ~= (state.geometry ~= nil)
+    local wasUniform = state.geometry ~= nil and state.geometry.inset ~= nil
+    local geometryChanged = (config.barGeometry == Mode.SAME_GEOMETRY) ~= wasUniform
     local baseHeight = Geometry.Apply(state, uf, setup, config, force, prefix)
     if not baseHeight then
         Defer(uf)
@@ -421,7 +453,7 @@ local function Apply(uf, prefix, config, force)
     AuraAnchors(state, uf, plan)
     ControlAuraAnchors(state, uf, plan, setup, config, badgeShown)
     DebuffPaddingAnchor(state, uf, plan, setup)
-    CastOffsets(state, uf, plan, setup, force)
+    if not CastOffsets(state, uf, plan, setup, force) then return end
     state.generation, state.prefix = generation, prefix
     state.nativeReset = nil
     if not hooked[uf] then
@@ -444,6 +476,8 @@ function Layout.RestoreAll()
 end
 
 function Layout.Configure(config)
+    local shared = NS.NameplateText.Shared(config)
+    local baseline = shared and shared.fontBaselineOffset or 0
     generation = generation + 1
     for _, prefix in ipairs({ "enemy", "friendly" }) do
         local plan = { active = config.barGeometry == Mode.SAME_GEOMETRY
@@ -452,14 +486,19 @@ function Layout.Configure(config)
             local element = elements[i]
             local key = prefix .. element.key .. "Offset"
             local x, y = config[key .. "X"] or 0, config[key .. "Y"] or 0
+            if element.key == "Name" or element.key == "HealthText" or element.key == "CastText"
+                or element.key == "CastTime" or element.key == "CastTarget" then y = y + baseline end
             plan.active = plan.active or x ~= 0 or y ~= 0
             if element.section == "castbar" and element.key ~= "Cast" then
                 x, y = x + (config[prefix .. "CastOffsetX"] or 0), y + (config[prefix .. "CastOffsetY"] or 0)
             end
             plan[element.key] = { x, y }
         end
+        plan.castWidth = config[Key[prefix].CastWidthDelta] or 0
         plans[prefix] = plan
         plan.active = plan.active or (config[prefix .. "HealthWidthDelta"] or 0) ~= 0
             or (config[prefix .. "HealthHeightDelta"] or 0) ~= 0
+            or plan.castWidth ~= 0 or (config[Key[prefix].CastHeight] or 0) > 0
+            or (config[Key[prefix].CastIconSize] or 0) > 0
     end
 end

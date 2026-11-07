@@ -11,6 +11,20 @@ P.QoLComfortGroups = {
             "block duels", "ignore invites", "summon", "resurrect", "duel", "pet battle duel" } },
 }
 function P.BuildQoLComfortActions(ctx, body, id, section, y, width)
+    if id == "dailyComfort" then
+        local spec = P.catalog.parallelWindows
+        local rules = { spec.rules.enabled, spec.rules.windowLimit }
+        local nextY, entries = P.RuleGrid(ctx, body, "suite_qualityOfLife", spec.id, rules, y, width,
+            nil, section, 1)
+        for _, entry in ipairs(entries) do
+            local rule = entry.rule
+            local meta = P.Meta("suite_qualityOfLife", spec.id, rule.key, "setting", section)
+            meta.pageKey, meta.kind = "suite_qualityOfLife", rule.key == "enabled" and "toggle" or "slider"
+            meta.label = Tr(rule.label)
+            P.M.RegisterSearchWidget(entry.widget, meta)
+        end
+        return nextY
+    end
     if id == "groupFinderTools" then
         if NS.Client.isForever then return y end
         local button

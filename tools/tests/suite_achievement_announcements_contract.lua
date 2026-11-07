@@ -100,6 +100,7 @@ hooksecurefunc = function(object, key, hook)
         return result
     end
 end
+assert(loadfile(root .. "/MSUF_Suite/Core/AnnouncementArt.lua"))("MSUF_Suite", NS)
 assert(loadfile(arg[2] or root .. "/MSUF_Suite_Modules/Announcements.lua"))("MSUF_Suite_Modules", { Suite = S, NS = NS })
 local banner = S.instances.announcements
 local ctx = Context("announcements", banner, { events = {} })

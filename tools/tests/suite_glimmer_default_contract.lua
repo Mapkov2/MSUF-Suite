@@ -10,13 +10,17 @@ local S = Suite.Suite
 local fresh={}
 S.Normalize(fresh)
 assert(fresh.suite.modules.glimmer.questSparkle and fresh.suite.modules.glimmer.style == 3, "wrong fresh sparkle defaults")
+assert(fresh.suite.modules.glimmer.skinning == true, "new profiles did not default to highlighting skinnable corpses")
 assert(fresh.suite.modules.glimmer.enabled == (flavor=="Forever"), "wrong fresh Glimmer default")
 local previous={suite={schema=1,revision=S.MigrationRevision-1,modules={glimmer={enabled=false,style=5}}}}
 S.Normalize(previous)
 assert(previous.suite.modules.glimmer.enabled == (flavor=="Forever"), "old Forever Off not migrated")
 assert(previous.suite.modules.glimmer.style==5, "migration reset the chosen look")
+assert(previous.suite.modules.glimmer.skinning == true, "existing profiles did not adopt the skinning default")
 previous.suite.modules.glimmer.enabled=false
+previous.suite.modules.glimmer.skinning=false
 S.Normalize(previous)
+assert(previous.suite.modules.glimmer.skinning == false, "normalization overwrote a skinning opt-out")
 assert(previous.suite.modules.glimmer.enabled==false, "normalization overwrote a later Off")
 -- A profile normalized on Retail has not yet adopted the Forever default.
 if flavor=="Mainline" then

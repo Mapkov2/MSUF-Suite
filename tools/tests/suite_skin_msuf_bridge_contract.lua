@@ -39,6 +39,36 @@ local function Check(root, motionPolicy)
     eventFrame.script(eventFrame, "ADDON_LOADED", "MSUF_Suite_Skin")
     assert(registrations == 1 and not eventFrame.events.ADDON_LOADED and host.MenuSkin.IsActive(),
         "MSUF did not connect to the Suite-owned skin engine")
+    if root ~= retail then
+        local spec, applies, changes = nil, 0, 0
+        function client:SkinButton(_, options)
+            spec, applies = options, applies + 1
+            return true, "applied"
+        end
+        function client:SetActive(_, selected)
+            spec.active, changes = selected, changes + 1
+        end
+        local button = { _msuf2RawSetScript = true, enabled = true, IsEnabled = function(self) return self.enabled end }
+        assert(host.MenuSkin.Button(button, false))
+        assert(not spec.selectionEdge and applies == 1)
+        button._msuf2SegmentChoice = true
+        assert(host.MenuSkin.Button(button, true))
+        assert(spec.active and spec.useControlShape and spec.selectionEdge and applies == 2,
+            "late tab marking did not apply a shaped selection")
+        assert(host.MenuSkin.Button(button, false))
+        assert(not spec.active and applies == 2 and changes == 1, "tab selection bypassed fast repaint")
+        button.enabled = false
+        assert(host.MenuSkin.Button(button, true) and not spec.active, "disabled tab retained selection")
+        button.enabled = true
+        if motionPolicy then
+            button._msuf2SelectionMotion = {}
+            assert(host.MenuSkin.Button(button, true) and not spec.active, "stationary tab duplicated moving selection")
+            button._msuf2SelectionMotion, button._msuf2MotionSurface = nil, true
+            assert(host.MenuSkin.Button(button, true) and not spec.selectionEdge, "hover clone painted a selected rim")
+            button._msuf2SelectionSurface = true
+            assert(host.MenuSkin.Button(button, true) and spec.active and spec.selectionEdge, "moving selection lost its rim")
+        end
+    end
     if motionPolicy then
         host.MSUF2 = { Theme = { StopAllMenuAnimations = function() stopped = stopped + 1 end } }
         assert(not host.MenuSkin.MotionReduced(), "unset suite flags disabled Core motion")

@@ -17,6 +17,14 @@ SoundProfiles.lua
 SlashCommands.lua
 CharacterPanel.lua
 TooltipLines.lua
+GatheringData.lua
+GatheringTooltips.lua
+ForeverMapData.lua
+ForeverMapPins.lua
+ForeverMapPins.xml
+ForeverMapLabels.lua
+ForeverMapLocations.lua
+ForeverWorldMap.lua
 MerchantWatch.lua
 InventoryProtection.lua
 Merchant.lua
@@ -56,6 +64,7 @@ ApplicantRaidProgress.lua
 ChatProfileLinks.lua
 Waypoints.lua
 DailyComfort.lua
+ParallelWindows.lua
 CollectionNewMarkers.lua
 GuildChatPrivacy.lua
 UIErrorFilter.lua
@@ -95,6 +104,7 @@ PlayerAuras.lua
 PlayerAuraSkins.lua
 NativeExperienceBar.lua
 ExperienceTrack.lua
+ExperienceBarText.lua
 ExperienceBar.lua
 ActionTracker.lua
 InnervateCue.lua

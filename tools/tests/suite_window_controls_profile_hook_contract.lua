@@ -76,7 +76,9 @@ local function Frame(name, parent, kind)
         for _, callback in ipairs(self.hooks.OnHide or {}) do callback(self) end
     end
     function frame:CreateTexture()
-        return { SetAllPoints = function() end, SetColorTexture = function() end }
+        return { SetAllPoints = function() end,
+            ClearAllPoints = function() end, SetPoint = function() end, SetSize = function() end,
+            Show = function() end, Hide = function() end, SetColorTexture = function() end }
     end
     function frame:CreateFontString()
         return { SetPoint = function() end, SetJustifyH = function() end,

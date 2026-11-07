@@ -2,35 +2,125 @@ local _, P = ...
 local Page = P.MacroPage
 local PAGE_SIZE = 10
 
-
 Page.initializers[#Page.initializers + 1] = function()
-    local Page, Helpers, T, Tr, NS = P.MacroPage, P.MacroPage.helpers, P.T, P.Tr, P.Suite
-    local Public = NS.Public
-    Helpers.Add = function(list, seen, name, value, icon)
-        if not Public(name) or type(name) ~= "string" or name == "" or seen[value] then return end
-        seen[value] = true
-        list[#list + 1] = { name = name, value = value, icon = Public(icon) and icon or 134400 }
-    end
+    local Page, Helpers, NS = P.MacroPage, P.MacroPage.helpers, P.Suite
 
-    Helpers.Spell = function(list, seen, index, bank, ids)
-        local info = C_SpellBook.GetSpellBookItemInfo(index, bank)
-        if not Public(info) or type(info) ~= "table" then return end
-        local id = info.spellID
-        if not Public(id) or type(id) ~= "number" then return end
-        local passive = C_SpellBook.IsSpellBookItemPassive(index, bank)
-        if not Public(passive) or passive then return end
-        local data = C_Spell.GetSpellInfo(id)
-        if not Public(data) or type(data) ~= "table" or not Public(data.name) or type(data.name) ~= "string" then return end
-        Helpers.Add(list, seen, data.name, ids and id or data.name, data.iconID)
-        if NS.Client.isForever and not ids then
-            local subtext = C_Spell.GetSpellSubtext(id)
-            if Public(subtext) and type(subtext) == "string" and subtext ~= "" then
-                Helpers.Add(list, seen, data.name .. " (" .. subtext .. ")", data.name .. "(" .. subtext .. ")", data.iconID)
+    local function PrimarySpell(document)
+        for _, step in ipairs(document.steps) do
+            if step.command == "cast" then
+                for _, branch in ipairs(step.branches) do
+                    if not branch.useFirst and branch.value:find("%S") then return branch.value end
+                end
+            elseif step.command == "castsequence" then
+                local value = step.sequence[1]
+                if value and value:find("%S") then return value end
             end
         end
     end
 
-    Helpers.Spells = function(list, seen, pet, ids)
+    local function SpellIcon(spell)
+        local icon = C_Spell.GetSpellTexture(tonumber(spell) or spell)
+        if NS.Public(icon) and type(icon) == "number" and icon > 0 then return icon end
+    end
+
+    function Helpers.DisplayIcon(document)
+        if document.icon ~= Page.AUTO_ICON or document.mode ~= "rules" then return document.icon end
+        local spell = PrimarySpell(document)
+        if not spell then return Page.AUTO_ICON end
+        spell = spell:match("^%s*!?%s*(.-)%s*$")
+        local icon = SpellIcon(spell)
+        if not icon and NS.Client.isForever then
+            local unranked = spell:match("^(.-)%s*%([^()]+%)$")
+            if unranked then icon = SpellIcon(unranked) end
+        end
+        return icon or Page.AUTO_ICON
+    end
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Page, Helpers, NS = P.MacroPage, P.MacroPage.helpers, P.Suite
+    local Public = NS.Public
+    Helpers.Add = function(list, seen, name, value, icon, spellName)
+        if not Public(name) or type(name) ~= "string" or name == "" or seen[value] then return end
+        seen[value] = true
+        list[#list + 1] = { name = name, value = value, icon = Public(icon) and icon or 134400, spellName = spellName }
+    end
+
+    Helpers.BookSpell = function(index, bank, learned)
+        local info = C_SpellBook.GetSpellBookItemInfo(index, bank)
+        if not Public(info) or type(info) ~= "table" then return end
+        local id = info.spellID
+        if not Public(id) or type(id) ~= "number" then return end
+        if learned then
+            local kind, offSpec = info.itemType, info.isOffSpec
+            if not Public(kind) or kind ~= Enum.SpellBookItemType.Spell or not Public(offSpec) or offSpec then return end
+        end
+        local passive = C_SpellBook.IsSpellBookItemPassive(index, bank)
+        if Public(passive) and not passive then return info, id end
+    end
+
+    Helpers.SpellText = function(info, id, withRank)
+        local data = C_Spell.GetSpellInfo(id)
+        if not Public(data) or type(data) ~= "table" then return end
+        local name, icon = data.name, data.iconID
+        if not Public(name) or type(name) ~= "string" or name == "" then return end
+        if not Public(icon) then icon = nil end
+        local rank
+        if withRank and NS.Client.isForever then
+            local subtext = info.subName
+            if not Public(subtext) or subtext == nil or subtext == "" then subtext = C_Spell.GetSpellSubtext(id) end
+            if Public(subtext) and type(subtext) == "string" and subtext ~= "" then rank = subtext end
+        end
+        return name, icon, rank
+    end
+
+    Helpers.RankedName = function(name, rank)
+        return name .. "(" .. rank .. ")"
+    end
+
+    local function CursorSpell()
+        -- Blizzard's spell cursor payload ends with the spell ID, including the selected rank.
+        local kind, _, _, spellID = GetCursorInfo()
+        if not Public(kind) or kind ~= "spell" or not Public(spellID) or type(spellID) ~= "number" then return end
+        local slot, bank = C_SpellBook.FindSpellBookSlotForSpell(spellID, true, false)
+        if not Public(slot) or type(slot) ~= "number" or not Public(bank) or type(bank) ~= "number" then return end
+        local info, id = Helpers.BookSpell(slot, bank, true)
+        if not info then return end
+        local base = info.actionID
+        if id ~= spellID and (not Public(base) or base ~= spellID) then return end
+        local name, icon, rank = Helpers.SpellText(info, id, true)
+        if name then return rank and Helpers.RankedName(name, rank) or name, icon, name end
+    end
+
+    function Page.SpellDrop(ui, control, callback)
+        if not callback then
+            control:SetScript("OnReceiveDrag", nil)
+            return
+        end
+        local function Receive()
+            if not Page.Active(ui) or not control:IsVisible() then return end
+            local value, icon, name = CursorSpell()
+            if not value then return end
+            ClearCursor()
+            callback(value, icon, name)
+        end
+        control:SetScript("OnReceiveDrag", Receive)
+        return Receive
+    end
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Helpers, Public = P.MacroPage.helpers, P.Suite.Public
+    Helpers.Spell = function(list, seen, index, bank, ids, learned)
+        local info, id = Helpers.BookSpell(index, bank, learned)
+        if not info then return end
+        local name, icon, rank = Helpers.SpellText(info, id, not ids)
+        if not name then return end
+        Helpers.Add(list, seen, name, ids and id or name, icon, name)
+        if rank then Helpers.Add(list, seen, name .. " (" .. rank .. ")", Helpers.RankedName(name, rank), icon, name) end
+    end
+
+    Helpers.Spells = function(list, seen, pet, ids, learned)
         if pet then
             local count = C_SpellBook.HasPetSpells()
             if Public(count) and type(count) == "number" then
@@ -45,13 +135,12 @@ Page.initializers[#Page.initializers + 1] = function()
                 local offset, count = line.itemIndexOffset, line.numSpellBookItems
                 if Public(offset) and Public(count) and type(offset) == "number" and type(count) == "number" then
                     for index = offset + 1, math.min(offset + count, offset + 1000) do
-                        Helpers.Spell(list, seen, index, bank, ids)
+                        Helpers.Spell(list, seen, index, bank, ids, learned)
                     end
                 end
             end
         end
     end
-
 end
 
 Page.initializers[#Page.initializers + 1] = function()
@@ -88,8 +177,10 @@ Page.initializers[#Page.initializers + 1] = function()
             local item = filtered[(frame.page - 1) * PAGE_SIZE + i]
             button.item = item
             button:SetShown(item ~= nil)
+            local create = frame.createButtons[i]
+            create:SetShown(item ~= nil and frame.create ~= nil)
             if item then
-                button:SetText(item.name)
+                P.SetButtonText(button, item.name)
                 button.icon:SetTexture(item.icon)
             end
         end
@@ -101,38 +192,49 @@ Page.initializers[#Page.initializers + 1] = function()
     Helpers.Action = function(frame, text, x, y, width, fn)
         local button = T.Button(frame, text, width, 26, { history = false, noSearch = true })
         button:SetPoint("TOPLEFT", x, y)
-        button:SetScript("OnClick", function() if frame:IsShown() and not P.Combat() then fn() end end)
+        button:SetScript("OnClick", function() if frame:IsVisible() and not P.Combat() then fn() end end)
         return button
     end
 
 end
 
 Page.initializers[#Page.initializers + 1] = function()
-    local Page, Helpers, T, Tr, NS = P.MacroPage, P.MacroPage.helpers, P.T, P.Tr, P.Suite
-    local Public = NS.Public
+    local Page, Helpers, T, Tr = P.MacroPage, P.MacroPage.helpers, P.T, P.Tr
+    local function Choose(frame, index, callback)
+        local item = frame.rows[index].item
+        if not item or not callback then return end
+        frame:Hide()
+        callback(item.value, item.icon, item.spellName)
+    end
+
     Helpers.Picker = function()
         if Page.picker then return Page.picker end
-        local frame = P.MenuPopupPanel(360, 415)
+        local frame = P.MenuPopupPanel(420, 415)
         Page.picker = frame
-        frame.rows = {}
-        frame.title = P.Text(frame, "Choose a spell or item", 14, -13, 295, T.colors.text)
-        Helpers.Action(frame, "Close", 290, -10, 58, function() frame:Hide() end)
+        frame.rows, frame.createButtons = {}, {}
+        frame.title = P.Text(frame, "Choose a spell or item", 14, -13, 325, T.colors.text)
+        Helpers.Action(frame, "Close", 350, -10, 58, function() frame:Hide() end)
         frame.search = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
         frame.search:SetPoint("TOPLEFT", 18, -43)
-        frame.search:SetSize(324, 25)
+        frame.search:SetSize(384, 25)
         frame.search:SetAutoFocus(false)
         frame.search:SetMaxLetters(80)
         frame.search:SetFontObject("GameFontHighlightSmall")
         T.SkinEditBox(frame.search)
-        frame.search:SetScript("OnTextChanged", function() frame.page = 1 Helpers.Filter(frame) end)
+        frame.search:SetScript("OnTextChanged", function()
+            if not frame:IsVisible() or P.Combat() then return end
+            frame.page = 1
+            Helpers.Filter(frame)
+        end)
         frame.search:SetScript("OnEscapePressed", function() frame:Hide() end)
+        frame:HookScript("OnHide", function()
+            frame.pick, frame.create, frame.anchor = nil, nil, nil
+        end)
         for i = 1, PAGE_SIZE do
-            local button = Helpers.Action(frame, "", 14, -77 - (i - 1) * 28, 330, function()
-                local selected = frame.rows[i].item
-                if selected and frame.pick then
-                    frame.pick(selected.value, selected.icon)
-                    frame:Hide()
-                end
+            local y = -77 - (i - 1) * 28
+            local button = Helpers.Action(frame, "", 14, y, 390, function() Choose(frame, i, frame.pick) end)
+            frame.createButtons[i] = Helpers.Action(frame, "Create WoW macro", 246, y, 158, function()
+                Choose(frame, i, frame.create)
             end)
             button.icon = button:CreateTexture(nil, "ARTWORK")
             button.icon:SetSize(20, 20)
@@ -140,24 +242,34 @@ Page.initializers[#Page.initializers + 1] = function()
             frame.rows[i] = button
         end
         frame.previous = Helpers.Action(frame, "Previous", 14, -369, 86, function() frame.page = frame.page - 1 Helpers.Filter(frame) end)
-        frame.next = Helpers.Action(frame, "Next", 260, -369, 84, function() frame.page = frame.page + 1 Helpers.Filter(frame) end)
-        frame.count = P.Text(frame, "", 112, -375, 136, T.colors.muted)
+        frame.next = Helpers.Action(frame, "Next", 320, -369, 84, function() frame.page = frame.page + 1 Helpers.Filter(frame) end)
+        frame.count = P.Text(frame, "", 142, -375, 136, T.colors.muted)
         frame:Hide()
         return frame
     end
+end
 
-    function Page.Pick(anchor, kind, callback)
-        if P.Combat() then return end
+Page.initializers[#Page.initializers + 1] = function()
+    local Page, Helpers = P.MacroPage, P.MacroPage.helpers
+    function Page.Pick(anchor, kind, callback, create)
+        local ui, document = Page.ui, Page.document
+        if not Page.Active(ui) then return end
         local frame = Helpers.Picker()
         frame:Hide()
-        local ui, document = Page.ui, Page.document
-        frame.anchor, frame.page = anchor, 1
-        frame.pick = function(...)
-            if Page.Active(ui) and Page.document == document then callback(...) end
+        local function Guard(action)
+            return function(...)
+                if Page.Active(ui) and Page.document == document then action(...) end
+            end
         end
+        frame.anchor, frame.page = anchor, 1
+        frame.pick, frame.create = Guard(callback), create and Guard(create)
+        frame.title:SetText(create and "From spellbook" or "Choose a spell or item")
+        for _, row in ipairs(frame.rows) do row:SetWidth(create and 224 or 390) end
         frame.items = {}
         local seen = {}
-        if kind == "spell" or kind == "spellID" or kind == "any" then Helpers.Spells(frame.items, seen, false, kind == "spellID") end
+        if kind == "spell" or kind == "spellID" or kind == "any" then
+            Helpers.Spells(frame.items, seen, false, kind == "spellID", create ~= nil)
+        end
         if kind == "pet" or kind == "any" then Helpers.Spells(frame.items, seen, true) end
         if kind == "item" or kind == "itemID" or kind == "any" then Helpers.Items(frame.items, seen, kind == "itemID") end
         table.sort(frame.items, function(a, b) return a.name < b.name end)

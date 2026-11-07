@@ -15,7 +15,8 @@ end
 GENERAL_CHAT_DOCK = {}
 local menuHook = hooksecurefunc
 hooksecurefunc = function(name, callback)
-    if name == "FCF_SetChatWindowFontSize" or name == "FCFDock_SelectWindow" or name == "FCFDock_UpdateTabs" then return end
+    if name == "FCF_SetChatWindowFontSize" or name == "FCFDock_SelectWindow" or name == "FCFDock_UpdateTabs"
+        or name == "FCF_StopDragging" or name == "FCF_SetWindowName" or name == "FCF_Close" then return end
     return menuHook(name, callback)
 end
 BNGetNumFriends = function() return 0, 0 end

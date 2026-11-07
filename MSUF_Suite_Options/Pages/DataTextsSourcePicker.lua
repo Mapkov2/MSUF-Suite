@@ -28,7 +28,7 @@ local hookedAnchors = setmetatable({}, { __mode = "k" })
 local GROUPS = {
     { "Everyday", { "clock", "date", "gold", "sessionGold", "bags", "durability", "location", "coordinates" } },
     { "Social", { "friends", "guild" } },
-    { "Character", { "xp", "progress", "itemLevel", "secondaryStat", "mythicRating", "specialization", "specLoot",
+    { "Character", { "xp", "progress", "progressBar", "itemLevel", "secondaryStat", "mythicRating", "specialization", "specLoot",
         "professions", "vault", "supplies" } },
     { "Travel and menus", { "travel", "hearth", "portals", "microMenu" } },
     { "Currencies", { "currency", "crests" } },

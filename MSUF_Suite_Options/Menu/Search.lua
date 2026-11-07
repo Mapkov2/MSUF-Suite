@@ -240,8 +240,12 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
         or not template and (rule.sectionTitle and Tr(rule.sectionTitle)
         or (spec.title ~= page.title and Tr(spec.title))) or nil
     -- Colors are edited from the section's color shortcut, not a control on
-    -- the page, so a color row leads to its section.
-    local exact = kind ~= "color" and targetExact ~= false
+    -- the page, so a color row leads to its section. Nameplate colors owned
+    -- by Fonts retain the setting identity for the cross-page resolver.
+    local settingKey = "msufsuite." .. spec.id .. "." .. rule.key
+    local movedColor = kind == "color" and spec.id == "nameplates" and P.NameplateFonts
+        and P.NameplateFonts.TargetForSetting(settingKey) ~= nil
+    local exact = movedColor or kind ~= "color" and targetExact ~= false
     local controlId
     if exact and not template and (P.OwnedTools[spec.id] or spec.id == "planningTools" or spec.id == "macroBuilder") then
         controlId = P.Meta(page.key, spec.id, rule.key, "setting", sectionId).controlId
@@ -251,7 +255,7 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
         label = rule.key == "enabled" and spec.title ~= page.title and Tr(spec.title) or Tr(rule.label),
         suiteModuleId = spec.id, suiteFeatureSwitch = feature and feature.switch or nil, suiteRuleKey = rule.key,
         section = section, keywords = keywords, help = rule.help and Tr(rule.help) or nil,
-        settingKey = exact and ("msufsuite." .. spec.id .. "." .. rule.key) or nil,
+        settingKey = exact and settingKey or nil,
         sectionId = spec.id ~= "macroBuilder" and
             (feature and ("suite_qualityOfLife_" .. feature.id .. "_" .. feature.sections[1]) or sectionId) or nil,
         prepareKind = spec.id == "macroBuilder" and "suiteMacroTab" or nil,
@@ -271,6 +275,9 @@ end
 local function SearchableRule(spec, rule, config)
     if spec.id == "minimap" and not P.MinimapSections.IsMinimapSectionAvailable(rule.section) then return false end
     if spec.controlAvailable and not spec.controlAvailable(rule, config) then return false end
+    if spec.id == "dataTexts" and rule.key:match("^bar%d+Slot%d+MenuLabel$") then
+        return rule.requiresChoice.values[config[rule.requiresChoice.key]] == true
+    end
     -- A rule this client cannot use has no control: its page skips the section
     -- (Buff Reminders' Mainline consumables on WoW Forever).
     if rule.requires and P.Requires[rule.requires] and not P.Requires[rule.requires]() then return false end
@@ -649,6 +656,23 @@ local function ResolveFormerArtwork(_, target)
     return "opt_castbar", copy, {}
 end
 Suite.HostBridge.RegisterSearchTargetResolver(M, "MSUF_Suite.FormerCastbarArtwork", ResolveFormerArtwork)
+
+local legacyChatBehavior = {}
+local chatBehaviorSection = "suite_chat_chatComfort_module"
+for _, rule in ipairs(P.SectionRules("chatComfort", "chatComfort_module")) do
+    local old = P.Meta("suite_qualityOfLife", "dailyComfort", rule.key, "setting", "suite_qualityOfLife_dailyComfort_daily_comfort")
+    if old.controlId then legacyChatBehavior[old.controlId] = rule.key end
+end
+
+local function ResolveFormerChatBehavior(_, target)
+    if not target then return end
+    local key = (target.settingKey or ""):match("^msufsuite%.dailyComfort%.(.+)$") or legacyChatBehavior[target.controlId]
+    if not key or key == "enabled" or not P.catalog.chatComfort.rules[key] then return end
+    local copy = P.Meta("suite_chat", "chatComfort", key, "setting", chatBehaviorSection)
+    copy.pageKey = "suite_chat"
+    return "suite_chat", copy, {}
+end
+Suite.HostBridge.RegisterSearchTargetResolver(M, "MSUF_Suite.FormerChatBehavior", ResolveFormerChatBehavior)
 
 if M.RegisterSearchAvailability then M.RegisterSearchAvailability("MSUF_Suite", P.SearchRowAvailable) end
 if M.InvalidateSearchProvider then

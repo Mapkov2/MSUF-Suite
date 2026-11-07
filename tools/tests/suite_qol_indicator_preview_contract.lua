@@ -2,6 +2,9 @@ local root = assert(arg[1])
 local function Widget(parent)
     local w = { parent = parent, shown = true, scale = 1, scripts = {}, events = {} }
     function w:SetPoint(...) self.point = { ... } end
+    function w:SetAllPoints(region) self.allPoints = region end
+    function w:GetFrameLevel() return self.level or (self.parent and self.parent:GetFrameLevel() + 1 or 0) end
+    function w:SetFrameLevel(level) self.level = level end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetOrientation() end
     function w:EnableMouse() end
@@ -24,6 +27,8 @@ local function Widget(parent)
     function w:SetScale(scale) self.scale = scale end
     function w:GetEffectiveScale() return self.scale * (self.parent and self.parent:GetEffectiveScale() or 1) end
     function w:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
+    function w:IsShown() return self.shown end
+    function w:SetShown(value) self.shown = value == true end
     function w:SetScript(key, callback) self.scripts[key] = callback end
     function w:RegisterEvent(event) self.events[event] = true end
     function w:UnregisterAllEvents() self.events = {} end
@@ -54,8 +59,17 @@ local P = { S = S, Suite = { Client = { isForever = false }, GlossMaterial = { A
     end,
     SetTranslatedText = function(label, text) label.text = text end,
     HM = { SkipHistoryCheckpoint = function() skips = skips + 1 end },
-    M = { TrackRefresh = function(ctx, callback) ctx.refresh[#ctx.refresh + 1] = callback end }, W = {} }
+    M = { AddTooltip = function() end,
+        TrackRefresh = function(ctx, callback) ctx.refresh[#ctx.refresh + 1] = callback end }, W = {} }
+P.catalog = {}
+for id, key in pairs({ xpBar = "displayStyle", skyriding = "width", actionTracker = "rowHeight",
+    battleRes = "scale", enemyCastStack = "rowHeight", glimmer = "size" }) do
+    P.catalog[id] = { rules = { [key] = { label = key } } }
+end
 function P.W.SettingsRows() error("sample sliders must not enter profile bindings/history") end
+-- Scene loading and viewport policy are isolated here. The real-menu XP
+-- editor contract exercises text handles and their actual property controls.
+P.XPBarPreviewEditor = { Bind = function() end, Build = function(_, _, y) return y end }
 local function Draw(parent, config, sample, viewport)
     draws = draws + 1
     assert(config.enabled == false, "preview enabled a disabled module")

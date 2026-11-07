@@ -124,6 +124,10 @@ assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("nameplates", priva
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Roles.lua"))("nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/Text.lua"))("nameplates", private)
 assert(loadfile(root .. "/MSUF_Suite_Nameplates/FriendlyNames.lua"))("nameplates", private)
+NS.HostBridge = NS.HostBridge or {}
+NS.HostBridge.NameFormatter = function() return nil end
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
+assert(loadfile(root .. "/MSUF_Suite_Nameplates/NameText.lua"))("nameplates", private)
 assert(loadfile(override or root .. "/MSUF_Suite_Nameplates/Skin.lua"))("nameplates", private)
 local applyText = private.Text.Apply
 private.Text.Apply = function(...) Count("Text.Apply"); return applyText(...) end

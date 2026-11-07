@@ -228,6 +228,12 @@ def dynamic_movers(owner, expression, preceding, code, addon_code, constants):
         if not re.search(r"for i = 1 , # SLOTS do", preceding):
             raise ValueError("unrecognized slot mover loop")
         return constants["CDMSlots"]
+    if owner == "chat" and text == "id" and re.search(
+            r"for index = 2 , C \. MaxFloatingWindows \( \) do local id = C \. FloatingMoverID \( index \)", preceding):
+        prefix = re.search(r'function C \. FloatingMoverID \( index \)\s+return "([^"\\]+)" \.\. index\s+end', addon_code)
+        bound = re.search(r"\bCHAT_WINDOW_LIMIT = (\d+)\b", addon_code)
+        if prefix and bound:
+            return [prefix[1] + str(i) for i in range(2, int(bound[1]) + 1)]
     if text == "list [ i ] . elementID":
         prefix = re.search(r'elementID = "([^"\\]+)" \.\. i', code)
         bound = re.search(r"\bMAX = (\d+)\b", addon_code)

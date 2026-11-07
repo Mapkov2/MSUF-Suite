@@ -494,6 +494,46 @@ Case("menus", function()
         "a host without pad navigation lost Blizzard's context menu")
 end)
 
+Case("styled menus", function()
+    local palette = {
+        panel = { .1, .12, .15, .97 }, border = { .3, .4, .5 }, text = { .9, .94, 1 },
+        idle = { .2, .22, .25 }, selected = { .3, .5, .7 }, accent = { .4, .8, 1 },
+    }
+    for _, client in ipairs({ "Mainline", "Forever" }) do
+        local W = World(client, client == "Forever")
+        local owner = W.New("Button", nil, W.UIParent)
+        local state = {}
+        local panel = assert(W.S.StyledContextMenu(owner, palette, Generator(state)))
+        assert(panel.background.color[3] == palette.panel[3] and InsecureCalls(W) == "",
+            "styled dropdown lost its panel palette or opened a native menu")
+        assert(Row(panel, "Submenu") and not Row(panel, "Radio"), "submenu choices leaked into the root")
+        W.Click(Row(panel, "Submenu"))
+        assert(Row(panel, "Radio") and Row(panel, "Back"), "styled submenu did not open")
+        W.Click(Row(panel, "Back"))
+        assert(Row(panel, "Check") and not Row(panel, "Radio"), "styled submenu could not return to the root")
+        W.Click(Row(panel, "Check"))
+        assert(state.check and panel.shown and Row(panel, "Check").mark.shown, "styled checkbox did not refresh its mark")
+        W.Click(Row(panel, "Off"))
+        assert(not state.off and panel.shown, "styled menu let a disabled action run")
+        W.Click(Row(panel, "Submenu"))
+        W.Click(Row(panel, "Radio"))
+        assert(state.radio == 7 and not panel.shown, "styled radio did not pick and close")
+        W.S.StyledContextMenu(owner, palette, Generator(state))
+        if client == "Forever" then
+            assert(W.padNavigation.Top() == panel, "styled dropdown was inaccessible to the pad")
+            W.padNavigation.Back()
+            assert(not panel.shown and W.padNavigation.Top() == nil, "styled menu kept pad focus after closing")
+            W.S.StyledContextMenu(owner, palette, Generator(state))
+        end
+        owner:Hide()
+        assert(not panel.shown and not panel.events.GLOBAL_MOUSE_DOWN, "styled menu outlived its owner")
+    end
+    local old = World("Forever", true, function(world) world.G.MSUF_PadNavigation = nil end)
+    old.S.StyledContextMenu(old.New("Button", nil, old.UIParent), palette, Generator({}))
+    assert(old.opened[#old.opened].name == "MenuUtil.CreateContextMenu",
+        "styled menus displaced the old host's gamepad fallback")
+end)
+
 -- The client APIs the DataTexts places read (as suite_datatexts_security_contract).
 local function DataTextFixture(world)
     local G = world.G

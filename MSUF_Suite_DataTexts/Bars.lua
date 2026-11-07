@@ -34,14 +34,18 @@ end
 local function Tooltip(button)
     if not M.active or not button.source then return end
     local title = S.Text(NS.DataTextSources[button.sourceIndex] or "")
-    if button.extra then
+    if button.extra and not M.paused then
         Actions.Tooltip(button, title)
         return
     end
     GameTooltip:SetOwner(button, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine(title, 1, .82, .36)
-    if Standard.TooltipLines(GameTooltip, button, M.config) then Actions.GoldTooltip(GameTooltip) end
+    if M.paused then
+        GameTooltip:AddLine(button.text or P.NO_VALUE, 1, 1, 1)
+    elseif Standard.TooltipLines(GameTooltip, button, M.config) then
+        Actions.GoldTooltip(GameTooltip)
+    end
     GameTooltip:Show()
 end
 
@@ -101,6 +105,12 @@ local function BarShownChanged(frame)
         if popup and popup.owner and popup.owner.bar.frame == frame then Actions.ClosePopup() end
     end
     if not M.styling then M:Rebind() end
+end
+
+function Bars.SetVisibilityCallbacks(bar, enabled)
+    local callback = enabled and BarShownChanged or nil
+    bar.frame:SetScript("OnShow", callback)
+    bar.frame:SetScript("OnHide", callback)
 end
 
 local function CreateEdge(frame, layer, from, to)
@@ -206,7 +216,5 @@ function Bars.Create(index)
     Bars.EnsureSlots(bar, M.config)
     frame:SetScript("OnEnter", BarEnter)
     frame:SetScript("OnLeave", BarLeave)
-    frame:SetScript("OnShow", BarShownChanged)
-    frame:SetScript("OnHide", BarShownChanged)
     return bar
 end

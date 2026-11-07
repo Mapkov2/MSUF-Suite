@@ -21,10 +21,10 @@ local function ApplyBlizzardFont()
         typography.ApplyConfigured()
     end
 end
-function S.ApplyGlobalFont()
+function S.ApplyGlobalFont(force)
     if not S.started then return end
     local path, epoch = NS.GlobalFontPath(), _G.MSUF_FontApplyEpoch
-    if path == lastPath and epoch == lastEpoch then return end
+    if not force and path == lastPath and epoch == lastEpoch then return end
     lastPath, lastEpoch = path, epoch
     S.FontRevision = S.FontRevision + 1
     ApplyBlizzardFont()

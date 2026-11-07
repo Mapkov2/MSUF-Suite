@@ -6,9 +6,23 @@ B.Module("chat", {
     description = "Style Blizzard's native chat windows, tabs and input line. Links, channels, filters, docking and message delivery remain Blizzard-owned.",
     page = "suite_chat", optIn = true,
     cvars = { showTimestamps = true },
-    conflicts = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy", "Prat-3.0", "Chattynator", "Chatter" },
+    conflicts = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy", "Prat-3.0", "Chattynator", "Chatter", "DaylightUI_Chat" },
     summary = "look fontSize tabFontSize tabAccent panelAlpha sidebarPanel sidebarWidth inputPanel inputAlpha"
         .. " copyMessages",
+})
+
+B.Module("chatComfort", {
+    title = "Chat behavior",
+    description = "Choose how Blizzard chat scrolls, colors names, shows whispers and fades messages.",
+    page = "suite_chat", optIn = true, defaultEnabled = false,
+    cvars = { chatMouseScroll = true, chatClassColorOverride = true, whisperMode = true },
+})
+B.Section("chatComfort", "chatComfort_module", "Chat behavior", {
+    B.Bool("chatWheel", "Scroll chat with the mouse wheel"),
+    B.Bool("chatClassColors", "Color chat names by class"),
+    B.Choice("whisperWindows", "Whisper windows", 1,
+        { "Follow Blizzard settings", "Separate window", "Window and main chat" }),
+    B.Bool("noChatFade", "Keep chat messages visible"),
 })
 
 local id = "chat"
@@ -83,6 +97,16 @@ for index, preset in pairs(NS.ChatLookPresets) do
         preset.fontShadowOpacity, preset.fontShadowDistance = 100, 1
     end
 end
+local compact = {}
+for key, value in pairs(cleanModern) do compact[key] = value end
+compact.headerToolbar, compact.sidebarPanel = true, false
+compact.tabHeight, compact.tabPadding, compact.tabGap = 24, 8, 2
+compact.inputPanel, compact.borderSize, compact.padding = true, 1, 4
+compact.animateInput = true
+NS.ChatLookPresets[8] = compact
+for index, preset in pairs(NS.ChatLookPresets) do
+    preset.headerToolbar, preset.animateInput = index == 8, index == 8
+end
 NS.ChatLookVisualKeys = {}
 for key in pairs(midnight) do NS.ChatLookVisualKeys[key] = true end
 NS.ChatLookVisualKeys.panelGradient = true
@@ -95,7 +119,7 @@ local initial = NS.Client.isForever and forever or midnightDark
 
 B.Section(id, "look", "Choose a look", {
     B.Choice("look", "Style preset", NS.Client.isForever and 3 or 2,
-        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style", "Immersive" }),
+        { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style", "Immersive", "Compact" }),
 })
 B.Section(id, "window", "Chat window", {
     B.Texture("panelTexture", "Background texture"),
@@ -105,8 +129,8 @@ B.Section(id, "window", "Chat window", {
     B.Number("windowHeight", "Locked height", 180, 80, 800),
     B.Tooltip(B.Bool("lockWindowPosition", "Anchor the main chat window to the bottom left", false),
         "While this is on, move the window in MSUF Edit Mode or with the two positions below. While it is off, Blizzard's Edit Mode places it."),
-    B.Number("windowX", "Horizontal position", 12, -4000, 4000),
-    B.Number("windowY", "Vertical position", 12, -3000, 3000),
+    B.Number("windowX", "Horizontal position", 12, -4000, 4000, 0.01),
+    B.Number("windowY", "Vertical position", 12, -3000, 3000, 0.01),
     B.Number("idleSeconds", "Fade after inactivity (seconds; 0 disables)", 0, 0, 300),
     B.Number("idleAlpha", "Idle panel opacity (percent)", 20, 0, 100),
     B.Number("idleFadeDuration", "Idle fade duration (seconds; 0 is instant)", 0, 0, 2, 0.05),
@@ -120,6 +144,8 @@ B.Section(id, "window", "Chat window", {
     B.Number("padding", "Background padding", initial.padding, 0, 16),
 })
 B.Section(id, "tabs", "Tabs and accent", {
+    B.Bool("headerToolbar", "Show chat header tools", false),
+    B.Bool("toolbarLocked", "Lock chat movement and resizing", true),
     B.Number("tabX", "Horizontal position", 0, -400, 400),
     B.Number("tabY", "Vertical position", 0, -300, 300),
     B.Number("tabHeight", "Tab height", 24, 18, 48),
@@ -161,10 +187,13 @@ B.Section(id, "sidebar", "Button sidebar", {
     B.Bool("sidebarClassColor", "Use class color for sidebar icons", false),
 })
 B.Section(id, "input", "Input line", {
+    B.Bool("animateInput", "Animate the chat input", false),
+    B.Number("inputAnimationDuration", "Input animation duration (seconds)", 0.18, 0.05, 0.5, 0.01),
     B.Number("inputX", "Horizontal position", 0, -400, 400),
     B.Number("inputY", "Vertical position", 0, -300, 300),
     B.Bool("inputTop", "Place input above the chat panel", false),
     B.Number("inputHeight", "Input height (0 follows Blizzard)", 0, 0, 60),
+    B.Number("inputWidth", "Input width (0 matches chat)", 0, 0, 1600),
     B.Bool("inputPanel", "Show input background", initial.inputPanel),
     B.Color("inputColor", "Input background color", initial.inputColor),
     B.Number("inputAlpha", "Input opacity (percent)", initial.inputAlpha, 0, 100, 5),
@@ -325,6 +354,8 @@ for _, key in ipairs({ "sidebarSide", "sidebarColor", "sidebarAlpha", "sidebarGa
     "sidebarWidth", "sidebarClassColor" }) do
     textRules[key].enableKey = "sidebarPanel"
 end
+textRules.inputAnimationDuration.enableKey = "animateInput"
+textRules.toolbarLocked.enableKey = "headerToolbar"
 textRules.inputColor.enableKey = "inputPanel"
 textRules.inputAlpha.enableKey = "inputPanel"
 -- The tab strip gap, and the individual tab backgrounds with their parts, need the dark tab strip.

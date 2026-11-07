@@ -2512,6 +2512,7 @@ Section("owned micro bar", function()
 end)
 
 Section("world map", function()
+    Load("WorldMapQuests.lua")
     Load("WorldMap.lua")
     local calls, restore = CountingApplyFrame()
     local navSkins = 0
@@ -3449,6 +3450,225 @@ Section("hidden windows defer cosmetic work until visible", function()
     collectgarbage("collect")
     Expect(retained[1] == nil, "catalog retained a frame pass's scratch metrics")
     _G.PVEFrame, _G.GroupFinderFrame, NS.ControlSkin.ApplyButton = oldPVE, oldNavigation, oldButton
+end)
+
+Section("native chat configuration", function()
+    local owner = "chat-config-contract"
+    NS.DB = { enabled = true }
+    local surfaces, jobs = {}, {}
+    NS.Surface = {
+        Attach = function(target, spec)
+            local surface = { spec = spec, visible = true }
+            surfaces[target] = surface
+            return surface
+        end,
+        SetActive = function(target, active) surfaces[target].active = active end,
+        SetVisible = function(target, visible) surfaces[target].visible = visible end,
+    }
+    NS.Registry.GetSurface = function(target) return surfaces[target] end
+    NS.CombatGate.RunOrDefer = function(key, callback)
+        if locked then jobs[key] = callback else callback() end
+    end
+    NS.CombatGate.Cancel = function(key) jobs[key] = nil end
+    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    assert(loadfile(skin .. "Core/Checkmarks.lua"))("MSUF_Suite_Skin", NS)
+    local function Noop() end
+    NS.Checkmarks.TrackDropdown = Noop
+    NS.WindowActionSkin.HasOwnedStates = function() return false end
+    NS.WindowActionSkin.IsApplied = function() return false end
+    NS.Theme.GetColor = function(role)
+        if role == "checkmark" then return 0.25, 0.75, 1, 1 end
+        return 1, 1, 1, 1
+    end
+    assert(loadfile(os.getenv("SUITE_CHAT_CONFIG_SKIN_SOURCE") or skin .. "Adapters/ChatConfig.lua"))("MSUF_Suite_Skin", NS)
+
+    local function Region(alpha)
+        return {
+            alpha = alpha, shown = true,
+            GetAlpha = function(self) return self.alpha end,
+            SetAlpha = function(self, value) self.alpha = value end,
+            IsShown = function(self) return self.shown end,
+        }
+    end
+    local function Panel(name)
+        local panel = Frame(name)
+        panel.NineSlice = { TopEdge = Region(0.5) }
+        return panel
+    end
+    local function CheckTexture(alpha)
+        local texture = Region(alpha)
+        texture.red, texture.green, texture.blue = 1, 1, 1
+        texture.writes = 0
+        texture.GetTexture = function() return 12345 end
+        texture.GetVertexColor = function(self) return self.red, self.green, self.blue, self.alpha end
+        texture.SetVertexColor = function(self, r, g, b, a)
+            self.red, self.green, self.blue, self.alpha = r, g, b, a
+            self.writes = self.writes + 1
+        end
+        texture.IsDesaturated = function(self) return self.desaturated == true end
+        texture.SetDesaturated = function(self, value) self.desaturated = value end
+        return texture
+    end
+    local function Checkbox()
+        local check = Frame(nil)
+        check.alpha, check.checkedArt, check.disabledArt = 1, CheckTexture(1), CheckTexture(0.6)
+        check.GetObjectType = function() return "CheckButton" end
+        check.GetCheckedTexture = function(self) return self.checkedArt end
+        check.GetDisabledCheckedTexture = function(self) return self.disabledArt end
+        check.SetChecked = function(self, value) self.checked = value end
+        check.Click = function(self) self:SetChecked(not self.checked) end
+        return check
+    end
+    local function Tinted(texture, alpha)
+        return texture and texture.desaturated and texture.red == 0.25
+            and texture.green == 0.75 and texture.blue == 1 and texture.alpha == alpha
+    end
+    local function TintedCheck(check)
+        return Tinted(check.checkedArt, 1) and Tinted(check.disabledArt, 0.6)
+    end
+    local function FilterRow()
+        local row = Panel(nil)
+        row.layoutType = "TooltipDefaultLayout"
+        row.CheckButton, row.ColorSwatch = Checkbox(), Region(1)
+        return row
+    end
+    local function Tab()
+        local tab = Frame(nil)
+        tab.IsShown = function() return true end
+        tab.Left, tab.ActiveMiddle, tab.HighlightMiddle = Region(1), Region(1), Region(1)
+        return tab
+    end
+    local function Category()
+        local button = Frame(nil)
+        button.Highlight = Region(1)
+        button.IsHighlightLocked = function(self) return self.locked == true end
+        return button
+    end
+    local frame, group, panel = Frame("ChatConfigFrame"), Panel("ChatConfigChatSettingsLeft"), Panel(nil)
+    local firstTab, secondTab = Tab(), Tab()
+    local firstCategory, secondCategory = Category(), Category()
+    local firstRow, thirdTab = FilterRow(), Tab()
+    local tiered = Panel("CombatConfigMessageTypesLeft")
+    local tieredParent, tieredChild = Checkbox(), Checkbox()
+    group.children[1] = firstRow
+    tiered.children[1] = tieredParent
+    tieredParent.children[1] = tieredChild
+    _G.CombatConfigMessageTypesLeft = tiered
+    _G.CombatConfigMessageTypesLeftCheckbox1 = tieredParent
+    firstCategory.locked = true
+    secondTab.ActiveMiddle.shown = false
+    frame.ChatTabManager = { Tabs = { firstTab, secondTab } }
+    frame.ChatTabManager.UpdateSelection = function(self, selected)
+        for index, tab in ipairs(self.Tabs) do
+            tab.ActiveMiddle.shown, tab.ActiveMiddle.alpha = index == selected, 1
+        end
+    end
+    _G.ChatConfigFrame, _G.ChatConfigBackgroundFrame, _G.ChatConfigChatSettingsLeft = frame, panel, group
+    _G.ChatConfigCategoryFrameButton1, _G.ChatConfigCategoryFrameButton2 = firstCategory, secondCategory
+    _G.ChatConfigCategory_OnClick = function(button)
+        firstCategory.locked, secondCategory.locked = button == firstCategory, button == secondCategory
+    end
+    _G.ChatConfig_CreateCheckboxes = function(parent, row) parent.children[#parent.children + 1] = row end
+    _G.ChatConfig_UpdateCheckboxes = function(parent)
+        for _, row in ipairs(parent.children) do row.CheckButton:SetChecked(true) end
+    end
+    _G.ChatConfig_CreateTieredCheckboxes = function(parent, row)
+        local index = #parent.children + 1
+        parent.children[index] = row
+        _G[parent:GetName() .. "Checkbox" .. index] = row
+    end
+    _G.ChatConfig_UpdateTieredCheckboxes = function(parent, index)
+        local row = parent.children[index]
+        row:SetChecked(true)
+        row.children[1]:SetChecked(true)
+    end
+
+    local function Selected(target, selected)
+        return surfaces[target] and surfaces[target].active == selected
+    end
+    local function Hidden(target)
+        return surfaces[target] and surfaces[target].visible == false
+    end
+    local entry
+    for _, candidate in ipairs(NS.BlizzardCatalog.entries) do
+        if candidate.id == "chat-configuration" then entry = candidate end
+    end
+    Expect(GenericWindows.ApplyEntry(entry, owner), "ChatConfig must skin through the utility catalog")
+    Expect(surfaces[panel] and panel.NineSlice.TopEdge.alpha == 0 and firstRow.NineSlice.TopEdge.alpha == 0,
+        "native ChatConfig panel/row NineSlices still stack borders")
+    Expect(firstRow.CheckButton.alpha == 1 and firstRow.ColorSwatch.alpha == 1,
+        "ChatConfig filter controls lost semantic art")
+    Expect(TintedCheck(firstRow.CheckButton), "Chat filters did not tint both file-based checkbox states")
+    Expect(TintedCheck(tieredParent) and TintedCheck(tieredChild),
+        "Combat Log Message Types did not tint parent and child checkbox states")
+    firstRow.CheckButton:Click()
+    Expect(firstRow.CheckButton.checked and TintedCheck(firstRow.CheckButton),
+        "native checkbox click did not retain checked state and theme")
+    local beforeUpdate = firstRow.CheckButton.checkedArt.writes
+    _G.ChatConfig_UpdateCheckboxes(group)
+    Expect(firstRow.CheckButton.checkedArt.writes == beforeUpdate, "stable checkmark was repainted on a native update")
+    Expect(Selected(firstTab, true) and Selected(secondTab, false)
+        and firstTab.Left.alpha == 0 and firstTab.ActiveMiddle.alpha == 0,
+        "ChatConfig tabs did not distinguish the initial native selection")
+    Expect(Selected(firstCategory, true) and Selected(secondCategory, false)
+        and firstCategory.Highlight.alpha == 0,
+        "ChatConfig category highlight did not follow the initial native selection")
+
+    frame.ChatTabManager.Tabs[3] = thirdTab
+    frame.ChatTabManager:UpdateSelection(3)
+    _G.ChatConfigCategory_OnClick(secondCategory)
+    local lateRow, unrelated = FilterRow(), FilterRow()
+    _G.ChatConfig_CreateCheckboxes(group, lateRow)
+    _G.ChatConfig_CreateCheckboxes(Panel(nil), unrelated)
+    Expect(Selected(thirdTab, true) and Selected(firstTab, false)
+        and firstTab.ActiveMiddle.alpha == 0, "recycled ChatConfig tabs lost their owned selected style")
+    Expect(secondCategory.locked and Selected(secondCategory, true) and Selected(firstCategory, false),
+        "clicking a native ChatConfig category left stale selected chrome")
+    Expect(lateRow.NineSlice.TopEdge.alpha == 0 and unrelated.NineSlice.TopEdge.alpha == 0.5,
+        "ChatConfig did not skin newly created filter rows within its own groups")
+    Expect(TintedCheck(lateRow.CheckButton) and not TintedCheck(unrelated.CheckButton),
+        "lazy Chat filter creation missed a checkbox or painted a foreign one")
+    local newTier, newChild = Checkbox(), Checkbox()
+    newTier.children[1] = newChild
+    _G.ChatConfig_CreateTieredCheckboxes(tiered, newTier)
+    Expect(TintedCheck(newTier) and TintedCheck(newChild), "new Combat Log parent or child missed the theme")
+    newChild.checkedArt = CheckTexture(1)
+    _G.ChatConfig_UpdateTieredCheckboxes(tiered, 2)
+    Expect(newTier.checked and newChild.checked and TintedCheck(newChild),
+        "programmatic Combat Log update did not repaint replacement check art")
+    lateRow.CheckButton.disabledArt = CheckTexture(0.6)
+    _G.ChatConfig_UpdateCheckboxes(group)
+    Expect(TintedCheck(lateRow.CheckButton), "programmatic Chat filter update missed replacement disabled art")
+
+    locked = true
+    tieredChild.checkedArt = CheckTexture(1)
+    _G.ChatConfig_UpdateTieredCheckboxes(tiered, 1)
+    Expect(not TintedCheck(tieredChild), "Combat Log checkmark changed during combat")
+    frame.ChatTabManager:UpdateSelection(2)
+    _G.ChatConfigCategory_OnClick(firstCategory)
+    local key, refresh = next(jobs)
+    Expect(key and next(jobs, key) == nil and Selected(thirdTab, true) and firstTab.ActiveMiddle.alpha == 1,
+        "ChatConfig updated native cosmetics in combat or queued multiple jobs")
+    locked = false
+    if key then
+        jobs[key] = nil
+        refresh()
+    end
+    Expect(Selected(secondTab, true) and Selected(thirdTab, false) and Selected(firstCategory, true),
+        "ChatConfig combat replay did not read the latest native selection")
+    Expect(TintedCheck(tieredChild), "deferred Combat Log checkmark did not repaint")
+    GenericWindows.Disable(owner)
+    Expect(firstRow.NineSlice.TopEdge.alpha == 0.5 and lateRow.NineSlice.TopEdge.alpha == 0.5
+        and firstCategory.Highlight.alpha == 1 and thirdTab.Left.alpha == 1 and Hidden(panel),
+        "ChatConfig disable did not restore native art and hide owned surfaces")
+    Expect(not TintedCheck(firstRow.CheckButton) and not TintedCheck(tieredChild)
+        and tieredChild.checkedArt.red == 1 and tieredChild.disabledArt.alpha == 0.6 and tieredChild.checked,
+        "ChatConfig disable did not restore native marks or changed the filter value")
+    local disabledRow = FilterRow()
+    _G.ChatConfig_CreateCheckboxes(group, disabledRow)
+    frame.ChatTabManager:UpdateSelection(3)
+    Expect(disabledRow.NineSlice.TopEdge.alpha == 0.5 and Hidden(thirdTab) and not TintedCheck(disabledRow.CheckButton),
+        "disabled ChatConfig hooks still styled the native window")
 end)
 
 if #failures > 0 then

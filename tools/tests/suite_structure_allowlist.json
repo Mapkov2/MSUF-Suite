@@ -16,6 +16,18 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_QualityOfLife/GatheringTooltips.lua",
+   "kind": "client",
+   "reason": "Forever exposes C_SkillInfo in its native Camelot SkillsFrame and PaperDollFrame. Retail 12.1.0 and 12.1.5 do not expose it; the module is Forever only and checks the capability before reading a rank.",
+   "symbol": "C_SkillInfo"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/GatheringTooltips.lua",
+   "kind": "client",
+   "reason": "Blizzard_UIPanels_Game/Camelot/PaperDollFrame.lua reads GetSkillLineInfoByID for rank and modifier. The Forever-only gathering module skips the tooltip addition when this method is absent.",
+   "symbol": "C_SkillInfo.GetSkillLineInfoByID"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/EnemyCastStack.lua",
    "kind": "client",
    "reason": "Retail Command Demon resolution uses C_Spell.GetOverrideSpell (Blizzard_ActionBar/Mainline/AssistedCombatManager.lua). This capability guard mirrors MSUF interrupt readiness: only when the override reader is absent may a known player Spell Lock be used; an available reader remains authoritative. The module returns before this path on Forever. suite_enemy_cast_stack_contract covers absent-reader fallback, wrong demon, secret override and pet precedence.",
@@ -1780,13 +1792,13 @@
    "symbol": "chrome.RefreshSelectedLayerButtons"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
    "kind": "addon",
    "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
    "symbol": "H.ApplyPreviewChrome"
   },
   {
-   "file": "MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua",
+   "file": "MSUF_Suite_Options/Menu/PreviewInteraction.lua",
    "kind": "addon",
    "reason": "Optional foreign MSUF host preview API varies between old and current Menu2 hosts. suite_preview_quality_contract covers the legacy fallback; suite_meter_preview_editor_contract exercises the current shared keyboard, chip and selection APIs on Mainline and Forever.",
    "symbol": "button.Refresh"
@@ -1981,7 +1993,7 @@
    "file": "MSUF_Suite_Options/Pages/MinimapPreviewPaint.lua",
    "kind": "lod",
    "reason": "export of a load-on-demand Suite addon (the runtime or the module's own addon), absent until it loads",
-   "symbol": "S.MinimapElementPreviewShown"
+   "symbol": "S.MinimapDrawerPreviewSource"
   },
   {
    "file": "MSUF_Suite_Options/Pages/Nameplates.lua",
@@ -2030,12 +2042,6 @@
    "kind": "state",
    "reason": "NameplatesSize.Build adds it only when MSUF2's PreviewSelectionBar exists (BuildSelection); without that bar there is no size row to refresh.",
    "symbol": "self.RefreshSizeSelection"
-  },
-  {
-   "file": "MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua",
-   "kind": "addon",
-   "reason": "MSUF2 export (Shell/Menu2/MSUF_Menu2_API.lua on the Main and Classic hosts) that scrolls to one setting row; without it a handle click selects the element without opening its setting.",
-   "symbol": "M.OpenExactSettingControl"
   },
   {
    "file": "MSUF_Suite_Options/Pages/NameplatesPreview.lua",
@@ -3098,6 +3104,48 @@
    "kind": "lod",
    "reason": "The Glimmer LoD renderer may be absent when a cold combat preview closes before the QoL addon loads; the preview contract covers cleanup both before and after loading.",
    "symbol": "S.HideGlimmerPreview"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewLinks.lua",
+   "kind": "addon",
+   "reason": "Host Menu2 accordion navigation is optional on older hosts. Exact search still opens the target when the helper is absent; the no-SearchBridge preview case exercises the independent local fallback.",
+   "symbol": "P.W.FocusCollapsibleSection"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewLinks.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 exact-search bridge is absent on older hosts. ChatPreview falls back to persistent local accordion focus; suite_chat_preview_contract exercises the absent bridge.",
+   "symbol": "bridge (= P.M.SearchBridge)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewLinks.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 exact-search bridge method can be absent on older hosts. The preview falls back to local section focus without changing values; covered by suite_chat_preview_contract.",
+   "symbol": "bridge.OpenSearchTarget (= P.M.SearchBridge)"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewWindows.lua",
+   "kind": "addon",
+   "reason": "The Chat preview can build while its optional load-on-demand runtime is absent. The native action remains disabled and the detached preview remains hidden until the provider is available.",
+   "symbol": "S.ChatCanCreateTab"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewWindows.lua",
+   "kind": "addon",
+   "reason": "The Delete Chat Tabs action stays disabled while the optional Chat runtime is absent.",
+   "symbol": "S.ChatDeletableTabs"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatPreviewWindows.lua",
+   "kind": "addon",
+   "reason": "The Chat preview can build while its optional load-on-demand runtime is absent. The native action remains disabled and the detached preview remains hidden until the provider is available.",
+   "symbol": "S.ChatDetachedWindows"
+  },
+  {
+   "file": "MSUF_Suite_Options/Pages/ChatWorkspace.lua",
+   "kind": "addon",
+   "reason": "MSUF Menu2 export for optional search/keyboard metadata. Older hosts can lack it; the topic buttons still select their groups. Same external-host contract as the existing NameplatesWorkspace selector.",
+   "symbol": "P.M.RegisterControlMetadata"
   }
  ]
 }

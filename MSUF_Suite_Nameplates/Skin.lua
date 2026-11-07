@@ -9,6 +9,7 @@ local Level, CastTime, CVars, Auras = private.Level, private.CastTime, private.C
 local KickReady, Selection, AuraColors = private.KickReady, private.Selection, private.AuraColors
 local Decor, Mouseover, Names = private.Decor, private.Mouseover, private.FriendlyNames
 local FilterFriendlyName, RestoreFriendlyName = Names.Filter, Names.Restore
+local NameText = private.NameText
 local LevelBadgeShown = private.Geometry.LevelBadgeShown
 local IN_COMBAT = { inCombat = true }
 local M = {
@@ -242,15 +243,16 @@ end
 local function PaintFonts(uf, health, cast, prefix)
     local c, keys = M.config, Key[prefix]
     local nameStyle = Text.styles[prefix]
-    Text.Apply(uf.name, nameStyle, c[keys.NameSize] or 0)
+    Text.Apply(uf.name, nameStyle, nameStyle.size)
     -- "Name and health text outline" styles both sides' health text; only
     -- enemy plates have a health text size (friendly keeps Blizzard's).
-    local healthSize = prefix == "enemy" and c.enemyHealthTextSize or 0
+    local healthSize = nameStyle.healthSize
     Text.Apply(health.Text, nameStyle, healthSize)
     Text.Apply(health.LeftText, nameStyle, healthSize)
     Text.Apply(health.RightText, nameStyle, healthSize)
     if not cast then return end
-    local style, size = Text.styles[keys.Cast], c[keys.CastSize] or 0
+    local style = Text.styles[keys.Cast]
+    local size = style.size
     Text.Apply(cast.Text, style, size)
     Text.Apply(cast.CastTargetNameText, style, size)
     local time = M.castTimes[cast]
@@ -274,22 +276,28 @@ local function Paint(uf)
     if M.config.look == LOOK_BLIZZARD or not prefix or not M.config[prefix] then
         if M.targetUF == uf then M.targetUF = nil end
         HideVisual(M.visuals[health])
-        RestorePlateFonts(uf, health, cast)
+        if Text.shared and prefix and M.config[prefix] then
+            PaintFonts(uf, health, cast, prefix)
+        else
+            RestorePlateFonts(uf, health, cast)
+        end
         if Selection.inUse then Selection.Apply(health, false) end
     else
         local visual = Visual(health, uf)
         PaintHealth(health, visual, prefix)
         PaintTarget(uf, health, visual, prefix)
         PaintFonts(uf, health, cast, prefix)
-        if Selection.inUse then Selection.Apply(health, true) end
+        if Selection.inUse then Selection.Apply(health, true, uf, prefix) end
     end
     if Decor.inUse then Decor.Paint(uf, health, cast, prefix, unit) end
     -- Last: the role tint, arrows and fonts come first whatever the DoT
     -- colors do (AuraColors.lua).
     AuraColors.Apply(uf, unit, prefix == "enemy")
+    if NameText.inUse then NameText.Apply(uf, prefix, unit) end
 end
 
 local function RestorePlate(uf)
+    NameText.Release(uf)
     AuraColors.Restore(uf)
     Threat.Restore(uf)
     RestoreFriendlyName(uf.name)
@@ -401,6 +409,7 @@ local function OnAdded(self, _, unit)
     if not Safe(uf) then return end
     CoverPlate(uf)
     self.activeUnits[unit] = uf
+    NameText.Begin(uf)
     SetRole(uf, unit)
     Paint(uf)
     Auras.Apply(uf)
@@ -593,6 +602,7 @@ local function OnFrameOptions(uf)
     if not health or not M.units[health] then return end
     local cast = uf.CastBarsContainer and uf.CastBarsContainer.castBar
     Text.Invalidate(uf.name)
+    if NameText.inUse then NameText.Invalidate(uf) end
     Text.Invalidate(health.Text)
     Text.Invalidate(health.LeftText)
     Text.Invalidate(health.RightText)
@@ -631,6 +641,7 @@ end
 local function OnCombatEnded(module)
     -- CVar writes held back for combat (CVars.Apply).
     if module.cvarsPending then CVars.Apply(module) end
+    NameText.FlushRestores()
     local retryQuests = Roles.RetryQuests()
     local pending = module.pendingPlates
     local powerHeld = module.needsRefresh
@@ -707,6 +718,7 @@ function M:Refresh()
     Layout.Configure(self.config)
     Roles.Configure(self.config)
     Text.Configure(self.config)
+    NameText.Configure(self.config)
     self.targetConfig = Style.TargetConfig(self.config)
     CVars.Apply(self)
     Threat.Refresh()
@@ -761,6 +773,7 @@ end
 
 Layout.Bind(M)
 Text.Bind(M)
+NameText.Bind(M)
 Level.Bind(M)
 CastTime.Bind(M)
 KickReady.Bind(M, RepaintCasts)

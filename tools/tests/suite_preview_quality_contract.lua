@@ -134,6 +134,11 @@ local skin = { Surface = { Attach = Attach, SkinOwnedButton = Attach },
 local skinCtx = Context("suite_skin")
 P.BuildSkinMenuPreview(skinCtx, P.W.PageBuilder(skinCtx), skin)
 local section = skinCtx.skinPreview.section
+local skinFocus, priorWorkspace = nil, skinCtx.suiteWorkspace
+skinCtx.suiteWorkspace = { Focus = function(_, target) skinFocus = target end }
+skinCtx.skinPreview.normal.scripts.OnClick()
+assert(skinFocus == "suite_skin_fonts", "Fonts sample opened shape settings")
+skinCtx.suiteWorkspace = priorWorkspace
 for _, state in ipairs(states) do state.refresh(state) end
 prior = skinPaints
 section:Hide()

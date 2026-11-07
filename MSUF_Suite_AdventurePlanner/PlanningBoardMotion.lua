@@ -64,6 +64,9 @@ function B.CreateMotion(window)
     window.pageMotion = Group(window.body, false)
     window.resizeMotion = Group(window, true)
     window.foldMotion, window.foldRegions = Group(window, false), {}
+    NS.ConfigureDisclosure(window.foldMotion.fade)
+    window.foldMotion.fade:SetFromAlpha(1)
+    window.foldMotion.fade:SetToAlpha(1)
     window.foldMotion:SetScript("OnFinished", function() B.FinishAccordion(window, true) end)
 end
 
@@ -112,7 +115,7 @@ end
 function B.FinishAccordion(window, apply)
     if not window.foldActive then return end
     local commit = window.foldCommit
-    window.foldActive, window.foldCommit = nil, nil
+    window.foldActive, window.foldCommit, window.foldGather, window.foldKey = nil, nil, nil, nil
     window.foldMotion:Stop()
     for i = #window.foldRegions, 1, -1 do
         local region = window.foldRegions[i]
@@ -130,46 +133,69 @@ function B.AddFoldRegion(window, region, distance, child)
     region.foldDistance, region.foldChild = distance, child
 end
 
-local function RegionFold(region, opening)
+local function FoldGroup(region)
     local group = region.plannerFoldMotion
-    if not group then
-        group = Group(region, true)
-        group.shift = group:CreateAnimation("Translation")
-        region.plannerFoldMotion = group
+    if group then return group end
+    group = Group(region, true)
+    group.shift = group:CreateAnimation("Translation")
+    NS.ConfigureDisclosure(group.shift)
+    NS.ConfigureDisclosure(group.fade)
+    if group.scale then
+        NS.ConfigureDisclosure(group.scale)
+        group.scale:SetOrigin("TOPLEFT", 0, 0)
     end
-    region.foldPoint, region.foldParent, region.foldRelative, region.foldX, region.foldY = region:GetPoint(1)
-    local distance = region.foldDistance
-    if opening then
-        region:ClearAllPoints()
-        region:SetPoint(region.foldPoint, region.foldParent, region.foldRelative, region.foldX, region.foldY + distance)
+    region.plannerFoldMotion = group
+    return group
+end
+
+local function RegionFold(region, opening, retarget)
+    local group = FoldGroup(region)
+    local distance, child = region.foldDistance, region.foldChild
+    local offset, visibility
+    if retarget then
+        local remaining = group.shift:GetSmoothProgress()
+        offset = group.foldTarget + group.foldDelta * remaining
+        visibility = group.foldVisibility + group.foldFade * remaining
+    else
+        region.foldPoint, region.foldParent, region.foldRelative, region.foldX, region.foldY = region:GetPoint(1)
+        offset, visibility = opening and distance or 0, opening and child and 0 or 1
     end
-    group.fade:SetFromAlpha(opening and region.foldChild and 0 or 1)
-    group.fade:SetToAlpha(not opening and region.foldChild and 0 or 1)
-    group.fade:SetDuration(OPEN)
-    group.fade:SetSmoothing("OUT")
-    group.scale:SetScaleFrom(1, opening and region.foldChild and .001 or 1)
-    group.scale:SetScaleTo(1, not opening and region.foldChild and .001 or 1)
-    group.scale:SetDuration(OPEN)
-    group.scale:SetSmoothing("OUT")
-    group.scale:SetOrigin("TOPLEFT", 0, 0)
-    group.shift:SetOffset(0, opening and -distance or distance)
-    group.shift:SetDuration(OPEN)
-    group.shift:SetSmoothing("OUT")
-    group:Play()
+    local target, visible = opening and 0 or distance, (opening or not child) and 1 or 0
+    group:Stop()
+    group.foldTarget, group.foldDelta = target, offset - target
+    group.foldVisibility, group.foldFade = visible, visibility - visible
+    region:ClearAllPoints()
+    region:SetPoint(region.foldPoint, region.foldParent, region.foldRelative, region.foldX, region.foldY + target)
+    group.shift:SetOffset(0, group.foldDelta)
+    group.fade:SetFromAlpha(visible)
+    group.fade:SetToAlpha(visibility)
+    if group.scale then
+        group.scale:SetScaleFrom(1, .001 + .999 * visible)
+        group.scale:SetScaleTo(1, .001 + .999 * visibility)
+    end
+    group:Play(true)
+end
+
+function B.PrepareAccordion(window, gather, key)
+    if window.foldGather ~= gather or window.foldKey ~= key or B.Reduced() then B.FinishAccordion(window, true) end
 end
 
 function B.PlayAccordion(window, opening, commit, gather, key)
-    B.FinishAccordion(window, true)
     if B.Reduced() then return commit(window) end
-    if opening then commit(window) end
-    gather(window, key)
-    if #window.foldRegions == 0 then
-        if not opening then commit(window) end
-        return
+    local retarget = window.foldActive
+    if not retarget then
+        if opening then commit(window) end
+        gather(window, key)
+        if #window.foldRegions == 0 then
+            if not opening then commit(window) end
+            return
+        end
     end
     window.foldActive, window.foldCommit = true, not opening and commit or nil
-    for _, region in ipairs(window.foldRegions) do RegionFold(region, opening) end
-    Play(window.foldMotion, 1, 1, OPEN, "OUT", 1, 1)
+    window.foldGather, window.foldKey = gather, key
+    for _, region in ipairs(window.foldRegions) do RegionFold(region, opening, retarget) end
+    window.foldMotion:Stop()
+    window.foldMotion:Play(true)
 end
 
 function B.ClearRestore(window)

@@ -19,7 +19,7 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" }, { "Addon memory", "memory" },
     { "Great Vault", "vault" }, { "Supplies", "supplies" }, { "Friends online", "friends" },
     { "Guild online", "guild" }, { "Secondary stat", "secondaryStat" }, { "Mythic+ rating", "mythicRating" },
-    { "Home latency", "homeLatency" } }) do
+    { "Home latency", "homeLatency" }, { "XP / reputation bar", "progressBar" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end
@@ -292,6 +292,9 @@ for bar = 1, 12 do
         B.Add("dataTexts", Number(block .. "Alpha", Label("Place %d background opacity"), 0, 0, 100), target, title)
         B.Add("dataTexts", Color(block .. "IconColor", Label("Place %d icon color"), "ffffff"), target, title)
         B.Add("dataTexts", Number(block .. "Scale", Label("Place %d scale"), 100, 50, 200, 5), target, title)
+        local menu = B.String(block .. "MenuLabel", "Button label", "", 64)
+        menu.requiresChoice = { key = block, values = { [NS.DataTextSourceIndex.microMenu] = true } }
+        B.Add("dataTexts", menu, target, title)
         local stat = Choice(block .. "Stat", Label("Place %d stat"), NS.DataTextStat.CRIT, NS.DataTextStatLabels)
         stat.requiresChoice = { key = block, values = { [NS.DataTextSourceIndex.secondaryStat] = true } }
         B.Add("dataTexts", stat, target, title)
@@ -318,7 +321,7 @@ end
 -- Keep the six legacy slots physically registered. Further slots share
 -- templates and are materialized only for bars whose controls are requested.
 NS.DataTextSlotSuffixes = { "", "Broker", "Currency", "MaxWidth", "Placement", "Padding",
-    "Background", "Alpha", "IconColor", "Scale", "Stat" }
+    "Background", "Alpha", "IconColor", "Scale", "Stat", "MenuLabel" }
 for slot = 7, NS.DataTextSlotLimit do
     for _, field in ipairs(NS.DataTextSlotSuffixes) do
         local suffix = "Slot" .. slot .. field
@@ -554,6 +557,10 @@ if not NS.Client.isForever then information[#information + 1] = "specLoot" end
 for _, key in ipairs({ "durability", "clock", "professions", "gold", "fps", "latency", "travel" }) do
     information[#information + 1] = key
 end
+local modernStyle = { Look = 5, BackgroundEnabled = true, BackgroundTexture = "", BackgroundGradient = false,
+    BackgroundOpacity = 92, BorderEnabled = false, AccentEnabled = false, SeparatorEnabled = false,
+    BagBadge = false, ShowLabels = false, SourceIcons = true, FpsAccent = true,
+    FontSize = 12, Padding = 6, Gap = 0, TextAlign = 2 }
 NS.DataTextPresets = {
     { id = "empty", title = "Empty bar", description = "Start with an empty bar and choose your own data.", sources = {} },
     { id = "infoTop", title = "Top information bar", description = "Everyday information across the top of your screen.",
@@ -562,9 +569,15 @@ NS.DataTextPresets = {
         sources = information },
     { id = "minimap", title = "Minimap companion", description = "A compact clock, FPS and latency bar.",
         sources = { "clock", "fps", "latency" } },
-    { id = "microMenu", title = "Menu bar", description = "Quick access to the native game menus.", sources = { "microMenu" } },
+    { id = "microMenu", title = "Micro menu button",
+        description = "Quick access to the native game menus.", sources = { "microMenu" }, style = modernStyle },
     { id = "antique", title = "Antique footer", description = "Bags, durability and clock with the antique bag medallion.",
         sources = { "bags", "durability", "clock" } },
+    { id = "modern", title = "Modern data bar",
+        description = "A slim top bar with progress, a centered clock and essential information.",
+        sources = { "microMenu", "progressBar", "durability", "clock", "professions", "gold", "fps", "latency", "location" },
+        style = modernStyle,
+    },
 }
 local presetsByID = {}
 for _, preset in ipairs(NS.DataTextPresets) do presetsByID[preset.id] = preset end
@@ -631,14 +644,14 @@ function NS.DataTextPresetValues(id, bar, config)
         values[prefix .. "Slot" .. slot] = NS.DataTextSourceIndex.none
     end
     for slot, key in ipairs(preset.sources) do values[prefix .. "Slot" .. slot] = NS.DataTextSourceIndex[key] end
-    values[prefix .. "Name"] = NS.Text(preset.title)
+    values[prefix .. "Name"] = id == "microMenu" and NS.Text("Menu bar") or NS.Text(preset.title)
     values[prefix .. "Enabled"], values[prefix .. "Vertical"] = true, false
     values[prefix .. "FullScreen"], values[prefix .. "Dock"] = false, NS.DataTextDock.FREE
     values[prefix .. "Width"], values[prefix .. "Height"] = 390, 28
     values[prefix .. "Layout"], values[prefix .. "StyleOverride"] = NS.DataTextLayout.EQUAL, false
-    if id == "infoTop" or id == "infoBottom" then
+    if id == "infoTop" or id == "infoBottom" or id == "modern" then
         values[prefix .. "FullScreen"], values[prefix .. "Width"] = true, 900
-        values[prefix .. "Dock"] = id == "infoTop" and NS.DataTextDock.TOP or NS.DataTextDock.BOTTOM
+        values[prefix .. "Dock"] = id == "infoBottom" and NS.DataTextDock.BOTTOM or NS.DataTextDock.TOP
         for slot, key in ipairs(preset.sources) do
             if key == "clock" then values[prefix .. "Slot" .. slot .. "Placement"] = NS.DataTextPlacement.CENTER end
         end
@@ -649,6 +662,10 @@ function NS.DataTextPresetValues(id, bar, config)
         values[prefix .. "Width"] = 180
     elseif id == "antique" then
         for key, value in pairs(NS.DataTextAntiqueFooterValues(bar, config)) do values[key] = value end
+    end
+    if preset.style then
+        values[prefix .. "Height"], values[prefix .. "StyleOverride"] = 26, true
+        for key, value in pairs(preset.style) do values[prefix .. key] = value end
     end
     return values
 end
@@ -690,9 +707,65 @@ function NS.DataTextEffectiveStyle(config, bar)
     }
 end
 
+-- The preview and live places use the same three texture layers.
+NS.DataTextProgressWidth = 112
+function NS.ClampDataTextProgress(value)
+    return math.min(1, math.max(0, value))
+end
+
+function NS.PrepareDataTextProgress(button, create)
+    if button.dataProgress then return end
+    local track = create(button, nil, "ARTWORK", nil, 0)
+    local rested = create(button, nil, "ARTWORK", nil, 1)
+    local fill = create(button, nil, "ARTWORK", nil, 2)
+    track:SetColorTexture(.15, .16, .18, .95)
+    rested:SetColorTexture(.29, .43, .68, 1)
+    fill:SetColorTexture(.25, .78, .62, 1)
+    for _, texture in ipairs({ rested, fill }) do
+        texture:SetPoint("TOPLEFT", track, "TOPLEFT")
+        texture:SetPoint("BOTTOMLEFT", track, "BOTTOMLEFT")
+        texture:Hide()
+    end
+    track:Hide()
+    button.dataProgress = { track = track, bonus = rested, fill = fill }
+end
+
+function NS.PaintDataTextProgress(button, progress, rested)
+    local visual = button.dataProgress
+    local width = visual.width
+    if not width or (visual.progress == progress and visual.rested == rested and visual.paintWidth == width) then return end
+    visual.progress, visual.rested, visual.paintWidth = progress, rested, width
+    local shown = progress ~= nil and width > 0
+    visual.track:SetShown(shown)
+    local fill, bonus = visual.fill, visual.bonus
+    fill:SetShown(shown and progress > 0)
+    bonus:SetShown(shown and rested ~= nil and rested > progress)
+    if shown and progress > 0 then fill:SetWidth(width * progress) end
+    if shown and rested and rested > progress then bonus:SetWidth(width * rested) end
+end
+
+function NS.LayoutDataTextProgress(button, available, inset, pixel)
+    local visual = button.dataProgress
+    local width = math.max(0, math.min(NS.DataTextProgressWidth, available - 2 * inset))
+    visual.width = width
+    local track = visual.track
+    track:ClearAllPoints()
+    track:SetPoint("BOTTOM", button, "BOTTOM", 0, pixel)
+    track:SetSize(math.max(pixel, width), 2 * pixel)
+    NS.PaintDataTextProgress(button, visual.progress, visual.rested)
+end
+
 local DATA_ICONS = {
     homeLatency = "Home", latency = "World", location = "Location", durability = "Durability",
 }
+
+function NS.DataTextMenuCaption(value)
+    if type(value) == "string" then
+        local caption = value:gsub("%c", " "):match("^%s*(.-)%s*$")
+        if caption ~= "" then return (caption:gsub("|", "||")) end
+    end
+    return NS.Text("Menu")
+end
 
 local FPS_LABEL, MS_LABEL = NS.Text("FPS"), NS.Text("MS")
 function NS.FormatDataText(label, value, severity, style, key, alternate)
@@ -708,7 +781,7 @@ function NS.FormatDataText(label, value, severity, style, key, alternate)
     elseif key == "memory" and style.colorMemoryUnit then
         value = value:gsub(" MB$", " |cff" .. style.memoryUnitColor .. "MB|r")
     end
-    if style.showLabels and (key ~= "clock" or style.clockLabel) then
+    if style.showLabels and label and key ~= "progressBar" and (key ~= "clock" or style.clockLabel) then
         local separator = style.labelColon and ": " or " "
         return label .. separator .. value,
             "|cff" .. style.labelColor .. label .. separator .. "|r|cff" .. valueColor .. value .. "|r"

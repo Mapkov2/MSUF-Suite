@@ -28,7 +28,7 @@ local function SuitePanel(strata, name)
     accent:SetPoint("TOPRIGHT")
     accent:SetHeight(2)
     accent:SetColorTexture(.8, .68, .42, 1)
-    return panel
+    return panel, background, accent
 end
 
 -- A movable Suite-owned window with a title, a drag strip (panel.dragHandle)
@@ -254,7 +254,8 @@ end
 -- row's parent ScrollFrame (ScrollIntoView, PadNavigation.lua) and scrolls
 -- it with the right stick. The mouse wheel scrolls it too.
 local function PadPanel(name)
-    local panel = SuitePanel("FULLSCREEN_DIALOG", name)
+    local panel, background, accent = SuitePanel("FULLSCREEN_DIALOG", name)
+    panel.background, panel.accent = background, accent
     panel:SetWidth(PAD_WIDTH)
     local text = S.CreateFontString(panel, nil, "ARTWORK")
     S.SetFont(text, nil, 12, "")
@@ -293,10 +294,36 @@ local function PadRow(panel, index)
     label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
     label:SetJustifyH("LEFT")
     label:SetWordWrap(false)
-    row.line, row.label, row.panel = line, label, panel
+    row.line, row.label, row.panel, row.highlight = line, label, panel, highlight
     row:SetScript("OnClick", function(self) PickPadRow(self) end)
     panel.rows[index] = row
     return row
+end
+
+local function StyleMenuRow(row, entry, clickable, palette)
+    local element = entry.element
+    local kind = element and element.kind
+    local selected = element and element.isSelected and element.isSelected(element.data)
+    if not row.fill then
+        row.fill = S.CreateTexture(row, nil, "BACKGROUND", nil, -1)
+        row.fill:SetAllPoints(row)
+        row.mark = S.CreateTexture(row, nil, "ARTWORK")
+        row.mark:SetPoint("TOPLEFT", 0, -2)
+        row.mark:SetPoint("BOTTOMLEFT", 0, 2)
+        row.mark:SetWidth(2)
+    end
+    local color = selected and palette.selected or palette.idle
+    row.fill:SetColorTexture(color[1], color[2], color[3], 1)
+    row.fill:SetShown(kind ~= "divider" and kind ~= "title")
+    row.mark:SetColorTexture(palette.accent[1], palette.accent[2], palette.accent[3], 1)
+    row.mark:SetShown(selected == true)
+    row.highlight:SetColorTexture(palette.accent[1], palette.accent[2], palette.accent[3], .20)
+    row.line:SetColorTexture(palette.border[1], palette.border[2], palette.border[3], .8)
+    local text = kind == "title" and palette.accent or palette.text
+    row.label:SetTextColor(text[1], text[2], text[3], (clickable or kind == "title") and 1 or .55)
+    local label = element and element.text or entry.label
+    if element and #element.children > 0 then label = label .. "  >" end
+    row.label:SetText(label)
 end
 
 -- entries[i] = { element, depth } for menus, { action, label } for questions.
@@ -308,8 +335,8 @@ local function FillPad(panel, entries, top)
     for index, entry in ipairs(entries) do
         local row, element = PadRow(panel, index), entry.element
         local kind = element and element.kind
-        local clickable = entry.action ~= nil
-            or (kind == "button" or kind == "checkbox" or kind == "radio") and element.callback ~= nil
+        local clickable = entry.action ~= nil or entry.back
+            or element and (element.callback ~= nil or panel.palette and #element.children > 0)
             and ElementEnabled(element)
         row.entry = entry
         row:ClearAllPoints()
@@ -320,11 +347,14 @@ local function FillPad(panel, entries, top)
         row.label:ClearAllPoints()
         row.label:SetPoint("LEFT", row, "LEFT", 6 + (entry.depth or 0) * PAD_INDENT, 0)
         row.label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
-        row.label:SetText(element and EntryLabel(element) or entry.label)
-        -- A submenu's own row heads its entries below it.
-        local shade = (clickable or element and #element.children > 0) and 1 or .5
-        if kind == "title" then row.label:SetTextColor(1, .82, 0) else row.label:SetTextColor(shade, shade, shade) end
-        row:SetEnabled(clickable)
+        if panel.palette then
+            StyleMenuRow(row, entry, clickable, panel.palette)
+        else
+            row.label:SetText(element and EntryLabel(element) or entry.label)
+            local shade = (clickable or element and #element.children > 0) and 1 or .5
+            if kind == "title" then row.label:SetTextColor(1, .82, 0) else row.label:SetTextColor(shade, shade, shade) end
+        end
+        row:SetEnabled(clickable == true)
         row:Show()
     end
     for index = #entries + 1, #panel.rows do panel.rows[index]:Hide() end
@@ -335,7 +365,7 @@ local function FillPad(panel, entries, top)
     scroll:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD_INSET, top)
     scroll:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -PAD_INSET, top)
     scroll:SetHeight(shown * PAD_ROW)
-    scroll:SetVerticalScroll(math.min(scroll:GetVerticalScroll(), (#entries - shown) * PAD_ROW))
+    scroll:SetVerticalScroll(math.min(scroll:GetVerticalScroll(), math.max(0, #entries - shown) * PAD_ROW))
     panel:SetHeight(-top + shown * PAD_ROW + PAD_INSET)
 end
 
@@ -355,35 +385,65 @@ local function TakePad(panel)
 end
 
 ------------------------------------------------------------------ pad menus
-local menuPanel
+local menuPanel, styledMenuPanel
+
+local function ShowMenuBranch(panel, branch)
+    local entries = {}
+    if branch.parent then entries[1] = { back = true, label = "<  " .. S.BlizzardText("BACK", "Back") } end
+    for _, element in ipairs(branch.children) do entries[#entries + 1] = { element = element } end
+    panel.branch = branch
+    FillPad(panel, entries, -PAD_INSET)
+    return #entries
+end
 
 local function BuildPadMenu(panel)
     local root = setmetatable({ children = {} }, ElementMeta)
     local args = panel.args
     S.Dispatch(panel.generator, panel.owner, root, unpack(args, 1, args.n))
-    local entries = {}
-    Flatten(entries, root, 0)
     panel.text:SetText("")
     panel.text:Hide()
+    if panel.palette then return ShowMenuBranch(panel, root) end
+    local entries = {}
+    Flatten(entries, root, 0)
     FillPad(panel, entries, -PAD_INSET)
     return #entries
 end
 
-local function MenuClickAway(panel)
+local function MenuClickAway(panel, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        panel:Hide()
+        return
+    end
     local over = panel:IsMouseOver()
     if S.Public(over) and over == true then return end
+    if panel.palette and panel.owner then
+        local ownerOver = panel.owner:IsMouseOver()
+        if S.Public(ownerOver) and ownerOver == true then return end
+    end
     panel:Hide()
 end
 
-local function MenuPanel()
-    if menuPanel then return menuPanel end
-    menuPanel = PadPanel()
-    menuPanel:SetScript("OnEvent", MenuClickAway)
-    menuPanel:SetScript("OnHide", function(self)
-        self:UnregisterEvent("GLOBAL_MOUSE_DOWN")
-        self.generator, self.owner, self.args = nil, nil, nil
-    end)
-    return menuPanel
+local function ClearMenu(panel)
+    panel:UnregisterAllEvents()
+    panel.generator, panel.owner, panel.args, panel.branch = nil, nil, nil, nil
+    for _, row in ipairs(panel.rows) do row.entry = nil end
+    panel.entries = nil
+end
+
+local function MenuPanel(name)
+    local panel = PadPanel(name)
+    panel:SetScript("OnEvent", MenuClickAway)
+    panel:SetScript("OnHide", ClearMenu)
+    return panel
+end
+
+local function PrepareMenu(panel, owner, generator, ...)
+    if panel:IsShown() then panel:Hide() end
+    panel.scroll:SetVerticalScroll(0)
+    panel.owner, panel.generator, panel.args = owner, generator, { n = select("#", ...), ... }
+    if BuildPadMenu(panel) > 0 then return true end
+    ClearMenu(panel)
+    return false
 end
 
 -- A Blizzard context menu (MenuUtil.CreateContextMenu, the generator gets
@@ -392,15 +452,11 @@ end
 -- own (nil or UIParent, whose bottom left is the screen's corner) opens in
 -- the screen's centre, where the pad's list is found without a cursor.
 function S.ContextMenu(owner, generator, ...)
+    S.CloseStyledContextMenu()
     if not PadList() then return MenuUtil.CreateContextMenu(owner, generator, ...) end
-    local panel = MenuPanel()
-    if panel:IsShown() then panel:Hide() end
-    panel.scroll:SetVerticalScroll(0)
-    panel.owner, panel.generator, panel.args = owner, generator, { n = select("#", ...), ... }
-    if BuildPadMenu(panel) == 0 then
-        panel.generator, panel.owner, panel.args = nil, nil, nil
-        return
-    end
+    menuPanel = menuPanel or MenuPanel()
+    local panel = menuPanel
+    if not PrepareMenu(panel, owner, generator, ...) then return end
     panel:ClearAllPoints()
     if owner and owner ~= UIParent then
         panel:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
@@ -413,13 +469,67 @@ function S.ContextMenu(owner, generator, ...)
     return panel
 end
 
+function S.CloseStyledContextMenu(owner)
+    local panel = styledMenuPanel
+    if panel and (not owner or owner == panel.owner) then panel:Hide() end
+end
+
+local function StyledMenuPanel()
+    if styledMenuPanel then return styledMenuPanel end
+    local name = "MSUFSuiteStyledContextMenu"
+    local panel = MenuPanel(name)
+    UISpecialFrames[#UISpecialFrames + 1] = name
+    panel.Close = panel.Hide
+    panel:SetFrameStrata("TOOLTIP")
+    panel.accent:Hide()
+    panel.edges = {}
+    for i = 1, 4 do panel.edges[i] = S.CreateTexture(panel, nil, "BORDER") end
+    styledMenuPanel = panel
+    return panel
+end
+
+-- Only Suite-owned controls opt in. The same description callbacks work
+-- with the styled mouse list, including on hosts with gamepad navigation.
+function S.StyledContextMenu(owner, palette, generator, ...)
+    local pad = PadList()
+    if not pad and S.GamepadUI() then return S.ContextMenu(owner, generator, ...) end
+    local panel = StyledMenuPanel()
+    if panel:IsShown() and panel.owner == owner then
+        panel:Hide()
+        return
+    end
+    if menuPanel then menuPanel:Hide() end
+    panel.palette = palette
+    if not PrepareMenu(panel, owner, generator, ...) then return end
+    panel.background:SetColorTexture(unpack(palette.panel))
+    local border = palette.border
+    S.PlaceEdges(panel.edges, panel, 1, border[1], border[2], border[3], 1)
+    local bottom = owner:GetBottom()
+    local scale = owner:GetEffectiveScale() / panel:GetEffectiveScale()
+    panel:ClearAllPoints()
+    if bottom and bottom * scale < panel:GetHeight() + 8 and owner:GetTop() * scale < UIParent:GetHeight() / 2 then
+        panel:SetPoint("BOTTOMLEFT", owner, "TOPLEFT", 0, 2)
+    else
+        panel:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", 0, -2)
+    end
+    if not owner.suiteStyledMenuHook then
+        owner.suiteStyledMenuHook = true
+        owner:HookScript("OnHide", S.CloseStyledContextMenu)
+    end
+    panel:Show()
+    panel:RegisterEvent("GLOBAL_MOUSE_DOWN")
+    panel:RegisterEvent("PLAYER_REGEN_DISABLED")
+    if pad then TakePad(panel) end
+    return panel
+end
+
 -- As MenuElementDescriptionProxyMixin:Pick, a disabled entry never runs.
 local function PickMenuRow(panel, element)
     if not element.callback or not ElementEnabled(element) then return end
     local response = element.response
     local ok, answer = S.Dispatch(Finish, element.callback, element.data, PICK_INPUT, nil)
     if ok and answer ~= nil then response = answer end
-    if panel ~= menuPanel or not panel:IsShown() then return end
+    if not panel:IsShown() then return end
     if KeepsMenu(response) and panel.generator then
         BuildPadMenu(panel)
     else
@@ -527,10 +637,18 @@ end
 function PickPadRow(row)
     local entry = row.entry
     if not entry then return end
+    local panel, element = row.panel, entry.element
     if entry.action then
         PadAnswer(row)
-    elseif entry.element then
-        PickMenuRow(row.panel, entry.element)
+    elseif entry.back then
+        panel.scroll:SetVerticalScroll(0)
+        ShowMenuBranch(panel, panel.branch.parent)
+    elseif element and panel.palette and #element.children > 0 and ElementEnabled(element) then
+        panel.scroll:SetVerticalScroll(0)
+        element.parent = panel.branch
+        ShowMenuBranch(panel, element)
+    elseif element then
+        PickMenuRow(panel, element)
     end
 end
 

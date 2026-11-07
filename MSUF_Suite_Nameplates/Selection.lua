@@ -14,10 +14,12 @@ local KEEP, CUSTOM, HIDE, LOOK_BLIZZARD = Mode.KEEP, Mode.CUSTOMIZE, Mode.HIDE, 
 local Selection = { inUse = false }
 private.Selection = Selection
 
--- Styled health bars: health -> { border = alpha, dim = alpha, revision }.
+-- Styled regions and the native health backdrop opacity saved for restoration.
 local plates = setmetatable({}, { __mode = "k" })
+local badges = setmetatable({}, { __mode = "k" })
+local hookedBadges = setmetatable({}, { __mode = "k" })
 local border, dim, dimAlpha, targetRGB, focusRGB = KEEP, KEEP, 1, nil, nil
-local active = false
+local active, hideEnemyBackground, hideFriendlyBackground = false, false, false
 local revision, hooked = 0, false
 local original
 
@@ -26,8 +28,13 @@ local function Safe(region)
 end
 
 -- Blizzard's own border color for the plate's state (Restore).
-local function NativeColor(health)
+local function NativeColor(health, badge)
     local target, focus = health.isTarget, health.isFocus
+    if badge then
+        if NS.Public(target) and target == true then return NamePlateConstants.TARGET_BORDER_COLOR end
+        if NS.Public(focus) and focus == true then return NamePlateConstants.FOCUS_TARGET_BORDER_COLOR end
+        return
+    end
     if NS.Public(target) and target == true then return NAMEPLATE_BORDER_TARGET_COLOR end
     if NS.Public(focus) and focus == true then return NAMEPLATE_BORDER_FOCUS_TARGET_COLOR end
 end
@@ -41,8 +48,8 @@ local function CustomColor(health)
     return (isFocus and not isTarget) and focusRGB or targetRGB
 end
 
-local function Paint(health, state, colorOnly)
-    local frame, overlay = health.selectedBorder, health.deselectedOverlay
+local function PaintBorder(owner, state, colorOnly, badge)
+    local frame = owner.selectedBorder
     if Safe(frame) then
         if not colorOnly then
             local alpha = border == HIDE and 0 or 1
@@ -52,15 +59,20 @@ local function Paint(health, state, colorOnly)
             end
         end
         if border == CUSTOM then
-            local rgb = CustomColor(health)
+            local rgb = CustomColor(owner)
             frame:SetVertexColor(rgb[1], rgb[2], rgb[3])
             state.colored = true
         elseif state.colored then
-            local color = NativeColor(health)
+            local color = NativeColor(owner, badge)
             if color then frame:SetVertexColor(color.r, color.g, color.b) end
             state.colored = nil
         end
     end
+end
+
+local function Paint(health, state, colorOnly)
+    PaintBorder(health, state, colorOnly)
+    local overlay = health.deselectedOverlay
     if not colorOnly and Safe(overlay) then
         local alpha = dim == HIDE and 0 or dim == CUSTOM and dimAlpha or 1
         if state.dim ~= alpha then
@@ -68,7 +80,57 @@ local function Paint(health, state, colorOnly)
             state.dim = alpha
         end
     end
-    state.revision = revision
+end
+
+local function OnUpdateBadge(badge)
+    local state = badges[badge]
+    if state and border == CUSTOM then PaintBorder(badge, state, true, true) end
+end
+
+local function RestoreBorder(owner, state, badge)
+    if not Safe(owner) then return end
+    local frame = owner.selectedBorder
+    if not Safe(frame) then return end
+    if state.border == 0 then frame:SetAlpha(1) end
+    if state.colored then
+        local color = NativeColor(owner, badge)
+        if color then frame:SetVertexColor(color.r, color.g, color.b) end
+    end
+end
+
+local function PaintBadge(state, badge)
+    if state.badge and (state.badge ~= badge or border == KEEP) then
+        RestoreBorder(state.badge, badges[state.badge], true)
+        badges[state.badge], state.badge = nil, nil
+    end
+    if border == KEEP or not Safe(badge) or not Safe(badge.selectedBorder) then return end
+    local visual = badges[badge]
+    if not visual then
+        visual = {}
+        badges[badge], state.badge = visual, badge
+    end
+    if border == CUSTOM and not hookedBadges[badge] and badge.UpdateSelectionBorder then
+        hooksecurefunc(badge, "UpdateSelectionBorder", OnUpdateBadge)
+        hookedBadges[badge] = true
+    end
+    PaintBorder(badge, visual, false, true)
+end
+
+-- Forever draws an oversized native backdrop on the bar; Classic uses the
+-- Nameplate-Border texture there. Keep its anchors for the selection border.
+local function PaintBackground(health, state, hide)
+    local texture = health.bgTexture
+    if not Safe(texture) then return end
+    if hide and state.background == nil then
+        local alpha = texture:GetAlpha()
+        if NS.Finite(alpha) then
+            state.background = alpha
+            texture:SetAlpha(0)
+        end
+    elseif not hide and state.background ~= nil then
+        texture:SetAlpha(state.background)
+        state.background = nil
+    end
 end
 
 -- Runs after Blizzard's own update on every target or focus change: only a
@@ -94,16 +156,18 @@ end
 
 local function Restore(health, state)
     plates[health] = nil
-    if not active and next(plates) == nil then Selection.inUse = false end
-    local frame, overlay = health.selectedBorder, health.deselectedOverlay
-    if Safe(frame) then
-        if state.border ~= 1 then frame:SetAlpha(1) end
-        if state.colored then
-            local color = NativeColor(health)
-            if color then frame:SetVertexColor(color.r, color.g, color.b) end
-        end
+    if not active and not hideEnemyBackground and not hideFriendlyBackground and next(plates) == nil then
+        Selection.inUse = false
     end
-    if Safe(overlay) and state.dim ~= 1 then overlay:SetAlpha(1) end
+    RestoreBorder(health, state)
+    local overlay = health.deselectedOverlay
+    if Safe(overlay) and state.dim and state.dim ~= 1 then overlay:SetAlpha(1) end
+    PaintBackground(health, state, false)
+    local badge = state.badge
+    if badge then
+        RestoreBorder(badge, badges[badge], true)
+        badges[badge] = nil
+    end
 end
 
 function Selection.Configure(config)
@@ -112,7 +176,9 @@ function Selection.Configure(config)
     dim = skin and config.selectionDim or KEEP
     dimAlpha = (config.selectionDimPercent or 50) / 100
     active = border ~= KEEP or dim ~= KEEP
-    Selection.inUse = active or next(plates) ~= nil
+    hideEnemyBackground = skin and NS.Client.isForever and config.enemy and config.enemyNativeBorderEnabled == false
+    hideFriendlyBackground = skin and NS.Client.isForever and config.friendly and config.friendlyNativeBorderEnabled == false
+    Selection.inUse = active or hideEnemyBackground or hideFriendlyBackground or next(plates) ~= nil
     -- Profiles saved before these settings existed have no colors yet.
     targetRGB = { NS.RGB(config.selectionTargetColor or "ffffff") }
     focusRGB = { NS.RGB(config.selectionFocusColor or "ff66ff") }
@@ -121,18 +187,27 @@ end
 
 -- A plate pass (Skin.lua Paint, only while inUse) on a health bar it already
 -- checked: styled is false for a plate whose side the skin leaves alone.
-function Selection.Apply(health, styled)
+function Selection.Apply(health, styled, uf, prefix)
     local state = plates[health]
-    if not styled or not active then
+    local hideBackground = prefix == "enemy" and hideEnemyBackground or prefix == "friendly" and hideFriendlyBackground
+    if not styled or not (active or hideBackground) then
         if state then Restore(health, state) end
         return
     end
     if not state then
         state = {}
         plates[health] = state
-        Hook(health)
     end
-    if state.revision ~= revision then Paint(health, state) end
+    -- A unit can change faction on an existing plate without a profile refresh.
+    if (hideBackground == true) ~= (state.background ~= nil) then
+        PaintBackground(health, state, hideBackground)
+    end
+    if state.revision ~= revision then
+        if active then Hook(health) end
+        if active or state.border or state.dim then Paint(health, state) end
+        PaintBadge(state, NS.Client.isForever and uf and uf.PlayerLevelDiffFrame)
+        state.revision = revision
+    end
 end
 
 function Selection.Restore(health)
@@ -142,6 +217,11 @@ end
 
 function Selection.RestoreAll()
     for health, state in pairs(plates) do
-        if Safe(health) then Restore(health, state) else plates[health] = nil end
+        if Safe(health) then
+            Restore(health, state)
+        else
+            if state.badge then badges[state.badge] = nil end
+            plates[health] = nil
+        end
     end
 end

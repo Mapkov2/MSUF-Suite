@@ -65,8 +65,6 @@ function Paint.Build(ui)
     end
     parts.lines = parts.messageLines[1]
     parts.lines:SetPoint("BOTTOMLEFT", sample, "BOTTOMLEFT", 0, 0)
-    parts.textHit = CreateFrame("Frame", nil, parts.textClip)
-    parts.textHit:SetAllPoints(parts.lines)
     parts.text = SampleText()
     parts.sidebar = CreateFrame("Frame", nil, ui.stage)
     for index = 1, 5 do
@@ -87,6 +85,35 @@ function Paint.Build(ui)
     local _, _, _, alpha = parts.lines:GetShadowColor()
     fonts.shadowAlpha, fonts.shadowX = alpha or 0, parts.lines:GetShadowOffset() or 1
     parts.fonts = fonts
+end
+
+-- Anchor the hit to its own line so it follows the shared text offset.
+-- Its rectangle is clipped to the painted area inside the chat window.
+function Paint.AnchorMessage(handle)
+    local line, sample = handle.region, handle:GetParent()
+    local _, _, _, alpha = line:GetTextColor()
+    local x, y, width, height = line:GetRect()
+    local sx, sy, sw, sh = sample:GetRect()
+    local visible, Finite = false, P.Suite.Finite
+    if line:IsShown() and Finite(alpha) and alpha > 0
+        and Finite(x) and Finite(y) and Finite(width) and Finite(height)
+        and Finite(sx) and Finite(sy) and Finite(sw) and Finite(sh) then
+        local wrapped, textHeight = line:GetWrappedWidth(), line:GetStringHeight()
+        if Finite(wrapped) and Finite(textHeight) then
+            local left, top = math.max(x, sx), math.min(y + height, sy + sh)
+            local right = math.min(x + math.min(width, wrapped), sx + sw)
+            local bottom = math.max(y + height - math.min(height, textHeight), sy)
+            if right > left and top > bottom then
+                handle:ClearAllPoints()
+                handle:SetPoint("TOPLEFT", line, "TOPLEFT", left - x, top - y - height)
+                handle:SetSize(right - left, top - bottom)
+                visible = true
+            end
+        end
+    end
+    -- Keep an inert selection target for exact X/Y search even if all text is clipped.
+    handle.hitVisible = visible
+    handle:EnableMouse(visible)
 end
 
 function Paint.Refresh(ui)

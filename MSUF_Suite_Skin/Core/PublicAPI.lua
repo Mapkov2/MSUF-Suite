@@ -73,7 +73,7 @@ end
 -- textures, Icon or Checked fields, dropdown mixin or Blizzard-gold text,
 -- and never adds them. The skin then skips its native-asset and gold-text
 -- tracking for it; a false claim only costs the caller that adoption.
-local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape", "ownedArt", "paletteMotion" }
+local specFlags = { "active", "forceEdge", "listItem", "slice", "useControlShape", "ownedArt", "paletteMotion", "selectionEdge" }
 
 -- Whitelist only declarative rendering values.  Public callers cannot pass
 -- region arrays, callbacks, functions, internal owner tokens, or the reviewed

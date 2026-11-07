@@ -184,6 +184,9 @@ S.Cleared = nil
              {"MSUFSuite.cdm:ess", "MSUFSuite.cdm:c1"}),
             ('S.RegisterOwnedMover("dataTexts", "bar" .. i, {})', 'for _, i in ipairs(self.barIDs) do ', '',
              {"MSUFSuite.dataTexts:bar1", "MSUFSuite.dataTexts:bar2", "MSUFSuite.dataTexts:bar3"}),
+            ('S.RegisterOwnedMover("chat", id, {})', 'for index = 2, C.MaxFloatingWindows() do local id = C.FloatingMoverID(index) ',
+             'local CHAT_WINDOW_LIMIT = 3 function C.FloatingMoverID(index) return "floating" .. index end',
+             {"MSUFSuite.chat:floating2", "MSUFSuite.chat:floating3"}),
             ('S.RegisterOwnedMover("meter", list[i].elementID, {})', 'for i = 1, D.MAX do ',
              'MAX = 2 elementID = "window" .. i', {"MSUFSuite.meter:window1", "MSUFSuite.meter:window2"}),
         )

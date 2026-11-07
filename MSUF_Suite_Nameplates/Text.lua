@@ -48,6 +48,7 @@ end
 function Text.Restore(region)
     local original = Text.originals[region]
     if not original or original.restored or NS.Safety.IsForbidden(region) then return end
+    if original.fontScale then original.fontScale(region, original[3]) end
     region:SetFont(original[1], original[2], original[3])
     if original.shadow then region:SetShadowColor(unpack(original.shadow)) end
     if original.offset then region:SetShadowOffset(unpack(original.offset)) end
@@ -78,31 +79,27 @@ function Text.Apply(region, style, size)
     -- 2026-10-26 M+ trace: only a font write can change the values just read.
     local appliedPath, appliedSize, appliedFlags = path, nativeSize, flags
     if fontChanged then
+        if style.fontScale then style.fontScale(region, style.flags) original.fontScale = style.fontScale end
         S.SetFont(region, face, height, style.flags)
         appliedPath, appliedSize, appliedFlags = region:GetFont()
     end
     if S.Public(appliedPath) and S.Finite(appliedSize) and S.Public(appliedFlags) then
         original.appliedPath, original.appliedSize, original.appliedFlags = appliedPath, appliedSize, appliedFlags
     end
-    if fontChanged or original.appliedShadow ~= style.shadow then
-        region:SetShadowColor(0, 0, 0, style.shadow and 1 or 0)
-        region:SetShadowOffset(style.shadow and 1 or 0, style.shadow and -1 or 0)
-        original.appliedShadow = style.shadow
+    local shadowKey = style.shadowKey or style.shadow
+    if fontChanged or original.appliedShadow ~= shadowKey then
+        region:SetShadowColor(0, 0, 0, style.shadow and (style.shadowAlpha or 1) or 0)
+        region:SetShadowOffset(style.shadow and (style.shadowX or 1) or 0, style.shadow and (style.shadowY or -1) or 0)
+        original.appliedShadow = shadowKey
     end
 end
 
 function Text.Configure(config)
+    local shared = NS.NameplateText.Shared(config)
+    Text.shared = shared
     local result = {}
     for _, prefix in ipairs({ "enemy", "friendly", "enemyCast", "friendlyCast" }) do
-        local cast = prefix:sub(-4) == "Cast"
-        local key = prefix .. (cast and "Font" or "NameFont")
-        local outline = config[prefix .. (cast and "Outline" or "TextOutline")]
-        result[prefix] = {
-            enabled = config[prefix .. "TextEnabled"] ~= false,
-            font = config[prefix .. "CustomFont"] ~= false and Style.Font(config[key]) or nil,
-            flags = Style.FontFlags(outline),
-            shadow = config[prefix .. "TextShadow"] == true,
-        }
+        result[prefix] = NS.NameplateText.FontStyle(config, prefix, shared)
     end
     Text.styles = result
 end

@@ -750,7 +750,7 @@ function P.ImportModule(text)
         if not ok then return false, reason end
         return skin.Database.SetActiveProfile(name)
     end
-    local id, settings, reason = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, chat = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
     -- The restore point comes first: a refused one leaves the variant overlay laid.
     local checkpoint, checkpointWhy = Suite.ProfileWorkbenchBridge.Checkpoint("Before importing Suite settings")
@@ -759,6 +759,7 @@ function P.ImportModule(text)
     local allowed,mutationReason=Suite.ProfileVariants.BeforeMutation(name)
     if not allowed then return false,mutationReason end
     local ok,why=Suite.Suite.SetMany(id, settings)
+    if ok and chat then ok, why = Suite.Suite.SetMany("chatComfort", chat) end
     Suite.ProfileVariants.AfterMutation(name)
     return ok,why
 end
@@ -778,7 +779,7 @@ function P.ImportModuleIntoNew(name, text)
         if not profile then return false, why end
         return Create(clean, frames, profile, skinProfile)
     end
-    local id, settings, why = IO.PrepareModuleProfile(text, true)
+    local id, settings, why, chat = IO.PrepareModuleProfile(text, true)
     if not id then return false, why end
     local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
     if type(frames) ~= "string" then return false, "Frame profile export failed" end
@@ -786,6 +787,7 @@ function P.ImportModuleIntoNew(name, text)
     profile, why = PrepareActive()
     if not profile then return false, why end
     for key, value in pairs(settings) do profile.suite.modules[id][key] = value end
+    if chat then profile.suite.modules.chatComfort = chat end
     local skin = SkinEngine()
     local skinProfile = skin and Suite.CopyValue(skin.Database.GetProfile(skin.Database.GetActiveProfileName()))
     if skin and not skinProfile then return false, "Skin profile unavailable" end

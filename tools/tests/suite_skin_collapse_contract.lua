@@ -203,7 +203,7 @@ alphaList:TriggerEvent("released", ac, alphaChild)
 alphaList.rows = { ah }
 alphaList:TriggerEvent("layout")
 local alphaCopy = NS.AddonListMotion.scrollStates[alphaList].records[ac].ghost
-Check(math.abs(alphaCopy.fonts[1].alpha * alphaCopy.alpha.FromAlpha - 0.5) < 0.001,
+Check(math.abs(alphaCopy.fonts[1].alpha * alphaCopy.alpha.ToAlpha - 0.5) < 0.001,
     "closing copy compounded native row opacity")
 NS.GenericWindows.releaseContent("alpha-collapse")
 
@@ -289,6 +289,16 @@ local function CheckJournal()
     local expectedTop = body.ghost.top + state.records[second].offset * 0.5
     second.description:Hide()
     Check(body.ghost.displayTop == expectedTop, "closing journal body lost its moving parent's rendered offset")
+    second.expanded = false
+    NS.AddonListMotion.RebuildCollection(scroll)
+    Check(body.ghost.group:IsPlaying(), "journal body was not retained for reopening")
+    first.expanded, second.expanded = true, true
+    first.description:Show()
+    second.description:Show()
+    second.top, second.description.top = 340, 320
+    NS.AddonListMotion.RebuildCollection(scroll)
+    Check(state.records[second].group:IsPlaying() and not body.ghost.group:IsPlaying(),
+        "reopened journal body kept its closing copy under a moving header")
     NS.AddonListMotion.DisableOwner("native-journal")
 end
 CheckJournal()
@@ -369,6 +379,7 @@ local function CheckOpeningAndTextures()
     local parent, child, nextNode = Node({}, nil, 1), Node({}), Node({})
     child.parent, parent.collapsed = parent, true
     local h, c, tail = Row(list, parent, 400), Row(list, child, 380), Row(list, nextNode, 380)
+    h.StateIcon = Frame(h)
     local texture = c:CreateTexture()
     texture.kind, texture.texture = "Texture", 123
     function texture:GetTexCoord() return 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 end
@@ -396,6 +407,31 @@ local function CheckOpeningAndTextures()
     Check(state.records[tail].group:IsPlaying(), "opening did not move following native rows")
     local coords = record.ghost.textures[1].coords
     Check(coords and #coords == 8 and coords[3] == 0.3 and coords[8] == 0.8, "native rotated texture coordinates were not preserved")
+    Check(record.translation.Duration == 0.150 and record.translation.Smoothing == "IN"
+        and record.alpha.Duration == record.translation.Duration
+        and state.records[h].rotation.Duration == record.translation.Duration,
+        "rows, opacity and header must use the shared disclosure timing")
+    record.group:Finish(); state.records[tail].group:Finish()
+    parent.collapsed = true
+    list:TriggerEvent("released", c, child)
+    list.rows, tail.top = { h, tail }, 380
+    list:TriggerEvent("layout")
+    local closing = record.ghost
+    Check(closing.group:IsPlaying() and closing.group.reverse
+        and closing.move.Duration == record.translation.Duration
+        and closing.move.Smoothing == record.translation.Smoothing,
+        "the closing copy uses a different curve from the live row")
+    closing.group.progress = 0.5
+    local expectedTop = h.top - h.height
+    local clipped = closing.targetTop + closing.move.y * 0.5 - expectedTop
+    Check(clipped > 0, "fixture did not exercise the header clip")
+    local expectedAlpha = closing.alpha.ToAlpha * 0.5 * (1 - clipped / c.height)
+    parent.collapsed, list.rows, tail.top = false, { h, c, tail }, 360
+    list:TriggerEvent("layout")
+    Check(not closing.group:IsPlaying() and not closing.frame:IsShown(),
+        "reopening left the closing copy visible")
+    Check(c.top + record.offset == expectedTop and record.alpha.ToAlpha == expectedAlpha,
+        "reopened row jumped from its closing position or opacity")
     record.group:Finish(); state.records[tail].group:Finish()
     local frames, groups = #H.frames, #H.groups
     for _ = 1, 5 do

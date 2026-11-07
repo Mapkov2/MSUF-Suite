@@ -18,12 +18,7 @@ local zoomShown, zoomHooked = setmetatable({}, weak), setmetatable({}, weak)
 local extents = {}
 local HOVER_GRACE = 0.15
 
-local function ZoomButtons()
-    local map = _G.Minimap
-    if not MM.Usable(map) then return nil, nil end
-    local zoomIn, zoomOut = map.ZoomIn, map.ZoomOut
-    return MM.Usable(zoomIn) and zoomIn or nil, MM.Usable(zoomOut) and zoomOut or nil
-end
+local ZoomButtons = NS.MinimapElements.ZoomButtons
 MM.ZoomButtons = ZoomButtons
 
 local function SyncButtons(zoom, levels)

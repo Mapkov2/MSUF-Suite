@@ -11,8 +11,14 @@ local function Values(preset, bar, look, target)
         or P.Suite.DataTextBarCreationValues(config, bar, preset)
     if preset ~= "antique" then
         values["bar" .. bar .. "StyleOverride"] = true
-        for _, key in ipairs(P.Suite.DataTextStyleKeys) do values[P.Suite.DataTextBarStyleKey(bar, key)] = P.Get(ID, key) end
-        values["bar" .. bar .. "Look"], values["bar" .. bar .. "CustomColors"] = look, false
+        for _, key in ipairs(P.Suite.DataTextStyleKeys) do
+            local styleKey = P.Suite.DataTextBarStyleKey(bar, key)
+            if values[styleKey] == nil then values[styleKey] = P.Get(ID, key) end
+        end
+        local lookKey = "bar" .. bar .. "Look"
+        values[lookKey] = look or values[lookKey] or P.Get(ID, "look")
+        if values[lookKey] == 4 then values[lookKey] = P.Suite.Client.isForever and 3 or 2 end
+        values["bar" .. bar .. "CustomColors"] = false
     end
     return values
 end
@@ -65,8 +71,9 @@ function Presets.Build(ctx, builder, choose, target)
     local title = target and "Apply preset to this bar" or "Add bar"
     local body = builder:CollapsibleSection(section, Tr(title), 120, true)
     local width = (HM.GetSectionWidth(body) or builder.width) - 32
-    local look, cards = P.Get(ID, "look"), {}
-    if look == 4 then look = P.Suite.Client.isForever and 3 or 2 end
+    local defaultLook, cards = P.Get(ID, "look"), {}
+    if defaultLook == 4 then defaultLook = P.Suite.Client.isForever and 3 or 2 end
+    local look
     local y = -18
     if not target then
         local hint = P.Text(body, "Choose a starting point. Existing bars stay unchanged.", 16, y, width)
@@ -76,7 +83,7 @@ function Presets.Build(ctx, builder, choose, target)
     for _, index in ipairs(LOOKS) do
         choices[#choices + 1] = { value = index, text = Tr(P.catalog[ID].rules.look.choices[index]) }
     end
-    M.BindDropdownAt(ctx, body, "MSUF style", 16, y, choices, width, function() return look end, function(value)
+    M.BindDropdownAt(ctx, body, "MSUF style", 16, y, choices, width, function() return look or defaultLook end, function(value)
         look = value
         RefreshCards(cards, look, target)
         for _, card in ipairs(cards) do card.preview:Refresh() end

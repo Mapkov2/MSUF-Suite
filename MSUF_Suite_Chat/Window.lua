@@ -348,53 +348,51 @@ local function ApplyPanel(self, visual, frame, top)
     end
 end
 
+local function InputWidth(c, frame)
+    local width = c.inputWidth or 0
+    if width > 0 then return width end
+    width = frame:GetWidth()
+    if Finite(width) and width > 0 then return width + 2 * c.padding end
+end
+
 local function ApplyInput(self, visual, frame, input)
-    local c = self.config
-    if not visual.input then visual.input = Fill(input, "BACKGROUND") end
-    -- Blizzard's edit box deliberately overhangs the chat frame on both
-    -- sides. Keep its native hit area and text, but align our visible bar
-    -- with the chat panel. Both anchors follow frame moves and resizes.
-    local inputHeight = input:GetHeight()
-    if not Finite(inputHeight) or inputHeight <= 0 then inputHeight = 26 end
-    -- Blizzard can enlarge the edit box while focused; only our background
-    -- stays compact. The native edit box keeps its hit area and autocomplete.
-    inputHeight = math.min(inputHeight, 26)
-    local context = self.context
-    if (c.inputHeight or 0) > 0 then inputHeight = c.inputHeight end
-    if visual.inputMoved then
-        context:RestorePoints(input)
-        context:RestoreProperty(input, "SetWidth")
-        visual.inputMoved = nil
+    if NS.Safety.IsForbidden(input) then return end
+    if not self.preview and NS.InCombat() then
+        S.Queue("chat")
+        return
     end
-    local x, y = c.inputX or 0, c.inputY or 0
+    local c, context = self.config, self.context
+    local width = InputWidth(c, frame)
+    if not width then return end
+    if not self.preview then
+        if c.lockWindowPosition or S.editMode then
+            context:Property(input, "IsClampedToScreen", "SetClampedToScreen", true)
+        else
+            context:RestoreProperty(input, "SetClampedToScreen")
+        end
+    end
+    -- Own one left anchor and a width so the text, hit area and panel move together.
+    context:RestorePoints(input)
+    local x, y = -c.padding + c.inputX, c.inputY
     if c.inputTop then
-        context:Anchor(input, "BOTTOMLEFT", frame, "TOPLEFT", -c.padding + x, HeaderTop(c, frame) + 2 + y)
-        context:Property(input, "GetWidth", "SetWidth", frame:GetWidth() + 2 * c.padding)
-        visual.inputMoved = true
-    elseif x ~= 0 or y ~= 0 then
-        C.OffsetNative(self, input, x, y)
-        visual.inputMoved = true
+        context:Anchor(input, "BOTTOMLEFT", frame, "TOPLEFT", x, HeaderTop(c, frame, self.preview) + 2 + y)
+    else
+        context:Anchor(input, "TOPLEFT", frame, "BOTTOMLEFT", x, y - c.padding - 2)
     end
-    if (c.inputHeight or 0) > 0 then
-        context:Property(input, "GetHeight", "SetHeight", inputHeight)
-        visual.inputHeightOwned = true
-    elseif visual.inputHeightOwned then
+    context:Property(input, "GetWidth", "SetWidth", width)
+    if c.inputHeight > 0 then
+        context:Property(input, "GetHeight", "SetHeight", c.inputHeight)
+    else
         context:RestoreProperty(input, "SetHeight")
-        visual.inputHeightOwned = nil
     end
-    visual.input:ClearAllPoints()
-    visual.input:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -c.padding + x, y)
-    visual.input:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", c.padding + x, y - (inputHeight + 4))
-    if c.inputTop then
-        visual.input:ClearAllPoints()
+    if not visual.input then
+        visual.input = Fill(input, "BACKGROUND")
         visual.input:SetAllPoints(input)
-    end
-    Tint(visual.input, c.inputColor, c.inputAlpha)
-    visual.input:SetShown(c.inputPanel and c.inputAlpha > 0)
-    if not visual.inputEdges then
         visual.inputEdges = {}
         for i = 1, 4 do visual.inputEdges[i] = Fill(input, "BORDER") end
     end
+    Tint(visual.input, c.inputColor, c.inputAlpha)
+    visual.input:SetShown(c.inputPanel and c.inputAlpha > 0)
     for i = 1, 4 do
         local edge = visual.inputEdges[i]
         ApplyEdge(edge, visual.input, i, math.max(1, c.borderSize), 0, 0, c.borderColor, math.min(60, c.borderAlpha))
@@ -402,21 +400,20 @@ local function ApplyInput(self, visual, frame, input)
     end
 end
 
--- A translated input loses its native second stretch anchor. Follow native
--- window resizing too, including an undocked window, without polling.
 local function ResizeInput(frame)
     local visual = M.visuals[frame]
-    if not M.active or not visual or not visual.inputMoved then return end
+    if not M.active or not visual or not visual.input or (M.config.inputWidth or 0) ~= 0 then return end
     if NS.InCombat() then
         S.Queue("chat")
         return
     end
-    ApplyInput(M, visual, frame, frame.editBox)
+    local width = InputWidth(M.config, frame)
+    if width then M.context:Property(frame.editBox, "GetWidth", "SetWidth", width) end
 end
 
 function C.ApplyInputLayout(self, visual, frame, input)
     ApplyInput(self, visual, frame, input)
-    if visual.inputMoved and not visual.inputSizeHooked then
+    if visual.input and not visual.inputSizeHooked then
         frame:HookScript("OnSizeChanged", ResizeInput)
         visual.inputSizeHooked = true
     end
@@ -493,6 +490,10 @@ function C.ApplyWindow(self, frame, keepPosition)
     ApplyCopyButton(self, visual, frame, top)
     C.ApplyClock(visual, frame, c, top)
     C.ApplyInputLayout(self, visual, frame, input)
+    if c.animateInput or visual.inputAnimated then
+        C.ApplyInputAnimation(self, input)
+        visual.inputAnimated = c.animateInput
+    end
     ApplyFont(self, frame, messageFont)
     ApplySizeLock(self, visual, frame, primary)
     if not keepPosition then C.ApplyWindowPosition(self, visual, frame, primary) end
@@ -549,7 +550,7 @@ end
 -- waits: with padding or a gap on, the module applies again once combat ends.
 local spacedTabs = setmetatable({}, { __mode = "k" })
 function C.DockGeometry()
-    if not M.active then return end
+    if not M.active or M.toolbarLayingOut then return end
     local padded = M.config.tabPadding and M.config.tabPadding > 0
     if NS.InCombat() then
         S.Queue("chat")

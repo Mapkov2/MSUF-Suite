@@ -355,6 +355,11 @@ local function Up(entry, button)
     local dx, dy = x and (x - drag.x) / scale or 0, y and (y - drag.y) / scale or 0
     local moved = drag.moving or x ~= nil and Travel(controller, drag, x, y, scale) >= controller.threshold
     entry.moved = moved
+    -- Let the native button finish an ordinary click with its hit area intact.
+    if controller.opts.manualDrag and entry.follow and not moved then
+        if controller.opts.drag then controller.opts.drag(entry.region, "done", false) end
+        return
+    end
     if controller.opts.drag then controller.opts.drag(entry.region, "stop", moved) end
     local ok = moved and not drag.blocked and controller:Commit(entry, drag.ox + dx, drag.oy + dy, true)
     if not ok then Restore(drag) end
@@ -410,9 +415,13 @@ function Handles:Add(key, region, read, write, info)
     region:RegisterForClicks(unpack(info.clicks or CLICKS))
     if write then
         region:SetMovable(not entry.follow)
-        region:RegisterForDrag("LeftButton")
-        region:SetScript("OnDragStart", function(_, button) Down(entry, button) end)
-        region:SetScript("OnDragStop", function(_, button) Up(entry, button) end)
+        -- Followed drags already use MouseDown, OnUpdate and MouseUp. An
+        -- opted-in button lets those scripts arbitrate instead of native drag.
+        if not (opts.manualDrag and entry.follow) then
+            region:RegisterForDrag("LeftButton")
+            region:SetScript("OnDragStart", function(_, button) Down(entry, button) end)
+            region:SetScript("OnDragStop", function(_, button) Up(entry, button) end)
+        end
         if opts.keys ~= false then
             region:EnableKeyboard(false)
             region:SetScript("OnKeyDown", function(frame, pressed) return self:Key(frame, pressed) end)

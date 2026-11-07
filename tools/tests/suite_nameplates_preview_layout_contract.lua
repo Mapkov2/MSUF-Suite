@@ -168,7 +168,10 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             self.y = self.y - height - 12
             return section
         end
+        local styleProvider = { AnchorPoints = {}, AnchorLabels = {} }
+        assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", styleProvider)
         local style = {
+            LevelMode = styleProvider.NameplateStyle.LevelMode,
             CreateBorder = function() return {} end, PaintBorder = Noop,
             NativeBit = function() return false end, NativeToggle = function() return false end,
             ClassicNativePlate = function() return false end,
@@ -187,6 +190,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
                 PreviewKit = core.PreviewKit },
             NameplatesEditorMarkers = { TargetActive = function() return false end },
             NameplatesSize = { Build = Noop },
+            OpenNameplateSetting = Noop,
         }
         local bridge = { HostBridge = {} }
         assert(loadfile(root .. "/MSUF_Suite/Core/HostBridgeMenu.lua"))("MSUF_Suite", bridge)
@@ -195,8 +199,8 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         assert(loadfile(root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", P)
         assert(loadfile(arg[3] or root .. "/MSUF_Suite_Options/Pages/NameplatesEditorLayers.lua"))("Options", P)
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesEditor.lua"))("Options", P)
-        local ui = P.NameplatesEditor.Create(ctx, builder, {})
         assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", P)
+        local ui = P.NameplatesEditor.Create(ctx, builder, {})
         local sample = { cell = Frame(ui.stage), bar = Frame(ui.stage), cast = Frame(ui.stage), progress = Frame(ui.stage) }
         P.NameplatesPreviewDecor.Build(ui, sample)
         local body, section = ui.body, ui.body.parent

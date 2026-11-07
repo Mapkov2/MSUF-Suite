@@ -68,6 +68,94 @@ local OVERLAY_SPEC = {
     regions = { "Background", "Border" },
 }
 local SIDE_TOGGLE_SPEC = { role = "button", radius = 6, inset = 2 }
+local QUEST_SEARCH_SPEC = {
+    role = "input", radius = 6, inset = 0, pillHeight = 28,
+    useControlShape = true, allowImplicitProtected = true,
+}
+local QUEST_COUNT_ART = { "Left", "Middle", "Right" }
+local QUEST_HOVER_MATERIAL = { opacity = "control" }
+local questHovers = Kit.WeakSet()
+local hoverListening = false
+
+-- Native QuestMapLogTitleButton_OnEnter owns the tooltip, map pin highlight
+-- and difficulty colors. Add only a soft full-row plate beneath that content;
+-- never replace the native scripts or read quest data into a second tooltip.
+local function PaintQuestHover(row)
+    local record = questHovers[row]
+    if not record then return end
+    if not Safety.CanDecorate(row, true) then
+        if NS.IsCombatLocked() then NS.CombatGate.RunOrDefer(record.key, record.repaint) end
+        return
+    end
+    local theme = NS.DB.theme
+    if theme.hoverStyle == "off" then
+        if record.suppressed then NS.Cosmetics.Restore(record.highlight, record.state.owner) end
+        record.suppressed = false
+    elseif record.state.active and not record.suppressed then
+        Fade(record.state, record.highlight)
+        record.suppressed = true
+    end
+    local visible = record.state.active and theme.hoverStyle ~= "off"
+        and Safety.Read(row, "IsVisible") == true
+        and (Safety.Read(row, "IsMouseOver") == true or Safety.Read(record.highlight, "IsShown") == true)
+    if visible then
+        local r, g, b, a = NS.Theme.GetColor("hover")
+        local opacity = NS.Theme.GetMaterialOpacity(QUEST_HOVER_MATERIAL)
+        record.fill:SetColorTexture(r, g, b, a * 0.22 * (theme.hoverIntensity or 1) * opacity)
+    end
+    record.fill:SetShown(visible == true)
+end
+
+local function RefreshQuestHovers()
+    for row in pairs(questHovers) do PaintQuestHover(row) end
+end
+
+local function OnQuestHoverTheme(_, domain)
+    if domain == "color" or domain == "theme" or domain == "profile" or domain == "appearance" then
+        RefreshQuestHovers()
+    end
+end
+
+local function EnsureQuestHover(row, state)
+    local record = questHovers[row]
+    if record and record.state == state and record.enabled then
+        PaintQuestHover(row)
+        return
+    end
+    local highlight = Field(row, "HighlightTexture")
+    if not highlight or not Safety.CanDecorate(row, true) then return end
+    if not record then
+        local fill = row:CreateTexture(nil, "BACKGROUND", nil, 1)
+        fill:SetAllPoints(row)
+        fill:Hide()
+        record = { fill = fill, highlight = highlight, key = "world-map-quest-hover:" .. tostring(row) }
+        record.repaint = function() PaintQuestHover(row) end
+        questHovers[row] = record
+        row:HookScript("OnEnter", PaintQuestHover)
+        row:HookScript("OnLeave", PaintQuestHover)
+        row:HookScript("OnHide", PaintQuestHover)
+        row:HookScript("OnShow", PaintQuestHover)
+    end
+    record.state = state
+    record.enabled = true
+    -- Blizzard shows this yellow glow explicitly, independently of the
+    -- button's GetHighlightTexture. Restore it with the adapter's owner.
+    Fade(state, highlight)
+    record.suppressed = true
+    PaintQuestHover(row)
+    if not hoverListening then
+        NS.Registry.AddListener(WorldMapSkin, OnQuestHoverTheme)
+        hoverListening = true
+    end
+end
+
+local function SkinQuestSearch(state, scroll)
+    local search = Field(scroll, "SearchBox")
+    if search then NS.ControlSkin.ApplySearchBox(search, state.owner, QUEST_SEARCH_SPEC) end
+    SkinControl(state, Field(scroll, "SettingsDropdown"), OVERFLOW_SPEC)
+    local count = Field(_G, "QuestLogCount")
+    if count and Safety.Read(count, "GetParent") == scroll then FadeFields(state, count, QUEST_COUNT_ART) end
+end
 
 local QUEST_LOG_MODE = {
     role = "panel",
@@ -184,6 +272,8 @@ end
 -- Only rows within the quest log pass's depth took that pass; the caller
 -- skips marking when its node limit cut the pass short.
 local function MarkQuestRow(row, state, generation)
+    EnsureQuestHover(row, state)
+    NS.WorldMapQuests.PaintRow(row, state)
     if Kit.IsDescendantOf(row, state.questLog, QUEST_LOG_MODE.maxDepth) then
         state.questRows[row] = generation
     end
@@ -192,6 +282,8 @@ end
 -- QuestLogQuests_Update repaints every reused title in Blizzard's quest
 -- colors, so a row with its pass only has its gold text tracked again.
 local function SkinQuestRow(row, state, generation)
+    EnsureQuestHover(row, state)
+    NS.WorldMapQuests.PaintRow(row, state)
     if state.questRows[row] == generation then
         NS.GenericWindows.RefreshDescendant(row, state.owner, QUEST_ROW_MODE)
         return
@@ -227,6 +319,7 @@ local function SkinQuestLog(state, questLog)
 
     local quests = Field(questLog, "QuestsFrame")
     local scroll = Field(quests, "ScrollFrame")
+    SkinQuestSearch(state, scroll)
     local details = Field(quests, "DetailsFrame")
     local campaign = Field(quests, "CampaignOverview")
     local story = Kit.Path(scroll, "Contents", "StoryHeader")
@@ -359,11 +452,13 @@ function WorldMapSkin.Apply(frame, owner)
     state.owner = owner
     state.active = true
     activeFrames[frame] = state
+    NS.WorldMapQuests.Activate(state, frame)
 
     local applied, reason = SkinFrame(frame, state)
     if not applied then
         state.active = false
         activeFrames[frame] = nil
+        NS.WorldMapQuests.Release(state)
         return false, reason
     end
     RegisterCallbacks()
@@ -389,6 +484,11 @@ function WorldMapSkin.Disable(frame, owner)
         state.generation = nil
         state.questRows = Kit.WeakSet()
         activeFrames[frame] = nil
+        for _, record in pairs(questHovers) do
+            if record.state == state then record.enabled, record.suppressed = false, false end
+        end
+        RefreshQuestHovers()
+        NS.WorldMapQuests.Release(state)
     end
 
     NS.GenericWindows.Disable(owner)

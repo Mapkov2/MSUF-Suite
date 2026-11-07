@@ -116,12 +116,12 @@ assert(paints > priorPaints and preview.selected() == 1, "reopening cached meter
 for _, target in ipairs({ targets.title, targets.timer, targets.buttons.settings, targets.buttons.reset, targets.buttons.session, targets.buttons.type }) do
     assert(target:GetFrameLevel() > targets.header:GetFrameLevel(), "header surface can intercept an element hit")
 end
-local function Click(handle, expectedKey, section)
+local function Click(handle, expectedKey, section, button)
     local shell = ui.sections[section]
     assert(shell, "missing target section")
     local entry = P.HM.GetSectionEntry(shell)
     if entry and entry.SetOpenImmediate then entry.SetOpenImmediate(false) end
-    handle:GetScript("OnClick")(handle, "LeftButton")
+    handle:GetScript("OnClick")(handle, button or "LeftButton")
     mw:RunTimers()
     local exact = P.Meta("suite_damageMeter", "damageMeter", expectedKey,
         expectedKey:match("^action%.") and "action" or "setting", section)
@@ -143,7 +143,15 @@ Click(targets.rows[1].barHit, "barHeight", "suite_damageMeter_bars")
 Click(targets.title, "titleSize", "suite_damageMeter_window")
 Click(targets.timer, "headerTimerSize", "suite_damageMeter_timer")
 Click(targets.buttons.type, "w1Type", "suite_damageMeter_windows")
-Click(targets.buttons.session, "w1Session", "suite_damageMeter_windows")
+local openedSample
+P.S.DamageMeterOpenPreviewFight = function(win, owner, refresh)
+    assert(win == preview.stage.meterTestWindow and owner == targets.buttons.session and refresh == ui.refreshPreview)
+    openedSample = true
+end
+local fight = targets.buttons.session
+fight:GetScript("OnClick")(fight, "LeftButton")
+assert(openedSample, "left-click on the fight preview did not open the sample menu")
+Click(fight, "w1Session", "suite_damageMeter_windows", "RightButton")
 Click(targets.buttons.settings, "windowCount", "suite_damageMeter_general")
 Click(targets.buttons.reset, "action.reset_data", "suite_damageMeter_damageMeter_module")
 Click(targets.body, "w1Width", "suite_damageMeter_windows")

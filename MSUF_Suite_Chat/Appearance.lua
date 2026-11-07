@@ -35,15 +35,9 @@ end
 -- Never set native Lua fields or replace their methods. Keep restoration
 -- separate from geometry ownership: focus can change during combat.
 --
--- Native fading has a second owner, QoL's "Keep chat messages visible"
--- (MSUF_Suite_QualityOfLife/DailyComfort.lua). Both hold a chat frame
--- through one record in S.chatFading: native is the frame's own value,
--- applied the last value written, keep and fade each one's hold. Keeping the
--- messages visible wins while both hold, the one left holding gets its own
--- value, and the last to let go writes native back. A change from elsewhere
--- since the last write becomes the new native value. QoL holds through
--- S.HoldChatFading once this addon is loaded and keeps the record itself
--- before that, while nothing else can hold the frame.
+-- Comfort.lua and the style controller share one record per frame. Keeping
+-- messages visible wins while both hold. The last owner to let go restores
+-- the native value. An external change becomes the new native value.
 local fading = S.chatFading or setmetatable({}, { __mode = "k" })
 S.chatFading = fading
 

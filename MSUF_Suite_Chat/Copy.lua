@@ -125,7 +125,7 @@ end
 
 -- Newest first: the last ROWS public lines among the window's newest 100.
 local function ShowCopyDialog(self, frame)
-    if not self.config.copyMessages or not frame or NS.Safety.IsForbidden(frame) then return end
+    if not (self.config.copyMessages or self.config.headerToolbar) or not frame or NS.Safety.IsForbidden(frame) then return end
     local count = frame:GetNumMessages()
     if not S.Number(count) then return end
     local panel = self.copyDialog or CreateCopyDialog()
@@ -153,6 +153,8 @@ local function ShowCopyDialog(self, frame)
     panel.edit:SetText("")
     panel:Show()
 end
+
+C.OpenCopyDialog = ShowCopyDialog
 
 local function CopyButtonClick(button) ShowCopyDialog(M, button.chatFrame) end
 
@@ -190,7 +192,7 @@ local function CreateCopyButton(frame)
 end
 
 function C.ApplyCopyButton(self, visual, frame, top)
-    if not self.config.copyMessages then
+    if not self.config.copyMessages or self.config.headerToolbar and frame.isDocked then
         if visual.copyButton then visual.copyButton:Hide() end
         HideCopyDialog(self.copyDialog)
         return

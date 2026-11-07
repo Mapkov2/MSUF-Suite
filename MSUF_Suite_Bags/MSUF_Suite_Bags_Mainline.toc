@@ -53,3 +53,4 @@ SplitInventory.lua
 AutoSplit.lua
 StackSplitter.lua
 SortDirection.lua
+BuybackSearch.lua

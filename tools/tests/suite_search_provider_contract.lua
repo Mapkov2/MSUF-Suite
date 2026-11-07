@@ -841,18 +841,18 @@ do
         local dataPage = M.cache.suite_dataTexts
         local navigation = Check(dataPage.pageHeaders and dataPage.pageHeaders[1],
             "DataTexts bar navigation is not registered in the fixed page header")
-        Check(#dataPage.pageHeaders == 1 and navigation.section:GetHeight() == 52,
-            "only the compact bar navigation should consume the fixed header")
-        local module = dataPage.sections.suite_dataTexts_dataTexts_module._msuf2CollapsibleEntry
-        Check(module._msuf2RelayoutY == 0,
-            "DataTexts module switch must start the scroll flow below the fixed navigation")
+        Check(#dataPage.pageHeaders == 1 and navigation.section:GetHeight() == 82,
+            "the DataTexts controls must share one fixed header")
+        Check(dataPage.sections.suite_dataTexts_dataTexts_module == navigation.section,
+            "the former module section must resolve to the fixed header")
+        local editor = dataPage.context.dataTextWorkspace.deck.views[400000].frame
         local headerHost = env.CreateFrame("Frame", nil, env.UIParent)
         local originalHost, wasActive = navigation.section:GetParent(), navigation.active
         Check(navigation:Activate(headerHost), "DataTexts navigation could not activate in the header host")
         local _, relativeTo, _, _, top = navigation.section:GetPoint(1)
-        Check(relativeTo == headerHost and top == -12 and navigation.hostHeight == 72,
+        Check(relativeTo == headerHost and top == -12 and navigation.hostHeight == 102,
             "DataTexts navigation did not retain its own fixed geometry above the scroll body")
-        Check(module.outer:GetParent() == dataPage.wrapper and module.outer:GetParent() ~= headerHost,
+        Check(editor:GetParent() ~= navigation.section and editor:GetParent() ~= headerHost,
             "DataTexts settings moved into the fixed navigation instead of the scroll body")
         navigation:Deactivate()
         Check(navigation.section:GetParent() == dataPage.wrapper and not navigation.section:IsShown(),

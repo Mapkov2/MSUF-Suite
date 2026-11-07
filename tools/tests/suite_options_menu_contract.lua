@@ -37,6 +37,7 @@ local function Widget(kind)
     function w:Show() self.shown = true end
     function w:Hide() self.shown = false end
     function w:IsShown() return self.shown end
+    function w:GetParent() return rawget(self, "parent") end
     function w:IsVisible()
         local parent = rawget(self, "parent")
         return self.shown and (not parent or parent:IsVisible())
@@ -76,6 +77,8 @@ local function Widget(kind)
     end
     function w:SetEnabled(v) self.enabled = v and true or false end
     function w:IsEnabled() return self.enabled ~= false end
+    function w:SetChecked(v) self.checked = v and true or false end
+    function w:GetChecked() return rawget(self, "checked") == true end
     function w:SetAlpha(v) self.alpha = v end
     function w:GetAlpha() return self.alpha end
     function w:SetActive(v) self.active = v and true or false end
@@ -483,6 +486,7 @@ M.BindBoolWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget
 M.BindDropdownAt = function(ctx, parent, label, x, y, values, w, get, set, meta)
     local dropdown = Widget("Dropdown")
     dropdown._msuf2Title = Widget("FontString")
+    dropdown.values = values
     dropdown:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y - 24)
     return Bind(ctx, dropdown, get, set, meta, label)
 end
@@ -494,7 +498,7 @@ M.BindTextInputAt = function(ctx, parent, label, x, y, w, get, set, blur, meta)
 end
 M.BindDropdownWidget = function(ctx, widget, get, set, meta) return Bind(ctx, widget, get, set, meta, widget.label) end
 W.Dropdown = function(parent, label) local d = Widget("Dropdown"); d.label = label; return d end
-W.SwitchAt = function() return Widget("Switch") end
+W.SwitchAt = function(parent) local switch = Widget("Switch"); switch.parent = parent; return switch end
 W.MoveWidget = function() end
 W.ScopeOverrideBar = function(ctx, parent, opts)
     local bar = Widget("ScopeOverrideBar")
@@ -594,6 +598,8 @@ W.RoleButton = function(parent, text, role)
     button.text, button.role, button.parent = text, role, parent
     return button
 end
+T.RoleButton = W.RoleButton
+FCF_CanOpenNewWindow = function() return true end
 W.PageBuilder = function(ctx)
     ctx.wrapper = ctx.wrapper or Widget("Frame")
     local b = { width = ctx.width, parent = ctx.wrapper, x = ctx._msuf2ContentX or 0,
@@ -719,6 +725,7 @@ Enum = { DamageMeterType = { DamageDone = 0 }, SpellBookSpellBank = { Player = 0
 C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
 issecretvalue = function(value) return actionPreview.secret ~= nil and rawequal(value, actionPreview.secret) end
 Minimap = { SetMaskTexture = function() end }
+C_EventUtils = { IsEventValid = function() return true end }
 
 -- Boot the suite core as the client would, then attach the menu.
 LoadTOC("MSUF_Suite", {})
@@ -1366,6 +1373,10 @@ do (function()
         local group = ui.groups[id]
         ui.select(id)
         assert(preview.id == id and group.frame.shown, "HUD feature selection did not select its preview")
+        assert(preview.artPicker.shown == (id == "announcements"), "art picker leaked into another HUD tab")
+        if id ~= "announcements" and preview.bannerArt then
+            assert(not preview.bannerArt.background.shown, "announcement art leaked into another HUD tab")
+        end
         for other, sibling in pairs(ui.groups) do assert(sibling.frame.shown == (other == id)) end
         assert(#preview.labels > 0 and preview.canvas:GetWidth() > 0, "disabled module has no preview")
         for other, picker in pairs(preview.pickers) do assert(picker.shown == (other == id)) end
@@ -1376,7 +1387,7 @@ do (function()
             "warm exact search cannot reveal an independent HUD enable switch")
     end
     ui.select("extras")
-    assert(ui.groups.extras.frame.shown and not preview.host.shown and not preview.selection.shown
+    assert(ui.groups.extras.frame.shown and not preview.host.shown and not preview.selection.shown and not preview.artPicker.shown
         and preview.id == nil and hud.fixedPreview.record.heightResolver() == 62,
         "additional displays retained an unrelated large HUD preview")
     ui.select("objectives")
@@ -1388,29 +1399,57 @@ do (function()
     announcement.colorStyle, announcement.questColor = 2, "ff0000"
     announcement.titleSize, announcement.backgroundOpacity = 40, 20
     preview:Paint()
+    local art = preview.bannerArt
+    local top, bottom = unpack(art.accents)
     assert(preview.labels[1].font[2] == 40 and preview.labels[1].textColor[1] == 1
-        and preview.labels[1].textColor[2] == 0 and preview.fills[1].color[4] == .2,
+        and preview.labels[1].textColor[2] == 0 and art.background.color[4] == .2,
         "banner example does not follow font size, type color and background opacity")
-    assert(preview.fills[2].color[4] == .95 and preview.fills[3].color[4] == .62,
+    assert(top.color[4] == .95 and bottom.color[4] == .62,
         "banner accents differ from the real feature")
     do
         local rule = optionsNS.catalog.announcements.rules.showBoxArt
         assert(rule and rule.default == true, "announcement artwork switch must default on")
+        local artControl = Control("announcements", "artStyle")
         assert(Control("announcements", "showBoxArt"), "announcement artwork switch is absent from the menu")
+        assert(artControl.meta.sectionId == "suite_hud_announcements_artwork", "art style search targets the wrong accordion")
         for _, enabled in ipairs({ false, true, false, true }) do
             announcement.showBoxArt = enabled
             preview:Paint()
-            assert(preview.fillsUsed == (enabled and 3 or 0), "announcement preview ignored the artwork switch")
-            for index = 1, 3 do
-                assert(preview.fills[index].shown == enabled, "pooled preview artwork was not hidden or restored")
-            end
+            assert(art.background.shown == enabled and top.shown == enabled and bottom.shown == enabled,
+                "announcement preview ignored the artwork switch")
             assert(preview.used == 2 and preview.labels[1].shown and preview.labels[2].shown,
                 "announcement artwork switch hid the preview text")
         end
         announcement.showBoxArt = nil
         preview:Paint()
-        assert(preview.fillsUsed == 3, "missing artwork setting changed the legacy preview")
-        announcement.showBoxArt = true
+        assert(art.style == 1 and top.shown and bottom.shown, "missing artwork setting changed the legacy preview")
+        local atlasInfo = C_Texture.GetAtlasInfo
+        C_Texture.GetAtlasInfo = function() return {} end
+        local picker, enabled = preview.artPicker, announcement.enabled
+        preview.finished = true
+        preview.canvas:SetAlpha(0)
+        picker.set(0)
+        assert(picker.get() == 0 and not announcement.showBoxArt and not art.background.shown,
+            "preview picker could not hide the artwork")
+        assert(preview.canvas.alpha == 1 and not preview.finished,
+            "artwork edits after playback must bring back the static sample")
+        picker.set(1)
+        assert(picker.get() == 1 and announcement.showBoxArt and art.style == 1,
+            "preview picker could not restore the same style")
+        picker.set(2)
+        assert(artControl.get() == 2 and art.style == 2 and preview.labels[1].width == 530
+            and top.atlas == "NPE_ArrowRight" and bottom.atlas == "NPE_ArrowLeft",
+            "preview picker did not show the arrows and update the accordion")
+        artControl.set(3)
+        assert(picker.get() == 3 and top.atlas == "levelup-bar-gold", "accordion did not update the preview picker")
+        picker.set(4)
+        assert(top.atlas == "levelup-glow-gold" and art.style == 4, "preview picker did not show the glow")
+        assert(historyWrites == historyBefore + 5 and announcement.enabled == enabled,
+            "each artwork edit must have one undo step and retain the module state")
+        C_Texture.GetAtlasInfo = atlasInfo
+        announcement.artStyle = 1
+        preview:Paint()
+        historyBefore = historyWrites
     end
     assert(preview.playButton.shown and not preview.playing, "banner playback must be explicitly started")
     -- The setting measures from playback start to fade-out start, just like
@@ -1483,9 +1522,12 @@ do (function()
     local focused, oldFocus = nil, W.FocusCollapsibleSection
     W.FocusCollapsibleSection = function(body) focused = body end
     preview.canvas.scripts.OnClick()
+    local artwork = hudSections.suite_hud_announcements_artwork
+    assert(focused == artwork, "clicking the example did not reveal the artwork accordion")
+    focused = nil
+    preview.selection.button.scripts.OnClick()
     W.FocusCollapsibleSection = oldFocus
-    assert(focused == hudSections.suite_hud_announcements_type,
-        "clicking the example does not reveal appearance settings")
+    assert(focused == artwork, "preview settings shortcut did not reveal the artwork accordion")
     local tracker = S.Config("objectives")
     ui.select("objectives")
     assert(not preview.playing and not preview.playButton.shown and preview.canvas.alpha == 1 and ActiveTimers() == 0,
@@ -1540,7 +1582,7 @@ end)() end
     for _, section in ipairs(hudCtx.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    assert(topics == (flavor == "Forever" and 14 or 17),
+    assert(topics == (flavor == "Forever" and 15 or 18),
         "HUD topics must be separate accordions beneath four feature categories")
     local previousTabs = W.SegmentTabs
     W.SegmentTabs = nil
@@ -1564,6 +1606,9 @@ end)() end
     workspace.select("announcements")
     assert(workspace.selector.value == "announcements" and workspace.groups.announcements.frame.shown,
         "older host feature selector displays a different feature")
+    local preview = workspace.preview
+    assert(preview.artPicker.shown and preview.artPicker.points[1][4] > preview.pickers.announcements.points[1][4],
+        "narrow HUD keeps the artwork picker beside the announcement sample picker")
     assert(workspace.selector.meta.classification == "ephemeral", "feature selector writes settings")
     for _, widget in ipairs(legacy.widgets) do
         if widget.meta and widget.meta.controlId == "menu2.suite_hud.objectives.x" then
@@ -1746,7 +1791,7 @@ local function Reattach()
         Suite = Suite, M = M, T = T, HM = optionsNS.HM, pages = optionsNS.pages, Tr = M.Tr, host = MSUF_NS,
         Refresh = function() end,
         BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
-        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage, QoLOwners = optionsNS.QoLOwners,
+        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage, NameplateFonts = optionsNS.NameplateFonts, QoLOwners = optionsNS.QoLOwners,
         S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
     })
 end
@@ -1831,7 +1876,7 @@ do
         Suite = Suite, M = M, T = T, HM = optionsNS.HM, pages = optionsNS.pages, Tr = Tr, host = MSUF_NS,
         Refresh = function() end,
         BuildColorsCategory = optionsNS.BuildColorsCategory, ApplyForeverStyle = optionsNS.ApplyForeverStyle,
-        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage, QoLOwners = optionsNS.QoLOwners,
+        ForgetAvailability = optionsNS.ForgetAvailability, GameplayPage = optionsNS.GameplayPage, NameplateFonts = optionsNS.NameplateFonts, QoLOwners = optionsNS.QoLOwners,
         S = optionsNS.S, catalog = optionsNS.catalog, Text = optionsNS.Text, SkinningEnabled = optionsNS.SkinningEnabled,
         Get = optionsNS.Get, Set = Counted(optionsNS.Set), SetMany = Counted(optionsNS.SetMany),
         StatusText = optionsNS.StatusText,
@@ -2057,10 +2102,10 @@ do
     C_Timer = { After = function() error("DataText navigation queued a timer") end }
     local workspace = assert(ctx.dataTextWorkspace)
     local navigation = assert(workspace.navigation, "DataTexts has no bar navigation strip")
-    assert(ctx.pageItems[1] == navigation and ctx.pageItems[2] == "suite_dataTexts_dataTexts_module",
-        "bar navigation must precede the DataTexts module switch")
+    assert(ctx.pageItems[1] == navigation and ctx.entry.sections.suite_dataTexts_dataTexts_module == navigation
+        and ctx.dataTextBarSelector.points[1][2] == navigation, "DataTexts switch and dropdown must share the fixed header")
     for _, button in pairs(workspace.buttons) do
-        assert(button.parent == navigation, "bar tabs and Add bar must belong to the navigation strip")
+        assert(button.parent == navigation, "DataTexts header actions must share the fixed panel")
     end
     assert(workspace.deck.views[1] and not workspace.deck.views[2], "cold page eagerly built other bars")
     local barView = workspace.deck.views[1]
@@ -2113,7 +2158,10 @@ do
     end
     ctx.entry._msuf2ResolveMissingSection("suite_dataTexts_presets")
     local gallery = workspace.deck.views.add
-    assert(#gallery.cards == 6, "starter gallery lost an EUI purpose or the Antique preset")
+    assert(#gallery.cards == 7, "starter gallery lost a preset")
+    local modern = gallery.cards[7]
+    assert(modern.preset.id == "modern" and modern.config["bar" .. modern.bar .. "Look"] == 5,
+        "the Modern preset did not preview its own default style")
     local before, historyBefore = {}, historyWrites
     for key, value in pairs(config) do before[key] = value end
     local picker
@@ -2415,8 +2463,32 @@ end
         and ui.sizeFields[1].caption.text == "Font",
         "name selection showed an unsupported independent width or height")
     ui:Select(cast)
-    assert(not ui.sizeFields[1].frame:IsShown() and not ui.sizeFields[2].frame:IsShown(),
-        "native cast geometry was advertised as independently resizable")
+    local baseCastWidth, baseCastHeight = cast.width, cast.height
+    assert(ui.sizeFields[1].frame:IsShown() and ui.sizeFields[2].frame:IsShown()
+        and tonumber(ui.sizeFields[1].edit.text) == math.floor(baseCastWidth + 0.5)
+        and tonumber(ui.sizeFields[2].edit.text) == math.floor(baseCastHeight + 0.5),
+        "castbar selection did not expose both current dimensions")
+    ui.sizeFields[1].plus.scripts.OnClick()
+    ui.sizeFields[2].edit:SetText("28")
+    ui.sizeFields[2].edit.scripts.OnEnterPressed(ui.sizeFields[2].edit)
+    assert(plates.enemyCastWidthDelta == 1 and plates.enemyCastHeight == 28
+        and cast.width == baseCastWidth + 1 and cast.height == 28,
+        "inline cast dimensions did not update the profile and preview")
+    ui.body.selectionDeps.ResetOffsets(ui.body, cast)
+    assert(plates.enemyCastWidthDelta == 0 and plates.enemyCastHeight == 0
+        and cast.width == baseCastWidth and cast.height == baseCastHeight,
+        "castbar reset did not restore automatic size")
+    local castRules = optionsNS.catalog.nameplates.rules
+    assert(optionsNS.RuleEnabled("nameplates", castRules.enemyCastWidthDelta), "active skin cast size rule is disabled")
+    S.Set("nameplates", "enemy", false)
+    ui:Paint()
+    assert(not ui.sizeFields[1].frame:IsShown() and not ui.sizeFields[2].frame:IsShown()
+        and not optionsNS.RuleEnabled("nameplates", castRules.enemyCastWidthDelta)
+        and not optionsNS.RuleEnabled("nameplates", castRules.enemyCastHeight)
+        and not optionsNS.RuleEnabled("nameplates", castRules.enemyCastIconSize),
+        "disabled enemy skin still offers cast size edits")
+    S.Set("nameplates", "enemy", true)
+    ui:Paint()
     ui:Select(Control("enemy.Auras"))
     assert(ui.sizeFields[1].caption.text == "Size %" and not ui.sizeFields[2].frame:IsShown(),
         "Blizzard aura scale did not appear as a single uniform size")
@@ -2882,7 +2954,7 @@ do
     for _, section in ipairs(contexts.suite_hud.sections) do
         if section.sectionId:match("^suite_hud_") then topics = topics + 1 end
     end
-    assert(topics == 17, "HUD topics lost their separate accordions")
+    assert(topics == 18, "HUD topics lost their separate accordions")
 end
 assert(hudSections.suite_hud_objectives_raid, "Retail raid encounter accordion missing")
 local raidPause
@@ -2900,6 +2972,9 @@ assert(raidPause and raidPause.row and raidPause.row.kind == "toggle"
     "raid combat tracker pause must be an optional HUD toggle")
 do (function()
     local workspace = contexts.suite_hud._msufSuiteHUDWorkspace
+    local artwork = assert(hudSections.suite_hud_announcements_artwork)
+    assert(artwork.parent == workspace.groups.announcements.frame,
+        "artwork accordion belongs to a different feature")
     for _, id in ipairs({ "objectives", "runSummary", "announcements" }) do
         local prefix = id == "runSummary" and "summary" or id
         for _, kind in ipairs({ "content", "layout", "type" }) do
@@ -3000,21 +3075,21 @@ do
     S.Set("nameplates", "enemyPreviewRole", 3)
     elite.previewUI:Paint()
     assert(elite:IsShown() and not raid:IsShown(), "rare preview did not follow Blizzard's icon conditions")
-    local exactSetting
-    M.OpenExactSettingControl = function(key, _, page)
-        exactSetting = key
+    local exactSetting, previousBridge = nil, M.SearchBridge
+    M.SearchBridge = { OpenSearchTarget = function(page, _, _, _, route, target)
+        exactSetting = target.settingKey
         assert(page == "suite_nameplates")
-        return true
-    end
+        assert(route.accordion[page .. ":" .. target.sectionId])
+        if target.settingKey == "msufsuite.nameplates.enemyRarityIcon" then tabs.segment:Choose("markers") end
+        return true, true, true, true
+    end }
     local healthLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.health"])
     healthLayer.scripts.OnClick(healthLayer, "RightButton")
     assert(exactSetting == "msufsuite.nameplates.enemyHealthWidthDelta",
         "enemy health preview did not open its width control")
     local levelLayer = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.layer.level"])
     levelLayer.scripts.OnClick(levelLayer, "RightButton")
-    assert(exactSetting == "msufsuite.nameplates."
-        .. (flavor == "Forever" and "levelAppearance" or "enemyLevelEnabled"),
-        "level preview opened the wrong client-specific setting")
+    assert(exactSetting == "msufsuite.nameplates.enemyLevelEnabled", "level preview did not open the visibility toggle")
     local beforeDisplay = S.Config("nameplates").friendlyNamesOnly
     local displayButton = assert(registeredControls["menu2.suite_nameplates.nameplates.preview.friendlyMode"])
     displayButton.scripts.OnClick(displayButton)
@@ -3029,7 +3104,7 @@ do
         "clicking the native elite icon did not open its Blizzard settings tab")
     assert(exactSetting == "msufsuite.nameplates.enemyRarityIcon",
         "clicking the elite icon did not link its exact setting")
-    M.OpenExactSettingControl = nil
+    M.SearchBridge = previousBridge
     tabs.segment:Choose("bar")
     current = contexts.suite_nameplates
     raritySetting.set(3)
@@ -3133,6 +3208,14 @@ do
         ui.uninterruptible = true
         ui:Paint()
         assert(not spellIcon:IsShown() and shield:IsShown(), "Legacy uninterruptible cast showed icon beside shield")
+        local selectedSetting, previousBridge = nil, M.SearchBridge
+        M.SearchBridge = { OpenSearchTarget = function(_, _, _, _, _, target)
+            selectedSetting = target.settingKey
+            return true, true, true, true
+        end }
+        shield.previewUI.body.selectionDeps.OpenSettings(shield.previewUI.body, shield)
+        M.SearchBridge = previousBridge
+        assert(selectedSetting == "msufsuite.nameplates.enemyCastEnabled", "Cast shield did not open its exact setting")
         NamePlateSetupOptions.spellNameInsideCastBar = true
         ui.uninterruptible = false
         ui:Paint()
@@ -3141,14 +3224,26 @@ do
             "inside cast preview retained the outside cast baseline")
         NamePlateSetupOptions.spellNameInsideCastBar = false
         plates.enemyCastHeight, plates.enemyCastIconSize, plates.enemyCastTimeFormat = 28, 40, 2
+        plates.enemyCastWidthDelta = 24
         plates.enemyCastIconOffsetX, plates.enemyCastIconOffsetY = 262, 34
         plates.enemyCastTextOffsetX, plates.enemyCastTextOffsetY = -38, 34
         ui:Paint()
         local customCast = registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.Cast"]
         local customTime = registeredControls["menu2.suite_nameplates.nameplates.preview.enemy.CastTime"]
-        assert(customCast.height == 28 and spellIcon.width == 40 and spellIcon.height == 40
+        assert(customCast.width == 206 * 1.25 + 24 and customCast.height == 28 and spellIcon.width == 40 and spellIcon.height == 40
             and text.points[1][4] == 4 and text.points[1][5] == 14 and customTime.width == 90,
             "reference cast dimensions, centered name or elapsed/total preview diverged")
+        plates.barGeometry = 1
+        NamePlateSetupOptions.castBarHeight = 16
+        NamePlateSetupOptions.castIconWidth, NamePlateSetupOptions.castIconHeight = 18, 20
+        ui:Paint()
+        local baseWidth = (flavor == "Forever" and 166 or 206) * 1.25
+        assert(customCast.width == baseWidth + 24 and customCast.height == 28 and spellIcon.height == 40,
+            "client-default geometry suppressed the cast dimension overrides")
+        plates.enemyCastWidthDelta, plates.enemyCastHeight, plates.enemyCastIconSize = 0, 0, 0
+        ui:Paint()
+        assert(customCast.width == baseWidth and customCast.height == 16 and spellIcon.width == 18 and spellIcon.height == 20,
+            "cast dimensions at zero did not keep Blizzard's client-specific values")
         NamePlateSetupOptions, C_CVar.GetCVar, ui.uninterruptible = setup, get, blocked
         for key, value in pairs(original) do plates[key] = value end
         ui:Paint()
@@ -3547,6 +3642,7 @@ local qolFeaturesByCategory = {
     questsProfessions = {
         "quests_automation", "questRewardValue_quest_reward_value", "trainerLearnAll_trainer_all",
         "fishingComfort_fishing_comfort", "professionAppearance_profession_outfits",
+        "gatheringTooltips_gathering_tooltips",
     },
     groups = {
         "groupRaidShortcuts_raid_shortcuts", "trustedPartyInvites_trusted_invites", "autoResponses_auto_responses",
@@ -3558,6 +3654,7 @@ local qolFeaturesByCategory = {
     travel = {
         "waypointLists_saved_waypoints",
         "waypoints_waypoint_command",  "glimmer_glimmer_objects", "dungeonPortals_dungeon_portals",
+        "foreverWorldMap_forever_world_map",
     },
     interface = {
         "dailyComfort_daily_comfort", "soundProfiles_sound_volumes",
@@ -3652,7 +3749,7 @@ for name in pairs(qolRows) do
     assert(expectedQolFeatures[name:gsub("^suite_qualityOfLife_", "")],
         "Quality of Life feature was not assigned to the proposed categories: " .. name)
 end
-assert(expectedQolFeatureCount == 68 and actualQolFeatureCount == expectedQolFeatureCount,
+assert(expectedQolFeatureCount == 70 and actualQolFeatureCount == expectedQolFeatureCount,
     "Quality of Life features are missing or duplicated: expected " .. expectedQolFeatureCount .. ", rendered " .. actualQolFeatureCount)
 assert(#optionsNS.QualityOfLifeCategories == 6, "Quality of Life source should define six primary categories")
 local sourceSeen, sourceCount, subgroupCount, expectedRenderedOrder = {}, 0, 0, {}
@@ -4058,6 +4155,7 @@ do
         "Micro Bar accordion did not grow for its Details tab")
     Reveal(registeredControls["menu2.suite_skin.skin.micro.reset"], "details")
     Reveal(registeredControls["menu2.suite_skin.skin.micro.move"], "general")
+    Reveal(registeredControls["menu2.suite_skin.skin.micro.dataTexts"], "general")
     Reveal(registeredControls["menu2.suite_skin.skin.micro.preset.modern"], "general")
     assert(skinControls["msufsuite.skin.icons.microMenu.scale"].get() == scale
         and skinContext.sections[3]._msuf2CursorY == generalBottom,
@@ -4807,7 +4905,9 @@ local function NativeTexture(atlas)
     return {
         IsShown = function() return true end,
         GetAtlas = function() return atlas end,
-        GetTexCoord = function() return 0, 1, 0, 1 end,
+        GetTexCoord = function() return 0, 0, 0, 1, 1, 0, 1, 1 end,
+        GetDesaturation = function() return 0 end,
+        GetEffectiveScale = function() return 1 end,
         GetVertexColor = function() return 1, 1, 1, 1 end,
         GetAlpha = function() return 1 end,
         GetSize = function() return 35.5, 36.5 end,
@@ -4815,7 +4915,7 @@ local function NativeTexture(atlas)
     }
 end
 local difficultyFrame = { GetSize = function() return 35.5, 36.5 end,
-    GetCenter = function() return 100, 100 end }
+    GetEffectiveScale = function() return 1 end, GetCenter = function() return 100, 100 end }
 local difficultyMode = { Background = NativeTexture("ui-hud-minimap-guildbanner-background-top"),
     Border = NativeTexture("ui-hud-minimap-guildbanner-border-top"),
     DifficultyTextures = { NativeTexture("ui-hud-minimap-guildbanner-mythic-large") } }
@@ -5940,7 +6040,19 @@ end)()
     more._msuf2PrepareExactSearchTarget()
     assert(remove:IsVisible(), "exact search did not reveal delete action")
     local action = useDirect and direct or remove
+    local open, dialog = optionsNS.OpenDeletePicker, optionsNS.Confirm
+    local picker, accept
+    optionsNS.OpenDeletePicker = function(...) picker = open(...) end
+    optionsNS.Confirm = function(_, text, callback)
+        assert(text:find("#42", 1, true), "the confirmation missed the selected bar")
+        accept = callback
+    end
     action.scripts.OnClick(action)
+    assert(picker and picker.count == 1 and not accept, "old Remove bar action bypassed the shared picker")
+    picker.apply.scripts.OnClick(picker.apply)
+    assert(accept and S.Config("dataTexts").bar42Enabled, "the selected bar was deleted before confirmation")
+    accept()
+    optionsNS.OpenDeletePicker, optionsNS.Confirm = open, dialog
     for _, id in ipairs(Suite.DataTextBarIDs(S.Config("dataTexts"))) do assert(id ~= 42, "deleted bar remained in navigation") end
     assert(S.Config("dataTexts").bar1Width == saved.bar1Width, "deleting a bar changed another bar")
     Suite.DB.suite.modules.dataTexts, current = saved, previous

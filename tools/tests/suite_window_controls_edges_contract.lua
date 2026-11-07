@@ -32,7 +32,11 @@ end
 local function Region(kind)
     local region = { kind = kind }
     function region:SetAllPoints() end
+    function region:ClearAllPoints() end
     function region:SetPoint() end
+    function region:SetSize() end
+    function region:Show() end
+    function region:Hide() end
     function region:SetJustifyH() end
     function region:SetText(text) self.text = text end
     function region:SetColorTexture(...) self.color = { ... } end
@@ -278,17 +282,17 @@ Check(WindowControls.ResetScales() and character.scale == 1, "the window scale r
 -- The minimize button and the restore tab follow a look, colour or profile
 -- change (DatabaseProfiles.ApplyActiveSettings notifies domain "profile").
 local minimize, restore = characterState.minimize, characterState.restore
-Check(Painted(minimize.textures[1], "buttonFill") and Painted(minimize.fontStrings[1], "text", "textColor")
+Check(minimize.textures[1].color[4] == 0 and Painted(minimize.textures[2], "text")
     and Painted(restore.textures[1], "popup"), "the window controls were not painted from the theme")
 palette.buttonFill, palette.popup, palette.text = { 0.3, 0.1, 0.1, 0.8 }, { 0.1, 0.3, 0.1, 0.7 }, { 1, 0.8, 0, 1 }
 Notify("color", "popup")
-Check(Painted(minimize.textures[1], "buttonFill") and Painted(minimize.fontStrings[1], "text", "textColor"),
+Check(minimize.textures[1].color[4] == 0 and Painted(minimize.textures[2], "text"),
     "a colour change did not repaint the minimize button")
 Check(Painted(restore.textures[1], "popup"), "a colour change did not repaint the restore tab")
 -- A profile with another look (Database.SetActiveProfile).
 palette.buttonFill, palette.popup, palette.text = { 0.5, 0.5, 0.6, 0.9 }, { 0.6, 0.5, 0.5, 0.9 }, { 0.7, 0.7, 1, 1 }
 Notify("profile", "activate")
-Check(Painted(minimize.textures[1], "buttonFill") and Painted(minimize.fontStrings[1], "text", "textColor")
+Check(minimize.textures[1].color[4] == 0 and Painted(minimize.textures[2], "text")
     and Painted(restore.textures[1], "popup"), "a profile switch left the window controls in the old colours")
 
 ------------------------------------------------------------------ R-S3-F1

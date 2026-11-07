@@ -11,7 +11,7 @@ local OUTLINES = { "", "OUTLINE", "THICKOUTLINE", "MONOCHROME,OUTLINE" }
 -- stand in for a setting a partial config lacks.
 local TEXT_ANCHOR, WEATHER, BOX = Suite.MinimapTextAnchor, Suite.MinimapWeatherDisplay, Suite.MinimapTextBox
 local LANDING, LANDING_ICON, ZOOM = Suite.MinimapLanding, Suite.MinimapLandingIcon, Suite.MinimapZoomButtons
-local ROTATE, ART = Suite.MinimapRotate, Suite.MinimapStyleTexture
+local ROTATE = Suite.MinimapRotate
 local RULES = P.catalog.minimap.rules
 local Native = Suite.MinimapElements
 
@@ -110,7 +110,7 @@ end
 local function SetIcon(texture, atlas, path)
     if atlas then
         local info = C_Texture.GetAtlasInfo(atlas)
-        if info and Public(info) then
+        if Public(info) and info then
             texture:SetAtlas(atlas)
             return
         end
@@ -118,81 +118,92 @@ local function SetIcon(texture, atlas, path)
     texture:SetTexture(path or WHITE)
 end
 
--- Offset of a native region's center from its frame's center, in preview units.
-local function CenterOffset(frame, source, scale)
-    local fx, fy = frame:GetCenter()
-    local sx, sy = source:GetCenter()
-    local x = PublicNumber(fx) and PublicNumber(sx) and (sx - fx) * scale or 0
-    local y = PublicNumber(fy) and PublicNumber(sy) and (sy - fy) * scale or 0
-    return x, y
+local function EffectiveScale(region)
+    local scale = region:GetEffectiveScale()
+    return PublicNumber(scale) and scale > 0 and scale or 1
 end
 
--- Mirror the active Blizzard difficulty banner instead of drawing a crown.
--- Its artwork and text change with instance type, guild group and client.
-local function CopyNativeTexture(target, source, frame, scale, nativeScale)
-    if not source then
-        target:Hide()
-        return false
-    end
-    local shown = source:IsShown()
-    if not Public(shown) or not shown then
-        target:Hide()
-        return false
-    end
+-- Centers are reported in each region's own effective coordinate space.
+local function PlaceRegion(target, source, frame, scale, ratio)
+    local fx, fy = frame:GetCenter()
+    local sx, sy = source:GetCenter()
+    local x = PublicNumber(fx) and PublicNumber(sx) and (sx * ratio - fx) * scale or 0
+    local y = PublicNumber(fy) and PublicNumber(sy) and (sy * ratio - fy) * scale or 0
+    target:ClearAllPoints()
+    target:SetPoint("CENTER", target:GetParent(), "CENTER", x, y)
+end
+
+local function RegionShown(region)
+    if not region or Suite.Safety.IsForbidden(region) then return false end
+    local shown = region:IsShown()
+    return Public(shown) and shown == true
+end
+
+local function CopyArtwork(target, source)
     local atlas = source:GetAtlas()
     if Public(atlas) and type(atlas) == "string" and atlas ~= "" then
         target:SetAtlas(atlas)
     else
         local file = source:GetTexture()
-        if not Public(file) or type(file) ~= "string" and type(file) ~= "number" then
-            target:Hide()
-            return false
-        end
+        if not Public(file) or type(file) ~= "string" and type(file) ~= "number" then return false end
         target:SetTexture(file)
+        target:SetTexCoord(0, 1, 0, 1)
     end
-    local left, right, top, bottom = source:GetTexCoord()
-    if PublicNumber(left) and PublicNumber(right) and PublicNumber(top) and PublicNumber(bottom) then
-        target:SetTexCoord(left, right, top, bottom)
+    -- GetTexCoord always returns four (x, y) pairs, even for an uncropped atlas.
+    local ulx, uly, llx, lly, urx, ury, lrx, lry = source:GetTexCoord()
+    if PublicNumber(ulx) and PublicNumber(uly) and PublicNumber(llx) and PublicNumber(lly)
+        and PublicNumber(urx) and PublicNumber(ury) and PublicNumber(lrx) and PublicNumber(lry) then
+        target:SetTexCoord(ulx, uly, llx, lly, urx, ury, lrx, lry)
     end
     local r, g, b, a = source:GetVertexColor()
     if PublicNumber(r) and PublicNumber(g) and PublicNumber(b) and Public(a) then
         target:SetVertexColor(r, g, b, type(a) == "number" and a or 1)
+    else
+        target:SetVertexColor(1, 1, 1, 1)
     end
     local alpha = source:GetAlpha()
-    if PublicNumber(alpha) then target:SetAlpha(alpha) end
-    local width, height = source:GetSize()
-    if not PublicNumber(width) or not PublicNumber(height) then
-        target:Hide()
-        return false
-    end
-    target:SetSize(width * nativeScale * scale, height * nativeScale * scale)
-    target:ClearAllPoints()
-    target:SetPoint("CENTER", target:GetParent(), "CENTER", CenterOffset(frame, source, scale))
-    target:Show()
+    target:SetAlpha(PublicNumber(alpha) and alpha or 1)
+    local desaturation = source:GetDesaturation()
+    target:SetDesaturation(PublicNumber(desaturation) and desaturation or 0)
     return true
 end
 
-local function CopyNativeText(target, source, frame, scale, nativeScale)
-    if not source then
+local function CopyNativeTexture(target, source, frame, scale)
+    if RegionShown(source) then
+        local width, height = source:GetSize()
+        if PublicNumber(width) and PublicNumber(height) and width > 0 and height > 0 and CopyArtwork(target, source) then
+            local ratio = EffectiveScale(source) / EffectiveScale(frame)
+            target:SetSize(width * ratio * scale, height * ratio * scale)
+            PlaceRegion(target, source, frame, scale, ratio)
+            target:Show()
+            return true
+        end
+    end
+    target:Hide()
+    return false
+end
+
+local function CopyNativeText(target, source, frame, scale)
+    if not RegionShown(source) then
         target:Hide()
         return
     end
-    local shown = source:IsShown()
-    if not Public(shown) or not shown then
+    local text = Suite.PublicText(source:GetText())
+    if not text then
         target:Hide()
         return
     end
+    local ratio = EffectiveScale(source) / EffectiveScale(frame)
     local font, size, flags = source:GetFont()
-    if Public(font) and Public(size) and Public(flags) and type(font) == "string" and type(size) == "number" then
-        target:SetFont(font, math.max(6, size * nativeScale * scale), flags)
+    if Public(font) and PublicNumber(size) and Public(flags) and type(font) == "string" then
+        target:SetFont(font, math.max(1, size * ratio * scale), flags)
     end
-    target:SetText(source:GetText())
+    target:SetText(text)
     local r, g, b, a = source:GetTextColor()
     if PublicNumber(r) and PublicNumber(g) and PublicNumber(b) and Public(a) then
         target:SetTextColor(r, g, b, type(a) == "number" and a or 1)
     end
-    target:ClearAllPoints()
-    target:SetPoint("CENTER", target:GetParent(), "CENTER", CenterOffset(frame, source, scale))
+    PlaceRegion(target, source, frame, scale, ratio)
     target:Show()
 end
 
@@ -258,7 +269,7 @@ local function PaintText(ui, config, item)
     local name, prefix = item.spec[1], "info" .. item.spec[1]
     local on = config[prefix] == true
     local layer = name == "Difficulty" and "difficultyText" or item.spec[3]
-    local shown = ui.LayerOn("text") and ui.LayerOn(layer) and (on or ui.LayerOn("hidden"))
+    local shown = ui.ShowLayer(layer, on, "text")
     local button = item.button
     button:SetShown(shown)
     if not shown then return end
@@ -308,38 +319,51 @@ local function PaintText(ui, config, item)
     local br, bg, bb = P.RGB(config.borderColor)
     if boxMode == BOX.CUSTOM then br, bg, bb = P.RGB(config[prefix .. "BoxColor"]) end
     Tint(item.box, br, bg, bb, 0.85)
-    item.box:SetShown(boxed or ui.state.selected and ui.state.selected.key == prefix)
+    item.box:SetShown(boxed or ui.body._selectedHandle == button)
     button:SetAlpha(on and 1 or 0.38)
 end
 
--- Whether an icon's element would show in game (the preview may still show
--- it dimmed through the Hidden layer).
--- S.Minimap* come with the minimap addon; before it loads, the settings decide.
-local function IconWanted(config, spec)
-    local key = spec[1]
-    local nativeKey = spec[8] or spec[2]
-    if spec[3] == "elements" then
-        if S.MinimapElementAvailable and not S.MinimapElementAvailable(nativeKey) then return false end
-        if not S.MinimapElementAvailable and Native.Ready() and not Native.Available(nativeKey) then return false end
+-- Owner visibility remains separate from the preview layer filters, since
+-- hidden samples must not move the live row's buttons.
+local function IconWanted(config, spec, drawer)
+    local key, nativeKey = spec[1], spec[8] or spec[2]
+    if key == "drawer" then
+        return config.collectButtons and drawer ~= false and not Suite.MinimapButtonCollector()
     end
     if key == "specialization" then return config.specButton and (config.specShowSpec or config.specShowLoot) end
-    if key == "difficulty" then
-        local wanted = config.showDifficulty and not config.infoDifficulty
-        if S.MinimapElementAvailable then wanted = wanted and S.MinimapElementAvailable("Difficulty") end
-        if S.MinimapElementPreviewShown and S.MinimapElementPreviewShown("Difficulty") == false then wanted = false end
-        return wanted
+    if key == "dungeon" then return config.dungeonButton end
+    if key == "folio" then
+        if config.showLanding == LANDING.NEVER then return false end
+        nativeKey = "Landing"
+    elseif key == "difficulty" then
+        if not config.showDifficulty or config.infoDifficulty then return false end
+    elseif spec[4] and not config[spec[4]] then
+        return false
     end
-    local wanted = key == "folio" and config.showLanding ~= LANDING.NEVER or spec[4] and config[spec[4]] == true
-    if key == "drawer" and Suite.MinimapButtonCollector() then wanted = false end
-    if spec[4] == false then
-        local frame = Native.Frame(nativeKey)
-        local shown = frame and frame:IsShown()
-        wanted = Public(shown) and shown == true
+    if S.MinimapElementAvailable and not S.MinimapElementAvailable(nativeKey) then return false end
+    local frame = Native.Frame(nativeKey)
+    if S.MinimapElementPreviewShown then
+        local shown = S.MinimapElementPreviewShown(nativeKey)
+        if shown ~= nil then return shown end
     end
-    if spec[3] == "elements" and S.MinimapElementPreviewShown and S.MinimapElementPreviewShown(nativeKey) == false then
-        wanted = false
-    end
-    return wanted
+    if frame then return RegionShown(frame) end
+    return spec[4] ~= false and not Native.Ready()
+end
+
+local function FallbackIcon(icon, atlas, file, inset)
+    icon:ClearAllPoints()
+    icon:SetPoint("TOPLEFT", icon:GetParent(), "TOPLEFT", inset, -inset)
+    icon:SetPoint("BOTTOMRIGHT", icon:GetParent(), "BOTTOMRIGHT", -inset, inset)
+    icon:SetVertexColor(1, 1, 1, 1)
+    icon:SetAlpha(1)
+    icon:SetDesaturation(0)
+    icon:SetTexCoord(0, 1, 0, 1)
+    SetIcon(icon, atlas, file)
+    icon:Show()
+end
+
+local function IconInset(button)
+    return math.min(2, button:GetWidth() / 4, button:GetHeight() / 4)
 end
 
 -- Mirrors Blizzard's difficulty banner, or falls back to the plain icon.
@@ -366,16 +390,17 @@ local function PaintDifficulty(ui, config, item, size)
                 end
             end
         end
-        local background = CopyNativeTexture(parts.background, mode.Background, native, scale, nativeScale)
-        local border = CopyNativeTexture(parts.border, mode.Border, native, scale, nativeScale)
+        local background = CopyNativeTexture(parts.background, mode.Background, native, scale * nativeScale)
+        local border = CopyNativeTexture(parts.border, mode.Border, native, scale * nativeScale)
         mirrored = background or border
-        CopyNativeTexture(parts.emblem, mode.Emblem, native, scale, nativeScale)
-        CopyNativeTexture(parts.glyph, glyph, native, scale, nativeScale)
-        CopyNativeText(parts.text, content.Text, native, scale, nativeScale)
+        CopyNativeTexture(parts.emblem, mode.Emblem, native, scale * nativeScale)
+        CopyNativeTexture(parts.glyph, glyph, native, scale * nativeScale)
+        CopyNativeText(parts.text, content.Text, native, scale * nativeScale)
     end
     if not mirrored then
         for _, part in pairs(parts) do part:Hide() end
         button:SetSize(size, size)
+        FallbackIcon(button.previewIcon, nil, item.spec[7], IconInset(button))
     end
     button.previewIcon:SetShown(not mirrored)
     item.backdrop:SetShown(not mirrored)
@@ -384,112 +409,198 @@ local function PaintDifficulty(ui, config, item, size)
         (-2 + (config.difficultyButtonY or 0)) * scale)
 end
 
-local function PaintFolio(ui, config, button, size)
-    local simpleBook = config.landingIcon == LANDING_ICON.BOOK
-    button.previewIcon:SetShown(not simpleBook)
-    for _, part in ipairs(button.previewBook) do part:SetShown(simpleBook) end
+local function NativeSize(frame)
+    if not frame then return end
+    local width, height = frame:GetWidth(), frame:GetHeight()
+    if PublicNumber(width) and PublicNumber(height) and width > 0 and height > 0 then return width, height end
+end
+
+-- Use the same native sizing as the runtime's row and corner placements.
+local function PaintNativeIcon(item, frame, source, add, border, text, width, height, scale)
+    local spec, button = item.spec, item.button
+    local parts, icon, mask = button.previewNative, button.previewIcon, rawget(button, "previewIconMask")
+    local copied = width and CopyNativeTexture(icon, source, frame, scale)
+    if copied then
+        if mask then mask:SetSize(width * scale, height * scale) end
+        CopyNativeTexture(parts.add, add, frame, scale)
+        CopyNativeTexture(parts.border, border, frame, scale)
+    else
+        parts.add:Hide()
+        parts.border:Hide()
+        local inset = IconInset(button)
+        FallbackIcon(icon, spec[6], spec[7], inset)
+        if mask then mask:SetSize(button:GetWidth() - 2 * inset, button:GetHeight() - 2 * inset) end
+    end
+    if parts.text then
+        if width then CopyNativeText(parts.text, text, frame, scale) else parts.text:Hide() end
+    end
+    item.backdrop:SetShown(not copied)
+end
+
+local function PaintFolio(ui, config, item, size)
+    local button = item.button
+    local frame, source, add = Native.Source("Landing")
+    local width, height = NativeSize(frame)
     local scale = ui.art.scale
-    button:SetSize(size * 0.8, size * 0.8)
+    local fit = size / 21 * 0.8
+    button:SetSize(width and width * fit or size * 0.8, height and height * fit or size * 0.8)
+    local book = config.landingIcon == LANDING_ICON.BOOK
+    if book then
+        button.previewIcon:Hide()
+        button.previewNative.add:Hide()
+        button.previewNative.border:Hide()
+        Tint(item.backdrop, 0.08, 0.1, 0.14, 1)
+        item.backdrop:Show()
+    else
+        PaintNativeIcon(item, frame, source, add, nil, nil, width, height, fit)
+    end
+    local glyphScale = fit
+    local parts = button.previewBook
+    parts[1]:SetSize(7 * glyphScale, 13 * glyphScale)
+    parts[2]:SetSize(7 * glyphScale, 13 * glyphScale)
+    parts[3]:SetSize(2 * glyphScale, 15 * glyphScale)
+    parts[1]:SetPoint("RIGHT", button, "CENTER", -glyphScale, 0)
+    parts[2]:SetPoint("LEFT", button, "CENTER", glyphScale, 0)
+    for _, part in ipairs(parts) do part:SetShown(book) end
     button:ClearAllPoints()
     button:SetPoint("BOTTOMLEFT", ui.map, "BOTTOMLEFT", (2 + (config.landingX or 0)) * scale,
         (2 + (config.landingY or 0)) * scale)
 end
 
--- Mirror the same native regions the runtime borrows, including the additive
--- hover/pressed layer. Older builds use normal textures. Samples stay usable
--- when Blizzard has not created a frame or resolved its geometry yet.
-local function PaintNativeIcon(ui, config, item)
-    local spec, button = item.spec, item.button
-    local frame, source, add, border = Native.Source(spec[8] or spec[2])
-    local parts = button.previewNative
-    local scale = ui.art.scale
-    local width, height = frame and frame:GetWidth(), frame and frame:GetHeight()
-    if frame and PublicNumber(width) and PublicNumber(height) and math.max(width, height) > 0 then
-        local wantedSize = spec[1] == "queueStatus" and config.queueStatusSize or config.elementSize or RULES.elementSize.default
-        local fit = wantedSize / math.max(width, height)
-        if CopyNativeTexture(button.previewIcon, source, frame, scale, fit) then
-            if spec[1] == "externalEvent" then button.previewIconMask:SetSize(width * fit * scale, height * fit * scale) end
-            CopyNativeTexture(parts.add, add, frame, scale, fit)
-            CopyNativeTexture(parts.border, border, frame, scale, fit)
-            return
+local function PaintSpec(ui, config, item)
+    local button, scale = item.button, ui.art.scale
+    local corner = Suite.MinimapSpecCorners[config.specCorner] or Suite.MinimapSpecCorners[1]
+    local size = (config.specSize or RULES.specSize.default) * scale
+    button:SetSize(size, size)
+    button:ClearAllPoints()
+    button:SetPoint(corner[1], ui.map, corner[2], (corner[3] + (config.specX or 0)) * scale,
+        (corner[4] + (config.specY or 0)) * scale)
+    local index = C_SpecializationInfo.GetSpecialization()
+    local icon
+    if PublicNumber(index) and index > 0 then
+        local _, _, _, texture = C_SpecializationInfo.GetSpecializationInfo(index)
+        if PublicNumber(texture) then icon = texture end
+    end
+    FallbackIcon(button.previewIcon, nil, icon or "Interface\\Icons\\INV_Misc_QuestionMark", 2 * scale)
+    local r, g, b = P.RGB(config.borderColor)
+    if config.borderClassColor then r, g, b = PlayerClassColor(r, g, b) end
+    Tint(item.backdrop, r, g, b, 0.88)
+end
+
+-- Third-party single buttons can have several art layers (for example
+-- LibDBIcon's icon, rim and background). Retain only a bounded set of textures.
+local function CopyDrawerRegions(button, frame, scale, ...)
+    local parts, count = button.previewDrawerArt, 0
+    for index = 1, select("#", ...) do
+        local source = select(index, ...)
+        if not Suite.Safety.IsForbidden(source) and source:GetObjectType() == "Texture" then
+            local target = parts[count + 1]
+            if not target then
+                target = button:CreateTexture(nil, "ARTWORK")
+                parts[count + 1] = target
+            end
+            if CopyNativeTexture(target, source, frame, scale) then
+                local layer, sublevel = source:GetDrawLayer()
+                if Public(layer) and PublicNumber(sublevel) then target:SetDrawLayer(layer, sublevel) end
+                local blend = source:GetBlendMode()
+                if Public(blend) then target:SetBlendMode(blend) end
+                count = count + 1
+                if count == 8 then break end
+            end
         end
     end
-    parts.add:Hide()
-    parts.border:Hide()
-    button.previewIcon:ClearAllPoints()
-    button.previewIcon:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-    button.previewIcon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
-    if spec[1] == "externalEvent" then button.previewIconMask:SetSize(button:GetWidth() - 4, button:GetHeight() - 4) end
-    button.previewIcon:SetVertexColor(1, 1, 1, 1)
-    button.previewIcon:SetAlpha(1)
-    button.previewIcon:SetTexCoord(0, 1, 0, 1)
-    SetIcon(button.previewIcon, spec[6], spec[7])
-    button.previewIcon:Show()
+    for index = count + 1, #parts do parts[index]:Hide() end
+    return count > 0
+end
+
+local function PaintDrawer(ui, config, item, size, source, index)
+    local button = item.button
+    local width, height = NativeSize(source)
+    local copied
+    if width then
+        copied = CopyDrawerRegions(button, source, size / math.max(width, height), source:GetRegions())
+    else
+        for _, part in ipairs(button.previewDrawerArt) do part:Hide() end
+    end
+    if not copied then
+        local r, g, b = P.RGB(config.borderColor)
+        if config.borderClassColor then r, g, b = PlayerClassColor(r, g, b) end
+        Suite.MinimapStyle.PaintDrawerToggle(button, item.backdrop, button.previewDots, config.elementSize, ui.art.scale, r, g, b)
+    end
+    item.backdrop:SetShown(not copied)
+    for _, part in ipairs(button.previewDots) do part:SetShown(not copied) end
+    RowPosition(button, ui.map, config.drawerRow, index, config, ui.art.scale, "drawer")
+end
+
+local function PaintIcon(ui, config, item, size, index, single)
+    local spec, button = item.spec, item.button
+    local key, scale = spec[1], ui.art.scale
+    button:SetSize(size, size)
+    if key == "specialization" then
+        PaintSpec(ui, config, item)
+    elseif key == "dungeon" then
+        Suite.MinimapStyle.PaintDungeonButton(button, button.previewIcon, config.dungeonStyle, scale)
+        button:SetSize(config.dungeonWidth * scale, config.dungeonHeight * scale)
+        local anchor = Suite.MinimapDungeonAnchors[config.dungeonAnchor]
+        button:ClearAllPoints()
+        button:SetPoint(anchor[1], ui.map, anchor[2], config.dungeonX * scale, config.dungeonY * scale)
+        Tint(item.backdrop, 0, 0, 0, 1)
+    elseif key == "folio" then
+        PaintFolio(ui, config, item, size)
+    elseif key == "difficulty" then
+        PaintDifficulty(ui, config, item, size)
+    elseif key == "drawer" then
+        PaintDrawer(ui, config, item, size, single, config.drawerRow == config.elementRow and index or 0)
+    else
+        local frame, source, add, border, text = Native.Source(spec[8] or spec[2])
+        local width, height = NativeSize(frame)
+        if key == "queueStatus" then
+            local eyeSize, x, y = Native.QueueLayout(config)
+            size = eyeSize * scale
+            button:SetSize(size, size)
+            button:ClearAllPoints()
+            button:SetPoint("CENTER", ui.map, "TOPLEFT", x * scale, y * scale)
+        else
+            RowPosition(button, ui.map, config.elementRow, index, config, scale, OffsetPrefix(key))
+        end
+        PaintNativeIcon(item, frame, source, add, border, text, width, height, width and size / math.max(width, height))
+    end
+    item.edge:SetShown(ui.body._selectedHandle == button)
+end
+
+local function RowIcon(spec)
+    return spec[3] == "elements" and spec[1] ~= "difficulty" and spec[1] ~= "queueStatus"
 end
 
 local function PaintIcons(ui, config)
-    local rowCount = 0
-    local scale = ui.art.scale
-    local size = Clamp((config.elementSize or RULES.elementSize.default) * scale, 12, 60)
-    local selectedKey = ui.state.selected and ui.state.selected.key
+    local size = (config.elementSize or RULES.elementSize.default) * ui.art.scale
+    local drawer, single
+    if S.MinimapDrawerPreviewSource then drawer, single = S.MinimapDrawerPreviewSource() end
+    local count, drawerItem = 0, nil
     for _, item in ipairs(ui.iconItems) do
-        local spec, button = item.spec, item.button
-        local key = spec[1]
-        local wanted = IconWanted(config, spec)
-        button:SetShown(ui.LayerOn(spec[5]) and ui.LayerOn(key) and (wanted or ui.LayerOn("hidden")))
-        button:SetAlpha(wanted and 1 or 0.38)
-        button:SetSize(size, size)
-        if key == "specialization" then
-            local corner = Suite.MinimapSpecCorners[config.specCorner] or Suite.MinimapSpecCorners[1]
-            local buttonSize = (config.specSize or RULES.specSize.default) * scale
-            button:SetSize(buttonSize, buttonSize)
-            button:ClearAllPoints()
-            button:SetPoint(corner[1], ui.map, corner[2], (corner[3] + (config.specX or 0)) * scale,
-                (corner[4] + (config.specY or 0)) * scale)
-            local index = C_SpecializationInfo.GetSpecialization()
-            local icon
-            if PublicNumber(index) and index > 0 then
-                local _, _, _, texture = C_SpecializationInfo.GetSpecializationInfo(index)
-                if PublicNumber(texture) then icon = texture end
-            end
-            button.previewIcon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-        elseif key == "queueStatus" then
-            local eyeSize, x, y = Native.QueueLayout(config)
-            button:SetSize(eyeSize * scale, eyeSize * scale)
-            button:ClearAllPoints()
-            button:SetPoint("CENTER", ui.map, "TOPLEFT", x * scale, y * scale)
-            PaintNativeIcon(ui, config, item)
-        elseif key == "dungeon" then
-            Suite.MinimapStyle.PaintDungeonButton(button, button.previewIcon, config.dungeonStyle, scale)
-            button:SetSize(config.dungeonWidth * scale, config.dungeonHeight * scale)
-            button:ClearAllPoints()
-            local anchor = Suite.MinimapDungeonAnchors[config.dungeonAnchor]
-            button:SetPoint(anchor[1], ui.map, anchor[2], config.dungeonX * scale, config.dungeonY * scale)
-        elseif key == "folio" then
-            PaintFolio(ui, config, button, size)
-        elseif key == "difficulty" then
-            PaintDifficulty(ui, config, item, size)
-        elseif key == "drawer" then
-            local index = config.drawerRow == config.elementRow and rowCount or 0
-            RowPosition(button, ui.map, config.drawerRow, index, config, scale, "drawer")
-        else
-            PaintNativeIcon(ui, config, item)
-            RowPosition(button, ui.map, config.elementRow, rowCount, config, scale, OffsetPrefix(key))
-            if wanted then rowCount = rowCount + 1 end
+        local key, spec = item.spec[1], item.spec
+        local wanted = IconWanted(config, spec, drawer)
+        local layer = key == "drawer" and "addons" or key
+        local group = spec[5] ~= layer and spec[5] or nil
+        local shown = ui.ShowLayer(layer, wanted, group)
+        item.button:SetShown(shown)
+        item.button:SetAlpha(wanted and 1 or 0.38)
+        item.sampleRow = shown and not wanted and RowIcon(spec)
+        if key == "drawer" then
+            if shown then drawerItem = item end
+        elseif not item.sampleRow then
+            if shown then PaintIcon(ui, config, item, size, count) end
+            if wanted and RowIcon(spec) then count = count + 1 end
         end
-        local chosen = selectedKey == key
-        if key == "difficulty" then item.edge:SetShown(chosen) end
-        if chosen then
-            Tint(item.edge, 0.28, 0.74, 1, 1)
-            Tint(item.backdrop, 0.11, 0.3, 0.43, 0.9)
-        else
-            if key == "dungeon" then
-                Tint(item.edge, 0, 0, 0, 1)
-                Tint(item.backdrop, 0, 0, 0, 1)
-            else
-                Tint(item.edge, 0.6, 0.74, 0.83, 0.65)
-            end
-            if key ~= "dungeon" then Tint(item.backdrop, 0.025, 0.035, 0.045, 0.9) end
+    end
+    if drawerItem then
+        PaintIcon(ui, config, drawerItem, size, count, single)
+    end
+    if config.drawerRow == config.elementRow and (drawerItem or drawer and config.collectButtons) then count = count + 1 end
+    for _, item in ipairs(ui.iconItems) do
+        if item.sampleRow then
+            PaintIcon(ui, config, item, size, count)
+            count = count + 1
         end
     end
 end
@@ -497,7 +608,7 @@ end
 local function PaintOrnament(ui, config)
     local art = ui.art
     local rim = math.max(12, ((config.styleScale or RULES.styleScale.default) / 100 - 1) * art.width)
-    local shown = ui.LayerOn("ornament") and (config.styleTexture ~= ART.NONE or ui.LayerOn("hidden"))
+    local shown = ui.ChipOn("ornament") or ui.LayerOn("ornament") and ui.LayerOn("hidden")
     local edges = ui.ornamentEdges
     edges[1]:SetWidth(art.width + rim)
     edges[2]:SetWidth(art.width + rim)
@@ -511,24 +622,40 @@ local function PaintOrnament(ui, config)
     end
 end
 
-local function PaintMapControls(ui, config)
+local function PaintZoom(ui, config, button, frame, index)
     local scale = ui.art.scale
+    local width, height = NativeSize(frame)
+    button:SetSize((width or 17) * scale, (height or (index == 1 and 17 or 9)) * scale)
+    local copied = width and CopyNativeTexture(button.previewIcon, Native.ButtonTexture(frame), frame, scale)
+    button.previewIcon:SetShown(copied == true)
+    button.previewBackdrop:SetShown(not copied)
+    button.previewSign:SetShown(not copied)
+    local prefix = index == 1 and "zoomIn" or "zoomOut"
+    button:ClearAllPoints()
+    button:SetPoint("BOTTOMRIGHT", ui.map, "BOTTOMRIGHT", (-2 + (config[prefix .. "X"] or 0)) * scale,
+        ((index == 1 and 27 or 2) + (config[prefix .. "Y"] or 0)) * scale)
+end
+
+local function PaintMapControls(ui, config)
     local mode = config.zoomButtons or RULES.zoomButtons.default
+    local zoomIn, zoomOut = Native.ZoomButtons()
+    local zoom = mode ~= ZOOM.HIDE and (zoomIn and zoomOut or not Native.Ready()) and true or false
+    local shown = ui.ShowLayer("zoom", zoom, "blizzard")
     for index, button in ipairs(ui.zoomItems) do
-        button:SetShown(ui.LayerOn("blizzard") and ui.LayerOn("zoom") and (mode ~= ZOOM.HIDE or ui.LayerOn("hidden")))
-        button:SetAlpha(mode == ZOOM.ALWAYS and 1 or mode == ZOOM.MOUSEOVER and 0.62 or 0.38)
-        local prefix = index == 1 and "zoomIn" or "zoomOut"
-        button:ClearAllPoints()
-        button:SetPoint("BOTTOMRIGHT", ui.map, "BOTTOMRIGHT",
-            (-2 + (config[prefix .. "X"] or 0)) * scale,
-            ((index == 1 and 27 or 3) + (config[prefix .. "Y"] or 0)) * scale)
+        button:SetShown(shown)
+        if shown then
+            button:SetAlpha(zoom and 1 or 0.38)
+            local frame = zoomOut
+            if index == 1 then frame = zoomIn end
+            PaintZoom(ui, config, button, frame, index)
+        end
     end
     local rotating = config.rotate == ROTATE.ROTATE
     if config.rotate == ROTATE.BLIZZARD then
         local value = GetCVarBool("rotateMinimap")
         rotating = Public(value) and value == true
     end
-    ui.compass:SetShown(ui.LayerOn("blizzard") and ui.LayerOn("compass") and (rotating or ui.LayerOn("hidden")))
+    ui.compass:SetShown(ui.ShowLayer("compass", rotating, "blizzard"))
     ui.compass:SetAlpha(rotating and 1 or 0.38)
 end
 

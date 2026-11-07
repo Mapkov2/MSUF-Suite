@@ -13,6 +13,7 @@ Menu\Controls.lua
 Menu\Colors.lua
 Menu\PreviewInteraction.lua
 Menu\SectionActions.lua
+Menu\DeletePicker.lua
 Menu\Workspace.lua
 Menu\PreviewClasses.lua
 Menu\PreviewCanvas.lua
@@ -43,6 +44,8 @@ Pages\DataTextsEditor.lua
 Pages\ComfortPickers.lua
 Pages\QualityOfLifeComfort.lua
 Pages\DataTexts.lua
+Pages\XPBarTextOptions.lua
+Pages\XPBarPreviewEditor.lua
 Pages\QualityOfLifePreview.lua
 Menu\GraphicsPerformance.lua
 Pages\GraphicsPerformance.lua
@@ -76,7 +79,11 @@ Pages\BuffRemindersPreview.lua
 Pages\BuffReminders.lua
 Pages\ChatPreviewPositions.lua
 Pages\ChatPreviewPaint.lua
+Pages\ChatPreviewLayers.lua
+Pages\ChatPreviewWindows.lua
 Pages\ChatPreview.lua
+Pages\ChatPreviewLinks.lua
+Pages\ChatWorkspace.lua
 Pages\Chat.lua
 Pages\NameplatesAuraDraft.lua
 Pages\NameplatesAuraColors.lua
@@ -89,6 +96,7 @@ Pages\NameplatesPreviewDecor.lua
 Pages\NameplatesPreview.lua
 Pages\NameplatesWorkspace.lua
 Pages\Nameplates.lua
+Pages\NameplateFonts.lua
 Pages\CooldownManagerData.lua
 Pages\CooldownManagerLists.lua
 Pages\CooldownManagerTarget.lua
@@ -108,6 +116,7 @@ Pages\CooldownManagerInspection.lua
 Pages\CooldownManager.lua
 Pages\AppearanceKit.lua
 Pages\AppearancePreview.lua
+Pages\AppearanceQuests.lua
 Pages\Appearance.lua
 Menu\ToolRouting.lua
 Menu\Register.lua

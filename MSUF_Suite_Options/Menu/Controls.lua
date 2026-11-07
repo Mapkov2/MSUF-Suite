@@ -24,8 +24,8 @@ function P.SkinSearchRow(ctx, row, section, title, help)
     }
 end
 
-function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, meta)
-    if not ctx.searchRows then return P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta) end
+function P.SkinSearchButton(ctx, parent, label, x, y, width, onClick, enabled, meta, options)
+    if not ctx.searchRows then return P.Button(ctx, parent, label, x, y, width, onClick, enabled, meta, options) end
     local row = { label = Tr(label), searchLabel = label, kind = "button",
         controlId = meta and meta.controlId, sectionId = meta and meta.sectionId, suiteAlways = meta and meta.suiteAlways }
     P.SkinSearchRow(ctx, row)
@@ -99,7 +99,7 @@ local function SkinTabs(ctx, builder, body, specs, state)
         values[#values + 1] = { value = tab, text = Tr(spec.label) }
     end
     local tabs, refresh, _, choose = W.SegmentTabs(ctx, body, {
-        label = "", values = values, width = width, frames = panels, defaultTab = specs[1].id,
+        label = "", compact = true, values = values, width = width, frames = panels, defaultTab = specs[1].id,
         get = function() return state.tab end,
         set = function(tab) state.tab = tab end,
         afterRefresh = function(tab) P.FinishBody(builder, body, -59 - heights[tab]) end,
@@ -386,6 +386,7 @@ function P.RuleGrid(ctx, parent, pageKey, id, rules, y, width, keyFn, sectionId,
         local input = M.BindTextInputAt(ctx, parent, Tr(rule.label), 16, y, width,
             function() return P.Get(id, Key()) end, function(value) P.Set(id, Key(), value or "") end, true,
             P.Meta(pageKey, id, rule.key, "setting", sectionId))
+        P.StyleMenuControl(input)
         -- The setters count bytes (Suite.lua ValidText): a CJK or Cyrillic
         -- text the box takes is one they take. The limit counts the
         -- terminating zero byte too.

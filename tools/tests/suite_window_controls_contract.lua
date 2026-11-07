@@ -95,16 +95,25 @@ local function Frame(name, parent, kind)
         for _, callback in ipairs(self.hooks.OnHide or {}) do callback(self) end
     end
     function frame:CreateTexture()
-        return {
-            SetAllPoints = function() end,
-            SetColorTexture = function(self, ...) self.color = { ... } end,
-        }
+        local texture = { shown = true }
+        self.textures = self.textures or {}
+        self.textures[#self.textures + 1] = texture
+        function texture:SetAllPoints() end
+        function texture:SetColorTexture(...) self.color = { ... } end
+        function texture:ClearAllPoints() self.point = nil end
+        function texture:SetPoint(...) self.point = { ... } end
+        function texture:SetSize(width, height) self.width, self.height = width, height end
+        function texture:Show() self.shown = true end
+        function texture:Hide() self.shown = false end
+        return texture
     end
     function frame:CreateLine()
         local line = {}
         self.lines = self.lines or {}
         self.lines[#self.lines + 1] = line
         function line:SetThickness(value) self.thickness = value end
+        function line:Show() self.shown = true end
+        function line:Hide() self.shown = false end
         function line:SetStartPoint(point, relativeTo, x, y)
             assert(type(relativeTo) == "table", "Line:SetStartPoint needs a relative region")
             self.startPoint = { point, relativeTo, x, y }
@@ -1004,6 +1013,65 @@ do
         UIPanelWindows[name] = nil
     end
     NS.BlizzardCatalog, NS.Client = previousCatalog, previousClient
+end
+
+do
+    local panel = Frame("SettingsPanel", UIParent)
+    local close = Frame(nil, panel, "Button")
+    close.anchorName, close.left, close.top, close.height = "TOPRIGHT", 668, 803, 26
+    panel.ClosePanelButton = close
+    local nativeClose = function() panel:Hide() end
+    close.scripts.OnClick = nativeClose
+    close.SetPoint = function() error("the caption moved Blizzard's close button") end
+    local originalScale = 0.8
+    panel:SetScale(originalScale)
+    function close:GetEffectiveScale() return panel:GetEffectiveScale() end
+    local title = { GetStringWidth = function() return 250 end, GetRight = function() return 700 end,
+        GetCenter = function() return 400 end, GetJustifyH = function() return "CENTER" end }
+    function panel:GetTitleText() return title end
+    local neighbor = Frame(nil, panel, "Button")
+    neighbor.left, neighbor.top = 592, 798
+    function neighbor:GetRight() return 610 end
+    function neighbor:GetBottom() return 776 end
+    function neighbor:GetEffectiveScale() return panel:GetEffectiveScale() end
+    function panel:GetChildren() return close, neighbor end
+    Check(NS.WindowControls.Attach(panel, "caption"), "could not attach the settings caption")
+    local state = NS.WindowControls.states[panel]
+    Check(state.maximize and state.maximize.shown and state.minimize.shown, "caption needs minimize, maximize and native close")
+    Check(state.maximize.point[2] == close and state.minimize.point[2] == state.maximize,
+        "caption buttons are not in Windows order beside the native X")
+    Check(state.maximize.width == 28 and state.minimize.width == 28 and state.maximize.height == 20,
+        "caption crossed a native neighbor or followed the native X past the top edge")
+    local dash, square = state.minimize.textures, state.maximize.textures
+    Check(#dash == 2 and #square == 5, "caption still relies on native Line regions")
+    Check(dash[2].height == 1 and square[2].height == 1 and square[4].height == 1,
+        "caption lost a horizontal one-pixel bar")
+    Check(square[3].width == 1 and square[5].width == 1,
+        "maximize lost a vertical one-pixel bar")
+    GetUIPanelAttribute = function(frame, key)
+        return frame == panel and key == "checkFitExtraHeight" and 60 or nil
+    end
+    state.maximize.scripts.OnClick(state.maximize)
+    Check(state.fit and panel.point[1] == "CENTER" and panel.scale == (1080 - 16) / 560,
+        "maximize did not fit the native window and its extra height to the screen")
+    Check(square[9].shown, "maximized window needs the overlapping restore glyph")
+    state.maximize.scripts.OnClick(state.maximize)
+    Check(not state.fit and panel.scale == originalScale and not square[9].shown,
+        "restore did not return the original scale and maximize glyph")
+    state.maximize.scripts.OnClick(state.maximize)
+    Check(state.fit and NS.WindowControls.ResetScales() and not state.fit and panel.scale == originalScale,
+        "scale reset left a transient maximize state or restored its old scale")
+    state.maximize.scripts.OnClick(state.maximize)
+    neighbor.GetRight = function() return 635 end
+    NS.WindowControls.Refresh()
+    Check(not state.fit and not state.maximize.shown and state.minimize.shown,
+        "the smaller caption lost a safe minimize action or stayed maximized without Restore")
+    neighbor.GetRight = function() return 664 end
+    NS.WindowControls.Refresh()
+    Check(not state.maximize.shown and not state.minimize.shown and close.shown,
+        "a tight title must keep the native X clear")
+    Check(close.scripts.OnClick == nativeClose, "caption replaced the native close handler")
+    NS.WindowControls.DisableOwner("caption")
 end
 
 print("Suite window controls: " .. checks .. " checks passed")

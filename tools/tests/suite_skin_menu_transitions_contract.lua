@@ -155,6 +155,9 @@ local function Load(file)
     end
     assert(loadfile(path))("MSUF_Suite_Skin", NS)
 end
+local suite = {}
+assert(loadfile(root .. "/MSUF_Suite/Core/DisclosureMotion.lua"))("MSUF_Suite", suite)
+NS.SuiteCore = function() return suite end
 Load("Core/Safety.lua")
 Load("Rendering/Motion.lua")
 -- Load the real dropdown observer, preserving its callback registration route.
@@ -324,7 +327,7 @@ local function Row(node, top)
     if node.data.category then row.CollapseExpand = Frame(row, true) end
     return row
 end
-local category, childNode, followingNode = Node("Tools", true), Node(), Node("Other", true)
+local category, childNode, followingNode = Node("Tools", true), Node(), Node("Other", false)
 local header, child, following = Row(category, 400), Row(childNode, 376), Row(followingNode, 376)
 childNode.parent = category
 child.Title = child:CreateFontString()
@@ -348,7 +351,7 @@ local before = #groups
 category.collapsed, following.top, scroll.rows = nil, 352, { header, child, following }
 scroll:TriggerEvent("layout")
 local childRecord, followingRecord = state.records[child], state.records[following]
-Check(childRecord.group.reverse and childRecord.translation.y == 24 and childRecord.alpha.ToAlpha == 0,
+Check(childRecord.group.reverse and childRecord.translation.y == 8 and childRecord.alpha.ToAlpha == 0,
     "expanded child did not reveal from its header")
 Check(followingRecord.group.reverse and followingRecord.translation.y == 24,
     "following row did not move down from its previous position")
@@ -358,22 +361,27 @@ local warmGroups = #groups
 childRecord.group.progress = 0.5
 followingRecord.group.progress = 0.5
 state.records[header].arrowGroup.progress = 0.5
-category.collapsed, following.top, scroll.rows = true, 376, { header, following }
+local incoming = Row(Node(), 352)
+incoming.node.parent = followingNode
+category.collapsed, following.top, scroll.rows = true, 376, { header, following, incoming }
 scroll:TriggerEvent("released", child, childNode)
 scroll:TriggerEvent("layout")
+local incomingRecord = state.records[incoming]
+Check(incomingRecord.translation and incomingRecord.translation.y == followingRecord.translation.y
+    and incomingRecord.alpha.ToAlpha == 1, "newly visible row overlapped or faded instead of following its neighbor")
 Check(not childRecord.group:IsPlaying() and childRecord.node == nil, "released row animation leaked into the pool")
 local ghost = childRecord.ghost
 Check(ghost.group:IsPlaying() and ghost.frame.shown and state.ghostViewport.shown,
     "native nil-open category did not collapse its released child")
 Check(ghost.fonts[1].text == "|Ticon:16|t Example" and ghost.textures[2].desaturated,
     "ghost lost inline icon text or partial checkbox state")
-Check(ghost.alpha.FromAlpha == 0.5 and ghost.frame.points[1][5] == 4,
+Check(ghost.alpha.ToAlpha == 0.5 and ghost.frame.points[1][5] + ghost.move.y == -4,
     "rapid collapse lost the partially revealed row position or alpha")
 Check(state.ghostViewport.clips and state.ghostClip.clips and not ghost.frame.mouse,
     "ghost escaped the viewport or intercepted native input")
 Check(followingRecord.translation.y == -12, "rapid collapse lost the current rendered position")
 Check(state.records[header].rotation.Degrees == -45, "rapid disclosure retarget jumped to the old endpoint")
-Check(#groups == warmGroups and warmGroups > before, "warm toggles allocated new animation groups")
+Check(#groups == warmGroups + 2 and warmGroups > before, "newly visible row allocated more than its own groups")
 scroll:TriggerEvent("layout")
 Check(followingRecord.group:IsPlaying(), "unchanged duplicate layout cancelled an active transition")
 scroll.offset = 20
@@ -432,6 +440,7 @@ Check(childRecord.group:IsPlaying(), "reuse fixture did not start a row transiti
 child.node = Node()
 scroll:TriggerEvent("layout")
 Check(not childRecord.group:IsPlaying(), "pooled row reuse retained old motion")
+child.node.parent = category
 category.collapsed = true
 scroll.rows = { header }
 scroll:TriggerEvent("layout")

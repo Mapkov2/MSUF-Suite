@@ -4,8 +4,6 @@ local NS, S = P.NS, P.Suite
 local M = {}
 local DELETE_DIALOGS = { "DELETE_GOOD_ITEM", "DELETE_GOOD_QUEST_ITEM" }
 local CVAR_CHOICES = {
-    { "chatWheel", "chatMouseScroll", "1" },
-    { "chatClassColors", "chatClassColorOverride", "0" },
     { "keepMapVisible", "mapFade", "0" },
     { "playerMapCoords", "worldMapShowPlayerCoords", "1" },
     { "cursorMapCoords", "worldMapShowCursorCoords", "1" },
@@ -16,7 +14,6 @@ local CVAR_CHOICES = {
     { "muteDialog", "Sound_EnableDialog", "0" },
     { "muteErrorSpeech", "Sound_EnableErrorSpeech", "0" },
 }
-local CHAT_LIMIT = 64
 
 local function FillDelete(dialog)
     -- Blizzard still owns the button and its confirmation handler.
@@ -61,69 +58,6 @@ local function SyncCVar(self, key, enabled, value)
     else
         S.RestoreCVar(self.id, key)
         self.appliedCVars[key] = nil
-    end
-end
-
--- Native chat fading has a second owner, the Chat module's "Fade individual
--- messages". MSUF_Suite_Chat/Appearance.lua keeps one record per chat frame
--- in S.chatFading (the frame's native value, each owner's hold) and settles
--- it through S.HoldChatFading. That addon loads on its own; until it does,
--- nothing else holds the frames and this keeps the same record directly.
-local fading = S.chatFading or setmetatable({}, { __mode = "k" })
-S.chatFading = fading
-
--- Keeps the frame's messages visible (keep true) or lets go of it (nil).
-local function KeepVisible(frame, keep)
-    local hold = S.HoldChatFading
-    if hold then return hold(frame, "keep", keep) end
-    local record = fading[frame]
-    local current = frame:GetFading()
-    if not S.Public(current) then return end
-    if keep then
-        if not record then
-            record = { native = current }
-            fading[frame] = record
-        end
-        record.keep, record.applied = true, false
-        if current then frame:SetFading(false) end
-    elseif record then
-        fading[frame] = nil
-        if current == false and record.native then frame:SetFading(true) end
-    end
-end
-
-local function ReleaseChatFade()
-    for frame, record in pairs(fading) do
-        if record.keep then KeepVisible(frame, nil) end
-    end
-end
-
-local SyncChatFade
-local function ChatWindowsChanged()
-    if M.active and M.config.noChatFade then SyncChatFade(M) end
-end
-
--- Blizzard_ChatFrameBase creates CHAT_FRAMES before any addon loads and
--- opens further windows through these two functions, called by name.
-SyncChatFade = function(self)
-    if not self.config.noChatFade then
-        ReleaseChatFade()
-        self.context:RemoveEvent("UPDATE_CHAT_WINDOWS")
-        self.context:RemoveEvent("UPDATE_FLOATING_CHAT_WINDOWS")
-        return
-    end
-    local count = 0
-    for _, name in pairs(CHAT_FRAMES) do
-        if count >= CHAT_LIMIT then break end
-        count = count + 1
-        KeepVisible(_G[name], true)
-    end
-    self.context:Event("UPDATE_CHAT_WINDOWS", ChatWindowsChanged)
-    self.context:Event("UPDATE_FLOATING_CHAT_WINDOWS", ChatWindowsChanged)
-    if not self.chatFadeHooked then
-        hooksecurefunc("FCF_OpenNewWindow", ChatWindowsChanged)
-        hooksecurefunc("FCF_OpenTemporaryWindow", ChatWindowsChanged)
-        self.chatFadeHooked = true
     end
 end
 
@@ -258,12 +192,8 @@ local function Sync(self)
         local choice = CVAR_CHOICES[i]
         SyncCVar(self, choice[2], self.config[choice[1]], choice[3])
     end
-    local whisperMode = self.config.whisperWindows
-    SyncCVar(self, "whisperMode", whisperMode == 2 or whisperMode == 3,
-        whisperMode == 3 and "popout_and_inline" or "popout")
     InstallDeleteHooks(self)
     SetScreenshotNotice(self)
-    SyncChatFade(self)
     SyncCinematics(self)
     SyncAuction(self)
     if self.config.vendorCharacter then
@@ -277,12 +207,17 @@ local function Sync(self)
     end
 end
 
-function M:Enable() Sync(self) end
+function M:Enable()
+    -- The old owner may still hold records from before the Chat menu split.
+    S.RestoreCVar(self.id, "chatMouseScroll")
+    S.RestoreCVar(self.id, "chatClassColorOverride")
+    S.RestoreCVar(self.id, "whisperMode")
+    Sync(self)
+end
 function M:Refresh() Sync(self) end
 function M:Disable()
     S.CloseCharacterFor(self)
     if self.auctionHint then self.auctionHint:Hide() end
-    ReleaseChatFade()
     self.appliedCVars = nil
     if self.screenshotWasRegistered then ActionStatus:RegisterEvent("SCREENSHOT_SUCCEEDED") end
     self.screenshotWasRegistered = nil

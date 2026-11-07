@@ -94,7 +94,12 @@ end
 local function PopupControls(id, spec)
     if spec.quickPosition == false then return spec.extraControls end
     local controls, rules = {}, S.catalog[id].rules
-    for _, axis in ipairs({ { spec.xKey, "X" }, { spec.yKey, "Y" } }) do
+    local api = API()
+    local capabilities = spec.screenPosition and api and api.GetCapabilities and api.GetCapabilities()
+    -- Hosts with position fields own screen coordinates, clamping and rounding.
+    -- Older hosts retain the owner's editable profile offsets.
+    local axes = capabilities and capabilities.positionFields and EMPTY or { { spec.xKey, "X" }, { spec.yKey, "Y" } }
+    for _, axis in ipairs(axes) do
         local key, label = axis[1], axis[2]
         local rule = rules[key]
         if rule and rule.min and rule.max then
@@ -201,8 +206,8 @@ local function MovePosition(id, spec, request)
         return true
     end
     local values = {
-        [spec.xKey] = math.floor(x * 10 + 0.5) / 10,
-        [spec.yKey] = math.floor(y * 10 + 0.5) / 10,
+        [spec.xKey] = spec.precisePosition and x or math.floor(x * 10 + 0.5) / 10,
+        [spec.yKey] = spec.precisePosition and y or math.floor(y * 10 + 0.5) / 10,
     }
     for key, value in pairs(spec.moveValues or EMPTY) do values[key] = value end
     -- MSUF Edit Mode also commits a drag still held when combat starts.
@@ -210,9 +215,8 @@ local function MovePosition(id, spec, request)
 end
 
 local function Element(id, elementID, spec)
-    local captureKeys = CaptureKeys(spec)
     local function Frame() return SpecFrame(spec) end
-    return {
+    local element = {
         id = elementID,
         label = S.Text(spec.label),
         group = "MSUF Suite",
@@ -223,25 +227,38 @@ local function Element(id, elementID, spec)
             return S.states[id].active and (not spec.isEnabled or spec.isEnabled())
                 and (not spec.visible or spec.visible()) and Frame() ~= nil
         end,
-        captureState = function() return CaptureState(id, spec, captureKeys) end,
-        restoreState = function(state)
-            if not ValidState(state) then return false end
-            return S.CommitEditPosition(id, state.values)
-        end,
-        movePosition = function(request) return MovePosition(id, spec, request) end,
-        resetPosition = function() return ResetPosition(id, spec) end,
-        extraControls = PopupControls(id, spec),
-        openSettings = function()
-            return S.Open(id)
-        end,
+        openSettings = function() return S.Open(id) end,
     }
+    if spec.nativePosition then
+        element.captureState = spec.nativePosition.capture
+        element.restoreState = spec.nativePosition.restore
+        element.movePosition = spec.nativePosition.move
+        element.onSessionChanged = spec.nativePosition.onSessionChanged
+        local api = API()
+        local capabilities = api and api.GetCapabilities and api.GetCapabilities()
+        if not (capabilities and capabilities.positionFields) then element.extraControls = spec.extraControls end
+        return element
+    end
+    local captureKeys = CaptureKeys(spec)
+    element.captureState = function() return CaptureState(id, spec, captureKeys) end
+    element.restoreState = function(state)
+        if not ValidState(state) then return false end
+        return S.CommitEditPosition(id, state.values)
+    end
+    element.movePosition = function(request) return MovePosition(id, spec, request) end
+    element.resetPosition = function() return ResetPosition(id, spec) end
+    element.extraControls = PopupControls(id, spec)
+    return element
 end
 
 -- spec: label, getFrame(), xKey, yKey, point (string or function), pointKey,
--- isEnabled(), visible(), order, quickPosition=false opt-out, extraControls, historyKeys,
+-- isEnabled(), visible(), order, quickPosition=false opt-out, screenPosition=true for host screen fields,
+-- precisePosition=true preserves subpixel anchor offsets across scaled one-pixel steps; extraControls, historyKeys,
 -- sizeKeys (explicit catalog dimensions for this element), moveValues, resetKeys,
 -- place(x, y) (drag preview for x/y that are not UIParent offsets),
 -- capture(origin) (live drag start x/y; undo keeps the saved values).
+-- Native owners supply nativePosition = { capture, restore, move } instead
+-- of profile keys and can provide their own extraControls.
 -- Returns true when MSUF Edit Mode accepted the element.
 function S.RegisterOwnedMover(id, elementID, spec)
     local api = API()
@@ -276,15 +293,17 @@ function S.UnregisterEditElements(id)
 end
 
 -- Opens MSUF Edit Mode, preferably with the given element selected.
-function S.OpenEditMode(id, elementID)
+function S.OpenEditMode(id, elementID, strict)
     if NS.IsCombatLocked() then return false end
     local api = API()
     if api and id and owners[id] and api.EnterEditMode then
         if elementID and owners[id][elementID] and api.EnterEditMode(OwnerName(id), elementID) then return true end
+        if strict then return false end
         for owned in pairs(owners[id]) do
             if api.EnterEditMode(OwnerName(id), owned) then return true end
         end
     end
+    if strict then return false end
     local em = _G.MSUF_EM2
     if em and em.State and type(em.State.Enter) == "function" then
         em.State.Enter("player")

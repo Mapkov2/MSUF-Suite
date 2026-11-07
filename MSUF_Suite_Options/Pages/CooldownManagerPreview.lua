@@ -9,7 +9,7 @@ local S, M, W, T, Tr = P.S, P.M, P.W, P.T, P.Tr
 local ID, PAGE = Page.ID, Page.PAGE
 local SLOTS = P.Suite.CDM.SLOTS
 local SECTION = Page.PREVIEW_SECTION
-local COMPACT, EXPANDED, STRIP_ROW = 300, 460, 24
+local COMPACT, EXPANDED, STRIP_ROW = 300, 460, 30
 -- The hint (or note) line under the canvas, the + tile beside the drawing
 -- and the rim around it that still drags the whole bar.
 local LINE, RIM = 42, 6
@@ -118,7 +118,8 @@ local function ChipEnter(self)
 end
 local function ChipLeave(self) Page.HideTip(self) end
 local function NewChip(ui, slot)
-    local chip = Page.Button(ui.strip, "", 96, 20, ChipClick)
+    local chip = Page.Button(ui.strip, "", 96, 26, ChipClick)
+    if slot then HM.MarkSegmentChoice(chip) end
     if chip.RegisterForClicks then chip:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
     chip.slot = slot
     chip.drop = chip:CreateTexture(nil, "OVERLAY")

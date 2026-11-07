@@ -325,24 +325,36 @@ local function ConfigureGlyph(glyph, atlas, cell, size, role, alphaScale)
     glyph:Show()
 end
 
-local function AnchorGlyphs(button, state, settings)
-    local x = math.floor((tonumber(settings.glyphOffsetX) or 0) + 0.5)
-    local y = math.floor((tonumber(settings.glyphOffsetY) or 0) + 0.5)
+local function AnchorGlyphs(button, state, x, y)
     for _, glyph in pairs(state.glyphs) do
         glyph:ClearAllPoints()
         glyph:SetPoint("CENTER", button, "CENTER", x, y)
     end
 end
 
+local function GlyphLayout(button, kind, settings)
+    local size = kind == "close" and settings.closeGlyphSize or settings.glyphSize
+    size = math.floor((tonumber(size) or 12) + 0.5)
+    local x = math.floor((tonumber(settings.glyphOffsetX) or 0) + 0.5)
+    local y = math.floor((tonumber(settings.glyphOffsetY) or 0) + 0.5)
+    if kind ~= "close" and kind ~= "minimize" and kind ~= "maximize" then return size, x, y end
+    local width, height = Safety.Read(button, "GetWidth"), Safety.Read(button, "GetHeight")
+    if not width or not height or width <= 0 or height <= 0 then return size, x, y end
+    size = math.min(size, math.min(width, height) / 1.04)
+    local nearest = Safety.Field(Safety.Field(_G, "PixelUtil"), "GetNearestPixelSize")
+    local scale = Safety.Read(button, "GetEffectiveScale")
+    if nearest and scale and scale > 0 then size = math.min(size, nearest(size, scale, 1)) end
+    local roomX, roomY = (width - size * 1.04) / 2, (height - size * 1.04) / 2
+    return size, math.max(-roomX, math.min(x, roomX)), math.max(-roomY, math.min(y, roomY))
+end
+
 local function ConfigureGlyphs(button, state, settings)
     local glyphKey = GlyphKey(state.kind, settings.glyphMode)
     local cell = glyphCells[glyphKey]
     local atlas = settings.weight == "bold" and BOLD_ATLAS or FINE_ATLAS
-    local configuredSize = state.kind == "close"
-        and settings.closeGlyphSize or settings.glyphSize
-    local size = math.floor((tonumber(configuredSize) or 12) + 0.5)
+    local size, x, y = GlyphLayout(button, state.kind, settings)
     local idle = tonumber(settings.opacity) or 0.78
-    AnchorGlyphs(button, state, settings)
+    AnchorGlyphs(button, state, x, y)
     ConfigureGlyph(state.glyphs.normal, atlas, cell, size,
         ColorRole(state.kind, "normal"), idle)
     ConfigureGlyph(state.glyphs.pushed, atlas, cell, size,
@@ -351,6 +363,7 @@ local function ConfigureGlyphs(button, state, settings)
         ColorRole(state.kind, "disabled"), math.min(idle, 0.55))
     ConfigureGlyph(state.glyphs.highlight, atlas, cell, size,
         ColorRole(state.kind, "highlight"), math.max(0.35, 1 - idle + 0.35))
+    return size
 end
 
 local function AssignGlyphStates(button, state)
@@ -475,15 +488,14 @@ local function ApplyNow(button, owner, kind, motion)
 
     if not state.nativeCaptured then SnapshotNative(button, state) end
     EnsureGlyphs(button, state)
-    ConfigureGlyphs(button, state, settings)
+    local size = ConfigureGlyphs(button, state, settings)
     if not RefreshSurface(button, settings) or not AssignGlyphStates(button, state) then
         RestoreNative(button, state)
         return nil, "state textures unavailable"
     end
     RefreshExtraRegions(button, state)
     state.visible = true
-    AnimateGlyphs(button, state,
-        state.kind == "close" and settings.closeGlyphSize or settings.glyphSize, settings.glyphMode)
+    AnimateGlyphs(button, state, size, settings.glyphMode)
     return state
 end
 

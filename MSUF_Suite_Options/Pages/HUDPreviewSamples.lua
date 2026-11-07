@@ -1,5 +1,5 @@
 local _, P = ...
-local V, Tr = P.HUDPreview, P.Tr
+local V, Tr, Art = P.HUDPreview, P.Tr, P.Suite.AnnouncementArt
 local DrawText, Fill, Color = V.Label, V.Fill, V.Color
 local WHITE, TEXT, MUTED = { .96, .97, .99 }, { .95, .96, .98 }, { .78, .81, .85 }
 local GOLD, GREEN = { .98, .79, .39 }, { .39, .86, .54 }
@@ -160,16 +160,18 @@ local ANNOUNCEMENTS = {
 local function Announcement(ui, mode)
     local c, sample = ui.config, ANNOUNCEMENTS[mode] or ANNOUNCEMENTS.zone
     local color = { Color(c, sample[3], sample[4]) }
-    if c.showBoxArt ~= false then
-        Fill(ui, 65, -8, 530, 111, { Color(c, "backgroundColor", { .02, .025, .035 }, "surface") }, c.backgroundOpacity / 100)
-        Fill(ui, 312.5, -12, 35, 2, color, .95)
-        Fill(ui, 200, -75, 260, 1, color, .62)
-    end
+    if not ui.bannerArt then ui.bannerArt = Art.Create(ui.canvas) end
+    local art = ui.bannerArt
+    Art.Layout(art, c)
+    local r, g, b = Color(c, "backgroundColor", { .02, .025, .035 }, "surface")
+    art.background:SetColorTexture(r, g, b, c.backgroundOpacity / 100)
+    Art.Tint(art, unpack(color))
+    local inset = art.inset
     local title = mode == "level" and string.format(Tr("LEVEL %d"), 70) or Tr(sample[1])
-    DrawText(ui, title, 14, -23, 632, c.titleSize, color, "banner"):SetJustifyH("CENTER")
-    DrawText(ui, Tr(sample[2]), 18, -84, 624, c.subtitleSize,
+    DrawText(ui, title, inset, -23, Art.WIDTH - 2 * inset, c.titleSize, color, "banner"):SetJustifyH("CENTER")
+    DrawText(ui, Tr(sample[2]), inset + 4, -84, Art.WIDTH - 2 * (inset + 4), c.subtitleSize,
         { Color(c, "subtitleColor", { .91, .93, .96 }, "text") }, "subtitle"):SetJustifyH("CENTER")
-    return 660, 130
+    return Art.WIDTH, Art.HEIGHT
 end
 
 V.Render = { objectives = Tracker, runSummary = Summary, announcements = Announcement }

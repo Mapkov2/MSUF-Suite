@@ -127,6 +127,13 @@ local function Frame(name)
     function frame:GetAlpha() return self.alpha end
     function frame:RegisterForClicks() end
     function frame:SetClampedToScreen(value) self.clamped = value end
+    function frame:IsClampedToScreen()
+        if self.clamped ~= nil then return self.clamped end
+        return self.name and self.name:match("^ChatFrame%d+$") ~= nil or false
+    end
+    function frame:SetScale(value) self.scale = value end
+    function frame:GetScale() return self.scale or 1 end
+    function frame:GetEffectiveScale() return self:GetScale() end
     function frame:SetAutoFocus(value) self.autoFocus = value end
     function frame:SetFocus() self.focused = true end
     function frame:ClearFocus() self.focused = false end
@@ -275,6 +282,8 @@ local function ChromeFade(frame, hovered, client)
 end
 FCF_OpenTemporaryWindow = function() end
 FCF_OpenNewWindow = function() end
+FCF_Close = function() end
+FCF_StopDragging = function() end
 FCFDock_SelectWindow = function() end
 FCFTab_UpdateAlpha = function() end
 FCFTab_UpdateColors = function() end
@@ -288,6 +297,7 @@ LinkUtil = { RegisterLinkHandler = function(kind, handler)
 end }
 CHAT_FRAME_FADE_OUT_TIME = 2.0
 S.RestoreCVar = function() end
+S.RefreshOwnedMovers = function() end
 -- Styling alone never hooks the message path; the opt-in idle fade adds a
 -- post-hook on AddMessage and follows Blizzard's chrome fade.
 local messageHooks = 0
@@ -304,6 +314,7 @@ hooksecurefunc = function(name, callback)
     assert(name == "FCF_OpenTemporaryWindow" or name == "FCF_OpenNewWindow"
         or name == "FCFDock_SelectWindow" or name == "FCFTab_UpdateAlpha"
         or name == "FCFTab_UpdateColors" or name == "FCFDock_UpdateTabs"
+        or name == "FCF_Close" or name == "FCF_StopDragging"
         or name == "FCF_FadeInChatFrame" or name == "FCF_FadeOutChatFrame",
         "chat touched the message path")
     if name == "FCF_OpenTemporaryWindow" then temporaryHook = callback
@@ -317,6 +328,7 @@ hooksecurefunc = function(name, callback)
 end
 
 function S.Install(id, module)
+    if id == "chatComfort" then S.comfort = module return end
     assert(id == "chat")
     S.module = module
 end
@@ -328,8 +340,8 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
 NS.ChatBubbleSources, NS.ChatSoundChannels = catalogNS.ChatBubbleSources, catalogNS.ChatSoundChannels
 NS.ChatLineLimits = catalogNS.ChatLineLimits
-local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "HeaderClock.lua", "Appearance.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
-    "Messages.lua", "Positions.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua" }
+local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "HeaderClock.lua", "InputAnimation.lua", "Appearance.lua", "Comfort.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
+    "Messages.lua", "Positions.lua", "Floating.lua", "ToolbarGeometry.lua", "Toolbar.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
 for i = 1, #CHAT_FILES do
@@ -347,6 +359,7 @@ S.ToolListWindow = { Close = function(owner) closedTools[#closedTools + 1] = own
 Support.Load(root, "MSUF_Suite_Chat", private, nil, { ["Bootstrap.lua"] = true })
 local module = assert(S.module)
 assert(module == private.Chat.M, "Controller.lua did not install the shared module table")
+assert(S.comfort and S.comfort ~= module, "Chat behavior did not register independently")
 local ctx = { callbacks = {}, combat = {}, restored = 0, original = {}, properties = {} }
 function ctx:Event(event, fn, options)
     self.callbacks[event], self.combat[event] = fn, Support.InCombatOption(options) or nil
@@ -568,8 +581,8 @@ assert(ChatFrame1Tab.Left.alpha == 0 and ChatFrame1Tab.Text.alpha == 1
     and not sidebar.tabOverlay,
     "Suite must style the native tab title without drawing a duplicate")
 assert(ChatFrame1EditBox.Left.alpha == 0, "native input art covers the MSUF input")
-assert(sidebar.input.points[1][2] == ChatFrame1 and sidebar.input.points[1][3] == "BOTTOMLEFT"
-    and sidebar.input.points[2][2] == ChatFrame1 and sidebar.input.points[2][3] == "BOTTOMRIGHT"
+assert(sidebar.input.allPoints == ChatFrame1EditBox and ChatFrame1EditBox.points[1][2] == ChatFrame1
+    and ChatFrame1EditBox:GetWidth() == ChatFrame1:GetWidth() + 2 * module.config.padding
     and sidebar.inputEdges[1].points[1][2] == sidebar.input,
     "input backdrop and border do not align with the chat panel width")
 -- Another addon may give the tab a longer title and repaint Blizzard's native
@@ -930,13 +943,11 @@ assert(edges[1].points[2][1] == "TOPRIGHT" and edges[2].points[2][1] == "BOTTOMR
 local count = #textures
 module:Refresh()
 assert(#textures == count, "refresh created another visual layer")
--- Focused or unreadable edit-box sizes keep only the cosmetic panel compact.
-ChatFrame1EditBox:SetHeight(math.huge)
-module:Refresh()
-assert(sidebar.input.points[2][5] == -30, "an unreadable input height reached the input backdrop")
+-- Automatic height follows the native edit box and leaves its size alone.
 ChatFrame1EditBox:SetHeight(60)
 module:Refresh()
-assert(sidebar.input.points[2][5] == -30, "focused edit box enlarged the input backdrop")
+assert(sidebar.input.allPoints == ChatFrame1EditBox and ChatFrame1EditBox:GetHeight() == 60,
+    "the input backdrop did not follow the native edit box")
 ChatFrame1EditBox.height = nil
 module:Refresh()
 module.config.sidebarPanel = false
@@ -1492,7 +1503,7 @@ for i = 2, #CHAT_FILES do
     if file == "Shared.lua" then
         assert(source:find("\nlocal C = {}\nP.Chat = C\n", 1, true), "Shared.lua does not create P.Chat")
     else
-        assert(third == "local C = P.Chat", file .. " does not read P.Chat in its header")
+        assert(file == "Comfort.lua" or third == "local C = P.Chat", file .. " does not read P.Chat in its header")
     end
     assert(not source:find(":CreateTexture%(") and not source:find(":CreateFontString%("),
         file .. " creates regions without S.CreateTexture/S.CreateFontString")
@@ -1504,6 +1515,7 @@ for i = 2, #CHAT_FILES do
         or source:match("if not (_G%.GameTooltip)") or source:match("if (_G%.GameTooltip) then")
         or source:match("(NUM_CHAT_WINDOWS)") or source:match("(GetFontString)")
     assert(not guarded, file .. " guards " .. tostring(guarded) .. " as if a client lacked it")
-    assert(file == "Controller.lua" or not source:find("S.Install(", 1, true), file .. " installs the module")
+    assert(file == "Controller.lua" or file == "Comfort.lua" or not source:find("S.Install(", 1, true),
+        file .. " installs the module")
 end
 print("Chat styling, whisper tab and joined dock regression, native font restore and event-only refresh passed")

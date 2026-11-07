@@ -8,7 +8,7 @@ B.NAV_GROUPS = { { key = "week", label = "This week" }, { key = "history", label
     { key = "tools", label = "Tools" } }
 local ICONS = { characters = { 1, 2 }, preparation = { 6, 1 }, goals = { 3, 0 }, runs = { 1, 1 }, raid = { 6, 2 },
     loadouts = { 4, 2 }, lfg = { 5, 3 }, notes = { 1, 4 } }
-local ITEM_WIDTH, ITEM_HEIGHT, ITEM_STEP, TITLE_HEIGHT = 184, 24, 28, 18
+local ITEM_WIDTH, ITEM_HEIGHT, ITEM_STEP, TITLE_HEIGHT, ITEM_FONT = 184, 28, 32, 18, 14
 local ARROW = "Interface\\ChatFrame\\ChatFrameExpandArrow"
 
 function B.StyleNav(button)
@@ -34,7 +34,7 @@ local function FallbackButton(window)
     button.stripe:SetPoint("TOPLEFT", 0, -4)
     button.stripe:SetPoint("BOTTOMLEFT", 0, 4)
     button.stripe:SetWidth(3)
-    button.text = B.Label(button, "", 13, "muted")
+    button.text = B.Label(button, "", ITEM_FONT, "muted")
     button.text:SetPoint("LEFT", 12, 0)
     button.text:SetPoint("RIGHT", -8, 0)
     button:SetScript("OnEnter", function(self) Hover(self, true) end)
@@ -46,7 +46,7 @@ local function NavButton(window, index)
     local button = Bridge.MenuNavButton(window.rail, ITEM_WIDTH, ITEM_HEIGHT)
     if button then
         button.plannerNativeButton = true
-        button.text = B.TrackFont(Bridge.MenuButtonLabel(button), 13, false)
+        button.text = B.TrackFont(Bridge.MenuButtonLabel(button), ITEM_FONT, false)
     else
         button = FallbackButton(window)
     end
@@ -91,7 +91,7 @@ end
 local function TitleClicked(row)
     local window = row.window
     if not B.Valid(window) then return end
-    B.FinishAccordion(window, true)
+    B.PrepareAccordion(window, GatherNav, row.group)
     window.navCollapsed[row.group] = not window.navCollapsed[row.group] or nil
     B.PlayAccordion(window, not window.navCollapsed[row.group], B.LayoutNav, GatherNav, row.group)
 end

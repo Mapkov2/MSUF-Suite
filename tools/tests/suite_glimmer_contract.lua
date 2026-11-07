@@ -1,6 +1,6 @@
 local root = assert(arg[1])
 local combat, object, cursor, related = false, true, 1, false
-local inReach, plateAvailable = false, true
+local inReach, plateAvailable, dead = false, true, false
 local cvars = { SoftTargetInteractOnlyInRange = "1", SoftTargetIconGameObject = "0", SoftTargetInteractArc = "0",
     outlineModeShowLootEffectWhenDisabled = "0", graphicsOutlineMode = "2", raidGraphicsOutlineMode = "1" }
 local savedBefore, tooltip = {}, nil
@@ -55,7 +55,12 @@ C_NamePlate = { GetNamePlateForUnit = function()
 end }
 -- World objects do not need to exist as normal units (native CompactUnitFrame_UpdateVisible).
 UnitExists = function() return false end
+UNIT_SKINNABLE_LEATHER = "Kürschnerbar"
 UnitIsGameObject = function() return object end
+UnitIsDead = function(unit)
+    assert(unit == "softinteract")
+    return dead
+end
 SetUnitCursorTexture = function(texture, unit, _, includeLowPriority)
     assert(unit == "softinteract" and includeLowPriority, "object probe omitted low-priority cursors")
     cursorReads = cursorReads + 1
@@ -65,6 +70,9 @@ end
 GetFileIDFromPath = function(path)
     if path:find("Mine", 1, true) then return 1 end
     if path:find("GatherHerbs", 1, true) then return 2 end
+    if path == "Interface\\Cursor\\Skin.blp" then return 4 end
+    if path == "Interface\\Cursor\\UnableSkinAlliance" then return 5 end
+    if path:find("Skin", 1, true) then return 0 end
     return 3
 end
 C_QuestLog = { UnitIsRelatedToActiveQuest = function() return related end }
@@ -88,9 +96,10 @@ assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/GlimmerVisuals.lua"))("test",
 assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/Glimmer.lua"))("test", P)
 module.active = true
 module.config = { ore = true, herb = true, quest = true, other = false, hideInstances = true,
-    range = 15, style = 1, size = 80, opacity = 85, color = "ffd166", offsetY = -20, pulse = true }
+    skinning = true, range = 15, style = 1, size = 80, opacity = 85, color = "ffd166", offsetY = -20, pulse = true }
 module.context = { Event = function(_, key, callback) events[key] = callback end,
-    After = function(_, delay, callback) assert(delay == 1); timers[callback] = true end,
+    RemoveEvent = function(_, key) events[key] = nil end,
+    After = function(_, delay, callback) assert(delay == 1 or delay == 0.1); timers[callback] = true end,
     Cancel = function(_, callback) timers[callback] = nil end,
     CVar = function(_, key, value, adoptCurrent)
         writes[#writes + 1] = {key, value}
@@ -204,9 +213,55 @@ object = secret
 reads = cursorReads
 events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
 assert(not module.host.shown and cursorReads == reads, "private object state reached the cursor probe")
-object = false
+object, cursor = false, 4
 events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
-assert(not module.host.shown, "unit highlighted as game object")
+assert(not module.host.shown, "living unit highlighted as a skinnable corpse")
+dead, cursor = true, 20
+events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+assert(not module.host.shown, "ordinary loot cursor highlighted as a skinnable corpse")
+cursor = 4
+events.LOOT_CLOSED(module, "LOOT_CLOSED")
+assert(module.host.shown and module.host.point[2] == plate, "looting did not reveal the now skinnable corpse")
+for _, texture in ipairs({ 5, "Interface\\Cursor\\SkinHorde.blp", "UnableSkin", "Cursor Skin",
+    "Cursor UnableSkin", "Cursor Crosshair_Skin_64", "Crosshair_UnableSkin_64" }) do
+    cursor = texture
+    events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+    assert(module.host.shown, "skinning cursor variant was not recognized")
+end
+for _, texture in ipairs({ "Interface\\Cursor\\EngineerSkin.blp", secret }) do
+    cursor = texture
+    events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+    assert(not module.host.shown, "a non-skinning or private cursor highlighted a corpse")
+end
+cursor, dead = 4, secret
+events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+assert(not module.host.shown, "private death state highlighted a corpse")
+dead = true
+events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+assert(module.host.shown, "skinning cursor did not highlight a dead unit")
+module.config.skinning = false
+module:Refresh()
+assert(not module.host.shown and not events.LOOT_CLOSED, "turning off skinning left its effect or loot listener active")
+reads = cursorReads
+events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
+assert(cursorReads == reads, "disabled skinning still probed the corpse")
+module.config.skinning = true
+module:Refresh()
+assert(module.host.shown and events.LOOT_CLOSED, "re-enabling skinning did not restore the effect and loot listener")
+cursor, hasCursor = 20, false
+events.LOOT_CLOSED(module, "LOOT_CLOSED")
+assert(not module.host.shown, "ordinary corpse without a skinning tooltip was highlighted")
+local retryLoot = assert(next(timers), "loot close did not schedule a deferred corpse refresh")
+tooltip = { lines = { { leftText = "|cffff2020" .. UNIT_SKINNABLE_LEATHER .. "|r" } } }
+timers[retryLoot] = nil
+retryLoot(module)
+assert(module.host.shown, "localized skinning tooltip did not reveal the corpse without a cursor")
+tooltip = { lines = { { leftText = secret } } }
+events.LOOT_CLOSED(module, "LOOT_CLOSED")
+assert(not module.host.shown, "private tooltip text left a stale effect")
+timers[retryLoot] = nil
+retryLoot(module)
+tooltip, dead, hasCursor = nil, false, true
 object, cursor, related = true, secret, true
 events.PLAYER_SOFT_INTERACT_CHANGED(module, "PLAYER_SOFT_INTERACT_CHANGED")
 assert(not module.host.shown, "secret cursor must not select an effect")

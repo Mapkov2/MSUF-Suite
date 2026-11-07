@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
--- Fight and settings menus use Blizzard's MenuUtil. The meter type picker is
--- one reusable Suite frame with direct choices below three category headings.
+-- Context menus share their entries across the original and styled renderers.
+-- The meter type picker keeps its direct choices below three category headings.
 -- Meter and fight picks apply at once, also in combat; the
 -- matching settings are written out of combat. Window-level settings (lock,
 -- hides, new/close window) are writes only and stay disabled in combat.
@@ -84,7 +84,11 @@ end
 -- value: a D.SESSION choice; a historic sessionID pins the window and keeps
 -- Current as the saved fallback.
 function D.SetWindowSession(win, value, sessionID, duration)
-    D.SelectSession(win, value, sessionID, duration)
+    if win.menuPreview then
+        D.SelectPreviewSession(win, value, sessionID, duration)
+    else
+        D.SelectSession(win, value, sessionID, duration)
+    end
 end
 
 local TYPE_WIDTH, TYPE_PAD, TYPE_GAP, TYPE_ROW, TYPE_HEADING = 376, 10, 6, 24, 20
@@ -96,8 +100,10 @@ local function MixColor(first, second, amount)
 end
 -- The MSUF Forever look's colors: with them the picker accent is the border.
 local FOREVER_LOOK = NS.DamageMeterLookPresets[NS.DamageMeterLook.FOREVER]
-local function TypePalette()
-    local c = M.config
+local function MenuPalette()
+    local config = M.config
+    local look = NS.DamageMeterDropdownLooks[config.dropdownStyle]
+    local c = NS.DamageMeterLookPresets[look] or config
     local br, bg, bb = S.RGB(c.bgColor)
     local hr, hg, hb = S.RGB(c.headerColor)
     local rr, rg, rb = S.RGB(c.borderColor)
@@ -247,13 +253,14 @@ local function EnsureTypePanel()
     return panel
 end
 function D.OpenTypeMenu(win, owner)
+    S.CloseStyledContextMenu()
     local panel = EnsureTypePanel()
     if panel:IsShown() and panel.win == win and panel.owner == owner then
         D.HideTypeMenu()
         return
     end
     panel.win, panel.owner = win, owner
-    panel.palette = TypePalette()
+    panel.palette = MenuPalette()
     panel.bg:SetColorTexture(unpack(panel.palette.panel))
     local border = panel.palette.border
     S.PlaceEdges(panel.edges, panel, 1, border[1], border[2], border[3], 1)
@@ -285,9 +292,11 @@ local function SessionSelected(data) return not data.win.sessionID and data.win.
 local function SessionChosen(data) D.SetWindowSession(data.win, data.value, nil, nil) end
 local function PinSelected(data) return data.win.sessionID == data.id end
 local function PinChosen(data) D.SetWindowSession(data.win, D.SESSION.CURRENT, data.id, data.duration) end
--- The 20 most recent tracked fights (the list is oldest first), then Current and Overall.
+local previewFights = { { sessionID = 1, durationSeconds = 43 }, { sessionID = 2, durationSeconds = 128 },
+    { sessionID = 3, durationSeconds = 76 } }
+-- The 20 most recent fights (oldest first), then Current and Overall.
 local function SessionMenu(_, root, win)
-    local list = C_DamageMeter.GetAvailableCombatSessions()
+    local list = win.menuPreview and previewFights or C_DamageMeter.GetAvailableCombatSessions()
     local count = D.Count(list)
     if count > 0 then
         for i = max(1, count - 19), count do
@@ -410,6 +419,20 @@ function S.DamageMeterReset(skipConfirm)
     return true
 end
 
+function D.OpenDropdown(owner, generator, win)
+    D.HideTypeMenu()
+    if M.config.dropdownStyle ~= NS.DamageMeterDropdownStyle.ORIGINAL then
+        return S.StyledContextMenu(owner, MenuPalette(), generator, win)
+    end
+    return S.ContextMenu(owner, generator, win)
+end
+
+function S.DamageMeterOpenPreviewFight(win, owner, refresh)
+    if not win.menuPreview or win.meterType == D.THREAT then return end
+    win.refreshFightPreview = refresh
+    D.OpenDropdown(owner, SessionMenu, win)
+end
+
 local menus = { session = SessionMenu, settings = SettingsMenu }
 function D.HeaderButtonClick(button)
     local win, kind = button.win, button.kind
@@ -422,9 +445,7 @@ function D.HeaderButtonClick(button)
         return
     end
     if kind == "target" then D.OpenTargetMenu(win, button) return end
-    -- Blizzard's context menu, or the Suite's list under WoW Forever's
-    -- Gamepad UI (S.ContextMenu, MSUF_Suite_Modules/Dialogs.lua).
-    S.ContextMenu(button, menus[kind], win)
+    D.OpenDropdown(button, menus[kind], win)
 end
 
 local function ButtonLabel(kind)

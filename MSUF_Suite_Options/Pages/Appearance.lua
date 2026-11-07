@@ -111,6 +111,7 @@ local function MicroPresetExtra(ctx, skin)
             if button then HM.SetSearchTargetPrepare(button, prepare) end
         end
         if ctx.searchRows then
+            P.DataTextPage.MicroMenuPresetLink(ctx, body, 0, width)
             Button(ctx, body, "Move in MSUF Edit Mode", 0, 0, width, nil, nil,
                 P.Meta(PAGE, "skin", "micro.move", "action", "suite_skin_micro"))
             return y
@@ -122,10 +123,11 @@ local function MicroPresetExtra(ctx, skin)
         RefreshMicroHint()
         M.TrackRefresh(ctx, RefreshMicroHint)
         local descHeight = math.max(22, math.ceil(description:GetStringHeight() or 22))
-        local move = Button(ctx, body, "Move in MSUF Edit Mode", 16, y - 82 - descHeight, width,
+        y = P.DataTextPage.MicroMenuPresetLink(ctx, body, y - 82 - descHeight, width, prepare)
+        local move = Button(ctx, body, "Move in MSUF Edit Mode", 16, y, width,
             function() MoveMicroBar(skin) end, nil, P.Meta(PAGE, "skin", "micro.move", "action", "suite_skin_micro"))
         if move then HM.SetSearchTargetPrepare(move, prepare) end
-        return y - 120 - descHeight
+        return y - 38
     end
 end
 
@@ -729,6 +731,7 @@ local function BuildSections(ctx, b, skin)
     BuildIcons(ctx, b, skin)
     BuildWindowControls(ctx, b, skin)
     BuildWindows(ctx, b, skin)
+    P.BuildSkinQuestLogSection(ctx, b, skin)
     BuildCoverage(ctx, b, skin)
     BuildCharacter(ctx, b, skin)
     BuildMaintenance(ctx, b, skin)

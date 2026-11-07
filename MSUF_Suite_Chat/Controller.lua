@@ -14,7 +14,7 @@ local FRIEND_EVENTS = {
 -- The addons that own the chat windows themselves: the module's conflicts in
 -- Core/Catalog/Chat.lua. One that loads late takes the module out of service.
 local CHAT_ADDONS = {
-    EllesmereUIChat = true, ElvUI = true, Glass = true, Glassy = true,
+    DaylightUI_Chat = true, EllesmereUIChat = true, ElvUI = true, Glass = true, Glassy = true,
     ["Prat-3.0"] = true, Chattynator = true, Chatter = true,
 }
 local ApplyWindow, ReleaseWindow, ColorTab, TabSelected = C.ApplyWindow, C.ReleaseWindow, C.ColorTab, C.TabSelected
@@ -55,13 +55,19 @@ local function ApplyAll(self, nativeRefresh)
     end
     C.ApplyClockSettings()
     ForEachChatFrame(nativeRefresh and S.editMode and ApplyNativeWindow or ApplyWindow, self)
+    if self.config.headerToolbar or self.toolbar then C.ApplyToolbar() end
     C.DockGeometry()
+    C.UpdateWindowMoverBounds(self)
+    if C.UpdateFloatingMoverBounds(self) and not nativeRefresh then S.RefreshOwnedMovers("chat") end
     self.selectedChat = _G.SELECTED_CHAT_FRAME
     self.selectedDock = DockSelection()
     C.RefreshClocks()
 end
 
-local function NativeWindowsUpdated(self) ApplyAll(self, true) end
+local function NativeWindowsUpdated(self)
+    ApplyAll(self, true)
+    if S.editMode and not NS.InCombat() then S.RefreshOwnedMovers("chat") end
+end
 
 local function RecolorTab(self, frame, chat, dock)
     local visual = frame and self.visuals[frame]
@@ -83,6 +89,11 @@ local function RefreshSelection(self)
     if oldDock ~= oldChat then RecolorTab(self, oldDock, chat, dock) end
     if chat ~= oldChat and chat ~= oldDock then RecolorTab(self, chat, chat, dock) end
     if dock ~= chat and dock ~= oldChat and dock ~= oldDock then RecolorTab(self, dock, chat, dock) end
+    if self.config.headerToolbar then
+        C.UpdateToolbarHover()
+        if self.visuals[oldDock] then C.ApplyInactivity(self, self.visuals[oldDock]) end
+        if self.visuals[dock] then C.ApplyInactivity(self, self.visuals[dock]) end
+    end
     local primary = self.visuals[_G.ChatFrame1]
     if self.config.sidebarPanel and self.config.panelAlpha > 0
         and primary and primary.sidebarFrame and dock then
@@ -154,6 +165,8 @@ function M:Enable()
     Hook(self, "hookedTemporary", "FCF_OpenTemporaryWindow", TemporaryWindowOpened)
     Hook(self, "hookedSelect", "FCFDock_SelectWindow", DockSelectionChanged)
     Hook(self, "hookedNewWindow", "FCF_OpenNewWindow", NewWindowOpened)
+    C.WatchFloatingClosures()
+    Hook(self, "hookedFloatingDrag", "FCF_StopDragging", C.FloatingDragStopped)
     Hook(self, "hookedTabAlpha", "FCFTab_UpdateAlpha", TabAlphaUpdated)
     Hook(self, "hookedTabFadeIn", "FCF_FadeInChatFrame", TabFadedIn)
     Hook(self, "hookedTabFadeOut", "FCF_FadeOutChatFrame", TabFadedOut)
@@ -173,6 +186,10 @@ end
 function M:Disable()
     S.SuppressHostElement("chat", HOST_CHAT, false)
     self.hostChatClaim = nil
+    if self.moverFrame then self.moverFrame:Hide() end
+    C.HideFloatingMovers(self)
+    if self.toolbar then C.ReleaseToolbar() end
+    C.StopInputAnimations()
     C.DisableClock()
     C.MessagesDisable()
     -- Faded alpha goes back before the context restores the tabs it owns.
@@ -184,19 +201,23 @@ function M:Disable()
     HideCopyDialog(self.copyDialog)
 end
 
--- The main window's position is the Suite's only while "Anchor the main chat
--- window" is on (Positions.lua ApplyWindowPosition); otherwise Blizzard's Edit Mode
--- layout owns it and there is nothing to move here.
+-- The active Suite chat always has one MSUF mover. Until its first move,
+-- Blizzard keeps the position; a drag adopts the Suite anchor and Undo keeps
+-- the previous ownership flag alongside the original native layout.
 function M:RegisterMovers()
     local registered = S.RegisterOwnedMover("chat", "window", {
         label = "Chat window", order = 870,
-        getFrame = function() return ChatFrame1 end,
+        getFrame = C.GetWindowMoverFrame, screenPosition = true, precisePosition = true,
         xKey = "windowX", yKey = "windowY", point = "BOTTOMLEFT", capture = C.CaptureWindowPosition,
         -- Numeric edits retain the other visible axis after a native layout change.
-        moveValues = {},
-        isEnabled = function() return self.config.lockWindowPosition == true end,
+        moveValues = { lockWindowPosition = true }, historyKeys = { "lockWindowPosition" },
+        resetKeys = { "lockWindowPosition" }, place = C.PlaceWindowPosition,
     })
-    local claimed = registered == true and self.config.lockWindowPosition == true
+    for index = 2, C.MaxFloatingWindows() do
+        local id = C.FloatingMoverID(index)
+        if not S.HasOwnedMover("chat", id) then S.RegisterOwnedMover("chat", id, C.FloatingMoverSpec(index)) end
+    end
+    local claimed = registered == true
     S.SuppressHostElement("chat", HOST_CHAT, claimed)
     if (self.hostChatClaim == true) ~= claimed then
         self.hostChatClaim = claimed

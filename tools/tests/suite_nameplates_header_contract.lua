@@ -3,13 +3,14 @@ local combat, object, persistOffsets = false, false, false
 local NS = { Client = { isMainline = true }, Public = function(v) return v ~= "secret" end,
     Finite = function(v) return type(v) == "number" and v == v end,
     IsCombatLocked = function() return combat end,
+    HostBridge = { NameFormatter = function() end },
     Safety = { IsForbidden = function(r) return r.forbidden == true end } }
 PixelUtil = { SetPoint = function(region, ...) region:SetPoint(...) end }
 C_CVar = { GetCVar = function() return "5" end, GetCVarBool = function() return false end }
 UnitIsGameObject = function() return object end
 UnitIsFriend, UnitIsPlayer = function() return false end, function() return false end
 local private = { NS = NS }
-for _, file in ipairs({ "SuiteCatalog", "NameplateStyle" }) do
+for _, file in ipairs({ "SuiteCatalog", "NameplateStyle", "NameplateText" }) do
     assert(loadfile(root .. "/MSUF_Suite/Core/" .. file .. ".lua"))("MSUF_Suite", NS)
 end
 for _, file in ipairs({ "Modes", "Geometry", "Layout" }) do

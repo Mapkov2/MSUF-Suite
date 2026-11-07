@@ -1,16 +1,18 @@
 local _, NS = ...
 
 -- Native tree rows are released immediately. These mouse-transparent copies
--- render their last appearance for 160ms without retaining native pool rows.
+-- animate the last rendered pose without retaining native pool rows.
 local Ghost = {}
 NS.AddonListGhosts = Ghost
 local Safety, Motion = NS.Safety, NS.Motion
+local ConfigureDisclosure = NS.SuiteCore().ConfigureDisclosure
 local fonts = { "Title", "Status", "Reload" }
 local textures = { "GetNormalTexture", "GetCheckedTexture", "GetDisabledCheckedTexture" }
 
 local function Finished(group)
     group.ghost:Hide()
-    local state = group.state
+    local state, copy = group.state, group.copy
+    if state.activeGhosts[copy.node] == copy then state.activeGhosts[copy.node] = nil end
     state.ghostActive = math.max(0, (state.ghostActive or 0) - 1)
     if state.ghostActive == 0 then
         state.ghostViewport:Hide()
@@ -36,16 +38,14 @@ local function CreateCopy(state, record)
     group.ghost, group.state, group.record = row, state, record
     group:SetScript("OnFinished", Finished)
     local move, alpha = group:CreateAnimation("Translation"), group:CreateAnimation("Alpha")
-    move:SetDuration(0.16)
-    alpha:SetDuration(0.16)
-    move:SetSmoothing("IN_OUT")
-    alpha:SetSmoothing("IN_OUT")
+    ConfigureDisclosure(move)
+    ConfigureDisclosure(alpha)
     local copy = { frame = row, clip = clip, group = group, move = move, alpha = alpha, fonts = {}, textures = {} }
     if not state.generic then
         for index = 1, 4 do copy.fonts[index] = row:CreateFontString(nil, "OVERLAY") end
         for index = 1, 3 do copy.textures[index] = row:CreateTexture(nil, "ARTWORK") end
     end
-    record.ghost = copy
+    record.ghost, group.copy = copy, copy
     state.ghostRows[copy] = true
     return copy
 end
@@ -54,6 +54,7 @@ function Ghost.Stop(state)
     if not state.ghostRows then return end
     for copy in pairs(state.ghostRows) do copy.group:Stop() copy.frame:Hide() copy.pendingNode = nil end
     state.ghostViewport:Hide()
+    wipe(state.activeGhosts)
     state.ghostCategory, state.ghostPending, state.ghostActive = nil, nil, 0
     state.ghostPendingCopies = nil
 end
@@ -78,7 +79,7 @@ local function EnsureViewport(state)
     local clip = Safety.CreateChildFrame("Frame", viewport)
     clip:SetClipsChildren(true)
     clip:EnableMouse(false)
-    state.ghostViewport, state.ghostClip, state.ghostRows = viewport, clip, {}
+    state.ghostViewport, state.ghostClip, state.ghostRows, state.activeGhosts = viewport, clip, {}, {}
     viewport:Hide()
     if not state.collection then
         state.scrollBox:RegisterCallback(ScrollBoxListMixin.Event.OnScroll, Scrolled, state)
@@ -203,6 +204,7 @@ function Ghost.Capture(state, record)
     copy.nativeAlpha = Safety.Read(row, "GetAlpha")
     copy.displayTop, copy.displayAlpha = nil, nil
     if cached then return end
+    copy.nativeHeight = Safety.Read(row, "GetHeight")
     copy.generation, copy.width, copy.scale = state.ghostGeneration, state.width, state.scale
     copy.provider, copy.dirty = state.provider, false
     if state.generic then CaptureGeneric(state, record, copy) return end
@@ -287,17 +289,42 @@ local function PlayCopy(state, record, copy, category)
     clip:ClearAllPoints()
     clip:SetPoint("TOPLEFT", state.ghostViewport, "TOPLEFT", 0, boundary - copy.viewportTop)
     clip:SetPoint("BOTTOMRIGHT", state.ghostViewport, "BOTTOMRIGHT", 0, 0)
+    local travel = math.max(16, boundary - top + 16)
+    copy.targetTop, copy.offset, copy.startAlpha, copy.boundary = top + travel, -travel, alpha, boundary
     copy.frame:ClearAllPoints()
-    copy.frame:SetPoint("TOPLEFT", clip, "TOPLEFT", copy.left - copy.viewportLeft, top - boundary)
+    copy.frame:SetPoint("TOPLEFT", clip, "TOPLEFT", copy.left - copy.viewportLeft, copy.targetTop - boundary)
     copy.frame:SetAlpha(1)
-    copy.move:SetOffset(0, math.max(16, boundary - top + 16))
-    copy.alpha:SetFromAlpha(alpha)
-    copy.alpha:SetToAlpha(0)
+    copy.move:SetOffset(0, copy.offset)
+    copy.alpha:SetFromAlpha(0)
+    copy.alpha:SetToAlpha(alpha)
     state.ghostViewport:Show()
     copy.frame:Show()
     if not copy.group:IsPlaying() then state.ghostActive = (state.ghostActive or 0) + 1 end
+    state.activeGhosts[copy.node] = copy
     copy.group:Stop()
-    copy.group:Play()
+    copy.group:Play(true)
+end
+
+-- A reopened native row takes over the visible pose of its closing copy.
+function Ghost.Take(state, node, resume)
+    local copy = state.activeGhosts[node]
+    if not copy then return end
+    local top, alpha
+    if resume then
+        local remaining = copy.move:GetSmoothProgress()
+        top = copy.targetTop + copy.offset * remaining
+        alpha = copy.startAlpha * remaining
+        if top > copy.boundary then
+            -- The native row has no header clip. Reveal from below the header
+            -- and keep only the opacity of the still visible portion.
+            local height = copy.nativeHeight
+            local visible = type(height) == "number" and height > 0 and math.max(0, 1 - (top - copy.boundary) / height) or 0
+            top, alpha = copy.boundary, alpha * visible
+        end
+    end
+    copy.group:Stop()
+    Finished(copy.group)
+    return top, alpha
 end
 
 function Ghost.Released(state, record, node)
@@ -346,7 +373,6 @@ function Ghost.Layout(state, provider, offset, width, height, scale)
     if not state.ghostCategory then return end
     local stable = provider == state.provider and width == state.width and height == state.height and scale == state.scale
         and (state.ghostPending or offset == state.offset)
-        and Safety.Read(state.ghostCategory, "IsCollapsed") == true
     local collapse = stable and state.ghostPending
     if not stable then Ghost.Stop(state) end
     state.ghostPending = nil

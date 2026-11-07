@@ -167,16 +167,19 @@ assert(Suite.Suite.Config("skyriding").look == 3
     and Suite.Suite.Config("skyriding").panelColor == "14181b"
     and Suite.Suite.Config("skyriding").accentColor == "d8b66a",
     "older Skyriding profiles lost their selected colors")
+assert(Suite.Suite.Config("parallelWindows").windowLimit == 0, "window limit factory default must be unlimited")
 for _, id in ipairs(Suite.SuiteOrder) do
     assert(Suite.Suite.Config(id).enabled == (id ~= "skyriding" and id ~= "actionTracker"
         and id ~= "durabilityAlert" and id ~= "battleRes" and id ~= "innervateCue"
         and id ~= "merchantLevel" and id ~= "vaultSpec" and id ~= "tooltipIDs"
         and id ~= "itemCounts" and id ~= "loadoutReminder" and id ~= "quietPopups"
-        and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "groupDeathAlert" and id ~= "releaseProtection"
+        and id ~= "waypoints" and id ~= "dailyComfort" and id ~= "chatComfort" and id ~= "groupDeathAlert" and id ~= "releaseProtection"
+        and id ~= "parallelWindows"
         and id ~= "autoUprank" and id ~= "tooltipVisibility" and id ~= "uiErrorFilter"
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
         and id ~= "mythicAutoQueue" and id ~= "questRewardValue" and id ~= "mailRecipients"
         and id ~= "groupFinderTools" and id ~= "fishingComfort"
+        and id ~= "foreverWorldMap" and id ~= "gatheringTooltips"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
         and id ~= "cursorEffects" and id ~= "playerAuras"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower" and id ~= "selfCombatText"

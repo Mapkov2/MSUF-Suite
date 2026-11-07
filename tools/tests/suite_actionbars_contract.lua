@@ -870,9 +870,45 @@ leave.shown=false
 local quick=NewFrame("Frame","QuickKeybindFrame",UIParent,"SecureFrameTemplate")
 quick.shown=false
 quick.scripts.OnShow=function() quick.shownSecurely=secure>0 end
+-- QuickKeybindFrameMixin:OnHide (live and forever) returns to SettingsPanel
+-- even when an addon opened the mode. Model the native return and panel
+-- occupancy: a direct Hide is not equivalent to HideUIPanel.
+do
+    SettingsPanel=NewFrame("Frame","SettingsPanel",UIParent)
+    GameMenuFrame=NewFrame("Frame","GameMenuFrame",UIParent)
+    SettingsPanel.shown,GameMenuFrame.shown=false,false
+    function SettingsPanel:Open()
+        if combat and secure==0 then return end
+        self.panelOccupied=true
+        self:Show()
+    end
+    function SettingsPanel:Close()
+        HideUIPanel(self)
+        GameMenuFrame:Show()
+    end
+    HideUIPanel=function(frame)
+        assert(not combat or secure>0,"HideUIPanel called insecurely during lockdown")
+        frame.panelOccupied=false
+        frame:Hide()
+    end
+    quick.scripts.OnHide=function()
+        quick.nativeCloses=(quick.nativeCloses or 0)+1
+        quick.closeWasSecure=secure>0
+        if not quick.editModeActive and not GameMenuFrame:IsShown() then SettingsPanel:Open() end
+        quick.nativeCleanup=(quick.nativeCleanup or 0)+1
+    end
+    function quick:CancelBinding()
+        self.cancelled=(self.cancelled or 0)+1
+        self:SetSelected(nil,nil)
+        self:Hide()
+    end
+end
 function quick:SetSelected(command,button) self.selected,self.mouseOverButton=command,button end
 function quick:OnKeyDown(input)
-    if not self.selected then return end
+    if not self.selected then
+        if input=="ESCAPE" then self:CancelBinding() end
+        return
+    end
     local old=bindings[self.selected] or {}
     if input=="ESCAPE" then
         bindings[self.selected]=old[2] and {old[2]} or nil
@@ -1136,6 +1172,100 @@ local function TestQuickKeybind()
         assert(not AB.panelPending and not Button(9,12).button.shown,"combat exit did not restore the grid")
     end
     combat=true;assert(not S.OpenQuickKeybind());combat=false
+end
+
+local function TestQuickKeybindExit()
+    local function NativeOpen()
+        secure=secure+1
+        quick:Show()
+        secure=secure-1
+    end
+    local function NativeClose()
+        secure=secure+1
+        quick:Hide()
+        secure=secure-1
+    end
+    local function CheckClosed(label)
+        assert(not quick.shown and not SettingsPanel.shown and not GameMenuFrame.shown,
+            label.." opened Blizzard settings or game menu")
+        assert(not SettingsPanel.panelOccupied,label.." retained panel-manager occupancy")
+        assert(quick.nativeCloses==quick.nativeCleanup,label.." skipped native cleanup")
+        assert(quick.closeWasSecure,label.." tainted native grid cleanup")
+    end
+    HideUIPanel(SettingsPanel)
+    GameMenuFrame:Hide()
+    for _,exit in ipairs({"Okay","Cancel","Escape"}) do
+        assert(S.OpenQuickKeybind())
+        assert(S.OpenQuickKeybind(),"repeated Suite open lost its session")
+        local before=quick.nativeCloses or 0
+        secure=secure+1
+        if exit=="Okay" then
+            quick.committed=(quick.committed or 0)+1
+            HideUIPanel(quick)
+        elseif exit=="Cancel" then
+            quick:CancelBinding()
+        else
+            quick:OnKeyDown("ESCAPE")
+        end
+        secure=secure-1
+        assert(quick.nativeCloses==before+1,"exit did not run the native handler once")
+        CheckClosed(exit)
+    end
+    local hooks=#quick.hooks.OnHide
+    assert(S.OpenQuickKeybind())
+    NativeClose()
+    assert(#quick.hooks.OnHide==hooks,"reopening installed another exit hook")
+    CheckClosed("reopen")
+    NativeOpen()
+    assert(S.OpenQuickKeybind(),"already-open native mode refused")
+    NativeClose()
+    assert(SettingsPanel.shown,"Suite claimed an already-open native session")
+    HideUIPanel(SettingsPanel)
+    NativeOpen()
+    NativeClose()
+    assert(SettingsPanel.shown,"Suite hook changed native entry/exit")
+    HideUIPanel(SettingsPanel)
+    SettingsPanel:Open()
+    assert(S.OpenQuickKeybind())
+    NativeClose()
+    assert(SettingsPanel.shown and SettingsPanel.panelOccupied,"preexisting settings were closed")
+    HideUIPanel(SettingsPanel)
+    GameMenuFrame:Show()
+    assert(S.OpenQuickKeybind())
+    NativeClose()
+    assert(GameMenuFrame.shown and not SettingsPanel.shown,"existing game menu changed")
+    GameMenuFrame:Hide()
+    quick.editModeActive=true
+    assert(S.OpenQuickKeybind())
+    NativeClose()
+    CheckClosed("Edit Mode return")
+    quick.editModeActive=nil
+    assert(S.OpenQuickKeybind())
+    combat=true
+    NativeClose()
+    assert(SettingsPanel.shown,"fixture must preserve the native secure combat return")
+    combat=false
+    for _,frame in ipairs({UIParent:GetChildren()}) do
+        if frame.events.PLAYER_REGEN_ENABLED then Fire(frame,"OnEvent","PLAYER_REGEN_ENABLED") end
+    end
+    CheckClosed("combat close")
+    assert(S.OpenQuickKeybind())
+    combat=true
+    NativeClose()
+    secure=secure+1
+    HideUIPanel(SettingsPanel)
+    SettingsPanel:Open()
+    secure=secure-1
+    combat=false
+    for _,frame in ipairs({UIParent:GetChildren()}) do
+        if frame.events.PLAYER_REGEN_ENABLED then Fire(frame,"OnEvent","PLAYER_REGEN_ENABLED") end
+    end
+    assert(SettingsPanel.shown,"deferred cleanup closed a later native Settings session")
+    HideUIPanel(SettingsPanel)
+    NativeOpen()
+    NativeClose()
+    assert(SettingsPanel.shown,"combat close retained Suite session ownership")
+    HideUIPanel(SettingsPanel)
 end
 
 -- The 2026-10-11 raid trace ran five shown-button plans (one restricted GRID
@@ -1650,6 +1780,7 @@ if nativeReuse then
         actions[61].current=current;c.castHighlight=highlight;M:Refresh()
     end
     TestQuickKeybind()
+    TestQuickKeybindExit()
     TestDragLayout()
     TestGridCap()
     for index=2,8 do assert(S.Set("actionbars","bar"..index.."Visibility",6)) end
@@ -3141,6 +3272,7 @@ assert(S.ActionBarAvailable(8) and not S.ActionBarAvailable(13))
 Fire(Bar(1).header,"OnLeave",true)
 Fire(Bar(9).header,"OnLeave",true)
 TestQuickKeybind()
+TestQuickKeybindExit()
 TestDragLayout()
 
 ------------------------------------------------------------------ disable and re-enable

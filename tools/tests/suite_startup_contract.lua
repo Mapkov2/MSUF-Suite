@@ -224,15 +224,18 @@ assert(starts == 0 and messages == 1 and owner.startupError == "legacy-runtime-a
 owner, starts = Scenario(nil, nil, false, false, false, nil, false, true)
 assert(starts == 1 and #reported == 3 and owner.DB, "a failing startup step kept the modules from starting")
 local first = Scenario(nil, nil, false, false)
+assert(first.RootDB.xpSessionGeneration == 1, "fresh login did not mark the XP session boundary")
 assert(first.RootDB.suiteGold["Player-test"] == 100000,
     "fresh login did not capture the starting gold")
 assert(first.goldSessionCaptured == true, "fresh login did not mark its gold baseline valid")
 money = 112345
 local reloaded = Scenario(first.RootDB, nil, false, false, false, nil, true)
+assert(reloaded.RootDB.xpSessionGeneration == 1, "database preparation or reload lost the XP boundary")
 assert(reloaded.RootDB.suiteGold["Player-test"] == 100000,
     "/reload reset the session gold baseline")
 assert(reloaded.goldSessionCaptured == true, "/reload lost the gold baseline state")
 local nextLogin = Scenario(reloaded.RootDB, nil, false, false)
+assert(nextLogin.RootDB.xpSessionGeneration == 2, "database preparation or new login reused the XP boundary")
 assert(nextLogin.RootDB.suiteGold["Player-test"] == 112345,
     "a new login kept the previous session gold baseline")
 assert(nextLogin.goldSessionCaptured == true, "new login did not mark its gold baseline valid")

@@ -40,7 +40,13 @@ loadfile = function(path)
     end
     return chunk
 end
-assert(original(root .. "/tools/tests/suite_options_menu_contract.lua"))()
+SUITE_OPTIONS_FIXTURE = true
+local fixture = assert(original(root .. "/tools/tests/suite_options_menu_contract.lua"))()
+SUITE_OPTIONS_FIXTURE = nil
+local ctx = { key = "suite_minimap", width = 720, refreshers = {}, widgets = {}, sections = {}, pageItems = {} }
+fixture.SetCurrent(ctx)
+fixture.M.pages.suite_minimap.build(ctx)
+ctx.fixedPreview.section.expander:Open()
 loadfile = original
 assert(ui and P, "minimap preview did not build")
 

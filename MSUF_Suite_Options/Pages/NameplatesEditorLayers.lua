@@ -61,7 +61,7 @@ local LAYERS = {
 local LAYER_SETTING = {
     health = "enemyHealthWidthDelta", backdrop = "enemyBackdropEnabled", border = "enemyBorderEnabled",
     roleFill = "enemyRoleColors", target = "enemyTargetMarker",
-    name = "enemyTextMode", level = P.Suite.Client.isForever and "levelAppearance" or "enemyLevelEnabled",
+    name = "enemyTextMode", level = "enemyLevelEnabled",
     healthText = "enemyTextMode",
     cast = "enemyCastEnabled", castText = "enemyCastSpellName", castTime = "enemyCastTimeEnabled",
     classification = "enemyRarityIcon", raidIcon = "enemyRaidIcon",
@@ -129,9 +129,8 @@ local function Register(widget, key, label)
         M.RegisterControlMetadata(widget, P.Meta(PAGE, ID, "preview." .. key, "action", "suite_nameplates_preview"), label, "button")
     end
 end
-local function OpenSetting(key, label)
-    if not key or type(M.OpenExactSettingControl) ~= "function" then return false end
-    return M.OpenExactSettingControl("msufsuite.nameplates." .. key, Tr(label), PAGE) ~= false
+local function OpenSetting(key)
+    return P.OpenNameplateSetting(key)
 end
 Layers.AURA_KIND, Layers.AuraGroup = AURA_KIND, AuraGroup
 Layers.Register, Layers.OpenSetting = Register, OpenSetting
@@ -202,20 +201,13 @@ function Layers.Active(ui, key)
     end
     if key == "power" then return P.Get(ID, "look") ~= 2 and P.Get(ID, "personalPowerSkin") end
     if key == "level" then
-        local classic = P.Suite.NameplateStyle.ClassicNativePlate(P.Get(ID, "nativeStyle"))
-        if not P.Suite.Client.isForever then
-            return classic or P.Get(ID, "look") ~= 2
-                and P.Get(ID, ui.sampleKind .. "LevelEnabled")
-        end
+        local classic = Style.ClassicNativePlate(P.Get(ID, "nativeStyle"))
         local namesOnly = ui.sampleKind == "friendly" and not ui.personal
             and not ui.friendlyElite and (P.Get(ID, "friendlyNamesOnly") == 2
                 or P.Get(ID, "friendlyNamesOnly") == 3
-                or P.Get(ID, "friendlyNamesOnly") == 1 and P.Suite.NameplateStyle.NativeToggle(
+                or P.Get(ID, "friendlyNamesOnly") == 1 and Style.NativeToggle(
                     "nameplateShowOnlyNameForFriendlyPlayerUnits", false))
-        if namesOnly then return false end
-        local badge = P.Get(ID, "look") == 2 or P.Get(ID, "levelAppearance") == 2
-        if badge and not (P.Suite.Client.isForever or classic) then return false end
-        return P.Get(ID, "look") == 2 or P.Get(ID, ui.sampleKind .. "LevelEnabled")
+        return P.NameplatesPreviewDecor.LevelMode(ui, ui.sampleKind, classic, namesOnly) ~= nil
     end
     if key == "raidIcon" then return ui.raidMarked == true end
     if key == "castShield" then return ui.uninterruptible == true end
@@ -235,18 +227,14 @@ function Layers.Active(ui, key)
 end
 
 local function FocusLayer(ui, section, key)
+    if P.Combat() then return end
     if Layers.NPCWorldNames(ui) then
-        OpenSetting("friendlyNPCs", key)
+        OpenSetting("friendlyNPCs")
         return
     end
     if (section == "enemy" or key == "castTime") and ui.sampleKind == "friendly" then section = "friendly" end
     if section == "elements" and ui.sampleKind == "friendly"
         and (key == "name" or key == "level" or key == "healthText") then section = "friendly" end
-    local target = section == "elements" and P.SelectNameplatesEnemyTab("elements")
-        or ui.sections and ui.sections[section]
-    if target and W.FocusCollapsibleSection then
-        W.FocusCollapsibleSection(target, { persist = true, flash = true })
-    end
     local setting = DecorSetting(ui, key) or LAYER_SETTING[key]
     if key == "castTime" then
         setting = ui.sampleKind .. "CastTimeEnabled"
@@ -257,8 +245,7 @@ local function FocusLayer(ui, section, key)
     elseif ui.sampleKind == "friendly" and key == "target" then
         setting = "enemyTargetHideFriendly"
     elseif ui.sampleKind == "friendly" and (key == "name" or key == "healthText" or key == "level") then
-        setting = key == "level" and (P.Suite.Client.isForever and "levelAppearance"
-            or "friendlyLevelEnabled")
+        setting = key == "level" and "friendlyLevelEnabled"
             or key == "name" and "friendlyTextEnabled" or "friendlyNamesOnly"
     end
     if AURA_KIND[key] then
@@ -274,13 +261,18 @@ local function FocusLayer(ui, section, key)
     elseif key == "eliteMarker" or key == "questMarker" then
         setting = ui.sampleKind .. (key == "eliteMarker" and "Elite" or "Quest") .. "Marker"
     elseif key == "power" then setting = "personalPowerSkin" end
-    OpenSetting(setting, key)
+    if OpenSetting(setting) then return end
+    local target = section == "elements" and P.SelectNameplatesEnemyTab("elements")
+        or ui.sections and ui.sections[section]
+    if target and W.FocusCollapsibleSection then
+        W.FocusCollapsibleSection(target, { persist = true, flash = true })
+    end
 end
 Layers.Focus = FocusLayer
 
 local function ToggleSkinLayer(ui, key)
     if P.Get(ID, "look") == 2 then
-        OpenSetting("look", "Look")
+        OpenSetting("look")
         return
     end
     if key == "roleFill" then
@@ -335,7 +327,7 @@ end
 -- The layers that change a live setting: auras, threat, soft target and personal power.
 local function ToggleLive(ui, key)
     if P.Get(ID, "look") == 2 then
-        OpenSetting("look", "Look")
+        OpenSetting("look")
         return
     end
     if AURA_KIND[key] then
@@ -387,7 +379,7 @@ end
 
 local function ToggleLayer(ui, key)
     if Layers.NPCWorldNames(ui) then
-        OpenSetting("friendlyNPCs", key)
+        OpenSetting("friendlyNPCs")
         return
     end
     local action = LayerAction(key)

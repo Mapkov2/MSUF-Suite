@@ -220,6 +220,7 @@ local function SurfaceTokens(state)
     if state.spec.activeRole then
         AddMaterialTokens(tokens, state.spec.activeRole)
     end
+    if state.spec.selectionEdge then AddToken(tokens, "title") end
     if state.kind == "button" then
         AddToken(tokens, "hover")
         AddToken(tokens, "pressed")
@@ -337,6 +338,12 @@ local function ReadNativeSelected(target)
     return selected
 end
 
+-- A selected tab uses its own contrast even with decorative borders off.
+function Surface.GetEdgePaint(state, material)
+    if state.active and state.spec.selectionEdge then return "title", 0.86 end
+    return material.border, NS.Theme.GetBorderOpacity()
+end
+
 local function RefreshState(state, checked)
     -- Only SetActive/SetVisible pass their immediately preceding guard.
     -- Between that read and this call they change owned scalar state only;
@@ -359,7 +366,7 @@ local function RefreshState(state, checked)
     ApplyFill(state.fill, material, state)
 
     local edgeAsset = geometry.edge
-    if state.active and state.spec.activeEdge then
+    if state.active and (state.spec.activeEdge or state.spec.selectionEdge) then
         edgeAsset = geometry.hoverEdge
     end
     if not edgeAsset and state.spec.forceEdge then
@@ -367,7 +374,8 @@ local function RefreshState(state, checked)
     end
     if edgeAsset then
         ConfigureShape(state.edge, edgeAsset, geometry)
-        SetVertexColor(state.edge, material.border, NS.Theme.GetBorderOpacity())
+        local color, opacity = Surface.GetEdgePaint(state, material)
+        SetVertexColor(state.edge, color, opacity)
         state.edge:Show()
     else
         state.edge:Hide()

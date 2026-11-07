@@ -180,7 +180,8 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
         end
         if #section.rules > 0 then
             local _, entries
-            y, entries = P.RuleGrid(ctx, details, V.GetFeaturePage(group), group.id, section.rules, y,
+            local rules = group.id == "xpBar" and P.XPBarTextOptions.BarRules(section.rules) or section.rules
+            y, entries = P.RuleGrid(ctx, details, V.GetFeaturePage(group), group.id, rules, y,
                 width - 32, nil, sectionId, nil, nil, true)
             RegisterFeatureRuleSearch(group, sectionId, entries, keywords)
         end
@@ -207,17 +208,6 @@ local function BuildFeatureDetails(ctx, details, group, sectionId, width, sectio
         P.M.RegisterControlMetadata(colorShortcut,
             P.Meta(V.GetFeaturePage(group), group.id, "action.colors." .. group.switch, "action", sectionId),
             Tr("%s Colors"):format(Tr(group.title)), "button")
-    end
-    if #allRules > 0 then
-        -- A section reset restores the section's settings; whether the feature
-        -- runs (allRules leaves its switch out) stays the player's choice.
-        details._msufSuiteSectionReset = function()
-            return P.ResetRules(group.id, allRules)
-        end
-        P.Button(ctx, details, "Reset section", 16, y, math.min(180, width - 32),
-            details._msufSuiteSectionReset, function() return not P.Combat() end,
-            P.Meta(V.GetFeaturePage(group), group.id, "action.reset." .. group.switch, "action", sectionId))
-        y = y - 38
     end
     local height = math.max(72, -y + 12)
     return y, height, colorShortcut

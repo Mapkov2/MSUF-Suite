@@ -1,5 +1,6 @@
 local _, P = ...
 local Suite, S, M, Tr, HM = P.Suite, P.S, P.M, P.Tr, P.HM
+local Art = Suite.AnnouncementArt
 local Preview = {}
 P.HUDPreview = Preview
 local modes = { objectives = "quests", runSummary = "raid", announcements = "zone", afkScreen = "character" }
@@ -114,7 +115,13 @@ local function Paint(ui)
     if not ui.id or not ui.host:IsVisible() then return end
     ui.config, ui.used, ui.fillsUsed = S.Config(ui.id), 0, 0
     if ui.afk then ui.afk.host:Hide() end
+    local previousArt = ui.bannerArt and ui.bannerArt.requested
     local width, height = Preview.Render[ui.id](ui, modes[ui.id])
+    if ui.id == "announcements" then
+        if previousArt ~= ui.bannerArt.requested then Preview.Stop(ui) end
+    elseif ui.bannerArt then
+        Art.Layout(ui.bannerArt)
+    end
     for i = ui.used + 1, #ui.labels do ui.labels[i]:Hide() end
     for i = ui.fillsUsed + 1, #ui.fills do ui.fills[i]:Hide() end
     ui.canvas:SetSize(width, height)
@@ -130,8 +137,13 @@ end
 local function Focus(ui)
     local workspace = ui.ctx._msufSuiteHUDWorkspace
     local group = workspace.groups[ui.id]
-    local body = group.appearance or group.body
+    local body = group.artwork or group.appearance or group.body
     if P.W.FocusCollapsibleSection then P.W.FocusCollapsibleSection(body, { flash = true }) end
+end
+
+local function SelectTarget(ui)
+    local label = ui.id == "announcements" and "Banner artwork" or P.catalog[ui.id].title
+    P.PreviewInteraction.Select(ui.selection, ui.canvas, label, function() Focus(ui) end)
 end
 
 local function Select(ui, id)
@@ -142,6 +154,7 @@ local function Select(ui, id)
         ui.host:Hide()
         ui.selection:Hide()
         ui.playButton:Hide()
+        P.W.SetControlShown(ui.artPicker, false)
         for _, picker in pairs(ui.pickers) do P.W.SetControlShown(picker, false) end
         return
     end
@@ -149,10 +162,10 @@ local function Select(ui, id)
         ui.host:Show()
         ui.selection:Show()
     end
-    if ui.selection then
-        P.PreviewInteraction.Select(ui.selection, ui.canvas, P.catalog[id].title, function() Focus(ui) end)
-    end
-    ui.playButton:SetShown(id == "announcements")
+    SelectTarget(ui)
+    local announcements = id == "announcements"
+    ui.playButton:SetShown(announcements)
+    P.W.SetControlShown(ui.artPicker, announcements)
     for key, picker in pairs(ui.pickers) do P.W.SetControlShown(picker, key == id) end
     -- Only the AFK example reads character events, and only while visible.
     ui.host:UnregisterAllEvents()
@@ -164,13 +177,34 @@ local function Select(ui, id)
     Paint(ui)
 end
 
+local function ArtPicker(ui, parent, width)
+    local id, key = "announcements", "artStyle"
+    local row = P.RuleRow("suite_hud", id, P.catalog[id].rules[key], nil, "suite_hud_announcements_artwork")
+    local values = { { value = 0, text = Tr("None") } }
+    for _, choice in ipairs(row.values) do values[#values + 1] = choice end
+    local function Get() return P.Get(id, "showBoxArt") and row.get() or 0 end
+    local function Set(value)
+        if value == 0 then
+            P.Set(id, "showBoxArt", false)
+        elseif P.Get(id, "showBoxArt") then
+            row.set(value)
+        else
+            P.SetMany(id, { artStyle = value, showBoxArt = true })
+        end
+    end
+    ui.artPicker = M.BindDropdownAt(ui.ctx, parent, row.label, 28 + width, -42, values, width, Get, Set,
+        P.Meta("suite_hud", id, "view.artwork", "ephemeral"))
+    P.W.SetControlShown(ui.artPicker, false)
+end
+
 local function Pickers(ui, parent)
+    local announcementWidth = math.min(300, math.floor((ui.width - 174) / 2))
     for id, choices in pairs(Preview.Choices) do
         local feature, values = id, {}
         for _, choice in ipairs(choices) do
             values[#values + 1] = { value = choice[1], text = Tr(choice[2]) }
         end
-        local width = math.min(300, id == "announcements" and ui.width - 162 or ui.width)
+        local width = id == "announcements" and announcementWidth or math.min(300, ui.width)
         local picker = M.BindDropdownAt(ui.ctx, parent, "Preview", 16, -42, values, width,
             function() return modes[feature] end, function(value)
                 modes[feature] = value
@@ -179,6 +213,7 @@ local function Pickers(ui, parent)
             end, P.Meta("suite_hud", feature, "view.preview", "ephemeral"))
         ui.pickers[id] = picker
     end
+    ArtPicker(ui, parent, announcementWidth)
 end
 
 function Preview.Build(ctx, parent, width)
@@ -192,7 +227,8 @@ function Preview.Build(ctx, parent, width)
     HM.AllowCombatClick(canvas)
     local ui = { ctx = ctx, host = host, canvas = canvas, width = width, labels = {}, fills = {}, pickers = {} }
     canvas:SetScript("OnClick", function()
-        P.PreviewInteraction.Select(ui.selection, canvas, P.catalog[ui.id].title, function() Focus(ui) end)
+        if not ui.id then return end
+        SelectTarget(ui)
         Focus(ui)
     end)
     ui.Select, ui.Paint = Select, Paint

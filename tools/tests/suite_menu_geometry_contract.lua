@@ -98,6 +98,9 @@ local function CheckHeader(entry)
                     if workspace and section==workspace.header then
                         choices=choices+1
                         Check(button:IsVisible(),"direct workspace tab is hidden")
+                        local caption=button._msuf2Label
+                        Check(caption._msuf2FontRole=="control","workspace tab kept its action-button font")
+                        Check(button:GetWidth()>=caption:GetStringWidth()+20,"workspace caption clips at this width")
                         local selected=workspace.selected
                         MenuWorld.FireScript(button,"OnClick")
                         Check(workspace.selected==button._msuf2Value,"direct tab click did not select its area")
@@ -117,23 +120,26 @@ local function CheckHeader(entry)
     if workspace then Check(choices==#workspace.spec.tabs,"a workspace area has no visible tab") end
     local ui=entry.context.dataTextWorkspace
     if ui then
-        if entry.context.dataTextBarSelector then
-            local selector=entry.context.dataTextBarSelector
-            local _,_,_,x=selector:GetPoint()
-            Check(x+selector:GetWidth()<=ui.navigation:GetWidth()-16-ui.buttons.add:GetWidth()-6,
-                "DataText dropdown overlaps Add bar")
+        local panel = ui.navigation
+        local selector = assert(entry.context.dataTextBarSelector)
+        local function Bounds(widget, name)
+            local point, relative, anchor, x, y = widget:GetPoint()
+            Check(point=="TOPLEFT" and relative==panel and anchor=="TOPLEFT", name.." lost its header anchor")
+            local right, bottom = x+widget:GetWidth(), y-widget:GetHeight()
+            Check(y<=-32 and bottom>=-panel:GetHeight(), name.." clips the DataTexts header vertically")
+            Check(x>=16 and right<=panel:GetWidth()-16+.01, name.." clips the DataTexts header horizontally")
+            return x, y, right, bottom
         end
-        local available=ui.navigation:GetWidth()-16-108-6
-        for key,button in pairs(ui.buttons) do
-            if type(key)=="number" then
-                local _,_,_,x=button:GetPoint()
-                Check(x+button:GetWidth()<=available+.01,"DataText bar overlaps Add bar")
-            end
+        local _, top, right, bottom = Bounds(selector, "Bar selector")
+        local addX, addTop, addRight, addBottom = Bounds(ui.buttons.add, "Add bar")
+        local deleteX, deleteTop = Bounds(ui.buttons.delete, "Delete bars")
+        Check(addTop==deleteTop and addRight<deleteX, "DataTexts actions do not share one row")
+        if panel:GetWidth()>=520 then
+            Check(right<addX and math.abs(top+bottom-addTop-addBottom)<.01,
+                "Bar selector is not aligned beside the DataTexts actions")
+        else
+            Check(bottom>addTop, "DataTexts actions overlap the selector at narrow widths")
         end
-        local point,relative,anchor,x=ui.buttons.add:GetPoint()
-        local right=anchor=="TOPRIGHT" and ui.navigation:GetWidth()+x or x+ui.buttons.add:GetWidth()
-        Check(relative==ui.navigation and right<=ui.navigation:GetWidth()-16+.01,
-            "Add bar exceeds header gutter")
     end
 end
 if arg[4] == "fixture" then

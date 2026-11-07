@@ -95,6 +95,7 @@ local MIGRATIONS = {
     { run = NS.MoveRunRecordsToCharacter },
     { run = Steps.RecordModuleLooks },
     { run = Steps.CooldownSpecLayouts },
+    { run = Steps.ChatComfort },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {

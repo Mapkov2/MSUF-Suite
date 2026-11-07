@@ -19,7 +19,7 @@ local M = C.M
 local Finite = S.Finite
 -- fadeParts: 1 the window, TAB its tab, 3 the sidebar (the window it sits
 -- on: the selected dock window, else the primary window; PlaceSidebar).
-local TAB, PARTS = 2, 3
+local TAB, PARTS = 2, 6
 local delay = 0
 -- edit box -> its window's visual; each box takes its focus hooks once.
 local inputs = setmetatable({}, { __mode = "k" })
@@ -66,7 +66,7 @@ local function Wake(visual, skip)
 end
 
 local function Expired(visual)
-    if not (M.active and visual.fadeArmed) or visual.hovered then return end
+    if not (M.active and visual.fadeArmed) or visual.hovered or visual.toolbarHovered or M.toolbarGesture then return end
     if visual.frame.editBox:HasFocus() == true then return end
     FadeOut(visual)
 end
@@ -77,7 +77,7 @@ function C.ChatActivity(frame)
     local visual = M.visuals[frame]
     if not (visual and visual.fadeArmed) then return end
     if visual.faded then Wake(visual) end
-    if not visual.hovered then M.context:After(delay, visual.fadeCallback) end
+    if not visual.hovered and not visual.toolbarHovered then M.context:After(delay, visual.fadeCallback) end
 end
 
 -- Blizzard shows the window's chrome while the pointer is over it.
@@ -161,6 +161,9 @@ function C.ApplyInactivity(self, visual)
     local parts, primary = visual.fadeParts, M.visuals[ChatFrame1]
     local sidebar = (C.DockSelection() or ChatFrame1) == frame and primary and primary.sidebarFrame or nil
     parts[1], parts[TAB], parts[3] = frame, _G[frame:GetName() .. "Tab"], sidebar
+    local selected = (C.DockSelection() or ChatFrame1) == frame and self.config.headerToolbar
+    parts[4], parts[5], parts[6] = selected and M.toolbar or nil, selected and M.toolbarDrag or nil,
+        selected and M.toolbarResize or nil
     C.PrepareFadeAnimations(visual, self.config.idleFadeDuration)
     M.context:Cancel(visual.fadeCallback)
     visual.fadeArmed = true

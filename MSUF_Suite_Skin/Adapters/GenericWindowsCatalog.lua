@@ -222,6 +222,9 @@ local function PaintEntryFrame(request, index)
     if NS.IsCombatLocked() then DeferEntryFrame(request, index) end
     -- Preserve the Macro adapter's specific artwork after this root's pass.
     if entry.id == "macros" then NS.MacroWindow.Apply(frame, owner) end
+    if entry.id == "chat-configuration" and ok and NS.ChatConfigSkin.Apply(frame, owner) then
+        request.ownerState.chatConfig = true
+    end
 end
 
 local function SummarizeEntry(request)
@@ -409,6 +412,11 @@ end
 
 local function DisableNow(owner)
     NS.MacroWindow.Disable(owner)
+    local ownerState = OwnerState(owner)
+    if ownerState.chatConfig then
+        ownerState.chatConfig = nil
+        NS.ChatConfigSkin.Disable(owner)
+    end
     NS.WindowControls.DisableOwner(owner)
     DeactivateOwner(owner)
 

@@ -1,7 +1,7 @@
 local root = assert(arg[1])
 local support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local toc = support.TocFiles(root, "MSUF_Suite_Nameplates")
-assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,Power.lua,Threat.lua,"
+assert(table.concat(toc, ",") == "Bootstrap.lua,Modes.lua,Geometry.lua,Layout.lua,Roles.lua,Text.lua,NameText.lua,Power.lua,Threat.lua,"
     .. "Level.lua,CastTime.lua,KickReady.lua,CVars.lua,Auras.lua,AuraColors.lua,Selection.lua,"
     .. "Mouseover.lua,FriendlyNames.lua,Decor.lua,Skin.lua",
     "nameplate runtime must stay in its own optional addon")
@@ -434,6 +434,9 @@ assert(loadfile(root .. "/MSUF_Suite/Core/NameplateAuraColors.lua"))("MSUF_Suite
 assert(loadfile(root .. "/MSUF_Suite/Core/HostBridge.lua"))("MSUF_Suite", NS)
 NS.HostBridge.KickReady = function() return nil end
 assert(loadfile(root .. "/MSUF_Suite/Core/NameplateStyle.lua"))("MSUF_Suite", NS)
+NS.HostBridge = NS.HostBridge or {}
+NS.HostBridge.NameFormatter = function() return nil end
+assert(loadfile(root .. "/MSUF_Suite/Core/NameplateText.lua"))("Suite", NS)
 local private = { NS = NS, Suite = S }
 -- No runtime file needs a protected call: every API both clients have is
 -- called directly, and restricted answers are checked as values.

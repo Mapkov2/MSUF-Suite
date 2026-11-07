@@ -21,7 +21,8 @@ local LAYER_SECTIONS = { map = "layout", border = "shape", shadow = "shape", orn
     clock = "info_clock", fps = "info_fps", latency = "info_latency", coordinates = "info_coordinates", durability = "info_durability",
     dungeon = "dungeon", calendarDay = "info_calendarday", location = "info_location", weather = "info_weather", difficultyText = "info_difficulty",
     tracking = "elements", calendar = "elements", mail = "elements", crafting = "elements",
-    compartment = "elements", difficulty = "elements", queueStatus = "elements", zoom = "behavior", compass = "behavior" }
+    compartment = "elements", externalEvent = "elements", difficulty = "elements", queueStatus = "elements",
+    zoom = "behavior", compass = "behavior" }
 ------------------------------------------------------------------ offsets
 local function WriteOffsets(key, x, y)
     if P.Combat() then return false end
@@ -271,12 +272,13 @@ local function BuildTextTargets(ui)
 end
 
 local function AddDrawerDots(button)
+    local dots = {}
     for index = 1, 4 do
         local dot = button:CreateTexture(nil, "ARTWORK")
-        dot:SetSize(4, 4)
-        dot:SetPoint("CENTER", button, "CENTER", index % 2 == 1 and -4 or 4, index <= 2 and 4 or -4)
         Tint(dot, 0.9, 0.9, 0.9, 1)
+        dots[index] = dot
     end
+    button.previewDots, button.previewDrawerArt = dots, {}
 end
 
 -- A simple open book for the "Simple book" landing icon.
@@ -320,12 +322,15 @@ local function IconTarget(ui, spec)
             text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"),
         }
     end
-    if spec[3] == "elements" and key ~= "difficulty" then
+    if (spec[3] == "elements" or key == "folio") and key ~= "difficulty" then
         button.previewNative = {
             add = button:CreateTexture(nil, "OVERLAY"),
             border = button:CreateTexture(nil, "OVERLAY"),
         }
         button.previewNative.add:SetBlendMode("ADD")
+    end
+    if key == "compartment" then
+        button.previewNative.text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     end
     if key == "externalEvent" then
         local mask = button:CreateMaskTexture(nil, "ARTWORK")
@@ -338,7 +343,8 @@ local function IconTarget(ui, spec)
     edge:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT")
     edge:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT")
     edge:SetHeight(2)
-    Tint(edge, 0.6, 0.74, 0.83, 0.65)
+    Tint(edge, 0.28, 0.74, 1, 1)
+    edge:Hide()
     return { spec = spec, button = button, backdrop = backdrop, edge = edge }
 end
 
@@ -353,8 +359,10 @@ local function BuildIconTargets(ui)
         local back = button:CreateTexture(nil, "BACKGROUND")
         back:SetAllPoints(button)
         Tint(back, 0.035, 0.05, 0.065, 0.9)
-        local sign = T.Font(button, "GameFontHighlightSmall", spec[3], T.colors.text)
-        sign:SetPoint("CENTER", button, "CENTER")
+        button.previewBackdrop = back
+        button.previewIcon = button:CreateTexture(nil, "ARTWORK")
+        button.previewSign = T.Font(button, "GameFontHighlightSmall", spec[3], T.colors.text)
+        button.previewSign:SetPoint("CENTER", button, "CENTER")
         ui.zoomItems[#ui.zoomItems + 1] = button
     end
     ui.compass = Target(ui, "compass", "Compass and rotation", "behavior", 17, 17)
@@ -453,6 +461,14 @@ local function LayoutLayerChips(ui)
     end
 end
 
+local function SetLayer(ui, key, shown)
+    ui.state.layers[key] = shown
+    local group = ui.layerGroups[key]
+    if shown and group then ui.state.layers[group] = true end
+    ui.Paint()
+    return ui.ChipOn(key) == shown
+end
+
 -- Layer switches affect this preview; right-click opens the existing settings.
 local function BuildLayerChips(ui)
     local H = ui.chrome or {}
@@ -468,7 +484,7 @@ local function BuildLayerChips(ui)
     local opts
     if H.LayerChipButtonOpts then
         opts = H.LayerChipButtonOpts(Tr, T.colors, H.PreviewChromePalette(T), {
-            IsOn = function(owner, key) return owner.LayerOn(key) end,
+            IsOn = function(owner, key) return owner.ChipOn(key) end,
         })
     end
     for i, entry in ipairs(LAYERS) do
@@ -486,18 +502,11 @@ local function BuildLayerChips(ui)
         button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         button:SetScript("OnClick", function(_, mouseButton)
             if mouseButton == "RightButton" then FocusSection(ui, LAYER_SECTIONS[layer])
-            else
-                ui.state.layers[layer] = not ui.LayerOn(layer)
-                ui.Paint()
-            end
+            else SetLayer(ui, layer, not ui.ChipOn(layer)) end
         end)
         HM.SetCommandAction(button, { kind = "toggle", historyMode = "none",
-            get = function() return ui.LayerOn(layer) end,
-            set = function(value)
-                ui.state.layers[layer] = value == true
-                ui.Paint()
-                return ui.LayerOn(layer) == (value == true)
-            end })
+            get = function() return ui.ChipOn(layer) end,
+            set = function(value) return SetLayer(ui, layer, value == true) end })
         if M.RegisterControlMetadata then
             M.RegisterControlMetadata(button, P.Meta(PAGE, ID, "preview.layer." .. layer, "action", PREVIEW_SECTION),
                 Tr("%s preview layer"):format(Tr(entry[2])), "button")
@@ -519,16 +528,49 @@ local function Paint(ui)
     local state = ui.state
     local base = state.compact and math.min(state.zoom, 94 / math.max(100, config.size or P.catalog[ID].rules.size.default))
         or Clamp(state.zoom, 0.2, 1.5)
-    ui.art:Paint(config, base, ui.LayerOn)
+    ui.art:Paint(config, base, ui.LayerOn, ui.state.layers, ui.layerShown)
     ui.style:SetWidth(ui.art.width + (config.borderSize or 0) * base * 2)
     PaintElements(ui, config)
     ui.zoomLabel:SetText(string.format("%d%%", math.floor(base * 100 + 0.5)))
     for _, button in ipairs(ui.layerButtons) do
-        if button.Refresh then button:Refresh() else button:SetAlpha(ui.LayerOn(button.key) and 1 or 0.42) end
+        if button.Refresh then button:Refresh() else button:SetAlpha(ui.ChipOn(button.key) and 1 or 0.42) end
     end
-    local selected = ui.body._selectedHandle
+    selected = ui.body._selectedHandle
     if selected and not selected:IsShown() then ui.kit:Select(nil) end
     M.PreviewSelectionBar.Refresh(ui.body)
+end
+
+-- Refresh once after native handlers have processed an event. Only the
+-- visible canvas subscribes, so the preview adds no work during gameplay.
+local PREVIEW_EVENTS = {
+    "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA",
+    "UPDATE_PENDING_MAIL", "CALENDAR_UPDATE_PENDING_INVITES", "CRAFTINGORDERS_UPDATE_PERSONAL_ORDER_COUNTS",
+    "LFG_UPDATE", "LFG_QUEUE_STATUS_UPDATE", "PLAYER_DIFFICULTY_CHANGED", "UPDATE_INSTANCE_INFO",
+    "PLAYER_SPECIALIZATION_CHANGED", "MINIMAP_UPDATE_TRACKING", "MINIMAP_UPDATE_ZOOM", "CVAR_UPDATE",
+}
+local function WatchRuntime(ui)
+    local events = CreateFrame("Frame", nil, ui.body)
+    local queued = false
+    local function Flush()
+        queued = false
+        ui.host:Paint()
+    end
+    local function Request(_, event, name)
+        if event == "CVAR_UPDATE" and name ~= "rotateMinimap" then return end
+        if queued then return end
+        queued = true
+        C_Timer.After(0, Flush)
+    end
+    local function Activate()
+        for _, event in ipairs(PREVIEW_EVENTS) do
+            if Suite.Client.SupportsEvent(event) then events:RegisterEvent(event) end
+        end
+        ui.Paint()
+    end
+    events:SetScript("OnShow", Activate)
+    events:SetScript("OnHide", events.UnregisterAllEvents)
+    events:SetScript("OnEvent", Request)
+    if events:IsVisible() then Activate() end
 end
 
 ------------------------------------------------------------------ fixed preview wiring
@@ -586,10 +628,23 @@ function P.BuildMinimapPreview(ctx, b, sections)
         compact = true,
         layers = {},
     }
-    for _, entry in ipairs(LAYERS) do ui.state.layers[entry[1]] = true end
+    ui.layerShown, ui.layerGroups = {}, { player = "map" }
     ui.state.layers.guides = false
     ui.state.layers.hidden = false
     ui.LayerOn = function(key) return ui.state.layers[key] ~= false end
+    ui.ChipOn = function(key)
+        local shown = ui.layerShown[key]
+        if shown ~= nil then return shown end
+        return ui.LayerOn(key)
+    end
+    ui.ShowLayer = function(key, wanted, group)
+        ui.layerGroups[key] = group
+        local choice = ui.state.layers[key]
+        local shown = (not group or ui.LayerOn(group)) and choice ~= false
+            and (wanted or choice == true or ui.LayerOn("hidden")) == true
+        ui.layerShown[key] = shown
+        return shown
+    end
     ui.Paint = function() Paint(ui) end
 
     BuildKeyboard(ui)
@@ -602,4 +657,5 @@ function P.BuildMinimapPreview(ctx, b, sections)
     ui.style:SetScript("OnClick", function() Focus(ui, "shape", "style") end)
     BuildExpander(ui, ctx)
     M.TrackRefresh(ctx, ui.Paint)
+    WatchRuntime(ui)
 end

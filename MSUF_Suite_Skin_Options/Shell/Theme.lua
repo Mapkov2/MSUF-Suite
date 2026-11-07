@@ -24,9 +24,10 @@ end
 
 function O.CreateText(parent, text, size, colorKey, justify)
     local fontString = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    local fontPath = fontString:GetFont()
-    if fontPath and size then
-        fontString:SetFont(fontPath, size, "")
+    local fontPath, inheritedSize = fontString:GetFont()
+    if fontPath then
+        local minimum = colorKey == "accent" and 11 or 13
+        fontString:SetFont(fontPath, math.max(size or inheritedSize or minimum, minimum), "")
     end
     fontString:SetText(text or "")
     fontString:SetJustifyH(justify or "LEFT")

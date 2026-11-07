@@ -19,12 +19,12 @@ P.DataTextStandard = Standard
 Standard.SOURCES = {
     gold = true, sessionGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
-    date = true, fpsLatency = true, memory = true, homeLatency = true,
+    date = true, fpsLatency = true, memory = true, homeLatency = true, progressBar = true,
 }
 Standard.SAMPLED = { clock = true, fps = true, latency = true, homeLatency = true, coordinates = true, date = true, fpsLatency = true, memory = true }
 Standard.INTERVAL = { fps = 2, latency = 5, homeLatency = 5, coordinates = 0.5, fpsLatency = 2, memory = 30 }
 -- Displays that read another shared data source.
-Standard.READER = { clock = "clockTime", sessionGold = "gold", homeLatency = "latency" }
+Standard.READER = { clock = "clockTime", sessionGold = "gold", homeLatency = "latency", progressBar = "xp" }
 Standard.EVENT_SOURCES = {
     PLAYER_MONEY = { "gold", "sessionGold" },
     BAG_UPDATE_DELAYED = { "bags" },
@@ -33,9 +33,12 @@ Standard.EVENT_SOURCES = {
     ZONE_CHANGED = { "location", "coordinates" },
     ZONE_CHANGED_INDOORS = { "location", "coordinates" },
     ZONE_CHANGED_NEW_AREA = { "location", "coordinates" },
-    PLAYER_XP_UPDATE = { "xp" },
-    PLAYER_LEVEL_UP = { "xp" },
-    UPDATE_EXHAUSTION = { "xp" },
+    PLAYER_XP_UPDATE = { "xp", "progressBar" },
+    PLAYER_LEVEL_UP = { "xp", "progressBar" },
+    UPDATE_EXHAUSTION = { "xp", "progressBar" },
+    UPDATE_FACTION = { "progressBar" },
+    MAJOR_FACTION_RENOWN_LEVEL_CHANGED = { "progressBar" },
+    HONOR_XP_UPDATE = { "progressBar" },
 }
 local CLICK = {
     gold = "OpenAllBags", sessionGold = "OpenAllBags", bags = "OpenAllBags", date = "ToggleCalendar",
@@ -162,8 +165,38 @@ function Standard.Configure(config)
     coordinateFormat = COORDINATE_FORMATS[config.coordinateDecimals] or COORDINATE_FORMATS[1]
 end
 
+local ClampProgress = NS.ClampDataTextProgress
+local XP_NEXT_LEVEL = S.Text("%d%% to level %d")
+local NAMED_PROGRESS = S.Text("%s · %d%%")
+
+local function FormatProgressBar()
+    local level, current, maximum = S.ReadInfoSource("xp")
+    local cap = GetMaxPlayerLevel()
+    if not (Finite(level) and Finite(cap)) then return "", NO_VALUE end
+    if level < cap then
+        if not (Finite(current) and Finite(maximum) and maximum > 0) then return "", NO_VALUE end
+        local progress = ClampProgress(current / maximum)
+        local bonus = GetXPExhaustion()
+        local rested = Finite(bonus) and ClampProgress((current + bonus) / maximum) or progress
+        return "", XP_NEXT_LEVEL:format(floor(progress * 100 + .5), level + 1), nil, progress, rested
+    end
+    local info = S.ReputationProgress()
+    if info then
+        local progress = ClampProgress(info.current / info.maximum)
+        local value = info.capped and info.name or NAMED_PROGRESS:format(info.name, floor(progress * 100 + .5))
+        return "", value, nil, progress
+    end
+    local honor, limit, rank = S.HonorProgress()
+    if honor then
+        local progress = ClampProgress(honor / limit)
+        return "", NAMED_PROGRESS:format(HONOR_LEVEL_LABEL:format(rank), floor(progress * 100 + .5)), nil, progress
+    end
+    return "", NO_VALUE
+end
+
 -- Label, display value, severity and alternate value of a built-in source.
 function Standard.Format(key)
+    if key == "progressBar" then return FormatProgressBar() end
     if key == "date" then
         -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
         local now = date("*t")

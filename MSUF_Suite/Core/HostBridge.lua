@@ -100,6 +100,19 @@ function HostBridge.KickReady()
     return kickReady
 end
 
+-- Optional on older hosts; nameplate colors remain independently available.
+local nameFormatterResolved, nameFormatter = false, nil
+function HostBridge.NameFormatter()
+    if not nameFormatterResolved then
+        nameFormatterResolved = true
+        local api = HostTable()
+        local get = api and api.GetNameFormatter
+        local provider = get and get() or nil
+        if type(provider) == "table" and provider.version == 1 then nameFormatter = provider end
+    end
+    return nameFormatter
+end
+
 ------------------------------------------------------------------ icon skins
 -- MSUF's icon skins for the cooldown manager and action bars: the interface
 -- MSUF 7.0 hands out through MSUF_HostAPI.GetIconSkins() (its own version 1,

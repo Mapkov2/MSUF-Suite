@@ -14,6 +14,7 @@ local IN_COMBAT = { inCombat = true }
 local OUTLINES = { "OUTLINE", "THICKOUTLINE", "", "MONOCHROME,OUTLINE" }
 local ALIGN = { "LEFT", "CENTER", "RIGHT" }
 local Snap, ApplyColor = Appearance.Snap, Appearance.Color
+local PrepareProgress, PaintProgress = NS.PrepareDataTextProgress, NS.PaintDataTextProgress
 local SOURCES, SAMPLED, INTERVAL = Standard.SOURCES, Standard.SAMPLED, Standard.INTERVAL
 local READER, EVENT_SOURCES = Standard.READER, Standard.EVENT_SOURCES
 local NO_VALUE = P.NO_VALUE
@@ -22,12 +23,33 @@ local Finite = S.Finite
 local VISIBILITY, LAYOUT, DOCK = NS.DataTextVisibility, NS.DataTextLayout, NS.DataTextDock
 -- Rebind alternates between two active-source sets and reuses its event set.
 local activeSetA, activeSetB, wantedEvents = {}, {}, {}
+local targets, targetPool = {}, {}
 -- Unit events the places read for the player only; group members' spec
 -- swaps (PLAYER_SPECIALIZATION_CHANGED carries their unit) never arrive.
 local PLAYER_UNIT_EVENTS = { UNIT_HEALTH = true, UNIT_MAXHEALTH = true, PLAYER_SPECIALIZATION_CHANGED = true,
     UNIT_STATS = true, UNIT_SPELL_HASTE = true }
 local function Clear(t)
     for key in pairs(t) do t[key] = nil end
+end
+
+local function RecycleTargets(active)
+    for key, list in pairs(targets) do
+        if not active or not active[key] then
+            Clear(list)
+            targets[key] = nil
+            targetPool[#targetPool + 1] = list
+        end
+    end
+end
+
+local function BindTarget(active, key, button)
+    local list = targets[key]
+    if not list then
+        list = table.remove(targetPool) or {}
+        targets[key] = list
+    end
+    list[#list + 1] = button
+    active[key] = true
 end
 
 local function Format(key)
@@ -47,43 +69,54 @@ local function Layout(bar)
     P.DataTextGeometry.Layout(bar, M.config, Extra)
 end
 
+local function PaintSlot(bar, button, key, label, value, severity, alternate, rested)
+    local text, display = bar.display(label, value, severity, bar.style, key, alternate)
+    local changed = button.display ~= display
+    if changed then
+        button.label:SetText(display)
+        button.text, button.display = text, display
+    end
+    if key == "progressBar" then
+        PaintProgress(button, alternate, rested)
+        return false -- The progress place has a stable width in Fit mode.
+    end
+    if button.extra then Extra.Paint(button) end
+    return changed
+end
+
 -- force repaints unchanged values: a bar that just became visible still
 -- shows whatever it displayed before it was hidden.
 function M:UpdateSource(key, force)
-    if not self.activeSources or not self.activeSources[key] then return end
-    local label, value, severity, alternate = Format(key)
+    local list = targets[key]
+    if not list then return end
+    local label, value, severity, alternate, rested = Format(key)
     local record = self.values[key]
     if record and not force and record.label == label and record.value == value
-        and record.severity == severity and record.alternate == alternate then
+        and record.severity == severity and record.alternate == alternate and record.rested == rested then
         return
     end
     if not record then
         record = {}
         self.values[key] = record
     end
-    record.label, record.value, record.severity, record.alternate = label, value, severity, alternate
-    for _, bar in pairs(self.bars) do
-        if Visible(bar) then
-            local relayout = false
-            if key == "bags" and bar.badge:IsShown() then
-                bar.badge.text = bar.display(label, value, severity, bar.style, key, alternate)
-            end
-            local slots = bar.slots
-            for i = 1, #slots do
-                local button = slots[i]
-                if button.source == key then
-                    local text, display = bar.display(label, value, severity, bar.style, key, alternate)
-                    if button.display ~= display then
-                        button.label:SetText(display)
-                        button.text, button.display = text, display
-                        relayout = true
-                    end
-                    Extra.Paint(button)
-                end
-            end
-            if relayout and self.config[bar.layoutKey] == LAYOUT.FIT then Layout(bar) end
+    record.label, record.value, record.severity = label, value, severity
+    record.alternate, record.rested = alternate, rested
+    local relayout
+    for i = 1, #list do
+        local button = list[i]
+        local bar = button.bar
+        if relayout and relayout ~= bar then
+            Layout(relayout)
+            relayout = nil
+        end
+        if button == bar.badge then
+            button.text = bar.display(label, value, severity, bar.style, key, alternate)
+        elseif PaintSlot(bar, button, key, label, value, severity, alternate, rested)
+            and self.config[bar.layoutKey] == LAYOUT.FIT then
+            relayout = bar
         end
     end
+    if relayout then Layout(relayout) end
 end
 
 local function NextClock()
@@ -114,6 +147,7 @@ end
 
 function M:Tick()
     self.timer = nil
+    if not self.activeSources then return end
     local now = GetTime()
     for key in pairs(self.activeSources or {}) do
         if SAMPLED[key] and (self.due[key] or 0) <= now + .001 then
@@ -141,23 +175,6 @@ local function EnteredWorld(self)
     for key in pairs(self.activeSources or {}) do self:UpdateSource(key) end
 end
 
--- Visibility modes and load conditions run as state drivers, so combat
--- itself needs no handler. Combat edges only release and restore the secure
--- buttons (Actions.lua) and store the gold ledger.
-local function CombatEdge(self, event)
-    if event == "PLAYER_REGEN_DISABLED" then
-        Actions.Release()
-        return
-    end
-    if self.config.trackAltGold then GoldLedger.Capture() end
-    -- A Hearthstone looted or learned in combat is offered right away.
-    if Extra.hearthDirty then
-        Extra.hearthDirty = nil
-        Extra.HearthsMayHaveChanged()
-    end
-    Actions.Resume()
-end
-
 local function OnEvent(self, event, unit)
     if event == "PLAYER_XP_UPDATE" and unit and unit ~= "player" then return end
     Extra.Changed(self, event)
@@ -177,10 +194,6 @@ local function OnEvent(self, event, unit)
     if event == "ZONE_CHANGED_NEW_AREA" or event == "HOUSE_PLOT_ENTERED"
         or event == "HOUSE_PLOT_EXITED" then
         self:UpdateVisibility()
-    end
-    if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
-        CombatEdge(self, event)
-        return
     end
     local keys = EVENT_SOURCES[event]
     local active = self.activeSources
@@ -235,7 +248,6 @@ local function SyncEvents(self, active)
     if next(active) or self.config.trackAltGold then wantedEvents.PLAYER_ENTERING_WORLD = true end
     if self.config.trackAltGold then
         wantedEvents.PLAYER_MONEY = true
-        wantedEvents.PLAYER_REGEN_ENABLED = true
     end
     WantBarEvents(self)
     for event in pairs(self.events) do
@@ -255,25 +267,31 @@ end
 -- Recomputes which sources visible bars show. Sampled sources that stay
 -- active keep their deadlines, so the shared timer is re-armed only when
 -- the sampled set changes.
-function M:Rebind()
-    if not self.active or self.styling then return end
+function M:Rebind(resample)
+    if not self.active or self.styling or self.paused then return end
     local previous = self.activeSources
     local active = previous == activeSetA and activeSetB or activeSetA
     Clear(active)
+    for _, list in pairs(targets) do Clear(list) end
     for _, bar in pairs(self.bars) do
         if Visible(bar) then
-            if bar.badge:IsShown() then active.bags = true end
+            if bar.badge:IsShown() then BindTarget(active, "bags", bar.badge) end
             local slots = bar.slots
             for i = 1, #slots do
-                local key = slots[i].source
-                if key then active[key] = true end
+                local button = slots[i]
+                if button.source then BindTarget(active, button.source, button) end
             end
         end
     end
+    RecycleTargets(active)
     self.activeSources = active
     Extra.PruneConfigured(self, SOURCES)
-    Extra.Rebind(self)
+    Extra.Rebind(self, resample)
     SyncEvents(self, active)
+    if resample then
+        invalidationMark = invalidationMark + 1
+        for key in pairs(active) do Invalidate(key) end
+    end
     local now, sampledChanged = GetTime(), false
     for key in pairs(active) do
         self:UpdateSource(key, true)
@@ -282,14 +300,12 @@ function M:Rebind()
             sampledChanged = true
         end
     end
-    if previous then
-        for key in pairs(previous) do
-            if not active[key] then
-                self.values[key] = nil
-                if SAMPLED[key] then
-                    self.due[key] = nil
-                    sampledChanged = true
-                end
+    for key in pairs(previous or self.values) do
+        if not active[key] then
+            self.values[key] = nil
+            if SAMPLED[key] then
+                self.due[key] = nil
+                sampledChanged = true
             end
         end
     end
@@ -297,9 +313,10 @@ function M:Rebind()
 end
 
 -- Bar visibility (modes, load conditions, health gate): Visibility.lua.
-function M:UpdateVisibility()
+function M:UpdateVisibility(resample)
+    if self.paused then return end
     Visibility.Apply(self)
-    self:Rebind()
+    self:Rebind(resample)
 end
 
 local function StyleSlot(button, style, font)
@@ -368,6 +385,11 @@ local function RefreshSlot(button, c, index, slot, style, font)
         button.blockFill:SetShown(alpha > 0)
     end
     Extra.Paint(button)
+    if key == "progressBar" then
+        PrepareProgress(button, S.CreateTexture)
+    elseif button.dataProgress then
+        PaintProgress(button)
+    end
     button.text, button.display = nil, nil
     button:SetShown(button.source ~= nil)
     if button.source then StyleSlot(button, style, font) end
@@ -379,6 +401,7 @@ local function RefreshBar(index)
     Bars.EnsureSlots(bar, c)
     local frame, layer = bar.frame, c[bar.prefix .. "Layer"]
     local restored = S.ApplyOwnedLayer(frame, layer)
+    Bars.SetVisibilityCallbacks(bar, true)
     S.ApplyOwnedChildLayer(bar.visual, frame, layer, 1, restored)
     S.ApplyOwnedChildLayer(bar.badge, frame, layer, 2, restored)
     PlaceBar(bar, c)
@@ -396,11 +419,29 @@ local function RefreshBar(index)
     Visibility.Cache(c, bar)
 end
 
-function M:Refresh()
-    if NS.IsCombatLocked() then
-        S.Queue(ID)
+-- Bars explicitly shown during combat need a snapshot even if their state
+-- driver hides them out of combat. They never become scheduled data sources.
+local function PrimeCombatBars(self)
+    local c = self.config
+    for _, bar in pairs(self.bars) do
+        local prefix = bar.prefix .. "LoadCond"
+        if c[bar.enabledKey] and not bar.frame:IsVisible()
+            and (c[bar.visibilityKey] == VISIBILITY.IN_COMBAT or c[prefix .. "HideOutOfCombat"]
+                or c[prefix .. "HideOutOfCombatNoTarget"]) then
+            for _, button in ipairs(bar.slots) do
+                if button.source then PaintSlot(bar, button, button.source, Format(button.source)) end
+            end
+            Layout(bar)
+        end
+    end
+end
+
+function M:Refresh(resample)
+    if self.paused or NS.InCombat() then
+        self.refreshAfterCombat = true
         return
     end
+    self.uiWidth, self.uiHeight, self.uiPixel = UIParent:GetWidth(), UIParent:GetHeight(), S.PixelUnit()
     -- Popup rows describe the old binding; they cannot survive a rebind.
     Actions.ClosePopup()
     Standard.Configure(self.config)
@@ -426,7 +467,7 @@ function M:Refresh()
         if self.config[BarKeys(i).enabled] then RefreshBar(i) end
     end
     self.styling = false
-    self:UpdateVisibility()
+    self:UpdateVisibility(resample)
     -- A clock that now shows (or no longer shows) seconds samples again at
     -- once, not at its old deadline.
     local seconds = self.config.clockSeconds == true
@@ -437,6 +478,7 @@ function M:Refresh()
     self.clockSeconds = seconds
     -- Every source can change while its secure overlay still holds the pointer.
     if not Extra.PrepareHearths() then Actions.Refresh() end
+    PrimeCombatBars(self)
     NativeBagBar.Sync()
 end
 
@@ -449,15 +491,71 @@ local function ScaleChanged(module)
     end
 end
 
-function M:Enable()
-    self:Refresh()
-    NativeBagBar.Sync()
+local function BindSurfaceEvents(self)
     self.context:Event("ADDON_LOADED", NativeBagBar.AddonLoaded, IN_COMBAT)
     self.context:Event("UI_SCALE_CHANGED", ScaleChanged)
     self.context:Event("DISPLAY_SIZE_CHANGED", ScaleChanged)
 end
 
+local function Pause(self)
+    self.paused = true
+    Actions.Release()
+    if self.timer then
+        self.timer:Cancel()
+        self.timer = nil
+    end
+    self.context:CancelTimers()
+    for event in pairs(self.events) do
+        self.context:RemoveEvent(event)
+        self.events[event] = nil
+    end
+    self.context:RemoveEvent("ADDON_LOADED")
+    self.context:RemoveEvent("UI_SCALE_CHANGED")
+    self.context:RemoveEvent("DISPLAY_SIZE_CHANGED")
+    Extra.Disable()
+    RecycleTargets()
+    self.activeSources = nil
+    Clear(self.due)
+    local owner = GameTooltip:GetOwner()
+    for _, bar in pairs(self.bars) do
+        Bars.SetVisibilityCallbacks(bar, false)
+        if owner and owner.bar == bar then Bars.HideTooltip(owner) end
+    end
+end
+
+local function Resume(self)
+    if not self.paused then return end
+    self.paused = nil
+    BindSurfaceEvents(self)
+    if self.refreshAfterCombat or self.uiWidth ~= UIParent:GetWidth() or self.uiHeight ~= UIParent:GetHeight()
+        or self.uiPixel ~= S.PixelUnit() then
+        self.refreshAfterCombat = nil
+        self:Refresh(true)
+        self:RegisterMovers()
+    else
+        for _, bar in pairs(self.bars) do Bars.SetVisibilityCallbacks(bar, true) end
+        if self.config.trackAltGold then GoldLedger.Capture() end
+        self:UpdateVisibility(true)
+        Extra.HearthsMayHaveChanged()
+        PrimeCombatBars(self)
+        if self.config.hideBlizzardBagBar then NativeBagBar.Sync() end
+    end
+    Actions.Resume()
+end
+
+function M:Enable()
+    self.context:Event("PLAYER_REGEN_DISABLED", Pause, IN_COMBAT)
+    self.context:Event("PLAYER_REGEN_ENABLED", Resume, IN_COMBAT)
+    if NS.InCombat() then
+        self.paused, self.refreshAfterCombat = true, true
+    else
+        BindSurfaceEvents(self)
+        self:Refresh()
+    end
+end
+
 function M:Disable()
+    self.paused, self.refreshAfterCombat = nil, nil
     Visibility.Release()
     Actions.Disable()
     Extra.Disable()
@@ -470,6 +568,7 @@ function M:Disable()
         self.context:RemoveEvent(event)
         self.events[event] = nil
     end
+    RecycleTargets()
     self.activeSources = nil
     Clear(self.values)
     Clear(self.due)

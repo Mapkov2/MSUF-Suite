@@ -325,6 +325,43 @@ do
     local surface = namespace.Registry.GetSurface(nav)
     assert(surface and surface.spec.activeRole == "button",
         "Suite provider kept the bright blue MSUF navigation highlight")
+    local tab = new_frame("Button", "SuiteMSUFTabContract", UIParent)
+    local geometry, theme = namespace.DB.geometry, namespace.DB.theme
+    local oldShape, oldBorder, oldOpacity = geometry.controlShape, geometry.border, theme.borderOpacity
+    local oldMotion, oldReduced = theme.menuAnimations, theme.reduceMotion
+    theme.menuAnimations, theme.reduceMotion = true, false
+    assert(namespace.Theme.SetGeometry("border", 0))
+    assert(namespace.Theme.SetAppearance("borderOpacity", 0))
+    assert(client:SkinButton(tab, { role = "button", useControlShape = true,
+        selectionEdge = true, ownedArt = true, paletteMotion = true }))
+    local selected = assert(namespace.Registry.GetSurface(tab))
+    local edge, fill = selected.edge, selected.fill
+    assert(not edge.shown, "an idle tab received a selection edge")
+    assert(client:SetActive(tab, true))
+    local regions = tab:GetNumRegions()
+    local title = namespace.Theme.GetColorTable("title")
+    for _, shape in ipairs({ "pill", "round", "squircle", "continuous" }) do
+        assert(namespace.Theme.SetGeometry("controlShape", shape))
+        namespace.Registry.RefreshAll()
+        assert(selected.edge == edge and selected.fill == fill and tab:GetNumRegions() == regions,
+            "changing button shape created new art")
+        local stem = assert(fill.texture:match("([^\\]+)_fill%.png$"))
+        assert(stem:find(shape, 1, true) == 1 and edge.shown and edge.texture:find(stem .. "_edge1.png", 1, true),
+            "the selected rim does not match the current fill shape with decorative borders off")
+        assert(edge.vertexColor[1] == title[1] and edge.vertexColor[4] >= 0.8,
+            "decorative border opacity dimmed the selection")
+        local paint = assert(selected.paletteMotion, "tab did not use the host palette policy")
+        assert(paint.to[9] == title[1] and paint.to[12] == title[4] * 0.86,
+            "palette animation would overwrite the selected rim")
+        tab:SetSize(145, 26)
+        tab:SetScale(0.55)
+        assert(client:SetActive(tab, false) and not edge.shown, "deselection left a visible rim")
+        assert(client:SetActive(tab, true) and edge.shown, "resized tab lost the selected rim")
+    end
+    assert(namespace.Theme.SetGeometry("controlShape", oldShape))
+    assert(namespace.Theme.SetGeometry("border", oldBorder))
+    assert(namespace.Theme.SetAppearance("borderOpacity", oldOpacity))
+    theme.menuAnimations, theme.reduceMotion = oldMotion, oldReduced
     client:ReleaseAll()
 
     -- A button whose icon border an adapter skins through IconSkin belongs

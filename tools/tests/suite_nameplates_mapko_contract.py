@@ -65,11 +65,20 @@ for _, forever in ipairs({ false, true }) do
         plateMaxDistanceMode = 1, plateMaxDistance = 60, plateOccludedMode = 1, plateOccludedPercent = 40,
         plateFadeDistance = 1, plateShrinkDistance = 1, plateSpacingMode = 1, plateOverlapV = 110, plateOverlapH = 80,
         plateMotionSpeed = 1, plateInsetMode = 1, plateTopInset = 8, plateBottomInset = 10, plateClampTarget = 1 }
+    newer.targetScaleEnabled, newer.targetScalePercent = false, 120
+    newer.nameFormattingEnabled, newer.nameTextUseCustomSettings = false, false
+    for _, side in ipairs({ "enemy", "friendly" }) do
+        newer[side .. "CastWidthDelta"] = 0
+        if forever then newer[side .. "NativeBorderEnabled"] = true end
+        for suffix, default in pairs({ NameFormat = 2, NameMaxChars = 12, NameClipSide = 1,
+            NameNoEllipsis = false, NameColorEnabled = false, NameColor = "ffffff" }) do
+            newer[side .. suffix] = default
+        end
+    end
     for key, value in pairs(newer) do
         assert(expected[key] == nil, "the export already holds " .. key)
         assert(spec.rules[key] and spec.rules[key].default == value, "newer setting default changed: " .. key)
     end
-    newer.targetScaleEnabled, newer.targetScalePercent = false, 120
     for _, side in ipairs({ "enemy", "friendly" }) do
         for key, value in pairs({ BorderStyle = 1, ShadowEnabled = false, GlowMode = 1,
             GlowColor = "ffffff", GlowEnabled = false, TextureEnabled = false, EffectSize = 4, OuterFrame = false, OuterFrameSize = 1,

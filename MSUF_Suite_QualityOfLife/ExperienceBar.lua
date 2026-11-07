@@ -4,12 +4,13 @@ local IN_COMBAT = { inCombat = true }
 local M = {}
 local Native = P.NativeExperienceBar
 local Tracked = P.ExperienceTrack
+local Text = P.ExperienceBarText
+local SessionReady
 local ID = "xpBar"
 local SEGMENT_COUNT = 20
 local SESSION_MAX_AGE = 604800
 local POINTS = NS.AnchorPoints
 local MSUF_BAR = NS.MSUFMedia.barTexture
-local DETAIL_SEPARATOR = "   •   "
 local RGB = S.RGB
 local floor, max, min = math.floor, math.max, math.min
 -- Match the authored Blue, Dark and Forever palettes used by the Suite's MSUF chat
@@ -45,16 +46,9 @@ local TEXT = {
     maxLevel = S.Text("Max level"),
     preview = S.Text("Experience bar preview"),
     levelValue = S.Text("Level %d"),
-    short = S.Text("Lv %d  %s / %s"),
-    session = S.Text("Session +%s"),
-    rate = S.Text("XP/h %s"),
-    toLevel = S.Text("To level %s"),
     progress = S.Text("Progress"),
-    progressShort = S.Text("%s  %s / %s"),
     nothing = S.Text("Nothing to track"),
 }
--- Reused for the details line; table.concat reads only the filled prefix.
-local detailParts = {}
 
 local function Paint(texture, hex, alpha)
     local r, g, b = RGB(hex)
@@ -87,31 +81,7 @@ local function Rested()
     return Finite(value) and max(0, value) or 0
 end
 
-local function Exact(value)
-    return BreakUpLargeNumbers(max(0, floor(value or 0)))
-end
-
-local function Compact(value)
-    value = max(0, value or 0)
-    if value >= 1000000 then return ("%.1fm"):format(value / 1000000) end
-    if value >= 10000 then return ("%.0fk"):format(value / 1000) end
-    if value >= 1000 then return ("%.1fk"):format(value / 1000) end
-    return tostring(floor(value))
-end
-
--- Blizzard's seconds formatter writes durations in the client's language,
--- two units at most ("1 h 5 m"); built on first use.
-local durations
-local function Duration(seconds)
-    if not Finite(seconds) or seconds < 0 then return "--" end
-    if not durations then
-        durations = C_StringUtil.CreateSecondsFormatter()
-        durations:SetDesiredUnitCount(2)
-        durations:SetMinInterval(Enum.SecondsFormatterInterval.Seconds)
-        durations:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
-    end
-    return durations:Format(floor(seconds))
-end
+local Exact, Duration = Text.Exact, Text.Duration
 
 local function ValidSession(saved, level, now)
     return type(saved) == "table" and Finite(saved.started) and saved.started > 0
@@ -139,6 +109,7 @@ local function Save(self)
         saved = {}
         root.suiteXP[key] = saved
     end
+    saved.generation = root.xpSessionGeneration
     saved.started, saved.gained, saved.levelUps = session.started, session.gained, session.levelUps
     saved.lastLevel, saved.lastXP, saved.lastMax = session.lastLevel, session.lastXP, session.lastMax
 end
@@ -147,11 +118,23 @@ local function NewSession(level, current, maximum)
     return { started = Clock(), gained = 0, levelUps = 0, lastLevel = level, lastXP = current, lastMax = maximum }
 end
 
+local function QueueSession(self)
+    if not self.session and self.sessionAttempts > 0 then
+        self.sessionAttempts = self.sessionAttempts - 1
+        self.sessionJob:Request()
+    end
+end
+
 local function InitializeSession(self, level, current, maximum)
     if self.session then return end
-    local root, key, now = NS.RootDB, CharacterKey(), Clock()
+    local key = NS.loginKind and CharacterKey()
+    if not key then
+        QueueSession(self)
+        return
+    end
+    local root, now = NS.RootDB, Clock()
     local saved = root and key and type(root.suiteXP) == "table" and root.suiteXP[key]
-    if NS.loginKind == "reload" and ValidSession(saved, level, now) then
+    if NS.loginKind == "reload" and ValidSession(saved, level, now) and saved.generation == root.xpSessionGeneration then
         self.session = {
             started = saved.started, gained = saved.gained, levelUps = saved.levelUps,
             lastLevel = saved.lastLevel, lastXP = saved.lastXP, lastMax = saved.lastMax,
@@ -160,6 +143,7 @@ local function InitializeSession(self, level, current, maximum)
         self.session = NewSession(level, current, maximum)
     end
     Save(self)
+    self.sessionJob:Cancel()
 end
 
 local function Track(self, level, current, maximum)
@@ -282,13 +266,6 @@ local function Create(self)
         divider:SetColorTexture(1, 1, 1, 0.28)
         segments[index] = divider
     end
-    local levelText = S.CreateFontString(bar, nil, "OVERLAY", "GameFontHighlightSmall")
-    levelText:SetPoint("LEFT", bar, "LEFT", 6, 0)
-    local percentText = S.CreateFontString(bar, nil, "OVERLAY", "GameFontHighlightSmall")
-    percentText:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
-    local details = S.CreateFontString(host, nil, "OVERLAY", "GameFontHighlightSmall")
-    details:SetPoint("TOP", bar, "BOTTOM", 0, -4)
-    details:SetJustifyH("CENTER")
     local edges = {}
     for index = 1, 4 do edges[index] = S.CreateTexture(host, nil, "OVERLAY", nil, 2) end
     edges[1]:SetPoint("TOPLEFT", host, "TOPLEFT")
@@ -304,8 +281,8 @@ local function Create(self)
     detailRule:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, -2)
     self.host, self.bar, self.panel, self.background = host, bar, panel, background
     self.fill, self.rested, self.restedMarker, self.segments = fill, rested, restedMarker, segments
-    self.levelText, self.percentText, self.details = levelText, percentText, details
     self.edges, self.detailRule = edges, detailRule
+    Text.Create(self)
 end
 
 -- The Custom style (4) is built from the bar's own color settings; it keeps
@@ -344,7 +321,7 @@ local function ApplyLook(self)
     local text = shared and shared.tabActiveColor or look.text
     local muted = shared and shared.tabInactiveColor or look.muted
     Paint(self.panel, panel, 0.94)
-    Paint(self.background, look.track, 0.98)
+    Tint(self.background, look.track, 0.98)
     Tint(self.fill, accent, 0.98)
     self.accent, self.fillColor = accent, nil
     Tint(self.rested, look.rested, 0.78)
@@ -355,23 +332,11 @@ local function ApplyLook(self)
     for _, divider in ipairs(self.segments) do Paint(divider, text, 0.34) end
     local textR, textG, textB = RGB(text)
     local mutedR, mutedG, mutedB = RGB(muted)
-    self.levelText:SetTextColor(textR, textG, textB, 1)
-    self.percentText:SetTextColor(textR, textG, textB, 1)
-    self.details:SetTextColor(mutedR, mutedG, mutedB, 1)
+    Text.Color(self, textR, textG, textB, mutedR, mutedG, mutedB)
     self.appliedLook = index
     self.appliedClassRevision = classRevision
     self.appliedCustom = customKey
-    self.trackColor, self.dividerColor = look.track, text
-end
-
-local function ApplyFont(self)
-    local path, epoch = S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
-    local minimal = self.config.displayStyle == 2
-    if self.fontPath == path and self.fontEpoch == epoch and self.fontMinimal == minimal then return end
-    S.SetFont(self.levelText, path, 11, "OUTLINE")
-    S.SetFont(self.percentText, path, minimal and 20 or 11, "OUTLINE")
-    S.SetFont(self.details, path, 11, "")
-    self.fontPath, self.fontEpoch, self.fontMinimal = path, epoch, minimal
+    self.dividerColor = text
 end
 
 -- Geometry and style: settings, scale and Edit Mode changes only.
@@ -381,16 +346,12 @@ local function Layout(self)
         local restored = S.ApplyOwnedLayer(self.host, self.config.layer)
         S.ApplyOwnedChildLayer(self.bar, self.host, self.config.layer, 1, restored)
     end
-    ApplyFont(self)
     local c, host, bar = self.config, self.host, self.bar
     host:SetSize(c.width, c.height + 23)
     if not self.previewParent then S.PlaceHost(host, c, "BOTTOM") end
     bar:SetSize(c.width, c.height)
     local framed, segmented = (c.displayStyle or 1) == 1, c.displayStyle == 3
-    self.levelText:SetShown(c.displayStyle ~= 2)
-    self.percentText:ClearAllPoints()
-    self.percentText:SetPoint(c.displayStyle == 2 and "CENTER" or "RIGHT", bar,
-        c.displayStyle == 2 and "CENTER" or "RIGHT", c.displayStyle == 2 and 0 or -6, 0)
+    Text.Layout(self)
     self.panel:SetShown(framed)
     self.detailRule:SetShown(framed)
     local outline = framed and host or bar
@@ -402,11 +363,17 @@ local function Layout(self)
         edge:SetPoint(first, outline, first)
         edge:SetPoint(last, outline, last)
     end
-    local texture = S.ResolveTexture(framed and "MSUF Lucent" or "Solid", MSUF_BAR)
+    local inherited = S.ResolveTexture(framed and "MSUF Lucent" or "Solid", MSUF_BAR)
+    local texture = S.ResolveTexture(c.barTexture, inherited)
     if self.appliedTexture ~= texture then
         self.fill:SetTexture(texture)
         self.rested:SetTexture(texture)
         self.appliedTexture, self.appliedLook = texture, nil
+    end
+    local background = S.ResolveTexture(c.backgroundTexture, "Interface\\Buttons\\WHITE8X8")
+    if self.appliedBackground ~= background then
+        self.background:SetTexture(background)
+        self.appliedBackground, self.appliedLook = background, nil
     end
     ApplyLook(self)
     local effectiveScale = bar:GetEffectiveScale()
@@ -423,10 +390,11 @@ local function Layout(self)
         local x = floor((c.width * index / SEGMENT_COUNT) / pixel + 0.5) * pixel
         divider:SetPoint("LEFT", bar, "LEFT", x, 0)
         divider:SetSize(segmented and pixel * 2 or pixel, c.height)
-        Paint(divider, segmented and self.trackColor or self.dividerColor, segmented and 1 or .34)
+        -- Empty cells keep their divisions too, even when the first filled
+        -- separator sits underneath the level label.
+        Paint(divider, self.dividerColor, .34)
         divider:SetShown(segmented or c.showSegments == true)
     end
-    self.details:SetWidth(c.width)
 end
 
 -- XP per hour and the time to level move with the clock, not with XP events:
@@ -453,9 +421,7 @@ local function HideProgress(self, levelText, percentText, detailsText)
     self.fill:Hide()
     self.rested:Hide()
     self.restedMarker:Hide()
-    self.levelText:SetText(levelText)
-    self.percentText:SetText(percentText)
-    self.details:SetText(detailsText)
+    Text.Message(self, levelText, percentText, detailsText)
 end
 
 -- Read once per level. The effective maximum can also change without a level
@@ -484,25 +450,6 @@ local function PaintRested(self, fraction, maximum, capped, sampleRested)
     self.restedMarker:SetShown(restedFraction > 0 and restedEnd > 0.01 and restedEnd < 0.99 and not capped)
 end
 
-local function DetailsText(self, current, maximum, sampleGain, sampleRate)
-    local c = self.config
-    local rate = sampleRate or Rate(self)
-    local count = 0
-    if c.showSession then
-        count = count + 1
-        detailParts[count] = TEXT.session:format(Compact(sampleGain or self.session and self.session.gained or 0))
-    end
-    if c.showRate then
-        count = count + 1
-        detailParts[count] = TEXT.rate:format(rate and Compact(rate) or "--")
-    end
-    if c.showETA then
-        count = count + 1
-        detailParts[count] = TEXT.toLevel:format(rate and rate > 0 and Duration((maximum - current) * 3600 / rate) or "--")
-    end
-    return table.concat(detailParts, DETAIL_SEPARATOR, 1, count)
-end
-
 -- Reputation or honor (the track setting) on the same bar, filled in the
 -- source's color. Nothing rested or timed belongs to them.
 local function ShowProgress(view, label, current, maximum, color, name, capped)
@@ -516,9 +463,7 @@ local function ShowProgress(view, label, current, maximum, color, name, capped)
     view.fill:SetShown(fraction > 0)
     view.rested:Hide()
     view.restedMarker:Hide()
-    view.levelText:SetText(capped and label or TEXT.progressShort:format(label, Compact(current), Compact(maximum)))
-    view.percentText:SetText((c.displayStyle == 2 and "%.0f%%" or "%.1f%%"):format(fraction * 100))
-    view.details:SetText(name)
+    Text.PaintProgress(view, label, current, maximum, name, capped, fraction)
 end
 
 local function PaintTracked(self, source)
@@ -563,9 +508,7 @@ PaintValues = function(self)
     self.fill:SetSize(max(0.01, c.width * fraction), c.height)
     self.fill:SetShown(fraction > 0)
     PaintRested(self, fraction, maximum, capped)
-    self.levelText:SetText(TEXT.short:format(level, Compact(current), Compact(maximum)))
-    self.percentText:SetText((c.displayStyle == 2 and "%.0f%%" or "%.1f%%"):format(fraction * 100))
-    self.details:SetText(DetailsText(self, current, maximum))
+    Text.PaintXP(self, level, current, maximum, self.session and self.session.gained or 0, Rate(self), fraction)
     -- An open tooltip follows the new values.
     if GameTooltip:IsOwned(host) then Tooltip(self) end
     KeepRateCurrent(self)
@@ -580,6 +523,24 @@ end
 local XPChanged
 local function SyncTrack(self)
     Tracked.SyncEvents(self, self.source, XPChanged)
+end
+
+local function CheckSession(self, track)
+    if self.session and not track then return end
+    local level, current, maximum = XP()
+    if not level then
+        QueueSession(self)
+    elseif self.session then
+        Track(self, level, current, maximum)
+    else
+        InitializeSession(self, level, current, maximum)
+    end
+end
+
+SessionReady = function(self)
+    CheckSession(self)
+    PaintValues(self)
+    SyncTrack(self)
 end
 
 -- Every event of the bar comes here: only the experience events change the
@@ -599,8 +560,8 @@ end
 
 local function EnterWorld(self)
     Native.Sync(self, true)
-    local level, current, maximum = XP()
-    if level then InitializeSession(self, level, current, maximum) end
+    self.sessionAttempts = 5
+    CheckSession(self)
     self.cappedLevel = nil
     Render(self)
     SyncTrack(self)
@@ -608,27 +569,22 @@ end
 
 function M:Enable()
     self.rateJob = self.context:Coalesce(RATE_REFRESH, PaintValues)
+    self.sessionJob = self.context:Coalesce(.2, SessionReady)
+    self.sessionAttempts = 5
     Create(self)
     self.trackEvents = nil
     local context = self.context
     context:Event("PLAYER_ENTERING_WORLD", EnterWorld, IN_COMBAT)
     context:Event("ADDON_LOADED", Native.AddonLoaded, IN_COMBAT)
-    if NS.loginKind then
-        local level, current, maximum = XP()
-        if level then
-            if self.session then
-                Track(self, level, current, maximum)
-            else
-                InitializeSession(self, level, current, maximum)
-            end
-        end
-    end
+    CheckSession(self, true)
     Native.Sync(self, true)
     Render(self)
     SyncTrack(self)
 end
 
 function M:Refresh()
+    self.sessionAttempts = 5
+    CheckSession(self)
     Native.Sync(self, true)
     self.cappedLevel = nil
     Render(self)
@@ -636,6 +592,8 @@ function M:Refresh()
 end
 
 function M:Disable()
+    self.sessionAttempts = 0
+    self.sessionJob:Cancel()
     Native.Sync(self, false)
     CancelRateTimer(self)
     if self.host then
@@ -664,30 +622,34 @@ function S.DrawExperienceBarPreview(parent, config, sample, viewport)
         parent.suiteXPPreview = view
     end
     view.config = config
-    if viewport then
-        Create(view)
-        local scale = viewport.scale
-        view.host:SetScale(scale * min(1, viewport.width / (config.width * scale),
-            viewport.height / ((config.height + 23) * scale)))
-    end
     Layout(view)
     local source = Tracked.PreviewSource(config.track)
     if source ~= Tracked.XP then
         ShowProgress(view, Tracked.Sample(source, sample.xp))
-        return view.host, config.width, config.height + 23
+    else
+        if view.fillColor then
+            Tint(view.fill, view.accent, 0.98)
+            view.fillColor = nil
+        end
+        local fraction = sample.xp / 100
+        view.fill:SetSize(max(.01, config.width * fraction), config.height)
+        view.fill:SetShown(fraction > 0)
+        PaintRested(view, fraction, 100, false, sample.rested)
+        Text.PaintXP(view, 42, sample.xp * 1000, 100000, 12000, 24000, fraction)
     end
-    if view.fillColor then
-        Tint(view.fill, view.accent, 0.98)
-        view.fillColor = nil
+    local dx, dy = 0, 0
+    if viewport then
+        local width, height
+        width, height, dx, dy = Text.PreviewBounds(view)
+        local scale = viewport.fixedScale or viewport.scale * min(1, max(1, viewport.width - 16) / (width * viewport.scale),
+            max(1, viewport.height - 16) / (height * viewport.scale))
+        if view.host:GetScale() ~= scale then
+            view.host:SetScale(scale)
+            Layout(view)
+            if source == Tracked.XP then PaintRested(view, sample.xp / 100, 100, false, sample.rested) end
+        end
     end
-    local fraction = sample.xp / 100
-    view.fill:SetSize(max(.01, config.width * fraction), config.height)
-    view.fill:SetShown(fraction > 0)
-    PaintRested(view, fraction, 100, false, sample.rested)
-    view.levelText:SetText(TEXT.short:format(42, Compact(sample.xp * 1000), Compact(100000)))
-    view.percentText:SetText((config.displayStyle == 2 and "%.0f%%" or "%.1f%%"):format(sample.xp))
-    view.details:SetText(DetailsText(view, sample.xp * 1000, 100000, 12000, 24000))
-    return view.host, config.width, config.height + 23
+    return view.host, config.width, config.height + 23, dx, dy
 end
 
 function S.ResetXPSession()

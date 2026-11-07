@@ -29,6 +29,30 @@ assert(preview.frame:GetWidth() == 420 and preview.frame:GetHeight() == 240, "me
 assert(preview.title.text:find("Overall", 1, true), "preview lost the Overall heading")
 assert(not preview.rows[1].icon:IsShown(), "preview ignored Icons=None")
 assert(preview.rows[1].valueText.text and preview.rows[1].nameText.text, "runtime row formatter did not paint samples")
+do
+    local available, contextMenu = C_DamageMeter.GetAvailableCombatSessions, S.ContextMenu
+    local choices, refreshes = {}, 0
+    C_DamageMeter.GetAvailableCombatSessions = function() error("fight preview queried live sessions") end
+    S.ContextMenu = function(owner, generator, win)
+        assert(owner == preview.buttons.session and win == preview)
+        local descriptions = {
+            CreateRadio = function(_, name, checked, choose, data)
+                choices[name] = { checked = checked, choose = choose, data = data }
+            end,
+            CreateDivider = function() end,
+        }
+        generator(owner, descriptions, win)
+    end
+    S.DamageMeterOpenPreviewFight(preview, preview.buttons.session, function() refreshes = refreshes + 1 end)
+    assert(choices.Overall.checked(choices.Overall.data), "sample ignored the saved fight mode")
+    local fight = assert(choices["Fight 1 [0:43]"], "sample fight is missing")
+    fight.choose(fight.data)
+    assert(preview.sessionID == 1 and preview.buttons.session.label.text == "#" and refreshes == 1,
+        "sample fight did not update the preview")
+    assert(config.w1Session == D.SESSION.OVERALL, "sample selection saved over the real fight")
+    choices.Overall.choose(choices.Overall.data)
+    C_DamageMeter.GetAvailableCombatSessions, S.ContextMenu = available, contextMenu
+end
 local layouts, layout = 0, D.StyleWindowLayout
 D.StyleWindowLayout = function(...) layouts = layouts + 1; return layout(...) end
 local gen = M.styleGen

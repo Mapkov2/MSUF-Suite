@@ -53,6 +53,10 @@ function L.SetCommandAction(widget, action)
 end
 function L.GetControlTitle(widget) return widget._msuf2Title end
 function L.GetControlLabel(widget) return rawget(widget, "_msuf2Label") end
+-- Responsive selectors can use the host's themed segment cue on their own buttons.
+function L.MarkSegmentChoice(button)
+    button._msuf2SegmentChoice = true
+end
 function L.GetControlSearchMeta(widget) return widget._msuf2SearchMeta end
 function L.GetRawSetText(fontString) return fontString._msuf2RawSetText end
 function L.ReleaseColorShortcut(shortcut) shortcut._msuf2BoundColorShortcut = nil end
@@ -135,13 +139,16 @@ local function HasMenuAPI(M)
 end
 
 local function Build(M)
+    local markSegmentChoice = M.Theme and M.Theme.StyleTabButton or L.MarkSegmentChoice
     if not HasMenuAPI(M) then
         local adapter, T = { mode = "legacy" }, M.Theme
         for name, step in pairs(L) do adapter[name] = step end
+        adapter.MarkSegmentChoice = markSegmentChoice
         adapter.AddNavIcon = function(pageKey, spec) return LegacyNavIcon(T, pageKey, spec) end
         return adapter
     end
-    local adapter = { mode = "host", SetFixedPreviewCompactHeight = L.SetFixedPreviewCompactHeight }
+    local adapter = { mode = "host", SetFixedPreviewCompactHeight = L.SetFixedPreviewCompactHeight,
+        MarkSegmentChoice = markSegmentChoice }
     for index = 1, #NAMES do adapter[NAMES[index]] = M[NAMES[index]] end
     return adapter
 end
@@ -157,6 +164,25 @@ function HostBridge.Menu2(M)
         adapters[M] = adapter
     end
     return adapter
+end
+
+function HostBridge.HasNameplateFontsMenu(M)
+    local formatter = HostBridge.NameFormatter()
+    local bridge = M.SearchBridge
+    return formatter and formatter.Nameplates and M.pages and M.pages.opt_fonts
+        and bridge and bridge.OpenSearchTarget
+end
+
+-- Menu2 applies the scope as view state and resolves the real section on both
+-- cold and cached pages. The Suite never writes the host profile.
+function HostBridge.NameplateFontsTarget(section)
+    return "opt_fonts", { sectionId = section }, { general = { _fontScopeKey = "nameplates" } }
+end
+
+function HostBridge.OpenNameplateFonts(M, section)
+    local page, target, route = HostBridge.NameplateFontsTarget(section)
+    local called, opened = M.SearchBridge.OpenSearchTarget(page, nil, nil, nil, route, target)
+    return called and opened
 end
 
 -- MSUF's Icon Skins page (Style > Icon Skins, MSUF 7.0: M.IconSkinsPage)
@@ -315,6 +341,13 @@ function HostBridge.MenuFont(label, color, role)
     local apply = AppearanceAction(theme, "ApplyFontRole")
     if apply then apply(label, role, nil, "") end
     return false
+end
+
+-- Older and current descriptions expose their help affordance on the label.
+-- A larger Suite role can truncate text that fit at the host's original size.
+function HostBridge.RefreshMenuDescriptionHelp(label, details)
+    local help = label and label._msuf2HelpTarget
+    if help then help:SetShown(details ~= nil or not label.IsTruncated or label:IsTruncated()) end
 end
 
 -- Public UI buttons own their hover/selection painter and the skin's
@@ -550,6 +583,16 @@ function HostBridge.IsOptionsSurface(frame)
         frame = getParent(frame)
     end
     return false
+end
+
+-- Owned links can supply their own destination without loading the search index.
+function HostBridge.OpenExactMenuSetting(menu, page, section, settingKey)
+    local search = menu.SearchBridge
+    if not (search and search.OpenSearchTarget) then return false end
+    local target = { pageKey = page, sectionId = section, settingKey = settingKey }
+    local route = { accordion = { [page .. ":" .. section] = true } }
+    local called, opened, focused, exact = search.OpenSearchTarget(page, "", nil, nil, route, target)
+    return called == true and opened == true and focused == true and exact == true
 end
 
 -- Older hosts expose the same routing function through their search facade.

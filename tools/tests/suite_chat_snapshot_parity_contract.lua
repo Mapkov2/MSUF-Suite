@@ -68,8 +68,8 @@ Check(path == "NativeTab.ttf" and size == 15 and flags == "OUTLINE", "native def
 Check(ui.parts.tabs[1]:GetWidth() == tab:GetWidth(), "native default tab width differs")
 Check(ui.parts.tabs[1]:GetHeight() == tab:GetHeight(), "default tab height differs")
 local p, rel, rp, x, y = ui.parts.input:GetPoint(1)
-Check(p == "TOPLEFT" and rel == ui.parts.sample and rp == "BOTTOMLEFT" and x == -5 and y == -2, "native input origin differs")
-Check(ui.parts.input:GetWidth() == 631 and ui.parts.input:GetHeight() == 32, "native input bounds differ")
+Check(p == "TOPLEFT" and rel == ui.parts.sample and rp == "BOTTOMLEFT" and x == -16 and y == -18, "input origin is not aligned to the padded panel")
+Check(ui.parts.input:GetWidth() == 642 and ui.parts.input:GetHeight() == 32, "aligned input bounds or native height differ")
 path, size, flags = ui.parts.prompt:GetFont()
 Check(path == "NativeInput.ttf" and size == 17 and flags == "", "native input header font differs")
 local _, _, _, promptX = ui.parts.prompt:GetPoint(1)
@@ -165,21 +165,22 @@ local _, _, _, appliedX, appliedY = dock:GetPoint(1)
 local _, _, _, drawnX, drawnY = ui.parts.tabGroup:GetPoint(1)
 Check(drawnX == appliedX and drawnY == appliedY, "reacquired native dock offset is doubled")
 
--- Input owns a native two-anchor baseline too. Snapshot only the original
--- anchor while ownership is current, then let the shared painter offset it.
-c.inputX, c.inputY = 13, -9
-C.OffsetNative(M, input, c.inputX, c.inputY)
+-- Match native text height and the shared configured rectangle at the
+-- captured scale. A live explicit height must not replace the native baseline.
+c.inputX, c.inputY, c.inputWidth, c.inputHeight = 13, -9, 312, 38
+local inputVisual = { frame = frame }
+C.ApplyInputLayout(M, inputVisual, frame, input)
 P.ChatPreviewPaint.Refresh(ui)
 local _, _, _, liveInputX, liveInputY = input:GetPoint(1)
 local _, _, _, sampleInputX, sampleInputY = ui.parts.input:GetPoint(1)
-Check(sampleInputX == liveInputX and sampleInputY == liveInputY, "owned input offset is applied twice")
-Check(ui.parts.nativeInputX == -5 and ui.parts.nativeInputY == -2, "owned input loses native baseline")
-input:ClearAllPoints()
-input:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -8, -4)
-input:SetPoint("RIGHT", frame, "RIGHT", 16, 0)
+Check(sampleInputX == liveInputX and sampleInputY == liveInputY, "aligned input offsets differ from live")
+Check(input:GetWidth() == 312 and ui.parts.input:GetWidth() == 312, "explicit input width differs from live")
+Check(ui.parts.input:GetHeight() == 38 and ui.parts.nativeInputHeight == 32, "custom input height replaced the native baseline")
+c.inputWidth, c.inputHeight = 0, 0
+C.ApplyInputLayout(M, inputVisual, frame, input)
 P.ChatPreviewPaint.Refresh(ui)
-Check(ui.parts.nativeInputX == -8 and ui.parts.nativeInputY == -4,
-    "stale input ownership corrupts fresh native anchors")
+Check(ui.parts.input:GetWidth() == input:GetWidth() and ui.parts.input:GetHeight() == input:GetHeight(),
+    "input reset differs between live and preview")
 -- Actual mouse callbacks must convert physical deltas using each element's
 -- own native scale; a scaled chat body must not scale the sidebar/dock edit.
 local mouseX, mouseY = 100, 100

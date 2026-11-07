@@ -252,6 +252,7 @@ D.HideTypeMenu()
 -- Preview layers may hide a configured button, but cannot resurrect one disabled by runtime settings.
 do
     local options = { S = S, Tr = function(value) return value end, T = {} }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Menu/PreviewInteraction.lua"))("Options", options)
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/DamageMeterPreviewLayers.lua"))("Options", options)
     local targets = { buttons = {}, rows = {} }
     for key in pairs(win.buttons) do targets.buttons[key] = CreateFrame("Frame") end

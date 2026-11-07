@@ -593,6 +593,29 @@ assert(api.fetch==fetches+1,"coalesced repaint should fetch once")
 assert(Registered("DAMAGE_METER_COMBAT_SESSION_UPDATED"),"session updates stayed muted after the paint")
 assert(RunPaint()==0)
 
+-- The three list dropdowns use the selected palette; the tile picker uses it too.
+do
+    local original, styled = c.dropdownStyle, S.StyledContextMenu
+    local palette, expected = nil, Suite.DamageMeterLookPresets[Suite.DamageMeterLook.CLEAN_MODERN]
+    local red, green, blue = S.RGB(expected.bgColor)
+    c.dropdownStyle = Suite.DamageMeterDropdownStyle.MODERN
+    S.StyledContextMenu = function(owner, colors, generator, ...)
+        palette = colors
+        return MenuUtil.CreateContextMenu(owner, generator, ...)
+    end
+    for kind, item in pairs({ session = "Current fight", target = "All targets", settings = "Report" }) do
+        palette = nil
+        D.HeaderButtonClick(win.buttons[kind])
+        assert(palette and palette.panel[1] == red and palette.panel[2] == green and palette.panel[3] == blue
+            and Find(lastMenu, item), kind .. " lost its selected palette or menu entries")
+    end
+    D.OpenTypeMenu(win, win.buttons.type)
+    local fill = D.typePanel.bg.color
+    assert(fill[1] == red and fill[2] == green and fill[3] == blue, "meter-type picker ignored the dropdown style")
+    D.HideTypeMenu()
+    S.StyledContextMenu, c.dropdownStyle = styled, original
+end
+
 -- Fight menu: pin a historic session; it reacts to its own sessionID only.
 D.HeaderButtonClick(win.buttons.session)
 assert(Find(lastMenu,"Boss [1:05]") and Find(lastMenu,"Current fight") and Find(lastMenu,"Overall"),"fight menu incomplete")

@@ -92,7 +92,7 @@ function Chrome.PlaceTitleDrag(strip, state)
         strip:SetHeight(20)
     else
         strip:SetPoint("TOPLEFT", state.frame, "TOPLEFT", 50, -1)
-        strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -110, -1)
+        strip:SetPoint("TOPRIGHT", state.frame, "TOPRIGHT", -math.max(110, state.captionInset or 0), -1)
         strip:SetHeight(24)
     end
 end
@@ -141,12 +141,15 @@ function Chrome.StyleGrip(grip)
     Chrome.RecolorGrip(grip)
 end
 
+local function TitleRegion(frame)
+    local title = Safety.Call(frame, "GetTitleText")
+    if Safety.Public(title) and title then return title end
+    return Safety.Field(Safety.Field(frame, "TitleContainer"), "TitleText")
+end
+
 -- The window's own (localized) title, else a name derived from its frame.
 function Chrome.Title(state)
-    local frame = state.frame
-    local title = NS.Safety.Call(frame, "GetTitleText")
-        or NS.Safety.Field(NS.Safety.Field(frame, "TitleContainer"), "TitleText")
-    local text = NS.Safety.Read(title, "GetText")
+    local text = Safety.Read(TitleRegion(state.frame), "GetText")
     -- Forever's outer container has no title region; all three child panes
     -- use this same localized native caption.
     if state.name == "LFGParentFrame" then text = NS.Safety.Field(_G, "LFG_TITLE") end
@@ -154,11 +157,317 @@ function Chrome.Title(state)
     return (state.name:gsub("Frame$", ""):gsub("(%l)(%u)", "%1 %2"))
 end
 
-function Chrome.Control(button, glyph, offset)
+local captionArt = setmetatable({}, { __mode = "k" })
+local captionBars = {
+    minimize = { { -4, -2, 4, -2 } },
+    maximize = { { -4, -4, 4, -4 }, { 4, -4, 4, 4 }, { 4, 4, -4, 4 }, { -4, 4, -4, -4 } },
+    restore = { { -5, -5, 2, -5 }, { 2, -5, 2, 2 }, { 2, 2, -5, 2 }, { -5, 2, -5, -5 },
+        { -2, 2, -2, 5 }, { -2, 5, 5, 5 }, { 5, 5, 5, -2 }, { 5, -2, 2, -2 } },
+}
+
+local function PaintCaption(button)
+    local art = captionArt[button]
+    local r, g, b, a = NS.Theme.GetColor(art.disabled and "disabled" or "text")
+    for _, texture in ipairs(art.bars) do texture:SetColorTexture(r, g, b, a) end
+    local active = not art.disabled and (art.hover or art.down)
+    art.fill:SetColorTexture(1, 1, 1, active and (art.down and 0.17 or 0.10) or 0)
+end
+
+local function LayoutCaption(button, kind)
+    local art = captionArt[button]
+    local pixelUtil = Safety.Field(_G, "PixelUtil")
+    local scale = button:GetEffectiveScale()
+    local nearest = Safety.Field(pixelUtil, "GetNearestPixelSize")
+    local pixel = nearest and nearest(0, scale, 1) or 1
+    local unit = nearest and nearest(1, scale, 1) or 1
+    unit = math.min(unit, (math.min(button:GetWidth(), button:GetHeight()) - pixel) / 10)
+    local bars = captionBars[kind]
+    for index, bar in ipairs(bars) do
+        local texture = art.bars[index]
+        if not texture then
+            texture = button:CreateTexture(nil, "OVERLAY")
+            Safety.Invoke(texture, "SetRoundLayoutToNearestPixel", true)
+            art.bars[index] = texture
+        end
+        local left, right = math.min(bar[1], bar[3]) * unit, math.max(bar[1], bar[3]) * unit
+        local bottom, top = math.min(bar[2], bar[4]) * unit, math.max(bar[2], bar[4]) * unit
+        texture:ClearAllPoints()
+        texture:SetPoint("TOPLEFT", button, "CENTER", left - pixel / 2, top + pixel / 2)
+        texture:SetSize(right - left + pixel, top - bottom + pixel)
+        texture:Show()
+    end
+    for index = #bars + 1, #art.bars do art.bars[index]:Hide() end
+    PaintCaption(button)
+end
+
+local function CaptionEnter(button)
+    captionArt[button].hover = true
+    PaintCaption(button)
+end
+
+local function CaptionLeave(button)
+    local art = captionArt[button]
+    art.hover, art.down = nil, nil
+    PaintCaption(button)
+end
+
+local function CaptionDown(button)
+    captionArt[button].down = true
+    PaintCaption(button)
+end
+
+local function CaptionUp(button)
+    captionArt[button].down = nil
+    PaintCaption(button)
+end
+
+function Chrome.Control(button, kind, offset, disabled)
     button:SetSize(22, 22)
     button:SetFrameLevel(button:GetParent():GetFrameLevel() + offset)
-    local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("CENTER", 0, 0)
-    label:SetText(glyph)
-    NS.WindowControlChrome.PaintControl(button, "buttonFill", label)
+    local fill = button:CreateTexture(nil, "BACKGROUND")
+    fill:SetAllPoints(button)
+    captionArt[button] = { fill = fill, bars = {}, disabled = disabled }
+    LayoutCaption(button, kind)
+    if disabled then
+        button:EnableMouse(false)
+    else
+        button:SetScript("OnEnter", CaptionEnter)
+        button:SetScript("OnLeave", CaptionLeave)
+        button:SetScript("OnMouseDown", CaptionDown)
+        button:SetScript("OnMouseUp", CaptionUp)
+        button:SetScript("OnHide", CaptionLeave)
+    end
+end
+
+local function TitleRight(frame, scale)
+    local title = TitleRegion(frame)
+    local width, right = Safety.Read(title, "GetStringWidth"), Safety.Read(title, "GetRight")
+    local titleScale = Safety.Read(title, "GetEffectiveScale") or scale
+    if not width or not right then return 0 end
+    local justify = Safety.Read(title, "GetJustifyH")
+    if justify == "LEFT" then
+        right = (Safety.Read(title, "GetLeft") or right) + width
+    elseif justify == "CENTER" then
+        right = (Safety.Read(title, "GetCenter") or right) + width / 2
+    end
+    return right * titleScale / scale
+end
+
+local function CaptionObstacle(state, scale, right, low, high, ...)
+    local obstacle = 0
+    for index = 1, select("#", ...) do
+        local child = select(index, ...)
+        if not Safety.Public(child) then return right end
+        local kind = Safety.Read(child, "GetObjectType")
+        if child ~= state.close and child ~= state.minimize and child ~= state.maximize and child ~= state.captionMin
+            and (kind == "Button" or kind == "CheckButton") and Safety.Read(child, "IsShown") then
+            local top, bottom = Safety.Read(child, "GetTop"), Safety.Read(child, "GetBottom")
+            local x, left = Safety.Read(child, "GetRight"), Safety.Read(child, "GetLeft")
+            local childScale = Safety.Read(child, "GetEffectiveScale")
+            if top and bottom and x and left and childScale then
+                local ratio = childScale / scale
+                if bottom * ratio < high and top * ratio > low and left * ratio < right then
+                    obstacle = math.max(obstacle, x * ratio + 2)
+                end
+            end
+        end
+    end
+    return obstacle
+end
+
+-- Work in the panel's local coordinates. Native close buttons may have a
+-- different scale and their rectangles may move when Blizzard changes tabs.
+function Chrome.CaptionSize(state)
+    local frame, close = state.frame, state.close
+    if not close or not Safety.Read(close, "IsShown") or Safety.Read(close, "IsVisible") == false then return nil, nil, 0 end
+    local left, top = Safety.Read(frame, "GetLeft"), Safety.Read(frame, "GetTop")
+    local scale = Safety.Read(frame, "GetEffectiveScale")
+    local closeScale = Safety.Read(close, "GetEffectiveScale")
+    local closeLeft, closeTop = Safety.Read(close, "GetLeft"), Safety.Read(close, "GetTop")
+    local closeHeight = Safety.Read(close, "GetHeight")
+    if not left or not top or not scale or scale <= 0 or not closeScale
+        or not closeLeft or not closeTop or not closeHeight then return end
+    local ratio = closeScale / scale
+    closeLeft, closeTop, closeHeight = closeLeft * ratio, closeTop * ratio, closeHeight * ratio
+    local right = left + frame:GetWidth()
+    if closeLeft >= right then return nil, nil, 0 end
+    if closeTop > top + 6 or closeTop - closeHeight < top - 38 or closeHeight < 16 then return end
+    local centerY = closeTop - closeHeight / 2
+    -- The native X can overhang the top edge. The added hit rectangles and
+    -- hover fills stay inside the panel while sharing the X's vertical center.
+    local height = math.min(closeHeight, 28, 2 * (top - centerY))
+    if height < 14 then return nil, nil, 0 end
+    local low, high = centerY - height / 2, centerY + height / 2
+    local obstacle = CaptionObstacle(state, scale, closeLeft, low, high, Safety.Call(frame, "GetChildren"))
+    local closeParent = Safety.Read(close, "GetParent")
+    if closeParent and closeParent ~= frame then
+        local headerObstacle = CaptionObstacle(state, scale, closeLeft, low, high, Safety.Call(closeParent, "GetChildren"))
+        obstacle = math.max(obstacle, headerObstacle)
+    end
+    local room = closeLeft - math.max(left + 54, TitleRight(frame, scale) + 6, obstacle)
+    local width = math.min(30, math.floor(room / 2))
+    if width < 18 then return nil, height, room end
+    return width, height, room, right - closeLeft + width * 2 + 4
+end
+
+local PlaceMinimize
+
+function Chrome.ShowCaption(state, level)
+    local minimize, maximize = state.minimize or state.captionMin, state.maximize
+    local width, height, room, inset = Chrome.CaptionSize(state)
+    local gamepad = NS.Client.IsGamepadUI()
+    if state.fit and (not width or gamepad) then
+        Chrome.LeaveFit(state)
+        width, height, room, inset = Chrome.CaptionSize(state)
+    end
+    state.captionInset = nil
+    if maximize and width and not gamepad then
+        state.captionInset = inset
+        maximize:SetSize(width, height)
+        minimize:SetSize(width, height)
+        maximize:SetFrameLevel(level)
+        minimize:SetFrameLevel(level)
+        maximize:ClearAllPoints()
+        maximize:SetPoint("RIGHT", state.close, "LEFT", 0, 0)
+        minimize:ClearAllPoints()
+        minimize:SetPoint("RIGHT", maximize, "LEFT", 0, 0)
+        LayoutCaption(maximize, state.fit and "restore" or "maximize")
+        LayoutCaption(minimize, "minimize")
+        maximize:Show()
+        minimize:Show()
+        return
+    end
+    if maximize then maximize:Hide() end
+    if state.minimize and not gamepad and (room == nil or room >= 25) then
+        minimize:SetSize(22, height or 22)
+        minimize:SetFrameLevel(level)
+        minimize:ClearAllPoints()
+        PlaceMinimize(minimize, state.frame, state.close)
+        LayoutCaption(minimize, "minimize")
+        minimize:Show()
+    elseif minimize then
+        minimize:Hide()
+    end
+end
+
+function Chrome.RecolorCaption(state)
+    if state.minimize then PaintCaption(state.minimize) end
+    if state.captionMin then PaintCaption(state.captionMin) end
+    if state.maximize then PaintCaption(state.maximize) end
+end
+
+-- Fixed-size native panels fill the available area by scaling uniformly.
+-- Keep a small screen margin and include exterior resize handles in the fit.
+local function NativeFitExtra(frame, key)
+    local read = Safety.Field(_G, "GetUIPanelAttribute")
+    local value = read and read(frame, key)
+    if Safety.Public(value) and type(value) == "number" then return value end
+    return 0
+end
+
+function Chrome.Fit(state)
+    local frame = state.frame
+    if state.fit.applying then return end
+    local right, bottom, top = Chrome.Footprint(state)
+    local extraWidth = NativeFitExtra(frame, "checkFitExtraWidth")
+    local extraHeight = NativeFitExtra(frame, "checkFitExtraHeight")
+    right, bottom = math.max(right, extraWidth), math.max(bottom, extraHeight)
+    local scaleFactor = frame:GetEffectiveScale() / frame:GetScale() / UIParent:GetEffectiveScale()
+    local width, height = frame:GetWidth() + right, frame:GetHeight() + bottom + top
+    if scaleFactor <= 0 or width <= 0 or height <= 0 then return end
+    local uiWidth, uiHeight = UIParent:GetWidth(), UIParent:GetHeight()
+    local scale = math.min((uiWidth - 16) / width, (uiHeight - 16) / height) / scaleFactor
+    if scale <= 0 then return end
+    state.fit.applying = true
+    if frame:GetScale() ~= scale then frame:SetScale(scale) end
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", -right / 2, (bottom - top) / 2)
+    state.fit.applying = nil
+end
+
+local function ValidClose(candidate)
+    if candidate and Safety.Read(candidate, "GetObjectType") == "Button"
+        and not Safety.GetProtection(candidate) then
+        return candidate
+    end
+end
+
+function Chrome.FindClose(frame, name)
+    return ValidClose(Safety.Field(frame, "ClosePanelButton"))
+        or ValidClose(Safety.Field(Safety.Field(frame, "Border"), "CloseButton"))
+        or ValidClose(Safety.Field(Safety.Field(frame, "BorderFrame"), "CloseButton"))
+        or ValidClose(Safety.Field(_G, name .. "CloseButton"))
+        or ValidClose(Safety.Field(frame, "CloseButton"))
+end
+
+function Chrome.LeaveFit(state)
+    local fit = state.fit
+    if not fit or not NS.WindowControlPolicy.CanChangeGeometry(state.frame) then return end
+    local frame = state.frame
+    state.fit = nil
+    frame:SetScale(fit.scale)
+    frame:ClearAllPoints()
+    for _, point in ipairs(fit.points) do frame:SetPoint(unpack(point)) end
+end
+
+function Chrome.EndFit(state)
+    local fit = state.fit
+    if NS.WindowControlPolicy.CanChangeGeometry(state.frame) then
+        Chrome.LeaveFit(state)
+    else
+        NS.CombatGate.RunOrDefer(fit, function()
+            if state.fit == fit then
+                Chrome.LeaveFit(state)
+                if state.frame:IsShown() then NS.WindowControls.Refresh() end
+            end
+        end)
+    end
+end
+
+function Chrome.ToggleFit(state, capturePoints)
+    if state.fit then
+        Chrome.LeaveFit(state)
+    else
+        local points = capturePoints(state.frame)
+        if not points then return false end
+        state.fit = { points = points, scale = state.frame:GetScale() }
+    end
+    return true
+end
+
+PlaceMinimize = function(button, frame, close)
+    local anchor = close and Safety.Read(close, "GetPoint", 1)
+    if type(anchor) == "string" and anchor:find("TOP", 1, true) then
+        button:SetPoint("RIGHT", close, "LEFT", -3, 0)
+    else
+        button:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -36, -4)
+    end
+end
+
+function Chrome.CreateMinimize(state, close, level, click)
+    local button = Safety.CreateChildFrame("Button", state.frame)
+    Chrome.Control(button, "minimize", level)
+    PlaceMinimize(button, state.frame, close)
+    button:RegisterForClicks("LeftButtonUp")
+    button:SetScript("OnClick", click)
+    return button
+end
+
+function Chrome.CreateCaption(state, level, click)
+    if state.maximize or state.inventory or not Chrome.CaptionSize(state) then return end
+    local frame = state.frame
+    if Safety.Field(frame, "MinimizeButton") or Safety.Field(frame, "MaximizeButton")
+        or Safety.Field(frame, "MaximizeMinimize") or Safety.Field(frame, "MaximizeMinimizeFrame")
+        or Safety.Field(frame, "MaximizeMinimizeButton") or Safety.Field(frame, "MaxMinButtonFrame")
+        or Safety.Field(_G, state.name .. "MinimizeButton") or Safety.Field(_G, state.name .. "MaximizeButton") then return end
+    local button = Safety.CreateChildFrame("Button", frame)
+    state.maximize = button
+    Chrome.Control(button, "maximize", level)
+    button:RegisterForClicks("LeftButtonUp")
+    button:SetScript("OnClick", click)
+    if not state.minimize then
+        state.captionMin = Safety.CreateChildFrame("Button", frame)
+        Chrome.Control(state.captionMin, "minimize", level, true)
+    end
+    return button
 end

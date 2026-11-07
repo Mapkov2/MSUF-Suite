@@ -90,26 +90,42 @@ local function Details(win, enabled)
     panel:Show()
 end
 
+local function PreviewFight(win)
+    if win.meterType == D.THREAT then
+        win.title:SetText(D.TypeName(win.meterType))
+        win.buttons.session.label:SetText(S.BlizzardText("DAMAGE_METER_CURRENT_SESSION_SHORT", "C"))
+    else
+        D.UpdateTitle(win)
+    end
+    D.SetTimerText(win, M.style.headerClock and not win.overall and (win.previewDuration or 95) or nil)
+end
+
+function D.SelectPreviewSession(win, value, sessionID, duration)
+    win.cfgSession, win.sessionID, win.previewDuration = value, sessionID, duration
+    win.overall = value == D.SESSION.OVERALL
+    PreviewFight(win)
+    if win.refreshFightPreview then win.refreshFightPreview() end
+end
+
 function S.DamageMeterDrawMenuPreview(parent, index, details)
     Style()
     local win = parent.damageMeterMenuPreview or Create(parent, index)
     details = details == true
     if win.index ~= index or win.styleGen ~= M.styleGen or win.detailsSample ~= details then
         win.detailsSample = details
-        win.index = index
         local c, keys = M.config, D.KEYS[index]
-        win.meterType = c[keys.Type] - 1
-        -- Sample headings never resolve live sessions, threat targets or APIs.
-        win.overall = c[keys.Session] == D.SESSION.OVERALL
+        local savedSession = c[keys.Session]
+        if win.index ~= index or win.savedPreviewSession ~= savedSession then
+            win.savedPreviewSession, win.cfgSession = savedSession, savedSession
+            win.sessionID, win.previewDuration = nil, nil
+            win.overall = savedSession == D.SESSION.OVERALL
+        end
+        win.index, win.meterType = index, c[keys.Type] - 1
         -- The page fits the stage to the window at its own scale.
         win.previewZoom = c[keys.Scale] / 100
         D.StyleWindowLayout(win)
         D.LayoutMenuTimer(win, parent)
-        if win.meterType == D.THREAT then
-            win.title:SetText(D.TypeName(win.meterType))
-            win.buttons.session.label:SetText(S.BlizzardText("DAMAGE_METER_CURRENT_SESSION_SHORT", "C"))
-        else D.UpdateTitle(win) end
-        D.SetTimerText(win, M.style.headerClock and not win.overall and 95 or nil)
+        PreviewFight(win)
         -- Turning smooth fill on shows it: the bars ease in from empty.
         if M.style.smoothFill and not win.smoothShown then
             for _, row in ipairs(win.rows) do row.bar:SetValue(0) end

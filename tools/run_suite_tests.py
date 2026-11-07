@@ -31,6 +31,7 @@ EXTRA = {
     "suite_bags_category_scroll_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_combat_style_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_live_ui_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_merchant_buyback_search_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_tab_selection_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_resize_transition_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_window_sizing_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -45,6 +46,8 @@ EXTRA = {
     "suite_bags_panel_contract.lua": [[], ["Forever"]],
     "suite_bags_menu_preview_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_chat_mover_popup_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],
+    "suite_chat_screen_coordinates_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
+        for host in (MSUF_MAIN, MSUF_70)],
     "suite_cdm_group_buffs_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_self_target_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_native_data_refresh_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -72,6 +75,8 @@ EXTRA = {
     "suite_qol_navigation_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_qol_accordions_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
         for host in (MSUF_MAIN, MSUF_70)],
+    "suite_xp_editor_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
+        for host in (MSUF_MAIN, MSUF_70)],
     "suite_player_aura_menu_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_history_owner_core_contract.lua": [[str(MSUF_70), flavor, mode]
         for flavor in FLAVORS for mode in ("contract", "overlay-contract")],
@@ -98,6 +103,8 @@ EXTRA = {
     "suite_character_combat_skin_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_hud_contract.lua": [[], ["Forever"]],
     "suite_tracker_sources_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_macros_menu_contract.lua": [[flavor, str(host)] for flavor in FLAVORS
+        for host in (MSUF_MAIN, MSUF_70)],
     "suite_options_menu_contract.lua": [[], ["Forever"]],
     "suite_menu_ux_contract.lua": [[], ["Forever"]],
     "suite_buff_reminders_preview_contract.lua": [[], ["Forever"]],
@@ -111,6 +118,7 @@ EXTRA = {
     "suite_meter_icon_layout_contract.lua": [[], ["Forever"]],
     "suite_preview_quality_contract.lua": [[], ["Forever"]],
     "suite_preview_interaction_contract.lua": [[], ["Forever"]],
+    "suite_options_pages_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_search_provider_contract.lua": [[], ["Forever"], ["Mainline", str(MSUF_LEGACY)]],
     # Every kick-glow lifecycle/strict case runs in the routine gate.
     "suite_cdm_kick_glow_contract.lua": [[str(MSUF_70), mode]

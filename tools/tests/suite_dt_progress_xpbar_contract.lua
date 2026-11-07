@@ -23,6 +23,7 @@ local function Widget(parent)
     function w:SetTexture(value) self.texture = value end
     function w:SetAllPoints() end
     function w:SetScale(value) self.scale = value end
+    function w:GetScale() return self.scale or 1 end
     function w:GetEffectiveScale() return 1 end
     function w:SetSize(width, height) self.width, self.height = width, height end
     function w:SetShown(value) self.shown = value end
@@ -85,6 +86,7 @@ runtime.CreateFrame = CreateFrame
 runtime.CreateTexture = function(parent, ...) return parent:CreateTexture(...) end
 runtime.CreateFontString = function(parent, ...) return parent:CreateFontString(...) end
 runtime.ResolveTexture = function(_, fallback) return fallback end
+runtime.ResolveFont = function() return nil end
 runtime.RGB = function(hex)
     return tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
 end
@@ -98,7 +100,8 @@ runtime.HonorProgress = function() if honor then return honor.current, honor.max
 assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", suite)
 MSUFSuite = suite
 local private = {}
-for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBar" }) do
+assert(loadfile(root .. "/MSUF_Suite/Core/ExperienceBarLayout.lua"))("MSUF_Suite", suite)
+for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceBar" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
 end
 local module = runtime.instances.xpBar
@@ -135,7 +138,7 @@ end
 -- Experience is the bar as it always was.
 module:Enable()
 eq(Events(), XP_EVENTS, "experience events")
-assert(module.host:IsShown() and module.levelText.text:find("100 / 1.0k", 1, true), "the experience bar changed")
+assert(module.host:IsShown() and module.xpText.text:find("100 / 1.0k", 1, true), "the experience bar changed")
 level, xp, maximum, capped = 80, 0, 0, true
 registered.PLAYER_LEVEL_UP(module, "PLAYER_LEVEL_UP")
 assert(not module.host:IsShown(), "the experience track hides at the level cap, as it always did")
@@ -146,7 +149,8 @@ watched = { name = "Dragonscale", label = "Renown 12", current = 1200, maximum =
 Choose(REPUTATION)
 eq(Events(), REPUTATION_EVENTS, "reputation events")
 assert(module.host:IsShown(), "the reputation track hides at the level cap")
-eq(module.levelText.text, "Renown 12  1.2k / 2.5k", "reputation step")
+eq(module.levelText.text, "Renown 12", "reputation step")
+eq(module.xpText.text, "1.2k / 2.5k", "reputation values stay separate and correct")
 eq(module.percentText.text, "48.0%", "reputation percent")
 eq(module.details.text, "Dragonscale", "the faction's name")
 assert(not module.rested:IsShown() and not module.restedMarker:IsShown(), "rested XP showed on a reputation bar")
@@ -172,7 +176,8 @@ module.config.displayStyle = 1
 honor = { current = 500, maximum = 2000, level = 25 }
 Choose(HONOR)
 eq(Events(), "HONOR_XP_UPDATE", "honor events")
-eq(module.levelText.text, "Honor Level 25  500 / 2.0k", "honor step")
+eq(module.levelText.text, "Honor Level 25", "honor step")
+eq(module.xpText.text, "500 / 2.0k", "honor values stay separate and correct")
 assert(module.fill.vertex[1] > module.fill.vertex[3], "honor paints orange")
 honor.current = 1000
 registered.HONOR_XP_UPDATE(module, "HONOR_XP_UPDATE")
@@ -183,18 +188,18 @@ level, xp, maximum, capped = 20, 100, 1000, false
 watched = { name = "Dragonscale", label = "Renown 12", current = 1200, maximum = 2500, kind = "renown", capped = false }
 Choose(AUTOMATIC)
 eq(Events(), XP_EVENTS, "Automatic follows experience while leveling")
-assert(module.levelText.text:find("100 / 1.0k", 1, true), "Automatic shows experience while leveling")
+assert(module.xpText.text:find("100 / 1.0k", 1, true), "Automatic shows experience while leveling")
 local accent = { module.fill.vertex[1], module.fill.vertex[2], module.fill.vertex[3] }
 level, xp, maximum, capped = 80, 0, 0, true
 registered.PLAYER_LEVEL_UP(module, "PLAYER_LEVEL_UP")
 eq(Events(), REPUTATION_EVENTS, "Automatic follows the watched reputation at the cap")
-eq(module.levelText.text, "Renown 12  1.2k / 2.5k", "Automatic shows the watched reputation")
+eq(module.levelText.text, "Renown 12", "Automatic shows the watched reputation")
 assert(module.host:IsShown(), "Automatic hid the bar at the level cap")
 watched = nil
 registered.UPDATE_FACTION(module, "UPDATE_FACTION")
 eq(Events(), "HONOR_XP_UPDATE MAJOR_FACTION_RENOWN_LEVEL_CHANGED UPDATE_FACTION",
     "Automatic without a reputation follows honor and a newly watched reputation")
-eq(module.levelText.text, "Honor Level 25  1.0k / 2.0k", "Automatic falls back to honor")
+eq(module.levelText.text, "Honor Level 25", "Automatic falls back to honor")
 watched = { name = "Dragonscale", label = "Renown 13", current = 5, maximum = 2500, kind = "renown", capped = false }
 registered.UPDATE_FACTION(module, "UPDATE_FACTION")
 eq(Events(), REPUTATION_EVENTS, "a newly watched reputation takes over from honor")
@@ -208,7 +213,7 @@ assert(not module.host:IsShown(), "Automatic with nothing to show stayed on scre
 level, xp, maximum, capped = 10, 100, 1000, false
 Choose(EXPERIENCE)
 eq(Events(), XP_EVENTS, "experience events return")
-assert(module.levelText.text:find("100 / 1.0k", 1, true) and module.host:IsShown(), "the experience bar came back")
+assert(module.xpText.text:find("100 / 1.0k", 1, true) and module.host:IsShown(), "the experience bar came back")
 eq(module.fill.vertex[1], accent[1], "the look's accent returns to the fill")
 eq(module.fill.vertex[3], accent[3], "the look's accent returns to the fill")
 local before = registrations
@@ -232,12 +237,42 @@ local function Preview(track)
 end
 watched, honor = nil, nil
 local view = Preview(REPUTATION)
-eq(view.levelText.text, "Renown 12  1.3k / 2.5k", "reputation preview")
+eq(view.levelText.text, "Renown 12", "reputation preview")
+eq(view.xpText.text, "1.3k / 2.5k", "reputation preview values")
 view = Preview(HONOR)
-eq(view.levelText.text, "Honor Level 25  1.3k / 2.5k", "honor preview")
+eq(view.levelText.text, "Honor Level 25", "honor preview")
+eq(view.xpText.text, "1.3k / 2.5k", "honor preview values")
 view = Preview(AUTOMATIC)
 assert(view.levelText.text:find("Lv 42", 1, true), "Automatic previews a leveling character")
 view = Preview(EXPERIENCE)
 assert(view.levelText.text:find("Lv 42", 1, true), "experience preview")
 
+-- Denominator caches belong to the value and number formatter that produced them.
+-- Unavailable/capped sources clear text without invalidating those independent keys.
+watched = { name = "Dragonscale", label = "Friendly", current = 100, maximum = 1000, kind = "standing", capped = false }
+Choose(REPUTATION)
+eq(module.xpText.text, "100 / 1.0k", "short denominator seeded")
+watched = nil
+module.config.xpTextNumbers = 3
+module:Refresh()
+watched = { name = "Dragonscale", label = "Friendly", current = 200, maximum = 1000, kind = "standing", capped = false }
+registered.UPDATE_FACTION(module, "UPDATE_FACTION")
+eq(module.xpText.text, "200 / 1000", "unavailable source cannot retain old numeric formatting")
+module.config.xpTextNumbers = 2
+watched.capped = true
+module:Refresh()
+watched.capped = false
+registered.UPDATE_FACTION(module, "UPDATE_FACTION")
+eq(module.xpText.text, "200 / 1.0k", "capped source cannot retain old numeric formatting")
+module.config.xpTextFormat = 3
+module:Refresh()
+watched.maximum = 2500
+registered.UPDATE_FACTION(module, "UPDATE_FACTION")
+eq(module.xpText.text, "200", "current-only format")
+watched = nil
+module.config.xpTextFormat = 2
+module:Refresh()
+watched = { name = "Dragonscale", label = "Friendly", current = 250, maximum = 2500, kind = "standing", capped = false }
+registered.UPDATE_FACTION(module, "UPDATE_FACTION")
+eq(module.xpText.text, "250 / 2.5k", "current-only source changes cannot poison denominator cache")
 print("xp bar track PASS")

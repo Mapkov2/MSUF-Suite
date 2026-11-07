@@ -184,6 +184,7 @@ do
     local values = Config({ friendlyNPCs = 4, friendlyNamesOnly = 2, friendlyTextEnabled = true })
     local preview = { M = {}, Tr = NS.Text, Get = function(_, key) return values[key] end,
         Suite = { NameplateStyle = NS.NameplateStyle, Public = NS.Public, Client = NS.Client } }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", preview)
     assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreview.lua"))("Options", preview)
     local render = Upvalue(Upvalue(preview.BuildNameplatesPreview, "Sample"), "Render")
     local metrics, visibility = Upvalue(render, "Metrics"), Upvalue(render, "RenderVisibility")

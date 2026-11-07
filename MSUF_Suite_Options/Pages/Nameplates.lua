@@ -47,6 +47,10 @@ for _, role in ipairs(P.Suite.NameplateStyle.Roles) do
 end
 local MODULE_KEYS = { "look", "enemy", "friendly", "protectImport" }
 local SECTIONS = {
+    { key = "nameText", area = "general", title = "Name formats and colors", keys = {
+        "nameFormattingEnabled", "nameTextUseCustomSettings", "enemyNameFormat", "enemyNameMaxChars", "enemyNameClipSide", "enemyNameNoEllipsis",
+        "enemyNameColorEnabled", "friendlyNameFormat", "friendlyNameMaxChars", "friendlyNameClipSide", "friendlyNameNoEllipsis",
+        "friendlyNameColorEnabled" }, colors = { "enemyNameColor", "friendlyNameColor" } },
     { key = "native", area = "general", title = "Blizzard plates",
       keys = { "nativeStyle", "nativeSize", "targetScaleEnabled", "targetScalePercent", "barGeometry", "levelAppearance",
             "classColors", "playerGuildNames", "playerTitles" } },
@@ -58,7 +62,7 @@ local SECTIONS = {
             "enemyFocusMarkerColor", "enemyThresholdColor" }, tabs = {
         { id = "bar", label = "Bar", help = "enemy", keys = { "enemyHealthWidthDelta", "enemyHealthHeightDelta",
             "enemyBackdropEnabled", "enemyBackdropAlpha", "enemyBorderEnabled", "enemyBorderSize", "enemyBorderStyle",
-            "enemyTextureEnabled", "enemyFillTexture" } },
+            "enemyNativeBorderEnabled", "enemyTextureEnabled", "enemyFillTexture" } },
         { id = "frame", label = "Frame and highlights", help = "decor", keys = {
             "enemyOuterFrame", "enemyOuterFrameSize", "enemyShadowEnabled", "enemyGlowEnabled", "enemyGlowMode", "enemyEffectSize" } },
         { id = "text", label = "Text", keys = { "enemyTextMode", "enemyMirrorHeader", "enemyTextEnabled", "enemyCustomFont", "enemyNameFont",
@@ -94,14 +98,14 @@ local SECTIONS = {
             "friendlyRealm", "friendlyNPCs" } },
         { id = "bar", label = "Bar", keys = { "friendlyHealthWidthDelta", "friendlyHealthHeightDelta",
             "friendlyBackdropEnabled", "friendlyBackdropAlpha", "friendlyBorderEnabled", "friendlyBorderSize",
-            "friendlyBorderStyle", "friendlyTextureEnabled", "friendlyFillTexture" } },
+            "friendlyBorderStyle", "friendlyNativeBorderEnabled", "friendlyTextureEnabled", "friendlyFillTexture" } },
         { id = "frame", label = "Frame and highlights", help = "decor", keys = {
             "friendlyOuterFrame", "friendlyOuterFrameSize", "friendlyShadowEnabled", "friendlyGlowEnabled", "friendlyGlowMode", "friendlyEffectSize" } },
         { id = "text", label = "Text", keys = { "friendlyTextEnabled", "friendlyCustomFont", "friendlyNameFont",
             "friendlyNameSize", "friendlyTextOutline", "friendlyTextShadow", "friendlyLevelEnabled", "friendlyLevelSize" } },
         { id = "markers", label = "Markers", keys = { "friendlyEliteMarker", "friendlyEliteMarkerAnchor",
             "friendlyEliteMarkerSize", "friendlyQuestMarker", "friendlyQuestMarkerAnchor", "friendlyQuestMarkerSize" } },
-        { id = "castbar", label = "Castbar", keys = { "friendlyCastHeight", "friendlyCastIconSize",
+        { id = "castbar", label = "Castbar", keys = { "friendlyCastWidthDelta", "friendlyCastHeight", "friendlyCastIconSize",
             "friendlyCastTextEnabled", "friendlyCastTimeEnabled", "friendlyCastTimeFormat",
             "friendlyCastCustomFont", "friendlyCastFont", "friendlyCastSize", "friendlyCastOutline", "friendlyCastTextShadow" } },
     } },
@@ -202,6 +206,21 @@ function P.NameplateSearchTarget(rule)
     if rule.section ~= "auraColors" and rule.key ~= "enabled" then return PAGE .. "_more" end
 end
 
+-- A preview click already has a setting key. Use the live catalog directly,
+-- even before the host has finished building its global search index.
+function P.OpenNameplateSetting(key)
+    local rule = key and P.catalog[ID].rules[key]
+    if not rule or P.Combat() then return false end
+    local sectionId, _, exact = P.NameplateSearchTarget(rule)
+    if not sectionId or exact == false then return false end
+    local page = P.M.cache and P.M.cache[PAGE]
+    local body = page and page.sections and page.sections[sectionId]
+    local entry = body and HM.GetSectionEntry(body)
+    local reveal = entry and HM.GetSectionEnsureVisible(entry)
+    if reveal then reveal() end
+    return P.Suite.HostBridge.OpenExactMenuSetting(P.M, PAGE, sectionId, "msufsuite.nameplates." .. key)
+end
+
 -- One panel per tab with its rules; a search hit on a rule selects the
 -- rule's tab first (the preview's exact setting jump uses the same hook).
 local function Panels(ctx, body, width, spec, sectionId)
@@ -238,7 +257,7 @@ local function Tabs(ctx, builder, body, spec, sectionId)
     local values = {}
     for _, tab in ipairs(spec.tabs) do values[#values + 1] = { value = tab.id, text = Tr(tab.label) } end
     local tabs, refresh, _, selectTab = P.W.SegmentTabs(ctx, body, {
-        label = "", values = values, width = math.min(width, math.max(360, 120 * #values)), frames = panels,
+        label = "", compact = true, values = values, width = math.min(width, math.max(360, 120 * #values)), frames = panels,
         defaultTab = spec.tabs[1].id,
         get = function() return selectedTabs[spec.key] or spec.tabs[1].id end,
         set = function(tab)
@@ -257,10 +276,15 @@ local function Tabs(ctx, builder, body, spec, sectionId)
     return refresh, selectTab
 end
 
--- Cold search must select the tab before the host looks up its widget.
--- The full rule catalog remains searchable even while that tab has no controls.
+-- Fonts-owned settings route to the host. Suite settings select their tab
+-- before the host looks up widgets that may not exist on a cold page.
 local function PrepareSearch(page, target)
     if page ~= PAGE or not target then return end
+    local fonts = P.NameplateFonts
+    if fonts then
+        local destination, focus, route = fonts.TargetForSetting(target.settingKey)
+        if destination then return destination, focus, route end
+    end
     local key = (target.settingKey or ""):match("^msufsuite%.nameplates%.(.+)$")
     local sectionId = key and placed[key]
     if not sectionId then return end
@@ -327,7 +351,7 @@ end
 -- its look are MSUF's (Castbars > Interrupt Ready Indicator), drawn here by
 -- MSUF_Suite_Nameplates/KickReady.lua. Shown where the host has the engine.
 -- Every host with the engine has Menu2's exact setting jump.
-local KICK_SWITCH, KICK_SWITCH_LABEL = "general.kickReadyShowNameplates", "Show on enemy nameplates (MSUF Suite)"
+local KICK_SWITCH = "general.kickReadyShowNameplates"
 local KICK_HELP =
     "Interrupt readiness on these castbars looks exactly like on MSUF's castbars. Turn it on and style it in MSUF: Castbars > Interrupt Ready Indicator."
 local function KickReadyLink(ctx)
@@ -336,7 +360,7 @@ local function KickReadyLink(ctx)
         local text = P.Description(body, KICK_HELP, 16, y, width, Tr("Enemy castbar"))
         y = y - math.max(14, math.ceil(text:GetStringHeight() or 14)) - 8
         P.Button(ctx, body, "Open interrupt settings", 16, y, 220, function()
-            P.M.OpenExactSettingControl(KICK_SWITCH, KICK_SWITCH_LABEL, "opt_castbar")
+            P.Suite.HostBridge.OpenExactMenuSetting(P.M, "opt_castbar", "castbar_interrupt_ready", KICK_SWITCH)
         end, nil, P.Meta(PAGE, ID, "action.kickReady", "action", PAGE .. "_castbar"))
         return y - 40
     end
@@ -344,6 +368,10 @@ end
 
 -- An accordion of one key list or one catalog section.
 local function PlainSection(ctx, builder, spec, rules)
+    local fonts = P.NameplateFonts
+    if spec.key == "nameText" and fonts and fonts.HasLinks() then
+        return fonts.LinkSection(ctx, builder, PAGE .. "_nameText", Tr(spec.title))
+    end
     rules = rules or (spec.catalog and VisibleRules(P.SectionRules(ID, spec.catalog)) or Rules(spec.keys))
     for _, rule in ipairs(Rules(spec.colors)) do rules[#rules + 1] = rule end
     if #rules == 0 then return nil end

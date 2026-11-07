@@ -2,8 +2,7 @@ local _, P = ...
 local Page = P.MacroPage
 
 Page.initializers[#Page.initializers + 1] = function()
-    local Page, Helpers, Tr, T, Macros = P.MacroPage, P.MacroPage.helpers, P.Tr, P.T, P.Suite.Macros
-    local Model, Store = Macros.Model, Macros.Store
+    local Page, Helpers, Tr, T = P.MacroPage, P.MacroPage.helpers, P.Tr, P.T
     Helpers.Preview = function(ui, y)
         local width = ui.panelWidth or ui.width
         Page.Label(ui, "result-title", Tr("Result"), 16, y, width - 32)
@@ -31,7 +30,7 @@ Page.initializers[#Page.initializers + 1] = function()
         local iconButton
         iconButton = Page.Button(ui, "icon", "Choose icon", 26 + column, y - 278, column, function()
             Page.Pick(iconButton, "any", function(_, icon)
-                Page.document.icon = icon or 134400
+                Page.document.icon = icon or Page.AUTO_ICON
                 Page.Changed(false)
             end)
         end)
@@ -41,11 +40,18 @@ Page.initializers[#Page.initializers + 1] = function()
             Page.Button(ui, "create-copy", "Create another macro", 26 + column, y - 316, column,
                 function() Helpers.Publish(false) end)
         end
-        Page.Card(ui, "result", 8, y + 10, width - 16, 366)
+        ui.autoIcon = Page.Button(ui, "icon:auto", "Use spell icon", 16, y - 354, column, function()
+            Page.document.icon = Page.AUTO_ICON
+            Page.Changed(false)
+        end)
+        Page.Card(ui, "result", 8, y + 10, width - 16, 404)
         Page.Preview()
-        return y - 363
+        return y - 401
     end
+end
 
+Page.initializers[#Page.initializers + 1] = function()
+    local Page, Helpers, Tr, Model = P.MacroPage, P.MacroPage.helpers, P.Tr, P.Suite.Macros.Model
     function Page.Preview()
         local ui = Page.ui
         if not ui or not ui.preview or P.Combat() then return end
@@ -64,8 +70,9 @@ Page.initializers[#Page.initializers + 1] = function()
         ui.publish:SetEnabled(body ~= nil and Page.document.name ~= "" and not P.Combat())
         Page.pickupReady = body ~= nil and Page.bound and not Page.dirty
             and Page.publishedStamp == Helpers.Stamp(Page.document, body)
+        ui.autoIcon:SetEnabled(Page.document.icon ~= Page.AUTO_ICON)
         if ui.icon then
-            ui.icon.texture:SetTexture(Page.document.icon)
+            ui.icon.texture:SetTexture(Helpers.DisplayIcon(Page.document))
             ui.icon:SetAlpha(Page.pickupReady and 1 or 0.45)
         end
         if ui.dragLabel then ui.dragLabel:SetText(Tr(Page.pickupReady and "Drag to an action bar" or "Save before dragging")) end
@@ -108,6 +115,11 @@ Page.initializers[#Page.initializers + 1] = function()
         body:RegisterEvent("PLAYER_REGEN_DISABLED")
         body:RegisterEvent("UPDATE_MACROS")
         local ui = Page.ui
+        if P.T.TrackTabLayout then
+            P.T.TrackTabLayout(body, function()
+                if Page.ui == ui then Page.Render() end
+            end)
+        end
         P.M.TrackRefresh(ctx, function()
             if Page.ui == ui and not P.Combat() then ui.body:Show() end
         end)
@@ -141,19 +153,24 @@ end
 
 Page.initializers[#Page.initializers + 1] = function()
     local Page, Helpers, Tr, T, Macros = P.MacroPage, P.MacroPage.helpers, P.Tr, P.T, P.Suite.Macros
-    local Model, Store = Macros.Model, Macros.Store
     Helpers.Header = function(ui)
         Helpers.EditorChoices()
         local width = ui.width
+        local available = width - 32
         local columns = width < 520 and 2 or 4
-        local tabWidth = math.floor((width - 32 - (columns - 1) * 5) / columns)
-        for i, tab in ipairs(Page.tabs) do
-            local x, row = 16 + ((i - 1) % columns) * (tabWidth + 5), math.floor((i - 1) / columns)
-            local button = Page.Button(ui, "tab:" .. tab[1], tab[2], x, -16 - row * 34, tabWidth,
+        local fallbackWidth = math.floor((available - (columns - 1) * 8) / columns)
+        local x, y = 16, -16
+        for _, tab in ipairs(Page.tabs) do
+            local preferred = T.MeasureTabWidth and T.MeasureTabWidth(Tr(tab[2]), 68) or fallbackWidth
+            local tabWidth = math.min(available, preferred)
+            if x > 16 and x + tabWidth > width - 16 then x, y = 16, y - 34 end
+            local button = Page.Button(ui, "tab:" .. tab[1], tab[2], x, y, tabWidth,
                 function() Helpers.ChooseTab(tab[1]) end)
+            P.HM.MarkSegmentChoice(button)
             button:SetActive(Page.tab == tab[1])
+            x = x + tabWidth + 8
         end
-        local y = -20 - math.ceil(#Page.tabs / columns) * 34
+        y = y - 38
         Page.Label(ui, "quick:title", Tr("Quick start"), 16, y, width - 32, T.colors.muted)
         y = y - 23
         columns = math.max(2, math.min(#Page.quick, math.floor((width - 32) / 108)))
@@ -166,6 +183,10 @@ Page.initializers[#Page.initializers + 1] = function()
         end
         y = y - math.ceil(#Page.quick / columns) * 32 - 10
         local column = math.floor((width - 42) / 2)
+        if Page.tab == "rules" then
+            Helpers.SpellTools(ui, y, column)
+            y = y - 35
+        end
         local templates = { { value = "", text = Tr("Choose a template") } }
         for _, entry in ipairs(Macros.Templates) do templates[#templates + 1] = { value = entry.id, text = Tr(entry.label) } end
         Page.Select(ui, "template", "More templates", templates, Page.template or "", 16, y, column,
@@ -181,6 +202,11 @@ Page.initializers[#Page.initializers + 1] = function()
         return y - 70
     end
 
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Page, Helpers, Tr, Macros = P.MacroPage, P.MacroPage.helpers, P.Tr, P.Suite.Macros
+    local Model, Store = Macros.Model, Macros.Store
     function Page.Load(id)
         local function Apply()
             local document = Store.Get(id)
@@ -195,7 +221,7 @@ Page.initializers[#Page.initializers + 1] = function()
         if Page.dirty then Page.Confirm("macro-open", Tr("Discard unsaved changes?"), Apply) else Apply() end
     end
 
-    Helpers.New = function(templateID)
+    Helpers.New = function(templateID, prepare, publish)
         local function Apply()
             Page.document = Model.New(templateID)
             Page.codeEdited = false
@@ -203,9 +229,40 @@ Page.initializers[#Page.initializers + 1] = function()
             Page.publishedStamp = nil
             Page.template = templateID
             Page.tab = Page.document.mode == "consumable" and "consumable" or "rules"
+            if prepare then prepare(Page.document) end
             Page.Render()
+            if publish then Helpers.Publish(false) end
         end
         if Page.dirty then Page.Confirm("macro-new", Tr("Discard unsaved changes?"), Apply) else Apply() end
+    end
+end
+
+Page.initializers[#Page.initializers + 1] = function()
+    local Page, Helpers = P.MacroPage, P.MacroPage.helpers
+    local function MacroName(spellName)
+        local letters = 0
+        for start in spellName:gmatch("()[^\128-\191]") do
+            if letters == 16 then return (spellName:sub(1, start - 1):gsub("%s+$", "")) end
+            letters = letters + 1
+        end
+        return spellName
+    end
+
+    local function NewSpell(value, _, name, publish)
+        Helpers.New("spell", function(document)
+            document.name = MacroName(name)
+            document.steps[1].branches[1].value = value
+            Page.dirty = true
+        end, publish)
+    end
+
+    Helpers.SpellTools = function(ui, y, column)
+        local choose
+        choose = Page.Button(ui, "spellbook:choose", "From spellbook", 16, y, column, function()
+            Page.Pick(choose, "spell", NewSpell, function(value, icon, name) NewSpell(value, icon, name, true) end)
+        end)
+        local drop = Page.Button(ui, "spellbook:drop", "Drop spell here", 26 + column, y, column)
+        drop.action = Page.SpellDrop(ui, drop, NewSpell)
     end
 end
 
@@ -289,7 +346,7 @@ Page.initializers[#Page.initializers + 1] = function()
 
     function Page.Finish(ui, y)
         local height = math.max(320, -y + 16)
-        ui.body:SetHeight(height)
+        -- FinishSection uses the previous height to resize the page's scroll content.
         P.HM.SetSectionCursor(ui.body, -height + 16)
         ui.builder:FinishSection(ui.body, 16)
     end

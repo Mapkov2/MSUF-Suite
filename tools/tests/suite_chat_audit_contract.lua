@@ -9,7 +9,7 @@ local P, S, Suite = F.optionsNS, F.S, F.Suite
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function eq(a, b, label) assert(a == b or type(a) == "number" and type(b) == "number" and math.abs(a - b) < 0.000001, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 
-local CONFLICTS = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy", "Prat-3.0", "Chattynator", "Chatter" }
+local CONFLICTS = { "EllesmereUIChat", "ElvUI", "Glass", "Glassy", "Prat-3.0", "Chattynator", "Chatter", "DaylightUI_Chat" }
 
 ------------------------------------------------------------------ conflicts
 -- Any of these chat addons switches the module off; the module's own late
@@ -110,6 +110,7 @@ local ns = { DB = {}, IsCombatLocked = function() return combat end,
 local suite = { catalog = catalogNS.SuiteCatalog, states = { chat = { active = true } }, instances = {},
     Text = function(text) return text end, Config = function() return config end,
     Finite = function(value) return type(value) == "number" and value == value end,
+    CanOpenNativeWindow = function() return not combat end,
     Apply = function(id) applied[#applied + 1] = id end,
     Dispatch = function(callback, ...) return callback(...) end }
 function suite.SetMany(_, values) for key, value in pairs(values) do config[key] = value end return true end
@@ -135,21 +136,61 @@ assert(loadfile(root .. "/MSUF_Suite_Modules/EditMode.lua"))("test", { NS = ns, 
 
 -- Window handling is the Window.lua file's business; the controller only
 -- needs these to start.
-local chat = { M = {}, ApplyClockSettings = function() end, RefreshClocks = function() end, DisableClock = function() end, DockGeometry = function() end, DockSelection = function() end,
-    MessagesRefresh = function() end, BubblesRefresh = function() end,
-    ListenInCombat = function(context, event, callback) context:Event(event, callback) end }
+local chatNS = { NS = ns, Suite = suite }
+assert(loadfile(root .. "/MSUF_Suite_Chat/Shared.lua"))("MSUF_Suite_Chat", chatNS)
+local chat = chatNS.Chat
+chat.StopInputAnimations = function() end
+chat.ApplyClockSettings, chat.RefreshClocks, chat.DisableClock = function() end, function() end, function() end
+chat.DockGeometry, chat.UpdateWindowMoverBounds, chat.DockSelection = function() end, function() end, function() end
+chat.MessagesRefresh, chat.BubblesRefresh = function() end, function() end
 function suite.Install(id, module) eq(id, "chat"); eq(module, chat.M, "installed module") end
 hooksecurefunc = function() end
 Constants = { ChatFrameConstants = { MaxChatWindows = 0 } }
 CHAT_FRAMES = {}
-local chatNS = { NS = ns, Suite = suite, Chat = chat }
-assert(loadfile(root .. "/MSUF_Suite_Chat/Positions.lua"))("MSUF_Suite_Chat", chatNS)
-assert(loadfile(root .. "/MSUF_Suite_Chat/Controller.lua"))("MSUF_Suite_Chat", chatNS)
+local cornerPatches = {
+    nativeClamp = { "Positions", 'self.context:Property(frame, "IsClampedToScreen", "SetClampedToScreen", false)', '' },
+    firstMove = { "Controller", 'moveValues = { lockWindowPosition = true }',
+        'isEnabled = function() return self.config.lockWindowPosition == true end, moveValues = {}' },
+    adoptAnchor = { "Controller", 'moveValues = { lockWindowPosition = true }', 'moveValues = {}' },
+    undoAnchor = { "Controller", 'historyKeys = { "lockWindowPosition" }', 'historyKeys = {}' },
+}
+local function LoadChat(name)
+    local path = root .. "/MSUF_Suite_Chat/" .. name .. ".lua"
+    local patch = arg[2] and cornerPatches[arg[2]]
+    if patch and patch[1] == name then
+        local file = assert(io.open(path, "rb")); local source = file:read("*a"); file:close()
+        local first, last = source:find(patch[2], 1, true)
+        assert(first, "mutation site missing")
+        assert(loadstring(source:sub(1, first-1) .. patch[3] .. source:sub(last+1), "@" .. path))("MSUF_Suite_Chat", chatNS)
+    else
+        assert(loadfile(path))("MSUF_Suite_Chat", chatNS)
+    end
+end
+LoadChat("Positions")
+LoadChat("Floating")
+LoadChat("Controller")
 local module = chat.M
 module.config, module.active = config, true
 module.context = {
     Event = function(_, event, callback) events[event] = callback end,
     RemoveEvent = function(_, event) events[event] = nil end,
+    clampBefore = {}, pointsBefore = {},
+    Property = function(self, frame, getter, setter, value)
+        if self.clampBefore[frame] == nil then self.clampBefore[frame] = frame[getter](frame) end
+        frame[setter](frame, value)
+    end,
+    RestoreProperty = function(self, frame, setter)
+        if self.clampBefore[frame] ~= nil then
+            frame[setter](frame, self.clampBefore[frame]); self.clampBefore[frame] = nil
+        end
+    end,
+    Anchor = function(self, frame, ...)
+        if not self.pointsBefore[frame] then self.pointsBefore[frame] = frame.points end
+        frame:ClearAllPoints(); frame:SetPoint(...)
+    end,
+    RestorePoints = function(self, frame)
+        if self.pointsBefore[frame] then frame.points = self.pointsBefore[frame]; self.pointsBefore[frame] = nil end
+    end,
 }
 module:Enable()
 
@@ -173,9 +214,12 @@ function frame:GetScale() return self.scale or 1 end
 function frame:GetEffectiveScale() return self:GetScale() * UIParent:GetEffectiveScale() end
 function frame:GetLeft() return self.left or config.windowX end
 function frame:GetBottom() return self.bottom or config.windowY end
+function frame:IsClampedToScreen() return self.clamped ~= false end
+function frame:SetClampedToScreen(value) self.clamped = value end
 function frame:ClearAllPoints() self.points = {} end
 function frame:SetPoint(...) self.points = { ... } end
 ChatFrame1 = frame
+module.visuals = { [frame] = {} }
 UIParent = UIParent or {}
 function UIParent:GetLeft() return 10 end
 function UIParent:GetBottom() return 20 end
@@ -186,8 +230,8 @@ module:RegisterMovers()
 local element = registered["MSUFSuite.chat/window"]
 assert(element, "the chat window has no Edit Mode mover")
 eq(element.label, "Chat window", "mover label")
-assert(not element.isEnabled(), "a mover for a window Blizzard's Edit Mode still owns")
-assert(nativeRecord.isEnabled(), "unlocked native chat mover was suppressed")
+assert(element.isEnabled(), "the active chat has no mover before its first Suite anchor")
+assert(not nativeRecord.isEnabled(), "the oversized native mover still competes before the first Suite anchor")
 config.lockWindowPosition, config.windowX, config.windowY = true, 12, 12
 module:RegisterMovers()
 assert(not nativeRecord.isEnabled(), "native and Suite chat movers compete for the same frame")
@@ -240,15 +284,54 @@ for _, scale in ipairs({ 0.5, 1, 1.5 }) do
     eq(config.windowY, 200, "numeric Y applies requested value")
     assert(element.restoreState(liveState))
 end
+-- Reproduce the native Selection's 32px dead margin, not just SetPoint arguments.
+do
+    local left, bottom, setPoint = frame.GetLeft, frame.GetBottom, frame.SetPoint
+    frame.scale, config.windowX, config.windowY, config.lockWindowPosition = 1, 12, 12, false
+    frame.points, frame.clamped = { "BOTTOMLEFT", UIParent, "BOTTOMLEFT", 32, 32 }, true
+    module.context.clampBefore, module.context.pointsBefore = {}, {}
+    module.visuals[frame], module.positionFrame = {}, frame
+    function frame:GetLeft() return UIParent:GetLeft() + (self.points[4] or 0) end
+    function frame:GetBottom() return UIParent:GetBottom() + (self.points[5] or 0) end
+    function frame:SetPoint(point, relative, edge, x, y)
+        if self.clamped then x, y = math.max(32, x), math.max(32, y) end
+        self.points = { point, relative, edge, x, y }
+    end
+    local beforeMove = element.captureState()
+    eq(beforeMove.origin.windowX, 32, "native corner origin X")
+    eq(beforeMove.origin.windowY, 32, "native corner origin Y")
+    assert(beforeMove.values.lockWindowPosition == false, "capture lost native ownership")
+    assert(element.movePosition({ state = beforeMove, deltaX = -32, deltaY = -32, phase = "drag" }))
+    eq(frame.points[4], 0, "native clamp keeps an invisible left margin")
+    eq(frame.points[5], 0, "native clamp keeps an invisible bottom margin")
+    assert(config.lockWindowPosition == false, "preview adopted ownership before release")
+    assert(element.movePosition({ state = beforeMove, deltaX = -32, deltaY = -32, phase = "commit" }))
+    assert(config.lockWindowPosition, "first completed move did not adopt the anchor")
+    eq(config.windowX, 0, "corner committed X"); eq(config.windowY, 0, "corner committed Y")
+    local afterMove = element.captureState()
+    assert(element.restoreState(beforeMove))
+    chat.ApplyWindowPosition(module, module.visuals[frame], frame, true)
+    assert(not config.lockWindowPosition and frame.clamped, "undo retained Suite clamp/anchor ownership")
+    eq(frame.points[4], 32, "undo lost original native X")
+    eq(frame.points[5], 32, "undo lost original native Y")
+    EditModeManagerFrame = { HookScript = function() end, IsShown = function() return false end }
+    assert(element.restoreState(afterMove))
+    chat.ApplyWindowPosition(module, module.visuals[frame], frame, true)
+    assert(config.lockWindowPosition and not frame.clamped, "redo lost Suite corner ownership")
+    eq(frame.points[4], 0, "redo corner X"); eq(frame.points[5], 0, "redo corner Y")
+    assert(element.restoreState(beforeMove))
+    chat.ApplyWindowPosition(module, module.visuals[frame], frame, true)
+    frame.GetLeft, frame.GetBottom, frame.SetPoint = left, bottom, setPoint
+end
 frame.scale, frame.left, frame.bottom, module.positionFrame = nil, nil, nil, nil
 eq(controls.windowX.positionAxis, "x", "X control identifies its coordinate axis")
 eq(controls.windowY.positionAxis, "y", "Y control identifies its coordinate axis")
 
 config.lockWindowPosition = false
 module:RegisterMovers()
-assert(nativeRecord.isEnabled(), "unlock did not hand the chat mover back to Blizzard")
-assert(moverRefreshes == 2, "unlock did not synchronize visible host movers")
-assert(not element.isEnabled(), "the mover stays after the anchor went off")
+assert(not nativeRecord.isEnabled(), "clearing a saved anchor restored the oversized competing mover")
+assert(moverRefreshes == 1, "clearing an anchor needlessly refreshed all host movers")
+assert(element.isEnabled(), "clearing an anchor stranded the active chat mover")
 config.lockWindowPosition, suite.states.chat.active = true, false
 assert(not element.isEnabled(), "the mover of a stopped module stays")
 
@@ -275,6 +358,145 @@ suite.RegisterOwnedMover = function() return false end
 module:RegisterMovers()
 assert(nativeRecord.isEnabled(), "failed Suite mover registration stranded the native mover")
 suite.RegisterOwnedMover = registerMover
+
+-- Detached movers own preview bounds. A commit saves only that native
+-- window, and native dock/close/reuse never inherits another window's state.
+do
+    Constants.ChatFrameConstants.MaxChatWindows = 4
+    local saves = {}
+    local function Native(index, x, y, scale)
+        local native = { points = { "TOPRIGHT", UIParent, "TOPRIGHT", -20, -30 },
+            x = x, y = y, index = index, shown = true, scale = scale }
+        function native:GetID() return self.index end
+        function native:IsShown() return self.shown end
+        function native:GetEffectiveScale() return self.scale * UIParent:GetEffectiveScale() end
+        function native:GetLeft() return self.x end
+        function native:GetBottom() return self.y end
+        function native:GetWidth() return 320 end
+        function native:GetHeight() return 140 end
+        function native:ClearAllPoints() assert(not combat); self.points = {} end
+        function native:SetPoint(...)
+            assert(not combat)
+            self.points = { ... }
+            local point, _, _, px, py = ...
+            assert(point == "BOTTOMLEFT")
+            self.x = px + UIParent:GetLeft() / self.scale
+            self.y = py + UIParent:GetBottom() / self.scale
+        end
+        return native
+    end
+    local guild, loot = Native(3, 180, 200, .75), Native(4, 450, 230, 1)
+    ChatFrame3, ChatFrame4 = guild, loot
+    function FCF_SavePositionAndDimensions(native) saves[#saves + 1] = native:GetID() end
+    function suite.CreateFrame()
+        local proxy = { shown = false }
+        function proxy:EnableMouse() end
+        function proxy:SetAlpha() end
+        function proxy:SetScale() end
+        function proxy:ClearAllPoints() self.point = nil end
+        function proxy:SetPoint(...) self.point = { ... } end
+        function proxy:SetSize(w, h) self.w, self.h = w, h end
+        function proxy:GetWidth() return self.w or 330 end
+        function proxy:GetHeight() return self.h or 166 end
+        function proxy:IsShown() return self.shown end
+        function proxy:Show() self.shown = true end
+        function proxy:Hide() self.shown = false end
+        return proxy
+    end
+    function chat.HeaderTop() return 20 end
+    MSUF_EditModeAPI.GetCapabilities = function() return { positionFields = true } end
+    module.active, suite.editMode = true, true
+    chat.UpdateFloatingMoverBounds(module)
+    module:RegisterMovers()
+    local g, l = registered["MSUFSuite.chat/floating3"], registered["MSUFSuite.chat/floating4"]
+    assert(g and l and g.getFrame() ~= l.getFrame(), "detached windows share a mover")
+    assert(not g.extraControls and not l.extraControls, "detached window has duplicate coordinates")
+    local opened, attempts
+    MSUF_EditModeAPI.EnterEditMode = function(owner, id)
+        attempts = (attempts or 0) + 1
+        opened = owner .. "/" .. id
+        return id == "floating4"
+    end
+    assert(suite.ChatOpenDetachedMover(4) and opened == "MSUFSuite.chat/floating4", "preview opened the wrong mover")
+    attempts = 0
+    assert(not suite.ChatOpenDetachedMover(3) and attempts == 1, "failed exact mover opened another window")
+    g.onSessionChanged(true, "enter")
+    local before = g.captureState()
+    eq(before.x, 125, "scaled floating X")
+    eq(before.y, 130, "scaled floating Y")
+    assert(g.restoreState(before) and guild.points[1] == "TOPRIGHT" and #saves == 0, "unchanged discard saved a new anchor")
+    assert(g.movePosition({ state = before, deltaX = 30, deltaY = -15, phase = "preview" }))
+    eq(guild.x, 180, "preview moved Blizzard's frame")
+    eq(#saves, 0, "preview saved native geometry")
+    assert(g.movePosition({ state = before, deltaX = 30, deltaY = -15, phase = "commit" }))
+    eq(guild.x, 220, "native commit used the wrong scale")
+    eq(guild.y, 180, "native commit moved the wrong Y")
+    eq(loot.x, 450, "moving Guild moved Loot")
+    eq(#saves, 1, "one commit did not produce one native save")
+    eq(saves[1], 3, "mover persisted the wrong native window")
+    combat = true
+    assert(not g.restoreState(before) and #saves == 1, "combat replay wrote native chat geometry")
+    combat = false
+    assert(g.restoreState(before) and guild.x == 180, "undo did not restore the detached window")
+    guild.isDocked = true
+    chat.UpdateFloatingMoverBounds(module)
+    assert(not g.isEnabled() and l.isEnabled(), "docking Guild removed the wrong mover")
+    g.onSessionChanged(true, "enter")
+    guild.isDocked = false
+    chat.FloatingWindowClosed(guild)
+    assert(not g.restoreState(before), "a reused tab slot accepted stale mover history")
+    local afterUndock = g.captureState()
+    assert(g.movePosition({ state = afterUndock, deltaX = 15, deltaY = 0, phase = "commit" }))
+    assert(guild.x == 200, "late detach could not move")
+    g.onSessionChanged(false, "discard")
+    eq(guild.x, 180, "discard lost the baseline of a newly detached window")
+
+    Constants.ChatFrameConstants.MaxChatWindows = 5
+    MSUF_EditModeAPI.GetCapabilities = nil
+    ChatFrame5 = Native(5, 120, 160, 1)
+    module:RegisterMovers()
+    local legacy = registered["MSUFSuite.chat/floating5"]
+    assert(legacy.extraControls and #legacy.extraControls == 2, "legacy host has no numeric detached position fields")
+    local nativeDeleted = 0
+    function suite.PublicText(value) return type(value) == "string" end
+    function GetChatWindowInfo(index) return index == 4 and "Loot" or "Guild" end
+    function FCF_IsChatWindowIndexReserved(index) return index <= 3 end
+    function FCF_IsChatWindowIndexActive(index) return _G["ChatFrame" .. index]:IsShown() end
+    function IsBuiltinChatWindow() return false end
+    function FCF_GetCurrentChatFrameID() return CURRENT_CHAT_FRAME_ID end
+    function FCF_PopInWindow() nativeDeleted = nativeDeleted + 1 end
+    ChatFrame5.isTemporary = true
+    local choices = {}
+    eq(suite.ChatDeletableTabs(choices), 1, "reserved/temporary chat is deletable")
+    eq(choices[1].index, 4, "wrong native tab eligible for deletion")
+    combat = true
+    suite.ChatDeleteTabs(choices)
+    combat = false
+    eq(nativeDeleted, 0, "delete accepted in combat")
+    chat.FloatingWindowClosed(loot)
+    suite.ChatDeleteTabs(choices)
+    eq(nativeDeleted, 0, "delete accepted a reused native slot")
+    local rebuilt = 0
+    CURRENT_CHAT_FRAME_ID, DEFAULT_CHAT_FRAME = 4, { GetID = function() return 1 end }
+    ChatConfigFrame = {
+        IsShown = function() return true end,
+        ChatTabManager = {
+            UpdateSelection = function(_, index) CURRENT_CHAT_FRAME_ID = index end,
+            UpdateTabDisplay = function() rebuilt = rebuilt + 1 end,
+        },
+    }
+    suite.ChatDeletableTabs(choices)
+    suite.ChatDeleteTabs(choices)
+    eq(nativeDeleted, 1, "confirmed native close did not run")
+    eq(CURRENT_CHAT_FRAME_ID, 1, "filter panel still points at a closed tab")
+    eq(rebuilt, 1, "filter panel did not rebuild after closing a tab")
+    ChatConfigFrame = nil
+    ChatFrame5 = nil
+    ChatFrame3, ChatFrame4 = nil, nil
+    suite.editMode = false
+    chat.HideFloatingMovers(module)
+    Constants.ChatFrameConstants.MaxChatWindows = 0
+end
 
 ------------------------------------------------------------------ keyword notices
 -- A random dungeon, raid finder or battleground group talks on the instance

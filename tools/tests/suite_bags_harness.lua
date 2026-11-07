@@ -407,6 +407,7 @@ function H.BuildClient(W, env)
         local frame = env.NewWidget("Frame", name, W.UIParent, true)
         frame.shown = false
     end
+    MerchantFrame_Update = function() end
     -- Blizzard_GuildBankUI loads on demand at the guild vault.
     function W.OpenGuildBank()
         if not _G.GuildBankFrame then

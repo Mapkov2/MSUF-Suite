@@ -1,5 +1,5 @@
 local _, P = ...
-local S = P.Suite
+local NS, S = P.NS, P.Suite
 local IN_COMBAT = { inCombat = true }
 -- Native chat styling. The Chat files share the private table below and load
 -- in TOC order, with Controller installing M. Native chrome updates when
@@ -38,6 +38,53 @@ function C.OwnBorderedParts(context, frame, own)
             end
         end
     end
+end
+
+function S.ChatCanCreateTab()
+    return not NS.InCombat() and FCF_CanOpenNewWindow()
+end
+
+local function FilterPanel()
+    local panel = ChatConfigFrame
+    if panel and not NS.Safety.IsForbidden(panel) then return panel end
+end
+
+local function OpenTabFilters(index)
+    -- In Gamepad UI the player opens Settings from Blizzard's tab menu.
+    if NS.InCombat() or not S.CanOpenNativeWindow() then return false end
+    local panel = FilterPanel()
+    if not panel then return false end
+    if panel:IsShown() then
+        panel.ChatTabManager:UpdateTabDisplay()
+    else
+        ShowUIPanel(panel)
+        if not panel:IsShown() then return false end
+    end
+    panel.ChatTabManager:UpdateSelection(index)
+    return true
+end
+
+function C.RefreshTabFilters(selectedClosed)
+    if not S.CanOpenNativeWindow() then return end
+    local panel = FilterPanel()
+    if not panel or not panel:IsShown() then return end
+    local manager = panel.ChatTabManager
+    if selectedClosed then manager:UpdateSelection(DEFAULT_CHAT_FRAME:GetID()) end
+    manager:UpdateTabDisplay()
+end
+
+function S.ChatCreateTab(onConfigured)
+    if not S.ChatCanCreateTab() then return false end
+    -- Mirror NAME_CHAT's native defaults and use the exact returned slot for filters.
+    S.AskText("chat-new-tab", { text = NAME_CHAT_WINDOW, maxLetters = 31, callback = function(name)
+        if not S.ChatCanCreateTab() then return end
+        local frame, index = FCF_OpenNewWindow(name)
+        if not frame then return end
+        FCF_CopyChatSettings(frame, DEFAULT_CHAT_FRAME)
+        FCF_DockUpdate()
+        if S.Finite(index) and OpenTabFilters(index) and onConfigured then onConfigured() end
+    end })
+    return true
 end
 
 -- Chat moves frames (a geometry module), so a listener waits for the end of
@@ -88,9 +135,11 @@ end
 C.CombatLogBar = CombatLogBar
 
 -- Height of the tab strip above a window: the combat log filter row joins it.
-function C.HeaderTop(config, frame)
-    if not config.tabPanel then return config.hideTabArt and 0 or config.padding end
+function C.HeaderTop(config, frame, preview)
+    local tools = config.headerToolbar and (preview or frame == ChatFrame1 or frame.isDocked)
+    if not config.tabPanel and not tools then return config.hideTabArt and 0 or config.padding end
     local top = (config.tabHeight or 24) + (config.tabPanelGap or 0)
+    if tools and C.ToolbarWrap(config, frame) then top = top + 24 end
     local quickBar = CombatLogBar(frame)
     if quickBar then
         local height = quickBar:GetHeight()

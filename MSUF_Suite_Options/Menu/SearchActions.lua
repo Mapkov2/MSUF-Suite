@@ -41,6 +41,7 @@ local EDITOR_ACTIONS = {
     { "damageMeter", "windows", "window.move", "Move this window" },
     { "dataTexts", "gold", "action.clearGold", "Clear saved character gold" },
     { "dataTexts", "presets", "action.addBar", "Add bar" },
+    { "dataTexts", "dataTexts_module", "action.deleteBars", "Delete bars" },
     { "dataTexts", "sources", "chooseSeasonStages", "Choose observed seasonal stages" },
     { "dataTexts", "sources", "chooseCrestCurrencies", "Choose crest currencies" },
     { "bags", "finance", "action.clearGold", "Clear saved character gold" },
@@ -168,6 +169,10 @@ local function AddQualityOfLifeRows(Add)
         for _, action in ipairs(QOL_ACTIONS[feature.id] or {}) do
             Add(feature.id, "action." .. action[1], action[2], sectionId, nil, nil, feature)
         end
+        if feature.id == "dailyComfort" then
+            Add("parallelWindows", "enabled", "Keep Blizzard windows open", sectionId, "setting", "toggle", feature)
+            Add("parallelWindows", "windowLimit", "Blizzard window limit", sectionId, "setting", "slider", feature)
+        end
         local colorWords = FeatureColorWords(feature)
         if colorWords then
             local label = Tr("%s Colors"):format(Tr(feature.title))
@@ -205,8 +210,8 @@ function P.AppendSearchActionRows(rows, pagesByKey)
         end
         rows[#rows + 1] = {
             pageKey = pageKey, kind = kind or "button", label = Tr(label),
-            sectionId = sectionId, controlId = meta.controlId,
-            suiteModuleId = id, suiteFeatureSwitch = feature and feature.switch or nil,
+            sectionId = sectionId, controlId = meta.controlId, settingKey = meta.settingKey,
+            suiteModuleId = id, suiteFeatureSwitch = feature and feature.id == id and feature.switch or nil,
             section = extra and extra.section or feature and Tr(feature.title) or Tr(spec.title), keywords = keywords,
         }
     end

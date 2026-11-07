@@ -169,6 +169,10 @@ local function BuildAnnouncements(ctx, b)
         Tr("Timing and position"), P.SectionRules("announcements", "layout"), {
             help = "Drag announcements in MSUF Edit Mode, or set their timing, scale and exact position here.",
         })
+    AddSection(sections, "suite_hud_announcements_artwork",
+        Tr("Banner artwork"), P.SectionRules("announcements", "artwork"), {
+            help = "Choose an artwork style in the preview to see it on the banner.",
+        })
     AddSection(sections, "suite_hud_announcements_type",
         Tr("Appearance"), AppearanceRules("announcements"), {
             help = "Set font, text sizes and background opacity here. Open the three-dot color menu in this section for announcement colors; choosing one switches to Custom colors automatically.",

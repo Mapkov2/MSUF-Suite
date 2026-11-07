@@ -137,6 +137,13 @@ NAMEPLATE_BORDER_FOCUS_TARGET_COLOR = { r = 1, g = 0.5, b = 0 }
 local function Texture()
     local t = { alpha = 1, writes = 0 }
     function t:SetAlpha(alpha) self.alpha, self.writes = alpha, self.writes + 1 end
+    function t:GetAlpha() return self.alpha end
+    function t:SetShown(shown) self.shown = shown end
+    function t:SetTexture(texture) self.texture = texture end
+    function t:SetAtlas(atlas) self.atlas = atlas end
+    function t:ClearAllPoints() end
+    function t:SetPoint() end
+    function t:SetTexCoord() end
     function t:SetVertexColor(r, g, b) self.color, self.writes = { r, g, b }, self.writes + 1 end
     return t
 end
@@ -201,6 +208,117 @@ Selection.Configure(Config())
 assert(Selection.inUse, "a styled plate must still get its restore pass")
 Selection.Apply(health, true)
 assert(health.deselectedOverlay.alpha == 1 and not Selection.inUse, "Keep did not restore Blizzard's dimming")
+
+------------------------------------------------------------------ Forever chrome and level preview
+do
+    NS.Client.isForever = true
+    local foreverCatalog = setmetatable({}, { __index = NS })
+    assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", foreverCatalog)
+    assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/Nameplates.lua"))("MSUF_Suite", foreverCatalog)
+    local forever = foreverCatalog.SuiteCatalog.nameplates.rules
+    assert(forever.enemyNativeBorderEnabled.default and forever.friendlyNativeBorderEnabled.default,
+        "Forever's native bar border must keep its old default")
+    assert(not rules.enemyNativeBorderEnabled and not rules.friendlyNativeBorderEnabled,
+        "Forever's native bar border controls leaked into Retail")
+    assert(forever.enemyLevelSize.requiresChoice.values[1] and not forever.enemyLevelSize.requiresChoice.values[2],
+        "Blizzard badge must not expose an inert size control")
+
+    NamePlateConstants = { TARGET_BORDER_COLOR = { r = 1, g = 0.8, b = 0 },
+        FOCUS_TARGET_BORDER_COLOR = { r = 0.4, g = 0.7, b = 1 } }
+    local enemy, friendly = Health(), Health()
+    enemy.bgTexture, friendly.bgTexture = Texture(), Texture()
+    enemy.bgTexture.alpha = 0.67
+    local badge = { selectedBorder = Texture(), isTarget = true }
+    function badge:UpdateSelectionBorder()
+        local color = self.isTarget and NamePlateConstants.TARGET_BORDER_COLOR or NamePlateConstants.FOCUS_TARGET_BORDER_COLOR
+        self.selectedBorder:SetVertexColor(color.r, color.g, color.b)
+    end
+    local uf = { PlayerLevelDiffFrame = badge }
+    local config = Config({ enemyNativeBorderEnabled = false, selectionBorder = 3 })
+    Selection.Configure(config)
+    Selection.Apply(enemy, true, uf, "enemy")
+    Selection.Apply(friendly, true, {}, "friendly")
+    assert(enemy.bgTexture.alpha == 0 and friendly.bgTexture.alpha == 1, "native border was not scoped per side")
+    Selection.Apply(enemy, true, uf, "friendly")
+    assert(enemy.bgTexture.alpha == 0.67, "a plate that became friendly kept its enemy native border preference")
+    Selection.Apply(enemy, true, uf, "enemy")
+    assert(enemy.bgTexture.alpha == 0, "a plate that became hostile kept its friendly native border preference")
+    assert(enemy.selectedBorder.alpha == 0 and badge.selectedBorder.alpha == 0,
+        "Hide left a native target border on Forever's level badge")
+    badge:UpdateSelectionBorder()
+    assert(badge.selectedBorder.alpha == 0, "native target update restored the hidden badge border")
+    config.selectionBorder, config.selectionFocusColor = 2, "00ff00"
+    Selection.Configure(config)
+    Selection.Apply(enemy, true, uf, "enemy")
+    badge.isTarget, badge.isFocus = false, true
+    badge:UpdateSelectionBorder()
+    assert(badge.selectedBorder.alpha == 1 and badge.selectedBorder.color[2] == 1,
+        "custom focus color did not survive a native badge refresh")
+    config.selectionBorder, config.enemyNativeBorderEnabled = 1, true
+    Selection.Configure(config)
+    Selection.Apply(enemy, true, uf, "enemy")
+    assert(enemy.bgTexture.alpha == 0.67 and badge.selectedBorder.color[2] == 0.7,
+        "Keep did not restore the previous native backdrop opacity and badge color")
+    config.selectionBorder, config.enemyNativeBorderEnabled = 3, false
+    Selection.Configure(config)
+    Selection.Apply(enemy, true, uf, "enemy")
+    Selection.Apply(enemy, false)
+    assert(enemy.bgTexture.alpha == 0.67 and badge.selectedBorder.alpha == 1,
+        "disabling a side did not restore the backdrop and badge border")
+    Selection.Apply(enemy, true, uf, "enemy")
+    Selection.RestoreAll()
+    assert(enemy.bgTexture.alpha == 0.67 and badge.selectedBorder.alpha == 1,
+        "disabling the module did not restore the backdrop and badge border")
+
+    local preview = { Suite = NS, Get = function(_, key) return config[key] end, RGB = NS.RGB }
+    assert(loadfile(root .. "/MSUF_Suite_Options/Pages/NameplatesPreviewDecor.lua"))("Options", preview)
+    local draw = preview.NameplatesPreviewDecor
+    local editor = { LayerOn = function() return true end }
+    local sample = { prefix = "enemy", bar = {}, state = { target = true },
+        nativeBorder = Texture(), selectedBar = Texture(), levelBack = Texture(),
+        levelSelected = Texture(), levelSkull = Texture(), levelText = Texture(), level = Texture() }
+    local label, level = sample.levelText, sample.level
+    function label:SetText(value) self.text = value end
+    function label:SetTextHeight(value) self.size = value end
+    function label:SetJustifyH(value) self.justify = value end
+    function label:SetTextColor() end
+    function level:SetSize(width, height) self.width, self.height = width, height end
+    local function Setup(_, fallback) return fallback end
+    local function Place(_, region, point) region.point = point end
+    UnitEffectiveLevel = function() return 13 end
+    local metrics = { forever = true, style = 0, horizontal = 1, vertical = 1, classificationScale = 1 }
+    config.look, config.enemyLevelEnabled, config.levelAppearance = 3, true, 1
+    config.enemyLevelSize = 20
+    metrics.levelMode = draw.LevelMode(editor, "enemy", true, false)
+    draw.PaintLevel(editor, sample, metrics, Setup, Place)
+    assert(level.shown and level.point == "RIGHT" and label.text == 13 and label.size == 20
+        and not sample.levelBack.shown, "Forever Classic must preview the configured plain level at the left")
+    config.levelAppearance = 2
+    metrics.levelMode = draw.LevelMode(editor, "enemy", true, false)
+    draw.PaintLevel(editor, sample, metrics, Setup, Place)
+    assert(level.shown and level.point == "LEFT" and label.size == 10 and sample.levelBack.shown
+        and not sample.levelSelected.shown, "Forever badge ignored its native placement or hidden selection")
+    config.enemyLevelEnabled = false
+    metrics.levelMode = draw.LevelMode(editor, "enemy", false, false)
+    draw.PaintLevel(editor, sample, metrics, Setup, Place)
+    assert(not level.shown and not draw.LevelMode(editor, "friendly", false, true),
+        "a disabled level or a names-only sample still showed the level")
+    draw.PaintHealthChrome(editor, sample, metrics)
+    assert(not sample.nativeBorder.shown and not sample.selectedBar.shown,
+        "the preview kept a native border that the live settings hide")
+    config.look = 2
+    draw.PaintHealthChrome(editor, sample, metrics)
+    assert(sample.nativeBorder.shown and sample.selectedBar.shown, "Blizzard look did not restore its native preview chrome")
+    assert(draw.LevelMode(editor, "enemy", true, false) == "badge", "Forever Blizzard look lost its native level badge")
+    NS.Client.isForever = false
+    Enum = { GameRule = { PlayerNameplateDifficultyIcon = 1 } }
+    C_GameRules = { IsGameRuleActive = function(rule) return rule == Enum.GameRule.PlayerNameplateDifficultyIcon end }
+    editor.enemyPlayer = true
+    assert(draw.LevelMode(editor, "enemy", false, false) == "badge",
+        "Retail's player difficulty badge is missing from the preview while its game rule is active")
+    editor.enemyPlayer = false
+    assert(not draw.LevelMode(editor, "enemy", false, false), "Retail displayed the player difficulty badge for an NPC")
+end
 
 ------------------------------------------------------------------ options
 local P = { Gates = {}, SearchPreparers = {}, catalog = { nameplates = spec } }

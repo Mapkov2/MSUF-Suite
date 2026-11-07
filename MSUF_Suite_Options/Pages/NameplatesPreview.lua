@@ -1,4 +1,5 @@
 local _, P = ...
+local NATIVE_TEXT_FONT = _G.STANDARD_TEXT_FONT
 local M, Tr = P.M, P.Tr
 local Style = P.Suite.NameplateStyle
 local NativeBit = Style.NativeBit
@@ -81,7 +82,7 @@ end
 
 local function Text(owner, value, size, color)
     local label = owner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetFont(_G.STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size or 12, "OUTLINE")
+    label:SetFont(NATIVE_TEXT_FONT or "Fonts\\FRIZQT__.TTF", size or 12, "OUTLINE")
     label:SetText(Tr(value))
     if color then label:SetTextColor(unpack(color)) end
     return label
@@ -120,10 +121,14 @@ local function AuraGroup(parent, textures, reverse)
 end
 
 local function PreviewFont(region, prefix, size, outline, nativeSize, nativeOnly)
+    if not nativeOnly then
+        P.Suite.NameplateText.PaintFont(region, P.S.Config(ID), prefix, nativeSize, NATIVE_TEXT_FONT, P.StylePreviewFont)
+        return
+    end
     local enabled = not nativeOnly and P.Get(ID, prefix .. "TextEnabled")
     local custom = P.Get(ID, prefix .. "CustomFont")
     local fontKey = prefix .. (prefix:sub(-4) == "Cast" and "Font" or "NameFont")
-    local font = enabled and custom and Style.Font(P.Get(ID, fontKey)) or _G.STANDARD_TEXT_FONT
+    local font = enabled and custom and Style.Font(P.Get(ID, fontKey)) or NATIVE_TEXT_FONT
     P.StylePreviewFont(region, font, enabled and size > 0 and size or nativeSize,
         enabled and Style.FontFlags(outline) or "OUTLINE")
     local shadow = enabled and P.Get(ID, prefix .. "TextShadow")
@@ -134,8 +139,11 @@ end
 -- Moves a sample element by its saved offset from a native-style base.
 local function Place(s, frame, point, owner, relative, x, y, key)
     frame:ClearAllPoints()
-    frame:SetPoint(point, owner, relative, x + P.Get(ID, s.prefix .. key .. "OffsetX"),
-        y + P.Get(ID, s.prefix .. key .. "OffsetY"))
+    if key then
+        x = x + P.Get(ID, s.prefix .. key .. "OffsetX")
+        y = y + P.Get(ID, s.prefix .. key .. "OffsetY")
+    end
+    frame:SetPoint(point, owner, relative, x, y)
 end
 
 ----------------------------------------------------------------- sample build
@@ -153,6 +161,7 @@ local function BuildBar(editor, s, cell)
     s.bar = bar
     s.back = Fill(bar, "BACKGROUND")
     s.back:SetAllPoints(bar)
+    s.nativeBorder = bar:CreateTexture(nil, "BACKGROUND", nil, -1)
     s.progress = Fill(bar, "ARTWORK")
     s.progress:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
     s.progress:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
@@ -194,10 +203,11 @@ local function BuildNameAndLevel(s, cell)
     Tint(s.levelBack, "191714")
     s.levelSelected = s.level:CreateTexture(nil, "OVERLAY")
     s.levelSelected:SetAtlas("ui-hud-nameplates-levelindicator-rectangle-selected")
-    s.levelSelected:SetPoint("TOPLEFT", s.level, "TOPLEFT", -3, 4)
+    s.levelSelected:SetPoint("TOPLEFT", s.level, "TOPLEFT", -3, 3)
     s.levelSelected:SetPoint("BOTTOMRIGHT", s.level, "BOTTOMRIGHT", 3, -4)
-    s.levelBorder = Style.CreateBorder(s.level)
-    s.levelText = Text(s.level, prefix == "enemy" and "73" or "80", 11, { 1, 1, 1 })
+    s.levelSkull = s.level:CreateTexture(nil, "OVERLAY")
+    s.levelSkull:SetPoint("CENTER", s.level, "CENTER")
+    s.levelText = s.level:CreateFontString(nil, "OVERLAY", "SystemFont_NamePlateLevel")
     s.levelText:SetAllPoints(s.level)
     s.levelText:SetJustifyH("RIGHT")
     s.arrowGroup = CreateFrame("Button", nil, cell)
@@ -359,32 +369,33 @@ local function Metrics(editor, s, m)
         and (friendlyDisplay == 2 or friendlyDisplay == 3 or friendlyDisplay == 1
             and Style.NativeToggle("nameplateShowOnlyNameForFriendlyPlayerUnits", false))
     m.nativeLevel = m.forever and not m.namesOnly
-    m.boxedLevel = m.classic or P.Get(ID, "look") == 2
-    if m.forever then m.boxedLevel = P.Get(ID, "look") == 2 or P.Get(ID, "levelAppearance") == 2 end
+    m.levelMode = P.NameplatesPreviewDecor.LevelMode(editor, prefix, m.classic, m.namesOnly)
     m.nativeLevelWidth = m.nativeLevel and SetupNumber("playerLevelDiffWidth", 28 * m.classificationScale) or 0
     m.reserve = m.nativeLevel and m.nativeLevelWidth + 5 or 0
     local contentWidth = (m.classic and 152 or m.forever and 190 or 230) * m.horizontal - 2 * inset
     local geometry = P.Get(ID, "look") ~= 2 and P.Get(ID, prefix) and P.Get(ID, "barGeometry") or 1
     local totalWidth, uniformHealth, uniformCast, uniformIcon = Style.BarDimensions(geometry, selectedStyle, m.horizontal, m.vertical)
-    if uniformCast then
-        uniformCast, uniformIcon = Style.CastDimensions(geometry, P.Get(ID, prefix .. "CastHeight"),
-            P.Get(ID, prefix .. "CastIconSize"), uniformCast, uniformIcon)
-    end
     if totalWidth then contentWidth, m.reserve = totalWidth - 2 * inset, 0 end
     m.classicInset = m.classic and 24.25 * m.horizontal or 0
     m.widthDelta = P.Get(ID, prefix .. "HealthWidthDelta") or 0
     m.heightDelta = P.Get(ID, prefix .. "HealthHeightDelta") or 0
     m.barWidth = contentWidth - m.reserve - m.classicInset + m.widthDelta
-    m.castWidth = contentWidth - m.classicInset
+    local castEnabled = P.Get(ID, "look") ~= 2 and P.Get(ID, prefix)
+    m.castBaseWidth = contentWidth - m.classicInset
+    m.castWidthDelta = castEnabled and P.Get(ID, prefix .. "CastWidthDelta") or 0
+    m.castWidth = m.castBaseWidth + m.castWidthDelta
     m.healthX = -m.reserve / 2 - (m.classic and 8.625 * m.horizontal or 0) - m.widthDelta / 2
     m.castX = m.classic and 8.625 * m.horizontal or 0
     local style = m.style
     local healthHeight = m.classic and 10 or (style == 0 or style == 2 or style == 3) and 20 or m.forever and 13 or 10
     m.nativeBarHeight = uniformHealth or SetupNumber("healthBarHeight", healthHeight * m.vertical)
     local nativeCastHeight = (style == 2 or style == 4) and 16 or m.classic and 10 or m.forever and 6 or 10
-    m.castHeight = uniformCast or SetupNumber("castBarHeight", nativeCastHeight * m.vertical)
-    m.iconHeight = uniformIcon or SetupNumber("castIconHeight", (m.classic and 14 or 12) * m.vertical)
-    m.iconWidth = uniformIcon or SetupNumber("castIconWidth", m.iconHeight)
+    local castBaseHeight = uniformCast or SetupNumber("castBarHeight", nativeCastHeight * m.vertical)
+    local iconHeight = uniformIcon or SetupNumber("castIconHeight", (m.classic and 14 or 12) * m.vertical)
+    local iconWidth = uniformIcon or SetupNumber("castIconWidth", iconHeight)
+    m.castHeight, m.iconWidth, m.iconHeight = Style.CastDimensions(
+        castEnabled and P.Get(ID, prefix .. "CastHeight"), castEnabled and P.Get(ID, prefix .. "CastIconSize"),
+        castBaseHeight, iconWidth, iconHeight)
     m.classicCast = SetupToggle("useClassicCastBar", m.classic)
     m.castInside = SetupToggle("spellNameInsideCastBar", style == 2 or style == 4)
     local fallbackAnchor = m.classic and 3 or (style == 0 or style == 2) and 1 or 2
@@ -404,11 +415,11 @@ local function RenderFrames(editor, s, m)
     bar:SetPoint("CENTER", cell, "CENTER", m.healthX + P.Get(ID, prefix .. "HealthOffsetX"),
         -4 + m.heightDelta / 2 + P.Get(ID, prefix .. "HealthOffsetY"))
     s.cast:SetSize(m.castWidth, m.castHeight)
+    s.cast._npNativeWidth = m.castBaseWidth
     s.castName:SetWidth(m.castWidth)
     m.availableNameWidth = math.max(20, m.barWidth - math.min(88, m.barWidth * .45))
     cell:SetAlpha(P.Get(ID, prefix) and 1 or 0.4)
-    s.selectedBar:SetAtlas(m.forever and "UI-HUD-CoolDownManager-Selected-yellow" or "UI-HUD-Nameplates-Selected")
-    s.selectedBar:SetShown(s.state.target and not m.classic and editor:LayerOn("health"))
+    P.NameplatesPreviewDecor.PaintHealthChrome(editor, s, m)
     local savedRole = prefix == "enemy" and P.Get(ID, "enemyPreviewRole") or nil
     if prefix == "enemy" and editor.previewRole and editor.previewRoleSource ~= savedRole then
         editor.previewRole = nil
@@ -425,13 +436,13 @@ local function RenderTitle(editor, s, m)
         s.nameText:SetText(Tr(descriptor.sample))
     elseif prefix == "enemy" then
         s.title:SetText(Tr("ENEMY PLAYER / TARGET"))
-        s.nameText:SetText(Tr("Enemy Player"))
+        P.SetTranslatedText(s.nameText, P.Suite.NameplateText.Sample("friendly"))
     end
     s.name:SetShown(editor:LayerOn("name") and not (m.groupOnly and editor.friendlyOutsider))
     if prefix == "friendly" then
         s.title:SetText(Tr(editor.personal and "PERSONAL / PLAYER" or m.friendlyNPC and "FRIENDLY / ELITE NPC"
             or editor.friendlyOutsider and "FRIENDLY / OUTSIDE GROUP" or "FRIENDLY / GROUP"))
-        s.nameText:SetText(Tr(editor.personal and "Your Character" or m.friendlyNPC and "Friendly Elite" or "Friendly Player"))
+        P.SetTranslatedText(s.nameText, m.friendlyNPC and Tr("Friendly Elite") or P.Suite.NameplateText.Sample("friendly"))
     end
 end
 
@@ -482,44 +493,6 @@ local function RenderName(s, m)
     end
     s.nameText:SetWidth(m.namesOnly and 170 or m.nameAnchor == 3 and name:GetWidth() or m.availableNameWidth)
     s.nameText:SetJustifyH((m.namesOnly or m.nameAnchor == 3) and "CENTER" or "LEFT")
-end
-
-local function RenderLevel(editor, s, m)
-    local prefix, level, levelText = s.prefix, s.level, s.levelText
-    local boxed, native, classic = m.boxedLevel, m.nativeLevel, m.classic
-    if boxed and native then
-        Place(s, level, "LEFT", s.bar, "RIGHT", 5 + (classic and 20.75 * m.horizontal or 0), 0, "Level")
-    elseif boxed and classic then
-        -- Blizzard anchors the plaque to the container border, while the
-        -- preview bar represents the inset health texture.
-        Place(s, level, "CENTER", s.bar, "RIGHT", 10 * m.horizontal, 0, "Level")
-    else
-        Place(s, level, "RIGHT", s.bar, "LEFT", -4, 0, "Level")
-    end
-    local nativeHeight = (m.style == 0 or m.style == 2) and 23 or 16
-    local customSize = P.Get(ID, prefix .. "LevelSize") or 0
-    level:SetSize(boxed and native and m.nativeLevelWidth
-            or boxed and classic and SetupNumber("levelIconWidth", 15 * m.horizontal)
-            or math.max(24, (customSize > 0 and customSize or SetupNumber("levelFontHeight", 10 * m.vertical)) * 2),
-        boxed and native and SetupNumber("playerLevelDiffHeight", nativeHeight * m.classificationScale)
-            or boxed and classic and SetupNumber("levelIconHeight", 15 * m.vertical) or 16)
-    if boxed and native then s.levelBack:SetAtlas("ui-hud-nameplates-levelindicator")
-    else Tint(s.levelBack, "191714") end
-    s.levelBack:SetShown(boxed and (native or classic))
-    s.levelSelected:SetShown(boxed and native and s.state.target and editor:LayerOn("level"))
-    Style.PaintBorder(s.levelBorder, level, boxed and not native and classic and 1 or 0, "d9b64b")
-    levelText:SetJustifyH(boxed and (native or classic) and "CENTER" or "RIGHT")
-    if boxed and (native or classic) then levelText:SetTextColor(1, 0.85, 0.35)
-    elseif prefix == "enemy" and P.Get(ID, "enemyLevelColor") then
-        -- The sample's difficulty: the low-level type is trivial, the others fair.
-        local difficulty = Enum.RelativeContentDifficulty
-        local color = GetDifficultyColor(m.role == 1 and difficulty.Trivial or difficulty.Fair)
-        levelText:SetTextColor(color.r, color.g, color.b)
-    else levelText:SetTextColor(1, 1, 1) end
-    levelText:SetText(prefix == "enemy" and (m.role == 1 and "11" or "73") or "80")
-    levelText:SetTextHeight(not boxed and customSize > 0 and customSize or SetupNumber("levelFontHeight", 10 * m.vertical))
-    local enabled = P.Get(ID, "look") == 2 or not m.forever and classic or P.Get(ID, prefix .. "LevelEnabled")
-    level:SetShown(editor:LayerOn("level") and not m.namesOnly and enabled and (not boxed or native or classic))
 end
 
 local function RoleColorShown(editor, m)
@@ -580,9 +553,10 @@ local function RenderTarget(s, m)
     for _, key in ipairs(TARGET_KEYS) do
         targetConfig["enemyTarget" .. key] = P.Get(ID, "enemyTarget" .. key)
     end
-    local rightGap = m.boxedLevel and level:IsShown() and (m.nativeLevel and m.nativeLevelWidth + 5
-        or m.classic and SetupNumber("levelIconWidth", 15 * m.horizontal) + 4) or 0
-    local leftGap = m.forever and not m.boxedLevel and level:IsShown() and level:GetWidth() + 4 or 0
+    local rightGap = level:IsShown() and (m.levelMode == "badge" and m.forever and m.nativeLevelWidth + 5
+        or m.levelMode == "classic" and SetupNumber("levelIconWidth", 15 * m.horizontal) + 4) or 0
+    local leftGap = level:IsShown() and (m.levelMode == "number" and m.forever and level:GetWidth() + 4
+        or m.levelMode == "badge" and not m.forever and level:GetWidth() + 4) or 0
     local marker = Style.PaintTarget(s.targetVisual, s.bar, arrows, Style.TargetConfig(targetConfig), s.cell,
         rightGap, leftGap)
     s.arrowGroup:SetShown(arrows and marker ~= nil)
@@ -705,7 +679,7 @@ local function RenderCastDetails(editor, s, m)
     local cast = s.cast
     s.castIcon:SetSize(m.iconWidth, m.iconHeight)
     if m.classicCast then
-        local border = SetupNumber("castBarBorderWidth", 128 * m.horizontal)
+        local border = SetupNumber("castBarBorderWidth", 128 * m.horizontal) + m.castWidthDelta
         Place(s, s.castIcon, "CENTER", cast, "LEFT", (m.castWidth - border) / 2 + 2.875 * m.horizontal,
             -.5 * m.vertical, "CastIcon")
         s.shield:SetSize(0, 0)
@@ -751,11 +725,17 @@ local function Render(editor, s)
     RenderTitle(editor, s, m)
     RenderVisibility(editor, s, m)
     RenderName(s, m)
-    RenderLevel(editor, s, m)
+    P.NameplatesPreviewDecor.PaintLevel(editor, s, m, SetupNumber, Place)
     RenderHealth(editor, s, m)
     RenderTarget(s, m)
     RenderMarkers(editor, s, m)
     RenderFonts(s, m)
+    s.nameFormatState = s.nameFormatState or {}
+    s.nameFormatState.sampleNPC = s.prefix == "enemy" and not editor.enemyPlayer
+    local nameLook = P.Suite.NameplateText.Compile(P.S.Config(ID), s.prefix)
+    if not m.npcWorldName then
+        P.Suite.NameplateText.Paint(s.nameText, s.nameFormatState, s.nameText:GetText(), nameLook)
+    end
     RenderMirroredHeader(s, m)
     RenderCastAndAuras(editor, s, m)
     RenderRaid(editor, s, m)

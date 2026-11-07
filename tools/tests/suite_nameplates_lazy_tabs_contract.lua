@@ -3,13 +3,16 @@ local root = assert(arg[1]):gsub("\\", "/")
 local host = arg[3] or (root .. "/../MidnightSimpleUnitFrames-7.0")
 local flavor = arg[2] or "Mainline"
 local MenuWorld = assert(loadfile(host .. "/tools/tests/menu_core_world.lua"))()
-local mw = MenuWorld.Open(host, flavor, { locale = "deDE", clientScriptBindings = true })
+local function InstallLineMethods(world)
+    local methods = world.widgets.Methods
+    for _, name in ipairs({ "SetStartPoint", "SetEndPoint", "SetThickness" }) do
+        if not methods[name] then methods[name] = function(self, ...) self[name .. "Args"] = { ... } end end
+    end
+end
+local mw = MenuWorld.Open(host, flavor, { locale = "deDE", clientScriptBindings = true, beforeCore = InstallLineMethods })
 local env, M, world = mw.env, mw.M, mw.world
 world.widgets.Methods.SetTextHeight = function(self, value) self.textHeight=value end
 world.widgets.Methods.SetPointsOffset = function(self,x,y) self.pointsOffset={x,y} end
-for _,name in ipairs({"SetStartPoint","SetEndPoint","SetThickness"}) do
-    if not world.widgets.Methods[name] then world.widgets.Methods[name]=function(self,...) self[name.."Args"]={...} end end
-end
 env.C_SpecializationInfo = {GetSpecialization=function() return 1 end,
     GetSpecializationInfo=function() return flavor=="Forever" and 1482 or 71,"Fixture specialization" end}
 -- Client visibility includes every ancestor; the generic widget stubs only
@@ -60,6 +63,17 @@ local function Ready()
     return api.GetSearchRecords()
 end
 local built,widgets,panels={}, {},{}
+local preview, interruptLink
+local CreateEditor, Button = P.NameplatesEditor.Create, P.Button
+P.NameplatesEditor.Create = function(...)
+    preview = CreateEditor(...)
+    return preview
+end
+P.Button = function(ctx, parent, label, ...)
+    local button = Button(ctx, parent, label, ...)
+    if label == "Open interrupt settings" then interruptLink = button end
+    return button
+end
 local RuleGrid=P.RuleGrid
 P.RuleGrid=function(ctx,parent,page,id,rules,...)
     if id=='nameplates' then
@@ -77,6 +91,21 @@ P.RuleGrid=function(ctx,parent,page,id,rules,...)
     if id=='nameplates' then for _,entry in ipairs(entries) do if entry.widget then widgets[entry.rule.key]=entry.widget end end end
     return y,entries
 end
+local links = {}
+local Button = P.Button
+P.Button = function(ctx, parent, label, x, y, width, click, enabled, meta, options)
+    local button = Button(ctx, parent, label, x, y, width, click, enabled, meta, options)
+    if meta and meta.sectionId == "suite_nameplates_nameText" then links[label] = button end
+    return button
+end
+
+local function OpenNameTextCard()
+    assert(M.SelectPage("suite_nameplates"))
+    local body = assert(M.cache.suite_nameplates.sections.suite_nameplates_nameText)
+    M.Widgets.FocusCollapsibleSection(body, { scroll = false, flash = false })
+    mw:RunTimers(1000)
+end
+
 local records={}
 for _,record in ipairs(Ready()) do
     local setting=record.exactTarget and record.exactTarget.settingKey
@@ -84,7 +113,8 @@ for _,record in ipairs(Ready()) do
 end
 local cases={
     {'enemyTextMode','enemy:text'}, {'enemyTargetStyle','enemy:target'},
-    {'friendlyCastHeight','friendly:castbar'}, {'selectionBorder','signals:selection'},
+    {'friendlyCastHeight','friendly:castbar'}, {'friendlyCastWidthDelta','friendly:castbar'},
+    {'selectionBorder','signals:selection'},
     {'friendlyNpcDebuffs','auras:general'},
 }
 local saved={}
@@ -139,4 +169,127 @@ assert(M.SelectPage('home'))
 M.InvalidatePage('suite_nameplates')
 built,widgets,panels={},{},{}
 Open({'enemyOuterFrame','enemy:frame'})
+
+-- 7.0's generic exact link queues navigation until the static index is ready.
+-- Preview and interrupt links already know the live control and must land now.
+do
+    local static = M.Search.StaticIndex
+    local decoded, ready = static and static.IsDecoded, api.WhenIndexReady
+    local queued = {}
+    local sectionFocus, focuses = P.W.FocusCollapsibleSection, 0
+    P.W.FocusCollapsibleSection = function(...)
+        focuses = focuses + 1
+        return sectionFocus(...)
+    end
+    if decoded then static.IsDecoded = function() return false end end
+    api.WhenIndexReady = function(callback) queued[#queued + 1] = callback return true end
+    for _, button in ipairs(preview.layerButtons) do
+        if button.layerKey == "level" then button:GetScript("OnClick")(button, "RightButton") end
+    end
+    assert(widgets.enemyLevelEnabled and widgets.enemyLevelEnabled:IsVisible(),
+        "cold preview link did not immediately open the enemy level toggle")
+    assert(focuses == 0, "exact preview link also focused its fallback section")
+    P.W.FocusCollapsibleSection = sectionFocus
+    assert(P.OpenNameplateSetting("nativeSize"), "cold preview link could not reveal the Blizzard plates section")
+    assert(widgets.nativeSize and widgets.nativeSize:IsVisible(), "cold preview link left its area hidden")
+    assert(P.OpenNameplateSetting("enemyCastHeight"), "cold preview link could not reveal the enemy castbar section")
+    assert(interruptLink, "enemy castbar lost its interrupt settings link")
+    interruptLink:GetScript("OnClick")(interruptLink, "LeftButton")
+    assert(M.activeKey == "opt_castbar", "cold interrupt settings link was deferred")
+    local _, toggle = M.RuntimeControlCatalog.FindBySettingKey("general.kickReadyShowNameplates", "opt_castbar")
+    assert(toggle and toggle:IsVisible(), "cold interrupt link did not open the nameplates toggle")
+    assert(M.SelectPage("home"))
+    for _, callback in ipairs(queued) do callback() end
+    mw:RunTimers(1000)
+    assert(#queued == 0 and M.activeKey == "home", "a delayed nameplate link overrode the newer navigation")
+    api.WhenIndexReady = ready
+    if decoded then static.IsDecoded = decoded end
+end
+
+do
+    local tails, values = 0
+    local priorGrid, priorScope = P.RuleGrid, M.GlobalPage.BuildScopeOverrideSection
+    P.RuleGrid = function(ctx, parent, page, ...)
+        if page == "opt_fonts" then tails = tails + 1 end
+        return priorGrid(ctx, parent, page, ...)
+    end
+    M.GlobalPage.BuildScopeOverrideSection = function(ctx, builder, opts)
+        values = opts.values
+        return priorScope(ctx, builder, opts)
+    end
+    local formatter = P.Suite.HostBridge.NameFormatter()
+    if formatter and formatter.Nameplates then
+        local GP, db = M.GlobalPage, M.EnsureDB()
+        local config = P.S.Config("nameplates")
+        local before = config.nameFormattingEnabled
+        local function Click(label, section)
+            local entry = M.cache.opt_fonts
+            if entry then P.HM.GetSectionEntry(entry.sections[section]).SetOpenImmediate(false) end
+            db.general._fontScopeKey = "player"
+            OpenNameTextCard()
+            local button = assert(links[label], "missing Fonts shortcut for " .. label)
+            assert(button:IsVisible() and button:IsEnabled(), "inactive Fonts shortcut for " .. label)
+            button:GetScript("OnClick")(button)
+            mw:RunTimers(1000)
+            assert(M.activeKey == "opt_fonts" and GP.CurrentFontScope() == "nameplates",
+                "shortcut did not select the Nameplates scope")
+            assert(P.HM.GetSectionEntry(M.cache.opt_fonts.sections[section]).open, "shortcut did not open " .. section)
+        end
+        Click("Name format", "fonts_name_shortening")
+        Click("Colors", "fonts_name_power_colors")
+        assert(not widgets.enemyNameFormat and not widgets.friendlyNameFormat, "legacy disabled name rows are still built")
+        assert(config.nameFormattingEnabled == before, "opening Fonts changed a Suite setting")
+        assert(db.nameplates == nil or not db.nameplates.fontOverride, "opening Fonts enabled an override")
+
+        for key, section in pairs({ enemyNameMaxChars = "fonts_name_shortening", friendlyNameColor = "fonts_name_power_colors" }) do
+            OpenNameTextCard()
+            local record = assert(records["msufsuite.nameplates." .. key], "missing Fonts search record for " .. key)
+            local selected, anchored, exact = (M.Search._RoutingAPI or api).OpenSearchTarget(record.key,
+                record.label, record.label, record.anchor, record.route, record.exactTarget)
+            mw:RunTimers(1000)
+            assert(selected and anchored and exact, "old setting did not resolve to a Fonts section: " .. key)
+            assert(M.activeKey == "opt_fonts" and GP.CurrentFontScope() == "nameplates", "wrong search destination for " .. key)
+            assert(P.HM.GetSectionEntry(M.cache.opt_fonts.sections[section]).open, "search did not open " .. section)
+        end
+        db.general._fontScopeKey = "nameplates"
+        db.general.nameFormat, db.general.shortenNameMaxChars = "ABBREV_CUT", 8
+        db.general.shortenNameClipSide, db.general.shortenNameShowDots = "RIGHT", false
+        db.general.fontTextAlpha = .85
+        db.nameplates = nil
+        assert(M.SelectPage("opt_fonts") ~= false)
+        mw:RunTimers(1000)
+        local found
+        for _, value in ipairs(values or {}) do if value.value == "nameplates" then found = true end end
+        assert(found and GP.CurrentFontScope() == "nameplates", "Nameplates is absent from the standard Fonts selector")
+        assert(tails == 0, "Fonts appended separate Suite Nameplate blocks")
+        local inherited = formatter.Nameplates({})
+        assert(inherited.nameFormat == "ABBREV_CUT" and inherited.nameShortenMax == 8,
+            "native nameplate scope does not inherit Shared")
+        GP.FontScopeSetFor("nameplates", "nameFormat", "CUT", nil, nil, true)
+        GP.FontScopeSetFor("nameplates", "shortenNameMaxChars", 5, nil, nil, true)
+        GP.FontScopeSetFor("nameplates", "fontTextAlpha", .7, nil, nil, true)
+        local custom = formatter.Nameplates({})
+        assert(db.nameplates.fontOverride and custom.nameFormat == "CUT" and custom.nameShortenMax == 5,
+            "standard nameplate scope writes do not reach the runtime projection")
+        assert(custom.fontTextAlpha == .7 and db.general.fontTextAlpha == .85, "scope opacity changed Shared")
+        config.nameFormattingEnabled, config.nameTextUseCustomSettings = false, true
+        config.enemyNameColorEnabled, config.enemyNameColor = true, "00ff00"
+        local look = P.Suite.NameplateText.Compile(config, "enemy")
+        assert(look.enabled and look.max == 5 and look.formatID == "CUT" and not look.customColor,
+            "hidden legacy Suite switches override the ordinary Fonts scope")
+        GP.ScopeSetOverride("nameplates", "fontOverride", false)
+        local shared = formatter.Nameplates({})
+        assert(shared.nameFormat == "ABBREV_CUT" and shared.nameShortenMax == 8 and shared.fontTextAlpha == .85,
+            "scope reset does not return nameplates to Shared")
+        assert(db.nameplates.nameFormat == "CUT", "turning off override destroyed stored local values")
+    else
+        OpenNameTextCard()
+        assert(widgets.enemyNameFormat and widgets.friendlyNameFormat, "legacy host lost its name formatting controls")
+        assert(not next(links), "legacy host received unusable Fonts links")
+        assert(M.SelectPage("opt_fonts") ~= false)
+        mw:RunTimers(1000)
+        assert(tails == 0, "legacy host appended rejected Nameplate columns")
+    end
+end
+
 print('PASS real host Nameplates cold tab/exact search/legacy preview parity '..flavor)

@@ -12,6 +12,7 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Core\Platform.lua
+Core\DisclosureMotion.lua
 Core\PreviewKit.lua
 Core\Changelog.lua
 Core\ForeverFactory.lua
@@ -31,6 +32,7 @@ Core\TooltipScale.lua
 Core\InventoryRules.lua
 Core\InventoryLists.lua
 Core\SuiteCatalog.lua
+Core\ExperienceBarLayout.lua
 Core\Catalog\ActionBars.lua
 Core\Bindings.lua
 Core\Catalog\Minimap.lua
@@ -40,20 +42,24 @@ Core\Catalog\DamageMeter.lua
 Core\Catalog\Bags.lua
 Core\Catalog\QualityOfLife.lua
 Core\Catalog\QualityOfLifeIndicators.lua
+Core\Catalog\ExperienceBar.lua
 Core\Catalog\QualityOfLifeDetails.lua
 Core\Catalog\QualityOfLifeHUD.lua
 Core\Catalog\QualityOfLifeCombatText.lua
 Core\Catalog\QualityOfLifeDistance.lua
 Core\Catalog\QualityOfLifeGroup.lua
 Core\Catalog\QualityOfLifeComfort.lua
+Core\Catalog\ForeverTools.lua
 Core\Catalog\InventoryTools.lua
 Core\Catalog\PlanningTools.lua
 Core\Catalog\EverydayTools.lua
 Core\Catalog\HUD.lua
+Core\AnnouncementArt.lua
 Core\Catalog\DataTexts.lua
 Core\Catalog\BuffReminders.lua
 Core\Catalog\Chat.lua
 Core\NameplateStyle.lua
+Core\NameplateText.lua
 Core\NameplateAuraColors.lua
 Core\Catalog\Nameplates.lua
 Core\Catalog\CooldownManager.lua

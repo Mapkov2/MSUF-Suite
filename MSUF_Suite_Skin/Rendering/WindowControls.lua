@@ -10,6 +10,7 @@ function WindowControls.TrackFocus(frame, owner) return TrackFocus(frame, owner)
 
 local Safety = NS.Safety
 local Policy = NS.WindowControlPolicy
+local Chrome = NS.WindowControlChrome
 local CanChangeFrameGeometry = Policy.CanControl
 
 local positionedStates = setmetatable({}, { __mode = "k" })
@@ -53,20 +54,6 @@ local function CommitWithHistory(label, key, commit)
     return commit()
 end
 
-local function ValidClose(candidate)
-    if candidate and Safety.Read(candidate, "GetObjectType") == "Button"
-        and not Safety.GetProtection(candidate) then
-        return candidate
-    end
-end
-
-local function FindClose(frame, name)
-    return ValidClose(Safety.Field(frame, "ClosePanelButton"))
-        or ValidClose(Safety.Field(Safety.Field(frame, "Border"), "CloseButton"))
-        or ValidClose(_G[name .. "CloseButton"])
-        or ValidClose(Safety.Field(frame, "CloseButton"))
-end
-
 local function ClampScale(value)
     local limits = NS.WindowLayoutLimits
     return math.max(limits.minScale, math.min(limits.maxScale, value))
@@ -80,6 +67,8 @@ local function SafeControls(state)
     local implicit = not IsCombat()
     return Safety.CanDecorate(state.grip, implicit) and Safety.CanDecorate(state.titleDrag, implicit)
         and (not state.minimize or Safety.CanDecorate(state.minimize, implicit))
+        and (not state.maximize or Safety.CanDecorate(state.maximize, implicit))
+        and (not state.captionMin or Safety.CanDecorate(state.captionMin, implicit))
 end
 
 local function Maximized(state)
@@ -89,7 +78,7 @@ end
 local InstallPanelPositionHook
 
 local function ApplyStoredScale(state)
-    if not CanChangeFrameGeometry(state.frame) then return end
+    if not CanChangeFrameGeometry(state.frame) or state.fit then return end
     if Maximized(state) then
         if state.frame:GetScale() ~= state.originalScale then state.frame:SetScale(state.originalScale) end
         return
@@ -141,7 +130,12 @@ end
 local function RestoreNativePosition(state, releasing)
     local mayChange = releasing and Policy.CanChangeGeometry or CanChangeFrameGeometry
     if not mayChange(state.frame) then return end
-    if IsCombat() and state.panel and not state.panel.centerFrameSkipAnchoring and not NS.Client.IsGamepadUI() then
+    local panel = state.panel
+    if panel and Safety.Read(state.frame, "GetAttribute", "UIPanelLayout-defined") == true then
+        local area = Safety.Call(state.frame, "GetAttribute", "UIPanelLayout-area")
+        if Safety.Public(area) and area == nil then panel = nil end
+    end
+    if IsCombat() and panel and not panel.centerFrameSkipAnchoring and not NS.Client.IsGamepadUI() then
         NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
         return
     end
@@ -149,7 +143,7 @@ local function RestoreNativePosition(state, releasing)
     state.defaultPosition = false
     positionedStates[state.frame] = nil
     -- The panel manager never anchors the Game Menu (centerFrameSkipAnchoring).
-    if state.panel and not state.panel.centerFrameSkipAnchoring then
+    if panel and not panel.centerFrameSkipAnchoring then
         -- Under the Gamepad UI Blizzard places the panel again when it next opens.
         if not NS.Client.IsGamepadUI() then UpdateUIPanelPositions(state.frame) end
     elseif state.nativePoints then
@@ -166,6 +160,7 @@ end
 
 local function ApplyStoredPosition(state)
     if not CanChangeFrameGeometry(state.frame) or not Enabled() or state.moving or Maximized(state) then return end
+    if state.fit then return Chrome.Fit(state) end
     local positions = NS.DB and NS.DB.windowControls and NS.DB.windowControls.positions
     local point = positions and positions[state.name]
     local defaultPosition = not point and state.name == "CharacterFrame"
@@ -181,15 +176,15 @@ local function ApplyStoredPosition(state)
     local ratio = state.frame:GetEffectiveScale() / uiScale
     if ratio <= 0 then return end
     local width, height = state.frame:GetWidth() * ratio, state.frame:GetHeight() * ratio
-    local rightInset, bottomInset, topInset = NS.WindowControlChrome.Footprint(state)
+    local rightInset, bottomInset, topInset = Chrome.Footprint(state)
     width, height = width + rightInset * ratio, height + bottomInset * ratio
     local x = math.max(0, math.min(uiWidth - math.min(uiWidth, width), point.x))
     local y = math.max(-math.max(0, uiHeight - height), math.min(-topInset * ratio, point.y))
     state.frame:ClearAllPoints()
     state.frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x / ratio, y / ratio)
     if SafeControls(state) then
-        NS.WindowControlChrome.PlaceGrip(state.grip, state)
-        NS.WindowControlChrome.PlaceTitleDrag(state.titleDrag, state)
+        Chrome.PlaceGrip(state.grip, state)
+        Chrome.PlaceTitleDrag(state.titleDrag, state)
     end
     state.customPosition = true
     state.defaultPosition = defaultPosition == true
@@ -208,6 +203,9 @@ local function OnPanelPositionsUpdated()
         if Controlled(state) and frame:IsShown() then
             if not state.drag then ApplyStoredScale(state) end
             ApplyStoredPosition(state)
+            if (state.maximize or state.minimize) and SafeControls(state) then
+                Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET)
+            end
         end
     end
 end
@@ -232,7 +230,7 @@ local function SavePosition(state)
     local positions = NS.DB.windowControls.positions
     local x = math.floor(left * ratio + 0.5)
     local y = math.floor((top * ratio - uiHeight) + 0.5)
-    CommitWithHistory(NS.L["Move %s"]:format(NS.WindowControlChrome.Title(state)), "positions." .. state.name, function()
+    CommitWithHistory(NS.L["Move %s"]:format(Chrome.Title(state)), "positions." .. state.name, function()
         positions[state.name] = { x = x, y = y }
         return true
     end)
@@ -254,11 +252,21 @@ local function Restore(state)
     return state.frame:IsShown() == true
 end
 
+local function ToggleFit(state)
+    if IsCombat() or NS.Client.IsGamepadUI() or not state or state.moving or state.drag
+        or not Controlled(state) or not SafeControls(state) then return end
+    if Chrome.ToggleFit(state, CaptureNativePoints) then
+        if state.fit then InstallPanelPositionHook() end
+        WindowControls.Refresh()
+    end
+end
+
 local function Minimize(state)
     if IsCombat() or NS.Client.IsGamepadUI() or not state or state.minimized then return end
     -- Native OnHide resets pending changes. Keep the editor open until the
     -- user explicitly applies or cancels them; never write its save flag.
     if state.name == "AddonList" and AddonList_HasAnyChanged() then return false end
+    Chrome.LeaveFit(state)
     local frame = state.frame
     local left, top = frame:GetLeft(), frame:GetTop()
     local uiScale = UIParent:GetEffectiveScale()
@@ -270,7 +278,7 @@ local function Minimize(state)
     else
         state.restore:SetPoint("TOP", UIParent, "TOP", 0, -80)
     end
-    state.restoreLabel:SetText(NS.WindowControlChrome.Title(state) .. "  +")
+    state.restoreLabel:SetText(Chrome.Title(state) .. "  +")
     state.minimized = true
     if state.panel then
         HideUIPanel(frame)
@@ -310,6 +318,10 @@ local function OnMinimizeClick(button)
     Minimize(controlStates[button])
 end
 
+local function OnMaximizeClick(button)
+    ToggleFit(controlStates[button])
+end
+
 local function CreateRestore(state)
     local bar = CreateFrame("Button", nil, UIParent)
     controlStates[bar] = state
@@ -321,7 +333,7 @@ local function CreateRestore(state)
     bar:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     bar:SetScript("OnDragStart", OnRestoreDragStart)
     bar:SetScript("OnDragStop", OnRestoreDragStop)
-    NS.WindowControlChrome.PaintControl(bar, "popup")
+    Chrome.PaintControl(bar, "popup")
     local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("LEFT", 10, 0)
     label:SetPoint("RIGHT", -10, 0)
@@ -348,15 +360,16 @@ local function EndDrag(state)
     if scale == drag.scale then return end
     if NS.DB and NS.DB.windowControls and NS.DB.windowControls.scales then
         local value = math.floor(scale * 100 + 0.5) / 100
-        CommitWithHistory(NS.L["Scale %s"]:format(NS.WindowControlChrome.Title(state)), "scales." .. state.name, function()
+        CommitWithHistory(NS.L["Scale %s"]:format(Chrome.Title(state)), "scales." .. state.name, function()
             NS.DB.windowControls.scales[state.name] = value
             return true
         end)
         state.customScale = true
         InstallPanelPositionHook()
         if SafeControls(state) then
-            NS.WindowControlChrome.PlaceGrip(grip, state)
-            NS.WindowControlChrome.PlaceTitleDrag(state.titleDrag, state)
+            if state.maximize or state.minimize then Chrome.ShowCaption(state, Chrome.Level(state) + CONTROL_LEVEL_OFFSET) end
+            Chrome.PlaceGrip(grip, state)
+            Chrome.PlaceTitleDrag(state.titleDrag, state)
         end
     end
 end
@@ -390,7 +403,7 @@ local function OnGripUpdate(grip)
 end
 
 local function BeginDrag(state)
-    if not CanChangeFrameGeometry(state.frame) or not SafeControls(state) or not Enabled() or Maximized(state) then return end
+    if not CanChangeFrameGeometry(state.frame) or not SafeControls(state) or not Enabled() or Maximized(state) or state.fit then return end
     if state.inventory and not state.customScale and not state.customPosition then CaptureNativeBagLayout(state) end
     local x, y = GetCursorPosition()
     local frame = state.frame
@@ -426,13 +439,13 @@ local function OnGripLeave()
 end
 
 local function CreateGrip(state)
-    local grip = Safety.CreateChildFrame("Button", NS.WindowControlChrome.Parent(state))
+    local grip = Safety.CreateChildFrame("Button", Chrome.Parent(state))
     controlStates[grip] = state
     grip:SetSize(20, 20)
-    grip:SetFrameLevel(NS.WindowControlChrome.Level(state) + GRIP_LEVEL_OFFSET)
-    NS.WindowControlChrome.PlaceGrip(grip, state)
+    grip:SetFrameLevel(Chrome.Level(state) + GRIP_LEVEL_OFFSET)
+    Chrome.PlaceGrip(grip, state)
     if state.name == "WorldMapFrame" then
-        NS.WindowControlChrome.StyleGrip(grip)
+        Chrome.StyleGrip(grip)
     else
         grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
         grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
@@ -465,7 +478,7 @@ local function EndMove(state)
 end
 
 local function BeginMove(state)
-    if not CanChangeFrameGeometry(state.frame) or not SafeControls(state) or not Enabled() or Maximized(state) then return end
+    if not CanChangeFrameGeometry(state.frame) or not SafeControls(state) or not Enabled() or Maximized(state) or state.fit then return end
     if state.inventory and not state.customScale and not state.customPosition then CaptureNativeBagLayout(state) end
     local frame = state.frame
     local movable = Safety.Read(frame, "IsMovable")
@@ -493,10 +506,10 @@ end
 local function CreateTitleDrag(state)
     -- The title area of standard Blizzard panels is clear (and below it on
     -- Forever): the drag target stays there, away from portraits and buttons.
-    local strip = Safety.CreateChildFrame("Frame", NS.WindowControlChrome.Parent(state))
+    local strip = Safety.CreateChildFrame("Frame", Chrome.Parent(state))
     controlStates[strip] = state
-    NS.WindowControlChrome.PlaceTitleDrag(strip, state)
-    strip:SetFrameLevel(NS.WindowControlChrome.Level(state) + CONTROL_LEVEL_OFFSET)
+    Chrome.PlaceTitleDrag(strip, state)
+    strip:SetFrameLevel(Chrome.Level(state) + CONTROL_LEVEL_OFFSET)
     strip:EnableMouse(true)
     strip:RegisterForDrag("LeftButton")
     strip:SetScript("OnDragStart", OnTitleDragStart)
@@ -517,16 +530,18 @@ local function ShowControls(state)
         state.grip:Hide()
         return
     end
-    local level = NS.WindowControlChrome.Level(state)
-    NS.WindowControlChrome.PlaceGrip(state.grip, state)
-    NS.WindowControlChrome.PlaceTitleDrag(state.titleDrag, state)
+    local level = Chrome.Level(state)
+    if state.maximize or state.minimize then Chrome.ShowCaption(state, level + CONTROL_LEVEL_OFFSET) end
+    Chrome.PlaceGrip(state.grip, state)
+    Chrome.PlaceTitleDrag(state.titleDrag, state)
     state.titleDrag:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
     state.grip:SetFrameLevel(level + GRIP_LEVEL_OFFSET)
-    state.titleDrag:Show()
-    state.grip:Show()
-    if state.minimize then
-        state.minimize:SetFrameLevel(level + CONTROL_LEVEL_OFFSET)
-        if NS.Client.IsGamepadUI() then state.minimize:Hide() else state.minimize:Show() end
+    if state.fit then
+        state.titleDrag:Hide()
+        state.grip:Hide()
+    else
+        state.titleDrag:Show()
+        state.grip:Show()
     end
 end
 
@@ -548,9 +563,12 @@ local function HideControls(state, releasing)
     if state.moving then EndMove(state) end
     if state.drag then EndDrag(state) end
     if state.minimized then Restore(state) end
+    Chrome.LeaveFit(state)
     state.titleDrag:Hide()
     state.grip:Hide()
     if state.minimize then state.minimize:Hide() end
+    if state.maximize then state.maximize:Hide() end
+    if state.captionMin then state.captionMin:Hide() end
     RestoreNativeScale(state, releasing)
     if state.customPosition and not IsCombat() then RestoreNativePosition(state, releasing) end
 end
@@ -559,23 +577,10 @@ local function CanMinimize(name)
     return minimizablePanels[name] == true and not nativeMinimize[name]
 end
 
-local function PlaceMinimize(button, frame, close)
-    local anchor = close and Safety.Read(close, "GetPoint", 1)
-    if type(anchor) == "string" and anchor:find("TOP", 1, true) then
-        button:SetPoint("RIGHT", close, "LEFT", -3, 0)
-    else
-        button:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -36, -4)
-    end
-end
-
-local function CreateMinimize(state, close)
-    local button = Safety.CreateChildFrame("Button", state.frame)
-    controlStates[button] = state
-    NS.WindowControlChrome.Control(button, "-", CONTROL_LEVEL_OFFSET)
-    PlaceMinimize(button, state.frame, close)
-    button:RegisterForClicks("LeftButtonUp")
-    button:SetScript("OnClick", OnMinimizeClick)
-    return button
+local function EnsureCaption(state)
+    if IsCombat() or nativeMinimize[state.name] or NS.Client.IsGamepadUI() then return end
+    local button = Chrome.CreateCaption(state, CONTROL_LEVEL_OFFSET, OnMaximizeClick)
+    if button then controlStates[button] = state end
 end
 
 -- Hooked once per panel. The invisible title strip takes the title area's clicks: it
@@ -595,12 +600,13 @@ OnPanelShow = function(frame)
         return
     end
     if Controlled(state) then
-        ShowControls(state)
         -- Blizzard fits checkFit panels (PlayerSpellsFrame, ProfessionsFrame,
         -- Settings) to the screen with SetScale(1) as they open: the stored
         -- scale comes back first, then the position, which depends on it.
         if not state.drag then ApplyStoredScale(state) end
         ApplyStoredPosition(state)
+        EnsureCaption(state)
+        ShowControls(state)
     else
         HideControls(state)
     end
@@ -640,6 +646,7 @@ local function OnPanelHide(frame)
     if not state.minimized then activeStates[frame] = nil end
     if state.drag then EndDrag(state) end
     if state.moving then EndMove(state) end
+    if state.fit then Chrome.EndFit(state) end
     if state.restore and not state.minimized then state.restore:Hide() end
 end
 
@@ -659,10 +666,11 @@ function WindowControls.Attach(frame, owner)
         if frame:IsShown() then OnPanelShow(frame) end
         return true
     end
-    local close = FindClose(frame, name)
+    local close = Chrome.FindClose(frame, name)
     state = {
         frame = frame,
         name = name,
+        close = close,
         panel = panel,
         inventory = Policy.IsInventory(frame),
         originalScale = frame:GetScale(),
@@ -682,11 +690,13 @@ function WindowControls.Attach(frame, owner)
     if close and CanMinimize(name) and not Safety.Field(frame, "MinimizeButton")
         and not _G[name .. "MinimizeButton"] then
         state.restore = CreateRestore(state)
-        state.minimize = CreateMinimize(state, close)
+        state.minimize = Chrome.CreateMinimize(state, close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
+        controlStates[state.minimize] = state
     end
     state.titleDrag = CreateTitleDrag(state)
-    ShowControls(state)
     ApplyStoredPosition(state)
+    EnsureCaption(state)
+    ShowControls(state)
     frame:HookScript("OnShow", OnPanelShow)
     frame:HookScript("OnHide", OnPanelHide)
     return true
@@ -721,12 +731,11 @@ end
 local function RefreshQueued() WindowControls.Refresh() end
 
 local function RecolorMinimize()
-    local Chrome = NS.WindowControlChrome
     for _, state in pairs(activeStates) do
         if SafeControls(state) then
             if state.name == "WorldMapFrame" then Chrome.RecolorGrip(state.grip) end
             if state.inventory then Chrome.RecolorControl(state.titleDrag) end
-            if state.minimize then Chrome.RecolorControl(state.minimize) end
+            Chrome.RecolorCaption(state)
             if state.restore then Chrome.RecolorControl(state.restore) end
         elseif IsCombat() then NS.CombatGate.RunOrDefer("windowControls:colors", RecolorMinimize) end
     end
@@ -746,11 +755,13 @@ function WindowControls.ResetScales()
     if IsCombat() then return false, "combat" end
     NS.DB.windowControls.scales = {}
     for _, state in pairs(WindowControls.states) do
+        if state.fit then Chrome.LeaveFit(state) end
         if type(state.originalScale) == "number" and CanChangeFrameGeometry(state.frame) then
             state.frame:SetScale(state.originalScale)
         end
         state.customScale = false
     end
+    WindowControls.Refresh()
     return true
 end
 
@@ -764,6 +775,7 @@ function WindowControls.ResetPositions()
     if IsCombat() then return false, "combat" end
     for _, state in pairs(WindowControls.states) do
         if state.moving then EndMove(state) end
+        if state.fit then Chrome.LeaveFit(state) end
     end
     NS.DB.windowControls.positions = {}
     -- Blizzard's layout pass must not move panels back while they return
@@ -781,6 +793,7 @@ function WindowControls.ResetPositions()
     for _, state in pairs(WindowControls.states) do
         if next(state.owners) then ApplyStoredPosition(state) end
     end
+    WindowControls.Refresh()
     if failed then return false, "error" end
     return true
 end

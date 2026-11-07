@@ -23,6 +23,23 @@ function Native.Calendar() return Global("GameTimeFrame") end
 function Native.Mail() return Cluster("IndicatorFrame", "MailFrame") end
 function Native.Crafting() return Cluster("IndicatorFrame", "CraftingOrderFrame") end
 function Native.Compartment() return Global("AddonCompartmentFrame") end
+function Native.ZoomButtons()
+    local map = Global("Minimap")
+    if not map then return end
+    local zoomIn, zoomOut = map.ZoomIn, map.ZoomOut
+    return Usable(zoomIn) and zoomIn or nil, Usable(zoomOut) and zoomOut or nil
+end
+function Native.ButtonTexture(button)
+    if not Usable(button) then return end
+    local enabled = button:IsEnabled()
+    if NS.Public(enabled) and enabled == false then
+        local disabled = button:GetDisabledTexture()
+        if Usable(disabled) then return disabled end
+    end
+    local normal = button.StateTexture
+    if not Usable(normal) then normal = button:GetNormalTexture() end
+    return Usable(normal) and normal or nil
+end
 function Native.QueueStatus() return Global("QueueStatusButton") end
 function Native.QueueLayout(config) return config.queueStatusSize, config.queueStatusX, config.queueStatusY end
 function Native.Difficulty() return Cluster("InstanceDifficulty") end
@@ -54,10 +71,11 @@ function Native.Available(key) return Native.Frame(key) ~= nil end
 function Native.Source(key)
     local frame = Native.Frame(key)
     if not frame then return end
-    local source, button = nil, frame
+    local source, label, button = nil, nil, frame
     if key == "Tracking" then button = frame.Button end
-    if key == "Tracking" or key == "Calendar" or key == "Compartment" then
-        if Usable(button) then source = button.StateTexture or button:GetNormalTexture() end
+    if key == "Tracking" or key == "Calendar" or key == "Compartment" or key == "Landing" then
+        source = Native.ButtonTexture(button)
+        if key == "Compartment" then label = frame.Text end
     elseif key == "Mail" then
         source = frame.MailIcon or Global("MiniMapMailIcon")
     elseif key == "Crafting" then
@@ -69,5 +87,6 @@ function Native.Source(key)
     end
     local add = Usable(button) and button.AddTexture
     local border = key == "ExternalEvent" and frame.Border
-    return frame, Usable(source) and source or nil, Usable(add) and add or nil, Usable(border) and border or nil
+    return frame, Usable(source) and source or nil, Usable(add) and add or nil,
+        Usable(border) and border or nil, Usable(label) and label or nil
 end

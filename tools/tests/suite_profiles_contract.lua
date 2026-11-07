@@ -53,6 +53,31 @@ assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
 local P, DB, IO = Suite.SuiteProfiles, Suite.Database, Suite.ProfileIO
 do
+    local step = Support.MigrationStep(root, "Steps.ChatComfort")
+    local settings = {
+        enabled = true, muteMusic = true, chatWheel = true, chatClassColors = false, noChatFade = true, whisperWindows = 3,
+    }
+    local source = { suite = { schema = 1, revision = step - 1, modules = {
+        dailyComfort = settings, chat = { enabled = false, padding = 9 },
+    } } }
+    local migrated = assert(IO.PrepareTable(source, false)).suite.modules
+    local comfort = migrated.chatComfort
+    assert(comfort.enabled and comfort.chatWheel and not comfort.chatClassColors and comfort.noChatFade
+        and comfort.whisperWindows == 3, "older profile lost chat behavior")
+    assert(migrated.dailyComfort.enabled and migrated.dailyComfort.muteMusic and migrated.dailyComfort.whisperWindows == nil
+        and not migrated.chat.enabled and migrated.chat.padding == 9, "chat migration changed the map/audio helper or styling")
+    assert(settings.whisperWindows == 3, "migration changed the import source")
+    settings.enabled = false
+    comfort = assert(IO.PrepareTable(source, false)).suite.modules.chatComfort
+    assert(not comfort.enabled and comfort.noChatFade and comfort.whisperWindows == 3, "disabled chat preferences were lost")
+    settings.enabled = true
+    local encoded = MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 2, module = "dailyComfort",
+        revision = step - 1, settings = settings }, "MSUF3")
+    local id, daily, _, chat = IO.PrepareModuleProfile("MSUFM2:" .. encoded)
+    assert(id == "dailyComfort" and daily.muteMusic and daily.whisperWindows == nil and chat.whisperWindows == 3,
+        "the old standalone Daily UI comforts export lost its chat settings")
+end
+do
     -- Saved before the minimap specialization step, whatever its place.
     local specializationStep, steps = Support.MigrationStep(root, "NS.MigrateMinimapSpecialization")
     assert(steps == Suite.Suite.MigrationRevision, "the MIGRATIONS table was not read completely")

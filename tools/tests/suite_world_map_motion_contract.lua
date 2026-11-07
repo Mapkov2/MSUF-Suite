@@ -39,6 +39,7 @@ local function Run(flavor)
     Load("Rendering/CollapseCollectionRows.lua")
     Load("Rendering/CollapseCollections.lua")
     Load("Rendering/MenuMotion.lua")
+    Load("Adapters/WorldMapQuests.lua")
     Load("Adapters/WorldMap.lua")
     local Content, Menus, Legacy = NS.ContentMotion, NS.MenuMotion, NS.LegacyScrollMotion
 

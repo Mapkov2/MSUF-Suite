@@ -13,6 +13,7 @@ local nativeBagBar, nativeBagBarWasShown, nativeBagDriver, nativeBagHooked
 local nativeBagShowHooks = setmetatable({}, { __mode = "k" })
 
 local function Sync()
+    if M.paused then return end
     if NS.IsCombatLocked() then
         S.Queue(ID)
         return

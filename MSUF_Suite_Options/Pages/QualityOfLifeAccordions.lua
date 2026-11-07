@@ -1,5 +1,10 @@
 local _, P = ...
 local V, W, HM, Tr = P.QoLView, P.W, P.HM, P.Tr
+local RESET_SEARCH = "qolSectionReset"
+
+local function ResetMeta(group, sectionId)
+    return P.Meta(V.GetFeaturePage(group), group.id, "action.reset." .. group.switch, "action", sectionId)
+end
 
 function V.FeatureTitle(group)
     local title = Tr(group.title)
@@ -66,6 +71,22 @@ local function BuildAccordion(ui, panel, record)
         record.toggle = toggle
         record.keywords = V.BindFeatureSwitch(ui.ctx, toggle, group, record.sectionId,
             function(feature) ui.retained = feature end)
+        if #record.allRules > 0 then
+            -- The detail rules leave the feature switch out of the reset.
+            local more = P.AttachSectionReset(ui.ctx, body, V.FeatureTitle(group), function()
+                return P.ResetRules(group.id, record.allRules)
+            end)
+            if more then
+                local meta = ResetMeta(group, record.sectionId)
+                meta.searchPrepareKind, meta.searchPrepareValue = RESET_SEARCH, record.sectionId
+                meta.prepareExactSearchTarget = function()
+                    if not group.reveal(true) then return false end
+                    more._msufSuiteOpenSectionPopup()
+                    return true
+                end
+                P.M.RegisterControlMetadata(more, meta, "Reset section", "button")
+            end
+        end
         HM.SetSectionEnsureVisible(entry, function()
             ui.retained = group
             ui:SelectCategory(panel.category.id)
@@ -115,7 +136,9 @@ function V.ResolveAccordionTarget(_, target)
     local copy = {}
     for key, value in pairs(target) do copy[key] = value end
     copy.pageKey, copy.sectionId = V.GetFeaturePage(feature), V.FeatureSectionId(feature)
-    copy.controlId, copy.controlPath, copy.identityKey, copy.actionKey, copy.settingKey = nil, nil, nil, nil, nil
+    if target.prepareKind ~= RESET_SEARCH or control ~= ResetMeta(feature, copy.sectionId).controlId then
+        copy.controlId, copy.controlPath, copy.identityKey, copy.actionKey, copy.settingKey = nil, nil, nil, nil, nil
+    end
     return copy.pageKey, copy, {}
 end
 P.Suite.HostBridge.RegisterSearchTargetResolver(P.M, "MSUF_Suite.QoLAccordions", V.ResolveAccordionTarget)

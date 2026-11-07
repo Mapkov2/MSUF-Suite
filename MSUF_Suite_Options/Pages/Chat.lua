@@ -56,7 +56,8 @@ end
 
 local function ImmersiveButton(ctx)
     return function(body, y, width)
-        local button = P.T.Button(body, "Immersive", width, 26)
+        local half = math.floor((width - 8) / 2)
+        local button = P.T.Button(body, "Immersive", half, 26)
         button:SetPoint("TOPLEFT", body, "TOPLEFT", 16, y)
         button:SetScript("OnClick", function()
             if not P.Combat() then P.Set(ID, "look", 7) end
@@ -67,6 +68,18 @@ local function ImmersiveButton(ctx)
         M.TrackRefresh(ctx, function()
             button:SetAlpha(P.Get(ID, "look") == 7 and 1 or 0.65)
             button:SetEnabled(P.RuleEnabled(ID, P.catalog[ID].rules.look))
+        end)
+        local compact = P.T.Button(body, "Compact", half, 26)
+        compact:SetPoint("TOPLEFT", body, "TOPLEFT", 24 + half, y)
+        compact:SetScript("OnClick", function()
+            if not P.Combat() then P.Set(ID, "look", 8) end
+        end)
+        if M.RegisterControlMetadata then
+            M.RegisterControlMetadata(compact, P.Meta(PAGE, ID, "look.8", "action", PAGE .. "_look"), "Compact", "button")
+        end
+        M.TrackRefresh(ctx, function()
+            compact:SetAlpha(P.Get(ID, "look") == 8 and 1 or 0.65)
+            compact:SetEnabled(P.RuleEnabled(ID, P.catalog[ID].rules.look))
         end)
         return y - 38
     end
@@ -84,10 +97,42 @@ local function BuildMessageSections(ctx, b)
         })
 end
 
+local function BuildAppearance(ctx, b)
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_text", Tr("Message text"),
+        P.SectionRules(ID, "text"), {
+            open = true,
+            help = "The default font follows MSUF Fonts while the default size follows Blizzard's chat size. Choose Blizzard chat font to keep its own face. Slug has no shadow.",
+        })
+end
+
+local function BuildInputTools(ctx, b)
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_input", Tr("Input line"),
+        P.SectionRules(ID, "input"), {
+            open = true,
+            help = "The native input box keeps autocomplete, links and chat commands.",
+            extra = function(body, y, width)
+                P.Button(ctx, body, "Preview input animation", 16, y, width, function()
+                    local ui = ctx.chatPreviewUI
+                    if ui then P.S.ChatPreviewInputAnimation(ui.parts.input, P.S.Config(ID)) end
+                end, function() return not P.Combat() and P.Get(ID, "animateInput") end,
+                    P.Meta(PAGE, ID, "previewInputAnimation", "action", PAGE .. "_input"))
+                return y - 36
+            end,
+        })
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_tools", Tr("Chat tools"),
+        P.SectionRules(ID, "tools"), {
+            open = true,
+            help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, drag its button in the preview, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on. The message tools leave the Combat Log alone (its own settings can add a timestamp to every line); its lines still wake the idle fade. Saved history belongs to this character.",
+            extra = function(body, y, width) return ToolsExtra(ctx, body, y, width) end,
+        })
+end
+
 local function Build(ctx)
-    local b = P.W.PageBuilder(ctx)
-    P.ChatPreview.Build(ctx, b)
-    P.ModuleCard(ctx, b, PAGE, ID)
+    local b, workspace, preview = P.ChatWorkspace.Begin(ctx)
+    P.ModuleCard(ctx, b, PAGE, ID, {
+        { "Move on screen", function() P.OpenEditMode(ID, "window") end,
+            function() return P.EditModeReady() and P.S.Status(ID) == "Active" end, key = "edit" },
+    })
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_look", Tr("Choose a look"),
         P.SectionRules(ID, "look"), {
             open = true,
@@ -96,7 +141,7 @@ local function Build(ctx)
         })
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_window", Tr("Chat window"),
         P.SectionRules(ID, "window"), {
-            open = true,
+            open = false,
             help = "A click-through surface follows each Blizzard chat window. Blizzard and MSUF Edit Mode keep their normal move and resize controls.",
         })
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_tabs", Tr("Tabs and accent"),
@@ -107,25 +152,19 @@ local function Build(ctx)
         P.SectionRules(ID, "sidebar"), {
             help = "MSUF icons replace the scattered Blizzard chat controls. Friends, channels, text to speech and the chat menu keep their Blizzard actions; the bottom icon jumps to the newest message. Turn this off to restore the native buttons.",
         })
-    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_input", Tr("Input line"),
-        P.SectionRules(ID, "input"), {
-            help = "The native input box keeps autocomplete, links and chat commands.",
-        })
-    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_text", Tr("Message text"),
-        P.SectionRules(ID, "text"), {
-            help = "The default font follows MSUF Fonts while the default size follows Blizzard's chat size. Choose Blizzard chat font to keep its own face. Slug has no shadow.",
-        })
-    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_tools", Tr("Chat tools"),
-        P.SectionRules(ID, "tools"), {
-            help = "Timestamps use Blizzard's chat setting across all chat windows. Copy is off by default; when enabled, drag its button in the preview, choose a message, then press Ctrl+C. The displayed timestamp is included when timestamps are on. The message tools leave the Combat Log alone (its own settings can add a timestamp to every line); its lines still wake the idle fade. Saved history belongs to this character.",
-            extra = function(body, y, width) return ToolsExtra(ctx, body, y, width) end,
-        })
+    BuildAppearance(ctx, b)
+    local comfort = P.SectionRules("chatComfort", "chatComfort_module")
+    P.ModuleCard(ctx, b, PAGE, "chatComfort", nil, {
+        title = "Chat behavior", open = false, rules = comfort,
+        reset = function() return P.ResetRules("chatComfort", comfort) end,
+    })
+    BuildInputTools(ctx, b)
     BuildMessageSections(ctx, b)
-    P.QoLOwners.Build(ctx, b, PAGE)
-    P.BuildOwnedTool(ctx, b, "keywordAlerts")
+    P.ChatWorkspace.Helpers(ctx, b, workspace)
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_bubbles", Tr("Speech bubbles"), P.SectionRules(ID, "bubbles"), {
         help = "Bubbles outside instances can take the MSUF look; Blizzard locks the ones inside instances. Each source keeps Blizzard's look or uses the MSUF one: the shared look or its own font, size, colors, spacing and width. A bubble is matched to the line it shows right after that line arrives. Turning bubbles off inside instances uses Blizzard's bubble settings and gives them back when you leave or turn it off.",
     })
+    P.ChatWorkspace.Finish(workspace, preview)
 end
 
 P.RegisterPage({ key = PAGE, label = "Chat", title = "Chat", build = Build, icon = { 4, 0 },

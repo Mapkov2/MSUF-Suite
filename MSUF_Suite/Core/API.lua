@@ -48,7 +48,8 @@ function API.OnMSUFProfileChanged(name, reason) return Suite.OnMSUFProfileChange
 function API.OnMSUFProfileLifecycle(kind, source, target)
     return Suite.OnMSUFProfileLifecycle(kind, source, target)
 end
-function API.ApplyFontsFromMSUF() return Suite.Suite.ApplyGlobalFont() end
+function API.HasNameplateFonts() return Suite.NameplateText ~= nil end
+function API.ApplyFontsFromMSUF(force) return Suite.Suite.ApplyGlobalFont(force) end
 
 ------------------------------------------------------------------ cooldown anchor
 -- MSUF_Suite_CooldownManager publishes Suite.CooldownManager when it loads.

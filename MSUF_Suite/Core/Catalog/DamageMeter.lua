@@ -72,6 +72,12 @@ local cleanModern = {
 -- The "look" choice values (Style preset below).
 local LOOK = { MIDNIGHT_BLUE = 1, MIDNIGHT_DARK = 2, FOREVER = 3, CUSTOM = 4, CLEAN_MODERN = 5, CLASS_STYLE = 6 }
 NS.DamageMeterLook = LOOK
+local DROPDOWN = { ORIGINAL = 1, METER = 2, MODERN = 3, BLUE = 4, DARK = 5, FOREVER = 6, CLASS = 7 }
+NS.DamageMeterDropdownStyle = DROPDOWN
+NS.DamageMeterDropdownLooks = {
+    [DROPDOWN.MODERN] = LOOK.CLEAN_MODERN, [DROPDOWN.BLUE] = LOOK.MIDNIGHT_BLUE,
+    [DROPDOWN.DARK] = LOOK.MIDNIGHT_DARK, [DROPDOWN.FOREVER] = LOOK.FOREVER, [DROPDOWN.CLASS] = LOOK.CLASS_STYLE,
+}
 NS.DamageMeterLookPresets = { [LOOK.MIDNIGHT_BLUE] = midnight, [LOOK.MIDNIGHT_DARK] = midnightDark,
     [LOOK.FOREVER] = forever, [LOOK.CLEAN_MODERN] = cleanModern }
 NS.DamageMeterLookPresets[LOOK.CLASS_STYLE] = B.ClassPreset(cleanModern, { barColor = "accent", borderColor = "border", titleColor = "label" })
@@ -85,6 +91,9 @@ local initial = NS.Client.isForever and forever or midnightDark
 B.Section(id, "look", "Choose a look", {
     Choice("look", "Style preset", NS.Client.isForever and LOOK.FOREVER or LOOK.MIDNIGHT_DARK,
         { "Midnight Blue", "Midnight Dark", "MSUF Forever", "Custom", "Clean Modern", "Class Style" }),
+    B.Tooltip(Choice("dropdownStyle", "Dropdown style", DROPDOWN.ORIGINAL,
+        { "Original menus", "Match meter look", "Clean Modern", "Midnight Blue", "Midnight Dark", "MSUF Forever", "Class Style" }),
+        "Styles the meter, fight, target and window menus. Click the fight button in the preview to try it."),
 })
 B.Section(id, "general", "Windows and data", {
     Number("windowCount", "Number of windows", 2, 1, MAX_WINDOWS),

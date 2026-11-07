@@ -30,6 +30,39 @@ local function SelectSource(ctx, body, bar, slot, section, y, width, reveal)
     return y - 42
 end
 
+local function MicroMenuControls(ctx, builder, body, prefix, section, y, width, reveal, fallbackY)
+    local panel, bottom, previous
+    local function Update()
+        local menu = P.Suite.DataTextSourceIndex.microMenu
+        local shown = P.Get(ID, prefix) == menu
+        if previous == shown then return end
+        previous = shown
+        if shown and not panel then
+            panel = CreateFrame("Frame", nil, body)
+            panel:SetPoint("TOPLEFT", body, "TOPLEFT", 0, y)
+            panel:SetSize(width + 32, 100)
+            local rule = P.catalog[ID].rules[prefix .. "MenuLabel"]
+            local nextY, entries = P.RuleGrid(ctx, panel, PAGE, ID, { rule }, -4, width, nil, section)
+            Page.Prepare(entries, section, reveal)
+            Page.Button(ctx, panel, "Style the Blizzard Micro Bar", 16, nextY, width, Page.OpenMicroMenuSkin,
+                prefix .. ".microSkin", section, reveal, function()
+                    return P.Suite.Client.AddOnEnabled("MSUF_Suite_Skin")
+                end)
+            bottom = y + nextY - 38
+        end
+        if panel then panel:SetShown(shown) end
+        return shown and bottom or fallbackY
+    end
+    local function Refresh()
+        if not body:IsVisible() then return end
+        local height = Update()
+        if height then P.FinishBody(builder, body, height) end
+    end
+    M.TrackRefresh(ctx, Refresh)
+    body:HookScript("OnShow", Refresh)
+    return Update() or fallbackY
+end
+
 -- A lazy host builds the place's controls when it first opens (P.LazySection).
 local function Slot(ctx, builder, bar, slot, reveal)
     local prefix = "bar" .. bar .. "Slot" .. slot
@@ -40,10 +73,9 @@ local function Slot(ctx, builder, bar, slot, reveal)
         Page.Button(ctx, body, "Remove data", width - 120, -18, 136, function()
             P.SetMany(ID, P.Suite.DataTextRemoveSlotValues(P.S.Config(ID), bar, slot))
         end, prefix .. ".remove", section, reveal, function() return P.Get(ID, prefix) ~= 1 end)
-        local details
-        y, details = P.DataTextsSourcePicker.BuildDetails(ctx, body, bar, slot, section, y, width)
+        local bottom, details = P.DataTextsSourcePicker.BuildDetails(ctx, body, bar, slot, section, y, width)
         Page.Prepare(details, section, reveal)
-        return y
+        return MicroMenuControls(ctx, builder, body, prefix, section, y, width, reveal, bottom)
     end
     return P.LazySection(builder, section, Tr("Selected data"), true, {
         content = Content,
@@ -55,19 +87,20 @@ local function Slot(ctx, builder, bar, slot, reveal)
     })
 end
 
+local function MoveSlot(bar, from, to, select, mode)
+    local values = P.Suite.DataTextMoveSlotValues(P.S.Config(ID), bar, from, to)
+    if values and P.SetMany(ID, values) then select(mode, to) end
+end
+
 local function SlotDetails(ctx, builder, bar, slot, reveal, select)
     local prefix = "bar" .. bar .. "Slot" .. slot
     local section = PAGE .. "_bar" .. bar .. "_slot" .. slot .. "_details"
     local rules = Rules(bar, function(rule)
-        return rule.key:match("^bar%d+Slot%d+") == prefix and rule.key ~= prefix
+        return rule.key:match("^bar%d+Slot%d+") == prefix and rule.key ~= prefix and rule.key ~= prefix .. "MenuLabel"
     end)
     Page.Rules(ctx, builder, section, Tr("Data settings"), rules, reveal, {
         open = true, extra = function(body, y, width)
-            local function Move(offset)
-                if P.SetMany(ID, P.Suite.DataTextMoveSlotValues(P.S.Config(ID), bar, slot, slot + offset)) then
-                    select("details", slot + offset)
-                end
-            end
+            local function Move(offset) MoveSlot(bar, slot, slot + offset, select, "details") end
             Page.Button(ctx, body, "Move earlier", 16, y, (width - 6) / 2, function() Move(-1) end,
                 prefix .. ".previous", section, reveal, function() return slot > 1 end)
             Page.Button(ctx, body, "Move later", 22 + (width - 6) / 2, y, (width - 6) / 2, function() Move(1) end,
@@ -128,8 +161,9 @@ local function BarActions(ctx, body, bar, section, reveal, y, width)
     end, prefix .. ".duplicate", section, reveal, function()
         return P.Suite.DataTextNextBarID(P.S.Config(ID)) ~= nil
     end)
-    P.Button(ctx, body, "Remove bar", 16, y - 38, half, function()
-        Page.ChangeBars(P.Suite.DataTextBarRemovalValues(P.S.Config(ID), bar))
+    local remove
+    remove = P.Button(ctx, body, "Remove bar", 16, y - 38, half, function()
+        Page.OpenBarRemoval(remove, bar)
     end, function() return true end)
     Page.Button(ctx, body, "All bars", 24 + half, y - 38, half,
         function() ctx.dataTextWorkspace.choose("shared") end, prefix .. ".shared", section, reveal)
@@ -148,11 +182,12 @@ end
 
 local function BarSectionActions(ctx, body, bar, section, select)
     local prefix = "bar" .. bar
-    local more = P.AttachSectionReset(ctx, body, Tr("Bar %d"):format(bar),
+    local more
+    more = P.AttachSectionReset(ctx, body, Tr("Bar %d"):format(bar),
         function() return Editor.ResetBar(bar) end, nil, function(popup)
             P.Button(ctx, popup, "Remove bar", 14, -76, 250, function()
                 popup:Hide()
-                Page.ChangeBars(P.Suite.DataTextBarRemovalValues(P.S.Config(ID), bar))
+                Page.OpenBarRemoval(more, bar)
             end, function() return true end)
             popup:SetHeight(114)
         end)
@@ -185,9 +220,10 @@ local function Header(ctx, builder, bar, select)
             end
         end
     end
-    local preview = P.DataTextsPreview.Build(ctx, body, bar, { x = 16, y = y, width = width, height = 160,
-        selectedSlot = function() return Page.selections[bar].slot end,
-        onSelect = function(slot) select("content", slot) end, onAdd = Add })
+    local preview = P.DataTextsPreview.Build(ctx, body, bar, { x = 16, y = y, width = width, height = 222,
+        stretch = true, selectedSlot = function() return Page.selections[bar].slot end,
+        onSelect = function(slot) select("content", slot) end,
+        onMove = function(from, to) MoveSlot(bar, from, to, select, "content") end, onAdd = Add })
     Page.Prepare({ { widget = preview.add, label = "Add data",
         meta = P.Meta(PAGE, ID, prefix .. ".addPlace", "action", section) } }, section, select)
     y = preview.bottomY - 8

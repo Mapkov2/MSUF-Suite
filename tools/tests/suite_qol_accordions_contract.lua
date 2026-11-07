@@ -1,9 +1,17 @@
 local suiteRoot = assert(arg[1]):gsub("\\", "/"):gsub("/$", "")
 local root = arg[3] or (suiteRoot:match("^(.*)/[^/]+$") .. "/MidnightSimpleUnitFrames")
 local flavor = arg[2] or "Mainline"
-local Open = assert(loadfile(root .. "/tools/tests/menu_core_world.lua"))().Open
-local mw = Open(root, flavor, { page = "gameplay", clientScriptBindings = true, tocMetadata = true })
+local MenuWorld = assert(loadfile(root .. "/tools/tests/menu_core_world.lua"))()
+local function AddNativeLineMethods(world)
+    for _, key in ipairs({ "SetThickness", "SetStartPoint", "SetEndPoint" }) do
+        world.widgets.Methods[key] = world.widgets.Methods[key] or function() end
+    end
+end
+local mw = MenuWorld.Open(root, flavor, {
+    page = "gameplay", clientScriptBindings = true, tocMetadata = true, beforeCore = AddNativeLineMethods,
+})
 local env, M, core = mw.env, mw.M, mw.core
+env.GetCurrentKeyBoardFocus = function() return nil end
 local methods = getmetatable(env.UIParent).__index
 for _, key in ipairs({ "SetDrawBling", "SetSwipeColor", "SetSwipeTexture", "SetReverse", "SetEdgeScale", "SetMotionScriptsWhileDisabled", "SetCooldownFromDurationObject" }) do
     methods[key] = methods[key] or function() end
@@ -187,10 +195,32 @@ view:SelectCategory(Feature("dailyComfort").category)
 Settle()
 local first,second=Native("dailyComfort"),Native("quietPopups")
 Check(not first.open and not second.open,"fresh accordions did not default closed")
+Check(not assert(first._msufSuiteResetButton, "missing QoL reset action"):IsShown(),
+    "closed QoL section exposes its action button")
 Check(not Widget("msufsuite.dailyComfort."..FindDetail("dailyComfort").key),"closed content eagerly instantiated")
 local before=CountWidgets()
 ClickHeader(first)
 Check(first.open and not S.Config("dailyComfort").enabled,"opening enabled disabled feature")
+do
+    local setting = "msufsuite.parallelWindows.enabled"
+    local toggle = Widget(setting)
+    Check(toggle and toggle:IsVisible() and toggle:IsEnabled(), "independent window toggle is missing")
+    Check(not toggle:GetChecked(), "parallel windows defaulted on")
+    local limit = Widget("msufsuite.parallelWindows.windowLimit")
+    Check(limit and limit:IsVisible() and not limit:IsEnabled() and S.Config("parallelWindows").windowLimit == 0,
+        "parallel windows limit did not default to disabled and unlimited")
+    toggle:GetScript("OnClick")(toggle, "LeftButton")
+    Settle()
+    Check(S.Config("parallelWindows").enabled and not S.Config("dailyComfort").enabled,
+        "parallel windows toggle changed unrelated helpers")
+    Check(limit:IsEnabled(), "window limit did not enable with parallel windows")
+    MenuWorld.FireScript(limit, "OnValueChanged", 3, true)
+    Settle()
+    Check(S.Config("parallelWindows").windowLimit == 3, "window limit did not save from the slider")
+    toggle:GetScript("OnClick")(toggle, "LeftButton")
+    Settle()
+    Check(not S.Config("parallelWindows").enabled, "parallel windows toggle did not turn off")
+end
 local detailRule=assert(FindDetail("dailyComfort"))
 local detail=Widget("msufsuite.dailyComfort."..detailRule.key)
 Check(detail and detail:IsVisible(),"open disabled feature did not show its options")
@@ -253,6 +283,53 @@ for _,action in ipairs({"settings","reset"}) do
     Check(not S.Config("dailyComfort").enabled,"old action bookmark enabled a feature")
     Check(S.Config("dailyComfort")[detailRule.key]==not oldDetailValue,"old reset bookmark actually reset a setting")
 end
+-- The reset moved into the lazily created header menu and remains undoable.
+do
+    first = Native("dailyComfort")
+    local more = assert(first._msufSuiteResetButton, "QoL feature has no header actions")
+    Check(first._msuf2SectionActions == more and more:GetParent() == first.header, "reset is not a header action")
+    Check(not more._msuf2GetSectionPopup(), "QoL reset popup was built before use")
+    Check(not more:IsShown(), "an open QoL header exposes actions without interaction")
+    first.header.mouseOver = true
+    local tooltip = env.GameTooltip
+    env.GameTooltip = nil
+    MenuWorld.FireScript(first.header, "OnEnter")
+    env.GameTooltip = tooltip
+    Check(more:IsShown(), "hover did not reveal the open QoL section's actions")
+    more:GetScript("OnClick")(more)
+    local popup = assert(more._msuf2GetSectionPopup(), "QoL reset popup did not open")
+    MenuWorld.FireVisibilityScripts(popup)
+    first.header.mouseOver = false
+    MenuWorld.FireScript(first.header, "OnLeave")
+    Check(more:IsShown(), "moving off the header hid the active QoL action")
+    local reset
+    for _, child in ipairs({ popup:GetChildren() }) do
+        if child:GetObjectType() == "Button" and child:GetText() == P.Tr("Reset section") then reset = child end
+    end
+    Check(reset and popup:IsShown(), "QoL popup has no Reset section action")
+    reset:GetScript("OnClick")(reset)
+    Settle()
+    Check(not popup:IsShown() and not more:IsShown(), "reset did not close and hide the section menu")
+    Check(S.Config("dailyComfort")[detailRule.key] == detailRule.default and not S.Config("dailyComfort").enabled,
+        "QoL reset did not restore the feature's settings while preserving its switch")
+    Check(M.Undo(), "QoL header reset has no Undo")
+    Check(S.Config("dailyComfort")[detailRule.key] == not oldDetailValue and not S.Config("dailyComfort").enabled,
+        "Undo did not restore the QoL option after reset")
+    local target = P.HM.GetControlSearchMeta(more)
+    first.SetOpenByUser(false)
+    Select("home")
+    Exact({ pageKey = "suite_qualityOfLife", sectionId = Section("dailyComfort"), controlId = target.controlId,
+        prepareKind = target.searchPrepareKind, prepareValue = target.searchPrepareValue },
+        "exact reset search did not reach the header menu")
+    first = Native("dailyComfort")
+    more = first._msufSuiteResetButton
+    popup = more._msuf2GetSectionPopup()
+    Check(first.open and popup and popup:IsShown() and more:IsShown(), "exact reset search left the menu hidden")
+    Check(S.Config("dailyComfort")[detailRule.key] == not oldDetailValue, "search activated the reset")
+    popup:Hide()
+    first.SetOpenByUser(false)
+    first.SetOpenByUser(true)
+end
 -- Every relocated feature opens native controls and reveals a hidden owner tab.
 for _,case in ipairs({
     {id="xpBar",page="suite_hud",context="_msufSuiteHUDWorkspace",other="objectives",wanted="extras"},
@@ -282,6 +359,22 @@ for _,case in ipairs({
         Check(Widget("msufsuite."..case.id.."."..rule.key):IsVisible(),"search left detail hidden "..case.id)
         if workspace then Check(workspace.selected==case.wanted,"search did not reveal owner tab "..case.id) end
         CheckGeometry(Native(case.id))
+    end
+end
+-- Both Forever additions use the existing menu and exact setting search.
+for _, case in ipairs({
+    { id = "foreverWorldMap", category = "travel", key = "zoneLevels" },
+    { id = "gatheringTooltips", category = "questsProfessions", key = "worldTooltips" },
+}) do
+    Check(Feature(case.id).category == case.category, "Forever helper is in the wrong menu group")
+    Check((P.Available(case.id) == true) == (flavor == "Forever"), "Forever helper lost its client gate")
+    if flavor == "Forever" then
+        Select("home")
+        local key = "msufsuite." .. case.id .. "." .. case.key
+        Exact({ pageKey = "suite_qualityOfLife", settingKey = key, sectionId = Section(case.id) },
+            "exact Forever setting search failed " .. case.id)
+        Check(Widget(key):IsVisible() and Native(case.id).open, "Forever search did not reveal its option")
+        Check(not S.Config(case.id).enabled, "revealing a Forever setting activated the module")
     end
 end
 -- Unavailable client features are omitted by default, but explicitly discoverable.
@@ -398,5 +491,118 @@ for _,case in ipairs({{"enemy casts","enemyCastStack"},{"cast list","enemyCastSt
         end
         Check(found and found<=6,"warm master rank exceeds6: "..case[1].." rank="..tostring(found))
     end
+end
+do
+    local meta = P.Meta("suite_qualityOfLife", "parallelWindows", "enabled", "setting", Section("dailyComfort"))
+    local found
+    for _, result in ipairs(api.SearchPages("Keep Blizzard windows open") or {}) do
+        local target = result.exactTarget or result
+        if target.controlId == meta.controlId then found = target break end
+    end
+    Check(found, "search did not find the Suite window toggle")
+    Exact(found, "search could not open the Suite window toggle")
+    Check(not S.Config("parallelWindows").enabled, "search changed the window setting")
+    local limitTarget
+    for _, result in ipairs(api.SearchPages("Blizzard window limit") or {}) do
+        local target = result.exactTarget or result
+        if target.settingKey == "msufsuite.parallelWindows.windowLimit" then limitTarget = target break end
+    end
+    Check(limitTarget, "search did not find the window limit")
+    Exact(limitTarget, "search could not open the window limit")
+end
+-- Indicator samples use ordinary menu hit areas and exact real control routes.
+-- Stand in only for the renderers; the pages, lazy content and search/focus
+-- machinery above remain the shipped host + Suite implementations.
+local previewCases = {
+    { "xpBar", "DrawExperienceBarPreview", "suiteXPPreview", "displayStyle" },
+    { "glimmer", "DrawGlimmerPreview", nil, "size" },
+    { "skyriding", "DrawSkyridingPreview", "suiteFlightPreview", "width", "speedHeight", "fontSize", "displayStyle" },
+    { "actionTracker", "DrawActionTrackerPreview", nil, "rowHeight" },
+    { "battleRes", "DrawBattleResPreview", nil, "scale" },
+    { "enemyCastStack", "DrawEnemyCastStackPreview", nil, "rowHeight" },
+}
+local createPreviewFrame, previewFrames = env.CreateFrame, 0
+env.CreateFrame = function(...)
+    previewFrames = previewFrames + 1
+    return createPreviewFrame(...)
+end
+local openPreviewTarget, lastPreviewTarget = M.SearchBridge.OpenSearchTarget, nil
+M.SearchBridge.OpenSearchTarget = function(page, label, anchor, section, route, exact)
+    local called, opened, focused, matched = openPreviewTarget(page, label, anchor, section, route, exact)
+    lastPreviewTarget = { key = exact.settingKey, matched = matched, called = called, opened = opened, focused = focused }
+    return called, opened, focused, matched
+end
+for _, case in ipairs(previewCases) do
+    local id, export, field = case[1], case[2], case[3]
+    if P.Available(id) then
+        S.Config(id).enabled = false
+        S[export] = function(parent)
+            local host = parent.testIndicatorHost
+            if not host then
+                host = env.CreateFrame("Frame", nil, parent)
+                host:SetSize(220, 36)
+                parent.testIndicatorHost = host
+                if field then
+                    local regions = { host = host }
+                    for _, key in ipairs({ "rested", "levelText", "xpText", "percentText", "sessionText", "rateText", "etaText",
+                        "details", "speed", "title", "state", "icon", "count" }) do
+                        regions[key] = host:CreateTexture(nil, "ARTWORK")
+                        regions[key]:SetSize(20, 12)
+                    end
+                    parent[field] = regions
+                end
+            end
+            return host
+        end
+        local page = P.QoLView.GetFeaturePage(Feature(id))
+        Select(page)
+        Check(S.Open(id), "preview feature route failed " .. id)
+        Settle()
+        local ui = assert(contexts[page].qolIndicatorPreviews[id], "indicator preview missing " .. id)
+        ui.Paint()
+        for index = 4, #case do
+            local key = case[index]
+            local handle = assert(ui.targets and ui.targets[key], "indicator lacks exact click target " .. id .. "." .. key)
+            Check(handle:IsVisible(), "indicator click target hidden " .. key)
+            lastPreviewTarget = nil
+            handle:GetScript("OnClick")(handle, "LeftButton")
+            Settle()
+            Check(lastPreviewTarget and lastPreviewTarget.key == "msufsuite." .. id .. "." .. key
+                and lastPreviewTarget.called and lastPreviewTarget.opened and lastPreviewTarget.focused
+                and lastPreviewTarget.matched, "preview did not focus exact control " .. id .. "." .. key)
+            local widget = Widget("msufsuite." .. id .. "." .. key)
+            Check(widget and widget:IsVisible(), "preview did not reveal exact setting " .. id .. "." .. key)
+            Check(not S.Config(id).enabled, "preview click enabled a module " .. id)
+        end
+        local stable = previewFrames
+        ui.Paint()
+        ui.Paint()
+        Check(previewFrames == stable, "warm indicator paint created hit areas")
+        if id == "xpBar" then
+            Check(ui.targets.percent:GetFrameLevel() > ui.targets.displayStyle:GetFrameLevel(),
+                "movable text did not sit above the background target")
+            ui.xpEditor.kit:Select(ui.targets.level)
+            Check(ui.xpEditor.properties.selected == "level", "text selection did not select its own properties")
+            ui.stage.suiteXPPreview.sessionText:Hide()
+            ui.Paint()
+            Check(not ui.targets.session:IsShown(), "hidden session text retained its hit area")
+            ui.stage.suiteXPPreview.sessionText:Show()
+            ui.Paint()
+            local before = S.Config(id).displayStyle
+            ui.sliders.xp:SetValue(12)
+            Check(S.Config(id).displayStyle == before and not S.Config(id).enabled, "sample slider changed stored settings")
+        end
+        ui.stage:Hide()
+        lastPreviewTarget = nil
+        local handle = ui.targets[case[4]]
+        handle:GetScript("OnClick")(handle, "LeftButton")
+        Check(lastPreviewTarget == nil, "hidden preview navigated")
+    end
+end
+env.CreateFrame = createPreviewFrame
+M.SearchBridge.OpenSearchTarget = openPreviewTarget
+if arg[4] == "xp-editor" then
+    assert(loadfile(suiteRoot .. "/tools/tests/xp_editor_acceptance.lua"))()(mw, P,
+        function() return contexts.suite_hud.qolIndicatorPreviews.xpBar end, Settle)
 end
 print("independent_native_accordion_acceptance: "..flavor.." "..checks.." checks")

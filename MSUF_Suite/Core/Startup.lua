@@ -3,13 +3,31 @@ _G.MSUFSuite = Suite
 
 local initialized = false
 local events = CreateFrame("Frame")
+local FinishWorldEntry
+local waitingForCombat = false
+local combatEvent
+
+local function SetCombatWait(wait)
+    if waitingForCombat == wait then return end
+    waitingForCombat = wait
+    if wait then
+        events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    else
+        events:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        if combatEvent then
+            events:UnregisterEvent("PLAYER_REGEN_DISABLED")
+            combatEvent = nil
+        end
+    end
+end
 
 local function ShowInstaller()
     if Suite.startupError or not Suite.Suite.started then return end
     if Suite.InCombat() and Suite.Installer.IsFirstRunPending() then
-        events:RegisterEvent("PLAYER_REGEN_ENABLED")
+        SetCombatWait(true)
         return
     end
+    SetCombatWait(false)
     Suite.Dispatch(Suite.Installer.MaybeShow, "login")
 end
 
@@ -20,13 +38,20 @@ loginEvent:RegisterEvent("PLAYER_ENTERING_WORLD")
 loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
     -- Only the first world entry counts; later ones are zone changes.
     self:UnregisterAllEvents()
+    -- Mark a new login even when the optional XP module never loads. Reloads
+    -- retain the generation, including legacy sessions before the first stamp.
+    if isReloadingUi ~= true and not Suite.startupError then
+        local root = Suite.RootDB
+        local generation = root.xpSessionGeneration
+        root.xpSessionGeneration = Suite.Finite(generation) and generation >= 0
+            and generation < 9007199254740991 and generation + 1 or 1
+    end
     Suite.loginKind = isReloadingUi == true and "reload" or "login"
     Suite.CaptureSessionGold(isReloadingUi)
     -- After the skin's PLAYER_LOGIN pass: chat colours an off skin left.
     Suite.Dispatch(Suite.Skin.SettleChatColors)
     -- The next frame follows client login readiness and all startup listeners.
-    -- One attempt only; unfinished setup remains pending for the next login.
-    C_Timer.After(0, ShowInstaller)
+    C_Timer.After(0, FinishWorldEntry)
 end)
 
 local function Initialize()
@@ -62,11 +87,18 @@ local function Step(owner, name, ...)
     Suite.Dispatch(owner[name], ...)
 end
 
+-- A combat-end event can precede a clear unit combat flag. Always respect
+-- the actual lockdown and let a newer combat-start event cancel the release.
+local function StartupInCombat(transition)
+    if transition == "PLAYER_REGEN_ENABLED" then return Suite.IsCombatLocked() end
+    return Suite.InCombat(transition)
+end
+
 local profilesPrepared = false
-local function PrepareProfiles()
+local function PrepareProfiles(transition)
     if not Initialize() then return end
-    if Suite.InCombat() then
-        events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    if StartupInCombat(transition) then
+        SetCombatWait(true)
         return false
     end
     local legacy = _G.MapkoSkin and _G.MapkoSkin.Suite
@@ -89,8 +121,12 @@ local function PrepareProfiles()
     return true
 end
 
-local function Start()
-    if not PrepareProfiles() then return end
+local function Start(transition)
+    if not PrepareProfiles(transition) then
+        if Suite.startupError then SetCombatWait(false) end
+        return
+    end
+    SetCombatWait(false)
     local profiles = Suite.SuiteProfiles
     Suite.startingModules = true
     Step(Suite.Suite, "Start")
@@ -99,7 +135,7 @@ local function Start()
     Step(profiles, "EnsureModernDarkTooltips")
     Step(profiles, "EnsureModernDarkMinimap")
     Step(profiles, "EnsureRetailResourceStack", false)
-    Step(Suite.Installer, "MaybeShow", "login")
+    ShowInstaller()
 end
 
 -- Finish the login dispatch before loading optional addons. AceAddon may
@@ -107,7 +143,7 @@ end
 local startQueued = false
 local function RunStart()
     startQueued = false
-    Start()
+    Start(combatEvent)
 end
 local function QueueStart(beforeSkinLogin)
     if startQueued then return end
@@ -116,8 +152,18 @@ local function QueueStart(beforeSkinLogin)
     if beforeSkinLogin and Suite.Client.IsAddOnLoaded("MSUF_Suite_Skin") and Suite.Skin.IsAvailable() then
         if not PrepareProfiles() then return end
     end
+    -- Combat can end before the queued callback reads the unit combat flag.
+    SetCombatWait(true)
     startQueued = true
     C_Timer.After(0, RunStart)
+end
+
+function FinishWorldEntry()
+    if waitingForCombat and not Suite.Suite.started then
+        if not startQueued then RunStart() end
+    else
+        ShowInstaller()
+    end
 end
 
 events:SetScript("OnEvent", function(self, event, loadedAddon)
@@ -136,9 +182,19 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
             self:UnregisterEvent("PLAYER_LOGIN")
             QueueStart()
         end
-    elseif event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then
-        self:UnregisterAllEvents()
-        if event == "PLAYER_REGEN_ENABLED" and Suite.Suite.started then ShowInstaller() else QueueStart(event == "PLAYER_LOGIN") end
+    elseif event == "PLAYER_LOGIN" then
+        self:UnregisterEvent(event)
+        QueueStart(true)
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if Suite.Suite.started then
+            ShowInstaller()
+        else
+            if not combatEvent then self:RegisterEvent("PLAYER_REGEN_DISABLED") end
+            combatEvent = event
+            QueueStart()
+        end
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        combatEvent = event
     end
 end)
 events:RegisterEvent("ADDON_LOADED")

@@ -1,6 +1,10 @@
 local _, P = ...
 -- Aliases name feature switches; keywords also describe their detail controls.
 local GROUPS = {
+    { id = "foreverWorldMap", title = "World map information (Forever)", switch = "enabled",
+        sections = { "forever_world_map" }, aliases = { "zone levels", "travel markers", "world map" } },
+    { id = "gatheringTooltips", title = "Gathering tooltips (Forever)", switch = "enabled",
+        sections = { "gathering_tooltips" }, aliases = { "herbalism", "mining", "gathering skill" } },
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
         keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
@@ -152,7 +156,7 @@ return {
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {
         Subgroup("quests", "Quests", "quests questRewardValue"),
-        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance"),
+        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips"),
     } },
     { id = "groups", title = "Groups", subgroups = {
         Subgroup("groupRaid", "Group & Raid", "groupRaidShortcuts trustedPartyInvites autoResponses releaseProtection"),
@@ -160,7 +164,7 @@ return {
         Subgroup("mythic", "Dungeons & Raids", "mythicKeyShare mythicAutoQueue mythicResetReminder combatLog delveSolePower"),
     } },
     { id = "travel", title = "Travel", subgroups = {
-        Subgroup("travel", "Map & Travel", "mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals"),
+        Subgroup("travel", "Map & Travel", "mapLandingShortcuts skyriding waypoints flightTimer glimmer waypointLists dungeonPortals foreverWorldMap"),
     } },
     { id = "interface", title = "Interface", subgroups = {
         Subgroup("interface", "Interface", "dailyComfort soundProfiles"),

@@ -141,7 +141,7 @@ local function ToggleSection(toggle)
     if not B.Valid(window) or not band.activity or not band.activity.key then return end
     window.matrix.scroller:Stop()
     local key = band.activity.key
-    B.FinishAccordion(window, true)
+    B.PrepareAccordion(window, GatherMatrix, key)
     local folded = Matrix.Folded()
     folded[key] = not folded[key] or nil
     B.PlayAccordion(window, not folded[key], CommitFold, GatherMatrix, key)

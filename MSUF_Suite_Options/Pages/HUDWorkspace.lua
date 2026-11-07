@@ -73,6 +73,7 @@ function Page.Builder(ctx)
         local section = owner:CollapsibleSection(sectionId, title, height, open)
         if sectionId:match("_module$") then ui.groups[id].body = section end
         if sectionId:match("_type$") then ui.groups[id].appearance = section end
+        if sectionId:match("_artwork$") then ui.groups[id].artwork = section end
         section._msufSuiteHUDSectionID = sectionId
         section._msufSuiteHUDID = id
         section._msufSuiteHUDBuilder = owner
@@ -141,7 +142,7 @@ function Page.Finish(ctx)
     ui.preview = P.HUDPreview.Build(ctx, ui.header, ui.width - 32)
     if W.SegmentTabs and ui.width - 32 >= 650 then
         local tabs, refresh, _, selectTab = W.SegmentTabs(ctx, ui.header, {
-            label = "", values = values, width = ui.width - 32, frames = panels, defaultTab = selected,
+            label = "", compact = true, values = values, width = ui.width - 32, frames = panels, defaultTab = selected,
             get = function() return ui.selected end, set = function(id) Choose(ui, id) end,
             afterRefresh = function(id) Choose(ui, id) end, x = 16, y = 12,
         })

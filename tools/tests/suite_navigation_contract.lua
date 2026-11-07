@@ -451,10 +451,9 @@ assert(opened[1] == "home" and opened[2] == "suite_bags" and opened[3] == "home"
 ------------------------------------------------------------------ first-run order
 do
     local startup = assert(io.open(root .. "/MSUF_Suite/Core/Startup.lua", "rb")):read("*a")
-    local _, deferred = startup:gsub('C_Timer%.After%(0, ShowInstaller%)', "")
-    local _, stepped = startup:gsub('Step%(Suite%.Installer, "MaybeShow", "login"%)', "")
-    local _, bare = startup:gsub("MaybeShow%(%)", "")
-    assert(deferred == 1 and stepped == 1 and bare == 0, "startup must ask once after world entry and keep host login ordering")
+    local _, deferred = startup:gsub('C_Timer%.After%(0, FinishWorldEntry%)', "")
+    local _, dispatched = startup:gsub('Suite%.Dispatch%(Suite%.Installer%.MaybeShow, "login"%)', "")
+    assert(deferred == 1 and dispatched == 1, "startup must defer world entry and use the guarded installer path")
     loggedIn = true
     Suite.freshInstall, Suite.RootDB.installation = true, nil
     Suite.RootDB.characterInstallations = nil

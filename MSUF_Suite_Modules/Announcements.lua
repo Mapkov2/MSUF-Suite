@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local ID = "announcements"
+local Art = NS.AnnouncementArt
 local IN_COMBAT = { inCombat = true }
 
 -- Cinematic banners for zones and events. Blizzard's own banners, toasts and
@@ -23,26 +24,14 @@ local Tr = S.Text
 local function Create(self)
     if self.host then return end
     local host = S.CreateFrame("Frame", "MSUFSuiteAnnouncements", UIParent)
-    host:SetSize(660, 130)
+    host:SetSize(Art.WIDTH, Art.HEIGHT)
     host:SetFrameStrata("HIGH")
     host:EnableMouse(false)
-    local background = S.CreateTexture(host, nil, "BACKGROUND")
-    background:SetPoint("TOPLEFT", 65, -8)
-    background:SetPoint("BOTTOMRIGHT", -65, 11)
-    local accent = S.CreateTexture(host, nil, "ARTWORK")
-    accent:SetPoint("TOP", 0, -12)
-    accent:SetSize(35, 2)
+    self.art = Art.Create(host, S.CreateTexture)
     local title = S.CreateFontString(host, nil, "OVERLAY")
-    title:SetPoint("TOPLEFT", 14, -23)
-    title:SetPoint("TOPRIGHT", -14, -23)
     title:SetJustifyH("CENTER")
     title:SetWordWrap(false)
-    local divider = S.CreateTexture(host, nil, "ARTWORK")
-    divider:SetPoint("CENTER", 0, -10)
-    divider:SetSize(260, 1)
     local subtitle = S.CreateFontString(host, nil, "OVERLAY")
-    subtitle:SetPoint("TOPLEFT", 18, -84)
-    subtitle:SetPoint("TOPRIGHT", -18, -84)
     subtitle:SetJustifyH("CENTER")
     subtitle:SetWordWrap(false)
     local enter = host:CreateAnimationGroup()
@@ -61,8 +50,7 @@ local function Create(self)
         self.current, self.showing, self.expiresAt = nil, false, nil
         self:Next()
     end)
-    self.host, self.background, self.accent = host, background, accent
-    self.title, self.divider, self.subtitle = title, divider, subtitle
+    self.host, self.title, self.subtitle = host, title, subtitle
     self.enter, self.leave = enter, leave
     host:Hide()
 end
@@ -70,6 +58,19 @@ end
 -- colorStyle: Suite skin + default accents, Custom colors; anchor: Top
 -- center, Screen center (MSUF_Suite/Core/Catalog/HUD.lua).
 local CUSTOM_COLORS, SCREEN_CENTER = 2, 2
+
+local function LayoutArt(self, config)
+    Art.Layout(self.art, config)
+    local inset = self.art.inset
+    if self.artInset == inset then return end
+    self.artInset = inset
+    self.title:ClearAllPoints()
+    self.title:SetPoint("TOPLEFT", inset, -23)
+    self.title:SetPoint("TOPRIGHT", -inset, -23)
+    self.subtitle:ClearAllPoints()
+    self.subtitle:SetPoint("TOPLEFT", inset + 4, -84)
+    self.subtitle:SetPoint("TOPRIGHT", -inset - 4, -84)
+end
 
 local function Theme(self)
     local c = self.config
@@ -83,21 +84,19 @@ local function Theme(self)
     for kind, key in pairs(COLOR_KEYS) do
         self.kindColors[kind] = custom and { S.RGB(c[key]) } or COLORS[kind]
     end
-    local showArt = c.showBoxArt ~= false
-    self.background:SetShown(showArt)
-    self.accent:SetShown(showArt)
-    self.divider:SetShown(showArt)
+    LayoutArt(self, c)
+    local background = self.art.background
     local opacity = (c.backgroundOpacity or (dark and 57 or 50)) / 100
     if custom then
         local r, g, b = S.RGB(c.backgroundColor)
-        self.background:SetColorTexture(r, g, b, opacity)
+        background:SetColorTexture(r, g, b, opacity)
         self.subtitle:SetTextColor(S.RGB(c.subtitleColor))
     elseif skin then
         local r, g, b = skin:GetColor("surface")
-        self.background:SetColorTexture(r, g, b, opacity)
+        background:SetColorTexture(r, g, b, opacity)
         self.subtitle:SetTextColor(skin:GetColor("text"))
     else
-        self.background:SetColorTexture(dark and .02 or .03, dark and .025 or .05, dark and .035 or .075, opacity)
+        background:SetColorTexture(dark and .02 or .03, dark and .025 or .05, dark and .035 or .075, opacity)
         self.subtitle:SetTextColor(.91, .93, .96)
     end
     self.host:SetScale(c.scale / 100)
@@ -111,8 +110,7 @@ local function Paint(self, item)
     self.title:SetText(item.title)
     self.title:SetTextColor(color[1], color[2], color[3])
     self.subtitle:SetText(item.subtitle or "")
-    self.accent:SetColorTexture(color[1], color[2], color[3], .95)
-    self.divider:SetColorTexture(color[1], color[2], color[3], .62)
+    Art.Tint(self.art, color[1], color[2], color[3])
 end
 
 -- The banner on screen fades out after its duration (ctx:After);

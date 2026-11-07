@@ -3,6 +3,8 @@ local Tr = P.Tr
 -- The help of each settings section of the Quality of Life page, by section key:
 -- the "?" popup of a feature and the tooltip of its row show it (QualityOfLife.lua).
 local HELP = {
+    forever_world_map = "Show known travel stops and roads on the world map. Click a marker to place a waypoint.",
+    gathering_tooltips = "Red means your skill is too low. The other colors show how far you are above the requirement.",
     castbar_art = "Adds a thin castbar frame and a dark spell-name panel below it. The Blizzard setup enables this artwork. "
         .. "Disable it to keep the MSUF castbar appearance.",
     glimmer_objects = "Quest item sparkle enables the game's own golden particles on eligible quest objects, including during "
@@ -47,7 +49,7 @@ local HELP = {
     profile_links = "Native character context menus offer Raider.IO and Warcraft Logs links. Select one to open a copyable URL; press Ctrl+C in its edit box. No chat message text is read, and no browser opens automatically.",
     waypoint_command = "Type /way x y for the current map or /way mapID x y. /msufway always works. The short /way alias is used only when no other addon owns it.",
     daily_comfort = "Cinematic confirmation can be skipped after you choose to exit. Automatic skipping is a separate option and also skips movies. Both stay inactive during combat, and a vehicle sequence always keeps its exit confirmation. Hide tutorials while this helper is enabled, prefill the DELETE word while keeping the final confirmation manual, hide only the successful screenshot notice, or open your character window at merchants on the tab you used last. At the auction house, Blizzard's filter button is marked while Current Expansion Only is off; tick it there once and Blizzard keeps it for this character.",
-    daily_cvars = "Optional Blizzard settings for chat, map, sound and low-health or alternate screen flashes. MSUF restores the previous value when you turn a choice or this helper off. Changes you make yourself in Blizzard settings while this helper runs are respected.",
+    daily_cvars = "Optional Blizzard settings for the map, sound and low-health or alternate screen flashes. MSUF restores the previous value when you turn a choice or this helper off. Changes you make yourself in Blizzard settings while this helper runs are respected.",
     collection_markers = "Clear only new mount, pet and toy fanfares acquired while this helper is active. Your collection entries remain available. Each collection type can be switched off independently.",
     guild_privacy = "Type /msufguildprivacy or use the small ON/OFF button above the main chat window. Any chat window containing Guild or Officer is covered in full, including other channels in a mixed window. The guild chat in the Guild & Communities window can be covered as well; other communities stay visible. Reveal the chat again with the click chosen here. Messages keep arriving underneath.",
     ui_error_filter = "Hide only the selected error types. Blizzard keeps handling all other messages and their sounds. Each choice remembers and restores its previous display state when you turn it off.",
