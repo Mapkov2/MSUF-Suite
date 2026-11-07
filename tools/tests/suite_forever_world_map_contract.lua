@@ -102,6 +102,10 @@ MapCanvasPinMixin = {
     UseFrameLevelType = function() end, OnReleased = function(self) self.released = true end,
     SetPosition = function(self, x, y) self.x, self.y = x, y end,
     GetMap = function(self) return self.map end,
+    CheckMouseButtonPassthrough = function(self, button)
+        self:SetPassThroughButtons()
+        self:SetPassThroughButtons(button)
+    end,
 }
 WorldMapFrame = Widget()
 WorldMapFrame.id, WorldMapFrame.activePins, WorldMapFrame.pool = 1429, {}, {}
@@ -116,10 +120,15 @@ function WorldMapFrame:AddDataProvider(provider) self.dataProviders[provider] = 
 function WorldMapFrame:RemoveDataProvider(provider)
     provider:RemoveAllData(); self.dataProviders[provider] = nil; provider:OnRemoved(self)
 end
+local function ResetPin(pin)
+    pin:Hide()
+    pin:OnReleased()
+    pin.map = nil
+end
 function WorldMapFrame:RemoveAllPinsByTemplate()
     for i = #self.activePins, 1, -1 do
         local pin = self.activePins[i]
-        pin:OnReleased()
+        ResetPin(pin)
         self.pool[#self.pool + 1] = pin
         self.activePins[i] = nil
     end
@@ -127,14 +136,23 @@ end
 function WorldMapFrame:AcquirePin(template, ...)
     Check(template == "MSUFSuiteForeverMapPinTemplate", "only own pin template is acquired")
     local pin = table.remove(self.pool)
-    if not pin then
+    local isNew = not pin
+    if isNew then
         pin = Widget()
+        function pin:SetPassThroughButtons()
+            error("Suite pins must retain their XML mouse passthrough on acquisition")
+        end
         for k, v in pairs(MSUFSuiteForeverMapPinMixin) do pin[k] = v end
-        pin:OnLoad()
+        -- Blizzard's frame pool invokes its resetter before MapCanvas can call OnLoad.
+        ResetPin(pin)
+        Check(pin.released, "cold pool reset still calls native pin cleanup")
     end
-    pin.map = self
-    pin:OnAcquired(...)
     self.activePins[#self.activePins + 1] = pin
+    pin.map = self
+    if isNew then pin:OnLoad() end
+    pin:Show()
+    pin:OnAcquired(...)
+    pin:CheckMouseButtonPassthrough("RightButton")
     return pin
 end
 local function Load(name) assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. name))("MSUF_Suite_QualityOfLife", private) end
@@ -164,11 +182,37 @@ Check(events.TAXI_NODE_STATUS_CHANGED == module.provider and events.PLAYER_LEVEL
     "visible map owns its event registrations")
 local count = #WorldMapFrame.activePins
 local beforeFrames = frameCreates
+local releasedPin = WorldMapFrame.activePins[1]
+releasedPin:OnMouseEnter()
+releasedPin:SetHighlightLocked(true)
 module.provider:RemoveAllData()
 Check(#WorldMapFrame.activePins == 0, "native blank-map lifecycle releases own pins")
+Check(not releasedPin.highlight.shown and not GameTooltip.shown and not releasedPin.record,
+    "pool reset clears the previous marker and its active hover state")
 module.provider:RefreshAllData()
 Check(#WorldMapFrame.activePins == count, "same-map refresh repopulates all pins after removal")
 Check(frameCreates == beforeFrames, "same-map refresh reuses the native pin pool")
+local function HasPin(kind)
+    for _, pin in ipairs(WorldMapFrame.activePins) do
+        if pin.kind == kind then return true end
+    end
+    return false
+end
+for setting, kind in pairs({ flightPoints = 1, zoneRoutes = 6, dungeonEntrances = 7 }) do
+    Check(HasPin(kind), setting .. " renders its markers on a supported map")
+    module.config[setting] = false
+    module:Refresh()
+    Check(not HasPin(kind), setting .. " releases its markers when disabled")
+    module.config[setting] = true
+    module:Refresh()
+    Check(HasPin(kind), setting .. " renders its markers again when re-enabled")
+end
+module.config.pinSize = 24
+module:Refresh()
+for _, pin in ipairs(WorldMapFrame.activePins) do
+    Check(pin.width == 24 and pin.height == 24, "marker size applies to reused pins")
+end
+Check(frameCreates == beforeFrames, "changing settings reuses existing pin artwork")
 
 -- A repeated native area-label update does no map lookup, native read,
 -- string normalization, allocation or own region write.
@@ -210,12 +254,21 @@ Check(module.label:IsShown(), "profile refresh repaints unchanged text when enab
 Check(fontWrites > beforeFonts, "global-font refresh restyles a label with unchanged native identity")
 
 WorldMapFrame.id = 1415
+module.config.onlyOwnFaction = false
 module:Refresh()
 for _, pin in ipairs(WorldMapFrame.activePins) do
     Check(pin.kind ~= 1 and pin.kind ~= 6, "continent view omits dense flight and road markers")
     Check(pin.x >= 0 and pin.x <= 1 and pin.y >= 0 and pin.y <= 1, "projected pins remain inside the map")
 end
-Check(#WorldMapFrame.activePins > 0, "transport and dungeon markers remain on continents")
+Check(HasPin(7), "dungeon approaches remain visible on continents")
+Check(HasPin(2) and HasPin(3) and HasPin(4), "boats, zeppelins and skycutters render on continents")
+module.config.transports = false
+module:Refresh()
+Check(not HasPin(2) and not HasPin(3) and not HasPin(4) and HasPin(7),
+    "disabling transports leaves dungeon approaches visible")
+module.config.transports = true
+module:Refresh()
+Check(HasPin(2) and HasPin(3) and HasPin(4), "re-enabling transports restores all three kinds")
 local pin = WorldMapFrame.activePins[1]
 pin:OnMouseEnter()
 Check(GameTooltip.shown and GameTooltip.text == pin.title, "mouse and native gamepad entry share the tooltip")
@@ -244,12 +297,15 @@ Check(calls == beforeCalls + 1, "hidden map does not rebuild or query map data")
 Check(not events.TAXI_NODE_STATUS_CHANGED and not events.PLAYER_LEVEL_UP, "hidden map unregisters its events")
 WorldMapFrame.shown = true
 WorldMapFrame.id = 1429
+module.config.onlyOwnFaction = true
 module.provider:RefreshAllData()
 module.provider:OnShow()
 nativeFlights = true
 module:Refresh()
 for _, p in ipairs(WorldMapFrame.activePins) do Check(p.kind ~= 1, "native flight markers are not duplicated") end
 WorldMapFrame.id = 1413
+module:Refresh()
+Check(not HasPin(1), "faction filtering hides opposite-faction flight points")
 module.config.onlyOwnFaction = false
 module:Refresh()
 local oppositeFlight = false
@@ -310,5 +366,6 @@ local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/ForeverMapPins.xm
 local xml = file:read("*a"); file:close()
 Check(xml:find('enableMouseMotion="true"', 1, true) and xml:find('enableMouseClicks="true"', 1, true)
     and not xml:find("<OnLoad", 1, true), "native AcquirePin owns script installation and creation lifecycle")
+Check(xml:find('passThroughButtons="RightButton"', 1, true), "right clicks pass through to the map")
 print(string.format("Forever world-map contract: %d checks; %d locations; warm label %d VM, %.3f KB/1000",
     checks, #private.ForeverMapData.pins, instructions, allocation))

@@ -15,7 +15,21 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     row.info.header = zone
     other.info = { questID = 99, header = otherZone }
     objective.questID = row.info.questID
-    pin.GetQuestID = function() return objective.questID end
+    local pinQuestID = objective.questID
+    pin.GetQuestID = function() return pinQuestID end
+    pin:SetAlpha(0.75)
+    local nativeShow, nativeHide = pin.Show, pin.Hide
+    function pin:Show() error("addon showed a native POI button") end
+    function pin:Hide() error("addon hid a native POI button") end
+    function pin:SetMouseClickEnabled(value) self.clicks = value end
+    function pin:SetMouseMotionEnabled(value) self.motion = value end
+    function pin:IsMouseClickEnabled() return self.clicks end
+    function pin:IsMouseMotionEnabled() return self.motion end
+    pin:SetMouseClickEnabled(true)
+    pin:SetMouseMotionEnabled(false)
+    local function PinVisible()
+        return pin:IsShown() and pin:GetAlpha() == 0.75 and pin:IsMouseClickEnabled() and not pin:IsMouseMotionEnabled()
+    end
     C_QuestLog.GetInfo = function(index) return index == 6 and zone or nil end
     C_QuestLog.GetHeaderIndexForQuest = function(id) return id == objective.questID and 6 or nil end
     local activeObjectives, activePins = {}, {}
@@ -36,8 +50,8 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
         -- Native releases the pools, then shows only rows belonging to open headers.
         local shown = not zone.isCollapsed
         active[row], activeObjectives[objective], activePins[pin] = shown or nil, shown or nil, shown or nil
-        if shown then row:Show() objective:Show() pin:Show()
-        else row:Hide() objective:Hide() pin:Hide() end
+        if shown then row:Show() objective:Show() nativeShow(pin)
+        else row:Hide() objective:Hide() nativeHide(pin) end
         header.CollapseButton.collapsed = zone.isCollapsed
         normal:SetAtlas(shown and minus or plus)
         highlight:SetAtlas(shown and minus or plus)
@@ -66,7 +80,8 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
         header:Fire("PostClick", button)
     end
     local function Folded(message)
-        Check(not row:IsShown() and not objective:IsShown() and not pin:IsShown()
+        Check(not row:IsShown() and not objective:IsShown() and pin:IsShown()
+            and pin:GetAlpha() == 0 and not pin:IsMouseClickEnabled() and not pin:IsMouseMotionEnabled()
             and other:IsShown() and contents.visibleQuests == 1 and normal:GetAtlas() == plus
             and highlight:GetAtlas() == plus, message)
     end
@@ -79,13 +94,19 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
         "fold masking changed the quest data used by a guide")
     ExpandQuestHeader(0)
     Folded("next native pool rebuild lost the fold")
+    pinQuestID = other.info.questID
+    NativeRebuild()
+    Check(PinVisible(), "a pooled POI inherited another quest's suppression")
+    pinQuestID = objective.questID
+    NativeRebuild()
+    Folded("reacquired POI escaped the fold")
     Click("RightButton", false)
     Folded("right click changed the fold")
     NS.WorldMapQuests.SetLayout("blizzard")
     Folded("switching quest layouts lost the fold")
     query = "Quest"
     NativeRebuild()
-    Check(row:IsShown() and pin:IsShown() and normal:GetAtlas() == minus, "fold masked a native search result")
+    Check(row:IsShown() and PinVisible() and normal:GetAtlas() == minus, "fold masked a native search result")
     query = ""
     NativeRebuild()
     Folded("clearing native search did not restore the fold")
@@ -93,7 +114,7 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     Check(not row.labels[2]:IsShown(), "masked quest still retained shown compact columns")
     rebuildImmediately = false
     Click("LeftButton", false)
-    Check(row:IsShown() and objective:IsShown() and pin:IsShown() and explicitExpands == 1
+    Check(row:IsShown() and objective:IsShown() and PinVisible() and explicitExpands == 1
         and normal:GetAtlas() == minus, "second click did not expand the locally folded zone")
     Check(row.labels[2]:IsShown(), "local reopen left a blank compact quest until native rebuild")
     rebuildImmediately = true
@@ -105,7 +126,7 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     Folded("zone could not be folded again after pin navigation")
     ExpandQuestHeader = originalExpand
     return function()
-        Check(row:IsShown() and objective:IsShown() and pin:IsShown() and normal:GetAtlas() == minus
+        Check(row:IsShown() and objective:IsShown() and PinVisible() and normal:GetAtlas() == minus
             and contents.visibleQuests == 2, "disabling skin left quest rows hidden or the disclosure changed")
     end
 end
@@ -289,6 +310,7 @@ local function Run(flavor)
     External("1")
     Check(NS.WorldMapQuests.SetLayout("compact") and cvar == "0", "compact layout failed after native CVar edits")
     Check(#row.labels == 3, "compact quest columns missing")
+    Check(nativeRebuilds == 2, "switching layouts invoked the native quest pool rebuild from addon code")
     row.Text:SetTextColor(1, 0.8, 0)
     Check(not row.Text:IsShown(), "native color repaint exposed a second quest title")
     row.Text:SetTextColor(0.8, 0.1, 0.1, 0)
@@ -407,17 +429,17 @@ local function Run(flavor)
     NS.DB.questLog = { layout = "compact" }
     NS.Registry.NotifyListeners("profile")
     Check(cvar == "0" and not row.Text:IsShown(), "Redo/profile restore did not restore compact presentation")
-    local originalUpdate, dispatch, reported = QuestLogQuests_Update, NS.Safety.Dispatch, 0
+    local originalSetText, dispatch, reported = row.labels[1].SetText, NS.Safety.Dispatch, 0
     NS.Safety.Dispatch = function(callback, ...)
         local ok, value = pcall(callback, ...)
         if not ok then reported = reported + 1 return end
         return value
     end
-    QuestLogQuests_Update = function() error("contract: native quest update failed") end
+    row.labels[1].SetText = function() error("contract: compact quest paint failed") end
     NS.WorldMapQuests.Refresh()
-    QuestLogQuests_Update = originalUpdate
+    row.labels[1].SetText = originalSetText
     NS.WorldMapQuests.SetLayout("blizzard")
-    Check(reported == 1 and cvar == "1" and row.Text:IsShown(), "native error latched future layout restoration")
+    Check(reported == 1 and cvar == "1" and row.Text:IsShown(), "paint error latched future layout restoration")
     NS.WorldMapQuests.SetLayout("compact")
     NS.Safety.Dispatch = dispatch
     combat = true

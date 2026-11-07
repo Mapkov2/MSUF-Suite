@@ -21,6 +21,10 @@ function Pins.Prepare()
     prepared = true
 end
 
+-- These pins always pass right clicks through, as declared in the template.
+-- Skip MapCanvas's protected passthrough writes when it acquires our pins.
+function Pin:CheckMouseButtonPassthrough() end
+
 function Pin:OnLoad()
     self.icon = S.CreateTexture(self, nil, "ARTWORK")
     self.icon:SetAllPoints()
@@ -79,8 +83,11 @@ function Pin:OnMouseClickAction(button)
 end
 
 function Pin:OnReleased()
-    self:OnMouseLeave()
-    self.highlight:Hide()
-    self.owner, self.record, self.title = nil, nil, nil
+    -- The native pool also resets newly created pins before MapCanvas calls OnLoad.
+    if self.highlight then
+        self:OnMouseLeave()
+        self.highlight:Hide()
+    end
+    self.owner, self.record, self.title, self.kind = nil, nil, nil, nil
     MapCanvasPinMixin.OnReleased(self)
 end

@@ -112,9 +112,37 @@ local function MaskObjective(row, list)
     MaskRow(row, list, type(questID) == "number" and list.hiddenQuests[questID] == true)
 end
 
-local function MaskPin(row, list)
-    local questID = Safety.Read(row, "GetQuestID")
-    MaskRow(row, list, type(questID) == "number" and list.hiddenQuests[questID] == true)
+-- Native POI visibility scripts change the shared supertracking callbacks.
+-- Keep the button shown and suppress only its artwork and mouse input.
+local function MaskPin(pin, list)
+    local questID = Safety.Read(pin, "GetQuestID")
+    if type(questID) ~= "number" or not list.hiddenQuests[questID] or not Safety.CanDecorate(pin, true) then return end
+    local record = list.hiddenPins[pin]
+    if not record then
+        local alpha = Safety.Read(pin, "GetAlpha")
+        local clicks = Safety.Read(pin, "IsMouseClickEnabled")
+        local motion = Safety.Read(pin, "IsMouseMotionEnabled")
+        if type(alpha) ~= "number" or type(clicks) ~= "boolean" or type(motion) ~= "boolean" then return end
+        record = { alpha = alpha, clicks = clicks, motion = motion }
+        list.hiddenPins[pin] = record
+        pin:SetAlpha(0)
+        pin:SetMouseClickEnabled(false)
+        pin:SetMouseMotionEnabled(false)
+    end
+    record.masked = true
+end
+
+local function RestoreUnmaskedPins(list)
+    for pin, record in pairs(list.hiddenPins) do
+        if record.masked then
+            record.masked = nil
+        elseif Safety.CanDecorate(pin, true) then
+            pin:SetAlpha(record.alpha)
+            pin:SetMouseClickEnabled(record.clicks)
+            pin:SetMouseMotionEnabled(record.motion)
+            list.hiddenPins[pin] = nil
+        end
+    end
 end
 
 local function ChangeDisclosureAtlas(texture, override)
@@ -201,6 +229,7 @@ local function ApplyFolds(list, questInfo)
         Kit.ForEachActive(objectives, Safety.Read(objectives, "GetNumActive") or FOLD_ROW_LIMIT, MaskObjective, list)
         Kit.ForEachActive(Safety.Field(list.contents, "buttonPool"), FOLD_ROW_LIMIT, MaskPin, list)
     end
+    RestoreUnmaskedPins(list)
     return list.changed
 end
 
@@ -210,7 +239,9 @@ local function BeforeQuestLayout(scroll, displayState)
     -- Blizzard has reset its pools and is about to lay out shown rows.
     wipe(list.hidden)
     if NS.IsCombatLocked() then
-        if next(list.folded) then NS.CombatGate.RunOrDefer(list, list.relayout) end
+        if next(list.folded) or next(list.hiddenPins) then
+            NS.CombatGate.RunOrDefer(list, list.relayout)
+        end
         return
     end
     ApplyFolds(list, Plain(Safety.Field(Plain(displayState), "questInfoContainer")))
@@ -229,7 +260,10 @@ local function AttachFolds(scroll, state)
     if not Safety.HasMethod(scroll, "UpdateBackground") or not Safety.HasMethod(contents, "Layout") then return end
     local list = lists[scroll]
     if not list then
-        list = { scroll = scroll, contents = contents, folded = {}, hidden = Kit.WeakSet(), hiddenQuests = {} }
+        list = {
+            scroll = scroll, contents = contents, folded = {}, hidden = Kit.WeakSet(),
+            hiddenQuests = {}, hiddenPins = Kit.WeakSet(),
+        }
         list.relayout = function()
             if not NS.IsCombatLocked() and Safety.CanDecorate(contents, true) and ApplyFolds(list) then
                 contents:Layout()
@@ -410,11 +444,13 @@ local function RefreshRows()
 end
 
 local function RefreshNow()
-    local owned = originalObjectives ~= nil
+    -- Blizzard rebuilds its own POI pool on quest-log updates. Forever also
+    -- rebuilds on this CVar change. Keep native visibility scripts in that path.
     SyncObjectives()
-    -- Rebuild through Blizzard so its own row heights and scroll extent agree.
-    if Compact() or owned or next(rows) ~= nil then QuestLogQuests_Update() end
-    RefreshRows()
+    if not Compact() then return RefreshRows() end
+    for state, scroll in pairs(contexts) do
+        Kit.ForEachActive(Safety.Field(scroll, "titleFramePool"), FOLD_ROW_LIMIT, Quests.PaintRow, state)
+    end
 end
 
 function Quests.Refresh()
@@ -429,11 +465,10 @@ function Quests.Refresh()
 end
 
 function Quests.Activate(state, frame)
-    contexts[state] = true
+    local scroll = Kit.Path(frame, "QuestLog", "QuestsFrame", "ScrollFrame")
+    contexts[state] = scroll or false
     SyncObjectives()
-    if Safety.CanDecorate(frame, true) then
-        AttachFolds(Kit.Path(frame, "QuestLog", "QuestsFrame", "ScrollFrame"), state)
-    end
+    if Safety.CanDecorate(frame, true) then AttachFolds(scroll, state) end
 end
 
 function Quests.Release(state)
