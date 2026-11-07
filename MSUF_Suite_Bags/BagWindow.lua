@@ -1,5 +1,6 @@
 local _, Private = ...
 local NS, S = Private.NS, Private.Suite
+local Gold = NS.GoldLedger
 local M = assert(Private.BagsModule, "Bags.lua must load before BagWindow.lua")
 -- The bag windows: Suite surface, title drag handles, session gold label and
 -- the placement Blizzard's container layout receives after each native pass.
@@ -7,8 +8,10 @@ local floor = math.floor
 local IN_COMBAT = { inCombat = true }
 local WindowTexture = M.WindowTexture
 local Layout = Private.BagLayout
+local GOLD_PERIOD = NS.BagsGoldPeriod
 local TEXT = {
     session = S.Text("Session %s"),
+    today = S.Text("Today %s"),
     drag = S.Text("Drag to move"),
     options = S.Text("Click for bag options"),
 }
@@ -22,8 +25,9 @@ local function PublicMoney()
 end
 
 -- Losses use the ASCII hyphen-minus.
-local function GoldDeltaText(delta)
-    return TEXT.session:format((delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta)))
+local function GoldDeltaText(format, delta)
+    if not delta then return format:format(NO_VALUE) end
+    return format:format((delta > 0 and "+" or delta < 0 and "-" or "") .. S.MoneyText(math.abs(delta)))
 end
 
 local function Edge(shell, from, to)
@@ -55,11 +59,17 @@ local function NewWindowStyle(frame, combined)
     shadow:SetPoint("TOPLEFT", frame, "TOPLEFT", -3, 3)
     shadow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 3, -3)
 
-    local shell = Private.ChildFrame("Frame", frame)
-    shell:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
-    shell:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
-    shell:SetFrameLevel(panel:GetFrameLevel())
-    shell:EnableMouse(false)
+    -- The combined bag animates a separate shell. The reagent bag keeps its
+    -- skin on the native root's draw layers, beneath the pooled slot buttons
+    -- and title, regardless of the frame level of Blizzard's background.
+    local shell = frame
+    if combined then
+        shell = Private.ChildFrame("Frame", frame)
+        shell:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+        shell:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+        shell:SetFrameLevel(panel:GetFrameLevel())
+        shell:EnableMouse(false)
+    end
 
     local body = WindowTexture(shell, "BACKGROUND", -7)
     body:SetPoint("TOPLEFT", shell, "TOPLEFT", 0, 0)
@@ -75,13 +85,14 @@ local function NewWindowStyle(frame, combined)
     line:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
     line:SetHeight(1)
 
-    local footer, goldLabel
+    local footer, goldLabel, dailyGoldLabel
     if combined then
         footer = WindowTexture(shell, "BORDER", -6)
         footer:SetPoint("BOTTOMLEFT", shell, "BOTTOMLEFT", 0, 0)
         footer:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", 0, 0)
         footer:SetHeight(32)
         goldLabel = NewGoldLabel(frame)
+        dailyGoldLabel = NewGoldLabel(frame)
     end
 
     local top = Edge(shell, "TOPLEFT", "TOPRIGHT")
@@ -93,7 +104,8 @@ local function NewWindowStyle(frame, combined)
     local right = Edge(shell, "TOPRIGHT", "BOTTOMRIGHT")
     right:SetWidth(1)
     return { shell = shell, shadow, body, header, line, footer, top, bottom, left, right,
-        goldLabel = goldLabel, combined = combined, moneyAnchor = frame.MoneyFrame }
+        goldLabel = goldLabel, dailyGoldLabel = dailyGoldLabel,
+        combined = combined, moneyAnchor = frame.MoneyFrame }
 end
 
 -- Title drag handles share these scripts; handle.window is the bag frame.
@@ -159,6 +171,19 @@ end
 
 local PaintWindow = Private.BagAppearance.Window
 
+local function SetSkinShown(textures, shown)
+    if textures.combined then
+        if not shown then Private.BagMotion.Stop(textures.shell) end
+        textures.shell:SetShown(shown)
+    else
+        for i = 2, 9 do
+            local texture = textures[i]
+            if texture then texture:SetShown(shown) end
+        end
+    end
+    textures[1]:SetShown(shown and not textures.panel)
+end
+
 -- Blizzard's title router forwards to PortraitButton, so the bag menu
 -- remains available from the heading. Hide the full button: the Suite
 -- skin can otherwise leave a styled but empty plate in this corner.
@@ -217,8 +242,7 @@ function M:StyleWindows()
         if not self.windows[frame] then self.windows[frame] = NewWindowStyle(frame, i == 1) end
     end
     for frame, textures in pairs(self.windows) do
-        textures.shell:Show()
-        textures[1]:SetShown(not textures.panel)
+        SetSkinShown(textures, true)
         OwnChrome(self, frame, textures)
         if textures.dragHandle then textures.dragHandle:SetShown(not S.editMode) end
         PaintWindow(textures, self.config)
@@ -227,43 +251,53 @@ function M:StyleWindows()
     self:UpdatePresentation()
 end
 
-function M:UpdateGold()
-    local style = self.windows and self.frame and self.windows[self.frame]
-    local label = style and style.goldLabel
-    if not label then return end
-    if not self.config.showSessionGold then
-        label:Hide()
-        return
+local function PaintGold(label, format, delta)
+    label:SetText(GoldDeltaText(format, delta))
+    if delta and delta > 0 then
+        label:SetTextColor(0.33, 0.86, 0.62)
+    elseif delta and delta < 0 then
+        label:SetTextColor(0.94, 0.43, 0.45)
+    else
+        label:SetTextColor(0.72, 0.77, 0.82)
     end
-    -- The one session baseline of the Bags and DataTexts (Core/SessionGold.lua).
+end
+
+local function UpdateSessionGold(self)
+    local style = self.windows and self.windows[self.frame]
+    if not style then return end
     local money = PublicMoney()
     local baseline = NS.SessionGoldBaseline(money)
-    if not money or not baseline then
-        label:SetText(TEXT.session:format(NO_VALUE))
-        label:SetTextColor(0.72, 0.77, 0.82)
-    else
-        local delta = money - baseline
-        label:SetText(GoldDeltaText(delta))
-        if delta > 0 then
-            label:SetTextColor(0.33, 0.86, 0.62)
-        elseif delta < 0 then
-            label:SetTextColor(0.94, 0.43, 0.45)
-        else
-            label:SetTextColor(0.72, 0.77, 0.82)
-        end
-    end
-    label:Show()
+    PaintGold(style.goldLabel, TEXT.session, money and baseline and money - baseline or nil)
+end
+
+local function UpdateTodayGold(self)
+    local style = self.windows and self.windows[self.frame]
+    if not style then return end
+    local label = style.goldBoth and style.dailyGoldLabel or style.goldLabel
+    local _, _, net = Gold.Today()
+    PaintGold(label, TEXT.today, net)
 end
 
 function M:ApplyGoldEvents()
-    if self.config.showSessionGold then
-        self.context:Event("PLAYER_MONEY", M.UpdateGold, IN_COMBAT)
-        self.context:Event("PLAYER_ENTERING_WORLD", M.UpdateGold, IN_COMBAT)
+    local show, period = self.config.showSessionGold, self.config.goldPeriod
+    local session = show and period ~= GOLD_PERIOD.TODAY
+    local today = show and (period == GOLD_PERIOD.TODAY or period == GOLD_PERIOD.BOTH)
+    Gold.WatchToday(self, today and UpdateTodayGold or nil)
+    if session then
+        self.context:Event("PLAYER_MONEY", UpdateSessionGold, IN_COMBAT)
+        self.context:Event("PLAYER_ENTERING_WORLD", UpdateSessionGold, IN_COMBAT)
     else
         self.context:RemoveEvent("PLAYER_MONEY")
         self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     end
-    self:UpdateGold()
+    local style = self.windows and self.windows[self.frame]
+    if not style then return end
+    local both = session and today or false
+    Private.BagPanelAppearance.Geometry(style, style.panel == true, both)
+    style.goldLabel:SetShown(show)
+    style.dailyGoldLabel:SetShown(both)
+    if session then UpdateSessionGold(self) end
+    if today then UpdateTodayGold(self) end
 end
 
 -- GetScaledRect and GetCursorPosition are both in screen pixels. Convert the
@@ -441,10 +475,9 @@ function M:RestoreWindows()
     if not self.windows then return end
     for frame, textures in pairs(self.windows) do
         if textures.goldLabel then textures.goldLabel:Hide() end
+        if textures.dailyGoldLabel then textures.dailyGoldLabel:Hide() end
         if textures.dragHandle then textures.dragHandle:Hide() end
-        Private.BagMotion.Stop(textures.shell)
-        textures.shell:Hide()
-        textures[1]:Hide()
+        SetSkinShown(textures, false)
         if textures.titlePoints and frame.TitleContainer and not NS.IsCombatLocked() then
             local title = frame.TitleContainer
             title:ClearAllPoints()

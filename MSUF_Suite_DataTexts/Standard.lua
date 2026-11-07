@@ -1,6 +1,7 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 local GoldLedger = P.GoldLedger
+local Gold = NS.GoldLedger
 local NO_VALUE = P.NO_VALUE
 local Finite, MoneyText = S.Finite, S.MoneyText
 local floor = math.floor
@@ -17,7 +18,7 @@ local Standard = {}
 P.DataTextStandard = Standard
 
 Standard.SOURCES = {
-    gold = true, sessionGold = true, bags = true, durability = true, clock = true,
+    gold = true, sessionGold = true, todayGold = true, bags = true, durability = true, clock = true,
     fps = true, latency = true, coordinates = true, location = true, xp = true,
     date = true, fpsLatency = true, memory = true, homeLatency = true, progressBar = true,
 }
@@ -41,12 +42,13 @@ Standard.EVENT_SOURCES = {
     HONOR_XP_UPDATE = { "progressBar" },
 }
 local CLICK = {
-    gold = "OpenAllBags", sessionGold = "OpenAllBags", bags = "OpenAllBags", date = "ToggleCalendar",
+    gold = "OpenAllBags", sessionGold = "OpenAllBags", todayGold = "OpenAllBags",
+    bags = "OpenAllBags", date = "ToggleCalendar",
 }
 -- Windows S.TogglePanel opens through Blizzard's panel manager.
 local PANELS = { durability = "character", coordinates = "worldMap", location = "worldMap" }
 local LABELS = {
-    gold = S.Text("Gold"), sessionGold = S.Text("Session"), bags = S.Text("Bags"),
+    gold = S.Text("Gold"), sessionGold = S.Text("Session"), todayGold = S.Text("Today"), bags = S.Text("Bags"),
     durability = S.Text("Durability"), clock = S.Text("Time"), fps = S.Text("FPS"),
     latency = S.Text("World"), coordinates = S.Text("Coords"), location = S.Text("Zone"), xp = S.Text("XP"),
     homeLatency = S.Text("Home latency"),
@@ -56,6 +58,10 @@ Standard.LABELS = LABELS
 local TEXT = {
     current = S.Text("Current"),
     sinceLogin = S.Text("Since login"),
+    earnedToday = S.Text("Earned today"),
+    spentToday = S.Text("Spent today"),
+    netToday = S.Text("Net today"),
+    todayHelp = S.Text("Gold today requires the gold history in Suite Bags."),
     homeWorld = S.Text("Home / World"),
     level = S.Text("Level %d"),
     knownTotal = S.Text("Known account gold"),
@@ -196,6 +202,11 @@ end
 
 -- Label, display value, severity and alternate value of a built-in source.
 function Standard.Format(key)
+    if key == "todayGold" then
+        local _, _, net = Gold.Today()
+        if net == nil then return LABELS[key], NO_VALUE end
+        return LABELS[key], SignedMoneyText(net), net < 0 and "bad" or nil
+    end
     if key == "progressBar" then return FormatProgressBar() end
     if key == "date" then
         -- Blizzard's localized short date (SHORTDATE through FormatShortDate).
@@ -218,12 +229,20 @@ end
 -- The detail lines of a built-in source below the tooltip title.
 function Standard.TooltipLines(tooltip, button, config)
     local key = button.source
-    if key == "gold" or key == "sessionGold" then
+    if key == "gold" or key == "sessionGold" or key == "todayGold" then
         local amount = S.ReadInfoSource("gold")
         if Finite(amount) then
             tooltip:AddDoubleLine(TEXT.current, MoneyText(amount))
             local baseline = SessionBaseline(amount)
             if baseline then tooltip:AddDoubleLine(TEXT.sinceLogin, SignedMoneyText(amount - baseline)) end
+        end
+        local earned, spent, net = Gold.Today()
+        if earned then
+            tooltip:AddDoubleLine(TEXT.earnedToday, SignedMoneyText(earned))
+            tooltip:AddDoubleLine(TEXT.spentToday, MoneyText(spent))
+            tooltip:AddDoubleLine(TEXT.netToday, SignedMoneyText(net))
+        elseif key == "todayGold" then
+            tooltip:AddLine(TEXT.todayHelp, 1, 0.82, 0, true)
         end
         if config.trackAltGold then GoldLedger.AppendTooltip(tooltip, MoneyText, TEXT) end
         return true

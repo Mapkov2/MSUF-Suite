@@ -1,4 +1,6 @@
 local _, Suite = ...
+local Gold = {}
+Suite.GoldLedger = Gold
 -- The character gold of Bags and DataTexts. Each character's gold at login
 -- lives in RootDB.suiteGold, so the session gold survives /reload;
 -- Suite.goldSessionCaptured tells whether the stored value is this session's
@@ -27,16 +29,6 @@ function Suite.SetSessionGold(money)
     return true
 end
 
--- One clear for remembered character gold: the gold ledger (suiteBagGold)
--- and the DataTexts balances of older builds it has not merged yet
--- (goldLedger). The options pages of both modules offer it.
-function Suite.ClearCharacterGold()
-    local root = Suite.RootDB
-    if type(root) ~= "table" then return false end
-    root.goldLedger, root.suiteBagGold = nil, nil
-    return true
-end
-
 -- Runs at the first PLAYER_ENTERING_WORLD (Startup.lua): a /reload keeps the
 -- stored baseline, a login stores the current money.
 function Suite.CaptureSessionGold(isReloadingUi)
@@ -59,8 +51,6 @@ end
 -- balance), updated (server time), days (the Bags' 30 days of income and
 -- spending, Finance.lua) and which of the two recorded the character: bags,
 -- account. Suite.ClearCharacterGold empties it.
-local Gold = {}
-Suite.GoldLedger = Gold
 local LEDGER_VERSION = 1
 
 -- Older builds kept the DataTexts balances apart, in RootDB.goldLedger
@@ -143,4 +133,132 @@ function Suite.SessionGoldBaseline(money)
     if not Suite.Finite(money) or money < 0 then return nil end
     money = math.floor(money)
     return Suite.SetSessionGold(money) and money or nil
+end
+
+-- Use the local calendar date of the server timestamp for both history and Today.
+function Gold.LocalDay(now)
+    local t = date("*t", now)
+    local year, month = t.year, t.month
+    if month <= 2 then year = year - 1 end
+    local era = math.floor(year / 400)
+    local yearOfEra = year - era * 400
+    local dayOfYear = math.floor((153 * ((month + 9) % 12) + 2) / 5) + t.day - 1
+    local dayOfEra = yearOfEra * 365 + math.floor(yearOfEra / 4) - math.floor(yearOfEra / 100) + dayOfYear
+    return era * 146097 + dayOfEra - 719468
+end
+
+local recording
+
+-- Recorded income, spending and net change in copper for the local day.
+function Gold.Today()
+    if not recording then return end
+    local root, guid = Suite.RootDB, PlayerKey()
+    if not guid then return end
+    local ledger = root and root.suiteBagGold
+    local characters = type(ledger) == "table" and ledger.characters
+    local record = type(characters) == "table" and characters[guid]
+    local days = type(record) == "table" and record.days
+    if type(days) ~= "table" then return 0, 0, 0 end
+    local today, earned, spent = Gold.LocalDay(GetServerTime()), 0, 0
+    for i = #days, 1, -1 do
+        local row = days[i]
+        if type(row) == "table" and row.day == today and Suite.Finite(row.earned) and Suite.Finite(row.spent) then
+            earned, spent = earned + row.earned, spent + row.spent
+        end
+    end
+    return earned, spent, earned - spent
+end
+
+-- One display listener for Bags and DataTexts. The recorder keeps its own
+-- events. Read after their dispatch so registration order cannot lag a gain.
+local watchers, events = {}
+local refresh, midnight
+
+local function PaintToday()
+    refresh = nil
+    for owner, callback in pairs(watchers) do Suite.Dispatch(callback, owner) end
+end
+
+local function QueueToday()
+    if recording and next(watchers) and not refresh and not Suite.InCombat() then
+        refresh = Suite.Suite.ScheduleDataTick("todayGoldRefresh", 0, PaintToday)
+    end
+end
+
+local function ArmMidnight()
+    local now = GetServerTime()
+    local nextDay = date("*t", now)
+    nextDay.day = nextDay.day + 1
+    nextDay.hour, nextDay.min, nextDay.sec, nextDay.isdst = 0, 0, 0, nil
+    midnight = Suite.Suite.ScheduleDataTick("todayGoldMidnight", time(nextDay) - now, ArmMidnight)
+    QueueToday()
+end
+
+local function PauseToday()
+    events:UnregisterEvent("PLAYER_MONEY")
+    events:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    if refresh then
+        refresh:Cancel()
+        refresh = nil
+    end
+    if midnight then
+        midnight:Cancel()
+        midnight = nil
+    end
+end
+
+local function ResumeToday()
+    events:RegisterEvent("PLAYER_MONEY")
+    events:RegisterEvent("PLAYER_ENTERING_WORLD")
+    ArmMidnight()
+end
+
+local function TodayEvent(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
+        PauseToday()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        ResumeToday()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        ArmMidnight()
+    else
+        QueueToday()
+    end
+end
+
+local function SyncToday()
+    if events then
+        PauseToday()
+        events:UnregisterAllEvents()
+    end
+    if not recording or not next(watchers) then return end
+    if not events then
+        events = CreateFrame("Frame")
+        events:SetScript("OnEvent", TodayEvent)
+    end
+    events:RegisterEvent("PLAYER_REGEN_DISABLED")
+    events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    if not Suite.InCombat() then ResumeToday() end
+end
+
+function Gold.WatchToday(owner, callback)
+    if watchers[owner] == callback then return end
+    local hadWatchers = next(watchers) ~= nil
+    watchers[owner] = callback
+    if hadWatchers ~= (next(watchers) ~= nil) then SyncToday() end
+end
+
+function Gold.SetHistoryRecording(active)
+    if recording == active then return end
+    recording = active
+    SyncToday()
+    if not active and next(watchers) and not Suite.InCombat() then PaintToday() end
+end
+
+-- Both options pages clear the shared ledger and any unmerged older balances.
+function Suite.ClearCharacterGold()
+    local root = Suite.RootDB
+    if type(root) ~= "table" then return false end
+    root.goldLedger, root.suiteBagGold = nil, nil
+    QueueToday()
+    return true
 end

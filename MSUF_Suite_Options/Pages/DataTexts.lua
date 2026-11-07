@@ -170,7 +170,8 @@ remembered reagents stay listed at zero. Bank items are excluded.]],
     })
     SharedRules(ctx, b, reveal, PAGE .. "_gold", Tr("Gold across characters"),
         P.SectionRules(ID, "gold"), {
-            help = "While DataTexts and this choice are enabled, MSUF remembers this character's gold at login and after money changes. Hover a Gold or Session gold DataText to see the last known account total and up to eight other characters. No background scans are used.",
+            help = P.Help("While DataTexts and this choice are enabled, MSUF remembers this character's gold at login and after money changes. Hover a Gold or Session gold DataText to see the last known account total and up to eight other characters. No background scans are used.",
+                "Gold today requires the gold history in Suite Bags."),
             extra = function(body, y, width)
                 P.Button(ctx, body, "Clear saved character gold", 16, y, width, P.ClearCharacterGold,
                     function() return type(P.Suite.RootDB) == "table" end,

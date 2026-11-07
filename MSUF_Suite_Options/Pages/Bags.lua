@@ -110,7 +110,8 @@ local function Build(ctx)
         })
     P.MenuWorkspace.Rules(ctx, b, PAGE, ID, "suite_bags_finance", Tr("Gold and currencies"),
         P.SectionRules(ID, "finance"), {
-            help = "Selected currencies appear above the bag footer. Click Gold history for recorded character balances and 30 days of this character's income and spending, by local date. Other characters show their last recorded balance. The history starts when enabled and does not reconstruct earlier transactions; Clear saved character gold removes the history and the balances.",
+             help = P.Help("Selected currencies appear above the bag footer. Click Gold history for recorded character balances and 30 days of this character's income and spending, by local date. Other characters show their last recorded balance. The history starts when enabled and does not reconstruct earlier transactions; Clear saved character gold removes the history and the balances.",
+                 "Gold today requires the gold history in Suite Bags."),
             extra = function(body, y, width)
                 P.Button(ctx, body, "Clear saved character gold", 16, y, width, P.ClearCharacterGold,
                     function() return type(P.Suite.RootDB) == "table" end,

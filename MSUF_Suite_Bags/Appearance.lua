@@ -7,7 +7,7 @@ P.BagAppearance = Appearance
 -- here belong to the Suite; Blizzard retains the item buttons and their actions.
 function Appearance.Window(t, c)
     local panel = t.combined and P.BagPresentation.IsPanel(c) and not t.combat or false
-    P.BagPanelAppearance.Geometry(t, panel)
+    P.BagPanelAppearance.Geometry(t, panel, t.goldBoth)
     local r, g, b = S.RGB(c.backgroundColor)
     local ar, ag, ab = S.RGB(c.accentColor)
     local opacity = c.backgroundOpacity / 100
@@ -18,7 +18,11 @@ function Appearance.Window(t, c)
     if t[5] then t[5]:SetColorTexture(r * .7, g * .7, b * .7, opacity) end
     t[6]:SetColorTexture(ar, ag, ab, .45)
     for i = 7, 9 do t[i]:SetColorTexture(.28, .31, .36, .55) end
-    if t.goldLabel then S.SetFont(t.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
+    if t.goldLabel then
+        local font = S.ResolveFont(c.font)
+        S.SetFont(t.goldLabel, font, 11, "OUTLINE")
+        if t.dailyGoldLabel then S.SetFont(t.dailyGoldLabel, font, 11, "OUTLINE") end
+    end
     if panel then P.BagPanelAppearance.Paint(t, c) end
 end
 

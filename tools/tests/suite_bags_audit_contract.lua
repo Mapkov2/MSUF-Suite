@@ -92,6 +92,37 @@ do
     local fresh = OpenBank({ bankView = 2, bankBackground = BACKGROUND.MATCH_BAGS, backgroundColor = "112233" })
     red, green, blue = PanelColor(fresh)
     assert(red == 0x11 and green == 0x22 and blue == 0x33, "a new bank panel ignores the setting")
+    local view = fresh.P.BankInventory
+    fresh.RunScript(view.native, "OnClick")
+    fresh.Settle()
+    assert(not view.frame:IsShown(), "Manage bank tabs leaves the Suite inventory over the native slots")
+    local native = assert(view.nativeBackground, "Bank tabs has no background")
+    red, green, blue = Bytes(unpack(native.color))
+    assert(native:IsShown() and native:GetParent() == fresh.BankFrame and native.color[4] == 1
+        and red == 0x11 and green == 0x22 and blue == 0x33, "Bank tabs ignores the configured background")
+    fresh.S.Set("bags", "backgroundColor", "cc8844")
+    fresh.Settle()
+    red, green, blue = Bytes(unpack(native.color))
+    assert(red == 0xcc and green == 0x88 and blue == 0x44, "Bank tabs ignores a color edit while open")
+    fresh.Native(function() fresh.BankFrame:GetTabButton(fresh.BankFrame.accountBankTabID):Click() end)
+    assert(fresh.BankFrame:GetActiveBankType() == Enum.BankType.Account and #fresh.taint == 0, "native tab click was lost")
+    local panel = fresh.BankFrame.BankPanel
+    local tab = CreateFrame("Button", nil, panel)
+    tab:SetSize(32, 32)
+    tab:SetPoint("TOPLEFT", panel, "TOPRIGHT", 2, -74)
+    tab:SetScript("OnClick", function() panel.selectedTabID = 13 end)
+    local left = fresh.Rect(tab)
+    local overlayLeft, _, overlayWidth = fresh.Rect(view.frame)
+    assert(left > overlayLeft + overlayWidth, "Suite's bank panel extends over the individual bank tabs")
+    fresh.Native(function() tab:Click() end)
+    assert(panel.selectedTabID == 13, "the native individual bank tab cannot be selected")
+    fresh.RunScript(view.modeButton, "OnClick")
+    fresh.Settle()
+    assert(view.frame:IsShown() and not native:IsShown(), "switching back to combined leaves the native view active")
+    fresh.S.Set("bags", "bankView", 1)
+    fresh.Settle()
+    view.Disable()
+    assert(not native:IsShown() and not view.modeButton:IsShown(), "disabling Bags leaves native bank decorations")
 end
 
 ---------------------------------------------------------------- the bank window
@@ -195,7 +226,7 @@ do
     local painted
     local S = { Config = function() return config end,
         SetFont = function() end, ResolveFont = function() end, GlobalFontPath = function() return "Global.ttf" end,
-        BagsNewPreview = function() return { width = 700, model = {lineCount=2}, config = { inventoryColumns = 12 } } end,
+        BagsNewPreview = function() return { width = 700, items = {}, model = {lineCount=2}, config = { inventoryColumns = 12 } } end,
         BagsPreviewLayout = function() return {} end,
         BagsPreviewIsPanel = function() return false end,
         BagsFitPreviewRows = function() end,
@@ -212,7 +243,8 @@ do
     local function Region() return setmetatable({}, { __index = function(_, key) return methods[key] or Noop end }) end
     function methods:CreateTexture() return Region() end
     function methods:GetStringHeight() return 14 end
-function methods:GetHeight() return 304 end
+    function methods:GetHeight() return 304 end
+    function methods:GetFrameLevel() return 1 end
     local paint
     local P = { S = S, Suite = setmetatable({ ResolveFont = function() end }, { __index = catalog }), Tr = function(text) return text end, SetTranslatedText = Noop,
         StylePreviewFont = Noop, MenuWorkspace = { FitHeader = Noop },

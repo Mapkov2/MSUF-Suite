@@ -141,14 +141,16 @@ local function PlaceSearch(edit, button)
     edit:SetPoint("TOPRIGHT", button, "TOPLEFT", -8, 0)
 end
 
--- The panel hides Blizzard's slots underneath, so it is always opaque; only
--- its color is a setting (bankBackground). Painted when that color changes.
+-- Both bank views use the same opaque fill. The organized panel covers the
+-- original slots. The native fill sits above Blizzard's background artwork,
+-- below its title, slots, tab buttons and deposit controls.
 local function PaintBackground()
     local hex = NS.BagsBankColor(M.config)
     if BankInventory.paintedColor == hex then return end
     BankInventory.paintedColor = hex
     local r, g, b = S.RGB(hex)
     BankInventory.background:SetColorTexture(r, g, b, 1)
+    BankInventory.nativeBackground:SetColorTexture(r, g, b, 1)
 end
 
 local function Create()
@@ -161,6 +163,9 @@ local function Create()
     frame:SetScript("OnMouseWheel", function(_, delta) Scroll(-delta * 3) end)
     BankInventory.background = S.CreateTexture(frame, nil, "BACKGROUND")
     BankInventory.background:SetAllPoints(frame)
+    BankInventory.nativeBackground = S.CreateTexture(BankFrame, nil, "BACKGROUND", nil, 1)
+    BankInventory.nativeBackground:SetAllPoints(BankFrame)
+    BankInventory.nativeBackground:Hide()
     PaintBackground()
     BankInventory.title = Font(frame, 14)
     BankInventory.title:SetPoint("TOPLEFT", 12, -10)
@@ -293,6 +298,7 @@ Flush = function()
     BankInventory.modeButton:Show()
     BankInventory.active = M.config.bankView ~= BANK_VIEW.TABS
     M.organizedBankActive = BankInventory.active
+    BankInventory.nativeBackground:SetShown(not BankInventory.active)
     if not BankInventory.active then
         P.BankActions.Cancel()
         BankInventory.frame:Hide()
@@ -377,6 +383,7 @@ function BankInventory.Disable()
     if BankInventory.events then BankInventory.events:UnregisterAllEvents() end
     if BankInventory.frame then
         BankInventory.frame:Hide()
+        BankInventory.nativeBackground:Hide()
         BankInventory.modeButton:Hide()
     end
 end

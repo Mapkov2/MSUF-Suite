@@ -5959,6 +5959,30 @@
       "evidence": "2026-11-06 group-buff tracking repair. CooldownManagerPopoverFields.lua retains Track on and all original choices, adds Group, and replaces this help with the complete Automatic includes Blizzard's group buffs sentence. suite_cdm_group_buffs_contract covers all original routes, the group route and harmful-aura fallback.",
       "reason": "Replace the inaccurate automatic-unit help after adding the previously omitted GroupBuff category; the tracking controls and existing modes remain.",
       "date": "2026-11-06"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:bags.showSessionGold\",\"Show gold change since login\"]",
+      "basis": "moved",
+      "evidence": "Catalog/Bags.lua retains showSessionGold with the label Show gold summary. Gold display period defaults to Since login. suite_bags_view_client_contract exercises both periods and the visibility switch.",
+      "reason": "The same switch now controls both session gold and today's gold.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "labels",
+      "item": "[\"retail:bags.showSessionGold\",\"Show gold change since login\"]",
+      "basis": "moved",
+      "evidence": "Catalog/Bags.lua retains showSessionGold with the label Show gold summary. Gold display period defaults to Since login. suite_bags_view_client_contract exercises both periods and the visibility switch.",
+      "reason": "The same switch now controls both session gold and today's gold.",
+      "date": "2026-11-07"
+    },
+    {
+      "category": "locale",
+      "item": "Show gold change since login",
+      "basis": "moved",
+      "evidence": "Catalog/Bags.lua relabels showSessionGold to Show gold summary and uses Since login as the default gold display period.",
+      "reason": "The visibility switch applies to either period.",
+      "date": "2026-11-07"
     }
   ]
 }

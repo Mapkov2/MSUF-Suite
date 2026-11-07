@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local Appearance = P.Appearance
 local GoldLedger = P.GoldLedger
+local Gold = NS.GoldLedger
 local Standard = P.DataTextStandard
 local Extra = P.DataTextSources
 local Actions = P.DataTextActions
@@ -264,6 +265,10 @@ local function SyncEvents(self, active)
     end
 end
 
+local function PaintToday(self)
+    self:UpdateSource("todayGold")
+end
+
 -- Recomputes which sources visible bars show. Sampled sources that stay
 -- active keep their deadlines, so the shared timer is re-armed only when
 -- the sampled set changes.
@@ -285,6 +290,7 @@ function M:Rebind(resample)
     end
     RecycleTargets(active)
     self.activeSources = active
+    Gold.WatchToday(self, active.todayGold and PaintToday or nil)
     Extra.PruneConfigured(self, SOURCES)
     Extra.Rebind(self, resample)
     SyncEvents(self, active)
@@ -556,6 +562,7 @@ end
 
 function M:Disable()
     self.paused, self.refreshAfterCombat = nil, nil
+    Gold.WatchToday(self, nil)
     Visibility.Release()
     Actions.Disable()
     Extra.Disable()

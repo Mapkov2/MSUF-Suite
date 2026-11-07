@@ -19,7 +19,7 @@ for _, source in ipairs({ { "Broker plugin", "broker" }, { "Currency", "currency
     { "Specialization / loot", "specLoot" }, { "Travel cooldowns", "travel" }, { "Addon memory", "memory" },
     { "Great Vault", "vault" }, { "Supplies", "supplies" }, { "Friends online", "friends" },
     { "Guild online", "guild" }, { "Secondary stat", "secondaryStat" }, { "Mythic+ rating", "mythicRating" },
-    { "Home latency", "homeLatency" }, { "XP / reputation bar", "progressBar" } }) do
+    { "Home latency", "homeLatency" }, { "XP / reputation bar", "progressBar" }, { "Gold today", "todayGold" } }) do
     NS.DataTextSources[#NS.DataTextSources + 1] = source[1]
     NS.DataTextSourceKeys[#NS.DataTextSourceKeys + 1] = source[2]
 end

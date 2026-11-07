@@ -556,6 +556,80 @@ assert(not strip[1].extra and not strip[2].extra, "standard source clicks change
 assert(S.Set("dataTexts", "bar1SourceIcons", false))
 assert(not M.bars[1].slots[1].display:find("|T", 1, true), "old icon markup remained after disabling")
 assert(S.Set("dataTexts", "enabled", false) and W.Pending() == 0)
+-- Today's source observes the recorded day after PLAYER_MONEY dispatch.
+do
+    local NS, start = W.Suite, W.now
+    local beforeMidnight = os.time({ year = 2026, month = 11, day = 7, hour = 23, min = 59, sec = 58 })
+    G.date, G.time = os.date, os.time
+    G.GetServerTime = function() return beforeMidnight + math.floor(W.now - start) end
+    assert(NS.ClearCharacterGold())
+    local package = { NS = NS, Suite = S, BagsModule = { active = true, config = { showGoldHistory = true } } }
+    setfenv(assert(loadfile(root .. "/MSUF_Suite_Bags/Finance.lua")), G)("MSUF_Suite_Bags", package)
+    local finance = package.BagFinance
+    money = 100000
+    finance.Record()
+    NS.GoldLedger.SetHistoryRecording(true)
+    assert(S.SetMany("dataTexts", { enabled = true, trackAltGold = false, bar1Slot1 = NS.DataTextSourceIndex.todayGold,
+        bar1Slot2 = 1, bar1Slot3 = 1, bar1Slot4 = 1, bar1Slot5 = 1, bar1Slot6 = 1 }))
+    local slot = M.bars[1].slots[1]
+    assert(slot.text == "0K", "Today did not use the current character's local day")
+    local recorder = G.CreateFrame("Frame")
+    recorder:SetScript("OnEvent", finance.Record)
+    recorder:RegisterEvent("PLAYER_MONEY")
+    money = 95900
+    W.Event("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(slot.text == "−41S" and M.values.todayGold.severity == "bad", "Today lost the first purchase or its loss color")
+    W.Fire(slot, "OnEnter")
+    local tooltip = table.concat(G.GameTooltip.lines, "\n")
+    assert(tooltip:find("Earned today | 0K", 1, true) and tooltip:find("Spent today | 41S", 1, true)
+        and tooltip:find("Net today | −41S", 1, true), "the tooltip did not separate earnings, spending and net gold")
+    W.Fire(slot, "OnLeave")
+    money = 112345
+    W.Event("PLAYER_MONEY")
+    money = 110000
+    W.Event("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(slot.text == "+1G", "Today did not subtract the full day's spending")
+    W.Advance(2)
+    W.Advance(0.1)
+    assert(slot.text == "0K", "Today kept yesterday's gold across idle midnight")
+    money = 110001
+    W.Event("PLAYER_MONEY") -- Queue a refresh immediately before combat.
+    W.Event("PLAYER_REGEN_DISABLED")
+    W.combat = true
+    local goldReads, paints = reads.gold, moneyTexts
+    money = 110002
+    W.Event("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(reads.gold == goldReads + 1 and moneyTexts == paints and W.Pending() == 0 and slot.text == "0K",
+        "Today did work in combat beyond the existing gold recorder")
+    W.combat = false
+    W.Event("PLAYER_REGEN_ENABLED")
+    W.Advance(0.1)
+    assert(slot.text == "+2K", "Today lost combat gold at regen")
+    finance.observed, money = nil, 111000
+    W.Event("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(slot.text == "+2K", "Today lost saved income or counted a balance change while logged out")
+    local stamp = os.time({ year = 2026, month = 11, day = 8, hour = 23, min = 59, sec = 59 })
+    G.GetServerTime = function() return stamp end
+    W.Event("PLAYER_REGEN_DISABLED")
+    W.combat = true
+    money = 111005
+    W.Event("PLAYER_MONEY")
+    stamp, money = stamp + 1, 111008
+    W.Event("PLAYER_MONEY")
+    assert(slot.text == "+2K", "the display changed during a fight across midnight")
+    W.combat = false
+    W.Event("PLAYER_REGEN_ENABLED")
+    W.Advance(0.1)
+    assert(slot.text == "+3K", "the gold recorder merged gains across midnight in combat")
+    NS.GoldLedger.SetHistoryRecording(false)
+    assert(slot.text == "—" and W.Pending() == 0, "Today kept a value or timer with history disabled")
+    assert(S.Set("dataTexts", "enabled", false))
+    recorder:UnregisterAllEvents()
+end
 -- The shared painter keeps the preview's already-formatted bag percentage.
 do
     local preview = { Suite = W.Suite, Tr = function(text) return text end }

@@ -16,19 +16,7 @@ local function AltGold()
     return data ~= nil and data.trackAltGold == true
 end
 
--- Days since 1970-01-01 of the player's local calendar date (the inverse of
--- the proleptic Gregorian civil calendar), so a day starts at local midnight.
--- Labels format the day number in UTC, which prints exactly that date.
-local function LocalDay(now)
-    local t = date("*t", now)
-    local year, month = t.year, t.month
-    if month <= 2 then year = year - 1 end
-    local era = math.floor(year / 400)
-    local yearOfEra = year - era * 400
-    local dayOfYear = math.floor((153 * ((month + 9) % 12) + 2) / 5) + t.day - 1
-    local dayOfEra = yearOfEra * 365 + math.floor(yearOfEra / 4) - math.floor(yearOfEra / 100) + dayOfYear
-    return era * 146097 + dayOfEra - 719468
-end
+local LocalDay = Gold.LocalDay
 Finance.LocalDay = LocalDay
 
 -- Days that left the 30-day window leave the history. A character keeps
@@ -325,6 +313,7 @@ function Finance.Enable()
         end
         Finance.Refresh()
     end
+    Gold.SetHistoryRecording(M.active and M.config.showGoldHistory == true or false)
 end
 
 function Finance.Disable()
@@ -332,4 +321,5 @@ function Finance.Disable()
     if Finance.events then Finance.events:UnregisterAllEvents() end
     if Finance.button then Finance.button:Hide() end
     if Finance.window then Finance.window:Hide() end
+    Gold.SetHistoryRecording(false)
 end

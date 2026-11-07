@@ -34,7 +34,36 @@ local function Inset(texture, left, right, height)
     if height then texture:SetHeight(height) else texture:SetPoint("BOTTOMRIGHT", right, 0) end
 end
 
-function Panel.Geometry(t, panel)
+local function GoldGeometry(t, panel, both)
+    local first, second = t.goldLabel, t.dailyGoldLabel
+    first:ClearAllPoints()
+    second:ClearAllPoints()
+    if panel then
+        first:SetPoint("BOTTOMLEFT", t.shell, "BOTTOMLEFT", 8, both and 72 or 50)
+        first:SetSize(96, both and 22 or 32)
+        second:SetPoint("BOTTOMLEFT", t.shell, "BOTTOMLEFT", 8, 50)
+        second:SetSize(96, 22)
+    elseif both then
+        -- Split the space left of Blizzard's coin buttons as the row resizes.
+        local left, reserve, gap = 4, 164, 4
+        local split = (left - reserve) / 2
+        first:SetPoint("LEFT", t.moneyAnchor, "LEFT", left, 0)
+        first:SetPoint("RIGHT", t.moneyAnchor, "CENTER", split - gap, 0)
+        second:SetPoint("LEFT", t.moneyAnchor, "CENTER", split + gap, 0)
+        second:SetPoint("RIGHT", t.moneyAnchor, "RIGHT", -reserve, 0)
+        first:SetSize(0, 0)
+        second:SetSize(0, 0)
+    else
+        first:SetPoint("LEFT", t.moneyAnchor, "LEFT", 4, 0)
+        first:SetSize(210, 0)
+    end
+    first:SetWordWrap(panel)
+    second:SetWordWrap(panel)
+end
+
+function Panel.Geometry(t, panel, both)
+    if t.dailyGoldLabel and (t.panel ~= panel or t.goldBoth ~= both) then GoldGeometry(t, panel, both) end
+    t.goldBoth = both
     if t.panel == panel then return end
     t.panel = panel
     if panel then Extras(t) end
@@ -53,16 +82,6 @@ function Panel.Geometry(t, panel)
         t.ribbon:SetShown(panel)
         t.glow:SetShown(panel)
         t.heading:SetShown(panel)
-    end
-    if t.goldLabel and t.moneyAnchor then
-        t.goldLabel:ClearAllPoints()
-        if panel then
-            t.goldLabel:SetPoint("BOTTOMLEFT", t.shell, "BOTTOMLEFT", 8, 50)
-        else
-            t.goldLabel:SetPoint("LEFT", t.moneyAnchor, "LEFT", 4, 0)
-        end
-        t.goldLabel:SetSize(panel and 96 or 210, panel and 32 or 0)
-        t.goldLabel:SetWordWrap(panel)
     end
 end
 

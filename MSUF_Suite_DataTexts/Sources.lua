@@ -45,7 +45,7 @@ Sources.panelSources = { durability = "character", coordinates = "worldMap", loc
 -- the Suite's own code (OpenAllBags, ToggleCalendar, ToggleProfessionsBook),
 -- which leaves Blizzard's gamepad focus state tainted there
 -- (MSUF_Suite_Modules/Dialogs.lua, S.GamepadUI).
-Sources.gamepadPanelSources = { gold = "bags", sessionGold = "bags", bags = "bags", date = "calendar",
+Sources.gamepadPanelSources = { gold = "bags", sessionGold = "bags", todayGold = "bags", bags = "bags", date = "calendar",
     clock = "calendar" }
 Sources.gamepadPanelKinds = { professions = "professions" }
 

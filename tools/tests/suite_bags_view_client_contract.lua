@@ -512,5 +512,63 @@ do
         "a render read the bag font " .. reads .. " times")
 end
 
+-- The footer uses the same persisted day as DataTexts, and its legacy
+-- switch still hides the entire gold display.
+do
+    local W = Bags({ config = { goldPeriod = 1 } })
+    function W.S.ScheduleDataTick(_, delay, callback)
+        local handle = {}
+        function handle:Cancel() self.cancelled = true end
+        C_Timer.After(math.max(delay, 0.05), function()
+            if not handle.cancelled then callback() end
+        end)
+        return handle
+    end
+    W.OpenBags()
+    W.Settle()
+    assert(W.S.Set("bags", "goldPeriod", 2))
+    local label = W.M.windows[W.CF].goldLabel
+    assert(label.text:match("^Today "), "the Bags period did not select the daily footer")
+    local loginMoney = W.money
+    W.money = loginMoney - 4100
+    W.Fire("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(label.text == "Today -" .. W.S.MoneyText(4100) and label.textColor[1] > label.textColor[2],
+        "spending on the first login must give Today a negative red value")
+    W.money = loginMoney + 12345
+    W.Fire("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(label.text == "Today +" .. W.S.MoneyText(12345), "the Bags footer missed the recorded gain")
+    W.money = W.money - 45
+    W.Fire("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(W.S.Set("bags", "showGoldHistory", false) and label.text == "Today —")
+    assert(W.S.SetMany("bags", { goldPeriod = 3, showGoldHistory = true }))
+    W.Advance(0.1)
+    local style = W.M.windows[W.CF]
+    local today = style.dailyGoldLabel
+    assert(today:IsShown() and today.text == "Today +" .. W.S.MoneyText(12300)
+        and label.text == "Session +" .. W.S.MoneyText(12300), "Today and Session must agree on the first login")
+    assert(W.S.Set("bags", "windowPresentation", 2))
+    W.Settle()
+    local _, sessionBottom = W.Rect(label)
+    local _, todayBottom, _, todayHeight = W.Rect(today)
+    assert(sessionBottom >= todayBottom + todayHeight - 0.01, "gold labels overlap in the side panel")
+    W.EnterCombat()
+    local frozen = today.text
+    W.money = W.money + 1
+    W.Fire("PLAYER_MONEY")
+    W.Advance(0.1)
+    assert(today.text == frozen and label.text == "Session +" .. W.S.MoneyText(12301),
+        "Both updated today's label in combat or froze the session label")
+    W.LeaveCombat()
+    W.Advance(0.1)
+    assert(today.text == "Today +" .. W.S.MoneyText(12301), "Both missed combat gold at regen")
+    assert(W.S.Set("bags", "showSessionGold", false) and not label:IsShown())
+    assert(not today:IsShown(), "hiding gold left today's label visible")
+    assert(W.S.SetMany("bags", { goldPeriod = 1, showSessionGold = true }) and label.text:match("^Session "))
+    assert(not today:IsShown(), "session mode left today's label visible")
+end
+
 print("bag view client model: order, reads, combat, geometry, tooltips, split owner, search, guild bank,"
     .. " category limit, combat disable, Blizzard grid, the category editor and font reads passed")

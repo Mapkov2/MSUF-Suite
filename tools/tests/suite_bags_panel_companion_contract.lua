@@ -76,4 +76,23 @@ for _, width in ipairs({600,960,1920}) do
         assert(#W.taint==0 and #W.combatLayout==0 and #W.errors==0, "companion taint/lockdown/error regression")
     end
 end
+do
+    local W = H.New(root, { client = arg[2] or "Mainline", config = { backgroundOpacity = 82 } })
+    local reagent = W.Reagent
+    reagent.Bg:SetFrameLevel(600)
+    W.Apply()
+    W.Native(function() reagent:Show() end)
+    W.Settle()
+    local skin = W.M.windows[reagent]
+    assert(skin[2]:GetParent() == reagent and skin[2].layer == "BACKGROUND",
+        "reagent fill follows a child frame level and can cover native contents")
+    assert(skin[3]:GetParent() == reagent and skin[3].layer == "BORDER",
+        "reagent header can cover the native title")
+    assert(skin[2].color[4] == .82 and skin[2]:IsShown(), "reagent fill does not use the configured opacity")
+    W.M:RestoreWindows()
+    assert(reagent:IsShown() and not skin[2]:IsShown() and not skin[3]:IsShown(),
+        "restoring the skin must hide owned art and leave the native bag visible")
+    W.M:StyleWindows()
+    assert(skin[2]:IsShown() and skin[3]:IsShown(), "re-enabling skin leaves reagent art hidden")
+end
 print("Default reagent companion fit, native anchor stability, custom placement and restoration passed: "..(arg[2] or "Mainline"))

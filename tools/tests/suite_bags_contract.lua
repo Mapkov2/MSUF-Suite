@@ -32,6 +32,7 @@ local function Font()
     function font:SetText(value) self.text = value end
     function font:Show() self.shown = true end
     function font:Hide() self.shown = false; self.hideCalls = (self.hideCalls or 0) + 1 end
+    function font:SetShown(value) if value then self:Show() else self:Hide() end end
     fonts[#fonts + 1] = font
     return font
 end
@@ -370,6 +371,7 @@ for _, file in ipairs({ "BagWindow", "BankItemLevel" }) do
     assert(loadfile(root .. "/MSUF_Suite_Bags/" .. file .. ".lua"))("MSUF_Suite_Bags", {
         NS = state, Suite = S, BagsModule = module, BagResize={active=false}, BagWindowMotion={active=false}, ItemLoads = bagsPrivate.ItemLoads,
         BagLayout = bagsPrivate.BagLayout, InventoryView = bagsPrivate.InventoryView, BagPresentation = bagsPrivate.BagPresentation, BagAppearance = bagsPrivate.BagAppearance, BagMotion = bagsPrivate.BagMotion,
+        BagPanelAppearance = bagsPrivate.BagPanelAppearance,
         ChildFrame = bagsPrivate.ChildFrame, BankWindow = { mover = {} },
     })
 end
@@ -514,12 +516,11 @@ context.events.PLAYER_MONEY(module, "PLAYER_MONEY")
 assert(combinedStyle.goldLabel.text == "Sitzung +1g",
     "the first public login baseline did not track subsequent gains")
 assert(combinedStyle.shell.parent == ContainerFrameCombinedBags
-    and reagentStyle.shell.parent == ContainerFrame6
-    and combinedStyle.shell.level == 0 and reagentStyle.shell.level == 0
-    and not combinedStyle.shell.mouseEnabled and not reagentStyle.shell.mouseEnabled
+    and combinedStyle.shell.level == 0 and not combinedStyle.shell.mouseEnabled
     and textures[2].parent == combinedStyle.shell and textures[3].parent == combinedStyle.shell
-    and textures[11].parent == reagentStyle.shell and textures[12].parent == reagentStyle.shell,
-    "Suite bag surface must be above native Bg and below item buttons without mouse capture")
+    and reagentStyle[2].parent == ContainerFrame6 and reagentStyle[2].layer == "BACKGROUND"
+    and reagentStyle[3].parent == ContainerFrame6 and reagentStyle[3].layer == "BORDER",
+    "bag backgrounds must stay below the native item and title layers")
 assert(ContainerFrameCombinedBags.Bg.alpha == 0 and ContainerFrameCombinedBags.NineSlice.alpha == 0
     and ContainerFrame6.Bg.alpha == 0 and ContainerFrame6.NineSlice.alpha == 0,
     "native bag art still covers the Suite window surface")
@@ -581,7 +582,7 @@ assert(textures[1].color[4] == 0 and textures[2].color[4] == 0
     "transparent windows also hid item slots or left a tinted panel")
 module.config.backgroundOpacity = 90
 module:Refresh()
-assert(combinedStyle.shell.shown and reagentStyle.shell.shown,
+assert(combinedStyle.shell.shown and reagentStyle[2].shown,
     "legacy disabled styling hid the new default bag window")
 -- Blizzard's anchor is module state: no settings write, now or after combat.
 local nativeWrites = setManyCalls
@@ -755,7 +756,7 @@ assert(bagMode == "0", "combined bags changed during lockdown")
 combat = false
 module:Refresh()
 assert(bagMode == "1", "queued combined bag restoration was skipped")
-assert(#fonts == 2 and module.overlays[buttons[1]].label.text == "640"
+assert(#fonts == 3 and module.overlays[buttons[1]].label.text == "640"
     and module.overlays[buttons[1]].label.shown, "equipment item level not visible on first open")
 assert(module.overlays[buttons[1]].label.flags == "OUTLINE,SLUG"
     and module.overlays[buttons[1]].label.shadowColor[4] == 0,
@@ -991,7 +992,7 @@ for i = #submoduleCalls, 1, -1 do submoduleCalls[i] = nil end
 module:Disable()
 assert(Ran(STOP_ORDER), "a stop did not run the sub-modules in Bags.lua's order: " .. table.concat(submoduleCalls, ", "))
 bagMode = context.before
-assert(not combinedStyle.shell.shown and not reagentStyle.shell.shown
+assert(not combinedStyle.shell.shown and not reagentStyle[2].shown
     and not textures[1].shown and not textures[10].shown
     and not combinedHandle.shown and not reagentHandle.shown,
     "disabling bags left the Suite window surfaces visible")

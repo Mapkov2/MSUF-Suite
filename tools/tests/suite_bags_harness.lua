@@ -682,6 +682,7 @@ function H.New(root, options)
     function Widget:SetTexture(texture) self.texture = texture end
     function Widget:GetTexture() return self.texture end
     function Widget:SetAtlas(atlas) self.atlas = atlas end
+    function Widget:SetBlendMode(mode) self.blendMode = mode end
     function Widget:SetVertexColor(r, g, b) self.vertex = { r, g, b } end
     function Widget:SetDesaturated(value) self.desaturated = value end
     function Widget:SetTexCoord() end

@@ -32,7 +32,7 @@ function S.BagsPreviewLayout(preview, config, bank, geometry)
     if bank then
         Model.BankConfig(c, config)
         local view = P.BankInventory
-        preview.width = view and view.frame and view.frame:GetWidth() or 700
+        preview.width = view and view.frame and view.frame:GetWidth() or 738
         c.inventoryColumns = Model.BankColumns(preview.width, config.bankView == P.NS.BagsBankView.CATEGORIES)
     else
         preview.width = nil

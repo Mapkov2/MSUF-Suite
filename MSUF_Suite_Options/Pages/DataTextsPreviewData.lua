@@ -8,6 +8,7 @@ P.DataTextsPreviewData = Data
 local SAMPLES = {
     vault = { "Great Vault", "3 / 9" }, supplies = { "Supplies", "24 / 150" },
     gold = { "Gold", "12458g" }, sessionGold = { "Session", "+245g" },
+    todayGold = { "Today", "+370g" },
     bags = { "Bags", "38/96" }, durability = { "Durability", "100%" },
     homeLatency = { "Home latency", "18 ms" }, clock = { "Time", "20:45" }, fps = { "FPS", "120" }, latency = { "World", "24 ms" },
     coordinates = { "Coords", "48.2, 61.7" }, location = { "Zone", "Location" },

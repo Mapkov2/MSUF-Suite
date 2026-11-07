@@ -26,7 +26,7 @@ Suite.Registry.AddListener(Picker, function(_, domain)
 end)
 local hookedAnchors = setmetatable({}, { __mode = "k" })
 local GROUPS = {
-    { "Everyday", { "clock", "date", "gold", "sessionGold", "bags", "durability", "location", "coordinates" } },
+    { "Everyday", { "clock", "date", "gold", "sessionGold", "todayGold", "bags", "durability", "location", "coordinates" } },
     { "Social", { "friends", "guild" } },
     { "Character", { "xp", "progress", "progressBar", "itemLevel", "secondaryStat", "mythicRating", "specialization", "specLoot",
         "professions", "vault", "supplies" } },

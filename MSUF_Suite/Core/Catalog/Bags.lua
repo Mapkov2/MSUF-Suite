@@ -29,6 +29,7 @@ B.Module("bags", {
 -- label's position there); the Bags runtime names its modes through these.
 NS.BagsAnimation = { OFF = 1, SIMPLE = 2, FULL = 3 }
 NS.BagsPresentation = { WINDOW = 1, PANEL = 2 }
+NS.BagsGoldPeriod = { SESSION = 1, TODAY = 2, BOTH = 3 }
 NS.BagsView = { ALL = 1, BY_BAG = 2, CATEGORIES = 3, BLIZZARD_GRID = 4 }
 NS.BagsBankView = { TABS = 1, CHARACTER = 2, WARBANK = 3, CATEGORIES = 4 }
 NS.BagsSortDirection = { BLIZZARD = 1, FROM_TOP = 2, FROM_BOTTOM = 3 }
@@ -98,7 +99,7 @@ B.LinkFontShadow(NS.SuiteCatalog.bags.rules)
 B.Section("bags", "window", "Combined bag window", {
     B.Choice("windowPresentation", "Bag presentation", NS.BagsPresentation.PANEL, { "Compact window", "Side panel" }),
     B.Bool("panelFullHeight", "Use full screen height", false),
-    B.Bool("showSessionGold", "Show gold change since login", true),
+    B.Bool("showSessionGold", "Show gold summary", true),
     B.Number("windowScale", "Window size", 1, 0.65, 1.5, 0.05),
     B.Bool("windowMoved", "Use custom window position", false),
     B.Number("windowX", "Horizontal offset", 0, -4096, 4096),
@@ -148,6 +149,7 @@ B.Section("bags", "categories", "Built-in categories", {
 })
 B.Section("bags", "finance", "Gold and currencies", {
     B.Bool("showGoldHistory", "Record gold history and character balances", true),
+    B.Choice("goldPeriod", "Gold display period", NS.BagsGoldPeriod.SESSION, { "Since login", "Today", "Since login and today" }),
     B.String("currencyIDs", "Currency IDs (up to 8, separated by commas)", "", 120),
 })
 B.Section("bags", "collections", "Pinned and recent items", {

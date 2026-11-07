@@ -377,6 +377,7 @@ end
 function methods:CreateTexture() return Region() end
 function methods:GetStringHeight() return 14 end
 function methods:GetHeight() return 304 end
+function methods:GetFrameLevel() return 1 end
 function methods:SetFont(path,size,flags)
     if type(path) ~= "string" or not path:match("%.TTF$") and not path:match("%.ttf$") then return false end
     self.path,self.size,self.flags=path,size,flags;return true

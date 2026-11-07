@@ -502,7 +502,7 @@ end
 local SLOT_KEYS = { "backgroundColor", "accentColor" }
 local WINDOW_KEYS = { "backgroundOpacity", "windowPresentation" }
 local LEVEL_KEYS = { "showItemLevel", "showBindBadge", "showBankItemLevel" }
-local GOLD_KEYS = { "showSessionGold" }
+local GOLD_KEYS = { "showSessionGold", "goldPeriod" }
 local LABEL_KEYS, VISUAL_KEYS = {}, {}
 do
     local switches = {}
@@ -563,6 +563,7 @@ function M:Refresh()
         if self.windows then
             for _, textures in pairs(self.windows) do
                 if textures.goldLabel then S.SetFont(textures.goldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
+                if textures.dailyGoldLabel then S.SetFont(textures.dailyGoldLabel, S.ResolveFont(c.font), 11, "OUTLINE") end
                 if textures.heading then S.SetFont(textures.heading, fontPath, 22, "") end
             end
         end
@@ -599,6 +600,7 @@ function M:Disable()
     if self.combinedModeJob then self.combinedModeJob:Cancel() end
     self.appliedVisual = nil
     self.context:RemoveEvent("PLAYER_MONEY")
+    NS.GoldLedger.WatchToday(self, nil)
     self.context:RemoveEvent("PLAYER_ENTERING_WORLD")
     for _, record in pairs(self.overlays) do
         Hide(record)
