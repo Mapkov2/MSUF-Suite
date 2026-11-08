@@ -50,6 +50,12 @@ local DRAIN_BUDGET_MS = 4
 local draining, resumeQueued = false, false
 local ResumeDrain
 
+local function ScheduleDrain()
+    if resumeQueued then return end
+    resumeQueued = true
+    C_Timer.After(0, ResumeDrain)
+end
+
 -- Each deferred job is its own boundary: a job that raises is reported and
 -- the remaining jobs still run in the same drain. budget nil: no limit.
 local function Drain(budget)
@@ -70,10 +76,7 @@ local function Drain(budget)
             dispatch(callback)
             if started and CombatGate.count > 0 and debugprofilestop() - started >= budget then
                 draining = false
-                if not resumeQueued then
-                    resumeQueued = true
-                    C_Timer.After(0, ResumeDrain)
-                end
+                ScheduleDrain()
                 return
             end
         end
@@ -83,16 +86,20 @@ local function Drain(budget)
     Clear()
 end
 
-local function DrainPending()
+ResumeDrain = function()
+    resumeQueued = false
     Drain(DRAIN_BUDGET_MS)
 end
 
-ResumeDrain = function()
-    resumeQueued = false
-    DrainPending()
-end
-
-eventFrame:SetScript("OnEvent", DrainPending)
+eventFrame:SetScript("OnEvent", function()
+    -- Regen can arrive while the unit's combat flag still reports combat.
+    -- Finish on the next frame; if it is locked again, wait for the next edge.
+    if NS.IsCombatLocked() then
+        ScheduleDrain()
+    else
+        Drain(DRAIN_BUDGET_MS)
+    end
+end)
 
 function CombatGate.RunOrDefer(key, callback)
     if type(callback) ~= "function" then
@@ -109,7 +116,11 @@ function CombatGate.RunOrDefer(key, callback)
     key = tostring(key or callback)
     local order, positions = CombatGate.order, CombatGate.positions
     if CombatGate.pending[key] == nil then
-        if CombatGate.count == 0 then eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED") end
+        if CombatGate.count == 0 then
+            eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+            -- A job can arrive after the regen dispatch already passed us.
+            if not InCombatLockdown() then ScheduleDrain() end
+        end
         CombatGate.count = CombatGate.count + 1
     end
     CombatGate.pending[key] = callback

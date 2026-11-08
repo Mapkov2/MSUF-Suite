@@ -10,6 +10,11 @@ return { NS=NS, Details=details, root=characterFrame, Object=Object,
 local checks=0
 local function Check(value,message) assert(value,message); checks=checks+1 end
 InCombatLockdown=function() return false end
+local wake
+C_Timer={After=function(delay, callback)
+    assert(delay==0 and not wake, "unexpected dossier wake-up")
+    wake=callback
+end}
 H.SetCombat(true)
 H.Details.Apply(H.root,"character","details")
 local view=H.Details.views[H.root]
@@ -39,6 +44,7 @@ for _, kind in ipairs({"explicit","forbidden"}) do
     Check(not H.Details.views[guarded],"cold dossier attached to unsafe " .. kind .. " root")
 end
 H.SetCombat(false)
+if wake then wake() end
 H.Details.Disable(H.root,"details")
 Check(not view.registered and not view.host:IsShown(),"disabled dossier retained work")
 print("Character dossier combat: " .. checks .. " checks")

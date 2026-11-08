@@ -21,6 +21,18 @@ local function World()
     end
     return W
 end
+if client == "Forever" then
+    for _, mode in ipairs({ "0", "1" }) do
+        local W = World()
+        W.cvars.combinedBags = mode
+        W.fighting = true
+        W.NS.startingBeforeLockdown = true
+        W.Apply()
+        W.NS.startingBeforeLockdown = nil
+        assert((W.M.combinedBagConfigured == true) == (mode == "1") and W.writes == 0,
+            "Forever combat reload did not respect the existing combined bag mode")
+    end
+end
 local cases = {"startup", "true", "false", "burst", "flip", "reject", "hostile", "combat", "edge",
     "queuedCombat", "disable", "reenable", "restore"}
 for _, case in ipairs(cases) do

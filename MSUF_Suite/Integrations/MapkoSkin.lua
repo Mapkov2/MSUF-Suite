@@ -124,6 +124,20 @@ local function LoadedEngine()
     if type(provider) == "table" and provider.addonName == "MSUF_Suite_Skin" then return provider end
 end
 
+function Skin.ApplyStartupLayout()
+    local engine = LoadedEngine()
+    if not engine then return end
+    local adapters = engine.Adapters
+    if Skin.enabled and adapters and adapters.PrepareReloadWindows then Suite.Dispatch(adapters.PrepareReloadWindows) end
+    if engine.EnsureLoginApplied then engine.EnsureLoginApplied() end
+end
+
+function Skin.FinishStartupLayout()
+    local engine = LoadedEngine()
+    local registry = engine and engine.Registry
+    if registry and registry.FlushStartupLayout then registry.FlushStartupLayout() end
+end
+
 -- Names an addon in chat once; RootDB.skinConflictNotices keeps who was told.
 local function TellOnce(root, name)
     local told = root.skinConflictNotices

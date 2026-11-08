@@ -29,7 +29,6 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     local W = NS.WindowControls
     local panel = Frame("CharacterFrame", UIParent)
     nativeWindows[#nativeWindows + 1] = panel
-    panel.CloseButton = Frame(nil, panel, "Button")
     NS.DB.windowControls.scales.CharacterFrame = 0.8
     NS.DB.windowControls.positions.CharacterFrame = { x = 300, y = -90 }
     _G.combatEdge = true -- PLAYER_REGEN_DISABLED before native lockdown changes
@@ -96,6 +95,61 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     grip.scripts.OnMouseUp(grip)
     _G.combatEdge = false
 
+    -- The first visible header after a combat reload can have no controls
+    -- yet. Safe fit is independent of the native panel visibility lock.
+    local settingsPanel = UIPanelWindows.SettingsPanel
+    UIPanelWindows.SettingsPanel = { area = "center" }
+    local caption = Frame("SettingsPanel", UIParent)
+    local close = Frame(nil, caption, "Button")
+    close.anchorName, close.left, close.top, close.height = "TOPRIGHT", 668, 803, 26
+    function close:GetEffectiveScale() return caption:GetEffectiveScale() end
+    caption.CloseButton = close
+    local nativeClose = function() caption:Hide() end
+    close.scripts.OnClick = nativeClose
+    _G.combat = true
+    Check(W.Attach(caption, "reload-caption"), "safe cold header refused to attach")
+    local header = W.states[caption]
+    Check(header.maximize and header.maximize.shown and header.minimize.shown,
+        "cold combat header lost its minimize/maximize caption")
+    header.maximize.scripts.OnClick(header.maximize)
+    Check(header.fit and caption.point[1] == "CENTER", "safe maximize was refused during combat")
+    header.maximize.scripts.OnClick(header.maximize)
+    Check(not header.fit, "safe fit could not restore during combat")
+    header.minimize.scripts.OnClick(header.minimize)
+    Check(caption.shown and not header.restore.shown and header.minimize.mouseEnabled == false,
+        "combat minimize bypassed the native panel manager or retained mouse input")
+    Check(close.scripts.OnClick == nativeClose and next(H.jobs) == "windowControls:captions",
+        "cold header changed native close or lost its combat-end caption refresh")
+    _G.combat = false
+    for key, callback in pairs(H.jobs) do H.jobs[key] = nil; callback() end
+    Check(header.minimize.mouseEnabled == true, "combat-end refresh did not re-enable minimize input")
+    header.minimize.scripts.OnClick(header.minimize)
+    Check(not caption.shown and header.restore.shown, "minimize did not resume after combat")
+    header.restore.scripts.OnClick(header.restore, "LeftButton")
+    close.scripts.OnClick(close)
+    Check(not caption.shown and not header.restore.shown, "restored header lost its native close")
+    W.DisableOwner("reload-caption")
+
+    local standalone = Frame("SettingsPanel", UIParent)
+    UIPanelWindows.SettingsPanel = nil
+    standalone.ClosePanelButton = Frame(nil, standalone, "Button")
+    _G.combat = true
+    Check(W.Attach(standalone, "standalone-caption"), "safe standalone cold window did not attach")
+    local standaloneHeader = W.states[standalone]
+    standaloneHeader.minimize.scripts.OnClick(standaloneHeader.minimize)
+    Check(not standalone.shown and standaloneHeader.restore.shown, "safe standalone minimize was refused")
+    standaloneHeader.restore.scripts.OnClick(standaloneHeader.restore, "LeftButton")
+    Check(standalone.shown and not standaloneHeader.restore.shown, "safe standalone restore was refused")
+    function standalone:GetAttribute(key)
+        if key == "UIPanelLayout-area" then return "center" end
+    end
+    standaloneHeader.minimize.scripts.OnClick(standaloneHeader.minimize)
+    Check(standalone.shown and not standaloneHeader.restore.shown, "late native panel attributes bypassed lockdown")
+    standalone:Hide()
+    _G.combat = false
+    UIPanelWindows.SettingsPanel = settingsPanel
+    W.DisableOwner("standalone-caption")
+
     -- Forbidden targets expose no getters: stopping our own transient updater
     -- must not read the native root or touch its button state.
     grip.scripts.OnMouseDown(grip, "LeftButton")
@@ -147,6 +201,35 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     for key, callback in pairs(H.jobs) do H.jobs[key] = nil; callback() end
     map:Hide()
     NS.WindowControlChrome.RecolorGrip = recolor
+
+    -- The Forever map can be unprotected while its native dungeon overlay is
+    -- rebuilding during a boss encounter. Leave its automatic geometry to Blizzard.
+    local dungeonMap = Frame("WorldMapFrame", UIParent)
+    nativeWindows[#nativeWindows + 1] = dungeonMap
+    NS.DB.windowControls.scales.WorldMapFrame = 1.22
+    NS.DB.windowControls.positions.WorldMapFrame = { x = 300, y = -90 }
+    _G.combatEdge = true
+    Check(W.Attach(dungeonMap, "dungeon-map"), "combat map attach lost its controls")
+    if NS.Client.isForever then
+        Check(dungeonMap.geometryWrites == nil, "Forever combat attach wrote map geometry")
+        dungeonMap:Hide()
+        dungeonMap:Show()
+        UpdateScaleForFitForOpenPanels()
+        Check(dungeonMap.geometryWrites == nil, "Forever combat reopen or fit wrote map geometry")
+        UpdateUIPanelPositions(dungeonMap)
+        Check(dungeonMap.geometryWrites == 1 and dungeonMap.point[4] == 30,
+            "Forever combat panel layout overrode Blizzard's map anchor")
+        Check(next(H.jobs) == "windowControls:show:WorldMapFrame", "combat map replay was not queued")
+        _G.combatEdge = false
+        for key, callback in pairs(H.jobs) do H.jobs[key] = nil; callback() end
+        Check(dungeonMap.scale == 1.22 and dungeonMap.point[4] == 300 / 1.22,
+            "combat end lost the saved map scale or position")
+    else
+        Check(dungeonMap.scale == 1.22 and dungeonMap.point[4] == 300 / 1.22,
+            "Retail lost its immediate map placement in combat")
+    end
+    _G.combatEdge = false
+    dungeonMap:Hide()
 
     -- The reviewed implicit spellbook exception remains out-of-combat only.
     local protected = Frame("PlayerSpellsFrame", UIParent)

@@ -86,9 +86,28 @@ local function Row(kind, label, key, section, get, set, values, min, max, step)
     return row
 end
 
+function Kit.AddScrollRows(shape, skin)
+    local modes = {
+        { value = "native", text = Tr("Default") },
+        { value = "smooth", text = Tr("Smooth scrolling") },
+        { value = "adaptive", text = Tr("Adaptive") },
+    }
+    shape[#shape + 1] = Row("dropdown", "Scroll behavior", "theme.smoothScrolling", "shape",
+        skin.Theme.GetScrollBehavior,
+        function(value) Change(skin, "Scroll behavior", "theme.smoothScrolling",
+            function() return skin.Theme.SetScrollBehavior(value) end) end, modes)
+    shape[#shape + 1] = Row("toggle", "Bounce at list edges", "theme.scrollEdgeBounce", "shape",
+        function() return skin.DB.theme.scrollEdgeBounce ~= false end,
+        function(value) Change(skin, "Bounce at list edges", "theme.scrollEdgeBounce",
+            function() return skin.Theme.SetAppearance("scrollEdgeBounce", value) end) end)
+    shape[#shape].unavailable = function()
+        if skin.Theme.GetScrollBehavior() ~= "adaptive" then return Tr("Requires adaptive scrolling.") end
+    end
+end
+
 local function SkinDefault(defaults, id)
     if id == "theme.menuAnimations" or id == "theme.dropdownDimming"
-        or id == "theme.windowFocusDimming" or id == "theme.smoothScrolling" then return true end
+        or id == "theme.windowFocusDimming" or id == "theme.smoothScrolling" or id == "theme.scrollEdgeBounce" then return true end
     if id == "theme.reduceMotion" then return false end
     if id == "suiteEnabled" then return true end
     if id == "enabled.windows" then return defaults.enabled end
@@ -141,6 +160,7 @@ local function ResetSkinSection(skin, id, rows, contextRows)
                 Suite.Skin.SetEnabled(item.value == true)
             else
                 if path == "enabled.windows" then path = "enabled" end
+                if path == "theme.smoothScrolling" then skin.DB.theme.adaptiveScrolling = nil end
                 if path:sub(1, 5) == "font." then path = "typography." .. path:sub(6) end
                 if path:sub(1, 10) == "character." then path = "characterDetails." .. path:sub(11) end
                 if path:sub(1, 6) == "color." then path = "theme.colors." .. path:sub(7) end

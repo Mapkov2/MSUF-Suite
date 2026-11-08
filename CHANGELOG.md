@@ -1,5 +1,39 @@
 # MSUF Suite Changelog
 
+## 0.1.14 Alpha - 2026-11-08
+
+### Highlights
+
+- Bags and Bank gain more appearance controls, a matching item preview, and gold totals for this login or the current day.
+- The XP bar and tooltip can show time played at the current level. The editor previews the new label alongside the existing time-to-level estimate.
+- Improved WoW Forever startup during a UI reload in combat, including HUD modules and the skinning work that resumes when combat ends.
+
+### Bags, Bank, and DataTexts
+
+- Refine reagent slots, bag and bank tab placement, item borders, and the placement and size of bag buttons. Keep native bag-slot input and the related bag and bank windows clear while another inventory window is open.
+- Add gold history and per-character balances to the shared ledger. The Bags summary and the Today Gold DataText use the same daily total.
+- Improve the native bag-bar takeover and the first layout of DataText bars after a reload or UI scale change.
+
+### Chat, Nameplates, and Cooldown Manager
+
+- Improve chat tab renaming, toolbar and detached-window previews, and the handling of saved screen positions on supported hosts.
+- Refine nameplate level and name text, size controls, and the preview layout. The preview keeps the selected layout while switching settings tabs.
+- Improve Cooldown Manager bar previews, layout controls, and host integration for saved profiles and native cooldown viewers.
+
+### WoW Forever map and skinning
+
+- Keep map information markers in the Suite's own layer and refresh them alongside Blizzard map updates. Improve quest search and compact quest-list controls.
+- Improve world map positioning with Parallel Windows, including native panel transitions and combat deferral.
+- Refine skins for Group Finder, professions, the spellbook, and talents. Improve native scroll motion, caption buttons, and the repaint of settings as windows reopen.
+
+### Quality of Life and settings
+
+- Group related settings into clearer sections and refine item selection and settings previews.
+- Choose Shift, Ctrl, or Alt to pause quest automation. On Retail, Tooltip IDs can use a selected modifier or stay visible.
+- Add an option to filter resource errors such as low energy or rage.
+- On the MSUF 7.0 host, show the round variant of compatible minimap Icon Skins and preserve the crop when restoring player aura icons.
+- Refresh the bundled Retail and Forever factory profiles and update translations for the new controls.
+
 ## 0.1.13 Alpha - 2026-11-07
 
 ### Highlights

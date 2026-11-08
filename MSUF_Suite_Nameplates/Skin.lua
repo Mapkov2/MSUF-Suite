@@ -201,7 +201,8 @@ local function TargetGaps(uf, unit)
     local width = classic and setup.levelIconWidth
     local rightGap = S.Finite(width) and width + 4 or classic and 19 or 0
     local leftWidth = setup.playerLevelDiffWidth
-    local diffGap = badge and LevelBadgeShown(uf, unit) == true
+    local diffBadge = badge and LevelBadgeShown(uf, unit) == true or not badge and Level.NativeBadgeVisible(uf)
+    local diffGap = diffBadge
         and (S.Finite(leftWidth) and leftWidth > 0 and leftWidth + (NS.Client.isForever and 5 or 4)
             or (NS.Client.isForever and 33 or 20)) or 0
     if not NS.Client.isForever then return rightGap, diffGap end
@@ -216,7 +217,8 @@ local function PaintTarget(uf, health, visual, prefix)
     local visible = M.config.enemyTargetMarker and (prefix == "enemy" or M.config.enemyTargetHideFriendly == false)
         and S.Public(target) and target == true
     if visible then M.targetUF = uf elseif M.targetUF == uf then M.targetUF = nil end
-    local rightGap, leftGap = TargetGaps(uf, unit)
+    local rightGap, leftGap
+    if visible then rightGap, leftGap = TargetGaps(uf, unit) end
     Style.PaintTarget(visual, health, visible, M.targetConfig, uf, rightGap, leftGap)
 end
 

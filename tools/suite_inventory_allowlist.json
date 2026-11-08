@@ -5983,6 +5983,70 @@
       "evidence": "Catalog/Bags.lua relabels showSessionGold to Show gold summary and uses Since login as the default gold display period.",
       "reason": "The visibility switch applies to either period.",
       "date": "2026-11-07"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:quests\",\"description\",\"Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.\"]",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the quests module and adds pauseModifier; its default remains Shift.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:quests\",\"description\",\"Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.\"]",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the quests module and adds pauseModifier; its default remains Shift.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
+      "item": "Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the quests module and adds pauseModifier; its default remains Shift.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
+      "item": "Hold Shift to pause. Quests with a money cost and quests with a reward choice always stay manual.",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the quests module and adds pauseModifier; its default remains Shift.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:tooltipIDs\",\"description\",\"Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.\"]",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the tooltipIDs module and adds idModifier; its default remains Alt.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:tooltipIDs\",\"description\",\"Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.\"]",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the tooltipIDs module and adds idModifier; its default remains Alt.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
+      "item": "Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the tooltipIDs module and adds idModifier; its default remains Alt.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
+      "item": "Hold Alt to see the ID of an item, spell, creature, quest, currency or temporary weapon enchant on its tooltip, or press Alt while the tooltip is open; the IDs stay until the tooltip is built again. Spell icon IDs and Blizzard's account character currency data are optional, and that data joins an open tooltip when it arrives. No ID or quantity appears when the client keeps it private.",
+      "basis": "moved",
+      "evidence": "Catalog/QualityOfLife.lua retains the tooltipIDs module and adds idModifier; its default remains Alt.",
+      "reason": "Update the description and help for the configurable modifier while preserving the previous default.",
+      "date": "2026-11-08"
     }
   ]
 }

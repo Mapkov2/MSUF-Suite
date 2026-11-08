@@ -360,6 +360,7 @@ local S = { Config=function() return config end, BagsPaintPreviewWindow=function
 MSUFSuite = { Suite=S, Database={}, SuiteCatalog={bags={rules={}}},
     Registry={AddListener=function() end}, -- profile dialog behavior is outside this font probe
     BagsView={BLIZZARD_GRID=4}, FontRendering={SLUG=3,SHARP=2}, HostBridge={Menu2=function() return {} end},
+    BagsGoldPeriod={SESSION=1,TODAY=2,BOTH=3},
     GlobalFontPath=function() return inherited end,
     ResolveFont=function(key) if key == "FancyFont" then return fancy end end,
     FontFileApplied=function(label,path) return label.path == path end,

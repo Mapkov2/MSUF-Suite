@@ -4,6 +4,7 @@ local Slots, Loads = P.SlotCache, P.ItemLoads
 local Index = {}
 P.InventoryIndex = Index
 local KEY = Slots.KEY
+local KEYRING_BAG = NS.Client and NS.Client.isForever and KEYRING_CONTAINER or nil
 
 function Index.New()
     return { items = {}, records = setmetatable({}, { __mode = "k" }), metadata = {},
@@ -246,6 +247,20 @@ local function Fresh(item, bag, slot)
     return fresh
 end
 
+-- The gamepad's keyring sorts before the backpack because its container ID
+-- is negative. Keep its free slots and display stacks separate.
+local function ClassifyKeyring(index, items, free)
+    index.hasKeyring = items[1] ~= nil and items[1].bag == KEYRING_BAG
+    if not index.hasKeyring then return free end
+    for i = 1, #items do
+        local item = items[i]
+        if item.bag ~= KEYRING_BAG then break end
+        item.keyring, item.bagName, item.mergeKey = true, KEYRING, item.key
+        if not item.itemID then free = free - 1 end
+    end
+    return free
+end
+
 -- Blizzard fills its combined bag from bag 4 down to 0 and slot N down to 1
 -- (upstream/live ContainerFrame.lua UpdateItemSlots); the index always lists
 -- slots physically: bag 0 slot 1 first. Call Index.Invalidate after Blizzard
@@ -282,6 +297,7 @@ function Index.ReadContainer(index, frame, recent)
     for itemID in pairs(recent.dismissed) do
         if not index.freshItems[itemID] then recent.dismissed[itemID] = nil end
     end
+    if KEYRING_BAG then free = ClassifyKeyring(index, items, free) end
     index.free, index.revision = free, index.revision + 1
     return items
 end

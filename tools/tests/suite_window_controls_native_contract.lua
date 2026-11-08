@@ -65,6 +65,8 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Check(panel.CloseButton:GetScript("OnClick") == nativeClick
             and panel.MaximizeMinimizeButton:GetScript("OnClick") == nativeClick,
             name .. " native actions were replaced")
+        Check(not state.minimize and not state.maximize,
+            name .. " custom caption covers the native maximize/minimize control")
         Check(not state.grip.scripts.OnUpdate, name .. " idle grip retained an updater")
     end
     local function CheckLayout(label)
@@ -82,6 +84,20 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
     CheckLayout("native panel reflow")
     UpdateScaleForFitForOpenPanels()
     CheckLayout("native scale fit")
+    -- Native OpenMailFrame is a separate UIParent child without a panel
+    -- manager entry. The catalogued window still gets a safe caption.
+    local mail = Frame("OpenMailFrame", UIParent)
+    OpenMailFrame = mail
+    mail.CloseButton = Frame(nil, mail, "Button")
+    mail.CloseButton.left, mail.CloseButton.top, mail.CloseButton.height = 668, 803, 26
+    Check(W.Attach(mail, "mail-caption") and W.states[mail].maximize.shown,
+        "catalogued standalone mail window lost its caption")
+    local nestedMail = Frame("OpenMailFrame", mail)
+    nestedMail.CloseButton = mail.CloseButton
+    Check(not W.Attach(nestedMail, "mail-caption"), "nested lookalike gained standalone geometry")
+    mail:Hide()
+    W.DisableOwner("mail-caption")
+    OpenMailFrame = nil
     local spellbook = panels[3]
     local children = {}
     for _, key in ipairs({ "SpecFrame", "TalentsFrame", "SpellBookFrame" }) do

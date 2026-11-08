@@ -127,9 +127,9 @@ local function RunQueuedJobs()
     jobCount = 0
 end
 
-local function Flush()
-    flushScheduled = false
-    if flushing then return end
+local function Flush(startup)
+    if not startup then flushScheduled = false end
+    if flushing or not HasQueuedWork() then return end
     if NS.IsCombatLocked() then
         NS.CombatGate.RunOrDefer("registry:queued", Flush)
         return
@@ -140,6 +140,10 @@ local function Flush()
         RunQueuedJobs()
     until not HasQueuedWork()
     flushing = false
+end
+
+function Registry.FlushStartupLayout()
+    Flush(true)
 end
 
 local function ScheduleFlush()

@@ -54,7 +54,7 @@ local function BindTarget(active, key, button)
 end
 
 local function Format(key)
-    if Extra.Has(key) then return Extra.Format(key) end
+    if Extra.Has(key) then return Extra.Format(key, M.config) end
     return Standard.Format(key)
 end
 
@@ -407,7 +407,7 @@ local function RefreshBar(index)
     Bars.EnsureSlots(bar, c)
     local frame, layer = bar.frame, c[bar.prefix .. "Layer"]
     local restored = S.ApplyOwnedLayer(frame, layer)
-    Bars.SetVisibilityCallbacks(bar, true)
+    Bars.SetVisibilityCallbacks(bar, not M.paused)
     S.ApplyOwnedChildLayer(bar.visual, frame, layer, 1, restored)
     S.ApplyOwnedChildLayer(bar.badge, frame, layer, 2, restored)
     PlaceBar(bar, c)
@@ -425,15 +425,15 @@ local function RefreshBar(index)
     Visibility.Cache(c, bar)
 end
 
--- Bars explicitly shown during combat need a snapshot even if their state
--- driver hides them out of combat. They never become scheduled data sources.
-local function PrimeCombatBars(self)
+-- Drivers can show a bar after sampling pauses. On combat reload, prime
+-- every enabled bar, including ones whose target or other conditions change.
+local function PrimeCombatBars(self, initialSnapshot)
     local c = self.config
     for _, bar in pairs(self.bars) do
         local prefix = bar.prefix .. "LoadCond"
-        if c[bar.enabledKey] and not bar.frame:IsVisible()
+        if c[bar.enabledKey] and (initialSnapshot or not bar.frame:IsVisible()
             and (c[bar.visibilityKey] == VISIBILITY.IN_COMBAT or c[prefix .. "HideOutOfCombat"]
-                or c[prefix .. "HideOutOfCombatNoTarget"]) then
+                or c[prefix .. "HideOutOfCombatNoTarget"])) then
             for _, button in ipairs(bar.slots) do
                 if button.source then PaintSlot(bar, button, button.source, Format(button.source)) end
             end
@@ -442,16 +442,9 @@ local function PrimeCombatBars(self)
     end
 end
 
-function M:Refresh(resample)
-    if self.paused or NS.InCombat() then
-        self.refreshAfterCombat = true
-        return
-    end
+local function RefreshLayout(self)
     self.uiWidth, self.uiHeight, self.uiPixel = UIParent:GetWidth(), UIParent:GetHeight(), S.PixelUnit()
-    -- Popup rows describe the old binding; they cannot survive a rebind.
-    Actions.ClosePopup()
     Standard.Configure(self.config)
-    if self.config.trackAltGold then GoldLedger.Capture() end
     self.styling = true
     Clear(self.values)
     Bars.ResetKeys()
@@ -473,6 +466,19 @@ function M:Refresh(resample)
         if self.config[BarKeys(i).enabled] then RefreshBar(i) end
     end
     self.styling = false
+end
+
+function M:Refresh(resample)
+    if self.paused or NS.InCombat() then
+        -- The controller may apply DataTexts again as a Bags follower
+        -- during the same startup. Its first snapshot is already laid out.
+        if not NS.startingBeforeLockdown then self.refreshAfterCombat = true end
+        return
+    end
+    -- Popup rows describe the old binding; they cannot survive a rebind.
+    Actions.ClosePopup()
+    if self.config.trackAltGold then GoldLedger.Capture() end
+    RefreshLayout(self)
     self:UpdateVisibility(resample)
     -- A clock that now shows (or no longer shows) seconds samples again at
     -- once, not at its old deadline.
@@ -553,7 +559,16 @@ function M:Enable()
     self.context:Event("PLAYER_REGEN_DISABLED", Pause, IN_COMBAT)
     self.context:Event("PLAYER_REGEN_ENABLED", Resume, IN_COMBAT)
     if NS.InCombat() then
-        self.paused, self.refreshAfterCombat = true, true
+        self.paused = true
+        if NS.startingBeforeLockdown and not NS.IsCombatLocked() then
+            RefreshLayout(self)
+            Visibility.Apply(self)
+            PrimeCombatBars(self, true)
+            NativeBagBar.Sync()
+            self.clockSeconds = self.config.clockSeconds == true
+        else
+            self.refreshAfterCombat = true
+        end
     else
         BindSurfaceEvents(self)
         self:Refresh()

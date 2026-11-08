@@ -5,6 +5,81 @@ P.EquippedBags = Equipped
 local BAG_SLOTS = Constants.InventoryConstants.NumBagSlots
 local TOTAL = BAG_SLOTS + Constants.InventoryConstants.NumReagentBagSlots
 local EMPTY = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"
+local keyringClick
+
+-- Leave the native bag's protection and the keyring's item actions with
+-- Blizzard. A separate secure button covers the icon only while hovered.
+local function DetachKeyring()
+    if not keyringClick or not keyringClick.owner then return end
+    if GameTooltip:IsOwned(keyringClick) then GameTooltip_Hide() end
+    if NS.IsCombatLocked() then return end
+    keyringClick.owner = nil
+    keyringClick:Hide()
+    keyringClick:ClearAllPoints()
+end
+
+local function KeyringTooltip(button)
+    GameTooltip:SetOwner(button, "ANCHOR_TOP")
+    GameTooltip:SetText(KEYRING)
+    GameTooltip:Show()
+end
+
+local function KeyringLeave(button)
+    if keyringClick and keyringClick.owner == button and keyringClick:IsMouseOver() then return end
+    DetachKeyring()
+end
+
+local function KeyringClick()
+    if keyringClick then return keyringClick end
+    local button = S.CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
+    button:RegisterForClicks("LeftButtonUp")
+    button:SetAttribute("useOnKeyDown", false)
+    button:SetAttribute("type", "click")
+    button:SetScript("OnEnter", KeyringTooltip)
+    button:SetScript("OnLeave", DetachKeyring)
+    button:SetScript("OnEvent", DetachKeyring)
+    button:RegisterEvent("PLAYER_REGEN_DISABLED")
+    button:RegisterEvent("PLAYER_REGEN_ENABLED")
+    button:Hide()
+    RegisterStateDriver(button, "visibility", "[combat] hide")
+    keyringClick = button
+    return button
+end
+
+local function NativeKeyring()
+    -- The Gamepad UI provides the keyring in the combined bag itself.
+    if S.GamepadUI() then return end
+    local button = _G.KeyRingButton
+    if not button or NS.Safety.IsForbidden(button) or not C_ActionBar.ShouldShowKeyring() then return end
+    if not GetCVarBool("showKeyring") then return end
+    local enabled = button:IsEnabled()
+    if S.Public(enabled) and enabled == true then return button end
+end
+
+local function KeyringEnter(button)
+    if not P.BagsModule.active or S.editMode or NS.InCombat() then return end
+    local target = NativeKeyring()
+    if not target then return end
+    local click = KeyringClick()
+    click.owner = button
+    click:SetAttribute("clickbutton", target)
+    click:SetFrameStrata(button:GetFrameStrata())
+    click:SetFrameLevel(button:GetFrameLevel() + 5)
+    click:SetAllPoints(button)
+    click:Show()
+    KeyringTooltip(click)
+end
+
+local function CreateKeyring(parent)
+    local button = P.GridView.Button(parent, "", 34, nil, 34)
+    P.BagAppearance.Tool(button, KEYRING, nil, "UI-HUD-ActionBar-Keyring-Small", true)
+    button.bagTool = nil
+    button:HookScript("OnEnter", KeyringEnter)
+    button:HookScript("OnLeave", KeyringLeave)
+    button:HookScript("OnHide", DetachKeyring)
+    button:Hide()
+    return button
+end
 
 local function CanChange()
     return P.BagsModule.active and not NS.InCombat()
@@ -70,6 +145,9 @@ function Equipped.Create(parent)
     hint:SetPoint("RIGHT", -8, 0)
     hint:SetText(S.Text("Drop a bag here to equip it. Drag an equipped bag to replace it."))
     Equipped.hint = hint
+    if NS.Client.isForever and C_ActionBar and C_ActionBar.ShouldShowKeyring then
+        Equipped.keyring = CreateKeyring(frame)
+    end
     Equipped.frame = frame
     return frame
 end
@@ -77,6 +155,13 @@ end
 -- Runs only while the drawer is visible, on a bag change or its first open.
 function Equipped.Refresh()
     if not Equipped.frame or not Equipped.frame:IsShown() then return end
+    if Equipped.keyring then
+        local shown = NativeKeyring() ~= nil
+        if Equipped.keyring:IsShown() ~= shown then
+            Equipped.keyring:SetShown(shown)
+            Equipped.hint:SetPoint("LEFT", shown and Equipped.keyring or Equipped.buttons[TOTAL], "RIGHT", 14, 0)
+        end
+    end
     for i = 1, #Equipped.buttons do
         local button = Equipped.buttons[i]
         local texture = GetInventoryItemTexture("player", button.inventoryID)
@@ -92,8 +177,12 @@ end
 
 function Equipped.Toggle()
     if NS.InCombat() or not Equipped.frame then return end
-    Equipped.frame:SetShown(not Equipped.frame:IsShown())
-    Equipped.Refresh()
+    if Equipped.frame:IsShown() then
+        Equipped.Close()
+    else
+        Equipped.frame:Show()
+        Equipped.Refresh()
+    end
     P.BagsModule:RefreshWindowLayout()
     P.InventoryView.Request()
 end
@@ -105,9 +194,15 @@ function Equipped.Layout(panel)
         button:SetPoint("LEFT", (panel and 4 or 12) + (i - 1) * (panel and 36 or 42), 0)
         button:SetSize(panel and 32 or 34, panel and 32 or 34)
     end
+    if Equipped.keyring then
+        Equipped.keyring:ClearAllPoints()
+        Equipped.keyring:SetPoint("LEFT", Equipped.buttons[TOTAL], "RIGHT", panel and 4 or 8, 0)
+        Equipped.keyring:SetSize(panel and 32 or 34, panel and 32 or 34)
+    end
     Equipped.hint:SetShown(not panel)
 end
 
 function Equipped.Close()
+    DetachKeyring()
     if Equipped.frame then Equipped.frame:Hide() end
 end

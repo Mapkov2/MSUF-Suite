@@ -129,6 +129,7 @@ local ICON_SKINS_VERSION = 1
 local SQUARE = "RECTANGLE"
 local skinsResolved, iconSkins = false, nil
 local skinLooks = { [SQUARE] = {} } -- icon shape -> choice -> look, or false for no skin
+local variantSkinLooks = {}         -- same cache for fixed shapes that accept alternate art
 local strengthLooks = setmetatable({}, { __mode = "k" }) -- compiled look -> strength variants
 local skinWatchers = {}   -- module id -> true while it draws skins
 local skinHooks = {}      -- key -> fn, run before the watchers refresh
@@ -138,6 +139,7 @@ local function IconSkinsChanged(reason)
     for _, looks in pairs(skinLooks) do
         for choice in pairs(looks) do looks[choice] = nil end
     end
+    for shape in pairs(variantSkinLooks) do variantSkinLooks[shape] = nil end
     -- Settings that wait for MSUF's new default (Register.lua: shapes the
     -- Icon Skins page set for it) are written first, so each module
     -- refreshes once, with the new look and its shape; a hook names the
@@ -187,19 +189,20 @@ function HostBridge.GlossTexture()
     return skins and skins.GlossTexture and skins.GlossTexture() or nil
 end
 
-function HostBridge.IconSkinLook(choice, shape, strength)
+function HostBridge.IconSkinLook(choice, shape, strength, allowVariant)
     local skins = HostBridge.IconSkins()
     if not skins then return nil end
     if choice == nil then choice = skins.DEFAULT end
     shape = shape or SQUARE
-    local looks = skinLooks[shape]
+    local cache = allowVariant and variantSkinLooks or skinLooks
+    local looks = cache[shape]
     if not looks then
         looks = {}
-        skinLooks[shape] = looks
+        cache[shape] = looks
     end
     local look = looks[choice]
     if look == nil then
-        look = skins.Compile(choice, shape) or false
+        look = skins.Compile(choice, shape, allowVariant) or false
         looks[choice] = look
     end
     if strength ~= nil then return StrengthLook(skins, look, strength) end
@@ -358,9 +361,9 @@ local function ReapplyFrameScale(saved)
 end
 
 local function ReapplyGlobalScale(saved)
-    local ui = saved.contents
-    if type(_G.MSUF_ApplyCurrentProfileGlobalUiScale) == "function" then
-        _G.MSUF_ApplyCurrentProfileGlobalUiScale()
+    local ui, apply = saved.contents, HostBridge.Profiles.ApplyCurrentProfileGlobalUiScale
+    if apply then
+        apply()
     elseif ui and ui.Enabled == true and Suite.Finite(ui.Scale) and type(_G.MSUF_SetGlobalUiScale) == "function" then
         _G.MSUF_SetGlobalUiScale(ui.Scale, true)
     else
@@ -779,10 +782,9 @@ function HostBridge.CooldownAnchor()
     local wants = type(general) == "table" and general.anchorToCooldown == true
     return wants, wants and type(_G.MSUF_GetSuiteCooldownAnchor) == "function"
 end
--- Late-resolved legacy profile operations. These hosts publish no versioned
--- profile-operation API yet; keep their exact entry points behind this finite
--- adapter, including capability checks and late provider replacement.
+-- Resolve legacy host profile operations at use time, including replaced providers.
 local PROFILE_METHODS = {
+    ApplyCurrentProfileGlobalUiScale = "MSUF_ApplyCurrentProfileGlobalUiScale",
     DeleteProfile = "MSUF_DeleteProfile",
     GetDefaultProfileForNewCharacters = "MSUF_GetDefaultProfileForNewCharacters",
     GetPixelPerfectScale = "MSUF_GetPixelPerfectScale",
@@ -795,7 +797,8 @@ local PROFILE_METHODS = {
 }
 HostBridge.Profiles = setmetatable({}, { __index = function(_, operation)
     local name = PROFILE_METHODS[operation]
-    return name and _G[name] or nil
+    local callback = name and _G[name]
+    return type(callback) == "function" and callback or nil
 end })
 function HostBridge.ActiveFrameProfileName() return _G.MSUF_ActiveProfile end
 function HostBridge.ProfileWasUnboundAtLogin() return _G.MSUF_ProfileWasUnboundAtLogin == true end

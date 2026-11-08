@@ -1980,15 +1980,35 @@ do
         "the Debuffs row writes only the debuff skin")
     assert(optionsNS.Set("playerAuras", "debuffSkin", "DEFAULT"))
     local map, reminders, meter = S.Config("minimap"), S.Config("buffReminders"), S.Config("damageMeter")
-    assert(byKey.suite_minimap.write("ROUND1") and map.shape == 2 and map.iconSkin == "ROUND1")
-    assert(optionsNS.Set("minimap", "shape", 3) and byKey.suite_minimap.write("SHADOW1") and map.shape == 3,
-        "a rectangular skin must preserve the existing wide map")
+    -- The map's shape is its own setting (mask, terrain, ring, style preset):
+    -- a skin pick never writes it, so the page offers only the skins drawn on
+    -- that shape, and a skin for another shape draws nothing there.
+    assert(not byKey.suite_minimap.setShape, "the map's shape belongs to the Minimap page")
+    assert(byKey.suite_minimap.skinVariants == true, "the map must offer shape-specific skin art")
+    assert(byKey.suite_minimap.write("ROUND1") and optionsNS.Get("minimap", "shape") == 1 and map.iconSkin == "ROUND1"
+        and byKey.suite_minimap.shape() == "RECTANGLE", "a round skin must not make a square map round")
+    -- Ember (round, with its ring): Like default for a square default, then
+    -- No skin, keeps the round map and its preset; nothing waits for a report.
+    local look = { stylePreset = optionsNS.Get("minimap", "stylePreset") }
+    for key in pairs(Suite.MinimapStyleVisualKeys) do look[key] = optionsNS.Get("minimap", key) end
+    assert(optionsNS.Set("minimap", "stylePreset", 4) and map.shape == 2 and map.styleTexture == 3
+        and byKey.suite_minimap.shape() == "CIRCLE", "the Ember preset is round")
     defaultShape, defaultSkin = "RECTANGLE", "SHADOW1"
-    assert(byKey.suite_minimap.write("DEFAULT") and byKey.suite_minimap.setShape("RECTANGLE"))
+    sets = 0
+    assert(byKey.suite_minimap.write("DEFAULT") and sets == 1 and map.iconSkin == "DEFAULT")
+    hooks["MSUF_Suite_Options.shapes"]({}, "apply")
+    assert(map.shape == 2 and map.stylePreset == 4, "a square default must not square the round Ember map")
+    assert(byKey.suite_minimap.write("SHADOW1") and map.shape == 2 and map.stylePreset == 4,
+        "a square skin must not square the round Ember map")
+    assert(byKey.suite_minimap.write("CUSTOM") and map.shape == 2 and map.stylePreset == 4 and map.styleTexture == 3,
+        "No skin must leave the round Ember map with its own ring")
+    assert(optionsNS.SetMany("minimap", look))
+    assert(optionsNS.Set("minimap", "shape", 3) and byKey.suite_minimap.write("SHADOW1") and map.shape == 3
+        and byKey.suite_minimap.shape() == "RECTANGLE", "a rectangular skin must preserve the existing wide map")
+    assert(byKey.suite_minimap.write("DEFAULT"))
     hooks["MSUF_Suite_Options.shapes"]({}, "apply")
     assert(map.shape == 3, "following a rectangular default must preserve Wide geometry")
     defaultShape, defaultSkin = nil, nil
-    assert(not byKey.suite_minimap.setShape("HEXAGON"), "the native map must reject unsupported masks")
     assert(byKey.suite_buffreminders.write("ROUND1") and reminders.iconShape == 2 and reminders.iconSkin == "ROUND1")
     assert(not byKey.suite_damageMeter.shape and byKey.suite_damageMeter.write("SHADOW1") and meter.iconSkin == "SHADOW1")
     assert(byKey.suite_minimap.write("CUSTOM") and byKey.suite_buffreminders.write("CUSTOM")
@@ -4052,7 +4072,11 @@ skin.DB = skin.CopyValue(skin.Defaults)
 local previewSurfaces = {}
 skin.Surface = { Attach = function(frame, spec) previewSurfaces[#previewSurfaces + 1] = spec.role; return frame end }
 skin.Surface.SkinOwnedButton = skin.Surface.Attach
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Theme.lua"))("MSUF_Suite_Skin", skin)
+local ScrollTheme = skin.Theme
 skin.Theme = {
+    GetScrollBehavior = ScrollTheme.GetScrollBehavior,
+    SetScrollBehavior = ScrollTheme.SetScrollBehavior,
     GetColor = function(key) return unpack(skin.DB.theme.colors[key]) end,
     GetColorTable = function(key) return skin.DB.theme.colors[key] end,
     ApplyLook = function(key) skin.DB.theme.look = key; return true end,
@@ -4098,7 +4122,8 @@ skin.CharacterDetails = {
     SetOption = function(key, value) skin.DB.characterDetails[key] = value; return true end,
 }
 skin.CharacterStats = { SetOption = function(key, value) skin.DB.characterStats[key] = value; return true end }
-skin.Registry = { NotifyListeners = function() end }
+skin.IsCombatLocked = function() return false end
+skin.Registry = { NotifyListeners = function() end, QueueRefresh = function() end }
 skin.Database = {
     GetProfileNames = function() return { "Default" } end,
     GetActiveProfileName = function() return "Default" end,

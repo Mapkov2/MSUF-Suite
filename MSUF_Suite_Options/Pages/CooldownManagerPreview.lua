@@ -567,7 +567,7 @@ function Page.BuildPreview(ctx, b, ui)
             ui.live = true
             if ui.grid then ui.grid.valid = false end
             ui.host:Activate()
-            if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview() then
+            if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview(true) then
                 expander:Open("SUITE_COOLDOWN_MANAGER_PREVIEW_ACTIVE")
             end
             ui.host:Paint("activate")

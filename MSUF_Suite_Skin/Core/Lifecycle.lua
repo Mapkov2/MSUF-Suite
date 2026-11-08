@@ -2,6 +2,7 @@ local addonName, NS = ...
 
 local initialized = false
 local loginApplied = false
+local loginQueued = false
 local eventFrame = CreateFrame("Frame")
 
 local function InitializeDatabase()
@@ -28,6 +29,7 @@ NS.Database.loginPassPending = true
 -- is reported and the later stages (and API clients) still start.
 local function ApplyLogin()
     if loginApplied then return end
+    loginQueued = false
     InitializeDatabase()
     loginApplied = true
     NS.Database.loginPassPending = false
@@ -39,6 +41,19 @@ local function ApplyLogin()
     dispatch(NS.Adapters.ApplyAll)
     dispatch(NS.PublicAPI.OnPlayerLogin)
 end
+NS.EnsureLoginApplied = ApplyLogin
+
+local function StartLogin()
+    if loginApplied or loginQueued then return end
+    if NS.Client.isForever and NS.IsCombatLocked() and not NS.SuiteCore().IsCombatLocked() then
+        -- Let the Suite select the skin profile at world entry. Other
+        -- login paths still run the usual guarded pass on the next frame.
+        loginQueued = true
+        C_Timer.After(0, ApplyLogin)
+        return
+    end
+    ApplyLogin()
+end
 
 eventFrame:SetScript("OnEvent", function(self, event, loadedAddon)
     if event == "ADDON_LOADED" then
@@ -47,12 +62,12 @@ eventFrame:SetScript("OnEvent", function(self, event, loadedAddon)
         end
         InitializeDatabase()
         self:UnregisterEvent("ADDON_LOADED")
-        if IsLoggedIn() then ApplyLogin() end
+        if IsLoggedIn() then StartLogin() end
         return
     end
 
     if event == "PLAYER_LOGIN" then
-        ApplyLogin()
+        StartLogin()
         self:UnregisterEvent("PLAYER_LOGIN")
         return
     end

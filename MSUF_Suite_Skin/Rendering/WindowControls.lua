@@ -20,7 +20,6 @@ local activeInventory = setmetatable({}, { __mode = "k" })
 local controlStates = setmetatable({}, { __mode = "k" })
 
 local FOREVER_CHARACTER_DOCK = { x = 0, y = 0 }
-local RESTORE_WIDTH = 154
 -- Our controls sit this many levels above their panel.
 local CONTROL_LEVEL_OFFSET = 15
 local GRIP_LEVEL_OFFSET = 20
@@ -200,7 +199,7 @@ local suspendPositionHook = false
 local function OnPanelPositionsUpdated()
     if suspendPositionHook or not Enabled() then return end
     for frame, state in pairs(activeStates) do
-        if Controlled(state) and frame:IsShown() then
+        if Controlled(state) and frame:IsShown() and not Policy.DeferMapLayout(state) then
             if not state.drag then ApplyStoredScale(state) end
             ApplyStoredPosition(state)
             if (state.maximize or state.minimize) and SafeControls(state) then
@@ -241,8 +240,10 @@ local function SavePosition(state)
 end
 
 local function Restore(state)
-    if IsCombat() or not state or not state.minimized then return false end
-    if state.panel and not NS.Client.IsGamepadUI() then
+    if not state or not state.minimized then return false end
+    local allowed, managed = Policy.CanChangeVisibility(state)
+    if not allowed then return false end
+    if managed and not NS.Client.IsGamepadUI() then
         ShowUIPanel(state.frame)
     else
         state.frame:Show()
@@ -253,7 +254,7 @@ local function Restore(state)
 end
 
 local function ToggleFit(state)
-    if IsCombat() or NS.Client.IsGamepadUI() or not state or state.moving or state.drag
+    if NS.Client.IsGamepadUI() or not state or state.moving or state.drag
         or not Controlled(state) or not SafeControls(state) then return end
     if Chrome.ToggleFit(state, CaptureNativePoints) then
         if state.fit then InstallPanelPositionHook() end
@@ -262,7 +263,9 @@ local function ToggleFit(state)
 end
 
 local function Minimize(state)
-    if IsCombat() or NS.Client.IsGamepadUI() or not state or state.minimized then return end
+    if NS.Client.IsGamepadUI() or not state or state.minimized or not Controlled(state) then return end
+    local allowed, managed = Policy.CanChangeVisibility(state)
+    if not allowed then Chrome.SyncMinimize(state) return end
     -- Native OnHide resets pending changes. Keep the editor open until the
     -- user explicitly applies or cancels them; never write its save flag.
     if state.name == "AddonList" and AddonList_HasAnyChanged() then return false end
@@ -280,7 +283,7 @@ local function Minimize(state)
     end
     state.restoreLabel:SetText(Chrome.Title(state) .. "  +")
     state.minimized = true
-    if state.panel then
+    if managed then
         HideUIPanel(frame)
     else
         frame:Hide()
@@ -290,16 +293,6 @@ local function Minimize(state)
     else
         state.restore:Show()
     end
-end
-
--- Restore tab handlers.
-
-local function OnRestoreDragStart(bar)
-    if not IsCombat() then bar:StartMoving() end
-end
-
-local function OnRestoreDragStop(bar)
-    bar:StopMovingOrSizing()
 end
 
 local function OnRestoreClick(bar, mouseButton)
@@ -320,28 +313,6 @@ end
 
 local function OnMaximizeClick(button)
     ToggleFit(controlStates[button])
-end
-
-local function CreateRestore(state)
-    local bar = CreateFrame("Button", nil, UIParent)
-    controlStates[bar] = state
-    bar:SetSize(RESTORE_WIDTH, 26)
-    bar:SetFrameStrata("DIALOG")
-    bar:SetClampedToScreen(true)
-    bar:SetMovable(true)
-    bar:RegisterForDrag("LeftButton")
-    bar:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    bar:SetScript("OnDragStart", OnRestoreDragStart)
-    bar:SetScript("OnDragStop", OnRestoreDragStop)
-    Chrome.PaintControl(bar, "popup")
-    local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetPoint("LEFT", 10, 0)
-    label:SetPoint("RIGHT", -10, 0)
-    label:SetJustifyH("LEFT")
-    state.restoreLabel = label
-    bar:SetScript("OnClick", OnRestoreClick)
-    bar:Hide()
-    return bar
 end
 
 -- Scale grip. The drag follows the cursor from a transient OnUpdate that clears
@@ -578,15 +549,23 @@ local function CanMinimize(name)
 end
 
 local function EnsureCaption(state)
-    if IsCombat() or nativeMinimize[state.name] or NS.Client.IsGamepadUI() then return end
+    if state.maximize or nativeMinimize[state.name] or NS.Client.IsGamepadUI() then return end
+    local frame, name = state.frame, state.name
+    if not state.close then state.close = Chrome.FindClose(frame, name) end
+    if not state.close or Chrome.HasNativeCaption(frame, name, state.close) then return end
+    if not state.minimize and CanMinimize(name) then
+        state.restore = Chrome.CreateRestore(state, OnRestoreClick)
+        controlStates[state.restore] = state
+        state.minimize = Chrome.CreateMinimize(state, state.close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
+        controlStates[state.minimize] = state
+    end
     local button = Chrome.CreateCaption(state, CONTROL_LEVEL_OFFSET, OnMaximizeClick)
     if button then controlStates[button] = state end
 end
 
 -- Hooked once per panel. The invisible title strip takes the title area's clicks: it
 -- comes back only while the controls are on, an owner skins and it can be controlled.
-local OnPanelShow
-OnPanelShow = function(frame)
+local function OnPanelShow(frame)
     local state = WindowControls.states[frame]
     if not state or Safety.IsForbidden(frame) then return end
     activeStates[frame] = state
@@ -595,6 +574,7 @@ OnPanelShow = function(frame)
         state.minimized = false
         state.restore:Hide()
     end
+    if Policy.DeferMapLayout(state) then return end
     if IsCombat() and (not CanChangeFrameGeometry(frame) or not SafeControls(state)) then
         NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
         return
@@ -666,11 +646,9 @@ function WindowControls.Attach(frame, owner)
         if frame:IsShown() then OnPanelShow(frame) end
         return true
     end
-    local close = Chrome.FindClose(frame, name)
     state = {
         frame = frame,
         name = name,
-        close = close,
         panel = panel,
         inventory = Policy.IsInventory(frame),
         originalScale = frame:GetScale(),
@@ -686,15 +664,10 @@ function WindowControls.Attach(frame, owner)
         elseif state.minimized and not Controlled(state) then HideControls(state) end
     end
     state.grip = CreateGrip(state)
-    ApplyStoredScale(state)
-    if close and CanMinimize(name) and not Safety.Field(frame, "MinimizeButton")
-        and not _G[name .. "MinimizeButton"] then
-        state.restore = CreateRestore(state)
-        state.minimize = Chrome.CreateMinimize(state, close, CONTROL_LEVEL_OFFSET, OnMinimizeClick)
-        controlStates[state.minimize] = state
-    end
+    local deferLayout = Policy.DeferMapLayout(state)
+    if not deferLayout then ApplyStoredScale(state) end
     state.titleDrag = CreateTitleDrag(state)
-    ApplyStoredPosition(state)
+    if not deferLayout then ApplyStoredPosition(state) end
     EnsureCaption(state)
     ShowControls(state)
     frame:HookScript("OnShow", OnPanelShow)

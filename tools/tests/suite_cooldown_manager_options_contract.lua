@@ -382,7 +382,11 @@ local focused
 W.FocusCollapsibleSection = function(section) focused = section.sectionId; return true end
 W.Dropdown = function(parent, label) local d = Widget("Dropdown", parent); d.label = label; return d end
 W.MoveWidget = function() end
-W.SectionSwitch = function(section, label) local w = Widget("Switch", section); w.label = label; section.headerSwitch = w; return w end
+W.SectionSwitch = function(section, label, displayLabel)
+    local w = Widget("Switch", section)
+    w.label, w.displayLabel, section.headerSwitch = label, displayLabel, w
+    return w
+end
 W.AttachContextColorShortcut = function(section, opts)
     local shortcut = { options = opts }
     section.colorShortcut = shortcut
@@ -688,7 +692,8 @@ end
 assert(cardButtons == 4 and registered["menu2." .. PAGE .. ".cooldownManager.editor.add"].parent == ctx.sections[1]
     and registered["menu2." .. PAGE .. ".cooldownManager.editor.actions"].parent == ctx.sections[1],
     "Basics must hold the two module actions, + Add bar and Bar actions")
-assert(ctx.sections[1].title == "Basics" and ctx.sections[1].defaultOpen, "Basics comes first and open")
+assert(ctx.sections[1].title == "Cooldown manager" and ctx.sections[1].defaultOpen,
+    "the module header must identify its scope and start open")
 for _, section in ipairs(ctx.sections) do
     for _, child in ipairs(section.children or {}) do
         if child.kind == "Button" and section ~= ctx.sections[1] then
@@ -810,10 +815,11 @@ assert(#CDM.SLOTS == 12 and #picker.values() == #CDM.SLOTS, "bar selector lists 
 assert(picker.values()[3].value == "def" and picker.values()[4].value == "ext" and picker.values()[7].value == "c1"
     and picker.values()[7].text:find("(off)", 1, true) and not picker.values()[6].text:find("(off)", 1, true),
     "bar selector order: built-in bars first, custom bars after, off custom bars marked")
--- Enabling the module also shows the selected bar in one history change.
--- Built-in and custom bars share this gesture; other bars keep their state.
+-- The module and selected bar have distinct headers. Both can start the
+-- selected bar, but disabling it leaves the module and every other bar on its saved setting.
 do
-    local toggle = ctx.sections[1].headerSwitch
+    local toggle, bar = ctx.sections[1].headerSwitch, ctx.sections[2].headerSwitch
+    assert(bar == Control("on") and bar.displayLabel == "Enable", "the bar Enable must be the visibility control in its header")
     local enabled, selected, saved = Config().enabled, Page.selected, {}
     for _, slot in ipairs(CDM.SLOTS) do saved[slot.key] = Config()[CDM.KEYS[slot.key].on] end
     for _, slot in ipairs(CDM.SLOTS) do
@@ -824,21 +830,35 @@ do
             Config()[key] = index % 2 == 0
             if entry.key ~= slot.key then other[key] = Config()[key] end
         end
-        Config().enabled, Config()[CDM.KEYS[slot.key].on] = false, false
+        local key = CDM.KEYS[slot.key].on
+        Config().enabled, Config()[key] = false, false
+        M.RequestRefresh()
+        assert(bar.enabled and not bar.get(), "the bar switch must be usable with the module off")
         local writes = historyWrites
+        bar.set(true)
+        assert(toggle.get() and bar.get() and Config()[key], "Enable must start the selected bar: " .. slot.key)
+        assert(historyWrites == writes + 1, "starting a bar and the module must share one history change")
+        bar.set(false)
+        assert(toggle.get() and not bar.get() and not Config()[key], "turning off the bar must leave the module on")
+        toggle.set(false)
         toggle.set(true)
-        assert(toggle.get() and Control("on").get(), "Enable must show the selected bar: " .. slot.key)
-        assert(historyWrites == writes + 1, "Enable and Show this bar must share one history change")
-        for key, value in pairs(other) do assert(Config()[key] == value, "Enable changed another bar: " .. key) end
+        assert(toggle.get() and bar.get(), "the module switch must still start the selected bar")
         toggle.set(false)
-        assert(not toggle.get() and Control("on").get(), "Disable must retain the bar's visibility preference")
-        Config()[CDM.KEYS[slot.key].on] = false
-        toggle.set(false)
-        assert(not Control("on").get(), "Disable must keep an already hidden bar off")
+        assert(not toggle.get() and not bar.get() and Config()[key], "module off must retain the bar preference")
         combat = true
+        M.RequestRefresh()
+        assert(not bar.enabled, "the bar switch must be disabled in combat")
+        bar.set(true)
         toggle.set(true)
         combat = false
-        assert(not toggle.get() and not Control("on").get(), "Combat must refuse both enable writes")
+        assert(not toggle.get() and not bar.get() and Config()[key], "combat must refuse both enable writes")
+        assert(Page.OpenBarMenu(picker, slot.key), "could not open the bar actions: " .. slot.key)
+        assert(lastDropdown.values[1].value == "show", "the bar actions must offer Show when the module is off")
+        lastDropdown.onSelect("show")
+        assert(toggle.get() and bar.get(), "Show this bar must work from the bar actions: " .. slot.key)
+        for otherKey, value in pairs(other) do
+            assert(Config()[otherKey] == value, "the selected bar switch changed another bar: " .. otherKey)
+        end
     end
     Config().enabled = enabled
     for _, slot in ipairs(CDM.SLOTS) do Config()[CDM.KEYS[slot.key].on] = saved[slot.key] end
@@ -857,7 +877,7 @@ for i, section in ipairs(ctx.sections) do
 end
 assert(table.concat(order, ",") == "cooldownManager_module,basics,spells,overrides,layout,look,text,effects,buffs,barstyle,visibility",
     "unexpected section order: " .. table.concat(order, ","))
-assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only Basics and Basics start open: "
+assert(table.concat(openSections, ",") == "cooldownManager_module,basics", "only the module and bar Basics start open: "
     .. table.concat(openSections, ","))
 assert(ctx.sections[3].title == "Spell list", "the tile section is the Spell list")
 assert(ctx.sections[10].title == "Timer bar style", "the timer bar section says what it styles")

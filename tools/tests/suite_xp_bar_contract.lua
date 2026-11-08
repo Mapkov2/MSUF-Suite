@@ -75,7 +75,7 @@ function tooltip:Hide() self.shown = false end
 local uncappedRules = { IsPlayerAtEffectiveMaxLevel = function() return false end }
 GameRulesUtil = uncappedRules
 C_Timer = { After = function(seconds, callback)
-    assert(seconds == 60 or seconds == .2, "only rate refresh or bounded login readiness may schedule")
+    assert(seconds == 60 or seconds == .2 or seconds == 1, "unexpected XP bar timer")
     timers[#timers + 1] = { callback = callback, seconds = seconds }
 end }
 
@@ -143,7 +143,7 @@ local function Load(kind)
         "xpBar", module, { Event = function(_, name, callback, allowCombat)
         assert(allowCombat and not callbacks[name])
         callbacks[name] = callback
-    end })
+    end, RemoveEvent = function(_, name) callbacks[name] = nil end })
     module:Enable()
     module:RegisterMovers() -- the controller registers movers after Enable
     return module, runtime, callbacks, movers, suite
@@ -464,6 +464,7 @@ do
         owner = owner or { RootDB = savedRoot, Suite = { started = false }, Finite = runtime.Finite,
             Dispatch = function(fn, ...) return fn(...) end }
         owner.Finite = runtime.Finite
+        owner.Client = owner.Client or { isForever = false }
         owner.Skin, owner.CaptureSessionGold = { SettleChatColors = function() end }, function() end
         assert(loadfile(root .. "/MSUF_Suite/Core/Startup.lua"))("MSUF_Suite", owner)
         frames[2].OnEvent(frames[2], "PLAYER_ENTERING_WORLD", kind == "login", kind == "reload")
@@ -545,6 +546,75 @@ do
     assert(stopped.session == nil and savedRoot.suiteXP["Player-test"] == record,
         "disabled module ran a stale session-readiness callback")
     savedRoot, MSUFSuite = originalRoot, originalNamespace
+end
+
+do
+    local requests = 0
+    GetTime = function() return now end
+    RequestTimePlayed = function() requests = requests + 1 end
+    level, xp, maximum = 21, 11108, 25200
+    local played, playedRuntime, playedEvents = Load("login")
+    assert(not playedEvents.TIME_PLAYED_MSG and requests == 0, "disabled level time requested /played")
+    played.config.showLevelTime = true
+    played:Refresh()
+    assert(requests == 1 and playedEvents.TIME_PLAYED_MSG, "level time did not request /played with its listener registered")
+    assert(played.levelTimeText.text == "This level --", "level time invented a value before the reply")
+    played:Refresh()
+    assert(requests == 1, "refresh sent another pending request")
+    playedEvents.TIME_PLAYED_MSG(played, "TIME_PLAYED_MSG", 145613, "secret")
+    assert(played.levelTimeText.text == "This level --", "level time used unreadable time played")
+    playedEvents.TIME_PLAYED_MSG(played, "TIME_PLAYED_MSG", 145613, 3465)
+    assert(played.levelTimeText.text == "This level <3465s>", "level time used the wrong /played field")
+    played.host.OnEnter(played.host)
+    assert(tooltip.lines[#tooltip.lines] == "Time played this level | <3465s>", "tooltip did not show played time separately")
+    local tick = timers[#timers]
+    assert(tick.seconds == 1, "played time did not start its clock")
+    now = now + 1
+    tick.callback()
+    assert(played.levelTimeText.text == "This level <3466s>"
+        and tooltip.lines[#tooltip.lines] == "Time played this level | <3466s>", "played time did not advance")
+    played.host.OnLeave(played.host)
+    level, xp, maximum = 22, 42, 27400
+    playedEvents.PLAYER_LEVEL_UP(played, "PLAYER_LEVEL_UP", 22)
+    assert(played.levelTimeText.text == "This level <0s>", "played time did not reset on level-up")
+    playedEvents.TIME_PLAYED_MSG(played, "TIME_PLAYED_MSG", 145614, 3466)
+    assert(played.levelTimeText.text == "This level <0s>", "old level reply overwrote the new level")
+    played.config.levelTimeTextFormat = 3
+    played:Refresh()
+    assert(played.levelTimeText.text == "<0s>", "value-only setting ignored")
+    local previewParent = Widget(UIParent)
+    playedRuntime.DrawExperienceBarPreview(previewParent, played.config, { xp = 44, rested = 0 })
+    assert(previewParent.suiteXPPreview.levelTimeText.text == "<3465s>" and requests == 1,
+        "level time preview did not use its sample or queried the server")
+    played.config.hideAtMax = false
+    GameRulesUtil = { IsPlayerAtEffectiveMaxLevel = function() return true end }
+    played:Refresh()
+    assert(played.host:IsShown() and not played.levelTimeText:IsShown() and not playedEvents.TIME_PLAYED_MSG,
+        "capped XP bar retained a stale level clock")
+    GameRulesUtil = uncappedRules
+    played:Refresh()
+    assert(played.levelTimeText:IsShown() and requests == 1, "uncapped XP bar did not resume the known level clock")
+    assert(played.host.height == played.config.height + 33, "the level time row extended beyond the framed bar")
+    playedEvents.PLAYER_LEVEL_UP(played, "PLAYER_LEVEL_UP", 23)
+    playedEvents.TIME_PLAYED_MSG(played, "TIME_PLAYED_MSG", 145615, 0)
+    level = 23
+    playedEvents.PLAYER_XP_UPDATE(played, "PLAYER_XP_UPDATE", "player")
+    assert(played.levelTimeText.text == "<0s>" and requests == 1,
+        "a reply before UnitLevel updated replaced the level-up clock")
+    level = 24
+    playedEvents.PLAYER_XP_UPDATE(played, "PLAYER_XP_UPDATE", "player")
+    playedEvents.TIME_PLAYED_MSG(played, "TIME_PLAYED_MSG", 145616, 3467)
+    playedEvents.PLAYER_LEVEL_UP(played, "PLAYER_LEVEL_UP", 24)
+    assert(played.levelTimeText.text == "<0s>", "a cached reply suppressed the real level-up reset")
+    played.config.showLevelTime = false
+    played:Refresh()
+    assert(not playedEvents.TIME_PLAYED_MSG and not played.levelTimeText:IsShown(),
+        "turning off level time retained its listener or text")
+    local queuedTick = timers[#timers]
+    local timerCount = #timers
+    queuedTick.callback()
+    assert(#timers == timerCount, "turning off level time retained its clock")
+    played:Disable()
 end
 
 local config = {}

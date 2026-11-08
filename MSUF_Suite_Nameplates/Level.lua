@@ -16,6 +16,14 @@ local function Safe(frame)
     return frame and not NS.Safety.IsForbidden(frame)
 end
 
+local function Protected(frame)
+    if not frame then return false end
+    if not Safe(frame) then return true end
+    local protected = frame:IsProtected()
+    if not S.Public(protected) then return true end
+    return protected == true
+end
+
 function Level.Hide(uf)
     local label = M.levelLabels[uf]
     if Safe(label) then label:Hide() end
@@ -23,26 +31,25 @@ end
 
 -- uf: the plate the frame belongs to; a write combat holds back applies
 -- that plate again at the end of combat (Skin.lua OnCombatEnded).
-local function NativeAlpha(uf, frame, hide)
+local function NativeAlpha(uf, frame, hide, locked)
     if not Safe(frame) then return end
     local previous = M.nativeLevelAlphas[frame]
+    local alpha
     if hide then
-        local alpha = frame:GetAlpha()
+        alpha = frame:GetAlpha()
         if not S.Finite(alpha) then return end
-        if previous ~= nil and alpha == 0 then return end
-        if previous == nil then
-            M.nativeLevelAlphas[frame] = alpha
-        end
-        if NS.IsCombatLocked() then
-            M.pendingPlates[uf] = true
-            return
-        end
+        if alpha == 0 then return end
+    elseif previous == nil then
+        return
+    end
+    if locked then
+        M.pendingPlates[uf] = true
+        return
+    end
+    if hide then
+        M.nativeLevelAlphas[frame] = previous or alpha
         frame:SetAlpha(0)
-    elseif previous ~= nil then
-        if NS.IsCombatLocked() then
-            M.pendingPlates[uf] = true
-            return
-        end
+    else
         frame:SetAlpha(previous)
         M.nativeLevelAlphas[frame] = nil
     end
@@ -50,12 +57,16 @@ end
 
 function Level.PaintNative(uf, prefix)
     if not NS.Client.isForever then return end
-    local hide = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix]
-        and (M.config[Key[prefix].LevelEnabled] == false or M.config.levelAppearance ~= LEVEL_BADGE)
-    NativeAlpha(uf, uf.PlayerLevelDiffFrame, hide)
+    local styled = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix]
+    local hide = styled and (M.config[Key[prefix].LevelEnabled] == false or M.config.levelAppearance ~= LEVEL_BADGE)
+    local badge, legacy = uf.PlayerLevelDiffFrame, uf.LevelFrame
+    -- Keep the native fallback if any part of the handoff is protected.
+    local locked = NS.IsCombatLocked() and (Protected(uf) or Protected(uf.HealthBarsContainer)
+        or Protected(badge) or Protected(legacy))
+    NativeAlpha(uf, badge, hide, locked)
     -- Camelot already draws its own badge in Classic style. Keep its legacy
     -- LevelFrame out of the Suite look so the level is never duplicated.
-    NativeAlpha(uf, uf.LevelFrame, hide or prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix])
+    NativeAlpha(uf, legacy, styled, locked)
 end
 
 function Level.RestoreNative()
@@ -88,6 +99,14 @@ local function NativeHidden(frame)
     return alpha == 0
 end
 
+function Level.NativeBadgeVisible(uf)
+    local badge = uf.PlayerLevelDiffFrame
+    if not Safe(badge) then return false end
+    local shown = badge:IsShown()
+    if not S.Public(shown) then return not NativeHidden(badge) end
+    return shown == true and not NativeHidden(badge)
+end
+
 local function ShowsNumber(uf, prefix, unit)
     if not prefix or not unit or M.config.look == LOOK_BLIZZARD or not M.config[prefix]
         or not M.config[Key[prefix].LevelEnabled] then return false end
@@ -104,11 +123,11 @@ end
 local function Label(uf)
     local label = M.levelLabels[uf]
     if label then return label end
-    if NS.IsCombatLocked() or not Safe(uf) then
+    local container = uf.HealthBarsContainer
+    if not Safe(uf) or NS.IsCombatLocked() and (not NS.Client.isForever or Protected(uf) or Protected(container)) then
         M.pendingPlates[uf] = true
         return
     end
-    local container = uf.HealthBarsContainer
     if not Safe(container) then return end
     label = uf:CreateFontString(nil, "OVERLAY", "SystemFont_NamePlateLevel")
     label:SetPoint("RIGHT", container, "LEFT", -4, 0)

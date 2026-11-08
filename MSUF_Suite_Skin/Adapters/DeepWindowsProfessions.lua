@@ -111,13 +111,13 @@ end
 -- root -> skin generation of its last full pass
 local rootGenerations = Kit.WeakSet()
 
-local function ApplyDeepRoot(state, root, mode)
+local function ApplyDeepRoot(state, root, mode, allowCombat)
     if not state or not state.active or not root then return false, "missing" end
-    if NS.IsCombatLocked() then return false, "combat" end
+    if not allowCombat and NS.IsCombatLocked() then return false, "combat" end
     -- Use the parent catalog owner deliberately. GenericWindows already owns
     -- these roots and therefore remains the sole restorer for its surfaces,
     -- controls, dynamic ScrollBox callbacks and cosmetic state.
-    local applied, reason = NS.GenericWindows.ApplyFrame(root, state.parentOwner, mode or PROFESSION_MODE)
+    local applied, reason = NS.GenericWindows.ApplyFrame(root, state.parentOwner, mode, allowCombat)
     if applied == true then rootGenerations[root] = Kit.SkinGeneration() end
     return applied == true, reason
 end
@@ -149,44 +149,63 @@ end
 -- loading the standalone ProfessionsBookFrame. The anonymous atlas on
 -- CraftingPage and the five book cards are exact decorative regions; spell
 -- buttons, rank bars, recipes, and profession icons stay native.
-local function FadeForeverProfessionBook(state, root, crafting)
-    Kit.FadeAtlas(state, crafting, "Profession-Background-Template2")
-    local content = Path(root, "BookPage", "ProfessionsContentFrame")
+local function SkinForeverProfessionBook(state, book, reuse)
+    local content = Field(book, "ProfessionsContentFrame")
     if not content then return end
-    NS.GenericWindows.ApplyFrame(content, state.parentOwner, FOREVER_BOOK_MODE)
+    local getSurface = NS.Registry.GetSurface
+    if not reuse or not getSurface(content) then
+        NS.GenericWindows.ApplyFrame(content, state.parentOwner, FOREVER_BOOK_MODE, true)
+    end
     for index = 1, #FOREVER_PROFESSION_CARDS do
         local card = Field(content, FOREVER_PROFESSION_CARDS[index])
         if card then
-            NS.GenericWindows.ApplyFrame(card, state.parentOwner, FOREVER_CARD_MODE)
-            Fade(state, Field(card, "Background"))
+            local surface = reuse and getSurface(card)
+            local prepared = surface and surface.visible ~= false and surface.spec and surface.spec.role == "card"
+            if prepared or NS.GenericWindows.ApplyFrame(card, state.parentOwner, FOREVER_CARD_MODE, true) then
+                local background = Field(card, "Background")
+                local alpha = prepared and Safety.Read(background, "GetAlpha")
+                if (not prepared or type(alpha) == "number" and alpha > 0)
+                    and Safety.CanDecorate(background, not NS.IsCombatLocked()) then
+                    -- The generic card pass owns its artwork and restores it with the card.
+                    NS.Cosmetics.Fade(background, state.parentOwner)
+                end
+            end
         end
     end
 end
 
-local function FadeProfessionChrome(state, root)
+local function FadeProfessionChrome(state, root, changed)
     -- These exact parentKey-only frames are anonymous in Blizzard's XML, so
     -- the generic name-token traversal cannot identify their decorative art.
     -- Keep recipe, reagent, quality, reward and order-state content native.
     local crafting = Field(root, "CraftingPage")
-    FadeProfessionRecipeList(state, Field(crafting, "RecipeList"))
-    FadeProfessionSchematic(state, Field(crafting, "SchematicForm"), true)
-
-    if NS.Client.isForever then
-        FadeForeverProfessionBook(state, root, crafting)
+    local schematic = Field(crafting, "SchematicForm")
+    if not changed or changed == crafting then
+        FadeProfessionRecipeList(state, Field(crafting, "RecipeList"))
+        if NS.Client.isForever then Kit.FadeAtlas(state, crafting, "Profession-Background-Template2") end
+    end
+    if not changed or changed == crafting or changed == schematic then
+        FadeProfessionSchematic(state, schematic, true)
     end
 
-    Fade(state, Path(root, "SpecPage", "TreeView", "Background"))
-    Fade(state, Path(root, "SpecPage", "DetailedView", "Background"))
-    Fade(state, Path(root, "SpecPage", "TreePreview", "Background"))
+    local spec = Field(root, "SpecPage")
+    if not changed or changed == spec then
+        Fade(state, Path(spec, "TreeView", "Background"))
+        Fade(state, Path(spec, "DetailedView", "Background"))
+        Fade(state, Path(spec, "TreePreview", "Background"))
+    end
 
     local orders = Field(root, "OrdersPage")
-    local browse = Field(orders, "BrowseFrame")
-    FadeProfessionRecipeList(state, Field(browse, "RecipeList"))
-    local orderList = Field(browse, "OrderList")
-    Fade(state, Field(orderList, "Background"))
-    Kit.FadeNineSlice(state, Field(orderList, "NineSlice"))
+    if not changed or changed == orders then
+        local browse = Field(orders, "BrowseFrame")
+        FadeProfessionRecipeList(state, Field(browse, "RecipeList"))
+        local orderList = Field(browse, "OrderList")
+        Fade(state, Field(orderList, "Background"))
+        Kit.FadeNineSlice(state, Field(orderList, "NineSlice"))
+    end
 
     local orderView = Field(orders, "OrderView")
+    if changed and changed ~= orders and changed ~= orderView then return end
     local orderInfo = Field(orderView, "OrderInfo")
     Fade(state, Field(orderInfo, "Background"))
     Kit.FadeNineSlice(state, Field(orderInfo, "NineSlice"))
@@ -258,9 +277,16 @@ local function FadeCustomerOrdersChrome(state, root)
 end
 
 local function ApplyProfessionRoot(state, root)
-    local applied, reason = ApplyDeepRoot(state, root)
-    if applied and root == _G.ProfessionsFrame then
-        FadeProfessionChrome(state, root)
+    if not root or not CategoryEnabled("profession") or root ~= Field(_G, "ProfessionsFrame") then return false, "disabled" end
+    local combat = NS.IsCombatLocked()
+    if combat then Shared.RunOrDefer(state, "profession", ApplyProfessionRoot, root) end
+    local applied, reason = ApplyDeepRoot(state, root, PROFESSION_MODE, true)
+    if applied then FadeProfessionChrome(state, root) end
+    if NS.Client.isForever then
+        local book = Field(root, "BookPage")
+        if book and (combat and not Kit.IsHidden(book) or not combat and applied) then
+            SkinForeverProfessionBook(state, book, combat)
+        end
     end
     return applied, reason
 end
@@ -378,11 +404,15 @@ local function SubtreeMode(rootMode, depth)
 end
 
 local function ApplySubtree(state, pass, subtree)
-    local depth = DepthBelow(_G[pass.rootName], subtree)
+    local root = _G[pass.rootName]
+    local depth = DepthBelow(root, subtree)
     if not depth then return end
-    NS.GenericWindows.ApplyDescendant(subtree, state.parentOwner, SubtreeMode(pass.mode, depth))
+    local applied = NS.GenericWindows.ApplyDescendant(subtree, state.parentOwner, SubtreeMode(pass.mode, depth))
     -- The window's exact decorative fields, which Init can assign again.
-    if pass.chrome then pass.chrome(state, _G[pass.rootName]) end
+    if pass == PROFESSIONS_PASS and NS.IsCombatLocked() then
+        Shared.RunOrDefer(state, "profession", ApplyProfessionRoot, root)
+    end
+    if applied and pass.chrome then pass.chrome(state, root, subtree) end
 end
 
 local function RequestRootPass(pass, frame, opening)
@@ -390,22 +420,21 @@ local function RequestRootPass(pass, frame, opening)
     if not Covers(root, frame) or passedThisFrame[root] then return end
     if opening and rootGenerations[root] == Kit.SkinGeneration() then return end
     RememberPass(root)
-    ForActiveOwners(pass.category, pass.apply, root)
+    ForActiveOwners(pass.category, pass.apply, root, nil, pass == PROFESSIONS_PASS)
 end
 
 local function RequestSubtreePass(pass, subtree)
     local root = _G[pass.rootName]
-    if not root or not subtree or passedThisFrame[root] or passedThisFrame[subtree]
-        or not Covers(root, subtree) then
-        return
-    end
-    if rootGenerations[root] ~= Kit.SkinGeneration() then
+    if not root or not subtree or passedThisFrame[subtree] or not Covers(root, subtree) then return end
+    local blockedRoot = pass == PROFESSIONS_PASS and NS.IsCombatLocked() and not Safety.CanCreateRegions(root)
+    if passedThisFrame[root] and not blockedRoot then return end
+    if not blockedRoot and rootGenerations[root] ~= Kit.SkinGeneration() then
         RememberPass(root)
-        ForActiveOwners(pass.category, pass.apply, root)
+        ForActiveOwners(pass.category, pass.apply, root, nil, pass == PROFESSIONS_PASS)
         return
     end
     RememberPass(subtree)
-    ForActiveOwners(pass.category, ApplySubtree, pass, subtree)
+    ForActiveOwners(pass.category, ApplySubtree, pass, subtree, pass == PROFESSIONS_PASS)
 end
 
 local function RefreshProfessions(frame)
@@ -422,6 +451,12 @@ end
 
 local function RefreshProfessionPage(page)
     RequestSubtreePass(PROFESSIONS_PASS, page)
+end
+
+local function RefreshProfessionBook(book)
+    if not Kit.IsHidden(book) then
+        ForActiveOwners("profession", SkinForeverProfessionBook, book, true, true)
+    end
 end
 
 -- SchematicPostInit ends SchematicForm:Init; only the schematic changed.
@@ -503,6 +538,7 @@ local function InstallProfessionsHooks()
     local orders = Field(root, "OrdersPage")
     HookInstance(root, "OnShow", ProfessionsOpened)
     HookInstance(root, "Refresh", RefreshProfessions)
+    if NS.Client.isForever then HookInstance(Field(root, "BookPage"), "Update", RefreshProfessionBook) end
     HookInstance(crafting, "Init", RefreshProfessionPage)
     HookInstance(crafting, "Refresh", RefreshProfessionPage)
     -- A profession switch rebuilds the specialization tabs and tree here.
@@ -562,6 +598,7 @@ Shared.AddAddonSpec({
     relevant = function() return CategoryEnabled("profession") end,
     ready = function() return _G.ProfessionsFrame ~= nil end,
     apply = ApplyProfessions,
+    allowCombat = true,
 })
 Shared.AddAddonSpec({
     addon = CUSTOMER_ORDERS_ADDON,

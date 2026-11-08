@@ -20,6 +20,7 @@ CreateFrame = function(...)
     function frame:SetFrameLevel(level) self.frameLevel = level end
     return frame
 end
+P.M.SetMenuStateValue = function(field, value) P.M[field] = value end
 local function LoadHost(host)
     local dir = root .. '/../' .. host .. '/MidnightSimpleUnitFrames_Options/Shell/Menu2/'
     local path = dir .. 'MSUF_Menu2_Widgets_PreviewDock.lua'

@@ -48,11 +48,16 @@ local key = "external:msufsuite.chat:window"
 local record = em.ExternalElements.GetRecord(key)
 Check(record ~= nil, "real Suite Chat mover was not registered")
 local caps = api.GetCapabilities()
+local controls = {}
+for _, control in ipairs(em.ExternalElements.GetControls(key) or {}) do controls[control.id] = control end
+Check(controls.windowWidth and controls.windowHeight, "Chat popup is missing size controls")
+Check(em.ExternalElements.GetControlValue(key, "windowWidth") == 496
+    and em.ExternalElements.GetControlValue(key, "windowHeight") == 148, "size fields did not read live chat dimensions")
 if caps.positionFields then
-    Check(#(em.ExternalElements.GetControls(key) or {}) == 0,
+    Check(not controls.windowX and not controls.windowY,
         "Chat still replaces shared screen coordinates with bottom-left profile offsets")
 else
-    Check(#em.ExternalElements.GetControls(key) == 2, "legacy host lost numeric position editing")
+    Check(controls.windowX and controls.windowY, "legacy host lost numeric position editing")
 end
 if not caps.positionFields then
     print("Chat legacy screen position fallback " .. flavor .. ": " .. checks .. " checks passed")
@@ -253,4 +258,36 @@ Check(S.Config("chat").lockWindowPosition and rx == ox + 11 and ry == oy, "Redo 
 Check(em.State.CancelAll() ~= false, "first adoption discard failed")
 Check(not S.Config("chat").lockWindowPosition and math.abs(frame:GetLeft() - nativeX) < .000001
     and math.abs(frame:GetBottom() - nativeY) < .000001, "discard lost original native position")
-print("Chat screen coordinates " .. flavor .. ": " .. checks .. " checks passed")
+Check(em.State.Enter("player") == true, "size edit session failed")
+Check(em.ExternalPopup.Open(key), "Chat size popup failed")
+local sizeBoxes = {}
+for _, control in ipairs(popup._activeControlSet.numbers) do sizeBoxes[control.id] = control.box end
+local function TypeSize(key, value)
+    local box = assert(sizeBoxes[key])
+    box:SetText(tostring(value))
+    box:GetScript("OnEnterPressed")(box)
+end
+local previous = S.Config("chat")
+local oldWidth, oldHeight = previous.windowWidth, previous.windowHeight
+Check(tonumber(sizeBoxes.windowWidth:GetText()) == 496 and tonumber(sizeBoxes.windowHeight:GetText()) == 148,
+    "editable fields display the mover bounds or stale profile sizes")
+TypeSize("windowWidth", 496)
+Check(not S.Config("chat").lockWindowSize, "accepting the current size adopted the lock")
+TypeSize("windowWidth", 620)
+local sized = S.Config("chat")
+Check(sized.windowWidth == 620 and sized.windowHeight == 148 and sized.lockWindowSize,
+    "editing width did not preserve the live height and adopt the size")
+Check(not sized.lockWindowPosition, "editing width adopted the position lock")
+Check(em.Undo.DoUndo() and not S.Config("chat").lockWindowSize, "size Undo lost native size ownership")
+Check(em.Undo.DoRedo() and S.Config("chat").windowWidth == 620 and S.Config("chat").lockWindowSize,
+    "size Redo lost the resized width")
+-- The fixture isolates the popup and profile transaction from native chat painting.
+frame:SetSize(620, 148)
+TypeSize("windowHeight", 999)
+Check(S.Config("chat").windowWidth == 620 and S.Config("chat").windowHeight == 800,
+    "height edit did not preserve width and enforce the allowed range")
+Check(em.State.CancelAll() ~= false, "size discard failed")
+local restored = S.Config("chat")
+Check(not restored.lockWindowSize and restored.windowWidth == oldWidth and restored.windowHeight == oldHeight,
+    "discard did not restore size settings")
+print("Chat screen coordinates and size " .. flavor .. ": " .. checks .. " checks passed")

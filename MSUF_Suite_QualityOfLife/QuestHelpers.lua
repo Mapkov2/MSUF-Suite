@@ -3,6 +3,12 @@ local NS, S = P.NS, P.Suite
 local M = {}
 local Public = S.Public
 local MAX_GOSSIP_QUESTS = 100
+local PAUSE_KEYS = { IsShiftKeyDown, IsControlKeyDown, IsAltKeyDown }
+
+local function Paused(self)
+    local held = (PAUSE_KEYS[self.config.pauseModifier] or IsShiftKeyDown)()
+    return not Public(held) or held == true
+end
 
 local function QuestFrequency(self, id, info)
     if not info then
@@ -63,7 +69,7 @@ local function Gossip(self, event)
         self.gossipChosen = nil
         return
     end
-    if NS.IsCombatLocked() or IsShiftKeyDown() or self.gossipChosen then return end
+    if NS.IsCombatLocked() or Paused(self) or self.gossipChosen then return end
     if self.config.complete then
         local questID, info = FirstQuest(self, C_GossipInfo.GetActiveQuests(), true)
         if questID then
@@ -89,7 +95,7 @@ local function Quest(self, event)
         self.selectedQuestInfo = nil
         return
     end
-    if NS.IsCombatLocked() or IsShiftKeyDown() then return end
+    if NS.IsCombatLocked() or Paused(self) then return end
     local cost = GetQuestMoneyToGet()
     -- An unreadable cost cannot authorize spending on a quest turn-in.
     if event ~= "QUEST_DETAIL" and (not Public(cost) or type(cost) ~= "number" or cost > 0) then return end

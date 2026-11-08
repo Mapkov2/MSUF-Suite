@@ -110,6 +110,7 @@ local function BuildModel(state)
     -- would stay unseen, so the Suite grid lists the matches alone.
     InventoryView.context.searching = InventoryView.index.filtered > 0
     InventoryView.context.query = InventoryView.smartQuery
+    InventoryView.context.hasKeyring = InventoryView.index.hasKeyring
     InventoryView.selected = Grid.Build(Model, InventoryView.model, InventoryView.index.items, M.config, state, InventoryView.context, InventoryView.selected)
 end
 

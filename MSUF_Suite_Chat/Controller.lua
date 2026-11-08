@@ -49,7 +49,7 @@ end
 local function ApplyNativeWindow(self, frame) ApplyWindow(self, frame, true) end
 
 local function ApplyAll(self, nativeRefresh)
-    if NS.InCombat() then
+    if C.LayoutLocked() then
         S.Queue("chat")
         return
     end
@@ -201,16 +201,50 @@ function M:Disable()
     HideCopyDialog(self.copyDialog)
 end
 
+local function ReadWindowDimension(getter)
+    local frame = ChatFrame1
+    if not frame or NS.Safety.IsForbidden(frame) then return end
+    local value = frame[getter](frame)
+    if S.Finite(value) and value > 0 then return math.floor(value) end
+end
+
+local function WindowSizeControl(key, label, getter, otherKey, otherGetter)
+    local rule = S.catalog.chat.rules[key]
+    return {
+        id = key, label = label, kind = "number", min = rule.min, max = rule.max, step = rule.step,
+        get = function() return ReadWindowDimension(getter) end,
+        set = function(value)
+            local current = ReadWindowDimension(getter)
+            local other = ReadWindowDimension(otherGetter)
+            if not (current and other) then return false end
+            value = math.floor(value)
+            if value == current then return true end
+            -- Adopt the current size on the untouched axis when taking ownership.
+            return S.SetMany("chat", { [key] = value, [otherKey] = other, lockWindowSize = true })
+        end,
+    }
+end
+
+local windowSizeControls
+
 -- The active Suite chat always has one MSUF mover. Until its first move,
 -- Blizzard keeps the position; a drag adopts the Suite anchor and Undo keeps
 -- the previous ownership flag alongside the original native layout.
 function M:RegisterMovers()
+    if not windowSizeControls then
+        windowSizeControls = {
+            WindowSizeControl("windowWidth", S.Text("Width"), "GetWidth", "windowHeight", "GetHeight"),
+            WindowSizeControl("windowHeight", S.Text("Height"), "GetHeight", "windowWidth", "GetWidth"),
+        }
+    end
     local registered = S.RegisterOwnedMover("chat", "window", {
         label = "Chat window", order = 870,
         getFrame = C.GetWindowMoverFrame, screenPosition = true, precisePosition = true,
         xKey = "windowX", yKey = "windowY", point = "BOTTOMLEFT", capture = C.CaptureWindowPosition,
         -- Numeric edits retain the other visible axis after a native layout change.
-        moveValues = { lockWindowPosition = true }, historyKeys = { "lockWindowPosition" },
+        moveValues = { lockWindowPosition = true },
+        extraControls = windowSizeControls,
+        historyKeys = { "lockWindowPosition", "lockWindowSize", "windowWidth", "windowHeight" },
         resetKeys = { "lockWindowPosition" }, place = C.PlaceWindowPosition,
     })
     for index = 2, C.MaxFloatingWindows() do

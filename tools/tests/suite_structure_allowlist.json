@@ -144,12 +144,6 @@
   {
    "file": "MSUF_Suite/Core/HostBridge.lua",
    "kind": "addon",
-   "reason": "MSUF core export (Runtime/MSUF_UIScaleRuntime.lua) that re-applies the profile's global UI scale; the legacy rollback falls back to MSUF's scale setters on hosts without it",
-   "symbol": "MSUF_ApplyCurrentProfileGlobalUiScale"
-  },
-  {
-   "file": "MSUF_Suite/Core/HostBridge.lua",
-   "kind": "addon",
    "reason": "MSUF export that Main and Classic MSUF both provide; older MSUF builds lack it, so the Suite checks it before use",
    "symbol": "MSUF_ApplyMsufScale"
   },
@@ -550,6 +544,12 @@
    "symbol": "MapkoSkin"
   },
   {
+   "file": "MSUF_Suite/Core/Startup.lua",
+   "kind": "addon",
+   "reason": "Optional MSUF host profile export resolved by HostBridge. Older hosts still start the Suite without early UI scale application",
+   "symbol": "applyScale (= Suite.HostBridge.Profiles.ApplyCurrentProfileGlobalUiScale)"
+  },
+  {
    "file": "MSUF_Suite/Core/Suite.lua",
    "kind": "lod",
    "reason": "export of the load-on-demand runtime MSUF_Suite_Modules",
@@ -600,6 +600,12 @@
   {
    "file": "MSUF_Suite/Integrations/MapkoSkin.lua",
    "kind": "lod",
+   "reason": "Optional early login pass exported by MSUF_Suite_Skin. An older installed skin engine uses its regular login event",
+   "symbol": "engine.EnsureLoginApplied"
+  },
+  {
+   "file": "MSUF_Suite/Integrations/MapkoSkin.lua",
+   "kind": "lod",
    "reason": "export of MSUF_Suite_Skin (SuiteOwnership), which loads on demand",
    "symbol": "ownership.Refresh"
   },
@@ -620,6 +626,12 @@
    "kind": "addon",
    "reason": "export of the standalone MapkoSkin addon (legacy profiles and its client API)",
    "symbol": "provider.MountOptions"
+  },
+  {
+   "file": "MSUF_Suite/Integrations/MapkoSkin.lua",
+   "kind": "lod",
+   "reason": "Optional startup flush exported by MSUF_Suite_Skin. An older installed skin engine retains its own registry scheduling",
+   "symbol": "registry.FlushStartupLayout"
   },
   {
    "file": "MSUF_Suite/Locales/deDE.lua",

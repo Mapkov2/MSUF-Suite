@@ -78,7 +78,7 @@ local function Region(kind, parent)
     function r:SetRotation() end
     function r:EnableMouse() end
     function r:HookScript() end
-    function r:IsProtected() return false end
+    function r:IsProtected() return self.protected or false end
     function r:GetEffectiveScale() return 1 end
     function r:CreateTexture(_, layer, _, sublevel)
         local texture = Region("Texture", self)
@@ -383,6 +383,13 @@ do
     assert(issecretvalue(badge.alpha), "a restricted badge alpha was overwritten")
     private.Level.PaintNative(ufA, nil)
     assert(badge.alpha == 0.65, "native badge release lost its original alpha")
+    badge.shown = Secret(true)
+    assert(private.Level.NativeBadgeVisible(ufA), "a potentially visible native badge lost its arrow clearance")
+    badge.shown = true
+    combat, badge.protected = true, Secret(false)
+    private.Level.PaintNative(ufA, "enemy")
+    assert(badge.alpha == 0.65 and module.pendingPlates[ufA], "an unknown protection state did not defer the native mask")
+    combat, badge.protected, module.pendingPlates[ufA] = false, nil, nil
     c.enemyLevelEnabled, c.levelAppearance = true, 1
     private.Level.Paint(ufA, "enemy", "nameplate1")
     assert(not module.levelLabels[ufA] or not module.levelLabels[ufA].shown,

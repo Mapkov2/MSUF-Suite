@@ -126,7 +126,7 @@ NS.SuiteCatalog.qol.rules.junkReport.enableKey = "autoJunk"
 
 B.Module("quests", {
     title = "Quest helpers",
-    description = "Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.",
+    description = "Accept and turn in quests automatically. Hold the selected key to pause. Reward choices and quests with a money cost stay manual.",
     optIn = true, automation = true, page = "suite_qualityOfLife",
 })
 B.Section("quests", "automation", "Quest actions", {
@@ -134,6 +134,7 @@ B.Section("quests", "automation", "Quest actions", {
     Bool("complete", "Automatically complete ready quests"),
     Bool("reward", "Collect rewards without a choice"),
     Bool("gossip", "Select offered or completed quests in dialogue"),
+    Choice("pauseModifier", "Hold to pause quest automation", 1, { "Shift", "Ctrl", "Alt" }),
 })
 local onlyIDs = String("onlyIDs", "Only these quest IDs (empty: all)", "", 1600)
 onlyIDs.ids = true
@@ -170,7 +171,7 @@ B.Module("vaultSpec", {
 
 B.Module("tooltipIDs", {
     title = "Tooltip IDs",
-    description = "Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.",
+    description = "Show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
     available = function()
         if NS.Client.isForever then return false, "Tooltip IDs are available only in Retail" end
@@ -178,6 +179,7 @@ B.Module("tooltipIDs", {
     end,
 })
 B.Section("tooltipIDs", "tooltip_ids", "Tooltip IDs", {
+    Choice("idModifier", "Show IDs with", 1, { "Alt", "Shift", "Ctrl", "Always" }),
     Bool("showQuestCurrency", "Show quest and currency IDs", true),
     Bool("showSpellIcon", "Show spell icon ID"),
     Bool("showTempEnchant", "Show temporary weapon enchant ID", true),

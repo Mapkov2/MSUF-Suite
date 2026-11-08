@@ -108,7 +108,7 @@ local function Remember(region, aspects)
         if not state.alpha then return false end
     end
     if aspects.coords then
-        state.coords = Numbers(4, region:GetTexCoord())
+        state.coords = Numbers(8, region:GetTexCoord())
         if not state.coords then return false end
     end
     if aspects.text then

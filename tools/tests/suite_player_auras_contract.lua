@@ -15,7 +15,7 @@ end
 
 local captured
 local function Region(w,h)
- local r={width=w or 30,height=h or 40,scale=1,alpha=1,points={},shown=true,font={'native.ttf',10,''},color={1,1,1,1},shadow={0,0,0,1},shadowOffset={0,0},coords={0,1,0,1}}
+ local r={width=w or 30,height=h or 40,scale=1,alpha=1,points={},shown=true,font={'native.ttf',10,''},color={1,1,1,1},shadow={0,0,0,1},shadowOffset={0,0},coords={0,0,0,1,1,0,1,1}}
  function r:IsObjectType(kind)return self.kind==kind end
  function r:GetWidth()return self.width end
  function r:GetHeight()return self.height end
@@ -29,7 +29,10 @@ local function Region(w,h)
  function r:SetSize(w,h)self.width,self.height=w,h end
  function r:SetScale(s)self.scale=s end
  function r:GetTexCoord()return unpack(self.coords)end
- function r:SetTexCoord(...)self.coords={...}end
+ function r:SetTexCoord(left,right,top,bottom,...)
+    if select("#",...)==0 then self.coords={left,top,left,bottom,right,top,right,bottom}
+    else self.coords={left,right,top,bottom,...} end
+ end
  function r:GetFont()return unpack(self.font)end
  function r:SetFont(...)self.font={...}end
  function r:GetTextColor()return unpack(self.color)end

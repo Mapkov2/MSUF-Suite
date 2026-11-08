@@ -179,9 +179,9 @@ local function ChangeMapSize(maximized)
     map.maximized = maximized
     local callback = callbacks[maximized and "WorldMapMaximized" or "WorldMapMinimized"]
     if callback then callback() end
-    -- The native delegate leaves both slot moves alone for a nil map area.
-    -- The maximize handler still applies the native full-size anchor.
-    if maximized then map:SetPoint("TOP", UIParent, "TOP", 0, 0) end
+    -- With a panel slot Blizzard also reapplies the compact anchor.
+    if maximized then map:SetPoint("TOP", UIParent, "TOP", 0, 0)
+    elseif NativeArea(map) then map:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 28, -100) end
 end
 local bag1, bag2 = Panel("ContainerFrame1"), Panel("ContainerFrame2")
 function IsAnyBagOpen() return bagsOpen or bag1:IsShown() or bag2:IsShown() end
@@ -200,15 +200,27 @@ NativeOpen(auction)
 module.active = true
 module:Enable()
 Check(auction:IsShown() and GetUIPanel("doublewide") == auction, "enabling broke the current auction session")
+Check(NativeArea(map) == "left" and map.attr[defined] == nil,
+    "Forever map lost its native panel dispatch before combat")
+HideUIPanel(auction)
+Flush()
+NativeOpen(auction)
+Fire("PLAYER_REGEN_DISABLED")
+combat = true
 NativeOpen(map)
-Check(map:IsShown() and auction:IsShown() and bagsOpen and GetUIPanel("left") == nil,
-    "opening the small map with M evicted an existing panel")
-map:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 180, -135)
+Check(map:IsShown() and auction:IsShown() and bagsOpen and GetUIPanel("left") == map,
+    "Forever combat map did not use its native slot alongside the floating auction house")
+HideUIPanel(map)
+Check(not map:IsShown() and GetUIPanel("left") == nil and NativeArea(map) == "left",
+    "Forever combat map did not close through the native panel manager")
+combat = false
+Fire("PLAYER_REGEN_ENABLED")
+NativeOpen(map)
 ChangeMapSize(true)
-Check(map:IsMaximized() and map.point[1] == "TOP" and auction:IsShown(), "maximizing a floating map changed native layout")
+Check(map:IsMaximized() and map.point[1] == "TOP" and auction:IsShown(), "maximizing the map changed native layout")
 ChangeMapSize(false)
-Check(map.point[1] == "TOPLEFT" and map.point[4] == 180 and map.point[5] == -135,
-    "minimizing did not restore the compact map position")
+Check(map.point[1] == "TOPLEFT" and map.point[4] == 28 and map.point[5] == -100,
+    "Blizzard did not restore the compact map position")
 HideUIPanel(map)
 NativeOpen(quest)
 Check(auction:IsShown() and quest:IsShown() and bagsOpen, "opening a quest detail closed the auction house or bags")
@@ -273,17 +285,17 @@ NativeOpen(quest)
 Check(not auction:IsShown(), "disabling did not restore native eviction")
 
 HideUIPanel(quest)
-NativeOpen(auction)
 map.preferCompact = false
 ChangeMapSize(true)
 module.active = true
 module:Enable()
+NativeOpen(auction)
 -- The native quest-log action opens the panel before changing its display
 -- mode. It requests the compact map with the log regardless of the M preset.
 NativeOpen(map)
 ChangeMapSize(false)
 map.questLogShown = true
-Check(map:IsShown() and map.questLogShown and auction:IsShown() and GetUIPanel("left") == nil,
+Check(map:IsShown() and map.questLogShown and auction:IsShown() and GetUIPanel("left") == map,
     "the quest-log action evicted an existing panel with the full-size preference")
 Check(not map:IsMaximized() and map.point[1] == "TOPLEFT", "the quest-log action did not restore the compact anchor")
 HideUIPanel(map)
@@ -567,4 +579,20 @@ Flush()
 Escape(false)
 Flush()
 Check(auction:IsShown() and not quest:IsShown(), "a same-tick layout transition changed Escape order")
+
+ResetWindows()
+module.active = false
+module:Disable()
+NS.Client.isForever = false
+ChangeMapSize(false)
+module.active = true
+module:Enable()
+NativeOpen(auction)
+NativeOpen(map)
+Check(NativeArea(map) == nil and map:IsShown() and auction:IsShown(), "Retail map lost floating-window support")
+map:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 180, -135)
+ChangeMapSize(true)
+ChangeMapSize(false)
+Check(map.point[1] == "TOPLEFT" and map.point[4] == 180 and map.point[5] == -135,
+    "Retail map lost its floating compact position")
 print("Suite parallel windows: " .. checks .. " checks passed")

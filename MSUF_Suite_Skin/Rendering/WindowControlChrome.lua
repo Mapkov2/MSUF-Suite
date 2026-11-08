@@ -312,7 +312,19 @@ end
 
 local PlaceMinimize
 
+function Chrome.SyncMinimize(state)
+    if not state.minimize then return end
+    local art = captionArt[state.minimize]
+    local disabled = NS.IsCombatLocked() and NS.WindowControlPolicy.HasManagedVisibility(state)
+    if (art.disabled == true) == disabled then return end
+    art.disabled = disabled
+    state.minimize:EnableMouse(not disabled)
+    PaintCaption(state.minimize)
+    if disabled then NS.CombatGate.RunOrDefer("windowControls:captions", NS.WindowControls.Refresh) end
+end
+
 function Chrome.ShowCaption(state, level)
+    Chrome.SyncMinimize(state)
     local minimize, maximize = state.minimize or state.captionMin, state.maximize
     local width, height, room, inset = Chrome.CaptionSize(state)
     local gamepad = NS.Client.IsGamepadUI()
@@ -359,6 +371,11 @@ end
 -- Fixed-size native panels fill the available area by scaling uniformly.
 -- Keep a small screen margin and include exterior resize handles in the fit.
 local function NativeFitExtra(frame, key)
+    if NS.IsCombatLocked() then
+        -- The panel manager's getter can seed native attributes on first read.
+        local value = Safety.Read(frame, "GetAttribute", "UIPanelLayout-" .. key)
+        return type(value) == "number" and value or 0
+    end
     local read = Safety.Field(_G, "GetUIPanelAttribute")
     local value = read and read(frame, key)
     if Safety.Public(value) and type(value) == "number" then return value end
@@ -398,6 +415,18 @@ function Chrome.FindClose(frame, name)
         or ValidClose(Safety.Field(Safety.Field(frame, "BorderFrame"), "CloseButton"))
         or ValidClose(Safety.Field(_G, name .. "CloseButton"))
         or ValidClose(Safety.Field(frame, "CloseButton"))
+end
+
+local function NativeCaption(frame)
+    return Safety.Field(frame, "MinimizeButton") or Safety.Field(frame, "MaximizeButton")
+        or Safety.Field(frame, "MaximizeMinimize") or Safety.Field(frame, "MaximizeMinimizeFrame")
+        or Safety.Field(frame, "MaximizeMinimizeButton") or Safety.Field(frame, "MaxMinButtonFrame")
+end
+
+function Chrome.HasNativeCaption(frame, name, close)
+    local header = Safety.Read(close, "GetParent")
+    return NativeCaption(frame) or (header ~= frame and NativeCaption(header))
+        or Safety.Field(_G, name .. "MinimizeButton") or Safety.Field(_G, name .. "MaximizeButton")
 end
 
 function Chrome.LeaveFit(state)
@@ -453,13 +482,38 @@ function Chrome.CreateMinimize(state, close, level, click)
     return button
 end
 
+local function OnRestoreDragStart(bar)
+    if not NS.IsCombatLocked() then bar:StartMoving() end
+end
+
+local function OnRestoreDragStop(bar)
+    bar:StopMovingOrSizing()
+end
+
+function Chrome.CreateRestore(state, click)
+    local bar = CreateFrame("Button", nil, UIParent)
+    bar:SetSize(154, 26)
+    bar:SetFrameStrata("DIALOG")
+    bar:SetClampedToScreen(true)
+    bar:SetMovable(true)
+    bar:RegisterForDrag("LeftButton")
+    bar:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    bar:SetScript("OnDragStart", OnRestoreDragStart)
+    bar:SetScript("OnDragStop", OnRestoreDragStop)
+    Chrome.PaintControl(bar, "popup")
+    local label = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", 10, 0)
+    label:SetPoint("RIGHT", -10, 0)
+    label:SetJustifyH("LEFT")
+    state.restoreLabel = label
+    bar:SetScript("OnClick", click)
+    bar:Hide()
+    return bar
+end
+
 function Chrome.CreateCaption(state, level, click)
     if state.maximize or state.inventory or not Chrome.CaptionSize(state) then return end
     local frame = state.frame
-    if Safety.Field(frame, "MinimizeButton") or Safety.Field(frame, "MaximizeButton")
-        or Safety.Field(frame, "MaximizeMinimize") or Safety.Field(frame, "MaximizeMinimizeFrame")
-        or Safety.Field(frame, "MaximizeMinimizeButton") or Safety.Field(frame, "MaxMinButtonFrame")
-        or Safety.Field(_G, state.name .. "MinimizeButton") or Safety.Field(_G, state.name .. "MaximizeButton") then return end
     local button = Safety.CreateChildFrame("Button", frame)
     state.maximize = button
     Chrome.Control(button, "maximize", level)

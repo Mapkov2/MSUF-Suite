@@ -35,6 +35,7 @@ return function(mw, P, uiFor, settle)
     assert(NS.Menu.FocusQualityOfLifeModule("xpBar"))
     settle()
     local ui = uiFor()
+    S.Config("xpBar").showLevelTime = true
     ui.stage:Show()
     ui.Paint()
     local function Config() return S.Config("xpBar") end
@@ -193,5 +194,5 @@ return function(mw, P, uiFor, settle)
     for _ = 1, 10 do ui.Paint() end
     assert(frames == count, "warm repaint created frames")
     assert(not Config().enabled, "editor enabled inactive module")
-    print("XP editor acceptance: six drags/history/reset, fit, stale input/profile/geometry/combat, format, nudge, warm lifetime passed")
+    print("XP editor acceptance: drags/history/reset, fit, stale input/profile/geometry/combat, format, nudge, warm lifetime passed")
 end

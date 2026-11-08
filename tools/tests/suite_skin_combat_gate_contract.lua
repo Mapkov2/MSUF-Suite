@@ -10,7 +10,8 @@ local function Check(value, message)
     checks = checks + 1
 end
 
-local locked = false
+local locked, staleUnitCombat = false, false
+InCombatLockdown = function() return locked and not staleUnitCombat end
 local frames = {}
 -- CombatGate times its drain (about 4 ms per frame); these jobs cost nothing.
 debugprofilestop = function() return 0 end
@@ -86,6 +87,57 @@ Gate.RunOrDefer("cancelled", function() error("contract: a cancelled job ran") e
 Gate.Cancel("cancelled")
 EndCombat()
 Check(updates == 1, "a job asked for many times ran " .. updates .. " times")
+
+-- The client can deliver regen before the unit flag settles. A single
+-- guarded handoff must preserve the pending skin work across that edge.
+local wake, originalTimer = nil, C_Timer
+C_Timer = { After = function(delay, callback)
+    Check(delay == 0 and wake == nil, "combat end queued multiple wake-ups")
+    wake = callback
+end }
+local applied = 0
+local function SkinPopup() applied = applied + 1 end
+locked = true
+Gate.RunOrDefer("static-popup", SkinPopup)
+staleUnitCombat = true
+gateFrame:script("PLAYER_REGEN_ENABLED")
+gateFrame:script("PLAYER_REGEN_ENABLED")
+Check(applied == 0 and wake and Gate.IsPending("static-popup"), "early regen stranded or ran the skin job")
+local callback = wake
+wake = nil
+-- The next combat starts before the callback. No protected work and no
+-- repeated callback: the next regen owns the pending job.
+staleUnitCombat = false
+callback()
+Check(applied == 0 and wake == nil and Gate.IsPending("static-popup"), "locked wake-up drained or polled")
+staleUnitCombat = true
+gateFrame:script("PLAYER_REGEN_ENABLED")
+callback, wake = wake, nil
+locked, staleUnitCombat = false, false
+callback()
+Check(applied == 1 and wake == nil and Gate.GetPendingCount() == 0
+    and not gateFrame.events.PLAYER_REGEN_ENABLED, "first unlocked frame did not finish the skin job")
+
+-- A later regen listener can queue the first job after event dispatch has
+-- already passed the gate. The unit flag still says combat; lockdown ended.
+locked, staleUnitCombat = true, true
+Gate.RunOrDefer("late-popup", SkinPopup)
+Check(wake and Gate.IsPending("late-popup"), "first job queued on the unlock edge missed regen")
+callback, wake = wake, nil
+locked, staleUnitCombat = false, false
+callback()
+Check(applied == 2 and Gate.GetPendingCount() == 0
+    and not gateFrame.events.PLAYER_REGEN_ENABLED, "job queued after regen never drained")
+
+locked, staleUnitCombat = true, true
+Gate.RunOrDefer("cancel-before-wake", SkinPopup)
+Gate.Cancel("cancel-before-wake")
+callback, wake = wake, nil
+locked, staleUnitCombat = false, false
+callback()
+Check(applied == 2 and Gate.GetPendingCount() == 0
+    and not gateFrame.events.PLAYER_REGEN_ENABLED, "a cancelled job survived the scheduled wake")
+C_Timer = originalTimer
 
 ------------------------------------------------------------------ window parts
 -- A part's release refused in combat is retried after combat; the adapter

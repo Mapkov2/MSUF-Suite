@@ -7,7 +7,7 @@ local floor, max, min = math.floor, math.max, math.min
 local OUTLINES, PERCENT = { false, "", "OUTLINE", "THICKOUTLINE" }, { "%.0f%%", "%.1f%%", "%.2f%%" }
 local LABELS = { level = S.Text("Lv %d"), session = S.Text("Session +%s"), rate = S.Text("XP/h %s"),
     eta = S.Text("To level %s"), xp = S.Text("%s / %s"), combined = S.Text("Lv %d  %s / %s"),
-    progress = S.Text("%s  %s / %s") }
+    progress = S.Text("%s  %s / %s"), levelTime = S.Text("This level %s") }
 local durations
 
 function Text.Compact(value)
@@ -140,6 +140,19 @@ local function Write(state, value)
     state.dirty = false
 end
 
+function Text.PaintLevelTime(view, seconds)
+    local state = view.xpTexts.levelTime
+    Show(state, state.enabled)
+    if not state.enabled or not state.dirty and state.currentInput == seconds then return end
+    local value = Text.Duration(seconds)
+    Write(state, state.format == 3 and value or LABELS.levelTime:format(value))
+    state.currentInput = seconds
+end
+
+function Text.HideLevelTime(view)
+    Show(view.xpTexts.levelTime, false)
+end
+
 local function NumberText(state, current, maximum)
     if state.format == 3 then return state.number(current) end
     if state.format == 4 then return state.number(max(0, maximum - current)) end
@@ -213,7 +226,8 @@ end
 -- Only menu samples measure text. Live XP events never measure or move it.
 function Text.PreviewBounds(view)
     local width, height = view.config.width, view.config.height
-    local left, right, bottom, top = 0, width, -23, height
+    local padding = Shared.BottomPadding(view.config)
+    local left, right, bottom, top = 0, width, -padding, height
     for _, spec in ipairs(Shared.Texts) do
         local state = view.xpTexts[spec.id]
         if state.shown then
@@ -224,5 +238,5 @@ function Text.PreviewBounds(view)
             left, right, bottom, top = min(left, x), max(right, x + w), min(bottom, y), max(top, y + h)
         end
     end
-    return right - left, top - bottom, width / 2 - (left + right) / 2, (height - 23) / 2 - (bottom + top) / 2
+    return right - left, top - bottom, width / 2 - (left + right) / 2, (height - padding) / 2 - (bottom + top) / 2
 end

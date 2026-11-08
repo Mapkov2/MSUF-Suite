@@ -3,7 +3,7 @@ local NS, S = P.NS, P.Suite
 if not NS.Client.isForever then return end
 local Data, Pins, Labels, Locations = P.ForeverMapData, P.ForeverMapPins, P.ForeverMapLabels, P.ForeverMapLocations
 local M = { mapNames = {}, areaNames = {}, titles = {}, rects = {} }
-local Provider = {}
+local hookedMap, refreshQueued
 local FLIGHT, FIRST_TRANSPORT, LAST_TRANSPORT, ROAD, APPROACH, ENTRANCE = 1, 2, 4, 6, 7, 8
 local KIND_TEXT = { "Flight point", "Boat", "Zeppelin", "Skycutter", [APPROACH] = "Dungeon approach" }
 local IN_COMBAT = { inCombat = true }
@@ -85,7 +85,7 @@ local function Wanted(record, mapType, faction)
     return config.transports
 end
 
-local function NativeEntrances(map, mapID)
+local function NativeEntrances(mapID)
     if not M.config.dungeonEntrances then return false end
     local entries = C_EncounterJournal.GetDungeonEntrancesForMap(mapID)
     if not S.Public(entries) or type(entries) ~= "table" or #entries == 0 then return false end
@@ -100,7 +100,7 @@ local function NativeEntrances(map, mapID)
                 local x, y = position:GetXY()
                 if S.Finite(x) and S.Finite(y) and x >= 0 and x <= 1 and y >= 0 and y <= 1 then
                     local record = { mapID, x, y }
-                    map:AcquirePin(Pins.template, M, record, x, y, name, ENTRANCE)
+                    Pins.Add(M, record, x, y, name, ENTRANCE)
                 end
             end
         end
@@ -108,14 +108,11 @@ local function NativeEntrances(map, mapID)
     return true
 end
 
-function Provider:RemoveAllData()
-    self:GetMap():RemoveAllPinsByTemplate(Pins.template)
-end
-
-function Provider:RefreshAllData()
-    local map = self:GetMap()
-    if not M.active or not map:IsShown() then return end
-    self:RemoveAllData()
+local function RefreshVisible()
+    refreshQueued = false
+    local map = M.map
+    if not M.active or not map or not map:IsShown() then return end
+    Pins.Release()
     local mapID = map:GetMapID()
     local info = S.Finite(mapID) and C_Map.GetMapInfo(mapID)
     if not S.Public(info) or type(info) ~= "table" or not canaccesstable(info) then return end
@@ -127,7 +124,7 @@ function Provider:RefreshAllData()
     end
     local factionName = S.PublicText(UnitFactionGroup("player"))
     local faction = factionName == "Alliance" and 1 or factionName == "Horde" and 2 or 3
-    local entrances = NativeEntrances(map, mapID)
+    local entrances = NativeEntrances(mapID)
     local nativeFlights = C_TaxiMap.ShouldMapShowTaxiNodes(mapID)
     nativeFlights = S.Public(nativeFlights) and nativeFlights == true
     M.records = M.records or Locations.Build(Data.pins)
@@ -137,51 +134,77 @@ function Provider:RefreshAllData()
         if Wanted(record, mapType, faction) and not (record[4] == APPROACH and entrances)
             and not nativeFlight then
             local x, y = Project(record, mapID, mapType)
-            if x then map:AcquirePin(Pins.template, M, record, x, y, Title(record), record[4]) end
+            if x then Pins.Add(M, record, x, y, Title(record), record[4]) end
         end
     end
+    Pins.Layout(map)
     Labels.Attach(M)
 end
 
-function Provider:OnShow()
-    self:RegisterEvent("TAXI_NODE_STATUS_CHANGED")
-    self:RegisterEvent("PLAYER_LEVEL_UP")
-    self:RegisterEvent("CVAR_UPDATE")
-    Labels.Attach(M)
+-- Blizzard iterates its providers inside the protected quest-pin refresh.
+-- Paint after that pass in Suite's own callback and keep its tables untouched.
+local function QueueRefresh(map)
+    if not M.active or map ~= M.map or refreshQueued then return end
+    refreshQueued = true
+    C_Timer.After(0, RefreshVisible)
 end
 
-function Provider:OnHide()
-    self:UnregisterEvent("TAXI_NODE_STATUS_CHANGED")
-    self:UnregisterEvent("PLAYER_LEVEL_UP")
-    self:UnregisterEvent("CVAR_UPDATE")
+local function MapEvent(self, event, name)
+    if event == "CVAR_UPDATE" and (not S.Public(name)
+        or name ~= "showDungeonEntrancesOnMap" and name ~= "showdungeonentrancesonmap") then return end
+    if event == "PLAYER_LEVEL_UP" then Labels.Refresh(self) else QueueRefresh(self.map) end
+end
+
+local function MapShown(map)
+    if not M.active or map ~= M.map then return end
+    M.context:Event("TAXI_NODE_STATUS_CHANGED", MapEvent, IN_COMBAT)
+    M.context:Event("PLAYER_LEVEL_UP", MapEvent, IN_COMBAT)
+    M.context:Event("CVAR_UPDATE", MapEvent, IN_COMBAT)
+    QueueRefresh(map)
+end
+
+local function MapHidden(map)
+    if map ~= M.map then return end
+    M.context:RemoveEvent("TAXI_NODE_STATUS_CHANGED")
+    M.context:RemoveEvent("PLAYER_LEVEL_UP")
+    M.context:RemoveEvent("CVAR_UPDATE")
+    Pins.Release()
     if M.label then M.label:Hide() end
 end
 
-function Provider:OnEvent(event, name)
-    if event == "CVAR_UPDATE" and (not S.Public(name)
-        or name ~= "showDungeonEntrancesOnMap" and name ~= "showdungeonentrancesonmap") then return end
-    if event == "PLAYER_LEVEL_UP" then Labels.Refresh(M) else self:RefreshAllData() end
+local function LayoutChanged(map)
+    if M.active and map == M.map then Pins.Layout(map) end
 end
 
-function Provider:OnRemoved(map)
-    self:OnHide()
-    MapCanvasDataProviderMixin.OnRemoved(self, map)
+local function GamepadCursorChanged(map)
+    if M.active and map == M.map then Pins.UpdateGamepadCursor(map) end
+end
+
+local function GamepadClicked(map)
+    if M.active and map == M.map and S.GamepadUI() then Pins.ClickHovered() end
+end
+
+local function ObserveMap(map)
+    if hookedMap == map then return end
+    hookedMap = map
+    map:HookScript("OnShow", MapShown)
+    map:HookScript("OnHide", MapHidden)
+    hooksecurefunc(map, "RefreshAllDataProviders", QueueRefresh)
+    hooksecurefunc(map, "OnMapChanged", QueueRefresh)
+    hooksecurefunc(map, "OnCanvasSizeChanged", LayoutChanged)
+    hooksecurefunc(map, "OnCanvasScaleChanged", LayoutChanged)
+    hooksecurefunc(map, "SetGlobalPinScale", LayoutChanged)
+    hooksecurefunc(map, "UpdateGamepadCursor", GamepadCursorChanged)
+    hooksecurefunc(map, "ClickHoveredPins", GamepadClicked)
 end
 
 local function Attach(self)
-    -- Blizzard_WorldMap's Mainline TOC loads the frame and requires
-    -- Blizzard_MapCanvas on Forever, including its provider and pin mixins.
+    -- Blizzard_WorldMap loads its native canvas before ADDON_LOADED.
     if self.map or not NS.Client.IsAddOnLoaded("Blizzard_WorldMap") then return end
-    Pins.Prepare()
-    self.provider = self.provider or CreateFromMixins(MapCanvasDataProviderMixin, Provider)
     self.map = WorldMapFrame
-    self.map:AddDataProvider(self.provider)
+    ObserveMap(self.map)
     self.context:RemoveEvent("ADDON_LOADED")
-    -- AddDataProvider only calls OnAdded, including when the map is already open.
-    if self.map:IsShown() then
-        self.provider:RefreshAllData()
-        self.provider:OnShow()
-    end
+    if self.map:IsShown() then MapShown(self.map) end
 end
 
 local function MapLoaded(self, _, addon)
@@ -196,13 +219,12 @@ end
 function M:Refresh()
     if not self.map then return Attach(self) end
     self.labelRaw = nil
-    self.provider:RefreshAllData()
+    QueueRefresh(self.map)
     if not self.config.zoneLevels and self.label then self.label:Hide() end
 end
 
 function M:Disable()
-    if self.map then self.map:RemoveDataProvider(self.provider) end
-    if self.label then self.label:Hide() end
+    if self.map then MapHidden(self.map) end
     self.map, self.labelRaw = nil, nil
 end
 

@@ -3,7 +3,7 @@ local flavor = arg[2] or "Mainline"
 local H = dofile(root .. "/tools/tests/suite_minimap_harness.lua")
 local reads = { fps = 0, gold = 0, durability = 0 }
 local money, fps = 100000, 80
-local W = H.New(root, flavor, { beforeModules = function(world)
+local function SetupSources(world)
     local G = world.G
     G.GetFramerate = function() reads.fps = reads.fps + 1; return fps end
     G.GetMoney = function() reads.gold = reads.gold + 1; return money end
@@ -34,11 +34,11 @@ local W = H.New(root, flavor, { beforeModules = function(world)
     G.MSUF_ResolveFontKeyPath = function(key)
         return key == "TestFont" and "Interface\\AddOns\\Test\\Media\\font.ttf" or nil
     end
-end })
+end
+local W = H.New(root, flavor, { beforeModules = SetupSources })
 local G, S = W.G, W.S
-local nativeBag
-if flavor == "Forever" or flavor == "Mainline" then
-    nativeBag = { shown = true }
+local function NativeBagFor(globals)
+    local nativeBag = { shown = true }
     function nativeBag:IsShown() return self.shown end
     function nativeBag:Hide() self.shown = false end
     function nativeBag:Show()
@@ -49,16 +49,21 @@ if flavor == "Forever" or flavor == "Mainline" then
         assert(script == "OnShow")
         self.onShow = callback
     end
-    G.BagsBar = nativeBag
-    G.RegisterStateDriver = function(frame, kind, driver)
+    globals.BagsBar = nativeBag
+    local register, unregister = globals.RegisterStateDriver, globals.UnregisterStateDriver
+    globals.RegisterStateDriver = function(frame, kind, driver)
+        if frame ~= nativeBag then return register(frame, kind, driver) end
         assert(frame == nativeBag and kind == "visibility" and driver == "hide")
         frame.driver = driver
     end
-    G.UnregisterStateDriver = function(frame, kind)
+    globals.UnregisterStateDriver = function(frame, kind)
+        if frame ~= nativeBag then return unregister(frame, kind) end
         assert(frame == nativeBag and kind == "visibility")
         frame.driver = nil
     end
+    return nativeBag
 end
+local nativeBag = NativeBagFor(G)
 -- MSUF's font comes from the shared media table and money text from the
 -- shared helper; DataTexts keeps its own sign characters.
 local MEDIA_FONT = "Interface\\AddOns\\Test\\Media\\MSUF.ttf"
@@ -641,6 +646,59 @@ do
     local plain = W.Suite.FormatDataText("Bags", "unknown", nil, style, "bags")
     assert(plain == "\226\128\148", "unknown bag values lost the existing missing-value mark")
 end
+-- An unlocked Forever reload builds the saved bars and samples once. The
+-- same bars bind their live sources at combat end without a second layout.
+if flavor == "Forever" then
+    local cold = H.New(root, flavor, { beforeModules = SetupSources })
+    NativeBagFor(cold.G)
+    cold.G.C_CVar.SetCVar("combinedBags", "1")
+    cold.LoadAddon("MSUF_Suite_DataTexts")
+    local core, controller = cold.Suite, cold.S
+    local module = controller.instances.dataTexts
+    for _, id in ipairs(core.SuiteOrder) do controller.Config(id).enabled = false end
+    local config = controller.Config("dataTexts")
+    config.enabled, config.bar1Enabled, config.bar2Enabled = true, true, true
+    config.hideBlizzardBagBar = true
+    local bags = controller.Config("bags")
+    bags.enabled, bags.inventoryView = true, core.BagsView.ALL
+    controller.instances.bags = { Enable = function(self) self.combinedBagConfigured = true end,
+        Refresh = function() end }
+    config.bar1Slot1, config.bar2Slot1 = core.DataTextSourceIndex.fps, core.DataTextSourceIndex.fps
+    config.bar2LoadCondHideNoTarget = true
+    local register = cold.G.RegisterStateDriver
+    cold.G.RegisterStateDriver = function(frame, kind, expression)
+        register(frame, kind, expression)
+        if expression == "[@target,noexists] hide; show" then frame:Hide() end
+    end
+    cold.G.UnitAffectingCombat = function() return true end
+    core.startingBeforeLockdown = true
+    controller.Start()
+    core.startingBeforeLockdown = nil
+    assert(not cold.G.BagsBar:IsShown() and cold.G.BagsBar.driver == "hide",
+        "the reload snapshot left native bag buttons visible")
+    local bar = module.bars[1]
+    assert(bar and bar.frame:IsShown() and bar.slots[1].text and bar.slots[1].text:find(tostring(fps), 1, true),
+        "combat reload did not lay out and paint DataTexts")
+    assert(module.paused and not module.activeSources and not module.timer and cold.Pending() == 0,
+        "combat reload started DataTexts background work")
+    local targetBar = module.bars[2]
+    assert(not targetBar.frame:IsShown(), "no-target fixture did not hide its bar")
+    cold.combat = true
+    cold.Blizzard(function() targetBar.frame:Show() end)
+    assert(targetBar.slots[1].text and targetBar.slots[1].text:find(tostring(fps), 1, true),
+        "a secure visibility change revealed an unsampled bar during combat")
+    local clears, clear = 0, bar.frame.ClearAllPoints
+    bar.frame.ClearAllPoints = function(frame)
+        clears = clears + 1
+        clear(frame)
+    end
+    cold.G.UnitAffectingCombat = function() return false end
+    cold.combat = false
+    cold.Event("PLAYER_REGEN_ENABLED")
+    assert(not module.paused and module.activeSources.fps and module.timer and clears == 0,
+        "DataTexts did not resume live samples from the first layout")
+end
+
 -- Retail and WoW Forever always have the APIs DataTexts calls. The one
 -- client-specific hook target (Forever's MainActionBar_InitializeMKB) is a
 -- plain existence check, not a type guard.

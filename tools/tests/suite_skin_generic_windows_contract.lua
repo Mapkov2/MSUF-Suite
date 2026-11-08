@@ -820,6 +820,23 @@ Section("deep windows", function()
     deepNS.DeepWindows.Apply("deep")
     NextFrame()
     Reset()
+    locked = true
+    crafting:SchematicPostInit()
+    Expect(calls[professions] == nil and descendants[schematic] == 1,
+        "a safe combat recipe change did not paint its schematic immediately")
+    locked = false
+    NextFrame()
+    Reset()
+    function professions:IsProtected() return true, false end
+    locked = true
+    deepNS.DeepWindows:OnProfessionsTabSet(professions)
+    crafting:SchematicPostInit()
+    Expect(calls[professions] == 1 and descendants[schematic] == 1,
+        "protected profession shell suppressed the safe schematic")
+    professions.IsProtected = nil
+    locked = false
+    NextFrame()
+    Reset()
     -- A recipe click (SchematicPostInit) re-skins the schematic at once, in
     -- Blizzard's call: no frame shows native art, and no full window pass.
     crafting:SchematicPostInit()
@@ -1311,6 +1328,10 @@ Section("player spells tab colors", function()
     local spellBook = Frame(nil)
     spellBook.SearchBox = Frame(nil)
     spells.SpellBookFrame = spellBook
+    local talents = Frame(nil)
+    talents.shown = false
+    function talents:IsShown() return self.shown end
+    spells.TalentsFrame = talents
     local searchBoxes = {}
     local attached = {}
     local attachControls = NS.WindowControls.Attach
@@ -1331,6 +1352,8 @@ Section("player spells tab colors", function()
     NS.PlayerSpellsSkin.Apply(spells, "spells")
     NS.ControlSkin.ApplySearchBox = applySearchBox
     Expect(searchBoxes[spellBook.SearchBox], "the spell book search box was not skinned")
+    Expect(talents.surfaceSpec and talents.surfaceSpec.role == "panel" and talents.childReads == 0,
+        "hidden talents lacked a prepared shell or traversed the hidden tree")
     Expect(#attached == 1 and attached[1].frame == spells and attached[1].owner == "spells",
         "the dedicated spellbook adapter did not attach window controls to its root")
     NS.PlayerSpellsSkin:OnFrameTabSet(spells)
@@ -1381,11 +1404,153 @@ Section("player spells tab colors", function()
     NS.CombatGate.RunOrDefer = defer
     NS.PlayerSpellsSkin.Disable(spells, "spells")
     Expect(releasedOwner == "spells", "disabling the dedicated spellbook skin did not release its window controls")
+    local previousSpells, previousDB = _G.PlayerSpellsFrame, NS.DB
+    local cold = Frame("PlayerSpellsFrame")
+    cold.TalentsFrame, cold.SpellBookFrame = Frame(nil), Frame(nil)
+    function cold:IsShown() return true end
+    function cold:IsProtected() return true, false end
+    function cold.SpellBookFrame:IsProtected() return true, false end
+    function cold:HookScript() end
+    _G.PlayerSpellsFrame = cold
+    NS.DB = { enabled = true, skins = {} }
+    locked = true
+    NS.PlayerSpellsSkin.AttachWindowControls(cold, "spells")
+    Expect(cold.TalentsFrame.surfaceSpec and not cold.surfaceSpec and not cold.SpellBookFrame.surfaceSpec,
+        "first combat opening skipped safe talent chrome or wrote a protected shell")
+    locked = false
+    NS.PlayerSpellsSkin.Disable(cold, "spells")
+    _G.PlayerSpellsFrame, NS.DB = previousSpells, previousDB
     NS.WindowControls.Attach = attachControls
     NS.WindowControls.DisableOwner = releaseControls
     NS.Theme.GetColor = getColor
     Expect(Near(label.color[1], 1) and Near(label.color[2], 0.82),
         "a tab refresh recaptured our own color as the native one")
+end)
+
+Section("prepared Forever spells window combat artwork", function()
+    local oldClient, oldCosmetics, oldGetSurface = NS.Client, NS.Cosmetics, NS.Registry.GetSurface
+    local oldLockdown = InCombatLockdown
+    NS.Client = { isForever = true }
+    InCombatLockdown = function() return locked end
+    assert(loadfile(skin .. "Core/Cosmetics.lua"))("MSUF_Suite_Skin", NS)
+    Load("PlayerSpells.lua")
+    local writes = 0
+    local function Art()
+        return { alpha = 1, GetAlpha = function(self) return self.alpha end,
+            SetAlpha = function(self, value) self.alpha = value; writes = writes + 1 end }
+    end
+    local spells, book, talents = Frame("PlayerSpellsFrame"), Frame(nil), Frame(nil)
+    spells.SpellBookFrame, spells.TalentsFrame = book, talents
+    spells.shown, book.shown, talents.shown = false, true, false
+    for _, frame in ipairs({ spells, book, talents }) do
+        function frame:IsShown() return self.shown end
+        function frame:IsProtected() return true, false end
+    end
+    function spells:HookScript(_, callback) self.onShow = callback end
+    book.BookBGHalved, book.BookBGLeft = Art(), Art()
+    talents.ClassBackground, talents.BackgroundBorder = Art(), Art()
+    local shell = { fill = { IsShown = function() return true end } }
+    NS.Registry.GetSurface = function(target)
+        if target == spells and spells.surfaceSpec then return shell end
+    end
+    NS.PlayerSpellsSkin.Apply(spells, "prepared-spells")
+    Expect(talents.ClassBackground.alpha == 0 and talents.BackgroundBorder.alpha == 0,
+        "Forever talent backdrop covered the prepared surface")
+
+    book.BookBGHalved.alpha = 1
+    book.BookBGLeft.alpha = 1
+    function book.BookBGLeft:IsProtected() return true, true end
+    spells.shown, locked = true, true
+    local attaches = counters.attach
+    NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    Expect(book.BookBGHalved.alpha == 1, "spell-data update traversed prepared chrome")
+    spells.onShow(spells)
+    Expect(book.BookBGHalved.alpha == 0 and book.BookBGLeft.alpha == 1,
+        "combat reopening did not repair safe spellbook artwork or touched a protected region")
+    local painted = writes
+    spells.onShow(spells)
+    Expect(writes == painted, "unchanged combat artwork performed another write")
+    talents.ClassBackground.alpha = 1
+    book.shown, talents.shown = false, true
+    local applyButton, applyPasses = NS.ControlSkin.ApplyButton, 0
+    talents.ApplyButton = Frame(nil)
+    NS.ControlSkin.ApplyButton = function()
+        applyPasses = applyPasses + 1
+        return {}
+    end
+    NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+    NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+    NS.ControlSkin.ApplyButton = applyButton
+    Expect(talents.ClassBackground.alpha == 0 and counters.attach == attaches,
+        "combat tab selection did not repair the prepared artwork without reattaching")
+    Expect(applyPasses == 1, "unchanged combat talent controls repainted or stayed native")
+
+    local vertexWrites = 0
+    local function VertexArt()
+        return { a = 1, GetVertexColor = function(self) return 1, 1, 1, self.a end,
+            SetVertexColor = function(self, _, _, _, alpha) self.a = alpha; vertexWrites = vertexWrites + 1 end }
+    end
+    local header, row, button = Frame(nil), Frame(nil), Frame(nil)
+    header.Backplate, header.Border, header.Text = VertexArt(), VertexArt(), Text(0.4, 0.2, 0.1)
+    row.Backplate, row.Button = VertexArt(), button
+    row.TextContainer = { Name = Text(0.4, 0.2, 0.1), SubName = Text(0.4, 0.2, 0.1) }
+    button.Border = VertexArt()
+    function button:IsProtected() return true, true end
+    local displayed = { header, row }
+    local pageReads = 0
+    book.PagedSpellsFrame = { GetFrames = function() pageReads = pageReads + 1; return displayed end }
+    book.shown, talents.shown = true, false
+    NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    Expect(header.Backplate.a == 0 and header.Border.a == 0 and row.Backplate.a == 0,
+        "pooled spellbook rows or header kept their native combat art")
+    Expect(row.TextContainer.Name.color[1] == NS.Theme.GetColor("text")
+        and row.TextContainer.SubName.color[1] == NS.Theme.GetColor("muted"),
+        "pooled spell labels waited until combat ended")
+    Expect(not button.surfaceSpec and button.Border.a == 0,
+        "spellbook combat paint touched the protected cast button or missed its safe border")
+    local vertexPaints = vertexWrites
+    NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    Expect(vertexWrites == vertexPaints, "unchanged spellbook rows repeated vertex writes")
+    local visiblePageReads = pageReads
+    function book:IsVisible() return false end
+    NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
+    Expect(pageReads == visiblePageReads, "hidden spellbook rows were visited during combat")
+
+    locked = false
+    NS.PlayerSpellsSkin.Disable(spells, "prepared-spells")
+    spells.shown, book.shown, talents.shown = false, false, false
+    NS.ControlSkin.ApplyButton = function()
+        applyPasses = applyPasses + 1
+        return {}
+    end
+    NS.PlayerSpellsSkin.Apply(spells, "prepared-spells")
+    spells.shown, talents.shown, locked = true, true, true
+    NS.PlayerSpellsSkin:OnFrameTabSet(spells)
+    Expect(applyPasses == 2, "re-enabled talent controls retained stale skin ownership")
+    NS.ControlSkin.ApplyButton = applyButton
+    locked = false
+    NS.PlayerSpellsSkin.Disable(spells, "prepared-spells")
+    local oldSpells, oldDB = PlayerSpellsFrame, NS.DB
+    local cold = Frame("PlayerSpellsFrame")
+    cold.TalentsFrame, cold.Bg = Frame(nil), Art()
+    cold.NineSlice = Frame(nil)
+    cold.NineSlice.TopEdge = Art()
+    cold.TitleContainer = { TitleText = Text(0.4, 0.2, 0.1) }
+    function cold:IsProtected() return true, false end
+    function cold:IsShown() return true end
+    function cold.TalentsFrame:IsShown() return true end
+    function cold:HookScript() end
+    PlayerSpellsFrame, NS.DB, locked = cold, { enabled = true, skins = {} }, true
+    NS.PlayerSpellsSkin.AttachWindowControls(cold, "prepared-spells")
+    Expect(cold.TalentsFrame.surfaceSpec and not cold.surfaceSpec
+        and cold.Bg.alpha == 1 and cold.NineSlice.TopEdge.alpha == 1
+        and cold.TitleContainer.TitleText.color[1] == NS.Theme.GetColor("title"),
+        "cold protected talent root lost its shell, safe title styling or protection")
+    locked = false
+    NS.PlayerSpellsSkin.Disable(cold, "prepared-spells")
+    PlayerSpellsFrame, NS.DB = oldSpells, oldDB
+    NS.Client, NS.Cosmetics, NS.Registry.GetSurface = oldClient, oldCosmetics, oldGetSurface
+    InCombatLockdown = oldLockdown
 end)
 
 Section("edit mode and game menu pools", function()
@@ -3471,6 +3636,15 @@ Section("hidden windows defer cosmetic work until visible", function()
     collectgarbage("collect")
     Expect(retained[1] == nil, "catalog retained a frame pass's scratch metrics")
     _G.PVEFrame, _G.GroupFinderFrame, NS.ControlSkin.ApplyButton = oldPVE, oldNavigation, oldButton
+end)
+
+Section("map canvas chrome", function()
+    for _, name in ipairs({ "FlightMapFrame", "BattlefieldMapFrame", "TaxiFrame" }) do
+        local entry = NS.BlizzardCatalog.FindByFrame(name)
+        local mode = entry.frameModes and entry.frameModes[name] or entry.mode
+        Expect(type(mode) == "table" and mode.preserveRootArt == true and mode.fillVisible == false,
+            name .. " covers the native map canvas with a full window fill")
+    end
 end)
 
 Section("native chat configuration", function()

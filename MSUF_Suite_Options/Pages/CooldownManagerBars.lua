@@ -394,10 +394,18 @@ function Page.ResetModule()
         return S.Reset(ID) == true
     end)
 end
+function Page.SetBarEnabled(slot, enabled)
+    local key = KEYS[slot].on
+    if enabled and not P.Get(ID, "enabled") then
+        return P.SetMany(ID, { enabled = true, [key] = true })
+    end
+    return P.Set(ID, key, enabled)
+end
+
 function Page.EnableBar(slot)
     if P.Combat() or not Page.SlotInfo(slot).custom then return false end
     Page.CommitFocus()
-    local ok = P.Set(ID, KEYS[slot].on, true)
+    local ok = Page.SetBarEnabled(slot, true)
     if ok then
         Page.selected = slot
         Page.ClosePopups()
@@ -475,9 +483,9 @@ local function BarPicked(value)
     if from then
         Page.CopyBarSettings(from, slot)
     elseif value == "show" then
-        if Page.SlotInfo(slot).custom then Page.EnableBar(slot) else P.Set(ID, KEYS[slot].on, true) end
+        if Page.SlotInfo(slot).custom then Page.EnableBar(slot) else Page.SetBarEnabled(slot, true) end
     elseif value == "hide" then
-        P.Set(ID, KEYS[slot].on, false)
+        Page.SetBarEnabled(slot, false)
     elseif value == "rename" then
         Page.Select(slot)
         Page.FocusName()
@@ -494,7 +502,8 @@ local RESET_TIP =
 function Page.OpenBarMenu(owner, slot)
     slot = slot or Page.selected
     if P.Combat() or not (W.OpenDropdown and owner and KEYS[slot]) then return false end
-    local custom, on = Page.SlotInfo(slot).custom, Page.IsOn(slot)
+    local custom = Page.SlotInfo(slot).custom
+    local on = P.Get(ID, "enabled") and Page.IsOn(slot)
     local n = 1
     MenuItem(n, on and "hide" or "show", on and "Hide this bar" or "Show this bar")
     if custom then
@@ -503,7 +512,7 @@ function Page.OpenBarMenu(owner, slot)
     end
     n = n + 1
     local move = MenuItem(n, "move", "Move on screen")
-    move.disabled = not (on and Page.Movable(slot) and P.Get(ID, "enabled"))
+    move.disabled = not (on and Page.Movable(slot))
     if move.disabled then move.tooltip = Tr(on and "This bar cannot be moved on its own right now." or "Show this bar first.") end
     n = n + 1
     local free = P.Get(ID, KEYS[slot].anchor) == FREE and RULES[KEYS[slot].anchor].default == FREE

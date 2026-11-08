@@ -33,7 +33,11 @@ assert(loadfile(root .. "/MSUF_Suite_Skin/Core/DefaultsLooks.lua"))("MSUF_Suite_
 skin.DB = skin.CopyValue(skin.Defaults)
 skin.Surface = { Attach = function(frame) return frame end }
 skin.Surface.SkinOwnedButton = skin.Surface.Attach
+assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Theme.lua"))("MSUF_Suite_Skin", skin)
+local ScrollTheme = skin.Theme
 skin.Theme = {
+    GetScrollBehavior = ScrollTheme.GetScrollBehavior,
+    SetScrollBehavior = ScrollTheme.SetScrollBehavior,
     GetColor = function(key) return unpack(skin.DB.theme.colors[key]) end,
     GetColorTable = function(key) return skin.DB.theme.colors[key] end,
     ApplyLook = function(key) skin.DB.theme.look = key; return true end,
@@ -65,7 +69,7 @@ skin.CharacterDetails = {
 }
 skin.CharacterStats = { SetOption = function(key, value) skin.DB.characterStats[key] = value; return true end,
     RefreshFonts = Noop }
-skin.Registry = { NotifyListeners = Noop, RefreshAll = Noop }
+skin.Registry = { NotifyListeners = Noop, RefreshAll = Noop, QueueRefresh = Noop }
 skin.Database = {
     GetProfileNames = function() return { "Default" } end,
     GetActiveProfileName = function() return "Default" end,
@@ -209,6 +213,29 @@ do
     end
     Check(help and help:find("only in Retail", 1, true), "the Forever section does not say it is Retail only")
     Suite.Client.modernEquipment = retail
+end
+
+------------------------------------------------------------------ Scroll behavior and its independent bounce toggle
+do
+    local ctx = BuildSkinPage()
+    local controls = {}
+    for _, widget in ipairs(ControlsOf(ctx, "suite_skin_shape")) do
+        if widget.row then controls[widget.row.id] = widget end
+    end
+    local mode, bounce = controls["theme.smoothScrolling"], controls["theme.scrollEdgeBounce"]
+    Check(mode and mode.rowKind == "dropdown" and mode.get() == "smooth", "default scroll behavior missing")
+    Check(bounce and bounce.enabled == false, "bounce is actionable outside adaptive mode")
+    mode.set("native")
+    Check(mode.get() == "native" and skin.DB.theme.smoothScrolling == false, "native scroll mode was not saved")
+    mode.set("adaptive")
+    for _, refresh in ipairs(ctx.refreshers) do refresh() end
+    Check(mode.get() == "adaptive" and skin.DB.theme.smoothScrolling == true and bounce.enabled,
+        "adaptive scroll mode did not enable smoothing and its bounce control")
+    bounce.set(false)
+    Check(bounce.get() == false and mode.get() == "adaptive", "bounce toggle changed scroll behavior")
+    local reset = rawget(SectionOf(ctx, "suite_skin_shape"), "_msufSuiteSectionReset")
+    Check(reset() and mode.get() == "smooth" and bounce.get() == true,
+        "appearance section reset did not restore scroll defaults")
 end
 
 ------------------------------------------------------------------ Fonts: section reset and status

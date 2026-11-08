@@ -51,6 +51,7 @@ EXTRA = {
     "suite_cdm_group_buffs_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_self_target_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_native_data_refresh_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_cdm_usability_runtime_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_glimmer_default_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_cdm_replacement_aura_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_menu_geometry_contract.lua": [[flavor, str(MSUF_70)] for flavor in FLAVORS],

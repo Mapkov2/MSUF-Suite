@@ -840,7 +840,7 @@ local entries = {
         category = "map",
         addon = "Blizzard_FlightMap",
         frames = { "FlightMapFrame" },
-        mode = "map",
+        mode = semanticChromeMode,
     },
     {
         id = "adventure-map-dialog",
@@ -1994,7 +1994,7 @@ local homogeneousGlassKinds = {
     {
         kind = "semantic-chrome",
         ids = {
-            "battlefield-map", "anima-diversion",
+            "flight-map", "battlefield-map", "anima-diversion",
         },
     },
     {

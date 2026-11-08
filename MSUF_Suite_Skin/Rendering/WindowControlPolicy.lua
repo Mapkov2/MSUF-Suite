@@ -61,6 +61,26 @@ function Policy.CanControl(frame)
     return Policy.CanChangeGeometry(frame)
 end
 
+function Policy.HasManagedVisibility(state)
+    if state.panel or UIPanelWindows[state.name] then return true end
+    local area = Safety.Call(state.frame, "GetAttribute", "UIPanelLayout-area")
+    return not Safety.Public(area) or area ~= nil
+end
+
+function Policy.CanChangeVisibility(state)
+    local managed = Policy.HasManagedVisibility(state)
+    return (not managed or not NS.IsCombatLocked()) and Policy.CanChangeGeometry(state.frame), managed
+end
+
+-- Forever rebuilds native map overlays and pins when the player opens the
+-- map during an encounter. Leave that layout to Blizzard until combat ends.
+function Policy.DeferMapLayout(state)
+    if state.name == "WorldMapFrame" and NS.Client.isForever and NS.IsCombatLocked() then
+        NS.CombatGate.RunOrDefer(state.replayKey, state.replayShow)
+        return true
+    end
+end
+
 local focusCompanions = {
     OpenMailFrame = true, WorldMapFrame = true,
     BattleNetInviteFrame = true, AddFriendFrame = true, AuctionHouseMultisellProgressFrame = true,
@@ -101,7 +121,13 @@ local function IdentifyWindow(frame, focus)
     local entry = NS.BlizzardCatalog.FindByFrame(name)
     local standalone = specialPanels[name] or inventoryRoots[name] or companion
     local panel = UIPanelWindows[name]
-    if not (entry or standalone) or not (panel or standalone) then return nil end
+    if not (entry or standalone) then return nil end
+    -- A catalogued, named top-level window can own its own visibility instead
+    -- of registering with UIPanelWindows. Require a native caption on that path.
+    if not (panel or standalone) then
+        local close = Safety.Field(frame, "ClosePanelButton") or Safety.Field(frame, "CloseButton")
+        if frame ~= Safety.Field(_G, name) or Safety.Read(close, "GetObjectType") ~= "Button" then return nil end
+    end
     if panel and panel.area == "full" and not (focus and name == "WorldMapFrame") then return nil end
     if entry and excludedCategories[entry.category] and not standalone then return nil end
     local parent = Safety.Read(frame, "GetParent")

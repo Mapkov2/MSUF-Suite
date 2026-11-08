@@ -208,16 +208,136 @@ local function Enabled()
     return db and db.enabled and db.theme.smoothScrolling ~= false and db.theme.reduceMotion ~= true
 end
 
+-- GetScrollInterpolator creates one when absent. Read the verified native
+-- storage slot instead so an idle/unused controller allocates nothing.
+local function ExistingInterpolator(target)
+    local interpolator = Safety.Field(target, "interpolator")
+    if Safety.Public(interpolator) and type(interpolator) == "table" then return interpolator end
+end
+
 local function Cancel(target, snap)
     if Safety.IsForbidden(target) then return end
-    -- GetScrollInterpolator creates one when absent. Read the verified native
-    -- storage slot instead so an idle/unused controller allocates nothing.
-    local interpolator = Safety.Field(target, "interpolator")
-    if not Safety.Public(interpolator) or type(interpolator) ~= "table" then return end
+    local interpolator = ExistingInterpolator(target)
+    if not interpolator then return end
     local destination = Safety.Read(interpolator, "GetInterpolateTo")
     Safety.Invoke(interpolator, "Cancel")
     if snap and type(destination) == "number" and Safe(target) then
         target:SetScrollPercentage(math.max(0, math.min(1, destination)), true)
+    end
+end
+
+-- Only these two native lists opt in. The Settings ScrollBox is shared by
+-- all vertical settings categories, so the category is checked on input.
+local Adaptive = {}
+
+function Adaptive.Reset(state)
+    local wheel = state.wheel
+    if not wheel then return end
+    wheel.sampleAt, wheel.lastAt, wheel.bounceAt = nil, nil, nil
+    wheel.activity, wheel.direction = 0, nil
+    if wheel.group then wheel.group:Stop() end
+end
+
+local function AdaptiveEnabled(state)
+    return state.captured and visible[state.target] ~= nil and not state.dragging
+        and Enabled() and NS.DB.theme.adaptiveScrolling == true and not NS.IsCombatLocked()
+end
+
+local function NativeWheelStep(target, step, direction)
+    local state = ScrollMotion.states[target]
+    if not AdaptiveEnabled(state) then return end
+    if not Safety.Public(step) or not Safety.Public(direction)
+        or type(step) ~= "number" or step <= 0 or (direction ~= 1 and direction ~= -1) then return end
+    local wheel = state.wheel
+    wheel.sampleAt, wheel.sampleDirection, wheel.step = GetTime(), direction, step
+end
+
+local function KeybindingsActive(panel)
+    local category = Safety.Read(panel, "GetCurrentCategory")
+    local keybindingsID = Safety.Field(Settings, "KEYBINDINGS_CATEGORY_ID")
+    return Safety.Public(keybindingsID) and keybindingsID ~= nil
+        and Safety.Read(category, "GetID") == keybindingsID
+        and Safety.Read(KeybindListener, "IsListening") == false
+end
+
+local function WheelGain(wheel, direction, now)
+    local activity = 0
+    if wheel.direction == direction and wheel.lastAt then
+        -- 160 ms or more gives the base step. At 40 ms the logarithmic
+        -- multiplier approaches 3x, with each further notch adding less.
+        local proximity = math.max(0, math.min(1, (0.160 - (now - wheel.lastAt)) / 0.120))
+        activity = proximity * (1 + 0.5 * wheel.activity)
+    end
+    wheel.activity, wheel.direction, wheel.lastAt = activity, direction, now
+    return 1 + 2 * math.log(1 + activity) / math.log(3)
+end
+
+local function Bounce(target, wheel, direction, now)
+    if NS.DB.theme.scrollEdgeBounce == false or (wheel.bounceAt and now - wheel.bounceAt < 0.25) then return end
+    local child = Safety.Read(target, "GetScrollTarget")
+    if not Safety.CanCreateRegions(child) then return end
+    if wheel.child ~= child then
+        if wheel.group then wheel.group:Stop() end
+        local group = child:CreateAnimationGroup()
+        local push, settle = group:CreateAnimation("Translation"), group:CreateAnimation("Translation")
+        push:SetOrder(1)
+        push:SetDuration(0.04)
+        push:SetSmoothing("OUT")
+        settle:SetOrder(2)
+        settle:SetDuration(0.08)
+        settle:SetSmoothing("IN_OUT")
+        wheel.child, wheel.group, wheel.push, wheel.settle = child, group, push, settle
+    end
+    wheel.bounceAt = now
+    wheel.push:SetOffset(0, 5 * direction)
+    wheel.settle:SetOffset(0, -5 * direction)
+    wheel.group:Play()
+end
+
+local function OnWheel(target, delta)
+    local state = ScrollMotion.states[target]
+    local wheel = state.wheel
+    local sampleAt = wheel.sampleAt
+    wheel.sampleAt = nil
+    if not AdaptiveEnabled(state) or not Safe(target) or not Safety.Public(delta)
+        or type(delta) ~= "number" or delta == 0 then return end
+    if wheel.panel and not KeybindingsActive(wheel.panel) then Adaptive.Reset(state) return end
+    local now, direction = GetTime(), delta < 0 and 1 or -1
+    -- SettingsPanel can consume the wheel without calling ScrollInDirection,
+    -- including an assignment that finishes within the same OnMouseWheel.
+    if sampleAt ~= now or wheel.sampleDirection ~= direction
+        or Safety.Read(target, "IsScrollAllowed") ~= true
+        or Safety.Read(target, "HasScrollableExtent") ~= true then return end
+    local position = Safety.Read(target, "GetScrollPercentage")
+    if type(position) ~= "number" then return end
+    local destination = Safety.Read(ExistingInterpolator(target), "GetInterpolateTo")
+    local reversing = wheel.direction ~= nil and wheel.direction ~= direction
+    if reversing then Adaptive.Reset(state) end
+    local gain = WheelGain(wheel, direction, now)
+    local edge = direction == 1 and 1 or 0
+    if math.abs(position - edge) <= 0.00001 then
+        if reversing and type(destination) == "number" and destination ~= edge then Cancel(target, false) end
+        Bounce(target, wheel, direction, now)
+        return
+    end
+    if gain == 1 or type(destination) ~= "number" or (destination - position) * direction <= 0 then return end
+    local accelerated = math.max(0, math.min(1, destination + direction * wheel.step * (gain - 1)))
+    if accelerated ~= destination then target:SetScrollPercentage(accelerated) end
+end
+
+function Adaptive.Bind(state)
+    local target = state.target
+    local panel = SettingsPanel
+    local list = Safety.Field(Safety.Field(panel, "Container"), "SettingsList")
+    local isSettings = target == Safety.Field(list, "ScrollBox")
+    if not isSettings and target ~= Safety.Field(AddonList, "ScrollBox") then return end
+    if not Safety.HasMethod(target, "ScrollInDirection") then return end
+    state.wheel = { panel = isSettings and panel or nil }
+    target:HookScript("OnMouseWheel", Safety.Isolated(OnWheel))
+    hooksecurefunc(target, "ScrollInDirection", Safety.Isolated(NativeWheelStep))
+    if isSettings then
+        Safety.Invoke(EventRegistry, "RegisterCallback", "KeybindListener.StartedListening", Adaptive.Reset, state)
+        Safety.Invoke(EventRegistry, "RegisterCallback", "KeybindListener.StoppedListening", Adaptive.Reset, state)
     end
 end
 
@@ -231,7 +351,10 @@ end
 local function CancelPartner(target)
     local partner = Partner(target)
     local state = partner and ScrollMotion.states[partner]
-    if state and state.captured then Cancel(partner, false) end
+    if state and state.captured then
+        if state.wheel then Adaptive.Reset(state) end
+        Cancel(partner, false)
+    end
 end
 
 local function Interpolating(target)
@@ -240,6 +363,7 @@ local function Interpolating(target)
 end
 
 local function LayoutChanged(state)
+    Adaptive.Reset(state)
     if state.captured then
         Cancel(state.target, false)
         CancelPartner(state.target)
@@ -260,11 +384,13 @@ end
 local function FlagChanged(target)
     local state = ScrollMotion.states[target]
     if state and not state.writing then
+        Adaptive.Reset(state)
         state.captured, state.pending = false, false
         visible[target], pendingRestore[target], pendingPause[target] = nil, nil, nil
         local partner = Partner(target)
         local paired = partner and ScrollMotion.states[partner]
         if paired then
+            Adaptive.Reset(paired)
             paired.captured, paired.pending = false, false
             visible[partner], pendingRestore[partner], pendingPause[partner] = nil, nil, nil
         end
@@ -300,6 +426,7 @@ local function Update(state, enabled)
 end
 
 local function Restore(state)
+    Adaptive.Reset(state)
     if not state.captured then state.pending = false pendingRestore[state.target] = nil return end
     local target = state.target
     if not Safe(target) then
@@ -318,6 +445,7 @@ end
 local function Hidden(target)
     visible[target] = nil
     local state = ScrollMotion.states[target]
+    if state then Adaptive.Reset(state) end
     if state and state.captured and next(state.leases) then
         if not Update(state, false) then
             Cancel(target, false)
@@ -336,12 +464,14 @@ end
 local function ThumbDown(state, button)
     if not Safety.Public(button) or button ~= "LeftButton" or not state.captured then return end
     state.dragging = true
+    Adaptive.Reset(state)
     Cancel(state.target, false)
     Update(state)
     local partner = Partner(state.target)
     local paired = partner and ScrollMotion.states[partner]
     if paired and paired.captured then
         paired.dragging = true
+        Adaptive.Reset(paired)
         Cancel(paired.target, false)
         Update(paired)
     end
@@ -395,6 +525,7 @@ local function AddController(lease, target)
     if not state then
         state = { target = target, leases = {} }
         ScrollMotion.states[target] = state
+        Adaptive.Bind(state)
         target:HookScript("OnHide", Safety.Isolated(Hidden))
         target:HookScript("OnShow", Safety.Isolated(Shown))
         hooksecurefunc(target, "SetInterpolateScroll", Safety.Isolated(FlagChanged))
@@ -496,6 +627,10 @@ local function Refresh(_, domain, key)
     local enabled = Enabled() == true
     local edge = domain == "PLAYER_REGEN_DISABLED" or domain == "PLAYER_REGEN_ENABLED"
     for _, state in pairs(edge and visible or ScrollMotion.states) do
+        if domain == "PLAYER_REGEN_DISABLED" or domain == "profile" or domain == "theme"
+            or domain == "motion" and (acquire or key == "scrollEdgeBounce") then
+            Adaptive.Reset(state)
+        end
         if acquire and not state.captured and next(state.leases) and Safe(state.target) then
             Capture(state)
             SyncVisible(state)

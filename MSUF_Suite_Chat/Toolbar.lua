@@ -168,7 +168,7 @@ function C.ToolbarWrap(config, frame)
 end
 
 function C.LayoutToolbarDock()
-    if M.toolbarLayingOut or not M.active or not M.config.headerToolbar or NS.InCombat() then return end
+    if M.toolbarLayingOut or not M.active or not M.config.headerToolbar or C.LayoutLocked() then return end
     local dock, c = GENERAL_CHAT_DOCK, M.config
     if C.ToolbarWrap(c, ChatFrame1) then
         if M.toolbarDockOwned then

@@ -17,7 +17,7 @@ local KIND = K.KIND
 local Finite, Clamp = S.Finite, K.Clamp
 local Dispatch = S.Dispatch
 local Cold = C.Cold
-local ceil = math.ceil
+local ceil, min, max = math.ceil, math.min, math.max
 local wipe = C.wipe
 
 ------------------------------------------------------------------ bar and picker rows
@@ -350,7 +350,39 @@ local function Control(id, key)
         set = function(value) return S.Set(ID, key, value) end }
 end
 local ICON_CONTROLS, BAR_CONTROLS = { "size", "spacing", "perRow" }, { "barWidth", "barHeight" }
--- Free bars move in MSUF Edit Mode; attached bars follow their parent.
+-- A direct drag of either member of the Essential/Utility pair leaves
+-- the other at its screen position. An attached child absorbs its parent's
+-- movement into its own offset, so the attachment remains usable.
+local PAIRED = { ess = "uti", uti = "ess" }
+local function PairAxis(key, childKey, value, saved)
+    local rules = S.catalog[ID].rules
+    local rule, childRule = rules[key], rules[childKey]
+    local start, childStart = saved[key], saved[childKey]
+    local lower = max(rule.min, start + childStart - childRule.max)
+    local upper = min(rule.max, start + childStart - childRule.min)
+    local position = max(lower, min(upper, Clamp(key, value)))
+    local snap = C.Layout.Snap
+    local delta = snap(position) - snap(start)
+    return position, delta == 0 and childStart or Clamp(childKey, snap(childStart) - delta)
+end
+
+local function MovePair(slot, child, x, y, request)
+    local view = C.views[child]
+    local layout = C.Layout
+    if not (S.editMode and view and view.on and C.plans[child] and C.bars[child]) then return nil end
+    local parent = layout.Parent(child)
+    while parent and parent ~= slot do parent = layout.Parent(parent) end
+    if not parent then return nil end
+    local keys, childKeys = KEYS[slot], KEYS[child]
+    local childX, childY
+    x, childX = PairAxis(keys.x, childKeys.x, x, request.state.values)
+    y, childY = PairAxis(keys.y, childKeys.y, y, request.state.values)
+    if request.phase == "commit" then
+        return S.CommitEditPosition(ID, { [keys.x] = x, [keys.y] = y, [childKeys.x] = childX, [childKeys.y] = childY })
+    end
+    return layout.DragPlace(slot, x, y) and layout.DragPlace(child, childX, childY)
+end
+
 local function Mover(i, timer)
     local def = SLOTS[i]
     local slot, keys = def.key, KEYS[def.key]
@@ -363,7 +395,13 @@ local function Mover(i, timer)
             history[#history + 1] = key
         end
     end
+    local child = PAIRED[slot]
+    if child then
+        local childKeys = KEYS[child]
+        history[#history + 1], history[#history + 2] = childKeys.x, childKeys.y
+    end
     return { timer = timer, label = def.title, order = 700 + i, xKey = keys.x, yKey = keys.y, extraControls = controls, historyKeys = history,
+        move = child and function(x, y, request) return MovePair(slot, child, x, y, request) end or nil,
         getFrame = function()
             local bar = C.bars[slot]
             return bar and bar.frame

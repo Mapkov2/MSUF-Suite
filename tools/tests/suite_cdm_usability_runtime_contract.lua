@@ -1,9 +1,12 @@
 local root = assert(arg[1], "repository root required")
+local flavor = arg[2] or "Mainline"
+assert(flavor == "Mainline" or flavor == "Forever")
 -- Usability changes exercise the real controller, event map, movers and
 -- pooled preview frames, including zero writes on an unchanged repaint.
 dofile(root .. "/tools/tests/suite_bh3_state_support.lua").Run("suite_cooldown_manager_contract.lua", [=[
 do (function()
 local CDM, KEYS = Suite.CDM, Suite.CDM.KEYS
+Suite.Client.isForever = arg[2] == "Forever"
 local config = S.Config(ID)
 module.config, module.context, module.active = config, S.NewContext(ID), true
 SecureCmdOptionParse = Evaluate
@@ -18,6 +21,79 @@ local function Controls(slot)
 end
 assert(Controls("bar").barWidth and Controls("bar").barHeight and not Controls("bar").size,
     "Buff bars need timer dimensions in Edit Mode")
+
+do
+    local FREE = CDM.ANCHOR.FREE
+    local first, second = KEYS.ess, KEYS.uti
+    local saved = { config.ess_anchor, config.uti_anchor, config.ess_x, config.ess_y, config.uti_x, config.uti_y }
+    S.editMode = true
+    for _, parent in ipairs({ "ess", "uti" }) do
+        local child = parent == "ess" and "uti" or "ess"
+        local p, c = KEYS[parent], KEYS[child]
+        config[p.anchor], config[c.anchor] = FREE, FREE + CDM.SLOT_INDEX[parent]
+        config[p.x], config[p.y], config[c.x], config[c.y] = 100, -200, 10, -15
+        module:Refresh(); Run()
+        local mover = elements[parent]
+        local childFrame = C.bars[child].frame
+        local point, startX, startY = childFrame.point[2], childFrame.point[4], childFrame.point[5]
+        assert(point == C.bars[parent].frame and mover and elements[child], "the linked pair must have two movers")
+        local start = mover.captureState()
+        local move = { state = start, deltaX = 30, deltaY = -20, phase = "drag" }
+        assert(mover.movePosition(move))
+        assert(childFrame.point[2] == point and childFrame.point[4] == startX - 30 and childFrame.point[5] == startY + 20,
+            "dragging " .. parent .. " must leave " .. child .. " at its original screen position")
+        assert(config[c.x] == 10 and config[c.y] == -15, "drag preview wrote the linked bar's saved offset")
+        move.phase = "commit"
+        assert(mover.movePosition(move))
+        assert(config[p.x] == 130 and config[p.y] == -220 and config[c.x] == -20 and config[c.y] == 5
+            and config[c.anchor] == FREE + CDM.SLOT_INDEX[parent], "commit must persist the independent position")
+        assert(mover.restoreState(start))
+        assert(config[p.x] == 100 and config[p.y] == -200 and config[c.x] == 10 and config[c.y] == -15,
+            "undo must restore both bars' offsets")
+        module:Refresh(); Run()
+        local childMover = elements[child]
+        assert(childMover.movePosition({ state = childMover.captureState(), deltaX = -10, deltaY = 12, phase = "commit" }))
+        assert(config[p.x] == 100 and config[p.y] == -200 and config[c.x] == 0 and config[c.y] == -3,
+            "moving the attached bar must leave its parent alone")
+        config[p.x], config[c.x] = 20, -3998
+        module:Refresh(); Run()
+        start = mover.captureState()
+        assert(mover.movePosition({ state = start, deltaX = 40, phase = "commit" }))
+        assert(config[p.x] == 22 and config[c.x] == -4000,
+            "the parent must stop before it forces its attached bar to move at the offset limit")
+    end
+    local defAnchor = config.def_anchor
+    config.ess_anchor, config.def_anchor, config.uti_anchor = FREE, FREE + CDM.SLOT_INDEX.ess, FREE + CDM.SLOT_INDEX.def
+    config.ess_x, config.uti_x = 100, 10
+    module:Refresh(); Run()
+    assert(elements.ess.movePosition({ state = elements.ess.captureState(), deltaX = 30, phase = "commit" }))
+    assert(config.ess_x == 130 and config.uti_x == -20 and config.uti_anchor == FREE + CDM.SLOT_INDEX.def,
+        "a move through a shared anchor chain must still hold the other bar")
+    config.def_anchor, config.uti_anchor = defAnchor, FREE + CDM.SLOT_INDEX.ess
+    config.ess_x, config.uti_x = 100, 10
+    local height = physical[2]
+    physical[2] = 864
+    local unit = C.Layout.InvalidateScale()
+    assert(unit < 1, "fixture must exercise fractional pixel scaling")
+    module:Refresh(); Run()
+    local parentFrame, childFrame = C.bars.ess.frame, C.bars.uti.frame
+    local before = parentFrame.point[4] + childFrame.point[4]
+    local mover = elements.ess
+    local move = { state = mover.captureState(), deltaX = 30.4, phase = "drag" }
+    assert(mover.movePosition(move))
+    local parentX, childX = parentFrame.point[4], childFrame.point[4]
+    assert(math.abs(parentX + childX - before) <= unit + 0.00001, "pixel snapping moved the held bar")
+    move.phase = "commit"
+    assert(mover.movePosition(move))
+    module:Refresh(); Run()
+    assert(parentFrame.point[4] == parentX and childFrame.point[4] == childX,
+        "fractional-scale preview must match the saved drag position")
+    physical[2] = height
+    C.Layout.InvalidateScale()
+    config[first.anchor], config[second.anchor], config[first.x], config[first.y], config[second.x], config[second.y] = unpack(saved)
+    S.editMode = false
+    module:Refresh(); Run()
+end
 config.c1_kind, config.c1_on = CDM.KIND.AURA_BAR, true
 module:Refresh(); Run(); module:RegisterMovers()
 assert(Controls("c1").barWidth and not Controls("c1").size, "custom buff bars need timer dimensions")
@@ -161,6 +237,6 @@ S.CooldownManagerSetPreview(false)
 Widget.SetText = setText
 module.active = false
 module:Disable()
-print("suite_cdm_usability_runtime_contract: timer popups, assisted icon rules and pooled bar labels passed")
+print("suite_cdm_usability_runtime_contract: independent bar movement, timer popups, assisted icon rules and labels passed")
 end)() end
 ]=], "------------------------------------------------------------------ enable: capture")

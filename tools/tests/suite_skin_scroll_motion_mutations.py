@@ -41,6 +41,10 @@ MUTANTS = (
      "local function ThumbDown(state, _, button)"),
     ("native mouse-up payload", "local function ThumbUp(state, button)",
      "local function ThumbUp(state, _, button)"),
+    ("logarithmic wheel gain", "2 * math.log(1 + activity) / math.log(3)", "activity"),
+    ("keybind capture completion", '"KeybindListener.StoppedListening", Adaptive.Reset, state',
+     '"KeybindListener.Missing", Adaptive.Reset, state'),
+    ("independent edge bounce", "NS.DB.theme.scrollEdgeBounce == false or", "false or"),
 )
 
 

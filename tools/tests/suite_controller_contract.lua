@@ -285,7 +285,10 @@ assert(#reported == 1 and texts.starts == textStarts + 1 and S.states.dataTexts.
     and S.Status("minimap") == "Stopped after an error",
     "a failing module stopped the modules after it")
 module.Enable = function(self) self.starts = self.starts + 1 end
-assert(S.Set("minimap", "enabled", true) and module.active)
+local activeRefreshes = texts.refreshes
+S.RetryStartup()
+assert(module.active and S.Status("minimap") == "Active" and texts.refreshes == activeRefreshes,
+    "startup did not retry an inactive enabled module independently of active modules")
 phases = {}
 texts.Refresh = function() error("dataTexts failed") end
 S.Apply("dataTexts")

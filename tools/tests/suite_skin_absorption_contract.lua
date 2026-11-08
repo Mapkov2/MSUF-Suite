@@ -1953,6 +1953,8 @@ if simulateForever then
         content[key] = card
         cards[#cards + 1] = card
     end
+    local restoredCard = cards[1]
+    function book:Update() restoredCard.Background:SetAlpha(1) end
     _G.ProfessionsFrame = root
     namespace.DeepWindows.Apply("forever-professions-contract")
     assert(background:GetAlpha() == 0,
@@ -1963,6 +1965,23 @@ if simulateForever then
             and card.Icon:GetAlpha() == 1,
             "Forever profession book card lost the MSUF surface or native icon")
     end
+    local lockdown, applyFrame = InCombatLockdown, namespace.GenericWindows.ApplyFrame
+    local bookPasses = 0
+    namespace.GenericWindows.ApplyFrame = function(...)
+        bookPasses = bookPasses + 1
+        return applyFrame(...)
+    end
+    root:Show()
+    book:Show()
+    InCombatLockdown = function() return true end
+    book:Update()
+    assert(restoredCard.Background:GetAlpha() == 0 and bookPasses == 0,
+        "combat update left the visible profession card native or repeated a frame pass")
+    book:Hide()
+    book:Update()
+    assert(restoredCard.Background:GetAlpha() == 1 and bookPasses == 0,
+        "hidden profession overview repainted on update")
+    InCombatLockdown, namespace.GenericWindows.ApplyFrame = lockdown, applyFrame
     namespace.DeepWindows.Disable("forever-professions-contract")
     namespace.GenericWindows.Disable("forever-professions-contract")
     assert(background:GetAlpha() == 1,

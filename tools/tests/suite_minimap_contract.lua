@@ -5,6 +5,21 @@ local WIDE = "Interface\\AddOns\\MSUF_Suite_Modules\\Media\\Minimap\\Wide.tga"
 local SQUARE = "Interface\\ChatFrame\\ChatFrameBackground"
 local ROUND = "Interface\\AddOns\\MSUF_Suite_Modules\\Media\\Minimap\\Circle.tga"
 
+-- A saved map can be claimed at Forever world entry, before the first timer
+-- runs under lockdown. First-use capture still belongs to native Edit Mode.
+for _, captured in ipairs({ true, false }) do
+    local W = H.New(root, "Forever")
+    W.G.UnitAffectingCombat = function() return true end
+    W.Suite.startingBeforeLockdown = true
+    W.config.enabled, W.config.captured = true, captured
+    W.S.Start()
+    W.Suite.startingBeforeLockdown = nil
+    check((W.map:GetParent() == W.MM.clip) == captured, "combat reload claimed the wrong native minimap")
+    W.SetCombat(true)
+    W.Step()
+    check((W.map:GetParent() == W.MM.clip) == captured, "deferred claim changed ownership in lockdown")
+end
+
 -- Ownership: the map moves one frame late, capture waits for Edit Mode, Blizzard's
 -- cluster is neutralised (never hidden) and the mover replaces MSUF's adapter.
 do

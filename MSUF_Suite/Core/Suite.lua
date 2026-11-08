@@ -503,6 +503,19 @@ function S.ApplyAll()
     for i = 1, #S.order do S.Apply(S.order[i]) end
 end
 
+-- A Forever combat reload can start the controller before lockdown. Retry
+-- enabled modules that were unavailable or failed in that first pass.
+function S.RetryStartup()
+    for i = 1, #S.order do
+        local id = S.order[i]
+        local state = S.states[id]
+        if not state.active and S.Config(id).enabled then
+            state.error = nil
+            S.Apply(id)
+        end
+    end
+end
+
 -- The public setters refuse from the start of combat: the client sends
 -- PLAYER_REGEN_DISABLED while InCombatLockdown() is still false, and
 -- NS.InCombat counts that dispatch as combat. S.Apply keeps its own

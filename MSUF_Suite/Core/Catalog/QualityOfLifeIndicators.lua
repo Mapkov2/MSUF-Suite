@@ -39,6 +39,7 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     Bool("showSession", "Show session XP", true),
     Bool("showRate", "Show XP per hour", true),
     Bool("showETA", "Show time to level", true),
+    Bool("showLevelTime", "Show time played this level", false),
     Bool("hideAtMax", "Hide at maximum level", true),
     Choice("point", "Screen anchor", 2, NS.AnchorLabels),
     Number("x", "Horizontal position", 0, -4000, 4000),

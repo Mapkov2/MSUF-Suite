@@ -1,14 +1,14 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
 
--- Hold Alt to read IDs on the main tooltip. The lines join Blizzard's build
--- (TooltipLines.lua) when the tooltip opens with Alt held; pressing Alt over
--- an open tooltip, or account currency data arriving, adds them to it. Lines
--- cannot be taken out of a built tooltip, so releasing Alt leaves them until
--- the tooltip is built again.
+-- IDs join the native build, or are appended when the configured key is
+-- pressed over an open tooltip. Appended lines stay until the next build.
 local M = {}
 local Line = S.TooltipLines.Line
 local handlers = {}
+local ALWAYS = 4
+local READ_KEY = { IsAltKeyDown, IsShiftKeyDown, IsControlKeyDown }
+local KEY_MODE = { LALT = 1, RALT = 1, LSHIFT = 2, RSHIFT = 2, LCTRL = 3, RCTRL = 3 }
 -- The tooltip data that already carries the IDs, and the account lines.
 local idsFor, accountFor
 -- An account currency request is on its way (until the data arrives).
@@ -19,9 +19,11 @@ local function AddID(tooltip, label, id)
     Line(tooltip, label, tostring(math.floor(id)))
 end
 
-local function AltHeld()
-    local alt = IsAltKeyDown()
-    return S.Public(alt) and alt == true
+local function IDsWanted()
+    local mode = M.config.idModifier
+    if mode == ALWAYS then return true end
+    local held = (READ_KEY[mode] or IsAltKeyDown)()
+    return S.Public(held) and held == true
 end
 
 -- Blizzard's temporary weapon enchant buttons carry auraType "TempEnchant"
@@ -36,21 +38,21 @@ local function TempEnchant(tooltip)
 end
 
 local function Item(tooltip, data)
-    if not AltHeld() then return end
+    if not IDsWanted() then return end
     idsFor = data
     AddID(tooltip, "Item ID", data.id)
     if M.config.showTempEnchant then TempEnchant(tooltip) end
 end
 
 local function Spell(tooltip, data)
-    if not AltHeld() then return end
+    if not IDsWanted() then return end
     idsFor = data
     AddID(tooltip, "Spell ID", data.id)
     if M.config.showSpellIcon then S.TooltipLines.SpellIcon(tooltip, data) end
 end
 
 local function Quest(tooltip, data)
-    if not AltHeld() then return end
+    if not IDsWanted() then return end
     idsFor = data
     if M.config.showQuestCurrency then AddID(tooltip, "Quest ID", data.id) end
 end
@@ -62,7 +64,7 @@ end
 -- Blizzard's account character currency data, when the client has it ready.
 -- The client loads it only on request, as Blizzard's currency transfer
 -- button asks when it shows (Blizzard_CurrencyTransfer.lua): the first
--- currency tooltip with Alt held that finds it missing asks once, and
+-- currency tooltip that needs IDs and finds it missing asks once, and
 -- ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED adds the lines (AccountArrived).
 local function AccountCurrency(tooltip, id)
     local ready = C_CurrencyInfo.IsAccountCharacterCurrencyDataReady()
@@ -103,14 +105,14 @@ local function AccountLines(tooltip, data)
 end
 
 local function Currency(tooltip, data)
-    if not AltHeld() then return end
+    if not IDsWanted() then return end
     idsFor = data
     if M.config.showQuestCurrency then AddID(tooltip, "Currency ID", data.id) end
     AccountLines(tooltip, data)
 end
 
 local function Unit(tooltip, data)
-    if not AltHeld() then return end
+    if not IDsWanted() then return end
     idsFor = data
     local guid = S.PublicText(data.guid)
     if not guid or not (guid:find("^Creature%-") or guid:find("^Vehicle%-")) then return end
@@ -118,10 +120,9 @@ local function Unit(tooltip, data)
 end
 
 ------------------------------------------------------------------ open tooltips
--- MODIFIER_STATE_CHANGED(key, down): Alt pressed over a tooltip that was
--- built without it adds the IDs to it.
-local function AltPressed(_, _, key, down)
-    if down ~= 1 or key ~= "LALT" and key ~= "RALT" then return end
+-- A press over a tooltip that was built without IDs appends them.
+local function ModifierPressed(_, _, key, down)
+    if down ~= 1 or KEY_MODE[key] ~= (M.config.idModifier or 1) then return end
     local tooltip, data = S.TooltipLines.Open()
     local handler = data and handlers[data.type]
     if not handler or data == idsFor then return end
@@ -130,7 +131,7 @@ local function AltPressed(_, _, key, down)
 end
 
 -- Account character currency data that arrives while a currency tooltip is
--- open with Alt held adds the lines it waited for.
+-- open with its ID adds the lines it waited for.
 local function AccountArrived()
     requested = nil
     local tooltip, data = S.TooltipLines.Open()
@@ -140,7 +141,11 @@ local function AccountArrived()
 end
 
 local function Listen(self)
-    self.context:Event("MODIFIER_STATE_CHANGED", AltPressed)
+    if self.config.idModifier == ALWAYS then
+        self.context:RemoveEvent("MODIFIER_STATE_CHANGED")
+    else
+        self.context:Event("MODIFIER_STATE_CHANGED", ModifierPressed)
+    end
     if self.config.showAccountCurrency then
         self.context:Event("ACCOUNT_CHARACTER_CURRENCY_DATA_RECEIVED", AccountArrived)
     else

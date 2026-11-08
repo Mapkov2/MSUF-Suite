@@ -66,6 +66,23 @@ NS.Registry.AddListener({}, function() error("foreign listener failed") end)
 NS.Registry.AddListener({}, function(_, domain, key) heard[#heard + 1] = domain .. ":" .. key end)
 NS.Registry.AddListener({}, function(_, domain, key) heard[#heard + 1] = domain .. ":" .. key end)
 assert(NS.Registry.NotifyListeners("theme", "look") == true)
+do
+    local timers, calls, deferred = {}, 0, 0
+    local timer, gate, isLocked = C_Timer, NS.CombatGate, NS.IsCombatLocked
+    C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+    NS.CombatGate = { RunOrDefer = function() deferred = deferred + 1 end }
+    NS.IsCombatLocked = function() return false end
+    NS.Registry.QueueJob(function() calls = calls + 1 end)
+    NS.Registry.FlushStartupLayout()
+    assert(calls == 1, "startup did not finish queued skin work before lockdown")
+    NS.Registry.QueueJob(function() calls = calls + 1 end)
+    NS.Registry.FlushStartupLayout()
+    assert(calls == 2 and #timers == 1, "startup forgot the scheduled skin callback and armed another")
+    NS.IsCombatLocked = function() return true end
+    timers[1]()
+    assert(calls == 2 and deferred == 0, "startup queued a second skin refresh during lockdown")
+    C_Timer, NS.CombatGate, NS.IsCombatLocked = timer, gate, isLocked
+end
 assert(#heard == 2, "a failing theme listener stopped the others")
 assert(#reported == 3 and reported[3]:find("foreign listener failed", 1, true))
 
@@ -74,6 +91,50 @@ local function Reported(text)
         if reported[index]:find(text, 1, true) then return true end
     end
     return false
+end
+
+-- Only the affected native families are loaded in the unlocked reload
+-- pass. Installed-but-disabled and already loaded targets are skipped.
+do
+    local client, windows, loader = NS.Client, NS.GenericWindows, C_AddOns
+    local lock, groupFinder, enums = NS.IsCombatLocked, C_LFGList, Enum
+    local loaded = { Blizzard_Professions = true }
+    local calls = {}
+    local categories = { profession = true, group = false }
+    local style = 0
+    C_LFGList = { GetPremadeGroupFinderStyle = function() return style end }
+    Enum = { PremadeGroupFinderStyle = { Vanilla = 1 } }
+    NS.Client = {
+        isForever = true,
+        HasAddOn = function() return true end,
+        IsAddOnLoaded = function(addon) return loaded[addon] == true end,
+    }
+    NS.GenericWindows = { IsCategoryEnabled = function(name) return categories[name] end }
+    C_AddOns = { LoadAddOn = function(addon)
+        calls[#calls + 1] = addon
+        loaded[addon] = true
+    end }
+    NS.DB.skins.playerSpells, NS.DB.skins.blizzardWindows = true, true
+    NS.IsCombatLocked = function() return true end
+    Adapters.PrepareReloadWindows()
+    assert(#calls == 0, "reload preparation ran in actual lockdown")
+    NS.IsCombatLocked = function() return false end
+    Adapters.PrepareReloadWindows()
+    assert(#calls == 1 and calls[1] == "Blizzard_PlayerSpells", "reload preparation ignored a loaded or disabled window")
+    categories.group = true
+    Adapters.PrepareReloadWindows()
+    assert(#calls == 1, "a different LFG mode loaded the Vanilla window")
+    style, loaded.Blizzard_Professions = 1, nil
+    Adapters.PrepareReloadWindows()
+    assert(#calls == 3 and loaded.Blizzard_GroupFinder_VanillaStyle and loaded.Blizzard_Professions,
+        "reload preparation missed the remaining enabled windows")
+    NS.Client.isForever = false
+    loaded.Blizzard_PlayerSpells = nil
+    Adapters.PrepareReloadWindows()
+    assert(#calls == 3, "reload preparation ran on Retail")
+    NS.DB.skins.playerSpells, NS.DB.skins.blizzardWindows = nil, nil
+    NS.Client, NS.GenericWindows, C_AddOns, NS.IsCombatLocked = client, windows, loader, lock
+    C_LFGList, Enum = groupFinder, enums
 end
 
 -- The icon tree and window controls that follow an adapter's own callbacks
@@ -184,6 +245,7 @@ local function Stage(name)
 end
 local life = {
     Safety = NS.Safety,
+    Client = {},
     InitializeLocalization = function() end,
     Database = { Initialize = function() end },
     Theme = { RefreshDynamicLook = Stage("look") },
@@ -204,6 +266,7 @@ assert(table.concat(stages, ",") == "look,checkmarks,typography,adapters,api"
 -- CombatGate times its drain (about 4 ms per frame); these jobs cost nothing.
 debugprofilestop = function() return 0 end
 local locked = false
+InCombatLockdown = function() return locked end
 local gate = { Safety = NS.Safety, IsCombatLocked = function() return locked end }
 assert(loadfile(root .. "/MSUF_Suite_Skin/Core/CombatGate.lua"))("MSUF_Suite_Skin", gate)
 local gateFrame = frames[#frames]

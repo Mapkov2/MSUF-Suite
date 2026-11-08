@@ -1,6 +1,6 @@
 local _, P = ...
 -- Cooldown manager page: one home for every bar. The docked preview shows the
--- selected bar and edits its spells. Basics holds the module switch,
+-- selected bar and edits its spells. The first card holds the module switch,
 -- what applies to every bar, and the bar being edited with its name, type
 -- and actions. The sections below edit that bar through custom bar 1's
 -- rules, which Page.KeyFn maps from c1_<setting> to <selected bar>_<setting>.
@@ -74,7 +74,7 @@ do
         end
     end
 end
--- Basics: Blizzard's bars and sounds share a row, then the switches.
+-- Module settings: Blizzard's bars and sounds share a row, then the switches.
 local GENERAL_ORDER = { "blizzard", "raidEssentials", "soundChannel", "showGCD", "muteSounds", "readyGlowCombat" }
 
 ------------------------------------------------------------------ selected-bar rows
@@ -333,10 +333,25 @@ local function SkinStatus(ctx, body, y, width)
     if height > 0 then return y - height - 8 end
     return y
 end
+local function BuildBarSwitch(ctx, body, sectionId)
+    local rule = RULES[KEYS.c1.on]
+    local toggle = P.BindSectionSwitch(ctx, body, {
+        label = Tr(rule.label), displayLabel = Tr("Enable"),
+        get = function() return P.Get(ID, "enabled") == true and Page.IsOn(Page.selected) end,
+        set = function(value) return Page.SetBarEnabled(Page.selected, value == true) end,
+        meta = P.Meta(PAGE, ID, rule.key, "setting", sectionId),
+    })
+    P.GateControls(ctx, ID, { { rule = rule, widget = toggle } }, Page.KeyFn, true)
+end
+
 local function BuildSection(ctx, b, ui, spec)
     local sectionId = "suite_cooldownManager_" .. spec.id
     local own, rules = {}, {}
-    for i, suffix in ipairs(spec.suffixes) do own[i], rules[i] = RULES[KEYS.c1[suffix]], RULES[KEYS.c1[suffix]] end
+    for _, suffix in ipairs(spec.suffixes) do
+        local rule = RULES[KEYS.c1[suffix]]
+        if suffix ~= "on" then own[#own + 1] = rule end
+        rules[#rules + 1] = rule
+    end
     local shared = spec.module and P.SectionRules(ID, spec.module) or {}
     for _, rule in ipairs(shared) do rules[#rules + 1] = rule end
     local function Content(body)
@@ -382,6 +397,7 @@ local function BuildSection(ctx, b, ui, spec)
     -- (refreshers run in order), also while Basics is closed on a lazy host.
     if spec.id == "basics" then M.TrackRefresh(ctx, function() if not P.Combat() then PaintChoices() end end) end
     return P.LazySection(b, sectionId, Tr(spec.title), spec.open == true, {
+        head = spec.id == "basics" and function(body) BuildBarSwitch(ctx, body, sectionId) end or nil,
         content = Content, shell = Shell, finish = function(body, y) P.FinishBody(b, body, y) end,
     })
 end
@@ -419,7 +435,7 @@ function Page.Summary(slot)
     return text
 end
 
--- Basics, after the module actions: what applies to every bar.
+-- After the module actions: what applies to every bar.
 local function BuildGeneral(ctx, card)
     local width = max(240, (HM.GetSectionWidth(card) or 720) - 32)
     local y = min(tonumber(HM.GetSectionCursor(card)) or -80, -40)
@@ -670,14 +686,14 @@ local function Build(ctx)
     -- FixedPreviewSection releases the first builder slot from scroll flow.
     Page.BuildPreview(ctx, b, ui)
     Page.BindUndo(ui.previewUndo)
-    -- Eager: the page builds Basics and the bar list into the card below.
+    -- Eager: the page builds the general settings and bar list into this card.
     local card = P.ModuleCard(ctx, b, PAGE, ID, {
         -- Edit Mode opens on a bar it can move: the selected one, or the first.
         { "Move bars on screen", function() P.MoveOnScreen(ID, Page.MoveTarget()) end,
             function() return S.Availability(ID) and P.Get(ID, "enabled") and Page.MoveTarget() ~= nil end, key = "move" },
         { "Open Blizzard's Cooldown Settings", Page.OpenBlizzardSettings, Page.CanOpenBlizzardSettings, key = "blizzard" },
-    }, { eager = true, setEnabled = function(value)
-        if value == true then return P.SetMany(ID, { enabled = true, [Page.Key("on")] = true }) end
+    }, { eager = true, title = "Cooldown manager", setEnabled = function(value)
+        if value == true then return Page.SetBarEnabled(Page.selected, true) end
         return P.Set(ID, "enabled", false)
     end })
     -- These actions navigate, or record their own history entry (reset), so
@@ -689,7 +705,7 @@ local function Build(ctx)
     if card then
         BuildGeneral(ctx, card)
         BuildBars(ctx, b, ui, card)
-        P.AttachSectionReset(ctx, card, "Basics", function()
+        P.AttachSectionReset(ctx, card, "Cooldown manager", function()
             local rules = P.SectionRules(ID, "general")
             rules[#rules + 1] = RULES[KEYS.c1.name]
             rules[#rules + 1] = RULES[KEYS.c1.kind]

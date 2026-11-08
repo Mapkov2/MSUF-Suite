@@ -481,16 +481,34 @@ function Theme.ValidateLook(lookName)
     return true
 end
 
+local function NotifyMotion(key)
+    NS.Registry.NotifyListeners("motion", key)
+    NS.Registry.QueueRefresh()
+    return true
+end
+
+function Theme.GetScrollBehavior()
+    local theme = NS.DB.theme
+    if theme.smoothScrolling == false then return "native" end
+    return theme.adaptiveScrolling == true and "adaptive" or "smooth"
+end
+
+function Theme.SetScrollBehavior(mode)
+    if NS.IsCombatLocked() or (mode ~= "native" and mode ~= "smooth" and mode ~= "adaptive") then return false end
+    local theme = NS.DB.theme
+    theme.smoothScrolling = mode ~= "native"
+    theme.adaptiveScrolling = mode == "adaptive" or nil
+    return NotifyMotion("smoothScrolling")
+end
+
 function Theme.SetAppearance(key, value)
     if NS.IsCombatLocked() then return false end
     if key == "gradient" then return Theme.SetGradient(value) end
     if key == "menuAnimations" or key == "reduceMotion" or key == "dropdownDimming"
-        or key == "windowFocusDimming" or key == "smoothScrolling" then
+        or key == "windowFocusDimming" or key == "smoothScrolling" or key == "scrollEdgeBounce" then
         if type(value) ~= "boolean" then return false end
         NS.DB.theme[key] = value
-        NS.Registry.NotifyListeners("motion", key)
-        NS.Registry.QueueRefresh()
-        return true
+        return NotifyMotion(key)
     end
     local listName = appearanceChoices[key]
     if listName then

@@ -22,24 +22,33 @@ IsLoggedIn = function() return false end
 MSUF_NS = {}
 MSUF_ActiveProfile = "mapko final"
 MSUFSuiteDB, MapkoSkinDB, MapkoSkin = nil, nil, nil
+UnitGUID = function() return "Player-Test" end
 
 local starts, initializations, notifications, skinPasses = 0, 0, 0, 0
+local locked = false
 local Suite = {
-    IsCombatLocked = function() return false end,
-    InCombat = function() return false end,
+    IsCombatLocked = function() return locked end,
+    InCombat = function() return true end,
+    CaptureSessionGold = function() end,
+    PublicText = function(value) return value end,
     -- Platform.lua's offline boundary helpers (no securecallfunction here).
     Dispatch = function(callback, ...) return callback(...) end,
     Finish = function(callback, ...) return true, callback(...) end,
     Client = {
+        isForever = true,
         HasAddOn = function() return false end,
         AddOnEnabled = function() return true end,
         IsAddOnLoaded = function(name) return name == "MSUF_Suite_Skin" end,
     },
-    Suite = { Start = function() starts = starts + 1 end },
+    Suite = {},
     Menu = { Watch = function() end },
     Installer = { MaybeShow = function() end },
     Print = function(message) error(message) end,
 }
+Suite.Suite.Start = function()
+    starts = starts + 1
+    Suite.Suite.started = true
+end
 Suite.Database = {
     Initialize = function()
         Suite.RootDB = { skinEnabled = true }
@@ -61,17 +70,30 @@ C_AddOns = { LoadAddOn = function(name)
     assert(name == "MSUF_Suite_Skin")
     provider = {
         addonName = name,
+        Client = { isForever = true },
+        Registry = { FlushStartupLayout = function()
+            assert(Suite.startingBeforeLockdown and starts == 1 and not locked,
+                "startup skin jobs missed the unlocked module pass")
+        end },
         ProfileIO = {},
         InitializeLocalization = function() end,
         PublicAPI = { OnDatabaseReady = function() notifications = notifications + 1 end,
             OnPlayerLogin = function() end },
         GetAPI = function() return {} end,
     }
+    assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Bootstrap.lua"))(name, provider)
     local function Noop() end
     provider.Safety = { Dispatch = function(callback, ...) return callback(...) end }
     provider.Theme, provider.BlizzardYellow = { RefreshDynamicLook = Noop }, { Apply = Noop }
     provider.Checkmarks, provider.Typography = { Apply = Noop }, { ApplyConfigured = Noop }
-    provider.Adapters = { ApplyAll = function()
+    provider.Adapters = { PrepareReloadWindows = function()
+        assert(Suite.startingBeforeLockdown and not locked and starts == 0 and skinPasses == 0,
+            "native windows were prepared after the first skin/module pass")
+        assert(provider.RootDB.activeProfile == "mapko final", "preparation ran before skin profile selection")
+        provider.windowsPrepared = true
+    end, ApplyAll = function()
+        assert(provider.windowsPrepared, "first skin pass missed its native windows")
+        assert(not provider.IsCombatLocked(), "skin login did not use the unlocked startup layout")
         assert(provider.RootDB.activeProfile == "mapko final", "skin login painted the previous character's profile")
         skinPasses = skinPasses + 1
     end }
@@ -90,6 +112,7 @@ C_AddOns = { LoadAddOn = function(name)
             return true, name
         end,
         SetActiveProfile = function(name)
+            assert(not provider.IsCombatLocked(), "skin profile selection was blocked before lockdown")
             assert(provider.RootDB.profiles[name])
             provider.RootDB.activeProfile = name
             -- The real provider applies adapters on a profile change once
@@ -111,12 +134,16 @@ assert(provider and skinFrame.events.ADDON_LOADED and provider.RootDB
     and initializations == 1 and notifications == 1,
     "loading the skin provider did not prepare its database before profile sync")
 suiteFrame:callback("PLAYER_LOGIN")
-assert(starts == 0 and #deferred == 1, "module loading ran inside PLAYER_LOGIN")
+assert(starts == 0 and #deferred == 0, "module loading ran inside PLAYER_LOGIN")
 skinFrame:callback("PLAYER_LOGIN")
-table.remove(deferred, 1)()
+assert(skinPasses == 0 and #deferred == 1, "skin pass ran before the Suite selected the reload profile")
+frames[2]:callback("PLAYER_ENTERING_WORLD", false, true)
 assert(starts == 1 and provider.RootDB.activeProfile == "mapko final"
     and provider.RootDB.profiles["mapko final"],
     "skin profile race stopped the Suite before its modules started")
+assert(skinPasses == 1 and provider.IsCombatLocked(), "skin layout missed or leaked the unlocked reload scope")
+locked = true
+for _, callback in ipairs(deferred) do callback() end
 assert(skinPasses == 1, "deferred module startup repeated the full skin login pass")
 skinFrame:callback("ADDON_LOADED", "MSUF_Suite_Skin")
 assert(initializations == 1 and notifications == 1,

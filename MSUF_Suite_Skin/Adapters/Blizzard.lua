@@ -209,7 +209,11 @@ local function TrackCombatFocus(definition)
     local root = definition and focusRoots[definition.id]
     if root and NS.DB.enabled and DefinitionEnabled(definition) then
         local frame = NS.Safety.Field(_G, root)
-        NS.WindowControls.TrackFocus(frame, definition.id)
+        if definition.id ~= "playerSpells" and NS.Safety.Read(frame, "IsShown") == true then
+            NS.WindowControls.Attach(frame, definition.id)
+        else
+            NS.WindowControls.TrackFocus(frame, definition.id)
+        end
         if not frame then ScheduleLoadOnDemand(definition) end
         if definition.id == "colorPicker" then NS.WindowControls.TrackFocus(NS.Safety.Field(_G, "OpacityFrame"), definition.id) end
     end
@@ -234,6 +238,30 @@ function Adapters.Apply(id)
         return false
     end
     return RunIsolated(ApplyDefinition, definition)
+end
+
+local function LoadReloadWindow(addon)
+    if NS.IsCombatLocked() or NS.Client.IsAddOnLoaded(addon) then return end
+    if NS.Client.HasAddOn(addon) ~= false then
+        NS.Safety.Dispatch(C_AddOns.LoadAddOn, addon)
+    end
+end
+
+-- Load only these enabled windows in Forever's unlocked combat-reload
+-- startup. Their native UI stays closed while the login pass prepares it.
+function Adapters.PrepareReloadWindows()
+    if not NS.Client.isForever or not NS.DB.enabled or NS.IsCombatLocked() then return end
+    if DefinitionEnabled(Adapters.definitions.playerSpells) then
+        LoadReloadWindow("Blizzard_PlayerSpells")
+    end
+    if not DefinitionEnabled(Adapters.definitions.blizzardWindows) then return end
+    if NS.GenericWindows.IsCategoryEnabled("profession") then
+        LoadReloadWindow("Blizzard_Professions")
+    end
+    if NS.GenericWindows.IsCategoryEnabled("group")
+        and C_LFGList.GetPremadeGroupFinderStyle() == Enum.PremadeGroupFinderStyle.Vanilla then
+        LoadReloadWindow("Blizzard_GroupFinder_VanillaStyle")
+    end
 end
 
 function Adapters.ApplyAll()

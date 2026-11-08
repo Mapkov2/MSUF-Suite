@@ -181,8 +181,20 @@ Getter("Frame", "IsProtected", function(self) return self.protected == true end)
 Getter("Frame", "GetFrameLevel", function(self) return self.level end)
 Method("Frame", "SetFrameLevel", function(self, level) self.level = level end)
 Method("Frame", "EnableMouse", function() end)
-Getter("Texture", "GetTexCoord", function(self) return unpack(self.coords) end)
-Setter("Texture", "SetTexCoord", function(self, ...) self.coords = { ... } end)
+Method("Texture", "GetTexCoord", function(self)
+    if self.secret and self.secret.GetTexCoord then
+        local ulX, ulY, llX, llY, urX, urY, lrX = unpack(self.coords)
+        return ulX, ulY, llX, llY, urX, urY, lrX, Secret()
+    end
+    return unpack(self.coords)
+end)
+Setter("Texture", "SetTexCoord", function(self, left, right, top, bottom, ...)
+    if select("#", ...) == 0 then
+        self.coords = { left, top, left, bottom, right, top, right, bottom }
+    else
+        self.coords = { left, right, top, bottom, ... }
+    end
+end)
 Method("Texture", "SetTexture", function(self, file) self.file = file end)
 Setter("Texture", "SetColorTexture", function(self, ...) self.color = { ... } end)
 Method("FontString", "GetFont", function(self) return unpack(self.font) end)
@@ -202,7 +214,7 @@ local Meta = {}
 for kind, methods in pairs(Methods) do Meta[kind] = { __index = methods } end
 local function Widget(kind, width, height)
     return setmetatable({ kind = kind, width = width or 30, height = height or 30, scale = 1, alpha = 1, points = {},
-        shown = true, level = 5, coords = { 0, 1, 0, 1 }, font = { "native.ttf", 10, "" }, color = { 1, .82, 0, 1 },
+        shown = true, level = 5, coords = { 0, 0, 0, 1, 1, 0, 1, 1 }, font = { "native.ttf", 10, "" }, color = { 1, .82, 0, 1 },
         shadow = { 0, 0, 0, 1 }, shadowOffset = { 1, -1 } }, Meta[kind == "Button" and "Frame" or kind])
 end
 Methods.Frame.CreateTexture = Native("CreateTexture", function() return Widget("Texture") end)

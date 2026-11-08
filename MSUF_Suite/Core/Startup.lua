@@ -3,7 +3,10 @@ _G.MSUFSuite = Suite
 
 local initialized = false
 local events = CreateFrame("Frame")
+local Start
 local FinishWorldEntry
+local startupFinished = false
+local startedBeforeLockdown = false
 local waitingForCombat = false
 local combatEvent
 
@@ -48,8 +51,17 @@ loginEvent:SetScript("OnEvent", function(self, _, isInitialLogin, isReloadingUi)
     end
     Suite.loginKind = isReloadingUi == true and "reload" or "login"
     Suite.CaptureSessionGold(isReloadingUi)
-    -- After the skin's PLAYER_LOGIN pass: chat colours an off skin left.
+    -- Settle the chat colour ledger before starting the reload layout.
     Suite.Dispatch(Suite.Skin.SettleChatColors)
+    -- Forever can report combat at reload while protected writes are still
+    -- allowed here. The next frame is already locked. PLAYER_LOGIN has
+    -- finished, so loading modules here also avoids a nested login load.
+    if isReloadingUi == true and Suite.Client.isForever and waitingForCombat and not Suite.Suite.started
+        and Suite.InCombat() and not Suite.IsCombatLocked() then
+        Suite.startingBeforeLockdown = true
+        Suite.Dispatch(Start, "PLAYER_ENTERING_WORLD")
+        Suite.startingBeforeLockdown = nil
+    end
     -- The next frame follows client login readiness and all startup listeners.
     C_Timer.After(0, FinishWorldEntry)
 end)
@@ -87,10 +99,12 @@ local function Step(owner, name, ...)
     Suite.Dispatch(owner[name], ...)
 end
 
--- A combat-end event can precede a clear unit combat flag. Always respect
--- the actual lockdown and let a newer combat-start event cancel the release.
+-- At combat end and the Forever reload window, the unit flag can still
+-- report combat. Both paths must respect actual lockdown.
 local function StartupInCombat(transition)
-    if transition == "PLAYER_REGEN_ENABLED" then return Suite.IsCombatLocked() end
+    if transition == "PLAYER_REGEN_ENABLED" or transition == "PLAYER_ENTERING_WORLD" then
+        return Suite.IsCombatLocked()
+    end
     return Suite.InCombat(transition)
 end
 
@@ -121,16 +135,35 @@ local function PrepareProfiles(transition)
     return true
 end
 
-local function Start(transition)
+function Start(transition)
+    if startupFinished or Suite.startupError then return end
     if not PrepareProfiles(transition) then
         if Suite.startupError then SetCombatWait(false) end
         return
     end
-    SetCombatWait(false)
+    local beforeLockdown = transition == "PLAYER_ENTERING_WORLD"
+    if beforeLockdown then
+        -- Settle the saved UI scale before the skin or modules measure UIParent.
+        local applyScale = Suite.HostBridge.Profiles.ApplyCurrentProfileGlobalUiScale
+        if applyScale then Suite.Dispatch(applyScale) end
+        Step(Suite.Skin, "ApplyStartupLayout")
+    else
+        startupFinished = true
+        SetCombatWait(false)
+    end
+    if not Suite.Suite.started then
+        Suite.startingModules = true
+        Step(Suite.Suite, "Start")
+        Suite.startingModules = nil
+    end
+    -- Profile repairs and setup retain their normal post-combat start path.
+    if beforeLockdown then
+        Step(Suite.Skin, "FinishStartupLayout")
+        startedBeforeLockdown = Suite.Suite.started == true
+        return
+    end
+    if startedBeforeLockdown then Step(Suite.Suite, "RetryStartup") end
     local profiles = Suite.SuiteProfiles
-    Suite.startingModules = true
-    Step(Suite.Suite, "Start")
-    Suite.startingModules = nil
     Step(profiles, "EnsureModernPanelLayout")
     Step(profiles, "EnsureModernDarkTooltips")
     Step(profiles, "EnsureModernDarkMinimap")
@@ -145,6 +178,7 @@ local function RunStart()
     startQueued = false
     Start(combatEvent)
 end
+
 local function QueueStart(beforeSkinLogin)
     if startQueued then return end
     -- An already loaded skin must see the selected profile on its login pass.
@@ -159,7 +193,7 @@ local function QueueStart(beforeSkinLogin)
 end
 
 function FinishWorldEntry()
-    if waitingForCombat and not Suite.Suite.started then
+    if waitingForCombat and not startupFinished then
         if not startQueued then RunStart() end
     else
         ShowInstaller()
@@ -186,7 +220,7 @@ events:SetScript("OnEvent", function(self, event, loadedAddon)
         self:UnregisterEvent(event)
         QueueStart(true)
     elseif event == "PLAYER_REGEN_ENABLED" then
-        if Suite.Suite.started then
+        if startupFinished then
             ShowInstaller()
         else
             if not combatEvent then self:RegisterEvent("PLAYER_REGEN_DISABLED") end

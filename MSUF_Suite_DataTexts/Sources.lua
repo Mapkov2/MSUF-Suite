@@ -318,13 +318,13 @@ FORMAT.travel = function()
 end
 
 -- Label and value of a bound place; its icons land in binding.icons.
-function Sources.Format(key)
+function Sources.Format(key, config)
     local binding = Sources.bindings[key]
     if not binding then return end
     local icons = binding.icons
     for i = #icons, 1, -1 do icons[i] = nil end
     binding.pieces = binding.pieces or {}
-    return FORMAT[binding.kind](binding, owner.config)
+    return FORMAT[binding.kind](binding, config or owner.config)
 end
 
 ------------------------------------------------------------------ events

@@ -316,6 +316,13 @@ local function BuildScenarioMenu(root, scenarioID)
     end
 end
 
+local questLinkDialog
+local function CopyQuestLink(questID)
+    local path = NS.Client.isForever and "/forever/" or "/"
+    questLinkDialog = questLinkDialog or S.QoLCopyDialog("Copy Wowhead link", "Copy this URL with Ctrl+C", 500)
+    S.QoLShowCopy(questLinkDialog, ("https://www.wowhead.com%squest=%d"):format(path, questID))
+end
+
 local function BuildQuestMenu(root, button)
     local questID, group = button.questID, button.group
     local task = group == "world" or group == "bonus"
@@ -331,6 +338,9 @@ local function BuildQuestMenu(root, button)
     end)
     if CanUntrack(button) then
         root:CreateButton(OBJECTIVES_STOP_TRACKING, function() Untrack(button) end)
+    end
+    if Finite(questID) and questID > 0 and questID == math.floor(questID) then
+        root:CreateButton(Tr("Copy Wowhead link"), function() CopyQuestLink(questID) end)
     end
     if not task and Read(C_QuestLog.IsPushableQuest, questID) == true
         and Read(IsInGroup) == true then

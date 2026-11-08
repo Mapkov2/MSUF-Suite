@@ -41,8 +41,23 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     scroll.ExpandHeaderForQuest = Noop
     local query = ""
     scroll.SearchBox.GetText = function() return query end
+    function contents:SetSize(width, height)
+        self.width, self.visibleQuests = width, height
+    end
+    function contents:GetLayoutChildren()
+        return (row:IsShown() and 1 or 0) + (other:IsShown() and 1 or 0)
+    end
+    contents.rowWidth = 280
+    function contents:LayoutChildren(children, expandToWidth)
+        if not self.skipChildLayout then header.dirty = false end
+        return expandToWidth or self.rowWidth, children, expandToWidth == nil
+    end
+    function contents:CalculateFrameSize(width, height) return math.max(width, 304), height end
     function contents:Layout()
-        self.visibleQuests = (row:IsShown() and 1 or 0) + (other:IsShown() and 1 or 0)
+        local children = self:GetLayoutChildren()
+        local width, height = self:LayoutChildren(children, 304)
+        self:SetSize(width, height)
+        self.dirty = false
     end
     local plus, minus = "common-button-list-plus", "common-button-list-minus"
     local displayState = { questInfoContainer = { [6] = zone } }
@@ -113,10 +128,14 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     NS.WorldMapQuests.SetLayout("compact")
     Check(not row.labels[2]:IsShown(), "masked quest still retained shown compact columns")
     rebuildImmediately = false
+    contents.dirty, header.dirty = true, true
     Click("LeftButton", false)
     Check(row:IsShown() and objective:IsShown() and PinVisible() and explicitExpands == 1
         and normal:GetAtlas() == minus, "second click did not expand the locally folded zone")
     Check(row.labels[2]:IsShown(), "local reopen left a blank compact quest until native rebuild")
+    Check(contents.visibleQuests == 2 and contents.width == 304, "local reopen did not lay out the expanded rows")
+    Check(contents.dirty == true, "local reopen cleared Blizzard's pending layout state")
+    Check(header.dirty == true and contents.skipChildLayout == nil, "local reopen changed native child layout state")
     rebuildImmediately = true
     Click("LeftButton", true)
     scroll:ExpandHeaderForQuest(objective.questID)
@@ -125,9 +144,11 @@ local function CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     Click("LeftButton", true)
     Folded("zone could not be folded again after pin navigation")
     ExpandQuestHeader = originalExpand
+    contents.dirty = true
     return function()
         Check(row:IsShown() and objective:IsShown() and PinVisible() and normal:GetAtlas() == minus
             and contents.visibleQuests == 2, "disabling skin left quest rows hidden or the disclosure changed")
+        Check(contents.dirty == true, "disabling the skin cleared Blizzard's pending layout state")
     end
 end
 

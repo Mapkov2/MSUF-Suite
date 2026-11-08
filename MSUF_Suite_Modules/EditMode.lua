@@ -197,6 +197,10 @@ local function MovePosition(id, spec, request)
     local x = origin[spec.xKey] + (request.deltaX or 0) / scale
     local y = origin[spec.yKey] + (request.deltaY or 0) / scale
     if not Finite(x) or not Finite(y) then return false end
+    if spec.move then
+        local moved = spec.move(x, y, request)
+        if moved ~= nil then return moved end
+    end
     if request.phase ~= "commit" then
         -- Elements whose x/y are not UIParent offsets place themselves.
         if spec.place then return spec.place(x, y) == true end
@@ -256,6 +260,7 @@ end
 -- precisePosition=true preserves subpixel anchor offsets across scaled one-pixel steps; extraControls, historyKeys,
 -- sizeKeys (explicit catalog dimensions for this element), moveValues, resetKeys,
 -- place(x, y) (drag preview for x/y that are not UIParent offsets),
+-- move(x, y, request) handles a compound move or returns nil for the normal path,
 -- capture(origin) (live drag start x/y; undo keeps the saved values).
 -- Native owners supply nativePosition = { capture, restore, move } instead
 -- of profile keys and can provide their own extraControls.

@@ -23,7 +23,7 @@ local combat, parents = false, 0
 local function Region(w, h)
     local r = { width = w or 30, height = h or 40, scale = 1, alpha = 1, points = {}, shown = true, layer = "BACKGROUND",
         sublayer = 0, font = { "native.ttf", 10, "" }, color = { 1, 1, 1, 1 }, shadow = { 0, 0, 0, 1 },
-        shadowOffset = { 0, 0 }, coords = { 0, 1, 0, 1 } }
+        shadowOffset = { 0, 0 }, coords = { 0, 0, 0, 1, 1, 0, 1, 1 } }
     function r:GetWidth() return self.width end
     function r:GetHeight() return self.height end
     function r:GetScale() return self.scale end
@@ -36,7 +36,13 @@ local function Region(w, h)
     function r:SetSize(width, height) self.width, self.height = width, height end
     function r:SetScale(s) self.scale = s end
     function r:GetTexCoord() return unpack(self.coords) end
-    function r:SetTexCoord(...) self.coords = { ... } end
+    function r:SetTexCoord(left, right, top, bottom, ...)
+        if select("#", ...) == 0 then
+            self.coords = { left, top, left, bottom, right, top, right, bottom }
+        else
+            self.coords = { left, right, top, bottom, ... }
+        end
+    end
     function r:GetFont() return unpack(self.font) end
     function r:SetFont(...) self.font = { ... } end
     function r:GetTextColor() return unpack(self.color) end
@@ -70,7 +76,6 @@ local function Button(shown, parent)
     local b = Region()
     b.parent = parent
     b.Icon, b.Count, b.Duration = Region(), Region(), Region()
-    b.Icon.SetTexCoord = function(self, ...) self.coords = { ... } end
     b.DebuffBorder, b.TempEnchantBorder = Region(40, 40), Region(32, 32)
     b.Count.layer = "OVERLAY"
     b.shown = shown
@@ -161,7 +166,13 @@ local function PaintsOf(button)
 end
 
 -- 1. Each frame's row ----------------------------------------------------------
+-- The native getter returns four corner pairs. Preserve the exact original
+-- mapping, even when it is not a simple left/right/top/bottom crop.
+local buffIcon = BuffFrame.auraFrames[1].Icon
+buffIcon:SetTexCoord(.1, .2, .2, .8, .9, .1, .8, .9)
+local originalCrop = table.concat(buffIcon.coords, ",")
 module:Enable()
+Check(table.concat(buffIcon.coords, ",") ~= originalCrop, "the layout must crop the native icon")
 Check(watched.playerAuras == true, "the module must watch MSUF's reports while enabled")
 Check(#yields == 1 and yields[1].on == true and yields[1].paints == 0,
     "enabling must make the skin-only piece let go of the buttons before this module paints")
@@ -251,6 +262,7 @@ config.debuffSkin = "DARK2"
 module:Refresh()
 Check(PaintsOf(debuff)[#PaintsOf(debuff)].look == LOOKS.DARK2, "the debuffs' skin is on again")
 module:Disable()
+Check(table.concat(buffIcon.coords, ",") == originalCrop, "disabling restores all eight native texture coordinates")
 Check(yields[#yields].on == false, "the cleanup gives the buttons back to the skin-only piece")
 Check(watched.playerAuras == false, "a disabled module stops watching")
 Check(PaintsOf(debuff)[#PaintsOf(debuff)].look == nil and debuff.Duration.layer == "BACKGROUND",

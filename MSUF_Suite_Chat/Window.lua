@@ -357,7 +357,7 @@ end
 
 local function ApplyInput(self, visual, frame, input)
     if NS.Safety.IsForbidden(input) then return end
-    if not self.preview and NS.InCombat() then
+    if not self.preview and C.LayoutLocked() then
         S.Queue("chat")
         return
     end
@@ -403,7 +403,7 @@ end
 local function ResizeInput(frame)
     local visual = M.visuals[frame]
     if not M.active or not visual or not visual.input or (M.config.inputWidth or 0) ~= 0 then return end
-    if NS.InCombat() then
+    if C.LayoutLocked() then
         S.Queue("chat")
         return
     end
@@ -552,7 +552,7 @@ local spacedTabs = setmetatable({}, { __mode = "k" })
 function C.DockGeometry()
     if not M.active or M.toolbarLayingOut then return end
     local padded = M.config.tabPadding and M.config.tabPadding > 0
-    if NS.InCombat() then
+    if C.LayoutLocked() then
         S.Queue("chat")
         return
     end

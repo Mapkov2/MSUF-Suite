@@ -33,7 +33,7 @@ for _, spec in ipairs(NS.ExperienceBarLayout.Texts) do
         if spec.id == "level" then formats[4] = "Level and XP" end
         Add(B.Choice(prefix .. "Format", Label("%s: Format"), 1, formats))
     end
-    if spec.id ~= "percent" and spec.id ~= "eta" then
+    if spec.id ~= "percent" and spec.id ~= "eta" and spec.id ~= "levelTime" then
         Add(B.Choice(prefix .. "Numbers", Label("%s: Number format"), 1,
             { "Automatic", "Short numbers", "Full numbers" }))
     end

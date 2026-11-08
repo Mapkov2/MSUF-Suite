@@ -142,6 +142,7 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
             local f = Frame(parent); f:SetText(text); f:SetSize(width, height); return f
         end
         M.TrackRefresh = Noop
+        M.SetMenuStateValue = function(field, value) M[field] = value end
         M.PreviewSelectionBar = {
             Create = function(body, options)
                 body.selectionOptions = options
@@ -274,8 +275,15 @@ for _, host in ipairs({ "_repo_backups/6.22", "MidnightSimpleUnitFrames" }) do
         assert(not ui.layerRail:IsShown() and not ui.samples:IsShown() and not ui.raidPalette:IsShown(),
             "compact preview retained expanded controls")
         CheckInside(ui.canvas, body, "compact canvas escaped its body")
-        M.SetFixedPreviewExpandedPreference(false)
         fixed:Activate(headerHost, 0)
+        if host == "MidnightSimpleUnitFrames" then
+            assert(not M.ShouldExpandFixedPreview(), "native 6.5 lost its compact default")
+            fixed.onActivate()
+            assert(expander.expanded and not ui.compact, "Suite Nameplates did not open expanded by default")
+            expander:Close("FIXED_PREVIEW_COMMAND")
+        else
+            M.SetFixedPreviewExpandedPreference(false)
+        end
         -- Pinned ownership checks can hide the body before the page wrapper
         -- shows. Compact activation must recover without opening the expander.
         body:Hide()

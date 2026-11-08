@@ -125,6 +125,7 @@ C_CurveUtil = { EvaluateGameCurve = Curve }
 -- methods the adapters call.
 local NOOP = function() end
 local combatLocked = false
+InCombatLockdown = function() return combatLocked end
 local NOOP_METHODS = {
     "SetSize", "SetPoint", "ClearAllPoints", "SetAllPoints", "EnableMouse", "SetFrameLevel",
     "SetFont", "SetJustifyH", "SetWordWrap", "SetWidth", "SetColorTexture", "SetTexture",

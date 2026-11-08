@@ -173,8 +173,8 @@ end
 -- apply(state, a, b) for every active owner while the category is enabled.
 -- These run from Blizzard's lifecycle hooks, so each owner's pass is its
 -- own error boundary and a raising pass never reaches Blizzard's caller.
-local function ForActiveOwners(category, apply, a, b)
-    if NS.IsCombatLocked() or not CategoryEnabled(category) then return end
+local function ForActiveOwners(category, apply, a, b, allowCombat)
+    if (not allowCombat and NS.IsCombatLocked()) or not CategoryEnabled(category) then return end
     for _, state in pairs(DeepWindows.owners) do
         if state.active then Dispatch(apply, state, a, b) end
     end
@@ -473,7 +473,7 @@ end
 local function ApplyAddonForOwners(spec)
     for _, state in pairs(DeepWindows.owners) do
         if state.active and spec.relevant() then
-            if NS.IsCombatLocked() then
+            if NS.IsCombatLocked() and not spec.allowCombat then
                 DeferApply(state, "load-" .. spec.addon)
             else
                 Dispatch(spec.apply, state)
@@ -574,6 +574,7 @@ NS.DeepWindowsShared = {
     ForActiveOwners = ForActiveOwners,
     HookMixin = HookMixin,
     AddAddonSpec = AddAddonSpec,
+    RunOrDefer = Owners.RunOrDefer,
 }
 
 return DeepWindows

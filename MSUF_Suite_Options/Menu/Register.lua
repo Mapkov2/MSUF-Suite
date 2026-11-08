@@ -316,7 +316,8 @@ end
 -- one for the custom bars and one for all action bars, each the hidden
 -- iconSkin rule of its bars written with history like every Suite setting.
 -- The page reads the area's icon shape and sets it when a skin for another
--- shape is picked (the shape itself is chosen on the module page). A few rows
+-- shape is picked (the shape itself is chosen on the module page; the
+-- minimap's never moves, FixedShapeArea). A few rows
 -- add a sample to the page's "Your Icons" strip. The module pages show the
 -- area's skin through P.IconSkinKey and HostBridge.IconSkinStatusRow.
 local SKIN_SAMPLES = { ess = "Interface\\Icons\\Spell_Nature_Lightning", buf = "Interface\\Icons\\Spell_Holy_WordFortitude" }
@@ -435,6 +436,16 @@ local function SquareArea(key, group, label, order, id, skinKey, icon)
         write = function(value) return P.Set(id, skinKey, value) end,
     }
 end
+-- An area whose shape belongs to its module page alone: the minimap's shape
+-- sets its mask, terrain and ring and is part of its style preset (Ember is
+-- round), so a skin never writes it. The map can use alternate skin art
+-- drawn for its current shape.
+local function FixedShapeArea(key, group, label, order, id, skinKey, shapeKey, ids, icon)
+    local area = SquareArea(key, group, label, order, id, skinKey, icon)
+    area.shape = function() return ids[P.Get(id, shapeKey)] or "RECTANGLE" end
+    area.skinVariants = true
+    return area
+end
 -- Whether a row's icons are drawn now (Page.RegisterArea `available`): while
 -- one of `ids` runs (the controller's state). Otherwise the page dims the row
 -- and shows why: the module's own status when it is enabled but does not run
@@ -470,8 +481,8 @@ local function RegisterIconSkinAreas()
     -- Player aura layout module draws them.
     specs[#specs + 1] = SquareArea("suite_playerauras_buffs", "Player aura layout", "Buffs", 1, "playerAuras", "buffSkin")
     specs[#specs + 1] = SquareArea("suite_playerauras_debuffs", "Player aura layout", "Debuffs", 2, "playerAuras", "debuffSkin")
-    specs[#specs + 1] = SkinArea(P.IconSkinKey("minimap"), "Minimap", "Map", 1, "minimap",
-        { "iconSkin" }, { "shape" }, { "RECTANGLE", "CIRCLE", "RECTANGLE" }, "Interface\\Icons\\INV_Misc_Map_01")
+    specs[#specs + 1] = FixedShapeArea(P.IconSkinKey("minimap"), "Minimap", "Map", 1, "minimap",
+        "iconSkin", "shape", { "RECTANGLE", "CIRCLE", "RECTANGLE" }, "Interface\\Icons\\INV_Misc_Map_01")
     specs[#specs + 1] = SkinArea(P.IconSkinKey("buffReminders"), "Buff reminders", "Icons", 1, "buffReminders",
         { "iconSkin" }, { "iconShape" }, Suite.IconShapeIds, SKIN_SAMPLES.buf)
     specs[#specs + 1] = SquareArea(P.IconSkinKey("damageMeter"), "Damage meter", "Bar icons", 1, "damageMeter", "iconSkin")

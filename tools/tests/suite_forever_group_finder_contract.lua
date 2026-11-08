@@ -75,7 +75,7 @@ local namespace = {
     },
     ControlSkin = {
         ApplyButton = function(button, owner, spec)
-            assert(not inCombat, "button paint during combat")
+            assert(not inCombat or not (button.IsProtected and button:IsProtected()), "protected button paint during combat")
             if button.objectType == "Frame" then return nil, "invalid button" end
             buttons[button] = { owner = owner, role = spec.role, regions = spec.regions }
             surfaces[button] = { spec = spec, visible = true }
@@ -92,12 +92,12 @@ local namespace = {
     },
     Surface = {
         Attach = function(frame, spec)
-            assert(not inCombat, "surface paint during combat")
+            assert(not inCombat or not (frame.IsProtected and frame:IsProtected()), "protected surface paint during combat")
             surfaces[frame] = { spec = spec, visible = true }
             return surfaces[frame]
         end,
         SetActive = function(frame, active)
-            assert(not inCombat, "selection paint during combat")
+            assert(not inCombat or not (frame.IsProtected and frame:IsProtected()), "protected selection paint during combat")
             assert(surfaces[frame], "selection has no surface")
             surfaces[frame].active = active
         end,
@@ -291,17 +291,22 @@ assert(surfaces[browseRow].active == true, "selected browse result lost its sele
 -- Reapplying visits existing registrations too; registering alone cannot
 -- recover a visible row which was skipped by OnInitializedFrame.
 local combatRow = { ResultBG = {}, Selected = Texture(), Highlight = {}, Name = {} }
-browse.ScrollBox.rows = { browseRow, grouping, combatRow }
+local protectedRow = { ResultBG = {}, Selected = Texture(), Highlight = {}, Name = {} }
+function protectedRow:IsProtected() return true, false end
+browse.ScrollBox.rows = { browseRow, grouping, combatRow, protectedRow }
 who.ScrollBox.rows = { whoRow }
 inCombat = true
 browse.ScrollBox:Initialize(combatRow)
-assert(not buttons[combatRow] and next(deferred), "combat row was painted or never deferred")
+assert(buttons[combatRow] and next(deferred) == nil, "safe combat row waited or scheduled a replay")
+browse.ScrollBox:Initialize(protectedRow)
+assert(not buttons[protectedRow] and next(deferred), "protected row was painted or never deferred")
 inCombat = false
 for key, callback in pairs(deferred) do deferred[key] = nil callback() end
-assert(buttons[combatRow], "post-combat replay missed an already visible row")
+assert(buttons[protectedRow], "post-combat replay missed an already visible protected row")
+protectedRow.IsProtected = nil
 inCombat = true
 browseTab:SetChecked(true)
-assert(next(deferred) and surfaces[browseTab].active == false, "tab selection painted in combat or was lost")
+assert(not next(deferred) and surfaces[browseTab].active == true, "safe tab selection waited until combat ended")
 inCombat = false
 for key, callback in pairs(deferred) do deferred[key] = nil callback() end
 assert(surfaces[browseTab].active == true, "post-combat replay missed side-tab selection")
@@ -329,9 +334,14 @@ adapter.Disable()
 
 -- A queued apply/repaint must not revive the adapter after disable.
 inCombat = true
+assert(adapter.Apply() and frames[LFGParentFrame] and next(deferred) == nil,
+    "cold unprotected LFG chrome waited until combat ended")
+adapter.Disable()
+function LFGParentFrame:IsProtected() return true, false end
 assert(adapter.Apply() and next(deferred), "combat Apply was not queued")
 adapter.Disable()
 assert(next(deferred) == nil and not adapter.active, "disable retained queued group finder paint")
+LFGParentFrame.IsProtected = nil
 inCombat = false
 
 categoryEnabled = false

@@ -170,8 +170,32 @@ local function TrackSettingsButton(button, owner)
     return Checkmarks.TrackButton(button, owner)
 end
 
+-- Changing a parent setting (for example Master Volume) can re-evaluate
+-- dependent rows without reinitializing the ScrollBox. Both DisplayEnabled
+-- and the native slider's SetEnabled write their text colors again.
+local settingsTextHooks = setmetatable({}, { __mode = "k" })
+
+local function OnSettingsTextStateChanged(control, enabled)
+    if not Safety.Public(enabled) or not enabled then return end
+    local state = settingsTextHooks[control]
+    if state and state.active and CanTrack(control) then
+        BlizzardYellow.TrackFrame(control)
+    end
+end
+
+local function TrackSettingsTextState(state, control, method)
+    if not CanTrack(control) then return end
+    if not settingsTextHooks[control] then
+        if not Safety.HasMethod(control, method) then return end
+        hooksecurefunc(control, method, Safety.Isolated(OnSettingsTextStateChanged))
+    end
+    settingsTextHooks[control] = state
+end
+
 local function TrackSettingsControlTree(state, root)
     if not state or not state.active or not root then return false end
+    TrackSettingsTextState(state, root, "DisplayEnabled")
+    TrackSettingsTextState(state, Field(root, "SliderWithSteppers"), "SetEnabled")
     return (WalkControlTree(root, state.owner, 4, 96, false, TrackSettingsButton))
 end
 

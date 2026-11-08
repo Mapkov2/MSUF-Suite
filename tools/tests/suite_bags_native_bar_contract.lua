@@ -62,6 +62,14 @@ S.Apply("bags")
 assert(BagsBar.shown and not S.OwnsBlizzardSurface("bagBar"), "Blizzard grid keeps native equipped slots reachable")
 S.Config("bags").inventoryView = 1
 S.Apply("bags")
+dt.paused = true
+NS.startingBeforeLockdown = true
+BagsBar:Show()
+assert(BagsBar.shown, "reload hid equipped slots before the combined inventory was ready")
+S.instances.bags.combinedBagConfigured = true
+P.DataTextNativeBagBar.Sync()
+assert(not BagsBar.shown and BagsBar.driver == "hide", "combat reload did not claim the native bags bar")
+NS.startingBeforeLockdown, dt.paused = nil, nil
 available.bags = false
 S.Apply("bags")
 assert(BagsBar.shown and not BagsBar.driver, "unavailable replacement returns native bags")

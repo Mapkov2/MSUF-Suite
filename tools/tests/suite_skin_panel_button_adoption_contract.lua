@@ -99,6 +99,7 @@ EnumerateFrames = function(previous)
 end
 
 local locked = false
+InCombatLockdown = function() return locked end
 local NS = {
     DB = { enabled = true, skins = {} },
     IsCombatLocked = function() return locked end,

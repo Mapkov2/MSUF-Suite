@@ -282,6 +282,9 @@ local function Attach(name, index)
     if not Accessible(frame) or not info or frame:GetParent() ~= UIParent then return end
     local canDetach = (info.area == "left" or info.area == "doublewide") and not frame:IsProtected()
     local record = Track(frame)
+    -- A nil map area bypasses Blizzard's panel delegate. On Forever, that
+    -- direct show/hide path can rebuild quest pins with tainted layout state.
+    if name == "WorldMapFrame" and NS.Client.isForever then return end
     if not canDetach then return end
     -- Changing a shown panel would strand its slot in the native manager.
     -- Let its current close run first, then apply the new layout policy.

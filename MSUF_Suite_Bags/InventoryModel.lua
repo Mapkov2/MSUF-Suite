@@ -380,6 +380,11 @@ local function ItemGroup(item, config, state, model)
     return key, label, order, nil, translate
 end
 
+local function ItemGroupWithKeyring(item, config, state, model)
+    if item.keyring then return "keyring", item.bagName, 190, nil, false end
+    return ItemGroup(item, config, state, model)
+end
+
 local function AddSets(model, config, item, key)
     for j = 1, #item.setNames do
         local name = item.setNames[j]
@@ -454,12 +459,13 @@ function Model.Build(model, items, config, state, context)
     end
     -- searching: Blizzard's search marks non-matching slots isFiltered.
     local searching = context and context.searching
+    local groupForItem = context and context.hasKeyring and ItemGroupWithKeyring or ItemGroup
     for i = 1, #items do
         local item = items[i]
         if not (config.hideEmptySlots and not item.itemID)
             and not (searching and (item.filtered or not item.itemID))
             and (not query or item.itemID and model.queryRule and P.NS.InventoryRules.Matches(model.queryRule, item)) then
-            local key, label, order, expansion, translate, expansionName = ItemGroup(item, config, state, model)
+            local key, label, order, expansion, translate, expansionName = groupForItem(item, config, state, model)
             Add(model, Group(model, key, label, order, expansion, translate, expansionName), item, merge)
             -- An item can belong to several equipment sets. Each set filter
             -- includes it, while All keeps one physical native button only.

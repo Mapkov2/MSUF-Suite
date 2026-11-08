@@ -608,7 +608,7 @@ local function BuildExpander(ui, ctx)
     })
     if ui.fixedRecord then
         ui.fixedRecord.onActivate = function()
-            if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview() then
+            if expander and M.ShouldExpandFixedPreview and M.ShouldExpandFixedPreview(true) then
                 expander:Open("SUITE_MINIMAP_PREVIEW_ACTIVE")
             end
             ui.Paint()

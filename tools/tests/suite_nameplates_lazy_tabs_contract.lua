@@ -181,10 +181,15 @@ Open({'enemyOuterFrame','enemy:frame'})
 -- Clicking a movable sample can reveal a settings section on the same page.
 -- Reflow must preserve the selected handle and the X/Y edit that owns focus.
 do
-    M.SetFixedPreviewExpandedPreference(true)
+    assert(not preview.compact, "Suite Nameplates did not open expanded by default")
+    assert(M.SelectPage("uf_player"))
+    mw:RunTimers(1000)
+    if not host:match("7%.0$") then
+        assert(not M._msuf2ActiveFixedPreviewExpander, "Suite's default expansion carried over to MSUF 6.5")
+    end
     assert(M.SelectPage("suite_nameplates"))
     mw:RunTimers(1000)
-    assert(not preview.compact, "fixture did not expand the nameplate preview")
+    assert(not preview.compact, "Suite Nameplates lost its expanded default on return")
     preview:ShowSample("enemy")
     local arrow = assert(preview.kit.entries["enemy.target"]).region
     local bar = preview.selection

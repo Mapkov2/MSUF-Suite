@@ -541,10 +541,13 @@ function M:Refresh()
     Private.BagMotion.StopAll()
     if not self.combinedBagConfigured then
         if NS.InCombat() then
-            S.Queue("bags")
-            return
-        end
-        if not SetCombinedMode(self) then
+            -- An already combined native bag needs no CVar change on reload.
+            local mode = NS.startingBeforeLockdown and not NS.IsCombatLocked() and C_CVar.GetCVar("combinedBags")
+            if not S.Public(mode) or mode ~= "1" then
+                S.Queue("bags")
+                return
+            end
+        elseif not SetCombinedMode(self) then
             error("MSUF Suite Bags could not enable Blizzard's combined bag")
         end
         self.combinedBagConfigured = true

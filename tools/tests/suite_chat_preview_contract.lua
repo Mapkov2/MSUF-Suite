@@ -61,7 +61,8 @@ local function File(path, addon, ns)
         clickThreshold = { "ChatPreview.lua", "pixels = true, threshold = 4", "threshold = 2" },
         follow = { "ChatPreview.lua", 'follow = handle.follow, ', '' },
         layerMask = { "ChatPreviewLayers.lua", 'if layers.input == false then Mask(ui, parts.input) end', '' },
-        previewCombat = { "MSUF_Suite_Chat/Positions.lua", 'not self.preview and NS.InCombat()', 'NS.InCombat()' },
+        previewCombat = { "MSUF_Suite_Chat/Positions.lua", 'not self.preview and C.LayoutLocked()',
+            'C.LayoutLocked()', 'function C.OffsetNative(self, region, x, y)' },
         parent = { "ChatPreview.lua", 'region:IsObjectType("FontString") and region:GetParent() or region', 'region' },
         static = { "ChatPreviewPositions.lua", '    if not spec.prefix then return 0, 0 end', '' },
         clipping = { "ChatPreview.lua", 'ui.canvas:SetClipsChildren(true)', 'ui.canvas:SetClipsChildren(true) ui.viewport:SetClipsChildren(true)' },
@@ -89,7 +90,8 @@ local function File(path, addon, ns)
         local sourceFile = assert(io.open(sourcePath, "rb"))
         local source = sourceFile:read("*a") sourceFile:close()
         if patch then
-            local first, last = source:find(patch[2], 1, true)
+            local start = patch[4] and assert(source:find(patch[4], 1, true)) or 1
+            local first, last = source:find(patch[2], start, true)
             assert(first, "mutation site missing")
             source = source:sub(1, first - 1) .. patch[3] .. source:sub(last + 1)
         end

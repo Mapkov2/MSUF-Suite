@@ -74,7 +74,7 @@ function C.ApplyWindowPosition(self, visual, frame, primary)
     if not primary then return end
     local c, context = self.config, self.context
     if not self.preview then
-        if NS.InCombat() then
+        if C.LayoutLocked() then
             S.Queue("chat")
             return
         end
@@ -100,7 +100,7 @@ function C.ApplyWindowPosition(self, visual, frame, primary)
                 watched[manager] = true
             end
         end
-        if NS.InCombat() and not self.preview then
+        if not self.preview and C.LayoutLocked() then
             S.Queue("chat")
             return
         end
@@ -164,7 +164,7 @@ end
 -- conditional on ownership, so a fresh Blizzard layout becomes the new base.
 local widths = setmetatable({}, { __mode = "k" })
 function C.OffsetNative(self, region, x, y)
-    if not self.preview and NS.InCombat() then
+    if not self.preview and C.LayoutLocked() then
         S.Queue("chat")
         return
     end
@@ -192,7 +192,7 @@ end
 
 function C.PositionTabs(self)
     local c = self.config
-    if not self.preview and NS.InCombat() then
+    if not self.preview and C.LayoutLocked() then
         S.Queue("chat")
         return
     end

@@ -156,7 +156,13 @@ function M:Refresh()
         if self.mapOwned then MM.ApplyMap(true) end
         MM.RefreshIcons()
     end
-    if not self.mapOwned then MM.Queue("claim") end
+    if not self.mapOwned then
+        if NS.startingBeforeLockdown and self.config.captured then
+            MM.Claim()
+        else
+            MM.Queue("claim")
+        end
+    end
     if dirty.border or dirty.geometry or MM.style:IconSkinChanged(self.config) then MM.ApplyBorder() end
     if dirty.input then MM.ApplyInput() end
     if dirty.elements or dirty.geometry then MM.LayoutElements() end

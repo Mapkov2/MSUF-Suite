@@ -65,6 +65,18 @@ do
     assert(W.MM.style.iconSurface == nil and W.MM.edges[1]:IsShown(), "old host lost configured look")
 end
 
+local function CreatePreview(W)
+    local frame = W.G.CreateFrame("Frame", nil, W.G.UIParent)
+    local F = getmetatable(frame).__index
+    local R = getmetatable(frame:CreateTexture()).__index
+    F.CreateMaskTexture = F.CreateTexture
+    function R:AddMaskTexture(mask) self.mask = mask end
+    local P = { Suite = W.Suite, S = W.S, catalog = W.Suite.SuiteCatalog, RGB = W.S.RGB }
+    local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/Pages/MinimapPreviewArt.lua"))
+    setfenv(chunk, W.G)("MSUF_Suite_Options", P)
+    return P.CreateMinimapPreviewArt(frame)
+end
+
 -- Preview paints the exact shared renderer at its own scale, and hiding its
 -- map/border layer hides the whole host material without showing old rings.
 do
@@ -79,16 +91,7 @@ do
         end
         bridge.IconSkinOutset = function() return 0, 0 end
     end })
-    local frame = W.G.CreateFrame("Frame", nil, W.G.UIParent)
-    local F = getmetatable(frame).__index
-    local R = getmetatable(frame:CreateTexture()).__index
-    F.CreateMaskTexture = F.CreateTexture
-    function R:AddMaskTexture(mask) self.mask = mask end
-    local P = { Suite = W.Suite, S = W.S, catalog = W.Suite.SuiteCatalog }
-    P.RGB = W.S.RGB
-    local chunk = assert(loadfile(root .. "/MSUF_Suite_Options/Pages/MinimapPreviewArt.lua"))
-    setfenv(chunk, W.G)("MSUF_Suite_Options", P)
-    local art = P.CreateMinimapPreviewArt(frame)
+    local art = CreatePreview(W)
     local hidden = {}
     local function Layer(key) return not hidden[key] end
     W.config.iconSkin, W.config.shape, W.config.size = "SHADOW1", 3, 240
@@ -112,12 +115,15 @@ end
 -- Optional real MSUF 7.0 engine: runtime mask/scene/release and the shared
 -- default notifications use the actual host Compile/Paint implementation.
 if arg[2] then
-    for _, flavor in ipairs({ "Mainline", "Forever" }) do
-        local skins, shared
-        local W = H.New(root, flavor, { beforeModules = function(world)
+    -- Harness options that load the real host; the world's MSUF default skin
+    -- is `default`, and host.skins / host.shared are filled in at load.
+    local function RealHost(default)
+        local host = {}
+        function host.beforeModules(world)
             local G = world.G
             local A3 = { _runtimeConfigGen = 1 }
-            shared = { iconSkinDefault = { styleSkin = "SHADOW1" } }
+            local shared = { iconSkinDefault = { styleSkin = default } }
+            host.shared = shared
             function A3.EnsureDB() return {}, shared end
             local MSUF = { MSUF_Auras3 = A3, Util = { InCombat = function() return world.combat end } }
             local providers = { MSUF_PixelLayoutRegion = function(region) return region end,
@@ -134,14 +140,29 @@ if arg[2] then
                 local chunk = assert(loadfile(addon .. file))
                 setfenv(chunk, G)("MidnightSimpleUnitFrames", MSUF)
             end
-            skins = A3.IconSkins
+            local skins = A3.IconSkins
+            A3.MenuModel = {}
+            MSUF.MSUF2 = {
+                Widgets = {}, Theme = {}, AuraControls = { RequestAuraRuntime = function() end },
+                ControlSchema = { UnitOptions = function() return {} end },
+                RegisterPage = function() end, Format = string.format, Tr = function(text) return text end,
+            }
+            local menu = assert(loadfile(arg[2] .. "/MidnightSimpleUnitFrames_Options/Shell/Menu2/Pages/MSUF_Menu2_IconSkins.lua"))
+            setfenv(menu, G)("MidnightSimpleUnitFrames_Options", MSUF)
+            host.skins, host.page = skins, MSUF.MSUF2.IconSkinsPage
             G.MSUF_HostAPI = { version = 1, GetIconSkins = function() return skins.Host end }
             local sample = G.CreateFrame("Frame", nil, G.UIParent):CreateTexture()
             local R = getmetatable(sample).__index
             function R:SetSnapToPixelGrid(value) self.snap = value end
             function R:SetTexelSnappingBias(value) self.bias = value end
             function R:SetDesaturated(value) self.desaturated = value end
-        end })
+        end
+        return host
+    end
+    for _, flavor in ipairs({ "Mainline", "Forever" }) do
+        local host = RealHost("SHADOW1")
+        local W = H.New(root, flavor, host)
+        local skins, shared = host.skins, host.shared
         H.Enable(W, { captured = true, iconSkin = "DEFAULT", size = 240, borderSize = 2 })
         W.Step()
         local renderer = W.MM.style
@@ -198,6 +219,80 @@ if arg[2] then
         skins.NotifyChanged("profile")
         assert(refreshes == prior, "actual reset CUSTOM map must stop following global edits")
         assert(W.S.Set("minimap", "enabled", false), "real release failed")
+    end
+    -- The same Shadow 3 assignment draws on square and round maps. Neither
+    -- selecting it nor taking it off changes the minimap's native shape.
+    for _, flavor in ipairs({ "Mainline", "Forever" }) do
+        local host = RealHost("SHADOW3")
+        local W = H.New(root, flavor, host)
+        local page, area = host.page, "suite_minimap"
+        page.RegisterArea({
+            key = area, group = "Minimap", label = "Map", skinVariants = true,
+            shape = function() return W.config.shape == 2 and "CIRCLE" or "RECTANGLE" end,
+            read = function() return W.config.iconSkin end,
+            write = function(choice) assert(W.S.Set("minimap", "iconSkin", choice)) end,
+        })
+        local ember = {}
+        for key, value in pairs(W.Suite.MinimapStylePresets[4]) do ember[key] = value end
+        ember.captured, ember.size, ember.iconSkin = true, 240, "DEFAULT"
+        H.Enable(W, ember)
+        W.Step()
+        local MM, renderer = W.MM, W.MM.style
+        local function CheckRoundLook(skinned)
+            assert(W.config.shape == 2 and W.config.stylePreset == 4, flavor .. ": Ember lost its shape or preset")
+            assert(W.G.Minimap.mask == MM.MASKS[2], flavor .. ": the map lost its circle mask")
+            assert(renderer.glow:IsShown() and renderer.artOver:IsShown()
+                and renderer.artOver:GetTexture() == W.Suite.MinimapStyle.paths[3], flavor .. ": Ember glow or ring missing")
+            assert(MM.disc:IsShown() == not skinned and not MM.edges[1]:IsShown(), flavor .. ": own border state")
+            local shadow = MM.shadows and MM.shadows[1]
+            assert((shadow and shadow.disc:IsShown() or false) == not skinned, flavor .. ": own shadow state")
+            assert(not shadow or not shadow.edges[1]:IsShown(), flavor .. ": square shadow on a round map")
+            assert(renderer.iconSurface:IsShown() == skinned, flavor .. ": unexpected skin surface visibility")
+            local shown = 0
+            host.skins.EachLayer(renderer.iconSurface, function(texture)
+                if not texture:IsShown() then return end
+                shown = shown + 1
+                assert(texture:GetTexture():match("msuf_skin_shadow3_circle%.tga$"), flavor .. ": wrong shadow art")
+            end)
+            assert(shown == (skinned and 1 or 0), flavor .. ": round map must paint one radial skin layer")
+        end
+        assert(renderer.iconPaintLook and renderer.iconPaintLook.skin.def.shape == "CIRCLE",
+            flavor .. ": inherited Shadow 3 did not draw on Ember")
+        CheckRoundLook(true)
+        assert(page.SkinDraws(area), flavor .. ": menu incorrectly reports a shape mismatch")
+        local found = {}
+        for _, item in ipairs(page.ProductValues(area)) do found[item.value] = true end
+        assert(found.SHADOW3 and found.RING and not found.DARK3, flavor .. ": round choices do not match renderer")
+        local masks, zoom = W.calls.mask, W.calls.zoom
+        page.SelectProduct(area, "SHADOW3")
+        CheckRoundLook(true)
+        local art = CreatePreview(W)
+        local function ShowLayer() return true end
+        art:Paint(W.config, .5, ShowLayer)
+        assert(art.style.iconPaintLook == renderer.iconPaintLook and art.style.iconSurface:IsShown(),
+            flavor .. ": preview did not paint the same radial skin")
+        page.SelectProduct(area, "CUSTOM")
+        CheckRoundLook(false)
+        art:Paint(W.config, .5, ShowLayer)
+        assert(not art.style.iconSurface:IsShown(), flavor .. ": preview retained the removed skin")
+        assert(W.calls.mask == masks and W.calls.zoom == zoom, flavor .. ": skin switches rebuilt native map")
+        assert(W.Suite.HostBridge.IconSkinLook("SHADOW3", "CIRCLE") == nil, "map variant leaked to other modules")
+        page.SelectProduct(area, "DEFAULT")
+        CheckRoundLook(true)
+        host.shared.iconSkinDefault.styleSkin = "DARK3"
+        host.skins.NotifyChanged("profile")
+        CheckRoundLook(false)
+        assert(not page.SkinDraws(area), flavor .. ": menu incorrectly reports a match")
+        host.shared.iconSkinDefault.styleSkin = "SHADOW3"
+        host.skins.NotifyChanged("profile")
+        CheckRoundLook(true)
+        assert(W.S.Set("minimap", "shape", 1) and W.S.Set("minimap", "iconSkin", "SHADOW3"))
+        assert(W.G.Minimap.mask == MM.MASKS[1] and renderer.iconPaintLook.skin.def.id == "SHADOW3"
+            and renderer.iconSurface:IsShown() and not MM.edges[1]:IsShown() and not MM.disc:IsShown(),
+            flavor .. ": a square map must take Shadow 3 instead of its own border")
+        assert(W.S.Set("minimap", "iconSkin", "CUSTOM") and not renderer.iconSurface:IsShown() and MM.edges[1]:IsShown(),
+            flavor .. ": No skin must restore the square map's own border")
+        assert(W.S.Set("minimap", "enabled", false))
     end
 end
 print("Minimap icon skin cold lifecycle, square/circle/wide shapes and combat deferral passed")

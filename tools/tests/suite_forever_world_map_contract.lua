@@ -4,6 +4,13 @@ local function Check(value, message) assert(value, message); checks = checks + 1
 local private, modules, events = {}, {}, {}
 local calls, textWrites, frameCreates, fontWrites = 0, 0, 0, 0
 local gamepad, waypointWrites = false, 0
+local deferred = {}
+C_Timer = { After = function(_, callback) deferred[#deferred + 1] = callback end }
+local function Flush()
+    local jobs = deferred
+    deferred = {}
+    for _, job in ipairs(jobs) do job() end
+end
 local secret = setmetatable({}, { __index = function() error("secret read") end })
 local function Widget()
     frameCreates = frameCreates + 1
@@ -27,11 +34,36 @@ local S = { Text = function(text) return text end,
     CreateTexture = Widget, CreateFontString = Widget, SetFont = function() fontWrites = fontWrites + 1 end,
     GlobalFontPath = function() return "font" end, GamepadUI = function() return gamepad end,
     Install = function(id, module) modules[id] = module end }
+function S.CreateFrame(_, _, parent, template)
+    Check(parent == nil and template == "MSUFSuiteForeverMapPinTemplate", "only unparented Suite marker frames are created")
+    local pin = Widget()
+    pin.shown = false
+    pin.scripts = {}
+    for name, method in pairs(MSUFSuiteForeverMapPinMixin) do pin[name] = method end
+    function pin:SetScript(name, callback) self.scripts[name] = callback end
+    function pin:GetParent() return self.parent end
+    function pin:SetParent(frame) self.parent = frame end
+    function pin:GetFrameLevel() return self.level end
+    function pin:SetFrameLevel(level) self.level = level end
+    function pin:SetScale(scale) self.scale = scale end
+    function pin:GetCenter() return self.point[4] * self.scale, self.point[5] * self.scale end
+    function pin:Show()
+        self.shown = true
+        table.insert(WorldMapFrame.activePins, self)
+    end
+    function pin:Hide()
+        self.shown = false
+        for i, frame in ipairs(WorldMapFrame.activePins) do
+            if frame == self then table.remove(WorldMapFrame.activePins, i); return end
+        end
+    end
+    return pin
+end
 S.Public = function(value) return value ~= secret end
 S.Finite = function(value) return S.Public(value) and type(value) == "number" and value == value end
 S.PublicText = function(value) return S.Public(value) and type(value) == "string" and value ~= "" and value or nil end
-local mapLoaded = true
-local NS = { Client = { isForever = true, IsAddOnLoaded = function() return mapLoaded end }, InCombat = function() return false end,
+local mapLoaded, combat = true, false
+local NS = { Client = { isForever = true, IsAddOnLoaded = function() return mapLoaded end }, InCombat = function() return combat end,
     Safety = { IsForbidden = function() return false end } }
 private.NS, private.Suite = NS, S
 canaccesstable = function(value) return value ~= secret end
@@ -90,70 +122,46 @@ function GameTooltip:Show() self.shown = true end
 function GameTooltip:Hide() self.shown = false end
 function GameTooltip:IsShown() return self.shown end
 
-MapCanvasDataProviderMixin = {
-    OnAdded = function(self, map) self.map = map end,
-    OnRemoved = function(self) self.map = nil end,
-    GetMap = function(self) return self.map end,
-    RegisterEvent = function(self, event) events[event] = self end,
-    UnregisterEvent = function(_, event) events[event] = nil end,
-}
-MapCanvasPinMixin = {
-    ClearNudgeSettings = function() end, SetScalingLimits = function() end,
-    UseFrameLevelType = function() end, OnReleased = function(self) self.released = true end,
-    SetPosition = function(self, x, y) self.x, self.y = x, y end,
-    GetMap = function(self) return self.map end,
-    CheckMouseButtonPassthrough = function(self, button)
-        self:SetPassThroughButtons()
-        self:SetPassThroughButtons(button)
-    end,
-}
 WorldMapFrame = Widget()
-WorldMapFrame.id, WorldMapFrame.activePins, WorldMapFrame.pool = 1429, {}, {}
+WorldMapFrame.id, WorldMapFrame.activePins = 1429, {}
 local nativeName = Widget()
 nativeName.text = "Elwynn"
 WorldMapFrame.dataProviders = { [{ Label = { Name = nativeName } }] = true }
 function WorldMapFrame:GetMapID() return self.id end
--- The stick is stationary when the button is pressed. The native movement
--- predicate is false even though the gamepad interface remains active.
-function WorldMapFrame:HasGamepadCursorInput() return false end
-function WorldMapFrame:AddDataProvider(provider) self.dataProviders[provider] = true; provider:OnAdded(self) end
-function WorldMapFrame:RemoveDataProvider(provider)
-    provider:RemoveAllData(); self.dataProviders[provider] = nil; provider:OnRemoved(self)
+local canvas = { GetSize = function() return 1000, 800 end, GetLeft = function() return 0 end,
+    GetTop = function() return 0 end }
+local levels = { GetValidFrameLevel = function() return 25 end }
+local cursorX, cursorY, nativeHover = 0, 0, nil
+WorldMapFrame.ScrollContainer = { GetGamepadCursorPosition = function() return cursorX, cursorY end }
+function WorldMapFrame:GetCanvas() return canvas end
+function WorldMapFrame:GetCanvasScale() return self.canvasScale or 1 end
+function WorldMapFrame:GetCanvasZoomPercent() return self.zoom or 0 end
+function WorldMapFrame:GetGlobalPinScale() return self.globalPinScale or 1 end
+function WorldMapFrame:GetPinFrameLevelsManager() return levels end
+function WorldMapFrame:GetHoveredPin() return nativeHover end
+function WorldMapFrame:UpdateGamepadCursor() end
+function WorldMapFrame:ClickHoveredPins() end
+function WorldMapFrame:SetGlobalPinScale(value) self.globalPinScale = value end
+function WorldMapFrame:OnCanvasSizeChanged() end
+function WorldMapFrame:OnCanvasScaleChanged() end
+function WorldMapFrame:OnMapChanged() end
+function WorldMapFrame:RefreshAllDataProviders() end
+function WorldMapFrame:AddDataProvider() error("Suite entered Blizzard's protected provider list") end
+function WorldMapFrame:AcquirePin() error("Suite entered Blizzard's native pin pool") end
+function WorldMapFrame:RemoveAllPinsByTemplate() error("Suite cleared Blizzard's native pin pool") end
+local mapHooks = {}
+function WorldMapFrame:HookScript(script, callback)
+    Check(not mapHooks[script], "native map hooked twice")
+    mapHooks[script] = callback
 end
-local function ResetPin(pin)
-    pin:Hide()
-    pin:OnReleased()
-    pin.map = nil
+function WorldMapFrame:Show()
+    self.shown = true
+    self:RefreshAllDataProviders()
+    mapHooks.OnShow(self)
 end
-function WorldMapFrame:RemoveAllPinsByTemplate()
-    for i = #self.activePins, 1, -1 do
-        local pin = self.activePins[i]
-        ResetPin(pin)
-        self.pool[#self.pool + 1] = pin
-        self.activePins[i] = nil
-    end
-end
-function WorldMapFrame:AcquirePin(template, ...)
-    Check(template == "MSUFSuiteForeverMapPinTemplate", "only own pin template is acquired")
-    local pin = table.remove(self.pool)
-    local isNew = not pin
-    if isNew then
-        pin = Widget()
-        function pin:SetPassThroughButtons()
-            error("Suite pins must retain their XML mouse passthrough on acquisition")
-        end
-        for k, v in pairs(MSUFSuiteForeverMapPinMixin) do pin[k] = v end
-        -- Blizzard's frame pool invokes its resetter before MapCanvas can call OnLoad.
-        ResetPin(pin)
-        Check(pin.released, "cold pool reset still calls native pin cleanup")
-    end
-    self.activePins[#self.activePins + 1] = pin
-    pin.map = self
-    if isNew then pin:OnLoad() end
-    pin:Show()
-    pin:OnAcquired(...)
-    pin:CheckMouseButtonPassthrough("RightButton")
-    return pin
+function WorldMapFrame:Hide()
+    self.shown = false
+    mapHooks.OnHide(self)
 end
 local function Load(name) assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. name))("MSUF_Suite_QualityOfLife", private) end
 Load("ForeverMapData.lua")
@@ -163,7 +171,7 @@ Load("ForeverMapLocations.lua")
 Load("ForeverWorldMap.lua")
 local module = assert(modules.foreverWorldMap)
 module.active = true
-local waiting = {}
+local waiting = events
 module.context = { Event = function(_, event, fn) waiting[event] = fn end,
     RemoveEvent = function(_, event) waiting[event] = nil end }
 module.config = { zoneLevels = true, transports = true, flightPoints = true, dungeonEntrances = true,
@@ -172,26 +180,36 @@ mapLoaded = false
 module:Enable()
 Check(not module.map and waiting.ADDON_LOADED, "map readiness waits for the native addon without forcing a load")
 waiting.ADDON_LOADED(module, "ADDON_LOADED", "UnrelatedAddon")
-Check(not module.map, "unrelated addon cannot attach the provider")
+Check(not module.map, "unrelated addon cannot attach the marker layer")
 mapLoaded = true
 waiting.ADDON_LOADED(module, "ADDON_LOADED", "Blizzard_WorldMap")
 Check(not waiting.ADDON_LOADED, "map attachment releases the startup listener")
+local nativeProviders = 0
+for _ in pairs(WorldMapFrame.dataProviders) do nativeProviders = nativeProviders + 1 end
+Check(nativeProviders == 1, "Suite registered a provider in Blizzard's native refresh loop")
+Check(#deferred == 1 and #WorldMapFrame.activePins == 0, "marker paint waits until the native refresh returns")
+Flush()
 Check(#WorldMapFrame.activePins > 0, "activation refreshes an already open map")
 Check(module.label:IsShown() and module.label.text == "Levels 1-10", "missing native ranges use known zone data")
-Check(events.TAXI_NODE_STATUS_CHANGED == module.provider and events.PLAYER_LEVEL_UP == module.provider,
+Check(events.TAXI_NODE_STATUS_CHANGED and events.PLAYER_LEVEL_UP,
     "visible map owns its event registrations")
 local count = #WorldMapFrame.activePins
 local beforeFrames = frameCreates
 local releasedPin = WorldMapFrame.activePins[1]
 releasedPin:OnMouseEnter()
 releasedPin:SetHighlightLocked(true)
-module.provider:RemoveAllData()
+WorldMapFrame:Hide()
 Check(#WorldMapFrame.activePins == 0, "native blank-map lifecycle releases own pins")
 Check(not releasedPin.highlight.shown and not GameTooltip.shown and not releasedPin.record,
     "pool reset clears the previous marker and its active hover state")
-module.provider:RefreshAllData()
+WorldMapFrame:Show()
+Flush()
 Check(#WorldMapFrame.activePins == count, "same-map refresh repopulates all pins after removal")
-Check(frameCreates == beforeFrames, "same-map refresh reuses the native pin pool")
+Check(frameCreates == beforeFrames, "same-map refresh reuses the Suite marker pool")
+local function Refresh()
+    module:Refresh()
+    Flush()
+end
 local function HasPin(kind)
     for _, pin in ipairs(WorldMapFrame.activePins) do
         if pin.kind == kind then return true end
@@ -201,14 +219,14 @@ end
 for setting, kind in pairs({ flightPoints = 1, zoneRoutes = 6, dungeonEntrances = 7 }) do
     Check(HasPin(kind), setting .. " renders its markers on a supported map")
     module.config[setting] = false
-    module:Refresh()
+    Refresh()
     Check(not HasPin(kind), setting .. " releases its markers when disabled")
     module.config[setting] = true
-    module:Refresh()
+    Refresh()
     Check(HasPin(kind), setting .. " renders its markers again when re-enabled")
 end
 module.config.pinSize = 24
-module:Refresh()
+Refresh()
 for _, pin in ipairs(WorldMapFrame.activePins) do
     Check(pin.width == 24 and pin.height == 24, "marker size applies to reused pins")
 end
@@ -245,17 +263,17 @@ nativeName:SetText("Unknown Zone")
 Check(not module.label:IsShown(), "unknown zone range is not invented")
 nativeName:SetText("Elwynn")
 module.config.zoneLevels = false
-module:Refresh()
+Refresh()
 Check(not module.label:IsShown(), "profile refresh can disable an unchanged zone label")
 module.config.zoneLevels = true
 local beforeFonts = fontWrites
-module:Refresh()
+Refresh()
 Check(module.label:IsShown(), "profile refresh repaints unchanged text when enabled again")
 Check(fontWrites > beforeFonts, "global-font refresh restyles a label with unchanged native identity")
 
 WorldMapFrame.id = 1415
 module.config.onlyOwnFaction = false
-module:Refresh()
+Refresh()
 for _, pin in ipairs(WorldMapFrame.activePins) do
     Check(pin.kind ~= 1 and pin.kind ~= 6, "continent view omits dense flight and road markers")
     Check(pin.x >= 0 and pin.x <= 1 and pin.y >= 0 and pin.y <= 1, "projected pins remain inside the map")
@@ -263,51 +281,68 @@ end
 Check(HasPin(7), "dungeon approaches remain visible on continents")
 Check(HasPin(2) and HasPin(3) and HasPin(4), "boats, zeppelins and skycutters render on continents")
 module.config.transports = false
-module:Refresh()
+Refresh()
 Check(not HasPin(2) and not HasPin(3) and not HasPin(4) and HasPin(7),
     "disabling transports leaves dungeon approaches visible")
 module.config.transports = true
-module:Refresh()
+Refresh()
 Check(HasPin(2) and HasPin(3) and HasPin(4), "re-enabling transports restores all three kinds")
 local pin = WorldMapFrame.activePins[1]
-pin:OnMouseEnter()
-Check(GameTooltip.shown and GameTooltip.text == pin.title, "mouse and native gamepad entry share the tooltip")
-pin:SetHighlightLocked(true)
-Check(pin.highlight.shown, "gamepad pin highlighting uses own artwork")
-pin:OnMouseClickAction("LeftButton")
+Check(pin.parent == canvas and pin.level == 25, "markers use the native canvas coordinates and flight-pin level")
+local x, y = pin:GetCenter()
+WorldMapFrame.zoom, WorldMapFrame.canvasScale = 1, 1.5
+WorldMapFrame:OnCanvasScaleChanged()
+local zoomX, zoomY = pin:GetCenter()
+Check(math.abs(zoomX - x) < .001 and math.abs(zoomY - y) < .001 and pin.scale == 1 / 1.5,
+    "zoom changes marker scale without moving its normalized point")
+pin.scripts.OnEnter(pin)
+Check(GameTooltip.shown and GameTooltip.text == pin.title and pin.highlight.shown, "mouse entry shows the marker tooltip")
+pin.scripts.OnMouseUp(pin, "LeftButton", true)
 Check(waypoint and tracked and waypoint[1] == pin.record[1], "manual pin action uses original zone coordinates")
-pin:OnMouseLeave()
+pin.scripts.OnLeave(pin)
 Check(not GameTooltip.shown, "leaving owns only its own tooltip")
 local nextPin = WorldMapFrame.activePins[2]
 gamepad = true
-pin:OnMouseEnter()
-nextPin:OnMouseEnter()
+cursorX, cursorY = nextPin:GetCenter()
+WorldMapFrame:UpdateGamepadCursor()
+local selected = GameTooltip.owner
+Check(selected and selected.highlight.shown and selected.kind, "native pad cursor highlights a Suite marker")
 local beforeWaypoints = waypointWrites
-pin:OnMouseClickAction("LeftButton")
-nextPin:OnMouseClickAction("LeftButton")
-Check(waypointWrites == beforeWaypoints + 1 and waypoint[1] == nextPin.record[1]
-    and waypoint[2] == nextPin.record[2], "one native pad press activates only the visible pin tooltip")
+WorldMapFrame:ClickHoveredPins()
+Check(waypointWrites == beforeWaypoints + 1 and waypoint[1] == selected.record[1]
+    and waypoint[2] == selected.record[2], "one native pad press activates only the visible pin tooltip")
+nativeHover = {}
+WorldMapFrame:UpdateGamepadCursor()
+WorldMapFrame:ClickHoveredPins()
+Check(not selected.highlight.shown and waypointWrites == beforeWaypoints + 1, "native map pins retain gamepad priority")
+nativeHover = nil
 gamepad = false
 
-WorldMapFrame.shown = false
-module.provider:OnHide()
+WorldMapFrame:Hide()
 beforeCalls = calls
-module.provider:RefreshAllData()
+Refresh()
 Check(calls == beforeCalls + 1, "hidden map does not rebuild or query map data")
 Check(not events.TAXI_NODE_STATUS_CHANGED and not events.PLAYER_LEVEL_UP, "hidden map unregisters its events")
-WorldMapFrame.shown = true
 WorldMapFrame.id = 1429
 module.config.onlyOwnFaction = true
-module.provider:RefreshAllData()
-module.provider:OnShow()
+combat = true
+WorldMapFrame:Show()
+WorldMapFrame:OnMapChanged()
+Check(#deferred == 1, "map open and native refresh coalesce into one Suite pass")
+Flush()
+Check(#WorldMapFrame.activePins > 0, "combat map open paints its markers outside the native refresh")
+local combatPin = WorldMapFrame.activePins[1]
+combatPin.scripts.OnMouseUp(combatPin, "LeftButton", true)
+Check(waypointWrites == beforeWaypoints + 1, "opening the map in combat does not allow a Suite waypoint write")
+combat = false
 nativeFlights = true
-module:Refresh()
+Refresh()
 for _, p in ipairs(WorldMapFrame.activePins) do Check(p.kind ~= 1, "native flight markers are not duplicated") end
 WorldMapFrame.id = 1413
-module:Refresh()
+Refresh()
 Check(not HasPin(1), "faction filtering hides opposite-faction flight points")
 module.config.onlyOwnFaction = false
-module:Refresh()
+Refresh()
 local oppositeFlight = false
 for _, p in ipairs(WorldMapFrame.activePins) do
     if p.kind == 1 then
@@ -319,7 +354,7 @@ Check(oppositeFlight, "opposite-faction flight points are available when request
 WorldMapFrame.id = 1429
 module.config.onlyOwnFaction = true
 exact = { { name = "Native entrance", position = { GetXY = function() return .4, .6 end } } }
-module:Refresh()
+Refresh()
 local found = false
 for _, p in ipairs(WorldMapFrame.activePins) do
     Check(p.kind ~= 7, "native entrances replace approximate dungeon approaches")
@@ -327,7 +362,8 @@ for _, p in ipairs(WorldMapFrame.activePins) do
 end
 Check(found, "exact native entrance is shown when Blizzard's filter is off")
 filter = true
-module.provider:OnEvent("CVAR_UPDATE", "showDungeonEntrancesOnMap")
+events.CVAR_UPDATE(module, "CVAR_UPDATE", "showDungeonEntrancesOnMap")
+Flush()
 for _, p in ipairs(WorldMapFrame.activePins) do Check(p.kind ~= 7 and p.kind ~= 8, "native visible entrances are not duplicated") end
 module.active = false
 module:Disable()
@@ -337,7 +373,8 @@ nativeName:SetText("Elwynn")
 Check(calls == beforeCalls, "disabled permanent label observer is dormant")
 module.active = true
 module:Enable()
-Check(module.map == WorldMapFrame, "re-enable reattaches the provider")
+Flush()
+Check(module.map == WorldMapFrame and #WorldMapFrame.activePins > 0, "re-enable repaints the marker layer")
 
 -- Continent masks, not overlapping zone rectangles, decide road/transport
 -- membership. Multiple routes at one physical signpost share one native pin.
@@ -365,7 +402,7 @@ Check(kinds[1] >= 60 and kinds[2] >= 10 and kinds[3] >= 4 and kinds[4] >= 2 and 
 local file = assert(io.open(root .. "/MSUF_Suite_QualityOfLife/ForeverMapPins.xml", "rb"))
 local xml = file:read("*a"); file:close()
 Check(xml:find('enableMouseMotion="true"', 1, true) and xml:find('enableMouseClicks="true"', 1, true)
-    and not xml:find("<OnLoad", 1, true), "native AcquirePin owns script installation and creation lifecycle")
+    and not xml:find("<OnLoad", 1, true), "the Suite owns script installation and creation lifecycle")
 Check(xml:find('passThroughButtons="RightButton"', 1, true), "right clicks pass through to the map")
 print(string.format("Forever world-map contract: %d checks; %d locations; warm label %d VM, %.3f KB/1000",
     checks, #private.ForeverMapData.pins, instructions, allocation))

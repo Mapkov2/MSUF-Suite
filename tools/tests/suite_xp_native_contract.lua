@@ -3,7 +3,7 @@ local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local combat, earlyCombat, queued, hooks, alphaWrites, mouseWrites, poolWalks = false, false, 0, 0, 0, 0, 0
 local data, methods = {}, {}
 local cleanupFrame
-local staleCombat
+local staleCombat, startupLayout
 local function Widget(alpha, click, motion)
     local frame = setmetatable({}, {
         __index = function(self, key) return methods[key] or data[self][key] end,
@@ -22,7 +22,7 @@ end
 function methods:IsMouseClickEnabled() return data[self].click end
 function methods:IsMouseMotionEnabled() return data[self].motion end
 function methods:EnableMouse(value)
-    assert(not combat and not earlyCombat, "protected mouse write during combat")
+    assert(not combat and (not earlyCombat or startupLayout), "protected mouse write during combat")
     data[self].click, data[self].motion = value, value
     mouseWrites = mouseWrites + 1
 end
@@ -113,7 +113,22 @@ local function Load(forever)
     data[StatusTrackingBarManager].barContainers = { main, secondary }
     StatusTrackingBarInfo = { BarsEnum = { Experience = 4 } }
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/NativeExperienceBar.lua"))("MSUF_Suite_QualityOfLife", private)
-    return private.NativeExperienceBar, module, main, xp, rep, tick, secondary, xp2, rep2
+    return private.NativeExperienceBar, module, main, xp, rep, tick, secondary, xp2, rep2, private.NS
+end
+do
+    local native, module, _, xp, _, _, _, _, _, ns = Load(true)
+    module.config.hideBlizzardTracking = true
+    local before = queued
+    earlyCombat, startupLayout, ns.startingBeforeLockdown = true, true, true
+    combat = true
+    native.Sync(module, true)
+    assert(queued == before + 1 and StatusTrackingBarManager:GetAlpha() == 1,
+        "the reload scope bypassed actual lockdown")
+    combat = false
+    native.Sync(module, true)
+    assert(queued == before + 1 and StatusTrackingBarManager:GetAlpha() == 0 and xp:GetAlpha() == 0,
+        "Forever combat reload left Blizzard tracking chrome over the ActionBar")
+    ns.startingBeforeLockdown, earlyCombat, startupLayout = nil, false, nil
 end
 for _, forever in ipairs({ false, true }) do
     hooks, alphaWrites, mouseWrites, poolWalks = 0, 0, 0, 0

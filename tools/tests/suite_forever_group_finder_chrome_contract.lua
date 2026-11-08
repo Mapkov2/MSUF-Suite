@@ -147,9 +147,10 @@ assert(not surfaces[LFGParentFrame].fill:IsShown())
 assert(NS.ForeverGroupFinder.Apply())
 assert(LFGBrowseFrame.inheritedRock:GetAlpha() == 0 and unnamedRock:GetAlpha() == 0)
 locked = true
+function unnamedRock:IsProtected() return true, false end
 unnamedRock:SetAlpha(.5)
 assert(NS.ForeverGroupFinder.Apply() and next(pending))
-assert(unnamedRock:GetAlpha() == .5, "inherited chrome was painted during combat")
+assert(unnamedRock:GetAlpha() == .5, "protected inherited chrome was painted during combat")
 locked = false
 for key, callback in pairs(pending) do pending[key] = nil callback() end
 assert(unnamedRock:GetAlpha() == 0, "deferred chrome pass lost inherited background")

@@ -459,7 +459,11 @@ module.config = {
 for key, value in pairs(chatDefaults) do
     if module.config[key] == nil then module.config[key] = value end
 end
+inCombat, NS.startingBeforeLockdown = true, true
 module:Enable()
+assert(module.visuals[ChatFrame1] and module.visuals[ChatFrame1].input,
+    "combat reload did not apply chat and input chrome before lockdown")
+inCombat, NS.startingBeforeLockdown = false, nil
 -- Modern Dark's panel geometry must not depend on a previous native layout.
 local nativeChatPoints, otherChatPoints = ChatFrame1.points, ChatFrame1Tab.points
 module.config.lockWindowPosition, module.config.windowX, module.config.windowY = true, 12, 12

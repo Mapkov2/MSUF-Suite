@@ -309,6 +309,7 @@ local uf = {
     HealthBarsContainer = healthContainer, CastBarsContainer = { castBar = cast },
 }
 uf.CreateTexture, uf.CreateFontString = bar.CreateTexture, bar.CreateFontString
+uf.IsProtected = bar.IsProtected
 function uf:UpdateAnchors()
     error("nameplate skin must not reenter native layout")
 end
@@ -1977,10 +1978,32 @@ do
     module.config.enemyLevelOffsetX = 6
     module.config.levelAppearance = 1
     targetUnit = "nameplate1"
-    module:Refresh()
-    local label = assert(module.levelLabels[uf])
-    local target = module.visuals[bar].targetHost._msufBossTargetIndicator
+    local badge = uf.PlayerLevelDiffFrame
     local targetX = NS.NameplateStyle.TargetConfig(module.config).bossTargetX
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    module.levelLabels[uf] = nil
+    combat = true
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    local label = assert(module.levelLabels[uf], "a new Forever plate deferred its level number in combat")
+    local target = module.visuals[bar].targetHost._msufBossTargetIndicator
+    assert(label:IsShown() and label.text == unitLevel and badge:GetAlpha() == 0
+        and target.offsetX == targetX - 28 and target.mirror.offsetX == -targetX,
+        "a new Forever plate in combat showed the native badge or misplaced the arrows")
+
+    events.NAME_PLATE_UNIT_REMOVED(module, "NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    assert(not label:IsShown() and badge:GetAlpha() == 1, "releasing a combat plate did not restore its native badge")
+    uf.protected = true
+    events.NAME_PLATE_UNIT_ADDED(module, "NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(not label:IsShown() and badge:GetAlpha() == 1 and DeferredPlate(uf)
+        and target.offsetX == targetX and target.mirror.offsetX == -targetX + 33,
+        "protected Forever plate did not keep its native badge clear of the target arrows")
+    combat = false
+    events.PLAYER_REGEN_ENABLED(module, "PLAYER_REGEN_ENABLED")
+    assert(label:IsShown() and badge:GetAlpha() == 0 and target.mirror.offsetX == -targetX,
+        "the protected plate did not switch back to the plain number after combat")
+    uf.protected = nil
+
+    module:Refresh()
     assert(label:IsShown() and label.offsetX == 6 and uf.PlayerLevelDiffFrame:GetAlpha() == 0
         and target.offsetX == targetX - 28 and target.mirror.offsetX == -targetX,
         "Forever Jundies did not use Retail's plain level number")
@@ -2472,6 +2495,7 @@ do
     local alphas = module.nativeLevelAlphas
     local frameAlpha = alphas[uf.LevelFrame]
     NS.Client.isForever, uf.PlayerLevelDiffFrame = true, Region()
+    uf.PlayerLevelDiffFrame.protected = true
     private.Level.PaintNative(uf, "enemy")
     assert(DeferredPlate(uf) and uf.PlayerLevelDiffFrame:GetAlpha() == 1,
         "a native level alpha in combat changed or held back no plate")

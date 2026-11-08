@@ -255,18 +255,35 @@ local function RevealMapQuest(scroll, questID)
     if key ~= nil then list.folded[key] = nil end
 end
 
+-- Fold changes affect the row positions, so reuse the child sizes from the
+-- native rebuild. The layout view skips child Layout calls and their MarkClean.
+local function ResizeQuestList(contents, layout)
+    local children = contents:GetLayoutChildren()
+    local width, height, expandable = layout:LayoutChildren(children)
+    local frameWidth, frameHeight = contents:CalculateFrameSize(width, height)
+    if expandable then
+        width, height = layout:LayoutChildren(children, frameWidth)
+        frameWidth, frameHeight = contents:CalculateFrameSize(width, height)
+    end
+    contents:SetSize(frameWidth, frameHeight)
+end
+
 local function AttachFolds(scroll, state)
     local contents = Safety.Field(scroll, "Contents")
-    if not Safety.HasMethod(scroll, "UpdateBackground") or not Safety.HasMethod(contents, "Layout") then return end
+    if not Safety.HasMethod(scroll, "UpdateBackground") or not Safety.HasMethod(contents, "GetLayoutChildren")
+        or not Safety.HasMethod(contents, "LayoutChildren") or not Safety.HasMethod(contents, "CalculateFrameSize") then
+        return
+    end
     local list = lists[scroll]
     if not list then
+        local layout = setmetatable({ skipChildLayout = true }, { __index = contents })
         list = {
             scroll = scroll, contents = contents, folded = {}, hidden = Kit.WeakSet(),
             hiddenQuests = {}, hiddenPins = Kit.WeakSet(),
         }
         list.relayout = function()
             if not NS.IsCombatLocked() and Safety.CanDecorate(contents, true) and ApplyFolds(list) then
-                contents:Layout()
+                ResizeQuestList(contents, layout)
             end
         end
         lists[scroll] = list

@@ -553,4 +553,172 @@ do
 end
 Check(scriptWrites == 0, "native wheel/update scripts were replaced")
 for _, frame in ipairs(frames) do Check(frame.scripts.OnUpdate == nil, "Suite installed an idle update loop") end
-print("Suite skin smooth scrolling (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")
+do
+    local now, step = 0, 0.05
+    GetTime = function() return now end
+    local function WheelBox()
+        local wheelBox = Controller(nil)
+        local child = Frame()
+        local group = { animations = {}, plays = 0 }
+        function group:CreateAnimation(kind)
+            Check(kind == "Translation", "bounce was not a render translation")
+            local anim = {}
+            function anim:SetOrder(order) self.order = order end
+            function anim:SetDuration(duration) self.duration = duration end
+            function anim:SetSmoothing(smoothing) self.smoothing = smoothing end
+            function anim:SetOffset(x, y) self.x, self.y = x, y end
+            self.animations[#self.animations + 1] = anim
+            return anim
+        end
+        function group:Play() self.plays, self.playing = self.plays + 1, true end
+        function group:Stop() self.playing = false end
+        function child:CreateAnimationGroup() return group end
+        function wheelBox:GetScrollTarget() return child end
+        function wheelBox:IsScrollAllowed() return not self.blocked end
+        function wheelBox:HasScrollableExtent() return not self.short end
+        function wheelBox:ScrollInDirection(amount, direction)
+            if self:IsScrollAllowed() then
+                self:SetScrollPercentage(math.max(0, math.min(1, self.position + amount * direction)))
+            end
+        end
+        wheelBox.scripts.OnMouseWheel = function(self, delta)
+            if self.capture then self.capture() return end
+            self:ScrollInDirection(step, delta < 0 and 1 or -1)
+        end
+        return wheelBox, group
+    end
+
+    local addon, bounce = WheelBox()
+    local bindings, bindingsBounce = WheelBox()
+    local other = WheelBox()
+    local category, listening = 42, false
+    Settings = { KEYBINDINGS_CATEGORY_ID = 42 }
+    KeybindListener = { IsListening = function() return listening end }
+    SettingsPanel = {
+        Container = { SettingsList = { ScrollBox = bindings } },
+        GetCurrentCategory = function() return { GetID = function() return category end } end,
+    }
+    AddonList = { ScrollBox = addon }
+    EventRegistry = Frame()
+    Check(Motion.Track(addon, "adaptiveAddon") and Motion.Track(bindings, "adaptiveSettings")
+        and Motion.Track(other, "other"), "adaptive list fixture was not tracked")
+
+    local function Wheel(target, interval, delta)
+        now = now + interval
+        local from = target.position
+        target:Fire("OnMouseWheel", delta or -1)
+        local tween = target.interpolator
+        local destination = tween and tween.destination
+        local travelled = (destination or target.position) - from
+        if destination then target.position = destination; tween:Cancel() end
+        return travelled
+    end
+
+    local function Near(value, expected)
+        return math.abs(value - expected) < 0.00001
+    end
+
+    Wheel(addon, 0.25)
+    Check(Near(Wheel(addon, 0.04), step), "legacy/default profile accelerated")
+    NS.DB.theme.adaptiveScrolling = true
+    Changed()
+    addon.position = 0
+    Check(Near(Wheel(addon, 0.25), step), "first notch did not preserve native distance")
+    local previous = step
+    for _ = 1, 5 do
+        local distance = Wheel(addon, 0.04)
+        Check(distance > previous and distance <= 3 * step, "burst gain did not grow toward a 3x ceiling")
+        previous = distance
+    end
+    Check(Near(previous / step, 1 + 2 * math.log(2.9375) / math.log(3)), "gain is not logarithmic")
+    Check(Near(Wheel(addon, 0.04, 1), -step), "direction change carried old gain")
+    Check(Near(Wheel(addon, 0.18, 1), -step), "pause did not reset gain")
+    Check(Near(Wheel(addon, 0.04, 1), -step * (1 + 2 * math.log(2) / math.log(3))),
+        "the burst did not restart after a pause")
+    addon:Trigger("layout")
+    Check(Near(Wheel(addon, 0.04, 1), -step), "list layout retained the burst")
+    addon:Fire("OnHide")
+    addon:Fire("OnShow")
+    Check(Near(Wheel(addon, 0.04, 1), -step), "reopened list retained the burst")
+
+    Wheel(other, 0.25)
+    Check(Near(Wheel(other, 0.04), step), "an unrelated Blizzard list accelerated")
+    Wheel(bindings, 0.25)
+    Check(Wheel(bindings, 0.04) > step, "active Keybindings category did not accelerate")
+    category = 43
+    Check(Near(Wheel(bindings, 0.04), step), "another Settings category accelerated")
+    category = 42
+    Check(Near(Wheel(bindings, 0.04), step), "reopening the Keybindings category inherited gain")
+    listening = true
+    EventRegistry:Trigger("KeybindListener.StartedListening")
+    bindings.capture = function()
+        listening = false
+        EventRegistry:Trigger("KeybindListener.StoppedListening")
+    end
+    bindings.position = 1
+    bindings:ScrollInDirection(step, 1) -- a same-frame programmatic attempt before the binding
+    Check(Wheel(bindings, 0) == 0 and bindingsBounce.plays == 0, "assigning MOUSEWHEELDOWN scrolled or bounced")
+    bindings.capture = nil
+
+    addon.position = 0.3
+    now = now + 0.25
+    addon:Fire("OnMouseWheel", -1)
+    local initial = addon.interpolator.destination
+    now = now + 0.04
+    addon:Fire("OnMouseWheel", -1)
+    Check(addon.interpolator.destination > initial and addon.position < addon.interpolator.destination,
+        "a burst did not advance the target of a running interpolation")
+    local beforeReverse = addon.position
+    now = now + 0.04
+    addon:Fire("OnMouseWheel", 1)
+    Check(Near(addon.interpolator.destination, beforeReverse - step), "reversal started from the old target")
+    addon.interpolator:Cancel()
+
+    addon.position = 0.98
+    Wheel(addon, 0.25)
+    Check(addon.position == 1 and bounce.plays == 0, "bounce played on arrival or crossed the scroll range")
+    Wheel(addon, 0.04)
+    Check(addon.position == 1 and bounce.plays == 1 and bounce.animations[1].y == 5
+        and bounce.animations[2].y == -5, "bottom bounce changed the real offset or moved the wrong way")
+    Wheel(addon, 0.04)
+    Check(bounce.plays == 1, "continued wheel notches restarted the bounce")
+    Check(Near(Wheel(addon, 0.04, 1), -step) and not bounce.playing,
+        "inward wheel input did not stop the bounce immediately")
+    addon.position = 0
+    Wheel(addon, 0.04, 1)
+    Check(addon.position == 0 and bounce.plays == 2 and bounce.animations[1].y == -5,
+        "top bounce moved the wrong way or changed the real offset")
+    NS.DB.theme.scrollEdgeBounce = false
+    Changed("scrollEdgeBounce")
+    Wheel(addon, 0.30, 1)
+    Check(bounce.plays == 2 and not bounce.playing, "disabling bounce retained a running effect")
+    addon.position = 0.3
+    Wheel(addon, 0.04)
+    Check(Wheel(addon, 0.04) > step, "disabling bounce also disabled acceleration")
+    NS.DB.theme.scrollEdgeBounce = nil
+    NS.DB.theme.reduceMotion = true
+    Changed("reduceMotion")
+    addon.position = 1
+    Wheel(addon, 0.30)
+    Check(bounce.plays == 2, "reduced motion permitted bounce")
+    addon.position = 0.3
+    Wheel(addon, 0.04)
+    Check(Near(Wheel(addon, 0.04), step), "reduced motion permitted acceleration")
+    NS.DB.theme.reduceMotion = nil
+    Changed("reduceMotion")
+    addon.position, addon.short = 1, true
+    Wheel(addon, 0.30)
+    Check(bounce.plays == 2, "unscrollable list bounced")
+    addon.short, combat = false, true
+    Wheel(addon, 0.30)
+    Check(bounce.plays == 2, "combat allowed the adaptive bounce")
+    combat = false
+    Wheel(addon, 0.30)
+    Check(bounce.playing, "adaptive wheel did not recover after combat")
+    Motion.ReleaseOwner("adaptiveAddon")
+    Wheel(addon, 0.30)
+    Check(not bounce.playing and bounce.plays == 3, "released list retained adaptive motion")
+    Check(scriptWrites == 0, "adaptive scrolling replaced native scripts")
+end
+
+print("Suite skin smooth and adaptive scrolling (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")

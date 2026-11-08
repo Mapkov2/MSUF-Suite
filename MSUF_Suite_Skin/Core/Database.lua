@@ -108,7 +108,8 @@ local GEOMETRY_CHOICES = {
     { "family", "GeometryFamilies" },
     { "controlShape", "ControlShapes" },
 }
-local OPTIONAL_MOTION_KEYS = { "menuAnimations", "reduceMotion", "dropdownDimming", "windowFocusDimming", "smoothScrolling" }
+local OPTIONAL_MOTION_KEYS = { "menuAnimations", "reduceMotion", "dropdownDimming", "windowFocusDimming",
+    "smoothScrolling", "adaptiveScrolling", "scrollEdgeBounce" }
 
 -- Optional booleans stay absent in older profiles and retain explicit false
 -- through sanitization, copy and import without adding factory defaults.

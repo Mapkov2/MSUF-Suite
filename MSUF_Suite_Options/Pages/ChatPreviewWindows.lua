@@ -92,7 +92,7 @@ function E.Build(ui)
         end
     end)
     P.HM.SkipHistoryCheckpoint(rail.create)
-    rail.rename = T.Button(panel, Tr("Rename Chat Tab"), 236, 26)
+    rail.rename = T.Button(panel, "Rename Chat Tab", 236, 26)
     rail.rename:SetScript("OnClick", function(button) OpenRenameMenu(ui, button) end)
     P.HM.SkipHistoryCheckpoint(rail.rename)
     rail.delete = T.RoleButton(panel, Tr("Delete Chat Tabs"), "destructive", 236, 26)

@@ -643,7 +643,7 @@ function MM.PrepareCapture()
     end
 end
 
-flushers.claim = function()
+function MM.Claim()
     if M.mapOwned then return end
     if NS.IsCombatLocked() then
         S.Queue("minimap")
@@ -661,6 +661,7 @@ flushers.claim = function()
     M.mapOwned = true
     MM.ApplyDecorations()
 end
+flushers.claim = MM.Claim
 
 local function RestoreMap(map, record, parent, lost)
     map:SetFixedFrameStrata(false)

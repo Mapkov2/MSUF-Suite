@@ -24,6 +24,13 @@ local BORDERED_PARTS = {
 }
 local RGB, Finite = S.RGB, S.Finite
 
+-- Cold presentation can use the reload's unlocked frame. Chat actions
+-- and combat event handlers continue to use the unit combat flag.
+function C.LayoutLocked()
+    if NS.startingBeforeLockdown then return NS.IsCombatLocked() end
+    return NS.InCombat()
+end
+
 -- Hides (own) or restores a bordered frame's chrome through the context.
 function C.OwnBorderedParts(context, frame, own)
     local name = frame:GetName()

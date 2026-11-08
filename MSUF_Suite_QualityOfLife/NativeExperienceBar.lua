@@ -135,9 +135,9 @@ local function SyncBars(state)
 end
 
 function Native.Sync(self, enabled, event)
-    -- Lifecycle/mouse changes wait for combat to end, including the early
-    -- PLAYER_REGEN_DISABLED edge. Native swaps only use the alpha C sink.
-    if NS.InCombat(event) or NS.IsCombatLocked() then
+    -- The cold Forever layout is still unlocked. Claim the saved XP
+    -- surface there before Blizzard's tracking bar covers the ActionBars.
+    if NS.IsCombatLocked() or NS.InCombat(event) and not (enabled and NS.startingBeforeLockdown) then
         -- Stop marks a failed module inactive before Disable. Core Apply
         -- cannot replay its cleanup, so a one-shot owned event returns it.
         if enabled == false then DeferCleanup(self) else S.Queue("xpBar") end

@@ -269,7 +269,8 @@ Renderer.__index = Renderer
 
 local function IconLook(c)
     if not c.iconSkin or c.iconSkin == "CUSTOM" then return nil end
-    return NS.HostBridge.IconSkinLook(c.iconSkin, c.shape == SHAPE.CIRCLE and "CIRCLE" or "RECTANGLE")
+    local round = c.shape == SHAPE.CIRCLE
+    return NS.HostBridge.IconSkinLook(c.iconSkin, round and "CIRCLE" or "RECTANGLE", nil, round)
 end
 
 function Renderer:IconSkinChanged(c)

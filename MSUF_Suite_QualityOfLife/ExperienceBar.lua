@@ -39,6 +39,7 @@ local TEXT = {
     sessionTime = S.Text("Session time"),
     perHour = S.Text("XP per hour"),
     timeToLevel = S.Text("Time to level"),
+    levelTime = S.Text("Time played this level"),
     levelUps = S.Text("Levels this session"),
     noProgress = S.Text("No experience progress is available."),
     unavailable = S.Text("XP unavailable"),
@@ -185,6 +186,11 @@ local function AddSessionLines(self, remaining)
     GameTooltip:AddDoubleLine(TEXT.levelUps, tostring(self.session.levelUps), 1, 1, 1, 1, 1, 1)
 end
 
+local function LevelTime(self, level)
+    if self.playedLevel ~= level or not self.playedAt then return nil end
+    return self.playedSeconds + floor(max(0, GetTime() - self.playedAt))
+end
+
 -- Reputation or honor (the track setting): the standing and what is left.
 local function TrackedTooltip(self)
     local label, current, maximum, _, name, capped = Tracked.Read(self.source)
@@ -223,10 +229,66 @@ local function Tooltip(self)
                 1, 1, 1, 0.65, 0.82, 1)
         end
         if self.session then AddSessionLines(self, remaining) end
+        if self.playedActive then
+            GameTooltip:AddDoubleLine(TEXT.levelTime, Duration(LevelTime(self, level)), 1, 1, 1, 1, 1, 1)
+        end
     else
         GameTooltip:AddLine(TEXT.noProgress, 1, 1, 1)
     end
     GameTooltip:Show()
+end
+
+local function PaintLevelTime(self)
+    local seconds = LevelTime(self, self.playedActive)
+    Text.PaintLevelTime(self, seconds)
+    if seconds then self.playedJob:Request() end
+end
+
+local function TickLevelTime(self)
+    PaintLevelTime(self)
+    if GameTooltip:IsOwned(self.host) then Tooltip(self) end
+end
+
+local function TimePlayed(self, _, _, seconds)
+    if not Finite(seconds) or seconds < 0 then return end
+    local requestedLevel = self.playedPending
+    self.playedPending = nil
+    local level = self.playedActive
+    local currentLevel = UnitLevel("player")
+    if not level or not Finite(currentLevel) or currentLevel ~= level
+        or (requestedLevel and requestedLevel ~= level) then return end
+    -- A reply can be in flight when the player levels. A clock started by
+    -- the level-up event bounds how much time could have been played here.
+    if self.playedFromLevelUp then
+        if self.playedLevel > level then return end
+        local elapsed = LevelTime(self, level)
+        if elapsed and seconds > elapsed + 2 then return end
+    end
+    self.playedLevel, self.playedSeconds, self.playedAt = level, seconds, GetTime()
+    self.playedFromLevelUp = nil
+    TickLevelTime(self)
+end
+
+local function SyncLevelTime(self, level)
+    if not level then
+        if self.playedActive then
+            self.playedActive, self.playedPending = nil, nil
+            self.context:RemoveEvent("TIME_PLAYED_MSG")
+            self.playedJob:Cancel()
+        end
+        return
+    end
+    if not self.playedActive then
+        self.playedJob = self.context:Coalesce(1, TickLevelTime)
+        self.context:Event("TIME_PLAYED_MSG", TimePlayed, IN_COMBAT)
+    end
+    self.playedActive = level
+    PaintLevelTime(self)
+    if (not self.playedLevel or self.playedLevel < level) and not self.playedPending then
+        -- Blizzard displays the normal /played chat lines for this request.
+        self.playedPending = level
+        RequestTimePlayed()
+    end
 end
 
 local function HostEnter() Tooltip(M) end
@@ -347,7 +409,7 @@ local function Layout(self)
         S.ApplyOwnedChildLayer(self.bar, self.host, self.config.layer, 1, restored)
     end
     local c, host, bar = self.config, self.host, self.bar
-    host:SetSize(c.width, c.height + 23)
+    host:SetSize(c.width, c.height + NS.ExperienceBarLayout.BottomPadding(c))
     if not self.previewParent then S.PlaceHost(host, c, "BOTTOM") end
     bar:SetSize(c.width, c.height)
     local framed, segmented = (c.displayStyle or 1) == 1, c.displayStyle == 3
@@ -488,6 +550,8 @@ PaintValues = function(self)
     local capped = level and (maximum <= 0 or AtEffectiveMaxLevel(self, level))
     local source = Tracked.Source(c.track, capped)
     self.source = source
+    local playedLevel = c.showLevelTime and NS.loginKind and source == Tracked.XP and not capped and level
+    if self.playedActive and not playedLevel then SyncLevelTime(self) end
     if source ~= Tracked.XP then return PaintTracked(self, source) end
     if self.fillColor then
         Tint(self.fill, self.accent, 0.98)
@@ -509,6 +573,11 @@ PaintValues = function(self)
     self.fill:SetShown(fraction > 0)
     PaintRested(self, fraction, maximum, capped)
     Text.PaintXP(self, level, current, maximum, self.session and self.session.gained or 0, Rate(self), fraction)
+    if playedLevel then
+        SyncLevelTime(self, playedLevel)
+    elseif c.showLevelTime then
+        Text.HideLevelTime(self)
+    end
     -- An open tooltip follows the new values.
     if GameTooltip:IsOwned(host) then Tooltip(self) end
     KeepRateCurrent(self)
@@ -547,6 +616,11 @@ end
 -- session.
 XPChanged = function(self, event, unit)
     if event == "PLAYER_XP_UPDATE" and unit and unit ~= "player" then return end
+    if event == "PLAYER_LEVEL_UP" and self.playedActive and Finite(unit) and unit >= self.playedActive
+        and (not self.playedFromLevelUp or unit ~= self.playedLevel) then
+        self.playedLevel, self.playedSeconds, self.playedAt = unit, 0, GetTime()
+        self.playedFromLevelUp = true
+    end
     local level, current, maximum = XP()
     if level then
         if not self.session and NS.loginKind then InitializeSession(self, level, current, maximum) end
@@ -596,6 +670,7 @@ function M:Disable()
     self.sessionJob:Cancel()
     Native.Sync(self, false)
     CancelRateTimer(self)
+    SyncLevelTime(self)
     if self.host then
         self.host:Hide()
         HostLeave(self.host)
@@ -636,6 +711,7 @@ function S.DrawExperienceBarPreview(parent, config, sample, viewport)
         view.fill:SetShown(fraction > 0)
         PaintRested(view, fraction, 100, false, sample.rested)
         Text.PaintXP(view, 42, sample.xp * 1000, 100000, 12000, 24000, fraction)
+        Text.PaintLevelTime(view, 3465)
     end
     local dx, dy = 0, 0
     if viewport then
@@ -649,7 +725,7 @@ function S.DrawExperienceBarPreview(parent, config, sample, viewport)
             if source == Tracked.XP then PaintRested(view, sample.xp / 100, 100, false, sample.rested) end
         end
     end
-    return view.host, config.width, config.height + 23, dx, dy
+    return view.host, config.width, config.height + NS.ExperienceBarLayout.BottomPadding(config), dx, dy
 end
 
 function S.ResetXPSession()

@@ -577,7 +577,7 @@ for _, case in ipairs(previewCases) do
                 if field then
                     local regions = { host = host }
                     for _, key in ipairs({ "rested", "levelText", "xpText", "percentText", "sessionText", "rateText", "etaText",
-                        "details", "speed", "title", "state", "icon", "count" }) do
+                        "levelTimeText", "details", "speed", "title", "state", "icon", "count" }) do
                         regions[key] = host:CreateTexture(nil, "ARTWORK")
                         regions[key]:SetSize(20, 12)
                     end

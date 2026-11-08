@@ -92,13 +92,22 @@ local function RequestRefresh()
 end
 
 -- Apply activates the adapter on Forever only.
-local function Ready()
-    return ForeverGroupFinder.active and not NS.IsCombatLocked()
-        and NS.GenericWindows.IsCategoryEnabled("group")
+local function Enabled()
+    return ForeverGroupFinder.active and NS.GenericWindows.IsCategoryEnabled("group")
+end
+
+local function CanPaintTarget(target)
+    local combat = NS.IsCombatLocked()
+    if Safety.CanCreateRegions(target, not combat) then return true end
+    if combat then
+        local protected, explicit = Safety.GetProtection(target)
+        if protected and not explicit then RequestRefresh() end
+    end
+    return false
 end
 
 local function Fade(region)
-    if region and Safety.CanDecorate(region, true) then
+    if region and CanPaintTarget(region) then
         NS.Cosmetics.Fade(region, OWNER)
     end
 end
@@ -111,7 +120,7 @@ local function FadeInset(inset)
     Fade(inset.CustomBG)
     Fade(inset.Bg)
     Fade(inset.Border)
-    NS.Cosmetics.FadeNineSlice(inset.NineSlice, OWNER)
+    NS.Cosmetics.FadeNineSlice(inset.NineSlice, OWNER, CanPaintTarget)
 end
 
 -- Stone header and the two scroll lines above a result list.
@@ -136,10 +145,7 @@ local function FadeRoleBackground(roles)
 end
 
 local function SkinCategoryCards()
-    if not Ready() then
-        if NS.IsCombatLocked() then RequestRefresh() end
-        return
-    end
+    if not Enabled() then return end
     local listing = _G.LFGListingFrame
     local view = listing and listing.CategoryView
     local buttons = view and view.CategoryButtons
@@ -147,14 +153,14 @@ local function SkinCategoryCards()
     for index = 1, #buttons do
         local button = buttons[index]
         if button and button.Icon and button.Cover and button.Label
-            and Safety.CanCreateRegions(button, true) then
+            and CanPaintTarget(button) then
             NS.ControlSkin.ApplyButton(button, OWNER, CARD_SPEC)
         end
     end
 end
 
 local function SkinButton(button, spec)
-    if not button or not Safety.CanCreateRegions(button, true) then return end
+    if not button or not CanPaintTarget(button) then return end
     -- These verified controls carry their semantic icon separately (Icon).
     -- ControlSkin replaces hover/pressed/disabled art, but not normal art.
     local normal = Safety.Call(button, "GetNormalTexture")
@@ -171,10 +177,7 @@ end
 
 local function OnSelectionChanged(frame)
     if not ForeverGroupFinder.rows[frame] and not ForeverGroupFinder.surfaces[frame] then return end
-    if not Ready() then
-        if NS.IsCombatLocked() then RequestRefresh() end
-        return
-    end
+    if not Enabled() or not CanPaintTarget(frame) then return end
     SyncSelection(frame, frame.Selected or frame.SelectedTexture, ForeverGroupFinder.rows[frame])
 end
 
@@ -192,11 +195,7 @@ local function OnCategoryButtonsUpdated()
 end
 
 local function SkinResultRow(row, kind, selectionBehavior)
-    if not Ready() then
-        if NS.IsCombatLocked() then RequestRefresh() end
-        return
-    end
-    if not row or not Safety.CanCreateRegions(row, true) then return end
+    if not Enabled() or not row or not CanPaintTarget(row) then return end
     if kind == "activity" and row.NameButton and row.CheckButton then
         NS.Checkmarks.TrackFrame(row, OWNER)
         NS.Checkmarks.TrackFrame(row.CheckButton, OWNER)
@@ -240,8 +239,8 @@ local function RegisterRows(scrollBox, kind, selectionBehavior)
 end
 
 local function SkinFrame(frame, mode)
-    if frame and Safety.CanCreateRegions(frame, true) then
-        NS.GenericWindows.ApplyFrame(frame, OWNER, mode)
+    if frame and CanPaintTarget(frame) then
+        NS.GenericWindows.ApplyFrame(frame, OWNER, mode, true)
     end
 end
 
@@ -312,16 +311,16 @@ end
 local function SkinTabs(parent)
     for index = 1, #PANEL_TABS do
         local tab = parent[PANEL_TABS[index]]
-        if tab and Safety.CanCreateRegions(tab, true) then
+        if tab and CanPaintTarget(tab) then
             NS.ControlSkin.ApplyTab(tab, OWNER, TAB_SPEC)
         end
     end
     for index = 1, #MODE_TABS do
         local tab = parent[MODE_TABS[index]]
-        if tab and Kit.Ensure(ForeverGroupFinder, tab, SIDE_TAB_SPEC) then
+        if tab and CanPaintTarget(tab) and Kit.Ensure(ForeverGroupFinder, tab, SIDE_TAB_SPEC) then
             Fade(tab.Background)
             Fade(tab.SelectedTexture)
-            if tab.TabGlow then NS.Cosmetics.SuppressVertexAlpha(tab.TabGlow, OWNER) end
+            if tab.TabGlow and CanPaintTarget(tab.TabGlow) then NS.Cosmetics.SuppressVertexAlpha(tab.TabGlow, OWNER) end
             SyncSelection(tab, tab.SelectedTexture)
             HookSelection(tab, "SetChecked")
         end
@@ -339,11 +338,13 @@ local function InstallHooks()
 end
 
 SkinLoadedWindow = function()
-    if not Ready() then return false, "combat" end
+    if not Enabled() then return false, "disabled" end
     local parent = _G.LFGParentFrame
     local listing = _G.LFGListingFrame
     local browse = _G.LFGBrowseFrame
     if not parent or not listing or not browse then return false, "missing" end
+    if NS.IsCombatLocked() and not (Safety.CanCreateRegions(parent) and Safety.CanCreateRegions(listing)
+        and Safety.CanCreateRegions(browse)) then return false, "combat" end
     local who = _G.LFGWhoListFrame
     SkinFrame(parent, ROOT_MODE)
     SkinPanels(listing, browse, who)
@@ -357,16 +358,21 @@ SkinLoadedWindow = function()
     return true, "applied"
 end
 
+local function ApplyLoaded()
+    local applied, reason = SkinLoadedWindow()
+    if reason == "combat" then
+        RequestRefresh()
+        return true, "waiting"
+    end
+    return applied, reason
+end
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:SetScript("OnEvent", Safety.Isolated(function(_, event, addon)
     if event ~= "ADDON_LOADED" or addon ~= ADDON then return end
     eventFrame:UnregisterEvent("ADDON_LOADED")
     if not ForeverGroupFinder.active then return end
-    if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer(OWNER .. ":load", SkinLoadedWindow)
-    else
-        SkinLoadedWindow()
-    end
+    ApplyLoaded()
 end))
 
 function ForeverGroupFinder.Apply()
@@ -384,18 +390,12 @@ function ForeverGroupFinder.Apply()
         eventFrame:RegisterEvent("ADDON_LOADED")
         return true, "waiting"
     end
-    if NS.IsCombatLocked() then
-        NS.CombatGate.RunOrDefer(OWNER .. ":apply", SkinLoadedWindow)
-        return true, "waiting"
-    end
-    return SkinLoadedWindow()
+    return ApplyLoaded()
 end
 
 function ForeverGroupFinder.Disable()
     ForeverGroupFinder.active = false
     eventFrame:UnregisterEvent("ADDON_LOADED")
-    NS.CombatGate.Cancel(OWNER .. ":load")
-    NS.CombatGate.Cancel(OWNER .. ":apply")
     NS.CombatGate.Cancel(OWNER .. ":refresh")
     for scrollBox, registration in pairs(ForeverGroupFinder.scrollBoxes) do
         Kit.UnregisterRowCallback(scrollBox, registration.event, registration)
