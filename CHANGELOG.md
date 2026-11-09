@@ -1,5 +1,12 @@
 # MSUF Suite Changelog
 
+## 0.1.16 Alpha - 2026-11-09
+
+### Character Panel and Inspect
+
+- Keep the Suite Character Panel interactive during combat, including its tabs and gear details.
+- Preserve the window layout when entering or leaving combat. Equipment changes continue to respect Blizzard's combat restrictions.
+
 ## 0.1.15 Alpha - 2026-11-09
 
 ### Character Panel and Inspect
