@@ -1,4 +1,6 @@
 local root = assert(arg[1], "repository root required")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+issecretvalue = Secrets.IsSecret
 local Suite, frames, skinReleases = {}, {}, 0
 -- The client's securecallfunction reports an error to the error handler and
 -- returns nothing; this harness models exactly that. dispatched counts the
@@ -98,8 +100,8 @@ for id in pairs(Suite.Suite.instances) do
     count = count + 1
 end
 -- The shared notice owner and nine QoL tools are available on Forever.
--- Craft shopping, bank transfer and mail templates remain Retail-only.
-assert(count == 82 and Suite.Suite.instances.foreverWorldMap and Suite.Suite.instances.gatheringTooltips
+-- Craft shopping and mail templates remain Retail-only.
+assert(count == 83 and Suite.Suite.instances.foreverWorldMap and Suite.Suite.instances.gatheringTooltips
     and Suite.Suite.instances.gatheringRoutes
     and not Suite.Suite.instances.castbarArt and Suite.Suite.instances.glimmer and Suite.Suite.instances.autoResponses and Suite.Suite.instances.questRewardValue and Suite.Suite.instances.fishingComfort and Suite.Suite.instances.autoUprank and Suite.Suite.instances.playerAuras
     and Suite.Suite.instances.playerAuraSkins and Suite.Suite.instances.selfCombatText and Suite.Suite.instances.actionTracker and Suite.Suite.instances.durabilityAlert and Suite.Suite.instances.battleRes
@@ -132,7 +134,7 @@ assert(count == 82 and Suite.Suite.instances.foreverWorldMap and Suite.Suite.ins
     and Suite.Suite.instances.restockPlanner and not Suite.Suite.instances.planningTools
     and Suite.Suite.instances.keyAudit and Suite.Suite.instances.currencyGoals
     and Suite.Suite.instances.keywordAlerts and Suite.Suite.instances.waypointLists and Suite.Suite.instances.soundProfiles
-    and not Suite.Suite.instances.craftShopping and not Suite.Suite.instances.bankTransfer and not Suite.Suite.instances.mailTemplates,
+    and not Suite.Suite.instances.craftShopping and Suite.Suite.instances.bankTransfer and not Suite.Suite.instances.mailTemplates,
     "shared HUD modules and Quality of Life helpers did not register together")
 Support.Load(root, "MSUF_Suite_AdventurePlanner", {})
 assert(Suite.Suite.instances.planningTools, "standalone Planner did not register")
@@ -353,9 +355,56 @@ assert(not next(overflow.events), "release left a routing frame registered")
 -- and call are gone: suite_modules_audit_contract.lua).
 assert(context.ownedSkins == nil and not context.OwnSkin, "a context kept a skin call nothing makes")
 
+local S = Suite.Suite
+do
+    -- An incoming whisper can create a temporary edit box with secret anchors.
+    local secret = Secrets.New("number")
+    local chat = S.NewContext("chat")
+    local native = { { "TOPLEFT", UIParent, "BOTTOMLEFT", -5, -2 }, { "RIGHT", UIParent, "RIGHT", 8, 0 } }
+    local input = { points = native }
+    function input:GetNumPoints() return self.secretCount and secret or #self.points end
+    function input:GetPoint(i)
+        local point, relative, edge, x, y = unpack(self.points[i] or {}, 1, 5)
+        if self.secretPoint == i then y = secret end
+        return point, relative, edge, x, y
+    end
+    function input:ClearAllPoints() self.points = {} end
+    function input:SetPoint(...)
+        for i = 1, select("#", ...) do assert(not issecretvalue(select(i, ...)), "replayed a secret anchor") end
+        self.points[#self.points + 1] = { ... }
+    end
+    local function Anchor()
+        chat:Anchor(input, "TOPLEFT", UIParent, "BOTTOMLEFT", -4, -6)
+    end
+    local stop = Secrets.Watch(root .. "/MSUF_Suite_Modules/Runtime.lua", { strict = true })
+    input.secretCount = true
+    Anchor()
+    assert(input.points == native and not chat.points[input], "secret count changed native anchors")
+    input.secretCount, input.secretPoint = false, 2
+    Anchor()
+    assert(input.points == native and not chat.points[input], "partially secret layout was taken over")
+    input.secretPoint = nil
+    Anchor()
+    local owned = input.points
+    assert(#owned == 1 and owned[1][5] == -6, "readable input did not pick up Suite layout")
+    input.secretCount = true
+    chat:RestorePoints(input)
+    Anchor()
+    assert(input.points == owned and chat.points[input], "secret refresh changed owned anchors or dropped their backup")
+    input.secretCount, input.secretPoint = false, 1
+    chat:RestorePoints(input)
+    Anchor()
+    assert(input.points == owned and chat.points[input], "secret refresh changed an unreadable anchor or lost its backup")
+    input.secretPoint = nil
+    chat:RestorePoints(input)
+    assert(#input.points == 2 and input.points[1][5] == -2 and input.points[2][4] == 8 and not chat.points[input],
+        "readable input did not recover both native anchors")
+    local violations = stop()
+    assert(#violations == 0, table.concat(violations, "\n"))
+end
+
 -- CVar ownership: a context sets only CVars its module declares, and a saved
 -- record is dropped only once it is resolved.
-local S = Suite.Suite
 local function Saved(id, key)
     local recovery = Suite.RootDB.suiteRecovery and Suite.RootDB.suiteRecovery["Realm/Tester"]
     return recovery and recovery[id] and recovery[id][key]

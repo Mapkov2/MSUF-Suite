@@ -11,8 +11,9 @@ NS.ActionBarTitles = {
 }
 local BAR_COUNT = #NS.ActionBarTitles
 NS.ActionBarCount = BAR_COUNT
--- Shared by the runtime and the menu's live preview, including extra bars.
-NS.ActionBarFirstSlots = { 1, 61, 49, 25, 37, 145, 157, 169, 13, 109 }
+-- Native first slots shared by the runtime and preview. Bar 10 stores
+-- independent actions, so page 10 stays available to form paging.
+NS.ActionBarFirstSlots = { 1, 61, 49, 25, 37, 145, 157, 169, 13 }
 NS.ActionBarCommands = { "ACTIONBUTTON", "MULTIACTIONBAR1BUTTON", "MULTIACTIONBAR2BUTTON", "MULTIACTIONBAR3BUTTON",
     "MULTIACTIONBAR4BUTTON", "MULTIACTIONBAR5BUTTON", "MULTIACTIONBAR6BUTTON", "MULTIACTIONBAR7BUTTON",
     "MSUFSUITE_BAR9_BUTTON", "MSUFSUITE_BAR10_BUTTON", "SHAPESHIFTBUTTON", "BONUSACTIONBUTTON" }
@@ -43,7 +44,8 @@ local ENUM = {
     -- "First button corner": the corner button 1 sits in.
     START = { TOP_LEFT = 1, TOP_RIGHT = 2, BOTTOM_LEFT = 3, BOTTOM_RIGHT = 4 },
     LOOK = { MIDNIGHT_BLUE = 1, MIDNIGHT_DARK = 2, FOREVER = 3, CUSTOM = 4, CLEAN_MODERN = 5, CLASS_STYLE = 6 },
-    BAR = { MAIN = 1, FIRST_NATIVE = 2, LAST_NATIVE = 8, FIRST_EXTRA = 9, LAST_ACTION = 10, STANCE = 11, PET = 12 },
+    BAR = { MAIN = 1, FIRST_NATIVE = 2, LAST_NATIVE = 8, FIRST_EXTRA = 9, INDEPENDENT = 10,
+        LAST_ACTION = 10, STANCE = 11, PET = 12 },
 }
 NS.ActionBarEnum = ENUM
 

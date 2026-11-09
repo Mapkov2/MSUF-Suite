@@ -119,6 +119,7 @@ B.Section("bags", "organisation", "Inventory organisation", {
     B.Choice("sortDirection", "Native bag sorting direction", 1, { "Blizzard setting", "Fill from the top", "Fill from the bottom" }),
     B.Bool("stackSplitter", "Stack split presets and automatic splitting", true),
     B.Bool("desaturateJunk", "Desaturate junk items"),
+    B.Bool("desaturateInactiveQuestItems", "Gray out inactive quest items", true),
     B.Bool("groupEquipmentSets", "Group equipment by set", true),
     B.Bool("groupEquipmentSlots", "Group equipment by slot", true),
     B.Bool("groupExpansions", "Group by expansion"),
@@ -181,10 +182,11 @@ B.Section("bags", "reagentWindow", "Reagent bag window", {
 })
 
 local rules = NS.SuiteCatalog.bags.rules
+rules.desaturateInactiveQuestItems.requiresChoice = { key = "inventoryView", values = {
+    [NS.BagsView.ALL] = true, [NS.BagsView.BY_BAG] = true, [NS.BagsView.CATEGORIES] = true,
+} }
 -- The bank views and the bank window exist on Retail only.
-for _, key in ipairs({ "bankView", "bankGroupExpansions", "bankGroupEquipmentSlots",
-    "bankGroupReagentTypes", "bankHideEmptySlots", "showBankTabs", "bankBackground", "bankWindowScale",
-    "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
+for _, key in ipairs({ "bankWindowScale", "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
     rules[key].hidden = NS.Client.isForever
 end
 -- These only act in the Categories view, so the menu greys them in the others.

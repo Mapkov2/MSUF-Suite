@@ -504,7 +504,7 @@ end
 function Theme.SetAppearance(key, value)
     if NS.IsCombatLocked() then return false end
     if key == "gradient" then return Theme.SetGradient(value) end
-    if key == "menuAnimations" or key == "reduceMotion" or key == "dropdownDimming"
+    if key == "menuAnimations" or key == "reduceMotion" or key == "dropdownDimming" or key == "readableValues"
         or key == "windowFocusDimming" or key == "smoothScrolling" or key == "scrollEdgeBounce" then
         if type(value) ~= "boolean" then return false end
         NS.DB.theme[key] = value

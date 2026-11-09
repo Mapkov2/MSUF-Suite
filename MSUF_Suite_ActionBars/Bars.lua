@@ -76,7 +76,7 @@ S.ActionBarAvailable = AB.Available
 function S.ActionBarPreviewSlot(index, ordinal)
     local bar = M.active and AB.bars[index]
     local rec = bar and bar.buttons[ordinal]
-    if rec and rec.owned then
+    if rec and rec.owned and not rec.virtual then
         local slot = rec.button:GetAttribute("action")
         if S.Public(slot) and type(slot) == "number" then return slot end
         return rec.slot
@@ -266,7 +266,8 @@ end
 
 local function NewButton(bar, index)
     local name = "MSUFSuiteBar" .. bar.index .. "Button" .. index
-    local slot = AB.FIRST_SLOT[bar.index] + index - 1
+    local firstSlot = AB.FIRST_SLOT[bar.index]
+    local slot = firstSlot and firstSlot + index - 1
     if bar.native then
         local button = AB.Frame(AB.NATIVE_BUTTONS[bar.index] .. index)
         return Own({
@@ -275,23 +276,28 @@ local function NewButton(bar, index)
         })
     end
     local button = S.CreateFrame("CheckButton", name, bar.header, "ActionButtonTemplate, SecureActionButtonTemplate")
-    button:SetAttribute("type", "action")
-    button:SetAttribute("typerelease", "actionrelease")
     button:SetAttribute("checkselfcast", true)
     button:SetAttribute("checkfocuscast", true)
     button:SetAttribute("checkmouseovercast", true)
     button:SetAttribute("index", index)
-    button:SetAttribute("action", slot)
-    button:SetAttribute("_childupdate-grid", AB.SNIPPET.BUTTON)
     button:RegisterForClicks("AnyDown", "AnyUp")
     button:RegisterForDrag("LeftButton", "RightButton")
-    SecureHandlerWrapScript(button, "OnClick", AB.grid, AB.SNIPPET.CLICK)
-    SecureHandlerWrapScript(button, "OnDragStart", AB.grid, AB.SNIPPET.DRAG)
-    SecureHandlerWrapScript(button, "OnReceiveDrag", AB.grid, AB.SNIPPET.RECEIVE)
-    return Own({
+    local rec = Own({
         button = button, bar = bar, index = index, slot = slot, base = slot, name = name,
-        owned = true, command = AB.COMMANDS[bar.index] .. index,
+        owned = true, virtual = bar.index == BAR.INDEPENDENT, command = AB.COMMANDS[bar.index] .. index,
     })
+    if rec.virtual then
+        AB.Virtual.Setup(rec)
+    else
+        button:SetAttribute("type", "action")
+        button:SetAttribute("typerelease", "actionrelease")
+        button:SetAttribute("action", slot)
+        button:SetAttribute("_childupdate-grid", AB.SNIPPET.BUTTON)
+        SecureHandlerWrapScript(button, "OnClick", AB.grid, AB.SNIPPET.CLICK)
+        SecureHandlerWrapScript(button, "OnDragStart", AB.grid, AB.SNIPPET.DRAG)
+        SecureHandlerWrapScript(button, "OnReceiveDrag", AB.grid, AB.SNIPPET.RECEIVE)
+    end
+    return rec
 end
 
 -- Creates every suite frame once per session (out of combat, on enable).

@@ -13,8 +13,10 @@ mutations = [
     ("CurrencyGoals.lua", "if goals[id] ~= initial then", "if false then", "stale currency editor"),
     ("CurrencyGoals.lua", "            Update()", "            -- seed omitted", "first goal crossing"),
     ("CurrencyGoals.lua", "if lifetime == true then amount = info.totalEarned end", "-- wrong balance", "earned-total cap"),
-    ("KeywordAlerts.lua", "if self.config ~= config or self.config.words ~= initial then", "if false then", "stale keyword editor"),
+    ("KeywordAlerts.lua", "if not stillCurrent() then", "if false then", "stale keyword editor"),
     ("KeywordAlerts.lua", "plain:find(phrase.key, 1, true)", "plain:find(phrase.key)", "literal phrase matching"),
+    ("KeywordAlerts.lua", 'local inChannel = scope ~= "channels" or phrase.allPublic or key and phrase.publicNames[key]',
+     "local inChannel = true", "rule-specific channel match"),
     ("WaypointLists.lua", "NS.DB ~= profile or NS.InCombat()", "NS.InCombat()", "stale waypoint confirmation"),
     ("SoundProfiles.lua", "if not M.active or NS.InCombat() then", "if not M.active then", "combat sound deferral"),
 ]
@@ -41,4 +43,4 @@ with tempfile.TemporaryDirectory(prefix="suite-everyday-mutations-") as director
         path.write_bytes(original)
         assert result.returncode and "syntax" not in result.stderr.lower(), reason + ": mutation survived"
         print("rejected " + reason)
-print("Everyday safety: 7/7 mutations rejected")
+print("Everyday safety: 8/8 mutations rejected")

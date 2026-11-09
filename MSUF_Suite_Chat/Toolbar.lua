@@ -223,3 +223,137 @@ function C.ReleaseToolbar()
         FCFDock_UpdateTabs(GENERAL_CHAT_DOCK, true)
     end
 end
+
+local function IsWhisper(frame)
+    local kind = frame.chatType
+    return frame.isTemporary and S.Public(kind) and (kind == "WHISPER" or kind == "BN_WHISPER")
+end
+
+local function SelectWhisper(button)
+    if not M.active or NS.InCombat() then return end
+    local alpha = button:GetEffectiveAlpha()
+    if not S.Finite(alpha) or alpha <= 0 then return end
+    local selected = C.DockSelection()
+    local first, last, selectedTab, neighbor
+    for _, frame in ipairs(GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES) do
+        local tab = not NS.Safety.IsForbidden(frame) and IsWhisper(frame) and _G[frame:GetName() .. "Tab"]
+        if tab and not NS.Safety.IsForbidden(tab) and tab:IsShown() then
+            if selected == frame then
+                selectedTab = tab
+                if button.previous then neighbor = last end
+            elseif not button.previous and selectedTab and last == selectedTab then
+                neighbor = tab
+            end
+            first, last = first or tab, tab
+        end
+    end
+    local tab = neighbor or (button.previous and last or first)
+    if tab and tab ~= selectedTab then FCF_Tab_OnClick(tab, "LeftButton") end
+end
+
+local ARROW_WIDTH, ARROW_HEIGHT = 36, 18
+
+local function WakeWhisperArrows()
+    if M.active then C.ChatActivity(C.DockSelection() or ChatFrame1) end
+end
+
+local function WhisperArrows(frame)
+    local arrows = S.CreateFrame("Frame", nil, frame)
+    arrows:SetSize(ARROW_WIDTH, ARROW_HEIGHT)
+    arrows:SetFrameStrata("MEDIUM")
+    arrows:SetClampedToScreen(true)
+    arrows.buttons = {}
+    for index, glyph in ipairs({ "<", ">" }) do
+        local button = S.CreateFrame("Button", nil, arrows)
+        button:SetSize(ARROW_WIDTH / 2, ARROW_HEIGHT)
+        button:SetPoint("LEFT", arrows, "LEFT", (index - 1) * ARROW_WIDTH / 2, 0)
+        local fill = C.Fill(button, "BACKGROUND")
+        fill:SetAllPoints(button)
+        local label = S.CreateFontString(button, nil, "ARTWORK", "GameFontHighlightSmall")
+        label:SetPoint("CENTER", button, "CENTER")
+        label:SetText(glyph)
+        button.fill, button.previous = fill, index == 1
+        button:SetScript("OnClick", SelectWhisper)
+        button:SetScript("OnEnter", WakeWhisperArrows)
+        arrows.buttons[index] = button
+    end
+    return arrows
+end
+
+-- Compare the whole dynamic row with its viewport so the result is stable
+-- while Blizzard scrolls to the selected tab. Copy can cover part of the row.
+local function WhisperOverflow(dock, copy)
+    if not (dock.DOCKED_CHAT_FRAMES and dock.scrollFrame and dock.overflowButton) then return false end
+    local first, last, hasWhisper
+    for _, frame in ipairs(dock.DOCKED_CHAT_FRAMES) do
+        if not NS.Safety.IsForbidden(frame) and not frame.isStaticDocked then
+            local tab = _G[frame:GetName() .. "Tab"]
+            if tab and not NS.Safety.IsForbidden(tab) and tab:IsShown() then
+                first, last = first or tab, tab
+                hasWhisper = hasWhisper or IsWhisper(frame)
+            end
+        end
+    end
+    if not hasWhisper then return false end
+    if dock.overflowButton:IsShown() then return true end
+    local left, right = dock.scrollFrame:GetLeft(), dock.scrollFrame:GetRight()
+    local firstLeft, lastRight = first:GetLeft(), last:GetRight()
+    if not (S.Finite(left) and S.Finite(right) and S.Finite(firstLeft) and S.Finite(lastRight)) then return false end
+    if copy then
+        local copyLeft, copyRight = copy:GetLeft(), copy:GetRight()
+        local copyTop, copyBottom, tabTop, tabBottom = copy:GetTop(), copy:GetBottom(), last:GetTop(), last:GetBottom()
+        if S.Finite(copyLeft) and S.Finite(copyRight) and copyLeft < right and copyRight > left
+            and S.Finite(copyTop) and S.Finite(copyBottom) and S.Finite(tabTop) and S.Finite(tabBottom)
+            and copyTop > tabBottom and copyBottom < tabTop then
+            right = math.max(left, copyLeft)
+        end
+    end
+    return lastRight - firstLeft > right - left + 0.5
+end
+
+local function ArrowOffset(anchor, copy)
+    if not copy then return 2 end
+    local right, top = anchor:GetRight(), anchor:GetTop()
+    local copyLeft, copyRight, copyBottom, copyTop = copy:GetLeft(), copy:GetRight(), copy:GetBottom(), copy:GetTop()
+    if S.Finite(right) and S.Finite(top) and S.Finite(copyLeft) and S.Finite(copyRight)
+        and S.Finite(copyBottom) and S.Finite(copyTop) and copyLeft < right and copyRight > right - ARROW_WIDTH
+        and copyTop > top + 2 and copyBottom < top + 2 + ARROW_HEIGHT then
+        return copyTop - top + 2
+    end
+    return 2
+end
+
+function C.UpdateWhisperArrows(dock)
+    local frame = C.DockSelection() or ChatFrame1
+    local visual = M.visuals[frame]
+    local copy = visual and visual.copyButton
+    if copy and not copy:IsShown() then copy = nil end
+    local arrows = M.whisperArrows
+    if NS.Safety.IsForbidden(frame) or not WhisperOverflow(dock, copy) then
+        if arrows and arrows:IsShown() then arrows:Hide() end
+        return
+    end
+    local c = M.config
+    local anchor = dock
+    if c.headerToolbar and M.toolbar and C.ToolbarWrap(c, ChatFrame1) then
+        anchor = M.toolbar
+    end
+    local offset = ArrowOffset(anchor, copy)
+    if not arrows then
+        arrows = WhisperArrows(frame)
+        M.whisperArrows = arrows
+    elseif arrows:GetParent() ~= frame then
+        -- Follow the selected chat window's visibility and inactivity alpha.
+        arrows:SetParent(frame)
+    end
+    if arrows.anchor ~= anchor or arrows.offset ~= offset then
+        arrows:ClearAllPoints()
+        arrows:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, offset)
+        arrows.anchor, arrows.offset = anchor, offset
+    end
+    if arrows.color ~= c.panelColor or arrows.minimal ~= c.minimalChrome then
+        for _, button in ipairs(arrows.buttons) do C.Tint(button.fill, c.panelColor, c.minimalChrome and 0 or 95) end
+        arrows.color, arrows.minimal = c.panelColor, c.minimalChrome
+    end
+    if not arrows:IsShown() then arrows:Show() end
+end

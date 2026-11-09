@@ -42,7 +42,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Registry = { QueueRefresh = Noop, NotifyListeners = Noop, RefreshAll = Noop },
         Safety = { Dispatch = function(callback, ...) return callback(...) end },
         Typography = { Restore = Noop, ApplyConfigured = Noop },
-        Adapters = { ApplyAll = Noop },
+        Adapters = { ApplyAll = Noop, PrepareCombatWindows = Noop },
     }
     Load("Defaults", ns)
     Load("DefaultsLooks", ns)
@@ -92,6 +92,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         return lifecycle
     end
     IsLoggedIn = function() return false end
+    C_Timer = { After = function(_, callback) callback() end }
     Load("Lifecycle", ns)
     lifecycle:OnEvent("ADDON_LOADED", "MSUF_Suite_Skin")
     token = "MAGE"

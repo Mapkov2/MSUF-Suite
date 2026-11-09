@@ -71,6 +71,7 @@ API.Profiles = {
     Export = function(options) return Suite.SuiteProfiles.Export(options) end,
     ExportModule = function(id, options) return Suite.SuiteProfiles.ExportModule(id, options) end,
     Import = function(name, text) return Suite.SuiteProfiles.Import(name, text) end,
+    BeginImport = function(text, name) return Suite.SuiteProfiles.BeginImport(text, name) end,
     ImportModule = function(text) return Suite.SuiteProfiles.ImportModule(text) end,
     ImportModuleIntoNew = function(name, text) return Suite.SuiteProfiles.ImportModuleIntoNew(name, text) end,
 }

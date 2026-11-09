@@ -328,6 +328,10 @@ local SORTERS = {
 
 -- The comparator for a group's rows, or nil for the order they were read in.
 -- Name keeps physical order in All items and By bag; categories use names.
+function Model.SortOrder(mode)
+    return SORTERS[mode] or SortRows
+end
+
 local function RowOrder(config, categories)
     return SORTERS[config.sortMode] or categories and SortRows or nil
 end

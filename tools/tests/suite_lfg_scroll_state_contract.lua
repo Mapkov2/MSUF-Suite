@@ -181,6 +181,27 @@ Check(not child.group.playing, "secret viewport height reached scroll arithmetic
 box.GetHeight = oldHeight
 NS.ScrollMotion.ReleaseOwner("hide")
 Check(writes == 0, "LFG safety checks wrote native scroll state")
+-- Forever's listing rebuilds its activity list before the protected search.
+-- Its root is separate from the Retail LFGListFrame tested above.
+NS.Client.isForever = true
+local foreverParent = Frame("LFGParentFrame")
+local listing = Frame("LFGListingFrame", foreverParent)
+local activityView = Frame(nil, listing)
+local activityBox, activityBar = Controller(activityView), Controller(activityView)
+local activityContent = Frame(nil, activityBox)
+function activityBox:GetScrollTarget() return activityContent end
+activityBox.registeredScrollBar, activityBar.registeredScrollBox = activityBar, activityBox
+Check(NS.ScrollMotion.Track(activityBox, "forever-listing"), "Forever activity list was not adopted")
+Check(NS.ScrollMotion.Track(activityBar, "forever-listing"), "Forever activity bar was not adopted")
+Check(writes == 0 and NS.ScrollMotion.states[activityBox] == nil and NS.ScrollMotion.states[activityBar] == nil,
+    "Forever Group Finder adoption wrote native ScrollController state")
+activityBox:Fire("scroll", 0, 0.25)
+activityBox:Fire("scroll", 0.01, 0.25)
+Check(activityContent.group and activityContent.group.playing and activityContent.group.move.y == -6,
+    "Forever Group Finder lost finite render easing")
+NS.ScrollMotion.ReleaseOwner("forever-listing")
+Check(writes == 0 and next(activityBox.callbacks.scroll) == nil and not activityContent.group.playing,
+    "Forever Group Finder release wrote native state or retained animation")
 local ordinary = Controller(Frame("OtherWindow"))
 Check(NS.ScrollMotion.Track(ordinary, "ordinary") and ordinary.canInterpolateScroll,
     "ordinary window lost native smooth scrolling")

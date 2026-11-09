@@ -126,12 +126,14 @@ do
     assert(#calls == 1, "a different LFG mode loaded the Vanilla window")
     style, loaded.Blizzard_Professions = 1, nil
     Adapters.PrepareReloadWindows()
-    assert(#calls == 3 and loaded.Blizzard_GroupFinder_VanillaStyle and loaded.Blizzard_Professions,
-        "reload preparation missed the remaining enabled windows")
+    assert(not loaded.Blizzard_GroupFinder_VanillaStyle,
+        "the skin took over the secure Forever Group Finder load")
+    assert(#calls == 2 and loaded.Blizzard_Professions,
+        "reload preparation missed professions or loaded an unexpected window")
     NS.Client.isForever = false
     loaded.Blizzard_PlayerSpells = nil
     Adapters.PrepareReloadWindows()
-    assert(#calls == 3, "reload preparation ran on Retail")
+    assert(#calls == 2, "reload preparation ran on Retail")
     NS.DB.skins.playerSpells, NS.DB.skins.blizzardWindows = nil, nil
     NS.Client, NS.GenericWindows, C_AddOns, NS.IsCombatLocked = client, windows, loader, lock
     C_LFGList, Enum = groupFinder, enums
@@ -158,7 +160,7 @@ NS.Checkmarks.TrackControlTree = function() end
 -- applies and when it releases.
 local PART_NAMES = { "DeepWindows", "SemanticHUD", "SharedChrome", "UIPanelButtons", "CommonMenus",
     "Commerce", "CharacterPanel", "InspectPanel", "SocialUISkin", "MajorWindows", "LegacyWindows",
-    "CommonArt", "ForeverGroupFinder" }
+    "CommonArt", "ForeverGroupFinder", "ForeverLegacyTree" }
 local partCalls = {}
 for _, name in ipairs(PART_NAMES) do
     NS[name] = {
@@ -261,6 +263,157 @@ local lifecycle = frames[#frames]
 lifecycle.script(lifecycle, "PLAYER_LOGIN")
 assert(table.concat(stages, ",") == "look,checkmarks,typography,adapters,api"
     and Reported("gold text failed"), "a failing login stage stopped the stages after it")
+
+-- Normal skin login warms the hidden LoD panel through the native callback,
+-- after PLAYER_LOGIN dispatch. Enabled profile and real-lockdown gates are
+-- sampled at execution, including opt-in after a disabled startup.
+do
+    local previousTimer, previousAddOns, previousEvents, previousSpells = C_Timer, C_AddOns, EventUtil, PlayerSpellsFrame
+    local function NativeSpellsLogin(forever, masterEnabled, adapterEnabled, enterCombat, failPreparation)
+        local timers, jobs = {}, {}
+        local locked, loaded, loads, paints, continuation = false, false, 0, 0
+        local loadReason = forever and "Forever" or "Retail"
+        PlayerSpellsFrame = nil
+        C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+        EventUtil = { ContinueOnAddOnLoaded = function(addon, callback)
+            assert(addon == "Blizzard_PlayerSpells" and not continuation)
+            continuation = callback
+        end }
+        local function NativeLoad()
+            loaded, PlayerSpellsFrame = true, Frame()
+            continuation()
+        end
+        C_AddOns = { LoadAddOn = function(addon)
+            assert(not locked and not loaded and addon == "Blizzard_PlayerSpells")
+            loads = loads + 1
+            if not failPreparation then NativeLoad() end
+        end }
+        local function Noop() end
+        local engine = {
+            DB = { enabled = masterEnabled, skins = { playerSpells = adapterEnabled } },
+            Client = { isMainline = true, isForever = forever,
+                HasAddOn = function(addon) return addon == "Blizzard_PlayerSpells" end,
+                IsAddOnLoaded = function() return loaded end },
+            IsCombatLocked = function() return locked end,
+            CombatGate = { RunOrDefer = function(key, callback) jobs[key] = callback end },
+            Safety = NS.Safety,
+            InitializeLocalization = Noop,
+            Database = { Initialize = Noop },
+            PublicAPI = { OnDatabaseReady = Noop, OnPlayerLogin = Noop },
+            Theme = { RefreshDynamicLook = Noop },
+            BlizzardYellow = { Apply = Noop },
+            Checkmarks = { Apply = Noop, TrackControlTree = Noop },
+            Typography = { ApplyConfigured = Noop },
+            Registry = { RefreshAll = Noop, NotifyListeners = Noop },
+            WindowControls = NS.WindowControls,
+            PlayerSpellsSkin = {
+                Apply = function(frame)
+                    assert(not locked and frame == PlayerSpellsFrame)
+                    paints = paints + 1
+                    return true
+                end,
+                Disable = Noop,
+            },
+        }
+        assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/Blizzard.lua"))("MSUF_Suite_Skin", engine)
+        assert(loadfile(root .. "/MSUF_Suite_Skin/Core/Lifecycle.lua"))("MSUF_Suite_Skin", engine)
+        local adapters = engine.Adapters
+        adapters.order = { "playerSpells" }
+        local frame = frames[#frames]
+        frame.script(frame, "PLAYER_LOGIN")
+        assert(loads == 0 and paints == 0 and #timers == 1, loadReason .. " nested its native addon load in login")
+        locked = enterCombat
+        timers[1]()
+        if enterCombat then
+            assert(loads == 0 and jobs["adapters:prepare-combat-windows"], loadReason .. " attempted preparation during lockdown")
+            locked = false
+            jobs["adapters:prepare-combat-windows"]()
+        elseif not masterEnabled then
+            assert(loads == 0, loadReason .. " warmed a master-disabled skin")
+            adapters.SetMasterEnabled(true)
+        elseif not adapterEnabled then
+            assert(loads == 0, loadReason .. " warmed a disabled PlayerSpells skin")
+            adapters.SetEnabled("playerSpells", true)
+        end
+        if failPreparation then
+            assert(loads == 1 and paints == 0 and not adapters.Apply("playerSpells"))
+            assert(loads == 1 and adapters.GetStatus("playerSpells") == "waiting",
+                "a refused warmup retried the Blizzard load or lost the native fallback")
+            NativeLoad()
+        end
+        assert(loads == 1 and paints == 1 and adapters.GetStatus("playerSpells") == "applied",
+            loadReason .. " did not prepare once through native ADDON_LOADED")
+        adapters.PrepareCombatWindows()
+        assert(loads == 1 and paints == 1, loadReason .. " repeated an already prepared pass")
+    end
+    NativeSpellsLogin(true, true, true, false)
+    NativeSpellsLogin(false, true, true, true)
+    NativeSpellsLogin(true, true, false, false)
+    NativeSpellsLogin(false, false, true, false)
+    NativeSpellsLogin(true, true, true, false, true)
+    C_Timer, C_AddOns, EventUtil, PlayerSpellsFrame = previousTimer, previousAddOns, previousEvents, previousSpells
+end
+
+-- The profession category owns only its native crafting and book windows.
+do
+    local priorAddOns = C_AddOns
+    local function CheckProfessionPreparation(forever, category, failCrafting, lockAfterCrafting)
+        local loads, loaded, jobs = {}, {}, {}
+        local locked = false
+        C_AddOns = { LoadAddOn = function(addon)
+            assert(not locked, "profession addon loaded during lockdown")
+            loads[#loads + 1] = addon
+            if addon ~= "Blizzard_Professions" or not failCrafting then loaded[addon] = true end
+            if addon == "Blizzard_Professions" and lockAfterCrafting then locked = true end
+        end }
+        local engine = {
+            DB = { enabled = true, skins = {} },
+            Client = { isForever = forever, HasAddOn = function() return true end,
+                IsAddOnLoaded = function(addon) return loaded[addon] == true end },
+            IsCombatLocked = function() return locked end,
+            Safety = NS.Safety,
+            CombatGate = { RunOrDefer = function(key, callback) jobs[key] = callback end },
+            WindowControls = NS.WindowControls,
+            GenericWindows = { IsCategoryEnabled = function(key) return key == "profession" and category end },
+        }
+        assert(loadfile(root .. "/MSUF_Suite_Skin/Adapters/Blizzard.lua"))("MSUF_Suite_Skin", engine)
+        local adapters = engine.Adapters
+        assert(adapters.Replace(Definition("blizzardWindows", function() return true, "partial" end)))
+        assert(adapters.Apply("blizzardWindows") and #loads == 0,
+            "native professions loaded before the login boundary")
+        locked = true
+        adapters.PrepareCombatWindows()
+        assert(#loads == 0, "native professions loaded before unlock")
+        locked = false
+        local function RunDeferredPreparation()
+            local callback = assert(jobs["adapters:prepare-combat-windows"])
+            jobs["adapters:prepare-combat-windows"] = nil
+            callback()
+        end
+        if category then
+            RunDeferredPreparation()
+        else
+            assert(not next(jobs), "disabled profession category kept a combat job")
+            assert(adapters.Apply("blizzardWindows") and #loads == 0, "disabled professions loaded anyway")
+            category = true
+            assert(adapters.Apply("blizzardWindows"), "enabled profession category was not reapplied")
+        end
+        if lockAfterCrafting then
+            assert(locked and #loads == 1, "crafting load did not exercise the nested combat edge")
+            locked = false
+            RunDeferredPreparation()
+        end
+        assert(loads[1] == "Blizzard_Professions" and #loads == (forever and 1 or 2)
+            and (forever or loads[2] == "Blizzard_ProfessionsBook"),
+            "wrong native profession addons prepared for the client")
+        adapters.PrepareCombatWindows()
+        adapters.Apply("blizzardWindows")
+        assert(#loads == (forever and 1 or 2), "profession warmup retried an attempted native addon")
+    end
+    CheckProfessionPreparation(true, true, true)
+    CheckProfessionPreparation(false, false, false, true)
+    C_AddOns = priorAddOns
+end
 
 -- Deferred combat jobs: each job is its own boundary within one drain.
 -- CombatGate times its drain (about 4 ms per frame); these jobs cost nothing.

@@ -172,13 +172,12 @@ function M:Enable()
     Hook(self, "hookedTabFadeOut", "FCF_FadeOutChatFrame", TabFadedOut)
     Hook(self, "hookedTabColors", "FCFTab_UpdateColors", TabColorsUpdated)
     Hook(self, "hookedDockGeometry", "FCFDock_UpdateTabs", C.DockGeometry)
-    C.MessagesRefresh(self)
-    C.BubblesRefresh(self)
-    ApplyAll(self)
+    self:Refresh()
 end
 
 function M:Refresh()
     C.MessagesRefresh(self)
+    C.SpamFilterRefresh(self)
     C.BubblesRefresh(self)
     ApplyAll(self)
 end
@@ -188,10 +187,12 @@ function M:Disable()
     self.hostChatClaim = nil
     if self.moverFrame then self.moverFrame:Hide() end
     C.HideFloatingMovers(self)
+    if self.whisperArrows then self.whisperArrows:Hide() end
     if self.toolbar then C.ReleaseToolbar() end
     C.StopInputAnimations()
     C.DisableClock()
     C.MessagesDisable()
+    C.SpamFilterDisable()
     -- Faded alpha goes back before the context restores the tabs it owns.
     C.FadeDisable()
     C.BubblesDisable()

@@ -378,7 +378,7 @@ local view = window.matrix
 Check(view ~= nil, "weekly overview is an activity-row / character-column comparison matrix")
 Equal(window, Plan.Window.host, "window route uses real dedicated Board")
 Equal(#window.tabs, 8, "eight navigation widgets are reusable")
-Equal(#window.spec.tabs, forever and 4 or 7, "all supported tools remain available; Mythic+ goals stay hidden for now")
+Equal(#window.spec.tabs, forever and 5 or 8, "loot goals and existing tabs are reachable; Mythic+ goals stay hidden")
 -- The options page opens the planner tab it names: every section has a visible tab and every tab a section.
 do
     local options = { Suite = { Client = { isForever = forever } }, RegisterPage = Noop }

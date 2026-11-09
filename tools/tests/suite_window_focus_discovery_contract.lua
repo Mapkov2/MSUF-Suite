@@ -21,6 +21,8 @@ local body = [======[
     local heavy = 0
     NS.Surface = { Attach = function() heavy = heavy + 1; error("heavy traversal during discovery") end }
     NS.PlayerSpellsSkin = { AttachWindowControls = function() heavy = heavy + 1 end }
+    local legacyApplies = 0
+    NS.ForeverLegacyTree = { Apply = function() legacyApplies = legacyApplies + 1 return true end }
     Load("Adapters/Blizzard.lua")
     local helper = io.open(root .. "/MSUF_Suite_Skin/Rendering/WindowFocusDiscovery.lua", "rb")
     local loader
@@ -41,6 +43,7 @@ local body = [======[
     Check(not F.records[friend] and not F.records[social], "disabled social category was discovered")
     Check(F.records[item] and not F.records[spells] and not F.records[communities], "skipGeneric item root or dedicated disabled setting was ignored")
     Check(heavy == 0 and not character.geometryWrites, "combat focus discovery wrote native geometry or traversed the skin")
+    Check(legacyApplies == (NS.Client.isForever and 1 or 0), "Forever legacy adapter missed combat startup")
     Check(loader and loader.events.ADDON_LOADED and not loader.scripts.OnUpdate,
         "cold catalog lacks bounded LoD discovery or installed a ticker")
     local hooks = #character.hooks.OnShow
@@ -115,7 +118,7 @@ local body = [======[
     NS.MacroWindow = { Start = function() end }
     for _, name in ipairs({ "DeepWindows", "SemanticHUD", "SharedChrome", "UIPanelButtons", "CommonMenus",
         "Commerce", "CharacterPanel", "InspectPanel", "SocialUISkin", "MajorWindows", "LegacyWindows",
-        "CommonArt", "ForeverGroupFinder" }) do
+        "CommonArt", "ForeverGroupFinder", "ForeverLegacyTree" }) do
         NS[name] = { Apply = function() return true end }
     end
     NS.Adapters.order = { "blizzardWindows" }

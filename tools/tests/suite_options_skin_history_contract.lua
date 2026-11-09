@@ -22,9 +22,11 @@ MSUFSuite = {
     CopyValue = Copy, IsCombatLocked = function() return false end,
     Skin = { enabled = true }, Registry = { AddListener = function() end },
     Suite = { Normalize = function() end, ApplyAll = function() end },
-    ProfileIO = { PrepareTable = function(value) return Copy(value) end },
     OnProfileChanged = function() end,
 }
+assert(loadfile(root .. "/MSUF_Suite/Core/ProfileIO.lua"))("MSUF_Suite", MSUFSuite)
+MSUFSuite.ProfileIO.PrepareTable = Copy
+MSUFSuite.InCombat = MSUFSuite.IsCombatLocked
 MSUF2 = { Widgets = {}, Theme = {} }
 MapkoSkin = { addonName = "MSUF_Suite_Skin", Database = {
     GetRoot = function() return skinRoot end,

@@ -216,6 +216,8 @@ B.Section(id, "text", "Message text", {
     B.Number("messageTimeVisible", "Message visibility (seconds)", 20, 5, 120),
     B.Number("messageFadeDuration", "Message fade duration (seconds)", 3, 0.1, 10, 0.1),
     B.Number("fontSize", "Font size", 0, 0, 24),
+    B.Tooltip(B.Number("messageSpacing", "Message spacing (pixels)", 0, 0, 12),
+        "Use 0 to keep Blizzard's spacing. Also spaces lines within long messages."),
     B.Font("font", "Font"),
     B.Choice("fontOutline", "Text outline", 1, { "Follow Blizzard", "Outline", "Thick outline", "None" }),
     B.Choice("fontRendering", "Font rendering", 3, { "Smooth", "Sharp / pixel", "Slug" }),
@@ -237,6 +239,10 @@ B.Section(id, "tools", "Chat tools", {
     B.Bool("allTimestamps", "Timestamp every public displayed message", false),
     B.Bool("hideNativeTimestamps", "Hide Blizzard message timestamps", false),
     B.String("timestampFormat", "Custom timestamp format", "[%H:%M]", 64),
+    B.Tooltip(B.Bool("copyOnTimestamp", "Click a timestamp to copy its message", false),
+        "Click an MSUF timestamp to open its message as copyable text."),
+    B.Bool("showClassIcons", "Show class icons next to known players", false),
+    B.Bool("showItemIcons", "Show item icons next to item links", false),
     B.Bool("shortenChannels", "Abbreviate channel prefixes", false),
     B.String("channelShortcuts", "World channel shortcuts (name=short; name=short)", "", 256),
     B.Bool("colorMentionNames", "Class colors for group names in message text", false),
@@ -247,6 +253,28 @@ B.Section(id, "tools", "Chat tools", {
     B.Number("copyButtonX", "Copy button X", 0, -200, 200),
     B.Number("copyButtonY", "Copy button Y", 0, -200, 200),
 })
+B.Section(id, "historyRules", "What to save", {
+    B.Tooltip(B.Bool("historyWhispers", "Save readable whispers", true),
+        "Includes whispers shown in permanent tabs. This does not remove messages already saved."),
+    B.Tooltip(B.Bool("historyConversations", "Archive whispers by character name", false),
+        "Includes readable character whispers in temporary tabs. Find conversations in Search saved chat."),
+    B.Bool("historyPublic", "Save public channels and local chat", true),
+    B.Bool("historyGroup", "Save party, raid and instance chat", true),
+    B.Bool("historyGuild", "Save guild and officer chat", true),
+    B.Bool("historySystem", "Save other messages, including system messages", true),
+})
+
+B.Section(id, "spamFilterRules", "Public chat spam filter", {
+    B.Tooltip(B.Bool("spamFilter", "Filter spam in public channels", false),
+        "Filters readable public chat and leaves your own messages visible."),
+    B.Tooltip(B.String("spamPhrases", "Blocked phrases", "", 4096),
+        "Separate up to 32 phrases with semicolons. Matching ignores case for A–Z."),
+    B.Tooltip(B.Number("spamRepeatSeconds", "Hide repeats for (seconds)", 30, 0, 600),
+        "Hide identical messages from the same player in the same channel. Use 0 to keep repeats."),
+    B.Tooltip(B.String("spamChannels", "Channels to filter", "", 512),
+        "Separate channel names with commas. Omit channel numbers and zones. Leave blank for all public channels."),
+})
+
 -- The channels that can play a sound: the chat events of each and the
 -- settings holding its sound, a sound kit ID or a custom file (the file wins).
 -- Whisper keeps the settings it always had, in Chat tools; Chat's Messages.lua
@@ -345,6 +373,14 @@ textRules.windowX.enableKey = "lockWindowPosition"
 textRules.windowY.enableKey = "lockWindowPosition"
 textRules.historyLines.enableKey = "saveHistory"
 textRules.timestampFormat.enableKey = "allTimestamps"
+textRules.copyOnTimestamp.enableKey = "allTimestamps"
+for _, key in ipairs({ "historyWhispers", "historyPublic", "historyGroup", "historyGuild", "historySystem" }) do
+    textRules[key].enableKey = "saveHistory"
+end
+textRules.historyConversations.enableKey = "historyWhispers"
+for _, key in ipairs({ "spamPhrases", "spamRepeatSeconds", "spamChannels" }) do
+    textRules[key].enableKey = "spamFilter"
+end
 textRules.copyButtonX.enableKey = "copyMessages"
 textRules.copyButtonY.enableKey = "copyMessages"
 textRules.channelShortcuts.enableKey = "shortenChannels"

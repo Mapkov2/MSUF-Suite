@@ -23,6 +23,12 @@ local URL = "https?://[^%s|<>]+"
 local NAME = "[%a\128-\255][%w\128-\255]*"
 local DATE_SPEC = "%%[aAbBcdHIjmMpSUwWxXyYzZ%%]"
 local DEFAULT_STAMP = "[%H:%M]"
+local COPY_LINK = "msufline"
+local CLASS_CACHE_LIMIT, ITEM_CACHE_LIMIT = 128, 256
+local classTags, senderIcons, itemIcons = {}, {}, {}
+local classFilter, senderIconCount, itemIconCount = false, 0, 0
+local stampSession, stampSerial, stampLabel = nil, 0, ""
+local stampLinkRegistered
 -- Keyword highlight: at most MAX_KEYWORDS words of MAX_KEYWORD_BYTES each.
 local MAX_KEYWORDS, MAX_KEYWORD_BYTES = 20, 64
 local DEFAULT_HIGHLIGHT = "ffd100"
@@ -142,6 +148,25 @@ local function FormatRun(run)
     return table.concat(pieces, "", 1, count + 1)
 end
 
+local function ItemIcon(text, start)
+    local digits = text:match("^|Hitem:(%d+)[:|]", start)
+    if not digits or #digits > 10 or text:sub(start - 3, start - 1) == "|t " then return "" end
+    local id = tonumber(digits)
+    if id < 1 or id > 2147483647 then return "" end
+    local tag = itemIcons[id]
+    if tag then return tag end
+    local icon = C_Item.GetItemIconByID(id)
+    if not S.Finite(icon) or icon <= 0 then return "" end
+    if itemIconCount == ITEM_CACHE_LIMIT then
+        wipe(itemIcons)
+        itemIconCount = 0
+    end
+    tag = "|T" .. icon .. ":0|t "
+    itemIcons[id] = tag
+    itemIconCount = itemIconCount + 1
+    return tag
+end
+
 -- Never alters the payload of a native hyperlink, texture or atlas escape.
 local function FormatPlainRuns(text)
     local count, index, length = 0, 1, #text
@@ -155,7 +180,9 @@ local function FormatPlainRuns(text)
             break
         end
         runs[count + 1] = FormatRun(text:sub(index, start - 1))
-        runs[count + 2] = text:sub(start, finish)
+        local link = text:sub(start, finish)
+        if tools.itemIcons and start ~= escape then link = ItemIcon(text, start) .. link end
+        runs[count + 2] = link
         count, index = count + 2, finish + 1
     end
     return table.concat(runs, "", 1, count)
@@ -219,7 +246,8 @@ end
 -- showTimestamps setting is on. Its own stamp is replaced, not repeated.
 local function RefreshStamps(now)
     stampSecond = now
-    stampText = date(stampFormat, now) .. " "
+    stampLabel = date(stampFormat, now)
+    stampText = stampLabel .. " "
     local setting = C_CVar.GetCVar("showTimestamps")
     if setting ~= nativeSetting then
         nativeSetting = setting
@@ -233,15 +261,19 @@ end
 -- AddMessage (FCF_OpenTemporaryWindow, live and forever), and a reused
 -- window still has its message hook.
 local function Stamp(text)
-    if text:find(stampPattern) then return text end
+    if text:find(stampPattern) or stampLinkRegistered and text:find("|Hmsufline:", 1, true) == 1 then return text end
     local now = time()
     if now ~= stampSecond then RefreshStamps(now) end
     if nativePrefix and text:find(nativePrefix, 1, true) == 1 then text = text:sub(#nativePrefix + 1) end
+    if tools.copyStamp and stampSession and stampLabel ~= "" then
+        stampSerial = stampSerial + 1
+        return "|H" .. COPY_LINK .. ":" .. stampSession .. "-" .. stampSerial .. "|h" .. stampLabel .. "|h " .. text
+    end
     return stampText .. text
 end
 
 local function Format(text)
-    if tools.plain then text = FormatPlainRuns(text) end
+    if tools.plain or tools.itemIcons and text:find("|Hitem:", 1, true) then text = FormatPlainRuns(text) end
     if tools.channels then text = ShortChannels(text) end
     if tools.stamps then text = Stamp(text) end
     return text
@@ -302,16 +334,56 @@ local function CompileKeywords(config)
     return #keywords > 0
 end
 
+-- Blizzard's sender filter receives the original GUID alongside the decorated
+-- name. Its callback only prepends an atlas and leaves the player link native.
+local function DecorateSender(_, decoratedName, ...)
+    local guid = select(SOUND_GUID, ...)
+    if not PublicText(decoratedName) or not PublicText(guid) or guid:sub(1, 7) ~= "Player-" then return end
+    local icon = senderIcons[guid]
+    if not icon then
+        local _, class = GetPlayerInfoByGUID(guid)
+        icon = PublicText(class) and classTags[class]
+        if not icon then return end
+        if senderIconCount == CLASS_CACHE_LIMIT then
+            wipe(senderIcons)
+            senderIconCount = 0
+        end
+        senderIcons[guid] = icon
+        senderIconCount = senderIconCount + 1
+    end
+    return icon .. decoratedName
+end
+
+local function RefreshClassIcons(enabled)
+    enabled = enabled == true
+    if classFilter == enabled then return end
+    classFilter = enabled
+    if enabled then
+        for class in pairs(RAID_CLASS_COLORS) do
+            classTags[class] = "|A:" .. GetClassAtlas(class) .. ":12:12|a "
+        end
+        ChatFrameUtil.AddSenderNameFilter(DecorateSender)
+    else
+        ChatFrameUtil.RemoveSenderNameFilter(DecorateSender)
+        wipe(senderIcons)
+        senderIconCount = 0
+    end
+end
+
 -- Cold path: what every line needs, from the current settings.
 function C.CompileMessages(config)
     formatGeneration = formatGeneration + 1
     tools.links, tools.names = config.linkURLs, config.colorMentionNames
     tools.channels, tools.stamps = config.shortenChannels, config.allTimestamps
     tools.keywords = CompileKeywords(config)
+    tools.itemIcons = config.showItemIcons
     tools.plain = tools.links or tools.names or tools.keywords
-    tools.format = tools.plain or tools.channels or tools.stamps
+    tools.format = tools.plain or tools.channels or tools.stamps or tools.itemIcons
     tools.prepare = tools.format
     tools.history = config.saveHistory
+    tools.conversations = tools.history and config.historyWhispers ~= false and config.historyConversations
+    C.CompileHistory(config)
+    HistoryStore = C.HistoryStore
     tools.fade = config.idleSeconds > 0
     tools.unread = config.coloredUnreadTabs
     tools.any = tools.format or tools.history or tools.fade or tools.unread
@@ -319,6 +391,7 @@ function C.CompileMessages(config)
     CompileChannels(config)
     stampFormat = ValidFormat(config.timestampFormat) and config.timestampFormat or DEFAULT_STAMP
     stampPattern = StampPattern(stampFormat)
+    tools.copyStamp = tools.stamps and config.copyOnTimestamp and not stampFormat:find("|", 1, true)
     stampSecond = nil
 end
 
@@ -401,7 +474,8 @@ local function MessageAdded(frame, text, r, g, b, chatTypeID)
             record.source, record.rendered = nil, nil
         end
     end
-    if record.ring then HistoryStore(record.ring, rendered, r, g, b) end
+    if record.ring then HistoryStore(record.ring, rendered, r, g, b, chatTypeID) end
+    if tools.conversations then C.HistoryWhisper(rendered, chatTypeID) end
 end
 
 local function NewRecord()
@@ -464,6 +538,12 @@ function C.ApplyMessages(_, frame)
 end
 
 function C.MessagesDisable()
+    RefreshClassIcons(false)
+    if itemIconCount > 0 then
+        wipe(itemIcons)
+        itemIconCount = 0
+    end
+    tools.copyStamp = false
     for _, record in pairs(hooks) do record.live, record.ring = nil, nil end
     for name in pairs(members) do members[name] = nil end
 end
@@ -536,9 +616,34 @@ local function RefreshSounds(self)
     end
 end
 
+-- SetItemRef supplies the exact source frame to LinkUtil on both clients.
+-- Look up the line only when clicked, including a line replayed from history.
+local function CopyTimestamp(link, _, _, context)
+    if not tools.copyStamp or not PublicText(link) or not Public(context) or not context then return end
+    if PublicText(context.button) ~= "LeftButton" then return end
+    local frame = context.frame
+    if not Public(frame) or not frame or not hooks[frame] or NS.Safety.IsForbidden(frame) then return end
+    local count = frame:GetNumMessages()
+    if not S.Finite(count) then return end
+    local prefix = "|H" .. link .. "|h"
+    for index = count, 1, -1 do
+        local text = PublicText((frame:GetMessageInfo(index)))
+        if text and text:find(prefix, 1, true) == 1 then
+            C.ShowChatLine(text)
+            return
+        end
+    end
+end
+
 function C.MessagesRefresh(self)
     local c, context = self.config, self.context
     C.CompileMessages(c)
+    RefreshClassIcons(c.showClassIcons)
+    if tools.copyStamp and not stampLinkRegistered then
+        LinkUtil.RegisterLinkHandler(COPY_LINK, CopyTimestamp)
+        stampSession = time() .. "-" .. math.floor(GetTime() * 1000)
+        stampLinkRegistered = true
+    end
     if tools.names then
         C.ListenInCombat(context, "GROUP_ROSTER_UPDATE", C.MessageRoster)
     else

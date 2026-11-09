@@ -84,7 +84,7 @@ function P.CaptureWorkbenchSkin()
     local settings, reason = Suite.ProfileVariants.BaseSettings(Suite.Database.GetActiveProfileName())
     if not settings then return false, reason end
     local result = { suite = settings, activeProfile = Suite.Database.GetActiveProfileName(),
-        skinEnabled = Suite.RootDB.skinEnabled, layout = {} }
+        skinEnabled = Suite.RootDB.skinEnabled, layout = {}, nameplateCVars = IO.CaptureNameplateCVars() }
     local states = Suite.DB.suite.moduleState
     for id, keys in pairs(Suite.Database.PROFILE_LAYOUT_STATE) do
         local source = states and states[id]
@@ -155,26 +155,31 @@ local function RestoreSuite(snapshot)
     Suite.OnProfileChanged(name)
 end
 
-function P.RestoreWorkbenchSkin(snapshot, historyReason)
+function P.RestoreWorkbenchSkin(snapshot, historyReason, source)
     -- Without its store the Suite captured nothing, the skin included: a
     -- point's parts wait in it, and a skin write here could not be undone.
     if not Suite.RootDB then
         return historyReason == nil or type(snapshot) == "table" and snapshot.suite == nil and snapshot.root == nil
     end
-    if Suite.IsCombatLocked() then return false, "Finish combat before restoring settings" end
+    if Suite.InCombat() then return false, "Finish combat before restoring settings" end
     snapshot = Canonical(snapshot)
     if not snapshot then return false, "Invalid skin restore point" end
     if snapshot.activeProfile ~= nil and not Suite.Database.IsProfileName(snapshot.activeProfile) then return false, "Missing suite profile" end
     if snapshot.suite then
-        local clean, why = IO.PrepareTable({ suite = snapshot.suite }, false)
+        local clean, why = IO.PrepareTable({ suite = snapshot.suite, nameplateCVars = snapshot.nameplateCVars }, false)
         if not clean then return false, why end
-        snapshot.suite = clean.suite
+        snapshot.suite, snapshot.nameplateCVars = clean.suite, clean.nameplateCVars
     end
     if snapshot.present then
         local ok, reason = RestoreSkin(snapshot, historyReason)
         if not ok then return false, reason end
     end
-    if snapshot.suite then RestoreSuite(snapshot) end
+    if snapshot.suite then
+        RestoreSuite(snapshot)
+        -- Profile Workbench undo and restore points can reverse a transfer.
+        -- Ordinary menu undo leaves later changes in Blizzard Settings alone.
+        if historyReason == nil or source == "profile-workbench" then IO.ApplyNameplateCVars(snapshot.nameplateCVars) end
+    end
     return true
 end
 
@@ -186,7 +191,7 @@ local function PrepareWorkbenchImport(text)
         local bundle, reason = P.WorkbenchPrepareBundle(text)
         if not bundle then return false, reason end
         IO.KeepPersonal(bundle.profile, snapshot.suite.modules, bundle.characterBound)
-        snapshot.suite = bundle.profile.suite
+        snapshot.suite, snapshot.nameplateCVars = bundle.profile.suite, bundle.profile.nameplateCVars
         snapshot.present, snapshot.profile = bundle.provider.present, bundle.provider.profile
         return { coreText = bundle.coreText, provider = snapshot }
     end
@@ -195,16 +200,17 @@ local function PrepareWorkbenchImport(text)
         if not skin then return false, "Skin engine unavailable" end
         local profile, reason = skin.ProfileIO.PrepareProfile(text)
         if not profile then return false, reason end
-        snapshot.present, snapshot.profile = true, profile
+        snapshot.present, snapshot.profile, snapshot.nameplateCVars = true, profile, nil
         return { provider = snapshot }
     end
-    local id, settings, reason, chat = IO.PrepareModuleProfile(text, true)
+    local id, settings, reason, chat, nameplateCVars = IO.PrepareModuleProfile(text, true)
     if not id then return false, reason end
     -- Only the string's settings change, as in P.ImportModule (SetMany): it
     -- leaves out character-bound ones, and an old helper string names seven
     -- Minimap settings.
     for key, value in pairs(settings) do snapshot.suite.modules[id][key] = value end
     if chat then snapshot.suite.modules.chatComfort = chat end
+    snapshot.nameplateCVars = nameplateCVars
     return { provider = snapshot }
 end
 

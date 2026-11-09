@@ -13,7 +13,7 @@ local TEXT = {
     session = S.Text("Session %s"),
     today = S.Text("Today %s"),
     drag = S.Text("Drag to move"),
-    options = S.Text("Click for bag options"),
+    options = S.Text("Right-click for bag options"),
 }
 local NO_VALUE = "—"
 
@@ -116,7 +116,7 @@ local function HandleClick(handle, button)
         handle.ignoreClick = false
         return
     end
-    if button ~= "LeftButton" or IsShiftKeyDown() then return end
+    if button ~= "RightButton" or IsShiftKeyDown() or NS.InCombat() then return end
     -- The portrait button is Blizzard's bag menu DropdownButton. Its menu
     -- opens on its own press only; opened from here under WoW Forever's
     -- Gamepad UI, MenuProxy.OnShow would run the frame controls manager's
@@ -157,7 +157,7 @@ local function NewDragHandle(frame)
     handle:SetAllPoints(title)
     handle:SetFrameLevel(math.max(title:GetFrameLevel(), frame.PortraitButton:GetFrameLevel()) + 1)
     handle:EnableMouse(true)
-    handle:RegisterForClicks("LeftButtonUp")
+    handle:RegisterForClicks("RightButtonUp")
     handle:RegisterForDrag("LeftButton")
     handle:SetScript("OnMouseDown", HandleMouseDown)
     handle:SetScript("OnClick", HandleClick)
@@ -184,8 +184,7 @@ local function SetSkinShown(textures, shown)
     textures[1]:SetShown(shown and not textures.panel)
 end
 
--- Blizzard's title router forwards to PortraitButton, so the bag menu
--- remains available from the heading. Hide the full button: the Suite
+-- The Suite title offers a separate right-click for the native bag menu. Hide the full button: the Suite
 -- skin can otherwise leave a styled but empty plate in this corner.
 local function OwnChrome(self, frame, textures)
     local context = self.context

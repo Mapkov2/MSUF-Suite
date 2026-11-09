@@ -1,7 +1,7 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
 local Model, Index, Grid, FreeSlots = P.InventoryModel, P.InventoryIndex, P.GridView, P.FreeSlots
-local VIEW = NS.BagsView
+local VIEW, Keyring = NS.BagsView, P.KeyringInventory
 -- layout: "suite" (Suite grid), "combat" (every slot in physical order, no
 -- Suite controls) or "native" (Blizzard's own grid is showing).
 local InventoryView = { index = Index.New(), model = Model.New(), buttons = {}, labels = {}, scroll = 0, view = {},
@@ -20,6 +20,7 @@ local EVENTS = { "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "GET_ITEM_INFO
     "AUCTION_HOUSE_CLOSED", "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED",
     "BAG_UPDATE_DELAYED", "EQUIPMENT_SETS_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "INVENTORY_SEARCH_UPDATE",
     "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }
+local QUEST_TINT_EVENTS = { "QUEST_REMOVED", "ITEM_LOCK_CHANGED" }
 
 local function State()
     local state = S.ModuleState("bags")
@@ -36,6 +37,8 @@ local function TransactionOpen()
     end
     return false
 end
+
+InventoryView.TransactionOpen = TransactionOpen
 
 -- Paging uses the same Suite projection in and out of combat. Protected
 -- fallback layouts expose their physical slots instead.
@@ -117,7 +120,8 @@ end
 -- event is the client event that asked for this pass, if any.
 Flush = function(event)
     if not InventoryView.active or not M.active or not InventoryView.frame:IsShown() then return end
-    local canLayout = not NS.InCombat(event) or P.BagLayout.CanRender(event)
+    local inCombat = NS.InCombat(event)
+    local canLayout = not inCombat or P.BagLayout.CanRender(event)
     if NS.IsCombatLocked() and not canLayout then
         -- A protected bag opened in combat shows Blizzard's own grid; the Suite controls
         -- must not cover its rows. Everything else waits for the combat end.
@@ -130,6 +134,7 @@ Flush = function(event)
     local state = State()
     if not state then return end
     Index.ReadContainer(InventoryView.index, InventoryView.frame, Index.Recent())
+    if Keyring then Keyring.Append(InventoryView.index, InventoryView.frame, not inCombat) end
     P.InventoryDetails.Index(InventoryView.index, InventoryView.smartQuery)
     if not canLayout then
         P.InventoryRendering.Combat()
@@ -165,6 +170,14 @@ end
 InventoryView.Request = Request
 
 local RestoreLayout
+local function QuestSlotChanged(bag, slot)
+    if not InventoryView.frame:IsShown() or not S.Finite(bag) or not S.Finite(slot) then return false end
+    local index = InventoryView.index
+    local button = index.buttons[bag * P.SlotCache.KEY + slot]
+    local item = index.records[button]
+    return item and P.InventoryRendering.InactiveQuest(item)
+end
+
 local function OnEvent(_, event, value, success)
     if not InventoryView.active then
         if InventoryView.restorePending and event == "PLAYER_REGEN_ENABLED" then RestoreLayout() end
@@ -197,6 +210,9 @@ local function OnEvent(_, event, value, success)
     end
     if event == "BAG_UPDATE_DELAYED" then P.EquippedBags.Refresh() end
     if event == "INVENTORY_SEARCH_UPDATE" then InventoryView.scroll = 0 end
+    -- Blizzard's single-slot lock refresh can clear the quest desaturation.
+    if event == "ITEM_LOCK_CHANGED" and not (Keyring and Keyring.OwnsBag(value))
+        and not (M.config.desaturateInactiveQuestItems and QuestSlotChanged(value, success)) then return end
     Request()
 end
 
@@ -217,6 +233,8 @@ end
 -- Blizzard lays the bag out again when it opens; until the Suite's own pass
 -- (or while protected) its grid is what shows.
 local function WindowHidden()
+    P.PhysicalSort.Stop()
+    if Keyring then Keyring.Hide() end
     if not InventoryView.active then return end
     InventoryView.layout = "native"
     InventoryView.transitionPending, InventoryView.categoryTransitionPending = false, false
@@ -249,6 +267,15 @@ function InventoryView.Refresh()
     for i = 1, #EVENTS do
         if NS.Client.SupportsEvent(EVENTS[i]) then InventoryView.events:RegisterEvent(EVENTS[i]) end
     end
+    for i = 1, #QUEST_TINT_EVENTS do
+        local event = QUEST_TINT_EVENTS[i]
+        local keyringLock = Keyring and event == "ITEM_LOCK_CHANGED"
+        if (keyringLock or M.config.desaturateInactiveQuestItems) and NS.Client.SupportsEvent(event) then
+            InventoryView.events:RegisterEvent(event)
+        else
+            InventoryView.events:UnregisterEvent(event)
+        end
+    end
     if not InventoryView.hooked then
         hooksecurefunc(InventoryView.frame, "UpdateItems", Request)
         hooksecurefunc(InventoryView.frame, "UpdateItemLayout", NativeLayoutChanged)
@@ -264,6 +291,7 @@ end
 
 -- Blizzard's own layout of the combined bag, from the native methods.
 RestoreLayout = function()
+    if Keyring then Keyring.Hide() end
     InventoryView.restorePending = false
     if not InventoryView.active and InventoryView.events then InventoryView.events:UnregisterAllEvents() end
     local frame = InventoryView.frame
@@ -285,6 +313,7 @@ function InventoryView.Release()
     M.combatScale = nil
     InventoryView.active, InventoryView.layout, InventoryView.positionsDirty, InventoryView.splitPending = false, "native", true, false
     Index.Reset(InventoryView.index)
+    if Keyring then Keyring.Hide() end
     if InventoryView.events then InventoryView.events:UnregisterAllEvents() end
     ShowChrome(false)
     P.BagMotion.StopAll()

@@ -1,0 +1,9 @@
+Forever flight times
+
+The timing data in ForeverFlightTimes.lua comes from RestedXP's RXPGuides.
+https://github.com/RestedXP/RXPGuides/blob/d583b89e455d73be6b93970579f074ecf6bb6326/DB/forever/flightData.lua
+
+The data is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International.
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+The table was reformatted and node names were omitted. All 793 timing values are unchanged.

@@ -11,7 +11,8 @@ local Commerce = {
 }
 NS.Commerce = Commerce
 
-local Field = NS.Safety.Field
+local Safety = NS.Safety
+local Field = Safety.Field
 local Kit = NS.AdapterKit
 local Fade = Kit.Fade
 local SurfaceSpec = Kit.SurfaceSpec
@@ -65,7 +66,9 @@ local mailStationery = {
 }
 
 local CARD_SPEC = SurfaceSpec("card", 4, 0)
-local PANEL_SPEC = SurfaceSpec("panel", 4, 0)
+local MAIL_BODY_SPEC = SurfaceSpec("panel", 4, 0)
+MAIL_BODY_SPEC.opaqueFill = true
+MAIL_BODY_SPEC.keepGlassFill = true
 local POPUP_SPEC = SurfaceSpec("popup", 8, 0)
 local ROW_SPEC = SurfaceSpec("card", 4, 1, true)
 local CATEGORY_ROW_SPEC = SurfaceSpec("navigation", 4, 1, true)
@@ -126,6 +129,92 @@ local function SkinMailAttachment(group, globalName)
     Kit.Attach(group, button, ATTACHMENT_SPEC)
 end
 
+-- OpenMailBodyText is SimpleHTML and uses the paragraph style for plain
+-- mail. Adapt its element-specific color to the reversible color ledger.
+local MailParagraph = {}
+local mailParagraphMeta = { __index = MailParagraph }
+function MailParagraph:IsForbidden() return Safety.IsForbidden(self.target) end
+function MailParagraph:IsProtected() return Safety.GetProtection(self.target) end
+function MailParagraph:GetTextColor() return Safety.Call(self.target, "GetTextColor", "P") end
+function MailParagraph:SetTextColor(r, g, b, a) self.target:SetTextColor("P", r, g, b, a) end
+
+local function SkinInvoiceLabel(region, colors)
+    if Kit.ObjectType(region) == "FontString" then
+        Kit.SetTextColor(colors, region, "text")
+    end
+end
+
+local function SkinMailText(group)
+    local colors = group.textColors
+    if not colors then
+        colors = Kit.NewTextColors()
+        group.textColors = colors
+    end
+    local body = Field(_G, "OpenMailBodyText")
+    if Safety.HasMethod(body, "SetTextColor") then
+        if not group.paragraph or group.paragraph.target ~= body then
+            group.paragraph = setmetatable({ target = body }, mailParagraphMeta)
+        end
+        Kit.SetTextColor(colors, group.paragraph, "text")
+    end
+    Kit.SetTextColor(colors, Field(_G, "SendMailBodyEditBox"), "text")
+
+    -- MailFrame.xml places the invoice labels, count and arithmetic signs
+    -- directly on these frames. The coin amounts live in child controls.
+    Kit.ForEachRegion(Field(_G, "OpenMailInvoiceFrame"), SkinInvoiceLabel, colors)
+    Kit.ForEachRegion(Field(_G, "OpenMailDepositMoneyFrame"), SkinInvoiceLabel, colors)
+    Kit.ForEachRegion(Field(_G, "OpenMailHouseCutMoneyFrame"), SkinInvoiceLabel, colors)
+    Kit.ForEachRegion(Field(_G, "OpenMailSalePriceMoneyFrame"), SkinInvoiceLabel, colors)
+    local consortium = Field(_G, "ConsortiumMailFrame")
+    local commission = Field(consortium, "CommissionPaidDisplay")
+    Kit.ForEachRegion(consortium, SkinInvoiceLabel, colors)
+    Kit.ForEachRegion(commission, SkinInvoiceLabel, colors)
+    Kit.ForEachRegion(Field(commission, "MoneyDisplayFrame"), SkinInvoiceLabel, colors)
+end
+
+local mailHint = {}
+
+local function CaptureMailBody(_, text)
+    if mailHint.group then
+        mailHint.empty = Safety.Public(text)
+            and (text == nil or type(text) == "string" and not text:find("%S"))
+    end
+end
+
+local function ShowMailHint(shown)
+    if mailHint.shown ~= shown then
+        mailHint.shown = shown
+        mailHint.label:SetAlpha(shown and 1 or 0)
+    end
+end
+
+local function RefreshMailHint()
+    if not mailHint.group then return end
+    -- The native update sets the body before switching its invoice panes.
+    ShowMailHint(mailHint.empty == true
+        and Safety.Read(Field(_G, "OpenMailInvoiceFrame"), "IsShown") == false
+        and Safety.Read(Field(_G, "ConsortiumMailFrame"), "IsShown") == false)
+end
+
+local function SkinMailHint(group)
+    if not mailHint.label then
+        local child = Field(_G, "OpenMailScrollChildFrame")
+        local body = Field(_G, "OpenMailBodyText")
+        if not Safety.CanCreateRegions(child, true) or not Safety.HasMethod(child, "CreateFontString")
+            or not Safety.HasMethod(body, "SetText") then return end
+        local frame = Field(_G, "OpenMailFrame")
+        if not Kit.HookFunction(frame, "Update", RefreshMailHint)
+            and not Kit.HookGlobal("OpenMail_Update", RefreshMailHint) then return end
+        Kit.HookFunction(body, "SetText", CaptureMailBody)
+        mailHint.label = child:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        mailHint.label:SetPoint("CENTER")
+        ShowMailHint(false)
+    end
+    mailHint.group = group
+    mailHint.label:SetText(NS.L["No message text."])
+    mailHint.label:SetTextColor(NS.Theme.GetColor("muted"))
+end
+
 local function SkinMail(owner)
     if NS.IsCombatLocked() then return false, "combat" end
     local group = Group(owner)
@@ -145,8 +234,10 @@ local function SkinMail(owner)
     -- surface to it; keep that surface hidden and skin the seven visible rows
     -- instead, otherwise the mailbox grows a large empty dark rectangle.
     NS.Surface.SetVisible(InboxFrame, false)
-    SkinPanel(group, _G.SendMailScrollFrame, PANEL_SPEC)
-    SkinPanel(group, _G.OpenMailScrollFrame, PANEL_SPEC)
+    SkinPanel(group, _G.SendMailScrollFrame, MAIL_BODY_SPEC)
+    SkinPanel(group, _G.OpenMailScrollFrame, MAIL_BODY_SPEC)
+    SkinMailText(group)
+    SkinMailHint(group)
     Kit.SkinControl(group, _G.SendMailNameEditBox, MAIL_INPUT_SPEC, "ApplySearchBox")
     Kit.SkinControl(group, _G.SendMailSubjectEditBox, MAIL_INPUT_SPEC, "ApplySearchBox")
     Kit.SkinControl(group, _G.MailFrameTab1, TAB_SPEC, "ApplyTab")
@@ -243,9 +334,15 @@ local function DisableGroup(owner)
     local group = Commerce.groups[owner]
     if not group then return true end
     group.active = false
+    if mailHint.group == group then
+        mailHint.group = nil
+        mailHint.empty = nil
+        ShowMailHint(false)
+    end
     UnregisterOwner(owner)
     NS.ControlSkin.DisableOwner(owner)
     NS.Cosmetics.RestoreOwner(owner)
+    if group.textColors then Kit.RestoreTextColors(group.textColors) end
     Kit.HideSurfaces(group)
     Commerce.groups[owner] = nil
     return true

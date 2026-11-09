@@ -62,7 +62,7 @@ local SHARED_WITH_BANK = { groupEquipmentSets = true, hideEmptyCategories = true
 local function CategoriesInUse()
     local Suite = P.Suite
     return P.Get(ID, "inventoryView") == Suite.BagsView.CATEGORIES
-        or not Suite.Client.isForever and P.Get(ID, "bankView") == Suite.BagsBankView.CATEGORIES
+        or OpensBags() and P.Get(ID, "bankView") == Suite.BagsBankView.CATEGORIES
 end
 
 P.Gates[ID] = function(rule)
@@ -77,7 +77,7 @@ P.Gates[ID] = function(rule)
         return false, string.format(Tr("Choose %s for \"%s\"."), Tr("Compact window"), Tr("Bag presentation"))
     end
     if rule.section ~= "categories" and not SHARED_WITH_BANK[rule.key] or CategoriesInUse() then return true end
-    if P.Suite.Client.isForever then return false, Tr("Choose Categories for \"Default inventory view\".") end
+    if not OpensBags() then return false, Tr("Choose Categories for \"Default inventory view\".") end
     return false, Tr("Choose Categories for \"Default inventory view\" or Bank categories for \"Default bank view\".")
 end
 

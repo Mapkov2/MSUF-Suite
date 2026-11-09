@@ -5,6 +5,13 @@ local WIDTH, ROW_HEIGHT, PAGE_SIZE = 320, 30, 8
 local popup
 local anchors = setmetatable({}, { __mode = "k" })
 
+local function SetHovered(self, item)
+    local hover = self.spec and self.spec.hover
+    if not hover or self.hovered == item then return end
+    self.hovered = item
+    hover(item and self.snapshot[item])
+end
+
 local function Confirm(self)
     if not self:IsVisible() or not self.ready or not self.ready() or self.count == 0 then return end
     local picks, names = {}, {}
@@ -39,13 +46,26 @@ local function MakeRow(self, index)
         end
         toggle:SetChecked(self.selected and self.selected[item] == true)
     end)
+    local function Enter()
+        if self:IsVisible() and self.ready and self.ready() then SetHovered(self, row.item) end
+    end
+    local function Leave()
+        if self.hovered == row.item and not row:IsMouseOver() then SetHovered(self) end
+    end
+    row:EnableMouse(true)
+    row:SetScript("OnEnter", Enter)
+    row:SetScript("OnLeave", Leave)
+    HM.HookToggleHover(row.toggle, Enter, Leave)
     self.rows[index] = row
     return row
 end
 
 local function ShowPage(self, page)
     if not self.ready or not self.ready() then return end
-    self.page = math.max(1, math.min(self.pages, page))
+    page = math.max(1, math.min(self.pages, page))
+    if self.page == page then return end
+    SetHovered(self)
+    self.page = page
     local offset = (self.page - 1) * PAGE_SIZE
     for index = 1, math.min(PAGE_SIZE, #self.snapshot - offset) do
         local item = offset + index
@@ -56,6 +76,7 @@ local function ShowPage(self, page)
         P.SetButtonText(row.toggle, self.snapshot[item].text)
         row.toggle:SetChecked(self.selected[item] == true)
         row:Show()
+        if self.spec.hover and self:IsVisible() and row:IsMouseOver() then SetHovered(self, item) end
     end
     for index = #self.snapshot - offset + 1, #self.rows do self.rows[index]:Hide() end
     self.pager:SetShown(self.pages > 1)
@@ -83,7 +104,14 @@ local function Ensure()
         if key == "ESCAPE" then frame:Hide() end
     end)
     self.title = P.Text(self, "", 14, -12, WIDTH - 52, T.colors.text)
-    local close = Button(self, "x", 24, function() self:Hide() end)
+    local close = P.Suite.HostBridge.MenuCloseButton(self)
+    if not close then
+        close = T.Button(self, "", 24, 24, { noSearch = true })
+        local glyph = T.Font(close, "GameFontHighlightSmall", "X", T.colors.text)
+        glyph:SetPoint("CENTER")
+    end
+    close:SetScript("OnClick", function() self:Hide() end)
+    HM.SkipHistoryCheckpoint(close)
     close:SetPoint("TOPRIGHT", self, "TOPRIGHT", -8, -8)
     self.apply = T.RoleButton(self, "", "destructive", WIDTH - 28, 26)
     self.apply:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", 14, 12)
@@ -103,6 +131,7 @@ local function Ensure()
         if delta ~= 0 then ShowPage(frame, frame.page + (delta > 0 and -1 or 1)) end
     end)
     self:HookScript("OnHide", function()
+        SetHovered(self)
         self.anchor, self.snapshot, self.ready, self.selected, self.spec, self.accept = nil, nil, nil, nil, nil, nil
     end)
     P.Suite.Registry.AddListener(self, function(_, domain)
@@ -133,7 +162,7 @@ function P.OpenDeletePicker(anchor, rows, spec, accept)
     end
     self.anchor, self.snapshot, self.ready = anchor, rows, P.ProfileGuard()
     self.spec, self.accept, self.selected, self.count = spec, accept, {}, 0
-    self.pages = math.ceil(#rows / PAGE_SIZE)
+    self.page, self.pages = nil, math.ceil(#rows / PAGE_SIZE)
     local page = 1
     for index, item in ipairs(rows) do
         if item.selected then

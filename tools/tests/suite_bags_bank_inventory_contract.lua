@@ -44,6 +44,7 @@ function methods:SetEnabled(value) self.enabled = value end
 function methods:SetScrollChild(value) self.child = value end
 function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
 function methods:RegisterUnitEvent(event, unit) self.events = self.events or {}; self.events[event] = unit end
+function methods:UnregisterEvent(event) if self.events then self.events[event] = nil end end
 function methods:UnregisterAllEvents() self.events = {} end
 for _, name in ipairs({ "SetJustifyH", "SetAllPoints", "SetFrameLevel", "EnableMouse", "EnableMouseWheel", "SetColorTexture",
     "SetAutoFocus", "SetMaxBytes", "SetTextColor", "SetWordWrap", "SetTexture" }) do
@@ -129,7 +130,7 @@ local S = {
     Set = function(_, key, value) c[key] = value; M:Refresh() end,
 }
 local _, catalog = dofile(root .. "/tools/tests/suite_test_support.lua").CatalogDefaults(root, "bags")
-local P = { Suite = S, NS = { IsCombatLocked = function() return combat end,
+local P = { Suite = S, NS = { IsCombatLocked = function() return combat end, InCombat = function() return combat end,
     BagsPresentation = catalog.BagsPresentation, BagsView = catalog.BagsView, BagsBankView = catalog.BagsBankView, BagsSort = catalog.BagsSort,
     BagsBankColor = catalog.BagsBankColor,
     Client = { SupportsEvent = function() return true end } }, BagsModule = M,

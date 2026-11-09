@@ -32,6 +32,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         Load("Rendering/WindowControls.lua")
         Load("Adapters/AdapterKit.lua")
         Load("Adapters/PlayerSpells.lua", os.getenv("SUITE_PLAYER_SPELLS_ENTRY_SOURCE"))
+        NS.ForeverLegacyTree = { Apply = function() return true end }
         Load("Adapters/Blizzard.lua", os.getenv("SUITE_BLIZZARD_ENTRY_SOURCE"))
         if route == "loadOnDemand" then
             Check(not NS.Adapters.Apply("playerSpells") and continuation, "missing spellbook did not schedule native loading")

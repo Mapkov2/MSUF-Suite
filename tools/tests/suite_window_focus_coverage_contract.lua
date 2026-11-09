@@ -109,6 +109,7 @@ local body = [======[
     NS.Client.IsAddOnLoaded = function() return true end
     NS.GenericWindows = { IsCategoryEnabled = function() return true end }
     NS.DB.skins, NS.DB.skinCategories = {}, {}
+    NS.ForeverLegacyTree = { Apply = function() return true end }
     Load("Adapters/Blizzard.lua")
     Load("Rendering/WindowFocusDiscovery.lua")
     NS.Adapters.Apply("blizzardWindows")

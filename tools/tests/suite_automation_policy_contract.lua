@@ -198,7 +198,7 @@ local CONFIRMED = {
         "the player's click on a Suite merchant row; currency, item and high-price purchases ask first, like Blizzard's rows",
     ["MSUF_Suite_Bags/BankActions.lua UseContainerItem"] = "the player's right click on a Suite bank slot withdraws it",
     ["MSUF_Suite_QualityOfLife/InventoryTransfers.lua UseContainerItem"] =
-        "one selected stack per explicit Move stack click; events only confirm or cancel, suite_inventory_tools_contract",
+        "the explicit Move stack click or confirmation of matching stacks; events only observe results, suite_inventory_tools_contract",
 }
 -- Addons whose files all belong to one catalog module.
 local ADDON_MODULE = {

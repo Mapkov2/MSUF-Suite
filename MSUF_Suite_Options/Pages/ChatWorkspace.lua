@@ -8,7 +8,7 @@ local TABS = {
     { id = "basics", label = "Basics", sections = "chat_module look window" },
     { id = "appearance", label = "Appearance", sections = "tabs sidebar" },
     { id = "input", label = "Input line", sections = "input" },
-    { id = "messages", label = "Messages", sections = "tools text chatComfort_module sounds highlight" },
+    { id = "messages", label = "Messages", sections = "tools historyRules spamFilterRules text chatComfort_module sounds highlight" },
     { id = "extras", label = "Extras", sections = "bubbles keywordAlerts_module" },
 }
 

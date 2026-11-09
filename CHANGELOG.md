@@ -1,5 +1,66 @@
 # MSUF Suite Changelog
 
+## 0.1.17 Alpha - 2026-11-09
+
+### Action Bars
+
+- Add Account transfer for spell assignments and keyboard bindings. Capture setups manually or automatically, export them, and review an import before assigning it to another character or loadout. Apply spells and keys separately, see skipped changes, and restore the previous setup.
+- Give Bar 10 its own assignments per character and specialization. Blizzard's page 10 remains available for forms. Enabled fixed bars reserve their native pages so the main bar avoids duplicate actions.
+
+### Damage Meter
+
+- Add Compare pulls to the Damage Meter fight menu. Compare DPS or HPS for two completed fights, then select a player to see per-spell rates and differences.
+
+### Bags, bank and inventory tools
+
+- Add Sort bag slots to physically rearrange items, with per-slot exclusions. Right-click the Bags title to open Blizzard's bag options.
+- Add optional dimming for inactive quest items. Suppress the empty 0/0 item upgrade rank.
+- Show Forever's native Keyring in organized bags. Add organized bank views and search to Forever's keyboard interface, with the native bank available in Gamepad UI.
+- Deposit or withdraw matching stacks from the Filters menu. Review the batch for the current category or search and selected bank before moving items.
+- Record dated mail attachments, active auctions, and accessible guild bank tabs in Inventory Archive. Browse records by character and location, and see where Crafting Shopping List materials were last recorded.
+
+### Chat
+
+- Search inside Copy Chat, move between matches, and copy the full tab. Click an MSUF timestamp to copy its message. Optionally show item icons beside links and class icons for known players.
+- Choose which chat categories keep saved history. Optionally archive whispers per character, search past conversations, and copy a conversation.
+- Add opt-in public chat filters for matching phrases, repeat messages, and selected channels.
+- Add whisper-tab overflow arrows and separate message spacing controls.
+- Give keyword alerts per-phrase channel filters, sound selection and previews, and a session history of the latest 100 matches.
+
+### Adventure Planner
+
+- Add Loot Goals to Adventure Planner. Drag an item or paste its link, track equipped status, and import visible Adventure Guide loot on Retail with lockout details where available.
+- Compare saved and current talents, loot specialization, and equipment in Retail Instance Loadouts. Open the relevant Blizzard panels to make corrections.
+
+### Quality of life
+
+- Add the Quick Actions palette via /msufactions or a keybind. Open Suite tools and inventory search from the keyboard or gamepad, with favorites and recent actions per character.
+- Add optional ready-check reminders for missing preparation, low durability, and loadout mismatches. Ally buff reminders can be limited to group members in range.
+- Animate expansion and collapse in the Objective Tracker, with an option to turn the motion off and support for reduced-motion settings.
+- Add an optional XP Optimizer to the XP bar with a turn-in XP strip, AFK-adjusted XP per hour, bonus cooldowns, and reminders for missing or expiring XP buffs.
+- Add Trainer Budget to show the combined cost of available training and the gold still needed. Training uses Blizzard's purchase button.
+- Add first-trip estimates for known flight paths and improve how the flight timer detects takeoff and restores an active flight after reload.
+- Limit minimap information hit areas to visible text, the information box, and the invite icon so the rest of the minimap stays clickable.
+
+### Character Panel and Inspect
+
+- Follow native character tabs for reputation, currency, and Forever's skills, PvP, or stats views. Improve Overview and Equipment navigation and restore model control click targets. Keep readable vitals visible and show when full stats are available after combat.
+
+### DataTexts
+
+- Add a live DataTexts preset gallery for creating and styling bars. Back restores the prior bar and scroll position. Hover a row in the delete picker to highlight the matching on-screen bar.
+
+### Nameplates
+
+- Carry supported Blizzard nameplate settings through module profile exports, imports, and Workbench restore points.
+
+### Skinning and Blizzard windows
+
+- Add dedicated skins for the native Legacy talent tree, reward track, and challenge page while preserving their native artwork and state.
+- Add an optional Readable values and status symbols setting for Bags, Character Panel, and Cooldown Manager, including larger cooldown and stack text.
+- Improve mailbox readability with opaque message panes, theme-aware compose and invoice text, and a hint for messages with no body text.
+- Prepare enabled Player Spells and Professions skins before combat, preserve Blizzard's spellbook rows and Group Finder scrolling, and respect reduced motion in profession panel transitions.
+
 ## 0.1.16 Alpha - 2026-11-09
 
 ### Character Panel and Inspect

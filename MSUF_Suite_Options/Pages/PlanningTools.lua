@@ -6,6 +6,7 @@ local S, PAGE, ID = P.S, "suite_planningTools", "planningTools"
 P.PlannerSections = {
     { key = "characters", title = "Weekly overview", keys = { "weekly" } },
     { key = "preparation", title = "Preparation", keys = { "preparation" } },
+    { key = "loot", title = "Loot goals", keys = {} },
     { key = "loadouts", title = "Instance loadouts", keys = { "loadouts" }, retail = true },
     { key = "runs", title = "Mythic+ archive", keys = {}, retail = true },
     { key = "raid", title = "Raid archive", keys = { "raidHistory", "keepAttempts" } },

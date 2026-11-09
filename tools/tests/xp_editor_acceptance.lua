@@ -25,7 +25,7 @@ return function(mw, P, uiFor, settle)
     end
     S.instances.xpBar = nil
     local private = {}
-    for _, name in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceBar" }) do
+    for _, name in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceOptimizer", "ExperienceBar" }) do
         Load(suiteRoot .. "/MSUF_Suite_QualityOfLife/" .. name .. ".lua", "MSUF_Suite_QualityOfLife", private)
     end
     private.NativeExperienceBar.Sync = function() error("menu editor changed native XP visibility") end
@@ -39,6 +39,21 @@ return function(mw, P, uiFor, settle)
     ui.stage:Show()
     ui.Paint()
     local function Config() return S.Config("xpBar") end
+    local optimizerRule = NS.SuiteCatalog.xpBar.rules.foreverOptimizer
+    assert(optimizerRule.default == false and optimizerRule.hidden == not NS.Client.isForever)
+    local optimizerPage, optimizerLabel, optimizerSection = "suite_hud", optimizerRule.label, "suite_qualityOfLife_xpBar_xp_bar"
+    local optimizerTarget = { settingKey = "msufsuite.xpBar.foreverOptimizer", suiteModuleId = "xpBar" }
+    if NS.Client.isForever then
+        local called, opened, focused, matched = M.SearchBridge.OpenSearchTarget(
+            optimizerPage, optimizerLabel, nil, optimizerSection, nil, optimizerTarget)
+        assert(called and opened and focused and matched, "Forever optimizer toggle did not resolve on the XP bar")
+        Config().foreverOptimizer = true
+        ui.Paint()
+        assert(ui.stage.suiteXPPreview.questXPStrip:IsShown(), "Forever toggle did not update the editor preview")
+        Config().foreverOptimizer = false
+        ui.Paint()
+        assert(not ui.stage.suiteXPPreview.questXPStrip:IsShown(), "disabling the Forever toggle left a preview strip")
+    end
     local function Script(handle, name, ...)
         if name == "OnEditFocusGained" then
             keyboardFocus = handle

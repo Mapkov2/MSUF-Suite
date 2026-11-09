@@ -14,7 +14,11 @@ local methods = {
     SetPoint = function(self, ...) self.point = { ... } Write() end,
     GetPoint = function(self) return unpack(self.point or {}) end,
     ClearAllPoints = function(self) self.point = nil Write() end,
-    SetHeight = Write, SetWidth = Write,
+    SetHeight = function(self)
+        assert(not (self.parent and self.parent.blockScrollLayout), "canvas resized inside a restricted native scroll")
+        Write()
+    end,
+    SetWidth = Write, SetClipsChildren = Write,
     SetSize = function(self, width, height) self.width, self.height = width, height Write() end,
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
@@ -79,7 +83,10 @@ local methods = {
     SetText = function(self, value) assert(self.fontPath, "font before text") self.text = value Write() end,
     GetUnboundedStringWidth = function(self) return #self.text * 6 end,
     GetVerticalScroll = function(self) return self.offset or 0 end,
+    GetVerticalScrollRange = function(self) return self.range or 1000 end,
     SetVerticalScroll = function(self, offset)
+        assert(not self.blockScrollLayout and not Strict.IsSecret(self:GetVerticalScrollRange()),
+            "native scroll callback would read a protected range")
         self.offset = offset
         Write()
         local hook = self.scripts.OnVerticalScroll
@@ -397,6 +404,23 @@ report.scroll:SetVerticalScroll(60)
 assert(FindCard("Above grid"), "an offset card disappeared before its following grid row boundary")
 report.scroll:SetVerticalScroll(0)
 report.height = reportHeight
+
+do
+    local rail = view.rail.scroll
+    rail.offset, rail.range, rail.blockScrollLayout = 110, Strict.New("number"), true
+    local vitals = { { title = "Attributes", rows = { { label = "Health", value = 595 } } } }
+    view:ShowGear(item, empty, empty, vitals, nil, empty, true, true)
+    assert(not rail:IsShown() and view.combatRail.canvas:IsShown(), "native stats scroller remained active in combat")
+    assert(view.combatRail.cards[1].rows[1].right.text == 595, "fixed combat rail dropped vitals")
+    assert(rail.offset == 110, "combat repaint reset the native scroller")
+    report.scroll.range, report.scroll.blockScrollLayout = Strict.New("number"), true
+    view:ShowGroups(groups)
+    report.scroll.scripts.OnVerticalScroll(report.scroll, Strict.New("number"))
+    report.scroll.range, report.scroll.blockScrollLayout = nil, nil
+    rail.range, rail.blockScrollLayout = nil, nil
+    view:ShowGear(item, empty, empty, groups, nil, empty, true)
+    assert(rail:IsShown() and not view.combatRail.canvas:IsShown(), "normal stats rail did not return after combat")
+end
 view:ShowGroups(groups)
 assert(report.cards[1].panelX == 0 and report.cards[1].panelY == 0 and report.cards[1].rows[1].panelX == 0
     and report.cards[1].rows[1].panelY == 30 and report.cardInset == 0 and report.rowInset == 0,
@@ -754,17 +778,32 @@ do
         GetActiveCamera = function() return camera end,
         Reset = function() resets = resets + 1 end,
     }
-    local toolbarCount = 0
+    local toolbarButtons, toolbarCount = {}, 0
     for control in pairs(full.surfaces) do
         if control.control then
             toolbarCount = toolbarCount + 1
-            assert(control.width == 20 and control.height == 20 and control.parent:GetFrameLevel() > nativeLevel + layout.modelLevel,
-                "the original model control art moved beneath the native scene")
-            control.scripts.OnClick(control)
+            toolbarButtons[control.control.atlas] = control
+            local level = control:GetFrameLevel()
+            assert(control.width == 20 and control.height == 20
+                and level > full.modelInput:GetFrameLevel() and level > full.nativeSlotMasks[1]:GetFrameLevel()
+                and level < full.reportCover:GetFrameLevel(), "native slot hit regions covered the model toolbar")
         end
     end
-    assert(toolbarCount == 5 and resets == 1 and zoom == 0 and camera.yaw == 0,
-        "the original model toolbar did not drive the native camera")
+    assert(toolbarCount == 5, "the native model toolbar lost a button")
+    local function ClickModelButton(icon)
+        local button = assert(toolbarButtons[icon])
+        button.scripts.OnClick(button)
+    end
+    ClickModelButton("common-icon-zoomin")
+    assert(zoom == 1, "the zoom-in button did not use the native camera")
+    ClickModelButton("common-icon-zoomout")
+    assert(zoom == 0, "the zoom-out button did not use the native camera")
+    ClickModelButton("common-icon-rotateright")
+    assert(camera.yaw > 0, "the rotate-right button did not turn the model")
+    ClickModelButton("common-icon-rotateleft")
+    assert(camera.yaw == 0, "the rotate-left button did not turn the model back")
+    ClickModelButton("common-icon-undo")
+    assert(resets == 1, "the reset button did not reset the native scene")
     local input = assert(full.modelInput, "the inactive slot mask still overlaps the 3D viewport")
     assert(input.parent == full.modelHost and input.mouseEnabled and input.width == layout.model.width
         and input:GetFrameLevel() > nativeLevel + layout.slotLevel + 1

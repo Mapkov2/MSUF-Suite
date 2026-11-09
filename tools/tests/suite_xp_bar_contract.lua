@@ -84,23 +84,27 @@ end }
 local MEDIA = { font = "Interface\\AddOns\\Test\\Media\\MSUF.ttf", barTexture = "Interface\\AddOns\\Test\\Media\\MSUF.tga" }
 local savedRoot = {}
 local translate
-local function Load(kind)
+local function Load(kind, forever)
     local callbacks, movers = {}, {}
     local suite = { editMode = false, loginKind = kind, RootDB = savedRoot, MSUFMedia = MEDIA,
         InCombat = function() return false end,
         IsCombatLocked = function() return false end,
         Dispatch = function(callback, ...) return callback(...) end,
+        Client = { isForever = forever == true },
         AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
     suite.Suite = { instances = {}, editMode = false }
     local runtime = suite.Suite
     runtime.ApplyOwnedLayer = function() return false end
     runtime.ApplyOwnedChildLayer = function() return false end
     runtime.GlobalFontPath = function() return MEDIA.font end
-    runtime.Public = function(value) return value ~= "secret" end
+    runtime.Public = function(value)
+        return (not issecretvalue or not issecretvalue(value)) and value ~= "secret"
+    end
     -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
     runtime.Number = function(value) return runtime.Public(value) and type(value) == "number" and value == value end
     runtime.Finite = function(value) return runtime.Number(value) and value > -math.huge and value < math.huge end
     runtime.Text = function(value) return translate and translate(value) or value end
+    runtime.Print = function(message) runtime.lastReminder = message end
     runtime.CreateFrame = CreateFrame
     runtime.CreateTexture = function(parent, ...) return parent:CreateTexture(...) end
     runtime.CreateFontString = function(parent, ...) return parent:CreateFontString(...) end
@@ -126,7 +130,7 @@ local function Load(kind)
     assert(loadfile(root .. "/MSUF_Suite/Core/ExperienceBarLayout.lua"))("MSUF_Suite", suite)
     MSUFSuite = suite
     local private = {}
-    for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceBar" }) do
+    for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceOptimizer", "ExperienceBar" }) do
         assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
     end
     local module = runtime.instances.xpBar
@@ -142,7 +146,7 @@ local function Load(kind)
     module.context = dofile(root .. "/tools/tests/suite_test_support.lua").ModuleTimers(root, runtime, suite)(
         "xpBar", module, { Event = function(_, name, callback, allowCombat)
         assert(allowCombat and not callbacks[name])
-        callbacks[name] = callback
+        callbacks[name] = dofile(root .. "/tools/tests/suite_test_support.lua").EventCallback(callback)
     end, RemoveEvent = function(_, name) callbacks[name] = nil end })
     module:Enable()
     module:RegisterMovers() -- the controller registers movers after Enable
@@ -673,5 +677,174 @@ for _,style in ipairs({1,2,3})do
 end
 print('all XP display styles, zero outline, finite segment geometry: OK')
 
+
+-- Exercise the opt-in through the installed bar with the production timer implementation.
+do
+    local sibling = root:gsub("[/\\][^/\\]+[/\\]?$", "") .. "/MidnightSimpleUnitFrames"
+    local secrets = assert(loadfile(sibling .. "/tools/tests/classpower_secrets.lua"))()
+    secrets.Install()
+    secrets.GUARD_NAMES.falsy.Public = true
+    local secret = secrets.New
+    local optimizerPath = root .. "/MSUF_Suite_QualityOfLife/ExperienceOptimizer.lua"
+    local stopWatching = secrets.Watch(optimizerPath, { strict = true })
+    level, xp, maximum, rested = 21, 100, 1000, 10
+    now = 200000
+    GetTime = function() return now end
+    UnitXP, UnitXPMax, GetXPExhaustion = function() return xp end, function() return maximum end,
+        function() return rested end
+    local afk, restricted, auraReads, itemReads, questReads = false, false, 0, 0, 0
+    UnitIsAFK = function() return afk end
+    UnitIsDeadOrGhost = function() return false end
+    GetInventoryItemID = function() return nil end
+    IsInInstance = function() return false, "none" end
+    canaccesstable = function(t) return not issecretvalue(t) end
+    wipe = function(t) for key in pairs(t) do t[key] = nil end end
+    C_Secrets = { ShouldAurasBeSecret = function() return restricted end }
+    local aura = { spellId = 429959, applications = 3, expirationTime = now + 100 }
+    C_UnitAuras = { GetAuraDataByIndex = function(_, index)
+        auraReads = auraReads + 1
+        if index == 1 then return aura end
+    end }
+    C_Item = {
+        GetItemCount = function(id)
+            itemReads = itemReads + 1
+            return (id == 211527 or id == 12218) and 1 or 0
+        end,
+    }
+    local readyCooldown = { startTime = 0, duration = 0, isEnabled = true }
+    local cooldown = readyCooldown
+    C_Spell = { GetItemCooldown = function() return cooldown end }
+    local questReady, loaded = true, false
+    local quests = {
+        { isHeader = true, questID = 0 },
+        { questID = 42, title = "The first quest" },
+        { questID = 42, title = "Duplicate" },
+        { questID = 43, title = "Pending reward" },
+        { questID = 44, title = "Unfinished quest" },
+        { questID = 45, title = secret("string") },
+        { questID = secret("number") },
+    }
+    C_QuestLog = {
+        GetNumQuestLogEntries = function() return #quests end,
+        GetInfo = function(index) return quests[index] end,
+        IsComplete = function(id) return questReady and id ~= 44 end,
+    }
+    HaveQuestRewardData = function(id) return id ~= 43 or loaded end
+    GetQuestLogRewardXP = function(id)
+        questReads = questReads + 1
+        if id == 45 then return secret("number") end
+        return id == 42 and 250 or 1000
+    end
+    local queued = {}
+    C_Timer.After = function(delay, callback) queued[#queued + 1] = { at = now + delay, callback = callback } end
+    local function Advance(seconds)
+        local target = now + seconds
+        while true do
+            local earliest
+            for index, timer in ipairs(queued) do
+                if timer.at <= target and (not earliest or timer.at < queued[earliest].at) then earliest = index end
+            end
+            if not earliest then break end
+            local timer = table.remove(queued, earliest)
+            now = timer.at
+            timer.callback()
+        end
+        now = target
+    end
+    local bar, engine, liveEvents = Load("login", true)
+    assert(not bar.optimizer and not liveEvents.UNIT_AURA and #queued == 0, "default schedules optimizer work")
+    bar.config.foreverOptimizer = true
+    bar:Refresh()
+    assert(liveEvents.UNIT_AURA and liveEvents.QUEST_LOG_UPDATE and liveEvents.PLAYER_FLAGS_CHANGED)
+    Advance(1)
+    assert(bar.questXPStrip:IsShown() and bar.questXPStrip.width == 100 and questReads == 2,
+        "known quest rewards did not paint, or a hidden/duplicate/unfinished reward was read")
+    bar.host.OnEnter(bar.host)
+    local contents = table.concat(tooltip.lines, "\n")
+    assert(contents:find("The first quest | 250", 1, true) and contents:find("3 / 3 stacks", 1, true)
+        and contents:find("Some quest rewards are unavailable.", 1, true), "tooltip omitted optimizer details")
+    assert(not engine.lastReminder, "optimizer warned during login grace")
+    local savedItemReads = itemReads
+    aura.spellId = secret("number")
+    liveEvents.UNIT_AURA(bar, "UNIT_AURA", secret("string"))
+    liveEvents.UNIT_AURA(bar, "UNIT_AURA", "player")
+    Advance(1)
+    assert(itemReads == savedItemReads and not bar.optimizer.aurasReadable, "aura event rescanned bags or accepted secret ID")
+    aura.spellId = 429959
+    loaded = true
+    liveEvents.QUEST_DATA_LOAD_RESULT(bar, "QUEST_DATA_LOAD_RESULT", 43, true)
+    Advance(1)
+    assert(bar.optimizer.questXP == 1250 and bar.questXPStrip.width == 360 and bar.session.gained == 0,
+        "quest rewards did not retry, extend to the cap, or stay out of earned XP")
+    Advance(39)
+    assert(engine.lastReminder == "XP bonus expiring soon: Cozy Sleeping Bag.", "expiration warning missed its deadline")
+    local previousAuraReads = auraReads
+    restricted, cooldown = secret("boolean"), secret("table")
+    liveEvents.PLAYER_REGEN_DISABLED(bar, "PLAYER_REGEN_DISABLED")
+    liveEvents.BAG_UPDATE_COOLDOWN(bar, "BAG_UPDATE_COOLDOWN")
+    Advance(1)
+    assert(auraReads == previousAuraReads and not bar.optimizer.aurasReadable
+        and table.concat(tooltip.lines, "\n"):find("Cozy Sleeping Bag | Unknown", 1, true),
+        "restricted aura data was read or treated as missing")
+    assert(bar.optimizer.bonuses[2].cooldownUnknown, "restricted cooldown appeared ready")
+    restricted, cooldown = false, readyCooldown
+    liveEvents.PLAYER_REGEN_ENABLED(bar, "PLAYER_REGEN_ENABLED")
+    Advance(20)
+    assert(not bar.optimizer.bonuses[2].cooldownUnknown, "cooldown did not recover after combat")
+    xp = 200
+    liveEvents.PLAYER_XP_UPDATE(bar, "PLAYER_XP_UPDATE", "player")
+    assert(bar.optimizer.gained == 100 and bar.session.gained == 100 and not bar.rateText.text:find("--", 1, true))
+    afk = secret("boolean")
+    liveEvents.PLAYER_FLAGS_CHANGED(bar, "PLAYER_FLAGS_CHANGED", "player")
+    afk = true
+    Advance(1)
+    local activeRate = bar.rateText.text
+    assert(bar.optimizer.afk == true, "AFK state failed to recover after chat lockdown")
+    xp = 350
+    liveEvents.PLAYER_XP_UPDATE(bar, "PLAYER_XP_UPDATE", "player")
+    Advance(80)
+    assert(bar.optimizer.gained == 100 and bar.session.gained == 250 and bar.rateText.text == activeRate,
+        "AFK time or gain leaked into the active rate")
+    afk = false
+    liveEvents.PLAYER_FLAGS_CHANGED(bar, "PLAYER_FLAGS_CHANGED", "player")
+    questReady = false
+    liveEvents.QUEST_TURNED_IN(bar, "QUEST_TURNED_IN", 42, 250)
+    Advance(1)
+    assert(not bar.questXPStrip:IsShown(), "a turned-in quest left its XP strip behind")
+    local parent = Widget()
+    local reads = auraReads + itemReads + questReads
+    engine.DrawExperienceBarPreview(parent, bar.config, { xp = 50, rested = 15 })
+    assert(parent.suiteXPPreview.questXPStrip:IsShown() and auraReads + itemReads + questReads == reads)
+    liveEvents.UNIT_AURA(bar, "UNIT_AURA", "player")
+    bar.config.foreverOptimizer = false
+    bar:Refresh()
+    Advance(360)
+    assert(not bar.optimizer and not liveEvents.UNIT_AURA and not liveEvents.QUEST_LOG_UPDATE
+        and not liveEvents.PLAYER_FLAGS_CHANGED and auraReads + itemReads + questReads == reads,
+        "toggle off left optimizer work running")
+    engine.DrawExperienceBarPreview(parent, bar.config, { xp = 50, rested = 15 })
+    assert(not parent.suiteXPPreview.questXPStrip:IsShown(), "toggle off left a stale preview strip")
+    bar.config.foreverOptimizer = true
+    bar:Refresh()
+    level, afk = secret("number"), secret("boolean")
+    liveEvents.PLAYER_FLAGS_CHANGED(bar, "PLAYER_FLAGS_CHANGED", "player")
+    Advance(1)
+    assert(not bar.optimizer and not liveEvents.UNIT_AURA, "AFK retry survived unavailable XP")
+    level, afk = 21, false
+    bar:Refresh()
+    GameRulesUtil = { IsPlayerAtEffectiveMaxLevel = function() return true end }
+    bar:Refresh()
+    assert(not bar.optimizer and not liveEvents.UNIT_AURA, "max level did not stop the optimizer")
+    GameRulesUtil = uncappedRules
+    bar:Refresh()
+    bar:Disable()
+    assert(not bar.optimizer and not liveEvents.UNIT_AURA, "disabling the bar did not stop the optimizer")
+    local retail, _, retailEvents = Load("login")
+    retail.config.foreverOptimizer = true
+    retail:Refresh()
+    assert(not retail.optimizer and not retailEvents.UNIT_AURA, "Retail started a Forever optimizer profile")
+    local violations = stopWatching()
+    assert(#violations == 0, table.concat(violations, "\n"))
+end
 
 print("suite_xp_bar_contract: OK")

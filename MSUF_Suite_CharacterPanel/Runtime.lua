@@ -67,12 +67,13 @@ local function OnClose()
     if not Module.kind then return end
     if Module.view.nativeLayout then Module.layoutGeometry.Present(Module.layoutRoot, nil) end
     local restoreCharacter = Module.kind == INSPECT and Module.running and not Module.replacing and Routing.Shown()
+    Routing.ReleaseGearClick()
     Module.view:CancelWindowGestures()
     SuspendPaint()
     Module.appearanceJob:Clear()
     if Module.gear and Module.reader then Gear.Close(Module.reader, Module.gear) end
     Module.unit, Module.guid, Module.kind, Module.gear, Module.slot = nil, nil, nil, nil, nil
-    Module.inspectGuild, Module.custom, Module.customDefinition = nil, nil, nil
+    Module.inspectGuild, Module.custom, Module.customDefinition, Module.nativeTab = nil, nil, nil, nil
     Module.gearStale, Module.durabilityStale = nil, nil
     if restoreCharacter then Module.nativeJob:Request() end
 end
@@ -190,14 +191,14 @@ local function PaintContextAction(event)
     elseif Module.tab == EQUIPMENT and not Host.InCombat(event) then
         view:SetContextAction(Module.setLabel)
     else
-        view:SetContextAction(nil)
+        view:SetContextAction(Module.kind == PLAYER and Module.tab == OVERVIEW and not Host.InCombat(event) and Text("Loot goals") or nil)
     end
 end
 
-local function Paint()
+local function Paint(event)
     local view, model, tab = Module.view, Module.gear, Module.tab
     if not model then return end
-    local groups, details = Module.groups, Module.details
+    local groups, details, combat = Module.groups, Module.details, Module.kind == PLAYER and Host.InCombat(event)
     local gearTab = tab == OVERVIEW or tab == EQUIPMENT
     if gearTab then
         wipe(details)
@@ -211,15 +212,15 @@ local function Paint()
     if Module.kind == PLAYER and tab == OVERVIEW then SyncOverviewEvents(#details == 0) end
     if gearTab then
         if #details == 0 then
-            if tab == OVERVIEW and Module.kind == PLAYER then Pages.Overview(groups, Module.fullStats) else wipe(groups) end
+            if tab == OVERVIEW and Module.kind == PLAYER then Pages.Overview(groups, Module.fullStats, combat) else wipe(groups) end
             if Module.kind == INSPECT then
                 InspectSummary(groups)
             else
                 Pages.EquipmentSummary(groups, model)
             end
         end
-        if Module.kind == INSPECT or view.nativeLayout then
-            view:ShowGear(model.left, model.right, model.weapons, groups, Module.slot, details, tab == OVERVIEW)
+        if Module.kind == INSPECT or view.nativeLayout and Routing.PaperDollShown() then
+            view:ShowGear(model.left, model.right, model.weapons, groups, Module.slot, details, tab == OVERVIEW, combat)
         else
             local report = #details > 0 and details or groups
             if tab == EQUIPMENT and Module.reader then Gear.EquipmentList(report, model) end
@@ -230,7 +231,7 @@ local function Paint()
         Gear.Compare(groups, Module.ownGear, model)
         view:ShowGroups(groups)
     else
-        if Module.custom then Pages.Custom(groups, Module.custom, Module) else Pages.Read(tab, groups) end
+        if Module.custom then Pages.Custom(groups, Module.custom, Module, combat) else Pages.Read(tab, groups) end
         view:ShowGroups(groups)
     end
 end
@@ -479,9 +480,9 @@ end
 
 local function ContextAction(button)
     if CanSelectSet() then
-        GearActions.OpenSets(button, CanSelectSet)
-        return
+        return GearActions.OpenSets(button, CanSelectSet)
     end
+    if Module.kind == PLAYER and Module.tab == OVERVIEW then return GearActions.OpenLootGoals() end
     if Module.kind ~= INSPECT or not NS.CanReplace() or Module.view:IsMinimized() then return end
     local unit = Module.unit
     if Identity(unit) ~= Module.guid then return end
@@ -590,7 +591,7 @@ local function PrepareNativeLayout(root)
     AcquireView(root)
 end
 
-local function Open(kind, unit, guid, tab, nativeRoot)
+local function Open(kind, unit, guid, tab, nativeRoot, nativeTab)
     local reader = PrimeEquipmentReader()
     if kind == INSPECT and not reader then return false end
     local playerVisible = kind == INSPECT and Module.kind == PLAYER
@@ -603,7 +604,7 @@ local function Open(kind, unit, guid, tab, nativeRoot)
     if kind == INSPECT and model.missingLinks then return false end
     if playerVisible then Close(true) end
     local view = AcquireView(nativeRoot)
-    Module.view = view
+    Module.view, Module.nativeTab = view, nativeTab
     Module.kind, Module.unit, Module.guid, Module.gear = kind, unit, guid, model
     if kind == PLAYER then
         WindowAction("prepare")
@@ -623,33 +624,32 @@ local function Open(kind, unit, guid, tab, nativeRoot)
     if kind == INSPECT then view:RefreshModel() end
     return true
 end
-
 local function OpenNativeCharacter()
-    local root = Routing.Shown()
-    if Module.running and Module.kind ~= PLAYER and root and NS.CanOpenCharacter() then
-        PrepareNativeLayout(root)
-        Open(PLAYER, "player", Identity("player") or "player", OVERVIEW, root)
+    local root, tab, requested = Routing.TakeTabRequest()
+    if not Module.running or not root or not NS.CanOpenCharacter() then return end
+    if Module.kind == PLAYER and Module.nativeTab == tab and (not requested or Module.tab == requested) then return end
+    if Module.kind == PLAYER then
+        Module.nativeTab = tab
+        return SelectTab(requested or tab)
     end
+    PrepareNativeLayout(root)
+    Open(PLAYER, "player", Identity("player") or "player", requested or tab, root, tab)
 end
-
-local function NativeVisibilityChanged(root)
-    if root and NS.CanOpenCharacter() then
-        if Module.kind ~= PLAYER then Module.nativeJob:Request() end
-    else
-        Module.nativeJob:Clear()
-        Module.nativeFitJob:Clear()
-        if Module.kind == PLAYER then Close() end
-        if not Host.InCombat() then
-            local native = Routing.Root()
-            if native and native:IsVisible() then ReleaseNativeLayout() else PrepareNativeLayout(native) end
-        end
+local function NativeVisibilityChanged(root, requestedTab)
+    if requestedTab and Module.tab ~= requestedTab then Module.nativeTab = nil end
+    if root and NS.CanOpenCharacter() then return Module.nativeJob:Request() end
+    Module.nativeJob:Clear()
+    Module.nativeFitJob:Clear()
+    if Module.kind == PLAYER then Close() end
+    if not Host.InCombat() then
+        local native = Routing.Root()
+        if native and native:IsVisible() then ReleaseNativeLayout() else PrepareNativeLayout(native) end
     end
 end
 
 local function FitNative()
     if Module.kind == PLAYER then Module.view:FitScreen() end
 end
-
 local function NativeSizeChanged()
     if Module.kind == PLAYER and not Module.view.nativeLayout then Module.nativeFitJob:Request() end
 end
@@ -728,9 +728,9 @@ local function LeaveCombat(_, event)
     PrepareNativeLayout(Routing.Root())
     if Module.kind ~= PLAYER then return end
     if root and Module.layoutRoot == root and not Module.view.nativeLayout then
-        local tab = Module.tab
+        local tab, nativeTab = Module.tab, Module.nativeTab
         Close(true)
-        Open(PLAYER, "player", Identity("player") or "player", tab, root)
+        Open(PLAYER, "player", Identity("player") or "player", tab, root, nativeTab)
         return
     end
     if not hadReader and Module.reader then Module.view:RefreshAppearance(AvailableSkin(), Module.config) end
@@ -739,6 +739,7 @@ local function LeaveCombat(_, event)
 end
 
 local function EnterCombat(_, event)
+    Routing.ReleaseGearClick()
     CancelInspect()
     if Module.kind == INSPECT then
         Close()
@@ -750,6 +751,7 @@ local function EnterCombat(_, event)
         SetEvents(SET_EVENTS, false)
         Module.dirtySets = nil
         PaintContextAction(event)
+        if Module.tab == OVERVIEW or Module.tab == EQUIPMENT or Module.custom then Paint(event) end
     end
 end
 

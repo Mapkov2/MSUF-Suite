@@ -41,7 +41,14 @@ local function ReadTarget(record, material)
         local from = first[index]
         local to = from + (last[index] - from) * strength
         local border = edge[index]
-        if index == 4 then from, to, border = from * opacity, to * opacity, border * borderOpacity end
+        if index == 4 then
+            if state.spec.opaqueFill == true then
+                from, to = 1, 1
+            else
+                from, to = from * opacity, to * opacity
+            end
+            border = border * borderOpacity
+        end
         changed = changed or values[index] ~= from or values[index + 4] ~= to or values[index + 8] ~= border
         values[index], values[index + 4], values[index + 8] = from, to, border
     end

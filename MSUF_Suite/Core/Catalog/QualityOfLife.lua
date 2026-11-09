@@ -681,13 +681,10 @@ B.Section("autoUprank", "auto_uprank", "New spell ranks", {
 })
 
 B.Module("trainerLearnAll", {
-    title = "Learn all at trainer",
-    description = "Review the total cost, then learn available non-profession abilities at a trainer.",
+    title = NS.Client.isForever and "Trainer budget" or "Learn all at trainer",
+    description = NS.Client.isForever and "See the combined cost of available paid abilities at the trainer."
+        or "Review the total cost, then learn available non-profession abilities at a trainer.",
     optIn = true, defaultEnabled = false, page = "suite_qualityOfLife",
-    available = function()
-        if NS.Client.isForever then return false, "Trainer learning is available only in Retail" end
-        return true
-    end,
 })
 
 B.Module("characterUpgradeWindow", {

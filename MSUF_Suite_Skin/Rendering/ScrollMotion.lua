@@ -1,7 +1,7 @@
 local _, NS = ...
 
--- Settings builds keybinding scripts in pooled rows. LFGList and SocialUI
--- run restricted data readers during native updates.
+-- Settings builds keybinding scripts in pooled rows. Group Finder and
+-- SocialUI run restricted operations during native updates.
 -- Lua ScrollController setters write native fields from skin execution.
 -- Keep that state native and ease only the rendered content, with finite C
 -- animations and external ownership, as the legacy scroll renderer does.
@@ -18,7 +18,7 @@ function NativeList.IsTarget(target)
     end
     for _ = 1, 16 do
         local name = Safety.Read(target, "GetName")
-        if name == "LFGListFrame" or name == "SocialUIFrame" then return true end
+        if name == "LFGListFrame" or name == "LFGParentFrame" or name == "SocialUIFrame" then return true end
         target = Safety.Read(target, "GetParent")
         if target == nil then return false end
     end

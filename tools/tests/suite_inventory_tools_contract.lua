@@ -142,6 +142,33 @@ eq(#recipes, 2, "tracked recipes"); eq(totals[12], 16, "shared reagent sum times
 eq(totals[13], nil, "alternative not invented"); eq(totals[90], nil, "variable not invented"); eq(totals[99], nil, "optional excluded")
 craft.config.choices = "101:0:2=14"
 _, _, totals = craft:Build(); eq(totals[14], 8, "explicit quality choice counted")
+local archiveStore = NS.RootDB.suiteInventoryArchive
+archiveStore.characters["player-b"].bank = { counts = { [12] = 3 }, at = 3000 }
+archiveStore.characters["other-region"] = { address = "Other-Realm", region = "US",
+    bags = { counts = { [12] = 100 }, at = 3000 } }
+archiveStore.characters["player-a"].mail = { counts = { [12] = 8 }, at = 3000 }
+local shopping, indexCalls = {}, 0
+local materialSources = archive.MaterialSources
+function archive:MaterialSources(wanted)
+    indexCalls = indexCalls + 1
+    return materialSources(self, wanted)
+end
+for _, row in ipairs(craft:Rows()) do shopping[row.itemID] = row end
+eq(indexCalls, 1, "shopping render indexes archived sources once for all items")
+eq(shopping[12].label:find("missing 15", 1, true) ~= nil, true, "archive stock never changes the live bag deficit")
+local materialDetail = shopping[12].detail
+eq(materialDetail:find("Bank: 3 · " .. date("%Y-%m-%d %H:%M", 3000), 1, true) ~= nil, true, "own bank with its time")
+eq(materialDetail:find("Warband bank: 10 · ", 1, true) ~= nil, true, "one shared warband source")
+eq(materialDetail:find("Alpha-Realm (Bags): 4 · ", 1, true) ~= nil, true, "alt bags are separate from bank")
+eq(materialDetail:find("Alpha-Realm (Bank): 8 · ", 1, true) ~= nil, true, "alt bank stays its own source")
+eq(materialDetail:find("Beta-Realm (Bags)", 1, true), nil, "archived own bags never double count the live bags")
+eq(materialDetail:find("Other-Realm", 1, true), nil, "another region is excluded")
+eq(materialDetail:find("(Mail)", 1, true), nil, "mail is not a bank or bag source")
+eq(shopping[14].detail:find("Last recorded material locations", 1, true), nil, "no inventory availability is invented")
+archive.active = false
+eq(craft:Rows()[1].detail:find("Last recorded material locations", 1, true), nil, "disabled archive contributes no sources")
+archive.active = true
+archive.MaterialSources = materialSources
 E.bags[0][2] = E.secret
 eq(craft:Rows()[1].label:find("unavailable", 1, true) ~= nil, true, "craft missing amount waits for complete bags")
 E.bags[0][2] = nil
@@ -161,7 +188,147 @@ row = transfer:Rows()[1]; E.refundable = true; E:Click(transfer, transfer.Move, 
 eq(#E.writes, 1, "refund confirmation stays native"); E.refundable = false
 E.combat = true; E:Click(transfer, transfer.Move, row); eq(#E.writes, 1, "combat transfer refused"); E.combat = false
 E:Click(transfer, transfer.Move, row); E:Emit(transfer, "BANKFRAME_CLOSED")
-eq(transfer.pending, nil, "close cancels pending"); BankFrame:Hide()
+eq(transfer.pending, nil, "close cancels pending")
+eq(transfer.context.events.BAG_UPDATE_DELAYED, nil, "closed bank stops inventory event work")
+eq(transfer.context.events.CURSOR_CHANGED, nil, "closed bank stops cursor event work")
+BankFrame:Hide()
+
+-- Grouped bank transfers use the displayed physical candidates, not a fresh inventory scan.
+local question
+S.Confirm = function(_, data) question = data end
+S.HideQuestion = function() question = nil end
+local function Stack(bag, slot, id, count)
+    E:Item(bag, slot, id, count)
+    return { bag = bag, slot = slot, itemID = id, count = count, link = "item:" .. id }
+end
+local function ConfirmBatch(items, direction, expected)
+    question = nil
+    E:Click(transfer, transfer.Batch, items, direction)
+    eq(question and question.text_arg1 or 0, expected, "approved physical stack count")
+    return question
+end
+local function Accept()
+    local approved = question
+    question = nil
+    E:Click(transfer, function() approved.callback() end)
+end
+local function WriteCount(expected, label) eq(#E.writes, expected, label) end
+
+E.bankType = 1
+BankFrame:Show()
+E:Emit(transfer, "BANKFRAME_OPENED")
+eq(type(transfer.context.events.BAG_UPDATE_DELAYED), "function", "reopening resumes inventory acknowledgement")
+local first, second, unmatched = Stack(0, 1, 12, 8), Stack(0, 2, 13, 4), Stack(0, 3, 14, 2)
+local prior, scanned = #E.writes, E.calls.scan
+local canBatch, activeBank = transfer:CanBatch()
+eq(canBatch, true, "active bank can transfer")
+eq(activeBank, 1, "menu can scope matches to the native bank")
+StackSplitFrame:Show()
+ConfirmBatch({ first }, "deposit", 0)
+StackSplitFrame:Hide()
+E.targeting = true
+ConfirmBatch({ first }, "deposit", 0)
+E.targeting = E.secret
+ConfirmBatch({ first }, "deposit", 0)
+E.targeting = nil
+E.bags[0][unmatched.slot].isFiltered = true
+ConfirmBatch({ unmatched }, "deposit", 0)
+E.bags[0][unmatched.slot].isFiltered = false
+local approval = ConfirmBatch({ first, first, second }, "deposit", 2)
+WriteCount(prior, "preview never moves items")
+Accept()
+WriteCount(prior + 2, "same click issues both unique approved stacks")
+eq(E.calls.scan, scanned, "batch uses exact candidates without rescanning containers")
+eq(E.writes[prior + 1][5], 1, "native deposit uses confirmed bank type")
+E:Click(transfer, function() approval.callback() end)
+WriteCount(prior + 2, "duplicate confirmation cannot issue the batch again")
+E.bags[0][1] = nil
+E:Emit(transfer, "BAG_UPDATE_DELAYED")
+eq(transfer.pending.updated, 1, "first accepted stack acknowledged")
+WriteCount(prior + 2, "acknowledgement events never issue writes")
+E.bags[0][2] = E.secret
+E:Emit(transfer, "BAG_UPDATE_DELAYED")
+eq(transfer.pending.updated, 1, "unknown slot is not an acknowledgement")
+E:Flush()
+eq(E.message:find("1 of 2", 1, true) ~= nil, true, "timeout reports the observed partial transfer")
+eq(E.bags[0][unmatched.slot].itemID, 14, "nonmatching item remains untouched")
+
+first, second = Stack(0, 1, 12, 8), Stack(0, 2, 13, 4)
+ConfirmBatch({ first, second }, "deposit", 2)
+E.bags[0][first.slot].guid = "different item instance"
+Accept()
+WriteCount(prior + 3, "same-ID replacement is skipped at confirmation")
+eq(E.writes[prior + 3][3], second.slot, "the unchanged stack can still move")
+E:Flush()
+
+ConfirmBatch({ first, second }, "deposit", 2)
+E.bankType = 2
+Accept()
+WriteCount(prior + 3, "changed destination never moves approved stacks")
+ConfirmBatch({ first, second }, "deposit", 2)
+E.refundable = true
+Accept()
+WriteCount(prior + 3, "newly refundable account deposit stays native")
+E.refundable = false
+
+E.free = 1
+ConfirmBatch({ first, second }, "deposit", 1)
+question.cancelCallback()
+eq(transfer:CanBatch(), true, "cancel leaves the next explicit batch available")
+E.free = 8
+local stale = ConfirmBatch({ first }, "deposit", 1)
+E:Emit(transfer, "BANKFRAME_CLOSED")
+E:Emit(transfer, "BANKFRAME_OPENED")
+E:Click(transfer, function() stale.callback() end)
+WriteCount(prior + 3, "bank reopen invalidates earlier confirmation")
+ConfirmBatch({ first, second }, "deposit", 2)
+E.combat = true
+Accept()
+WriteCount(prior + 3, "combat invalidates an open confirmation")
+E.combat = false
+ConfirmBatch({ first, second }, "deposit", 2)
+E.conflict = "MerchantFrame"
+Accept()
+WriteCount(prior + 3, "competing item windows cannot repurpose a transfer")
+E.conflict = nil
+ConfirmBatch({ first, second, unmatched }, "deposit", 3)
+local native = S.QoLRestrictedCall
+local attempted = 0
+S.QoLRestrictedCall = function(...)
+    attempted = attempted + 1
+    if attempted == 2 then return false end
+    return native(...)
+end
+Accept()
+S.QoLRestrictedCall = native
+WriteCount(prior + 4, "first refused native action stops the batch")
+E.bags[0][1] = nil
+E:Emit(transfer, "BAG_UPDATE_DELAYED")
+eq(E.message:find("1 of 3", 1, true) ~= nil, true, "refusal is reflected in the confirmed count")
+
+local bankItem = Stack(13, 1, 15, 3)
+ConfirmBatch({ second, bankItem }, "withdraw", 1)
+Accept()
+WriteCount(prior + 5, "only physical items in the selected bank are withdrawn")
+eq(E.writes[prior + 5][2], 13, "withdrawal uses the selected bank source")
+E:Emit(transfer, "BANKFRAME_CLOSED")
+E:Emit(transfer, "BANKFRAME_OPENED")
+first, second = Stack(0, 1, 12, 8), Stack(0, 2, 13, 4)
+ConfirmBatch({ first, second }, "deposit", 2)
+local use = C_Container.UseContainerItem
+C_Container.UseContainerItem = function(bag, slot, ...)
+    use(bag, slot, ...)
+    E.bags[bag][slot] = nil
+    E:Emit(transfer, "BAG_UPDATE_DELAYED")
+end
+Accept()
+C_Container.UseContainerItem = use
+WriteCount(prior + 7, "synchronous updates still allow all approved writes")
+eq(transfer.pending, nil, "updates during issuance are reconciled before returning")
+eq(E.message:find("2 of 2", 1, true) ~= nil, true, "synchronous updates are acknowledged")
+eq(next(E.timers), nil, "a fully acknowledged synchronous batch needs no timeout")
+E:Emit(transfer, "BANKFRAME_CLOSED")
+BankFrame:Hide()
 
 -- Exact mail quantities, known own recipient, native fields only on click, no SendMail path.
 local mail = E:Start("mailTemplates", { templates = assert(Lists.EncodeTemplates({ template })) })
@@ -190,7 +357,24 @@ mail.config.templates = Lists.EncodeTemplates({ replacement })
 save:Click()
 eq(Lists.Templates(mail.config.templates)[1].items, "12=2", "stale template quantity never changes another template")
 local forever = F.New(root, true)
-eq(forever.S.instances.bankTransfer, nil, "bank transfer Retail-only")
+local foreverTransfer = forever:Start("bankTransfer", {})
+BankFrame:Show()
+forever:Emit(foreverTransfer, "BANKFRAME_OPENED")
+forever:Item(0, 1, 12)
+forever:Item(5, 1, 13)
+eq(#foreverTransfer:Rows(), 1, "Forever's first bank bag is excluded from carried rows")
+eq(foreverTransfer:CanBatch(), true, "Forever supports grouped bank transfers")
+local foreverQuestion
+forever.S.Confirm = function(_, data) foreverQuestion = data end
+forever:Click(foreverTransfer, foreverTransfer.Batch, {
+    { bag = 0, slot = 1, itemID = 12, count = 1 },
+    { bag = 5, slot = 1, itemID = 13, count = 1 },
+}, "deposit")
+eq(foreverQuestion.text_arg1, 1, "Forever never deposits a slot of its own bank")
+forever:Click(foreverTransfer, function() foreverQuestion.callback() end)
+eq(#forever.writes, 1, "Forever confirm issues one native deposit")
+eq(forever.writes[1][2], 0, "Forever deposit uses the actual carried slot")
+BankFrame:Hide()
 eq(forever.S.instances.mailTemplates, nil, "mail templates Retail-only")
 eq(forever.S.instances.craftShopping, nil, "recipe shopping Retail-only")
 print("inventory tools: " .. checks .. " behavior checks")

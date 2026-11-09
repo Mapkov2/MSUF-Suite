@@ -96,12 +96,26 @@ function M:Build()
     return recipes, materials, totals
 end
 
+local function MaterialDetails(detail, entries)
+    if not entries then return detail end
+    local lines = { detail, "", S.Text("Last recorded material locations") }
+    for i = 1, #entries do
+        local entry = entries[i]
+        local source = entry.source
+        local location = S.Text(source.location)
+        if source.owner then location = source.owner .. " (" .. location .. ")" end
+        lines[#lines + 1] = S.Text("%s: %d · %s"):format(location, entry.count, source.recorded)
+    end
+    return table.concat(lines, "\n")
+end
+
 function M:Rows()
     local recipes, materials, totals = self:Build()
     if self.tab == "recipes" then return recipes end
     if self.tab == "materials" then return materials end
     local _, bags, complete = Data.Bags()
     local rows = Data.QuantityRows(totals, bags)
+    local sources = S.InventoryArchive:MaterialSources(totals)
     for i = 1, #rows do
         local row = rows[i]
         row.label = S.Text("%s — need %d, missing %d"):format(Data.Name(row.itemID), row.quantity,
@@ -111,6 +125,7 @@ function M:Rows()
             row.label = S.Text("%s — need %d, bag quantity unavailable"):format(Data.Name(row.itemID), row.quantity)
             row.detail = S.Text("Some bag slots are unavailable. Refresh outside combat before using a missing amount.")
         end
+        row.detail = MaterialDetails(row.detail, sources[row.itemID])
     end
     return rows
 end

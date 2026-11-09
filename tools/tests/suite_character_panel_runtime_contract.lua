@@ -14,13 +14,13 @@ local openSounds = 0
 local screenFits, cancelledGestures = 0, 0
 local lastSlot, lastTab, lastKind, lastUnit, lastGroup, actions
 local usedSlot, pickedSlot, modifiedClick, linkedItem
-local nativeHardware, nativeSlots, nativeModel
+local nativeHardware, nativeSlots, nativeModel, nativePanes, gearProxy
 local groupReads = 0
 local setReads, setUses = 0, 0
 local inspectAllowed, currentSet, setMenu, equippedSet
 local itemWorn = true
 local frames = {}
-UIParent, UISpecialFrames = {}, {}
+UIParent, UISpecialFrames = { GetEffectiveScale = function() return 2 end }, {}
 C_GameRules = { IsGameRuleActive = function() return disabled end }
 Enum = { GameRule = { CharacterPanelDisabled = 1 }, AddOnRestrictionState = { Inactive = 0, Activating = 1 } }
 SOUNDKIT = { IG_CHARACTER_INFO_OPEN = 839 }
@@ -54,18 +54,22 @@ function UnitLevel() return 22 end
 function UnitName(unit) return unit end
 function GetBindingKey() error("Suite must leave the stock Character key in place") end
 function GetBindingAction() error("Suite must leave the stock Character key in place") end
-function RegisterStateDriver() error("Suite must leave the stock Character key in place") end
+function RegisterStateDriver(frame, state, condition)
+    assert(frame == gearProxy and state == "visibility" and condition == "[combat] hide",
+        "native click proxy lost the combat visibility driver")
+end
 function IsModifiedClick(kind) return kind == modifiedClick end
 function HandleModifiedItemClick(link) linkedItem = link end
-function ToggleCharacter(pane)
-    if disabled then return end
+function ToggleCharacter(pane, onlyShow)
+    local subframe = nativePanes[pane]
+    if disabled or not subframe then return end
     nativeToggles = nativeToggles + 1
     local visible = CharacterFrame:IsShown()
-    if visible and pane == "PaperDollFrame" and PaperDollFrame:IsShown() then
-        CharacterFrame:Hide()
+    if visible and subframe:IsShown() then
+        if not onlyShow then CharacterFrame:Hide() end
         return
     end
-    if pane == "PaperDollFrame" then PaperDollFrame:Show() else PaperDollFrame:Hide() end
+    CharacterFrame:ShowSubFrame(pane)
     if not visible then
         CharacterFrame:Show()
         PlaySound(SOUNDKIT.IG_CHARACTER_INFO_OPEN)
@@ -86,8 +90,13 @@ function HideUIPanel(frame)
     frame.shown, frame.unit = false, nil
 end
 function hooksecurefunc(target, method, callback)
-    assert(target ~= "ToggleCharacter", "Suite wrapped the stock Character toggle")
-    if target == CharacterFrame then
+    if target == "ToggleCharacter" then
+        local original = ToggleCharacter
+        ToggleCharacter = function(...)
+            original(...)
+            method(...)
+        end
+    elseif target == CharacterFrame then
         local original = assert(target[method])
         target[method] = function(...)
             original(...)
@@ -97,7 +106,7 @@ function hooksecurefunc(target, method, callback)
         hooks[target] = method
     end
 end
-local function CreateFrame(_, name, parent)
+local function CreateFrame(_, name, parent, template)
     local scripts = {}
     local frame = {
         scripts = scripts,
@@ -123,6 +132,19 @@ local function CreateFrame(_, name, parent)
             if scripts.OnHide and (not parent or parent:IsVisible()) then scripts.OnHide(self) end
         end,
     }
+    if template == "SecureActionButtonTemplate" then
+        assert(not locked and parent == UIParent, "click proxy was created under protected UI or in combat")
+        gearProxy = frame
+        local attributes = {}
+        frame.SetAttribute = function(_, key, value) assert(not locked) attributes[key] = value end
+        frame.GetAttribute = function(_, key) return attributes[key] end
+        frame.ClearAllPoints = function() assert(not locked) end
+        frame.SetPoint = function(self, ...) assert(not locked) self.point = { ... } end
+        frame.SetSize = function(self, width, height) self.width, self.height = width, height end
+        frame.SetFrameStrata = function() end
+        frame.SetFrameLevel = function() end
+        frame.RegisterForClicks = function(_, button) assert(button == "LeftButtonUp") end
+    end
     frames[#frames + 1] = frame
     return frame
 end
@@ -162,8 +184,8 @@ local function Event(module, event, ...)
     if callbacks[event] then callbacks[event](module, event, ...) end
 end
 local function Press(key)
-    if key == "C" then ToggleCharacter("PaperDollFrame")
-    elseif key == "U" then ToggleCharacter("ReputationFrame") end
+    local pane = key == "C" and "PaperDollFrame" or key == "U" and "ReputationFrame" or key
+    ToggleCharacter(pane)
     Flush()
 end
 
@@ -191,6 +213,7 @@ local function Run(forever)
     local preferences, boundPreferences = {}, nil
     local lastContext, lastReport, lastGearSummary, lastHeader, lastTabs, lastRail
     local armor, armorReads, averageItemLevel = 42, 0, 19
+    local statReads, critReads, lastCombatRail = 0, 0, nil
     local xp, xpReads = 25, 0
     function UnitXP(unit)
         assert(unit == "player", "custom XP used a foreign unit")
@@ -211,7 +234,7 @@ local function Run(forever)
     function UnitHealthMax() return 595 end
     function UnitPowerType() return 0, "MANA" end
     function UnitPowerMax() return 1264 end
-    function UnitStat(_, id) return id, id * 10 end
+    function UnitStat(_, id) statReads = statReads + 1 return id, id * 10 end
     function UnitArmor() armorReads = armorReads + 1 return 0, armor end
     function GetDodgeChance() return 2 end
     function GetAvoidance() return 3 end
@@ -257,7 +280,7 @@ local function Run(forever)
     currentSet, inspectAllowed, itemWorn = 0, true, true
     controller = {
         CreateFrame = CreateFrame, GamepadUI = function() return pad end,
-        ReadCrit = function() return 1 end, ReadHaste = function() return 2 end,
+        ReadCrit = function() critReads = critReads + 1 return 1 end, ReadHaste = function() return 2 end,
         ReadMastery = function() return 3 end, ReadVersatility = function() return 4 end,
         Dispatch = function(callback, ...) return callback(...) end,
         Finish = function(callback, ...) return true, callback(...) end,
@@ -334,10 +357,28 @@ local function Run(forever)
     assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/CharacterPanel.lua"))("MSUF_Suite", MSUFSuite)
     controller.CharacterHeader = MSUFSuite.CharacterHeader
     assert(loadfile(root .. "/MSUF_Suite/Core/UnitMount.lua"))("MSUF_Suite", MSUFSuite)
+    gearProxy = nil
+    CharacterMicroButton = {
+        IsForbidden = function() return false end, IsEnabled = function() return true end,
+        Click = function() ToggleCharacter("PaperDollFrame") end,
+    }
     CharacterFrame = CreateFrame("Frame")
     CharacterFrame.SetPoint, CharacterFrame.SetScale, CharacterFrame.StopMovingOrSizing =
         function() end, function() end, function() end
     PaperDollFrame = CreateFrame("Frame", nil, CharacterFrame)
+    nativePanes = { PaperDollFrame = PaperDollFrame }
+    for _, name in ipairs({ "ReputationFrame", "TokenFrame", "SkillsFrame", "PVPRankFrame", "StatisticsFrame", "UnmappedFrame" }) do
+        _G[name] = CreateFrame("Frame", name, CharacterFrame)
+        nativePanes[name] = _G[name]
+    end
+    function CharacterFrame:ShowSubFrame(name)
+        if forever then self.activeSubframe = name end
+        for id, subframe in pairs(nativePanes) do
+            if id ~= name then subframe:Hide() end
+        end
+        nativePanes[name]:Show()
+        if not forever then self.activeSubframe = name end
+    end
     nativeModel = CreateFrame("ModelScene", nil, PaperDollFrame)
     nativeModel:Show()
     nativeSlots = { [13] = CreateFrame("ItemButton", nil, PaperDollFrame),
@@ -399,8 +440,8 @@ local function Run(forever)
                     end,
                     SetHeader = function(_, _, _, _, unit, _, data) lastUnit, lastHeader = unit, data end,
                     SetContextAction = function(_, label) lastContext = label end,
-                    ShowGear = function(_, _, _, _, groups, _, details, withModel)
-                        lastWithModel = withModel
+                    ShowGear = function(_, _, _, _, groups, _, details, withModel, combat)
+                        lastWithModel, lastCombatRail = withModel, combat
                         lastRail = #details > 0 and details or groups
                         lastGearSummary = lastRail[#lastRail] and lastRail[#lastRail].rows
                     end,
@@ -439,6 +480,21 @@ local function Run(forever)
     Load("Pages", ns)
     ns.Pages.Read = function(tab) lastGroup, groupReads = tab, groupReads + 1 end
     ns.Pages.Toggle = function() return true end
+    do
+        local definition = { cards = { { title = "Combat stats", rows = {
+            { source = "crit", label = "" }, { source = "health", label = "" },
+        } } } }
+        local groups, plan = {}, ns.Pages.CustomPlan(definition)
+        local before = critReads
+        ns.Pages.Custom(groups, plan, {}, false)
+        assert(groups[1].rows[1].value == "1.00%" and critReads == before + 1)
+        ns.Pages.Custom(groups, plan, {}, true)
+        assert(groups[1].rows[1].value == "—" and groups[1].rows[2].value == 595 and critReads == before + 1,
+            "custom tab carried a stale combat value or queried its provider")
+        ns.Pages.Custom(groups, plan, {}, false)
+        assert(groups[1].rows[1].value == "1.00%" and critReads == before + 2)
+        critReads = before
+    end
     Load("Routing", ns)
     Load("Travel", ns)
     Load("Runtime", ns)
@@ -448,6 +504,10 @@ local function Run(forever)
     Press("C")
     assert(CharacterFrame:IsVisible() and not runtime.view, "Basic changed native Character ownership")
     Press("C")
+    Press("U")
+    assert(CharacterFrame:IsVisible() and ReputationFrame:IsVisible() and not runtime.view,
+        "Basic replaced a directly opened native report")
+    Press("U")
     runtime.config.mode = 2
     runtime:Refresh()
     assert(not runtime.view and runtime.characterView and not runtime.characterView.frame:IsShown()
@@ -464,6 +524,11 @@ local function Run(forever)
         and nativeModel:IsVisible() and readerChecks == coldReaderChecks and gearReads == coldReads,
         "first combat open missed its host or attempted to load optional metadata")
     assert(skinAcquires == beforeCombatSkin + 1, "prepared wide panel lost its skin when first opened in combat")
+    assert(lastCombatRail and #lastRail[1].rows == 2 and lastRail[1].rows[1].value == 595
+        and lastRail[1].rows[2].value == 1264 and statReads == 0 and critReads == 0 and armorReads == 0,
+        "first combat open used the native scroller or queried restricted stats")
+    assert(lastRail[2].title == "Full stats after combat" and #lastRail[2].rows == 0,
+        "combat stats did not show a compact notice below the vitals")
     if not forever then
         local audit = lastRail[#lastRail].rows
         assert(audit[#audit - 1].value == "—" and audit[#audit].value == "—", "cold gear audit displayed false zeroes")
@@ -843,7 +908,11 @@ local function Run(forever)
     Press("C")
     assert(openSounds == beforeSounds + 2, "reopening the player window did not replay its sound")
     local beforeCancel = cancelledGestures
+    local beforeCombatStats, beforeCombatCrit = statReads, critReads
     Event(runtime, "PLAYER_REGEN_DISABLED")
+    assert(lastCombatRail and not FindRow("Crit") and FindRow("Health") == 595
+        and statReads == beforeCombatStats and critReads == beforeCombatCrit,
+        "stat restriction waited for lockdown or sampled combat stats")
     assert(runtime.view == hostedView and hostedView.frame:IsShown() and cancelledGestures == beforeCancel + 1
         and lastWindowAction == "scaleStop",
         "entering combat closed the hosted view or kept an old gesture")
@@ -873,13 +942,19 @@ local function Run(forever)
         and lastTab == "overview", "C did not reopen the same hosted panel in combat")
     pad = false
     Press("U")
-    assert(CharacterFrame:IsVisible() and not hostedView.frame:IsShown() and not nativeModel:IsVisible(),
-        "the addon stayed over a different native subframe")
+    assert(CharacterFrame:IsVisible() and hostedView.frame:IsShown() and not nativeModel:IsVisible()
+        and lastTab == "reputation" and lastGroup == "reputation", "Reputation routed to the native report in combat")
+    actions.tab("gear")
+    assert(not nativeModel:IsVisible() and lastTab == "gear" and lastReport,
+        "a report backing pane did not keep the Suite equipment data available")
     Press("C")
-    assert(CharacterFrame:IsVisible() and hostedView.frame:IsShown(), "returning to PaperDoll lost the hosted view")
+    assert(CharacterFrame:IsVisible() and hostedView.frame:IsShown() and nativeModel:IsVisible() and lastTab == "overview",
+        "returning to PaperDoll lost the hosted view or native equipment")
     locked = false
     Event(runtime, "PLAYER_REGEN_ENABLED")
     assert(hostedView.frame:IsShown() and CharacterFrame:IsVisible(), "combat exit changed the active window")
+    assert(not lastCombatRail and FindRow("Crit") == "1.00%" and FindRow("Armor") == 55,
+        "public stats did not return after combat")
     missingLinks = true
     RequestInspect("target")
     InspectFrame:Show()
@@ -917,15 +992,86 @@ local function Run(forever)
         and geometryApplied == beforeFallback + 1 and not runtime.dockView.frame:IsShown(),
         "combat exit did not restore wide art and retain the selected tab")
     local beforeStock = geometryReleased
-    Press("U")
+    Press("UnmappedFrame")
     assert(CharacterFrame:IsVisible() and not hostedView.frame:IsShown() and geometryReleased == beforeStock + 1
-        and not runtime.layoutRoot, "the stock subframe kept Suite anchors")
+        and not runtime.layoutRoot, "an unmapped native subframe kept Suite anchors")
     Press("C")
     assert(runtime.view == hostedView and hostedView.frame:IsShown() and runtime.layoutRoot == CharacterFrame,
         "the Suite geometry did not return after visiting a stock subframe")
     Press("C")
+    Press("TokenFrame")
+    assert(runtime.view == hostedView and lastTab == "currency" and lastGroup == "currency" and not nativeModel:IsVisible(),
+        "opening Currency directly did not start the Suite report")
+    actions.tab("reputation")
+    ToggleCharacter("TokenFrame", true)
+    Flush()
+    assert(runtime.view == hostedView and lastTab == "currency", "an explicit link to the already-open native pane was ignored")
+    local function HoverGearTab(id)
+        ns.Routing.HoverGearTab({
+            id = id, view = hostedView,
+            GetRect = function() return 10, 20, 50, 30 end,
+            GetEffectiveScale = function() return 3 end,
+            GetFrameStrata = function() return "HIGH" end,
+            GetFrameLevel = function() return 551 end,
+        })
+    end
+    local function NativeGearClick(id)
+        HoverGearTab(id)
+        assert(gearProxy:IsShown() and gearProxy:GetAttribute("type1") == "click"
+            and gearProxy:GetAttribute("clickbutton1") == CharacterMicroButton
+            and gearProxy:GetAttribute("useOnKeyDown") == false and gearProxy.point[2] == UIParent
+            and gearProxy.point[4] == 15 and gearProxy.point[5] == 30 and gearProxy.width == 75 and gearProxy.height == 45,
+            "gear route did not prepare a detached Blizzard click at the tab's scaled position")
+        local before = nativeToggles
+        gearProxy.scripts.PreClick(gearProxy)
+        gearProxy:GetAttribute("clickbutton1"):Click()
+        gearProxy.scripts.PostClick(gearProxy)
+        Flush()
+        assert(nativeToggles == before + 1 and not gearProxy:IsShown() and lastTab == id
+            and runtime.view == hostedView and nativeModel:IsVisible(), "gear tab click did not restore the native model and slots")
+    end
+    NativeGearClick("overview")
+    HoverGearTab("overview")
+    assert(not gearProxy:IsShown(), "gear overlay could toggle an already-shown PaperDoll closed")
+    Press("TokenFrame")
+    HoverGearTab("gear")
+    Event(runtime, "PLAYER_REGEN_DISABLED")
+    assert(not gearProxy:IsShown(), "combat transition kept a prepared detached click")
+    locked = true
+    HoverGearTab("overview")
+    assert(not gearProxy:IsShown(), "a detached gear click armed in combat")
+    locked = false
+    Event(runtime, "PLAYER_REGEN_ENABLED")
+    Flush()
+    NativeGearClick("gear")
+    NativeSlot(13, "OnClick")
+    assert(usedSlot == 13, "returning through Equipment lost the native trinket")
+    Press("TokenFrame")
+    local routeReads, routeOpens = gearReads, openSounds
+    if forever then
+        for _, route in ipairs({ { "SkillsFrame", "skills" }, { "PVPRankFrame", "pvp" }, { "StatisticsFrame", "statistics" } }) do
+            Press(route[1])
+            assert(runtime.view == hostedView and lastTab == route[2] and lastGroup == route[2],
+                "Forever link routed to the wrong tab: " .. route[1])
+        end
+    end
+    Press("U")
+    assert(runtime.view == hostedView and lastTab == "reputation" and gearReads == routeReads and openSounds == routeOpens,
+        "changing native reports reopened the Suite or reread equipment")
+    Press("U")
+    assert(not hostedView.frame:IsShown() and not CharacterFrame:IsShown(), "the same native report did not toggle closed")
+    CharacterFrame:Show()
+    Flush()
+    assert(hostedView.frame:IsShown() and lastTab == "reputation", "reopening the last native report missed the Suite")
+    ToggleCharacter("TokenFrame", true)
+    CharacterFrame:Hide()
+    Flush()
+    assert(not hostedView.frame:IsShown(), "closing the native window replayed a queued link")
     runtime.config.mode = 1
     runtime:Refresh()
+    Press("U")
+    assert(ReputationFrame:IsVisible() and not hostedView.frame:IsShown(), "Basic retained the Suite native routes")
+    Press("U")
     assert(#UISpecialFrames == (forever and 2 or 1))
 end
 

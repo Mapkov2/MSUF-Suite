@@ -120,15 +120,17 @@ local function EnsureLabel(self, button)
     return record
 end
 
-function S.BagsStylePreviewLabel(label, c, font)
-    S.SetStyledFont(label, font or S.ResolveFont(c.font), c.itemLevelSize, OUTLINES[c.fontOutline] or "OUTLINE",
+function S.BagsStylePreviewLabel(label, c, font, readable)
+    if readable == nil and S.ReadableValues then readable = S.ReadableValues() end
+    local size = c.itemLevelSize + (readable and 2 or 0)
+    S.SetStyledFont(label, font or S.ResolveFont(c.font), size, OUTLINES[c.fontOutline] or "OUTLINE",
         c.fontRendering, c.fontShadow, c.fontShadowOpacity, c.fontShadowDistance)
 end
 
 local function Style(self, record)
     if record.style == self.labelStyle then return end
     local c = self.config
-    S.BagsStylePreviewLabel(record.label, c, self.fontPath)
+    S.BagsStylePreviewLabel(record.label, c, self.fontPath, self.readableValues)
     record.style = self.labelStyle
     record.quality = nil
 end
@@ -174,7 +176,7 @@ local function Paint(self, button, pending, info)
         return
     end
     local link, itemID, quality = info.hyperlink, info.itemID, info.quality
-    if not link or not S.Public(link) or not S.Public(itemID) or not S.Public(quality) then
+    if not S.Public(link) or not link or not S.Public(itemID) or not S.Public(quality) then
         Hide(record)
         return
     end
@@ -182,7 +184,9 @@ local function Paint(self, button, pending, info)
         record = {}
         self.overlays[button] = record
     end
-    if record.link ~= link then record.link, record.level, record.gear = link, nil, nil end
+    if record.link ~= link then
+        record.link, record.level, record.gear, record.unknownLink = link, nil, nil, nil
+    end
     if record.gear == nil then
         local equippable = C_Item.IsEquippableItem(link)
         if not S.Public(equippable) then
@@ -208,8 +212,14 @@ local function Paint(self, button, pending, info)
         end
     end
     if not record.level then
-        record.label:Hide()
-        return
+        if not self.readableValues then
+            record.label:Hide()
+            return
+        end
+        if record.unknownLink ~= link then
+            record.unknownLink = link
+            record.label:SetText("?")
+        end
     end
     PaintQuality(self, record, quality)
     record.label:Show()
@@ -466,8 +476,9 @@ end
 local SUBMODULES = {
     { "PlayerGear", "Refresh", "Disable" },                   -- cached character eligibility
     { "UpgradeMarker", "Refresh", "Disable" },                -- worn equipment, for the upgrade arrow
+    { "PhysicalSort", nil, "Stop" },
     { "InventoryView", "Refresh", "Disable" },                -- the Suite grid of the combined bag
-    { "BankInventory", "Refresh", "Disable", retail = true }, -- the organized bank view
+    { "BankInventory", "Refresh", "Disable" }, -- the organized bank view
     { "BankWindow", "Refresh", "Disable", retail = true },    -- the bank window's size and place
     { "BagFinance", "Enable", "Disable" },                    -- the currency and gold history line
     { "AutoSplit", nil, "Stop" },                             -- a running automatic split
@@ -555,7 +566,9 @@ function M:Refresh()
     local c, last = self.config, self.appliedVisual
     local slotChanged, windowChanged, labelChanged, levelChanged, goldChanged = VisualChanges(c, last)
     local fontPath, fontEpoch = S.ResolveFont(c.font) or S.GlobalFontPath(), _G.MSUF_FontApplyEpoch
-    if self.fontPath ~= fontPath or self.fontEpoch ~= fontEpoch then
+    local readable = S.ReadableValues and S.ReadableValues() or false
+    if self.fontPath ~= fontPath or self.fontEpoch ~= fontEpoch or self.readableValues ~= readable then
+        self.readableValues = readable
         self.fontPath, self.fontEpoch = fontPath, fontEpoch
         labelChanged = true
         for _, record in pairs(self.overlays) do record.bindStyled = nil end

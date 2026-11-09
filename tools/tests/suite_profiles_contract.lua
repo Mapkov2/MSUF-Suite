@@ -869,4 +869,289 @@ do
     Suite.Client.AddOnEnabled = enabled
     MSUF_SetCurrentProfileScreenReferenceHeight = nil
 end
-print("Standalone profiles: unified profiles, nameplate import protection, lifecycle and sanitization passed")
+do
+    assert(loadfile(root .. "/MSUF_Suite/Core/API.lua"))("MSUF_Suite", Suite)
+    local api = Suite.API.Profiles
+    local beforeFrame, beforeSuite, beforeSkin = MSUF_ActiveProfile, Suite.DB, skinActive
+    local full = assert(P.Export())
+    local oldHostAPI = MSUF_HostAPI
+    local beginCalls, prepareCalls, commitCalls = 0, 0, 0
+    local oldFrameImports = frameImports
+    local checkedProtection = { protectImport = true, enabled = false }
+    local reentrant
+    local function BeginHost(text, name)
+        assert(text == "MSUF3:frames")
+        beginCalls = beginCalls + 1
+        return { completed = 0, total = 3, Step = function(job)
+            if job.completed < 2 then
+                assert(not Suite.suppressProfileSync and not MSUF_GlobalDB.profiles[name] and not DB.GetProfile(name))
+                job.completed = job.completed + 1
+                prepareCalls = prepareCalls + 1
+                return false
+            end
+            assert(Suite.suppressProfileSync and not DB.GetProfile(name), "host published outside the Suite transaction")
+            if reentrant then
+                assert(reentrant:Step() == false, "a second job advanced during atomic publication")
+                reentrant = nil
+            end
+            commitCalls = commitCalls + 1
+            local ok, reason = MSUF_Profiles_ImportIntoNewProfile(name, text)
+            if name == "Stepped Host Fault" then error("injected failure after Core publication") end
+            return true, ok, reason
+        end }
+    end
+    MSUF_HostAPI = { Profiles_BeginImport = BeginHost }
+    local job = assert(api.BeginImport(full, "Stepped Bundle"))
+    assert(job.completed == 0 and job.phase == "decode")
+    local previousProgress, pendingSteps = 0, 0
+    while job.completed < job.total - 1 do
+        assert(job:Step() == false, "Suite job completed during preparation")
+        pendingSteps = pendingSteps + 1
+        assert(pendingSteps <= 5 and job.completed >= previousProgress)
+        previousProgress = job.completed
+        assert(MSUF_ActiveProfile == beforeFrame and Suite.DB == beforeSuite and skinActive == beforeSkin
+            and not DB.GetProfile("Stepped Bundle") and not skinProfiles["Stepped Bundle"]
+            and not MSUF_GlobalDB.profiles["Stepped Bundle"], "preparation wrote to a live profile")
+    end
+    assert(job.phase == "apply" and beginCalls == 1 and prepareCalls == 2 and commitCalls == 0)
+    -- Protection comes from the profile currently in use, even if changed during preparation.
+    beforeSuite.suite.modules.nameplates = checkedProtection
+    reentrant = assert(api.BeginImport(assert(P.ExportModule("minimap"))))
+    assert(not reentrant:Step())
+    local done, ok, name = job:Step()
+    assert(done and ok and name == "Stepped Bundle" and job.completed == job.total and commitCalls == 1)
+    assert(Suite.DB.suite.modules.nameplates.protectImport and not Suite.DB.suite.modules.nameplates.enabled)
+    assert(MSUF_ActiveProfile == name and skinActive == name and frameImports == oldFrameImports + 1)
+    assert(job:Step() and commitCalls == 1, "a completed job committed twice")
+
+    local function StageJob(text, target)
+        local pending = assert(api.BeginImport(text, target))
+        for _ = 1, 6 do
+            if pending.completed == pending.total - 1 then return pending end
+            assert(not pending:Step())
+        end
+        error("job never reached commit")
+    end
+
+    local currentName, active = MSUF_ActiveProfile, Suite.DB
+    job = StageJob(full, "Stepped Combat")
+    Support.CombatStart(function(value) combat = value end, function()
+        local ended, applied = job:Step()
+        assert(ended and not applied)
+    end)
+    assert(not DB.GetProfile("Stepped Combat") and not MSUF_GlobalDB.profiles["Stepped Combat"] and Suite.DB == active)
+
+    job = StageJob(full, "Stepped Name Conflict")
+    local intruder = {}
+    MSUF_GlobalDB.profiles["Stepped Name Conflict"] = intruder
+    done, ok = job:Step()
+    assert(done and not ok and MSUF_GlobalDB.profiles["Stepped Name Conflict"] == intruder
+        and not DB.GetProfile("Stepped Name Conflict"), "a target that appeared during preparation was overwritten")
+
+    job = StageJob(full, "Stepped Stale")
+    assert(P.Activate(beforeFrame))
+    done, ok = job:Step()
+    assert(done and not ok and P.Active() == beforeFrame and not DB.GetProfile("Stepped Stale"))
+    assert(P.Activate(currentName))
+
+    local prior = DB.Activate
+    job = StageJob(full, "Stepped Rollback")
+    DB.Activate = function(target)
+        if target == "Stepped Rollback" then return false, "injected activation refusal" end
+        return prior(target)
+    end
+    done, ok = job:Step()
+    DB.Activate = prior
+    assert(done and not ok and P.Active() == currentName and skinActive == currentName and not Suite.suppressProfileSync
+        and not DB.GetProfile("Stepped Rollback") and not skinProfiles["Stepped Rollback"]
+        and not MSUF_GlobalDB.profiles["Stepped Rollback"], "stepped host commit was not rolled back")
+
+    local reports = #reported
+    job = StageJob(full, "Stepped Host Fault")
+    done, ok = job:Step()
+    assert(done and not ok and #reported == reports + 1 and not Suite.suppressProfileSync
+        and not MSUF_GlobalDB.profiles["Stepped Host Fault"] and not DB.GetProfile("Stepped Host Fault")
+        and P.Active() == currentName, "a raising host publication left the import or its suppression active")
+
+    job = StageJob(full, "Stepped Provider Changed")
+    local imports = frameImports
+    MSUF_HostAPI.Profiles_BeginImport = nil
+    done, ok = job:Step()
+    assert(done and not ok and frameImports == imports and not DB.GetProfile("Stepped Provider Changed"),
+        "a detached host provider could still publish")
+
+    MSUF_HostAPI.Profiles_BeginImport = function() return nil, "injected host refusal" end
+    job = assert(api.BeginImport(full, "Stepped Host Refused"))
+    assert(not job:Step() and not job:Step())
+    local why
+    done, ok, why = job:Step()
+    assert(done and not ok and why == "injected host refusal" and frameImports == imports,
+        "a refusal from the optional host fell through to the old import")
+    MSUF_HostAPI = oldHostAPI
+
+    job = StageJob(full, "Stepped Legacy")
+    assert(frameImports == imports)
+    done, ok = job:Step()
+    assert(done and ok and P.Active() == "Stepped Legacy" and frameImports == imports + 1)
+    local moduleText = assert(P.ExportModule("minimap"))
+    local current = Suite.DB.suite.modules.minimap
+    local expected = current.enabled
+    current.enabled = not expected
+    job = assert(api.BeginImport(moduleText))
+    assert(not job:Step() and current.enabled == not expected, "current module applied before the final step")
+    done, ok = job:Step()
+    assert(done and ok and Suite.DB.suite.modules.minimap.enabled == expected and frameImports == imports + 1)
+    local exportFrames, importFrames = MSUF_Profiles_ExportSelectionToString, MSUF_Profiles_ImportIntoNewProfile
+    local frameVersion, exports = "previous", 0
+    MSUF_Profiles_ExportSelectionToString = function(kind)
+        exports = exports + 1
+        return exportFrames(kind) .. ":" .. frameVersion
+    end
+    MSUF_Profiles_ImportIntoNewProfile = function(target, text)
+        assert(text == "MSUF3:frames:latest", "module-to-new kept an old frame snapshot")
+        return importFrames(target, "MSUF3:frames")
+    end
+    job = StageJob(moduleText, "Stepped Module New")
+    assert(exports == 0, "a module-to-new import exported its inherited frames before applying")
+    frameVersion = "latest"
+    done, ok = job:Step()
+    MSUF_Profiles_ExportSelectionToString, MSUF_Profiles_ImportIntoNewProfile = exportFrames, importFrames
+    assert(done and ok and exports == 1 and P.Active() == "Stepped Module New" and frameImports == imports + 2)
+
+    local skinText = assert(P.ExportModule("skin"))
+    local savedSkin = skinProfiles[skinActive]
+    job = assert(api.BeginImport(skinText))
+    assert(not job:Step() and skinProfiles[skinActive] == savedSkin)
+    done, ok = job:Step()
+    assert(done and ok and skinProfiles[skinActive] ~= savedSkin and frameImports == imports + 2)
+
+    job = assert(api.BeginImport(skinText))
+    assert(not job:Step())
+    local replacement = Suite.CopyValue(skinProfiles[skinActive])
+    skinProfiles[skinActive] = replacement
+    done, ok = job:Step()
+    assert(done and not ok and skinProfiles[skinActive] == replacement, "a stale Skin draft overwrote its replacement")
+
+    local activeSkin = skinActive
+    skinActive = beforeFrame
+    job = assert(api.BeginImport(skinText))
+    assert(not job:Step())
+    replacement = Suite.CopyValue(skinProfiles[MSUF_ActiveProfile])
+    skinProfiles[MSUF_ActiveProfile] = replacement
+    done, ok = job:Step()
+    assert(done and not ok and skinProfiles[MSUF_ActiveProfile] == replacement, "a stale draft replaced an inactive Skin target")
+    skinActive = activeSkin
+
+    local decoder = MSUF_TryDecodeCompactString
+    local failures = #reported
+    MSUF_TryDecodeCompactString = function() error("injected staged codec failure") end
+    job = assert(api.BeginImport(moduleText))
+    done, ok = job:Step()
+    MSUF_TryDecodeCompactString = decoder
+    assert(done == true and ok == false and #reported == failures + 1, "a raising phase did not return terminal false")
+    local ended, success = job:Step()
+    assert(ended == true and success == false and #reported == failures + 1, "a failed phase ran again")
+end
+
+print("Standalone profiles: synchronous and stepped unified profiles, nameplate protection, lifecycle and sanitization passed")
+
+do
+    local version = string.char(1)
+    local live = {
+        nameplateShowEnemies = "1", nameplateSize = "3", nameplateDebuffPadding = "5",
+        nameplateStackingTypes = version .. "C", cameraDistanceMaxZoomFactor = "2.6",
+    }
+    local writes = 0
+    C_CVar = {
+        GetCVar = function(key) return live[key] end,
+        SetCVar = function(key, value)
+            assert(not combat and live[key] ~= nil, "invalid native write")
+            live[key], writes = value, writes + 1
+        end,
+    }
+    UnitName = function() return "Tester" end
+    GetRealmName = function() return "Realm" end
+    MSUFSuite = Suite
+    assert(loadfile(root .. "/MSUF_Suite_Modules/Runtime.lua"))("MSUF_Suite_Modules", {})
+    local S = Suite.Suite
+    local private = { NS = Suite, Suite = S }
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/Modes.lua"))("MSUF_Suite_Nameplates", private)
+    assert(loadfile(root .. "/MSUF_Suite_Nameplates/CVars.lua"))("MSUF_Suite_Nameplates", private)
+    local plates = S.Config("nameplates")
+    plates.look, plates.nativeSize, plates.plateStackEnemy, plates.protectImport = 3, 3, 3, false
+    plates.enemyNameOffsetX = 49
+    local instance = { active = true, context = S.NewContext("nameplates") }
+    function instance:ResetCVarBaseline()
+        self.flagsBefore, self.infoTextApplied, self.rarityBefore = nil, nil, nil
+    end
+    S.instances.nameplates = instance
+    -- Paint only the native part of the real module refresh in this fixture.
+    S.Apply = function(id)
+        if id ~= "nameplates" then return end
+        instance.config = S.Config(id)
+        private.CVars.Apply(instance)
+    end
+    Suite.Registry.AddListener(instance, function() S.Apply("nameplates") end)
+    S.Apply("nameplates")
+    assert(live.nameplateSize == "2" and live.nameplateStackingTypes == version .. "B")
+    local module = assert(P.ExportModule("nameplates"))
+    local bundle = assert(P.Export())
+    local encoded = Encoded(module)
+    local native = encoded.nameplateCVars
+    assert(native and native.nameplateDebuffPadding == "5", "module export dropped Blizzard-only settings")
+    assert(native.nameplateSize == "3" and native.nameplateStackingTypes == version .. "C",
+        "export captured Suite overrides instead of the Blizzard baseline")
+    assert(not native.cameraDistanceMaxZoomFactor, "module export leaked an unrelated CVar")
+    assert(live.nameplateSize == "2", "export changed the active CVar")
+    assert(not Encoded(assert(P.ExportModule("minimap"))).nameplateCVars, "other module exported nameplate CVars")
+    native.cameraDistanceMaxZoomFactor = "1"
+    native.nameplateShowAll = "1" -- registered on some clients only
+    native.nameplateShowEnemies = "bad"
+    live.nameplateShowEnemies = "0"
+    S.RestoreSaved("nameplates")
+    live.nameplateDebuffPadding, live.nameplateStackingTypes = "7", version .. "A"
+    instance:ResetCVarBaseline()
+    S.Apply("nameplates")
+    plates.enemyNameOffsetX = 12
+    assert(P.ImportModule(module))
+    assert(S.Config("nameplates").enemyNameOffsetX == 49 and live.nameplateDebuffPadding == "5")
+    assert(live.nameplateStackingTypes == version .. "B", "import reused old Keep flags when composing its new baseline")
+    assert(live.nameplateShowEnemies == "0" and live.cameraDistanceMaxZoomFactor == "2.6" and not live.nameplateShowAll,
+        "invalid, unrelated or missing CVars were written")
+    S.RestoreSaved("nameplates")
+    assert(live.nameplateSize == "3" and live.nameplateStackingTypes == version .. "C", "release restored a pre-import baseline")
+
+    local function Complete(job)
+        while true do
+            local done, ok, reason = job:Step()
+            if done then return ok, reason end
+        end
+    end
+    live.nameplateDebuffPadding = "7"
+    local job = assert(P.BeginImport(module))
+    local before = writes
+    assert(not job:Step() and writes == before, "decoding a staged import wrote Blizzard settings")
+    combat = true
+    assert(not Complete(job) and writes == before and live.nameplateDebuffPadding == "7")
+    combat = false
+
+    assert(Complete(assert(P.BeginImport(bundle, "Native Nameplate Bundle"))))
+    assert(live.nameplateShowEnemies == "1" and live.nameplateDebuffPadding == "5", "staged full import lost native settings")
+    assert(DB.GetProfile("Native Nameplate Bundle").nameplateCVars == nil, "one-time client settings leaked into the profile store")
+    live.nameplateDebuffPadding = "9"
+    S.Config("nameplates").protectImport = true
+    assert(P.Import("Native Nameplates Protected", bundle))
+    assert(live.nameplateDebuffPadding == "9", "full import bypassed nameplate protection")
+    assert(P.ImportModuleIntoNew("Native Nameplate Module", module))
+    assert(live.nameplateDebuffPadding == "5", "module-to-new import lost native settings")
+    native.nameplateDebuffPadding = nil
+    native.nameplateStackingTypes = string.char(2) .. "A"
+    live.nameplateDebuffPadding = "11"
+    assert(Complete(assert(P.BeginImport(module))))
+    assert(live.nameplateDebuffPadding == "11", "omitted native value was reset")
+    assert(live.nameplateStackingTypes:byte(1) == 1, "import overwrote a different native bitfield version")
+    encoded.nameplateCVars = nil
+    before = writes
+    assert(P.ImportModule(module) and writes == before, "legacy module import wrote native values")
+    print("Native nameplate transfer: module, bundle, protection, release and legacy compatibility passed")
+end

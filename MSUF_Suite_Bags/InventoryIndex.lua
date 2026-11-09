@@ -190,7 +190,7 @@ function Index.ReadButton(index, button, info, quest, version, bag, slot, bankTy
         item.locked = not S.Public(info.isLocked) or info.isLocked == true
         item.bound = S.Public(info.isBound) and info.isBound == true
         item.filtered = S.Public(info.isFiltered) and info.isFiltered == true
-        item.quest = quest == true
+        item.quest = quest
         -- Full link, binding state and location type: different bonus IDs,
         -- upgrade ranks, qualities and bank scopes never share a stack.
         item.mergeKey = link .. (item.bound and "\031b\031" or "\031u\031") .. (bankType or "bags")

@@ -22,6 +22,7 @@ P.Refresh = function() end
 -- Copy to All asks first through the pages' confirmation (Menu/Bridge.lua).
 P.Confirm = function(_, _, onAccept) confirmed = confirmed + 1; onAccept() end
 local code = source:sub(1, prefix-1) .. source:sub(first, last-1) ..
+    "assert(copyScopes == nil, \"copy scopes initialized before the page\") InitEditorData() " ..
     "return { targets=CopyDestination, click=SelectCopyDestination, run=RunCopyTo, scopes=copyScopes }"
 local api = assert(loadstring(code))("Options", P)
 for i=1,4 do config["bar"..i.."Size"]=30+i;config["bar"..i.."X"]=i*10 end

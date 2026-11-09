@@ -1,6 +1,5 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-if NS.Client.isForever then return end
 local Index, Slots = P.InventoryIndex, P.SlotCache
 local BANK_VIEW = NS.BagsBankView
 local Bank = {}
@@ -43,9 +42,10 @@ local function ReadTab(index, tab, bankType)
 end
 
 local function ReadType(index, bankType)
-    if not C_Bank.CanViewBank(bankType) then return end
+    local visible = C_Bank.CanViewBank(bankType)
+    if not S.Public(visible) or visible ~= true then return end
     local tabs = C_Bank.FetchPurchasedBankTabData(bankType)
-    if type(tabs) ~= "table" then return end
+    if not S.Public(tabs) or type(tabs) ~= "table" then return end
     for i = 1, #tabs do ReadTab(index, tabs[i], bankType) end
 end
 

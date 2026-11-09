@@ -53,6 +53,15 @@ function L.SetCommandAction(widget, action)
 end
 function L.GetControlTitle(widget) return widget._msuf2Title end
 function L.GetControlLabel(widget) return rawget(widget, "_msuf2Label") end
+local function HookToggleHover(toggle, onEnter, onLeave)
+    toggle:HookScript("OnEnter", onEnter)
+    toggle:HookScript("OnLeave", onLeave)
+    local hit = rawget(toggle, "_msuf2LabelHit")
+    if hit and hit ~= toggle then
+        hit:HookScript("OnEnter", onEnter)
+        hit:HookScript("OnLeave", onLeave)
+    end
+end
 -- Responsive selectors can use the host's themed segment cue on their own buttons.
 function L.MarkSegmentChoice(button)
     button._msuf2SegmentChoice = true
@@ -141,14 +150,14 @@ end
 local function Build(M)
     local markSegmentChoice = M.Theme and M.Theme.StyleTabButton or L.MarkSegmentChoice
     if not HasMenuAPI(M) then
-        local adapter, T = { mode = "legacy" }, M.Theme
+        local adapter, T = { mode = "legacy", HookToggleHover = HookToggleHover }, M.Theme
         for name, step in pairs(L) do adapter[name] = step end
         adapter.MarkSegmentChoice = markSegmentChoice
         adapter.AddNavIcon = function(pageKey, spec) return LegacyNavIcon(T, pageKey, spec) end
         return adapter
     end
     local adapter = { mode = "host", SetFixedPreviewCompactHeight = L.SetFixedPreviewCompactHeight,
-        MarkSegmentChoice = markSegmentChoice }
+        MarkSegmentChoice = markSegmentChoice, HookToggleHover = HookToggleHover }
     for index = 1, #NAMES do adapter[NAMES[index]] = M[NAMES[index]] end
     return adapter
 end
@@ -738,6 +747,21 @@ function HostBridge.RegisterPageTail(menu, page, name, provider)
     return RegisterLegacyExtension(menu, page, name, provider)
 end
 
+function HostBridge.RegisterPageBack(menu, page, resolve)
+    local original = AppearanceAction(menu, "GoBackPage")
+    if not original or not AppearanceAction(menu, "RefreshPageHistoryNav") then return end
+    local function LocalBack()
+        if menu.activeKey == page then return resolve(menu.cache[page]) end
+    end
+    menu.GoBackPage = function(...)
+        local back = LocalBack()
+        if back and not Suite.InCombat() then return back() end
+        return original(...)
+    end
+    hooksecurefunc(menu, "RefreshPageHistoryNav", function()
+        if menu.pageHistoryBackButton and LocalBack() then menu.pageHistoryBackButton:SetEnabled(true) end
+    end)
+end
 local menuStateFallbacks = setmetatable({}, { __mode = "k" })
 function HostBridge.GetPersistentMenuState(menu, name)
     if AppearanceAction(menu, "GetPersistentMenuStateTable") then return menu.GetPersistentMenuStateTable(name) end

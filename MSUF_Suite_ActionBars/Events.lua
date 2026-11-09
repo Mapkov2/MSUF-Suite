@@ -16,7 +16,7 @@ local IsSecret = NS.IsSecret
 local GCD_RECOVERY
 local PROC_PIXEL, PROC_NONE = AB.ENUM.PROC_GLOW.PIXEL, AB.ENUM.PROC_GLOW.NONE
 local MAIN_BAR = AB.ENUM.BAR.MAIN
-local Painter, Dirty = AB.Painter, AB.Dirty
+local Painter, Dirty, Virtual = AB.Painter, AB.Dirty, AB.VirtualPaint
 local slotMap, Visible, NewChargeEpoch = Painter.slotMap, Painter.Visible, Painter.NewChargeEpoch
 local spellButtons = Painter.spellButtons
 local Tint, Usable, Cooldown, ReleaseRange = Painter.Tint, Painter.Usable, Painter.Cooldown, Painter.ReleaseRange
@@ -30,6 +30,7 @@ local Schedule, Mark = Dirty.Schedule, Dirty.Mark
 
 ------------------------------------------------------------------ events
 local function SlotChanged(_, _, slot)
+    if AB.snapshotChanged then AB.snapshotChanged() end
     if not Public(slot) or type(slot) ~= "number" or slot == 0 then
         AB.MarkAll()
         return
@@ -106,7 +107,12 @@ local function GlowMatch(rec)
     elseif kind == GLOW_FLYOUT then
         GlowCheck(rec)
     elseif kind == GLOW_DYNAMIC then
-        local id, flyout = ActionSpell(rec.slot)
+        local id, flyout
+        if rec.virtual then
+            id, flyout = Painter.ButtonSpell(rec)
+        else
+            id, flyout = ActionSpell(rec.slot)
+        end
         if id == glowSpell then
             SetGlow(rec, glowShow and M.config.procGlow ~= PROC_NONE)
         elseif flyout then
@@ -173,6 +179,11 @@ end
 -- Key texts are cosmetic and update at once, also in combat; routing waits
 -- for combat to end (Bindings.lua).
 local function Bindings()
+    if AB.snapshotChanged then
+        AB.snapshotChanged()
+    elseif AB.snapshotReady then
+        AB.snapshotReady()
+    end
     AllKeyTexts()
     AB.UpdateRouting()
 end
@@ -202,6 +213,8 @@ local function FormsChanged()
 end
 
 local function RegenEnabled()
+    AB.Virtual.Resume()
+    if AB.snapshotReady then AB.snapshotReady() end
     -- A spellbook or macro window closed (or opened) in combat.
     if AB.panelPending then AB.SyncPanelReveal() end
     if AB.routingPending then AB.UpdateRouting() end
@@ -290,6 +303,8 @@ local EVENTS = {
         AB.MarkAll()
     end,
     PLAYER_ENTERING_WORLD = function()
+        AB.Virtual.Sync()
+        if AB.snapshotReady then AB.snapshotReady() end
         NewChargeEpoch()
         AB.MarkAll()
     end,
@@ -301,7 +316,10 @@ local EVENTS = {
     CVAR_UPDATE = CVarChanged,
     ACTIONBAR_SHOWGRID = function() AB.CursorChanged() end,
     ACTIONBAR_HIDEGRID = function() AB.CursorChanged() end,
-    CURSOR_CHANGED = function() AB.CursorChanged() end,
+    CURSOR_CHANGED = function()
+        AB.CursorChanged()
+        if AB.snapshotReady then AB.snapshotReady() end
+    end,
     UPDATE_SHAPESHIFT_FORMS = function()
         NewChargeEpoch()
         FormsChanged()
@@ -339,6 +357,7 @@ local DIRECT_EVENTS = { SPELL_UPDATE_COOLDOWN = DIRECT, ACTIONBAR_UPDATE_COOLDOW
     CURRENT_SPELL_CAST_CHANGED = DIRECT, ACTIONBAR_UPDATE_STATE = DIRECT }
 function AB.SyncOptionalEvents()
     local context = M.context
+    if Virtual then Virtual.SyncEvents(context) end
     for event in pairs(optionalEvents) do
         local gamepadEvent = event == "GAME_PAD_ACTIVE_CHANGED" or event == "GAME_PAD_CONNECTED"
             or event == "GAME_PAD_DISCONNECTED" or event == "INPUT_DEVICE_INTERFACE_TRANSITION"
@@ -390,7 +409,8 @@ end
 -- Hooked only on cooldowns StartDispatcher recorded in AB.cooldownOwner.
 local function CooldownDone(frame)
     local rec = AB.cooldownOwner[frame]
-    if rec and M.active and rec.filled and Visible(rec.bar) then Cooldown(rec) end
+    if not (rec and M.active and rec.filled and Visible(rec.bar)) then return end
+    if rec.virtual then Virtual.Cooldown(rec) else Cooldown(rec) end
 end
 
 function AB.StartDispatcher()
@@ -425,6 +445,7 @@ function AB.StartDispatcher()
 end
 
 function AB.StopDispatcher()
+    if Virtual then Virtual.StopEvents(M.context) end
     for event in pairs(EVENTS) do M.context:RemoveEvent(event) end
     for i = 1, #AB.owned do
         local rec = AB.owned[i]

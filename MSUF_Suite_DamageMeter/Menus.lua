@@ -296,6 +296,11 @@ local previewFights = { { sessionID = 1, durationSeconds = 43 }, { sessionID = 2
     { sessionID = 3, durationSeconds = 76 } }
 -- The 20 most recent fights (oldest first), then Current and Overall.
 local function SessionMenu(_, root, win)
+    if not win.menuPreview and win.meterType ~= D.THREAT then
+        local compare = root:CreateButton(S.Text("Compare pulls"), D.OpenPullCompare, win)
+        compare:SetEnabled(not M.inCombat and not NS.IsCombatLocked())
+        root:CreateDivider()
+    end
     local list = win.menuPreview and previewFights or C_DamageMeter.GetAvailableCombatSessions()
     local count = D.Count(list)
     if count > 0 then

@@ -362,8 +362,8 @@ end
 -- presses; the spell is a spell action's or a macro's that shows one.
 local function NotifyPress(rec)
     local pressed = S.CooldownManagerActionPressed
-    if not pressed or not rec.slot then return end
-    local spellID = AB.Painter.ActionSpell(rec.slot)
+    if not pressed then return end
+    local spellID = rec.virtual and AB.Painter.ButtonSpell(rec) or rec.slot and AB.Painter.ActionSpell(rec.slot)
     if spellID then pressed(spellID) end
 end
 

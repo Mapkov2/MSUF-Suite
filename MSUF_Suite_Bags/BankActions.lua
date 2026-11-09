@@ -1,6 +1,5 @@
 local _, P = ...
 local NS, S = P.NS, P.Suite
-if NS.Client.isForever then return end
 -- Item clicks of the Suite bank view (BankInventory.lua). Blizzard's
 -- BankPanelItemButtonMixin decides refund confirmations from BankFrame's
 -- active bank type; switching that type from Suite code (BankFrame:SetTab)
@@ -15,9 +14,18 @@ local BankActions = {}
 P.BankActions = BankActions
 local ACCOUNT = Enum.BankType.Account
 
+local function CanUse(bankType)
+    local allowed = C_Bank.CanUseBank(bankType)
+    return S.Public(allowed) and allowed == true
+end
+
+local function ItemGUID(location)
+    if S.Public(location) and location then return S.PublicText(C_Item.GetItemGUID(location)) end
+end
+
 local function Usable(button)
     local record = button.record
-    if not record or NS.IsCombatLocked() or not BankFrame:IsShown() or not C_Bank.CanUseBank(record.bankType) then
+    if not record or NS.InCombat() or not BankFrame:IsShown() or not CanUse(record.bankType) then
         return nil
     end
     return record
@@ -42,11 +50,10 @@ end
 
 local function Accept()
     local record, guid = CloseConfirm()
-    local location = C_Cursor.GetCursorItem()
     -- The cursor still holds the item the player was asked about.
     if not record or not guid or not P.BagsModule.active or not P.BankInventory.active
-        or not location or C_Item.GetItemGUID(location) ~= guid or not BankFrame:IsShown()
-        or NS.IsCombatLocked() or not C_Bank.CanUseBank(ACCOUNT) then
+        or NS.InCombat() or not BankFrame:IsShown() or not CanUse(ACCOUNT)
+        or ItemGUID(C_Cursor.GetCursorItem()) ~= guid then
         return
     end
     C_Container.PickupContainerItem(record.bag, record.slot)
@@ -54,12 +61,13 @@ end
 
 local function Cancel()
     local _, guid = CloseConfirm()
-    local location = C_Cursor.GetCursorItem()
     -- The player may have replaced the cursor item while the question was open.
-    if guid and location and C_Item.GetItemGUID(location) == guid then ClearCursor() end
+    if not NS.InCombat() and guid and ItemGUID(C_Cursor.GetCursorItem()) == guid then ClearCursor() end
 end
 
 local function Confirm(record, location)
+    local guid = ItemGUID(location)
+    if not guid then return end
     if not confirm then
         confirm = S.CreateFrame("Frame", nil, UIParent)
         confirm:SetFrameStrata("DIALOG")
@@ -77,7 +85,7 @@ local function Confirm(record, location)
         ConfirmButton(confirm, CANCEL, 54, Cancel)
     end
     confirm.text:SetText(END_REFUND)
-    confirm.record, confirm.guid = record, C_Item.GetItemGUID(location)
+    confirm.record, confirm.guid = record, guid
     confirm:Show()
 end
 -- The bank closed: the refund question and the warband tab overlay go.
@@ -88,9 +96,14 @@ end
 
 local function Place(record)
     local location = C_Cursor.GetCursorItem()
-    if record.bankType == ACCOUNT and location and C_Item.CanBeRefunded(location) == true then
-        Confirm(record, location)
-        return
+    if record.bankType == ACCOUNT then
+        if not S.Public(location) or not location then return end
+        local refundable = C_Item.CanBeRefunded(location)
+        if not S.Public(refundable) then return end
+        if refundable == true then
+            Confirm(record, location)
+            return
+        end
     end
     C_Container.PickupContainerItem(record.bag, record.slot)
 end
@@ -160,10 +173,12 @@ end
 -- A Suite bank item gained the pointer.
 function BankActions.Enter(button)
     local record = button.record
-    if NS.IsCombatLocked() or not record or not record.itemID or record.bankType ~= ACCOUNT
-        or not BankFrame:IsShown() or BankFrame:GetActiveBankType() == ACCOUNT or not C_Bank.CanUseBank(ACCOUNT) then
+    if NS.InCombat() or not record or not record.itemID or record.bankType ~= ACCOUNT
+        or not BankFrame:IsShown() or BankFrame:GetActiveBankType() == ACCOUNT or not CanUse(ACCOUNT) then
         return
     end
+    -- Camelot's side page tabs handle native OnMouseUp; there is no TabSystem click target.
+    if NS.Client.isForever then return end
     local target = BankFrame.accountBankTabID and BankFrame:GetTabButton(BankFrame.accountBankTabID)
     if not target then return end
     local overlay = TabOverlay()

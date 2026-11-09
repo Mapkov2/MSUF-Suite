@@ -547,6 +547,11 @@ function S.CloseStyledContextMenu(owner)
     if panel and (not owner or owner == panel.owner) then panel:Hide() end
 end
 
+function S.CloseOwnedContextMenu(owner)
+    if menuPanel and menuPanel.owner == owner then menuPanel:Hide() end
+    S.CloseStyledContextMenu(owner)
+end
+
 local function StyledMenuPanel()
     if styledMenuPanel then return styledMenuPanel end
     local name = "MSUFSuiteStyledContextMenu"

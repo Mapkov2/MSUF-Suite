@@ -52,7 +52,7 @@ local function LineKey(entry, index)
     return key
 end
 
-local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedEntries, groups, sectionKeys)
+local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedEntries, groups, sectionKeys, closingKey)
     if #items == 0 then return index end
     index = index + 1
     local section = FlatSlot(flat, index, "section")
@@ -79,11 +79,12 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
         item.questIcon, item.questIconAtlas = entry.questIcon, entry.questIconAtlas
         item.scenarioHeaderSetID = entry.scenarioHeaderSetID
         item.findGroup, item.questGroupSearch = entry.findGroup, entry.questGroupSearch
-        item.hasLines, item.collapsed, item.collapseKey = lines.count > 0, collapsedEntries[base] == true, base
+        local collapsed = collapsedEntries[base] == true and base ~= closingKey
+        item.hasLines, item.collapsed, item.collapseKey = lines.count > 0, collapsed, base
         item.questID, item.achievementID, item.scenarioID = questID, achievementID, scenarioID
         item.recipeID, item.isRecraft = entry.recipeID, entry.isRecraft
         item.contentID, item.contentType = entry.contentID, entry.contentType
-        if not collapsedEntries[base] then
+        if not collapsed then
             for j = 1, lines.count do
                 local line = lines[j]
                 index = index + 1
@@ -101,7 +102,7 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
     return index
 end
 
-local function SameItem(a, b)
+local function SameItem(a, b, ignoreDeadline)
     if not b or a.key ~= b.key or a.kind ~= b.kind or a.group ~= b.group
         or a.text ~= b.text or a.height ~= b.height then return false end
     if a.kind == "section" then return a.collapsed == b.collapsed end
@@ -111,7 +112,8 @@ local function SameItem(a, b)
         or a.contentID ~= b.contentID or a.contentType ~= b.contentType
         or a.scenarioID ~= b.scenarioID then return false end
     if a.kind == "line" then return a.done == b.done and a.percent == b.percent end
-    return a.itemIcon == b.itemIcon and a.itemLink == b.itemLink and a.timerEnd == b.timerEnd
+    return a.itemIcon == b.itemIcon and a.itemLink == b.itemLink
+        and (a.timerEnd == b.timerEnd or (ignoreDeadline and a.timerEnd and b.timerEnd))
         and a.questIcon == b.questIcon and a.questIconAtlas == b.questIconAtlas
         and a.scenarioHeaderSetID == b.scenarioHeaderSetID
         and a.findGroup == b.findGroup and a.questGroupSearch == b.questGroupSearch

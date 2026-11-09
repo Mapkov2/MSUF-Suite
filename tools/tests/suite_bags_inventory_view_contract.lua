@@ -56,6 +56,7 @@ function methods:IsMouseWheelEnabled() return self.mouseWheel == true end
 function methods:SetFont(...) self.font = { ... }; calls.fonts = calls.fonts + 1 end
 function methods:GetFont() return unpack(self.font) end
 function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
+function methods:UnregisterEvent(event) if self.events then self.events[event] = nil end end
 function methods:UnregisterAllEvents() self.events = {} end
 for _, name in ipairs({ "SetHighlightFontObject", "SetDisabledFontObject", "SetTexture", "SetVertexColor", "SetJustifyH", "SetAllPoints", "SetFrameLevel", "RegisterForClicks", "RegisterForDrag", "SetNormalTexture" }) do
     methods[name] = function() end
@@ -183,6 +184,7 @@ Enum = { TooltipDataType = { Item = 0 },
         Battlepet = 17, WoWToken = 18, Profession = 19 },
     ItemQuality = { Poor = 0, Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 },
     -- ItemConstantsDocumentation.lua (Retail and Forever)
+    ItemBind = { Quest = 4 },
     ItemArmorSubclass = { Generic = 0, Cloth = 1, Leather = 2, Mail = 3, Plate = 4, Cosmetic = 5, Shield = 6 },
     ItemMiscellaneousSubclass = { Junk = 0, Reagent = 1, CompanionPet = 2, Holiday = 3, Other = 4, Mount = 5,
         MountEquipment = 6 },

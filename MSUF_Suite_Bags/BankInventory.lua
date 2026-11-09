@@ -1,6 +1,5 @@
 local _, P = ...
 local NS, S, M = P.NS, P.Suite, P.BagsModule
-if NS.Client.isForever then return end
 local Model, Index, Bank, Grid = P.InventoryModel, P.InventoryIndex, P.BankInventoryIndex, P.GridView
 local FreeSlots = P.FreeSlots
 local Font = Grid.Font
@@ -12,9 +11,23 @@ P.BankInventory = BankInventory
 local Request, Flush, Render
 local MODES = { [BANK_VIEW.TABS] = "Bank tabs", [BANK_VIEW.CHARACTER] = "Combined bank",
     [BANK_VIEW.WARBANK] = "Combined warbank", [BANK_VIEW.CATEGORIES] = "Bank categories" }
-local EVENTS = { "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "BAG_UPDATE", "PLAYER_REGEN_ENABLED",
+local WATCH_EVENTS = { "BAG_UPDATE", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED",
     "GET_ITEM_INFO_RECEIVED", "BANK_TABS_CHANGED", "PLAYER_ACCOUNT_BANK_TAB_SLOTS_CHANGED", "INVENTORY_SEARCH_UPDATE",
     "ITEM_LOCK_CHANGED", "BAG_UPDATE_COOLDOWN", "BANK_TAB_SETTINGS_UPDATED" }
+local GRID_TOP = NS.Client.isForever and 68 or 40
+
+local function WatchBank(watching)
+    if BankInventory.watching == watching then return end
+    BankInventory.watching = watching
+    local events = BankInventory.events
+    for _, event in ipairs(WATCH_EVENTS) do
+        if watching then
+            if NS.Client.SupportsEvent(event) then events:RegisterEvent(event) end
+        else
+            events:UnregisterEvent(event)
+        end
+    end
+end
 
 local function Button(parent, text, width, callback)
     return Grid.Button(parent, text, width, callback, 23)
@@ -136,8 +149,12 @@ end
 
 -- The smart search box and its Filters button stand in the title row.
 local function PlaceSearch(edit, button)
-    button:SetPoint("TOPRIGHT", -12, -7)
-    edit:SetPoint("TOPLEFT", BankInventory.title, "TOPRIGHT", 16, 4)
+    button:SetPoint("TOPRIGHT", -12, NS.Client.isForever and -34 or -7)
+    if NS.Client.isForever then
+        edit:SetPoint("TOPLEFT", BankInventory.frame, "TOPLEFT", 12, -34)
+    else
+        edit:SetPoint("TOPLEFT", BankInventory.title, "TOPRIGHT", 16, 4)
+    end
     edit:SetPoint("TOPRIGHT", button, "TOPLEFT", -8, 0)
 end
 
@@ -184,7 +201,7 @@ local function Create()
     BankInventory.free:SetPoint("RIGHT", BankInventory.native, "LEFT", -8, 0)
     P.InventorySearch.Create(BankInventory, Request, frame, PlaceSearch)
     BankInventory.side, BankInventory.sideChild = P.BagWidgets.Scroll(frame, 133)
-    BankInventory.side:SetPoint("TOPLEFT", 10, -40)
+    BankInventory.side:SetPoint("TOPLEFT", 10, -GRID_TOP)
     BankInventory.side:SetPoint("BOTTOMLEFT", 10, 40)
     -- Below the bank window, opposite Blizzard's bank tabs (BankFrame.xml
     -- TabSystem): the search box and Clean Up button stay free in every view.
@@ -201,7 +218,7 @@ local function Create()
 end
 
 local function PaintCell(cell, number, sidebar, font)
-    local x, y = sidebar + cell.column * 40, -40 - (cell.line - BankInventory.scroll) * 40
+    local x, y = sidebar + cell.column * 40, -GRID_TOP - (cell.line - BankInventory.scroll) * 40
     if not cell.row then
         BankInventory.labelCount = BankInventory.labelCount + 1
         local toggle = M.config.bankView == BANK_VIEW.CATEGORIES and ToggleGroup or nil
@@ -241,7 +258,7 @@ Render = function()
     local categories = M.config.bankView == BANK_VIEW.CATEGORIES
     local sidebar = categories and 170 or 12
     BankInventory.columns = Model.BankColumns(BankInventory.frame:GetWidth(), categories)
-    BankInventory.visibleRows = math.max(2, math.floor((BankInventory.frame:GetHeight() - 84) / 40))
+    BankInventory.visibleRows = math.max(2, math.floor((BankInventory.frame:GetHeight() - GRID_TOP - 44) / 40))
     local layout = Model.Layout(BankInventory.model, BankInventory.columns, BankInventory.config.compactGroups)
     BankInventory.maxScroll = math.max(0, BankInventory.model.lineCount - BankInventory.visibleRows)
     BankInventory.scroll = math.min(BankInventory.scroll, BankInventory.maxScroll)
@@ -288,21 +305,35 @@ local function PrepareModel(state)
     end
     local built = Grid.Build(Model, BankInventory.model, items, BankInventory.config, state, BankInventory.context, not tab and BankInventory.selected or "all")
     if not tab and built ~= BankInventory.selected then BankInventory.selected, BankInventory.scroll = built, 0 end
+    BankInventory.renderedTab = tab
 end
 
 Flush = function()
     if not BankInventory.enabled or not M.active or not BankFrame:IsShown() then return end
-    if NS.IsCombatLocked() then return end
-    if not BankInventory.frame then Create() end
-    BankInventory.modeButton:SetText(S.Text(MODES[M.config.bankView]))
-    BankInventory.modeButton:Show()
-    BankInventory.active = M.config.bankView ~= BANK_VIEW.TABS
-    M.organizedBankActive = BankInventory.active
-    BankInventory.nativeBackground:SetShown(not BankInventory.active)
+    local nativeGamepad = NS.Client.isForever and S.GamepadUI()
+    local organize = M.config.bankView ~= BANK_VIEW.TABS and not nativeGamepad
+    WatchBank(organize or not BankInventory.frame)
+    if NS.InCombat() then return end
+    if not BankInventory.frame then
+        Create()
+        if not organize then WatchBank(false) end
+    end
+    local modeButton = BankInventory.modeButton
+    local mode = M.config.bankView
+    if modeButton.mode ~= mode then
+        modeButton.mode = mode
+        modeButton:SetText(S.Text(MODES[mode]))
+    end
+    local showMode = not nativeGamepad
+    if modeButton:IsShown() ~= showMode then modeButton:SetShown(showMode) end
+    local wasOrganized = BankInventory.active
+    BankInventory.active = organize
+    M.organizedBankActive = organize
+    if not NS.Client.isForever then BankInventory.nativeBackground:SetShown(not organize) end
     if not BankInventory.active then
         P.BankActions.Cancel()
         BankInventory.frame:Hide()
-        M:UpdateBank()
+        if wasOrganized or not NS.Client.isForever then M:UpdateBank() end
         return
     end
     M:HideBankLevels()
@@ -343,9 +374,10 @@ local function Event(_, event, value, success)
         return
     end
     if event == "BAG_UPDATE" or event == "BANKFRAME_OPENED" then P.InventoryDetails.Invalidate() end
-    if event == "BANKFRAME_CLOSED" then
+    if event == "BANKFRAME_CLOSED" or event == "PLAYER_REGEN_DISABLED" then
+        if event == "BANKFRAME_CLOSED" then WatchBank(false) end
         BankInventory.active, M.organizedBankActive = false, false
-        if BankInventory.frame then BankInventory.frame:Hide() end
+        if BankInventory.frame and not NS.IsCombatLocked() then BankInventory.frame:Hide() end
         return
     end
     if event == "GET_ITEM_INFO_RECEIVED" then
@@ -370,9 +402,8 @@ function BankInventory.Refresh()
         BankInventory.events = S.CreateFrame("Frame")
         BankInventory.events:SetScript("OnEvent", Event)
     end
-    for i = 1, #EVENTS do
-        if NS.Client.SupportsEvent(EVENTS[i]) then BankInventory.events:RegisterEvent(EVENTS[i]) end
-    end
+    BankInventory.events:RegisterEvent("BANKFRAME_OPENED")
+    BankInventory.events:RegisterEvent("BANKFRAME_CLOSED")
     Request()
 end
 
@@ -380,6 +411,7 @@ function BankInventory.Disable()
     BankInventory.enabled, BankInventory.active, M.organizedBankActive = false, false, false
     P.BankActions.Cancel()
     Index.Reset(BankInventory.index)
+    BankInventory.watching = nil
     if BankInventory.events then BankInventory.events:UnregisterAllEvents() end
     if BankInventory.frame then
         BankInventory.frame:Hide()

@@ -11,7 +11,7 @@ P.EverydayToolGroups = {
     { id = "notificationHistory", title = "Suite notice history", switch = "enabled", sections = { "notice_history" } },
 }
 local ACTIONS = {
-    keyAudit = "Review actions and keys", currencyGoals = "Manage currency goals", keywordAlerts = "Edit watched phrases",
+    keyAudit = "Review actions and keys", currencyGoals = "Manage currency goals", keywordAlerts = "Manage keyword alerts",
     waypointLists = "Open saved waypoint lists", notificationHistory = "Open notice history",
 }
 function P.BuildEverydayToolActions(ctx, body, id, section, y, width)

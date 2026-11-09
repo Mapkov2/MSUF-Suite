@@ -18,6 +18,7 @@ B.Section("currencyGoals", "currency_goals", "Currency goals", {
 Module("keywordAlerts", "Chat keyword notices", "Watch chosen words in selected chat channels. Private game values are never read.")
 B.Section("keywordAlerts", "keyword_notices", "Chat keyword notices", {
     B.String("words", "Words or phrases, one per line", "", 6500),
+    B.String("phraseOptions", "Keyword alert rules", "", 32000),
     B.Bool("party", "Watch party chat", true), B.Bool("raid", "Watch raid chat", true),
     B.Bool("guild", "Watch guild chat"), B.Bool("say", "Watch nearby chat"),
     B.Bool("channels", "Watch public channels"),
@@ -25,6 +26,7 @@ B.Section("keywordAlerts", "keyword_notices", "Chat keyword notices", {
     B.Bool("sound", "Play a sound for matching messages"),
 })
 NS.SuiteCatalog.keywordAlerts.rules.words.hidden = true
+NS.SuiteCatalog.keywordAlerts.rules.phraseOptions.hidden = true
 Module("waypointLists", "Saved waypoint lists", "Save named map points and activate the next stop with a click. No movement is automated.")
 B.Section("waypointLists", "saved_waypoints", "Saved waypoint lists", {
     B.Bool("superTrack", "Track the selected saved waypoint", true),

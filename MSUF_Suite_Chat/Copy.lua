@@ -2,13 +2,14 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 local C = P.Chat
 -- Opt-in copy chooser: a Copy button on each chat window opens one shared
--- dialog listing the window's recent public lines. Choosing a line puts its
--- plain text into an edit box, ready for Ctrl+C; Copy all puts every public
--- line of the window there. Nothing reads the chat until a button is clicked.
+-- dialog over the window's readable lines. A snapshot lives only while the
+-- dialog is open, so typing a search never walks the native message buffer.
+-- Copy all takes the latest complete snapshot when clicked.
 local M = C.M
 local ROWS, WIDTH, INSET = 10, 500, 16
 local ALL_BUTTON_WIDTH, ACTION_HEIGHT = 130, 27
-local CHOOSER = { rows = ROWS, height = 396 }
+local CHOOSER = { rows = ROWS, height = 457 }
+local SEARCH_ROW_TOP, ROW_STEP = -112, 26
 -- InputScrollFrameTemplate keeps native scrolling and selection. Only the
 -- inherited background pieces are replaced, on our own scroll frame.
 local INPUT_ART = {
@@ -23,10 +24,14 @@ local TEXT = {
     copyAll = S.Text("Copy all"),
     copyAllHint = S.Text("Every line is selected, press Ctrl+C"),
     copyURL = S.Text("Copy this URL with Ctrl+C"),
+    search = S.Text("Search this chat tab"),
+    noMatches = S.Text("No chat messages match this search."),
+    range = S.Text("%d–%d of %d"),
+    back = S.Text("Back to messages"),
 }
 local Fill, Tint, ShowTooltip, HideTooltip = C.Fill, C.Tint, C.ShowTooltip, C.HideTooltip
 
-local function PlainMessage(text)
+function C.PlainChatMessage(text)
     -- GetMessageInfo returns Blizzard's rendered line, including a timestamp
     -- if its native setting is enabled. Present readable text in the copy box.
     local plain = text:gsub("|H.-|h(.-)|h", "%1")
@@ -41,19 +46,16 @@ local function HideCopyDialog(panel)
 end
 C.HideCopyDialog = HideCopyDialog
 
--- Every public line of the window, oldest first, one per line.
-local function AllMessages(frame)
-    local count = frame:GetNumMessages()
-    if not S.Number(count) then return "" end
+local function ReadMessages(frame, first, last, step)
     local lines, kept = {}, 0
-    for index = 1, count do
-        local message = frame:GetMessageInfo(index)
-        if S.Public(message) and type(message) == "string" and message ~= "" then
+    for index = first, last, step do
+        local message = S.PublicText(frame:GetMessageInfo(index))
+        if message and message ~= "" then
             kept = kept + 1
-            lines[kept] = PlainMessage(message)
+            lines[kept] = C.PlainChatMessage(message)
         end
     end
-    return table.concat(lines, "\n", 1, kept)
+    return lines
 end
 
 -- Blizzard's multi-line input with its scroll bar (InputScrollFrameTemplate
@@ -85,18 +87,55 @@ local function CloseAllView(panel)
     panel.edit:Show()
 end
 
-local function CopyAll(panel)
-    local frame = panel.chatFrame
-    if not frame or NS.Safety.IsForbidden(frame) then return end
-    local text = AllMessages(frame)
-    if text == "" then
-        panel.hint:SetText(TEXT.copyEmpty)
-        return
+local function ShowRows(panel)
+    local matches, offset = panel.matches, panel.offset
+    for i, row in ipairs(panel.rows) do
+        row.message = matches[offset + i]
+        row.label:SetText(row.message or "")
+        row:SetShown(row.message ~= nil)
     end
-    for _, row in ipairs(panel.rows) do
-        row.message = nil
-        row:Hide()
+    local count = #matches
+    local empty = panel.search:GetText() == "" and TEXT.copyEmpty or TEXT.noMatches
+    panel.hint:SetText(count > 0 and TEXT.copyHint or empty)
+    panel.counter:SetText(TEXT.range:format(count > 0 and offset + 1 or 0, math.min(count, offset + ROWS), count))
+    panel.previous:SetEnabled(offset > 0)
+    panel.next:SetEnabled(offset + ROWS < count)
+end
+
+local function SetActionText(button, text)
+    if button.copyLabel then button.copyLabel:SetText(text) else button:SetText(text) end
+end
+
+local function ShowNavigation(panel, shown)
+    panel.search:SetShown(shown)
+    panel.previous:SetShown(shown)
+    panel.next:SetShown(shown)
+    panel.counter:SetShown(shown)
+end
+
+local function SearchChanged(search)
+    local panel = search:GetParent()
+    if not panel.lines then return end
+    local query, matches = search:GetText():lower(), panel.matches
+    local count = 0
+    if query ~= "" and not panel.searchLines then
+        panel.searchLines = {}
+        for i, line in ipairs(panel.lines) do panel.searchLines[i] = line:lower() end
     end
+    for i, line in ipairs(panel.lines) do
+        if query == "" or panel.searchLines[i]:find(query, 1, true) then
+            count = count + 1
+            matches[count] = line
+        end
+    end
+    for i = #matches, count + 1, -1 do matches[i] = nil end
+    panel.offset = 0
+    panel.edit:SetText("")
+    ShowRows(panel)
+end
+
+local function ShowAllText(panel, text)
+    for _, row in ipairs(panel.rows) do row:Hide() end
     local view = panel.allView or CreateAllView(panel)
     panel.edit:Hide()
     view:Show()
@@ -106,14 +145,37 @@ local function CopyAll(panel)
     view.EditBox:HighlightText()
 end
 
-local function CreateCopyAllButton(panel)
+local function CopyAll(panel)
+    if panel.allOpen then
+        panel.allOpen = nil
+        CloseAllView(panel)
+        SetActionText(panel.copyAll, TEXT.copyAll)
+        ShowNavigation(panel, true)
+        ShowRows(panel)
+        return
+    end
+    local frame = panel.chatFrame
+    if not frame or NS.Safety.IsForbidden(frame) then return end
+    local count = frame:GetNumMessages()
+    if not S.Number(count) then return end
+    local text = table.concat(ReadMessages(frame, 1, count, 1), "\n")
+    if text == "" then
+        panel.hint:SetText(TEXT.copyEmpty)
+        return
+    end
+    panel.allOpen = true
+    panel.search:ClearFocus()
+    ShowNavigation(panel, false)
+    SetActionText(panel.copyAll, TEXT.back)
+    ShowAllText(panel, text)
+end
+
+local function CreateActionButton(panel, text, width, action)
     local bridge = NS.HostBridge
-    local button = bridge and bridge.MenuButton(panel, ALL_BUTTON_WIDTH, ACTION_HEIGHT)
-    if button then
-        button:SetText(TEXT.copyAll)
-    else
+    local button = bridge and bridge.MenuButton(panel, width, ACTION_HEIGHT)
+    if not button then
         button = S.CreateFrame("Button", nil, panel, "BackdropTemplate")
-        button:SetSize(ALL_BUTTON_WIDTH, ACTION_HEIGHT)
+        button:SetSize(width, ACTION_HEIGHT)
         S.QoLCopySurface(button, "card")
         local hover = S.CreateTexture(button, nil, "HIGHLIGHT")
         hover:SetAllPoints(button)
@@ -121,52 +183,83 @@ local function CreateCopyAllButton(panel)
         local label = S.CreateFontString(button, nil, "ARTWORK")
         S.SetFont(label, nil, 12, "")
         label:SetPoint("CENTER")
-        label:SetText(TEXT.copyAll)
+        button.copyLabel = label
     end
-    button:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -INSET, -43)
-    panel.hint:SetPoint("TOPRIGHT", button, "TOPLEFT", -12, 0)
-    button:SetScript("OnClick", function() CopyAll(panel) end)
+    SetActionText(button, text)
+    button:SetScript("OnClick", action)
     return button
 end
 
--- The drag strip of the title leaves the message rows and the copy edit box
--- free for clicks, selection and Ctrl+C. Closing the dialog, however it
--- happens, ends the Copy all view.
+local function AddSearch(panel)
+    local search = S.CreateFrame("EditBox", nil, panel, "InputBoxInstructionsTemplate")
+    search:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET + 4, -76)
+    search:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -INSET - 4, -76)
+    search:SetHeight(27)
+    search:SetAutoFocus(false)
+    search:SetMaxBytes(512)
+    search.Instructions:SetText(TEXT.search)
+    search:SetScript("OnTextChanged", SearchChanged)
+    search:SetScript("OnEscapePressed", function(edit) edit:ClearFocus() end)
+    if NS.HostBridge then NS.HostBridge.MenuEditBox(search) end
+    panel.search = search
+    for i, row in ipairs(panel.rows) do
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET, SEARCH_ROW_TOP - (i - 1) * ROW_STEP)
+    end
+end
+
+local function AddNavigation(panel)
+    panel.previous = CreateActionButton(panel, S.Text("Previous"), 96, function()
+        panel.offset = math.max(0, panel.offset - ROWS)
+        ShowRows(panel)
+    end)
+    panel.previous:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", INSET, 49)
+    panel.next = CreateActionButton(panel, S.Text("Next"), 96, function()
+        panel.offset = panel.offset + ROWS
+        ShowRows(panel)
+    end)
+    panel.next:SetPoint("LEFT", panel.previous, "RIGHT", 8, 0)
+    panel.counter = S.QoLLabel(panel, "", 11)
+    panel.counter:SetPoint("LEFT", panel.next, "RIGHT", 12, 0)
+end
+
+local function ResetCopyDialog(panel)
+    panel.chatFrame, panel.lines, panel.matches, panel.searchLines, panel.allOpen = nil, nil, nil, nil, nil
+    panel.search:ClearFocus()
+    panel.search:SetText("")
+    panel.edit:ClearFocus()
+    panel.edit:SetText("")
+    CloseAllView(panel)
+    for _, row in ipairs(panel.rows) do
+        row.message = nil
+        row.label:SetText("")
+        row:Hide()
+    end
+end
+
 local function CreateCopyDialog()
     local panel = S.QoLCopyDialog("Copy chat message (drag to move)", "Choose a line, then press Ctrl+C", WIDTH, CHOOSER)
-    panel.copyAll = CreateCopyAllButton(panel)
-    panel:SetScript("OnHide", CloseAllView)
+    panel.copyAll = CreateActionButton(panel, TEXT.copyAll, ALL_BUTTON_WIDTH, function() CopyAll(panel) end)
+    panel.copyAll:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -INSET, -43)
+    panel.hint:SetPoint("TOPRIGHT", panel.copyAll, "TOPLEFT", -12, 0)
+    AddSearch(panel)
+    AddNavigation(panel)
+    panel:SetScript("OnHide", ResetCopyDialog)
     return panel
 end
 
--- Newest first: the last ROWS public lines among the window's newest 100.
 local function ShowCopyDialog(self, frame)
     if not (self.config.copyMessages or self.config.headerToolbar) or not frame or NS.Safety.IsForbidden(frame) then return end
     local count = frame:GetNumMessages()
     if not S.Number(count) then return end
     local panel = self.copyDialog or CreateCopyDialog()
     self.copyDialog = panel
-    CloseAllView(panel)
-    panel.chatFrame = frame
+    ResetCopyDialog(panel)
+    panel.chatFrame, panel.lines, panel.matches = frame, ReadMessages(frame, count, 1, -1), {}
+    SetActionText(panel.copyAll, TEXT.copyAll)
     panel.copyAll:Show()
-    local shown = 0
-    for index = count, math.max(1, count - 99), -1 do
-        if shown == ROWS then break end
-        local message = frame:GetMessageInfo(index)
-        if S.Public(message) and type(message) == "string" and message ~= "" then
-            shown = shown + 1
-            local row = panel.rows[shown]
-            row.message = PlainMessage(message)
-            row.label:SetText(row.message)
-            row:Show()
-        end
-    end
-    for i = shown + 1, ROWS do
-        panel.rows[i].message = nil
-        panel.rows[i]:Hide()
-    end
-    panel.hint:SetText(shown > 0 and TEXT.copyHint or TEXT.copyEmpty)
-    panel.edit:SetText("")
+    ShowNavigation(panel, true)
+    SearchChanged(panel.search)
     panel:Show()
 end
 
@@ -174,20 +267,36 @@ C.OpenCopyDialog = ShowCopyDialog
 
 local function CopyButtonClick(button) ShowCopyDialog(M, button.chatFrame) end
 
--- A clicked chat URL (Messages.lua links them) opens the dialog with only
--- that address, selected for Ctrl+C.
-function C.ShowURL(url)
+local function PrepareSingle()
     local panel = M.copyDialog or CreateCopyDialog()
     M.copyDialog = panel
-    CloseAllView(panel)
+    ResetCopyDialog(panel)
+    ShowNavigation(panel, false)
     panel.copyAll:Hide()
-    for _, row in ipairs(panel.rows) do
-        row.message = nil
-        row:Hide()
-    end
+    return panel
+end
+
+-- Links already present in chat may outlive the enabled message options.
+function C.ShowURL(url)
+    local panel = PrepareSingle()
     panel.hint:SetText(TEXT.copyURL)
     S.QoLShowCopy(panel, url)
 end
+
+function C.ShowChatLine(text)
+    local line = S.PublicText(text)
+    if not line or line == "" then return end
+    local panel = PrepareSingle()
+    panel.hint:SetText(TEXT.copyHint)
+    S.QoLShowCopy(panel, C.PlainChatMessage(line))
+end
+
+function C.ShowChatTranscript(text)
+    local panel = PrepareSingle()
+    panel:Show()
+    ShowAllText(panel, text)
+end
+
 local function CopyButtonEnter(button) ShowTooltip(button, TEXT.copyTooltip) end
 
 local function CreateCopyButton(frame)

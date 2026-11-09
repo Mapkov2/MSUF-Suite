@@ -37,7 +37,9 @@ local function Fixture()
         IsEditing = function() return false end,
         Open = function(_, spec) state.window = spec return {} end,
         Edit = function(_, spec) state.editor = spec end }
-    S.LoadoutSnapshot = function() return state.build, "Build", state.loot, "Loot" end
+    S.LoadoutSnapshot = function()
+        return state.build, "Build " .. state.build, state.loot, "Loot " .. state.loot, state.spec, state.specName, state.lootPreference
+    end
     S.ReadInfoSource = function() return .75 end
     S.PlanningReadiness = function() return {} end
     S.Raid = { AttemptProgress = function() end }
@@ -92,7 +94,7 @@ local function Fixture()
         GetOverallDungeonScore = function() return 2450 end, GetDungeonScoreRarityColor = function() return nil end }
     local P = { NS = NS, Suite = S, GroupFinderFilters = { Eligible = function() return state.eligible end,
         Apply = function() state.applied = true return true end } }
-    local names = { "PlanningTools", "PlanningHistory", "PlanningWeekly", "PlanningLoadouts", "PlanningNotes", "PlanningLFG",
+    local names = { "PlanningTools", "PlanningHistory", "PlanningWeekly", "PlanningLoadouts", "PlanningLoot", "PlanningNotes", "PlanningLFG",
         "PlanningWindow", "PlanningWindowHistory", "PlanningWindowActions", "PlanningController" }
     for _, name in ipairs(names) do
         assert(loadfile(root .. "/MSUF_Suite_AdventurePlanner/" .. name .. ".lua"))("test", P)
@@ -386,7 +388,7 @@ local function NotesAndWindowChecks()
     st.instance = 200
     equal(#Plan.Notes.Rows(true), 0, "context notes filter")
     equal(Plan.Window.Open("notes"), true, "normal window reachable")
-    equal(#st.window.tabs, 7, "every visible tab reachable; Mythic+ goals stay hidden for now")
+    equal(#st.window.tabs, 8, "loot goals and existing tabs are reachable; Mythic+ goals stay hidden")
     st.window.selectTab(owner, "runs")
     equal(st.window.currentTab(), "runs", "tab change")
     equal(#st.window.actions, 5, "tab actions installed")
@@ -474,11 +476,108 @@ local function StaleEditorChecks()
     equal(st.editor, editor, "old profile goal menu cannot open editor")
 end
 
+local function CorrectionChecks()
+    local st, NS, S, Plan = Fixture()
+    st.build, st.spec, st.specName, st.lootPreference = 0, 1, "Arms", 0
+    equal(Plan.Loadouts.Save(), true, "starter config saved with its specialization")
+    st.spec, st.specName, st.lootPreference, st.equipment = 2, "Fury", st.loot, 2
+    local issues = S.PlanningLoadoutIssues()
+    equal(#issues, 3, "spec, loot mode and set differences all visible")
+    equal(issues[1], "Talents: Fury — Build 0 → Arms — Build 0", "starter config IDs are distinct across specs")
+    equal(issues[3], "Equipment: Set 2 → Set 1", "equipment delta shows both sets")
+    equal(Plan.Loadouts.Rows()[1].differences.talents, true, "different talents get a correction action")
+    local setIDs = C_EquipmentSet.GetEquipmentSetIDs
+    C_EquipmentSet.GetEquipmentSetIDs = function() return secret end
+    equal(#S.PlanningLoadoutIssues(), 2, "unknown equipment does not claim a mismatch")
+    C_EquipmentSet.GetEquipmentSetIDs = setIDs
+    S.CanOpenNativeWindow = function() return not st.gamepad end
+    S.Dispatch = function(callback, ...) return callback(...) end
+    S.Finish = function(callback, ...) return true, callback(...) end
+    _G.PlayerSpellsUtil = { OpenToClassTalentsTab = function() st.opened = "talents" end }
+    _G.UnitPopup_OpenMenu = function(kind, context)
+        equal(kind, "SELF", "native player menu")
+        equal(context.unit, "player", "menu uses player context")
+        st.opened = "loot"
+    end
+    _G.ToggleCharacter = function(tab, onlyShow)
+        equal(tab, "PaperDollFrame", "gear opens native paper doll")
+        equal(onlyShow, true, "already open paper doll stays open")
+    end
+    _G.PaperDollFrame = { IsVisible = function() return true end }
+    _G.PaperDollFrame_SetSidebar = function(_, tab) st.opened = tab end
+    equal(Plan.Loadouts.Open("talents"), true, "talents native action")
+    equal(st.opened, "talents", "talents chooser only")
+    equal(Plan.Loadouts.Open("loot"), true, "loot native action")
+    equal(st.opened, "loot", "loot menu only")
+    equal(Plan.Loadouts.Open("gear"), true, "equipment native action")
+    equal(st.opened, 3, "equipment manager selected")
+    st.gamepad = true
+    equal(Plan.Loadouts.Open("gear"), false, "cannot open protected panel from gamepad mode")
+    st.combat, st.gamepad = true, false
+    equal(Plan.Loadouts.Open("talents"), false, "no correction action in combat")
+    equal(S.PlanningLoadoutIssues(), nil, "no combat stat reads")
+    st.combat, NS.Client.isForever = false, true
+    equal(Plan.Loadouts.Open("loot"), false, "no Retail correction on Forever")
+end
+
+local function LootChecks()
+    local st, NS, _, Plan = Fixture()
+    local link = "|cffa335ee|Hitem:4321:0:0|h[Testing Sword]|h|r"
+    local entry = Plan.Loot.New("prefix " .. link .. " suffix", "  Raid  ")
+    equal(entry.link, link, "save only the actual item hyperlink")
+    equal(entry.source, "Raid", "manual source trimmed")
+    equal(Plan.Loot.New("|Hspell:4321|h[Spell]|h"), nil, "non-item hyperlinks refused")
+    equal(Plan.Loot.New(secret), nil, "secret item link rejected")
+    _G.C_Item = { IsEquippedItem = function(id) return id == st.equipped end }
+    NS.Client.isForever = true
+    equal(Plan.Loot.Save(entry), true, "Forever saves manually entered item")
+    equal(#Plan.Loot.Rows(true), 1, "unequipped remains visible")
+    st.equipped = entry.id
+    equal(#Plan.Loot.Rows(true), 0, "filter hides equipped item")
+    equal(Plan.Loot.Rows()[1].detail:find("Item equipped", 1, true) ~= nil, true, "equipped badge remains in all filter")
+    equal(Plan.Loot.JournalRows(), nil, "Forever never queries Retail journal")
+    equal(Plan.Window.Open("loot"), true, "Forever loot page is reachable")
+    equal(Plan.Delete("loot", "4321"), true, "remove saved loot goal")
+    st.window.actions[1].run()
+    _G.GetCursorInfo = function() return "item", 4321, link end
+    local dropped = st.editor.receive("\nMy source")
+    equal(dropped, link .. "\nMy source", "item drop preserves the optional source")
+    equal(st.editor.onSave(nil, dropped), true, "the item editor saves an explicit confirmation")
+    equal(Plan.Loot.Rows()[1].loot.source, "My source", "manual source saved from editor")
+    NS.Client.isForever = false
+    _G.EncounterJournal = { instanceID = 15, LootContainer = { IsVisible = function() return st.journal end } }
+    _G.EJ_GetInstanceInfo = function(id) return id == 15 and "Raid" end
+    _G.EJ_GetDifficulty = function() return 16 end
+    _G.EJ_GetNumLoot = function() return 2 end
+    _G.EJ_GetNumEncountersForLootByIndex = function() return 1 end
+    _G.EJ_GetEncounterInfo = function() return "Boss" end
+    _G.C_EncounterJournal = { GetLootInfoByIndex = function() return { link = link, encounterID = 20 } end }
+    equal(Plan.Loot.JournalRows(), nil, "hidden loot page is not read")
+    st.journal = true
+    local rows = Plan.Loot.JournalRows()
+    equal(#rows, 1, "current journal loot is deduplicated")
+    equal(rows[1].loot.source, "Raid — Boss — Difficulty 16", "native source includes boss and difficulty")
+    equal(Plan.Loot.Save(rows[1].loot), true, "explicit save of selected journal loot")
+    equal(Plan.Loot.Rows()[1].detail:find("lockout", 1, true), nil, "pending lockout not guessed")
+    Plan.Weekly.lockoutsReady = true
+    equal(Plan.Weekly.Capture(), true, "weekly lockout captured")
+    equal(Plan.Loot.Rows()[1].detail:find("Saved instance lockout", 1, true) ~= nil, true, "exact difficulty lockout shown")
+    st.time = st.time + 3700
+    equal(Plan.Loot.Rows()[1].detail:find("lockout", 1, true), nil, "expired lockout omitted")
+    st.guid = "other"
+    equal(#Plan.Loot.Rows(), 0, "loot wishlist is character-specific")
+    st.combat = true
+    equal(Plan.Loot.Save(entry), false, "loot save blocked during combat")
+    equal(Plan.Loot.JournalRows(), nil, "no journal reads during combat")
+end
+
 WeeklyChecks()
 KeystoneChecks()
 RegionChecks()
 SnapshotChecks()
 LoadoutChecks()
+CorrectionChecks()
+LootChecks()
 HistoryChecks()
 HistoryOrderChecks()
 WorkspaceChecks()

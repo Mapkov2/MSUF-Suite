@@ -53,6 +53,22 @@ B.Module("nameplates", {
 })
 
 local id = "nameplates"
+-- Native settings that the Suite does not write itself. The remaining
+-- transferable CVars are already declared by the Nameplates module above.
+NS.SuiteCatalog[id].nativeProfileCVars = {
+    nameplateDebuffPadding = true,
+    ShowQuestUnitCircles = true,
+    UnitNameOwn = true,
+    UnitSurnameOwn = true,
+    UnitNameEnemyPlayerName = true,
+    UnitNameEnemyMinionName = true,
+    UnitNameFriendlyPlayerName = true,
+    UnitNameFriendlyMinionName = true,
+    UnitNameNonCombatCreatureName = true,
+    UnitNameFriendlySpecialNPCName = true,
+    UnitNameHostleNPC = true,
+    UnitNameInteractiveNPC = true,
+}
 -- The user's Retail Platynator profile is stored under the technical key
 -- DEFAULT. Preserve its Jundies preset independently of the Mapko factory.
 local native = {

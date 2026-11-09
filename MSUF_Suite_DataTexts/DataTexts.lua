@@ -580,6 +580,7 @@ function M:Enable()
 end
 
 function M:Disable()
+    self:SetDeleteHover()
     self.paused, self.refreshAfterCombat = nil, nil
     Gold.WatchToday(self, nil)
     Visibility.Release()

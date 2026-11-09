@@ -21,6 +21,140 @@ local function Money()
     return S.Finite(value) and value >= 0 and value or nil
 end
 
+if NS.Client.isForever then
+    local function HideBudget(self)
+        if self.budget and self.budget:IsShown() then self.budget:Hide() end
+    end
+
+    local function PaintBudget(self)
+        if not self.budgetTotal or not TrainerOpen(self) then
+        HideBudget(self)
+        return
+    end
+        local money = Money()
+        if not money then
+        HideBudget(self)
+        return
+    end
+        local count, total = self.budgetCount, self.budgetTotal
+        local short = math.max(0, total - money)
+        if self.paintCount ~= count or self.paintTotal ~= total or self.paintShort ~= short then
+            local text = S.Text("%d paid · %s"):format(count, Coins(total))
+            if short > 0 then text = text .. "\n" .. S.Text("%s short"):format(Coins(short)) end
+            self.budget:SetText(text)
+            self.paintCount, self.paintTotal, self.paintShort = count, total, short
+        end
+        if not self.budget:IsShown() then self.budget:Show() end
+    end
+
+    local function ReadBudget()
+        if not C_Trainer or not C_Trainer.GetTrainerType or not Enum.TrainerType then return end
+        local trainerType = C_Trainer.GetTrainerType()
+        -- Blizzard shows the same cost API as training points for pet trainers.
+        if not S.Finite(trainerType) or trainerType == Enum.TrainerType.Pet then return end
+        local count, step = GetNumTrainerServices(), GetTrainerServiceStepIndex()
+        if not S.Finite(count) or count < 0 or count > MAX_SERVICES
+            or count ~= math.floor(count) or not S.Public(step) then return end
+        local paid, total = 0, 0
+        for index = 1, count do
+            if index ~= step then
+                local _, kind = GetTrainerServiceInfo(index)
+                kind = S.PublicText(kind)
+                if not kind then return end
+                if kind == "available" then
+                    local cost, profession = GetTrainerServiceCost(index)
+                    if not S.Public(cost) or not S.Public(profession) then return end
+                    if cost ~= nil and (not S.Finite(cost) or cost < 0 or cost ~= math.floor(cost)) then return end
+                    if cost and cost > 0 and profession ~= true then
+                        paid, total = paid + 1, total + cost
+                    end
+                end
+            end
+        end
+        if S.Finite(total) then return paid, total end
+    end
+
+    local function UpdateBudget(self)
+        if not TrainerOpen(self) then return end
+        self.budgetCount, self.budgetTotal = ReadBudget()
+        PaintBudget(self)
+    end
+
+    local function StopBudget(self)
+        self.budgetJob:Cancel()
+        local context = self.context
+        context:RemoveEvent("PLAYER_MONEY")
+        context:RemoveEvent("TRAINER_UPDATE")
+        context:RemoveEvent("TRAINER_SERVICE_INFO_NAME_UPDATE")
+        context:RemoveEvent("TRAINER_CLOSED")
+        context:RemoveEvent("PLAYER_REGEN_DISABLED")
+        context:RemoveEvent("PLAYER_REGEN_ENABLED")
+        self.budgetCount, self.budgetTotal = nil, nil
+        HideBudget(self)
+    end
+
+    local function BudgetChanged(self)
+        self.budgetJob:Request()
+    end
+
+    local function BudgetCombat(self)
+        StopBudget(self)
+        self.context:Event("PLAYER_REGEN_ENABLED", M.Refresh, IN_COMBAT)
+    end
+
+    local function StartBudget(self)
+        if not TrainerOpen(self) then return end
+        local context = self.context
+        context:Event("PLAYER_MONEY", PaintBudget, IN_COMBAT)
+        context:Event("TRAINER_UPDATE", BudgetChanged, IN_COMBAT)
+        context:Event("TRAINER_SERVICE_INFO_NAME_UPDATE", BudgetChanged, IN_COMBAT)
+        context:Event("TRAINER_CLOSED", StopBudget, IN_COMBAT)
+        context:Event("PLAYER_REGEN_DISABLED", BudgetCombat, IN_COMBAT)
+        self.budgetJob:Request()
+    end
+
+    function M:Refresh()
+        local frame, train = ClassTrainerFrame, ClassTrainerTrainButton
+        if not frame or not train or NS.Safety.IsForbidden(frame) or NS.Safety.IsForbidden(train) then return end
+        if NS.IsCombatLocked() then
+            self.context:Event("PLAYER_REGEN_ENABLED", M.Refresh, IN_COMBAT)
+            return
+        end
+        self.context:RemoveEvent("PLAYER_REGEN_ENABLED")
+        if not self.budget then
+            local label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            label:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 157, 4)
+            label:SetPoint("BOTTOMRIGHT", train, "BOTTOMLEFT", -4, 4)
+            label:SetJustifyH("CENTER")
+            label:SetMaxLines(2)
+            label:Hide()
+            self.budget = label
+            frame:HookScript("OnShow", function() if M.active then StartBudget(M) end end)
+            frame:HookScript("OnHide", function() if M.active then StopBudget(M) end end)
+        end
+        self.context:RemoveEvent("ADDON_LOADED")
+        StartBudget(self)
+    end
+
+    local function BudgetAddonLoaded(self, _, addon)
+        if addon == "Blizzard_TrainerUI" then self:Refresh() end
+    end
+
+    function M:Enable()
+        self.budgetJob = self.context:Coalesce(0, UpdateBudget)
+        self.context:Event("ADDON_LOADED", BudgetAddonLoaded, IN_COMBAT)
+        self:Refresh()
+    end
+
+    function M:Disable()
+        self.context:RemoveEvent("ADDON_LOADED")
+        StopBudget(self)
+    end
+
+    S.Install("trainerLearnAll", M)
+    return
+end
+
 local function Service(index)
     local name, kind, icon, level = GetTrainerServiceInfo(index)
     kind = S.PublicText(kind)

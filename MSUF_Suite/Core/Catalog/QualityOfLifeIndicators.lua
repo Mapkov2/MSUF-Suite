@@ -51,6 +51,9 @@ B.Section("xpBar", "xp_bar", "Experience bar", {
     B.Color("customBorder", "Custom style: border and text color", "aab8c4"),
 })
 
+B.Add("xpBar", Bool("foreverOptimizer", "Forever XP Optimizer", false), "xp_bar", "Experience bar",
+    { hidden = not NS.Client.isForever })
+
 -- The native player aura buttons keep Blizzard ownership and interactions.
 B.Module("playerAuras", {
     title = "Player aura layout", description = "Style native player buffs and debuffs beside the minimap.",

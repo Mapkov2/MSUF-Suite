@@ -41,8 +41,73 @@ local function AddSaved(menu, edit)
     end
 end
 
-function Search.Menu(button, edit)
+local function TransferSource(view, transfer)
+    if not transfer or not view.context.transactions or view.context.query ~= view.smartQuery then return end
+    local ready, bankType = transfer:CanBatch()
+    if not ready then return end
+    local selected = view.selected
+    if selected == "keyring" then return end
+    if view ~= P.InventoryView then
+        local mode = P.BagsModule.config.bankView
+        if mode == NS.BagsBankView.CHARACTER and bankType ~= Enum.BankType.Character
+            or mode == NS.BagsBankView.WARBANK and bankType ~= Enum.BankType.Account then return end
+        local tab = view.renderedTab
+        if tab then
+            local container = view.index.containers[tab]
+            if selected == "tab:" .. tab and container and container.bankType == bankType then return bankType end
+            return
+        end
+    end
+    if selected ~= view.context.selected then return end
+    if selected and selected ~= "all" then return bankType end
+    if view.smartQuery and view.smartQuery:find("%S") and NS.InventoryRules.HasTerms(view.model.queryRule) then return bankType end
+end
+
+local function TransferMatches(view, transfer, direction, bankType)
+    if not view.frame:IsVisible() or TransferSource(view, transfer) ~= bankType then return end
+    local items = {}
+    local all = view.selected == nil or view.selected == "all" or view.renderedTab ~= nil
+    for _, group in ipairs(view.model.groups) do
+        if group.visible then
+            for _, row in ipairs(group.rows) do
+                local item = row.item
+                if item.itemID and row.stacks == 1 and (not all or not row.alias)
+                    and (direction == "deposit" or item.bankType == bankType) then items[#items + 1] = item end
+            end
+        end
+    end
+    transfer:Batch(items, direction)
+end
+
+local function AddInventoryTools(menu, button, view)
+    local isBag = view == P.InventoryView
+    local direction = isBag and "deposit" or "withdraw"
+    local transfer = S.instances and S.instances.bankTransfer
+    local bankType = TransferSource(view, transfer)
+    if bankType then
+        local label = S.Text(isBag and "Deposit matching stacks" or "Withdraw matching stacks")
+        local selected, query, profile = view.selected, view.smartQuery, NS.DB
+        menu:CreateButton(label, function()
+            if selected == view.selected and query == view.smartQuery and profile == NS.DB then
+                TransferMatches(view, transfer, direction, bankType)
+            end
+        end)
+    end
+    local archive = S.InventoryArchive
+    if archive and archive.active then
+        menu:CreateButton(S.Text("Inventory archive"), function()
+            if archive.active then archive:Browse(isBag and "bags" or "bank") end
+        end)
+    end
+    if isBag then
+        menu:CreateButton(S.Text("Sort bag slots"), function() P.InventoryActions.SortMenu(button) end)
+    end
+    if isBag or archive and archive.active or bankType then menu:CreateDivider() end
+end
+
+function Search.Menu(button, edit, view)
     P.BagFilterMenu.Show(button, function(_, menu)
+        if view then AddInventoryTools(menu, button, view) end
         menu:CreateTitle(S.Text("Smart search presets"))
         for i = 1, #PRESETS do
             local preset = PRESETS[i]
@@ -84,7 +149,7 @@ function Search.Create(view, request, parent, place)
         request()
     end)
     edit:SetScript("OnEscapePressed", function(self) self:SetText("") self:ClearFocus() end)
-    local button = P.GridView.Button(parent, "Filters", 80, function(self) Search.Menu(self, edit) end)
+    local button = P.GridView.Button(parent, "Filters", 80, function(self) Search.Menu(self, edit, view) end)
     place = place or PlaceInBag
     place(edit, button)
     view.smartSearch, view.filterButton = edit, button

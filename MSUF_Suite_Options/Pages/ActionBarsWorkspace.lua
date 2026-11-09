@@ -4,13 +4,20 @@ local Page = {}
 P.ActionBarMenu = Page
 local selectedTab = "shared"
 local details = {}
-local GROUPS = {
-    { id = "shared", label = "All action bars", sections = "actionbars_module keyAudit_module look appearance cooldowns text behavior" },
-    { id = "layout", label = "Layout", sections = "editor bar_layout" },
-    { id = "text", label = "Text", sections = "bar_text" },
-    { id = "visibility", label = "Visibility", sections = "bar_visibility" },
-    { id = "appearance", label = "Appearance", sections = "bar_background bar_ornaments" },
-}
+local groups
+local function Groups()
+    if not groups then
+        groups = {
+            { id = "shared", label = "All action bars",
+                sections = "actionbars_module account_transfer keyAudit_module look appearance cooldowns text behavior" },
+            { id = "layout", label = "Layout", sections = "editor bar_layout" },
+            { id = "text", label = "Text", sections = "bar_text" },
+            { id = "visibility", label = "Visibility", sections = "bar_visibility" },
+            { id = "appearance", label = "Appearance", sections = "bar_background bar_ornaments" },
+        }
+    end
+    return groups
+end
 
 function Page.IsShared(ctx)
     local workspace = ctx._msufSuiteActionBarWorkspace
@@ -19,7 +26,7 @@ end
 
 local function GroupFor(sectionId)
     local suffix = sectionId:match("^suite_actionbars_(.+)$")
-    for _, spec in ipairs(GROUPS) do
+    for _, spec in ipairs(Groups()) do
         for name in spec.sections:gmatch("%S+") do if name == suffix then return spec end end
     end
 end
@@ -228,7 +235,7 @@ function Page.Finish(ctx)
     local workspace = ctx._msufSuiteActionBarWorkspace
     if not workspace then return end
     local values, panels = {}, {}
-    for _, spec in ipairs(GROUPS) do
+    for _, spec in ipairs(Groups()) do
         if workspace.groups[spec.id] then
             values[#values + 1] = { value = spec.id, text = Tr(spec.label) }
             panels[spec.id] = workspace.groups[spec.id].frame

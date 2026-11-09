@@ -31,12 +31,12 @@ local function ToolsExtra(ctx, body, y, width)
         end
         return values
     end
-    local function History(clear)
+    local function History(clear, whispers)
         if P.Combat() then return end
         if not P.S.instances.chat then C_AddOns.LoadAddOn("MSUF_Suite_Chat") end
         local chat = P.S.instances.chat
         if not chat then return end
-        if clear then chat:ClearHistory() else chat:OpenHistory() end
+        if clear then chat:ClearHistory() else chat:OpenHistory(whispers) end
     end
     local row = P.Meta(PAGE, ID, "timestamp", "setting", PAGE .. "_tools")
     row.id, row.label, row.kind = "timestamp", Tr("Timestamps (Blizzard setting)"), "dropdown"
@@ -51,7 +51,9 @@ local function ToolsExtra(ctx, body, y, width)
     end, function() return not P.Combat() end, P.Meta(PAGE, ID, "clearHistory", "action", PAGE .. "_tools"))
     P.Button(ctx, body, "Search saved chat", 16, grid.bottomY - 36, width, function() History(false) end,
         function() return not P.Combat() end, P.Meta(PAGE, ID, "searchHistory", "action", PAGE .. "_tools"))
-    return grid.bottomY - 76
+    P.Button(ctx, body, "Open whisper archive", 16, grid.bottomY - 72, width, function() History(false, true) end,
+        function() return not P.Combat() end, P.Meta(PAGE, ID, "whisperArchive", "action", PAGE .. "_tools"))
+    return grid.bottomY - 112
 end
 
 local function ImmersiveButton(ctx)
@@ -85,8 +87,12 @@ local function ImmersiveButton(ctx)
     end
 end
 
--- The sections after Chat tools: a sound per channel and the keyword highlight.
+-- The storage and filter sections sit with the other message tools.
 local function BuildMessageSections(ctx, b)
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_historyRules", Tr("What to save"),
+        P.SectionRules(ID, "historyRules"))
+    P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_spamFilterRules", Tr("Public chat spam filter"),
+        P.SectionRules(ID, "spamFilterRules"))
     P.ChatPreviewPositions.CoordinateSection(ctx, b, PAGE .. "_sounds", Tr("Channel sounds"),
         P.SectionRules(ID, "sounds"), {
             help = "A channel plays a sound kit ID or a sound file (the file wins) for new messages. A burst plays once. Whisper is under Chat tools.",

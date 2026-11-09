@@ -94,21 +94,22 @@ local function Input(parts)
     parts.inputFill, parts.inputEdges = parts.visual.input, parts.visual.inputEdges
 end
 
-local function Messages(parts)
+local function Messages(parts, config)
     local texts = parts.messageTexts or {}
     parts.messageTexts = texts
     local count = 0
     for text in (parts.text or ""):gmatch("[^\n]+") do count = count + 1 texts[count] = text end
     count = math.min(count, #parts.messageLines)
+    local spacing = C.MessageSpacing(config, parts.messageSpacing or 0)
     local point, opposite = parts.insertTop and "TOPLEFT" or "BOTTOMLEFT", parts.insertTop and "BOTTOMLEFT" or "TOPLEFT"
     for index, line in ipairs(parts.messageLines) do
         line:ClearAllPoints()
         if index == 1 then line:SetPoint(point, parts.sample, point, 0, 0)
         else
             line:SetPoint(point, parts.messageLines[index - 1], opposite, 0,
-                (parts.messageSpacing or 0) * (parts.insertTop and -1 or 1))
+                spacing * (parts.insertTop and -1 or 1))
         end
-        line:SetSpacing(parts.messageSpacing or 0)
+        line:SetSpacing(spacing)
         line:SetText(index <= count and texts[count - index + 1] or "")
         line:SetTextColor(1, 1, 1, 1)
         line:SetShown(index <= count)
@@ -132,7 +133,7 @@ function S.ChatPaintMenuPreview(parts, c)
     local visual = Surface(parts)
     parts.previewOwner = parts.previewOwner or PreviewOwner()
     parts.previewOwner.config = c
-    Messages(parts)
+    Messages(parts, c)
     if parts.quickHeight and parts.quickHeight > 0 then
         parts.quickBar = parts.quickBar or CreateFrame("Frame", nil, parts.sample)
         parts.quickBar:SetHeight(parts.quickHeight)

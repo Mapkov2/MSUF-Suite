@@ -1956,7 +1956,12 @@ if simulateForever then
     local restoredCard = cards[1]
     function book:Update() restoredCard.Background:SetAlpha(1) end
     _G.ProfessionsFrame = root
+    function root:IsProtected() return true, false end
+    root:Hide()
+    book:Hide()
     namespace.DeepWindows.Apply("forever-professions-contract")
+    assert(not root:IsShown() and not book:IsShown() and namespace.Registry.GetSurface(root),
+        "Forever's protected profession shell did not prepare while closed")
     assert(background:GetAlpha() == 0,
         "Forever crafting-page atlas retained its native art")
     for _, card in ipairs(cards) do
@@ -1971,9 +1976,9 @@ if simulateForever then
         bookPasses = bookPasses + 1
         return applyFrame(...)
     end
+    InCombatLockdown = function() return true end
     root:Show()
     book:Show()
-    InCombatLockdown = function() return true end
     book:Update()
     assert(restoredCard.Background:GetAlpha() == 0 and bookPasses == 0,
         "combat update left the visible profession card native or repeated a frame pass")

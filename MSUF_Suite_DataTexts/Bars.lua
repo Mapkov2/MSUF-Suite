@@ -12,6 +12,33 @@ local M = P.DataTexts
 local SLOT_COUNT = P.SLOT_COUNT
 local BADGE = "Interface\\AddOns\\MSUF_Suite_DataTexts\\Media\\BagMedallion.tga"
 local VISIBILITY = NS.DataTextVisibility
+local DELETE_OUTLINE = { edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 }
+local deleteOutline, highlightedBar
+
+function M:SetDeleteHover(index)
+    local bar = index and self.active and self.bars[index] or nil
+    if bar and (NS.InCombat() or not bar.frame:IsVisible()) then bar = nil end
+    if highlightedBar == bar then return end
+    highlightedBar = bar
+    if not bar then
+        deleteOutline:Hide()
+        return
+    end
+    if not deleteOutline then
+        deleteOutline = S.CreateFrame("Frame", nil, bar.frame, "BackdropTemplate")
+        deleteOutline:SetBackdrop(DELETE_OUTLINE)
+        deleteOutline:SetBackdropBorderColor(1, .82, .36, 1)
+        deleteOutline:SetIgnoreParentAlpha(true)
+    else
+        deleteOutline:SetParent(bar.frame)
+    end
+    deleteOutline:ClearAllPoints()
+    deleteOutline:SetAllPoints(bar.frame)
+    -- Above the options window and below its delete picker.
+    deleteOutline:SetFrameStrata("FULLSCREEN")
+    deleteOutline:Show()
+end
+
 -- Per-bar setting names, built once so event paths never concatenate keys.
 local BAR_KEYS = {}
 local function BarKeys(i)
@@ -179,6 +206,7 @@ function Bars.Create(index)
     if M.bars[index] then return M.bars[index] end
     local recycled = table.remove(M.pool)
     if recycled then
+        if highlightedBar == recycled then M:SetDeleteHover() end
         AssignBarKeys(recycled, index)
         recycled.hover = false
         M.bars[index] = recycled

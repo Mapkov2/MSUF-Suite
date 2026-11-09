@@ -8,20 +8,42 @@ local S = P.Suite
 -- :1549). Without a saved selection the base config stands for the build;
 -- 0 is the starter build, which a saved expectation reads as "any".
 local function SelectedBuild(specID)
-    if C_ClassTalents.GetStarterBuildActive() == true then return 0, S.Text("Starter build") end
-    local configID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
-    if not S.Finite(configID) or configID <= 0 then configID = C_ClassTalents.GetActiveConfigID() end
-    if not S.Finite(configID) or configID <= 0 then return 0, S.Text("Starter build") end
+    local starter = C_ClassTalents.GetStarterBuildActive()
+    if S.Public(starter) and starter == true then return 0, S.Text("Starter build"), "starter" end
+    local selected = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+    local hasSelection = S.Finite(selected) and selected > 0
+    local selectionKnown = S.Public(starter) and S.Public(selected)
+    local fallback = selectionKnown and "default" or nil
+    local configID = hasSelection and selected or C_ClassTalents.GetActiveConfigID()
+    if not S.Finite(configID) or configID <= 0 then return 0, S.Text("Starter build"), fallback end
     local info = C_Traits.GetConfigInfo(configID)
     local buildName = S.Public(info) and type(info) == "table" and S.PublicText(info.name) or nil
-    return configID, buildName or S.Text("Starter build")
+    if hasSelection then
+        local key = selectionKnown and buildName and tostring(configID) or nil
+        return configID, buildName or S.Text("Starter build"), key, buildName
+    end
+    return configID, buildName or S.Text("Starter build"), fallback
+end
+
+local function CurrentSpecialization()
+    local index = C_SpecializationInfo.GetSpecialization()
+    if not S.Finite(index) or index < 1 then return nil end
+    local specID, name = C_SpecializationInfo.GetSpecializationInfo(index)
+    if S.Finite(specID) then return specID, S.PublicText(name) end
+end
+
+-- The selection key is local to the current character and stable across
+-- renames. An explicit custom name is available only for a saved loadout.
+function S.CurrentTalentLoadout()
+    local specID, specName = CurrentSpecialization()
+    if not specID or specID <= 0 then return nil end
+    local _, buildName, selection, customName = SelectedBuild(specID)
+    return specID, customName or (selection == "starter" and buildName) or specName, selection, customName
 end
 
 function S.LoadoutSnapshot()
-    local specIndex = C_SpecializationInfo.GetSpecialization()
-    if not S.Finite(specIndex) or specIndex < 1 then return nil end
-    local specID, specName = C_SpecializationInfo.GetSpecializationInfo(specIndex)
-    if not S.Finite(specID) or not S.PublicText(specName) then return nil end
+    local specID, specName = CurrentSpecialization()
+    if not specID or not specName then return nil end
 
     local configID, buildName = SelectedBuild(specID)
 
@@ -36,5 +58,5 @@ function S.LoadoutSnapshot()
         lootName = S.PublicText(name)
         effectiveLootID = lootID
     end
-    return configID, buildName, effectiveLootID, lootName
+    return configID, buildName, effectiveLootID, lootName, specID, specName, lootID
 end

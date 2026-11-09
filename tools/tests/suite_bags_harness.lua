@@ -25,8 +25,8 @@ local function Clear(t) for key in pairs(t) do t[key] = nil end end
 
 ---------------------------------------------------------------- Blizzard's frames
 -- Blizzard's ContainerFrameItemButtonTemplate: its scripts are native code.
-local function ItemButton(W, env, parent, index)
-    local button = env.NewWidget("ItemButton", "ContainerFrameCombinedBagsItem" .. index, parent, true)
+local function ItemButton(W, env, parent, index, button)
+    button = button or env.NewWidget("ItemButton", "ContainerFrameCombinedBagsItem" .. index, parent, true)
     button.guarded = not W.unprotectedBags
     button.width, button.height = 37, 37
     button.Count = button:CreateFontString(nil, "ARTWORK")
@@ -42,7 +42,15 @@ local function ItemButton(W, env, parent, index)
         self.icon:SetShown(texture ~= nil)
         self.icon.texture = texture
     end
-    function button:Initialize(bag, slot)
+    function button:SetHasItem(icon) self.hasItem = icon ~= nil end
+    function button:SyncAppearanceWithHasItem()
+        if not self:HasItem() then self:SetItemButtonTexture(nil) end
+    end
+    function button:SetReadable(readable) self.readable = readable end
+    function button:UpdateCooldown() self.cooldowns = (self.cooldowns or 0) + 1 end
+    function button:Initialize(container, bag, slot)
+        self.containerFrame = container
+        self:SetAttribute("bagid", bag)
         self.bagID = bag
         self:SetID(slot)
         self:Show()
@@ -124,7 +132,7 @@ local function CombinedBag(W, env)
                 local button = self.pool[index] or ItemButton(W, env, self, index)
                 self.pool[index] = button
                 self.Items[index] = button
-                button:Initialize(bag, size - i + 1)
+                button:Initialize(self, bag, size - i + 1)
             end
         end
     end
@@ -276,12 +284,12 @@ end
 
 local function Bank(W, env)
     local bank = env.NewWidget("Frame", "BankFrame", W.UIParent, true)
-    bank.shown, bank.width, bank.height = false, 738, 460
+    bank.shown, bank.width, bank.height = false, env.forever and 480 or 738, 460
     bank:SetPoint("TOPLEFT", W.UIParent, "TOPLEFT", 20, -100)
     -- Retail and WoW Forever (Camelot/BankFrame.xml) both build BankPanel from
     -- BankPanelTemplate: the panel methods the item level overlay hooks.
     local panel = env.NewWidget("Frame", "BankPanel", bank, true)
-    panel.width, panel.height, panel.bankType = 738, 460, Enum.BankType.Character
+    panel.width, panel.height, panel.bankType = bank.width, 460, Enum.BankType.Character
     panel:SetPoint("LEFT", bank, "LEFT", 0, 0)
     bank.BankPanel = panel
     function panel:EnumerateValidItems() return function() end end
@@ -289,10 +297,6 @@ local function Bank(W, env)
     function panel:GenerateItemSlotsForSelectedTab() end
     function panel:GetActiveBankType() return self.bankType end
     function bank:GetActiveBankType() return self.BankPanel:IsShown() and self.BankPanel:GetActiveBankType() or nil end
-    if env.forever then
-        panel.bankType = nil
-        return bank
-    end
     bank.TabSystem = env.NewWidget("Frame", nil, bank, true)
     bank.TabSystem:SetPoint("TOPLEFT", bank, "BOTTOMLEFT", 22, 2)
     bank.TabSystem.width, bank.TabSystem.height = 300, 32
@@ -318,7 +322,11 @@ local function Bank(W, env)
         button.scripts.OnClick = function() bank:SetTab(id) end
         bank.tabButtons[id] = button
     end
-    function bank:GetTabButton(id) return self.tabButtons[id] end
+    function bank:GetTabButton(id)
+        assert(not env.forever, "Camelot uses native page tabs, not TabSystem")
+        return self.tabButtons[id]
+    end
+    if env.forever then bank.TabSystem = nil end
     -- The bank tabs a test buys: W.bankTabs[type] = { { ID =, name = }, ... }.
     W.bankTabs = { [Enum.BankType.Character] = {}, [Enum.BankType.Account] = {} }
     C_Bank = {
@@ -364,6 +372,7 @@ function H.BuildClient(W, env)
     W.GameTooltip = Tooltip(W, env)
     W.StackSplitFrame = StackSplit(W, env)
     W.CF = CombinedBag(W, env)
+    W.templates.ContainerFrameItemButtonTemplate = function(button) ItemButton(W, env, nil, nil, button) end
     W.NativeSearch = env.NewWidget("EditBox", "BagItemSearchBox", W.CF, true)
     W.NativeSort = env.NewWidget("Button", "BagItemAutoSortButton", W.CF, true)
     W.NativeSearch.mouse, W.NativeSort.mouse = true, true
@@ -818,6 +827,7 @@ function H.New(root, options)
     W.UIParent = NewWidget("Frame", "UIParent", nil, true)
     _G.GetInventoryItemTexture = function(_, id) return 1000 + id end
     _G.SetItemButtonTexture = function(button, texture) button.icon:SetTexture(texture) end
+    _G.SetItemButtonQuality = function(button, quality) button.quality = quality end
     _G.CreateColor = function(r,g,b,a) return {r=r,g=g,b=b,a=a} end
     W.UIParent.width, W.UIParent.height = W.screenWidth, W.screenHeight
     UIParent = W.UIParent
@@ -1105,7 +1115,7 @@ function H.New(root, options)
         GetContainerItemQuestInfo = function(bag, slot)
             W.calls.quest = W.calls.quest + 1
             local item = W.Item(bag, slot)
-            return { isQuestItem = item and item.quest == true or false }
+            return { isQuestItem = item and item.quest == true or false, isActive = false }
         end,
         GetBagName = function(bag) return bag == 0 and "Backpack" or "Bag " .. bag end,
         GetContainerItemLink = function(bag, slot) local item = W.Item(bag, slot); return item and item.link end,

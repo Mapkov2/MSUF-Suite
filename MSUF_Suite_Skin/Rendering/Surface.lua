@@ -77,19 +77,21 @@ local function ApplyFill(texture, material, state)
     local toR = from[1] + (to[1] - from[1]) * strength
     local toG = from[2] + (to[2] - from[2]) * strength
     local toB = from[3] + (to[3] - from[3]) * strength
-    local toA = from[4] + (to[4] - from[4]) * strength
+    local opaque = state.spec.opaqueFill == true
+    local fromA = opaque and 1 or from[4] * opacity
     texture:SetVertexColor(1, 1, 1, 1)
     if NS.DB.theme.gradient then
         -- Still call SetGradient every time to repair native resets.
-        state.gradientFrom = NS.Theme.ReuseColor(state.gradientFrom, from[1], from[2], from[3], from[4] * opacity)
-        state.gradientTo = NS.Theme.ReuseColor(state.gradientTo, toR, toG, toB, toA * opacity)
+        local toA = opaque and 1 or (from[4] + (to[4] - from[4]) * strength) * opacity
+        state.gradientFrom = NS.Theme.ReuseColor(state.gradientFrom, from[1], from[2], from[3], fromA)
+        state.gradientTo = NS.Theme.ReuseColor(state.gradientTo, toR, toG, toB, toA)
         texture:SetGradient(
             NS.DB.theme.gradientDirection or "VERTICAL",
             state.gradientFrom,
             state.gradientTo
         )
     else
-        texture:SetVertexColor(from[1], from[2], from[3], from[4] * opacity)
+        texture:SetVertexColor(from[1], from[2], from[3], fromA)
     end
 end
 

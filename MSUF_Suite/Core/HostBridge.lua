@@ -775,14 +775,13 @@ function HostBridge.ResourceStackNeedsRepair(profile, force)
         and (player.powerBarDetached == true and player.detachedPowerBarAnchorToClassPower == true
             or profile == "forever" and bars.classPowerOffsetY == -41))
 end
-
 function HostBridge.CooldownAnchor()
     local db = _G.MSUF_DB
     local general = type(db) == "table" and db.general or nil
     local wants = type(general) == "table" and general.anchorToCooldown == true
     return wants, wants and type(_G.MSUF_GetSuiteCooldownAnchor) == "function"
 end
--- Resolve legacy host profile operations at use time, including replaced providers.
+-- Resolve host profile operations at use time, including replaced providers.
 local PROFILE_METHODS = {
     ApplyCurrentProfileGlobalUiScale = "MSUF_ApplyCurrentProfileGlobalUiScale",
     DeleteProfile = "MSUF_DeleteProfile",
@@ -797,7 +796,8 @@ local PROFILE_METHODS = {
 }
 HostBridge.Profiles = setmetatable({}, { __index = function(_, operation)
     local name = PROFILE_METHODS[operation]
-    local callback = name and _G[name]
+    local api = operation == "BeginImport" and HostTable()
+    local callback = name and _G[name] or api and api.Profiles_BeginImport
     return type(callback) == "function" and callback or nil
 end })
 function HostBridge.ActiveFrameProfileName() return _G.MSUF_ActiveProfile end

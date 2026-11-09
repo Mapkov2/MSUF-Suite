@@ -181,6 +181,30 @@ local function OnFindGroupEnter(button)
     GameTooltip:SetText(search and TOOLTIP_TRACKER_FIND_GROUP_BUTTON or Tr("Open group finder"))
     GameTooltip:Show()
 end
+local function ToggleEntry(self, owner)
+    local key = owner.collapseKey
+    local closing = not self.collapsedEntries[key]
+    local animate = self.config.animateQuestCollapse ~= false and Finite(owner.questID)
+        and not NS.InCombat() and self.host:IsVisible() and not self.host:IsProtected()
+        and (not S.HostBridge or not S.HostBridge.MenuReducedMotion())
+    local body = self.questMotion
+    if animate and body and body.owner == owner then
+        self.collapsedEntries[key] = closing or nil
+        O.AimQuestMotion(body, closing)
+        return
+    end
+    if O.StopQuestMotion(self) then Render(self) end
+    self.collapsedEntries[key] = closing or nil
+    if not animate then
+        Render(self)
+    elseif not closing then
+        Render(self)
+        O.StartQuestMotion(self, owner, false)
+    elseif not O.StartQuestMotion(self, owner, true) then
+        Render(self)
+    end
+end
+
 local function OnCollapseClick(button, mouseButton)
     local owner = button.ownerRow
     if mouseButton == "RightButton" then
@@ -190,9 +214,7 @@ local function OnCollapseClick(button, mouseButton)
     if owner.kind == "section" then
         ToggleGroup(M, owner.group)
     elseif owner.collapseKey then
-        local base = owner.collapseKey
-        M.collapsedEntries[base] = not M.collapsedEntries[base] or nil
-        Render(M)
+        ToggleEntry(M, owner)
     end
 end
 
@@ -643,12 +665,12 @@ end
 -- The rows to show, in order, from the grouped entries (an Edit Mode preview
 -- line while nothing is tracked). Returns the list, its length and the
 -- number of entries.
-local function BuildFlat(self, c)
-    local grouped = GroupEntries(self)
+local function BuildFlat(self, c, grouped, closingKey)
     local flat, flatCount, totalEntries = self.flatWork or {}, 0, 0
     for i = 1, #ORDER do
         local group = ORDER[i]
-        flatCount = AddFlat(flat, flatCount, group, grouped[group], c, self.collapsedGroups, self.collapsedEntries, GROUP, SECTION_KEYS)
+        flatCount = AddFlat(flat, flatCount, group, grouped[group], c, self.collapsedGroups,
+            self.collapsedEntries, GROUP, SECTION_KEYS, closingKey)
         totalEntries = totalEntries + #grouped[group]
     end
     if flatCount == 0 and S.editMode then
@@ -663,7 +685,7 @@ end
 
 -- Whether the rows differ from the previous layout; an unchanged tracker
 -- stops there.
-local function LayoutChanged(self, c, flat, flatCount, previous, themeChanged)
+local function LayoutChanged(self, c, flat, flatCount, previous, themeChanged, motion)
     local geometryChanged = self.lastWidth ~= c.width or self.lastHeight ~= c.height
         or self.lastScale ~= c.scale or self.lastX ~= c.x or self.lastY ~= c.y
         or self.lastEditMode ~= S.editMode
@@ -671,7 +693,12 @@ local function LayoutChanged(self, c, flat, flatCount, previous, themeChanged)
         return true
     end
     for i = 1, flatCount do
-        if not SameItem(flat[i], previous[i]) then return true end
+        if not SameItem(flat[i], previous[i]) then
+            -- A running countdown's recomputed deadline can shift without
+            -- changing the row layout. Paint it after the transition.
+            if not motion or not SameItem(flat[i], previous[i], true) then return true end
+            motion.refreshAfter = true
+        end
     end
     return false
 end
@@ -703,7 +730,7 @@ local function PaintRows(self, c, flat, flatCount, previous, themeChanged)
     return y
 end
 
-Render = function(self)
+Render = function(self, finishMotion)
     if not self.active then return end
     local c = self.config
     if self.raidActive and self.raid then
@@ -716,12 +743,23 @@ Render = function(self)
         return
     end
     if self.mplus then self.mplus.frame:Hide() end
-    local flat, flatCount, totalEntries = BuildFlat(self, c)
+    local body = self.questMotion
+    -- Keep the closing entry projected open while checking for real data changes.
+    local motion = not finishMotion and body and body.owner and body
+    local closingKey = motion and body.targetHeight == 0 and body.owner.collapseKey
+    local grouped = GroupEntries(self)
+    local flat, flatCount, totalEntries = BuildFlat(self, c, grouped, closingKey)
     local previous = self.previousFlat
     local themeChanged = self.retheme or not self.font
-    if not LayoutChanged(self, c, flat, flatCount, previous, themeChanged) then
+    if not LayoutChanged(self, c, flat, flatCount, previous, themeChanged, motion) then
         self.flatWork = flat
         return
+    end
+    if body and body.owner then
+        O.StopQuestMotion(self, true)
+        if closingKey and self.collapsedEntries[closingKey] then
+            flat, flatCount, totalEntries = BuildFlat(self, c, grouped)
+        end
     end
     self.previousFlat, self.flatWork = flat, previous or {}
     self.layoutDirty = nil

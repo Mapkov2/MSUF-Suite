@@ -168,6 +168,7 @@ local function LoadChat(name)
 end
 LoadChat("Positions")
 LoadChat("Floating")
+LoadChat("SpamFilter")
 LoadChat("Controller")
 local module = chat.M
 module.config, module.active = config, true
@@ -521,6 +522,7 @@ local SECRET = setmetatable({}, { __tostring = function() error("secret formatte
 local clock, printed, asked = 1000, {}, {}
 local homeRaid, instanceRaid = false, false
 GetTime = function() return clock end
+GetServerTime = function() return clock end
 wipe = function(t) for key in pairs(t) do t[key] = nil end return t end
 LE_PARTY_CATEGORY_HOME, LE_PARTY_CATEGORY_INSTANCE = 1, 2
 IsInRaid = function(category)

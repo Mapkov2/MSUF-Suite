@@ -7,11 +7,12 @@ local CLASSES = { "DRUID", "MAGE", "PRIEST", "SHAMAN", "WARRIOR", "EVOKER" }
 R.BUFF_CLASSES = CLASSES
 -- Settings whose change forces a full group refresh.
 local GROUP_OPTIONS = { "groupBuff", "classBuff", "otherClassBuffs", "healthstoneFromWarlock",
-    "soulstoneOnAlly", "beaconOnAlly" }
+    "soulstoneOnAlly", "beaconOnAlly", "onlyInRange" }
 -- Member events arrive in bursts (buffing before a pull, a busy city, a
 -- roster storm). They only mark their unit; one pass this much later
 -- refreshes the marked units and the display once, without item counts.
 local FLUSH_DELAY = 0.1
+local RANGE_EVENT = "UNIT_IN_RANGE_UPDATE"
 
 function R.WantsGroup(self)
     local c = self.config
@@ -84,7 +85,10 @@ function R.GroupRoster(self)
     Clear(classes)
     group.allies = R.WantsAllies(self)
     if R.WantsGroup(self) then FillRoster(roster) end
-    if not SameMembers(group.units, roster) then group.listChanged = true end
+    if not SameMembers(group.units, roster) then
+        group.listChanged = true
+        self.list.needsFullRefresh = true
+    end
     group.units, group.unitList = roster.units, roster.list
     for unit in pairs(roster.units) do
         local _, class = UnitClass(unit)
@@ -113,6 +117,67 @@ local function Eligible(unit)
     local exists, connected, visible, dead = UnitExists(unit), UnitIsConnected(unit), UnitIsVisible(unit), UnitIsDeadOrGhost(unit)
     return Public(exists) and exists == true and Public(connected) and connected == true
         and Public(visible) and visible == true and Public(dead) and dead == false
+end
+
+local function RangeEligible(unit)
+    if not Eligible(unit) then return false end
+    local phase = UnitPhaseReason(unit)
+    return Public(phase) and phase == nil
+end
+
+local function ReadMemberRange(unit, cached)
+    if unit == "player" or not RangeEligible(unit) then return nil end
+    if cached ~= nil then return cached end
+    local inRange, checked = UnitInRange(unit)
+    if Public(checked) and (checked == true or checked == 1) and Public(inRange) then return inRange end
+end
+
+-- Consume the same native range result as MSUF's group frames. Only a
+-- member without a prior readable sample may need its auras read on entry.
+local function RangeChanged(self, _, unit, inRange)
+    local group = self.group
+    local range = group.range
+    if not range or not Public(unit) or unit == "player" or not group.units[unit] then return end
+    if not Public(inRange) then inRange = nil end
+    local before = range[unit]
+    if inRange == before or (before == nil and (inRange ~= true or not RangeEligible(unit))) then return end
+    range[unit] = inRange
+    if (before == true) ~= (inRange == true) then
+        R.QueueMemberWork(self, before == nil and unit or nil)
+    end
+end
+
+local function HasRangeReminder(self)
+    local group = self.group
+    if group.soulstoneKnown or group.beaconLightKnown or group.beaconFaithKnown then return true end
+    for _, entry in ipairs(self.list.entries) do
+        if entry.group then return true end
+    end
+    return false
+end
+
+function R.SyncRange(self, allowed)
+    local group = self.group
+    if allowed and self.config.onlyInRange and self.listen.aura == "group" and #group.unitList > 1
+        and HasRangeReminder(self) then
+        if group.range then return end
+        group.range = {}
+        R.Listen(self, RANGE_EVENT, RangeChanged, group.unitList)
+    elseif group.range then
+        group.range = nil
+        self.context:RemoveEvent(RANGE_EVENT)
+    end
+end
+
+function R.CanRemindAlly(self)
+    if not self.config.onlyInRange then return true end
+    local range = self.group.range
+    if range then
+        for _, inRange in pairs(range) do
+            if inRange == true then return true end
+        end
+    end
+    return false
 end
 
 local function Listed(ids, id)
@@ -248,7 +313,16 @@ function R.RefreshGroup(self, changedUnit)
     if changedUnit and not units[changedUnit] then return end
     RefreshOwnBuffs(self, changedUnit)
     if group.allies then RefreshAllies(self, changedUnit) end
-    if not self.config.groupBuff then return end
+    local config = self.config
+    if not changedUnit and (config.onlyInRange or group.range) then
+        R.SyncRange(self, true)
+        local range = group.range
+        if range then
+            Clear(range)
+            for unit in pairs(units) do range[unit] = ReadMemberRange(unit) end
+        end
+    end
+    if not config.groupBuff then return end
     local _, class = UnitClass("player")
     local buff = Public(class) and R.ClassBuff(class)
     if not buff or not R.Known(buff.cast) then return end
@@ -293,14 +367,27 @@ function R.OwnGroupBuffTiming(self, entry, fullRefresh, updateInfo)
 end
 
 function R.GroupPresent(self, entry)
-    if entry.ally then return R.AllyPresent(entry) end
+    if entry.ally then
+        if not R.CanRemindAlly(self) then return true end
+        return R.AllyPresent(entry)
+    end
     local group = self.group
     local presence = group.presence
     local missing = 0
     if presence then
-        local classBuff = self.config.classBuff
-        for unit in pairs(group.units or {}) do
-            if (unit ~= "player" or classBuff) and presence[unit] == false then missing = missing + 1 end
+        local config = self.config
+        local classBuff = config.classBuff
+        if config.onlyInRange then
+            if classBuff and presence.player == false then missing = 1 end
+            if group.range then
+                for unit, inRange in pairs(group.range) do
+                    if inRange == true and presence[unit] == false then missing = missing + 1 end
+                end
+            end
+        else
+            for unit, present in pairs(presence) do
+                if present == false and (unit ~= "player" or classBuff) then missing = missing + 1 end
+            end
         end
     end
     entry.missingCount = missing
@@ -324,8 +411,10 @@ local function Flush(self)
         self:Update("all")
         return
     end
-    for unit in pairs(dirty) do
+    local range = group.range
+    for unit, refreshRange in pairs(dirty) do
         dirty[unit] = nil
+        if range and refreshRange and group.units[unit] then range[unit] = ReadMemberRange(unit, range[unit]) end
         R.RefreshGroup(self, unit)
     end
     self:Update("visual")
@@ -341,10 +430,10 @@ end
 
 -- Marks one member for the next pass. Member events come in bursts, so the
 -- common case only marks the unit.
-function R.QueueMemberWork(self, unit)
+function R.QueueMemberWork(self, unit, refreshRange)
     local group = self.group
     local dirty = group.dirty or NewDirty(self, group)
-    if unit then dirty[unit] = true end
+    if unit then dirty[unit] = dirty[unit] or refreshRange or false end
     group.pass:Request()
 end
 

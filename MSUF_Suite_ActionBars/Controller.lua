@@ -167,7 +167,7 @@ local BAR_WORK = {
     Size = { layout = true, style = true },
     HeightPercent = { layout = true, style = true },
     ClickThrough = { layout = true, visible = true },
-    Visibility = { visible = true },
+    Visibility = { visible = true, paging = true },
     HideGamepad = { visible = true, events = true },
     GroupOnly = { visible = true },
     ResumeVisibility = {},
@@ -245,13 +245,16 @@ local function Collect(config)
     local all = rebuild
     for i = 1, #WATCH_KEYS do
         local key = WATCH_KEYS[i]
-        local value = config[key]
-        if all or applied[key] ~= value then
+        local value, previous = config[key], applied[key]
+        if all or previous ~= value then
             applied[key] = value
             local index, flags = WATCH_BAR[i], WATCH_WORK[i]
             Merge(index == 0 and work or barWork[index], flags)
             -- The optional listeners are global work, also for a bar's rule.
-            if flags.events then work.events = true end
+            if flags.events or key == AB.KEYS[AB.ENUM.BAR.INDEPENDENT].Visibility then work.events = true end
+            if index ~= 0 and flags.paging and (previous == VIS.NEVER) ~= (value == VIS.NEVER) then
+                work.paging = true
+            end
         end
     end
     if all then
@@ -395,6 +398,8 @@ function M:Enable()
     if import and not AB.importQueued then QueueImport(import) end
     rebuild = true
     self:Refresh()
+    AB.Virtual.Start(self.context)
+    AB.StartSnapshots(self.context)
 end
 
 function M:Refresh()
@@ -443,6 +448,8 @@ end
 -- runs isolated (Dispatch), as Context:Release does: one that raises is
 -- reported and every later step still runs.
 function M:Disable()
+    Dispatch(AB.StopSnapshots)
+    Dispatch(AB.Virtual.Stop, self.context)
     Dispatch(AB.StopAssist)
     Dispatch(AB.StopDispatcher)
     AB.dispatching = nil

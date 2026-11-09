@@ -7,6 +7,9 @@ local Adapters = {
     waiting = {},
 }
 NS.Adapters = Adapters
+local PLAYER_SPELLS_ADDON = "Blizzard_PlayerSpells"
+local PROFESSIONS_ADDON = "Blizzard_Professions"
+local PROFESSIONS_BOOK_ADDON = "Blizzard_ProfessionsBook"
 local TrackMenuMotion, ReleaseMenuMotion = function() end, function() end
 function Adapters.SetMenuMotionProvider(track, release) TrackMenuMotion, ReleaseMenuMotion = track, release end
 local TrackCatalogFocus, StopCatalogFocus = function() end, function() end
@@ -34,6 +37,16 @@ function Adapters.Replace(definition)
         return Adapters.Register(definition)
     end
     Adapters.definitions[definition.id] = definition
+    return true
+end
+
+local function LoadNativeWindow(addon, attempts)
+    if attempts and attempts[addon] then return true end
+    if NS.IsCombatLocked() then return false end
+    if not NS.Client.IsAddOnLoaded(addon) and NS.Client.HasAddOn(addon) ~= false then
+        if attempts then attempts[addon] = true end
+        NS.Safety.Dispatch(C_AddOns.LoadAddOn, addon)
+    end
     return true
 end
 
@@ -135,6 +148,49 @@ local focusRoots = {
     encounterJournal = "EncounterJournal", communities = "CommunitiesFrame",
 }
 
+local combatWindowPreparationReady = false
+local combatWindowLoadAttempts = {}
+
+local function DeferCombatWindowPreparation()
+    NS.CombatGate.RunOrDefer("adapters:prepare-combat-windows", Adapters.PrepareCombatWindows)
+end
+
+local function LoadNativeWindowOnce(addon)
+    -- A native ADDON_LOADED callback can put us in combat before the next
+    -- window. Retry through the same job without spending that load attempt.
+    if not LoadNativeWindow(addon, combatWindowLoadAttempts) then DeferCombatWindowPreparation() end
+end
+
+local function CanPrepareProfessions()
+    local status = Adapters.status.blizzardWindows
+    return status and (status.state == "applied" or status.state == "partial") and NS.DB.enabled
+        and DefinitionEnabled(Adapters.definitions.blizzardWindows) and NS.GenericWindows.IsCategoryEnabled("profession")
+end
+
+local function PrepareProfessions()
+    LoadNativeWindowOnce(PROFESSIONS_ADDON)
+    -- Forever embeds the book in ProfessionsFrame. Its Blizzard_ProfessionsBook
+    -- dependency provides templates only; Retail has a separate window.
+    if not NS.Client.isForever then LoadNativeWindowOnce(PROFESSIONS_BOOK_ADDON) end
+end
+
+-- Prepare exact enabled combat windows after login, while still hidden.
+-- Their native ADDON_LOADED callbacks own the actual apply.
+function Adapters.PrepareCombatWindows()
+    combatWindowPreparationReady = true
+    local definition = Adapters.definitions.playerSpells
+    local spells = Adapters.waiting.playerSpells and NS.DB.enabled and DefinitionEnabled(definition)
+        and definition.loadAddon == PLAYER_SPELLS_ADDON
+    local professions = CanPrepareProfessions()
+    if not spells and not professions then return end
+    if NS.IsCombatLocked() then
+        DeferCombatWindowPreparation()
+        return
+    end
+    if spells then LoadNativeWindowOnce(PLAYER_SPELLS_ADDON) end
+    if professions then PrepareProfessions() end
+end
+
 local function ApplyDefinition(definition)
     local id = definition.id
     if id == "blizzardWindows" then
@@ -156,6 +212,11 @@ local function ApplyDefinition(definition)
     if not frame then
         local waiting = ScheduleLoadOnDemand(definition)
         Adapters.status[id] = { state = waiting and "waiting" or "missing" }
+        if waiting and id == "playerSpells" and combatWindowPreparationReady
+            and definition.loadAddon == PLAYER_SPELLS_ADDON then
+            LoadNativeWindowOnce(PLAYER_SPELLS_ADDON)
+            return Adapters.status[id].state == "applied"
+        end
         return false
     end
     NS.WindowControls.TrackFocus(frame, id)
@@ -174,6 +235,7 @@ local function ApplyDefinition(definition)
     end
     if definition.menuMotion ~= false then TrackMenuMotion(frame, id) end
     NS.WindowControls.Attach(frame, id)
+    if id == "blizzardWindows" and combatWindowPreparationReady and CanPrepareProfessions() then PrepareProfessions() end
     return true
 end
 
@@ -203,7 +265,9 @@ end
 
 local function TrackCombatFocus(definition)
     if definition and definition.id == "blizzardWindows" then
-        TrackCatalogFocus(NS.DB.enabled and DefinitionEnabled(definition), focusRoots)
+        local enabled = NS.DB.enabled and DefinitionEnabled(definition)
+        TrackCatalogFocus(enabled, focusRoots)
+        if enabled and NS.Client.isForever then NS.Safety.Dispatch(NS.ForeverLegacyTree.Apply) end
         return
     end
     local root = definition and focusRoots[definition.id]
@@ -240,28 +304,19 @@ function Adapters.Apply(id)
     return RunIsolated(ApplyDefinition, definition)
 end
 
-local function LoadReloadWindow(addon)
-    if NS.IsCombatLocked() or NS.Client.IsAddOnLoaded(addon) then return end
-    if NS.Client.HasAddOn(addon) ~= false then
-        NS.Safety.Dispatch(C_AddOns.LoadAddOn, addon)
-    end
-end
-
 -- Load only these enabled windows in Forever's unlocked combat-reload
 -- startup. Their native UI stays closed while the login pass prepares it.
 function Adapters.PrepareReloadWindows()
     if not NS.Client.isForever or not NS.DB.enabled or NS.IsCombatLocked() then return end
     if DefinitionEnabled(Adapters.definitions.playerSpells) then
-        LoadReloadWindow("Blizzard_PlayerSpells")
+        LoadNativeWindow(PLAYER_SPELLS_ADDON)
     end
     if not DefinitionEnabled(Adapters.definitions.blizzardWindows) then return end
     if NS.GenericWindows.IsCategoryEnabled("profession") then
-        LoadReloadWindow("Blizzard_Professions")
+        LoadNativeWindow(PROFESSIONS_ADDON)
     end
-    if NS.GenericWindows.IsCategoryEnabled("group")
-        and C_LFGList.GetPremadeGroupFinderStyle() == Enum.PremadeGroupFinderStyle.Vanilla then
-        LoadReloadWindow("Blizzard_GroupFinder_VanillaStyle")
-    end
+    -- Blizzard owns the secure Group Finder load. ForeverGroupFinder
+    -- applies its skin when the native ADDON_LOADED event arrives.
 end
 
 function Adapters.ApplyAll()
@@ -347,13 +402,14 @@ local windowParts = {
     -- Forever's group finder has its own adapter below.
     { module = "CommonArt", tolerated = COMBAT_ONLY, category = "group", excludeForever = true },
     { module = "ForeverGroupFinder", tolerated = COMBAT_ONLY },
+    { module = "ForeverLegacyTree", tolerated = COMBAT_OR_WAITING },
 }
 
 -- The same parts in their release order; the generic catalog goes last.
 local windowPartsDisableOrder = {
     "UIPanelButtons", "SharedChrome", "Commerce", "CommonArt", "ForeverGroupFinder",
     "CommonMenus", "SocialUISkin", "CharacterPanel", "InspectPanel", "LegacyWindows",
-    "MajorWindows", "SemanticHUD", "DeepWindows",
+    "MajorWindows", "SemanticHUD", "DeepWindows", "ForeverLegacyTree",
 }
 
 local function PartEnabled(part)
@@ -529,7 +585,7 @@ Adapters.Register({
 Adapters.Register({
     id = "playerSpells",
     labelKey = "SKIN_PLAYER_SPELLS",
-    loadAddon = "Blizzard_PlayerSpells",
+    loadAddon = PLAYER_SPELLS_ADDON,
     allowImplicitProtected = true,
     trackIconTree = true,
     resolve = function() return _G.PlayerSpellsFrame end,

@@ -285,22 +285,35 @@ local function Visible()
 end
 MM.InfoVisible = Visible
 
--- The box and the invite mark follow the text's width, re-measured on change only.
+-- The box, invite mark and hit rectangle follow the measured content width.
 local function Decorate(entry)
     local width = entry.contentWidth or entry.label:GetStringWidth()
     if not Finite(width) then width = 0 end
-    if entry.box and entry.box:IsShown() then entry.box:SetWidth(math.max(entry.size, width + 8)) end
+    local padding = 2
+    if entry.box and entry.box:IsShown() then
+        local boxWidth = math.max(entry.size, width + 8)
+        entry.box:SetWidth(boxWidth)
+        padding = (boxWidth - width) / 2
+    end
+    local free = math.max(0, entry.width - width)
+    local justify = entry.justify
+    local left = justify == "LEFT" and 0 or justify == "RIGHT" and free or free / 2
+    local right = free - left
     local mark = entry.invite
     if mark and mark:IsShown() then
         mark:ClearAllPoints()
-        if entry.justify == "RIGHT" then
+        if justify == "RIGHT" then
             mark:SetPoint("RIGHT", entry.button, "RIGHT", -(width + 2), 0)
-        elseif entry.justify == "LEFT" then
+            left = left - entry.size - 2
+        elseif justify == "LEFT" then
             mark:SetPoint("LEFT", entry.button, "LEFT", width + 2, 0)
+            right = right - entry.size - 2
         else
             mark:SetPoint("LEFT", entry.button, "CENTER", width / 2 + 2, 0)
+            right = right - entry.size - 2
         end
     end
+    MM.SetInfoHitInsets(entry, math.max(0, left - padding), math.max(0, right - padding))
 end
 
 local function Sample(entry, key)
@@ -558,7 +571,7 @@ local function Style(entry, key, c, classColor, boxR, boxG, boxB)
     if key == "Weather" and c.infoWeatherDisplay ~= weather.TEXT then
         width = c.infoWeatherDisplay == weather.ICON and c.infoWeatherIconSize or math.max(width, c.infoWeatherIconSize + 8)
     end
-    entry.size = key == "Weather" and height or size
+    entry.size, entry.width = key == "Weather" and height or size, width
     entry.button:SetSize(width, height + 8)
     entry.justify = Anchor(entry.button, c[prefix .. "Anchor"], c[prefix .. "X"], c[prefix .. "Y"])
     entry.label:SetJustifyH(entry.justify)

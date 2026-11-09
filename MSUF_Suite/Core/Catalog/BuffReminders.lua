@@ -151,6 +151,8 @@ B.Section(id, "visibility", "When to show", {
     B.Tooltip(Bool("hideResting", "Hide while resting", false),
         "Cities and inns count as resting. The reminders come back when you leave them."),
     Number("remindBeforeMinutes", "Remind before expiration (minutes)", 5, 0, 60),
+    B.Tooltip(Bool("onlyInRange", "Only remind for allies in range", false),
+        "Uses the same group range as the unit frames. Personal reminders still appear."),
     -- Before a keystone starts, buffs can be asked to last the dungeon's own
     -- timer (C_ChallengeMode) or a number of minutes.
     Choice("keystoneCover", "Before a keystone starts, buffs must last", 1,
@@ -169,6 +171,7 @@ B.Section(id, "visibility", "When to show", {
     Bool("showScenarios", "Scenarios and delves", true),
 })
 B.Section(id, "readycheck", "Ready check", {
+    Bool("readyCheckIssues", "Ready checks: show missing preparation", false),
     Bool("readyCheckMana", "Ready checks: show my healer mana when it is low", false),
     Number("readyCheckManaPercent", "Low means below (percent of mana)", 70, 1, 100),
     Number("readyCheckDuration", "Show the mana note for (seconds)", 8, 3, 30),
@@ -247,9 +250,7 @@ for key, switch in pairs({ flaskChoice = "autoFlask", foodChoice = "autoFood", r
     rules[key].enableKey = switch
 end
 for _, key in ipairs({ "mapPotionItem", "mapPotionMaps" }) do rules[key].enableKey = "mapPotion" end
-for _, key in ipairs({ "readyCheckManaPercent", "readyCheckDuration", "readyCheckSize" }) do
-    rules[key].enableKey = "readyCheckMana"
-end
+rules.readyCheckManaPercent.enableKey = "readyCheckMana"
 for _, key in ipairs({ "cursorOffsetX", "cursorOffsetY" }) do rules[key].enableKey = "followCursor" end
 -- A demon's tick counts only while the demon warning is on.
 for _, demon in ipairs(NS.BuffReminderDemons) do rules[demon.key].enableKey = "demonChoiceWarning" end

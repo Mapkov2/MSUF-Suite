@@ -5,6 +5,21 @@ local S = NS.Suite
 -- Suite module restyles its text while explicit module font choices stay
 -- intact: most modules draw with the MSUF font without a font setting of
 -- their own, so a hand-kept list of text modules cannot stay complete.
+function S.ReadableValues()
+    local skin = MapkoSkin
+    local theme = skin and skin.addonName == "MSUF_Suite_Skin" and skin.DB and skin.DB.theme
+    return theme and theme.readableValues == true or false
+end
+
+local readabilityModules = { "bags", "characterPanel", "cooldownManager" }
+function S.RefreshReadableValues()
+    if not S.started then return end
+    for _, id in ipairs(readabilityModules) do
+        local state = S.states[id]
+        if state and state.active then S.Apply(id) end
+    end
+end
+
 local lastPath, lastEpoch
 S.FontRevision = 0
 local function ApplyBlizzardFont()

@@ -1,5 +1,8 @@
 <Bindings>
-	<Binding name="MSUFSUITE_TOGGLE_FRIENDLY_NPCS" header="MSUFSUITE" category="BINDING_HEADER_MSUFSUITE">
+	<Binding name="MSUFSUITE_QUICK_ACTIONS" header="MSUFSUITE" category="BINDING_HEADER_MSUFSUITE">
+		if MSUFSuite and MSUFSuite.ToggleQuickActions then MSUFSuite.ToggleQuickActions() end
+	</Binding>
+	<Binding name="MSUFSUITE_TOGGLE_FRIENDLY_NPCS" category="BINDING_HEADER_MSUFSUITE">
 		if MSUFSuite and MSUFSuite.ToggleFriendlyNPCNameplates then MSUFSuite.ToggleFriendlyNPCNameplates() end
 	</Binding>
 	<!-- Commands for the suite-only action bars 9 and 10. They have no bodies:

@@ -48,11 +48,14 @@ end
 local function ReadUpgrade(item)
     if item.upgradeRead or not item.link then return end
     local data = C_Item.GetItemUpgradeInfo(item.link)
-    if S.Public(data) and type(data) == "table" and S.Finite(data.currentLevel) and S.Finite(data.maxLevel) then
-        item.upgrade = tostring(data.currentLevel) .. "/" .. tostring(data.maxLevel)
-        item.upgradeTrack = S.Public(data.trackString) and data.trackString or nil
-        item.upgradeRead = true
-    end
+    if not S.Public(data) or type(data) ~= "table" then return end
+    local current, maximum = data.currentLevel, data.maxLevel
+    if not S.Finite(current) or not S.Finite(maximum) then return end
+    -- The client can return 0/0 for an item without a rank. Cache that answer.
+    item.upgradeRead = true
+    if maximum <= 0 or current < 0 or current > maximum then return end
+    item.upgrade = tostring(current) .. "/" .. tostring(maximum)
+    item.upgradeTrack = S.PublicText(data.trackString)
 end
 
 local CHARACTER = "[%z\1-\127\194-\244][\128-\191]*"
@@ -129,7 +132,7 @@ function Details.Index(index, query)
     local ruleLevel, marker, track = Details.ruleLevel, c.showUpgradeMarker, c.showUpgradeTrack
     local gearLevel = ruleLevel or marker or c.sortMode == SORT.ITEM_LEVEL
     local myArmor = c.category_myArmorSlot == true and (c.inventoryView == NS.BagsView.CATEGORIES
-        or not NS.Client.isForever and c.bankView == NS.BagsBankView.CATEGORIES)
+        or c.bankView == NS.BagsBankView.CATEGORIES)
     if c.category_collectibles then ReadToys(index.items) end
     local keyLevel, keyMap
     if not NS.Client.isForever and c.showKeystoneDetails then

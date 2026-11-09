@@ -10,8 +10,9 @@ local NS, S = P.NS, P.Suite
 -- duration objects, counts and text through SetText, desaturation and alpha
 -- through curve evaluations. Only NeverSecret fields are compared.
 local AB = P.ActionBars
-local M = AB.M
+local M, Virtual = AB.M, AB.VirtualPaint
 local ENUM = AB.ENUM
+local INDEPENDENT = ENUM.BAR.INDEPENDENT
 local PROC_BLIZZARD, PROC_PIXEL, PROC_NONE = ENUM.PROC_GLOW.BLIZZARD, ENUM.PROC_GLOW.PIXEL, ENUM.PROC_GLOW.NONE
 local USABLE = S.USABLE
 local USABLE_OK, NO_POWER, UNUSABLE, OUT_OF_RANGE = USABLE.USABLE, USABLE.NO_POWER, USABLE.UNUSABLE, USABLE.OUT_OF_RANGE
@@ -348,9 +349,21 @@ local function ActionSpell(slot)
     if kind == "flyout" then return nil, id end
 end
 
--- Caches what GlowMatch compares; returns ActionSpell's answer.
+local function ButtonSpell(rec)
+    if not rec.virtual then return ActionSpell(rec.slot) end
+    local action = rec.virtualAction
+    if action and action.kind == "flyout" then return nil, action.id end
+    return Virtual.Spell(action)
+end
+
+-- Caches what GlowMatch compares; returns the action's spell or flyout.
 local function CacheAction(rec)
-    local kind, id, sub = ReadAction(rec.slot)
+    local kind, id, sub
+    if rec.virtual then
+        kind, id, sub = Virtual.ActionInfo(rec.virtualAction)
+    else
+        kind, id, sub = ReadAction(rec.slot)
+    end
     if kind == "spell" then
         rec.glowKind, rec.glowID = GLOW_SPELL, id
         return id
@@ -527,23 +540,24 @@ local LAST_PAGE_SLOT, MAIN_BAR = 120, ENUM.BAR.MAIN
 
 local function RouteSpell(rec)
     local spell = rec.glowKind == GLOW_SPELL and rec.glowID or nil
-    if spell and rec.slot > LAST_PAGE_SLOT and rec.bar.index == MAIN_BAR then spell = nil end
+    if spell and rec.bar.index == MAIN_BAR and rec.slot > LAST_PAGE_SLOT then spell = nil end
     if not spell then
         UnrouteSpell(rec)
         return
     end
     local override = OverrideOf(spell)
     local oldSpell, oldOverride = rec.cdSpell, rec.cdOverride
-    if spell == oldSpell and override == oldOverride and rec.cdSlot == rec.slot then return end
+    local action = rec.virtualAction or rec.slot
+    if spell == oldSpell and override == oldOverride and rec.cdSlot == action then return end
     -- The IDs the button leaves stay listed for one change on the same slot;
     -- another slot (a page) starts without them.
     local previous, previousOverride
-    if rec.cdSlot == rec.slot then
+    if rec.cdSlot == action then
         if oldSpell ~= spell and oldSpell ~= override then previous = oldSpell end
         if oldOverride ~= spell and oldOverride ~= override then previousOverride = oldOverride end
     end
     SetRoute(rec, spell, override, previous, previousOverride)
-    rec.cdSlot = rec.slot
+    rec.cdSlot = action
 end
 
 -- Whether SPELL_UPDATE_COOLDOWN alone keeps the button's swipes current: a
@@ -594,10 +608,7 @@ end
 -- A crafted item's quality badge, as ActionBarActionButtonMixin:
 -- UpdateProfessionQuality shows it on Retail and Forever: item actions only.
 -- Native reused buttons own this overlay themselves.
-local function ProfessionQuality(rec)
-    if rec.native then return end
-    local item = api.IsItem(rec.slot)
-    local info = Public(item) and item and api.Quality(rec.slot)
+local function SetQuality(rec, info)
     local atlas = Public(info) and type(info) == "table" and info.iconInventory
     if not Public(atlas) or type(atlas) ~= "string" or atlas == "" then
         if rec.quality then rec.quality:Hide() end
@@ -609,6 +620,12 @@ local function ProfessionQuality(rec)
     rec.quality:ClearAllPoints()
     rec.quality:SetPoint("TOPLEFT", rec.button.icon, "TOPLEFT", 0, 0)
     rec.quality:Show()
+end
+
+local function ProfessionQuality(rec)
+    if rec.native then return end
+    local item = api.IsItem(rec.slot)
+    SetQuality(rec, Public(item) and item and api.Quality(rec.slot))
 end
 
 local function Paint(rec)
@@ -726,7 +743,9 @@ end
 
 local function PaintBar(bar)
     if not bar.owned or bar.native then return end
-    for i = 1, #bar.buttons do Paint(bar.buttons[i]) end
+    local first = bar.buttons[1]
+    local paint = first and first.virtual and Virtual.Paint or Paint
+    for i = 1, #bar.buttons do paint(bar.buttons[i]) end
     Refill(bar)
 end
 
@@ -735,7 +754,9 @@ local function Walk(fn)
         local bar = AB.bars[index]
         if bar and not bar.native and Visible(bar) then
             local filled = bar.filled
-            for i = 1, #filled do fn(filled[i]) end
+            local paint = fn
+            if index == INDEPENDENT and filled[1] and filled[1].virtual then paint = Virtual.walk[fn] or fn end
+            for i = 1, #filled do paint(filled[i]) end
         end
     end
 end
@@ -753,9 +774,14 @@ WalkNative = function(fn)
 end
 
 function AB.ShowTooltip(rec)
-    if not rec.slot or not rec.filled then return end
-    GameTooltip_SetDefaultAnchor(GameTooltip, rec.button)
-    GameTooltip:SetAction(rec.slot)
+    if not rec.filled then return end
+    if rec.virtual then
+        GameTooltip_SetDefaultAnchor(GameTooltip, rec.button)
+        Virtual.Tooltip(rec)
+    elseif rec.slot then
+        GameTooltip_SetDefaultAnchor(GameTooltip, rec.button)
+        GameTooltip:SetAction(rec.slot)
+    end
 end
 
 -- Charge reads are skipped for actions known to have no charges until the
@@ -774,7 +800,8 @@ AB.Painter = {
     spellButtons = spellButtons, SpellRouted = SpellRouted,
     Tint = Tint, ReleaseRange = ReleaseRange, AcquireRange = AcquireRange,
     Usable = Usable, State = State, Count = Count, Cooldown = Cooldown, CooldownFeedback = CooldownFeedback,
-    CacheAction = CacheAction, ActionSpell = ActionSpell, SetGlow = SetGlow, GlowCheck = GlowCheck,
+    CacheAction = CacheAction, ActionSpell = ActionSpell, ButtonSpell = ButtonSpell, SetGlow = SetGlow, GlowCheck = GlowCheck,
+    Clear = Clear, RouteSpell = RouteSpell, SetQuality = SetQuality,
     GLOW_SPELL = GLOW_SPELL, GLOW_DYNAMIC = GLOW_DYNAMIC, GLOW_FLYOUT = GLOW_FLYOUT,
     Paint = Paint, Icon = Icon, Refill = Refill, MapButton = MapButton, UnmapButton = UnmapButton, Remap = Remap,
     AllKeyTexts = AllKeyTexts, PaintBar = PaintBar, Walk = Walk, WalkNative = WalkNative,

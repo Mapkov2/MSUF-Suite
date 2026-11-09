@@ -56,6 +56,8 @@ local groups = {
         category = "profession",
         addon = "Blizzard_ProfessionsBook",
         root = "ProfessionsBookFrame",
+        retailOnly = true,
+        prepareHidden = true,
     },
     {
         id = "housing-dashboard",
@@ -245,8 +247,11 @@ local function SkinProfessionBook(root, state)
     Fade(state, _G.ProfessionsBookPage1)
     Fade(state, _G.ProfessionsBookPage2)
     Attach(state, _G.ProfessionsContentFrame, PANEL_EDGE)
+    local bookFades = NS.ContentMotion.Watch(root, state.owner)
     for index = 1, #PROFESSION_CARDS do
-        SkinProfessionCard(state, _G[PROFESSION_CARDS[index]])
+        local card = _G[PROFESSION_CARDS[index]]
+        SkinProfessionCard(state, card)
+        if not bookFades then NS.ContentMotion.Watch(Field(card, "statusBar"), state.owner) end
     end
     return true, "applied"
 end
@@ -610,13 +615,18 @@ NS.MajorWindowsShared = {
 
 local ApplyGroupForOwners
 local function ApplyVisibleGroup(spec, root, state)
-    if Kit.DeferHidden(root, spec, ApplyGroupForOwners, spec, nil, nil, 10) then return true, "waiting" end
+    if (not spec.prepareHidden or NS.IsCombatLocked())
+        and Kit.DeferHidden(root, spec, ApplyGroupForOwners, spec, nil, nil, 10) then return true, "waiting" end
     return groupSkinners[spec.id](root, state)
+end
+
+local function GroupEnabled(spec)
+    return (not spec.retailOnly or not NS.Client.isForever) and CategoryEnabled(spec.category)
 end
 
 local function ApplyGroup(spec, state)
     if not state or not state.active then return false, "disabled" end
-    if not CategoryEnabled(spec.category) then return true, "disabled" end
+    if not GroupEnabled(spec) then return true, "disabled" end
     local root = _G[spec.root]
     if not root then return false, NS.Client.IsAddOnLoaded(spec.addon) and "missing" or "waiting" end
     -- Each group is its own error boundary: a raising group is reported and
@@ -708,7 +718,7 @@ function MajorWindows.Apply(owner)
     local applied, waiting, failed = 0, 0, 0
     for index = 1, #groups do
         local spec = groups[index]
-        if CategoryEnabled(spec.category) then
+        if GroupEnabled(spec) then
             local ok, reason = ApplyGroup(spec, state)
             if ok and reason == "waiting" then
                 waiting = waiting + 1

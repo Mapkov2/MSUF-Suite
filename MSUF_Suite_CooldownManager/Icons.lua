@@ -170,6 +170,34 @@ local function Font(fontString, size, r, g, b)
     fontString:SetTextColor(r or 1, g or 1, b or 1)
 end
 
+local function PlaceReadiness(icon, view)
+    local key = view.keybind == true and K.POINTS[view.keybindPos or 3]
+    local stack = icon.stackOn and K.POINTS[view.stackPos or 9]
+    local point = (key == "TOPLEFT" or stack == "TOPLEFT") and "TOP" or "TOPLEFT"
+    if point == "TOP" and (key == point or stack == point) then point = "TOPRIGHT" end
+    if icon.readinessPoint == point then return end
+    icon.readinessPoint = point
+    local text = icon.readinessText
+    text:ClearAllPoints()
+    local x = point == "TOPLEFT" and 2 or point == "TOPRIGHT" and -2 or 0
+    text:SetPoint(point, icon, point, x, -2)
+end
+
+function Icons.PaintReadiness(icon, value, view)
+    if icon.readinessValue == value then return end
+    icon.readinessValue = value
+    local text = icon.readinessText
+    if not text then
+        text = S.CreateFontString(icon.over, nil, "OVERLAY")
+        local state = C.state
+        Font(text, 12, state.stackR, state.stackG, state.stackB)
+        icon.readinessText = text
+    end
+    if view then PlaceReadiness(icon, view) end
+    text:SetText(value)
+    text:SetShown(value ~= nil)
+end
+
 local function PlaceText(fontString, icon, pos, inset)
     if not K.POINTS[pos] then pos = 9 end
     local point = K.POINTS[pos]
@@ -279,8 +307,17 @@ local function StylePlain(icon, view, width, height)
     local entry = icon.entry
     Texts(icon, view, entry and entry.ov or EMPTY)
     local text = cooldown:GetCountdownFontString()
-    if text then Font(text, TextSize(view.cdSize, FONT.countdown, h), state.cdR, state.cdG, state.cdB) end
-    Font(icon.count, TextSize(view.stackSize, FONT.stacks, h), state.stackR, state.stackG, state.stackB)
+    local extra = state.readableValues and 2 or 0
+    if text then Font(text, TextSize(view.cdSize, FONT.countdown, h) + extra, state.cdR, state.cdG, state.cdB) end
+    Font(icon.count, TextSize(view.stackSize, FONT.stacks, h) + extra, state.stackR, state.stackG, state.stackB)
+    if icon.readinessText then
+        if state.readableValues then
+            Font(icon.readinessText, 12, state.stackR, state.stackG, state.stackB)
+            PlaceReadiness(icon, view)
+        else
+            Icons.PaintReadiness(icon)
+        end
+    end
     PlaceText(icon.count, icon, view.stackPos or 9, K.Pixels(1) + border)
     StyleKey(icon, view)
     C.TrackingBars.Style(icon, view)
@@ -570,6 +607,10 @@ end
 
 -- Returns an icon to its bar's pool. Points stay with the layout layer.
 local function Recycle(pool, icon)
+    if icon.readinessText then
+        Icons.PaintReadiness(icon)
+        icon.readinessKnown = nil
+    end
     local entry = icon.entry
     if icon.masqued then C.Masque.Remove(pool, icon) end
     -- Its aura overlay goes off with it at once (combat too), so a rebound

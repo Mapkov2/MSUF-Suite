@@ -16,6 +16,8 @@ local DESAT = K.DESAT
 local TrackingBars = C.TrackingBars
 local Time = {}
 C.Time = Time
+local readable
+function Time.SetReadability(enabled) readable = enabled end
 -- The client's secret test (Platform.lua; its fallback where the host has
 -- none), called directly: no Lua wrapper on the cooldown paths.
 local issecret = NS.IsSecret
@@ -270,6 +272,7 @@ local function SpellState(entry, icon, spell, reason)
     local cooling, exact = false, true
     if reason == "recharge" and icon.cdSet == true then reason = "charges" end
     if reason == "expired" then
+        if readable then icon.readinessKnown = true end
         if entry.ov.actionUsableGlow then C.ActionUsableGlows.Cooldown(entry, false) end
         ClearMain(icon)
         Feedback(icon, nil)
@@ -300,6 +303,9 @@ local function SpellState(entry, icon, spell, reason)
         else
             ClearMain(icon)
             Feedback(icon, nil)
+        end
+        if readable then
+            icon.readinessKnown = exact and info ~= nil and not issecret(active) and type(active) == "boolean"
         end
         -- Share the main answer before recharge presentation can hold it.
         if entry.ov.actionUsableGlow then C.ActionUsableGlows.Timing(entry, info, active, cooling, exact) end
@@ -451,6 +457,7 @@ local function ItemTiming(entry, icon, reason, start, length, enable, item, rate
             cooling = NewItemCooldown(icon, start, length, gcd, rate)
         end
     else
+        if readable then icon.readinessKnown = plain end
         icon.itemStart, icon.itemLock = nil, nil
         ClearMain(icon)
         Feedback(icon, nil)
@@ -459,7 +466,7 @@ local function ItemTiming(entry, icon, reason, start, length, enable, item, rate
 end
 
 local function ItemState(entry, icon, reason)
-    local slot = entry.equipSlot or (entry.src == "e" and entry.id) or nil
+    local slot = entry.equipSlot or (entry.src == "e" and entry.id)
     local item = entry.itemID or entry.id
     local start, length, enable
     if slot then
@@ -490,6 +497,7 @@ local function CategoryState(entry, icon, reason, spell)
     if not info then
         icon.itemStart, icon.itemLock = nil, nil
         if spell then return SpellState(entry, icon, spell, reason) end
+        if readable then icon.readinessKnown = false end
         ClearMain(icon)
         ClearCharge(icon)
         Feedback(icon, nil)
@@ -506,6 +514,7 @@ local function CategoryState(entry, icon, reason, spell)
     icon.itemStart, icon.itemLock = nil, nil
     ClearMain(icon)
     local cooling = info.isEnabled == false or info.isActive == true and info.isOnGCD ~= true
+    if readable then icon.readinessKnown = true end
     if cooling then Held(icon) else Feedback(icon, nil) end
     return cooling
 end
@@ -533,6 +542,15 @@ local function Edge(entry, cooling, usableQueries)
         if start and GetTime() - start >= READY_MIN then C.Alerts.Ready(entry) end
     end
     if was ~= cooling then C.Effects.Update(entry, usableQueries) end
+end
+
+local function PaintReadiness(entry, icon, view, empty, cooling)
+    local known = icon.readinessKnown or icon.itemStart ~= nil or icon.itemLock == true
+    local bagItem = entry.src == "i" and not entry.equipSlot
+    local counted = entry.hideEmpty or icon.stackOn or (entry.spellCategory and C.state.potionStockIcon)
+    local badge = empty == true and counted and "!" or (not known or bagItem and not counted) and "?"
+        or cooling and "-" or "+"
+    C.Icons.PaintReadiness(icon, badge, view)
 end
 
 -- reason: "cooldown" (SPELL_UPDATE_COOLDOWN, isOnGCD trustworthy),
@@ -578,6 +596,7 @@ function Time.Refresh(entry, reason, usableQueries)
         elseif spell then
             cooling = SpellState(entry, icon, spell, reason)
         else
+            if readable then icon.readinessKnown = false end
             ClearMain(icon)
             ClearCharge(icon)
             Feedback(icon, nil)
@@ -588,6 +607,7 @@ function Time.Refresh(entry, reason, usableQueries)
     end
     -- Healthstones (hideEmpty) leave their bar while the bags hold none;
     -- entry.empty keeps that answer for the options page.
+    if readable then PaintReadiness(entry, icon, view, empty, cooling) end
     empty = entry.hideEmpty == true and empty == true
     entry.empty = empty
     local hidden = (not C.state.preview and ((icon.hideReady and not cooling) or empty or (icon.gate and entry.gated)))

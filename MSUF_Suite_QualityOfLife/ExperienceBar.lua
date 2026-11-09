@@ -5,6 +5,7 @@ local M = {}
 local Native = P.NativeExperienceBar
 local Tracked = P.ExperienceTrack
 local Text = P.ExperienceBarText
+local Optimizer = P.ExperienceOptimizer
 local SessionReady
 local ID = "xpBar"
 local SEGMENT_COUNT = 20
@@ -79,7 +80,9 @@ end
 
 local function Rested()
     local value = GetXPExhaustion()
-    return Finite(value) and max(0, value) or 0
+    if S.Public(value) and value == nil then return 0, true end
+    if Finite(value) then return max(0, value), true end
+    return 0, false
 end
 
 local Exact, Duration = Text.Exact, Text.Duration
@@ -162,6 +165,8 @@ local function Track(self, level, current, maximum)
         end
         session.levelUps = session.levelUps + (level - session.lastLevel)
     end
+    local optimizer = self.optimizer
+    if optimizer and optimizer.afk == false then optimizer.gained = optimizer.gained + delta end
     session.gained = session.gained + delta
     session.lastLevel, session.lastXP, session.lastMax = level, current, maximum
     Save(self)
@@ -171,6 +176,7 @@ local function Rate(self)
     local session = self.session
     local now = Clock()
     local elapsed = max(0, now - (session and session.started or now))
+    if self.optimizer then return Optimizer.Rate(self.optimizer), elapsed end
     if elapsed < 60 or not session or session.gained <= 0 then return nil, elapsed end
     return session.gained * 3600 / elapsed, elapsed
 end
@@ -180,7 +186,8 @@ local function AddSessionLines(self, remaining)
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine(TEXT.sessionXP, "+" .. Exact(self.session.gained), 1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine(TEXT.sessionTime, Duration(elapsed), 1, 1, 1, 1, 1, 1)
-    GameTooltip:AddDoubleLine(TEXT.perHour, rate and Exact(rate) or "--", 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine(self.optimizer and Optimizer.rateLabel or TEXT.perHour,
+        rate and Exact(rate) or "--", 1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine(TEXT.timeToLevel, rate and rate > 0 and Duration(remaining * 3600 / rate) or "--",
         1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine(TEXT.levelUps, tostring(self.session.levelUps), 1, 1, 1, 1, 1, 1)
@@ -221,7 +228,7 @@ local function Tooltip(self)
         GameTooltip:AddDoubleLine(TEXT.level, tostring(level), 1, 1, 1, 1, 1, 1)
         GameTooltip:AddDoubleLine(TEXT.currentXP, Exact(current) .. " / " .. Exact(maximum), 1, 1, 1, 1, 1, 1)
         GameTooltip:AddDoubleLine(TEXT.remaining, Exact(remaining), 1, 1, 1, 1, 1, 1)
-        local rested = Rested()
+        local rested, restedReadable = Rested()
         GameTooltip:AddDoubleLine(TEXT.restedXP, Exact(rested), 1, 1, 1, 0.45, 0.7, 1)
         if rested > 0 then
             GameTooltip:AddDoubleLine(TEXT.restedUntil, current + rested < maximum
@@ -229,6 +236,7 @@ local function Tooltip(self)
                 1, 1, 1, 0.65, 0.82, 1)
         end
         if self.session then AddSessionLines(self, remaining) end
+        if self.optimizer then Optimizer.Tooltip(self.optimizer, GameTooltip, restedReadable and rested, maximum) end
         if self.playedActive then
             GameTooltip:AddDoubleLine(TEXT.levelTime, Duration(LevelTime(self, level)), 1, 1, 1, 1, 1, 1)
         end
@@ -236,6 +244,10 @@ local function Tooltip(self)
         GameTooltip:AddLine(TEXT.noProgress, 1, 1, 1)
     end
     GameTooltip:Show()
+end
+
+local function RefreshTooltip(self)
+    if GameTooltip:IsOwned(self.host) then Tooltip(self) end
 end
 
 local function PaintLevelTime(self)
@@ -471,8 +483,12 @@ end
 local PaintValues
 local function KeepRateCurrent(self)
     if not self.active or not self.host:IsShown()
-        or not self.session or self.session.gained <= 0
+        or not self.session or (self.optimizer and self.optimizer.gained or self.session.gained) <= 0
         or not (self.config.showRate or self.config.showETA) then
+        return
+    end
+    if self.optimizer and self.optimizer.afk ~= false then
+        CancelRateTimer(self)
         return
     end
     self.rateJob:Request()
@@ -544,12 +560,15 @@ local function PaintTracked(self, source)
 end
 
 -- Values only: XP, rested and rate changes never move the bar or its dividers.
-PaintValues = function(self)
+local function PaintProgressValues(self, level, current, maximum)
     local c, host = self.config, self.host
-    local level, current, maximum = XP()
     local capped = level and (maximum <= 0 or AtEffectiveMaxLevel(self, level))
     local source = Tracked.Source(c.track, capped)
     self.source = source
+    local optimizing = c.foreverOptimizer and NS.Client.isForever and NS.loginKind
+        and source == Tracked.XP and not capped and level
+    if optimizing or self.optimizer then Optimizer.Sync(self, optimizing) end
+    if self.questStripShown and not self.optimizer then Optimizer.Paint(self) end
     local playedLevel = c.showLevelTime and NS.loginKind and source == Tracked.XP and not capped and level
     if self.playedActive and not playedLevel then SyncLevelTime(self) end
     if source ~= Tracked.XP then return PaintTracked(self, source) end
@@ -572,6 +591,7 @@ PaintValues = function(self)
     self.fill:SetSize(max(0.01, c.width * fraction), c.height)
     self.fill:SetShown(fraction > 0)
     PaintRested(self, fraction, maximum, capped)
+    if self.optimizer then Optimizer.Paint(self, fraction, maximum, self.optimizer.questXP) end
     Text.PaintXP(self, level, current, maximum, self.session and self.session.gained or 0, Rate(self), fraction)
     if playedLevel then
         SyncLevelTime(self, playedLevel)
@@ -581,6 +601,10 @@ PaintValues = function(self)
     -- An open tooltip follows the new values.
     if GameTooltip:IsOwned(host) then Tooltip(self) end
     KeepRateCurrent(self)
+end
+
+PaintValues = function(self)
+    PaintProgressValues(self, XP())
 end
 
 local function Render(self)
@@ -628,7 +652,7 @@ XPChanged = function(self, event, unit)
             Track(self, level, current, maximum)
         end
     end
-    PaintValues(self)
+    PaintProgressValues(self, level, current, maximum)
     SyncTrack(self)
 end
 
@@ -638,10 +662,12 @@ local function EnterWorld(self)
     CheckSession(self)
     self.cappedLevel = nil
     Render(self)
+    if self.optimizer then Optimizer.WorldChanged(self) end
     SyncTrack(self)
 end
 
 function M:Enable()
+    self.optimizerPaint, self.optimizerTooltip = PaintValues, RefreshTooltip
     self.rateJob = self.context:Coalesce(RATE_REFRESH, PaintValues)
     self.sessionJob = self.context:Coalesce(.2, SessionReady)
     self.sessionAttempts = 5
@@ -670,6 +696,8 @@ function M:Disable()
     self.sessionJob:Cancel()
     Native.Sync(self, false)
     CancelRateTimer(self)
+    Optimizer.Stop(self)
+    if self.questStripShown then Optimizer.Paint(self) end
     SyncLevelTime(self)
     if self.host then
         self.host:Hide()
@@ -713,6 +741,11 @@ function S.DrawExperienceBarPreview(parent, config, sample, viewport)
         Text.PaintXP(view, 42, sample.xp * 1000, 100000, 12000, 24000, fraction)
         Text.PaintLevelTime(view, 3465)
     end
+    if config.foreverOptimizer and NS.Client.isForever and source == Tracked.XP then
+        Optimizer.Paint(view, sample.xp / 100, 100, 12)
+    elseif view.questStripShown then
+        Optimizer.Paint(view)
+    end
     local dx, dy = 0, 0
     if viewport then
         local width, height
@@ -722,7 +755,10 @@ function S.DrawExperienceBarPreview(parent, config, sample, viewport)
         if view.host:GetScale() ~= scale then
             view.host:SetScale(scale)
             Layout(view)
-            if source == Tracked.XP then PaintRested(view, sample.xp / 100, 100, false, sample.rested) end
+            if source == Tracked.XP then
+                PaintRested(view, sample.xp / 100, 100, false, sample.rested)
+                if view.questStripShown then Optimizer.Paint(view, sample.xp / 100, 100, 12) end
+            end
         end
     end
     return view.host, config.width, config.height + NS.ExperienceBarLayout.BottomPadding(config), dx, dy
@@ -733,6 +769,7 @@ function S.ResetXPSession()
     local level, current, maximum = XP()
     if not level then return false end
     M.session = NewSession(level, current, maximum)
+    if M.optimizer then Optimizer.ResetRate(M.optimizer) end
     Save(M)
     PaintValues(M)
     return true

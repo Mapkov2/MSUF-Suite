@@ -44,6 +44,7 @@ end
 
 -- The flush and the countdown tick already due are dropped.
 local function CancelPending(self)
+    O.StopQuestMotion(self)
     self.flushJob:Cancel()
     self.countdownJob:Cancel()
     self.recipeItemsPending, self.recipeItemsNeeded = nil, nil
@@ -494,7 +495,9 @@ end
 
 local function RaidCombatEvent(self, event)
     UpdateRaidCombatPause(self, event)
-    if event == "PLAYER_REGEN_ENABLED" then
+    if event == "PLAYER_REGEN_DISABLED" then
+        if O.StopQuestMotion(self) then Render(self) end
+    elseif event == "PLAYER_REGEN_ENABLED" then
         self:SuppressNative()
         O.UpdateQuestItem(self)
     end

@@ -26,6 +26,14 @@ local function Texture()
         "SetTextureSliceMargins", "SetTextureSliceMode" }) do
         texture[method] = function() paints = paints + 1 end
     end
+    function texture:SetVertexColor(_, _, _, alpha)
+        paints = paints + 1
+        self.vertexAlpha = alpha
+    end
+    function texture:SetGradient(_, first, last)
+        paints = paints + 1
+        self.gradientStartAlpha, self.gradientEndAlpha = first.a, last.a
+    end
     function texture:Show() self.shown = true end
     function texture:Hide() self.shown = false end
     function texture:ClearAllPoints() end
@@ -118,6 +126,25 @@ Surface.SetNativeStateSync(selectable, true)
 Surface.SetActive(selectable, false)
 Check(paints > 0, "SetActive skipped a surface that mirrors native selection")
 Surface.SetNativeStateSync(selectable, false)
+
+-- Reading surfaces keep both ends opaque across gradient settings, while
+-- an ordinary panel continues to use the configured panel opacity.
+local opacity, gradient = NS.DB.theme.panelOpacity, NS.DB.theme.gradient
+NS.DB.theme.panelOpacity = 0.3
+NS.DB.theme.gradient = false
+local readingPanel = Target()
+local ordinaryPanel = Target()
+Surface.Attach(readingPanel, { role = "panel", opaqueFill = true, keepGlassFill = true })
+Surface.Attach(ordinaryPanel, { role = "panel" })
+local readingFill = NS.Registry.GetSurface(readingPanel).fill
+local ordinaryFill = NS.Registry.GetSurface(ordinaryPanel).fill
+Check(readingFill.vertexAlpha == 1, "solid reading surface let the world show through")
+Check(ordinaryFill.vertexAlpha < 1, "normal surfaces lost their configured transparency")
+NS.DB.theme.gradient = true
+Surface.Refresh(readingPanel)
+Check(readingFill.gradientStartAlpha == 1 and readingFill.gradientEndAlpha == 1,
+    "a reading gradient let the world show through")
+NS.DB.theme.panelOpacity, NS.DB.theme.gradient = opacity, gradient
 
 ------------------------------------------------------------------ hot callers
 -- Each hot path attaches through Ensure.

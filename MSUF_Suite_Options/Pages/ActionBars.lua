@@ -17,14 +17,7 @@ local NEVER = Suite.ActionBarEnum.VISIBILITY.NEVER
 -- Highlight option (the assistedCombatHighlight CVar) is on; Forever has no
 -- assisted combat and hides those options.
 local APPEARANCE = "Shared look of every suite action button. Blizzard's own highlight art is used when you pick Blizzard."
-local HELP = {
-    appearance = Suite.Client.isForever and APPEARANCE or P.Help(APPEARANCE,
-        "Rotation recommendations appear while Blizzard's Assisted Highlight option is on. Blizzard's own recommendation highlight reaches only the bars that reuse Blizzard's buttons (2 to 8); Ring and Fill cover every bar."),
-    cooldowns = "Cooldown numbers, swipes and state colors come from the client's action data; nothing is polled.",
-    text = "Fonts, outlines, shadows and Smooth/Sharp/Slug rendering for keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below. Slug has no shadow.",
-    behavior = "Paging switches bar 1 between pages, like Blizzard's own main bar. Key bindings keep using Blizzard's commands.",
-    editor = "Select a bar to adjust its layout and visibility.",
-}
+local HELP, ESSENTIAL, COPY_CATEGORIES, copyScopes
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
     { id = "visibility", title = "When the selected bar appears",
@@ -42,32 +35,42 @@ local GROUPS = {
         "BackgroundY", "BackgroundBorder" } },
 }
 local POSITION = { Point = true, X = true, Y = true }
-local ESSENTIAL = {
-    layout = { Buttons = true, Rows = true, Size = true, HeightPercent = true, Spacing = true, Vertical = true, ShowEmpty = true },
-    text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
-        CountSize = true, CooldownSize = true, CooldownAutoSize = true },
-    visibility = { Visibility = true, GroupOnly = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
-    ornaments = { LeftEndcap = true, LeftEndcapSize = true, RightEndcap = true, RightEndcapSize = true },
-    background = { Background = true, BackgroundAlpha = true, BackgroundPadding = true, BackgroundBorder = true },
-}
 P.ActionBarSearchGroups = GROUPS
--- Copy To categories, one per section above, like the Unit and Group pages.
-local COPY_CATEGORIES = {
-    { key = "visibility", label = "Visibility", default = true,
-      description = "Copies when the bar is shown, its opacity, fade, tooltips and click-through." },
-    { key = "layout", label = "Layout", default = true,
-      description = "Copies buttons, rows, size, spacing, growth direction, empty slots and flyout direction. Position is never copied." },
-    { key = "text", label = "Text", default = true,
-      description = "Copies keybind and macro name visibility and every text size." },
-    { key = "ornaments", label = "Endcaps", default = true, description = "Copies both endcaps, their sizes and offsets." },
-    { key = "background", label = "Background", default = true,
-      description = "Copies the bar background with its color, opacity and padding." },
-}
 
 -- The Copy To choices last for the session, like the Unit and Group pages.
 local selected, copyDestinations = 1, nil
-local copyScopes = {}
-for _, category in ipairs(COPY_CATEGORIES) do copyScopes[category.key] = category.default end
+local function InitEditorData()
+    if HELP then return end
+    HELP = {
+        appearance = Suite.Client.isForever and APPEARANCE or P.Help(APPEARANCE,
+            "Rotation recommendations appear while Blizzard's Assisted Highlight option is on. Blizzard's own recommendation highlight reaches only the bars that reuse Blizzard's buttons (2 to 8); Ring and Fill cover every bar."),
+        cooldowns = "Cooldown numbers, swipes and state colors come from the client's action data; nothing is polled.",
+        text = "Fonts, outlines, shadows and Smooth/Sharp/Slug rendering for keybinds, macro names, counts and cooldown numbers. Sizes are set per bar below. Slug has no shadow.",
+        behavior = "Paging switches bar 1 between pages, like Blizzard's own main bar. Key bindings keep using Blizzard's commands.",
+        editor = "Select a bar to adjust its layout and visibility.",
+    }
+    ESSENTIAL = {
+        layout = { Buttons = true, Rows = true, Size = true, HeightPercent = true, Spacing = true, Vertical = true, ShowEmpty = true },
+        text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
+            CountSize = true, CooldownSize = true, CooldownAutoSize = true },
+        visibility = { Visibility = true, GroupOnly = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
+        ornaments = { LeftEndcap = true, LeftEndcapSize = true, RightEndcap = true, RightEndcapSize = true },
+        background = { Background = true, BackgroundAlpha = true, BackgroundPadding = true, BackgroundBorder = true },
+    }
+    COPY_CATEGORIES = {
+        { key = "visibility", label = "Visibility", default = true,
+          description = "Copies when the bar is shown, its opacity, fade, tooltips and click-through." },
+        { key = "layout", label = "Layout", default = true,
+          description = "Copies buttons, rows, size, spacing, growth direction, empty slots and flyout direction. Position is never copied." },
+        { key = "text", label = "Text", default = true,
+          description = "Copies keybind and macro name visibility and every text size." },
+        { key = "ornaments", label = "Endcaps", default = true, description = "Copies both endcaps, their sizes and offsets." },
+        { key = "background", label = "Background", default = true,
+          description = "Copies the bar background with its color, opacity and padding." },
+    }
+    copyScopes = {}
+    for _, category in ipairs(COPY_CATEGORIES) do copyScopes[category.key] = category.default end
+end
 local function BarKey(key)
     local suffix = key:match("^bar%d+(.+)$")
     return suffix and ("bar" .. selected .. suffix) or key
@@ -524,6 +527,7 @@ end
 local function Visible(rule) return not rule.hidden end
 
 local function Build(ctx)
+    InitEditorData()
     local b = P.ActionBarMenu.Builder(ctx)
     BuildSelection(ctx, b, AttachCopyTo)
     P.ModuleCard(ctx, b, PAGE, ID, {
@@ -560,6 +564,7 @@ local function Build(ctx)
         P.ActionBarMenu.Rules(ctx, b, "suite_actionbars_" .. section, Tr(rules[1].sectionTitle), rules,
             { help = HELP[section], open = false, extra = section == "appearance" and SkinStatus(ctx) or nil })
     end
+    P.ActionBarSnapshotsPage.Build(ctx, b)
     P.BuildOwnedTool(ctx, b, "keyAudit")
     P.ActionBarMenu.BuildHelpers(ctx)
     P.ActionBarMenu.Finish(ctx)

@@ -2,10 +2,41 @@ local _, P = ...
 local W, M, T, Tr, HM = P.W, P.M, P.T, P.Tr, P.HM
 local PAGE, ID = "suite_dataTexts", "dataTexts"
 local MODULE_SECTION = PAGE .. "_dataTexts_module"
+local function HoverBar(item)
+    local runtime = P.S.instances[ID]
+    if runtime then runtime:SetDeleteHover(item and item.bar) end
+end
+
 local DELETE_BARS = { title = Tr("Delete bars"), action = Tr("Delete selected bars"),
-    key = "datatext-delete-bars", question = Tr("Delete these bars?") }
+    key = "datatext-delete-bars", question = Tr("Delete these bars?"), hover = HoverBar }
 local Page = { selectedBar = 1, selections = {} }
 P.DataTextPage = Page
+local workspaceState = {}
+local entryWorkspaces = setmetatable({}, { __mode = "kv" })
+
+local function WorkspaceState()
+    local config = P.S.Config(ID)
+    if workspaceState.config ~= config then
+        workspaceState.config = config
+        workspaceState.key, workspaceState.previous, workspaceState.look, workspaceState.scroll = nil, nil, nil, nil
+    end
+    return workspaceState
+end
+
+local function PresetTarget(key)
+    return type(key) == "string" and tonumber(key:match("^preset(%d+)$")) or nil
+end
+
+local function PageScroll(offset)
+    local scroll = M.scrollFrame
+    if M.activeKey ~= PAGE or not scroll then return end
+    if offset ~= nil then
+        scroll:SetVerticalScroll(offset)
+        return
+    end
+    local value = scroll:GetVerticalScroll()
+    return P.Suite.Finite(value) and value or 0
+end
 
 local function OpenMenuTarget(page, id, key, kind, section)
     local bridge = M.SearchBridge
@@ -125,10 +156,12 @@ function P.RefreshDataTextPageShape()
 end
 
 function Page.ChangeBars(values, bar)
-    local previous = Page.selectedBar
+    local state = WorkspaceState()
+    local previous, previousView = Page.selectedBar, state.key
     if bar then Page.selectedBar = bar end
+    state.key = bar
     if P.SetMany(ID, values) then return true end
-    Page.selectedBar = previous
+    Page.selectedBar, state.key = previous, previousView
     return false
 end
 
@@ -346,22 +379,53 @@ function Page.Build(ctx, builder, shared)
     local width = HM.GetSectionWidth(host) or builder.width or 720
     local function Resize(height) P.FinishBody(builder, host, -height, 0) end
     local deck = Page.Deck(ctx, host, width, 0, Resize)
+    local present = InstallResolver(ctx, bars, function(...) return choose(...) end)
+    local state = WorkspaceState()
+    local function DefaultBar() return present[Page.selectedBar] and Page.selectedBar or bars[1] end
+    local function ViewExists(key) return key == "shared" or present[key] or present[PresetTarget(key)] end
+    local function Back()
+        WorkspaceState()
+        local previous, scroll = state.previous, state.scroll
+        choose(ViewExists(previous) and previous or DefaultBar() or "shared")
+        PageScroll(scroll or 0)
+        return true
+    end
     choose = function(key, mode, slot)
+        WorkspaceState()
+        local entering = key == "add" and state.key ~= "add"
+        if entering then state.previous, state.scroll = state.key, PageScroll() end
+        state.key = key
         if type(key) == "number" then Page.selectedBar = key end
-        local target = type(key) == "string" and tonumber(key:match("^preset(%d+)$"))
+        local target = PresetTarget(key)
         local view = deck:Select(key, function(item, child, childBuilder)
             if key == "shared" then shared(child, childBuilder, function() choose("shared") end)
             elseif key == "add" or target then
-                item.cards = P.DataTextPresetPage.Build(child, childBuilder, function() choose(key) end, target)
+                item.cards = P.DataTextPresetPage.Build(child, childBuilder, function() choose(key) end, target, WorkspaceState, Back)
             else P.DataTextEditor.Build(child, childBuilder, key, item, function(m, s) choose(key, m, s) end) end
         end)
         if view.select then view.select(mode, slot) end
         selection = (type(key) == "number" or key == "shared") and key or nil
         ctx.dataTextBarSelector:SetValue(selection)
+        if entering then PageScroll(0) end
+        if M.RefreshPageHistoryNav then M.RefreshPageHistoryNav() end
         return view
     end
     ctx.dataTextWorkspace = { deck = deck, choose = choose, buttons = buttons, navigation = navigation,
-        presets = function(bar) return choose("preset" .. bar) end }
-    local present = InstallResolver(ctx, bars, choose)
-    choose(present[Page.selectedBar] and Page.selectedBar or bars[1] or "add")
+        presets = function(bar) return choose("preset" .. bar) end, back = Back }
+    if ctx.entry then entryWorkspaces[ctx.entry] = ctx.dataTextWorkspace end
+    local function Restore()
+        local key = WorkspaceState().key
+        if key ~= "add" and not ViewExists(key) then key = DefaultBar() or "add" end
+        if deck.selected ~= key then choose(key) end
+    end
+    host:HookScript("OnShow", Restore)
+    M.TrackRefresh(ctx, function()
+        if M.activeKey == PAGE and host:IsVisible() then Restore() end
+    end)
+    Restore()
 end
+
+P.Suite.HostBridge.RegisterPageBack(M, PAGE, function(entry)
+    local view = entryWorkspaces[entry]
+    if view and view.deck.selected == "add" then return view.back end
+end)

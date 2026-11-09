@@ -56,3 +56,10 @@ end
 function Actions.OpenSets(owner, canUse)
     Suite.ContextMenu(owner, SetMenu, canUse)
 end
+
+function Actions.OpenLootGoals()
+    if NS.Host.InCombat() then return false end
+    local planner = Suite.PlanningTools
+    if planner and planner.Active() then return planner.Window.Open("loot") end
+    return Suite.Open("planningTools")
+end

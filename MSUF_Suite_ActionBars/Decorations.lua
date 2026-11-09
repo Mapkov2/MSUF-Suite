@@ -391,7 +391,10 @@ local function Recommended(rec)
     if not rec.filled then return false end
     local Pa = AB.Painter
     if rec.glowKind == Pa.GLOW_SPELL then return rec.glowID == spell end
-    if rec.glowKind == Pa.GLOW_DYNAMIC then return Pa.ActionSpell(rec.slot) == spell end
+    if rec.glowKind == Pa.GLOW_DYNAMIC then
+        if rec.virtual then return Pa.ButtonSpell(rec) == spell end
+        return Pa.ActionSpell(rec.slot) == spell
+    end
     return false
 end
 -- After a suite button's paint (its action or page changed).

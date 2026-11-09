@@ -35,6 +35,19 @@ local TITLES = {
     CalendarDay = { false, "Calendar day" },
 }
 local overlay
+local VERTICAL_HIT_INSET = 2
+
+-- Keep the label's configured layout width. Only the visible content should
+-- take mouse focus from the native minimap and its markers.
+function MM.SetInfoHitInsets(entry, left, right)
+    if entry.hitLeft == left and entry.hitRight == right then return end
+    entry.hitLeft, entry.hitRight = left, right
+    local button = entry.button
+    button:SetHitRectInsets(left, right, VERTICAL_HIT_INSET, VERTICAL_HIT_INSET)
+    if overlay and overlay.owner == button and not NS.IsCombatLocked() then
+        overlay:SetHitRectInsets(left, right, VERTICAL_HIT_INSET, VERTICAL_HIT_INSET)
+    end
+end
 
 local function OpensWindow(button)
     local key = button.infoKey
@@ -137,6 +150,7 @@ local function Attach(button)
     frame:SetFrameLevel(button:GetFrameLevel() + 5)
     frame:ClearAllPoints()
     frame:SetAllPoints(button)
+    frame:SetHitRectInsets(button:GetHitRectInsets())
     frame:Show()
     MM.Listen("PLAYER_REGEN_DISABLED", "infoOverlay", Detach)
 end

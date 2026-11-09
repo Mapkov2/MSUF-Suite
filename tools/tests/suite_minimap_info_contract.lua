@@ -64,6 +64,8 @@ do
     end
     check(entry.button.width == 48 and entry.button.height == 56 and entry.box.height == 52,
         "large weather icon was clipped by text-sized geometry")
+    local left, right = entry.button:GetHitRectInsets()
+    check(left == 0 and right == 0, "icon-only weather must keep the full icon hoverable")
     W.Step()
     check(W.MM.catcher.points[2][5] == -(56 - W.config.infoWeatherY + W.MM.BorderWidth()),
         "mouseover area did not cover the full weather icon below the map")
@@ -196,6 +198,19 @@ do
     check(entries.FPS.label.text == "80 BpS" and entries.Latency.label.text == "50 Ms", "fps/latency")
     check(entries.Coordinates.label.text == "52.3, 48.0" and W.Pending() == 1, "coordinates and one shared timer")
     check(entries.FPS.label.justify == "LEFT" and entries.Latency.label.justify == "RIGHT", "corner justification")
+    local fpsButton, latencyButton = entries.FPS.button, entries.Latency.button
+    local left, right, top, bottom = fpsButton:GetHitRectInsets()
+    check(fpsButton.width == c.infoFPSWidth and left == 0 and right == c.infoFPSWidth - entries.FPS.label:GetStringWidth() - 2
+        and top == 2 and bottom == 2, "empty space beside FPS must leave the map hoverable")
+    left, right = latencyButton:GetHitRectInsets()
+    check(left == c.infoLatencyWidth - entries.Latency.label:GetStringWidth() - 2 and right == 0,
+        "empty space to the left of latency must leave the map hoverable")
+    local hitWrites = 0
+    local setFPSInsets = fpsButton.SetHitRectInsets
+    function fpsButton:SetHitRectInsets(...)
+        hitWrites = hitWrites + 1
+        setFPSInsets(self, ...)
+    end
     local clockReads, fpsReads, latencyReads = reads.clock, reads.fps, reads.latency
     W.Advance(.5)
     check(reads.clock == clockReads and reads.fps == fpsReads and reads.latency == latencyReads, "independent intervals")
@@ -204,6 +219,7 @@ do
     W.Advance(.5)
     check(entries.FPS.label.text == "20 BpS" and entries.FPS.label.textColor[1] == 1, "status colour")
     check(entries.Coordinates.label.textWrites == writes, "unchanged coordinates rewritten")
+    check(hitWrites == 0, "a value change at the same width must not rewrite the hit rectangle")
     -- Hidden: nothing samples; visible again: sampling resumes.
     assert(S.Set("minimap", "visibility", 5))
     check(W.Pending() == 0, "hidden texts kept a timer")
@@ -229,6 +245,9 @@ do
     fps = W.secret
     W.Advance(1)
     check(entries.FPS.label.text == "--", "secret framerate")
+    left, right = fpsButton:GetHitRectInsets()
+    check(left == 0 and right == c.infoFPSWidth - entries.FPS.label:GetStringWidth() - 2,
+        "shorter FPS text must release the newly empty space")
     fps, x, y = 60, .5, .5
     -- Mouseover coordinates sample only while the map is hovered.
     assert(S.Set("minimap", "infoCoordinatesMode", 1))
@@ -258,6 +277,9 @@ do
     local box = clock.box
     check(box and box.shown and box.layer == "BACKGROUND" and math.abs(box.color[1] - 0x33 / 255) < 1e-6, "text box colour")
     check(box.width == #clock.label.text * 6 + 8 and box.points[1][1] == "CENTER", "text box follows the text")
+    left, right = clock.button:GetHitRectInsets()
+    check(left == math.max(0, (clock.button.width - box.width) / 2) and right == left,
+        "centered clock hover must follow its visible box")
     assert(S.SetMany("minimap", { infoClockBox = 3, infoClockBoxColor = "123456" }))
     check(box.shown and math.abs(box.color[1] - 0x12 / 255) < 1e-6
         and math.abs(box.color[2] - 0x34 / 255) < 1e-6 and math.abs(box.color[3] - 0x56 / 255) < 1e-6,
@@ -538,12 +560,13 @@ end
 -- clicks Blizzard's own opener button; the combat start releases it.
 do
     local opened, clicks = {}, {}
+    local x = .5
     local W = H.New(root, "Mainline", { clientSecurity = true, beforeModules = function(W)
         local G = W.G
         G.GetInventoryItemDurability = function(slot) if slot == 1 then return 50, 100 end end
         G.GetZoneText = function() return "Stormwind" end
         G.C_Map = { GetBestMapForUnit = function() return 1 end,
-            GetPlayerMapPosition = function() return { GetXY = function() return .5, .5 end } end }
+            GetPlayerMapPosition = function() return { GetXY = function() return x, .5 end } end }
         local character = W.New("Button", "CharacterMicroButton", W.UIParent)
         for _, native in ipairs({ character, W.cluster.ZoneTextButton }) do
             native.scripts.OnClick = function(self) clicks[#clicks + 1] = { button = self, secure = W.secure } end
@@ -554,7 +577,7 @@ do
     end })
     W.editModeReady = true
     local G, S = W.G, W.S
-    H.Enable(W, { captured = true, infoClock = false, infoDurability = true, infoLocation = true,
+    H.Enable(W, { captured = true, infoClock = false, infoDurability = true, infoDurabilityIcon = false, infoLocation = true,
         infoCoordinates = true })
     W.Step()
     local M, MM, tip = W.M, W.MM, G.GameTooltip
@@ -572,6 +595,10 @@ do
             and overlay.points[1][2] == entry.button and overlay:GetAttribute("type") == "click"
             and overlay:GetAttribute("clickbutton") == native, case[1] .. " text lacks the secure window click")
         check(not entry.button:IsProtected(), case[1] .. " text became protected")
+        local left, right, top, bottom = entry.button:GetHitRectInsets()
+        local overlayLeft, overlayRight, overlayTop, overlayBottom = overlay:GetHitRectInsets()
+        check(left + right > 0 and overlayLeft == left and overlayRight == right
+            and overlayTop == top and overlayBottom == bottom, "secure click must match the compact text hit rectangle")
         -- The pointer moves onto the overlay: the text keeps its tooltip.
         overlay.mouseOver = true
         W.Fire(entry.button, "OnLeave")
@@ -588,10 +615,24 @@ do
     end
     check(#opened == 0, "an information text opened its window from the addon's code")
     local overlay = MM.infoOverlay
+    local coordinates = entries.Coordinates.button
+    Hover(entries.Coordinates)
+    local _, originalRight = coordinates:GetHitRectInsets()
+    x = .05
+    W.Event("ZONE_CHANGED_NEW_AREA")
+    local _, updatedRight = coordinates:GetHitRectInsets()
+    local _, overlayRight = overlay:GetHitRectInsets()
+    check(updatedRight > originalRight and overlayRight == updatedRight,
+        "active secure click must shrink when the coordinates become shorter")
     -- The combat start releases the overlay before the lockdown; none in combat.
-    Hover(entries.Durability)
     W.SetCombat(true)
     check(not overlay.shown and #overlay.points == 0 and overlay.owner == nil, "the overlay stayed over a text in combat")
+    x = .5
+    W.Event("ZONE_CHANGED_NEW_AREA")
+    local _, combatRight = coordinates:GetHitRectInsets()
+    _, overlayRight = overlay:GetHitRectInsets()
+    check(combatRight == originalRight and overlayRight == updatedRight,
+        "in-combat updates must only resize the unprotected text hit rectangle")
     W.Fire(entries.Durability.button, "OnLeave")
     Hover(entries.Durability)
     W.Click(entries.Durability.button)

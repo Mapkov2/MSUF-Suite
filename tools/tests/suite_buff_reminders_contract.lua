@@ -1,4 +1,6 @@
 local root = assert(arg[1], "repository root required")
+local Secrets = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+Secrets.GUARD_NAMES.falsy.Public = true
 local combat, auraReads, itemReads, foodReads = false, 0, 0, 0
 local attributeWrites, textureWrites, enchantReads = 0, 0, 0
 local inventory
@@ -1389,6 +1391,92 @@ do
     module.config.soulstoneOnAlly, module.config.beaconOnAlly, module.config.groupBuff = false, false, true
     module:Refresh()
     RunAfter()
+    do
+        local rangeEvent = "UNIT_IN_RANGE_UPDATE"
+        local ranges, rangeReads, groupReads = { party1 = false, party2 = true, party3 = false }, 0, 0
+        local dead, phases = {}, {}
+        UnitIsDeadOrGhost = function(unit) return dead[unit] == true end
+        UnitPhaseReason = function(unit) return phases[unit] end
+        UnitInRange = function(unit)
+            rangeReads = rangeReads + 1
+            assert(unit ~= "player", "range filter probed the player")
+            return ranges[unit], true
+        end
+        C_UnitAuras.GetUnitAuraBySpellID = function(unit)
+            groupReads = groupReads + 1
+            return memberAuras[unit] and {} or nil
+        end
+        local function Fire(event, ...) eventFrame.OnEvent(eventFrame, event, ...) end
+        local function Missing() return module.list.entries[1].missingCount end
+        local function Edge(unit, value)
+            ranges[unit] = value
+            Fire(rangeEvent, unit, value)
+        end
+        assert(NS.Defaults.suite.modules.buffReminders.onlyInRange == false,
+            "group range filtering must be opt-in")
+        assert(not eventFrame.events[rangeEvent] and Missing() == 1,
+            "opt-out must keep the missing remote member without watching range")
+        module.config.onlyInRange = true
+        module:Refresh()
+        assert(eventFrame.events[rangeEvent] == eventFrame.events.UNIT_AURA and rangeReads == 3 and Missing() == 0,
+            "range filter did not seed the current roster or exclude the missing remote member")
+        rangeReads, groupReads = 0, 0
+        Edge("party3", true)
+        for _ = 1, 20 do Edge("party3", true) end
+        assert(#afterQueue == 1 and RunAfter() == 1 and Missing() == 1 and rangeReads == 0 and groupReads == 0,
+            "a known range edge must update once from cached aura data without probing range")
+        local stop = Secrets.Watch(root .. "/MSUF_Suite_BuffReminders/Group.lua", { strict = true })
+        local secretUnit, secretRange = Secrets.New("string"), Secrets.New("boolean")
+        rawset(secretUnit, "secret", true)
+        rawset(secretRange, "secret", true)
+        Fire(rangeEvent, secretUnit, true)
+        Edge("party3", secretRange)
+        RunAfter()
+        local violations = stop()
+        assert(#violations == 0, table.concat(violations, "\n"))
+        assert(Missing() == 0, "unknown range was treated as confirmed range")
+        Edge("party3", true)
+        RunAfter()
+        dead.party3 = true
+        Fire("UNIT_FLAGS", "party3")
+        RunAfter()
+        assert(Missing() == 0, "a dead member counted as in range")
+        dead.party3 = nil
+        Fire("UNIT_FLAGS", "party3")
+        RunAfter()
+        assert(Missing() == 1, "a revived in-range member did not count again")
+        phases.party3 = 1
+        Fire("UNIT_PHASE", "party3")
+        RunAfter()
+        Edge("party3", true)
+        RunAfter()
+        assert(Missing() == 0, "a stale positive range edge counted a phased member")
+        phases.party3 = nil
+        Fire("UNIT_PHASE", "party3")
+        RunAfter()
+        assert(Missing() == 1, "a member back in phase did not count again")
+        Edge("party2", false)
+        Edge("party3", false)
+        RunAfter()
+        assert(BR.GroupPresent(module, { ally = {}, allyMissing = true }) == true,
+            "a targeted ally buff appeared with no ally in range")
+        memberAuras.player = false
+        Fire("UNIT_AURA", "player", { isFullUpdate = true })
+        assert(Missing() == 1, "the range filter hid a missing self buff")
+        Fire("PLAYER_REGEN_DISABLED")
+        assert(not eventFrame.events[rangeEvent], "combat kept the range subscription")
+        ranges.party3 = true
+        Fire("PLAYER_REGEN_ENABLED")
+        assert(eventFrame.events[rangeEvent] and Missing() == 2, "combat end did not reseed current range")
+        roster.party3, members = nil, 2
+        Fire("GROUP_ROSTER_UPDATE")
+        RunAfter()
+        assert(#eventFrame.events[rangeEvent] == 3 and Missing() == 1,
+            "a departed member kept contributing to the range filter")
+        module.config.onlyInRange = false
+        module:Refresh()
+        assert(not eventFrame.events[rangeEvent], "opt-out kept the range subscription")
+    end
     module.Update, module.Compile = update, compile
     module:Disable()
     assert(not eventFrame.events.UNIT_AURA and not eventFrame.events.GROUP_ROSTER_UPDATE,

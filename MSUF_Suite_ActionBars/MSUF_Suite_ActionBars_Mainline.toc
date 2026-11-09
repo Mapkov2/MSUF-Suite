@@ -2,10 +2,11 @@
 ## Title: MSUF Suite - Action bars
 ## Notes: Optional Action bars module for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.16-alpha
+## Version: 0.1.17-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
+## SavedVariablesPerCharacter: MSUFSuiteIndependentBar
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Bootstrap.lua
@@ -13,10 +14,14 @@ Bars.lua
 Decorations.lua
 Blizzard.lua
 Paging.lua
+VirtualActions.lua
+SnapshotNative.lua
+Snapshots.lua
 Visibility.lua
 Bindings.lua
 KeyAudit.lua
 Style.lua
+VirtualPaint.lua
 Paint.lua
 NativeButtons.lua
 Flush.lua

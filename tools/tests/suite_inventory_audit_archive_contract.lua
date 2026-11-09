@@ -47,6 +47,36 @@ archive:Open()
 local window
 for _, frame in ipairs(E.frames) do if frame.owner == archive and frame.actions then window = frame end end
 assert(window, "the archive window did not open")
+
+-- Browsing starts from cached snapshots, including while the live bank is open.
+local scans = E.calls.scan
+archive:Browse("bank")
+eq(#window.filtered, 1, "bank launcher scopes to recorded character banks")
+eq(window.filtered[1].label, "Item 12 × 8 — Beta-Realm (Bank)", "character bank quantity is dated and read-only")
+window.tabs[2]:Click()
+eq(#window.filtered, 2, "bags tab shows both recorded characters")
+window.actions[5]:Click()
+eq(E.menu[1][1], "All characters", "character menu can restore the combined view")
+eq(E.menu[2][1], "Alpha-Realm", "character menu includes an alt")
+eq(E.menu[3][1], "Beta-Realm", "character menu includes the current character")
+E.menu[2][2]()
+eq(#window.filtered, 1, "choosing an alt scopes the rows")
+eq(window.filtered[1].label, "Item 12 × 4 — Alpha-Realm (Bags)", "alt shows its own recorded quantity")
+eq(window.status.text:find("Recorded ", 1, true) ~= nil, true, "selected snapshot shows when it was recorded")
+window.search:SetText("not in archive")
+eq(#window.filtered, 0, "search filters inside the selected snapshot")
+window.search:SetText("ITEM 12")
+eq(#window.filtered, 1, "recorded item search is case insensitive")
+window.tabs[4]:Click()
+eq(#window.filtered, 1, "warband is a separate recorded location")
+eq(window.filtered[1].label, "Item 12 × 10 — Warband (Warband bank)", "warband count is independent of selected character")
+window.tabs[2]:Click()
+eq(#window.filtered, 1, "returning from warband preserves the character selection")
+eq(E.calls.scan, scans, "archive launch, search and navigation do not scan live containers")
+eq(#E.writes, 0, "archive browsing never moves items")
+archive:Open()
+eq(#window.filtered, 4, "the options launcher still opens the complete archive")
+
 eq(window.actions[3].text, "Forget a character", "forget-a-character action")
 eq(window.actions[4].text, "Forget warband bank", "forget-warband action")
 eq(window.actions[3].enabled, true, "another character can be forgotten")
@@ -154,5 +184,101 @@ eq(Visit(), 0, "an unreadable bag slot pauses the sale")
 Bags({ 12, POOR })
 protection.active = false
 eq(Visit(), 1, "protection off: the native sale is untouched")
+
+local function CheckNativeSources(forever)
+    local env = F.New(root, forever)
+    local module = env:Start("inventoryArchive", { characters = 5, tooltips = true })
+    env:Flush()
+    local row = env.NS.RootDB.suiteInventoryArchive.characters[env.guid]
+    local function Event(event)
+        env:Emit(module, event)
+        env:Flush()
+    end
+
+    local mailReads, mailboxComplete = 0, true
+    GetInboxNumItems = function() return 2, mailboxComplete and 2 or 3 end
+    GetInboxHeaderInfo = function(message) return nil, nil, nil, nil, nil, message == 2 and 10 or 0, 2, 1 end
+    GetInboxItem = function(message, slot)
+        mailReads = mailReads + 1
+        assert(message == 1, "cash-on-delivery message read as owned inventory")
+        if slot == 4 then return "Ore", 12, 1, 5 end
+    end
+    CheckInbox = function() error("archive must not query the inbox") end
+    Event("MAIL_INBOX_UPDATE")
+    eq(mailReads, 0, "hidden mailbox never read")
+    MailFrame:Show()
+    env:Emit(module, "MAIL_INBOX_UPDATE"); env:Emit(module, "MAIL_INBOX_UPDATE"); env:Flush()
+    eq(mailReads, 4, "mail snapshots coalesce and follow sparse attachment slots")
+    eq(row.mail.counts[12], 5, "mail attachment count")
+    local savedMail = row.mail
+    mailboxComplete = false
+    env.now = env.now + 1
+    Event("MAIL_INBOX_UPDATE")
+    eq(row.mail, savedMail, "partial inbox preserves the previous complete snapshot")
+    MailFrame:Hide()
+
+    AuctionHouseFrame = env.S.CreateFrame("Frame")
+    Enum.AuctionStatus = { Active = 0, Sold = 1 }
+    local auctionFull, auctionReads = false, 0
+    C_AuctionHouse = {
+        HasFullOwnedAuctionResults = function() return auctionFull end,
+        GetNumOwnedAuctions = function() return 2 end,
+        GetOwnedAuctionInfo = function(index)
+            auctionReads = auctionReads + 1
+            return { status = index - 1, itemKey = { itemID = 12 }, quantity = index * 10 }
+        end,
+        QueryOwnedAuctions = function() error("archive must not query auctions") end,
+    }
+    Event("OWNED_AUCTIONS_UPDATED")
+    eq(auctionReads, 0, "incomplete auction listing not read")
+    auctionFull = true
+    Event("OWNED_AUCTIONS_UPDATED")
+    eq(row.auctions.counts[12], 10, "only active owned auctions contribute")
+    eq(auctionReads, 2, "owned auction entries read exactly once")
+    AuctionHouseFrame:Hide()
+
+    GuildBankFrame = env.S.CreateFrame("Frame")
+    local club, activeTab, guildReads, canView = 1234, 1, 0, true
+    C_Club = { GetGuildClubId = function() return club end }
+    GetGuildInfo = function() return "Guild" end
+    GetCurrentGuildBankTab = function() return activeTab end
+    GetGuildBankTabInfo = function(tab) return "Tab " .. tab, 1, canView end
+    GetGuildBankItemInfo = function(_, slot)
+        guildReads = guildReads + 1
+        if slot == 1 then return 1, 3 end
+    end
+    GetGuildBankItemLink = function() return "|Hitem:12:0|h[Ore]|h" end
+    QueryGuildBankTab = function() error("archive must not query guild tabs") end
+    env:Emit(module, "GUILDBANKBAGSLOTS_CHANGED")
+    activeTab = 2
+    env:Flush()
+    eq(guildReads, 0, "switching tabs before capture does not record an unloaded tab")
+    Event("GUILDBANKBAGSLOTS_CHANGED")
+    eq(guildReads, 98, "only the loaded guild tab is read")
+    module:Browse("guild")
+    local items = module:Rows("")
+    eq(#items, 1, "guild observation displayed in its separate scope")
+    eq(items[1].label, "Item 12 × 3 — Guild (Tab 2) (Guild bank)", "guild result identifies its observed tab")
+    club = 1235
+    eq(#module:Rows(""), 0, "another guild cannot browse the previous guild observation")
+    club = 1234
+    env.guid, env.name = "other-guild-member", "Other"
+    eq(#module:Rows(""), 0, "another alt must observe authorized tabs itself")
+    env.guid, env.name = "player-a", "Alpha"
+    canView = false
+    Event("GUILDBANK_UPDATE_TABS")
+    eq(#module:Rows(""), 0, "explicitly revoked tab access removes the stored observation")
+    Event("GUILDBANKBAGSLOTS_CHANGED")
+    eq(guildReads, 98, "a forbidden tab is never read")
+    GuildBankFrame:Hide()
+
+    local tooltip = {}
+    env.tooltip(tooltip, { id = 12 })
+    eq(tooltip[1][1], "Alpha-Realm (Mail)", "mail counts identify the recorded character in the tooltip")
+    eq(tooltip[2][1], "Alpha-Realm (Auction House)", "auction counts identify the recorded character in the tooltip")
+end
+
+CheckNativeSources(false)
+CheckNativeSources(true)
 
 print("inventory audit archive: " .. checks .. " behavior checks")

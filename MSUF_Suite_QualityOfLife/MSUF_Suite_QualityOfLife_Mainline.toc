@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Quality of Life
 ## Notes: Optional combat, quest, merchant, vault, tooltip and experience helpers for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.16-alpha
+## Version: 0.1.17-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -110,6 +110,7 @@ PlayerAuraSkins.lua
 NativeExperienceBar.lua
 ExperienceTrack.lua
 ExperienceBarText.lua
+ExperienceOptimizer.lua
 ExperienceBar.lua
 ActionTracker.lua
 InnervateCue.lua
@@ -117,6 +118,7 @@ DurabilityAlert.lua
 BattleRes.lua
 Skyriding.lua
 ThreatMeter.lua
+ForeverFlightTimes.lua
 FlightTimer.lua
 GlimmerVisuals.lua
 Glimmer.lua

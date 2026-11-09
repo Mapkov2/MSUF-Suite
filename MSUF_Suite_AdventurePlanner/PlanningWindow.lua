@@ -8,6 +8,7 @@ Plan.Window = Window
 -- (owner decision 2026-10-29).
 local TABS = { { key = "characters", label = "Weekly overview", group = "week" },
     { key = "preparation", label = "Preparation", group = "week" },
+    { key = "loot", label = "Loot goals", group = "week" },
     { key = "goals", label = "Mythic+ goals", group = "history", hidden = true },
     { key = "runs", label = "Mythic+ archive", group = "history" },
     { key = "raid", label = "Raid archive", group = "history" }, { key = "loadouts", label = "Instance loadouts", group = "tools" },
@@ -18,10 +19,10 @@ function Window.Refresh()
     if Plan.owner and Plan.CanEdit() then Plan.Board.Refresh(Plan.owner) end
 end
 
-function Window.Edit(title, label, text, limit, save, valid, multiline)
+function Window.Edit(title, label, text, limit, save, valid, multiline, receive)
     if not Plan.CanEdit() then return end
     S.ToolListWindow.Edit(Plan.owner, { title = title, label = label, text = text or "", maxBytes = limit,
-        multiline = multiline, valid = valid, onSave = function(_, value)
+        multiline = multiline, receive = receive, valid = valid, onSave = function(_, value)
             if not Plan.CanEdit() then return false end
             return save(value)
         end })
@@ -89,6 +90,7 @@ function Window.Rows()
     local tab = Window.tab
     if tab == "characters" then return Plan.Weekly.Rows(false) end
     if tab == "preparation" then return Preparation() end
+    if tab == "loot" then return Plan.Loot.Rows(Window.hideEquipped) end
     if tab == "loadouts" then return Plan.Loadouts.Rows() end
     if tab == "runs" then
         local rows = Plan.History.Runs("", Window.minimum, Window.sort)
@@ -119,6 +121,7 @@ function Window.Rows()
 end
 
 local function Status()
+    if Window.tab == "loot" and Window.hideEquipped then return S.Text("Equipped items are hidden.") end
     if Window.tab == "runs" then
         return S.Text("Minimum +%d | Sort: %s | Compare: select a first run, then another run.")
             :format(Window.minimum, S.Text(Window.sort == "level" and "Level" or Window.sort == "time" and "Time" or "Date"))

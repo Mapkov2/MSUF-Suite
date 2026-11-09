@@ -51,6 +51,7 @@ function Overview.Hint(tab)
     if tab == "preparation" then
         return S.Text("Check durability, talents, loot and equipment before your group starts.")
     end
+    if tab == "loot" then return S.Text("Save items you want to collect on this character.") end
     if tab == "goals" then return S.Text("Set a target keystone level for each dungeon you want to push.") end
     if tab == "lfg" then return S.Text("Save Group Finder filters, roles and your note as reusable workspaces.") end
     if tab == "loadouts" then return S.Text("Enter a dungeon or raid and select a talent loadout first.") end

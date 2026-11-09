@@ -8,6 +8,7 @@ local NS, S = P.NS, P.Suite
 local AB = P.ActionBars
 local M = AB.M
 local Painter, NativeButtons = AB.Painter, AB.NativeButtons
+local Virtual = AB.VirtualPaint
 local PROC_PIXEL = AB.ENUM.PROC_GLOW.PIXEL
 local slotMap, Visible = Painter.slotMap, Painter.Visible
 local Walk, WalkNative, Paint, Icon, Refill, PaintBar = Painter.Walk, Painter.WalkNative, Painter.Paint, Painter.Icon, Painter.Refill, Painter.PaintBar
@@ -105,6 +106,14 @@ local function OtherCooldownAndCount(rec)
     spellCooldowns[rec] = nil
     CooldownAndCount(rec)
 end
+local function VirtualActionbarCooldown(rec)
+    spellCooldowns[rec] = nil
+    Virtual.Cooldown(rec)
+end
+local function VirtualActionbarCooldownAndCount(rec)
+    spellCooldowns[rec] = nil
+    Virtual.CooldownAndCount(rec)
+end
 local function ActionbarCooldownWalk()
     if dirty.count then
         Walk(OtherCooldownAndCount)
@@ -116,11 +125,17 @@ local function ActionbarCooldownWalk()
     if not AB.directDuration then WalkNative(NativeFeedback) end
 end
 
+local function TypedCooldown(rec)
+    if rec.virtual then return Virtual.Cooldown(rec) end
+    return Cooldown(rec)
+end
+local NamedCooldown = Virtual and TypedCooldown or Cooldown
+
 -- The buttons SPELL_UPDATE_COOLDOWN named, once each per flush.
 local function SpellCooldownWalk()
     for rec in pairs(spellCooldowns) do
         spellCooldowns[rec] = nil
-        if rec.filled and Visible(rec.bar) then Run(spellCooldowns, rec, true, Cooldown, rec) end
+        if rec.filled and Visible(rec.bar) then Run(spellCooldowns, rec, true, NamedCooldown, rec) end
     end
 end
 local function UsableWalk() Walk(Usable) end
@@ -352,6 +367,17 @@ local function Reset()
     for bar in pairs(gridBars) do gridBars[bar] = nil end
     protected.routing, protected.grid = false, false
     ResetUnits()
+end
+
+-- The existing dirty passes keep the native callbacks. The independent bar
+-- chooses its typed counterpart only when walking its own filled buttons.
+if Virtual then
+    Virtual.walk = {
+        [Cooldown] = Virtual.Cooldown, [CooldownAndCount] = Virtual.CooldownAndCount,
+        [OtherCooldown] = VirtualActionbarCooldown, [OtherCooldownAndCount] = VirtualActionbarCooldownAndCount,
+        [Usable] = Virtual.Usable, [UsableIfUnreported] = Virtual.Usable,
+        [Count] = Virtual.Count, [State] = Virtual.State, [Icon] = Virtual.Paint,
+    }
 end
 
 -- What the event map (Events.lua) marks directly.

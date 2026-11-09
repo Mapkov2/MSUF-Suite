@@ -288,8 +288,8 @@ local function CheckLinks(rulesOf, label)
     local switches = {
         mapPotionItem = "mapPotion", mapPotionMaps = "mapPotion",
         flaskChoice = "autoFlask", foodChoice = "autoFood", runeChoice = "autoRune", oilChoice = "autoWeapon",
-        readyCheckManaPercent = "readyCheckMana", readyCheckDuration = "readyCheckMana",
-        readyCheckSize = "readyCheckMana", cursorOffsetX = "followCursor", cursorOffsetY = "followCursor",
+        readyCheckManaPercent = "readyCheckMana",
+        cursorOffsetX = "followCursor", cursorOffsetY = "followCursor",
     }
     for _, demon in ipairs(catalogNS.BuffReminderDemons) do switches[demon.key] = "demonChoiceWarning" end
     for key, switch in pairs(switches) do
@@ -298,6 +298,9 @@ local function CheckLinks(rulesOf, label)
         eq(type(rulesOf[switch].default), "boolean", label .. ": " .. switch .. " is not a switch")
         assert(rule.hidden == nil and rule.requiresChoice == nil, label .. ": " .. key .. " got more than a link")
     end
+    eq(rulesOf.readyCheckIssues.default, false, label .. ": preparation warning must be opt-in")
+    eq(rulesOf.readyCheckDuration.enableKey, nil, label .. ": warning duration must also work with preparation enabled")
+    eq(rulesOf.readyCheckSize.enableKey, nil, label .. ": warning size must also work with preparation enabled")
     local channel = rulesOf.reminderSoundChannel.requiresChoice
     eq(channel and channel.key, "reminderSound", label .. ": the sound channel follows another setting")
     assert(not channel.values[1], label .. ": the sound channel is open with no sound")

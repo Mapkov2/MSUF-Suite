@@ -15,13 +15,14 @@ local NO_OPS = { "SetSize", "SetPoint", "ClearAllPoints", "SetAllPoints", "SetFr
     "EnableMouse", "SetClampedToScreen", "SetMovable", "StartMoving", "StopMovingOrSizing", "RegisterForDrag",
     "SetColorTexture", "SetHeight", "SetWidth", "SetFont", "SetTextColor", "SetJustifyH", "SetWordWrap",
     "SetMaxLines", "SetAutoFocus", "SetVertexColor", "SetTexture", "SetAlpha", "SetMultiLine",
-    "SetBackdropColor", "SetBackdropBorderColor", "SetTextInsets" }
+    "SetBackdropColor", "SetBackdropBorderColor", "SetTextInsets", "SetMaxBytes", "SetEnabled" }
 local function Widget(parent)
     local widget = { parent = parent, shown = true, scripts = {}, text = "" }
     for _, name in ipairs(NO_OPS) do widget[name] = function() end end
     function widget:SetBackdrop(value) self.backdrop = value end
     function widget:SetText(value) self.text = value end
     function widget:GetText() return self.text end
+    function widget:GetParent() return self.parent end
     function widget:Show() self.shown = true end
     function widget:Hide()
         local was = self.shown
@@ -29,6 +30,7 @@ local function Widget(parent)
         if was and self.scripts.OnHide then self.scripts.OnHide(self) end
     end
     function widget:IsShown() return self.shown end
+    function widget:SetShown(shown) if shown then self:Show() else self:Hide() end end
     function widget:SetScript(name, callback) self.scripts[name] = callback end
     function widget:SetFocus() self.focused = true end
     function widget:ClearFocus() self.focused = false end
@@ -46,6 +48,7 @@ local function CreateFrame(_, _, parent, template)
     local frame = Widget(parent)
     -- Blizzard's InputScrollFrameTemplate (InputBoxTemplates.xml).
     frame.template = template
+    if template == "InputBoxInstructionsTemplate" then frame.Instructions = Widget(frame) end
     if template and template:find("InputScrollFrameTemplate", 1, true) then
         frame.CharCount, frame.EditBox = Widget(frame), Widget(frame)
         for _, key in ipairs({ "TopLeftTex", "TopTex", "TopRightTex", "LeftTex", "MiddleTex", "RightTex",
@@ -170,6 +173,7 @@ local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLoc
     ChatSoundChannels = catalogNS.ChatSoundChannels, ChatLineLimits = catalogNS.ChatLineLimits }
 local themed
 NS.HostBridge = {
+    MenuEditBox = function() end,
     MenuMaterial = function(frame, material)
         if not themed then return false end
         frame.material = material
@@ -187,8 +191,9 @@ NS.HostBridge = {
     end,
     MenuButton = function(parent)
         if not themed then return end
-        parent.themedAction = Widget(parent)
-        return parent.themedAction
+        local button = Widget(parent)
+        button.themedAction = true
+        return button
     end,
 }
 assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = Suite, NS = NS })
@@ -338,7 +343,7 @@ do
     eq(panel.material, "shell", "host shell")
     eq(panel.edit.material, "input", "host input")
     eq(panel.close, panel.themedClose, "host close button")
-    eq(panel.copyAll, panel.themedAction, "host action button")
+    assert(panel.copyAll.themedAction and panel.previous.themedAction and panel.next.themedAction, "host action buttons")
     eq(panel.copyAll.text, "Copy all", "host action label")
     panel.copyAll.scripts.OnClick(panel.copyAll)
     eq(panel.allView.material, "card", "host multiline surface")

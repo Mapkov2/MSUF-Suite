@@ -5,6 +5,7 @@
 -- the voice transcription window has its own event handler, chat frames
 -- hold 128 lines and BackFillMessage adds behind the oldest one.
 local root = assert(arg[1])
+local strict = arg[2] and assert(loadfile(arg[2]))()
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
 local function eq(a, b, label) assert(a == b, (label or "value") .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
 
@@ -654,4 +655,91 @@ tocFile:close()
 assert(tocText:gsub("\r", ""):find("\n## SavedVariablesPerCharacter: MSUFSuiteChatHistory\n", 1, true),
     "the Chat TOC does not keep history per character")
 eq(next(NS.RootDB), nil, "chat lines reached the account-wide Suite database")
+
+-- Enhancements are opt-in; native chat keeps its links and exact source frame.
+do
+    wipe = function(target) for key in pairs(target) do target[key] = nil end end
+    local senderFilter, lookups, itemLookups = nil, 0, 0
+    local message, picked = "|cffffffff|Hitem:42:0|h[Item]|h|r", nil
+    local guid = "Player-1-123"
+    if strict then
+        strict.Install()
+        local public, finite, text = S.Public, S.Finite, S.PublicText
+        S.Public = function(value) return not strict.IsSecret(value) and public(value) end
+        S.PublicText = function(value) return not strict.IsSecret(value) and text(value) or nil end
+        S.Finite = function(value) return not strict.IsSecret(value) and finite(value) end
+    end
+    local hidden = strict and strict.New("string") or "secret"
+    ChatFrameUtil = {
+        AddSenderNameFilter = function(fn)
+            assert(not senderFilter, "duplicate native sender filter")
+            senderFilter = fn
+        end,
+        RemoveSenderNameFilter = function(fn)
+            eq(fn, senderFilter, "wrong native sender filter released")
+            senderFilter = nil
+        end,
+    }
+    RAID_CLASS_COLORS = { MAGE = {} }
+    GetClassAtlas = function(class) return "classicon-" .. class end
+    GetPlayerInfoByGUID = function(value)
+        eq(value, guid, "only readable player GUIDs go to the class API")
+        lookups = lookups + 1
+        return "Mage", "MAGE"
+    end
+    C_Item = { GetItemIconByID = function(id)
+        eq(id, 42, "lookup uses the item ID")
+        itemLookups = itemLookups + 1
+        return 123456
+    end }
+    local chat, module, handlers = LoadChat(nil)
+    chat.ShowChatLine = function(text) picked = text end
+    local window = Frame(1)
+    function window:GetMessageInfo(index) return self.lines[index] end
+    config.coloredUnreadTabs, config.saveHistory = false, false
+    config.allTimestamps, config.copyOnTimestamp, config.showClassIcons, config.showItemIcons = true, true, true, true
+    chat.MessagesRefresh(module)
+    chat.ApplyMessages(module, window)
+    local function Decorate(name, id)
+        return senderFilter("CHAT_MSG_CHANNEL", name, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, id)
+    end
+    local stopWatch = strict and strict.Watch(root .. "/MSUF_Suite_Chat/Messages.lua", { strict = true })
+    eq(Decorate("Mage", hidden), nil, "restricted GUID reached the filter")
+    eq(Decorate(hidden, guid), nil, "restricted sender reached the filter")
+    eq(Decorate("Mage", guid), "|A:classicon-MAGE:12:12|a Mage", "class icon markup")
+    eq(Decorate("Mage", guid), "|A:classicon-MAGE:12:12|a Mage", "class icon reused")
+    eq(lookups, 1, "repeated GUID looked up a second time")
+    window:AddMessage(message, 1, 1, 1)
+    local line = window.lines[1]
+    assert(line:find("|T123456:0|t ", 1, true) and line:find("|Hitem:42:0|h[Item]|h", 1, true), "item icon or native link missing")
+    local link = assert(line:match("^|H(msufline:[^|]+)|h%[12:34%]|h "), "clickable timestamp missing")
+    eq(itemLookups, 1, "single item icon lookup")
+    window:AddMessage(line, 1, 1, 1)
+    eq(window.lines[2], line, "Blizzard's temporary-window copy received duplicated icons or timestamps")
+    eq(itemLookups, 1, "existing item icon repeated the lookup")
+    window:AddMessage(message, 1, 1, 1)
+    eq(itemLookups, 1, "the same item link bypassed the icon cache")
+    window:AddMessage("|Hitem:99999999999999999999|h[Invalid]|h", 1, 1, 1)
+    eq(itemLookups, 1, "an invalid item link queried the native API")
+    window:AddMessage(hidden, 1, 1, 1)
+    if strict then assert(strict.IsSecret(window.lines[5]), "restricted text was decorated")
+    else eq(window.lines[5], hidden, "restricted text was decorated") end
+    handlers.msufline(hidden, nil, nil, { button = "LeftButton", frame = window })
+    handlers.msufline(link, nil, nil, { button = hidden, frame = window })
+    eq(picked, nil, "restricted click data opened a copy window")
+    handlers.msufline(link, nil, nil, { button = "RightButton", frame = window })
+    eq(picked, nil, "right click copied a message")
+    handlers.msufline(link, nil, nil, { button = "LeftButton", frame = window })
+    eq(picked, line, "timestamp lookup did not use the native source frame")
+    chat.MessagesDisable()
+    eq(senderFilter, nil, "disabled chat left its native sender filter registered")
+    picked = nil
+    handlers.msufline(link, nil, nil, { button = "LeftButton", frame = window })
+    eq(picked, nil, "disabled chat still opened a timestamp copy window")
+    if stopWatch then
+        local violations = stopWatch()
+        assert(#violations == 0, table.concat(violations, "\n"))
+    end
+end
+
 print("chat messages PASS")

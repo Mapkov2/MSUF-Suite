@@ -1802,4 +1802,26 @@ do
     style,r=K.GlowSpec({glowStyle=4,glowColor="ff0000"},1,true,0,0,0)
     assert(style==4 and r==1,"a per-spell color wins over the bar's tint")
 end
+-- The optional symbols distinguish unreadable timing and uncounted stock.
+do
+    C.state.readableValues, C.state.potionStockIcon = true, false
+    T.SetReadability(true)
+    ess.stackText = false
+    ess.styleGen = ess.styleGen + 1
+    I.Sync("ess")
+    Info(100, false, false)
+    T.Refresh(b1, "full")
+    assert(b1.icon.readinessValue == "+", "readable idle spell does not show ready")
+    info[100] = nil
+    T.Refresh(b1, "full")
+    assert(b1.icon.readinessValue == "?", "unavailable timing was treated as known")
+    b4.catSpell = 400
+    Info(400, false, false)
+    T.Refresh(b4, "full")
+    assert(b4.icon.readinessValue ~= "!", "category without a stock read was treated as empty")
+    local icon = b1.icon
+    I.Release("ess")
+    assert(not icon.readinessValue and not icon.readinessText.shown, "pooled icon retained its status symbol")
+    T.SetReadability(nil)
+end
 print("Cooldown manager render: constants, 10:9 defaults, pooled icons, memoized styling, tooltips, hidden-bar mouse, threshold formatter, keybinds, secret sinks, isolation, ready edges, ready inside a GCD, charges, hideReady, category counts, cached bag totals, memoized items, empty healthstones, held item cooldowns, simulation, zero allocation, hot-path budgets, tint, range references, glow union and repaint memo, assist and release passed")

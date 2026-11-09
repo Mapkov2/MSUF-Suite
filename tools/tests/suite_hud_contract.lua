@@ -28,6 +28,7 @@ local function Widget(parent, fontString)
     end
     function w:ClearAllPoints() end
     function w:SetAllPoints() end
+    function w:SetClipsChildren(value) self.clipsChildren = value end
     function w:SetSize(a, b) self.width, self.height = a, b end
     function w:SetWidth(a) self.width = a end
     function w:GetWidth() return self.width or 0 end
@@ -1263,7 +1264,7 @@ end
 UseQuestLogSpecialItem = function() error("addon called protected UseQuestLogSpecialItem") end
 QuestUtil.QuestShowsItemByIndex = function() return true end
 C_QuestLog.GetLogIndexForQuestID = function(id) return id end
-C_QuestLog.GetTimeAllowed = function() return 120, 30 end
+C_QuestLog.GetTimeAllowed = function() return 120, clock - 70 end
 C_QuestLog.GetQuestObjectives = function()
     local lines = {}
     for i = 1, 6 do lines[i] = { text = i == 6 and string.rep("Long objective text ", 5)
@@ -1313,24 +1314,96 @@ assert(activeQuest.itemButton:GetAttribute("item1") == "item:778",
 clock = 101
 Drain()
 assert(activeQuest.timer.text == "1:29", "visible quest timer must update without rebuilding rows")
-activeQuest.collapse.OnClick(activeQuest.collapse)
-assert(not tracker.rows["line:quests:42:1"] and moduleStates.objectives.collapsedEntries["quests:42"]
-    and tracker.config.collapsedEntries == nil,
-    "quest collapse must hide only its objective lines")
-tracker.rows["entry:quests:42"].collapse.OnClick(tracker.rows["entry:quests:42"].collapse)
-assert(tracker.rows["line:quests:42:6"], "quest expansion must restore every objective")
+do
+    local function ToggleQuest()
+        activeQuest.collapse.OnClick(activeQuest.collapse, "LeftButton")
+    end
+
+    ToggleQuest()
+    local motion = assert(tracker.questMotion, "quest folding should animate by default")
+    local objective = assert(tracker.rows["line:quests:42:1"])
+    local heightBeforeFold = tracker.content:GetHeight()
+    assert(motion.clipsChildren and objective:GetParent() == motion and not objective:IsMouseEnabled()
+        and activeQuest.itemButton:GetParent() == activeQuest and motion.OnUpdate,
+        "only objective rows should enter the clipped animation body")
+    local pointsBeforeStep = setPoints
+    tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+    Drain()
+    assert(motion.OnUpdate and setPoints == pointsBeforeStep,
+        "unchanged quest events must leave a closing animation alone")
+    local readTime, deadline = C_QuestLog.GetTimeAllowed, activeQuest.timerEnd
+    C_QuestLog.GetTimeAllowed = function()
+        local total, elapsed = readTime()
+        return total, elapsed - .25
+    end
+    tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+    Drain()
+    assert(motion.OnUpdate and activeQuest.timerEnd == deadline,
+        "a countdown deadline update must not interrupt the fold")
+    motion.OnUpdate(motion, .075)
+    local partialHeight = motion:GetHeight()
+    assert(partialHeight > 0 and partialHeight < motion.fullHeight and setPoints == pointsBeforeStep
+        and tracker.content:GetHeight() < heightBeforeFold,
+        "the animation tick should shrink the body without rewriting row anchors")
+    ToggleQuest()
+    assert(motion.startHeight == partialHeight and motion.targetHeight == motion.fullHeight,
+        "reversing a click should continue from the current animated height")
+    motion.OnUpdate(motion, .25)
+    assert(not motion.OnUpdate and objective:GetParent() == tracker.content and objective:IsMouseEnabled()
+        and tracker.content:GetHeight() == heightBeforeFold,
+        "motion completion should restore regular anchors and stop ticking")
+    assert(activeQuest.timerEnd == deadline + .25, "motion completion must apply the current countdown deadline")
+    C_QuestLog.GetTimeAllowed = readTime
+    tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
+    Drain()
+
+    ToggleQuest()
+    motion.OnUpdate(motion, .2)
+    assert(not motion.OnUpdate and not motion:IsShown(), "finished collapse should release the animation body")
+    assert(not tracker.rows["line:quests:42:1"] and moduleStates.objectives.collapsedEntries["quests:42"]
+        and tracker.config.collapsedEntries == nil,
+        "quest collapse must hide only its objective lines")
+    ToggleQuest()
+    assert(motion.OnUpdate and motion.startHeight == 0 and motion.targetHeight == motion.fullHeight,
+        "opening should grow the clipped body from its collapsed height")
+    motion.OnUpdate(motion, .25)
+    assert(tracker.rows["line:quests:42:6"], "quest expansion must restore every objective")
+
+    tracker.config.animateQuestCollapse = false
+    ToggleQuest()
+    assert(not motion.OnUpdate and not tracker.rows["line:quests:42:1"], "disabled motion should collapse instantly")
+    ToggleQuest()
+    assert(not motion.OnUpdate and tracker.rows["line:quests:42:6"], "disabled motion should expand instantly")
+    tracker.config.animateQuestCollapse = true
+
+    ToggleQuest()
+    assert(motion.OnUpdate and not combatLocked)
+    tracker.context.events.PLAYER_REGEN_DISABLED(tracker, "PLAYER_REGEN_DISABLED")
+    assert(not motion.OnUpdate and not tracker.rows["line:quests:42:1"],
+        "combat entry should finish motion before lockdown")
+    combatLocked = true
+    ToggleQuest()
+    assert(not motion.OnUpdate and tracker.rows["line:quests:42:6"], "combat should use instant layout")
+    combatLocked = false
+end
 tracker.rows["section:quests"].OnClick(tracker.rows["section:quests"])
 assert(not tracker.rows["entry:quests:42"] and moduleStates.objectives.collapsedGroups.quests
     and tracker.config.collapsedGroups == nil,
     "group collapse must hide its entries and persist the group state")
 tracker.rows["section:quests"].OnClick(tracker.rows["section:quests"])
 local rowFrameCount = #frames
+activeQuest = tracker.rows["entry:quests:42"]
+activeQuest.collapse.OnClick(activeQuest.collapse, "LeftButton")
+assert(tracker.questMotion.OnUpdate, "quest should be folding when the watch changes")
 C_QuestLog.GetQuestIDForQuestWatchIndex = function() return 43 end
 C_QuestLog.GetTitleForQuestID = function(id) return id == 43 and "Another Quest" or nil end
 tracker.context.events.QUEST_LOG_UPDATE(tracker, "QUEST_LOG_UPDATE")
 Drain()
 assert(tracker.rows["entry:quests:43"] and not tracker.rows["entry:quests:42"]
-    and #frames == rowFrameCount, "quest churn must recycle old row frames")
+    and #frames == rowFrameCount and not tracker.questMotion.OnUpdate,
+    "quest churn must stop motion before recycling old row frames")
+assert(tracker.rows["line:quests:43:1"]:GetParent() == tracker.content,
+    "a recycled objective must leave the previous quest's clipping body")
 C_QuestLog.GetNumWorldQuestWatches = function() return 1 end
 C_QuestLog.GetQuestIDForWorldQuestWatchIndex = function() return 77 end
 C_QuestLog.GetTitleForQuestID = function(id)
@@ -1350,6 +1423,19 @@ Drain()
 assert(tracker.rows["entry:world:77"].timer.text == "5:00"
     and tracker.rows["entry:scenario:0"].timer.text == "0:50",
     "world and scenario countdowns must use their matching Blizzard data")
+do
+    local collapse = tracker.rows["entry:quests:43"].collapse
+    local following = tracker.rows["section:world"]
+    collapse.OnClick(collapse, "LeftButton")
+    local motion = tracker.questMotion
+    assert(following.point[2] == motion and following.point[3] == "BOTTOMLEFT",
+        "the next group should follow the animated body height")
+    motion.OnUpdate(motion, .2)
+    assert(following.point[2] == tracker.content and following.point[3] == "TOPLEFT",
+        "the next group should return to the normal layout after closing")
+    collapse.OnClick(collapse, "LeftButton")
+    motion.OnUpdate(motion, .25)
+end
 if flavor == "Mainline" then
     -- A hardware click runs PreClick, then the template's own OnClick.
     local function Click(button)

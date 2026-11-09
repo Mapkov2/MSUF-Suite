@@ -21,6 +21,11 @@ cases = [
     ("manual eligible apply", "PlanningLFG.lua", "or not m.CanApplyFilters() then", "then"),
     ("bounded attempts", "PlanningHistory.lua", "while #list > limit do table.remove(list) end", "-- mutation: bound removed"),
     ("context notes", "PlanningNotes.lua", "(not contextOnly or instance and instance.id == entry.instanceID)", "true"),
+    ("hide equipped loot", "PlanningLoot.lua", "if not hideEquipped or not equipped then", "if true then"),
+    ("fresh loot lockout", "PlanningLoot.lua", "S.Finite(lockout.expires) and lockout.expires > now", "S.Finite(lockout.expires)"),
+    ("starter build specialization", "PlanningLoadouts.lua",
+     "expected.config ~= current.config or expected.spec and current.spec and expected.spec ~= current.spec",
+     "expected.config ~= current.config"),
 ]
 with tempfile.TemporaryDirectory(prefix="suite-planning-mutation-") as temp:
     target = Path(temp)
@@ -38,4 +43,4 @@ with tempfile.TemporaryDirectory(prefix="suite-planning-mutation-") as temp:
         assert result.returncode != 0, (label, "unsafe mutant survived")
         assert "expected" in result.stderr or "assertion failed" in result.stderr, (label, result.stderr)
         print("rejected:", label)
-print("suite_planning_tools_mutation: 8 unsafe mutations rejected")
+print(f"suite_planning_tools_mutation: {len(cases)} unsafe mutations rejected")

@@ -64,7 +64,10 @@ function Preview.Read(tile, bar, ordinal, config)
     tile.cooldown:Clear()
     tile.chargeCooldown:Clear()
     local texture, filled
-    if bar <= 10 then
+    if bar == ENUM.BAR.INDEPENDENT then
+        tile.slot = nil
+        if S.ActionBarPreviewVirtual then texture, filled = S.ActionBarPreviewVirtual(ordinal, tile, config) end
+    elseif bar <= LAST_ACTION then
         texture, filled = Action(tile, Slot(bar, ordinal), config)
     elseif bar == 11 then
         local forms = GetNumShapeshiftForms()
@@ -133,12 +136,21 @@ local EVENTS = { "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED", "UPDATE_BON
 -- a frame however many arrive; the events themselves stay here.
 function Preview.Watch(ui)
     local host = ui.host
+    local registry = EventRegistry
+    local event = "MSUFSuite.ActionBars.ActionsChanged"
+    local function ActionsChanged()
+        if ui.selected() == ENUM.BAR.INDEPENDENT then ui.kit:Request("actions") end
+    end
     ui.kit = Suite.PreviewKit.NewHost(nil, { frame = host, paint = function() ui.Paint() end,
         activate = function(kit)
-            for _, event in ipairs(EVENTS) do host:RegisterEvent(event) end
+            for _, nativeEvent in ipairs(EVENTS) do host:RegisterEvent(nativeEvent) end
+            if registry and registry.RegisterCallback then registry:RegisterCallback(event, ActionsChanged, kit) end
             kit:Paint("show")
         end,
-        deactivate = function() host:UnregisterAllEvents() end })
+        deactivate = function(kit)
+            host:UnregisterAllEvents()
+            if registry and registry.UnregisterCallback then registry:UnregisterCallback(event, kit) end
+        end })
     host:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_PET" and (IsSecret(unit) or unit ~= "player") then return end
         ui.kit:Request("event")

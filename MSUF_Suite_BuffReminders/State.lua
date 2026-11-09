@@ -50,10 +50,11 @@ R.STATE = {
     -- allies: an ally class reminder reads the members' auras (last roster
     -- read); allyStates: the player's own aura per member for each ally class
     -- reminder, by catalog key; dirty, rosterDirty and pass (a context job):
-    -- the coalesced member pass.
+    -- the coalesced member pass. range: readable range results by ally token,
+    -- present only while the range filter is listening.
     group = { "settings", "buffers", "units", "unitList", "classes", "listChanged", "presence",
         "soulstonePresence", "beaconLightPresence", "beaconFaithPresence", "soulstoneKnown",
-        "beaconLightKnown", "beaconFaithKnown", "allies", "allyStates", "dirty", "rosterDirty", "pass" },
+        "beaconLightKnown", "beaconFaithKnown", "allies", "allyStates", "dirty", "rosterDirty", "pass", "range" },
     -- The notice lines below the buttons (Special, Group): one field per
     -- notice (Special's NOTICES), the shown set (mask), its text and label, the
     -- summon that may teach a demon look (summonDemon, summonAt, summonPet).
@@ -67,7 +68,7 @@ R.STATE = {
     environment = { "instanceType", "key", "preKey", "keystoneSeconds", "challengeStarted", "hidden" },
     -- The ready check mana note (Preparation): its label (its hide is a
     -- context wait).
-    readyCheck = { "label" },
+    readyCheck = { "label", "action", "wrapped", "enabled" },
     -- The options stage owns a separate entry buffer and selection snapshot;
     -- no menu drawing uses the live controller's mutable list or view.
     menuPreview = { "buffer", "settings" },

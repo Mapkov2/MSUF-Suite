@@ -299,6 +299,7 @@ end
 
 local catalogConfig, catalogNS = Support.CatalogDefaults(root, "objectives", "HUD", suite.Client)
 local rules = catalogNS.SuiteCatalog.objectives.rules
+assert(catalogConfig.animateQuestCollapse == true, "quest fold animation must default to on")
 
 ------------------------------------------------------------------ helpers
 local function Fire(event, ...)

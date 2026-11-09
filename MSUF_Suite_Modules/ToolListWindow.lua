@@ -112,7 +112,8 @@ end
 local function DrawRows(window)
     local selected = window:Selected()
     for i = 1, PAGE_ROWS do
-        local button, row = window.buttons[i], window.filtered[window.offset + i]
+        local button = window.buttons[i]
+        local row = i <= window.pageRows and window.filtered[window.offset + i]
         if row then
             local marker = row.checked == true and "[x] " or row.checked == false and "[ ] " or ""
             button.text:SetText(marker .. (row.label or ""))
@@ -129,9 +130,9 @@ local function DrawRows(window)
     window.details:SetHeight(math.max(67, window.details:GetStringHeight() + 6))
     window.detailsChild:SetHeight(window.details:GetHeight())
     window.counter:SetText(S.Text("%d–%d of %d"):format(#window.filtered == 0 and 0 or window.offset + 1,
-        math.min(#window.filtered, window.offset + PAGE_ROWS), #window.filtered))
+        math.min(#window.filtered, window.offset + window.pageRows), #window.filtered))
     window.previous:SetEnabled(window.offset > 0)
-    window.next:SetEnabled(window.offset + PAGE_ROWS < #window.filtered)
+    window.next:SetEnabled(window.offset + window.pageRows < #window.filtered)
     for i = 1, #window.actions do
         local action = window.spec.actions and window.spec.actions[i]
         local button = window.actions[i]
@@ -149,8 +150,9 @@ local function Refresh(window)
         window:Hide()
         return
     end
-    local query = window.search:GetText():lower()
-    window.items = window.spec.rows(window.owner, query) or {}
+    local input = S.PublicText(window.search:GetText()) or ""
+    local query = input:lower()
+    window.items = window.spec.rows(window.owner, query, input) or {}
     local filtered, count = window.filtered, 0
     for i = 1, math.min(#window.items, 20000) do
         local row = window.items[i]
@@ -164,7 +166,12 @@ local function Refresh(window)
         if match then count = count + 1 filtered[count] = row end
     end
     for i = #filtered, count + 1, -1 do filtered[i] = nil end
-    window.offset = math.min(window.offset, math.max(0, math.floor((count - 1) / PAGE_ROWS) * PAGE_ROWS))
+    local pageRows = window.pageRows
+    window.offset = math.min(window.offset, math.max(0, math.floor((count - 1) / pageRows) * pageRows))
+    if window.spec.activate and not window:Selected() then
+        local row = filtered[window.offset + 1]
+        window.selected = row and row.key
+    end
     if window.spec.status then window.status:SetText(window.spec.status(window.owner) or "") end
     local selectedTab = window.spec.currentTab and window.spec.currentTab(window.owner)
     for i = 1, #window.tabs do
@@ -177,12 +184,48 @@ end
 
 local function Closed(window)
     local owner, spec = window.owner, window.spec
+    if spec and spec.gamepad then
+        window:EnableGamePadButton(false)
+        window:SetScript("OnGamePadButtonDown", nil)
+    end
     window.owner, window.spec, window.profile, window.selected = nil, nil, nil, nil
     window.items, window.filtered = {}, {}
     window.details:SetText("")
     window.status:SetText("")
     window.search:ClearFocus()
     if spec and spec.onHide then spec.onHide(owner) end
+end
+
+local function Activate(window)
+    local row = window:Selected()
+    if row and not row.disabled and window.spec.activate then window.spec.activate(window.owner, row, window) end
+end
+
+local function MoveSelection(window, key)
+    if not Valid(window) or not window.spec.activate or (key ~= "UP" and key ~= "DOWN") then return end
+    local index = window.offset + 1
+    for i = 1, #window.filtered do
+        if window.filtered[i].key == window.selected then index = i break end
+    end
+    local step = key == "UP" and -1 or 1
+    local row = window.filtered[index + step]
+    if not row then return end
+    window.selected = row.key
+    window.offset = math.floor((index + step - 1) / window.pageRows) * window.pageRows
+    DrawRows(window)
+end
+
+local function PadButton(window, key)
+    if not S.Public(key) then return end
+    if key == "PADDUP" then
+        MoveSelection(window, "UP")
+    elseif key == "PADDDOWN" then
+        MoveSelection(window, "DOWN")
+    elseif key == "PAD1" then
+        Activate(window)
+    elseif key == "PAD2" then
+        window:Hide()
+    end
 end
 
 local function CreateRows(window)
@@ -210,6 +253,12 @@ local function CreateRows(window)
         row.icon:SetSize(20, 20)
         row.icon:SetPoint("LEFT", 6, 0)
         row:SetScript("OnClick", RowClicked)
+        row:SetScript("OnDoubleClick", function(button, mouse)
+            if mouse ~= "LeftButton" or not Valid(window) or not window.spec.activate then return end
+            local selected = window.filtered[window.offset + button.index]
+            if selected then window.selected = selected.key end
+            Activate(window)
+        end)
         window.buttons[i] = row
     end
 end
@@ -237,12 +286,14 @@ local function CreateNavigation(window)
         window.tabs[i] = tab
     end
     window.previous = Button(window, "Previous", 86, function()
-        window.offset = math.max(0, window.offset - PAGE_ROWS)
+        window.offset = math.max(0, window.offset - window.pageRows)
+        if window.spec and window.spec.activate then window.selected = nil end
         window:Refresh()
     end)
     window.previous:SetPoint("TOPLEFT", 18, -484)
     window.next = Button(window, "Next", 86, function()
-        window.offset = window.offset + PAGE_ROWS
+        window.offset = window.offset + window.pageRows
+        if window.spec and window.spec.activate then window.selected = nil end
         window:Refresh()
     end)
     window.next:SetPoint("LEFT", window.previous, "RIGHT", 6, 0)
@@ -265,8 +316,16 @@ local function Create()
     window.search:SetAutoFocus(false)
     window.search:SetMaxBytes(513)
     window.search.Instructions:SetText(S.Text("Search this list"))
-    window.search:SetScript("OnEscapePressed", function(edit) edit:ClearFocus() end)
-    window.search:SetScript("OnTextChanged", function() window.offset = 0 window:Refresh() end)
+    window.search:SetScript("OnEscapePressed", function(edit)
+        if window.spec and window.spec.activate then window:Hide() else edit:ClearFocus() end
+    end)
+    window.search:SetScript("OnEnterPressed", function() Activate(window) end)
+    window.search:SetScript("OnArrowPressed", function(_, key) MoveSelection(window, key) end)
+    window.search:SetScript("OnTextChanged", function()
+        window.offset = 0
+        if window.spec and window.spec.activate then window.selected = nil end
+        window:Refresh()
+    end)
     local detailScroll = S.CreateFrame("ScrollFrame", nil, window, "ScrollFrameTemplate")
     detailScroll:SetPoint("TOPLEFT", 18, -519)
     detailScroll:SetSize(692, 67)
@@ -285,6 +344,7 @@ local function Create()
     window.status:SetSize(720, 25)
     window.status:SetWordWrap(true)
     window.items, window.filtered, window.offset = {}, {}, 0
+    window.pageRows = PAGE_ROWS
     window.Refresh, window.Selected = Refresh, Selected
     window.SetStatus = function(self, text) self.status:SetText(text or "") end
     CreateRows(window)
@@ -296,20 +356,57 @@ local function Create()
     return window
 end
 
-function Tools.Open(owner, spec)
+-- The compact tool uses the same widgets and skin as the full tool window.
+local function SetCompact(window, compact)
+    if window.compact == compact then return end
+    window.compact = compact
+    window.pageRows = compact and 8 or PAGE_ROWS
+    window:SetSize(compact and 620 or 756, compact and 500 or 650)
+    window.title:SetWidth(compact and 544 or 680)
+    window.help:SetWidth(compact and 584 or 720)
+    window.search:SetWidth(compact and 569 or 705)
+    window.search:SetPoint("TOPLEFT", 24, compact and -102 or -116)
+    for i = 1, #window.buttons do
+        local row = window.buttons[i]
+        row:SetWidth(compact and 584 or 720)
+        row:SetPoint("TOPLEFT", 18, -(compact and 139 or 153) - (i - 1) * ROW_HEIGHT)
+    end
+    for i = 1, #window.tabs do
+        window.tabs[i]:SetPoint("TOPLEFT", 18 + (i - 1) * 91, compact and -68 or -82)
+    end
+    window.previous:SetPoint("TOPLEFT", 18, compact and -360 or -484)
+    window.detailScroll:SetPoint("TOPLEFT", 18, compact and -396 or -519)
+    window.detailScroll:SetSize(compact and 556 or 692, compact and 51 or 67)
+    window.detailsChild:SetWidth(compact and 550 or 686)
+    window.details:SetWidth(compact and 550 or 686)
+    window.status:SetWidth(compact and 584 or 720)
+end
+
+function Tools.Open(owner, spec, query)
     if NS.InCombat() or owner.active == false then return end
     if not current then current = Create() end
     if current:IsShown() then current:Hide() end
     current.owner, current.spec, current.profile = owner, spec, NS.DB
     current.selected, current.offset = nil, 0
+    SetCompact(current, spec.activate ~= nil)
     current.title:SetText(S.Text(spec.title))
     current.help:SetText(S.Text(spec.help or ""))
-    current.search:SetText("")
+    current.search.Instructions:SetText(S.Text(spec.searchHint or "Search this list"))
+    current.search:SetText(S.PublicText(query) or "")
     current:Show()
     current:Refresh()
+    if spec.gamepad then
+        current:SetScript("OnGamePadButtonDown", PadButton)
+        current:EnableGamePadButton(true)
+    end
+    if spec.activate then current.search:SetFocus() end
     if Theme() then Theme().WatchMenuAppearance(Tools, Restyle) end
     Restyle()
     return current
+end
+
+function Tools.IsOpen(owner)
+    return current and current.owner == owner and current:IsShown()
 end
 
 function Tools.Refresh(owner)
@@ -375,6 +472,13 @@ local function CreateEditor()
     scroll:SetScrollChild(panel.input)
     panel.inputScroll = scroll
     panel.input:SetScript("OnEscapePressed", function() panel:Hide() end)
+    panel.input:SetScript("OnReceiveDrag", function(input)
+        local owner, spec = panel.owner, panel.spec
+        if not owner or not spec.receive or NS.InCombat() or panel.profile ~= NS.DB or owner.active == false
+            or spec.valid and not spec.valid(owner) then return end
+        local replacement = spec.receive(input:GetText())
+        if replacement then input:SetText(replacement) end
+    end)
     panel.error = Label(panel, "", 11)
     panel.error:SetPoint("BOTTOMLEFT", 16, 45)
     panel.error:SetWidth(520)

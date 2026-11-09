@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Shared runtime
 ## Notes: Shared runtime required by enabled Suite modules.
 ## Author: Mapko
-## Version: 0.1.16-alpha
+## Version: 0.1.17-alpha
 ## Dependencies: MSUF_Suite
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -16,6 +16,7 @@ ToolListWindow.lua
 SuiteNotices.lua
 PreparationStatus.lua
 MicroMenu.lua
+QuickActions.lua
 DataSources.lua
 PlayerReaders.lua
 LoadoutSnapshot.lua

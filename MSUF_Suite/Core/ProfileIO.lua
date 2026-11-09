@@ -4,6 +4,73 @@ local _, Suite = ...
 -- 192 KiB decode cap). Imports keep maxBytes.
 local IO = { prefix = "MSUFM1:", modulePrefix = "MSUFM2:", maxBytes = 2 * 1024 * 1024, maxExportBytes = 200000 }
 Suite.ProfileIO = IO
+local NAMEPLATES = "nameplates"
+
+-- Array CVars carry Blizzard's version byte and six-bit data bytes. Keep
+-- their raw representation, including flags that the Suite does not edit.
+local NAMEPLATE_ARRAY_CVARS = {
+    nameplateStackingTypes = true, nameplateSimplifiedTypes = true, nameplateInfoDisplay = true,
+    nameplateCastBarDisplay = true, nameplateThreatDisplay = true, nameplateEnemyNpcAuraDisplay = true,
+    nameplateEnemyPlayerAuraDisplay = true, nameplateFriendlyPlayerAuraDisplay = true,
+}
+
+local function NativeValue(key, value)
+    if not Suite.Public(value) or type(value) ~= "string" or #value >= 64 then return nil end
+    if NAMEPLATE_ARRAY_CVARS[key] then
+        if value:match("^.[\64-\127]*$") then return value end
+    elseif Suite.Finite(tonumber(value)) then
+        return value
+    end
+end
+
+local function CleanNameplateCVars(values)
+    if type(values) ~= "table" then return nil end
+    local spec = Suite.SuiteCatalog[NAMEPLATES]
+    local clean = {}
+    for key, value in pairs(values) do
+        if spec.cvars[key] or spec.nativeProfileCVars[key] then clean[key] = NativeValue(key, value) end
+    end
+    return next(clean) and clean or nil
+end
+
+local function ReadNameplateCVar(key)
+    local value = C_CVar.GetCVar(key)
+    local readBaseline = Suite.Suite.CVarBaseline
+    if readBaseline then return readBaseline(NAMEPLATES, key, value) end
+    if Suite.Public(value) then return value end
+end
+
+function IO.CaptureNameplateCVars()
+    if not C_CVar then return nil end
+    local spec = Suite.SuiteCatalog[NAMEPLATES]
+    local values = {}
+    for key in pairs(spec.cvars) do values[key] = NativeValue(key, ReadNameplateCVar(key)) end
+    for key in pairs(spec.nativeProfileCVars) do values[key] = NativeValue(key, C_CVar.GetCVar(key)) end
+    return next(values) and values or nil
+end
+
+-- This payload transfers client settings once. Future edits in Blizzard's
+-- Settings remain authoritative wherever the Suite chooses Keep.
+function IO.ApplyNameplateCVars(values)
+    if not values or not C_CVar or Suite.InCombat() then return end
+    local changes = {}
+    for key, value in pairs(values) do
+        local current = ReadNameplateCVar(key)
+        if current ~= nil and current ~= value
+            and (not NAMEPLATE_ARRAY_CVARS[key] or current:byte(1) == value:byte(1)) then
+            changes[key] = value
+        end
+    end
+    if not next(changes) then return end
+
+    local runtime = Suite.Suite
+    if runtime.RestoreSaved then runtime.RestoreSaved(NAMEPLATES) end
+    local instance = runtime.instances[NAMEPLATES]
+    if instance and instance.active then instance:ResetCVarBaseline() end
+    for key, value in pairs(changes) do C_CVar.SetCVar(key, value) end
+    runtime.Apply(NAMEPLATES)
+end
+
 local LEGACY_MINIMAP_KEYS = { enabled = "specButton", showSpec = "specShowSpec", showLoot = "specShowLoot",
     corner = "specCorner", size = "specSize", x = "specX", y = "specY" }
 
@@ -135,7 +202,8 @@ function IO.PrepareTable(profile, shared, keep)
     if type(data) ~= "table" or data.schema ~= 1 or type(data.modules) ~= "table" then
         return nil, "Unsupported suite profile"
     end
-    local result = { suite = { schema = 1, modules = {} } }
+    local result = { suite = { schema = 1, modules = {} },
+        nameplateCVars = CleanNameplateCVars(profile.nameplateCVars) }
     -- Only a look the Suite knows; an unknown name (or a shared string of any
     -- length) never enters the profile.
     if type(data.globalLook) == "string" and Suite.SuiteLooks.indexes[data.globalLook] then
@@ -200,6 +268,7 @@ function IO.ExportProfile(name, options)
     if not CodecAvailable() then return nil, "Profile codec unavailable on this client" end
     local keep = KeptModules(clean, options)
     ResetPersonal(clean, keep)
+    if name == Suite.Database.GetActiveProfileName() then clean.nameplateCVars = IO.CaptureNameplateCVars() end
     local encoded = _G.MSUF_EncodeCompactTable({ addon = "MSUF_Suite", format = 1, profile = clean,
         characterBound = keep }, "MSUF3")
     if type(encoded) ~= "string" or #encoded > IO.maxBytes then return nil, "Suite profile is too large" end
@@ -223,6 +292,7 @@ function IO.ExportModule(id, options)
     local encoded = _G.MSUF_EncodeCompactTable({
         addon = "MSUF_Suite", format = 2, module = id, revision = clean.suite.revision,
         settings = clean.suite.modules[id], characterBound = keep and keep[id] or nil,
+        nameplateCVars = id == NAMEPLATES and IO.CaptureNameplateCVars() or nil,
     }, "MSUF3")
     if type(encoded) ~= "string" or #IO.modulePrefix + #encoded > IO.maxExportBytes then
         return nil, "Suite module profile is too large"
@@ -272,7 +342,8 @@ function IO.PrepareModuleProfile(text, preservePersonal)
             end
         end
     end
-    return id, settings
+    local native = id == NAMEPLATES and CleanNameplateCVars(envelope.nameplateCVars) or nil
+    return id, settings, nil, nil, native
 end
 
 function IO.PrepareProfile(text, shared)

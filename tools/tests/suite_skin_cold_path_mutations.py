@@ -9,7 +9,7 @@ ROOT = Path(sys.argv[1]).resolve()
 LUA = os.environ.get("MSUF_LUA51", r"C:\Users\Marco\AppData\Local\Temp\msuf-lua51\portable\lua.exe")
 CASES = [
     ("hidden-major", "MajorWindows.lua",
-     'if Kit.DeferHidden(root, spec, ApplyGroupForOwners, spec, nil, nil, 10) then', 'if false then',
+     'and Kit.DeferHidden(root, spec, ApplyGroupForOwners, spec, nil, nil, 10) then', 'and false then',
      "hidden major window performed initial cosmetic traversal", False),
     ("hidden-catalog", "GenericWindowsCatalog.lua",
      'and Kit.DeferHidden(frame, request, DeferredEntryFrame, request, index) then', 'and false then',

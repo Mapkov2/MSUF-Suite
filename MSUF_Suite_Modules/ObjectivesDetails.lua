@@ -76,6 +76,112 @@ function O.PaintScenarioHeader(row, item, width, rowHeight)
     return headerHeight * scale + 6
 end
 
+-- One clipped body drives the objective lines and the rows below them. Their
+-- anchors follow the body's height in the client; the tick never walks rows.
+local function AnchorQuestRow(row, target, point, offset)
+    row:ClearAllPoints()
+    row:SetPoint("TOPLEFT", target, point, 0, offset)
+end
+
+local function PaintQuestMotion(body, height)
+    body.heightNow = height
+    body:SetHeight(math.max(.01, height))
+    local self = body.tracker
+    local contentHeight = body.baseHeight + height
+    self.content:SetHeight(contentHeight)
+    local hostHeight = math.min(body.maxHeight, math.max(body.minHeight, contentHeight + body.chrome))
+    if body.hostHeight ~= hostHeight then
+        body.hostHeight = hostHeight
+        self.host:SetHeight(hostHeight)
+    end
+end
+
+function O.StopQuestMotion(self, layoutChanged)
+    local body = self.questMotion
+    if not body or not body.owner then return false end
+    body:SetScript("OnUpdate", nil)
+    local flat = body.flat
+    for i = body.first, #flat do
+        local row = self.rows[flat[i].key]
+        if i <= body.last then
+            row:SetParent(self.content)
+            row:EnableMouse(true)
+        end
+        AnchorQuestRow(row, self.content, "TOPLEFT", -row.layoutY)
+    end
+    if not layoutChanged and body.heightNow ~= body.fullHeight then PaintQuestMotion(body, body.fullHeight) end
+    body.owner, body.flat, body.refreshAfter = nil, nil, nil
+    body:Hide()
+    return true
+end
+
+local function StepQuestMotion(body, elapsed)
+    body.elapsed = body.elapsed + elapsed
+    local progress = body.elapsed / body.duration
+    if progress >= 1 then
+        if body.targetHeight == 0 or body.refreshAfter then O.Render(body.tracker, true) end
+        if body.owner then O.StopQuestMotion(body.tracker) end
+        return
+    end
+    local eased = progress * progress * (3 - 2 * progress)
+    PaintQuestMotion(body, body.startHeight + (body.targetHeight - body.startHeight) * eased)
+end
+
+function O.AimQuestMotion(body, closing)
+    body.startHeight, body.targetHeight = body.heightNow, closing and 0 or body.fullHeight
+    body.elapsed, body.duration = 0, closing and .150 or .200
+    body.owner.collapse.glyph:SetText(closing and "+" or "-")
+end
+
+function O.StartQuestMotion(self, owner, closing)
+    local flat = self.previousFlat
+    if not flat then return end
+    local first
+    for i = 1, #flat do
+        if self.rows[flat[i].key] == owner then
+            first = i + 1
+            break
+        end
+    end
+    if not first or not flat[first] or flat[first].kind ~= "line" then return end
+    local last = first
+    while flat[last + 1] and flat[last + 1].kind == "line" do last = last + 1 end
+    local firstRow, lastRow = self.rows[flat[first].key], self.rows[flat[last].key]
+    local top, bottom = firstRow.layoutY, lastRow.layoutY + lastRow.layoutHeight
+    local body = self.questMotion
+    if not body then
+        body = S.CreateFrame("Frame", nil, self.content)
+        body:SetClipsChildren(true)
+        body.tracker = self
+        self.questMotion = body
+    end
+    body.owner, body.flat, body.first, body.last = owner, flat, first, last
+    body.fullHeight = bottom - top
+    body.baseHeight = self.content:GetHeight() - body.fullHeight
+    body.chrome = self.headerHeight + 5
+    body.maxHeight = self.config.height
+    body.minHeight = S.editMode and 160 or body.chrome
+    body.hostHeight = self.host:GetHeight()
+    body:ClearAllPoints()
+    body:SetPoint("TOPLEFT", self.content, "TOPLEFT", 0, -top)
+    body:SetPoint("TOPRIGHT", self.content, "TOPRIGHT", 0, -top)
+    PaintQuestMotion(body, closing and body.fullHeight or 0)
+    body:Show()
+    for i = first, last do
+        local row = self.rows[flat[i].key]
+        row:EnableMouse(false)
+        row:SetParent(body)
+        AnchorQuestRow(row, body, "TOPLEFT", top - row.layoutY)
+    end
+    for i = last + 1, #flat do
+        local row = self.rows[flat[i].key]
+        AnchorQuestRow(row, body, "BOTTOMLEFT", bottom - row.layoutY)
+    end
+    O.AimQuestMotion(body, closing)
+    body:SetScript("OnUpdate", StepQuestMotion)
+    return true
+end
+
 function O.ApplyHeading(self, c)
     local shown = c.showHeader ~= false
     self.title:SetShown(shown)

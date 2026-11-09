@@ -33,8 +33,8 @@ assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSu
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
-local files={"Bootstrap","Bars","Decorations","Blizzard","Paging","Visibility",
-    "Bindings","Style","Paint","NativeButtons","Flush","Events","Controller"}
+local files={"Bootstrap","Bars","Decorations","Blizzard","Paging","VirtualActions","Visibility",
+    "Bindings","Style","VirtualPaint","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(files) do assert(loadfile(root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private) end
 local S,AB=Suite.Suite,private.ActionBars
 assert(created==0,"loading the runtime created frames")
@@ -74,10 +74,11 @@ do
 end
 
 ------------------------------------------------------------------ tables
-local expectedSlots={1,61,49,25,37,145,157,169,13,109}
-for i=1,10 do assert(AB.FIRST_SLOT[i]==expectedSlots[i],"slot table changed for bar "..i) end
--- Every owned bar except bar 1 shows one whole page.
-for i=2,10 do assert((AB.FIRST_SLOT[i]-1)%12==0,"bar "..i.." does not start a page") end
+local expectedSlots={1,61,49,25,37,145,157,169,13}
+for i=1,9 do assert(AB.FIRST_SLOT[i]==expectedSlots[i],"slot table changed for bar "..i) end
+assert(AB.FIRST_SLOT[10]==nil,"bar 10 must not own a native action page")
+-- The native fixed bars show one whole page.
+for i=2,9 do assert((AB.FIRST_SLOT[i]-1)%12==0,"bar "..i.." does not start a page") end
 assert(AB.COMMANDS[1]=="ACTIONBUTTON" and AB.COMMANDS[2]=="MULTIACTIONBAR1BUTTON" and AB.COMMANDS[8]=="MULTIACTIONBAR7BUTTON")
 assert(AB.COMMANDS[9]=="MSUFSUITE_BAR9_BUTTON" and AB.COMMANDS[10]=="MSUFSUITE_BAR10_BUTTON")
 assert(AB.COMMANDS[11]=="SHAPESHIFTBUTTON" and AB.COMMANDS[12]=="BONUSACTIONBUTTON")
@@ -273,6 +274,26 @@ Suite.Client.isForever=true
 c2.pagingModifiers,c2.disableSkyridingPaging=false,true
 assert(AB.PageDriver(c2)==base..manual..forms.."[bonusbar:5] 11; 1" and not AB.CustomPaging(c2),"Forever keeps possess paging")
 Suite.Client.isForever=false
+
+-- Enabled fixed bars reserve their native manual pages even when their
+-- visibility mode may hide them temporarily. Explicitly disabled bars
+-- release those pages, including the manually selected page 2.
+do
+    local vis = AB.ENUM.VISIBILITY
+    local config = {
+        bar9Visibility = vis.MOUSEOVER, bar4Visibility = vis.NEVER, bar5Visibility = vis.COMBAT,
+        pagingModifiers = true, pageShift = 2, pageCtrl = 3, pageAlt = 4,
+        pagingTarget = true, pageFriendly = 4, pageHostile = 5,
+    }
+    local available = "[bar:3] 3; [bar:5] 5; [bar:6] 6; "
+    local expected = base .. "[mod:ctrl] 3; [harm] 5; " .. available .. forms .. "[bonusbar:5] 11; 1"
+    assert(AB.PageDriver(config) == expected, "manual, modifier or target paging can borrow an enabled bar's page")
+    config.pagingModifiers, config.pagingTarget = false, false
+    assert(AB.CustomPaging(config), "Blizzard's native bindings can bypass a reserved page")
+    config.bar9Visibility, config.bar5Visibility = vis.NEVER, vis.NEVER
+    assert(AB.PageDriver(config) == base .. manual .. forms .. "[bonusbar:5] 11; 1"
+        and not AB.CustomPaging(config), "disabled fixed bars did not release their pages")
+end
 
 ------------------------------------------------------------------ visibility drivers
 local modes={"show","[combat] show; hide","[combat] hide; show","fade","[combat] show; fade"}

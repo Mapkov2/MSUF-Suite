@@ -16,6 +16,150 @@
  },
  "allowed": [
   {
+   "file": "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
+   "kind": "client",
+   "reason": "Forever's native trainer distinguishes training points from coin prices. Retail 12.1 has no trainer-type API and keeps its separate runtime.",
+   "symbol": "C_Trainer"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
+   "kind": "client",
+   "reason": "Forever's native trainer distinguishes training points from coin prices. Retail 12.1 has no trainer-type API and keeps its separate runtime.",
+   "symbol": "C_Trainer.GetTrainerType"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
+   "kind": "client",
+   "reason": "Forever's native trainer distinguishes training points from coin prices. Retail 12.1 has no trainer-type API and keeps its separate runtime.",
+   "symbol": "Enum.TrainerType"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
+   "kind": "client",
+   "reason": "Forever's native trainer distinguishes training points from coin prices. Retail 12.1 has no trainer-type API and keeps its separate runtime.",
+   "symbol": "Enum.TrainerType.Pet"
+  },
+  {
+   "file": "MSUF_Suite_QualityOfLife/TrainerLearnAll.lua",
+   "kind": "lod",
+   "reason": "The Forever native trainer creates its footer controls when its Blizzard addon loads.",
+   "symbol": "train (= ClassTrainerTrainButton)"
+  },
+  {
+   "file": "MSUF_Suite/Core/QuickActionsCommand.lua",
+   "kind": "lod",
+   "reason": "Core exposes the binding before the optional Modules runtime has loaded.",
+   "symbol": "S.QuickActions"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoadouts.lua",
+   "kind": "lod",
+   "reason": "Retail native talents, player menu and Paper Doll selectors can have different load states. Offer only the selectors currently available.",
+   "symbol": "PaperDollFrame"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoadouts.lua",
+   "kind": "lod",
+   "reason": "Retail native talents, player menu and Paper Doll selectors can have different load states. Offer only the selectors currently available.",
+   "symbol": "PaperDollFrame_SetSidebar"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoadouts.lua",
+   "kind": "lod",
+   "reason": "Retail native talents, player menu and Paper Doll selectors can have different load states. Offer only the selectors currently available.",
+   "symbol": "PlayerSpellsUtil"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoadouts.lua",
+   "kind": "lod",
+   "reason": "Retail native talents, player menu and Paper Doll selectors can have different load states. Offer only the selectors currently available.",
+   "symbol": "PlayerSpellsUtil.OpenToClassTalentsTab"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoadouts.lua",
+   "kind": "lod",
+   "reason": "Retail native talents, player menu and Paper Doll selectors can have different load states. Offer only the selectors currently available.",
+   "symbol": "ToggleCharacter"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoadouts.lua",
+   "kind": "lod",
+   "reason": "Retail native talents, player menu and Paper Doll selectors can have different load states. Offer only the selectors currently available.",
+   "symbol": "UnitPopup_OpenMenu"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoadouts.lua",
+   "kind": "lod",
+   "reason": "The custom character-panel provider is optional. The same control can open the native equipment sets.",
+   "symbol": "S.OpenCharacterPanelTab"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoot.lua",
+   "kind": "lod",
+   "reason": "Retail's Encounter Journal is a Blizzard load-on-demand addon. Import is available once its native loot list exists.",
+   "symbol": "journal (= EncounterJournal)"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoot.lua",
+   "kind": "lod",
+   "reason": "Retail's Encounter Journal is a Blizzard load-on-demand addon. Import is available once its native loot list exists.",
+   "symbol": "journal.LootContainer (= EncounterJournal)"
+  },
+  {
+   "file": "MSUF_Suite_AdventurePlanner/PlanningLoot.lua",
+   "kind": "client",
+   "reason": "Retail and Forever can have different item-reader availability during startup. The planner leaves equipment status unknown without the reader.",
+   "symbol": "C_Item"
+  },
+  {
+   "file": "MSUF_Suite_BuffReminders/Preparation.lua",
+   "kind": "lod",
+   "reason": "The optional custom character-panel route is absent when the panel has not loaded. The ready-check gear link has a Suite settings fallback.",
+   "symbol": "S.OpenCharacterPanelTab"
+  },
+  {
+   "file": "MSUF_Suite_Modules/PreparationStatus.lua",
+   "kind": "lod",
+   "reason": "The optional Adventure Planner owns saved instance comparisons. Buff and durability checks work independently.",
+   "symbol": "S.PlanningLoadoutIssues"
+  },
+  {
+   "file": "MSUF_Suite_Modules/QuickActions.lua",
+   "kind": "lod",
+   "reason": "Quick Actions only offers planner destinations after its optional owner has loaded.",
+   "symbol": "S.PlanningTools"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Routing.lua",
+   "kind": "lod",
+   "reason": "Native frame objects belong to Blizzard's character UI. The Suite only routes a tab once its native root and Paper Doll are available.",
+   "symbol": "CharacterFrame"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/Routing.lua",
+   "kind": "lod",
+   "reason": "Native frame objects belong to Blizzard's character UI. The Suite only routes a tab once its native root and Paper Doll are available.",
+   "symbol": "PaperDollFrame"
+  },
+  {
+   "file": "MSUF_Suite_Bags/Bags.lua",
+   "kind": "lod",
+   "reason": "The optional Suite appearance accessor supplies the preset. Standalone renderer hosts keep normal values and fonts without this accessor.",
+   "symbol": "S.ReadableValues"
+  },
+  {
+   "file": "MSUF_Suite_CharacterPanel/View.lua",
+   "kind": "addon",
+   "reason": "The optional Suite appearance accessor supplies the preset. Standalone renderer hosts keep normal values and fonts without this accessor.",
+   "symbol": "S.ReadableValues (= MSUFSuite.Suite)"
+  },
+  {
+   "file": "MSUF_Suite_CooldownManager/Settings.lua",
+   "kind": "lod",
+   "reason": "The optional Suite appearance accessor supplies the preset. Standalone renderer hosts keep normal values and fonts without this accessor.",
+   "symbol": "S.ReadableValues"
+  },
+  {
    "file": "MSUF_Suite_QualityOfLife/GatheringTooltips.lua",
    "kind": "client",
    "reason": "Forever exposes C_SkillInfo in its native Camelot SkillsFrame and PaperDollFrame. Retail 12.1.0 and 12.1.5 do not expose it; the module is Forever only and checks the capability before reading a rank.",

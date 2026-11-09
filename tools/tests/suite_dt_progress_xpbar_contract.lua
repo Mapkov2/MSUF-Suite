@@ -70,6 +70,7 @@ end }
 local MEDIA = { font = "font.ttf", barTexture = "bar.tga" }
 
 local suite = { editMode = false, loginKind = "login", RootDB = {}, MSUFMedia = MEDIA,
+    Client = { isForever = false },
     InCombat = function() return false end, IsCombatLocked = function() return false end,
     Dispatch = function(callback, ...) return callback(...) end,
     AnchorPoints = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" } }
@@ -101,7 +102,7 @@ assert(loadfile(root .. "/MSUF_Suite/Core/SuiteCatalog.lua"))("MSUF_Suite", suit
 MSUFSuite = suite
 local private = {}
 assert(loadfile(root .. "/MSUF_Suite/Core/ExperienceBarLayout.lua"))("MSUF_Suite", suite)
-for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceBar" }) do
+for _, file in ipairs({ "Bootstrap", "NativeExperienceBar", "ExperienceTrack", "ExperienceBarText", "ExperienceOptimizer", "ExperienceBar" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file .. ".lua"))("MSUF_Suite_QualityOfLife", private)
 end
 local module = runtime.instances.xpBar

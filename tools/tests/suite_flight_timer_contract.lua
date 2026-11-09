@@ -92,16 +92,34 @@ S.Text=function(v) return v end
 local movers={}
 S.RegisterOwnedMover=function(id,element,spec) assert(id=="flightTimer");movers[element]=spec end
 S.Install=function(id,m) assert(id=="flightTimer");S.module=m end
-assert(loadfile((arg[2] or root).."/MSUF_Suite_QualityOfLife/FlightTimer.lua"))("test",{NS={Safety={IsForbidden=function(frame) return frame.forbidden==true end}},Suite=S})
+local qol=(arg[2] or root).."/MSUF_Suite_QualityOfLife/"
+local private={NS={Client={},Safety={IsForbidden=function(frame) return frame.forbidden==true end}},Suite=S}
+assert(loadfile(qol.."FlightTimer.lua"))("test",private)
 local m=S.module
 m.active=true;m.config={width=340,scale=100,x=0,y=0,fontSize=12,showStops=true,routePreview=true,classColor=true,hideDisplay=false}
-local tickers={}
-m.context={Event=function(_,name,callback) events[name]=callback end, Ticker=function(_,interval,callback)
+local tickers,deadlines={},{}
+m.context={
+    Event=function(_,name,callback) events[name]=callback end,
+    RemoveEvent=function(_,name) events[name]=nil end,
+    After=function(_,delay,callback) deadlines[callback]=now+delay end,
+    Cancel=function(_,callback) deadlines[callback]=nil end,
+    Ticker=function(_,interval,callback)
     local handle={interval=interval,callback=callback,running=true}
     function handle:Cancel() self.running=false end
     tickers[#tickers+1]=handle
     return handle
 end}
+local function Fire(name,...)
+    if m.active and events[name] then events[name](m,name,...) end
+end
+local function FlushDeadlines()
+    for callback,due in pairs(deadlines) do
+        if now>=due then
+            deadlines[callback]=nil
+            callback(m)
+        end
+    end
+end
 local function Tick()
     for _,handle in ipairs(tickers) do if handle.running then handle.callback(m) end end
 end
@@ -109,6 +127,7 @@ local function Running()
     local count=0;for _,handle in ipairs(tickers) do if handle.running then count=count+1 end end;return count
 end
 m:Enable()
+assert(not events.UNIT_FLAGS and not next(deadlines),"idle flight timer watches player flags or has a pending timer")
 assert(not next(movers),"Enable registered the mover; the controller does it through RegisterMovers")
 -- The controller registers the movers right after Enable (S.RefreshEditMover).
 m:RegisterMovers()
@@ -174,7 +193,9 @@ do
     events.TAXIMAP_OPENED(m)
     Hover(Pin())
     assert(GameTooltip.line=="A > B > C" and GameTooltip.ownerReads==1,"reopening the taxi map did not restore the preview")
-    m.mapOpen=nil
+    Fire("TAXIMAP_CLOSED")
+    FlushDeadlines()
+    assert(not events.UNIT_FLAGS,"a closed taxi map kept the flag subscription")
     GameTooltip.owner=nil
 end
 -- The client's takeoff order: TakeTaxiNode returns before the flight starts,
@@ -182,11 +203,11 @@ end
 -- follows with UNIT_FLAGS.
 local function TakeOff(at)
     now=at;hooks.TakeTaxiNode(3)
-    events.PLAYER_CONTROL_LOST(m,"PLAYER_CONTROL_LOST")
-    now=at+.5;taxi=true;events.UNIT_FLAGS(m,"UNIT_FLAGS","player")
+    Fire("PLAYER_CONTROL_LOST")
+    now=at+.5;taxi=true;Fire("UNIT_FLAGS","player")
 end
 local function Landed(at)
-    now=at;taxi=false;events.PLAYER_CONTROL_GAINED(m,"PLAYER_CONTROL_GAINED")
+    now=at;taxi=false;Fire("PLAYER_CONTROL_GAINED")
 end
 TakeOff(100)
 assert(m.host.shown and m.host.title.text=="A > C" and not m.binding.enabled,
@@ -200,7 +221,7 @@ end
 now=125;Tick();assert(m.host.time.text=="0:25","unknown route elapsed clock does not advance")
 local savedTick=tickers[#tickers]
 Landed(160)
-assert(Running()==0,"elapsed clock kept an idle timer after landing")
+assert(Running()==0 and not events.UNIT_FLAGS and not next(deadlines),"landing kept idle timer or flag work")
 local oldText=m.host.time.text;savedTick.callback(m);assert(m.host.time.text==oldText,"late tick repainted after landing")
 assert(state.timings["A > B > C"]==60 and not m.host.shown,"completed flight did not learn its time from takeoff")
 TakeOff(200)
@@ -215,8 +236,12 @@ assert(state.timings["A > B > C"]==60,"early landing overwrote full route durati
 -- The client can report the taxi flag from inside TakeTaxiNode, before the
 -- secure post-hook has supplied the route. Play the saved duration immediately
 -- from the already observed departure, without waiting for another event.
-now=220;taxi=true;events.UNIT_FLAGS(m,"UNIT_FLAGS","player")
+now=220
+Fire("TAXIMAP_OPENED")
+Fire("TAXIMAP_CLOSED")
+taxi=true;Fire("UNIT_FLAGS","player")
 now=221;hooks.TakeTaxiNode(3)
+FlushDeadlines()
 assert(m.departed==220 and m.duration.finish==280 and m.binding.enabled,
     "a taxi flag before the post-hook lost the observed start or saved countdown")
 assert(m.host.time.text=="59" and m.host.status.text=="Remaining time",
@@ -238,25 +263,38 @@ assert(timeReads==timeBefore and taxiReads-taxiBefore==2000,
     "steady taxi events read the clock or sampled the flag more than once")
 assert(m.binding.binds==binds and m.binding.paints==paints and Running()==0 and allocated<1,
     "steady taxi events restarted the known countdown or added Lua work")
-Landed(280)
+now=280;taxi=false;Fire("UNIT_FLAGS","player")
 assert(not m.binding.enabled,"landing left the native countdown running")
+assert(not events.UNIT_FLAGS,"landing flag without a control event kept observing")
 -- A flag that is already true without an earlier Lua event also seeds the
 -- departure at the hook. This flight must bind even at the same duration.
 now=285;taxi=true;hooks.TakeTaxiNode(3)
 assert(m.departed==285 and m.duration.finish==345 and m.binding.binds==binds+1,
     "the hook failed to seed an already active taxi or reuse the saved route")
 m.host.land.OnClick();Landed(290)
--- A refused choice followed by an unrelated loss of control (a stun) never
--- reaches the taxi flag; that is no journey.
+-- A rejected choice must expire even when no control or flag event follows.
 now=300;hooks.TakeTaxiNode(3)
-now=302;events.PLAYER_CONTROL_LOST(m,"PLAYER_CONTROL_LOST")
-now=302.5;events.UNIT_FLAGS(m,"UNIT_FLAGS","player")
-Landed(306)
+now=306;FlushDeadlines()
+assert(not events.UNIT_FLAGS and not m.current and not m.departed,"refused flight left a permanent watch")
+
+-- A matching control loss marks the departure even if the taxi flag takes
+-- longer than the selection window to arrive. A control regain with no taxi
+-- flag, such as after a stun, instead discards the tentative departure.
+now=310;hooks.TakeTaxiNode(3)
+now=311;Fire("PLAYER_CONTROL_LOST")
+now=316;FlushDeadlines()
+taxi=true;Fire("UNIT_FLAGS","player")
+assert(m.binding.enabled and m.duration.finish==371,"a delayed taxi flag lost its confirmed departure")
+m.host.land.OnClick();Landed(320)
+now=325;hooks.TakeTaxiNode(3)
+now=326;Fire("PLAYER_CONTROL_LOST")
+Landed(328)
+assert(not events.UNIT_FLAGS and not next(deadlines),"grounded control regain kept a taxi request pending")
 assert(state.timings["A > B > C"]==60,"refused request or unrelated control loss fabricated flight timing")
 -- A flight long after the last choice has no known route.
-now=310;hooks.TakeTaxiNode(3)
-now=330;events.PLAYER_CONTROL_LOST(m,"PLAYER_CONTROL_LOST")
-taxi=true;events.UNIT_FLAGS(m,"UNIT_FLAGS","player")
+now=330;hooks.TakeTaxiNode(3)
+now=340;FlushDeadlines()
+taxi=true;Fire("PLAYER_CONTROL_LOST")
 assert(m.host.title.text=="Flight route unavailable","a stale choice was taken as the current route")
 Landed(390)
 assert(state.timings["A > B > C"]==60,"a flight on an unknown route taught a route time")
@@ -281,13 +319,13 @@ local titleText = m.host.title.SetText
 m.host.title.SetText = function(self, value) texts = texts + 1; titleText(self, value) end
 for _, flying in ipairs({ false, true }) do
     taxi = flying
-    events.UNIT_FLAGS(m, "UNIT_FLAGS", "player")
+    Fire("PLAYER_CONTROL_LOST")
     fonts, texts = 0, 0
     collectgarbage("collect"); collectgarbage("stop")
     local memory = collectgarbage("count")
     for _ = 1, 1000 do
-        events.UNIT_FLAGS(m, "UNIT_FLAGS", "player")
-        events.PLAYER_CONTROL_GAINED(m, "PLAYER_CONTROL_GAINED")
+        Fire("UNIT_FLAGS", "player")
+        Fire("PLAYER_CONTROL_GAINED")
     end
     local allocated = collectgarbage("count") - memory
     collectgarbage("restart")
@@ -322,11 +360,99 @@ events.TAXIMAP_OPENED(m)
 m.active=false;m:Disable();Landed(650)
 assert(m.mapOpen==nil,"disabling left the taxi map flag set")
 assert(Running()==0,"disable left elapsed work running")
+assert(not events.UNIT_FLAGS and not next(deadlines),"disable left flag work or a deadline")
 assert(next(state.timings)==nil and not m.host.shown,"disabled flight timer recorded or reopened")
 -- Cold enabling on an existing taxi needs no further native flag/control event.
 now=700;taxi=true;m.active=true;m:Enable()
 assert(m.departed==700 and m.host.time.text=="0:00" and Running()==1,"cold enable failed to seed a running flight")
 now=705;Tick();assert(m.host.time.text=="0:05","cold-enabled flight clock stayed blank")
 Landed(710);assert(next(state.timings)==nil,"cold enable learned a partial route")
+m.active=false;m:Disable()
+
+-- The bundled data is loaded by the QoL TOC and stays off Retail.
+local manifest=assert(io.open(qol.."MSUF_Suite_QualityOfLife_Mainline.toc","rb"))
+local contents=manifest:read("*a"):gsub("\r\n","\n")
+manifest:close()
+assert(contents:find("ForeverFlightTimes.lua\nFlightTimer.lua",1,true),"flight times are missing from the load graph")
+local loadTimes=assert(loadfile(qol.."ForeverFlightTimes.lua"))
+loadTimes("test",private)
+assert(not private.ForeverFlightTimes,"Forever flight data loaded on Retail")
+private.NS.Client.isForever=true
+loadTimes("test",private)
+
+-- Slots are per map, and labels are localized. Only native taxi IDs match
+-- the bundled routes. Capture a modern map without legacy enumeration.
+Enum.UIMapSystem={Taxi=1,Adventure=2}
+UnitFactionGroup=function() return "Horde" end
+GetTaxiMapID=function() return 101 end
+C_Map={GetBestMapForUnit=function() return 202 end}
+canaccesstable=function(value) return not value.restricted end
+local expectedMap=101
+local entries={
+    {slotIndex=3,nodeID=58,name="Zoramgar-Außenposten",state=1},
+    {slotIndex=1,nodeID=23,name="Orgrimmar",state=0},
+    {slotIndex=2,nodeID=61,name="Splitterholzposten",state=1},
+    {slotIndex=2,nodeID=25,name="Transition",state=1,isMapLayerTransition=true},
+    {slotIndex=2,nodeID=25,name="Restricted",state=1,restricted=true},
+    {slotIndex=2,nodeID="secret",name="Secret ID",state=1},
+}
+C_TaxiMap={GetAllTaxiNodes=function(mapID)
+    assert(mapID==expectedMap,"queried the wrong flight map")
+    return entries
+end}
+NumTaxiNodes=function() return 0 end
+m.active=true;m:Enable()
+events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",Enum.UIMapSystem.Adventure)
+local route="Orgrimmar > Splitterholzposten > Zoramgar-Außenposten"
+GameTooltip.owner={pinTemplate="FlightMap_FlightPointPinTemplate",taxiNodeData=entries[1]}
+GameTooltip.scripts.OnShow(GameTooltip)
+assert(GameTooltip.line==route.." (4:15)","the tooltip did not sum the selected flight legs")
+events.TAXIMAP_CLOSED(m) -- the native selection may close the map before the post-hook
+TakeOff(800)
+assert(m.binding.enabled and m.duration.finish==1055 and Running()==0,
+    "a first Forever flight had no countdown from the bundled data")
+Landed(1060)
+assert(state.timings[route]==260,"the bundled estimate prevented learning the actual flight")
+TakeOff(1100)
+assert(m.binding.enabled and m.duration.finish==1360,"a learned route lost priority over the estimate")
+m.host.land.OnClick()
+Landed(1120)
+assert(state.timings[route]==260,"an early landing overwrote the learned route")
+
+-- A legacy taxi map uses the player's UiMap. With no known leg chain use
+-- the measured endpoint pair. An unknown destination still learns normally.
+state.timings[route]=nil
+expectedMap=202
+NumTaxiNodes=function() return 3 end
+nodes[1][1],nodes[2][1],nodes[3][1]=entries[2].name,entries[3].name,entries[1].name
+entries[3].nodeID=99999
+events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",Enum.UIMapSystem.Taxi)
+hooks.TaxiNodeOnButtonEnter(Widget())
+assert(GameTooltip.line==route.." (4:10)","a known endpoint pair was lost when a leg was missing on TaxiFrame")
+entries[1].nodeID=99998
+events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",Enum.UIMapSystem.Taxi)
+TakeOff(1200)
+assert(not m.binding.enabled and Running()==1,"a route with no data invented a countdown")
+Landed(1220)
+assert(state.timings[route]==20,"a missing route could not learn its own time")
+
+local Strict=dofile(root.."/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+Strict.Install()
+Strict.GUARD_NAMES.falsy.Public=true
+Strict.GUARD_NAMES.falsy.Finite=true
+S.Public=function(value) return not issecretvalue(value) end
+local secretNumber=Strict.New("number")
+local secretBoolean=Strict.New("boolean")
+local secretText=Strict.New("string")
+local stop=Strict.Watch(qol.."FlightTimer.lua",{strict=true})
+entries[4]={slotIndex=secretNumber,nodeID=61,name="Restricted slot",state=1}
+entries[5]={slotIndex=2,nodeID=secretNumber,name="Restricted node",state=1}
+entries[6]={slotIndex=2,nodeID=61,name=secretText,state=1}
+entries[7]={slotIndex=2,nodeID=61,name="Restricted transition",state=1,isMapLayerTransition=secretBoolean}
+entries[8]={slotIndex=2,nodeID=99999,name="Restricted state",state=secretNumber}
+events.TAXIMAP_OPENED(m,"TAXIMAP_OPENED",secretNumber)
+local violations=stop()
+assert(#violations==0 and not m.routes[3].estimate,
+    "secret taxi metadata influenced a route estimate: "..table.concat(violations," | "))
 m.active=false;m:Disable()
 print("suite_flight_timer_contract: OK")

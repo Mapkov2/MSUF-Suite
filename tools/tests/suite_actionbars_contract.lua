@@ -605,7 +605,20 @@ local calls,rangeEnabled,ranges={cooldown=0,duration=0,charges=0,loc=0,usable=0,
 calls.chargesBySlot={}
 -- C_Spell.GetOverrideSpell answers the spell itself without an override.
 local spellOverrides={}
-C_Spell={GetOverrideSpell=function(id) assert(not IsSecret(id),"secret spell ID reached GetOverrideSpell");return spellOverrides[id] or id end}
+C_Spell={
+    GetOverrideSpell=function(id) assert(not IsSecret(id),"secret spell ID reached GetOverrideSpell");return spellOverrides[id] or id end,
+    GetSpellTexture=function(id) return id+400 end,
+    GetSpellDisplayCount=function() return "" end,
+    GetSpellCharges=function() end,
+    GetSpellCooldownDuration=function() end,
+    GetSpellLossOfControlCooldownInfo=function() return {isActive=false} end,
+    GetSpellLossOfControlCooldownDuration=function() end,
+    GetSpellChargeDuration=function() end,
+    IsSpellUsable=function() return true,false end,
+    IsSpellInRange=function() return true end,
+    IsCurrentSpell=function() return false end,
+    IsAutoRepeatSpell=function() return false end,
+}
 local locCount=0
 C_LossOfControl={GetActiveLossOfControlDataCountByUnit=function(unit)
     assert(unit=="player")
@@ -939,8 +952,14 @@ assert(loadfile(root .. "/MSUF_Suite/Core/FontBridge.lua"))("MSUF_Suite", MSUFSu
 for _,file in ipairs({"Surfaces","Runtime","EditMode"}) do
     assert(loadfile(root.."/MSUF_Suite_Modules/"..file..".lua"))("MSUF_Suite_Modules",private)
 end
-local RUNTIME={"Bootstrap","Bars","Decorations","Blizzard","Paging","Visibility",
-    "Bindings","KeyAudit","Style","Paint","NativeButtons","Flush","Events","Controller"}
+local specID, specGroup=102,1
+C_SpecializationInfo={
+    GetSpecialization=function() return 1 end,
+    GetSpecializationInfo=function() return specID end,
+    GetActiveSpecGroup=function() return specGroup end,
+}
+local RUNTIME={"Bootstrap","Bars","Decorations","Blizzard","Paging","VirtualActions","SnapshotNative","Snapshots","Visibility",
+    "Bindings","KeyAudit","Style","VirtualPaint","Paint","NativeButtons","Flush","Events","Controller"}
 for _,file in ipairs(RUNTIME) do
     assert(loadfile((file=="Paint" and os.getenv("MSUF_ACTIONBARS_PAINT_SOURCE"))
         or root.."/MSUF_Suite_ActionBars/"..file..".lua"))("MSUF_Suite_ActionBars",private)
@@ -1846,14 +1865,19 @@ for index=1,10 do
     for i=1,12 do
         local rec=Button(index,i)
         local button=rec.button
-        assert(button.name=="MSUFSuiteBar"..index.."Button"..i and button.explicit and button.wraps==3)
-        assert(button.attrs.type=="action" and button.attrs.typerelease=="actionrelease" and button.attrs.index==i)
-        assert(button.clickTypes[1]=="AnyDown" and button.clickTypes[2]=="AnyUp")
-        if index>1 then assert(button.attrs.action==AB.FIRST_SLOT[index]+i-1,"explicit slot on bar "..index) end
+        assert(button.name=="MSUFSuiteBar"..index.."Button"..i and button.explicit)
+        assert(button.clickTypes[1]=="AnyDown" and button.clickTypes[2]=="AnyUp" and button.attrs.index==i)
+        if index==10 then
+            assert(rec.virtual and not rec.slot and not button.attrs.action and not button.attrs.type and button.wraps==1,
+                "independent bar borrowed a native action slot")
+        else
+            assert(button.attrs.type=="action" and button.attrs.typerelease=="actionrelease" and button.wraps==3)
+            if index>1 then assert(button.attrs.action==AB.FIRST_SLOT[index]+i-1,"explicit slot on bar "..index) end
+        end
     end
 end
 assert(Bar(1).header.attrs.actionpage==1 and Button(1,5).button.attrs.action==5)
-assert(MainBar.attrs.actionpage==1 and Bar(1).header.attrs.mirror==true)
+assert(MainBar.attrs.actionpage==1 and Bar(1).header.attrs.mirror==false, "enabled fixed bars reserve their manual pages")
 -- Empty slots follow showEmpty: bar 2 hides empty buttons only when set so.
 assert(Button(2,1).button.shown and Button(2,2).button.shown,"bar 2 shows empty slots by default")
 assert(Button(9,1).button.shown,"bar 9 shows empty slots")
@@ -1876,7 +1900,8 @@ assert(b61.icon.texture==61 and b61.Count.text=="3" and b61.HotKey.text=="S1")
 assert(Button(1,1).button.HotKey.text=="1" and Button(9,1).button.HotKey.text=="CM4")
 assert(overrides["CTRL-BUTTON4"]=="MSUFSuiteBar9Button1" and overrides.MOUSEWHEELUP=="MSUFSuiteBar9Button1","bar 9 keys click suite buttons")
 assert(overrides.F=="MSUFSuiteBar3Button1","flyout slots route to the visible button")
-assert(not overrides["1"] and not overrides["SHIFT-1"],"native commands stay native")
+assert(overrides["1"]=="MSUFSuiteBar1Button1" and not overrides["SHIFT-1"],
+    "bar 1 must not cast a reserved native page; fixed native commands stay native")
 local writes=overrideWrites
 AB.UpdateRouting();assert(overrideWrites==writes,"unchanged routing must be skipped")
 -- Crafting quality badges: item actions only, on Retail and Forever alike
@@ -1901,9 +1926,28 @@ do
 end
 
 ------------------------------------------------------------------ paging
+local function ReleaseManualPages()
+    local disabled, restore = {}, {}
+    for _, index in ipairs({2,3,4,5,9}) do
+        local key = AB.KEYS[index].Visibility
+        disabled[key], restore[key] = AB.ENUM.VISIBILITY.NEVER, c[key]
+    end
+    assert(S.SetMany("actionbars",disabled))
+    return restore
+end
 Fire(Bar(1).header,"OnEnter",true)
+conditions["bar:2"]=true;barPage=2;MainBar.attrs.actionpage=2;Drivers();RunTimers()
+assert(Bar(1).header.attrs.actionpage==1 and Button(1,1).slot==1 and Button(9,1).slot==13,
+    "native page 2 mirrored the enabled bar 9")
+assert(overrides["1"]=="MSUFSuiteBar1Button1","the native page could bypass the Suite's reservation")
+conditions.shapeshift=true;Drivers()
+assert(Bar(1).header.attrs.actionpage==1,"the secure shapeshift fallback borrowed the reserved native page")
 local actionsChanged=triggered["MSUFSuite.ActionBars.ActionsChanged"] or 0
-conditions["bar:2"]=true;barPage=2;Drivers();RunTimers()
+local restoreManualPages=ReleaseManualPages()
+RunTimers()
+assert(Bar(1).header.attrs["state-page"]=="shapeshift" and Bar(1).header.attrs.actionpage==2,
+    "disabling a fixed bar did not re-evaluate the existing special state")
+conditions.shapeshift=nil;Drivers();RunTimers()
 assert(Bar(1).header.attrs.actionpage==2 and Button(1,1).button.attrs.action==13 and Button(1,1).slot==13)
 assert((triggered["MSUFSuite.ActionBars.ActionsChanged"] or 0)>actionsChanged,
     "a bar 1 page change did not tell the cooldown manager its glows moved")
@@ -1930,11 +1974,21 @@ assert((triggered[BINDINGS_EVENT] or 0)>bindingEvents,"the forms opt-out did not
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==1 and Bar(1).header.attrs.mirror==false,"forms opt-out keeps page 1")
 assert(overrides["1"]=="MSUFSuiteBar1Button1" and overrides["2"]=="MSUFSuiteBar1Button2","opt-out routes bar 1 keys")
-conditions.petbattle=true; combat=true; Drivers()
-assert(not next(overrides), "pet battle must release this owner's keyboard routes")
-conditions.petbattle=nil; Drivers()
-assert(overrides["1"]=="MSUFSuiteBar1Button1" and overrides["2"]=="MSUFSuiteBar1Button2",
-    "native state exit must restore saved routes during combat")
+combat=true
+for _,nativeState in ipairs({"petbattle","vehicleui","overridebar","possessbar"}) do
+    conditions[nativeState]=true
+    Drivers()
+    if nativeState=="overridebar" or nativeState=="possessbar" then
+        assert(overrides["1"]==nil and overrides["CTRL-BUTTON4"]=="MSUFSuiteBar9Button1",
+            nativeState.." must keep the extra bars' keys while releasing the main ones")
+    else
+        assert(not next(overrides), nativeState.." must release this owner's keyboard routes")
+    end
+    conditions[nativeState]=nil
+    Drivers()
+    assert(overrides["1"]=="MSUFSuiteBar1Button1" and overrides["2"]=="MSUFSuiteBar1Button2",
+        nativeState.." exit must restore saved routes during combat")
+end
 combat=false
 MainBar.attrs.actionpage=7
 conditions["mod:shift"]=true
@@ -1946,6 +2000,9 @@ conditions["mod:shift"]=nil;conditions["bonusbar:1"]=nil;special.bonus=nil
 assert(S.SetMany("actionbars",{pagingModifiers=false}))
 RunTimers()
 assert(Bar(1).header.attrs.actionpage==1 and MainBar.attrs.actionpage==1 and not overrides["1"],"native routing restored")
+assert(S.SetMany("actionbars",restoreManualPages))
+assert(overrides["1"]=="MSUFSuiteBar1Button1","enabling fixed bars restores the safe click route")
+RunTimers()
 
 ------------------------------------------------------------------ bindings in combat
 combat=true
@@ -2675,7 +2732,8 @@ Event("ACTIONBAR_SLOT_CHANGED",62);RunTimers()
 assert(Button(2,2).button.icon.texture==62,"slot change repaints in combat")
 actions[64]=nil
 combat=false
--- Native key presses show the pushed state on the suite button.
+-- Native key presses show the pushed state while there are no reservations.
+restoreManualPages=ReleaseManualPages()
 ActionButtonDown(2)
 assert(Button(1,2).button.state=="PUSHED" and native[#native]=="down2")
 ActionButtonUp(2)
@@ -2692,6 +2750,7 @@ do
         "a raising press hook reached Blizzard's binding handler")
     ActionButtonUp(2)
 end
+assert(S.SetMany("actionbars",restoreManualPages))
 MultiActionButtonDown("MultiBarBottomLeft",1)
 assert(b61.state=="PUSHED")
 -- Checked state and equipped border.
@@ -2940,21 +2999,23 @@ do
             holder.SetSize,holder.SetPoint,holder.ClearAllPoints,holder.ring.SetVertexColor=nil,nil,nil,nil
         end
     end
-    -- Bar 1 changes page in combat: the ring follows the spell, not the button.
+    -- A released page remains reachable in combat; the ring follows its spell.
+    local bar9Visibility=c.bar9Visibility
+    assert(S.Set("actionbars","bar9Visibility",AB.ENUM.VISIBILITY.NEVER))
     combat=true
     conditions["bar:2"]=true;barPage=2;Drivers();RunDue()
     assert(Button(1,2).slot==14 and not Button(1,2).assist.shown,"the ring stayed on a button whose page changed")
     conditions["bar:2"]=nil;barPage=1;Drivers();RunDue()
     assert(Button(1,2).assist.shown,"the ring did not come back with the page")
     combat=false
+    assert(S.Set("actionbars","bar9Visibility",bar9Visibility))
     assert(S.Set("actionbars","assistStyle",1) and not Button(1,2).assist.shown,"custom feedback lingered after native style restored")
     Recommend(nil)
 end
 
 ------------------------------------------------------------------ keybind export
 -- The cooldown manager's icons show the key of the suite button that
--- presses a spell: bar order first (bar 9 owns slots 13-24, bar 10 slots
--- 109-120), bar 1's form pages last.
+-- presses a spell: bar order first, then bar 1's form pages.
 local spellSlots={}
 C_ActionBar.FindSpellActionButtons=function(spell) return spellSlots[spell] or {} end
 spellSlots[1001]={1}
@@ -2974,7 +3035,80 @@ do
     assert(S.ForEachActionBarButtonForSpell("secret",Visit,context)==0,"spell visitor accepted non-public ID")
 end
 assert(S.ActionBarsBindingForSpell(2013)=="CM4","bar 9 presses slots 13-24")
-assert(S.ActionBarsBindingForSpell(2110)=="CSpc","bar 10 presses slots 109-120, not bar 1's keys")
+assert(S.ActionBarsBindingForSpell(2110)=="2","page 10 belongs to bar 1's form")
+do
+    local rec=Button(10,2)
+    local oldCursor,oldClear=GetCursorInfo,ClearCursor
+    local held=4001
+    GetCursorInfo=function() if held then return "spell",1,0,held end end
+    ClearCursor=function() held=nil end
+    rec.button:GetScript("OnReceiveDrag")(rec.button)
+    assert(held==nil and rec.button.attrs.spell==4001)
+    local oldPickup=C_Spell.PickupSpell
+    C_Spell.PickupSpell=function(id) held=id end
+    held=4004
+    rec.button:GetScript("PreClick")(rec.button,"Keybind",false)
+    assert(held==4004 and rec.button.attrs.spell==4001,"a keybind attempted to place the cursor action")
+    rec.button:GetScript("PreClick")(rec.button,"LeftButton",false)
+    assert(held==4001 and rec.button.attrs.spell==4004 and rec.button.attrs.independentdrop,
+        "click placement failed to exchange actions and suppress its cast")
+    rec.button:GetScript("PostClick")(rec.button)
+    assert(not rec.button.attrs.independentdrop,"click placement disabled later casts")
+    assert(AB.Virtual.SetSnapshotSpell(2,4004,4001))
+    C_Spell.PickupSpell=oldPickup
+    GetCursorInfo,ClearCursor=oldCursor,oldClear
+    assert(rec.button.attrs.type=="spell" and rec.button.attrs.spell==4001 and not rec.button.attrs.action,
+        "independent spell was not assigned as a secure spell")
+    assert(S.ActionBarsBindingForSpell(4001)=="CSpc","independent spell key needs no native slot")
+    RunDue()
+    local duration=C_Spell.GetSpellCooldownDuration
+    local directReads=0
+    C_Spell.GetSpellCooldownDuration=function(...)
+        directReads=directReads+1
+        return duration(...)
+    end
+    Fire(rec.button.cooldown,"OnCooldownDone")
+    C_Spell.GetSpellCooldownDuration=duration
+    assert(directReads>0,"cooldown completion fell back to a native slot")
+    conditions["bonusbar:4"]=true
+    Drivers()
+    assert(Button(1,2).button.attrs.action==110 and rec.button.attrs.spell==4001,
+        "entering the form changed the independent bar")
+    conditions["bonusbar:4"]=nil
+    Drivers()
+    assert(Button(1,2).button.attrs.action==2 and rec.button.attrs.spell==4001,
+        "leaving the form changed the independent bar")
+    combat=true
+    specID=105
+    Broadcast("PLAYER_SPECIALIZATION_CHANGED","player")
+    assert(rec.button.attrs.spell==4001 and AB.Virtual.SnapshotSpell(2)==nil,"combat swap wrote stale or protected data")
+    combat=false
+    Broadcast("PLAYER_REGEN_ENABLED")
+    assert(not rec.virtualAction and not rec.button.attrs.spell,"another spec saw the independent spell")
+    specID=102
+    Broadcast("PLAYER_SPECIALIZATION_CHANGED","player")
+    assert(rec.button.attrs.spell==4001,"original spec lost its independent spell")
+    assert(AB.Virtual.SetSnapshotSpell(2,4001,false),"independent spell clear refused its matching assignment")
+
+    -- Forever has one class specialization and two native talent groups.
+    local context=AB.M.context
+    AB.Virtual.Stop(context)
+    Suite.Client.isForever=true
+    specGroup=1
+    AB.Virtual.Start(context)
+    assert(AB.Virtual.SetSnapshotSpell(2,false,4002),"first talent group could not store an action")
+    specGroup=2
+    Broadcast("ACTIVE_COMBAT_CONFIG_CHANGED",2)
+    assert(AB.Virtual.SnapshotSpell(2)==false and not rec.button.attrs.spell,"Forever talent groups shared assignments")
+    assert(AB.Virtual.SetSnapshotSpell(2,false,4003))
+    specGroup=1
+    Broadcast("ACTIVE_COMBAT_CONFIG_CHANGED",1)
+    assert(rec.button.attrs.spell==4002,"switching back to the first Forever group did not restore its own action")
+    AB.Virtual.Stop(context)
+    Suite.Client.isForever=false
+    AB.Virtual.Start(context)
+    assert(not rec.button.attrs.spell,"Forever assignments leaked into the Retail specialization fixture")
+end
 bindings.ACTIONBUTTON3={"3"}
 assert(S.ActionBarsBindingForSpell(2075)=="3","form pages take bar 1's keys")
 assert(S.ActionBarsBindingForSpell(2076)=="3","an unbound bar slot falls back to a form page key")
@@ -3010,13 +3144,17 @@ end
 spellSlots[4050]={50}
 assert(S.ActionBarsBindingForSpell(4050)=="","harness: slot 50 starts without a key")
 c.pagingTarget,c.pageFriendly,c.pageHostile=true,1,5
-assert(S.ActionBarsBindingForSpell(4050)=="2","a spell on the hostile target page lost bar 1's key")
+assert(S.ActionBarsBindingForSpell(4050)=="","bar 1's key appeared on a reserved target page")
+local keyLabelBar3Visibility=c.bar3Visibility
+c.bar3Visibility=AB.ENUM.VISIBILITY.NEVER
+assert(S.ActionBarsBindingForSpell(4050)=="2","a spell on a released target page lost bar 1's key")
 c.pagingTarget=false
 c.pagingModifiers,c.pageShift,c.pageCtrl,c.pageAlt=true,5,2,3
 assert(S.ActionBarsBindingForSpell(4050)==S.KeyText("SHIFT-2"),"a spell on the Shift page lost its modified key")
 bindings.TOGGLEAUTORUN={"SHIFT-2"}
 assert(S.ActionBarsBindingForSpell(4050)=="","a modified key bound elsewhere was shown for bar 1")
 bindings.TOGGLEAUTORUN=nil
+c.bar3Visibility=keyLabelBar3Visibility
 c.pagingModifiers,c.pageShift,c.pageCtrl,c.pageAlt=false,2,3,4
 bindings.ACTIONBUTTON3=nil
 bindings.MSUFSUITE_BAR10_BUTTON2=nil

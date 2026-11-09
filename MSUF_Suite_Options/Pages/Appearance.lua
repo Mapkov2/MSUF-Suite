@@ -345,20 +345,23 @@ local function BuildHUD(ctx, b, skin)
         hud, false)
 end
 
-local MATERIAL_SPECS = {
-    { "Shaded surfaces", "gradient", "toggle" },
-    { "Light direction", "gradientDirection", "dropdown", { "VERTICAL", "HORIZONTAL" } },
-    { "Shading strength", "gradientStrength", "slider", nil, 0, 1, 0.05 },
-    { "Surface depth", "materialDepth", "slider", nil, 0, 1, 0.05 },
-    { "Window opacity", "shellOpacity", "slider", nil, 0.35, 1, 0.05 },
-    { "Content opacity", "panelOpacity", "slider", nil, 0.35, 1, 0.05 },
-    { "Controls opacity", "controlOpacity", "slider", nil, 0.35, 1, 0.05 },
-    { "Outline opacity", "borderOpacity", "slider", nil, 0, 1, 0.05 },
-}
+local materialSpecs
 
 local function BuildMaterial(ctx, b, skin)
+    if not materialSpecs then
+        materialSpecs = {
+            { "Shaded surfaces", "gradient", "toggle" },
+            { "Light direction", "gradientDirection", "dropdown", { "VERTICAL", "HORIZONTAL" } },
+            { "Shading strength", "gradientStrength", "slider", nil, 0, 1, 0.05 },
+            { "Surface depth", "materialDepth", "slider", nil, 0, 1, 0.05 },
+            { "Window opacity", "shellOpacity", "slider", nil, 0.35, 1, 0.05 },
+            { "Content opacity", "panelOpacity", "slider", nil, 0.35, 1, 0.05 },
+            { "Controls opacity", "controlOpacity", "slider", nil, 0.35, 1, 0.05 },
+            { "Outline opacity", "borderOpacity", "slider", nil, 0, 1, 0.05 },
+        }
+    end
     local material = {}
-    for _, spec in ipairs(MATERIAL_SPECS) do
+    for _, spec in ipairs(materialSpecs) do
         ConfigRow(skin, material, "material", spec[1], "theme", spec[2], spec[3], spec[4], spec[5], spec[6], spec[7],
             skin.Theme.SetAppearance)
     end
@@ -394,6 +397,14 @@ local function BuildShape(ctx, b, skin)
         function(value) Change(skin, "Dim inactive windows", "theme.windowFocusDimming",
             function() return skin.Theme.SetAppearance("windowFocusDimming", value) end) end)
     Kit.AddScrollRows(shape, skin)
+    shape[#shape + 1] = Row("toggle", "Readable values and status symbols", "theme.readableValues", "shape",
+        function() return skin.DB.theme.readableValues == true end,
+        function(value) Change(skin, "Readable values and status symbols", "theme.readableValues",
+            function()
+                if not skin.Theme.SetAppearance("readableValues", value) then return false end
+                Suite.RefreshReadableValues()
+                return true
+            end) end)
     shape[#shape + 1] = Row("toggle", "Reduced motion", "theme.reduceMotion", "shape",
         function() return skin.DB.theme.reduceMotion == true end,
         function(value) Change(skin, "Reduced motion", "theme.reduceMotion",

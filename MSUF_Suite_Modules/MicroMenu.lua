@@ -166,12 +166,30 @@ end
 -- button. Under the Gamepad UI nothing opens from here
 -- (S.CanOpenNativeWindow): the places click Blizzard's buttons instead
 -- (S.PanelButton).
-function S.TogglePanel(panel)
+local function PanelWindow(panel)
     if not S.CanOpenNativeWindow() or panel == "guild" then return end
+    if panel == "friends" then return FriendsFrame end
     local window, rule = CharacterFrame, Enum.GameRule.CharacterPanelDisabled
     if panel == "worldMap" then window, rule = WorldMapFrame, Enum.GameRule.WorldMapDisabled end
-    if panel == "friends" then window = FriendsFrame end
-    if panel ~= "friends" and C_GameRules.IsGameRuleActive(rule) then return end
+    local disabled = C_GameRules.IsGameRuleActive(rule)
+    if S.Public(disabled) and not disabled then return window end
+end
+
+function S.ShowPanel(panel)
+    if NS.InCombat() then return false end
+    local window = PanelWindow(panel)
+    if not window then return false end
+    local shown = window:IsShown()
+    if not S.Public(shown) then return false end
+    if shown == true then return true end
+    S.Dispatch(NS.Finish, ShowUIPanel, window)
+    shown = window:IsShown()
+    return S.Public(shown) and shown == true
+end
+
+function S.TogglePanel(panel)
+    local window = PanelWindow(panel)
+    if not window then return end
     S.Dispatch(NS.Finish, window:IsShown() and HideUIPanel or ShowUIPanel, window)
 end
 

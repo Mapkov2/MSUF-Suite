@@ -454,8 +454,8 @@ assert(bagMode == "1" and hooks.UpdateItems and hooks.OnShow, "combined bag or h
 -- The explicit sub-module list replaces the files' post-hooks on the module.
 local REFRESH_ORDER = { "PlayerGear.Refresh", "UpgradeMarker.Refresh", "InventoryView.Refresh", "BankInventory.Refresh", "BankWindow.Refresh",
     "BagFinance.Enable", "StackSplitter.Refresh", "SortDirection.Refresh", "BuybackSearch.Refresh" }
-local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "InventoryView.Disable", "BankInventory.Disable", "BankWindow.Disable",
-    "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable" }
+local STOP_ORDER = { "PlayerGear.Disable", "UpgradeMarker.Disable", "PhysicalSort.Stop", "InventoryView.Disable", "BankInventory.Disable",
+    "BankWindow.Disable", "BagFinance.Disable", "AutoSplit.Stop", "StackSplitter.Close", "SortDirection.Restore", "BuybackSearch.Disable" }
 local function Ran(order)
     if #submoduleCalls ~= #order then return false end
     for i = 1, #order do if submoduleCalls[i] ~= order[i] then return false end end
@@ -642,19 +642,22 @@ assert(combinedHandle and reagentHandle and combinedHandle.shown and reagentHand
     and reagentHandle.allPoints == ContainerFrame6.TitleContainer
     and combinedHandle.drags == "LeftButton" and reagentHandle.drags == "LeftButton",
     "open bag titles are not draggable")
--- The title explains both of its actions: drag to move, click for the menu.
+-- The title explains dragging and the separate right-click menu.
 combinedHandle.scripts.OnEnter(combinedHandle)
 assert(tooltip.shown and tooltip.owner == combinedHandle and tooltip.anchor == "ANCHOR_TOP"
-    and tooltip.lines[1] == "Drag to move" and tooltip.lines[2] == "Click for bag options",
+    and tooltip.lines[1] == "Drag to move" and tooltip.lines[2] == "Right-click for bag options",
     "the bag title did not explain dragging and its menu")
 combinedHandle.scripts.OnLeave(combinedHandle)
 assert(not tooltip.shown, "leaving the bag title kept its tooltip")
 combinedHandle.scripts.OnMouseDown(combinedHandle)
 combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
+assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
+    "left-clicking the combined bag title opened Blizzard's bag menu")
+combinedHandle.scripts.OnClick(combinedHandle, "RightButton")
 assert(ContainerFrameCombinedBags.PortraitButton.menuOpen,
-    "clicking the combined bag title lost Blizzard's bag menu")
+    "right-clicking the combined bag title lost Blizzard's bag menu")
 combinedHandle.scripts.OnMouseDown(combinedHandle)
-combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
+combinedHandle.scripts.OnClick(combinedHandle, "RightButton")
 assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
     "second title click did not close Blizzard's bag menu")
 -- S12-A5: under WoW Forever's Gamepad UI Blizzard's bag menu, opened from
@@ -662,7 +665,7 @@ assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
 -- portrait button itself opens it. The title still drags the window.
 gamepadUI = true
 combinedHandle.scripts.OnMouseDown(combinedHandle)
-combinedHandle.scripts.OnClick(combinedHandle, "LeftButton")
+combinedHandle.scripts.OnClick(combinedHandle, "RightButton")
 assert(not ContainerFrameCombinedBags.PortraitButton.menuOpen,
     "the bag title opened Blizzard's bag menu from the Suite under the Gamepad UI")
 gamepadUI = false

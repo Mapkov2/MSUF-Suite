@@ -2,7 +2,7 @@
 ## Title: MSUF Suite - Adventure Planner
 ## Notes: Optional Adventure Planner module for MSUF Suite.
 ## Author: Mapko
-## Version: 0.1.16-alpha
+## Version: 0.1.17-alpha
 ## Dependencies: MSUF_Suite, MSUF_Suite_Modules
 ## Group: MSUF_Suite
 ## LoadOnDemand: 1
@@ -13,6 +13,7 @@ PlanningTools.lua
 PlanningHistory.lua
 PlanningWeekly.lua
 PlanningLoadouts.lua
+PlanningLoot.lua
 PlanningNotes.lua
 PlanningLFG.lua
 PlanningOverview.lua

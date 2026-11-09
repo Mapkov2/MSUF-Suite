@@ -89,6 +89,7 @@ function F.New(root, forever)
     _G.Enum = { BankType = { Character = 1, Account = 2 }, CraftingReagentType = { Basic = 1, Modifying = 2 } }
     _G.GetCursorInfo = function() if E.cursor then return E.cursor.kind, E.cursor.id end end
     _G.CursorHasItem = function() return E.cursor ~= nil end
+    _G.SpellIsTargeting = function() return E.targeting or false end
     _G.ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot) return { bag = bag, slot = slot } end }
     _G.C_Item = {
         GetItemNameByID = function(id) return "Item " .. id end,
@@ -115,6 +116,8 @@ function F.New(root, forever)
         FetchPurchasedBankTabData = function(kind) return { { ID = kind == 1 and 6 or 13 } } end,
         IsItemAllowedInBankType = function() return E.allowed ~= false end }
     _G.BankFrame, _G.MailFrame, _G.SendMailFrame = Frame("Frame"), Frame("Frame"), Frame("Frame")
+    _G.StackSplitFrame = Frame("Frame")
+    StackSplitFrame:Hide()
     BankFrame:Hide(); MailFrame:Hide(); SendMailFrame:Hide()
     BankFrame.GetActiveBankType = function() return E.bankType end
     _G.SendMailNameEditBox, _G.SendMailSubjectEditBox = Frame("EditBox"), Frame("EditBox")

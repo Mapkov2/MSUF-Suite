@@ -192,9 +192,16 @@ local function ReadQuickStats(buffer)
     end
 end
 
-function Pages.Overview(groups, fullStats)
+function Pages.Overview(groups, fullStats, combat)
     local buffer = Buffer(groups)
-    if fullStats then ReadStats(buffer) else ReadQuickStats(buffer) end
+    if combat then
+        Vitals(Group(buffer, Text("Attributes")))
+        Group(buffer, Text("Full stats after combat"))
+    elseif fullStats then
+        ReadStats(buffer)
+    else
+        ReadQuickStats(buffer)
+    end
     return Finish(buffer, groups)
 end
 
@@ -288,6 +295,11 @@ local providers = {
 -- Only chosen, supported sources can register events or read values. A row
 -- plan caches the display label and source index until the definition changes.
 local plans = setmetatable({}, { __mode = "k" })
+local combatLockedSources = {
+    strength = true, agility = true, stamina = true, intellect = true, spirit = true,
+    crit = true, haste = true, mastery = true, versatility = true,
+    armor = true, dodge = true, defense = true, avoidance = true,
+}
 
 local function AddProvider(plan, provider, unique, events)
     local index = unique[provider]
@@ -309,7 +321,7 @@ end
 function Pages.CustomPlan(definition)
     local plan = plans[definition]
     if plan then return plan end
-    plan = { cards = {}, events = {}, readers = {}, values = {}, labels = {}, samples = {} }
+    plan = { cards = {}, events = {}, readers = {}, values = {}, labels = {}, samples = {}, combatLocked = {} }
     local unique, events = {}, {}
     for i, card in ipairs(definition.cards) do
         local x, y = Model.Position(card)
@@ -321,7 +333,10 @@ function Pages.CustomPlan(definition)
             local rowX, rowY = Model.Position(row)
             target.rowUp, target.rowDown = math.max(target.rowUp, rowY), math.max(target.rowDown, -rowY)
             local index = provider and AddProvider(plan, provider, unique, events) or nil
-            if index then plan.samples[index] = source.sample end
+            if index then
+                plan.samples[index] = source.sample
+                plan.combatLocked[index] = combatLockedSources[row.source]
+            end
             target.rows[j] = {
                 x = rowX, y = rowY,
                 index = index,
@@ -335,11 +350,17 @@ function Pages.CustomPlan(definition)
 end
 
 local sampleLabels = {}
-function Pages.Custom(groups, plan, state)
+function Pages.Custom(groups, plan, state, combat)
     local buffer = Buffer(groups)
     local values, labels = plan.values, plan.labels
     if state then
-        for i = 1, #plan.readers do values[i], labels[i] = plan.readers[i](state) end
+        for i = 1, #plan.readers do
+            if combat and plan.combatLocked[i] then
+                values[i], labels[i] = nil, nil
+            else
+                values[i], labels[i] = plan.readers[i](state)
+            end
+        end
     else
         values, labels = plan.samples, sampleLabels
     end

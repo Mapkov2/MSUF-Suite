@@ -245,5 +245,43 @@ Case("E5 export larger than any import", function()
     assert(IO.ExportModule("objectives") and P.Export(), "ordinary exports were refused")
 end)
 
+
+Case("Blizzard nameplate settings transfer and restore", function()
+    local cvars = { nameplateDebuffPadding = "3", nameplateShowEnemies = "1", UnitSurnameOwn = "0" }
+    C_CVar = {
+        GetCVar = function(key) return cvars[key] end,
+        SetCVar = function(key, value) cvars[key] = value end,
+    }
+    local previous = assert(provider.Capture())
+    assert(previous.nameplateCVars and previous.nameplateCVars.nameplateDebuffPadding == "3",
+        "restore point omitted Blizzard's value")
+    local module = assert(P.ExportModule("nameplates"))
+    local bundle = assert(P.Export())
+    cvars.nameplateDebuffPadding, cvars.UnitSurnameOwn = "8", "1"
+    local prepared = assert(provider.PrepareImport(module))
+    assert(cvars.nameplateDebuffPadding == "8", "preparing a module import wrote the native value")
+    assert(provider.Restore(prepared.provider))
+    assert(cvars.nameplateDebuffPadding == "3" and cvars.UnitSurnameOwn == "0",
+        "applying a prepared module lost the native values")
+    cvars.nameplateDebuffPadding = "9"
+    assert(provider.Restore(previous, "MSUF2_HISTORY_UNDO", "suite:options"))
+    assert(cvars.nameplateDebuffPadding == "9", "ordinary menu undo replaced a later Blizzard edit")
+    assert(provider.Restore(previous, "MSUF2_HISTORY_UNDO", "profile-workbench"))
+    assert(cvars.nameplateDebuffPadding == "3", "workbench undo lost the native value")
+    cvars.nameplateDebuffPadding = "9"
+    assert(provider.Restore(previous))
+    assert(cvars.nameplateDebuffPadding == "3", "restoring a point lost the native value")
+    Suite.DB.suite.modules.nameplates.protectImport = true
+    cvars.nameplateDebuffPadding = "5"
+    prepared = assert(provider.PrepareImport(bundle))
+    assert(provider.Restore(prepared.provider))
+    assert(cvars.nameplateDebuffPadding == "5", "workbench full import ignored the nameplate protection")
+    Suite.DB.suite.modules.nameplates.protectImport = false
+    prepared = assert(provider.PrepareImport(bundle))
+    assert(provider.Restore(prepared.provider))
+    assert(cvars.nameplateDebuffPadding == "3", "applying a prepared bundle lost the native value")
+    C_CVar = nil
+end)
+
 assert(#failures == 0, "\n" .. table.concat(failures, "\n"))
 print("suite_profile_workbench_contract: OK")

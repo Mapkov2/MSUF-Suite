@@ -2,7 +2,7 @@ local _, NS = ...
 local bounds = NS.Host.CharacterTabs.PositionBounds
 local CARD_INSET, ROW_INSET = bounds.card.x, bounds.row.x
 local VERTICAL_INSET = bounds.card.y + bounds.row.y
-local ceil, floor, max = math.ceil, math.floor, math.max
+local ceil, floor, max, min = math.ceil, math.floor, math.max, math.min
 local Layout = {}
 NS.GroupLayout = Layout
 
@@ -49,4 +49,54 @@ function Layout.FirstCard(list, offset)
         if list.offsets[index] <= earliest then low = middle else high = middle - 1 end
     end
     return (low - 1) * list.columns + 1
+end
+
+local CreateFrame = NS.Suite.CreateFrame
+local Number = NS.Number
+
+local function VerticalScroll(scroll, offset)
+    local list = scroll.panelList
+    if list.content and not list.layingOut and Number(offset) then list.paint(list, offset) end
+end
+
+function Layout.NewList(view, parent, width, height, columns, paint, fixed)
+    local scroll, canvas
+    if fixed then
+        canvas = NS.Window.CreateChild(view, "Frame", parent)
+        canvas:SetPoint("TOPLEFT")
+        canvas:SetSize(width - 16, height)
+        canvas:SetClipsChildren(true)
+    else
+        scroll = CreateFrame("ScrollFrame", nil, parent, "ScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT")
+        scroll:SetSize(width - 16, height)
+        canvas = CreateFrame("Frame", nil, scroll)
+        canvas:SetSize(width - 16, 1)
+        scroll:SetScrollChild(canvas)
+    end
+    local list = {
+        view = view, scroll = scroll, canvas = canvas, groups = {}, paint = paint,
+        columns = columns, height = height, width = width - 16, cards = {}, offsets = {}, heights = {},
+    }
+    if scroll then
+        scroll.panelList = list
+        scroll:HookScript("OnVerticalScroll", VerticalScroll)
+    end
+    return list
+end
+
+function Layout.UpdateScroll(list, content, reset)
+    local scroll = list.scroll
+    if not scroll then return 0 end
+    local oldOffset = Number(scroll:GetVerticalScroll())
+    if not oldOffset or not Number(scroll:GetVerticalScrollRange()) then return oldOffset or 0 end
+    list.layingOut = true
+    if list.content ~= content then
+        list.content = content
+        list.canvas:SetHeight(content)
+    end
+    local offset = reset and 0 or min(oldOffset, max(0, content - list.height))
+    if offset ~= oldOffset and Number(scroll:GetVerticalScrollRange()) then scroll:SetVerticalScroll(offset) end
+    list.layingOut = false
+    return offset
 end

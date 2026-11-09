@@ -12,6 +12,8 @@ local SlotCache = { info = {}, quest = {}, version = {}, sizes = {}, dirtyBags =
     KEY = 1000 }
 P.SlotCache = SlotCache
 local KEY = SlotCache.KEY
+local client = P.NS and P.NS.Client
+local KEYRING_BAG = client and client.isForever and KEYRING_CONTAINER or nil
 local Finite, Public = S.Finite, S.Public
 local bindings, bindLocation = {}, nil
 local BIND_NONE, BIND_ON_EQUIP, BIND_UNTIL_EQUIPPED = 0, 2, 9
@@ -19,6 +21,17 @@ local BIND_NONE, BIND_ON_EQUIP, BIND_UNTIL_EQUIPPED = 0, 2, 9
 local function Forget(key)
     SlotCache.info[key], SlotCache.quest[key], SlotCache.dirtySlots[key], bindings[key] = nil, nil, nil, nil
     SlotCache.version[key] = (SlotCache.version[key] or 0) + 1
+end
+
+-- Blizzard marks active quest objectives with isQuestItem and quest starters
+-- with questID. Only a readable, unmarked slot can hold an inactive quest item.
+local function QuestState(quest)
+    if not Public(quest) or type(quest) ~= "table" or not Public(quest.isQuestItem) then return nil end
+    if quest.isQuestItem == true then return true end
+    local questID, active = quest.questID, quest.isActive
+    if quest.isQuestItem == false and Public(questID) and questID == nil and Public(active) and active == false then
+        return false
+    end
 end
 
 local function Read(bag, slot)
@@ -37,13 +50,17 @@ local function Read(bag, slot)
         SlotCache.quest[key] = nil
         return
     end
-    local quest = C_Container.GetContainerItemQuestInfo(bag, slot)
-    SlotCache.quest[key] = Public(quest) and quest and Public(quest.isQuestItem) and quest.isQuestItem == true
+    SlotCache.quest[key] = QuestState(C_Container.GetContainerItemQuestInfo(bag, slot))
 end
 
 -- Brings one container up to date and returns its slot count.
 function SlotCache.Sync(bag)
-    local size = C_Container.GetContainerNumSlots(bag)
+    local size
+    if bag == KEYRING_BAG then
+        size = GetKeyRingSize()
+    else
+        size = C_Container.GetContainerNumSlots(bag)
+    end
     if not Finite(size) or size < 0 or size >= KEY then size = 0 end
     local base = bag * KEY
     local known = SlotCache.sizes[bag]
@@ -59,11 +76,12 @@ function SlotCache.Sync(bag)
     return size
 end
 
--- info (nil for an empty or unreadable slot), quest flag, read version.
+-- Slot info, quest state (true for an objective, false for confirmed unmarked,
+-- nil for a starter or unknown), and read version.
 function SlotCache.Get(bag, slot)
     local key = bag * KEY + slot
     local info = SlotCache.info[key]
-    return info or nil, SlotCache.quest[key] == true, SlotCache.version[key] or 0
+    return info or nil, SlotCache.quest[key], SlotCache.version[key] or 0
 end
 
 function SlotCache.MarkBag(bag)

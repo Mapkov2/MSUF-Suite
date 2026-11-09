@@ -276,12 +276,32 @@ local function FadeCustomerOrdersChrome(state, root)
     SkinVisibleCustomerRows(state, root)
 end
 
+local PROFESSION_PAGES = { "CraftingPage", "SpecPage", "OrdersPage" }
+
+local function WatchProfessionMotion(state, root)
+    local watch, owner = NS.ContentMotion.Watch, state.parentOwner
+    for index = 1, #PROFESSION_PAGES do
+        watch(Field(root, PROFESSION_PAGES[index]), owner)
+    end
+    local book = NS.Client.isForever and Field(root, "BookPage")
+    if not book or watch(book, owner) then return end
+    -- Secure profession spell buttons protect their parent cards. Their rank
+    -- displays are independent visual frames and can use the normal fade.
+    local content = Field(book, "ProfessionsContentFrame")
+    for index = 1, #FOREVER_PROFESSION_CARDS do
+        watch(Path(content, FOREVER_PROFESSION_CARDS[index], "StatusBar"), owner)
+    end
+end
+
 local function ApplyProfessionRoot(state, root)
     if not root or not CategoryEnabled("profession") or root ~= Field(_G, "ProfessionsFrame") then return false, "disabled" end
     local combat = NS.IsCombatLocked()
     if combat then Shared.RunOrDefer(state, "profession", ApplyProfessionRoot, root) end
     local applied, reason = ApplyDeepRoot(state, root, PROFESSION_MODE, true)
-    if applied then FadeProfessionChrome(state, root) end
+    if applied then
+        FadeProfessionChrome(state, root)
+        WatchProfessionMotion(state, root)
+    end
     if NS.Client.isForever then
         local book = Field(root, "BookPage")
         if book and (combat and not Kit.IsHidden(book) or not combat and applied) then
@@ -449,6 +469,21 @@ local function ProfessionsOpened(frame)
     RequestRootPass(PROFESSIONS_PASS, frame, true)
 end
 
+local selectedProfession = Kit.WeakSet()
+
+local function PlayProfessionSelection(state, frame, skill)
+    NS.ContentMotion.Play(Field(frame, "CraftingPage"), state.parentOwner, skill)
+end
+
+local function ProfessionSelected(frame, tab)
+    local skill = Field(tab, "skillLine")
+    if not Safety.Public(skill) or skill ~= nil and type(skill) ~= "number" then return end
+    local previous = selectedProfession[frame]
+    if previous == skill then return end
+    selectedProfession[frame] = skill
+    if previous and skill then ForActiveOwners("profession", PlayProfessionSelection, frame, skill, true) end
+end
+
 local function RefreshProfessionPage(page)
     RequestSubtreePass(PROFESSIONS_PASS, page)
 end
@@ -538,7 +573,10 @@ local function InstallProfessionsHooks()
     local orders = Field(root, "OrdersPage")
     HookInstance(root, "OnShow", ProfessionsOpened)
     HookInstance(root, "Refresh", RefreshProfessions)
-    if NS.Client.isForever then HookInstance(Field(root, "BookPage"), "Update", RefreshProfessionBook) end
+    if NS.Client.isForever then
+        HookInstance(Field(root, "BookPage"), "Update", RefreshProfessionBook)
+        HookInstance(root, "RightTabSelected", ProfessionSelected)
+    end
     HookInstance(crafting, "Init", RefreshProfessionPage)
     HookInstance(crafting, "Refresh", RefreshProfessionPage)
     -- A profession switch rebuilds the specialization tabs and tree here.

@@ -52,12 +52,12 @@ E:Emit(keywords, "CHAT_MSG_PARTY", "ready.", "Tank")
 assert(#messages == 2, "rate window expires")
 keywords.config.words = ""; keywords:Refresh()
 assert(not next(keywords.context.events), "empty phrase list removes listeners")
-keywords:Open()
+keywords:EditPhrases()
 keywords.config.words = "newer settings"
 assert(window.edit.onSave(keywords, "old edit") == false, "stale keyword editor cannot overwrite newer settings")
-keywords:Open()
+keywords:EditPhrases()
 assert(window.edit.onSave(keywords, string.rep("目", 80)), "80 UTF-8 characters fit the phrase limit")
-keywords:Open()
+keywords:EditPhrases()
 assert(window.edit.onSave(keywords, string.rep("目", 81)) == false, "81 UTF-8 characters exceed the phrase limit")
 
 local quantity = 5
@@ -148,4 +148,153 @@ S.SuspendSoundProfile(); S.instances.fishingComfort = { audio = true }; S.Refres
 assert(not volumes.Sound_MusicVolume, "fishing owns sound until it ends")
 S.instances.fishingComfort.audio = nil; S.RefreshSoundProfile(); assert(volumes.Sound_MusicVolume == .7)
 sound:Disable(); assert(not next(volumes), "disable releases owned sound settings")
+
+do
+    local files, reads = 0, 0
+    function S.SetMany(id, values)
+        local module = E.modules[id]
+        for key, value in pairs(values) do module.config[key] = value end
+        module:Refresh()
+        return true
+    end
+    S.SharedMedia = function() return {
+        List = function() return { "Signal" } end,
+        Fetch = function(_, kind, name, silent)
+            assert(kind == "sound" and name == "Signal" and silent, "sound is resolved through SharedMedia")
+            return "signal.ogg"
+        end,
+    } end
+    PlaySoundFile = function(path) assert(path == "signal.ogg"); files = files + 1 end
+    GetChannelList = function() return 1, "Trade", false, 4, "LookingForGroup", false end
+    GetTime = function() reads = reads + 1; return now end
+    GetServerTime = function() return now end
+    S.QoLCopyDialog = function() return {} end
+    S.QoLShowCopy = function(_, text) window.copied = text end
+    S.QoLClearCopy = function() window.copied = nil end
+    keywords.config.words = "Lead\nQuick"
+    keywords.config.phraseOptions = ""
+    keywords:Refresh()
+
+    local function Row(key)
+        for _, row in ipairs(window.spec.rows(keywords)) do
+            if row.key == key then return row end
+        end
+        error("Missing row " .. key)
+    end
+    local function Channel(text, channel)
+        E:Emit(keywords, "CHAT_MSG_CHANNEL", text, "Leader", nil, nil, nil, nil, nil, nil, channel)
+    end
+    local function OpenChannel(key)
+        keywords:Open()
+        window.spec.actions[4].run(keywords, Row(key))
+    end
+    local function ApplyChannels()
+        window.spec.actions[1].run(keywords, nil, window)
+    end
+
+    OpenChannel("lead")
+    assert(Row("").checked, "rules initially follow the default scope")
+    window.spec.onSelect(keywords, Row("channel:Trade"))
+    window.spec.onSelect(keywords, Row("guild"))
+    window.spec.onSelect(keywords, Row("party"))
+    window.spec.actions[2].run(keywords)
+    assert(window.edit.onSave(keywords, "  LookingForGroup  "))
+    assert(Row("channel:Trade").checked and Row("channel:LookingForGroup").checked and Row("guild").checked)
+    ApplyChannels()
+    assert(keywords.context.events.CHAT_MSG_CHANNEL and keywords.context.events.CHAT_MSG_GUILD,
+        "explicit scopes work independently of the global defaults")
+    assert(not keywords.context.events.CHAT_MSG_RAID, "unrelated event remains dormant")
+    assert(Row("lead").detail:find("LookingForGroup", 1, true))
+
+    OpenChannel("quick")
+    window.spec.onSelect(keywords, Row("channel:Trade"))
+    ApplyChannels()
+    window.spec.actions[5].run(keywords, Row("lead"))
+    window.spec.actions[2].run(keywords, Row("lsm:Signal"))
+    assert(files == 1, "sound picker plays the selected sound")
+    window.spec.actions[1].run(keywords, Row("lsm:Signal"), window)
+    assert(Row("lead").detail:find("Signal", 1, true))
+
+    local initial = #messages
+    local beforeReads = reads
+    Channel("lead", E.secret)
+    Channel("lead", "General")
+    assert(#messages == initial and reads == beforeReads,
+        "restricted or irrelevant named channels return before reading the clock")
+    Channel("quick", "LookingForGroup")
+    assert(#messages == initial, "a rule watches only its own named channels")
+    Channel("LEAD", "Trade")
+    Channel("lead", "LookingForGroup")
+    E:Emit(keywords, "CHAT_MSG_GUILD", "lead", "Leader")
+    assert(#messages == initial + 1 and files == 2, "one rule shares its cooldown across all selected channels")
+    now = now + 31
+    Channel("Lead", "LOOKINGFORGROUP")
+    now = now + 31
+    E:Emit(keywords, "CHAT_MSG_GUILD", "lead", "Leader")
+    assert(#messages == initial + 3 and files == 4, "configured sound plays on both named and group routes")
+
+    local instanceRaid, groupReads = true, 0
+    LE_PARTY_CATEGORY_INSTANCE = {}
+    IsInRaid = function(category)
+        assert(category == LE_PARTY_CATEGORY_INSTANCE)
+        groupReads = groupReads + 1
+        return instanceRaid
+    end
+    now = now + 31
+    E:Emit(keywords, "CHAT_MSG_INSTANCE_CHAT", "other text", "Leader")
+    assert(groupReads == 0, "nonmatching instance chat does not read group state")
+    E:Emit(keywords, "CHAT_MSG_INSTANCE_CHAT", "lead", "Leader")
+    assert(#messages == initial + 3, "a party rule does not match raid instances")
+    instanceRaid = false
+    E:Emit(keywords, "CHAT_MSG_INSTANCE_CHAT", "lead", "Leader")
+    assert(#messages == initial + 4 and groupReads == 2, "a party rule sees party instances through the same route")
+
+    local function MeasureUnrelated()
+        collectgarbage("collect")
+        collectgarbage("stop")
+        local before = collectgarbage("count")
+        for _ = 1, 200 do Channel("lead", "General") end
+        local delta = collectgarbage("count") - before
+        collectgarbage("restart")
+        return delta
+    end
+    assert(math.min(MeasureUnrelated(), MeasureUnrelated()) < 0.1, "irrelevant channel warm path has no retained allocation")
+
+    for index = 1, 105 do
+        now = now + 31
+        Channel("Lead " .. index, "Trade")
+    end
+    keywords:Open()
+    window.spec.selectTab(keywords, "matches")
+    local rows = window.spec.rows()
+    assert(#rows == 100 and rows[1].label == "Leader: Lead 105" and rows[100].label == "Leader: Lead 6", "recent hits are bounded and newest-first")
+    window.spec.actions[3].run(keywords, rows[1])
+    assert(window.copied == rows[1].text, "copy action takes the selected match")
+    now = now + 31
+    Channel("Lead newest", "Trade")
+    assert(window.spec.rows()[1].label == "Leader: Lead 105", "an open list holds a snapshot rather than repainting per event")
+    window.spec.actions[2].run()
+    assert(window.spec.rows()[1].label == "Leader: Lead newest", "refresh takes a new hit snapshot")
+    window.spec.actions[4].run()
+    assert(#window.spec.rows() == 0, "clear empties the session list")
+
+    keywords:Open()
+    window.spec.actions[1].run(keywords, Row("lead"))
+    assert(window.edit.title == "Add phrase" and window.edit.onSave(keywords, "Third"), "add works with an existing selection")
+    assert(Row("lead") and Row("third"), "add preserves the selected phrase")
+    window.spec.actions[2].run(keywords, Row("third"))
+    assert(window.edit.onSave(keywords, "THIRD edit"), "a phrase can be renamed")
+    window.spec.actions[3].run(keywords, Row("third edit"))
+    window.confirm()
+    assert(#window.spec.rows(keywords) == 2, "remove action deletes only the selected rule after confirmation")
+
+    local config = keywords.config
+    keywords.config = { words = "", phraseOptions = "", cooldown = config.cooldown }
+    keywords:Refresh()
+    assert(not next(keywords.context.events), "empty profile unregisters keyword events")
+    keywords:Open()
+    window.spec.selectTab(keywords, "matches")
+    assert(#window.spec.rows() == 0, "profile switch clears collected messages")
+end
+
 print("PASS everyday tools: bounded notices, literal scoped keywords, currency crossings, manual waypoints, sound lifecycle")

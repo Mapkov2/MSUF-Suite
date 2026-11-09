@@ -158,8 +158,8 @@ end
 local NOTICES = {
     { field = "petPassive", text = "Pet is set to passive." },
     { field = "healthstoneMissing", text = "No Healthstone in your bags, and a Warlock is here." },
-    { field = "soulstoneMissing", text = "Your Soulstone is on nobody in the group." },
-    { field = "beaconMissing", text = "One of your Beacons is on nobody in the group." },
+    { field = "soulstoneMissing", text = "Your Soulstone is on nobody in the group.", ally = true },
+    { field = "beaconMissing", text = "One of your Beacons is on nobody in the group.", ally = true },
     { field = "wrongDemon", text = "This demon is not one you chose; summon another." },
 }
 
@@ -182,7 +182,7 @@ function R.SpecialText(self, allowed)
     local mask = 0
     if allowed then
         for i, notice in ipairs(NOTICES) do
-            if notices[notice.field] then mask = mask + 2 ^ (i - 1) end
+            if notices[notice.field] and (not notice.ally or R.CanRemindAlly(self)) then mask = mask + 2 ^ (i - 1) end
         end
     end
     if notices.mask == mask then return end

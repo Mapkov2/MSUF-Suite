@@ -26,11 +26,14 @@ HELPERS = {"suite_test_support.lua", "suite_minimap_harness.lua", "suite_bags_ha
 # The Suite supports Retail and WoW Forever only (Forever loads the Mainline TOC).
 FLAVORS = ("Mainline", "Forever")
 EXTRA = {
+    "suite_trainer_learn_all_contract.lua": [[str(MSUF_MAIN / "tools/tests/classpower_secrets.lua")]],
     "suite_bags_editor_style_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_player_gear_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_category_scroll_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_combat_style_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_live_ui_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_bags_workflow_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_bags_physical_sort_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_merchant_buyback_search_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_tab_selection_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_bags_resize_transition_contract.lua": [[flavor] for flavor in FLAVORS],
@@ -139,9 +142,11 @@ EXTRA = {
     "suite_host_api_v2_contract.lua": [[str(MSUF_MAIN)]],
     "suite_load_graph_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_contract.lua": [[flavor] for flavor in FLAVORS],
+    "suite_datatexts_gallery_contract.lua": [[flavor, str(host)] for flavor in FLAVORS for host in (MSUF_MAIN, MSUF_70)],
     "suite_datatexts_security_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_datatexts_load_conditions_contract.lua": [[flavor] for flavor in FLAVORS],
     "suite_actionbars_contract.lua": [[], ["native"]],
+    "suite_actionbar_snapshots_contract.lua": [["Mainline"], ["Forever"]],
     # Icon skins: a recording host, then MSUF 7.0's real skin engine.
     "suite_icon_skins_contract.lua": [[], [str(MSUF_70)]],
     "suite_gloss_material_contract.lua": [[], [str(MSUF_70)]],

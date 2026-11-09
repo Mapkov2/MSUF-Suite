@@ -18,6 +18,11 @@ local Field = Safety.Field
 local Kit = NS.AdapterKit
 local Fade = Kit.Fade
 
+local function PublicField(target, key)
+    local value = Field(target, key)
+    if Safety.Public(value) then return value end
+end
+
 local CALLBACK_FRAME_TAB = "PlayerSpellsFrame.TabSet"
 local CALLBACK_DISPLAYED_SPELLS = "PlayerSpellsFrame.SpellBookFrame.DisplayedSpellsChanged"
 
@@ -175,8 +180,9 @@ local function SkinSearchPreview(state, preview)
     if not preview or not CanCreateRegions(preview) then
         return
     end
-    Kit.Attach(state, preview, PREVIEW_SPEC)
-    Kit.FadeFields(state, preview, searchPreviewArt)
+    if Kit.Ensure(state, preview, PREVIEW_SPEC) then
+        Kit.FadeFields(state, preview, searchPreviewArt)
+    end
 end
 
 local function SkinTab(state, tab)
@@ -184,22 +190,23 @@ local function SkinTab(state, tab)
         return
     end
     Kit.SkinControl(state, tab, TAB_SPEC, "ApplyTab")
-    local selected = Field(tab, "isSelected") == true
+    local selected = PublicField(tab, "isSelected") == true
     NS.ControlSkin.Refresh(tab, selected)
     -- Blizzard changes the tab's FontObject whenever selection changes. Save
     -- that current native color before applying ours so Disable restores the
     -- latest selected/unselected state rather than the first state we saw.
-    SetThemeTextColor(state, Field(tab, "Text"), selected and "accentBright" or "muted", true)
+    SetThemeTextColor(state, PublicField(tab, "Text"), selected and "accentBright" or "muted", true)
 end
 
 local function SkinTabSystem(state, tabSystem, unpreparedOnly)
-    local tabs = Field(tabSystem, "tabs")
+    if not tabSystem or Safety.IsForbidden(tabSystem) then return end
+    local tabs = PublicField(tabSystem, "tabs")
     if type(tabs) ~= "table" then
         return
     end
     for index = 1, #tabs do
         local tab = tabs[index]
-        if not unpreparedOnly or not state.surfaces[tab] then SkinTab(state, tab) end
+        if Safety.Public(tab) and (not unpreparedOnly or not state.surfaces[tab]) then SkinTab(state, tab) end
     end
 end
 
@@ -214,42 +221,44 @@ end
 
 local function SkinHeader(state, header)
     Kit.Ensure(state, header, LIST_CARD_SPEC)
-    SuppressVertexAlpha(state, header.Backplate)
-    SuppressVertexAlpha(state, header.Border)
-    SkinRowText(state, header.Text, "title")
+    SuppressVertexAlpha(state, PublicField(header, "Backplate"))
+    SuppressVertexAlpha(state, PublicField(header, "Border"))
+    SkinRowText(state, PublicField(header, "Text"), "title")
 end
 
-local function SkinSpellItem(state, item)
+local function SkinSpellItem(state, item, button, textContainer)
     Kit.Ensure(state, item, LIST_CARD_SPEC)
 
     -- Backplate alpha is changed by Blizzard on hover, so vertex alpha is used
     -- here instead of SetAlpha(0). The suppression survives those hover updates.
-    SuppressVertexAlpha(state, item.Backplate)
+    SuppressVertexAlpha(state, PublicField(item, "Backplate"))
 
-    local button = item.Button
-    Kit.Ensure(state, button, SPELL_BUTTON_SPEC)
-    -- The icon border is a decoration even if the native spell button is
-    -- protected. The per-region guard decides whether it can be painted.
-    SuppressVertexAlpha(state, Field(button, "Border"))
-
-    local textContainer = item.TextContainer
-    SkinRowText(state, item.Name or Field(textContainer, "Name"), "text")
-    SkinRowText(state, item.SubName or Field(textContainer, "SubName"), "muted")
-    SkinRowText(state, item.RequiredLevel or Field(textContainer, "RequiredLevel"), "warning")
+    if not Safety.IsForbidden(button) then
+        Kit.Ensure(state, button, SPELL_BUTTON_SPEC)
+        -- The per-region guard also applies to decorations of a protected button.
+        SuppressVertexAlpha(state, PublicField(button, "Border"))
+    end
+    if Safety.IsForbidden(textContainer) then textContainer = nil end
+    SkinRowText(state, PublicField(item, "Name") or PublicField(textContainer, "Name"), "text")
+    SkinRowText(state, PublicField(item, "SubName") or PublicField(textContainer, "SubName"), "muted")
+    SkinRowText(state, PublicField(item, "RequiredLevel") or PublicField(textContainer, "RequiredLevel"), "warning")
 end
 
-local function SkinDisplayedSpellFrames(state)
-    local paged = Kit.Path(state.frame, "SpellBookFrame", "PagedSpellsFrame")
-    local frames = type((Field(paged, "GetFrames"))) == "function" and paged:GetFrames() or nil
+local function SkinDisplayedSpellFrames(state, book)
+    if not book or Safety.IsForbidden(book) then return end
+    local paged = PublicField(book, "PagedSpellsFrame")
+    local frames = Safety.Read(paged, "GetFrames")
     if type(frames) ~= "table" then
         return
     end
     for index = 1, #frames do
         local element = frames[index]
-        if element then
-            if element.Button and element.TextContainer then
-                SkinSpellItem(state, element)
-            elseif element.Backplate and element.Text then
+        if Safety.Public(element) and element and not Safety.IsForbidden(element) then
+            local button = PublicField(element, "Button")
+            local text = PublicField(element, "TextContainer")
+            if button and text then
+                SkinSpellItem(state, element, button, text)
+            elseif PublicField(element, "Backplate") and PublicField(element, "Text") then
                 SkinHeader(state, element)
             end
         end
@@ -257,26 +266,18 @@ local function SkinDisplayedSpellFrames(state)
 end
 
 local function SkinPagingControls(state, pagingControls)
-    if not pagingControls then
-        return
-    end
-    SetThemeTextColor(state, pagingControls.PageText, "muted")
-    SkinGlyphButton(state, pagingControls.PrevPageButton, "<", PREVIOUS_PAGE_SPEC)
-    SkinGlyphButton(state, pagingControls.NextPageButton, ">", NEXT_PAGE_SPEC)
+    if not pagingControls or Safety.IsForbidden(pagingControls) then return end
+    SkinRowText(state, PublicField(pagingControls, "PageText"), "muted")
+    SkinGlyphButton(state, PublicField(pagingControls, "PrevPageButton"), "<", PREVIOUS_PAGE_SPEC)
+    SkinGlyphButton(state, PublicField(pagingControls, "NextPageButton"), ">", NEXT_PAGE_SPEC)
 end
 
-local function SkinSpellBookStatic(state, spellBook)
-    if not spellBook or not CanCreateRegions(spellBook) then
-        return
-    end
+local function SkinSpellBookControls(state, spellBook)
+    SkinTabSystem(state, PublicField(spellBook, "CategoryTabSystem"))
+    Kit.SkinSearchBox(state, PublicField(spellBook, "SearchBox"))
+    SkinSearchPreview(state, PublicField(spellBook, "SearchPreviewContainer"))
 
-    if not Kit.Attach(state, spellBook, SPELL_BOOK_SPEC) then return end
-    Kit.FadeFields(state, spellBook, spellBookArt)
-    SkinTabSystem(state, spellBook.CategoryTabSystem)
-    Kit.SkinSearchBox(state, spellBook.SearchBox)
-    SkinSearchPreview(state, spellBook.SearchPreviewContainer)
-
-    local settingsDropdown = spellBook.SettingsDropdown
+    local settingsDropdown = PublicField(spellBook, "SettingsDropdown")
     if settingsDropdown and CanCreateRegions(settingsDropdown) then
         Kit.Attach(state, settingsDropdown, DROPDOWN_SPEC)
     end
@@ -284,15 +285,24 @@ local function SkinSpellBookStatic(state, spellBook)
     -- The assisted-combat chip owns an explicitly secure spell button, so the
     -- entire chip stays untouched and no MapkoSkin region joins its tree.
 
-    SkinPagingControls(state, Field(spellBook.PagedSpellsFrame, "PagingControls"))
+    local paged = PublicField(spellBook, "PagedSpellsFrame")
+    if paged and not Safety.IsForbidden(paged) then
+        SkinPagingControls(state, PublicField(paged, "PagingControls"))
+    end
+end
+
+local function SkinSpellBookStatic(state, spellBook)
+    if not spellBook or Safety.IsForbidden(spellBook) then return end
+    if Kit.Ensure(state, spellBook, SPELL_BOOK_SPEC) then Kit.FadeFields(state, spellBook, spellBookArt) end
+    SkinSpellBookControls(state, spellBook)
 end
 
 -- Each page gets one generic traversal per apply; it is only walked while
 -- shown so hidden pages keep their untouched native state until opened.
-local function ApplyPageOnce(state, page, mode, requireShown, shellOnly)
+local function ApplyPageOnce(state, page, mode, requireShown)
     state.pagesSkinned = state.pagesSkinned or Kit.WeakSet()
     if state.pagesSkinned[page] then return true end
-    if shellOnly or requireShown and Safety.Read(page, "IsShown") == false then
+    if requireShown and Safety.Read(page, "IsShown") == false then
         -- Prepare the visible chrome without walking the hidden talent tree.
         return Kit.Ensure(state, page, PAGE_SHELL_SPEC)
     end
@@ -302,55 +312,59 @@ local function ApplyPageOnce(state, page, mode, requireShown, shellOnly)
 end
 
 local function SkinTalentControls(state, page)
-    SkinTabSystem(state, Field(page, "TabSystem"), true)
-    local apply = Field(page, "ApplyButton")
+    SkinTabSystem(state, PublicField(page, "TabSystem"), true)
+    local apply = PublicField(page, "ApplyButton")
     if apply and not state.surfaces[apply] then Kit.SkinControl(state, apply, WINDOW_BUTTON_SPEC) end
+    local search = PublicField(page, "SearchBox")
+    if search and not state.surfaces[search] then Kit.SkinSearchBox(state, search) end
+    SkinSearchPreview(state, PublicField(page, "SearchPreviewContainer"))
 end
 
-local function SkinSpecializationAndTalentPages(state, shellOnly)
+local function SkinSpecializationAndTalentPages(state)
     local frame = state.frame
     if not frame then
         return
     end
 
-    local specFrame = frame.SpecFrame
-    if CanCreateRegions(specFrame) and ApplyPageOnce(state, specFrame, PAGE_MODE, true, shellOnly) then
+    local specFrame = PublicField(frame, "SpecFrame")
+    if CanCreateRegions(specFrame) and ApplyPageOnce(state, specFrame, PAGE_MODE, true) then
         Fade(state, specFrame.BlackBG)
         Fade(state, specFrame.Background)
     end
 
-    local talentsFrame = frame.TalentsFrame
-    if CanCreateRegions(talentsFrame) and ApplyPageOnce(state, talentsFrame, TALENTS_MODE, true, shellOnly) then
+    local talentsFrame = PublicField(frame, "TalentsFrame")
+    if CanCreateRegions(talentsFrame) and ApplyPageOnce(state, talentsFrame, TALENTS_MODE, true) then
         Kit.FadeFields(state, talentsFrame, talentsArt)
         if NS.Client.isForever then Kit.FadeFields(state, talentsFrame, foreverTalentsArt) end
         for index = 1, #talentsAnimatedArt do
             SuppressVertexAlpha(state, talentsFrame[talentsAnimatedArt[index]])
         end
-        Kit.SkinSearchBox(state, talentsFrame.SearchBox)
-        SkinSearchPreview(state, talentsFrame.SearchPreviewContainer)
-        if shellOnly and NS.Client.isForever and Safety.Read(talentsFrame, "IsShown") then
-            SkinTalentControls(state, talentsFrame)
-        end
+    end
+    if talentsFrame and not Safety.IsForbidden(talentsFrame) then
+        SkinTalentControls(state, talentsFrame)
     end
 
     for index = 1, #talentDialogs do
         local dialog = _G[talentDialogs[index]]
         if dialog and CanCreateRegions(dialog) then
-            if not shellOnly then ApplyPageOnce(state, dialog, DIALOG_MODE, false) end
+            ApplyPageOnce(state, dialog, DIALOG_MODE, false)
         end
     end
 end
 
 local function SkinRootControls(state)
     local frame = state.frame
-    SetThemeTextColor(state, Kit.Path(frame, "TitleContainer", "TitleText"), "title")
-    SkinTabSystem(state, frame.TabSystem)
-    SkinGlyphButton(state, frame.CloseButton, "X", WINDOW_BUTTON_SPEC)
+    local title = PublicField(frame, "TitleContainer")
+    if title and not Safety.IsForbidden(title) then
+        SetThemeTextColor(state, PublicField(title, "TitleText"), "title")
+    end
+    SkinTabSystem(state, PublicField(frame, "TabSystem"))
+    SkinGlyphButton(state, PublicField(frame, "CloseButton"), "X", WINDOW_BUTTON_SPEC)
 
-    local maxMin = frame.MaximizeMinimizeButton
-    if maxMin then
-        SkinGlyphButton(state, maxMin.MaximizeButton, "+", WINDOW_BUTTON_SPEC)
-        SkinGlyphButton(state, maxMin.MinimizeButton, "-", WINDOW_BUTTON_SPEC)
+    local maxMin = PublicField(frame, "MaximizeMinimizeButton")
+    if maxMin and not Safety.IsForbidden(maxMin) then
+        SkinGlyphButton(state, PublicField(maxMin, "MaximizeButton"), "+", WINDOW_BUTTON_SPEC)
+        SkinGlyphButton(state, PublicField(maxMin, "MinimizeButton"), "-", WINDOW_BUTTON_SPEC)
     end
 end
 
@@ -361,7 +375,6 @@ local function SkinRootStatic(state, skipWindowControls)
     Fade(state, frame.TopTileStreaks)
     Kit.FadeNineSlice(state, frame.NineSlice)
     SkinRootControls(state)
-    SkinSpellBookStatic(state, frame.SpellBookFrame)
     if not skipWindowControls then NS.WindowControls.Attach(frame, state.owner) end
     return true
 end
@@ -377,9 +390,12 @@ local function RefreshVisualState(state, refreshPages)
     if not state or not state.active then
         return
     end
-    SkinTabSystem(state, state.frame.TabSystem)
-    SkinTabSystem(state, Field(state.frame.SpellBookFrame, "CategoryTabSystem"))
-    SkinDisplayedSpellFrames(state)
+    SkinTabSystem(state, PublicField(state.frame, "TabSystem"))
+    local book = PublicField(state.frame, "SpellBookFrame")
+    if book and not Safety.IsForbidden(book) then
+        SkinTabSystem(state, PublicField(book, "CategoryTabSystem"))
+        SkinDisplayedSpellFrames(state, book)
+    end
     if refreshPages then
         SkinSpecializationAndTalentPages(state)
         NS.WindowControls.Attach(state.frame, state.owner)
@@ -389,7 +405,8 @@ end
 
 local function RefreshPendingState()
     local current = PlayerSpellsSkin.activeState
-    if current and current.active and current.pendingRefresh and Safety.Read(current.frame, "IsShown") ~= false then
+    if current and current.active and current.pendingRefresh and not current.combatPrepared
+        and Safety.Read(current.frame, "IsShown") ~= false then
         local includePages = current.pendingPageRefresh == true
         current.pendingRefresh, current.pendingPageRefresh = nil, nil
         RefreshVisualState(current, includePages)
@@ -398,33 +415,53 @@ end
 
 local function FadeVisibleArt(state, frame, fields)
     for index = 1, #fields do
-        local region = Field(frame, fields[index])
+        local region = PublicField(frame, fields[index])
         local alpha = Safety.Read(region, "GetAlpha")
         if type(alpha) == "number" and alpha > 0 then Fade(state, region) end
     end
 end
 
--- An already painted shell stays valid when the native root becomes
--- protected. Restore only its visible decorative art, not its layout or
--- surface, after Blizzard selects or opens a page.
-local function ReconcilePreparedPage(state)
-    local frame = state.frame
-    local shell = NS.Registry.GetSurface(frame)
-    if not shell or not state.surfaces[frame] or not Safety.Read(shell.fill, "IsShown") then return false end
-    local book = Field(frame, "SpellBookFrame")
-    if state.surfaces[book] and Safety.Read(book, "IsShown") then
-        FadeVisibleArt(state, book, spellBookArt)
-        return true
+-- Reuse a page's own replacement even when its outer window was protected
+-- on first open. Native backgrounds stay visible when no replacement exists.
+local function HasPageSurface(state, page)
+    if not (state.surfaces[page] or state.pagesSkinned and state.pagesSkinned[page]) then return false end
+    local surface = NS.Registry.GetSurface(page)
+    return surface and Safety.Read(surface.fill, "IsShown") == true
+end
+
+local function ShownPage(frame, key)
+    local page = PublicField(frame, key)
+    if page and not Safety.IsForbidden(page) and not Kit.IsHidden(page) then return page end
+end
+
+local function RefreshCombatPage(state, book)
+    if book then
+        if HasPageSurface(state, book) then
+            FadeVisibleArt(state, book, spellBookArt)
+        else
+            SkinSpellBookStatic(state, book)
+        end
+        return
     end
-    local talents = Field(frame, "TalentsFrame")
-    local hasTalentSurface = state.surfaces[talents] or state.pagesSkinned and state.pagesSkinned[talents]
-    if hasTalentSurface and Safety.Read(talents, "IsShown") then
-        FadeVisibleArt(state, talents, talentsArt)
-        FadeVisibleArt(state, talents, foreverTalentsArt)
+
+    local talents = ShownPage(state.frame, "TalentsFrame")
+    if talents then
+        if HasPageSurface(state, talents) or Kit.Ensure(state, talents, PAGE_SHELL_SPEC) then
+            FadeVisibleArt(state, talents, talentsArt)
+            if NS.Client.isForever then FadeVisibleArt(state, talents, foreverTalentsArt) end
+            for index = 1, #talentsAnimatedArt do
+                SuppressVertexAlpha(state, PublicField(talents, talentsAnimatedArt[index]))
+            end
+        end
         SkinTalentControls(state, talents)
-        return true
+        return
     end
-    return false
+
+    local spec = ShownPage(state.frame, "SpecFrame")
+    if spec and (HasPageSurface(state, spec) or Kit.Ensure(state, spec, PAGE_SHELL_SPEC)) then
+        Fade(state, PublicField(spec, "BlackBG"))
+        Fade(state, PublicField(spec, "Background"))
+    end
 end
 
 function PlayerSpellsSkin:QueueRefresh(frame, refreshPages)
@@ -439,15 +476,11 @@ function PlayerSpellsSkin:QueueRefresh(frame, refreshPages)
     state.pendingRefresh = true
     state.pendingPageRefresh = state.pendingPageRefresh or refreshPages == true
     if Safety.Read(state.frame, "IsShown") == false then return end
-    if NS.IsCombatLocked() then
-        if NS.Client.isForever then
-            local book = Field(state.frame, "SpellBookFrame")
-            if book and not Kit.IsHidden(book) then SkinDisplayedSpellFrames(state) end
-        end
-        if refreshPages and not (NS.Client.isForever and ReconcilePreparedPage(state)) then
-            SkinSpecializationAndTalentPages(state, true)
-        end
-        NS.CombatGate.RunOrDefer("playerSpells:refresh", RefreshPendingState)
+    if NS.IsCombatLocked() or state.combatPrepared then
+        local book = ShownPage(state.frame, "SpellBookFrame")
+        if refreshPages then RefreshCombatPage(state, book) end
+        if book then SkinDisplayedSpellFrames(state, book) end
+        if not state.combatPrepared then NS.CombatGate.RunOrDefer("playerSpells:refresh", RefreshPendingState) end
         return
     end
     RefreshPendingState()
@@ -461,21 +494,27 @@ function PlayerSpellsSkin:OnDisplayedSpellsChanged()
     self:QueueRefresh()
 end
 
+local function Activate(state)
+    state.active = true
+    PlayerSpellsSkin.activeState = state
+    if PlayerSpellsSkin.callbacksRegistered then return end
+    EventRegistry:RegisterCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin.OnFrameTabSet, PlayerSpellsSkin)
+    EventRegistry:RegisterCallback(CALLBACK_DISPLAYED_SPELLS,
+        PlayerSpellsSkin.OnDisplayedSpellsChanged, PlayerSpellsSkin)
+    NS.Registry.AddListener(PlayerSpellsSkin, PlayerSpellsSkin.OnThemeChanged)
+    PlayerSpellsSkin.callbacksRegistered = true
+end
+
 local function PrepareCombatPages(state)
-    if state.active or state.combatPrepared then return end
+    if state.active then return end
     local frame = state.frame
-    local book = Field(frame, "SpellBookFrame")
-    if not (CanCreateRegions(book) or CanCreateRegions(Field(frame, "TalentsFrame"))
-        or CanCreateRegions(Field(frame, "SpecFrame"))) then return end
+    if type(PublicField(frame, "SpellBookFrame")) ~= "table" and type(PublicField(frame, "TalentsFrame")) ~= "table"
+        and type(PublicField(frame, "SpecFrame")) ~= "table" then return end
+    -- The deferred Apply owns the full pass. Start native page updates now,
+    -- even if every enclosing frame is protected and only row art is safe.
     state.combatPrepared = true
-    local rootPainted = SkinRootStatic(state, true)
-    if not rootPainted then SkinSpellBookStatic(state, book) end
-    SkinSpecializationAndTalentPages(state, true)
-    local talents = Field(frame, "TalentsFrame")
-    local page = Safety.Read(talents, "IsShown") and talents or Safety.Read(book, "IsShown") and book
-    if not rootPainted and NS.Client.isForever and page and state.surfaces[page] then
-        SkinRootControls(state)
-    end
+    if not SkinRootStatic(state, true) then SkinRootControls(state) end
+    Activate(state)
 end
 
 local function OnShown(frame)
@@ -485,8 +524,15 @@ local function OnShown(frame)
         if NS.IsCombatLocked() then PrepareCombatPages(state) end
         if NS.WindowControls.Attach(frame, state.owner) then state.windowControlsRequested = nil end
     end
-    if state and state.active and NS.Client.isForever and NS.IsCombatLocked() then ReconcilePreparedPage(state) end
-    if state and state.pendingRefresh then PlayerSpellsSkin:QueueRefresh(frame) end
+    if state and state.active and NS.IsCombatLocked() then
+        if state.combatPrepared or state.pendingRefresh then
+            PlayerSpellsSkin:QueueRefresh(frame, true)
+        else
+            RefreshCombatPage(state, ShownPage(frame, "SpellBookFrame"))
+        end
+    elseif state and state.pendingRefresh then
+        PlayerSpellsSkin:QueueRefresh(frame)
+    end
 end
 
 -- Load-on-demand can finish before Blizzard shows the root. Keep that one
@@ -518,17 +564,6 @@ end
 -- Once per frame of settings writes.
 function PlayerSpellsSkin:OnThemeChanged()
     NS.Registry.QueueJob(RefreshActiveColors)
-end
-
-local function RegisterCallbacks()
-    if PlayerSpellsSkin.callbacksRegistered then
-        return
-    end
-    EventRegistry:RegisterCallback(CALLBACK_FRAME_TAB, PlayerSpellsSkin.OnFrameTabSet, PlayerSpellsSkin)
-    EventRegistry:RegisterCallback(CALLBACK_DISPLAYED_SPELLS,
-        PlayerSpellsSkin.OnDisplayedSpellsChanged, PlayerSpellsSkin)
-    NS.Registry.AddListener(PlayerSpellsSkin, PlayerSpellsSkin.OnThemeChanged)
-    PlayerSpellsSkin.callbacksRegistered = true
 end
 
 local function UnregisterCallbacks()
@@ -585,16 +620,12 @@ function PlayerSpellsSkin.Apply(frame, owner)
     if not CanCreateRegions(frame) then return false, "protected" end
 
     local state = GetState(frame, owner)
-    state.active = true
-    PlayerSpellsSkin.activeState = state
+    if not SkinRootStatic(state) then return false, "failed" end
 
-    if not SkinRootStatic(state) then
-        state.active = false
-        return false, "failed"
-    end
-
+    SkinSpellBookStatic(state, PublicField(frame, "SpellBookFrame"))
     SkinSpecializationAndTalentPages(state)
-    RegisterCallbacks()
+    state.combatPrepared = nil
+    Activate(state)
     if not state.showHooked then
         frame:HookScript("OnShow", Safety.Isolated(OnShown))
         state.showHooked = true

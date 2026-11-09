@@ -215,6 +215,7 @@ do
         return ui
     end
     local ctx = Build("suite_dataTexts")
+    ctx.dataTextWorkspace.choose(1)
     NS.DataTextsPreview.Build = build
     local picker = assert(ctx.dataTextBarSelector)
     local choices = type(picker.values) == "function" and picker.values() or picker.values

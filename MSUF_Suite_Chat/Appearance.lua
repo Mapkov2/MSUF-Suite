@@ -93,6 +93,12 @@ function C.ReleaseMessageFade(visual)
     visual.nativeFadeBefore, visual.nativeFadeApplied = nil, nil
 end
 
+function C.MessageSpacing(config, fallback)
+    local spacing = config.messageSpacing
+    if spacing and spacing > 0 then return spacing end
+    return fallback
+end
+
 function C.ApplyMessageFade(visual, config)
     -- Blizzard_CombatLog owns its own continuously rebuilt message display.
     if not config.messageFading or visual.frame == ChatFrame2 then

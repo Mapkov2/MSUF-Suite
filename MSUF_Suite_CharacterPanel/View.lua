@@ -89,13 +89,14 @@ local function Rule(view, parent, point, color)
     return texture
 end
 
-local function Font(view, parent, size, color, justify)
+local function Font(view, parent, size, color, justify, value)
     local text = CreateFontString(parent, nil, "OVERLAY", "GameFontHighlightSmall")
-    S.SetFont(text, view.fontPath, size, "")
+    S.SetFont(text, view.fontPath, size + (value and view.readableValues and 2 or 0), "")
     Tint(view, text, color, true)
     text:SetJustifyH(justify or "LEFT")
     text:SetWordWrap(false)
-    view.fonts[text] = size
+    local fonts = value and view.valueFonts or view.fonts
+    fonts[text] = size
     return text
 end
 
@@ -204,15 +205,19 @@ local function NewTab(view)
     tab.underline = Rule(view, tab, "BOTTOM", GOLD)
     TrackSurface(view, tab, nil, nil, NAVIGATION, Fill(view, tab, "HIGHLIGHT", HOVER, 1))
     tab:SetScript("OnClick", TabOverflow.Click)
+    if view.nativeLayout and NS.Routing then tab:HookScript("OnEnter", NS.Routing.HoverGearTab) end
     return tab
 end
 
 local tabLayout = { height = TABS, pad = PAD, new = NewTab, place = Place, text = Text, visible = Visible }
 
 local function RefreshFonts(view)
-    if view.fontRevision == S.FontRevision then return false end
-    view.fontRevision, view.fontPath = S.FontRevision, S.GlobalFontPath()
+    local readable = S.ReadableValues and S.ReadableValues() or false
+    if view.fontRevision == S.FontRevision and view.readableValues == readable then return false end
+    view.fontRevision, view.fontPath, view.readableValues = S.FontRevision, S.GlobalFontPath(), readable
     for font, size in pairs(view.fonts) do S.SetFont(font, view.fontPath, size, "") end
+    local extra = readable and 2 or 0
+    for font, size in pairs(view.valueFonts) do S.SetFont(font, view.fontPath, size + extra, "") end
     return true
 end
 
@@ -270,6 +275,7 @@ end
 function View:SetTabs(tabs, selected, forceLayout)
     local fontChanged = RefreshFonts(self)
     if self.tabs ~= tabs or fontChanged or forceLayout or TabOverflow.SelectionMovesTab(self, tabs, selected) then
+        if self.nativeLayout and NS.Routing then NS.Routing.ReleaseGearClick() end
         self.tabs = tabs
         TabOverflow.Layout(self, tabs, selected, tabLayout)
     end
@@ -370,7 +376,7 @@ local function NewSlot(view)
     button.icon:SetPoint("TOPLEFT", rim, "TOPLEFT", 1, -1)
     button.icon:SetPoint("BOTTOMRIGHT", rim, "BOTTOMRIGHT", -1, 1)
     button.icon:SetTexCoord(.07, .93, .07, .93)
-    button.level = Font(view, button, 12, GOLD, "RIGHT")
+    button.level = Font(view, button, 12, GOLD, "RIGHT", true)
     button.level:SetPoint("RIGHT", -7, 0)
     button.level:SetWidth(34)
     button.label = Font(view, button, 10, MUTED)
@@ -391,7 +397,7 @@ local function PaintSlot(button, item, selected)
     button.slot = item.slot
     Text(button.label, item.label)
     Text(button.name, item.name or "—")
-    Text(button.level, item.level or "—")
+    Text(button.level, item.level or (item.link and button.view.readableValues and "?" or "—"))
     if button.texture ~= item.icon then
         button.texture = item.icon
         button.icon:SetTexture(item.icon)
@@ -466,7 +472,7 @@ local function NewValueRow(list, card)
     row.left = Font(list.view, row, 11, MUTED)
     row.left:SetPoint("LEFT", 10, 0)
     row.left:SetPoint("RIGHT", row, "CENTER", 18, 0)
-    row.right = Font(list.view, row, 11, TEXT, "RIGHT")
+    row.right = Font(list.view, row, 11, TEXT, "RIGHT", true)
     row.right:SetPoint("LEFT", row, "CENTER", 20, 0)
     row.right:SetPoint("RIGHT", -10, 0)
     Rule(list.view, row, "TOP", LINE)
@@ -513,7 +519,7 @@ local function PaintCard(list, card, group, offset)
         if movement then x, y = x + movement.x, y - movement.y end
         Place(row, x, y, list.rowWidth, GROUP_ROW)
         Text(row.left, values.label)
-        Text(row.right, values.value)
+        Text(row.right, list.view.readableValues and values.value == "—" and "?" or values.value)
         Visible(row, true)
     end
     for i = used + 1, #card.rows do Visible(card.rows[i], false) end
@@ -584,39 +590,9 @@ function View:VisitReport(visitor)
     end
 end
 
-local function VerticalScroll(scroll, offset)
-    local list = scroll.panelList
-    if not list.layingOut then PaintList(list, offset) end
-end
-
-local function NewList(view, parent, width, height, columns)
-    local scroll = CreateFrame("ScrollFrame", nil, parent, "ScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT")
-    scroll:SetSize(width - 16, height)
-    local canvas = CreateFrame("Frame", nil, scroll)
-    canvas:SetSize(width - 16, 1)
-    scroll:SetScrollChild(canvas)
-    local list = {
-        view = view, scroll = scroll, canvas = canvas, groups = GROUP_EMPTY,
-        columns = columns, height = height, width = width - 16, cards = {}, offsets = {}, heights = {},
-    }
-    scroll.panelList = list
-    scroll:HookScript("OnVerticalScroll", VerticalScroll)
-    return list
-end
-
 local function PaintGroups(list, groups, reset)
     local content = GroupLayout.Build(list, groups, GROUP_HEADER, GROUP_ROW, GROUP_GAP)
-    list.layingOut = true
-    if list.content ~= content then
-        list.content = content
-        list.canvas:SetHeight(content)
-    end
-    local oldOffset = list.scroll:GetVerticalScroll()
-    local offset = reset and 0 or min(oldOffset, max(0, content - list.height))
-    if offset ~= oldOffset then list.scroll:SetVerticalScroll(offset) end
-    list.layingOut = false
-    PaintList(list, offset)
+    PaintList(list, GroupLayout.UpdateScroll(list, content, reset))
 end
 
 local function CloseDetails(button)
@@ -650,14 +626,33 @@ local function GearBody(view)
     local rail = CreateFrame("Frame", nil, view.gear)
     rail:SetPoint("TOPRIGHT")
     rail:SetSize(RAIL_W, BODY_H)
-    view.rail = NewList(view, rail, RAIL_W, BODY_H - 32, 1)
+    view.rail = GroupLayout.NewList(view, rail, RAIL_W, BODY_H - 32, 1, PaintList)
+    view.railHost = rail
     view.dismiss = ClickLabel(view, rail, NS.Text("Close"), CloseDetails)
     view.dismiss.view = view
     view.dismiss:SetPoint("BOTTOMLEFT")
     view.dismiss:SetSize(82, 24)
 end
 
-function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups, withModel)
+local function PaintGearRail(view, groups, reset, combat)
+    local rail = view.rail
+    if combat then
+        -- The native scroll template recalculates the protected range in its
+        -- own scripts. The short combat rail needs neither scrolling nor a bar.
+        Visible(rail.scroll, false)
+        if not view.combatRail then
+            view.combatRail = GroupLayout.NewList(view, view.railHost, RAIL_W, BODY_H - 32, 1, PaintList, true)
+        end
+        PaintGroups(view.combatRail, groups, false)
+        Visible(view.combatRail.canvas, true)
+    else
+        if view.combatRail then Visible(view.combatRail.canvas, false) end
+        PaintGroups(rail, groups, reset)
+        Visible(rail.scroll, true)
+    end
+end
+
+function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups, withModel, combat)
     if self.nativeLayout then Window.ApplyNativeGearMode(self, right, withModel, GearClick, GearEnter, GearLeave) end
     local reset = self.contentTab ~= self.tab or self.detailSlot ~= selectedSlot
     self.contentTab, self.detailSlot = self.tab, selectedSlot
@@ -671,7 +666,7 @@ function View:ShowGear(left, right, weapons, groups, selectedSlot, detailGroups,
     PaintSlots(self, self.right, right, DOLL_W - INSET - columnWidth, INSET, columnWidth, 0, SLOT_STEP, selectedSlot)
     PaintSlots(self, self.weapons, weapons, INSET, WEAPON_Y, weaponWidth, weaponWidth + GROUP_GAP, 0, selectedSlot)
     local detailsShown = selectedSlot ~= nil and detailGroups ~= nil and #detailGroups > 0
-    PaintGroups(self.rail, detailsShown and detailGroups or groups or GROUP_EMPTY, reset)
+    PaintGearRail(self, detailsShown and detailGroups or groups or GROUP_EMPTY, reset, combat)
     Visible(self.dismiss, detailsShown)
     Text(self.hint, self.gearHint)
 end
@@ -680,7 +675,7 @@ function View:RefreshInspectSummary(groups, relayout)
     local rail = self.rail
     if relayout then return PaintGroups(rail, groups, false) end
     rail.groups = groups
-    PaintList(rail, rail.scroll:GetVerticalScroll())
+    PaintList(rail, NS.Number(rail.scroll:GetVerticalScroll()) or 0)
 end
 
 function View:ShowGroups(groups)
@@ -748,8 +743,9 @@ function View.New(callbacks, parent, nativeRoot, nativeLayout)
     local height = nativeLayout and nativeLayout.height or HEIGHT
     local frame = CreateFrame("Frame", not nativeRoot and callbacks.frameName or nil, nativeRoot and UIParent or parent or UIParent)
     local view = setmetatable({
-        frame = frame, callbacks = callbacks, fonts = {}, tabButtons = {}, left = {}, right = {}, weapons = {},
+        frame = frame, callbacks = callbacks, fonts = {}, valueFonts = {}, tabButtons = {}, left = {}, right = {}, weapons = {},
         fontRevision = S.FontRevision, fontPath = S.GlobalFontPath(),
+        readableValues = S.ReadableValues and S.ReadableValues() or false,
         palette = {}, changedTints = {}, textTints = {}, textureTints = {}, surfaces = {},
         headerConfig = {}, headerData = {}, embedded = parent ~= nil, nativeRoot = nativeRoot,
         nativeLayout = nativeLayout, bodyWidth = width - 2 * PAD,
@@ -786,7 +782,8 @@ function View.New(callbacks, parent, nativeRoot, nativeLayout)
     if not nativeRoot or nativeLayout then GearBody(view) end
     local reportParent = Window.ReportParent(view)
     if view.reportCover then view.reportMask = Fill(view, reportParent, "BACKGROUND", BG) end
-    view.report = NewList(view, reportParent, view.bodyWidth, BODY_H, nativeRoot and not nativeLayout and 1 or 2)
+    view.report = GroupLayout.NewList(view, reportParent, view.bodyWidth, BODY_H,
+        nativeRoot and not nativeLayout and 1 or 2, PaintList)
 
     local footer = CreateFrame("Frame", nil, frame)
     view.footer = footer

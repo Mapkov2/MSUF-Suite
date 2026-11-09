@@ -53,14 +53,13 @@ end
 -- Key text of the suite button that presses a spell, for the cooldown
 -- manager's icons (MSUF_Suite_CooldownManager/Keybinds.lua): the text that
 -- button shows. Candidates in key preference: each bar's own page in bar
--- order (bar 1 page 1, bars 2-10 their fixed slots), then bar 1's custom
--- pages (Paging.lua), then the form pages 7-9 bar 1 switches to, pressed by
--- bar 1's keys (page 10, slots 109-120, is bar 10). "" when no candidate has
--- a key; nil while the suite bars are off (Blizzard's bars apply then).
+-- order, including independent bar 10, then bar 1's custom pages and
+-- form pages 7-10. "" when no candidate has a key; nil while the suite
+-- bars are off (Blizzard's bars apply then).
 -- current (the cooldown manager's labels follow the page): each button
 -- answers for the slot it presses now, and bar 1's target and form pages,
 -- which its keys press only at other times, do not count.
-local FORM_FIRST, FORM_LAST = 73, 108
+local FORM_FIRST, FORM_LAST = 73, 120
 local spellSlots = {}
 
 -- Bar 1's custom pages are pressed by bar 1's keys as well: the friendly and
@@ -72,7 +71,7 @@ local function Modified(key)
     return key:find("^ALT%-.") or key:find("^CTRL%-.") or key:find("^SHIFT%-.") or key:find("^META%-.")
 end
 local function PageKey(main, page, modifier)
-    if page == 1 then return "" end
+    if page == 1 or AB.ReservedPage(M.config, page) then return "" end
     local first = (page - 1) * 12
     for i = 1, #main.buttons do
         if spellSlots[first + i] then
@@ -104,19 +103,22 @@ local function CustomPagesKey(main, config, current)
 end
 function S.ActionBarsBindingForSpell(spell, current)
     if not M.active then return nil end
-    local slots = spell and C_ActionBar.FindSpellActionButtons(spell)
-    if not (Public(slots) and type(slots) == "table") then return "" end
+    if not S.Finite(spell) or spell <= 0 then return "" end
+    local slots = C_ActionBar.FindSpellActionButtons(spell)
     for slot in pairs(spellSlots) do spellSlots[slot] = nil end
-    for i = 1, #slots do
-        local slot = slots[i]
-        if Public(slot) and type(slot) == "number" then spellSlots[slot] = true end
+    if Public(slots) and type(slots) == "table" then
+        for i = 1, #slots do
+            local slot = slots[i]
+            if Public(slot) and type(slot) == "number" then spellSlots[slot] = true end
+        end
     end
     for index = 1, 10 do
         local bar = AB.bars[index]
         if bar then
             for i = 1, #bar.buttons do
                 local rec = bar.buttons[i]
-                if spellSlots[current and rec.slot or rec.base] then
+                if spellSlots[current and rec.slot or rec.base]
+                    or (rec.virtual and AB.Painter.ButtonSpell(rec) == spell) then
                     local text = AB.BindingText(rec)
                     if text ~= "" then return text end
                 end
@@ -147,7 +149,7 @@ function S.ForEachActionBarButtonForSpell(spellID, callback, context)
         or type(callback) ~= "function" then return 0 end
     local count = 0
     for _, rec in pairs(AB.records) do
-        if rec.slot and AB.Painter.ActionSpell(rec.slot) == spellID then
+        if AB.Painter.ButtonSpell(rec) == spellID then
             callback(rec.button, context)
             count = count + 1
         end
@@ -168,30 +170,34 @@ function AB.ClickRouted(rec)
     local index = rec.bar.index
     local BAR = AB.ENUM.BAR
     if index >= BAR.FIRST_EXTRA then return true end
-    if index == BAR.MAIN and AB.CustomPaging(M.config) then return true end
+    if index == BAR.MAIN and rec.bar.customPaging then return true end
     return IsFlyout(rec.slot) or IsFlyout(rec.base)
 end
 
 -- The routes last written (key -> button name pairs) and the routes wanted
 -- now; unchanged routes skip the rebuild.
-local routedKeys, routedNames, wantedKeys, wantedNames = {}, {}, {}, {}
+local routedKeys, routedNames, wantedKeys, wantedNames, wantedMain = {}, {}, {}, {}, {}
 local routed = false
 
 -- Restricted binding handles call ClearOverrideBindings/SetOverrideBindingClick
 -- (Blizzard_RestrictedAddOnEnvironment/RestrictedFrames.lua). Pet battles
--- release only this owner, so native ActionButtonDown reaches pet abilities.
+-- and Blizzard's special bars keep their native action keys.
 local APPLY_ROUTES = [[
 self:ClearBindings()
-if self:GetAttribute("routingEnabled") and self:GetAttribute("state-petbattle")~="battle" then
+local state=self:GetAttribute("state-actionkeys")
+if self:GetAttribute("routingEnabled") and state~="hidden" then
     for i=1,self:GetAttribute("routeCount") or 0 do
-        self:SetBindingClick(false,self:GetAttribute("key"..i),self:GetAttribute("name"..i),"Keybind")
+        if state~="native-main" or not self:GetAttribute("main"..i) then
+            self:SetBindingClick(false,self:GetAttribute("key"..i),self:GetAttribute("name"..i),"Keybind")
+        end
     end
 end
 ]]
 
-local function Want(count, key, name)
+local function Want(count, key, rec)
     count = count + 1
-    wantedKeys[count], wantedNames[count] = key, name
+    wantedKeys[count], wantedNames[count] = key, rec.name
+    wantedMain[count] = rec.bar.index == AB.ENUM.BAR.MAIN
     return count
 end
 
@@ -217,11 +223,11 @@ function AB.UpdateRouting(force)
         local rec = AB.owned[i]
         if AB.ClickRouted(rec) then
             local first, second = GetBindingKey(rec.command)
-            if first then count = Want(count, first, rec.name) end
-            if second then count = Want(count, second, rec.name) end
+            if first then count = Want(count, first, rec) end
+            if second then count = Want(count, second, rec) end
         end
     end
-    for i = count + 1, #wantedKeys do wantedKeys[i], wantedNames[i] = nil, nil end
+    for i = count + 1, #wantedKeys do wantedKeys[i], wantedNames[i], wantedMain[i] = nil, nil, nil end
     if not force and SameRoutes(count) then return end
     routed = true
     for i = 1, count do routedKeys[i], routedNames[i] = wantedKeys[i], wantedNames[i] end
@@ -229,8 +235,8 @@ function AB.UpdateRouting(force)
     local owner = AB.bindingOwner
     if not owner then
         owner = S.CreateFrame("Frame", nil, UIParent, "SecureHandlerStateTemplate")
-        owner:SetAttribute("_onstate-petbattle", APPLY_ROUTES)
-        RegisterStateDriver(owner, "petbattle", "[petbattle] battle; normal")
+        owner:SetAttribute("_onstate-actionkeys", APPLY_ROUTES)
+        RegisterStateDriver(owner, "actionkeys", "[petbattle][vehicleui] hidden; [overridebar][possessbar] native-main; suite")
         AB.bindingOwner = owner
     end
     owner:SetAttribute("routingEnabled", true)
@@ -238,6 +244,7 @@ function AB.UpdateRouting(force)
     for i = 1, count do
         owner:SetAttribute("key" .. i, routedKeys[i])
         owner:SetAttribute("name" .. i, routedNames[i])
+        owner:SetAttribute("main" .. i, wantedMain[i])
     end
     SecureHandlerExecute(owner, APPLY_ROUTES)
 end

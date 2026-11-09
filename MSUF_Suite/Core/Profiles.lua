@@ -6,13 +6,13 @@ local Dispatch, Finish = Suite.Dispatch, Suite.Finish
 
 -- Returns the Suite-owned skin engine once its database is ready. The second
 -- result tells whether the engine is loaded at all.
-local function LoadedSkin()
+local function LoadedSkin(readyOnly)
     local skin = _G.MapkoSkin
     if type(skin) ~= "table" or rawget(skin, "addonName") ~= "MSUF_Suite_Skin"
         or not skin.Database or not skin.ProfileIO then
         return nil, false
     end
-    if type(skin.EnsureDatabaseReady) == "function" then skin.EnsureDatabaseReady() end
+    if not readyOnly and type(skin.EnsureDatabaseReady) == "function" then skin.EnsureDatabaseReady() end
     if type(skin.Database.GetRoot) == "function" and not skin.Database.GetRoot() then return nil, true end
     return skin, true
 end
@@ -532,20 +532,29 @@ end
 -- profiles are active (the installer's UI scale, which belongs to the new
 -- MSUF profile); a refusal (false, reason) or an error rolls everything back
 -- like a refused import.
-local function Create(name, frames, profile, skinProfile, screenHeight, finish)
+local function CommitFrameJob(_, job)
+    local done, ok, reason = job:Step()
+    if not done then return false, "Profile import failed" end
+    return ok, reason
+end
+
+local function Create(name, frames, profile, skinProfile, screenHeight, finish, hostJob)
     local _, previousFrames, previousModules = P.Active()
     local skin = skinProfile and SkinEngine()
     if skinProfile and (not skin or skin.Database.GetProfile(name)) then
         return false, "Skin profile name already exists or skin engine is unavailable"
     end
     local previousSkin = skin and skin.Database.GetActiveProfileName()
+    local nameplateCVars = profile.nameplateCVars
+    profile.nameplateCVars = nil
     -- Module settings have already been validated. MSUF validates its own
     -- payload before creating a frame profile and reports a refusal as
     -- false, reason. Neither import overwrites data. An error in any step is
     -- reported and rolled back like a refusal; profile sync always resumes.
+    local previousSync = Suite.suppressProfileSync
     Suite.suppressProfileSync = true
-    local finished, ok, reason = Dispatch(Finish, ImportFramesIntoNewProfile, name, frames)
-    Suite.suppressProfileSync = nil
+    local finished, ok, reason = Dispatch(Finish, hostJob and CommitFrameJob or ImportFramesIntoNewProfile, name, hostJob or frames)
+    Suite.suppressProfileSync = previousSync
     if finished and ok then
         finished, ok, reason = Dispatch(Finish, PublishCreated, name, profile, skin, skinProfile, screenHeight)
     end
@@ -555,7 +564,10 @@ local function Create(name, frames, profile, skinProfile, screenHeight, finish)
         active = done and finishedOk == true
         if not active then reason = why end
     end
-    if active then return true, name end
+    if active then
+        IO.ApplyNameplateCVars(nameplateCVars)
+        return true, name
+    end
     if skin and previousSkin and skin.Database.GetProfile(previousSkin) then
         skin.Database.SetActiveProfile(previousSkin)
     end
@@ -602,45 +614,6 @@ function P.SaveAs(name)
     local skinProfile = skin and Suite.CopyValue(skin.Database.GetProfile(skin.Database.GetActiveProfileName()))
     if skin and not skinProfile then return false, "Skin profile unavailable" end
     return Create(clean, frames, profile, skinProfile)
-end
-
-local function PrepareBundle(text)
-    if type(text) ~= "string" or #text > P.maxBytes then return false, "Invalid suite profile" end
-    text = text:match("^%s*(.-)%s*$"):gsub("\r\n", "\n")
-    local version, frames, modules, skinText = text:match("^MSUFS(3):([^\n]+)\n([^\n]+)\n([^\n]+)$")
-    if not version then version, frames, modules = text:match("^MSUFS([12]):([^\n]+)\n([^\n]+)$") end
-    if not frames or not frames:match("^MSUF[234]:") then return false, "Invalid suite profile" end
-    local decode = version == "1" and IO.PrepareLegacyProfile or IO.PrepareProfile
-    local profile, why, marked = decode(modules)
-    if not profile then return false, why end
-    -- User preference belongs to the active profile, never to the incoming
-    -- payload. Full imports carry this module forward when protection is on;
-    -- explicit module imports and factory resets remain deliberate replacements.
-    local current = Suite.DB and Suite.DB.suite and Suite.DB.suite.modules
-    local plates = current and current.nameplates
-    if plates and plates.protectImport then
-        profile.suite.modules.nameplates = Suite.CopyValue(plates)
-    end
-    local skin = SkinEngine()
-    local skinProfile, skinReason
-    if version == "3" or (version == "1" and skin) then
-        if not skin then return false, "Skin engine unavailable" end
-        skinProfile, skinReason = skin.ProfileIO.PrepareProfile(version == "3" and skinText or modules)
-    else
-        skinProfile, skinReason = SkinSnapshot(skin)
-    end
-    if skin and not skinProfile then return false, skinReason end
-    return { profile = profile, coreText = frames, modules = profile.suite.modules, characterBound = marked,
-        provider = { present = skin ~= nil, profile = skinProfile } }
-end
-
-function P.Import(name, text)
-    local clean, reason = NewName(name)
-    if not clean then return false, reason end
-    local bundle, why = PrepareBundle(text)
-    if not bundle then return false, why end
-    local profile = bundle.profile
-    return Create(clean, bundle.coreText, profile, bundle.provider.profile)
 end
 
 -- Installer-owned factory data is already bundled and validated by the same
@@ -735,65 +708,8 @@ function P.ExportModule(id, options)
     return IO.ExportModule(id, options)
 end
 
-function P.ImportModule(text)
-    if Suite.IsCombatLocked() then return false, "Finish combat before importing" end
-    if type(text) == "string" and text:match("^%s*MSKIN1:") then
-        local skin = SkinEngine()
-        if not skin then return false, "Skin engine unavailable" end
-        local profile, reason = skin.ProfileIO.PrepareProfile(text)
-        if not profile then return false, reason end
-        local name = Suite.HostBridge.ActiveFrameProfileName() or skin.Database.GetActiveProfileName()
-        local ok
-        ok, reason = Suite.ProfileWorkbenchBridge.Checkpoint("Before importing skin settings")
-        if not ok then return false, reason end
-        ok, reason = skin.Database.SetProfile(name, profile)
-        if not ok then return false, reason end
-        return skin.Database.SetActiveProfile(name)
-    end
-    local id, settings, reason, chat = IO.PrepareModuleProfile(text, true)
-    if not id then return false, reason end
-    -- The restore point comes first: a refused one leaves the variant overlay laid.
-    local checkpoint, checkpointWhy = Suite.ProfileWorkbenchBridge.Checkpoint("Before importing Suite settings")
-    if not checkpoint then return false, checkpointWhy end
-    local name=DB.GetActiveProfileName()
-    local allowed,mutationReason=Suite.ProfileVariants.BeforeMutation(name)
-    if not allowed then return false,mutationReason end
-    local ok,why=Suite.Suite.SetMany(id, settings)
-    if ok and chat then ok, why = Suite.Suite.SetMany("chatComfort", chat) end
-    Suite.ProfileVariants.AfterMutation(name)
-    return ok,why
-end
-
-function P.ImportModuleIntoNew(name, text)
-    local clean, reason = NewName(name)
-    if not clean then return false, reason end
-    if type(text) == "string" and text:match("^%s*MSKIN1:") then
-        local skin = SkinEngine()
-        if not skin then return false, "Skin engine unavailable" end
-        local skinProfile
-        skinProfile, reason = skin.ProfileIO.PrepareProfile(text)
-        if not skinProfile then return false, reason end
-        local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
-        if type(frames) ~= "string" then return false, "Frame profile export failed" end
-        local profile, why = PrepareActive()
-        if not profile then return false, why end
-        return Create(clean, frames, profile, skinProfile)
-    end
-    local id, settings, why, chat = IO.PrepareModuleProfile(text, true)
-    if not id then return false, why end
-    local frames = Suite.HostBridge.Profiles.Profiles_ExportSelectionToString("all")
-    if type(frames) ~= "string" then return false, "Frame profile export failed" end
-    local profile
-    profile, why = PrepareActive()
-    if not profile then return false, why end
-    for key, value in pairs(settings) do profile.suite.modules[id][key] = value end
-    if chat then profile.suite.modules.chatComfort = chat end
-    local skin = SkinEngine()
-    local skinProfile = skin and Suite.CopyValue(skin.Database.GetProfile(skin.Database.GetActiveProfileName()))
-    if skin and not skinProfile then return false, "Skin profile unavailable" end
-    return Create(clean, frames, profile, skinProfile)
-end
-
 P.WorkbenchSkinEngine = SkinEngine
-P.WorkbenchPrepareBundle = PrepareBundle
 P.WorkbenchSkinSnapshot = SkinSnapshot
+P.ImportOperations = {
+    NewName = NewName, Create = Create, PrepareActive = PrepareActive, PeekSkin = function() return LoadedSkin(true) end,
+}

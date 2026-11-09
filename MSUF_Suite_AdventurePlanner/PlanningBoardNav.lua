@@ -7,7 +7,7 @@ local Bridge = NS.HostBridge
 B.NAV_GROUPS = { { key = "week", label = "This week" }, { key = "history", label = "History" },
     { key = "tools", label = "Tools" } }
 local ICONS = { characters = { 1, 2 }, preparation = { 6, 1 }, goals = { 3, 0 }, runs = { 1, 1 }, raid = { 6, 2 },
-    loadouts = { 4, 2 }, lfg = { 5, 3 }, notes = { 1, 4 } }
+    loadouts = { 4, 2 }, loot = { 3, 0 }, lfg = { 5, 3 }, notes = { 1, 4 } }
 local ITEM_WIDTH, ITEM_HEIGHT, ITEM_STEP, TITLE_HEIGHT, ITEM_FONT = 184, 28, 32, 18, 14
 local ARROW = "Interface\\ChatFrame\\ChatFrameExpandArrow"
 

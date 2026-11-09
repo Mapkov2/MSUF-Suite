@@ -4,6 +4,7 @@ NS.RegisterLocale("enUS", {
     ["Mouseover"] = "Mouseover",
     ["Individual bar scale"] = "Individual bar scale",
     ["Rows"] = "Rows",
+    ["No message text."] = "No message text.",
     ["Visible buttons"] = "Visible buttons",
     ["Button spacing"] = "Button spacing",
     ["Friends"] = "Friends",

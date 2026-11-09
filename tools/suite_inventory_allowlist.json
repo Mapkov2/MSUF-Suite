@@ -1,6 +1,86 @@
 {
   "removed": [
     {
+      "category": "module_traits",
+      "item": "[\"forever:trainerLearnAll\",\"description\",\"Review the total cost, then learn available non-profession abilities at a trainer.\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua and suite_trainer_learn_all_contract.lua",
+      "reason": "Forever now presents the live training budget through the same module ID and native trainer.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "labels",
+      "item": "[\"forever:trainerLearnAll\",\"Learn all at trainer\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua and suite_trainer_learn_all_contract.lua",
+      "reason": "Forever names the read-only budget in its existing trainer module. Retail retains Learn all at trainer.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "locale",
+      "item": "Trainer learning is available only in Retail",
+      "basis": "dead",
+      "evidence": "MSUF_Suite/Core/Catalog/QualityOfLife.lua and suite_trainer_learn_all_contract.lua",
+      "reason": "The former client availability message is obsolete because Forever has a read-only trainer budget.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.bankGroupEquipmentSlots\",\"boolean\",true,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua and suite_bags_workflow_contract.lua",
+      "reason": "The Forever bank view now uses this setting and exposes it with its existing values and default.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.bankGroupExpansions\",\"boolean\",true,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua and suite_bags_workflow_contract.lua",
+      "reason": "The Forever bank view now uses this setting and exposes it with its existing values and default.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.bankGroupReagentTypes\",\"boolean\",true,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua and suite_bags_workflow_contract.lua",
+      "reason": "The Forever bank view now uses this setting and exposes it with its existing values and default.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.bankHideEmptySlots\",\"boolean\",true,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua and suite_bags_workflow_contract.lua",
+      "reason": "The Forever bank view now uses this setting and exposes it with its existing values and default.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.bankView\",\"choice\",true,1,4,1,\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua and suite_bags_workflow_contract.lua",
+      "reason": "The Forever bank view now uses this setting and exposes it with its existing values and default.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "rule_metadata",
+      "item": "[\"forever:bags.showBankTabs\",\"boolean\",true,\"\",\"\",\"\",\"\"]",
+      "basis": "moved",
+      "evidence": "MSUF_Suite/Core/Catalog/Bags.lua and suite_bags_workflow_contract.lua",
+      "reason": "The Forever bank view now uses this setting and exposes it with its existing values and default.",
+      "date": "2026-11-09"
+    },
+    {
+      "category": "locale",
+      "item": "Click for bag options",
+      "basis": "moved",
+      "evidence": "MSUF_Suite_Bags/BagWindow.lua and suite_bags_workflow_contract.lua",
+      "reason": "The Backpack heading opens the same native sorting menu on right click. The tooltip now names that button.",
+      "date": "2026-11-09"
+    },
+    {
       "category": "locale",
       "item": "Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.",
       "basis": "moved",

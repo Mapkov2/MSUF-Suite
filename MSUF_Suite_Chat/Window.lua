@@ -495,6 +495,13 @@ function C.ApplyWindow(self, frame, keepPosition)
         visual.inputAnimated = c.animateInput
     end
     ApplyFont(self, frame, messageFont)
+    local spacing = C.MessageSpacing(c)
+    if spacing then
+        self.context:Property(frame, "GetSpacing", "SetSpacing", spacing)
+    elseif visual.customSpacing then
+        self.context:RestoreProperty(frame, "SetSpacing")
+    end
+    visual.customSpacing = spacing
     ApplySizeLock(self, visual, frame, primary)
     if not keepPosition then C.ApplyWindowPosition(self, visual, frame, primary) end
     C.ApplyCompleteMessages(self, frame)
@@ -566,6 +573,7 @@ function C.DockGeometry()
             spacedTabs[tab] = nil
         end
         C.PositionTabs(M)
+        C.UpdateWhisperArrows(GENERAL_CHAT_DOCK)
         return
     end
     -- GENERAL_CHAT_DOCK exists from the start on both clients (FloatingChatFrame.xml).
@@ -593,6 +601,7 @@ function C.DockGeometry()
         end
     end
     C.PositionTabs(M)
+    C.UpdateWhisperArrows(GENERAL_CHAT_DOCK)
 end
 
 -- The menu paints owned sample regions with the runtime surface painters.

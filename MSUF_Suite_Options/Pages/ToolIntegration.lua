@@ -2,7 +2,7 @@ local _, P = ...
 local S = P.S
 P.OwnedTools = {
     keyAudit = "Review actions and keys", currencyGoals = "Manage currency goals",
-    keywordAlerts = "Edit watched phrases", inventoryArchive = "Open inventory tool",
+    keywordAlerts = "Manage keyword alerts", inventoryArchive = "Open inventory tool",
     restockPlanner = "Open inventory tool", craftShopping = "Open inventory tool", bankTransfer = "Open inventory tool",
 }
 local QOL_CATEGORY = {

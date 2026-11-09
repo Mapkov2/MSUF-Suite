@@ -96,7 +96,7 @@ end
 
 function R.SyncPreparationEvents(self, callback)
     local listen = not self.listen.suspended
-    if listen and self.config.readyCheckMana then
+    if listen and self.readyCheck.enabled then
         R.Listen(self, "READY_CHECK", callback)
     else
         self.context:RemoveEvent("READY_CHECK")
@@ -128,9 +128,8 @@ local function ReadyNoteAnchor(self)
     return self.view.host
 end
 
-function R.ReadyCheck(self)
-    R.HideReadyCheck(self)
-    if not self.config.readyCheckMana or NS.IsCombatLocked() then return end
+local function LowMana(self)
+    if not self.config.readyCheckMana then return end
     local role = UnitGroupRolesAssigned("player")
     if not Public(role) or role ~= "HEALER" then return end
     local mana = Enum.PowerType.Mana
@@ -138,7 +137,52 @@ function R.ReadyCheck(self)
     if not Public(power) or not Public(maximum) or type(power) ~= "number" or type(maximum) ~= "number"
         or maximum <= 0 or power < 0 then return end
     local limit = NumberSetting(self.config, "readyCheckManaPercent")
-    if power / maximum * 100 >= limit then return end
+    local percent = power / maximum * 100
+    if percent < limit then return percent, limit end
+end
+
+local function OpenPreparation(action)
+    if NS.InCombat() then return end
+    if action.route == "gear" and S.OpenCharacterPanelTab and S.OpenCharacterPanelTab("gear") then return end
+    local planner = S.PlanningTools
+    if action.route == "loadouts" and planner and planner.Active() then
+        planner.Window.Open("loadouts")
+    elseif action.route == "gear" then
+        S.Open("durabilityAlert")
+    else
+        S.Open("buffReminders")
+    end
+end
+
+local function ShowPreparationAction(self, text, route)
+    local readyCheck = self.readyCheck
+    local action = readyCheck.action
+    if not action then
+        action = CreateFrame("Button", nil, self.view.host)
+        action:SetPoint("BOTTOM", text, "TOP", 0, 2)
+        action:SetSize(180, 18)
+        action:SetClampedToScreen(true)
+        action:SetScript("OnClick", OpenPreparation)
+        action.label = S.CreateFontString(action, nil, "OVERLAY", "GameFontNormal")
+        action.label:SetAllPoints(action)
+        action.label:SetText(S.Text("Click for details"))
+        hooksecurefunc(text, "Hide", function() action:Hide() end)
+        readyCheck.action = action
+    end
+    S.SetFont(action.label, nil, 12, "OUTLINE")
+    action.route = route
+    action:Show()
+end
+
+function R.ReadyCheck(self)
+    R.HideReadyCheck(self)
+    if NS.IsCombatLocked() then return end
+    local percent, limit = LowMana(self)
+    local issues, route
+    if self.config.readyCheckIssues then
+        issues, route = S.ReadyCheckPreparation()
+    end
+    if not percent and not issues then return end
     local readyCheck = self.readyCheck
     local text = readyCheck.label
     if not text then
@@ -147,14 +191,26 @@ function R.ReadyCheck(self)
     end
     R.PlaceNote(text, ReadyNoteAnchor(self), self.config, false, READY_NOTE_GAP)
     R.StyleNote(text, GameFontNormalLarge, NumberSetting(self.config, "readyCheckSize"))
-    -- The note turns red once the mana is below half of the chosen limit.
-    local percent = power / maximum * 100
-    text:SetText(S.Text("Mana at the ready check: %d%%"):format(math.floor(percent + .5)))
-    if percent < limit / 2 then
+    local message = percent and S.Text("Mana at the ready check: %d%%"):format(math.floor(percent + .5))
+    local wrap = issues ~= nil
+    if readyCheck.wrapped ~= wrap then
+        if wrap or readyCheck.wrapped then
+            text:SetWidth(wrap and 300 or 0)
+            text:SetWordWrap(wrap)
+        end
+        readyCheck.wrapped = wrap
+    end
+    if issues then
+        local details = S.Text("Ready check") .. "\n" .. issues
+        message = message and message .. "\n" .. details or details
+    end
+    text:SetText(message)
+    if percent and percent < limit / 2 then
         text:SetTextColor(1, .3, .25)
     else
         text:SetTextColor(1, .82, 0)
     end
     text:Show()
+    if route then ShowPreparationAction(self, text, route) end
     self.context:After(NumberSetting(self.config, "readyCheckDuration"), R.HideReadyCheck)
 end

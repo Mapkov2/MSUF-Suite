@@ -16,6 +16,7 @@ local objectiveContent = {
     B.Bool("hideDuringBoss", "Hide tracker during raid boss encounters", false),
     B.Bool("showHeader", "Show tracker heading", true),
     B.Bool("groupUnderlines", "Underline tracker group headings", false),
+    B.Bool("animateQuestCollapse", "Animate quest expansion and collapse", true),
     B.Choice("questIconStyle", "Quest type symbols", 1, { "Off", "Suite symbols", "Blizzard symbols" }),
     B.Bool("showAchievements", "Tracked achievements", true),
     B.Bool("showCollectibles", "Tracked collectibles", true),

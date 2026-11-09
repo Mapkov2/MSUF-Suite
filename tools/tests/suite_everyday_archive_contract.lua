@@ -5,7 +5,9 @@ local S, NS = E.S, E.NS
 date = os.date
 local chat = { M = { config = { historyLines = 20 } } }
 E.P.Chat = chat
+E:Load("MSUF_Suite_Chat/Copy.lua")
 E:Load("MSUF_Suite_Chat/History.lua")
+E:Load("MSUF_Suite_Chat/HistoryBrowser.lua")
 local ring = chat.HistoryRing("1:General")
 for i = 1, 25 do chat.HistoryStore(ring, "|cffffffffMessage " .. i .. "|r", 1, 1, 1) end
 local rows = chat.HistorySnapshot()
@@ -15,12 +17,6 @@ rows = chat.HistorySnapshot()
 assert(rows[1].text == "[Item]" and rows[1].search:find("General", 1, true), "plain searchable text keeps tab identity")
 chat.HistoryStore(ring, "|HBNplayer:|Ksecret|k|h[Person]|h", 1, 1, 1)
 assert(not chat.HistorySnapshot()[1].text:find("|K", 1, true), "cross-session names sanitized")
-chat.M:ClearHistory(); assert(#chat.HistorySnapshot() == 0, "cleared history disappears")
-chat.M.config = nil
-S.Config = function() return { historyLines = 20 } end
-chat.HistoryStore(chat.HistoryRing("2:Disabled"), "Saved while previously enabled", 1, 1, 1)
-assert(#chat.HistorySnapshot() == 1, "saved archive opens when chat module was never enabled this session")
-
 -- The browser keeps its snapshot only while its window is open (up to 16 tabs of 1000 lines otherwise stay in memory), and
 -- turning Chat off closes it. The stand-in window hides first when it is already shown, as the shared window does.
 local shown, held = nil, setmetatable({}, { __mode = "v" })
@@ -39,13 +35,24 @@ S.ToolListWindow = {
         window.spec.onHide(owner)
     end,
 }
-E:Load("MSUF_Suite_Chat/HistoryBrowser.lua")
+chat.M:ClearHistory(); assert(#chat.HistorySnapshot() == 0, "cleared history disappears")
+chat.M.config = nil
+S.Config = function() return { historyLines = 20 } end
+chat.HistoryStore(chat.HistoryRing("2:Disabled"), "Saved while previously enabled", 1, 1, 1)
+assert(#chat.HistorySnapshot() == 1, "saved archive opens when chat module was never enabled this session")
+
 chat.M:OpenHistory()
 assert(#held.rows == 1, "the browser lists the saved message")
 chat.M:OpenHistory()
 assert(#held.rows == 1, "opening the browser again lost its rows")
 chat.HistoryStore(chat.HistoryRing("3:Trade"), "Another saved message", 1, 1, 1)
-shown.spec.actions[2].run(shown.owner)
+local refresh
+for _, action in ipairs(shown.spec.actions) do
+    if action.label == "Refresh saved messages" then refresh = action.run end
+end
+local window = { offset = 5, selected = "previous" }
+assert(refresh, "saved history has no refresh action")(shown.owner, nil, window)
+assert(window.offset == 0 and window.selected == nil, "refresh did not reset the list position and selection")
 assert(#held.rows == 2, "Refresh saved messages did not take a new snapshot")
 S.ToolListWindow.Close(shown.owner)
 collectgarbage()

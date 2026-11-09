@@ -15,6 +15,7 @@ end
 local printed = {}
 S.Print = function(message) printed[#printed + 1] = message end
 S.Public = function(value) return value ~= "secret" end
+S.PublicText = function(value) return S.Public(value) and type(value) == "string" and value or nil end
 -- Readable-number helpers as defined by MSUF_Suite_Modules/Runtime.lua.
 S.Number = function(value) return S.Public(value) and type(value) == "number" and value == value end
 S.Finite = function(value) return S.Number(value) and value > -math.huge and value < math.huge end
@@ -78,6 +79,7 @@ local function Frame(name)
             SetShadowColor = function(label, ...) label.shadowColor = { ... } end,
             SetShadowOffset = function(label, ...) label.shadowOffset = { ... } end,
             Show = function(label) label.shown = true end, Hide = function(label) label.shown = false end,
+            SetShown = function(label, value) label.shown = value end,
             IsShown = function(label) return label.shown ~= false end,
             GetText = function(label) return label.value end,
             GetUnboundedStringWidth = function(label) return #(label.value or "") * 6 end,
@@ -93,7 +95,10 @@ local function Frame(name)
             SetMaxLines = function(label, lines) label.maxLines = lines end }
     end
     function frame:GetName() return self.name end
+    function frame:GetSpacing() return self.spacing or 2 end
+    function frame:SetSpacing(value) self.spacing = value end
     function frame:GetParent() return self.parent end
+    function frame:SetParent(parent) self.parent = parent end
     function frame:GetFont() return unpack(self.font) end
     function frame:SetFont(path, size, flags) self.font = { path, size, flags } end
     function frame:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 0 }) end
@@ -125,6 +130,7 @@ local function Frame(name)
     function frame:StopMovingOrSizing() self.moving = false end
     function frame:SetAlpha(alpha) self.alpha = alpha end
     function frame:GetAlpha() return self.alpha end
+    function frame:GetEffectiveAlpha() return self.alpha * (self.parent and self.parent:GetEffectiveAlpha() or 1) end
     function frame:RegisterForClicks() end
     function frame:SetClampedToScreen(value) self.clamped = value end
     function frame:IsClampedToScreen()
@@ -140,6 +146,8 @@ local function Frame(name)
     function frame:SetTextColor() end
     function frame:SetTextInsets() end
     function frame:SetAutoFocus(value) self.autoFocus = value end
+    function frame:SetMaxBytes(value) self.maxBytes = value end
+    function frame:SetEnabled(value) self.enabled = value end
     function frame:SetFocus() self.focused = true end
     function frame:ClearFocus() self.focused = false end
     function frame:HasFocus() return self.focused == true end
@@ -169,6 +177,12 @@ end
 CreateFrame = function(_, _, parent, template)
     local frame = Frame(nil)
     frame.parent, frame.template = parent, template
+    if template == "InputBoxInstructionsTemplate" then frame.Instructions = frame:CreateFontString() end
+    if template == "InputScrollFrameTemplate,BackdropTemplate" then
+        for _, key in ipairs({ "TopLeftTex", "TopTex", "TopRightTex", "LeftTex", "MiddleTex", "RightTex",
+            "BottomLeftTex", "BottomTex", "BottomRightTex", "CharCount" }) do frame[key] = Texture() end
+        frame.EditBox = Frame(nil)
+    end
     return frame
 end
 local stateDrivers = {}
@@ -346,7 +360,7 @@ local chatDefaults, catalogNS = Support.CatalogDefaults(root, "chat")
 NS.ChatBubbleSources, NS.ChatSoundChannels = catalogNS.ChatBubbleSources, catalogNS.ChatSoundChannels
 NS.ChatLineLimits = catalogNS.ChatLineLimits
 local CHAT_FILES = { "Bootstrap.lua", "Shared.lua", "HeaderClock.lua", "InputAnimation.lua", "Appearance.lua", "Comfort.lua", "MinimalChrome.lua", "FadeAnimation.lua", "Unread.lua", "Sidebar.lua", "Copy.lua", "History.lua", "HistoryBrowser.lua", "Fade.lua",
-    "Messages.lua", "Positions.lua", "Floating.lua", "ToolbarGeometry.lua", "Toolbar.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua" }
+    "Messages.lua", "SpamFilter.lua", "Positions.lua", "Floating.lua", "ToolbarGeometry.lua", "Toolbar.lua", "CompleteMessages.lua", "Window.lua", "PreviewSnapshot.lua", "Preview.lua", "Bubbles.lua", "Controller.lua" }
 local tocFiles = Support.TocFiles(root, "MSUF_Suite_Chat")
 assert(#tocFiles == #CHAT_FILES, "the Chat TOC must list " .. #CHAT_FILES .. " files")
 for i = 1, #CHAT_FILES do
@@ -608,6 +622,12 @@ assert(sidebar.tabLabel == ChatFrame1Tab.Text and sidebar.tabLabel:GetText() == 
     and math.abs(sidebar.tabLabel.color[3] - activeB) < 0.001,
     "a renamed tab gained duplicate text or lost its configured color")
 ChatFrame1Tab.Text:SetText("General")
+module.config.messageSpacing = 6
+module:Refresh()
+assert(ChatFrame1:GetSpacing() == 6, "chat spacing was not applied to the native window")
+module.config.messageSpacing = 0
+module:Refresh()
+assert(ChatFrame1:GetSpacing() == 2, "chat spacing did not restore the native value")
 module.config.tabFontSize = 18
 module:Refresh()
 assert(ChatFrame1Tab.Text.font[1] == globalFont and ChatFrame1Tab.Text.font[2] == 18
@@ -747,6 +767,24 @@ assert(module.copyDialog and module.copyDialog.shown and module.copyDialog.rows[
     and module.copyDialog.rows[3].message == "[15:37] You receive loot: [Radiant Item]."
     and not module.copyDialog.rows[4].shown, "copy chooser did not show recent public chat lines as plain text")
 local copyDialog = module.copyDialog
+local search = copyDialog.search
+local function Search(query)
+    search:SetText(query)
+    search.scripts.OnTextChanged(search)
+end
+Search("RADIANT ITEM")
+assert(copyDialog.rows[1].message == "[15:37] You receive loot: [Radiant Item]."
+    and not copyDialog.rows[2].shown, "copy search did not match a readable item label")
+copyDialog.copyAll:Click("LeftButton")
+assert(copyDialog.allView.EditBox.text == table.concat({
+    "[15:37] You receive loot: [Radiant Item].", "[15:38] First message", "[15:39] [Mapko]: Good point!",
+}, "\n"), "copy all did not preserve chronological readable text while searching")
+copyDialog.copyAll:Click("LeftButton")
+assert(copyDialog.rows[1].shown and not copyDialog.rows[2].shown and copyDialog.search.shown,
+    "returning from Copy all did not restore the search results")
+Search("%w")
+assert(not copyDialog.rows[1].shown, "copy search treated plain text as a Lua pattern")
+Search("")
 assert(copyDialog.movable and copyDialog.dragHandle.dragButton == "LeftButton"
     and copyDialog.dragHandle.scripts.OnDragStart and copyDialog.dragHandle.scripts.OnDragStop,
     "copy chooser title is not draggable")
@@ -1353,9 +1391,97 @@ local speechIcon = sidebar.buttons[3].button
 speechIcon.scripts.OnEnter(speechIcon)
 assert(module.panelDelegate.shown and module.panelDelegate:GetAttribute("clickbutton") == TextToSpeechButton,
     "the Text to speech icon did not borrow the secure delegate")
+do
+    local dock = GENERAL_CHAT_DOCK
+    local oldFrames, oldSelected = dock.DOCKED_CHAT_FRAMES, dock.selected
+    local oldScroll, oldOverflow = dock.scrollFrame, dock.overflowButton
+    local oldLeft, oldRight, oldBottom, oldTop = dock.GetLeft, dock.GetRight, dock.GetBottom, dock.GetTop
+    local oldChat, oldClick = SELECTED_CHAT_FRAME, FCF_Tab_OnClick
+    local primary = module.visuals[ChatFrame1]
+    local oldCopy = primary.copyButton
+    local first, second, third, other = Frame("TestWhisper1"), Frame("TestWhisper2"), Frame("TestWhisper3"), Frame("TestPetLog")
+    local function Bounds(frame, left, right, bottom, top)
+        function frame:GetLeft() return left end
+        function frame:GetRight() return right end
+        function frame:GetBottom() return bottom end
+        function frame:GetTop() return top end
+    end
+    for index, frame in ipairs({ first, other, second, third }) do
+        frame.isTemporary, frame.isDocked = true, true
+        frame.chatType = ({ "WHISPER", "PET_BATTLE_COMBAT_LOG", "BN_WHISPER", "WHISPER" })[index]
+        local tab = Frame(frame.name .. "Tab")
+        tab.chatFrame = frame
+        _G[tab.name] = tab
+        Bounds(tab, (index - 1) * 60, index * 60, 0, 22)
+    end
+    dock.DOCKED_CHAT_FRAMES, dock.selected = { ChatFrame1, first, other, second, third }, ChatFrame1
+    dock.scrollFrame, dock.overflowButton = Frame(), Frame()
+    dock.overflowButton:Hide()
+    Bounds(dock, 0, 300, 0, 26)
+    Bounds(dock.scrollFrame, 0, 245, 0, 22)
+    FCF_Tab_OnClick = function(tab, mouseButton)
+        assert(mouseButton == "LeftButton", "arrows did not use normal native tab selection")
+        dock.selected, SELECTED_CHAT_FRAME = tab.chatFrame, tab.chatFrame
+        dockTabsHook(dock)
+        selectHook()
+    end
+    dockTabsHook(dock)
+    assert(not module.whisperArrows, "a fitting tab row allocated overflow controls")
+    local copy = Frame()
+    Bounds(copy, 215, 261, 1, 20)
+    primary.copyButton = copy
+    dockTabsHook(dock)
+    local arrows = assert(module.whisperArrows, "Copy covered a whisper tab without showing arrows")
+    assert(arrows:IsShown() and arrows.points[1][2] == dock and arrows.points[1][3] == "TOPRIGHT",
+        "arrows overlapped the tabs or Copy")
+    dock.overflowButton:Show()
+    Bounds(copy, 265, 311, 29, 48)
+    dockTabsHook(dock)
+    assert(arrows.points[1][2] == dock and arrows.points[1][5] == 24, "arrows did not clear a moved Copy button")
+    Bounds(copy, 310, 356, 29, 48)
+    dockTabsHook(dock)
+    assert(arrows.points[1][5] == 2, "arrows moved for a Copy button outside their slot")
+    dock.overflowButton:Hide()
+    primary.copyButton = oldCopy
+    Bounds(dock.scrollFrame, 0, 150, 0, 22)
+    dockTabsHook(dock)
+    local previous, nextTab = unpack(arrows.buttons)
+    nextTab:Click("LeftButton")
+    assert(dock.selected == first, "right arrow did not select the first whisper from General")
+    nextTab:Click("LeftButton")
+    assert(dock.selected == second, "right arrow skipped Battle.net whispers or selected another chat type")
+    assert(arrows:GetParent() == second, "arrows did not follow the selected window's visibility and fade")
+    previous:Click("LeftButton")
+    assert(dock.selected == first, "left arrow did not select the previous whisper")
+    previous:Click("LeftButton")
+    assert(dock.selected == third, "left arrow did not wrap to the last whisper")
+    third:SetAlpha(0)
+    nextTab:Click("LeftButton")
+    assert(dock.selected == third, "an invisible arrow intercepted a click")
+    third:SetAlpha(1)
+    inCombat = true
+    nextTab:Click("LeftButton")
+    inCombat = false
+    assert(dock.selected == third, "arrow selected a native tab at the combat edge")
+    table.remove(dock.DOCKED_CHAT_FRAMES, 5)
+    nextTab:Click("LeftButton")
+    assert(dock.selected == first, "arrow retained a closed whisper or did not wrap")
+    Bounds(dock.scrollFrame, 0, 245, 0, 22)
+    dockTabsHook(dock)
+    assert(not arrows:IsShown(), "widening the dock left the arrows visible")
+    dock.overflowButton:Show()
+    dockTabsHook(dock)
+    assert(arrows:IsShown() and dock.overflowButton:IsShown(), "native overflow did not retain both navigation paths")
+    dock.DOCKED_CHAT_FRAMES, dock.selected = oldFrames, oldSelected
+    dock.scrollFrame, dock.overflowButton = oldScroll, oldOverflow
+    dock.GetLeft, dock.GetRight, dock.GetBottom, dock.GetTop = oldLeft, oldRight, oldBottom, oldTop
+    SELECTED_CHAT_FRAME, FCF_Tab_OnClick = oldChat, oldClick
+    for _, frame in ipairs({ first, second, third, other }) do _G[frame.name .. "Tab"] = nil end
+end
 -- The controller (Suite.lua Stop) clears active before Disable.
 module.active = false
 module:Disable()
+assert(not module.whisperArrows:IsShown(), "disabling Chat left the whisper arrows visible")
 assert(#closedTools == 1 and type(closedTools[1]) == "table", "disabling Chat left the saved chat search open")
 assert(not module.panelDelegate.shown and not module.panelDelegate.owner and not ctx.callbacks.PLAYER_REGEN_DISABLED,
     "disabling Chat left the secure delegate on the sidebar")

@@ -283,14 +283,18 @@ end
 do
     local W = H.New(root, { config = { showUpgradeTrack = true } })
     W.sizes[0] = 4
-    W.Define(10, { name = "Potion", class = 0, maxStack = 20 })
+    W.Define(10, { name = "Potion", class = 0, maxStack = 20, equipLoc = "INVTYPE_NON_EQUIP_IGNORE" })
     W.Define(20, { name = "Helm", class = 4, equipLoc = "INVTYPE_HEAD", level = 650 })
     W.Define(21, { name = "Chest", class = 4, equipLoc = "INVTYPE_CHEST", level = 660 })
     W.Put(0, 1, 20, 1)
     W.Put(0, 2, 10, 2)
     W.Put(0, 3, 10, 3)
+    W.Define(22, { name = "Legacy sword", class = 2, equipLoc = "INVTYPE_WEAPONMAINHAND" })
+    W.Put(0, 4, 22, 1)
+    W.upgrades["item:10"] = { currentLevel = 0, maxLevel = 0 }
+    W.upgrades["item:22"] = { currentLevel = 0, maxLevel = 0 }
     W.upgrades["item:20"] = { currentLevel = 3, maxLevel = 8, trackString = "Hero" }
-    W.upgrades["item:21"] = { currentLevel = 1, maxLevel = 6, trackString = "Champion" }
+    W.upgrades["item:21"] = { currentLevel = 0, maxLevel = 6, trackString = "Champion" }
     W.Apply()
     W.OpenBags()
     W.Settle()
@@ -302,6 +306,16 @@ do
         for _, item in ipairs(V.index.items) do if item.bag == 0 and item.slot == slot then return item end end
     end
     assert(Record(1).upgrade == "3/8" and Record(1).loaded, "the helm's upgrade track was not read")
+    for _, slot in ipairs({ 2, 4 }) do
+        local record = Record(slot)
+        assert(record.upgradeRead and not record.upgrade, "a readable empty rank was not cached as absent")
+        local labels = W.P.InventoryDetails.overlays[record.button]
+        assert(not labels or not labels.upgrade:IsShown(), "0/0 was drawn on the bag slot")
+        W.RunScript(record.button, "OnEnter")
+        for _, line in ipairs(W.GameTooltip.lines) do assert(not line:find("0/0", 1, true), "0/0 leaked into the tooltip") end
+        W.GameTooltip:Hide()
+    end
+    assert(Record(2).button.Count:IsShown(), "an empty rank hid the stack count")
     W.BagChanged(0)
     W.Settle()
     local helm, potion = Record(1), Record(2)
@@ -326,7 +340,7 @@ do
     W.Put(0, 1, 21, 1)
     W.BagChanged(0)
     W.Settle()
-    assert(Record(1).upgrade == "1/6" and Record(1).upgradeTrack == "Champion" and upgradeReads == 1,
+    assert(Record(1).upgrade == "0/6" and Record(1).upgradeTrack == "Champion" and upgradeReads == 1,
         "a new item in the slot kept the previous item's upgrade track")
     assert(Record(1).name == "Chest", "a new item kept the previous item's record")
     C_Item.GetItemUpgradeInfo = read
@@ -435,12 +449,12 @@ end
 
 ---------------------------------------------------------------- WoW Forever
 do
-    -- Forever loads the same Mainline TOC; the Retail bank files stand aside.
+    -- Forever loads the shared organized bank view through the Mainline TOC.
     local W = FullBags({ client = "Forever" })
     W.OpenBags()
     W.Settle()
-    assert(W.NS.Client.isForever and W.P.BankInventory == nil and W.P.BankActions == nil,
-        "the Retail bank view must not load on WoW Forever")
+    assert(W.NS.Client.isForever and W.P.BankInventory and W.P.BankActions,
+        "the organized bank view must load on WoW Forever")
     assert(W.P.InventoryView.layout == "suite" and ButtonFor(W, 0, 3).shown, "the bag view must run on WoW Forever")
     W.EnterCombat()
     assert(W.P.InventoryView.layout == "combat" and ButtonFor(W, 4, 36).shown, "every slot must be reachable on Forever")

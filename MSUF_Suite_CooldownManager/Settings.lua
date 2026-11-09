@@ -162,6 +162,11 @@ end
 function Settings.ReadGlobals(config, all)
     local state = C.state
     local text = all
+    local readable = S.ReadableValues and S.ReadableValues() or nil
+    if state.readableValues ~= readable then
+        state.readableValues, dirty.cooldowns, text = readable, true, true
+        C.Time.SetReadability(readable)
+    end
     local raid = config.raidEssentials ~= false
     if all or state.raidEssentials ~= raid then state.raidEssentials, dirty.resolve = raid, true end
     local font, flags = S.ResolveFont(config.font) or S.GlobalFontPath(), OUTLINE[config.fontOutline] or "OUTLINE"

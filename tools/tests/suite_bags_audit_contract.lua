@@ -40,9 +40,10 @@ do
     equal(tonumber(hex:sub(5, 6), 16), b, "dark panel blue")
     equal(catalog.BagsBankColor({ bankBackground = BACKGROUND.MATCH_BAGS, backgroundColor = "336699" }), "336699",
         "Match the bag window follows the bag background color")
-    -- The bank window exists on Retail only.
+    -- Both clients get organized bank colors; custom native placement is Retail-only.
     local _, forever = Support.CatalogDefaults(root, "bags", nil, { isForever = true })
-    for _, key in ipairs({ "bankBackground", "bankWindowScale", "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
+    assert(not forever.SuiteCatalog.bags.rules.bankBackground.hidden, "organized bank color is missing on Forever")
+    for _, key in ipairs({ "bankWindowScale", "bankWindowMoved", "bankWindowX", "bankWindowY" }) do
         assert(not rules[key].hidden, key .. " is hidden on Retail")
         assert(forever.SuiteCatalog.bags.rules[key].hidden, key .. " shows on WoW Forever")
     end
@@ -362,7 +363,7 @@ do
     -- and the empty-category hiding too; it has its own twins of the other
     -- grouping options.
     for _, view in ipairs({ VIEW.ALL, VIEW.BY_BAG, VIEW.BLIZZARD_GRID }) do
-        Check(view, BANK_VIEW.CATEGORIES, not Suite.Client.isForever, false, "bank categories with view " .. view)
+        Check(view, BANK_VIEW.CATEGORIES, true, false, "bank categories with view " .. view)
     end
     -- The reasons name the setting to change.
     config.inventoryView, config.bankView = VIEW.ALL, BANK_VIEW.TABS
@@ -370,12 +371,11 @@ do
         'Choose Categories for "Default inventory view" or Bank categories for "Default bank view".',
         "category reason")
     equal(Reason("groupExpansions"), 'Choose Categories for "Default inventory view".', "grouping reason")
-    -- WoW Forever has no organised bank, so only the bags' view counts.
+    -- Forever's bank categories use the same settings.
     local isForever = Suite.Client.isForever
     Suite.Client.isForever = true
     config.bankView = BANK_VIEW.CATEGORIES
-    equal(Usable("category_junk"), false, "Forever: category_junk follows the bank view")
-    equal(Reason("category_junk"), 'Choose Categories for "Default inventory view".', "Forever category reason")
+    equal(Usable("category_junk"), true, "Forever: category_junk follows the bank view")
     Suite.Client.isForever = isForever
     config.inventoryView, config.bankView = rules.inventoryView.default, rules.bankView.default
 end

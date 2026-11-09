@@ -18,10 +18,16 @@ local buys, messages, events = {}, {}, {}
 local function Frame(shown)
     local frame = { shown = shown == true, scripts = {}, hooks = {} }
     function frame:SetSize() end
+    function frame:SetJustifyH() end
+    function frame:SetMaxLines() end
+    function frame:CreateFontString(_, _, template)
+        assert(template == "GameFontHighlightSmall")
+        return Frame(false)
+    end
     function frame:SetPoint() end
     function frame:SetFrameLevel() end
     function frame:GetFrameLevel() return 1 end
-    function frame:SetText(value) self.text = value end
+    function frame:SetText(value) self.text = value self.textWrites = (self.textWrites or 0) + 1 end
     function frame:SetEnabled(value) self.enabled = value end
     function frame:SetScript(kind, fn) self.scripts[kind] = fn end
     function frame:SetParent(value) self.parent = value end
@@ -83,6 +89,7 @@ local suite = {
     Dispatch = Support.Dispatcher(reported),
 }
 local ns = {
+    Client = { isForever = false },
     IsCombatLocked = function() return combat end,
     Safety = { IsForbidden = function() return false end },
     Print = function(value) messages[#messages + 1] = value end,
@@ -194,4 +201,99 @@ assert(#reported == 1 and reported[1]:find("client rejected purchase", 1, true)
 Emit("TRAINER_UPDATE")
 assert(#buys == beforeFailure, "later updates cannot restart a failed purchase")
 assert(module.button.parent == ClassTrainerFrame, "the trainer button did not join the trainer window")
-print("Suite trainer learn-all confirmation and update lifecycle passed")
+-- The same opt-in uses a read-only budget on Forever.
+module:Disable()
+local trainerFrame = ClassTrainerFrame
+ClassTrainerFrame = nil
+ns.Client.isForever = true
+local trainerType, serviceReads = 0, 0
+Enum = { TrainerType = { Pet = 2 } }
+C_Trainer = { GetTrainerType = function() return trainerType end }
+local originalInfo = GetTrainerServiceInfo
+GetTrainerServiceInfo = function(index)
+    serviceReads = serviceReads + 1
+    return originalInfo(index)
+end
+services[3][2], services[4][2], services[5][2] = "available", "available", "unavailable"
+services[6] = { "Free ability", "available", 6, 1, 0, false }
+gold = 400
+local pending = {}
+C_Timer.After = function(_, callback) pending[#pending + 1] = callback end
+local function Flush()
+    local timers = pending
+    pending = {}
+    for i = 1, #timers do timers[i]() end
+end
+local secrets, stopWatch, secretCost
+if arg[2] then
+    secrets = assert(loadfile(arg[2]))()
+    secrets.Install()
+    secrets.GUARD_NAMES.falsy.Public = true
+    secrets.GUARD_NAMES.falsy.Finite = true
+    secrets.GUARD_NAMES.falsy.PublicText = true
+    secretCost = secrets.New("number")
+    stopWatch = secrets.Watch(root .. "/MSUF_Suite_QualityOfLife/TrainerLearnAll.lua", { strict = true })
+    local public, finite, publicText = suite.Public, suite.Finite, suite.PublicText
+    suite.Public = function(value) return not secrets.IsSecret(value) and public(value) end
+    suite.Finite = function(value) return not secrets.IsSecret(value) and finite(value) end
+    suite.PublicText = function(value) return not secrets.IsSecret(value) and publicText(value) end
+else
+    secretCost = "SECRET"
+end
+BuyTrainerService = function() error("Forever tried to buy training") end
+events = {}
+chunk("MSUF_Suite_QualityOfLife", { NS = ns, Suite = suite })
+module = assert(installed)
+suite.instances.trainerLearnAll = module
+module:Enable()
+assert(not module.budget and not events.PLAYER_MONEY, "closed trainer did budget work")
+ClassTrainerFrame = trainerFrame
+ClassTrainerFrame:Show()
+Emit("ADDON_LOADED", "Blizzard_TrainerUI")
+Emit("TRAINER_UPDATE")
+Flush()
+local budget = assert(module.budget)
+assert(budget:IsShown() and budget.text == "2 paid · 500c\n100c short" and not module.button and not Question(),
+    "budget totals only the visible available paid abilities")
+assert(serviceReads == #services - 1, "opening and trainer update did not coalesce")
+local reads, writes = serviceReads, budget.textWrites
+Emit("PLAYER_MONEY")
+assert(serviceReads == reads and budget.textWrites == writes, "unchanged funds reread services or rewrote text")
+gold = 501
+Emit("PLAYER_MONEY")
+assert(budget.text == "2 paid · 500c" and serviceReads == reads, "balance update rescanned or kept outdated shortfall")
+services[4][2] = "used"
+Emit("TRAINER_UPDATE")
+Flush()
+assert(budget.text == "1 paid · 300c", "changed trainer list kept stale costs")
+services[3][5] = secretCost
+Emit("TRAINER_UPDATE")
+Flush()
+assert(not budget:IsShown(), "unreadable costs must hide the total")
+services[3][5] = 300
+trainerType = Enum.TrainerType.Pet
+Emit("TRAINER_UPDATE")
+Flush()
+assert(not budget:IsShown(), "pet points treated as copper")
+trainerType = 0
+Emit("TRAINER_UPDATE")
+Flush()
+assert(budget:IsShown(), "changed trainer type did not restore budget")
+Emit("PLAYER_REGEN_DISABLED")
+assert(not budget:IsShown() and not events.PLAYER_MONEY, "combat edge did not suspend trainer updates")
+Emit("PLAYER_REGEN_ENABLED")
+Flush()
+assert(budget:IsShown() and events.PLAYER_MONEY, "open trainer did not resume")
+Emit("TRAINER_CLOSED")
+assert(not budget:IsShown() and not events.PLAYER_MONEY and not events.TRAINER_UPDATE, "trainer close left live work")
+ClassTrainerFrame.hooks.OnShow(ClassTrainerFrame)
+Flush()
+assert(budget:IsShown(), "reopened trainer did not update")
+module:Disable()
+assert(not budget:IsShown() and not events.PLAYER_MONEY, "disabling left the budget active")
+assert(#reported == 1, table.concat(reported, "\n"))
+if stopWatch then
+    local violations = stopWatch()
+    assert(#violations == 0, table.concat(violations, "\n"))
+end
+print("Suite trainer Retail confirmation and Forever read-only budget lifecycle passed")

@@ -8,7 +8,7 @@ local mutations = {
     messageRestore = { "Positions", "        self.context:RestorePoints(line)", "" },
     tabRecovery = { "Window", '        S.Queue("chat")\n        return\n    end\n    if padded then',
         '        return\n    end\n    if padded then' },
-    floatingGap = { "Window", "        C.PositionTabs(M)\n        return", "        return" },
+    floatingGap = { "Window", "        C.PositionTabs(M)\n        C.UpdateWhisperArrows(GENERAL_CHAT_DOCK)", "        C.UpdateWhisperArrows(GENERAL_CHAT_DOCK)" },
     messageOffset = { "Positions", 'local x, y = self.config.messageTextX or 0, self.config.messageTextY or 0', 'local x, y = 0, 0' },
     inputOffset = { "Window", 'local x, y = -c.padding + c.inputX, c.inputY', 'local x, y = -c.padding, 0' },
     inputOverhang = { "Window", 'return width + 2 * c.padding', 'return width + 28' },

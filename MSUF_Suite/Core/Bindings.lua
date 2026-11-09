@@ -43,6 +43,7 @@ end
 _G.BINDING_NAME_MSUFSUITE_TOGGLE_DAMAGE_METER = Text("Toggle damage meter")
 _G.BINDING_NAME_MSUFSUITE_RESET_DAMAGE_METER = Text("Reset damage meter")
 _G.BINDING_NAME_MSUFSUITE_TOGGLE_FPS = Text("Toggle FPS display")
+_G.BINDING_NAME_MSUFSUITE_QUICK_ACTIONS = Text("Quick actions")
 _G["BINDING_NAME_CLICK MSUFSuiteQuestItem:LeftButton"] = Text("Use tracked quest item")
 _G["BINDING_NAME_CLICK MSUFSuiteFishing:LeftButton"] = Text("Fishing")
 _G["BINDING_NAME_CLICK MSUFSuiteFishingLure:LeftButton"] = Text("Apply fishing lure")

@@ -17,6 +17,20 @@ local NS = P.NS
 local MAX_TABS = 16
 local MAX_TEXT = 8192
 local PublicText, Finite = S.PublicText, S.Finite
+local CATEGORY_TYPES = {
+    historyWhispers = { WHISPER = true, SMART_WHISPER = true, WHISPER_INFORM = true, BN_WHISPER = true,
+        BN_WHISPER_INFORM = true, BN_WHISPER_PLAYER_OFFLINE = true, AFK = true, DND = true },
+    historyGroup = { PARTY = true, PARTY_LEADER = true, RAID = true, RAID_LEADER = true,
+        RAID_WARNING = true, INSTANCE_CHAT = true, INSTANCE_CHAT_LEADER = true },
+    historyGuild = { GUILD = true, OFFICER = true, GUILD_DISCORD = true, GUILD_ACHIEVEMENT = true,
+        GUILD_ITEM_LOOTED = true, GUILD_MOTD = true },
+    historyPublic = { CHANNEL = true, CHANNEL_JOIN = true, CHANNEL_LEAVE = true, CHANNEL_LIST = true,
+        CHANNEL_NOTICE = true, CHANNEL_NOTICE_USER = true, SAY = true, YELL = true, EMOTE = true, TEXT_EMOTE = true },
+}
+local whisperTypes, allowedTypes = {}, {}
+local allowSystem, whisperRing
+local RECENT_IDS = 2048
+local seen, recent, nextRecent = {}, {}, 1
 -- gsub replacement text: a translated "%" must stay a percent sign.
 local BATTLE_NET = S.Text("Battle.net friend"):gsub("%%", "%%%%")
 local store
@@ -93,6 +107,14 @@ function C.HistoryRing(key)
     return ring
 end
 
+local function Category(name)
+    if name:match("^CHANNEL%d+$") then return "historyPublic" end
+    for key, types in pairs(CATEGORY_TYPES) do
+        if types[name] then return key end
+    end
+    return "historySystem"
+end
+
 -- A link whose target holds a |K escape gives up the link, keeping its text.
 local function Unlink(target, label)
     if target:find("|K", 1, true) then return label end
@@ -105,7 +127,7 @@ local function Keepable(text)
 end
 
 -- Per added line: one row write. Rows are reused once the ring is full.
-function C.HistoryStore(ring, text, r, g, b)
+local function StoreLine(ring, text, r, g, b)
     if #text > MAX_TEXT then return end
     local index, lines = ring.next, ring.lines
     local row = lines[index]
@@ -117,6 +139,63 @@ function C.HistoryStore(ring, text, r, g, b)
     row.r, row.g, row.b = Finite(r) and r or 1, Finite(g) and g or 1, Finite(b) and b or 1
     ring.next = index % ring.limit + 1
     if ring.count < ring.limit then ring.count = ring.count + 1 end
+end
+
+local function StoreFilteredLine(ring, text, r, g, b, chatTypeID)
+    if S.IsSecret(chatTypeID) then return end
+    local allowed = allowedTypes[chatTypeID]
+    if allowed == false or allowed == nil and not allowSystem then return end
+    return StoreLine(ring, text, r, g, b)
+end
+
+C.HistoryStore = StoreLine
+
+-- Native message delivery passes ChatTypeInfo[type].id after Blizzard's
+-- filtering. Compile the choices once; the default needs no ID inspection.
+function C.CompileHistory(config)
+    whisperRing = nil
+    for id in pairs(whisperTypes) do whisperTypes[id] = nil end
+    for id in pairs(allowedTypes) do allowedTypes[id] = nil end
+    C.HistoryStore = StoreLine
+    if not config.saveHistory then return end
+    allowSystem = config.historySystem ~= false
+    local filterTypes = not allowSystem
+    for key in pairs(CATEGORY_TYPES) do
+        if config[key] == false then filterTypes = true end
+    end
+    local conversations = config.historyWhispers ~= false and config.historyConversations
+    if filterTypes then
+        C.HistoryStore = StoreFilteredLine
+        for name, info in pairs(ChatTypeInfo) do
+            if Finite(info.id) then allowedTypes[info.id] = config[Category(name)] ~= false end
+        end
+    end
+    if not conversations then return end
+    for _, name in ipairs({ "WHISPER", "WHISPER_INFORM" }) do
+        local info = ChatTypeInfo[name]
+        if info and Finite(info.id) then whisperTypes[info.id] = true end
+    end
+    local saved = Store()
+    if type(saved.whispers) ~= "table" then saved.whispers = {} end
+    whisperRing = saved.whispers
+    Fit(whisperRing, LineLimit())
+end
+
+-- Retail and Forever use the same line ID when whisper delivery reaches
+-- more than one frame or native pop-outs copy earlier lines into a new tab.
+-- The native character hyperlink holds the peer in both directions; BNet
+-- identity is session-bound and is never used as an archive key.
+function C.HistoryWhisper(text, chatTypeID)
+    if not whisperRing or not Finite(chatTypeID) or not whisperTypes[chatTypeID] or #text > MAX_TEXT then return end
+    local peer, lineID = text:match("|Hplayer:([^:|%c]+):(%d+):")
+    if not peer or #peer > 160 or lineID == "0" or seen[lineID] then return end
+    local old = recent[nextRecent]
+    if old then seen[old] = nil end
+    recent[nextRecent], seen[lineID] = lineID, true
+    nextRecent = nextRecent % RECENT_IDS + 1
+    local index = whisperRing.next
+    StoreLine(whisperRing, text)
+    whisperRing.lines[index].peer = peer
 end
 
 -- Newest first, each saved line goes behind the lines already shown, as far
@@ -203,6 +282,9 @@ end
 function C.ClearHistory()
     local saved = Store()
     saved.input = nil
+    if type(saved.whispers) == "table" then
+        saved.whispers.lines, saved.whispers.count, saved.whispers.next = {}, 0, 1
+    end
     local tabs = saved.tabs
     for key, ring in pairs(tabs) do
         if type(ring) == "table" then
@@ -216,6 +298,7 @@ end
 -- The options page's "Clear saved chat history" button.
 function M:ClearHistory()
     C.ClearHistory()
+    C.HistoryCleared()
 end
 
 -- Explicitly requested snapshot; no search index or copy is maintained per message.
@@ -226,19 +309,43 @@ function C.HistorySnapshot()
         if PublicText(key) and type(ring) == "table" then tabs[#tabs + 1] = { key = key, ring = ring } end
     end
     table.sort(tabs, function(a, b) return a.key < b.key end)
+    local stamp = S.Text("Saved message")
     for _, tab in ipairs(tabs) do
         local ring = tab.ring
         Fit(ring, LineLimit())
         for offset = 1, ring.count do
             local row = ring.lines[(ring.next - offset - 1) % ring.limit + 1]
             if type(row) == "table" and PublicText(row.text) and #row.text <= MAX_TEXT then
-                local text = row.text:gsub("|H.-|h(.-)|h", "%1"):gsub("|c%x%x%x%x%x%x%x%x", "")
-                    :gsub("|cn[%w_]+:", ""):gsub("|r", ""):gsub("|T.-|t", ""):gsub("|A.-|a", "")
-                local stamp = S.Text("Saved message")
+                local text = C.PlainChatMessage(row.text)
                 rows[#rows + 1] = { key = tab.key .. ":" .. offset, label = text, text = text,
                     detail = tab.key .. " · " .. stamp .. "\n" .. text, search = tab.key .. " " .. text }
             end
         end
     end
     return rows
+end
+
+
+-- Build conversation groups when their tab opens. The transcript never
+-- enters a Blizzard buffer; the normal tab history replays independently.
+function C.WhisperSnapshot()
+    local ring = Store().whispers
+    local contacts = {}
+    if type(ring) ~= "table" then return contacts end
+    local peers = {}
+    Fit(ring, LineLimit())
+    for offset = 1, ring.count do
+        local row = ring.lines[(ring.next - offset - 1) % ring.limit + 1]
+        if type(row) == "table" and PublicText(row.text) and #row.text <= MAX_TEXT and PublicText(row.peer) then
+            local contact = peers[row.peer]
+            if not contact then
+                contact = { peer = row.peer, lines = {} }
+                peers[row.peer] = contact
+                contacts[#contacts + 1] = contact
+            end
+            local lines = contact.lines
+            lines[#lines + 1] = C.PlainChatMessage(row.text)
+        end
+    end
+    return contacts
 end

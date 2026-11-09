@@ -145,7 +145,7 @@ C_Timer = originalTimer
 local releases = {}
 local PARTS = { "DeepWindows", "SemanticHUD", "SharedChrome", "UIPanelButtons", "CommonMenus",
     "Commerce", "CharacterPanel", "InspectPanel", "SocialUISkin", "MajorWindows", "LegacyWindows",
-    "CommonArt", "ForeverGroupFinder" }
+    "CommonArt", "ForeverGroupFinder", "ForeverLegacyTree" }
 for _, name in ipairs(PARTS) do
     NS[name] = { Disable = function()
         releases[name] = (releases[name] or 0) + 1

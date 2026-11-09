@@ -39,6 +39,9 @@ local function ApplyLogin()
     dispatch(NS.Checkmarks.Apply)
     dispatch(NS.Typography.ApplyConfigured)
     dispatch(NS.Adapters.ApplyAll)
+    -- Prepare hidden native combat windows on the next frame, outside
+    -- PLAYER_LOGIN, so their protected shells can be painted while unlocked.
+    if NS.Client.isMainline then C_Timer.After(0, NS.Adapters.PrepareCombatWindows) end
     dispatch(NS.PublicAPI.OnPlayerLogin)
 end
 NS.EnsureLoginApplied = ApplyLogin

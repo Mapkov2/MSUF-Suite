@@ -1922,6 +1922,7 @@ if NS.Client.isForever then
         category = "character",
         addon = "Blizzard_LegacySystem",
         frames = { "LegacySystemFrame" },
+        skipGeneric = true,
     }
 end
 
@@ -1937,7 +1938,7 @@ local REVIEWED_CATALOG_ENTRIES = 241
 local REVIEWED_CATALOG_ROOTS = 464
 local REVIEWED_SOURCE_REVISION = "8ea15b61e45c0ed4eba01439c90757f86eb78d34"
 if NS.Client.isForever then
-    REVIEWED_CATALOG_FINGERPRINT = "6272f4e2-335c3116"
+    REVIEWED_CATALOG_FINGERPRINT = "06f14bca-05ab5ae9"
     REVIEWED_CATALOG_ENTRIES = 242
     REVIEWED_CATALOG_ROOTS = 465
     REVIEWED_SOURCE_REVISION = "9465cb273b5513495d8ecc12fbb19930dd6b8957"
@@ -1960,6 +1961,7 @@ local dedicatedGlassOwners = {
     ["quick-keybind"] = "SharedChrome",
     ["hud-addon-compartment"] = "SharedChrome",
     ["housing-dashboard"] = "MajorWindows",
+    ["forever-legacy-system"] = "ForeverLegacyTree",
 }
 
 local partialDedicatedGlass = {
@@ -1979,6 +1981,7 @@ local homogeneousGlassKinds = {
             "combat-log-navigation", "encounter-journal", "pvp", "profession-book",
             "inspect", "item-interaction", "item-socketing", "item-upgrade",
             "world-map", "quick-keybind", "hud-addon-compartment", "housing-dashboard",
+            "forever-legacy-system",
         },
     },
     {

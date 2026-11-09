@@ -216,6 +216,7 @@ local function SyncUnitEvents(self)
     local mode = group and "group" or active and (list.hasAura or list.hasFood) and "player" or false
     local wantWeapon = active and list.hasWeapon or false
     if mode ~= listen.aura or group and members.listChanged then
+        if members.range then R.SyncRange(self, false) end
         listen.aura = mode
         members.listChanged = false
         for i = 1, #MEMBER_EVENTS do context:RemoveEvent(MEMBER_EVENTS[i]) end
@@ -525,6 +526,10 @@ end
 function M:Update(mode, updateCounts, updateInfo, foodDirty)
     if NS.IsCombatLocked() then return end
     if S.editMode then
+        if self.group.range then
+            R.SyncRange(self, false)
+            self.list.needsFullRefresh = true
+        end
         Preview(self)
         return
     end
@@ -539,6 +544,7 @@ function M:Update(mode, updateCounts, updateInfo, foodDirty)
     if allowed then
         mask, nextDue = Evaluate(self, mode, updateInfo, foodDirty, now, threshold)
     else
+        if self.group.range then R.SyncRange(self, false) end
         list.needsFullRefresh = true
     end
     R.SpecialText(self, allowed and self.config["class_" .. self.environment.key] ~= false)
@@ -648,7 +654,7 @@ OnEvent = function(self, event, unit, updateInfo)
         if event == "UNIT_AURA" and unit == "player" then
             if not listen.suspended then R.RefreshGroup(self, "player") end
         else
-            if not listen.suspended then R.QueueMemberWork(self, unit) end
+            if not listen.suspended then R.QueueMemberWork(self, unit, event ~= "UNIT_AURA") end
             return
         end
     end
@@ -732,10 +738,11 @@ end
 function M:Refresh()
     NS.HostBridge.WatchIconSkins("buffReminders", self.config.iconSkin ~= "CUSTOM")
     ReadInstance(self)
+    self.readyCheck.enabled = self.config.readyCheckMana or self.config.readyCheckIssues
     R.SyncPreparationEvents(self, OnEvent)
     SyncRestingEvent(self)
     RegisterEvents(self)
-    if not self.config.readyCheckMana then R.HideReadyCheck(self) end
+    if not self.readyCheck.enabled then R.HideReadyCheck(self) end
     R.StyleNotices(self)
     self:Compile()
     self.view.mask = nil

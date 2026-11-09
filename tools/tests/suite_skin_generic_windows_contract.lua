@@ -524,7 +524,10 @@ do
     Check(#ReviewProblems(data, forever.BlizzardCatalog) == 0 and forever.BlizzardCatalog.glass.valid,
         "Forever catalog fingerprint, root count or classifications are stale")
     local loader = createdFrames[#createdFrames]
-    for _, name in ipairs({ "PetStableFrame", "LegacySystemFrame" }) do
+    local legacy = forever.BlizzardCatalog.FindByFrame("LegacySystemFrame")
+    Check(legacy.skipGeneric == true and data.dedicatedOwners[legacy.id] == "ForeverLegacyTree",
+        "the Legacy window must stay outside the generic CheckButton traversal")
+    for _, name in ipairs({ "PetStableFrame" }) do
         local entry = forever.BlizzardCatalog.FindByFrame(name)
         Check(entry ~= nil, name .. " has no Forever catalog entry")
         local panel = Frame(name)
@@ -763,6 +766,19 @@ end)
 Section("deep windows", function()
     -- A private namespace: the post-hooks installed here stay local.
     local deepNS = setmetatable({}, { __index = NS })
+    local motionWatches, motionPlays = {}, 0
+    deepNS.ContentMotion = {
+        Watch = function(frame, owner)
+            if not frame or frame == deepNS.protectedBook then return false end
+            motionWatches[frame] = owner
+            return true
+        end,
+        Play = function(frame, owner, skill)
+            Check(locked and motionWatches[frame] == owner and skill == 171,
+                "the combat profession switch bypassed the prepared page")
+            motionPlays = motionPlays + 1
+        end,
+    }
     Load("DeepWindows.lua", deepNS)
     Load("DeepWindowsProfessions.lua", deepNS)
     local calls, restore = CountingApplyFrame()
@@ -839,7 +855,24 @@ Section("deep windows", function()
         for frame in pairs(descendants) do descendants[frame] = nil end
     end
 
+    local forever = NS.Client.isForever
+    NS.Client.isForever = true
+    function professions:RightTabSelected() end
+    local book, rank = Frame(nil), Frame(nil)
+    deepNS.protectedBook = book
+    book.ProfessionsContentFrame = { PrimaryProfession1 = { StatusBar = rank } }
+    professions.BookPage = book
     deepNS.DeepWindows.Apply("deep")
+    Expect(motionWatches[crafting] == "deep" and motionWatches[spec] == "deep" and motionWatches[rank] == "deep"
+        and not motionWatches[book], "profession animations missed exact pages or targeted the protected book")
+    locked = true
+    professions:RightTabSelected({ skillLine = 164 })
+    professions:RightTabSelected({ skillLine = 164 })
+    professions:RightTabSelected({ skillLine = 171 })
+    professions:RightTabSelected({ skillLine = 171 })
+    professions:RightTabSelected({})
+    Expect(motionPlays == 1, "the same-page combat animation missed a skill switch or replayed a refresh")
+    locked, NS.Client.isForever = false, forever
     NextFrame()
     Reset()
     locked = true
@@ -1432,6 +1465,7 @@ Section("player spells tab colors", function()
     function cold:IsShown() return true end
     function cold:IsProtected() return true, false end
     function cold.SpellBookFrame:IsProtected() return true, false end
+    function cold.SpellBookFrame:IsShown() return false end
     function cold:HookScript() end
     _G.PlayerSpellsFrame = cold
     NS.DB = { enabled = true, skins = {} }
@@ -1473,16 +1507,43 @@ Section("prepared Forever spells window combat artwork", function()
     talents.ClassBackground, talents.BackgroundBorder = Art(), Art()
     local shell = { fill = { IsShown = function() return true end } }
     NS.Registry.GetSurface = function(target)
-        if target == spells and spells.surfaceSpec then return shell end
+        if (target == book or target == talents) and target.surfaceSpec then return shell end
     end
-    NS.PlayerSpellsSkin.Apply(spells, "prepared-spells")
-    Expect(talents.ClassBackground.alpha == 0 and talents.BackgroundBorder.alpha == 0,
-        "Forever talent backdrop covered the prepared surface")
+    local previousAdapters, previousDB, previousSpells = NS.Adapters, NS.DB, PlayerSpellsFrame
+    local previousEvents, previousAddOns = EventUtil, C_AddOns
+    local continuation, loads = nil, 0
+    PlayerSpellsFrame, NS.DB, book.shown = nil, { enabled = true, skins = {} }, false
+    spells.Bg = Art()
+    NS.Client.HasAddOn = function(addon) return addon == "Blizzard_PlayerSpells" end
+    NS.Client.IsAddOnLoaded = function() return PlayerSpellsFrame ~= nil end
+    EventUtil = { ContinueOnAddOnLoaded = function(addon, callback)
+        assert(addon == "Blizzard_PlayerSpells" and not continuation)
+        continuation = callback
+    end }
+    C_AddOns = { LoadAddOn = function(addon)
+        assert(not locked and addon == "Blizzard_PlayerSpells" and loads == 0)
+        loads, PlayerSpellsFrame = loads + 1, spells
+        continuation()
+    end }
+    local originalTrackTree = NS.Checkmarks.TrackControlTree
+    NS.Checkmarks.TrackControlTree = function() end
+    Load("Blizzard.lua")
+    local adapters = NS.Adapters
+    assert(not adapters.Apply("playerSpells") and loads == 0, "native addon loaded inside the login pass")
+    if adapters.PrepareCombatWindows then adapters.PrepareCombatWindows() end
+    Expect(loads == 1 and not spells.shown and not book.shown and not talents.shown
+        and spells.surfaceSpec and book.surfaceSpec and talents.surfaceSpec and spells.Bg.alpha == 0
+        and talents.ClassBackground.alpha == 0 and talents.BackgroundBorder.alpha == 0,
+        "hidden native shells or the Forever talent backdrop were not prepared before the first fight")
+    local prepared = NS.PlayerSpellsSkin.states[spells] ~= nil
+    PlayerSpellsFrame, NS.DB, NS.Adapters = previousSpells, previousDB, previousAdapters
+    EventUtil, C_AddOns, NS.Checkmarks.TrackControlTree = previousEvents, previousAddOns, originalTrackTree
+    if not prepared then return end
 
     book.BookBGHalved.alpha = 1
     book.BookBGLeft.alpha = 1
     function book.BookBGLeft:IsProtected() return true, true end
-    spells.shown, locked = true, true
+    spells.shown, book.shown, locked = true, true, true
     local attaches = counters.attach
     NS.PlayerSpellsSkin:OnDisplayedSpellsChanged()
     Expect(book.BookBGHalved.alpha == 1, "spell-data update traversed prepared chrome")
@@ -1570,6 +1631,106 @@ Section("prepared Forever spells window combat artwork", function()
         "cold protected talent root lost its shell, safe title styling or protection")
     locked = false
     NS.PlayerSpellsSkin.Disable(cold, "prepared-spells")
+
+    local oldEvents, oldGate, oldApplyButton = EventRegistry, NS.CombatGate, NS.ControlSkin.ApplyButton
+    local function ColdBook(forever)
+        NS.Client.isForever = forever
+        local root, spellBook, talentPage = Frame("PlayerSpellsFrame"), Frame(nil), Frame(nil)
+        root.SpellBookFrame, root.TalentsFrame = spellBook, talentPage
+        spellBook.shown, talentPage.shown = true, false
+        spellBook.BookBGLeft, talentPage.Background, root.Bg = Art(), Art(), Art()
+        for _, frame in ipairs({ root, spellBook, talentPage }) do
+            function frame:IsShown() return self.shown == true end
+            function frame:IsProtected() return true, self.explicit == true end
+            function frame:CreateTexture()
+                assert(not locked, "cold combat path wrote to a protected container")
+                return {}
+            end
+        end
+        function root:HookScript(event, callback)
+            assert(event == "OnShow" and not self.onShow, "cold root hooked twice")
+            self.onShow = callback
+        end
+
+        local function SpellRow()
+            local item, cast = Frame(nil), Frame(nil)
+            item.Button, item.TextContainer = cast, { Name = Text(0.4, 0.2, 0.1) }
+            cast.Border = VertexArt()
+            function cast:IsProtected() return true, true end
+            return item
+        end
+        local rows = { SpellRow() }
+        spellBook.PagedSpellsFrame = { GetFrames = function() return rows end }
+        talentPage.ApplyButton = Frame(nil)
+        local applied, callbacks, jobs, registrations = 0, {}, {}, 0
+        NS.ControlSkin.ApplyButton = function(frame)
+            assert(frame == talentPage.ApplyButton, "combat path painted an unexpected control")
+            applied = applied + 1
+            return {}
+        end
+        EventRegistry = {
+            RegisterCallback = function(_, event, callback, owner)
+                assert(not callbacks[event], "native event registered twice")
+                callbacks[event] = { callback, owner }
+                registrations = registrations + 1
+            end,
+            UnregisterCallback = function(_, event) callbacks[event] = nil end,
+        }
+        NS.CombatGate = {
+            RunOrDefer = function(key, callback) jobs[key] = callback end,
+            IsPending = function(key) return jobs[key] ~= nil end,
+            Cancel = function(key) jobs[key] = nil end,
+        }
+        local function Fire(event, ...)
+            local registration = assert(callbacks[event], "cold native event was not registered")
+            registration[1](registration[2], ...)
+        end
+
+        PlayerSpellsFrame, locked = root, true
+        NS.PlayerSpellsSkin.Apply(root, "cold-spells")
+        assert(root.onShow and next(callbacks) == nil, "hidden first open registered visual callbacks")
+        root.shown = true
+        root.onShow(root)
+        Expect(registrations == 2 and rows[1].surfaceSpec
+            and rows[1].TextContainer.Name.color[1] == NS.Theme.GetColor("text"),
+            "first combat spellbook did not activate and paint safe rows")
+        Expect(not root.surfaceSpec and not spellBook.surfaceSpec and not rows[1].Button.surfaceSpec
+            and root.Bg.alpha == 1 and spellBook.BookBGLeft.alpha == 1 and root.childReads == 0,
+            "cold combat altered a protected shell, cast button or native artwork without a replacement")
+
+        rows[1] = SpellRow()
+        Fire("PlayerSpellsFrame.SpellBookFrame.DisplayedSpellsChanged")
+        Expect(rows[1].surfaceSpec and rows[1].Button.Border.a == 0 and not rows[1].Button.surfaceSpec,
+            "recycled cold spell row did not repaint its safe decoration")
+        spellBook.shown, talentPage.shown = false, true
+        Fire("PlayerSpellsFrame.TabSet", root)
+        Fire("PlayerSpellsFrame.TabSet", root)
+        Expect(applied == 1 and not talentPage.surfaceSpec and talentPage.Background.alpha == 1
+            and talentPage.childReads == 0,
+            "cold talent page did not paint only its safe controls")
+
+        locked = false
+        if forever then
+            root.explicit = true
+            assert(jobs["playerSpells:apply"])()
+            Expect(not root.surfaceSpec and NS.PlayerSpellsSkin.callbacksRegistered,
+                "a refused full upgrade dropped the safe lane")
+            spellBook.shown, talentPage.shown = true, false
+            rows[1] = SpellRow()
+            Fire("PlayerSpellsFrame.SpellBookFrame.DisplayedSpellsChanged")
+            Expect(rows[1].surfaceSpec, "a refused full upgrade froze safe row updates")
+            root.explicit = false
+        end
+        assert(jobs["playerSpells:apply"])()
+        Expect(root.surfaceSpec and spellBook.surfaceSpec and talentPage.surfaceSpec
+            and registrations == 2 and not rows[1].Button.surfaceSpec,
+            "combat exit did not upgrade the same skin state without duplicate callbacks")
+        NS.PlayerSpellsSkin.Disable(root, "cold-spells")
+        Expect(next(callbacks) == nil, "disabling the adapter retained native callbacks")
+    end
+    ColdBook(false)
+    ColdBook(true)
+    EventRegistry, NS.CombatGate, NS.ControlSkin.ApplyButton = oldEvents, oldGate, oldApplyButton
     PlayerSpellsFrame, NS.DB = oldSpells, oldDB
     NS.Client, NS.Cosmetics, NS.Registry.GetSurface = oldClient, oldCosmetics, oldGetSurface
     InCombatLockdown = oldLockdown
@@ -3307,6 +3468,42 @@ Section("hidden windows defer cosmetic work until visible", function()
     NS.MajorWindows.Disable("cold-combat")
     NS.CombatGate = originalGate
     _G.PVPUIFrame = previous
+
+    local previousBook, previousContent, previousForever = ProfessionsBookFrame, ProfessionsContentFrame, NS.Client.isForever
+    local book, content = Window("ProfessionsBookFrame"), Window("ProfessionsContentFrame")
+    ProfessionsBookFrame, ProfessionsContentFrame, NS.Client.isForever = book, content, false
+    local oldPrimary, oldMotion = PrimaryProfession1, NS.ContentMotion
+    local card, rank = Window("PrimaryProfession1"), Window(nil)
+    PrimaryProfession1, card.statusBar = card, rank
+    local watched = {}
+    NS.ContentMotion = { Watch = function(frame)
+        if not frame or frame == book then return false end
+        watched[frame] = true
+        return true
+    end }
+    local priorNativeLockdown = InCombatLockdown
+    InCombatLockdown = function() return locked end
+    function book:IsProtected() return true, false end
+    NS.MajorWindows.Apply("retail-profession-book")
+    Expect(not book:IsShown() and book.surfaceSpec and content.surfaceSpec,
+        "standalone Retail profession book did not prepare while closed")
+    Expect(watched[rank] and not watched[book], "the protected standalone book lost its safe opening animation")
+    before = Paints()
+    locked = true
+    book:Display(true)
+    Expect(book.surfaceSpec and Paints() == before,
+        "first combat open repainted the Retail profession book or lost its prepared skin")
+    locked = false
+    NS.MajorWindows.Disable("retail-profession-book")
+    local foreignBook = Window("ProfessionsBookFrame")
+    ProfessionsBookFrame, NS.Client.isForever = foreignBook, true
+    NS.MajorWindows.Apply("forever-profession-book")
+    Expect(not foreignBook.surfaceSpec and not foreignBook.hooks.OnShow,
+        "Forever applied the standalone Retail profession book adapter")
+    NS.MajorWindows.Disable("forever-profession-book")
+    ProfessionsBookFrame, ProfessionsContentFrame, NS.Client.isForever = previousBook, previousContent, previousForever
+    PrimaryProfession1, NS.ContentMotion = oldPrimary, oldMotion
+    InCombatLockdown = priorNativeLockdown
 
     local frame = Window("ColdGenericFrame")
     local entry = { id = "cold-generic", category = "utility", frames = { frame } }

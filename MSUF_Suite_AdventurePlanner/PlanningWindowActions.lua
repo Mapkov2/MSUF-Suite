@@ -87,7 +87,74 @@ local function WorkspaceActions()
         W.Action("Note settings", function() S.Open("groupFinderDoubleClick") end) }
 end
 
+local function ReceiveLoot(value)
+    local kind, _, link = GetCursorInfo()
+    if not S.Public(kind) or kind ~= "item" then return end
+    local entry = Plan.Loot.New(link)
+    if entry then return entry.link .. (value:match("[\r\n].*$") or "") end
+end
+
+local function AddLoot()
+    W.Edit("Add item", "Drop an item here or paste its link. Enter an optional source on the next line.", "", 1152, function(value)
+        local link, source = value:match("^([^\r\n]*)[\r\n]*(.*)$")
+        source = source:gsub("[\r\n]+", " ")
+        if #source > 80 then return false, S.Text("The text is too long.") end
+        local entry = Plan.Loot.New(link, source)
+        if not entry then return false, S.Text("Enter a valid item link.") end
+        if Plan.Loot.Save(entry) then return true end
+        return false, S.Text("The loot list is full.")
+    end, nil, true, ReceiveLoot)
+end
+
+local function BrowseLoot(_, _, window)
+    local rows = Plan.Loot.JournalRows()
+    if not rows then
+        window:SetStatus(S.Text("Open an instance's Loot tab in the Adventure Guide first."))
+        return
+    end
+    if #rows == 0 then
+        window:SetStatus(S.Text("No loot is available from the current Adventure Guide page."))
+        return
+    end
+    S.ToolListWindow.Open(Plan.owner, { title = "Adventure Guide", help = "Select an item to save as a loot goal.",
+        rows = function() return rows end, valid = Plan.CanEdit,
+        actions = { W.Action("Save", function(_, row, picker)
+            if Plan.Loot.Save(row.loot) then
+                S.ToolListWindow.Close(Plan.owner)
+            else
+                picker:SetStatus(S.Text("The loot list is full."))
+            end
+        end, true, "primary") } })
+end
+
+local function LootActions()
+    local actions = { W.Action("Add item", AddLoot, false, "primary"),
+        W.Action("Remove", function(_, row) W.Remove("loot", row) end, true, "danger"),
+        W.Action("Toggle equipped items", function()
+            W.hideEquipped = not W.hideEquipped
+            W.Refresh()
+        end) }
+    if not NS.Client.isForever then actions[#actions + 1] = W.Action("Import guide loot", BrowseLoot) end
+    return actions
+end
+
+local function CorrectionAction(field, label, guidance)
+    local action = W.Action(label, function(_, _, window)
+        if Plan.Loadouts.Open(field) then
+            if guidance then S.Print(S.Text(guidance)) end
+            Plan.Board.Dismiss(Plan.owner)
+        else
+            window:SetStatus(S.Text("Unavailable on this client or in combat."))
+        end
+    end, true)
+    action.enabled = function(_, row)
+        return row ~= nil and row.differences ~= nil and row.differences[field] == true and Plan.Loadouts.CanOpen(field) == true
+    end
+    return action
+end
+
 function W.Actions(tab)
+    if tab == "loot" then return LootActions() end
     if tab == "characters" then
         return { W.Action("Refresh current character", function() Plan.Weekly.Request() Plan.Weekly.Capture() end, false, "primary"),
             W.Action("Forget character", function(_, row) W.Remove("characters", row) end, true, "danger") }
@@ -102,7 +169,10 @@ function W.Actions(tab)
             window:SetStatus(Plan.Loadouts.Save() and S.Text("Current loadout saved for this instance.")
                 or S.Text("Enter a dungeon or raid and select a talent loadout first."))
         end, false, "primary"), W.Action("Delete loadout", function(_, row) W.Remove("loadouts", row) end, true, "danger"),
-            W.Action("Loadout settings", function() S.Open("loadoutReminder") end) }
+            W.Action("Loadout settings", function() S.Open("loadoutReminder") end),
+            CorrectionAction("talents", "Talents"),
+            CorrectionAction("loot", "Loot specialization", "Choose Loot Specialization in the player menu."),
+            CorrectionAction("gear", "Equipment sets") }
         actions[1].enabled = function() return Plan.CanEdit() and not NS.Client.isForever and Plan.Instance() ~= nil end
         return actions
     end

@@ -27,7 +27,7 @@ Module("inventoryProtection", "Never sell items", "Protect selected items and eq
 })
 NS.SuiteCatalog.inventoryProtection.rules.sets.help =
     "When equipment sets exist, all equippable items are protected. Exact set membership is unavailable to this helper."
-Module("bankTransfer", "Bank transfer preview", "Review matching stacks and move one selected stack with each click while your bank is open.", true)
+Module("bankTransfer", "Bank transfer preview", "Review matching stacks and move one selected stack with each click while your bank is open.", false)
 Module("mailTemplates", "Mail templates",
     "Prepare mail for your own recorded characters with saved subjects and item quantities. Sending stays manual.", true, {
     B.String("templates", "Mail template data", "", 24000),

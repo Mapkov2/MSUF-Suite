@@ -322,7 +322,7 @@ Support.Load(root,"MSUF_Suite",Suite,"Core/HostBridge.lua")
 assert(loadfile(root.."/MSUF_Suite/Integrations/MapkoSkin.lua"))("MSUF_Suite",Suite)
 assert(Suite.Database.Initialize(nil))
 Suite.Suite.Normalize(Suite.DB)
-local files={"Data","TargetFilter","CombatDetails","Recap","Navigation","Favorites","Styling","IconLayout","Rows","Window","Breakdown","Menus","Report","TimerStyle","Timer","Visibility","Controller"}
+local files={"Data","TargetFilter","CombatDetails","Recap","Navigation","Favorites","Styling","IconLayout","Rows","Window","Breakdown","Menus","PullCompareData","PullCompare","Report","TimerStyle","Timer","Visibility","Controller"}
 local private={}
 -- Blizzard builds its shared font objects at startup on every client.
 GameFontHighlightSmall = { GetFont = function() return "Fonts\\FRIZQT__.TTF", 12, "" end }

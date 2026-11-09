@@ -20,7 +20,10 @@ if not page then
     elseif HasOverrideActionBar and HasOverrideActionBar() then page=GetOverrideBarIndex()
     elseif HasTempShapeshiftActionBar and HasTempShapeshiftActionBar() then page=GetTempShapeshiftBarIndex()
     elseif HasBonusActionBar and HasBonusActionBar() and GetActionBarPage()==1 then page=GetBonusBarIndex()
-    elseif GetActionBarPage then page=GetActionBarPage() end
+    elseif GetActionBarPage then
+        page=GetActionBarPage()
+        if page and self:GetAttribute("reserved-page-"..page) then page=1 end
+    end
 end
 page=tonumber(page) or 1
 if page<1 then page=1 end
@@ -37,7 +40,26 @@ self:SetAttribute("action",(self:GetAttribute("index") or 1)+(page-1)*12)
 ]] .. AB.SNIPPET.BUTTON
 
 local SPECIAL = "[vehicleui] vehicle; [overridebar] override; [possessbar] possess; [shapeshift] shapeshift; "
-local MANUAL = "[bar:2] 2; [bar:3] 3; [bar:4] 4; [bar:5] 5; [bar:6] 6; "
+local FIRST_MANUAL_PAGE, LAST_MANUAL_PAGE = 2, 6
+local pageOwner, reservedAttribute = {}, {}
+for page = FIRST_MANUAL_PAGE, LAST_MANUAL_PAGE do
+    reservedAttribute[page] = "reserved-page-" .. page
+end
+for index = AB.ENUM.BAR.FIRST_NATIVE, AB.ENUM.BAR.LAST_ACTION do
+    local slot = AB.FIRST_SLOT[index]
+    local page = slot and math.floor((slot - 1) / AB.BUTTONS) + 1
+    if page and page >= FIRST_MANUAL_PAGE and page <= LAST_MANUAL_PAGE then
+        pageOwner[page] = AB.KEYS[index].Visibility
+    end
+end
+
+-- Mouseover, combat and group rules can change in combat. Keep a fixed bar's
+-- page reserved until the user explicitly turns that bar off.
+function AB.ReservedPage(config, page)
+    local key = pageOwner[page]
+    local mode = key and config[key]
+    return mode ~= nil and mode ~= AB.ENUM.VISIBILITY.NEVER
+end
 local FORMS = "[bonusbar:1] 7; [bonusbar:2] 8; [bonusbar:3] 9; [bonusbar:4] 10; "
 
 -- Skyriding only exists on Retail. On Forever bonus bar 5 is the possess
@@ -49,7 +71,16 @@ end
 -- True when bar 1 must not follow Blizzard's native page: its keys then
 -- click the suite buttons instead of the hidden Blizzard ones.
 function AB.CustomPaging(config)
-    return config.pagingTarget or config.pagingModifiers or config.disableFormPaging or SkyridingOptOut(config) or false
+    if config.pagingTarget or config.pagingModifiers or config.disableFormPaging or SkyridingOptOut(config) then return true end
+    for page = FIRST_MANUAL_PAGE, LAST_MANUAL_PAGE do
+        if AB.ReservedPage(config, page) then return true end
+    end
+    return false
+end
+
+local function AddPage(driver, condition, page, config)
+    if AB.ReservedPage(config, page) then return driver end
+    return driver .. condition .. page .. "; "
 end
 
 -- Blizzard's order: vehicle/override/possess, manual pages 2-6 (which beat
@@ -59,16 +90,35 @@ end
 function AB.PageDriver(config)
     local driver = SPECIAL
     if config.pagingModifiers then
-        driver = driver .. "[mod:shift] " .. config.pageShift .. "; [mod:ctrl] " .. config.pageCtrl
-            .. "; [mod:alt] " .. config.pageAlt .. "; "
+        driver = AddPage(driver, "[mod:shift] ", config.pageShift, config)
+        driver = AddPage(driver, "[mod:ctrl] ", config.pageCtrl, config)
+        driver = AddPage(driver, "[mod:alt] ", config.pageAlt, config)
     end
     if config.pagingTarget then
-        driver = driver .. "[help] " .. config.pageFriendly .. "; [harm] " .. config.pageHostile .. "; "
+        driver = AddPage(driver, "[help] ", config.pageFriendly, config)
+        driver = AddPage(driver, "[harm] ", config.pageHostile, config)
     end
-    driver = driver .. MANUAL
+    for page = FIRST_MANUAL_PAGE, LAST_MANUAL_PAGE do
+        driver = AddPage(driver, "[bar:" .. page .. "] ", page, config)
+    end
     if not config.disableFormPaging then driver = driver .. FORMS end
     if not SkyridingOptOut(config) then driver = driver .. "[bonusbar:5] 11; " end
     return driver .. "1"
+end
+
+-- The special states can fall back to Blizzard's numeric page. Keep their
+-- fallback subject to the same reservation as the compiled ordinary clauses.
+local function ApplyReservations(header, config)
+    local changed = false
+    for page = FIRST_MANUAL_PAGE, LAST_MANUAL_PAGE do
+        local key = reservedAttribute[page]
+        local reserved = AB.ReservedPage(config, page) or nil
+        if header:GetAttribute(key) ~= reserved then
+            header:SetAttribute(key, reserved)
+            changed = true
+        end
+    end
+    return changed
 end
 
 -- Registers (or keeps) the bar 1 driver. Re-registering an unchanged driver
@@ -84,14 +134,19 @@ function AB.ApplyPaging()
         if main then SecureHandlerSetFrameRef(header, "main", main) end
         bar.pageReady = true
     end
-    local mirror = not AB.CustomPaging(M.config)
-    local changed = header:GetAttribute("mirror") ~= mirror
-    header:SetAttribute("mirror", mirror)
-    local driver = AB.PageDriver(M.config)
+    local config = M.config
+    bar.customPaging = AB.CustomPaging(config)
+    local mirror = not bar.customPaging
+    local mirrorChanged = header:GetAttribute("mirror") ~= mirror
+    if mirrorChanged then header:SetAttribute("mirror", mirror) end
+    local reservedChanged = ApplyReservations(header, config)
+    local state = header:GetAttribute("state-page")
+    local driver = AB.PageDriver(config)
     if bar.pageDriver ~= driver then
         bar.pageDriver = driver
         RegisterStateDriver(header, "page", driver)
-    elseif changed then
+    end
+    if (mirrorChanged or reservedChanged) and state == header:GetAttribute("state-page") then
         AB.Execute(header, AB.SNIPPET.PAGE_STATE)
     end
 end

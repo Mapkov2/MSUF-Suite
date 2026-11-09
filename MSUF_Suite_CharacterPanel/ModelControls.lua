@@ -130,7 +130,9 @@ end
 
 local function MakeToolbar(view, makeButton)
     local toolbar = S.CreateFrame("Frame", nil, view.modelHost)
-    if view.nativeLayout then toolbar:SetFrameLevel(NS.Window.NativeLevel(view, view.nativeLayout.modelLevel + 2)) end
+    -- The native slot hit spans cross the model. Keep the toolbar above
+    -- the same masks as the viewport input, below the report cover.
+    if view.modelInput then toolbar:SetFrameLevel(view.modelInput:GetFrameLevel() + 1) end
     toolbar:SetPoint("TOP", 0, -5)
     toolbar:SetSize(#BUTTONS * (BUTTON_SIZE + GAP) - GAP, BUTTON_SIZE)
     local click = view.nativeLayout and ClickNative or Click

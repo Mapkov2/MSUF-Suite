@@ -20,7 +20,8 @@ end
 local function Build(dedicated)
     if initialized then return end
     initialized = true
-    local excluded = { OpacityFrame = true }
+    -- The dedicated Forever skin tracks this root even on a combat load.
+    local excluded = { OpacityFrame = true, LegacySystemFrame = true }
     for _, name in pairs(dedicated) do excluded[name] = true end
     for _, entry in ipairs(NS.BlizzardCatalog.entries) do
         if NS.BlizzardCatalog.IsEntryGlassReady(entry) then

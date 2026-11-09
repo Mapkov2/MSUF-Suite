@@ -146,6 +146,17 @@ local function ValidRecord(entry)
         and type(entry.applied) == "string"
 end
 
+-- The Blizzard value under a still-owned override. An external edit after
+-- the Suite's write has already taken precedence over the recovery record.
+function S.CVarBaseline(id, key, current)
+    if not Public(current) or type(current) ~= "string" then return nil end
+    local recovery = Recovery(false)
+    local owned = recovery and recovery[id]
+    local entry = type(owned) == "table" and owned[key]
+    if ValidRecord(entry) and current == entry.applied then return entry.before end
+    return current
+end
+
 -- Hands saved CVars back to their previous value. A record is dropped only
 -- once it is resolved: restored, overridden by a later change, or malformed.
 -- Unknown owners and unreadable values keep their record for a later attempt.
@@ -437,18 +448,32 @@ function Context:HideUnprotected(frame, hidden)
     end
 end
 
+local function PublicAnchor(point, relative, relativePoint, x, y)
+    return Public(point) and Public(relative) and Public(relativePoint) and Public(x) and Public(y)
+end
+
 local function SetOwnedAnchor(self, frame, point, relative, relativePoint, x, y)
     if not Accessible(frame) or not frame.GetNumPoints then return end
+    -- A temporary whisper edit box can expose secret anchor data in instances.
+    local count = frame:GetNumPoints()
+    if not S.Number(count) then return end
     local record = self.points[frame]
-    if not record then
-        record = { before = {} }
-        for i = 1, frame:GetNumPoints() do record.before[i] = { frame:GetPoint(i) } end
+    local before = not record and {}
+    for i = 1, count do
+        local nativePoint, nativeRelative, nativeEdge, nativeX, nativeY = frame:GetPoint(i)
+        if not PublicAnchor(nativePoint, nativeRelative, nativeEdge, nativeX, nativeY) then return end
+        if before then
+            before[i] = { nativePoint, nativeRelative, nativeEdge, nativeX, nativeY }
+        end
+    end
+    if before then
+        record = { before = before }
         self.points[frame] = record
     end
     frame:ClearAllPoints()
     frame:SetPoint(point, relative, relativePoint, x, y)
     local actualPoint, actualRelative, actualRelativePoint, actualX, actualY = frame:GetPoint(1)
-    if Public(actualPoint) and Public(actualX) and Public(actualY) then
+    if PublicAnchor(actualPoint, actualRelative, actualRelativePoint, actualX, actualY) then
         record.point, record.x, record.y = actualPoint, actualX, actualY
         record.relative, record.relativePoint = actualRelative, actualRelativePoint
     end
@@ -475,12 +500,16 @@ end
 function Context:RestorePoints(frame)
     local record = self.points[frame]
     if not record or not Accessible(frame) then return end
-    local point, relative, relativePoint, x, y = frame:GetPoint(1)
-    if Public(point) and Public(relative) and Public(relativePoint) and Public(x) and Public(y)
-        and frame:GetNumPoints() == 1 and point == record.point and relative == record.relative
-        and relativePoint == record.relativePoint and x == record.x and y == record.y then
-        frame:ClearAllPoints()
-        for i = 1, #record.before do frame:SetPoint(unpack(record.before[i])) end
+    local count = frame:GetNumPoints()
+    if not S.Number(count) then return end
+    if count == 1 then
+        local point, relative, relativePoint, x, y = frame:GetPoint(1)
+        if not PublicAnchor(point, relative, relativePoint, x, y) then return end
+        if point == record.point and relative == record.relative and relativePoint == record.relativePoint
+            and x == record.x and y == record.y then
+            frame:ClearAllPoints()
+            for i = 1, #record.before do frame:SetPoint(unpack(record.before[i], 1, 5)) end
+        end
     end
     self.points[frame] = nil
 end

@@ -863,8 +863,7 @@ do
     for _, section in ipairs(ctx.sections) do
         if section.sectionId == "suite_bags_bank" then bankSection = true end
     end
-    assert(bankSection == (flavor == "Mainline"),
-        "Bank organisation must render only when this client has visible bank controls")
+    assert(bankSection, "Bank organisation must render for both supported Suite clients")
     -- Reset section restores the visible organisation settings only; the
     -- player's custom categories are data, not a setting of that section.
     local organisation

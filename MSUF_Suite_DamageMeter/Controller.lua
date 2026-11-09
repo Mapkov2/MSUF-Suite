@@ -331,6 +331,7 @@ local function CurrentUpdated(self)
     if dirty then D.RequestPaint() end
 end
 local function Reset()
+    D.ClosePullCompare()
     D.InvalidateTargets()
     for i = 1, D.MAX do
         local win = D.windows[i]
@@ -352,6 +353,7 @@ end
 local function CombatStart(self)
     D.InvalidateTargets()
     M.inCombat = true
+    D.ClosePullCompare()
     M.combatStart = GetTime()
     M.nextPaint = nil
     M.preview = false
@@ -414,6 +416,7 @@ end
 
 -- isInitialLogin: the first world entry of a session, when the role meters apply.
 local function World(self, _, isInitialLogin)
+    D.ClosePullCompare()
     D.ClearIdentities()
     D.InvalidateTargets()
     local combat = NS.IsCombatLocked()
@@ -491,10 +494,10 @@ function D.UpdateEvents()
     local data = shown and MeterShown(false)
     M.dataVisible = data == true
     WantThreat(threat)
-    Want("PLAYER_REGEN_DISABLED", clock, CombatStart)
+    Want("PLAYER_REGEN_DISABLED", clock or M.compareOpen, CombatStart)
     Want("PLAYER_REGEN_ENABLED", clock or M.inCombat, CombatEnd)
     local roles = D.WantsRoleMeters()
-    Want("PLAYER_ENTERING_WORLD", clock or roles, World)
+    Want("PLAYER_ENTERING_WORLD", clock or roles or M.compareOpen, World)
     Want("PLAYER_SPECIALIZATION_CHANGED", roles, D.RoleChanged, "player")
     Want("ZONE_CHANGED_NEW_AREA", possible, World)
     Want("GROUP_ROSTER_UPDATE", (possible and c.visibility == VISIBILITY.GROUP) or (shown and D.WantsGroupDetails()) or threat, Roster)
@@ -503,7 +506,7 @@ function D.UpdateEvents()
     Want("CHALLENGE_MODE_COMPLETED", mythic, D.MythicEnd)
     Want("DAMAGE_METER_COMBAT_SESSION_UPDATED", data, SessionUpdated)
     Want("DAMAGE_METER_CURRENT_SESSION_UPDATED", shown, CurrentUpdated)
-    Want("DAMAGE_METER_RESET", shown, Reset)
+    Want("DAMAGE_METER_RESET", shown or M.compareOpen, Reset)
     Want("ENCOUNTER_START", shown, Encounter)
     Want("ENCOUNTER_END", shown, Encounter)
     Want("ADDON_RESTRICTION_STATE_CHANGED", shown, Restriction)
@@ -614,6 +617,7 @@ end
 
 -- Frames are kept and reused by the next Enable.
 function M:Disable()
+    D.ClosePullCompare()
     D.UntrackUIVisibility()
     NS.HostBridge.WatchIconSkins("damageMeter", false)
     M.sessionHidden = nil

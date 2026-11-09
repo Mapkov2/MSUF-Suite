@@ -2,6 +2,7 @@ local _, P = ...
 local S, M = P.Suite, P.BagsModule
 local Grid, Model, FreeSlots = P.GridView, P.InventoryModel, P.FreeSlots
 local VIEW, POOR = P.NS.BagsView, Enum.ItemQuality.Poor
+local QUEST_CLASS, QUEST_BIND = Enum.ItemClass.Questitem, Enum.ItemBind.Quest
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 local CELL, TOP, FOOTER, COMBAT_TOP = 40, 122, 50, 66
 local InventoryView
@@ -35,9 +36,10 @@ local function SetCount(button, count, path)
         saved = { text:GetFont() }
         InventoryView.nativeCountFonts[text] = saved
     end
-    if saved.path ~= path or saved.size ~= M.config.itemCountSize then
-        S.SetFont(text, path, M.config.itemCountSize, "OUTLINE")
-        saved.path, saved.size = path, M.config.itemCountSize
+    local size = InventoryView.countSize
+    if saved.path ~= path or saved.size ~= size then
+        S.SetFont(text, path, size, "OUTLINE")
+        saved.path, saved.size = path, size
     end
     if count > 1 then
         text:SetText(tostring(GetFormattedItemQuantity(count, button.maxDisplayCount)))
@@ -47,12 +49,19 @@ local function SetCount(button, count, path)
     end
 end
 
+local function InactiveQuest(item)
+    return item.quest == false and (item.classID == QUEST_CLASS or item.bindType == QUEST_BIND)
+end
+Rendering.InactiveQuest = InactiveQuest
+
 local function PaintSlot(item, x, y, row, count, font)
     local button = item.button
     PlaceSlot(button, x, y, row)
     SetCount(button, count, font)
-    local junk = M.config.desaturateJunk and item.quality == POOR
-    SetItemButtonDesaturated(button, item.locked or junk or false)
+    local config = M.config
+    local gray = item.locked or config.desaturateJunk and item.quality == POOR
+        or config.desaturateInactiveQuestItems and InactiveQuest(item)
+    SetItemButtonDesaturated(button, gray or false)
     P.InventoryDetails.Paint(button, item, font)
 end
 
@@ -155,6 +164,7 @@ function Rendering.Suite(visualPass)
     InventoryView.scroll = min(InventoryView.scroll, InventoryView.maxScroll)
     ClearVisible()
     local font = Grid.FontPath()
+    InventoryView.countSize = M.config.itemCountSize + (M.readableValues and 2 or 0)
     for i = 1, #layout do
         local cell = layout[i]
         if cell.line >= InventoryView.scroll and cell.line < InventoryView.scroll + visibleRows then
@@ -195,6 +205,7 @@ function Rendering.Combat()
     M:RefreshWindowLayout()
     ClearVisible()
     local font = Grid.FontPath()
+    InventoryView.countSize = M.config.itemCountSize + (M.readableValues and 2 or 0)
     for i = 1, total do
         local item = items[i]
         PaintSlot(item, 12 + (i - 1) % columns * CELL, -COMBAT_TOP - floor((i - 1) / columns) * CELL, nil,

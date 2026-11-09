@@ -555,6 +555,7 @@ function API:GetAppearanceSnapshot()
     return {
         menuAnimations = theme.menuAnimations,
         reduceMotion = theme.reduceMotion,
+        readableValues = theme.readableValues,
         smoothScrolling = theme.smoothScrolling,
         gradient = theme.gradient,
         gradientDirection = theme.gradientDirection,
