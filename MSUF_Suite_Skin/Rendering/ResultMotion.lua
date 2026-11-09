@@ -8,8 +8,22 @@ NS.ResultMotion = Results
 local Safety, Content, Motion = NS.Safety, NS.ContentMotion, NS.Motion
 local visible = {}
 
+local function ClearOpening(state)
+    local pending = state.opening
+    if not pending then return end
+    pending[state.target] = nil
+    state.opening = nil
+end
+
 local function Cancel(state)
+    ClearOpening(state)
     Content.StopOwner(state, state.target)
+end
+
+local function OpeningFinished(target, covered)
+    local state = Results.states[target]
+    state.opening = nil
+    if not covered then Content.Play(target, state, state.provider) end
 end
 
 local function Provider(target)
@@ -29,7 +43,9 @@ local function Layout(state)
     state.provider = provider
     if not collapsed and previous ~= nil and provider ~= nil and Motion.Enabled()
         and Safety.Read(state.target, "IsVisible") == true then
-        Content.Play(state.target, state, provider)
+        ClearOpening(state)
+        state.opening = Content.DeferToOpening(state.target, OpeningFinished)
+        if not state.opening then Content.Play(state.target, state, provider) end
     else Cancel(state) end
 end
 

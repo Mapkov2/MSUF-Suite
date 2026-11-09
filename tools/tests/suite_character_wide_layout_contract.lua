@@ -94,7 +94,7 @@ local function Wide()
 end
 
 -- The options row is still there and writes this setting through the setter.
-local options = assert(io.open(root .. "/MSUF_Suite_Options/Pages/Appearance.lua", "rb"))
+local options = assert(io.open(root .. "/MSUF_Suite_Options/Pages/AppearanceKit.lua", "rb"))
 local page = options:read("*a")
 options:close()
 Check(page:find('{ "Wide layout", "characterDetails", "wideLayout", "CharacterDetails" }', 1, true),

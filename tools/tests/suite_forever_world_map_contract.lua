@@ -20,6 +20,7 @@ local function Widget()
     function w:SetColorTexture(...) self.color = { ... } end
     function w:SetTextColor(...) self.color = { ... } end
     function w:SetText(text) self.text = text; textWrites = textWrites + 1 end
+    function w:SetFormattedText(...) self:SetText(string.format(...)) end
     function w:GetText() return self.text end
     function w:SetSize(x, y) self.width, self.height = x, y end
     function w:SetTexture(texture) self.texture = texture end
@@ -31,10 +32,25 @@ local function Widget()
     return w
 end
 local S = { Text = function(text) return text end,
-    CreateTexture = Widget, CreateFontString = Widget, SetFont = function() fontWrites = fontWrites + 1 end,
+    CreateTexture = Widget, SetFont = function() fontWrites = fontWrites + 1 end,
     GlobalFontPath = function() return "font" end, GamepadUI = function() return gamepad end,
     Install = function(id, module) modules[id] = module end }
+function S.CreateFontString(parent)
+    local label = Widget()
+    label.owner = parent
+    return label
+end
 function S.CreateFrame(_, _, parent, template)
+    if parent == WorldMapFrame and template == nil then
+        local holder = Widget()
+        holder.parent = parent
+        function holder:SetAllPoints(relative) self.relative = relative end
+        function holder:SetFrameLevel(level)
+            assert(S.Finite(level), "unreadable frame level passed to the renderer")
+            self.level = level
+        end
+        return holder
+    end
     Check(parent == nil and template == "MSUFSuiteForeverMapPinTemplate", "only unparented Suite marker frames are created")
     local pin = Widget()
     pin.shown = false
@@ -168,6 +184,7 @@ Load("ForeverMapData.lua")
 Load("ForeverMapPins.lua")
 Load("ForeverMapLabels.lua")
 Load("ForeverMapLocations.lua")
+Load("ForeverMapLayer.lua")
 Load("ForeverWorldMap.lua")
 local module = assert(modules.foreverWorldMap)
 module.active = true
@@ -375,6 +392,105 @@ module.active = true
 module:Enable()
 Flush()
 Check(module.map == WorldMapFrame and #WorldMapFrame.activePins > 0, "re-enable repaints the marker layer")
+
+do
+    local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+    local public = S.Public
+    S.Public = function(value) return not Strict.IsSecret(value) and public(value) end
+    local guidCalls, inside = 0, false
+    local guids = { nameplate2 = "Creature-0-9001-0-6783-42-0000000011" }
+    function UnitGUID(unit)
+        assert(not Strict.IsSecret(unit), "unreadable token passed to UnitGUID")
+        guidCalls = guidCalls + 1
+        return guids[unit]
+    end
+    function IsInInstance() return inside end
+    local forbiddenPlate = { GetUnit = function() error("read a forbidden plate") end }
+    local readablePlate = { GetUnit = function() return "nameplate2" end }
+    C_NamePlate = { GetNamePlates = function() return { forbiddenPlate, readablePlate } end }
+    NS.Safety.IsForbidden = function(frame) return frame == forbiddenPlate end
+    local coordLevel = 36
+    local coords = { PlayerCoords = { GetFrameLevel = function() return coordLevel end }, CursorCoords = {} }
+    WorldMapFrame.overlayFrames = { {}, coords }
+    Check(not module.layerLabel and not events.NAME_PLATE_UNIT_ADDED and guidCalls == 0,
+        "existing profiles leave layer detection asleep")
+
+    module.config.layerID = true
+    module:Refresh()
+    local layer = assert(module.layerLabel, "enabling the option creates a Suite-owned readout")
+    local holder = layer.owner
+    Check(holder.parent == WorldMapFrame and holder.level > coordLevel,
+        "the layer label renders above the map artwork at the native coordinate row level")
+    Check(layer.shown and layer.text == "Observed layer ID: 6783" and layer.point[2] == holder
+        and holder.relative == coords, "uses the fifth GUID field and follows the native coordinate panel")
+    Check(#WorldMapFrame.overlayFrames == 2 and next(coords.CursorCoords) == nil,
+        "the layer label stays out of the native coordinate layout")
+
+    local function Fire(event, ...)
+        assert(events[event], event)(module, event, ...)
+    end
+    local previousWrites = textWrites
+    Fire("NAME_PLATE_UNIT_ADDED", "nameplate2")
+    Check(textWrites == previousWrites, "identical samples skip text writes")
+    guids.target = "Vehicle-0-9001-0-18432-42-0000000022"
+    Fire("PLAYER_TARGET_CHANGED")
+    Check(layer.text == "Observed layer ID: 18432", "vehicle observations can update the raw ID")
+    guids.target = "Player-9001-00000101"
+    Fire("PLAYER_TARGET_CHANGED")
+    guids.target = "Creature-0-9001-0-0-42-0000000011"
+    Fire("PLAYER_TARGET_CHANGED")
+    Check(layer.text == "Observed layer ID: 18432", "player GUIDs and zero IDs are ignored")
+
+    Fire("ZONE_CHANGED_NEW_AREA")
+    Check(layer.text == "Observed layer ID: unknown", "zone change clears the old sample immediately")
+    guids.nameplate2 = "Creature-0-9001-0-27-42-0000000022"
+    Flush()
+    Check(layer.text == "Observed layer ID: 27", "open map reseeds after the zone settles")
+    Fire("ZONE_CHANGED_NEW_AREA")
+    Fire("SHARD_TRANSFER")
+    Flush()
+    Check(layer.text == "Observed layer ID: unknown", "shard transfer cancels a pending sample from the old world")
+
+    Strict.Install()
+    local stop = Strict.Watch(root .. "/MSUF_Suite_QualityOfLife/ForeverMapLayer.lua", { strict = true })
+    guids.target = Strict.New("string")
+    Fire("PLAYER_TARGET_CHANGED")
+    local previousReads = guidCalls
+    Fire("NAME_PLATE_UNIT_ADDED", Strict.New("string"))
+    local violations = stop()
+    Check(#violations == 0 and guidCalls == previousReads and layer.text == "Observed layer ID: unknown",
+        "secret unit tokens and GUIDs are ignored before inspection: " .. table.concat(violations, " | "))
+
+    Fire("PLAYER_LEAVING_WORLD")
+    Check(not layer.shown and not events.NAME_PLATE_UNIT_ADDED, "world transition suspends observation")
+    inside = true
+    Fire("PLAYER_ENTERING_WORLD")
+    Flush()
+    Check(not layer.shown and not events.PLAYER_TARGET_CHANGED, "instances do not sample or display layer IDs")
+    inside = false
+    Fire("PLAYER_ENTERING_WORLD")
+    Flush()
+    Check(layer.shown and layer.text == "Observed layer ID: 27", "return to the open world reseeds visible samples")
+    Fire("ZONE_CHANGED_NEW_AREA")
+    WorldMapFrame:Hide()
+    previousReads = guidCalls
+    Flush()
+    Check(not layer.shown and not events.SHARD_TRANSFER and guidCalls == previousReads,
+        "closing the map removes events and cancels pending native reads")
+    WorldMapFrame:Show()
+    Check(layer.shown and layer.text == "Observed layer ID: 27", "reopening samples fresh evidence")
+    module.config.layerID = false
+    module:Refresh()
+    Check(not layer.shown and not events.SHARD_TRANSFER and not events.NAME_PLATE_UNIT_ADDED,
+        "turning off the setting removes the display and its subscriptions")
+    coordLevel = Strict.New("number")
+    local fresh = { map = WorldMapFrame, config = { layerID = true }, context = module.context }
+    stop = Strict.Watch(root .. "/MSUF_Suite_QualityOfLife/ForeverMapLayer.lua", { strict = true })
+    private.ForeverMapLayer.Sync(fresh)
+    violations = stop()
+    Check(#violations == 0 and not fresh.layerLabel and not events.SHARD_TRANSFER,
+        "a secret frame level cannot reach the owned renderer: " .. table.concat(violations, " | "))
+end
 
 -- Continent masks, not overlapping zone rectangles, decide road/transport
 -- membership. Multiple routes at one physical signpost share one native pin.

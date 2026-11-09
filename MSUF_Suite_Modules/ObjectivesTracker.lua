@@ -12,7 +12,8 @@ local Tr = S.Text
 -- theme and layout (see ObjectivesData.lua for how the files fit together).
 -- Blizzard's own module order puts the zone widgets after the scenario and the
 -- collectibles before the achievements.
-local ORDER = { "scenario", "zone", "focused", "campaign", "important", "complete", "quests", "world", "bonus",
+local ORDER = { "scenario", "zone", "focused", "localQuests", "campaign", "important", "complete", "quests",
+    "otherQuests", "world", "bonus",
     "collectibles", "achievements", "travelersLog", "endeavors", "recipes" }
 local GROUP = {
     scenario = { Tr("SCENARIO"), .39, .64, .90 },
@@ -22,6 +23,8 @@ local GROUP = {
     important = { Tr("IMPORTANT"), .94, .52, .79 },
     complete = { Tr("READY TO TURN IN"), .39, .86, .54 },
     quests = { Tr("QUESTS"), .91, .92, .95 },
+    localQuests = { Tr("CURRENT ZONE"), .91, .92, .95 },
+    otherQuests = { Tr("OTHER ZONES"), .91, .92, .95 },
     world = { Tr("WORLD QUESTS"), .73, .58, .94 },
     bonus = { Tr("BONUS OBJECTIVES"), .47, .82, .80 },
     collectibles = { Tr("COLLECTIBLES"), .93, .66, .40 },
@@ -38,6 +41,7 @@ local GROUP_COLOR_KEYS = {
     world = "worldColor", bonus = "bonusColor", achievements = "achievementsColor",
     zone = "scenarioColor", collectibles = "achievementsColor",
     travelersLog = "questsColor", endeavors = "questsColor",
+    localQuests = "questsColor", otherQuests = "questsColor",
 }
 -- Tracked recipes (professions) exist on Retail only and have their own color.
 if not NS.Client.isForever then GROUP_COLOR_KEYS.recipes = "recipesColor" end

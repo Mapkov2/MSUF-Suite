@@ -68,6 +68,33 @@ box:TriggerEvent("layout")
 Check(state.records[second].group.plays == plays, "provider replacement invented a tree toggle")
 NS.GenericWindows.releaseContent("generic-tree")
 Check(not state.active and not state.registered, "generic owner release retained observers")
+
+-- Blizzard's AddOns tree never removes root entries when a category closes.
+-- Only the nested rows need an owned copy to finish the exit animation.
+local nativeRoot = Frame(UIParent, true)
+local nativeBox = List(nativeRoot, true)
+nativeRoot.ScrollBox = nativeBox
+local treeRoot = Node({})
+local categoryNode = Node({ category = "Group" }, treeRoot, 1)
+local childNode = Node({ addonIndex = 1 }, categoryNode)
+local looseNode = Node({ addonIndex = 2 }, treeRoot)
+local function NativeDepth(node) return node.parent and node.parent:GetDepth() + 1 or 0 end
+treeRoot.GetDepth, categoryNode.GetDepth, childNode.GetDepth, looseNode.GetDepth = NativeDepth, NativeDepth, NativeDepth, NativeDepth
+local categoryRow, childRow = Row(nativeBox, categoryNode, 400), Row(nativeBox, childNode, 380)
+local looseRow = Row(nativeBox, looseNode, 360)
+childRow.Title = childRow.label
+nativeBox.rows = { categoryRow, childRow, looseRow }
+Check(NS.AddonListMotion.Attach(nativeRoot, "native-addon-list"), "native AddOns list could not attach")
+local nativeState = NS.AddonListMotion.states[nativeRoot]
+Check(not nativeState.records[categoryRow].ghost and not nativeState.records[looseRow].ghost,
+    "root AddOns rows captured unused collapse artwork")
+local childGhost = nativeState.records[childRow].ghost
+Check(childGhost and childGhost.fonts[1].text == "Native label", "nested AddOns row lost its artwork copy")
+categoryNode.collapsed = true
+nativeBox:TriggerEvent("released", childRow, childNode)
+Check(childGhost.group:IsPlaying(), "native AddOns category lost its exit animation")
+NS.AddonListMotion.DisableOwner("native-addon-list")
+
 -- Settings replaces initializer tables and its provider on every disclosure.
 local settings = Frame(UIParent, true)
 function settings:CreateCategories() end
@@ -185,6 +212,101 @@ quest:Fire("OnVerticalScroll", 20)
 Check(not questState.records[title].ghost.group:IsPlaying() and not questState.records[following].group:IsPlaying(),
     "legacy scrolling retained closing copies or row travel")
 NS.AddonListMotion.DisableOwner("quest-pool")
+
+local function CheckQuestCaptureBudget()
+    local box = Frame(UIParent, true)
+    box.kind, box.top, box.height = "ScrollFrame", 400, 120
+    function box:GetEffectiveAlpha() return 1 end
+    local header = Frame(box, true)
+    header.sortKey, header.isCollapsed, header.top = "visible", false, 400
+    local visible, partial, offscreen = Row(box, {}, 380), Row(box, {}, 285), Row(box, {}, 460)
+    local regionReads, safetyChecks, writes = 0, 0, 0
+    local titles = { visible, partial, offscreen }
+    for index, row in ipairs(titles) do
+        row.info = { questID = index, header = { headerSortKey = "visible" } }
+        row.GetRegions = function(self) regionReads = regionReads + 1 return self.label end
+        row.label.IsForbidden = function() safetyChecks = safetyChecks + 1 return false end
+        function row.label:GetEffectiveAlpha() return 1 end
+        row.label.top = row.top
+    end
+    box.headerFramePool, box.titleFramePool = NativePool({ header }), NativePool(titles)
+    NS.CollapseCollections.Track(box, "quest-budget")
+    local engine = NS.AddonListMotion
+    local state = engine.scrollStates[box]
+    local visibleCopy = state.records[visible].ghost
+    local function CountWrites(region, name)
+        local native = region[name]
+        region[name] = function(self, ...) writes = writes + 1 return native(self, ...) end
+    end
+    for _, name in ipairs({ "SetText", "SetFont", "SetTextColor", "SetPoint", "SetAlpha", "SetSize", "Show" }) do
+        CountWrites(visibleCopy.fonts[1], name)
+    end
+    regionReads, safetyChecks, writes = 0, 0, 0
+    for _ = 1, 12 do
+        visible:Hide()
+        visible.info = { questID = 1, header = { headerSortKey = "visible" } }
+        visible:Show()
+        engine.RebuildCollection(box)
+    end
+    print(("Quest warm repool (12 updates): %d region walks, %d forbidden checks, %d snapshot writes")
+        :format(regionReads, safetyChecks, writes))
+    Check(writes == 0, "unchanged quest repool rewrote the snapshot")
+    Check(regionReads == 36 and safetyChecks <= 468, "quest refresh repeated a region walk or its read guards")
+    Check(state.records[partial].ghost and state.records[offscreen].ghost,
+        "quest capture dropped artwork that can move into the viewport")
+
+    visible.info = { questID = 91, header = { headerSortKey = "visible" } }
+    visible.label.text = "Recycled title"
+    visible.label.color = { 0.8, 0.4, 0.2, 1 }
+    engine.RebuildCollection(box)
+    Check(visibleCopy.node == "quest:91" and visibleCopy.fonts[1].text == "Recycled title"
+        and visibleCopy.fonts[1].color[2] == 0.4, "quest repool reused a stale quest or style snapshot")
+    visible.label.color = { 0.3, 0.5, 0.7, 1 }
+    engine.RebuildCollection(box)
+    Check(visibleCopy.fonts[1].color[2] == 0.5, "same quest snapshot missed a visible recolor")
+
+    box.scrollOffset = 100
+    offscreen.top, offscreen.label.top = 340, 340
+    box:Fire("OnVerticalScroll", 100)
+    Check(state.records[offscreen].ghost and state.records[offscreen].ghost.node == "quest:3",
+        "scrolling into the viewport did not capture the quest")
+
+    box.top = nil
+    partial.top, partial.label.top = 110, 110
+    engine.RebuildCollection(box)
+    Check(state.records[partial].ghost.node == "quest:2", "unavailable viewport geometry discarded a snapshot")
+
+    box:Hide()
+    visible.label.text = "Reopened title"
+    box:Show()
+    box:Fire("OnShow")
+    Check(visibleCopy.fonts[1].text == "Reopened title", "quest reopen reused old snapshot artwork")
+    NS.AddonListMotion.DisableOwner("quest-budget")
+end
+CheckQuestCaptureBudget()
+
+local function CheckQuestExitEntersClip()
+    local box = Frame(UIParent, true)
+    box.kind, box.top, box.height = "ScrollFrame", 400, 120
+    local header = Frame(box, true)
+    header.sortKey, header.isCollapsed, header.top, header.height = "parent", false, 350, 20
+    local child = Row(box, {}, 240)
+    child.label.top = child.top
+    child.info = { questID = 101, header = { headerSortKey = "parent" } }
+    box.headerFramePool, box.titleFramePool = NativePool({ header }), NativePool({ child })
+    NS.CollapseCollections.Track(box, "quest-clip")
+    local record = NS.AddonListMotion.scrollStates[box].records[child]
+    Check(record.ghost ~= nil, "below-viewport quest lost a copy that can enter the viewport")
+    header.isCollapsed = true
+    child:Hide()
+    box.titleFramePool.rows = {}
+    NS.AddonListMotion.RebuildCollection(box)
+    Check(record.ghost.group:IsPlaying() and record.ghost.targetTop > 280,
+        "collapse did not keep the closing artwork entering the visible clip")
+    NS.AddonListMotion.DisableOwner("quest-clip")
+end
+CheckQuestExitEntersClip()
+
 local nativeSection = Frame(UIParent, true)
 nativeSection.myID, nativeSection.parentID, nativeSection.expanded = 27123, 1409, true
 Check(NS.CollapseCollectionRows.Encounter({}, nativeSection) == "header:27123",

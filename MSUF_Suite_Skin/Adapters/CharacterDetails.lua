@@ -26,6 +26,12 @@ local events = {
     "GET_ITEM_INFO_RECEIVED", "ITEM_DATA_LOAD_RESULT", "INSPECT_READY", "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_LEVEL_UP", "PLAYER_AVG_ITEM_LEVEL_UPDATE",
 }
+local ranged = { 18, "RangedSlot" }
+
+function Details.IsAvailable()
+    return NS.Client.modernEquipment or NS.Client.isForever
+end
+
 local OPTION_KEYS = {
     enabled = true, expanded = true, styleEQoL = true, inlineGear = true, wideLayout = true,
 }
@@ -59,13 +65,16 @@ end
 -- Whether this view shows item data (and needs events and reads).
 local function NeedsData(v)
     local config = Config()
-    if v.kind == "character" and config.view then return config.view ~= "classic" end
+    if v.kind == "character" and config.view then
+        if v.forever and config.view == "modern" then return config.inlineGear ~= false end
+        return config.view ~= "classic"
+    end
     return config.expanded or (v.kind == "inspect" and config.inlineGear ~= false)
         or (v.kind == "character" and config.inlineGear == true)
 end
 
 local function Enabled(v)
-    if not NS.Client.modernEquipment then return false end
+    if not Details.IsAvailable() then return false end
     local config = Config()
     return v.active and NS.DB and NS.DB.enabled and NS.DB.skins.blizzardWindows ~= false
         and NS.GenericWindows.IsCategoryEnabled("character")
@@ -263,7 +272,7 @@ local function ReadRow(v, row, slot, dirtySlots)
     local link = Text(Read(GetInventoryItemLink, v.unit, id))
     local info = NS.EquipmentInfo.Read(link, v.unit, id, row.audit, v.guid)
     row.audit = info
-    NS.EquipmentInfo.Check(info, v.level)
+    if not v.forever then NS.EquipmentInfo.Check(info, v.level) end
     local texture = info.texture or Read(GetInventoryItemTexture, v.unit, id)
     local quality = info.quality or Number(Read(GetInventoryItemQuality, v.unit, id))
     row.inventoryTexture, row.quality = texture, quality
@@ -316,15 +325,22 @@ end
 
 local function Disclosure(v)
     local config = Config()
-    if v.kind == "character" and config.view then
-        v.panel:SetShown(config.view == "list")
+    local view = v.kind == "character" and config.view
+    local expanded = view and view == "list" or not view and config.expanded
+    if expanded and not v.list then
+        local rail = NS.Safety.Field(v.root, "ModeTabs")
+        NS.AdapterKit.PositionSidecar(v.panel, v.root, rail, v)
+    end
+    v.panel:SetShown(expanded == true)
+    if view then
         v.toggle:Hide()
         return
     end
-    v.panel:SetShown(config.expanded)
     v.toggle:Show()
     v.toggle:ClearAllPoints()
-    if config.expanded then
+    if v.kind == "inspect" then
+        v.toggle:SetPoint("TOPRIGHT", v.root, "TOPRIGHT", -12, -33)
+    elseif config.expanded then
         v.toggle:SetPoint("TOPRIGHT", v.panel, "TOPRIGHT", -8, -8)
     else
         v.toggle:SetPoint("TOPLEFT", v.root, "TOPRIGHT", 8, -34)
@@ -334,10 +350,10 @@ local function Disclosure(v)
     v.toggleText:SetShown(not action or action.style == "native")
 end
 
-local function FooterText(waiting, lowest)
+local function FooterText(waiting, lowest, forever)
     if waiting then return NS.L.DOSSIER_PENDING end
     if lowest then return string.format(NS.L.DOSSIER_DURABILITY, lowest * 100) end
-    return NS.L.DOSSIER_INSPECT_NOTE
+    return forever and "" or NS.L.DOSSIER_INSPECT_NOTE
 end
 
 local function RefreshDurability(v)
@@ -347,30 +363,8 @@ local function RefreshDurability(v)
         if value then lowest = math.min(lowest or 1, value) end
         waiting = waiting or (row.audit and row.audit.pending)
     end
-    v.footer:SetText(FooterText(waiting, lowest))
+    v.footer:SetText(FooterText(waiting, lowest, v.forever))
     NS.GearAnnotations.UpdateSummary(v)
-end
-
-local function SpecializationName(v, unit)
-    local sex = Number(Read(UnitSex, unit))
-    if v.kind == "character" then
-        local index = Number(Read(C_SpecializationInfo.GetSpecialization))
-        if not index then return nil end
-        local _, name = Read(C_SpecializationInfo.GetSpecializationInfo, index, false, false, nil, sex)
-        return Text(name)
-    end
-    local id = Number(Read(C_SpecializationInfo.GetInspectSpecialization, unit))
-    if not id or id <= 0 then return nil end
-    local _, name = Read(GetSpecializationInfoByID, id, sex)
-    return Text(name)
-end
-
-local function AverageItemLevel(v, unit)
-    if v.kind == "character" then
-        local _, equipped = Read(GetAverageItemLevel)
-        return Number(equipped)
-    end
-    return Number(Read(C_PaperDollInfo.GetInspectItemLevel, unit))
 end
 
 local function UpdateCheckSummary(v)
@@ -399,7 +393,7 @@ end
 local function PaintRows(v, dirtySlots)
     local loaded, enchantCount, gemCount, lowest, waiting = 0, 0, 0, nil, false
     for id in pairs(v.pending) do v.pending[id] = nil end
-    for index, slot in ipairs(slots) do
+    for index, slot in ipairs(v.slots or slots) do
         local itemLevel, enchanted, gems, durability, pending = ReadRow(v, v.rows[index], slot, dirtySlots)
         if itemLevel then loaded = loaded + 1 end
         if enchanted then enchantCount = enchantCount + 1 end
@@ -407,8 +401,12 @@ local function PaintRows(v, dirtySlots)
         if durability then lowest = math.min(lowest or 1, durability) end
         waiting = waiting or pending
     end
-    v.summary:SetText(string.format(NS.L.DOSSIER_SUMMARY, loaded, enchantCount, gemCount))
-    v.footer:SetText(FooterText(waiting, lowest))
+    if v.forever then
+        v.summary:SetText(string.format(NS.L.DOSSIER_SIMPLE_SUMMARY, loaded, enchantCount))
+    else
+        v.summary:SetText(string.format(NS.L.DOSSIER_SUMMARY, loaded, enchantCount, gemCount))
+    end
+    v.footer:SetText(FooterText(waiting, lowest, v.forever))
 end
 
 -- dirtySlots: nil for a full read, or the set of slot ids that changed.
@@ -470,11 +468,11 @@ function Details.Refresh(v, dirtySlots, durabilityOnly)
     -- A target swap while an inspect window stays visible is not permission
     -- to reuse the prior inspect cache. Wait for Blizzard's matching ready GUID.
     if v.kind == "inspect" and v.readyGUID ~= guid then return end
-    v.specialization:SetText(SpecializationName(v, unit) or "")
-    local average = AverageItemLevel(v, unit)
+    v.specialization:SetText(NS.EquipmentInfo.SpecializationName(v.kind, unit) or "")
+    local average = NS.EquipmentInfo.AverageItemLevel(v.kind, unit)
     v.average:SetText(average and average > 0 and string.format("%.1f", average) or "--")
     PaintRows(v, dirtySlots)
-    UpdateCheckSummary(v)
+    if not v.forever then UpdateCheckSummary(v) end
     NS.GearAnnotations.UpdateSummary(v)
 end
 
@@ -580,7 +578,7 @@ local function OnRowEnter(frame)
     if row.link and v.unit and GUID(v.unit) == v.guid then
         GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
         GameTooltip:SetInventoryItem(v.unit, row.slot)
-        NS.EquipmentInfo.AddTooltip(row.audit)
+        if not v.forever then NS.EquipmentInfo.AddTooltip(row.audit) end
         GameTooltip:Show()
     end
 end
@@ -660,6 +658,10 @@ local function CreateHeader(v, panel)
     v.averageLabel = Label(panel, 9, "muted")
     v.averageLabel:SetPoint("TOPRIGHT", -18, -63)
     v.averageLabel:SetText(NS.L.DOSSIER_ILVL)
+    if v.forever and v.kind == "inspect" then
+        v.average:Hide()
+        v.averageLabel:Hide()
+    end
     v.summary = Label(panel, 11, "muted")
     v.summary:SetPoint("TOPLEFT", 14, -88)
     v.summary:SetWidth(324)
@@ -678,7 +680,8 @@ end
 local function CreateToggle(v, host, panel)
     local toggle = NS.Safety.CreateChildFrame("Button", host)
     v.toggle = toggle
-    toggle:SetSize(26, 26)
+    toggle:SetSize(24, 24)
+    NS.Surface.SkinOwnedButton(toggle, { role = "button", radius = 5, inset = 1, allowImplicitProtected = true })
     toggle:SetFrameLevel(panel:GetFrameLevel() + 3)
     v.toggleText = Label(toggle, 18, "text")
     v.toggleText:SetAllPoints()
@@ -692,6 +695,7 @@ end
 local function Create(root, parent, kind, owner)
     local v = {
         root = root, kind = kind, owner = owner, rows = {}, bySlot = {}, pending = {}, active = true,
+        forever = NS.Client.isForever, slots = slots,
         deferKey = "character-details:" .. kind, actionOwner = "character-details:" .. kind,
         refreshSlots = {}, spareSlots = {},
         refreshAll = false, refreshDurability = false, refreshScheduled = false,
@@ -708,13 +712,17 @@ local function Create(root, parent, kind, owner)
     host:EnableMouse(false)
     local panel = NS.Safety.CreateChildFrame("Frame", host)
     v.panel = panel
-    panel:SetSize(352, 610)
+    if v.forever then
+        v.slots = { unpack(slots) }
+        v.slots[#v.slots + 1] = ranged
+    end
+    panel:SetSize(352, 610 + (#v.slots - #slots) * ROW_HEIGHT)
     panel:SetPoint("TOPLEFT", root, "TOPRIGHT", 8, 0)
     panel:SetClampedToScreen(true)
     panel:SetFrameLevel(root:GetFrameLevel() + 5)
     NS.Surface.Attach(panel, { role = "shell", radius = 8, inset = 0, allowImplicitProtected = true })
     CreateHeader(v, panel)
-    for index, slot in ipairs(slots) do CreateRow(v, panel, index, slot) end
+    for index, slot in ipairs(v.slots) do CreateRow(v, panel, index, slot) end
     CreateToggle(v, host, panel)
     host:SetScript("OnShow", function() OnShow(v) end)
     host:SetScript("OnHide", function() OnHide(v) end)
@@ -724,7 +732,7 @@ end
 
 function Details.Apply(root, kind, owner)
     Details.StyleChrome(root, owner)
-    if not NS.Client.modernEquipment then return end
+    if not Details.IsAvailable() then return end
     -- InspectPaperDollFrame loads with Blizzard_InspectUI (load-on-demand).
     local parent = _G.InspectPaperDollFrame
     if kind == "character" then parent = PaperDollFrame end
@@ -783,7 +791,7 @@ function Details.SetOption(key, value)
 end
 
 function Details.SetView(value)
-    if not NS.Client.modernEquipment or NS.IsCombatLocked() or not VIEWS[value] then return false end
+    if not Details.IsAvailable() or NS.IsCombatLocked() or not VIEWS[value] then return false end
     if Config().view == value then return true end
     Config().view = value
     -- This selector is reload-only: persist first, then let Blizzard rebuild

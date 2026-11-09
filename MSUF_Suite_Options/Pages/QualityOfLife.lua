@@ -48,6 +48,23 @@ local function AddLoadoutAction(ctx, body, id, sectionId, y, width)
         function() if S.LoadoutReminder then S.LoadoutReminder:ClearSaved() end end,
         function() return S.Status(id) == "Active" and not P.Combat() end,
         P.Meta(PageFor(id), id, "action.clearSaved", "action", sectionId))
+    y = y - 38
+    P.Button(ctx, body, "Set required abilities for this dungeon", 16, y, width,
+        function()
+            local reminder = S.LoadoutReminder
+            if not reminder then return end
+            local zone, guid, config = reminder:DungeonAbilityContext()
+            if not zone then return end
+            P.AskText("loadoutDungeonAbilities",
+                Tr("Enter up to six spell names or IDs separated by commas. Enter 0 to clear this dungeon."),
+                function(value)
+                    if not reminder:SetDungeonAbilities(value, zone, guid, config) then
+                        print(Tr("The dungeon ability list could not be saved."))
+                    end
+                end, 240, 720)
+        end,
+        function() return S.LoadoutReminder and S.LoadoutReminder:CanSetDungeonAbilities() end,
+        P.Meta(PageFor(id), id, "action.dungeonAbilities", "action", sectionId))
     return y - 38
 end
 

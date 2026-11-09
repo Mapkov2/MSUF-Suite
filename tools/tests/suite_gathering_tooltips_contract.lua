@@ -145,7 +145,8 @@ Check(Paint(4) ~= nil, "restored skill capability resumes tooltip additions")
 local specs, rules = {}, {}
 NS.CatalogBuild = { ForAddon = function()
     return { Module = function(id, spec) specs[id] = spec end, Section = function(id, _, _, list) rules[id] = list end,
-        Bool = function(key, _, default) return { key = key, default = default } end,
+        Bool = function(key, _, default) return { key = key, default = default == true } end,
+        Tooltip = function(rule, tooltip) rule.tooltip = tooltip; return rule end,
         Number = function(key, _, default) return { key = key, default = default } end }
 end }
 assert(loadfile(root .. "/MSUF_Suite/Core/Catalog/ForeverTools.lua"))("MSUF_Suite", NS)
@@ -155,5 +156,8 @@ for _, id in ipairs({ "gatheringTooltips", "foreverWorldMap" }) do
     Check(specs[id].available() == false, "Retail cannot activate the Forever feature")
     NS.Client.isForever = true
 end
+local layerRule = rules.foreverWorldMap[2]
+Check(layerRule.key == "layerID" and layerRule.default == false and layerRule.tooltip,
+    "layer detection is an opt-in Forever world-map setting with an explanation")
 print(string.format("Gathering tooltip contract: %d checks; warm %d VM, %.3f KB/1000, one native line/build",
     checks, instructions, allocation))

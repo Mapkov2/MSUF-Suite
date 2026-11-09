@@ -469,16 +469,24 @@ function NS.DataTextNextBarID(config)
     end
     for id = 1, #ids + 1 do if not seen[id] then return id end end
 end
+local CENTER_POINT = 5 -- Index of CENTER in NS.AnchorPoints.
+function NS.DataTextFreePositionValues(prefix)
+    return { [prefix .. "Dock"] = NS.DataTextDock.FREE,
+        [prefix .. "Point"] = CENTER_POINT, [prefix .. "X"] = 0, [prefix .. "Y"] = 0 }
+end
+
 function NS.DataTextBarCreationValues(config, id, presetID)
     local ids = NS.DataTextBarIDs(config)
     ids[#ids + 1] = id
     table.sort(ids)
-    local values = { barIds = table.concat(ids, ",") }
+    local prefix = "bar" .. id
+    local values = NS.DataTextFreePositionValues(prefix)
+    values.barIds = table.concat(ids, ",")
     for suffix in pairs(templates) do
-        local key = "bar" .. id .. suffix
-        values[key] = spec.rules[key].default
+        local key = prefix .. suffix
+        if values[key] == nil then values[key] = spec.rules[key].default end
     end
-    values["bar" .. id .. "Enabled"] = true
+    values[prefix .. "Enabled"] = true
     if presetID then
         local preset = NS.DataTextPresetValues(presetID, id, config)
         if not preset then return nil end
@@ -666,6 +674,10 @@ function NS.DataTextPresetValues(id, bar, config)
     if preset.style then
         values[prefix .. "Height"], values[prefix .. "StyleOverride"] = 26, true
         for key, value in pairs(preset.style) do values[prefix .. key] = value end
+    end
+    local free, previousDock = NS.DataTextDock.FREE, config[prefix .. "Dock"]
+    if previousDock and previousDock ~= free and values[prefix .. "Dock"] == free and not values[prefix .. "Point"] then
+        for key, value in pairs(NS.DataTextFreePositionValues(prefix)) do values[key] = value end
     end
     return values
 end

@@ -276,6 +276,7 @@ local function Paint(uf)
     Level.PaintNative(uf, prefix)
     Level.Paint(uf, prefix, unit)
     Layout.Apply(uf, prefix, M.config)
+    if Power.enemyEnabled then Power.ApplyEnemy(uf, health, prefix, unit) end
     local styled = prefix and M.config.look ~= LOOK_BLIZZARD and M.config[prefix] == true
     if not styled then
         if M.targetUF == uf then M.targetUF = nil end
@@ -300,6 +301,7 @@ local function Paint(uf)
 end
 
 local function RestorePlate(uf)
+    if Power.enemyEnabled then Power.RestoreEnemy(uf) end
     NameText.Release(uf)
     AuraColors.Restore(uf)
     Threat.Restore(uf)
@@ -522,6 +524,7 @@ local function OnUnitChanged(module, event, unit)
     end
     local role, marker, quest = module.roles[health], facts.marker, facts.quest
     if FACT_EVENTS[event] then
+        if event == "UNIT_DISPLAYPOWER" and Power.enemyEnabled then Power.EnemyResourceChanged(uf, unit) end
         SetRole(uf, unit)
         AfterClassify(module)
         if event == "UNIT_LEVEL" then
@@ -723,6 +726,7 @@ function M:Refresh()
     Text.Configure(self.config)
     NameText.Configure(self.config)
     self.targetConfig = Style.TargetConfig(self.config)
+    Power.ConfigureEnemy()
     CVars.Apply(self)
     Threat.Refresh()
     KickReady.Configure()

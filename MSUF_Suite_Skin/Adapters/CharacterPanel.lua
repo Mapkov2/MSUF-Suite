@@ -90,7 +90,7 @@ local statCategoryFields = {
     "EnhancementsCategory",
 }
 
-local FOREVER_VIEWS = {
+local TAB_VIEWS = {
     { "ReputationFrame", "ReputationDetailFrame" },
     { "TokenFrame", "DetailFrame" },
     { "SkillsFrame", "SkillDetailFrame" },
@@ -104,7 +104,7 @@ local FOREVER_TAB_FALLBACKS = {
 
 local PANE_SPEC = Chrome.Spec("panel", 4, 0)
 local DETAIL_SPEC = Chrome.Spec("card", 4, 0)
-local NAVIGATION_TAB_SPEC = Chrome.Spec("navigation", 4, 1, true, "navigationActive")
+local NAVIGATION_TAB_SPEC = Chrome.Spec("navigation", 5, 1, false, "navigationActive")
 local FOREVER_TAB_SPEC = {
     role = "navigation", activeRole = "navigationActive",
     fillVisible = false, border = 0, radius = 2, inset = 0,
@@ -269,12 +269,14 @@ local function PlaceForeverTab(state, root, container, tab, index, visualIndex, 
         parts.rule:SetHeight(2)
         tabParts[tab] = parts
     end
-    local labelText = tab.tooltipText
+    local labelText = Field(tab, "tooltipText")
+    if not Public(labelText) then labelText = nil end
     parts.label:SetText(type(labelText) == "string" and labelText ~= "" and labelText
         or FOREVER_TAB_FALLBACKS[index] or tostring(index))
     parts.label:SetWidth(tabWidth - 4)
     parts.label:Show()
-    local selected = root.selectedTab == index
+    local selectedTab = Field(root, "selectedTab")
+    local selected = Public(selectedTab) and selectedTab == index
     parts.label:SetTextColor(NS.Theme.GetColor(selected and "accent" or "text"))
     parts.rule:SetColorTexture(NS.Theme.GetColor("accent"))
     parts.rule:SetShown(selected)
@@ -319,7 +321,10 @@ local function PositionForeverTabs(state, root)
     nav.header:Show()
     nav.headerRule:Show()
     nav.active = true
-    local usable = math.min(384, width - 24)
+    -- The native pane toggle occupies the last 34 px of the left pane.
+    local leftWidth = Safety.Read(Field(root, "LeftPaneHost"), "GetWidth")
+    if type(leftWidth) ~= "number" or leftWidth < 100 then leftWidth = 398 end
+    local usable = math.min(384, leftWidth - 48, width - 24)
     local tabWidth = math.min(64, math.floor(usable / visibleCount))
     -- The native reputation/currency lists use HIGH strata. Keep their native
     -- tabs above those panes when presenting the tabs inside the window.
@@ -358,32 +363,38 @@ local function SkinForeverPanes(state, root)
     end
 end
 
-local function SkinForeverSubframes(state, root)
-    if not ForeverLook() or not state.active then
-        return
-    end
-    -- Camelot already supplies the faction, currency, skills, PvP and
-    -- statistics views. Decorate their exact native list and detail hosts as
-    -- each Blizzard subframe becomes available; keep its data and scripts.
-    for index = 1, #FOREVER_VIEWS do
-        local spec = FOREVER_VIEWS[index]
+local function SkinTabViews(state, root)
+    if not state.active then return end
+    -- Decorate the native list and detail hosts when each tab becomes
+    -- available. The extra Camelot tabs use the same material.
+    for index = 1, #TAB_VIEWS do
+        local spec = TAB_VIEWS[index]
         local view = _G[spec[1]]
         if view and ParentIs(view, root) then
             local list = Field(view, "ScrollBox")
             local detail = spec[2] and Field(view, spec[2])
             if list then Attach(state, list, PANE_SPEC) end
-            if detail then Attach(state, detail, DETAIL_SPEC) end
+            if detail then
+                Attach(state, detail, DETAIL_SPEC)
+                if spec[1] == "ReputationFrame" then Chrome.Action(state, Field(detail, "ViewRenownButton")) end
+            end
         end
     end
 end
 
-local function SkinForeverModeTabs(state, root)
-    if not NS.Client.isForever or not state.active then return end
+local function SkinModeTabs(state, root)
+    if not state.active then return end
+    if not NS.Client.isForever then
+        Chrome.PanelTabs(state, root, CharacterFrameTab1, CharacterFrameTab2, CharacterFrameTab3)
+        return
+    end
     local container = Field(root, "ModeTabs")
     local tabs = Field(container, "Tabs")
     if type(tabs) ~= "table" then return end
     Attach(state, container, PANE_SPEC)
-    local tabRow = ForeverTabRow()
+    local tabRow = PositionForeverTabs(state, root)
+    local selectedTab = Field(root, "selectedTab")
+    if not Public(selectedTab) then selectedTab = nil end
     for index = 1, #tabs do
         local tab = tabs[index]
         if tab then
@@ -398,12 +409,10 @@ local function SkinForeverModeTabs(state, root)
             if attached then
                 Fade(state, Field(tab, "Background"))
                 Fade(state, Field(tab, "SelectedTexture"))
-                Fade(state, Field(tab, "HighlightTexture"))
-                NS.Surface.SetActive(tab, root.selectedTab == index)
+                NS.Surface.SetActive(tab, selectedTab == index)
             end
         end
     end
-    PositionForeverTabs(state, root)
 end
 
 -- Stats, model, slots and sidebar ------------------------------------------------------
@@ -554,8 +563,10 @@ end
 
 local function SkinSidebarTab(state, tab)
     local hider = Field(tab, "Hider")
+    local checked = Safety.Read(tab, "GetChecked")
+    local active = checked == true or checked == nil and IsShown(hider) == false
     if NS.Safety.CanControl(tab, not NS.IsCombatLocked())
-        and NS.ControlSkin.ApplyButton(tab, state.owner, sidebarControlSpecs[IsShown(hider) == false]) then
+        and NS.ControlSkin.ApplyButton(tab, state.owner, sidebarControlSpecs[active]) then
         Track(state, tab)
         return true
     end
@@ -570,6 +581,10 @@ local function SkinSidebar(state)
     local container = _G.PaperDollSidebarTabs
     Fade(state, Field(container, "DecorLeft"))
     Fade(state, Field(container, "DecorRight"))
+    local pane = Field(PaperDollFrame, "EquipmentManagerPane")
+    Chrome.Action(state, Field(pane, "EquipSet"))
+    Chrome.Action(state, Field(pane, "SaveSet"))
+    Chrome.Action(state, Field(pane, "NewSet"))
     local applied = false
     local sidebars = _G.PAPERDOLL_SIDEBARS
     for index = 1, sidebars and #sidebars or 3 do
@@ -581,18 +596,18 @@ local function SkinSidebar(state)
     return applied
 end
 
-local function SkinForeverTabsAndViews(state)
+local function SkinTabsAndViews(state)
     local root = _G.CharacterFrame
-    SkinForeverModeTabs(state, root)
-    SkinForeverSubframes(state, root)
+    SkinModeTabs(state, root)
+    SkinTabViews(state, root)
 end
 
 local function RepositionForeverTabs(state)
-    PositionForeverTabs(state, _G.CharacterFrame)
+    SkinModeTabs(state, _G.CharacterFrame)
 end
 
 local function RefreshForeverLook(state)
-    SkinForeverTabsAndViews(state)
+    SkinTabsAndViews(state)
     SkinModel(state)
 end
 
@@ -629,20 +644,23 @@ local function ApplyNow(state)
     if NS.IsCombatLocked() then panel:RunOrDefer(state, "apply", ApplyNow) end
     if not Safety.CanCreateRegions(root, not NS.IsCombatLocked()) then return false, "protected" end
 
+    Chrome.Window(state, root)
+    Chrome.FadeNineSlice(state, root)
     Fade(state, Field(root, "Background"))
+    Chrome.Action(state, Field(root, "RightPaneToggleButton"))
     Chrome.FadePortraits(state, root, _G.CharacterFramePortrait)
     Chrome.SkinInset(state, Field(root, "Inset"))
     Chrome.SkinInset(state, Field(root, "InsetRight") or _G.CharacterFrameInsetRight)
     SkinForeverPanes(state, root)
 
+    SkinModeTabs(state, root)
     NS.CharacterDetails.Apply(root, "character", state.owner)
 
     SkinModel(state)
     SkinStats(state)
     panel:SkinAllSlots(state)
     SkinSidebar(state)
-    SkinForeverModeTabs(state, root)
-    SkinForeverSubframes(state, root)
+    SkinTabViews(state, root)
     if not NS.IsCombatLocked() then NS.EQoLCharacter.Apply(state.owner) end
     InstallHooks()
     return true, "applied"
@@ -695,7 +713,7 @@ local function OnStatsUpdated()
 end
 local function OnSlotUpdated(slot) panel:RefreshSlot(slot) end
 local function OnSidebarUpdated() RefreshShownOwners("sidebar", SkinSidebar, CharacterRoot()) end
-local function OnModeTabSelected() RefreshShownOwners("mode-tabs", SkinForeverTabsAndViews, CharacterRoot()) end
+local function OnModeTabSelected() RefreshShownOwners("mode-tabs", SkinTabsAndViews, CharacterRoot()) end
 local function OnTabLayout() RefreshShownOwners("mode-tabs-layout", RepositionForeverTabs, CharacterRoot()) end
 
 local function OnPaperDollBackground(model)
@@ -736,6 +754,8 @@ InstallHooks = function()
     if NS.Client.isForever and root then
         HookOnce("modeTabs", root, "SetSelectedModeTabByFrame", OnModeTabSelected)
         HookOnce("tabLayout", root, "UpdateTabLayout", OnTabLayout)
+    elseif root then
+        HookOnce("modeTabs", root, "RefreshDisplay", OnModeTabSelected)
     end
 end
 

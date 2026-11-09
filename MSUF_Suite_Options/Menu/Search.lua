@@ -176,7 +176,10 @@ local function RuleTarget(page, spec, rule)
     if P.OwnedTools[spec.id] then return page.key .. "_" .. spec.id .. "_module" end
     if spec.id == "planningTools" then return P.PlanningRuleTarget(rule.key) end
     if rule.key == "enabled" then return page.key .. "_" .. spec.id .. "_module" end
-    if rule.previewOnly then return page.key .. "_preview", nil, false end
+    if rule.previewOnly then
+        local target = spec.id == "minimap" and P.MinimapSections.PreviewOffsetSection(rule.key) or page.key .. "_preview"
+        return target, nil, false
+    end
     if spec.id == "nameplates" then
         local target, title, exact = P.NameplateSearchTarget(rule)
         if target then return target, title, exact end
@@ -205,7 +208,7 @@ local function RuleTarget(page, spec, rule)
     elseif page.key == "suite_hud" then
         if rule.key == "enabled" or not section then return page.key .. "_" .. spec.id .. "_module" end
         local prefix = spec.id == "runSummary" and "summary" or spec.id
-        if rule.color or section:find("Colors$") or section == "colors" then section = "type" end
+        if spec.id ~= "characterPanel" and (rule.color or section:find("Colors$") or section == "colors") then section = "type" end
         return page.key .. "_" .. prefix .. "_" .. section
     elseif spec.id == "nameplates" and section == "general" then
         return page.key .. "_nameplates_module"
@@ -247,7 +250,8 @@ local function RuleRow(page, spec, rule, template, feature, category, config)
         and P.NameplateFonts.TargetForSetting(settingKey) ~= nil
     local exact = movedColor or kind ~= "color" and targetExact ~= false
     local controlId
-    if exact and not template and (P.OwnedTools[spec.id] or spec.id == "planningTools" or spec.id == "macroBuilder") then
+    if exact and not template and (spec.id == "minimap" or P.OwnedTools[spec.id]
+        or spec.id == "planningTools" or spec.id == "macroBuilder") then
         controlId = P.Meta(page.key, spec.id, rule.key, "setting", sectionId).controlId
     end
     return {

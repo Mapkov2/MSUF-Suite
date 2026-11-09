@@ -94,6 +94,30 @@ Check(not Content.Play(a, owner2, 5) and childFade.group:IsPlaying(),
     "refused foreign owner stopped another owner's descendant")
 Content.StopOwner(owner1)
 
+-- An independent fade reads the candidate's chain once, even when eight
+-- other branches are animating. A sole active retarget needs no walk.
+do
+    local owner, targetReads = {}, 0
+    for token = 1, 8 do
+        Check(Content.Play(Frame(nil, true), owner, token), "independent fade was refused")
+    end
+    local target = Frame(Frame(nil, true), true)
+    local getParent = target.GetParent
+    function target:GetParent()
+        targetReads = targetReads + 1
+        return getParent(self)
+    end
+    Check(Content.Play(target, owner, 9) and targetReads == 1,
+        "parallel fades repeated the candidate parent walk")
+    Content.StopOwner(owner)
+
+    Check(Content.Play(target, owner, 10), "fresh fade was refused")
+    targetReads = 0
+    Check(Content.Play(target, owner, 11) and targetReads == 0,
+        "sole active fade retarget walked its parent chain")
+    Content.StopOwner(owner)
+end
+
 -- Legacy wheel/render retarget keeps native offset and thumb drag direct.
 local scroll, scrollChild, bar = Frame(nil, true), Frame(nil, true), Frame(nil, true)
 scroll.kind, scroll.scrollChild, scrollChild.parent = "ScrollFrame", scrollChild, scroll

@@ -36,47 +36,6 @@ local function Identity(unit)
 end
 
 ------------------------------------------------------------------ mounts
-local function AuraMount(aura)
-    if not PublicTable(aura) then return end
-    local spellID = aura.spellId
-    if not S.Finite(spellID) or spellID <= 0 then return end
-    local mountID = C_MountJournal.GetMountFromSpell(spellID)
-    if not S.Finite(mountID) or mountID <= 0 then return end
-    local name, _, _, _, _, _, _, _, _, _, collected = C_MountJournal.GetMountInfoByID(mountID)
-    name = S.PublicText(name)
-    if not name then return end
-    if not S.Public(collected) or type(collected) ~= "boolean" then collected = nil end
-    return name, collected
-end
-
--- One page of helpful aura slots: "stop" on restricted data, "found" and the
--- mount, or the continuation token of the next page.
-local function ScanSlots(unit, continuation, ...)
-    if not S.Public(continuation) or continuation ~= nil and not S.Finite(continuation) then return "stop" end
-    for index = 1, select("#", ...) do
-        local slot = select(index, ...)
-        if not S.Finite(slot) or Restricted(C_Secrets.ShouldUnitAuraSlotBeSecret, unit, slot) then return "stop" end
-        local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
-        if not S.Public(aura) or aura ~= nil and not PublicTable(aura) then return "stop" end
-        local name, collected = AuraMount(aura)
-        if name then return "found", name, collected end
-    end
-    return continuation
-end
-
-local function ReadUnitMount(unit)
-    if Restricted(C_Secrets.ShouldAurasBeSecret) then return end
-    local continuation, seen = nil, {}
-    repeat
-        local result, name, collected = ScanSlots(unit, C_UnitAuras.GetAuraSlots(unit, "HELPFUL", 32, continuation))
-        if result == "found" then return name, collected end
-        -- A malformed page that does not progress ends the scan.
-        if result == "stop" or result ~= nil and seen[result] then return end
-        if result ~= nil then seen[result] = true end
-        continuation = result
-    until continuation == nil
-end
-
 -- Read once per hovered identity, outside combat; a mount change shows on
 -- the next hover. A raising aura read is reported and caches nothing found.
 local function UnitMount(t, unit)
@@ -86,7 +45,7 @@ local function UnitMount(t, unit)
     if not guid then return end
     if M.mountGUID ~= guid then
         M.mountGUID = guid
-        M.mountName, M.mountCollected = S.Dispatch(ReadUnitMount, unit)
+        M.mountName, M.mountCollected = S.Dispatch(NS.UnitMount.Read, unit)
     end
     if c.unitMount then Detail(t, "Mount", M.mountName) end
     if c.unitMountOwned and M.mountName and M.mountCollected ~= nil then

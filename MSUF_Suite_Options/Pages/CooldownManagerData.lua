@@ -439,5 +439,6 @@ function Page.Identity(key)
         local group = CDM.AURA_GROUPS[number]
         return group and Tr(group.name) or format(Tr("Buff %d on you"), number)
     end
+    if kind == "g" then return format(Tr("External defensive %d cast by you"), number) end
     return format(Tr("Debuff %d on your target"), number)
 end

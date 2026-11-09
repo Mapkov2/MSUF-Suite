@@ -4,8 +4,8 @@ local C = P.CDM
 -- Special own buffs can live on another group member. Keep one native aura
 -- slot per entry and move only its unit binding when the recipient changes.
 -- The native button still owns duration, stacks, glows and secret values.
--- Only never-secret identities may be queried by name; restricted spells
--- never enter a RequiresNonSecretAura API. Aura storms share one wake.
+-- Only readable identities may be queried by name. Explicit externals use
+-- Blizzard's current spell secrecy predicate when available. Aura storms share one wake.
 local Recipients = { slots = {} }
 C.AuraRecipients = Recipients
 local Public, type, pairs = S.Public, type, pairs
@@ -27,9 +27,16 @@ end
 
 local function Eligible(state)
     local never = Enum.SecrecyLevel.NeverSecret
+    local shouldBeSecret = state.external and C_Secrets.ShouldSpellAuraBeSecret
     for i = 1, #state.spells do
-        local secrecy = C_Secrets.GetSpellAuraSecrecy(state.spells[i])
-        state.eligible[i] = Public(secrecy) and secrecy == never
+        local spell = state.spells[i]
+        if shouldBeSecret then
+            local secret = shouldBeSecret(spell)
+            state.eligible[i] = Public(secret) and secret == false
+        else
+            local secrecy = C_Secrets.GetSpellAuraSecrecy(spell)
+            state.eligible[i] = Public(secrecy) and secrecy == never
+        end
     end
 end
 
@@ -71,6 +78,16 @@ local function Select(rec, state)
         rec.frame:SetUnit(unit)
     end
     state.active = active
+    local displayUnit = active and unit or false
+    if state.named and state.displayUnit ~= displayUnit then
+        state.displayUnit = displayUnit
+        local recipient = active and S.PublicText(UnitName(unit)) or nil
+        local label = recipient and state.name and S.Text("%s on %s"):format(state.name, recipient) or nil
+        if rec.recipientText ~= label then
+            rec.recipientText = label
+            C.AuraLooks.Recipient(rec)
+        end
+    end
 end
 
 local function Refresh(rec, state, full)
@@ -79,9 +96,9 @@ local function Refresh(rec, state, full)
         local unit = units[i]
         if full or dirty[unit] then
             local match = Read(state, unit)
-            -- An opaque result cannot select a new recipient. Keep the last
-            -- public association and let its native container handle secrecy.
-            if match ~= nil then state.matches[unit] = match end
+            -- Opaque externals have no verified recipient. Other group buffs
+            -- keep their prior public binding and let the native slot update.
+            if match ~= nil or state.external then state.matches[unit] = match == true end
         end
     end
     Select(rec, state)
@@ -103,16 +120,23 @@ local function Event(event, unit)
         dirty[unit] = true
     elseif event == "PLAYER_TARGET_CHANGED" then
         dirty.target = true
-        for _, state in pairs(records) do state.matches.target = false end
+        for _, state in pairs(records) do
+            state.matches.target = false
+            if state.displayUnit == "target" then state.displayUnit = nil end
+        end
     elseif event == "PLAYER_FOCUS_CHANGED" then
         dirty.focus = true
-        for _, state in pairs(records) do state.matches.focus = false end
+        for _, state in pairs(records) do
+            state.matches.focus = false
+            if state.displayUnit == "focus" then state.displayUnit = nil end
+        end
     else
         all = true
         -- A token may now name a different person, or a previously readable
         -- identity may become restricted. Do not retain stale associations.
         if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
             for _, state in pairs(records) do
+                state.displayUnit = nil
                 for token in pairs(state.matches) do state.matches[token] = false end
             end
         end
@@ -171,6 +195,9 @@ local function State(rec, entry)
         for i = 1, #units do state.matches[units[i]] = false end
         records[rec] = state
     end
+    state.displayUnit = nil
+    state.external = entry.src == "g"
+    state.named, state.name = state.external and rec.role == "bar", entry.name
     C.wipe(state.spells)
     C.wipe(state.names)
     C.wipe(state.ids)
@@ -216,6 +243,10 @@ function Recipients.Sync(slot, fam, view, plan, force, run, needs)
             for j = #list, 2, -1 do list[j], where[j] = nil, nil end
             needs(list, not over, view)
             if not over and C.Alerts.AuraSensor(entry) then Containers.need.kit = true end
+            if entry.src == "g" and plan.kind == C.Const.KIND.AURA_BAR then
+                Containers.need.label, Containers.need.looks = true, true
+                Containers.need.timers = Containers.need.timers .. "R"
+            end
             local key = "group:" .. entry.key
             local role = over and "over" or plan.kind == C.Const.KIND.AURA_BAR and "bar" or "icon"
             local fams = Containers.live[slot]

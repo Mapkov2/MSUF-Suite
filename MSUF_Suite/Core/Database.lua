@@ -52,11 +52,13 @@ end
 -- codec can read it, otherwise from catalog defaults at the current
 -- migration revision.
 function Database.PrepareFactory(profile)
-    local config = profile.suite.modules.cooldownManager
+    local modules = profile.suite.modules
+    local config = modules.cooldownManager
     if config then
         config.captured = true
         config.defaultsVersion = Suite.CDM.DEFAULTS_VERSION
     end
+    if modules.characterPanel then modules.characterPanel.mode = Suite.CharacterPanelMode.SUITE end
     return profile
 end
 

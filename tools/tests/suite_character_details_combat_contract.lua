@@ -47,4 +47,22 @@ H.SetCombat(false)
 if wake then wake() end
 H.Details.Disable(H.root,"details")
 Check(not view.registered and not view.host:IsShown(),"disabled dossier retained work")
-print("Character dossier combat: " .. checks .. " checks")
+-- Forever keeps the native equipment pane and reads its extra ranged slot.
+H.NS.Client.modernEquipment, H.NS.Client.isForever = false, true
+H.NS.DB.characterDetails.expanded = true
+H.NS.EquipmentInfo.Check = function() error("Retail enchant checks reached Forever") end
+C_PaperDollInfo.GetInspectItemLevel = function() error("Retail inspect average reached Forever") end
+InspectPaperDollFrame, InspectRangedSlot = H.Object(), H.Object()
+local inspect = H.Object({ unit = "target", ModeTabs = H.Object() })
+function inspect:GetRight() return 398 end
+function inspect.ModeTabs:GetRight() return 462 end
+reads = H.Reads()
+H.Details.Apply(inspect, "inspect", "details")
+local dossier = H.Details.views[inspect]
+Check(dossier and dossier.panel:IsShown() and H.Reads() == reads + 17,
+    "Forever Inspect did not show the equipment list with its native ranged slot")
+Check(dossier.bySlot[18] and not dossier.averageLabel:IsShown() and dossier.sidecarGap == 64,
+    "Forever Inspect overlapped its tabs or painted a Retail header")
+H.Details.Disable(inspect, "details")
+Check(not dossier.host:IsShown() and not dossier.registered, "Forever Inspect retained hidden work")
+print("Character dossier combat and Forever: " .. checks .. " checks")

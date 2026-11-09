@@ -2,6 +2,70 @@
   "removed": [
     {
       "category": "locale",
+      "item": "Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the wording to describe the selectable modifier. The original key remains the default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
+      "item": "Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the wording to describe the selectable modifier. The original key remains the default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
+      "item": "Hold Shift to pause. Quests with a money cost and quests with a reward choice always stay manual.",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the wording to describe the selectable modifier. The original key remains the default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
+      "item": "Hold Alt to see the ID of an item, spell, creature, quest, currency or temporary weapon enchant on its tooltip, or press Alt while the tooltip is open; the IDs stay until the tooltip is built again. Spell icon IDs and Blizzard's account character currency data are optional, and that data joins an open tooltip when it arrives. No ID or quantity appears when the client keeps it private.",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the wording to describe the selectable modifier. The original key remains the default.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:quests\",\"description\",\"Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.\"]",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the description for the selectable modifier. Existing defaults and client gates are preserved.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"retail:tooltipIDs\",\"description\",\"Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.\"]",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the description for the selectable modifier. Existing defaults and client gates are preserved.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:quests\",\"description\",\"Accept and turn in quests automatically. Hold Shift to pause. Reward choices and quests with a money cost stay manual.\"]",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the description for the selectable modifier. Existing defaults and client gates are preserved.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "module_traits",
+      "item": "[\"forever:tooltipIDs\",\"description\",\"Hold Alt to show item, spell, creature, quest, currency and temporary weapon enchant IDs on the main tooltip.\"]",
+      "basis": "moved",
+      "evidence": "QualityOfLife.lua and QualityOfLifeHelp.lua",
+      "reason": "Updated the description for the selectable modifier. Existing defaults and client gates are preserved.",
+      "date": "2026-11-08"
+    },
+    {
+      "category": "locale",
       "item": "Dungeon / raid",
       "basis": "owner",
       "evidence": "NameplatesEditor.lua and NameplatesEditorMarkers.lua with the preview-layout and menu contracts.",

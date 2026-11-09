@@ -20,6 +20,121 @@ end
 
 local SLOT_SPEC = Chrome.Spec("button", 4, 0, true)
 local INSET_SPEC = Chrome.Spec("panel", 5, 0)
+local WINDOW_SPEC = Chrome.Spec("shell", 8, 0)
+local ACTION_SPEC = { role = "button", radius = 5, inset = 1, useControlShape = true, pillHeight = 24 }
+local TAB_SPECS = {}
+for _, active in ipairs({ "selected", "idle", "native" }) do
+    TAB_SPECS[active] = {
+        role = "navigation", activeRole = "navigationActive", selectionEdge = true,
+        radius = 5, inset = 1, useControlShape = true, pillHeight = 24,
+    }
+end
+TAB_SPECS.selected.active, TAB_SPECS.idle.active = true, false
+local headers = setmetatable({}, { __mode = "k" })
+local watchingTheme
+
+local function PaintHeader(header)
+    local r, g, b, alpha = NS.Theme.GetColor("accent")
+    header.rule:SetColorTexture(r, g, b, alpha * .36)
+    local pr, pg, pb, pa = NS.Theme.GetColor("microBarFill")
+    header.fill:SetColorTexture(pr, pg, pb, pa * .85)
+end
+
+local function RefreshHeaders()
+    for root, header in pairs(headers) do
+        if header.owner and Safety.CanDecorate(root, not NS.IsCombatLocked()) then PaintHeader(header) end
+    end
+end
+
+local function OnTheme(_, domain, key)
+    local headerColor = domain == "color" and (key == "accent" or key == "microBarFill")
+    if headerColor or domain == "theme" or domain == "profile" or domain == "appearance" then
+        NS.CombatGate.RunOrDefer("paper-doll-header-colors", RefreshHeaders)
+    end
+end
+
+local function Band(root, layer, height, y)
+    local region = root:CreateTexture(nil, layer, nil, -3)
+    region:SetPoint("TOPLEFT", root, "TOPLEFT", 2, y)
+    region:SetPoint("TOPRIGHT", root, "TOPRIGHT", -2, y)
+    region:SetHeight(height)
+    return region
+end
+
+function Chrome.Window(state, root)
+    if not Chrome.Attach(state, root, WINDOW_SPEC, true) then return end
+    if not Safety.HasMethod(root, "GetFrameLevel") then return end
+    local header = headers[root]
+    if not header then
+        header = { fill = Band(root, "BACKGROUND", 25, -2), rule = Band(root, "ARTWORK", 1, -27) }
+        headers[root] = header
+    end
+    header.owner, state.headerRoot = state, root
+    PaintHeader(header)
+    header.fill:Show()
+    header.rule:Show()
+    if not watchingTheme then
+        watchingTheme = true
+        NS.Registry.AddListener(headers, OnTheme)
+    end
+end
+
+function Chrome.PaintBadge(badge, info)
+    local path = Kit.FontPath()
+    if path ~= badge.path then
+        badge.path = path
+        badge.text:SetFont(path, 11, "")
+    end
+    local color = info and info.quality and ITEM_QUALITY_COLORS[info.quality]
+    if color then
+        badge.text:SetTextColor(color.r, color.g, color.b, 1)
+    else
+        badge.text:SetTextColor(NS.Theme.GetColor("text"))
+    end
+    local r, g, b = NS.Theme.GetColor("ink")
+    badge.fill:SetColorTexture(r, g, b, .88)
+end
+
+function Chrome.UpdateBadge(row, slot, info)
+    local badge = row.levelBadge
+    if not info or not info.itemLevel then
+        if badge and Safety.CanDecorate(badge.frame, not NS.IsCombatLocked()) then badge.frame:Hide() end
+        return
+    end
+    if not badge then
+        local frame = NS.Safety.CreateChildFrame("Frame", slot)
+        frame:SetSize(27, 13)
+        frame:SetPoint("TOPRIGHT", slot, "TOPRIGHT", -1, -1)
+        frame:SetFrameLevel(slot:GetFrameLevel() + 2)
+        frame:EnableMouse(false)
+        local fill = frame:CreateTexture(nil, "BACKGROUND")
+        fill:SetAllPoints()
+        local text = frame:CreateFontString(nil, "OVERLAY")
+        text:SetPoint("CENTER")
+        badge = { frame = frame, fill = fill, text = text }
+        row.levelBadge = badge
+    end
+    if not Safety.CanDecorate(badge.frame, not NS.IsCombatLocked()) then return end
+    Chrome.PaintBadge(badge, info)
+    if badge.level ~= info.itemLevel then
+        badge.text:SetText(string.format("%d", info.itemLevel))
+        badge.level = info.itemLevel
+    end
+    badge.frame:Show()
+end
+
+function Chrome.Action(state, button)
+    return Kit.SkinControl(state, button, ACTION_SPEC)
+end
+
+function Chrome.PanelTabs(state, root, ...)
+    local selected = Kit.ReadValues(PanelTemplates_GetSelectedTab, root)
+    for index = 1, select("#", ...) do
+        local tab = select(index, ...)
+        local active = selected == nil and "native" or selected == index and "selected" or "idle"
+        Kit.SkinControl(state, tab, TAB_SPECS[active], "ApplyPanelTab")
+    end
+end
 
 -- The owner state is the kit's skin context ({ owner, surfaces }), so the
 -- kit's gated primitives serve it directly.
@@ -178,6 +293,12 @@ end
 
 -- Cancels deferred work, hides this owner's surfaces and forgets the owner.
 function Chrome:Release(state)
+    local header = state.headerRoot and headers[state.headerRoot]
+    if header and header.owner == state then
+        header.fill:Hide()
+        header.rule:Hide()
+        header.owner = nil
+    end
     self.registry.Release(state)
 end
 

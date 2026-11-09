@@ -1,5 +1,64 @@
 # MSUF Suite Changelog
 
+## 0.1.15 Alpha - 2026-11-09
+
+### Character Panel and Inspect
+
+- Add an optional Suite Character and Inspect interface for Retail and WoW Forever under Interface > HUD > Character Panel. Choose the Basic Blizzard skin or the Suite interface. Upgraded profiles keep the Basic view by default.
+- Add Overview, Equipment, Reputation, Skills or Professions, PvP, Currency, and Statistics pages where the client provides the data. Inspect includes Overview, Equipment, and Compare with per-slot item-level differences.
+- Show item tooltips, equipment set actions, gear audit details, and character information in the Suite window. Add model controls and show mounted movement speed when available.
+- Add persistent window placement, scaling, docking, minimize and maximize controls, and overflow for the tab strip. Route character and inspect shortcuts to Blizzard when a native combat or gamepad path is needed.
+- Customize the Character and Inspect headers independently. Toggle and style portrait, name, level, class and specialization, guild, zone, and item level. Reposition elements in the live preview with drag, arrow keys, or numeric offsets.
+- Build custom Character tabs from presets or a blank layout. Search client-specific sources, add cards and rows, rename, duplicate or remove tabs, reorder them, and move the contents in the preview.
+- Improve the Basic character and inspect skins with shared headers, tabs and action buttons. Keep Blizzard's stats lists under native control and improve Equipment Manager, item-level badges, and gear details, including Forever's ranged slot.
+- Fix Forever character tab selection and spacing when toggling the side panel, and preserve native detail and inspection fallbacks when data is unavailable.
+
+### Gathering and Quality of Life
+
+- Add Resource Routes for known herbs, ore, fishing pools, skinning spots, and Retail timber. Open the route panel with `/msufgather` or from Quality of Life.
+- Guide to the nearest known location with a direction arrow and distance in meters, then select another spot on arrival. Switch targets manually, place a Blizzard map waypoint, or stop guidance. The open-world arrow continues in combat and pauses in instances.
+- Add an optional gathering radar with a configurable 50-300 meter range, profession filters and tracking status. Use `/msufgather hud` to toggle the radar and `/msufgather stop` to stop guidance.
+- Use available GatherMate2 locations, save spots from the current position or map, and remove custom locations. Optionally remember successful herb and ore harvests.
+- Add optional Current Zone and Other Zones groups for watched quests, including parent-zone matching for submaps. Keep focused quests separate and preserve ordinary grouping for quests with unreadable locations.
+- Reduce repeated quest completion and log reads and reuse Objective Tracker rows. Quest reward actions still check the current quest state when clicked.
+- Save up to six required spells per dungeon and character in Loadout Reminder. Enter names or spell IDs, see which abilities are missing, and clear the current dungeon's saved rules.
+- Add an optional single-key fishing and bobber interaction on Forever. The Fishing key uses Blizzard's Interact Key during a fishing channel and returns to its normal binding when the cast ends or combat starts.
+- Reuse the same mount lookup for character surfaces and unit tooltips, including checks for restricted aura data.
+
+### WoW Forever world map
+
+- Add an optional Observed Layer ID based on nearby NPCs. Show an unknown state when a usable observation is unavailable and reset it on a shard transfer. This is a local estimate that can differ between players on the same layer.
+- Keep the map-side quest list on its native wheel and scrollbar offsets. Limit quest-row styling to the visible map and avoid redundant updates to hover artwork.
+- Release compact quest titles at combat entry and repaint the list when combat ends. Preserve quest rows during collapse fades and Blizzard's row recycling.
+
+### Nameplates, Action Bars, and Cooldown Manager
+
+- Add an optional enemy power bar to supported Blizzard nameplate skins. Set its width, height, position, smoothing, resource colors, fallback color, and background opacity. Select, drag and resize it in the preview.
+- Read power only for visible eligible enemy units, clear reused bars when plates change, and leave restricted values with Blizzard's supported display path.
+- Add a Group Only visibility option to each action bar. It combines with existing per-bar visibility and gamepad rules.
+- Fix pressed and checked artwork for styled action buttons and restore the correct appearance when switching button styles. Keep auto-repeat actions highlighted when the client exposes their state.
+- Add defensive auras cast by you to the Cooldown Manager aura picker on supported clients, including Ignore Pain on Retail. Add Time Dilation to the group-buff choices.
+- Track your supported external defensives on their readable recipients and show the recipient name on aura bars. Clear stale names on target, focus or roster changes and omit unverified recipient data.
+- Improve resource and usability refreshes on visible cooldown entries. Skip hidden bars and redundant checks while keeping range tint and ready-glow behavior.
+
+### DataTexts and Chat
+
+- Keep the DataTexts game menu button available in combat through a preconfigured secure popup. Restricted actions stay disabled during combat and the popup closes after an action or when dismissed.
+- Apply the active skin to the game menu, including fonts, hover state, border and opacity. Use the full bar width when the game menu is its only horizontal slot, and keep the popup within the screen.
+- Center new freely positioned DataText bars and reset their position when changing from a dock to free placement. Open the selected bar's positioning popup directly from Move on Screen.
+- Improve Copy Chat with a larger, scrollable text area, native selection and a visible Copy All action. Match the copy window, line picker, text input, and buttons to the active UI styling.
+
+### Settings, previews, and skinning
+
+- Move HUD into Interface and add the Character Panel to its preview. Let the feature selector wrap in narrow layouts and keep color shortcuts linked to the selected feature.
+- Open the relevant preview handle and X/Y field from minimap position search results. Route other minimap results to their exact controls.
+- Preserve inherited header colors in the color picker and keep the Nameplates setting index lazy until the page or search needs it.
+- Keep Blizzard Settings and Keybindings scrolling native while easing the rendered content. Keep adaptive wheel acceleration on the AddOn List.
+- Improve AddOn List collapse and expand animations with clipped copies of departing rows. Distinguish a real collapse from row recycling and preserve rows that remain visible.
+- Avoid overlapping fades on nested menus and search results. Reuse menu discovery when reopening a skinned window and preserve scroll state through content updates.
+- Refresh bundled Retail and Forever factory profiles, including Character Panel defaults. Update translations and extend regression coverage for the new modules, previews, secure menus, quest refreshes, and skin transitions.
+
+
 ## 0.1.14 Alpha - 2026-11-08
 
 ### Highlights

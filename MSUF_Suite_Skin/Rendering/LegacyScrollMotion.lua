@@ -134,9 +134,10 @@ end
 function Legacy.Track(frame, owner, bar)
     if not Safety.CanCreateRegions(frame) or Safety.GetProtection(frame)
         or not Safety.HasMethod(frame, "GetScrollChild") then return false end
+    local nativeQuest, nativeOnly = NS.ScrollMotion.IsQuestScroll(frame)
+    if nativeOnly then return false end
     bar = bar or Safety.Field(frame, "ScrollBar") or Safety.Field(frame, "scrollBar")
     local state = Legacy.states[frame]
-    local nativeQuest = NS.ScrollMotion.IsQuestScroll(frame)
     if not nativeQuest and Safety.HasMethod(bar, "CanInterpolateScroll") then
         if state then wipe(state.owners) Stop(state) end
         return NS.ScrollMotion.Track(bar, owner)

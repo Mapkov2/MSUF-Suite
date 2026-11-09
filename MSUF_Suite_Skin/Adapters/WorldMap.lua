@@ -103,7 +103,11 @@ local function PaintQuestHover(row)
         local opacity = NS.Theme.GetMaterialOpacity(QUEST_HOVER_MATERIAL)
         record.fill:SetColorTexture(r, g, b, a * 0.22 * (theme.hoverIntensity or 1) * opacity)
     end
-    record.fill:SetShown(visible == true)
+    visible = visible == true
+    if visible ~= record.visible then
+        record.fill:SetShown(visible)
+        record.visible = visible
+    end
 end
 
 local function RefreshQuestHovers()
@@ -128,7 +132,7 @@ local function EnsureQuestHover(row, state)
         local fill = row:CreateTexture(nil, "BACKGROUND", nil, 1)
         fill:SetAllPoints(row)
         fill:Hide()
-        record = { fill = fill, highlight = highlight, key = "world-map-quest-hover:" .. tostring(row) }
+        record = { fill = fill, highlight = highlight, visible = false, key = "world-map-quest-hover:" .. tostring(row) }
         record.repaint = function() PaintQuestHover(row) end
         questHovers[row] = record
         row:HookScript("OnEnter", PaintQuestHover)
@@ -393,12 +397,11 @@ function WorldMapSkin:OnWorldMapShown()
     end
 end
 
--- QuestLogQuests_Update releases and refills every row pool on opening and
--- on each quest log change; rows its pools created since take their pass.
+-- Blizzard can refill the pools while the map is closed. The existing
+-- OnWorldMapShown pass catches up any rows that were skipped while hidden.
 local function OnQuestLogUpdated()
-    if NS.IsCombatLocked() then return end
     for frame, state in pairs(activeFrames) do
-        if state.active and state.generation ~= nil then
+        if state.active and state.generation ~= nil and Safety.Read(frame, "IsVisible") == true then
             VisitQuestRows(state, Field(frame, "QuestLog"), SkinQuestRow)
         end
     end
@@ -406,7 +409,7 @@ end
 
 -- Runs inside Blizzard's update, so the pass is its own error boundary.
 local function OnQuestLogUpdatedHook()
-    Dispatch(OnQuestLogUpdated)
+    if not NS.IsCombatLocked() then Dispatch(OnQuestLogUpdated) end
 end
 
 function WorldMapSkin:OnQuestLogModeChanged()

@@ -1,6 +1,7 @@
 local _, NS = ...
 
--- LFGList and SocialUI run restricted data readers during native updates.
+-- Settings builds keybinding scripts in pooled rows. LFGList and SocialUI
+-- run restricted data readers during native updates.
 -- Lua ScrollController setters write native fields from skin execution.
 -- Keep that state native and ease only the rendered content, with finite C
 -- animations and external ownership, as the legacy scroll renderer does.
@@ -9,6 +10,12 @@ do
 local Safety = NS.Safety
 
 function NativeList.IsTarget(target)
+    local panel = SettingsPanel
+    local settings = Safety.Field(Safety.Field(panel, "Container"), "SettingsList")
+    local categories = Safety.Field(panel, "CategoryList")
+    if target == Safety.Field(settings, "ScrollBox") or target == Safety.Field(categories, "ScrollBox") then
+        return true
+    end
     for _ = 1, 16 do
         local name = Safety.Read(target, "GetName")
         if name == "LFGListFrame" or name == "SocialUIFrame" then return true end
@@ -166,14 +173,24 @@ local questScrollNames = {
     "QuestDetailScrollFrame", "QuestProgressScrollFrame", "QuestRewardScrollFrame",
     "QuestGreetingScrollFrame", "QuestLogPopupDetailFrameScrollFrame",
 }
+local function IsQuestFrame(target, name)
+    local frame = Safety.Field(_G, name)
+    if not Safety.Public(frame) or type(frame) ~= "table" then return false end
+    local bar = Safety.Field(frame, "ScrollBar")
+    return target == frame or Safety.Public(bar) and target == bar
+end
+
+local function IsNativeQuestList(target)
+    return NS.Client.isForever and IsQuestFrame(target, "QuestScrollFrame")
+end
+
+-- The second result also excludes Forever's map-side list from legacy
+-- render easing. Its native scrollbar already owns the wheel and offsets.
 function ScrollMotion.IsQuestScroll(target)
     if not Safety.Public(target) or target == nil then return false end
+    if IsNativeQuestList(target) then return true, true end
     for index = 1, #questScrollNames do
-        local frame = Safety.Field(_G, questScrollNames[index])
-        if Safety.Public(frame) and type(frame) == "table" then
-            local bar = Safety.Field(frame, "ScrollBar")
-            if target == frame or Safety.Public(bar) and target == bar then return true end
-        end
+        if IsQuestFrame(target, questScrollNames[index]) then return true end
     end
     return false
 end
@@ -226,8 +243,7 @@ local function Cancel(target, snap)
     end
 end
 
--- Only these two native lists opt in. The Settings ScrollBox is shared by
--- all vertical settings categories, so the category is checked on input.
+-- The AddOn List can opt into a longer native wheel step.
 local Adaptive = {}
 
 function Adaptive.Reset(state)
@@ -250,14 +266,6 @@ local function NativeWheelStep(target, step, direction)
         or type(step) ~= "number" or step <= 0 or (direction ~= 1 and direction ~= -1) then return end
     local wheel = state.wheel
     wheel.sampleAt, wheel.sampleDirection, wheel.step = GetTime(), direction, step
-end
-
-local function KeybindingsActive(panel)
-    local category = Safety.Read(panel, "GetCurrentCategory")
-    local keybindingsID = Safety.Field(Settings, "KEYBINDINGS_CATEGORY_ID")
-    return Safety.Public(keybindingsID) and keybindingsID ~= nil
-        and Safety.Read(category, "GetID") == keybindingsID
-        and Safety.Read(KeybindListener, "IsListening") == false
 end
 
 local function WheelGain(wheel, direction, now)
@@ -301,10 +309,8 @@ local function OnWheel(target, delta)
     wheel.sampleAt = nil
     if not AdaptiveEnabled(state) or not Safe(target) or not Safety.Public(delta)
         or type(delta) ~= "number" or delta == 0 then return end
-    if wheel.panel and not KeybindingsActive(wheel.panel) then Adaptive.Reset(state) return end
     local now, direction = GetTime(), delta < 0 and 1 or -1
-    -- SettingsPanel can consume the wheel without calling ScrollInDirection,
-    -- including an assignment that finishes within the same OnMouseWheel.
+    -- Only extend a native step from this wheel event.
     if sampleAt ~= now or wheel.sampleDirection ~= direction
         or Safety.Read(target, "IsScrollAllowed") ~= true
         or Safety.Read(target, "HasScrollableExtent") ~= true then return end
@@ -327,18 +333,10 @@ end
 
 function Adaptive.Bind(state)
     local target = state.target
-    local panel = SettingsPanel
-    local list = Safety.Field(Safety.Field(panel, "Container"), "SettingsList")
-    local isSettings = target == Safety.Field(list, "ScrollBox")
-    if not isSettings and target ~= Safety.Field(AddonList, "ScrollBox") then return end
-    if not Safety.HasMethod(target, "ScrollInDirection") then return end
-    state.wheel = { panel = isSettings and panel or nil }
+    if target ~= Safety.Field(AddonList, "ScrollBox") or not Safety.HasMethod(target, "ScrollInDirection") then return end
+    state.wheel = {}
     target:HookScript("OnMouseWheel", Safety.Isolated(OnWheel))
     hooksecurefunc(target, "ScrollInDirection", Safety.Isolated(NativeWheelStep))
-    if isSettings then
-        Safety.Invoke(EventRegistry, "RegisterCallback", "KeybindListener.StartedListening", Adaptive.Reset, state)
-        Safety.Invoke(EventRegistry, "RegisterCallback", "KeybindListener.StoppedListening", Adaptive.Reset, state)
-    end
 end
 
 local function Write(state, value)
@@ -564,6 +562,7 @@ end
 function ScrollMotion.Track(target, owner)
     if owner == nil or ScrollMotion.IsQuestScroll(target) or not Supported(target) then return false end
     local partner = Partner(target)
+    if partner and IsNativeQuestList(partner) then return false end
     if NativeList.IsTarget(target) or partner and NativeList.IsTarget(partner) then
         return NativeList.Track(target, owner)
     end

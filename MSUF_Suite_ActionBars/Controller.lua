@@ -169,6 +169,7 @@ local BAR_WORK = {
     ClickThrough = { layout = true, visible = true },
     Visibility = { visible = true },
     HideGamepad = { visible = true, events = true },
+    GroupOnly = { visible = true },
     ResumeVisibility = {},
     Tooltip = {},
     Alpha = { visible = true },

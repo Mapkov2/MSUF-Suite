@@ -414,6 +414,19 @@ B.Section(id, "personal", "Personal power bar", {
     B.Number("personalPowerOffsetY", "Power bar Y", 0, -POSITION_LIMIT, POSITION_LIMIT),
 })
 
+B.Section(id, "enemyPower", "Enemy power bar", {
+    B.Bool("enemyPowerEnabled", "Show enemy power bar", false),
+    B.Bool("enemyPowerSmooth", "Smooth enemy power changes", true),
+    B.Number("enemyPowerWidth", "Enemy power bar width change (px)", 0, -20, 120),
+    B.Number("enemyPowerHeight", "Enemy power bar height (px)", 4, 2, 18),
+    B.Number("enemyPowerOffsetX", "Enemy power bar X", 0, -POSITION_LIMIT, POSITION_LIMIT),
+    B.Number("enemyPowerOffsetY", "Enemy power bar Y", 0, -POSITION_LIMIT, POSITION_LIMIT),
+    B.Bool("enemyPowerByType", "Color enemy power by resource type", true),
+    B.Color("enemyPowerColor", "Enemy power fallback color", "337be6"),
+    B.Color("enemyPowerBackgroundColor", "Enemy power background color", "10151d"),
+    B.Number("enemyPowerBackgroundAlpha", "Enemy power background opacity (%)", 80, 0, 100, 5),
+})
+
 local toggles = {}
 for _, role in ipairs(roles) do
     if role.key ~= "TankMode" then
@@ -585,6 +598,14 @@ Requires({ "plateOccludedPercent" }, "plateOccludedMode")
 Requires({ "plateOverlapV", "plateOverlapH" }, "plateSpacingMode")
 Requires({ "plateTopInset", "plateBottomInset" }, "plateInsetMode")
 EnabledBy({ "personalPowerBorderSize", "personalPowerBorderColor" }, "personalPowerSkin")
+local enemyPowerOptions = { "enemyPowerSmooth", "enemyPowerWidth", "enemyPowerHeight", "enemyPowerOffsetX",
+    "enemyPowerOffsetY", "enemyPowerByType", "enemyPowerColor", "enemyPowerBackgroundColor",
+    "enemyPowerBackgroundAlpha" }
+local skinLooks = { [1] = true, [3] = true, [4] = true }
+EnabledBy({ "enemyPowerEnabled" }, "enemy")
+EnabledBy(enemyPowerOptions, "enemyPowerEnabled")
+Requires({ "enemyPowerEnabled" }, "look", skinLooks)
+Requires(enemyPowerOptions, "look", skinLooks)
 
 EnabledBy({ "targetScalePercent" }, "targetScaleEnabled")
 for _, prefix in ipairs({ "enemy", "friendly" }) do

@@ -53,11 +53,11 @@ end
 -- A buff bar's own name (barText; "" the spell's): Blizzard keeps writing
 -- the spell's name into its bound string, which steps aside (alpha) while
 -- the label (made with the button where the bar asks for it) shows ours.
-local function Label(part, ov, dry)
+local function Label(rec, part, ov, dry)
     local label = part.label
     if not label then return false end
     local text = ov.barText
-    if text == "" then text = nil end
+    if not text or text == "" then text = rec.recipientText end
     if part.labelText == text then return false end
     if dry then return true end
     part.labelText = text
@@ -71,9 +71,17 @@ end
 -- bar's entries stop choosing any (AuraButtons.lua ApplyEntry).
 function AuraLooks.Apply(rec, part, ov, dry)
     if Border(rec, part, ov, dry) then return true end
-    if rec.role == "bar" and (Fill(rec, part, ov, dry) or Label(part, ov, dry)) then return true end
+    if rec.role == "bar" and (Fill(rec, part, ov, dry) or Label(rec, part, ov, dry)) then return true end
     if not dry then part.looked = part.borderHex ~= nil or part.fillHex ~= nil or part.labelText ~= nil end
     return false
+end
+
+function AuraLooks.Recipient(rec)
+    for i = 1, #rec.parts do
+        local part = rec.parts[i]
+        local entry = rec.entry[part.pos]
+        if entry then Label(rec, part, entry.ov or C.EMPTY, false) end
+    end
 end
 
 -- The style pass painted the bar's edges and fill: those memos start over

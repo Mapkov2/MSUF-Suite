@@ -179,7 +179,7 @@ for _, id in ipairs(Suite.SuiteOrder) do
         and id ~= "groupFinderDoubleClick" and id ~= "groupFinderApplicantSort" and id ~= "mythicKeyShare"
         and id ~= "mythicAutoQueue" and id ~= "questRewardValue" and id ~= "mailRecipients"
         and id ~= "groupFinderTools" and id ~= "fishingComfort"
-        and id ~= "foreverWorldMap" and id ~= "gatheringTooltips"
+        and id ~= "foreverWorldMap" and id ~= "gatheringTooltips" and id ~= "gatheringRoutes"
         and id ~= "groupBloodlust" and id ~= "lootContainers"
         and id ~= "cursorEffects" and id ~= "playerAuras"
         and id ~= "combatStatsHUD" and id ~= "delveSolePower" and id ~= "selfCombatText"

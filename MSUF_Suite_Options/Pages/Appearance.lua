@@ -564,49 +564,6 @@ local function BuildCoverage(ctx, b, skin)
         "Narrow general Blizzard window coverage by category.", categories, false)
 end
 
-local CHARACTER_TOGGLES = {
-    { "Character details", "characterDetails", "enabled", "CharacterDetails" },
-    { "Expanded details", "characterDetails", "expanded", "CharacterDetails" },
-    { "Character quality of life style", "characterDetails", "styleEQoL", "CharacterDetails" },
-    { "Inline gear", "characterDetails", "inlineGear", "CharacterDetails" },
-    { "Wide layout", "characterDetails", "wideLayout", "CharacterDetails" },
-    { "Character stats", "characterStats", "enabled", "CharacterStats" },
-    { "Diminishing returns", "characterStats", "diminishingReturns", "CharacterStats" },
-}
-
-local CHARACTER_HELP = "Choose the detailed character view and its extra information. Changing the view reloads the UI."
-local CHARACTER_FOREVER_NOTE = "The detailed character panel and stats are available only in Retail. WoW Forever keeps its own character layout."
-
--- The skin's character adapters skip every one of these controls on WoW Forever.
-local function CharacterUnavailable()
-    return "The detailed character panel is available only in Retail."
-end
-
-local function BuildCharacter(ctx, b, skin)
-    local character = {
-        Row("dropdown", "Character view", "character.view", "character",
-            function() return skin.DB.characterDetails.view end,
-            function(value)
-                Change(skin, "Character view", "character.view", function() return skin.CharacterDetails.SetView(value) end)
-            end,
-            Values({ "modern", "list", "classic" })),
-    }
-    for _, spec in ipairs(CHARACTER_TOGGLES) do
-        local label, group, key, api = spec[1], spec[2], spec[3], spec[4]
-        character[#character + 1] = Row("toggle", label, group .. "." .. key, "character",
-            function() return skin.DB[group][key] end,
-            function(value)
-                Change(skin, label, group .. "." .. key, function() return skin[api].SetOption(key, value) end)
-            end)
-    end
-    local retail = Suite.Client.modernEquipment == true
-    if not retail then
-        for _, row in ipairs(character) do row.unavailable = CharacterUnavailable end
-    end
-    Section(ctx, b, "character", "Character panel and stats",
-        retail and CHARACTER_HELP or CHARACTER_FOREVER_NOTE, character, false)
-end
-
 -- The factory profile and look come back; the player's two Skinning switches
 -- (Blizzard windows, Suite windows) stay as they were. The Suite follows the
 -- factory look like it follows any look chosen on this page.
@@ -730,7 +687,7 @@ local function BuildSections(ctx, b, skin)
     BuildWindows(ctx, b, skin)
     P.BuildSkinQuestLogSection(ctx, b, skin)
     BuildCoverage(ctx, b, skin)
-    BuildCharacter(ctx, b, skin)
+    Kit.BuildCharacter(ctx, b, skin)
     BuildMaintenance(ctx, b, skin)
 end
 

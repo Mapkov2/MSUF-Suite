@@ -153,6 +153,7 @@ Handles.__index = Handles
 --   steps      { shift = 10, ctrl = n, alt = n } arrow step multipliers
 --   threshold  distance a press must travel to be a drag (default 3), in units
 --              of the drag's scale; pixels = true counts raw screen pixels
+--   pointerHeld()  active followed-drag release check for mouse-up outside a handle
 --   escape()   Escape is consumed and calls this (the page's release)
 --   combat()   refusal test (default: the Suite's combat flag)
 --   dedupe(owner, dx, dy)   true when this key press was already applied
@@ -304,6 +305,7 @@ local function Travel(controller, drag, x, y, scale)
     return (math.abs(x - drag.x) + math.abs(y - drag.y)) / scale
 end
 
+local Up
 local function Follow(entry)
     local controller, drag = entry.controller, entry.controller.drag
     if not drag or drag.entry ~= entry then return end
@@ -311,6 +313,8 @@ local function Follow(entry)
         controller:Cancel()
         return
     end
+    local pointerHeld = controller.opts.pointerHeld
+    if pointerHeld and not pointerHeld() then return Up(entry, "LeftButton") end
     local x, y, scale = Cursor(entry)
     if not x then return end
     local dx, dy = (x - drag.x) / scale, (y - drag.y) / scale
@@ -345,7 +349,7 @@ local function Down(entry, button)
     if controller.opts.drag then controller.opts.drag(region, "start") end
 end
 
-local function Up(entry, button)
+Up = function(entry, button)
     local controller = entry.controller
     local drag = controller.drag
     if (button and button ~= "LeftButton") or not drag or drag.entry ~= entry then return end

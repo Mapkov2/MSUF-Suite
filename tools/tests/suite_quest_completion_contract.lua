@@ -94,7 +94,58 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         _G[name] = nil
     end
 end
+-- Forever's list next to the map has a native ScrollFrameTemplate bar.
+-- Cosmetics and menu discovery may see it independently, in either combat state.
+NS.Client.isForever = true
+for _, inCombat in ipairs({ false, true }) do
+    combat = inCombat
+    for _, original in ipairs({ false, true }) do
+        local scroll, child = Frame(), AnimationTarget()
+        local listBar = Controller(original, true)
+        scroll.ScrollBar, scroll.offset, listBar.legacy = listBar, 0, scroll
+        QuestScrollFrame = scroll
+        function scroll:GetScrollChild() return child end
+        function scroll:GetVerticalScroll() return self.offset end
+        local setter = listBar.SetInterpolateScroll
+        local function Wheel(_, delta) listBar:SetScrollPercentage(listBar.position - delta * 0.5) end
+        scroll:SetScript("OnMouseWheel", Wheel)
+        Check(not providers.bar[1](listBar, "quest-map-style") and listBar.canInterpolateScroll == original,
+            "Forever quest list styling acquired the native interpolator")
+        Check(not NS.LegacyScrollMotion.Track(scroll, "quest-map-motion") and not scroll.hooks.OnVerticalScroll,
+            "Forever quest list acquired a legacy render translation")
+        Check(not providers.generic[1](listBar, "quest-map-motion"), "direct motion adopted the native quest bar")
+        local other = Controller(false)
+        other.registeredScrollBar = listBar
+        Check(not providers.generic[1](other, "quest-map-partner"), "paired motion adopted the native quest bar")
+        Changed()
+        Check(listBar.canInterpolateScroll == original and listBar.SetInterpolateScroll == setter,
+            "motion refresh changed Forever native scroll ownership")
+        scroll:Fire("OnMouseWheel", -1)
+        Check(scroll.scripts.OnMouseWheel == Wheel and scroll.offset > 0,
+            "Forever native wheel no longer updates the quest list")
+        if original then
+            Check(listBar.interpolator and listBar.interpolator.destination == 0.5,
+                "Forever's native interpolation was canceled")
+        else
+            Check(scroll.offset == 500 and not listBar.interpolator, "Suite delayed the native quest wheel step")
+        end
+        Check(not Motion.states[listBar] and not NS.LegacyScrollMotion.states[scroll],
+            "Forever's quest list retained a Suite motion controller")
+    end
+end
+combat = false
 local foreign = Controller(false, true)
+function foreign:GetName() return "QuestScrollFrame" end
+Check(Motion.Track(foreign, "lookalike") and foreign.canInterpolateScroll,
+    "a lookalike scrollbar lost normal smoothing")
+Motion.ReleaseOwner("lookalike")
+NS.Client.isForever = false
+local retailBar = Controller(false, true)
+QuestScrollFrame.ScrollBar = retailBar
+Check(Motion.Track(retailBar, "mainline-map") and retailBar.canInterpolateScroll,
+    "Mainline's quest list lost normal smoothing")
+Motion.ReleaseOwner("mainline-map")
+QuestScrollFrame = nil
 function foreign:GetName() return "QuestRewardScrollFrameScrollBar" end
 Check(Motion.Track(foreign, "foreign") and foreign.canInterpolateScroll,
     "a same-named foreign scrollbar lost normal smoothing")
@@ -117,6 +168,12 @@ Check(not Motion.IsQuestScroll(foreign), "secret native identity was compared")
 QuestDetailScrollFrame = { ScrollBar = secret }
 Check(not Motion.IsQuestScroll(foreign), "secret scrollbar identity was compared")
 QuestDetailScrollFrame = nil
+NS.Client.isForever = true
+QuestScrollFrame = secret
+Check(not Motion.IsQuestScroll(foreign), "secret map-side quest list identity was compared")
+QuestScrollFrame = { ScrollBar = secret }
+Check(not Motion.IsQuestScroll(foreign), "secret map-side quest scrollbar was compared")
+QuestScrollFrame = nil
 local violations = stopWatch()
 Check(#violations == 0, "quest identity secret misuse: " .. table.concat(violations, "; "))
 print("suite quest completion contract: " .. checks .. " checks passed")

@@ -76,8 +76,41 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
             "the " .. kind .. " popup of the top bar does not open below its place: " .. flavor)
         assert(popup:IsClampedToScreen(), "the DataTexts popup is not clamped to the screen")
         assert(popup.height + 3 <= SCREEN - 28, "the " .. kind .. " popup is taller than the room below the top bar: " .. flavor)
+        if kind == "microMenu" then
+            assert(popup.width == 240, "the multi-slot bar lost the regular micro menu width: " .. flavor)
+        end
         W.Click(popup.rows[1])
     end
+
+    local menu = assert(Apply("microMenu").microMenu)
+    local panel = M.bars[1].frame
+    local function CheckMenu(anchor, relativePoint)
+        W.Click(menu)
+        local popup = A.popup
+        local point = popup.points[1]
+        local width = panel:GetWidth() * panel:GetEffectiveScale() / W.UIParent:GetEffectiveScale()
+        assert(popup.shown and popup:GetWidth() == width, "the menu popup does not match its panel width: " .. flavor)
+        assert(point[1] == anchor and point[2] == panel and point[3] == relativePoint,
+            "the menu popup is not aligned with its panel: " .. flavor)
+        for _, row in ipairs(popup.rows) do
+            if row.shown then
+                local left, relativeLeft, leftEdge, leftInset = row.label:GetPoint(1)
+                local right, relativeRight, rightEdge, rightInset = row.label:GetPoint(2)
+                assert(row.points[1][4] == 4 and row:GetWidth() == width - 8 and row.label.justify == "CENTER"
+                    and left == "LEFT" and relativeLeft == row and leftEdge == "LEFT" and leftInset == 4
+                    and right == "RIGHT" and relativeRight == row and rightEdge == "RIGHT" and rightInset == -4,
+                    "a centered menu row does not fit the panel width: " .. flavor)
+            end
+        end
+        W.Click(popup.rows[1])
+    end
+    panel.rect = { 20, 0, panel:GetWidth(), panel:GetHeight() }
+    CheckMenu("BOTTOMLEFT", "TOPLEFT")
+    assert(S.SetMany("dataTexts", { bar1Width = 360 }))
+    panel:SetScale(0.75)
+    panel.rect = { 20, SCREEN / 0.75 - panel:GetHeight(), panel:GetWidth(), panel:GetHeight() }
+    CheckMenu("TOPLEFT", "BOTTOMLEFT")
+    panel:SetScale(1)
 
     -- The bottom bar opens upward as before; a long travel list wraps.
     places = Apply("infoBottom")
@@ -90,6 +123,10 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         "the travel popup of the bottom bar does not open above its place: " .. flavor)
     assert(popup.height + 3 <= SCREEN - 28,
         "a travel popup with " .. OWNED .. " entries runs off the top of the screen: " .. flavor)
+    local first = popup.rows[1]
+    local _, labelAnchor, anchorEdge = first.label:GetPoint()
+    assert(first.label.justify == "LEFT" and labelAnchor == first.icon and anchorEdge == "RIGHT"
+        and first.label:GetWidth() == first:GetWidth() - 28, "travel text did not keep its icon inset: " .. flavor)
     local perColumn = math.floor((popup.height - 8) / 26)
     local columns = math.ceil(OWNED / perColumn)
     assert(columns > 1 and popup.width == 4 + columns * 236, "the long travel list did not wrap into columns: " .. flavor)
@@ -97,6 +134,7 @@ for _, flavor in ipairs({ "Mainline", "Forever" }) do
         local row = popup.rows[i]
         local rowPoint = row.points[1]
         assert(row.shown and #row.points == 1 and rowPoint[2] == popup
+            and row:GetWidth() == 232 and row.label:GetWidth() == 204
             and rowPoint[4] == 4 + math.floor((i - 1) / perColumn) * 236 and rowPoint[5] == -4 - (i - 1) % perColumn * 26,
             "travel row " .. i .. " is not in its column: " .. flavor)
     end

@@ -42,8 +42,9 @@ MUTANTS = (
     ("native mouse-up payload", "local function ThumbUp(state, button)",
      "local function ThumbUp(state, _, button)"),
     ("logarithmic wheel gain", "2 * math.log(1 + activity) / math.log(3)", "activity"),
-    ("keybind capture completion", '"KeybindListener.StoppedListening", Adaptive.Reset, state',
-     '"KeybindListener.Missing", Adaptive.Reset, state'),
+    ("Settings list native ownership", 'target == Safety.Field(settings, "ScrollBox")', "false"),
+    ("Settings category selector native ownership", 'target == Safety.Field(categories, "ScrollBox")', "false"),
+    ("Settings scrollbar cannot bypass native ownership", "or partner and NativeList.IsTarget(partner)", ""),
     ("independent edge bounce", "NS.DB.theme.scrollEdgeBounce == false or", "false or"),
 )
 

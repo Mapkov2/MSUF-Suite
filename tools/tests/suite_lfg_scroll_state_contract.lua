@@ -61,7 +61,7 @@ end
 BaseScrollBoxEvents = { OnScroll = "scroll" }
 ScrollBoxListMixin = { Event = { OnLayout = "layout", OnScroll = "scroll" } }
 local listeners = {}
-local NS = { DB = { enabled = true, theme = {} }, Motion = { combat = false },
+local NS = { DB = { enabled = true, theme = {} }, Motion = { combat = false }, Client = { isForever = false },
     IsCombatLocked = InCombatLockdown, Registry = { AddListener = function(owner, fn) listeners[owner] = fn end },
     GenericWindows = { SetScrollMotionProvider = Noop }, ScrollBarSkin = { SetScrollMotionProvider = Noop } }
 local function Load(path)

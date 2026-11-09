@@ -120,8 +120,203 @@ function Power.Enable(module)
     Power.Refresh()
 end
 
+-- Enemy power is a separate, owned row. It shares the native health bar's
+-- visibility and anchors to the space Blizzard already reserves for casts.
+local Enemy = Style.EnemyPower
+local enemyBars = setmetatable({}, { __mode = "k" })
+local enemyPlan
+local MAX_POWER_EVENT = "UNIT_MAXPOWER"
+local POWER_EVENT = "UNIT_POWER_UPDATE"
+local ENEMY_POWER_EVENTS = { inCombat = true }
+
+local function StopEnemyUpdates(bar)
+    if not bar.enemyPowerListening then return end
+    bar:UnregisterEvent(POWER_EVENT)
+    bar.enemyPowerListening = nil
+end
+
+local function StartEnemyUpdates(bar)
+    local unit = bar.enemyPowerUnit
+    if not unit or bar.enemyPowerListening then return end
+    bar.enemyPowerValue = nil
+    Enemy.SetValue(bar, UnitPower(unit))
+    bar:RegisterUnitEvent(POWER_EVENT, unit)
+    bar.enemyPowerListening = true
+end
+
+local function OnEnemyPowerShown(bar)
+    bar.enemyPowerVisible = true
+    StartEnemyUpdates(bar)
+end
+
+local function OnEnemyPowerHidden(bar)
+    bar.enemyPowerVisible = nil
+    StopEnemyUpdates(bar)
+end
+
+local function OnEnemyPowerChanged(bar, _, unit, token)
+    if not bar.enemyPowerListening or not NS.Public(unit) or unit ~= bar.enemyPowerUnit then return end
+    local displayed = bar.enemyPowerToken
+    if displayed and NS.Public(token) and token ~= displayed then return end
+    Enemy.SetValue(bar, UnitPower(unit), bar.enemyPowerSmooth)
+end
+
+local function ReleaseEnemyBar(bar)
+    if not bar or not bar.enemyPowerUnit then return end
+    StopEnemyUpdates(bar)
+    bar.enemyPowerUnit, bar.enemyPowerMaximum = nil, nil
+    bar.enemyPowerValue = nil
+    -- An alpha write can retire the owned row even if the anchor later
+    -- becomes protected. The next occupant seeds a fresh, immediate value.
+    bar:SetAlpha(0)
+end
+
+function Power.RestoreEnemy(uf)
+    local state = enemyBars[uf]
+    if not state then return end
+    ReleaseEnemyBar(state.bar)
+    state.unit, state.plan = nil, nil
+end
+
+local function PublicAnchor(frame)
+    if not Accessible(frame) then return false end
+    local protected = frame:IsProtected()
+    if not NS.Public(protected) or protected ~= false then return false end
+    local restricted = frame:IsAnchoringRestricted()
+    return NS.Public(restricted) and restricted == false
+end
+
+local function CanAttach(uf, health, bottom, bar)
+    return PublicAnchor(uf) and PublicAnchor(health) and PublicAnchor(bottom) and (not bar or PublicAnchor(bar))
+end
+
+local function CreateEnemyBar(health)
+    local bar = Enemy.Create(health)
+    bar:SetAlpha(0)
+    bar:SetScript("OnShow", OnEnemyPowerShown)
+    bar:SetScript("OnHide", OnEnemyPowerHidden)
+    bar:SetScript("OnEvent", OnEnemyPowerChanged)
+    bar:Show()
+    return bar
+end
+
+local function PaintEnemyBar(bar, plan)
+    local color = plan.byType and PowerBarColor[bar.enemyPowerToken]
+    if color then
+        Enemy.Paint(bar, plan, color.r, color.g, color.b)
+    else
+        Enemy.Paint(bar, plan)
+    end
+    bar.enemyPowerSmooth = plan.interpolation
+end
+
+local function ReadEnemyToken(unit)
+    local _, token = UnitPowerType(unit)
+    if NS.Public(token) and type(token) == "string" then return token end
+end
+
+local function SetEnemyMaximum(bar, maxPower)
+    if not NS.Public(maxPower) then
+        bar.enemyPowerMaximum = nil
+        bar:SetMinMaxValues(0, maxPower)
+    elseif bar.enemyPowerMaximum ~= maxPower then
+        bar.enemyPowerMaximum = maxPower
+        bar:SetMinMaxValues(0, maxPower)
+    end
+end
+
+local function RefreshEnemyResource(state, health, unit)
+    if state.unit ~= unit then ReleaseEnemyBar(state.bar) end
+    local maxPower = UnitPowerMax(unit)
+    state.unit = unit
+    if NS.Public(maxPower) and (type(maxPower) ~= "number" or maxPower <= 0) then
+        ReleaseEnemyBar(state.bar)
+        return
+    end
+    local bar = state.bar
+    if not bar then
+        bar = CreateEnemyBar(health)
+        state.bar = bar
+    end
+    bar.enemyPowerToken = ReadEnemyToken(unit)
+    SetEnemyMaximum(bar, maxPower)
+    return bar
+end
+
+function Power.ApplyEnemy(uf, health, prefix, unit, refreshResource)
+    local state = enemyBars[uf]
+    if prefix ~= "enemy" or not unit then
+        if state and state.unit then Power.RestoreEnemy(uf) end
+        return
+    end
+    local plan = enemyPlan
+    if state and state.unit == unit and state.plan == plan and not refreshResource then return end
+    local bottom = uf.CastBarsContainer
+    local bar = state and state.bar
+    if not CanAttach(uf, health, bottom, bar) then
+        Power.RestoreEnemy(uf)
+        if NS.InCombat() then owner.pendingPlates[uf] = true end
+        return
+    end
+    if not state then
+        state = {}
+        enemyBars[uf] = state
+    end
+    local refresh = refreshResource or state.unit ~= unit
+    if refresh then bar = RefreshEnemyResource(state, health, unit) end
+    state.plan = plan
+    if not bar or not refresh and not bar.enemyPowerUnit then return end
+    local previous = bar.enemyPowerPlan
+    if not previous or previous.width ~= plan.width or previous.x ~= plan.x or previous.y ~= plan.y then
+        Enemy.Place(bar, health, bottom, plan)
+    end
+    local wasSmooth = bar.enemyPowerSmooth
+    PaintEnemyBar(bar, plan)
+    if not bar.enemyPowerUnit then
+        bar.enemyPowerUnit = unit
+        if bar.enemyPowerVisible then StartEnemyUpdates(bar) end
+        bar:SetAlpha(1)
+    elseif bar.enemyPowerListening and (refresh or wasSmooth and not bar.enemyPowerSmooth) then
+        Enemy.SetValue(bar, UnitPower(unit))
+    end
+end
+
+function Power.EnemyResourceChanged(uf, unit)
+    local container = uf.HealthBarsContainer
+    Power.ApplyEnemy(uf, container and container.healthBar, private.PlatePrefix(uf), unit, true)
+end
+
+local function OnEnemyMaximumChanged(module, _, unit)
+    if not NS.Public(unit) then return end
+    local uf = module.activeUnits[unit]
+    if Accessible(uf) then Power.EnemyResourceChanged(uf, unit) end
+end
+
+local function DisableEnemy()
+    if not Power.enemyEnabled then return end
+    Power.enemyEnabled = false
+    enemyPlan = nil
+    owner.context:RemoveEvent(MAX_POWER_EVENT)
+    for uf in pairs(enemyBars) do Power.RestoreEnemy(uf) end
+end
+
+function Power.ConfigureEnemy()
+    if not owner then return end
+    local plan = Enemy.Plan(owner.config, enemyPlan)
+    if not plan.enabled then
+        DisableEnemy()
+        return
+    end
+    enemyPlan = plan
+    if not Power.enemyEnabled then
+        Power.enemyEnabled = true
+        owner.context:Event(MAX_POWER_EVENT, OnEnemyMaximumChanged, ENEMY_POWER_EVENTS)
+    end
+end
+
 function Power.Disable()
     if not owner then return end
+    DisableEnemy()
     for bar in pairs(visuals) do Paint(bar, false, 0, 0, 0) end
     owner = nil
 end

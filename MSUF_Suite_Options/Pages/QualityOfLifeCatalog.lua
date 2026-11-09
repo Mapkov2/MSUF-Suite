@@ -5,6 +5,9 @@ local GROUPS = {
         sections = { "forever_world_map" }, aliases = { "zone levels", "travel markers", "world map" } },
     { id = "gatheringTooltips", title = "Gathering tooltips (Forever)", switch = "enabled",
         sections = { "gathering_tooltips" }, aliases = { "herbalism", "mining", "gathering skill" } },
+    { id = "gatheringRoutes", title = "Resource routes", switch = "enabled",
+        sections = { "gathering_routes" },
+        aliases = { "gathering guide", "gathering radar", "farmhud", "farming route", "sammelroute", "sammelpfeil" } },
     { id = "selfCombatText", title = "Own combat text", switch = "enabled", sections = { "self_combat_text" },
         keywords = { "SCT", "FCT", "floating combat text", "Kampftext", "Schadenszahlen", "Heilungszahlen" } },
     -- Keep the visible feature names alphabetic; section IDs stay stable for search and history.
@@ -156,7 +159,7 @@ return {
     } },
     { id = "questsProfessions", title = "Quests & Professions", subgroups = {
         Subgroup("quests", "Quests", "quests questRewardValue"),
-        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips"),
+        Subgroup("professions", "Professions", "trainerLearnAll fishingComfort professionAppearance gatheringTooltips gatheringRoutes"),
     } },
     { id = "groups", title = "Groups", subgroups = {
         Subgroup("groupRaid", "Group & Raid", "groupRaidShortcuts trustedPartyInvites autoResponses releaseProtection"),

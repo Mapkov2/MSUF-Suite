@@ -22,6 +22,7 @@ local objectiveContent = {
     B.Bool("showScenario", "Scenario and delve steps", true),
     B.Bool("showZoneEvents", "Zone event progress", true),
     B.Bool("showWorldQuests", "World quests", true),
+    B.Bool("groupQuestsByZone", "Group watched quests by current zone", false),
     B.Bool("showBonus", "Nearby bonus objectives", true),
     B.Bool("showQuestItems", "Usable quest items", true),
     B.Bool("showTimers", "Objective countdowns", true),

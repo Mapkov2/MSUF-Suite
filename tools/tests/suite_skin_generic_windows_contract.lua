@@ -652,11 +652,33 @@ Section("selection indicator combat gate", function()
         "a selection indicator was created or moved in combat")
 end)
 
+Section("native character stats stay outside generic skin registration", function()
+    local stats = Frame("CharacterStatsPaneScrollBox")
+    local list = Frame("CharacterStatsPaneScrollBoxScrollBox")
+    stats.children = { list }
+    function list:HasView() return true end
+    function list:RegisterCallback() error("generic skin registered on the native stats list") end
+    function list:ForEachFrame() end
+    local character = Frame("CharacterFrame", { stats })
+    local popup = Frame("GearManagerPopupFrame")
+    _G.CharacterFrame, _G.GearManagerPopupFrame = character, popup
+    local motion = {}
+    GenericWindows.SetMenuMotionProvider(function(frame) motion[frame] = true end, function() end)
+    Expect(GenericWindows.ApplyAll("native-character"), "native character catalog pass failed")
+    Expect(character.childReads == 0 and stats.childReads == 0 and not motion[character],
+        "generic skin traversed or registered menu motion on the native character window")
+    Expect(GenericWindows.GetStatus("character") == "applied" and popup.surfaceSpec and motion[popup],
+        "native character exclusion also skipped the separate gear manager popup")
+    GenericWindows.Disable("native-character")
+    GenericWindows.SetMenuMotionProvider(function() end, function() end)
+    _G.CharacterFrame, _G.GearManagerPopupFrame = nil, nil
+end)
+
 Section("catalog entries are isolated", function()
-    local raising = Frame("CharacterFrame")
-    function raising:GetChildren() error("contract: CharacterFrame raised") end
+    local raising = Frame("GearManagerPopupFrame")
+    function raising:GetChildren() error("contract: GearManagerPopupFrame raised") end
     local bank = Frame("BankFrame")
-    _G.CharacterFrame, _G.BankFrame = raising, bank
+    _G.GearManagerPopupFrame, _G.BankFrame = raising, bank
     local before = #reported
     local ok = pcall(GenericWindows.ApplyAll, "isolation")
     Expect(ok and bank.surfaceSpec ~= nil,
@@ -679,7 +701,7 @@ Section("catalog entries are isolated", function()
     Expect(ok and laterBank.surfaceSpec ~= nil,
         "a raising entry of a loaded addon stopped the other waiting entries")
     GenericWindows.Disable("bucket")
-    _G.CharacterFrame, _G.BankFrame = nil, nil
+    _G.GearManagerPopupFrame, _G.BankFrame = nil, nil
 end)
 
 Section("shared chrome", function()
@@ -2743,6 +2765,8 @@ Section("world map", function()
     _G.QuestLogQuests_Update = function() end
     local firstRow = AcquireRow()
     local map = Frame("WorldMapFrame")
+    map.visible = true
+    function map:IsVisible() return self.visible end
     map.QuestLog = questLog
     map.NavBar = Frame(nil)
     map.NavBar.navList = { Frame("HomeButton") }
@@ -2767,7 +2791,10 @@ Section("world map", function()
     -- pool had to create; it has its outline once the map opens again.
     local closedRow = AcquireRow()
     local firstAttaches = rowAttaches[firstRow]
+    map.visible = false
     _G.QuestLogQuests_Update()
+    Expect(not Outlined(closedRow), "a hidden map skinned a new quest row")
+    map.visible = true
     NS.WorldMapSkin:OnWorldMapShown()
     Expect(Outlined(closedRow), "a quest row created while the map was closed had no outline after reopening")
     Expect(rowAttaches[firstRow] == firstAttaches and calls[questLog] == 1,
@@ -2829,6 +2856,7 @@ Section("world map", function()
         local mapLog = Linked(Frame(name .. "QuestLog", { mapQuests }))
         mapLog.QuestsFrame = mapQuests
         local mapFrame = Frame(name)
+        function mapFrame:IsVisible() return true end
         mapFrame.QuestLog = mapLog
         return mapFrame
     end

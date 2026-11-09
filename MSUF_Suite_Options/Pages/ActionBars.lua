@@ -28,7 +28,7 @@ local HELP = {
 -- Per-bar settings grouped by topic; position (Point/X/Y) is never copied.
 local GROUPS = {
     { id = "visibility", title = "When the selected bar appears",
-        suffixes = { "Visibility", "HideGamepad", "Alpha", "FadeAlpha", "FadeDuration", "ClickThrough", "Tooltip" } },
+        suffixes = { "Visibility", "HideGamepad", "GroupOnly", "Alpha", "FadeAlpha", "FadeDuration", "ClickThrough", "Tooltip" } },
     { id = "layout", title = "Layout for the selected bar",
         suffixes = { "Buttons", "Rows", "Size", "HeightPercent", "Spacing", "Vertical", "Start", "ShowEmpty", "FlyoutDirection",
         "Layer", "Point", "X", "Y" } },
@@ -46,7 +46,7 @@ local ESSENTIAL = {
     layout = { Buttons = true, Rows = true, Size = true, HeightPercent = true, Spacing = true, Vertical = true, ShowEmpty = true },
     text = { Keybind = true, KeybindSize = true, Macro = true, MacroSize = true,
         CountSize = true, CooldownSize = true, CooldownAutoSize = true },
-    visibility = { Visibility = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
+    visibility = { Visibility = true, GroupOnly = true, Alpha = true, FadeAlpha = true, FadeDuration = true, Tooltip = true },
     ornaments = { LeftEndcap = true, LeftEndcapSize = true, RightEndcap = true, RightEndcapSize = true },
     background = { Background = true, BackgroundAlpha = true, BackgroundPadding = true, BackgroundBorder = true },
 }

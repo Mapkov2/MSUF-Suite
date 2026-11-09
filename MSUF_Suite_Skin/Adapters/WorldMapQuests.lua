@@ -12,6 +12,7 @@ local originalObjectives, yieldedObjectives, refreshing
 local pendingValues, pendingHead, pendingTail = {}, 1, 0
 local CVAR = "showQuestObjectivesInLog"
 local REPLAY = "world-map-quest-layout"
+local events = CreateFrame("Frame")
 
 function Quests.GetLayout()
     local settings = NS.DB and NS.DB.questLog
@@ -413,6 +414,7 @@ local function HideNativeTitle(record)
 end
 
 function Quests.PaintRow(row, state)
+    if NS.IsCombatLocked() or NS.SuiteCore().startingBeforeLockdown then return end
     local record = rows[row]
     if not Compact() or not state.active then
         if record and Safety.CanDecorate(row, true) then RestoreRow(record) end
@@ -482,6 +484,10 @@ function Quests.Refresh()
 end
 
 function Quests.Activate(state, frame)
+    if not next(contexts) then
+        events:RegisterEvent("PLAYER_REGEN_DISABLED")
+        events:RegisterEvent("PLAYER_REGEN_ENABLED")
+    end
     local scroll = Kit.Path(frame, "QuestLog", "QuestsFrame", "ScrollFrame")
     contexts[state] = scroll or false
     SyncObjectives()
@@ -494,7 +500,11 @@ function Quests.Release(state)
     for row, record in pairs(rows) do
         if record.state == state and Safety.CanDecorate(row, true) then RestoreRow(record) end
     end
-    if not next(contexts) then RestoreObjectives() end
+    if not next(contexts) then
+        events:UnregisterEvent("PLAYER_REGEN_DISABLED")
+        events:UnregisterEvent("PLAYER_REGEN_ENABLED")
+        RestoreObjectives()
+    end
 end
 
 function Quests.SetLayout(value)
@@ -537,12 +547,28 @@ local function OnSettings(_, domain)
 end
 NS.Registry.AddListener(Quests, OnSettings)
 
-local events = CreateFrame("Frame")
+local function RestoreCombatTitles()
+    -- Blizzard can recycle hidden rows without showing their Text regions.
+    -- Release Compact's visibility ownership before lockdown takes effect.
+    for row, record in pairs(rows) do
+        if (record.visible or record.nativeHidden) and Safety.CanDecorate(row, true) then
+            RestoreRow(record)
+        end
+    end
+end
+
 events:RegisterEvent("PLAYER_LOGOUT")
 events:RegisterEvent("CVAR_UPDATE")
 events:SetScript("OnEvent", function(_, event, name, value)
     if event == "PLAYER_LOGOUT" then
         RestoreObjectives()
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        RestoreCombatTitles()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if not Compact() then return end
+        for _, scroll in pairs(contexts) do
+            if Safety.Read(scroll, "IsVisible") == true then return Quests.Refresh() end
+        end
     elseif name and name:lower() == "showquestobjectivesinlog" then
         if not OwnCVarEvent(value) and originalObjectives ~= nil then
             -- A later native settings edit wins, including off/on/off.

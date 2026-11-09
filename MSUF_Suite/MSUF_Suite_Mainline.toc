@@ -3,7 +3,7 @@
 ## Notes: Alpha interface modules for MSUF. Requires MSUF; compatible with 6.5 (6.50).
 ## Author: Mapko
 ## Category: MSUF
-## Version: 0.1.14-alpha
+## Version: 0.1.15-alpha
 ## X-Wago-ID: YK9xrV6L
 ## X-Curse-Project-ID: 1743628
 ## Dependencies: MidnightSimpleUnitFrames
@@ -12,6 +12,7 @@
 ## IconTexture: Interface\AddOns\MSUF_Suite\Media\SuiteIcon.tga
 
 Core\Platform.lua
+Core\UnitMount.lua
 Core\DisclosureMotion.lua
 Core\PreviewKit.lua
 Core\Changelog.lua
@@ -40,6 +41,8 @@ Core\MinimapStyle.lua
 Core\MinimapElements.lua
 Core\Catalog\DamageMeter.lua
 Core\Catalog\Bags.lua
+Core\CharacterTabs.lua
+Core\Catalog\CharacterPanel.lua
 Core\Catalog\QualityOfLife.lua
 Core\Catalog\QualityOfLifeIndicators.lua
 Core\Catalog\ExperienceBar.lua
@@ -69,6 +72,7 @@ Core\Suite.lua
 Core\CDMInspection.lua
 Core\SpellRange.lua
 Core\FontBridge.lua
+Core\CharacterHeader.lua
 Integrations\MapkoSkin.lua
 Core\HostBridge.lua
 Core\GlossMaterial.lua

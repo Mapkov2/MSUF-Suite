@@ -649,3 +649,95 @@ function Decor.Hide(state)
     if state.threshold then Shown(state.threshold, false) end
     if state.focusMarker then Shown(state.focusMarker, false) end
 end
+
+-- The enemy resource row is Suite-owned. Runtime and preview use the same
+-- art and anchors, with the cast container reserving the native cast space.
+local EnemyPower, NO_ENEMY_POWER = {}, { enabled = false }
+Style.EnemyPower = EnemyPower
+local POWER_WHITE = "Interface\\Buttons\\WHITE8X8"
+
+local function PowerNumber(value, fallback, minimum, maximum)
+    if not NS.Finite(value) then return fallback end
+    return math.max(minimum, math.min(maximum, value))
+end
+
+function EnemyPower.Plan(config, previous)
+    local enabled = config.enemyPowerEnabled == true and config.enemy == true and config.look ~= 2
+    if not enabled then return NO_ENEMY_POWER end
+    local smooth = config.enemyPowerSmooth ~= false
+    local byType = config.enemyPowerByType ~= false
+    local width = PowerNumber(config.enemyPowerWidth, 0, -20, 120)
+    local height = PowerNumber(config.enemyPowerHeight, 4, 2, 18)
+    local x = PowerNumber(config.enemyPowerOffsetX, 0, -2048, 2048)
+    local y = PowerNumber(config.enemyPowerOffsetY, 0, -2048, 2048)
+    local color = config.enemyPowerColor or "337be6"
+    local background = config.enemyPowerBackgroundColor or "10151d"
+    local alpha = PowerNumber(config.enemyPowerBackgroundAlpha, 80, 0, 100) / 100
+    if previous and previous.enabled and previous.smooth == smooth and previous.byType == byType
+        and previous.width == width and previous.height == height and previous.x == x and previous.y == y
+        and previous.colorKey == color
+        and previous.backgroundKey == background and previous.backgroundAlpha == alpha then
+        return previous
+    end
+    return {
+        enabled = true,
+        smooth = smooth,
+        interpolation = smooth and Enum.StatusBarInterpolation.ExponentialEaseOut or nil,
+        byType = byType,
+        width = width,
+        height = height,
+        x = x,
+        y = y,
+        colorKey = color,
+        color = { NS.RGB(color) },
+        backgroundKey = background,
+        background = { NS.RGB(background) },
+        backgroundAlpha = alpha,
+    }
+end
+
+function EnemyPower.Create(parent)
+    local bar = CreateFrame("StatusBar", nil, parent)
+    bar:EnableMouse(false)
+    bar:Hide()
+    bar:SetStatusBarTexture(POWER_WHITE)
+    bar.enemyPowerBackground = bar:CreateTexture(nil, "BACKGROUND")
+    bar.enemyPowerBackground:SetAllPoints(bar)
+    return bar
+end
+
+function EnemyPower.Place(bar, health, bottom, plan)
+    local halfWidth = plan.width / 2
+    bar:ClearAllPoints()
+    bar:SetPoint("TOP", bottom, "BOTTOM", 0, plan.y - 1)
+    bar:SetPoint("LEFT", health, "LEFT", plan.x - halfWidth, 0)
+    bar:SetPoint("RIGHT", health, "RIGHT", plan.x + halfWidth, 0)
+end
+
+function EnemyPower.Paint(bar, plan, r, g, b)
+    local previous = bar.enemyPowerPlan
+    if previous ~= plan then
+        bar.enemyPowerPlan = plan
+        if not previous or previous.height ~= plan.height then bar:SetHeight(plan.height) end
+        if not previous or previous.backgroundKey ~= plan.backgroundKey or previous.backgroundAlpha ~= plan.backgroundAlpha then
+            local background = plan.background
+            bar.enemyPowerBackground:SetColorTexture(background[1], background[2], background[3], plan.backgroundAlpha)
+        end
+    end
+    if r == nil then r, g, b = unpack(plan.color) end
+    if bar.enemyPowerR ~= r or bar.enemyPowerG ~= g or bar.enemyPowerB ~= b then
+        bar:SetStatusBarColor(r, g, b)
+        bar.enemyPowerR, bar.enemyPowerG, bar.enemyPowerB = r, g, b
+    end
+end
+
+function EnemyPower.SetValue(bar, value, interpolation)
+    interpolation = interpolation or Enum.StatusBarInterpolation.Immediate
+    if not NS.Public(value) then
+        bar.enemyPowerValue = nil
+        bar:SetValue(value, interpolation)
+    elseif bar.enemyPowerValue ~= value or bar.enemyPowerInterpolation ~= interpolation then
+        bar.enemyPowerValue, bar.enemyPowerInterpolation = value, interpolation
+        bar:SetValue(value, interpolation)
+    end
+end

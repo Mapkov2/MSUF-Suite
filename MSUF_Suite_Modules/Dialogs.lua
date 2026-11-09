@@ -1,5 +1,6 @@
 local _, Private = ...
 local S = Private.Suite
+local bridge = Private.NS and Private.NS.HostBridge
 
 -- Suite-owned windows and the one copy dialog, shared by the Quality of Life
 -- and Chat addons (both load after this runtime). C_OS.CopyToClipboard is
@@ -13,13 +14,35 @@ function S.QoLLabel(parent, text, size)
     return label
 end
 
+local COPY_BACKDROP = {
+    bgFile = "Interface\\Buttons\\WHITE8X8",
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
+    edgeSize = 1,
+}
+
+-- Owned copy surfaces use the host material when it is already available.
+function S.QoLCopySurface(frame, material)
+    if bridge and bridge.MenuMaterial(frame, material) then return end
+    frame:SetBackdrop(COPY_BACKDROP)
+    if material == "shell" then
+        frame:SetBackdropColor(.035, .049, .068, .99)
+    else
+        frame:SetBackdropColor(.057, .079, .108, .98)
+    end
+    frame:SetBackdropBorderColor(.25, .36, .49, .85)
+end
+
 -- A Suite-owned panel in UIParent with the windows' background and accent
 -- line, clamped to the screen and taking the mouse.
-local function SuitePanel(strata, name)
-    local panel = S.CreateFrame("Frame", name, UIParent)
+local function SuitePanel(strata, name, copyChrome)
+    local panel = S.CreateFrame("Frame", name, UIParent, copyChrome and "BackdropTemplate" or nil)
     panel:SetFrameStrata(strata)
     panel:EnableMouse(true)
     panel:SetClampedToScreen(true)
+    if copyChrome then
+        S.QoLCopySurface(panel, "shell")
+        return panel
+    end
     local background = S.CreateTexture(panel, nil, "BACKGROUND")
     background:SetAllPoints()
     background:SetColorTexture(.065, .075, .085, .97)
@@ -33,25 +56,35 @@ end
 
 -- A movable Suite-owned window with a title, a drag strip (panel.dragHandle)
 -- and a close button (panel.close).
-function S.QoLWindow(width, height, title, titleSize)
-    local panel = SuitePanel("DIALOG")
+function S.QoLWindow(width, height, title, titleSize, copyChrome)
+    local panel = SuitePanel("DIALOG", nil, copyChrome)
     panel:SetSize(width, height)
     panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel:SetMovable(true)
     local drag = S.CreateFrame("Button", nil, panel)
     drag:SetPoint("TOPLEFT", 0, 0)
-    drag:SetPoint("TOPRIGHT", -32, 0)
-    drag:SetHeight(38)
+    drag:SetPoint("TOPRIGHT", copyChrome and -40 or -32, 0)
+    drag:SetHeight(copyChrome and 40 or 38)
     drag:RegisterForDrag("LeftButton")
     drag:SetScript("OnDragStart", function() panel:StartMoving() end)
     drag:SetScript("OnDragStop", function() panel:StopMovingOrSizing() end)
-    local close = S.CreateFrame("Button", nil, panel)
-    close:SetSize(22, 22)
-    close:SetPoint("TOPRIGHT", -7, -7)
-    close.caption = S.QoLLabel(close, "X", 13)
-    close.caption:SetPoint("CENTER")
+    local close = copyChrome and bridge and bridge.MenuCloseButton(panel)
+    if not close then
+        close = S.CreateFrame("Button", nil, panel, copyChrome and "BackdropTemplate" or nil)
+        close:SetSize(copyChrome and 24 or 22, copyChrome and 24 or 22)
+        if copyChrome then S.QoLCopySurface(close, "card") end
+        close.caption = S.QoLLabel(close, "X", 13)
+        close.caption:SetPoint("CENTER")
+    end
+    close:SetPoint("TOPRIGHT", copyChrome and -12 or -7, copyChrome and -10 or -7)
     close:SetScript("OnClick", function() panel:Hide() end)
-    S.QoLLabel(panel, title, titleSize or 14):SetPoint("TOPLEFT", 14, -12)
+    local titleLabel = S.QoLLabel(panel, title, titleSize or 14)
+    titleLabel:SetPoint("TOPLEFT", copyChrome and 16 or 14, copyChrome and -14 or -12)
+    if copyChrome then
+        titleLabel:SetWidth(width - 62)
+        titleLabel:SetJustifyH("LEFT")
+        titleLabel:SetMaxLines(1)
+    end
     panel.dragHandle, panel.close = drag, close
     return panel
 end
@@ -87,8 +120,8 @@ local function ChooseRow(row)
 end
 
 -- Chooser lines under the hint: row i shows row.message (set by the caller).
-local CHOOSER_TOP, ROW_HEIGHT, ROW_STEP, ROW_INSET = -61, 23, 25, 15
-local ROW_SHADES = { "252a2d", "1d2225" }
+local CHOOSER_TOP, ROW_HEIGHT, ROW_STEP, ROW_INSET = -79, 24, 26, 16
+local ROW_SHADES = { "162131", "111b29" }
 
 local function AddRows(panel, width, count)
     for i = 1, count do
@@ -99,10 +132,13 @@ local function AddRows(panel, width, count)
         local shade = S.CreateTexture(row, nil, "BACKGROUND")
         shade:SetAllPoints(row)
         shade:SetColorTexture(S.RGB(ROW_SHADES[i % 2 + 1]))
+        local hover = S.CreateTexture(row, nil, "HIGHLIGHT")
+        hover:SetAllPoints(row)
+        hover:SetColorTexture(.30, .58, .82, .25)
         local label = S.CreateFontString(row, nil, "ARTWORK")
-        S.SetFont(label, nil, 11, "")
-        label:SetPoint("LEFT", row, "LEFT", 7, 0)
-        label:SetWidth(width - 2 * ROW_INSET - 16)
+        S.SetFont(label, nil, 12, "")
+        label:SetPoint("LEFT", row, "LEFT", 10, 0)
+        label:SetPoint("RIGHT", row, "RIGHT", -10, 0)
         label:SetJustifyH("LEFT")
         label:SetMaxLines(1)
         row.label = label
@@ -119,20 +155,31 @@ end
 -- clears the dialog (S.QoLClearCopy).
 function S.QoLCopyDialog(title, hint, width, options)
     local rows = options and options.rows or 0
-    local panel = S.QoLWindow(width, options and options.height or 104, title)
+    local chooser = rows > 0
+    local panel = S.QoLWindow(width, options and options.height or 104, title, chooser and 15 or nil, chooser)
     panel.rows = {}
-    local edit = S.CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+    local editTemplate = chooser and "InputBoxScriptTemplate,BackdropTemplate" or "InputBoxTemplate"
+    local edit = S.CreateFrame("EditBox", nil, panel, editTemplate)
     edit:SetAutoFocus(false)
     panel.edit = edit
     local function Clear() S.QoLClearCopy(panel) end
     edit:SetScript("OnEscapePressed", Clear)
     panel.close:SetScript("OnClick", Clear)
-    local hintLabel = S.QoLLabel(panel, hint, 11)
+    local hintLabel = S.QoLLabel(panel, hint, chooser and 12 or 11)
     panel.hint = hintLabel
-    if rows > 0 then
-        hintLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", ROW_INSET, -36)
-        edit:SetSize(width - 40, 25)
-        edit:SetPoint("BOTTOM", panel, "BOTTOM", 0, 12)
+    if chooser then
+        hintLabel:SetPoint("TOPLEFT", panel, "TOPLEFT", ROW_INSET, -43)
+        hintLabel:SetHeight(27)
+        hintLabel:SetJustifyH("LEFT")
+        hintLabel:SetMaxLines(2)
+        hintLabel:SetTextColor(.74, .81, .90)
+        edit:SetHeight(28)
+        edit:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", ROW_INSET, 14)
+        edit:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -ROW_INSET, 14)
+        edit:SetTextInsets(10, 10, 0, 0)
+        S.SetFont(edit, nil, 12, "")
+        edit:SetTextColor(.92, .95, 1)
+        if not (bridge and bridge.MenuInput(edit)) then S.QoLCopySurface(edit, "card") end
         AddRows(panel, width, rows)
     else
         hintLabel:SetPoint("BOTTOM", 0, 9)

@@ -29,8 +29,13 @@ SpellFlyout={IsShown=function() return false end}
 local tip={owner=nil}
 GameTooltip={GetOwner=function() return tip.owner end,SetAction=function() end,Hide=function() tip.owner=nil end}
 GameTooltip_SetDefaultAnchor=function(_,owner) tip.owner=owner end
-local calls={usable=0}
+local calls={usable=0,current=0,repeating=0}
+local current,repeating
+local secret={}
+issecretvalue=function(value) return value==secret end
 C_ActionBar=setmetatable({
+    IsCurrentAction=function() calls.current=calls.current+1 return current end,
+    IsAutoRepeatAction=function() calls.repeating=calls.repeating+1 return repeating end,
     IsUsableAction=function() calls.usable=calls.usable+1;return true,false end,
     IsActionInRange=function() return true end,
 }, {__index=function() return function() end end})
@@ -227,12 +232,43 @@ AB.bars[1]=nil
 ------------------------------------------------------------------ checked decoration, empty slot
 local plain=Rec(Bar(1))
 plain.decorFancy=true
-plain.stateArt={shown=true}
-function plain.stateArt:SetShown(value) self.shown=value end
+plain.stateArt={shown=true,writes=0}
+function plain.stateArt:SetShown(value)
+    self.shown=value
+    self.writes=self.writes+1
+end
 plain.decorChecked=true
 AB.Painter.Paint(plain)
 assert(plain.filled==false and plain.decorChecked==false,"a button on an empty slot kept its checked flag")
 assert(plain.stateArt.shown==false,"a button on an empty slot kept its checked frame art")
+local checkedWrites=0
+function plain.button:SetChecked(value)
+    self.checked=value
+    checkedWrites=checkedWrites+1
+end
+config.castHighlight=true
+current,repeating=true,false
+AB.Painter.State(plain)
+assert(plain.button.checked and plain.stateArt.shown,"a current action must highlight")
+plain.stateArt.writes,calls.current,calls.repeating,checkedWrites=0,0,0,0
+for _=1,100 do
+    plain.button.checked=false
+    AB.Painter.State(plain)
+end
+assert(checkedWrites==100 and plain.button.checked,"a native checked-state change escaped the state painter")
+assert(plain.stateArt.writes==0,"unchanged checked decoration wrote native visibility")
+assert(calls.current==100 and calls.repeating==0,"a current action still queried auto-repeat")
+current,repeating=secret,true
+AB.Painter.State(plain)
+assert(plain.button.checked and calls.repeating==1 and plain.stateArt.writes==0,"secret current must fall back to auto-repeat")
+current,repeating=false,secret
+AB.Painter.State(plain)
+assert(not plain.button.checked and not plain.stateArt.shown and plain.stateArt.writes==1,
+    "secret auto-repeat must clear the checked decoration")
+config.castHighlight=false
+AB.Painter.State(plain)
+assert(calls.current==102 and calls.repeating==2 and plain.stateArt.writes==1,
+    "disabled cast highlight must skip state reads and preserve hidden decoration")
 AB.bars[1]=nil
 
 print("Action bar audit (runtime): key audit, native usability cache, fade dormancy and checked art passed")

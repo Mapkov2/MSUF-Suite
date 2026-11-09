@@ -206,6 +206,22 @@ Check(native.GetChildren == 219 * 25, "resize skipped exact child identity verif
 -- are unchanged in the two-run allocation probe. Native calls count separately.
 Check(instructions < 6000000, "resize instruction budget regressed")
 
+-- Reopening the same Blizzard panel and re-adopting its current owner still
+-- verify child identities without running the provider-discovery walk again.
+Reset()
+instructions = 0
+debug.sethook(function() instructions = instructions + 100 end, "", 100)
+for i = 1, 60 do
+    Signal(panel, "OnShow") Drain()
+    Check(Menus.Track(panel, owner), "same owner could not re-adopt its panel")
+end
+debug.sethook()
+print(string.format("warm-menu-budget: discovery=%d forbidden=%d children=%d vm~%d",
+    calls.discovery or 0, native.IsForbidden or 0, native.GetChildren or 0, instructions))
+Check((calls.discovery or 0) == 0, "unchanged show/re-track repeated discovery")
+Check(native.GetChildren == 120 * 25, "warm show/re-track missed a child identity check")
+Check(instructions < 3400000, "warm show/re-track instruction budget regressed")
+
 -- Equal count, different identities: discover the replacement including deeper children.
 local replacement, list = Frame(), Frame()
 list.GetDataProvider, list.RegisterCallback = Noop, Noop
@@ -285,9 +301,24 @@ panel.visible = false
 Reset()
 for i = 1, 30 do Resize(panel) end
 Check((native.GetChildren or 0) == 0 and not calls.target, "hidden root refreshed descendants")
+local reopenedList = Frame()
+reopenedList.GetDataProvider, reopenedList.RegisterCallback = Noop, Noop
+panel.children[4] = reopenedList
 panel.visible = true
 Signal(panel, "OnShow") Drain()
-Check((calls.discovery or 0) > 10, "show did not rediscover")
+Check((native.GetChildren or 0) > 0 and (calls.target or 0) > 0, "show did not verify children and reconcile targets")
+Check(tracked[reopenedList] ~= nil, "show missed a same-count replacement made while hidden")
+reopenedList.protected = true
+Reset()
+Signal(panel, "OnShow") Drain()
+Check((calls.discovery or 0) > 0, "show retained a discovery snapshot after a protection change")
+reopenedList.protected = false
+local reopenedBody = Frame()
+panel.Content = reopenedBody
+Signal(panel, "OnShow") Drain()
+Check(tracked[reopenedBody] == owner, "show missed a replaced content body")
+panel.Content = body
+Resize(panel)
 panel.forbidden = true
 Reset() Resize(panel)
 Check(not native.GetChildren, "forbidden root refreshed descendants")
@@ -307,10 +338,14 @@ coldCombat.protected = true
 Check(not Menus.Track(coldCombat, "protected-combat"), "protected new root adopted in combat")
 combat = false
 
--- Show beats an already queued resize; profile/adapter and owner transitions are cold.
+-- A queued resize and show can share a verification. A same-count replacement
+-- still invalidates that snapshot, and profile/owner transitions remain cold.
+local shownList = Frame()
+shownList.GetDataProvider, shownList.RegisterCallback = Noop, Noop
+panel.children[5] = shownList
 Reset()
 Signal(panel, "OnSizeChanged") Signal(panel, "OnShow") Drain()
-Check((calls.discovery or 0) > 10, "queued resize swallowed show invalidation")
+Check(tracked[shownList] ~= nil, "queued resize and show missed a replacement list")
 Reset()
 listeners[Menus](Menus, "profile") Drain()
 Check((calls.discovery or 0) > 10, "profile change reused discovery")

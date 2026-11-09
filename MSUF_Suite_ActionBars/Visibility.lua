@@ -48,6 +48,7 @@ function AB.VisibilityDriver(index, mode, forms, gamepad, reveal)
     if mode == VIS.NEVER then return "hide" end
     local body = MODES[mode] or "show"
     if reveal then body = "[nocombat] show; " .. body end
+    if M.config[AB.KEYS[index].GroupOnly] then body = "[nogroup] hide; " .. body end
     if index == BAR.STANCE then
         if not forms then return "hide" end
         return "[petbattle][vehicleui][possessbar] hide; " .. body

@@ -92,7 +92,7 @@ local function Describe(key, family, saved)
         for i = 1, #group.ids do
             texture = texture or Number(C_Spell.GetSpellTexture(group.ids[i]))
         end
-    elseif kind == "s" or kind == "a" or kind == "d" then
+    elseif kind == "s" or CDM.IsAuraKey(key) then
         spell = id
     elseif kind == "i" then
         name, texture = Text(C_Item.GetItemNameByID(id)), Number(C_Item.GetItemIconByID(id))
@@ -285,7 +285,7 @@ local function Claim(context, list, slot, shared)
         local kind, family = CDM.EntryKind(key), Family(context, slot)
         if kind == "s" or kind == "i" or kind == "e" then
             family = 1
-        elseif kind == "a" or kind == "d" then
+        elseif CDM.IsAuraKey(key) then
             family = 2
         end
         local row = context.records[key] or Add(context, key, slot, family)

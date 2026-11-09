@@ -371,6 +371,12 @@ local RegisterDynamicScrollBox
 -- keeps only the window's contents: no root surface and Blizzard's root art
 -- left to the module. One derived mode per incoming mode.
 local bagShellModes = Kit.WeakSet()
+-- The dedicated adapter supplies CharacterFrame's art. The generic skin must
+-- never register row or motion callbacks on Blizzard's native stats lists.
+local characterShellMode = {
+    rootSurface = false, accentOnly = true, maxDepth = 0, registerDynamicRows = false,
+    allowImplicitProtected = true,
+}
 
 local function BagShellMode(mode)
     local key = mode == nil and NO_MODE or mode
@@ -389,6 +395,7 @@ local function BagShellMode(mode)
 end
 
 local function OwnedMode(frame, mode)
+    if frame == Safety.Field(_G, "CharacterFrame") then return characterShellMode end
     local ownership = NS.SuiteOwnership
     if ownership.IsBagShell(frame) and ownership.Owns("bagWindows") then
         return BagShellMode(mode)

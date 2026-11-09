@@ -636,6 +636,16 @@ local function FindSetting(key)
     end
 end
 do
+    local style = FindSetting("msufsuite.characterPanel.mode")
+    Check(style and style.key == "suite_hud" and style.exactTarget
+        and style.exactTarget.sectionId == "suite_hud_characterPanel_appearance",
+        "Character Panel style must route to its exact control inside HUD")
+    local toggle = FindSetting("msufsuite.characterPanel.enabled")
+    Check(toggle and toggle.key == "suite_hud" and toggle.exactTarget
+        and toggle.exactTarget.sectionId == "suite_hud_characterPanel_module",
+        "Character Panel enable switch must route to its HUD feature card")
+end
+do
     local switches, byModule = {}, {}
     for _, feature in ipairs(P.QualityOfLifeSearchFeatures) do
         switches["msufsuite." .. feature.id .. "." .. feature.switch] = true
@@ -777,6 +787,8 @@ end
 -- omits a few native Widget methods and window chrome; supply only those API
 -- surfaces for this route test.
 do
+    world.widgets.Methods.EnableKeyboard = function(self, enabled) self._keyboardEnabled = enabled end
+    world.widgets.Methods.SetPropagateKeyboardInput = function(self, propagate) self._propagateKeyboard = propagate end
     local createFrame = env.CreateFrame
     env.CreateFrame = function(kind, ...)
         local frame = createFrame(kind, ...)
@@ -818,6 +830,38 @@ do
     M.scrollChild = env.CreateFrame("Frame", nil, env.UIParent)
     M.frame = env.CreateFrame("Frame", nil, env.UIParent)
     M.frame:Show()
+
+    if searchHost == classic then
+        local page, setting = "suite_minimap", "msufsuite.minimap.showMail"
+        local control = P.Meta(page, "minimap", "showMail", "setting", "suite_minimap_elements").controlId
+        local function OpenMail(query)
+            local row = Check(api.SearchPages(query)[1], "no result for " .. query)
+            local target = row.exactTarget
+            Check(row.key == page and target and target.settingKey == setting and target.controlId == control,
+                query .. " did not rank the Mail indicator toggle first")
+            local previous = Suite.Suite.Config("minimap").showMail
+            local selected, anchored, exact = api.OpenSearchTarget(row.key, query, row.label, row.anchor, row.route, target)
+            world.widgets:RunTimers(80)
+            local buttons = M.cache[page].sections.suite_minimap_buttons
+            local _, widget = M.RuntimeControlCatalog.FindBySettingKey(setting, page)
+            Check(selected and anchored and exact and buttons._msuf2CollapsibleEntry.open and widget and widget:IsVisible(),
+                "the Mail result did not open Blizzard buttons and reveal the Mail toggle")
+            Check(Suite.Suite.Config("minimap").showMail == previous, "search changed the Mail toggle")
+        end
+        Check(M.cache[page] == nil, "the Mail route must also work from an unvisited page")
+        OpenMail("Mail indicator")
+        Check(M.cache[page]._msuf2ResolveMissingSection("suite_minimap_dungeon"),
+            "could not switch the Blizzard buttons workspace")
+        OpenMail("Mail indicator")
+
+        for _, offset in ipairs({ "Mail horizontal offset", "Mail vertical offset" }) do
+            local row = Check(api.SearchPages(offset)[1], "missing Minimap position result")
+            local selected, anchored, exact =
+                api.OpenSearchTarget(row.key, offset, row.label, row.anchor, row.route, row.exactTarget)
+            world.widgets:RunTimers(80)
+            Check(row.key == page and selected and anchored and exact, offset .. " did not open its preview editor")
+        end
+    end
 
     if M.InvalidateSearchProvider then
         local config=Suite.Suite.Config("dataTexts")

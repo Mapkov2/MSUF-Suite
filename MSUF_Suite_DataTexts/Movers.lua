@@ -17,7 +17,6 @@ local function Spec(module, index)
     local pointKey, widthKey, heightKey = prefix .. "Point", prefix .. "Width", prefix .. "Height"
     spec = {
         nameKey = prefix .. "Name", order = 690 + index,
-        centerPopup = true,
         getFrame = function() return module.bars[index] and module.bars[index].frame end,
         isEnabled = function() return module.presentIDs[index] and module.config[enabledKey] == true end,
         xKey = prefix .. "X", yKey = prefix .. "Y", pointKey = pointKey,

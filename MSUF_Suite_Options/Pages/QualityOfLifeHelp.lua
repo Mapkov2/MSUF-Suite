@@ -5,6 +5,9 @@ local Tr = P.Tr
 local HELP = {
     forever_world_map = "Show known travel stops and roads on the world map. Click a marker to place a waypoint.",
     gathering_tooltips = "Red means your skill is too low. The other colors show how far you are above the requirement.",
+    gathering_routes = "The arrow automatically points to the nearest known spot for your selected professions and shows the distance in meters. "
+        .. "Use /msufgather hud to toggle the radar and /msufgather stop to stop guidance. "
+        .. "Known spots may have been gathered already. The arrow works in open-world combat and pauses in instances.",
     castbar_art = "Adds a thin castbar frame and a dark spell-name panel below it. The Blizzard setup enables this artwork. "
         .. "Disable it to keep the MSUF castbar appearance.",
     glimmer_objects = "Quest item sparkle enables the game's own golden particles on eligible quest objects, including during "

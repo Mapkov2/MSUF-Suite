@@ -11,6 +11,16 @@ P.QoLComfortGroups = {
             "block duels", "ignore invites", "summon", "resurrect", "duel", "pet battle duel" } },
 }
 function P.BuildQoLComfortActions(ctx, body, id, section, y, width)
+    if id == "gatheringRoutes" then
+        local function CanOpen()
+            local runtime = P.S.instances[id]
+            return runtime and runtime:CanOpen()
+        end
+        P.Button(ctx, body, "Open resource routes", 16, y, width, function()
+            if CanOpen() then P.S.instances[id]:Open() end
+        end, CanOpen, P.Meta("suite_qualityOfLife", id, "action.open", "action", section))
+        return y - 38
+    end
     if id == "dailyComfort" then
         local spec = P.catalog.parallelWindows
         local rules = { spec.rules.enabled, spec.rules.windowLimit }
@@ -59,6 +69,8 @@ function P.BuildQoLComfortActions(ctx, body, id, section, y, width)
         P.SetTranslatedText(status, NS.Finite(fishing) and "" or Tr("Learn Fishing first."))
     end)
     y = y - 22
+    P.Text(body, "For one-key fishing, enable Blizzard's Interact Key under Controls.", 16, y, width, P.T.colors.muted)
+    y = y - 34
     Add("Choose fishing rod from bags", "rod", "Equipped fishing rod")
     Add("Choose lure from bag consumables", "lure", "No lure")
     P.Button(ctx, body, "Open fishing key bindings", 16, y, width,

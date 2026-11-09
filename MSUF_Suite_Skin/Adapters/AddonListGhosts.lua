@@ -8,6 +8,7 @@ local Safety, Motion = NS.Safety, NS.Motion
 local ConfigureDisclosure = NS.SuiteCore().ConfigureDisclosure
 local fonts = { "Title", "Status", "Reload" }
 local textures = { "GetNormalTexture", "GetCheckedTexture", "GetDisabledCheckedTexture" }
+local ROOT_ROW_DEPTH = 1
 
 local function Finished(group)
     group.ghost:Hide()
@@ -87,75 +88,137 @@ local function EnsureViewport(state)
     end
 end
 
-local function Anchor(copy, source, row, top)
+local function HideRegion(target, saved)
+    if saved and saved.shown == false then return end
+    target:Hide()
+    if saved then saved.shown = false end
+end
+
+local function Anchor(target, source, row, top, saved)
     local left, sourceTop = Safety.Read(source, "GetLeft"), Safety.Read(source, "GetTop")
-    local rowLeft = Safety.Read(row, "GetLeft")
+    local rowLeft = saved and saved.rowLeft or Safety.Read(row, "GetLeft")
     local width, height = Safety.Read(source, "GetWidth"), Safety.Read(source, "GetHeight")
     if type(left) ~= "number" or type(sourceTop) ~= "number" or type(rowLeft) ~= "number"
-        or type(width) ~= "number" or type(height) ~= "number" then copy:Hide() return false end
-    copy:ClearAllPoints()
-    copy:SetPoint("TOPLEFT", copy:GetParent(), "TOPLEFT", left - rowLeft, sourceTop - top)
-    copy:SetSize(width, height)
-    copy:Show()
+        or type(width) ~= "number" or type(height) ~= "number" then HideRegion(target, saved) return false end
+    left, sourceTop = left - rowLeft, sourceTop - top
+    if not saved or left ~= saved.left or sourceTop ~= saved.top then
+        target:ClearAllPoints()
+        target:SetPoint("TOPLEFT", target:GetParent(), "TOPLEFT", left, sourceTop)
+        if saved then saved.left, saved.top = left, sourceTop end
+    end
+    if not saved or width ~= saved.width or height ~= saved.height then
+        target:SetSize(width, height)
+        if saved then saved.width, saved.height = width, height end
+    end
+    if not saved or not saved.shown then
+        target:Show()
+        if saved then saved.shown = true end
+    end
     return true
 end
 
-local function CopyFont(target, source, row, top)
-    local text = Safety.Read(source, "GetText")
-    if type(text) ~= "string" or Safety.Read(source, "IsShown") ~= true then target:Hide() return end
-    local path, size, flags = Safety.Call(source, "GetFont")
-    if not Safety.Public(path) or not Safety.Public(size) or not Safety.Public(flags)
-        or type(path) ~= "string" or type(size) ~= "number" then target:Hide() return end
-    if not Anchor(target, source, row, top) then return end
-    target:SetFont(path, size, flags or "")
-    target:SetText(text)
-    target:SetJustifyH(Safety.Read(source, "GetJustifyH") or "LEFT")
-    target:SetJustifyV(Safety.Read(source, "GetJustifyV") or "MIDDLE")
-    target:SetAlpha(Safety.Read(source, "GetAlpha") or 1)
-    local r, g, b, a = Safety.ReadColor(source, "GetTextColor")
-    if r then target:SetTextColor(r, g, b, a) end
+local function WriteValue(target, saved, key, setter, value)
+    if not saved or saved[key] ~= value then
+        setter(target, value)
+        if saved then saved[key] = value end
+    end
 end
 
-local function CopyTexture(target, source, row, top, shown)
-    if not shown or not source then target:Hide() return end
+local function WriteColor(target, saved, setter, r, g, b, a)
+    if r and (not saved or r ~= saved.r or g ~= saved.g or b ~= saved.b or a ~= saved.a) then
+        setter(target, r, g, b, a)
+        if saved then saved.r, saved.g, saved.b, saved.a = r, g, b, a end
+    end
+end
+
+local function CopyFont(target, source, row, top, saved)
+    local text = Safety.Read(source, "GetText")
+    if type(text) ~= "string" or Safety.Read(source, "IsShown") ~= true then return HideRegion(target, saved) end
+    local path, size, flags = Safety.Call(source, "GetFont")
+    if not Safety.Public(path) or not Safety.Public(size) or not Safety.Public(flags)
+        or type(path) ~= "string" or type(size) ~= "number" then return HideRegion(target, saved) end
+    if not Anchor(target, source, row, top, saved) then return end
+    flags = flags or ""
+    if not saved or path ~= saved.path or size ~= saved.fontSize or flags ~= saved.flags then
+        target:SetFont(path, size, flags)
+        if saved then saved.path, saved.fontSize, saved.flags = path, size, flags end
+    end
+    WriteValue(target, saved, "text", target.SetText, text)
+    WriteValue(target, saved, "justifyH", target.SetJustifyH, Safety.Read(source, "GetJustifyH") or "LEFT")
+    WriteValue(target, saved, "justifyV", target.SetJustifyV, Safety.Read(source, "GetJustifyV") or "MIDDLE")
+    if not saved then target:SetAlpha(Safety.Read(source, "GetAlpha") or 1) end
+    WriteColor(target, saved, target.SetTextColor, Safety.ReadColor(source, "GetTextColor"))
+    return true
+end
+
+local function CopyTexture(target, source, row, top, shown, saved)
+    if not shown or not source then return HideRegion(target, saved) end
     local atlas, texture = Safety.Read(source, "GetAtlas"), Safety.Read(source, "GetTexture")
-    if not atlas and not texture then target:Hide() return end
-    if not Anchor(target, source, row, top) then return end
-    if atlas then target:SetAtlas(atlas) else target:SetTexture(texture) end
-    local r, g, b, a = Safety.ReadColor(source, "GetVertexColor")
-    if r then target:SetVertexColor(r, g, b, a) end
-    target:SetAlpha(Safety.Read(source, "GetAlpha") or 1)
-    target:SetDesaturated(Safety.Read(source, "IsDesaturated") == true)
+    if not atlas and not texture then return HideRegion(target, saved) end
+    if not Anchor(target, source, row, top, saved) then return end
+    if not saved or atlas ~= saved.atlas or not atlas and texture ~= saved.texture then
+        if atlas then target:SetAtlas(atlas) else target:SetTexture(texture) end
+        if saved then saved.atlas, saved.texture, saved.coordA = atlas, texture, nil end
+    end
+    WriteColor(target, saved, target.SetVertexColor, Safety.ReadColor(source, "GetVertexColor"))
+    if not saved then target:SetAlpha(Safety.Read(source, "GetAlpha") or 1) end
+    WriteValue(target, saved, "desaturated", target.SetDesaturated, Safety.Read(source, "IsDesaturated") == true)
+    return true
+end
+
+local function CopyCoordinates(target, source, saved)
+    local a, b, c, d, e, f, g, h = Safety.Call(source, "GetTexCoord")
+    if not Safety.Public(a) or not Safety.Public(b) or not Safety.Public(c) or not Safety.Public(d)
+        or not Safety.Public(e) or not Safety.Public(f) or not Safety.Public(g) or not Safety.Public(h)
+        or type(a) ~= "number" or type(h) ~= "number" then return end
+    if saved and a == saved.coordA and b == saved.coordB and c == saved.coordC and d == saved.coordD
+        and e == saved.coordE and f == saved.coordF and g == saved.coordG and h == saved.coordH then return end
+    target:SetTexCoord(a, b, c, d, e, f, g, h)
+    if saved then
+        saved.coordA, saved.coordB, saved.coordC, saved.coordD = a, b, c, d
+        saved.coordE, saved.coordF, saved.coordG, saved.coordH = e, f, g, h
+    end
+end
+
+local function SavedRegion(copy, target)
+    local regions = copy.questRegions
+    if not regions then return end
+    local saved = regions[target]
+    if not saved then
+        saved = {}
+        regions[target] = saved
+    end
+    saved.rowLeft = copy.left
+    return saved
 end
 
 local function CaptureRegion(state, record, copy, source)
     if Safety.Read(source, "IsVisible") ~= true then return end
     if state.model == "encounter" and source == Safety.Field(record.row, "description") then return end
     local kind = Safety.Read(source, "GetObjectType")
-    local target
+    local target, saved, visible
     if kind == "FontString" and copy.fontCount < 8 then
         copy.fontCount = copy.fontCount + 1
         target = copy.fonts[copy.fontCount] or copy.frame:CreateFontString(nil, "OVERLAY")
         copy.fonts[copy.fontCount] = target
-        CopyFont(target, source, record.row, record.top)
+        saved = SavedRegion(copy, target)
+        visible = CopyFont(target, source, record.row, record.top, saved)
     elseif kind == "Texture" and copy.textureCount < 16 then
         copy.textureCount = copy.textureCount + 1
         target = copy.textures[copy.textureCount] or copy.frame:CreateTexture(nil, "ARTWORK")
         copy.textures[copy.textureCount] = target
-        CopyTexture(target, source, record.row, record.top, true)
-        local a, b, c, d, e, f, g, h = Safety.Call(source, "GetTexCoord")
-        if Safety.Public(a) and Safety.Public(b) and Safety.Public(c) and Safety.Public(d)
-            and Safety.Public(e) and Safety.Public(f) and Safety.Public(g) and Safety.Public(h)
-            and type(a) == "number" and type(h) == "number" then
-            target:SetTexCoord(a, b, c, d, e, f, g, h)
-        end
+        saved = SavedRegion(copy, target)
+        visible = CopyTexture(target, source, record.row, record.top, true, saved)
+        if not saved or visible then CopyCoordinates(target, source, saved) end
     end
-    if target then
-        local effective, base = Safety.Read(source, "GetEffectiveAlpha"), Safety.Read(state.scrollBox, "GetEffectiveAlpha")
-        local rowAlpha = Safety.Read(record.row, "GetAlpha")
-        if type(effective) == "number" and type(base) == "number" and type(rowAlpha) == "number" and base > 0 and rowAlpha > 0 then
-            target:SetAlpha(effective / (base * rowAlpha))
-        end
+    if not target or saved and not visible then return end
+    local effective = Safety.Read(source, "GetEffectiveAlpha")
+    local base = saved and copy.questBase or Safety.Read(state.scrollBox, "GetEffectiveAlpha")
+    local rowAlpha = saved and copy.nativeAlpha or Safety.Read(record.row, "GetAlpha")
+    if type(effective) == "number" and type(base) == "number" and type(rowAlpha) == "number" and base > 0 and rowAlpha > 0 then
+        WriteValue(target, saved, "alpha", target.SetAlpha, effective / (base * rowAlpha))
+    elseif saved then
+        WriteValue(target, saved, "alpha", target.SetAlpha, Safety.Read(source, "GetAlpha") or 1)
     end
 end
 
@@ -182,12 +245,24 @@ local function CaptureGeneric(state, record, copy)
     if kind == "FontString" or kind == "Texture" then CaptureRegion(state, record, copy, record.row)
     else CaptureChildren(record.row, 0) end
     captureState, captureRecord, captureCopy = nil, nil, nil
-    for index = copy.fontCount + 1, #copy.fonts do copy.fonts[index]:Hide() end
-    for index = copy.textureCount + 1, #copy.textures do copy.textures[index]:Hide() end
+    local regions = copy.questRegions
+    for index = copy.fontCount + 1, #copy.fonts do
+        local target = copy.fonts[index]
+        HideRegion(target, regions and regions[target])
+    end
+    for index = copy.textureCount + 1, #copy.textures do
+        local target = copy.textures[index]
+        HideRegion(target, regions and regions[target])
+    end
 end
 
 function Ghost.Capture(state, record)
-    if state.generic and (record.parent == nil or state.model == "tree" and Safety.Read(record.parent, "GetDepth") == 0) then return end
+    if state.generic then
+        if record.parent == nil or state.model == "tree" and Safety.Read(record.parent, "GetDepth") == 0 then return end
+    elseif Safety.Read(record.node, "GetDepth") == ROOT_ROW_DEPTH then
+        -- Direct children of the invisible root cannot leave a closing branch.
+        return
+    end
     if not Safety.HasMethod(state.scrollBox, "GetLeft") then return end
     EnsureViewport(state)
     local copy = record.ghost or CreateCopy(state, record)
@@ -197,7 +272,7 @@ function Ghost.Capture(state, record)
     local cached = copy.node == record.node and copy.generation == state.ghostGeneration
         and copy.width == state.width and copy.scale == state.scale
         and (not state.generic or copy.provider == state.provider and not copy.dirty)
-    copy.node, copy.top = record.node, top
+    copy.node, copy.top, copy.parent = record.node, top, record.parent
     copy.left = Safety.Read(row, "GetLeft")
     copy.viewportTop = Safety.Read(state.scrollBox, "GetTop")
     copy.viewportLeft = Safety.Read(state.scrollBox, "GetLeft")
@@ -207,6 +282,10 @@ function Ghost.Capture(state, record)
     copy.nativeHeight = Safety.Read(row, "GetHeight")
     copy.generation, copy.width, copy.scale = state.ghostGeneration, state.width, state.scale
     copy.provider, copy.dirty = state.provider, false
+    if state.model == "quest" then
+        copy.questRegions = copy.questRegions or {}
+        copy.questBase = Safety.Read(state.scrollBox, "GetEffectiveAlpha")
+    end
     if state.generic then CaptureGeneric(state, record, copy) return end
     for index = 1, 3 do CopyFont(copy.fonts[index], Safety.Field(row, fonts[index]), row, top) end
     local button = Safety.Field(row, "LoadAddonButton")
@@ -269,7 +348,7 @@ end
 
 function Ghost.Hidden(record)
     local copy = record.ghost
-    if copy then
+    if copy and (record.state.model ~= "quest" or copy.node == record.node) then
         copy.displayTop, copy.displayAlpha = Displayed(record, copy)
         record.hiddenOffset = copy.displayTop - record.top
     end
@@ -343,7 +422,33 @@ function Ghost.Released(state, record, node)
     if category then PlayCopy(state, record, copy, category) end
 end
 
-function Ghost.AfterLayout(state)
+local function PlayQuestClosures(state)
+    if not state.ghostRows or not state.ghostGeneration then return end
+    local previous = state.ghostGeneration - 1
+    for copy in pairs(state.ghostRows) do
+        if copy.node and (copy.generation or 0) == previous and not state.seenKeys[copy.node] then
+            local parent = copy.parent
+            for _ = 1, 16 do
+                if not parent then break end
+                if state.changes[parent] == true then
+                    local record = copy.group.record
+                    if Safety.CanCreateRegions(record.row) and not Safety.GetProtection(record.row) then
+                        PlayCopy(state, record, copy, parent)
+                    end
+                    break
+                end
+                parent = state.parents[parent]
+            end
+        end
+    end
+end
+
+function Ghost.AfterLayout(state, changed)
+    if state.model == "quest" then
+        if changed then PlayQuestClosures(state) end
+        for index = 1, state.count do Ghost.Capture(state, state.rows[index]) end
+        return
+    end
     if not state.generic or state.model == "tree" or not state.ghostRows or not state.ghostPendingCopies then return end
     state.ghostPendingCopies = nil
     for copy in pairs(state.ghostRows) do

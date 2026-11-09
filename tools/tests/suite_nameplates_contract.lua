@@ -2633,3 +2633,173 @@ do
     S.RestoreCVar = restore
 end
 print("Suite nameplates: native target scale apply, restore and combat replay passed")
+
+-- The optional enemy row follows real nameplate events and owns every write.
+do
+    local settings, bottom = module.config, uf.CastBarsContainer
+    local nativeCreate = CreateFrame
+    local current, maximum, token = 35, 0, "MANA"
+    local reads, created, owned = 0, 0, nil
+    local function Allowed()
+        return false
+    end
+    uf.IsAnchoringRestricted, bar.IsAnchoringRestricted, bottom.IsAnchoringRestricted = Allowed, Allowed, Allowed
+    bottom.IsProtected = bar.IsProtected
+    Enum.StatusBarInterpolation = { Immediate = 0, ExponentialEaseOut = 1 }
+    PowerBarColor = { MANA = { r = 0.1, g = 0.4, b = 1 }, RAGE = { r = 1, g = 0, b = 0 } }
+    UnitPowerType = function() return Enum.PowerType.Mana, token end
+    UnitPowerMax = function() return maximum end
+    UnitPower = function(unit)
+        assert(unit == "nameplate1", "enemy power read an unrelated unit")
+        reads = reads + 1
+        return current
+    end
+    CreateFrame = function(kind, globalName, parent)
+        local frame = nativeCreate(kind, globalName, parent)
+        if kind ~= "StatusBar" or parent ~= bar then return frame end
+        created, owned = created + 1, frame
+        frame.rangeWrites, frame.valueWrites, frame.pointWrites = 0, 0, 0
+        frame.IsAnchoringRestricted = Allowed
+        function frame:IsVisible() error("enemy power must use its owned visibility events") end
+        function frame:Show()
+            local wasShown = self.shown
+            self.shown = true
+            if not wasShown and bar.shown and self.scripts.OnShow then self.scripts.OnShow(self) end
+        end
+        function frame:RegisterUnitEvent(event, unit) self.registeredEvent, self.registeredUnit = event, unit end
+        function frame:UnregisterEvent(event)
+            assert(event == "UNIT_POWER_UPDATE")
+            self.registeredEvent, self.registeredUnit = nil, nil
+        end
+        function frame:SetStatusBarTexture(texture) self.texture = texture end
+        function frame:SetStatusBarColor(r, g, b) self.tint = { r, g, b } end
+        function frame:SetMinMaxValues(_, max)
+            self.maximum = max
+            self.rangeWrites = self.rangeWrites + 1
+        end
+        function frame:SetValue(value, interpolation)
+            self.value, self.interpolation = value, interpolation
+            self.valueWrites = self.valueWrites + 1
+        end
+        local point = frame.SetPoint
+        function frame:SetPoint(...)
+            self.pointWrites = self.pointWrites + 1
+            assert(not bottom.protected and not bar.protected and not uf.protected,
+                "enemy power anchored to a protected frame")
+            point(self, ...)
+        end
+        return frame
+    end
+
+    local function NativeEvent(event)
+        events[event](module, event, "nameplate1")
+    end
+    local function Update(eventToken, unit)
+        owned.scripts.OnEvent(owned, "UNIT_POWER_UPDATE", unit or "nameplate1", eventToken)
+    end
+    module.active, uf.isFriend, bar.shown = true, false, true
+    settings.look, settings.enemy, settings.enemyPowerEnabled = 1, true, false
+    module:Enable()
+    assert(not events.UNIT_MAXPOWER and created == 0, "disabled enemy power retained work")
+    settings.enemyPowerEnabled, settings.enemyPowerSmooth = true, true
+    settings.enemyPowerHeight, settings.enemyPowerWidth = 7, 16
+    settings.enemyPowerOffsetX, settings.enemyPowerOffsetY = 9, -4
+    module:Refresh()
+    assert(events.UNIT_MAXPOWER and created == 0, "a public zero maximum allocated a row")
+
+    maximum, combat, bottom.protected = 100, true, true
+    NativeEvent("UNIT_MAXPOWER")
+    assert(created == 0 and module.pendingPlates[uf],
+        "enemy power attached to a protected cast container in combat or lost its retry")
+    bottom.protected, bar.shown = false, false
+    local hiddenReads = reads
+    NativeEvent("UNIT_MAXPOWER")
+    assert(created == 1 and not owned.registeredUnit and reads == hiddenReads,
+        "a row acquired under hidden native health started consuming power events")
+    bar.shown = true
+    owned.scripts.OnShow(owned)
+    assert(created == 1 and owned.mouse == false and owned.alpha == 1
+        and owned.registeredUnit == "nameplate1" and owned.registeredEvent == "UNIT_POWER_UPDATE"
+        and owned.maximum == 100 and owned.value == 35 and owned.interpolation == 0, "combat bind did not seed the owned row")
+    assert(owned.height == 7 and owned.texture == "Interface\\Buttons\\WHITE8X8" and owned.tint[1] == 0.1
+        and owned.points[1][2] == bottom and owned.points[1][5] == -5
+        and owned.points[2][2] == bar and owned.points[2][4] == 1 and owned.points[3][4] == 17,
+        "enemy power appearance and independent row geometry were not applied")
+
+    local before = reads
+    Update("RAGE")
+    Update("MANA", "nameplate2")
+    assert(reads == before, "unrelated unit or power type reached the power reader")
+    current = 42
+    Update("MANA")
+    assert(owned.value == 42 and owned.interpolation == 1, "native interpolation was not applied")
+    local writes = owned.valueWrites
+    local function RepeatedPower() Update("MANA") end
+    local instructions = 0
+    debug.sethook(function() instructions = instructions + 1 end, "", 1)
+    RepeatedPower()
+    debug.sethook()
+    collectgarbage("collect")
+    collectgarbage("stop")
+    RepeatedPower()
+    local memory = collectgarbage("count")
+    for _ = 1, 100 do RepeatedPower() end
+    local growth = collectgarbage("count") - memory
+    collectgarbage("restart")
+    assert(owned.valueWrites == writes and owned.rangeWrites == 1 and instructions <= 105 and growth < 1,
+        "steady power events repeated widget writes or exceeded their hot-path budget")
+    print(("Enemy power steady event: %d instructions, %.2f KB per 100"):format(instructions, growth))
+
+    local points = owned.pointWrites
+    module:Refresh()
+    assert(owned.pointWrites == points and owned.valueWrites == writes, "unchanged refresh rewrote the power row")
+    settings.enemyPowerSmooth = false
+    module:Refresh()
+    assert(owned.interpolation == 0 and owned.pointWrites == points, "turning smoothing off did not snap the bar")
+    owned.scripts.OnHide(owned)
+    before = reads
+    Update("MANA")
+    assert(not owned.registeredUnit and reads == before, "a hidden plate still read power")
+    current = 51
+    owned.scripts.OnShow(owned)
+    assert(owned.registeredUnit == "nameplate1" and owned.value == 51 and owned.interpolation == 0,
+        "a shown plate did not reseed after suspension")
+
+    local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
+    Strict.Install()
+    Strict.GUARD_NAMES.falsy.Public = true
+    NS.Public = function(value) return value ~= "secret" and not Strict.IsSecret(value) end
+    local secretMax, secretValue, secretToken = Strict.New(), Strict.New(), Strict.New("string")
+    local stop = Strict.Watch({
+        root .. "/MSUF_Suite_Nameplates/Power.lua",
+        root .. "/MSUF_Suite/Core/NameplateStyle.lua",
+    }, { strict = true })
+    local secretProtection = Strict.New("boolean")
+    bottom.IsAnchoringRestricted = function() return secretProtection end
+    NativeEvent("UNIT_MAXPOWER")
+    assert(owned.alpha == 0 and not owned.registeredUnit, "secret anchor restriction allowed an attached row")
+    bottom.IsAnchoringRestricted = Allowed
+    current, maximum, token = secretValue, secretMax, secretToken
+    NativeEvent("UNIT_MAXPOWER")
+    Update(secretToken)
+    Update("MANA", secretToken)
+    assert(rawequal(owned.maximum, secretMax) and rawequal(owned.value, secretValue)
+        and owned.enemyPowerValue == nil and owned.enemyPowerMaximum == nil and owned.tint[1] ~= 0.1,
+        "restricted resource data was not forwarded straight to the native sinks")
+    local violations = stop()
+    assert(#violations == 0, table.concat(violations, "\n"))
+
+    current, maximum, token = 9, 20, "RAGE"
+    NativeEvent("NAME_PLATE_UNIT_REMOVED")
+    assert(owned.alpha == 0 and not owned.registeredUnit, "recycled plate leaked the previous unit's power")
+    NativeEvent("NAME_PLATE_UNIT_ADDED")
+    assert(created == 1 and owned.maximum == 20 and owned.value == 9 and owned.tint[1] == 1,
+        "a recycled plate did not seed the next unit immediately")
+    settings.look = 2
+    module:Refresh()
+    assert(not events.UNIT_MAXPOWER and owned.alpha == 0 and not owned.registeredUnit,
+        "switching to the Blizzard look left the enemy row active")
+    combat = false
+    module:Disable()
+end
+print("Suite enemy nameplate power: combat, ownership, style, secrets, visibility, lifecycle and budget passed")

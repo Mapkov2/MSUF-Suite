@@ -7,8 +7,8 @@ local rules = NS.SuiteCatalog.cooldownManager.rules
 ------------------------------------------------------------------ entry keys and data codec
 -- Entry keys: b<cooldownID> Blizzard entry, s<spellID> spell, i<itemID> item,
 -- e<slot> equipment slot, a<spellID> helpful aura on the player,
--- d<spellID> harmful aura the player cast on the target.
-local ENTRY_KINDS = { b = true, s = true, i = true, e = true, a = true, d = true }
+-- d<spellID> harmful aura on the target, g<spellID> own external defensive.
+local ENTRY_KINDS = { b = true, s = true, i = true, e = true, a = true, d = true, g = true }
 -- One aura entry for several spells of one effect. The key's number is not a
 -- spell and never reaches a spell API: `spell` gives the icon and tooltip,
 -- `ids` are the player auras looked for, from any caster, in one icon or bar
@@ -33,7 +33,7 @@ function CDM.EntryKind(key) return key:sub(1, 1) end
 function CDM.EntryID(key) return tonumber(key:sub(2)) end
 function CDM.IsAuraKey(key)
     local kind = key:sub(1, 1)
-    return kind == "a" or kind == "d"
+    return kind == "a" or kind == "d" or kind == "g"
 end
 
 local function Bool01(value) return type(value) == "boolean" end

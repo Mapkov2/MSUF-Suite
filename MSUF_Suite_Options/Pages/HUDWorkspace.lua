@@ -8,6 +8,7 @@ local FEATURES = {
     { id = "runSummary", label = "Run Summaries" },
     { id = "announcements", label = "Announcements" },
     { id = "afkScreen", label = "AFK Screen" },
+    { id = "characterPanel", label = "Character Panel" },
     { id = "extras", label = "Additional displays" },
 }
 
@@ -16,17 +17,31 @@ local function Height(ui)
     ui.builder:FinishSection(ui.body, 12)
 end
 
+local function PreviewHeight(ui, height)
+    if ui.previewHeight == height then return end
+    ui.previewHeight = height
+    HM.SetFixedPreviewHeight(ui.header, height)
+    ui.header:SetHeight(height)
+    if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
+end
+
 local function Choose(ui, id)
     if not ui.groups[id] then return end
     ui.selected, selected = id, id
     for key, group in pairs(ui.groups) do group.frame:SetShown(key == id) end
     if ui.selector then ui.selector:SetValue(id) end
     Height(ui)
-    ui.preview:Select(id ~= "extras" and id or nil)
-    local height = id == "extras" and 62 or 326
-    HM.SetFixedPreviewHeight(ui.header, height)
-    ui.header:SetHeight(height)
-    if M.RelayoutPageHeaderHost then M.RelayoutPageHeaderHost() end
+    local hasPreview = id ~= "extras" and id ~= "characterPanel"
+    ui.preview:Select(hasPreview and id or nil)
+    local character = id == "characterPanel"
+    if character and not ui.characterPreview then
+        ui.characterPreview = P.CharacterPanelEditor.Build(ui.ctx, ui.header, function(height)
+            ui.characterPreviewHeight = height
+            if ui.selected == "characterPanel" then PreviewHeight(ui, height) end
+        end)
+    end
+    if ui.characterPreview then ui.characterPreview:SetShown(character) end
+    PreviewHeight(ui, character and (ui.characterPreviewHeight or 204) or hasPreview and 326 or 62)
 end
 
 local function Child(ui, id)
@@ -141,7 +156,7 @@ function Page.Finish(ctx)
     end
     ui.preview = P.HUDPreview.Build(ctx, ui.header, ui.width - 32)
     local selector
-    if W.SegmentTabs and ui.width - 32 >= 650 then
+    if W.SegmentTabs and ui.width - 32 >= math.max(650, #values * 126) then
         local tabs, refresh, _, selectTab = W.SegmentTabs(ctx, ui.header, {
             label = "", compact = true, values = values, width = ui.width - 32, frames = panels, defaultTab = selected,
             get = function() return ui.selected end, set = function(id) Choose(ui, id) end,

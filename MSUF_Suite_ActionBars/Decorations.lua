@@ -201,7 +201,12 @@ function AB.GlowRing(rec, shown)
     end
 end
 function AB.UpdateDecorState(rec)
-    if rec.stateArt then rec.stateArt:SetShown(rec.decorFancy and (rec.decorPushed or rec.decorChecked) or false) end
+    local art = rec.stateArt
+    if not art then return end
+    local shown = rec.decorFancy and (rec.decorPushed or rec.decorChecked) or false
+    if rec.stateArtShown == shown then return end
+    art:SetShown(shown)
+    rec.stateArtShown = shown
 end
 -- Masks (or unmasks) one of the button's own textures for the round shape.
 local function ShapeMask(texture, rec, circle)
@@ -299,11 +304,9 @@ function AB.StyleDecoration(rec, size)
         rec.pressBorder = false
         AB.ShowEdges(rec.pressEdges, false)
         AB.UpdateDecorState(rec)
-    else
-        if rec.borderArt then
-            rec.borderArt:Hide()
-            rec.stateArt:Hide()
-        end
+    elseif rec.borderArt then
+        rec.borderArt:Hide()
+        AB.UpdateDecorState(rec)
     end
     if rec.quality then rec.quality:SetSize(math.max(8, size * .4), math.max(8, size * .4)) end
 end

@@ -170,7 +170,9 @@ end
 
 local function Shown(frame)
     local states = Menus.observers[frame]
-    for state in pairs(states) do Schedule(state, true) end
+    -- A reopened panel can reuse discovery if its live children, bodies and
+    -- capabilities still match. The content watcher owns the opening fade.
+    for state in pairs(states) do Schedule(state) end
 end
 Menus.observers = setmetatable({}, { __mode = "k" })
 
@@ -288,7 +290,6 @@ function Menus.Track(root, owner, contentOnly)
     state.owners[owner], state.owner = true, owner
     Content.Watch(root, owner)
     Observe(state, root)
-    state.discover = true
     if not state.scanning then state.reentryQueued = false end
     Scan(state)
     return true

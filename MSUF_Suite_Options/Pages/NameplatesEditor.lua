@@ -98,6 +98,8 @@ local function BindSetting(handle, id)
         handle._npSettingKey = ELEMENT_SETTING[element]
     elseif id == "friendly.Name" or id == "friendly.HealthText" or id == "friendly.Level" then
         handle._npSettingKey = id == "friendly.Level" and "friendlyLevelEnabled" or "friendlyNamesOnly"
+    elseif id == "enemy.Power" then
+        handle._npSettingKey = "enemyPowerEnabled"
     elseif id == "personal.Power" then
         handle._npSettingKey = "personalPowerSkin"
     elseif id:match("%.target$") or id:match("%.targetRight$") then

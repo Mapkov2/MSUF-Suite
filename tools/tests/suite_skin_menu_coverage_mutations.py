@@ -12,7 +12,7 @@ CASES = (
     ("owner handoff", "Rendering/MenuMotion.lua", 'state.owner, state.cacheOwner = next(state.owners), nil',
      '-- stale owner retained', 'menu retained released latest owner'),
     ("nested content exclusion", "Rendering/ContentMotion.lua",
-     'if Descendant(frame, active.target) then return false end',
+     'if HasActiveAncestor(frame) then return false end',
      '-- active ancestor ignored', 'child faded under active ancestor'),
     ("foreign content owner", "Rendering/ContentMotion.lua",
      'if record and record.owner ~= nil and record.owner ~= owner then return false end',

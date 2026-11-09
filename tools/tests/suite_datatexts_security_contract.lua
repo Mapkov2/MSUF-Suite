@@ -96,9 +96,9 @@ S.Start()
 local c = S.Config("dataTexts")
 assert(S.SetMany("dataTexts", { enabled = true, bar1Enabled = true, bar1Layout = 2,
     bar1Slot1 = Choice("clock"), bar1Slot2 = Choice("hearth"), bar1Slot3 = Choice("specialization"),
-    bar1Slot4 = Choice("audio"), bar1Slot5 = Choice("portals"), bar1Slot6 = Choice("microMenu"),
-    bar2Enabled = true, bar2Visibility = 2, bar2Slot1 = Choice("fps"), bar2Slot2 = 1, bar2Slot3 = 1,
-    bar3Enabled = true, bar3Visibility = 3, bar3Slot1 = Choice("gold"), bar3Slot2 = 1, bar3Slot3 = 1,
+    bar1Slot4 = Choice("audio"), bar1Slot5 = Choice("portals"), bar1Slot6 = Choice("microMenu"), bar1Slot6Scale = 75,
+    bar2Enabled = true, bar2Visibility = 2, bar2Slot1 = Choice("fps"), bar2Slot2 = Choice("microMenu"), bar2Slot3 = 1,
+    bar3Enabled = true, bar3Visibility = 3, bar3Slot1 = Choice("gold"), bar3Slot2 = Choice("microMenu"), bar3Slot3 = 1,
     bar4Enabled = true, bar4Slot1 = Choice("durability"), bar4Slot2 = Choice("coordinates"),
     bar4Slot3 = Choice("location"), bar4Slot4 = Choice("currency") }))
 local bar = assert(M.bars[1])
@@ -166,7 +166,21 @@ W.Fire(overlay, "OnLeave")
 -- It lists the Suite's one micro menu (S.MicroMenuEntries, the Minimap's
 -- entries in Blizzard's order) and keeps its game menu row last (S3.2).
 local beforeMicro = #microClicks
+local skinEnabled = true
+local palette = {
+    popup = { .15, .22, .3, .88 }, border = { .32, .38, .45, .8 },
+    text = { .9, .85, .8, 1 }, muted = { .45, .5, .55, .7 }, hover = { .2, .5, .8, .9 },
+}
+local skin = {
+    IsEnabled = function() return skinEnabled end,
+    GetColor = function(_, key) return unpack((assert(palette[key], key))) end,
+    GetFont = function() return "MicroSkin.ttf" end,
+    GetAppearance = function(_, key) return key == "hoverStyle" and "solidFill" or .5 end,
+}
+function M.context:Skin() return skin end
 G.GuildMicroButton.enabled = false
+W.Fire(micro, "OnEnter")
+assert(G.GameTooltip:IsOwned(micro) and G.GameTooltip.shown, "the micro place tooltip fixture did not open")
 W.Click(micro)
 local popup = assert(A.popup, "the micro menu did not open its popup")
 assert(popup.shown and popup:IsProtected() and popup.parent == W.UIParent, "the micro menu popup is not secure")
@@ -194,6 +208,21 @@ assert(not (popup.rows[#expected + 1] and popup.rows[#expected + 1].shown), "the
 local first, guild = popup.rows[1], popup.rows[#expected - 1]
 assert(first.label.text == "Character" and first.enabled and not guild.enabled,
     "micro menu rows lost the shared labels or a disabled button stayed clickable")
+local function Centered(row)
+    local left, parent, relativeLeft, xLeft = row.label:GetPoint(1)
+    local right, parentRight, relativeRight, xRight = row.label:GetPoint(2)
+    return row.label.justify == "CENTER" and left == "LEFT" and right == "RIGHT" and parent == row and parentRight == row
+        and relativeLeft == "LEFT" and relativeRight == "RIGHT" and xLeft == -xRight
+end
+assert(Centered(first), "micro menu text does not use the full centered row")
+local function UsesSkin(menu)
+    local row = menu.rows[1]
+    return menu.fill.color[4] == palette.popup[4] * .5 and menu.border[1].color[1] == palette.border[1]
+        and menu.border[1].color[4] == palette.border[4] * .5 and row.label.font[1] == "MicroSkin.ttf" and row.label.textColor[1] == palette.text[1]
+        and row.hoverFill.color[4] == palette.hover[4] * .5
+end
+assert(UsesSkin(popup) and guild.label.textColor[1] == palette.muted[1], "micro menu did not apply the Suite skin")
+assert(not G.GameTooltip:IsOwned(micro) or not G.GameTooltip.shown, "the place tooltip covers the micro menu")
 G.GuildMicroButton.enabled = true
 W.Click(first)
 assert(#microClicks == beforeMicro + 1 and microClicks[#microClicks].name == "CharacterMicroButton"
@@ -207,8 +236,12 @@ local opened = W.panelCalls[#W.panelCalls]
 assert(G.GameMenuFrame.shown and opened and opened.frame == G.GameMenuFrame and opened.shown
     and W.lastSound == G.SOUNDKIT.IG_MAINMENU_OPEN and not popup.shown,
     "the game menu row did not open the game menu (S3.2)")
+skinEnabled = false
 W.Click(micro)
+assert(Centered(popup.rows[1]) and popup.rows[1].label.fontObject == G.GameFontHighlightSmall
+    and not popup.border[1].shown, "turning Skinning off did not restore the micro menu's plain presentation")
 W.Click(popup.rows[#expected])
+skinEnabled = true
 assert(not G.GameMenuFrame.shown and W.panelCalls[#W.panelCalls].shown == false
     and W.lastSound == G.SOUNDKIT.IG_MAINMENU_QUIT and not popup.shown,
     "the game menu row did not close the open game menu")
@@ -324,6 +357,11 @@ assert(outOfCombat.visibilityDriver == "[combat] hide; show" and inCombat.visibi
 assert(outOfCombat.frame.shown and not inCombat.frame.shown, "combat visibility is wrong out of combat")
 
 -- P0-1: combat starts while the overlay covers a place and the popup is open.
+-- Resolve the place bounds before PLAYER_REGEN_DISABLED. The first place
+-- is scaled, and the out-of-combat bar must leave no hotspot.
+micro.rect = { 370, 310, 88, 24 }
+outOfCombat.slots[2].rect = { 480, 332, 76, 24 }
+inCombat.slots[2].rect = { 580, 284, 96, 26 }
 W.Fire(hearth, "OnEnter")
 hearth.mouseOver = true
 assert(overlay.shown, "the overlay did not attach before combat")
@@ -333,6 +371,55 @@ assert(not popup.shown and #popup.points == 0, "the secure popup still depends o
 assert(not outOfCombat.frame.shown and inCombat.frame.shown, "combat visibility did not switch in combat")
 assert(inCombat.slots[1].text and inCombat.slots[1].text:find("Gold", 1, true),
     "a combat-only bar was not seeded out of combat")
+
+local function CheckCombatMicro()
+    local combatMenu = assert(A.combatMicroPopup, "the combat micro menu was not prepared before lockdown")
+    local launchers = {}
+    for _, candidate in ipairs(assert(A.combatMicroLaunchers)) do
+        if candidate:IsShown() then
+            local width = candidate:GetWidth()
+            assert(width == 66 or width == 96, "a hidden bar left a live secure launcher in combat")
+            launchers[width] = candidate
+        end
+    end
+    local launcher, alternate = launchers[66], launchers[96]
+    assert(launcher and alternate and launcher:IsProtected() and launcher.parent == W.UIParent
+        and launcher.points[1][2] == W.UIParent and launcher:GetHeight() == 18,
+        "the combat micro launchers did not follow the bars' scaled places")
+    assert(combatMenu:IsProtected() and combatMenu.parent == W.UIParent and not bar.frame:IsProtected()
+        and not micro:IsProtected(), "combat micro controls protected a DataTexts bar")
+    W.Click(micro)
+    W.Click(launcher)
+    assert(not combatMenu:IsShown(), "a programmatic click opened a protected menu in combat")
+    W.HardwareClick(launcher)
+    assert(combatMenu:IsShown() and combatMenu.points[1][2] == launcher and Centered(combatMenu.rows[1])
+        and combatMenu.autoHide and combatMenu.autoHide.owners[launcher],
+        "the hardware click did not open a centered, auto-hiding menu at its launcher")
+    assert(UsesSkin(combatMenu), "combat micro menu did not use the same Suite skin")
+    local clicks, panels = #microClicks, #W.panelCalls
+    W.Click(combatMenu.rows[1])
+    assert(#microClicks == clicks and combatMenu:IsShown(), "a programmatic row click reached a protected action")
+    W.HardwareClick(combatMenu.rows[1])
+    assert(#microClicks == clicks + 1 and microClicks[#microClicks].name == "CharacterMicroButton"
+        and microClicks[#microClicks].secure and not combatMenu:IsShown() and not combatMenu.autoHide,
+        "the combat row did not click its native button securely and dismiss the popup")
+    W.HardwareClick(launcher)
+    local gameMenu = combatMenu.rows[#expected]
+    if gameMenu and gameMenu.label.text == "Game menu" then
+        assert(gameMenu.label.textColor[1] == palette.muted[1], "the Game Menu row was not dimmed in combat")
+        W.HardwareClick(gameMenu)
+    end
+    assert(#W.panelCalls == panels and not G.GameMenuFrame:IsShown(), "the Game Menu fallback tried to open in combat")
+    if not combatMenu:IsShown() then W.HardwareClick(launcher) end
+    W.HardwareClick(alternate)
+    assert(combatMenu:IsShown() and combatMenu.points[1][2] == alternate and combatMenu.autoHide.owners[alternate],
+        "another launcher did not move the open micro menu")
+    W.Blizzard(function() launcher:Hide() end)
+    assert(combatMenu:IsShown(), "hiding the old launcher closed another launcher's popup")
+    W.Blizzard(function() alternate:Hide() end)
+    assert(not combatMenu:IsShown() and not combatMenu.autoHide, "a hidden launcher kept its combat popup open")
+end
+CheckCombatMicro()
 -- The clock and its Fit-text layout freeze while combat is active.
 local width, oldTime = bar.frame.width, clock.text
 minute, hour = 4, 23
@@ -387,4 +474,10 @@ assert(hearthReads == 1, "post-combat reconciliation did not check the configure
 
 assert(S.Set("dataTexts", "enabled", false))
 assert(not overlay.shown and #overlay.points == 0 and not popup.shown, "disabling DataTexts kept a secure frame")
+W.SetCombat(true)
+for _, launcher in ipairs(A.combatMicroLaunchers) do
+    assert(not launcher:IsShown() and not launcher.stateDriver and #launcher.points == 0,
+        "disabling DataTexts left a combat micro launcher active")
+end
+assert(not A.combatMicroPopup:IsShown(), "disabling DataTexts left a combat micro menu active")
 print("Suite DataTexts client security: insecure places, secure overlay and popup, combat edges passed: " .. flavor)

@@ -12,6 +12,8 @@ B.Module("foreverWorldMap", {
 })
 B.Section("foreverWorldMap", "forever_world_map", "World map information", {
     B.Bool("zoneLevels", "Show zone level ranges", true),
+    B.Tooltip(B.Bool("layerID", "Show observed layer ID"),
+        "Uses nearby NPCs to estimate your layer. The ID can differ between players on the same layer."),
     B.Bool("transports", "Show boats, zeppelins and skycutters", true),
     B.Bool("flightPoints", "Show flight points", true),
     B.Bool("dungeonEntrances", "Show dungeon entrances and approaches", true),

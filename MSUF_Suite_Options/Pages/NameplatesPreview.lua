@@ -678,6 +678,44 @@ local function HeaderPoint(region, ...)
     region:SetPoint(...)
 end
 
+local function RenderEnemyPower(editor, s, m)
+    if s.prefix ~= "enemy" then return end
+    local handle, bar = s.enemyPowerHandle, s.enemyPower
+    if editor.sampleKind ~= "enemy" or not editor:LayerActive("enemyPower") then
+        if handle then handle:Hide() end
+        return
+    end
+    local painter = Style.EnemyPower
+    local plan = painter.Plan(P.S.Config(ID), bar and bar.enemyPowerPlan)
+    if not plan.enabled then
+        if handle then handle:Hide() end
+        return
+    end
+    if not bar then
+        handle = CreateFrame("Button", nil, s.cell)
+        bar = painter.Create(handle)
+        bar:SetAllPoints(handle)
+        bar:SetMinMaxValues(0, 100)
+        bar:Show()
+        s.enemyPowerHandle, s.enemyPower = handle, bar
+        s.enemyPowerBottom = CreateFrame("Frame", nil, s.cell)
+        s.enemyPowerBottom:SetSize(1, 1)
+        editor:Bind(handle, "enemy.Power", "Enemy power bar", "enemyPowerOffsetX", "enemyPowerOffsetY", "enemyPower")
+    end
+    -- Cast geometry uses the Blizzard container bottom even when the cast
+    -- sample is hidden or the castbar itself was dragged.
+    local castContainerHeight = m.castHeight + (m.castInside and 0 or m.iconHeight)
+    s.enemyPowerBottom:SetPoint("BOTTOM", s.cell, "CENTER", 0, -4 - m.nativeBarHeight / 2 - m.castSpacing - castContainerHeight)
+    handle._npNativeWidth = m.barWidth
+    handle:SetHeight(plan.height)
+    painter.Place(handle, s.bar, s.enemyPowerBottom, plan)
+    local manaColor = plan.byType and PowerBarColor.MANA
+    if manaColor then painter.Paint(bar, plan, manaColor.r, manaColor.g, manaColor.b)
+    else painter.Paint(bar, plan) end
+    painter.SetValue(bar, editor.enemyPlayer and 38 or 66, plan.interpolation)
+    handle:Show()
+end
+
 local function RenderMirroredHeader(s, m)
     if s.prefix ~= "enemy" or not Style.MirrorHeader(P.Get(ID, "enemyMirrorHeader"),
         P.Get(ID, "enemyTextMode"), m.nameAnchor, m.namesOnly) or P.Get(ID, "look") == 2 then return end
@@ -715,6 +753,7 @@ local function Render(editor, s)
     RenderCastAndAuras(editor, s, m)
     RenderRaid(editor, s, m)
     RenderCastDetails(editor, s, m)
+    RenderEnemyPower(editor, s, m)
     P.NameplatesPreviewDecor.Paint(editor, s, m)
 end
 

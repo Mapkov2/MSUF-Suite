@@ -143,6 +143,10 @@ function P.Set(id, key, value)
         local box = key:match("^(info%a+Box)Color$")
         if box and P.Get(id, box) == 2 then return P.SetMany(id, { [key] = value, [box] = 3 }) end
     end
+    if id == "dataTexts" and value == Suite.DataTextDock.FREE then
+        local prefix = key:match("^(bar%d+)Dock$")
+        if prefix and P.Get(id, key) ~= value then return P.SetMany(id, Suite.DataTextFreePositionValues(prefix)) end
+    end
     local values = LookEdit(id, key, value)
     if values then return P.SetMany(id, values) end
     local ok, reason
@@ -684,12 +688,12 @@ function P.EditModeReady()
 end
 
 -- Opens MSUF Edit Mode with a module's element selected.
-function P.OpenEditMode(id, element)
+function P.OpenEditMode(id, element, showPopup)
     if P.Combat() or not S.OpenEditMode then return false end
-    return S.OpenEditMode(id, element)
+    return S.OpenEditMode(id, element, showPopup, showPopup)
 end
 
 -- Opens MSUF Edit Mode with a module's element selected; closes the menu.
-function P.MoveOnScreen(id, element)
-    if P.OpenEditMode(id, element) and M.frame and M.frame.Hide then M.frame:Hide() end
+function P.MoveOnScreen(id, element, showPopup)
+    if P.OpenEditMode(id, element, showPopup) and M.frame and M.frame.Hide then M.frame:Hide() end
 end

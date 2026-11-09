@@ -562,11 +562,12 @@ B.Section("loadoutReminder", "loadout_expectation", "Saved selection", {
     Number("expectedConfigID", "Expected talent build ID (0: any)", 0, 0, 100000000),
     Number("expectedLootSpecID", "Expected loot spec ID (0: any)", 0, 0, 100000),
     String("expectedCharacterGUID", "Expected character", "", 100),
+    String("dungeonAbilities", "Required dungeon abilities", "", 2400),
 }, { category = "advanced" })
 -- The saved selection belongs to one character: hidden, and exported only
 -- when the player chose to (ProfileIO resets personal rules otherwise), since
 -- a foreign build ID without its character would remind every importer.
-for _, key in ipairs({ "expectedCharacterGUID", "expectedConfigID", "expectedLootSpecID" }) do
+for _, key in ipairs({ "expectedCharacterGUID", "expectedConfigID", "expectedLootSpecID", "dungeonAbilities" }) do
     local rule = NS.SuiteCatalog.loadoutReminder.rules[key]
     rule.hidden, rule.personal = true, true
 end

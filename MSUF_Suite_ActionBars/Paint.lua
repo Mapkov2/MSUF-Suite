@@ -159,8 +159,12 @@ local function State(rec)
     local slot, checked = rec.slot, false
     if M.config.castHighlight then
         local current = api.Current(slot)
-        local repeating = api.AutoRepeat(slot)
-        checked = (not IsSecret(current) and current) or (not IsSecret(repeating) and repeating) or false
+        if not IsSecret(current) and current then
+            checked = current
+        else
+            local repeating = api.AutoRepeat(slot)
+            checked = not IsSecret(repeating) and repeating or false
+        end
     end
     rec.button:SetChecked(checked)
     rec.decorChecked = checked

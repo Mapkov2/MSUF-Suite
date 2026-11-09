@@ -2,13 +2,15 @@ local _, P = ...
 local O = P.Objectives
 
 -- Reused display records for the objective tracker; no widget or client writes.
-local function FlatSlot(flat, index)
+local function FlatSlot(flat, index, kind)
     local item = flat[index]
     if not item then
         item = {}
         flat[index] = item
+        return item
     end
-    -- Both flat buffers survive refreshes. Clear fields that belong to another row kind.
+    -- A regular row writes all its fields on reuse. The preview and kind changes clear the old fields.
+    if kind and item.kind == kind then return item end
     item.key, item.kind, item.group, item.text, item.height = nil, nil, nil, nil, nil
     item.collapsed, item.menuTitle, item.tracked, item.itemIcon, item.itemLink = nil, nil, nil, nil, nil
     item.findGroup, item.questGroupSearch = nil, nil
@@ -53,7 +55,7 @@ end
 local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedEntries, groups, sectionKeys)
     if #items == 0 then return index end
     index = index + 1
-    local section = FlatSlot(flat, index)
+    local section = FlatSlot(flat, index, "section")
     section.key, section.kind, section.group = sectionKeys[group], "section", group
     section.text = groups[group][1]
     section.height = math.max(23, (c.sectionSize or 14) + 12)
@@ -69,7 +71,7 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
         local scenarioID = group == "scenario" and entry.scenarioID or nil
         local lines = entry.lines
         index = index + 1
-        local item = FlatSlot(flat, index)
+        local item = FlatSlot(flat, index, "entry")
         item.key, item.kind, item.group = entry.entryKey, "entry", group
         item.text, item.height = entry.title, entryHeight
         item.menuTitle, item.tracked = entry.title, entry.tracked
@@ -85,7 +87,7 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
             for j = 1, lines.count do
                 local line = lines[j]
                 index = index + 1
-                item = FlatSlot(flat, index)
+                item = FlatSlot(flat, index, "line")
                 item.key, item.kind, item.group = LineKey(entry, j), "line", group
                 item.text, item.done, item.percent = line.text, line.done, line.percent
                 item.menuTitle, item.tracked = entry.title, entry.tracked
@@ -100,19 +102,20 @@ local function AddFlat(flat, index, group, items, c, collapsedGroups, collapsedE
 end
 
 local function SameItem(a, b)
-    return b and a.key == b.key and a.kind == b.kind and a.group == b.group
-        and a.text == b.text and a.height == b.height and a.done == b.done
-        and a.percent == b.percent and a.tracked == b.tracked
-        and a.questID == b.questID and a.achievementID == b.achievementID
-        and a.recipeID == b.recipeID and a.isRecraft == b.isRecraft
-        and a.contentID == b.contentID and a.contentType == b.contentType
-        and a.scenarioID == b.scenarioID and a.collapsed == b.collapsed
-        and a.itemIcon == b.itemIcon and a.itemLink == b.itemLink and a.timerEnd == b.timerEnd
+    if not b or a.key ~= b.key or a.kind ~= b.kind or a.group ~= b.group
+        or a.text ~= b.text or a.height ~= b.height then return false end
+    if a.kind == "section" then return a.collapsed == b.collapsed end
+    if a.tracked ~= b.tracked or a.menuTitle ~= b.menuTitle
+        or a.questID ~= b.questID or a.achievementID ~= b.achievementID
+        or a.recipeID ~= b.recipeID or a.isRecraft ~= b.isRecraft
+        or a.contentID ~= b.contentID or a.contentType ~= b.contentType
+        or a.scenarioID ~= b.scenarioID then return false end
+    if a.kind == "line" then return a.done == b.done and a.percent == b.percent end
+    return a.itemIcon == b.itemIcon and a.itemLink == b.itemLink and a.timerEnd == b.timerEnd
         and a.questIcon == b.questIcon and a.questIconAtlas == b.questIconAtlas
         and a.scenarioHeaderSetID == b.scenarioHeaderSetID
         and a.findGroup == b.findGroup and a.questGroupSearch == b.questGroupSearch
-        and a.hasLines == b.hasLines and a.menuTitle == b.menuTitle
-        and a.collapseKey == b.collapseKey
+        and a.hasLines == b.hasLines and a.collapsed == b.collapsed and a.collapseKey == b.collapseKey
 end
 
 O.FlatSlot, O.EntryBase, O.AddFlat, O.SameItem = FlatSlot, EntryBase, AddFlat, SameItem

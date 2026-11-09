@@ -12,10 +12,6 @@ local function Stop(record)
     Content.active[record] = nil
 end
 
-local function Hidden(frame)
-    local record = Content.records[frame]
-    if record then Stop(record) end
-end
 
 local function Descendant(frame, ancestor)
     for _ = 1, 16 do
@@ -26,11 +22,56 @@ local function Descendant(frame, ancestor)
     return false
 end
 
+-- Active records are keyed by their target. Read the candidate's current
+-- parent chain once even when several independent fades are playing.
+local function HasActiveAncestor(frame)
+    for _ = 1, 16 do
+        frame = Safety.Read(frame, "GetParent")
+        if frame == nil then return false end
+        if Content.active[Content.records[frame]] then return true end
+    end
+    return false
+end
+
+local function CompleteOpening(watch, coveringFrame)
+    for target, resolve in pairs(watch.pending) do
+        watch.pending[target] = nil
+        Safety.Dispatch(resolve, target, coveringFrame and Descendant(target, coveringFrame))
+    end
+end
+
+local function Hidden(frame)
+    local watch = Content.watchers[frame]
+    if watch then
+        watch.shown = false
+        CompleteOpening(watch, frame)
+    end
+    local record = Content.records[frame]
+    if record then Stop(record) end
+end
+
 local function Finished(group) Content.active[group.record] = nil end
 
 function Content.HasOpeningFade(frame)
     local watch = Content.watchers[frame]
     return watch ~= nil and next(watch.owners) ~= nil
+end
+
+-- The native list may lay out before its now-visible window's OnShow hook.
+-- Resolve in that hook, before drawing, so the window and list do not both
+-- start a fade. If the window cannot fade, the list still gets its own fade.
+function Content.DeferToOpening(target, resolve)
+    local frame = target
+    for _ = 1, 16 do
+        frame = Safety.Read(frame, "GetParent")
+        if frame == nil then return end
+        local watch = Content.watchers[frame]
+        if watch and not watch.shown and next(watch.owners)
+            and Safety.CanCreateRegions(frame) and Safety.Read(frame, "IsVisible") == true then
+            watch.pending[target] = resolve
+            return watch.pending
+        end
+    end
 end
 
 function Content.Play(frame, owner, token)
@@ -43,11 +84,18 @@ function Content.Play(frame, owner, token)
     if record and record.owner ~= nil and record.owner ~= owner then return false end
     local unchanged = record and record.token == token and record.revision == revision
     if unchanged and Content.active[record] then return true end
-    for active in pairs(Content.active) do
-        if active ~= record then
-            if Descendant(frame, active.target) then return false end
-            if Descendant(active.target, frame) then Stop(active) end
+    local first = next(Content.active)
+    if first and (first ~= record or next(Content.active, first)) then
+        if HasActiveAncestor(frame) then return false end
+        local stopped
+        for active in pairs(Content.active) do
+            if active ~= record and Descendant(active.target, frame) then
+                Stop(active)
+                stopped = true
+            end
         end
+        -- Stopping a native group may dispatch another animation callback.
+        if stopped and HasActiveAncestor(frame) then return false end
     end
     if unchanged then return true end
     local alpha = Safety.Read(frame, "GetAlpha")
@@ -61,10 +109,10 @@ function Content.Play(frame, owner, token)
         group.record = record
         group:SetScript("OnFinished", Finished)
         Content.records[frame] = record
-        frame:HookScript("OnHide", Hidden)
+        if not Content.watchers[frame] then frame:HookScript("OnHide", Hidden) end
     end
     local from = 0
-    if record.group:IsPlaying() then
+    if Content.active[record] and record.group:IsPlaying() then
         local progress = Safety.Read(record.alpha, "GetSmoothProgress")
         if type(progress) == "number" then
             progress = math.max(0, math.min(1, progress))
@@ -73,9 +121,15 @@ function Content.Play(frame, owner, token)
         record.group:Stop()
     end
     record.owner, record.token, record.revision = owner, token, revision
-    record.fromAlpha, record.toAlpha = from, alpha
-    record.alpha:SetFromAlpha(from)
-    record.alpha:SetToAlpha(alpha)
+    -- Replays of the same fade reuse the native animation configuration.
+    if record.fromAlpha ~= from then
+        record.alpha:SetFromAlpha(from)
+        record.fromAlpha = from
+    end
+    if record.toAlpha ~= alpha then
+        record.alpha:SetToAlpha(alpha)
+        record.toAlpha = alpha
+    end
     Content.active[record] = true
     record.group:Play()
     return true
@@ -99,10 +153,15 @@ end
 
 local function Shown(frame)
     local watch = Content.watchers[frame]
-    if watch and next(watch.owners) then
+    if not watch then return end
+    watch.shown = true
+    local owner = next(watch.owners)
+    local covered = false
+    if owner then
         watch.serial = watch.serial + 1
-        Content.Play(frame, next(watch.owners), watch.serial)
+        covered = Content.Play(frame, owner, watch.serial)
     end
+    CompleteOpening(watch, covered and frame)
 end
 
 function Content.Watch(frame, owner)
@@ -110,25 +169,29 @@ function Content.Watch(frame, owner)
         or not Safety.HasMethod(frame, "CreateAnimationGroup") then return false end
     local watch = Content.watchers[frame]
     if not watch then
-        watch = { owners = {}, serial = 0 }
+        watch = { owners = {}, serial = 0, pending = {}, shown = Safety.Read(frame, "IsVisible") == true }
         Content.watchers[frame] = watch
         frame:HookScript("OnShow", Shown)
+        if not Content.records[frame] then frame:HookScript("OnHide", Hidden) end
     end
     watch.owners[owner] = true
     return true
 end
 
+local function RemoveOwner(watch, owner)
+    if not watch or not watch.owners[owner] then return end
+    watch.owners[owner] = nil
+    if not next(watch.owners) then CompleteOpening(watch) end
+end
+
 function Content.Unwatch(owner, frame)
-    local watch = Content.watchers[frame]
-    if watch then watch.owners[owner] = nil end
     Content.StopOwner(owner, frame)
+    RemoveOwner(Content.watchers[frame], owner)
 end
 
 function Content.UnwatchOwner(owner)
-    for frame, watch in pairs(Content.watchers) do
-        watch.owners[owner] = nil
-    end
     Content.StopOwner(owner)
+    for _, watch in pairs(Content.watchers) do RemoveOwner(watch, owner) end
 end
 
 local function StopAll(_, event)

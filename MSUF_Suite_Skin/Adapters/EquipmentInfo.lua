@@ -9,6 +9,8 @@ local _, NS = ...
 -- No external addon implementation, localized names or assets are included.
 local Info = {}
 NS.EquipmentInfo = Info
+local suite = _G.MSUFSuite
+if suite and suite.Skin then suite.Skin.EquipmentReader = Info end
 
 local Public = NS.Safety.Public
 -- Blizzard getters called with valid arguments; secret results read as nil.
@@ -128,7 +130,9 @@ end
 
 -- Returns the tooltip line table (nil when unavailable).
 local function ReadTooltip(unit, slot, result)
-    local tooltip = Read(C_TooltipInfo.GetInventoryItem, unit, slot)
+    local tooltip
+    if unit then tooltip = Read(C_TooltipInfo.GetInventoryItem, unit, slot)
+    else tooltip = Read(C_TooltipInfo.GetHyperlink, result.link) end
     local lines = Field(tooltip, "lines")
     if type(lines) ~= "table" then return lines end
     local types = Enum.TooltipDataLineType
@@ -199,6 +203,11 @@ function Info.Read(link, unit, slot, result, identity)
     result.enchantRank = result.enchantID and rank[result.enchantID]
     ItemIdentity(link, result)
     result.itemLevel = Number(Read(C_Item.GetDetailedItemLevelInfo, link))
+    if NS.Client.isForever then
+        result.pending = not result.name or not result.itemLevel
+        result.settled = not result.pending
+        return result
+    end
     result.sockets = Number(Read(C_Item.GetItemNumSockets, link))
     ReadGems(link, result)
     ReadUpgrade(link, result)
@@ -248,6 +257,29 @@ function Info.Check(result, level)
     result.enchantToken = result.missingEnchant and "danger" or result.lowEnchant and "warning"
         or result.enchanted and "success" or "muted"
     return result
+end
+
+function Info.SpecializationName(kind, unit)
+    if NS.Client.isForever then return nil end
+    local sex = Number(Read(UnitSex, unit))
+    if kind == "character" then
+        local index = Number(Read(C_SpecializationInfo.GetSpecialization))
+        if not index then return nil end
+        local _, name = Read(C_SpecializationInfo.GetSpecializationInfo, index, false, false, nil, sex)
+        return Text(name)
+    end
+    local id = Number(Read(C_SpecializationInfo.GetInspectSpecialization, unit))
+    if not id or id <= 0 then return nil end
+    local _, name = Read(GetSpecializationInfoByID, id, sex)
+    return Text(name)
+end
+
+function Info.AverageItemLevel(kind, unit)
+    if kind == "character" then
+        local _, equipped = Read(GetAverageItemLevel)
+        return Number(equipped)
+    end
+    if not NS.Client.isForever then return Number(Read(C_PaperDollInfo.GetInspectItemLevel, unit)) end
 end
 
 function Info.AddTooltip(result)

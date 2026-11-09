@@ -2008,6 +2008,30 @@ assert(Keys("buf") == "b10,b11,a10060,a29166,a1459", "custom received buff did n
 Fire(received.close, "OnClick")
 Config().listsData = beforeReceived
 M.RequestRefresh()
+-- Outgoing defensive picks use the client's classification and the learned
+-- spellbook. The same ID remains separately available as a received buff.
+do
+    local previous, bank, classify = C_SpellBook, Enum.SpellBookSpellBank, C_Spell.IsExternalDefensive
+    local ids = { 102342, 357170, 6940, 33206, 1459, 190456 }
+    local names = { "Ironbark", "Time Dilation", "Blessing of Sacrifice", "Pain Suppression", nil, "Ignore Pain" }
+    for i = 1, #ids do if names[i] then SPELLS[ids[i]] = { names[i], 1010 + i } end end
+    Enum.SpellBookSpellBank = { Player = 1 }
+    C_SpellBook = {
+        GetNumSpellBookSkillLines = function() return 1 end,
+        GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = #ids } end,
+        GetSpellBookItemInfo = function(i, book) assert(book == 1); return { spellID = ids[i] } end,
+        IsSpellKnown = function(id) return id ~= 33206 end,
+    }
+    C_Spell.IsExternalDefensive = function(id) return id ~= 1459 and id ~= 190456 end
+    assert(Page.TogglePicker(grid.plus))
+    local rows = {}
+    for i = 1, Page.picker.count do rows[Page.picker.items[i].key or false] = true end
+    assert(rows.g102342 and rows.g357170 and rows.g6940 and rows.a102342 and rows.a190456)
+    assert(not rows.g33206 and not rows.g1459, "unlearned or non-defensive spells must not appear as externals")
+    Fire(Page.picker.close, "OnClick")
+    C_SpellBook, Enum.SpellBookSpellBank, C_Spell.IsExternalDefensive = previous, bank, classify
+    for i = 1, #ids do if names[i] then SPELLS[ids[i]] = nil end end
+end
 -- Potion suggestions use native player-aura keys, without needing an item
 -- in the bags. Each gesture uses the existing list/history path.
 do

@@ -35,12 +35,14 @@ for choice, unit in pairs({ [2] = "player", [3] = "target", [4] = "both", [5] = 
 end
 C_Spell.IsSpellHarmful = function(id) return id == 589 end
 C.spells = CDM.CleanSpells({ e = { a33763 = { auraUnit = 5 }, d589 = { auraUnit = 5 } } })
-C.lists = CDM.CleanLists({ specs = { [63] = { buf = { "a33763", "b198716", "d589" } } } })
+C.lists = CDM.CleanLists({ specs = { [63] = { buf = { "a33763", "b198716", "d589", "a102342", "g102342" } } } })
 C.state.specID = 63
 C.Resolve.Build()
 assert(C.entries.a33763.unit == "group" and C.entries.b198716.unit == "group",
     "custom or manually selected hidden buffs cannot track the group")
 assert(C.entries.d589.unit == "target", "the buff-only Group choice must preserve a harmful aura's target route")
+assert(C.entries.a102342.unit == "player" and C.entries.g102342.unit == "group" and C.entries.g102342.auraHelpful,
+    "own external defensive must not replace the received aura of the same spell")
 local replacement = { family = 1, src = "s" }
 assert(C.EntryFill.ApplyReplacement(replacement, { replaceAura = 589, auraUnit = 5 }) and replacement.unit == "target",
     "a harmful replacement aura disappeared through the Group buff choice")
@@ -196,6 +198,30 @@ do (function()
     A.SetBarMouse("c6", true)
     RunTimers()
     assert(Current().unit == "party1", "a returning consumer was not refreshed while another kept the driver running")
+    A.Release("c5")
+    -- The outgoing defensive is shown by Blizzard's aura button, with the
+    -- public recipient on its own name region.
+    rawset(_G, "UnitName", function(unit) return unit == "party1" and "Ally" or Secret() end)
+    S.PublicText = function(value) return S.Public(value) and type(value) == "string" and value or nil end
+    local externalSecret = false
+    C_Secrets.ShouldSpellAuraBeSecret = function(id) return id == 102342 and externalSecret end
+    local external = Aura("c5", "g102342", "g", "group", Set(102342), { auraHelpful = true, name = "Ironbark" })
+    C.views.c5 = View("c5", 3)
+    Plan("c5", 3, { external })
+    A.Sync("c5")
+    RunTimers()
+    local ex = assert(C.AuraContainers.live.c5.aura["group:g102342"])
+    assert(ex.unit == "party1" and ex.recipientText == "Ironbark on Ally", "outgoing bar lost its recipient")
+    externalSecret = true
+    Fire("ADDON_RESTRICTION_STATE_CHANGED")
+    RunTimers()
+    assert(ex.unit == "player" and ex.recipientText == nil, "restricted aura retained its previous recipient")
+    externalSecret = false
+    recipients.party1, recipients.party2 = nil, true
+    Fire("UNIT_AURA", "party1")
+    Fire("UNIT_AURA", "party2")
+    RunTimers()
+    assert(ex.unit == "party2" and ex.recipientText == nil, "secret recipient name must not reach string formatting")
     A.Release("c5")
     A.SetBarMouse("c6", false)
     assert(next(driver.events) == nil, "hidden group bar retained its aura listener")

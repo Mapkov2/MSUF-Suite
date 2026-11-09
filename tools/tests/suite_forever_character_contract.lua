@@ -61,6 +61,7 @@ end
 local leftArt = Texture("UI-Character-Info-General-BG")
 local rightArt = Texture("UI-Character-Info-Stat-BG")
 local left, right = Frame({ leftArt }), Frame({ rightArt })
+left.width = 398
 right.StoneBg = Texture("UI-Character-Info-Stat-StoneBG")
 local tabs = {}
 for index = 1, 6 do
@@ -114,7 +115,10 @@ for _, name in ipairs({ "CharacterModelFrameBackgroundTopLeft",
 end
 
 local hooks = {}
-local themeListener
+local themeListeners = {}
+local function themeListener(...)
+    for _, callback in pairs(themeListeners) do callback(...) end
+end
 hooksecurefunc = function(target, method, callback)
     if type(target) == "string" then
         hooks[target] = method
@@ -162,7 +166,7 @@ local ns = {
     Client = { isForever = true, IsGamepadUI = function() return gamepadUI end },
     DB = { theme = { look = "foreverGlass" } },
     Theme = { GetColor = function() return 0.7, 0.5, 0.3, 1 end },
-    Registry = { AddListener = function(_, callback) themeListener = callback end, QueueJob = QueueJob },
+    Registry = { AddListener = function(owner, callback) themeListeners[owner] = callback end, QueueJob = QueueJob },
     IsCombatLocked = function() return combatLocked end,
     Safety = assert(loadfile(rootPath .. "/MSUF_Suite_Skin/Core/Safety.lua"))("MSUF_Suite_Skin", {}),
     Cosmetics = {
@@ -235,6 +239,7 @@ assert(character.ModeTabs.points[1][2] == character
     and character.ModeTabs.points[1][5] == -26
     and character.ModeTabs.frameStrata == "HIGH"
     and character.ModeTabs.frameLevel >= 520
+    and character.ModeTabs.width + 8 <= left.width - 34
     and tabs[2].points[1][4] > 0
     and Parts(2).label.shown == true
     and Parts(2).label.text == "Reputation"
@@ -267,7 +272,7 @@ character:UpdateTabLayout()
 hooks.UpdateTabLayout()
 assert(tabs[3].points[1][4] > tabs[2].points[1][4],
     "native layout refresh undid the Forever icon rail")
-assert(themeListener, "Forever tabs did not observe look changes")
+assert(themeListeners[ns.CharacterPanel], "Forever tabs did not observe look changes")
 ns.DB.theme.look = "midnight"
 themeListener(nil, "theme", "look")
 NextFrame()
@@ -356,4 +361,43 @@ for _, frame in ipairs(blizzardFrames) do
         assert(type(key) ~= "string" or not key:find("^_msuf"), "the skin wrote " .. key .. " onto a Blizzard frame")
     end
 end
-print("Suite Forever character: panes, mode tabs and restore passed (secret strata: " .. tostring(secretCase) .. ")")
+-- A FontString created without a template must get its font before the first write.
+do
+    local createChild, fontPath = ns.Safety.CreateChildFrame, ns.AdapterKit.FontPath
+    local badgeFrame = Frame()
+    badgeFrame.EnableMouse = function() end
+    badgeFrame.CreateTexture = function()
+        local fill = Texture()
+        fill.SetAllPoints = function() end
+        return fill
+    end
+    local text = badgeFrame:CreateFontString()
+    badgeFrame.Show, badgeFrame.Hide = text.Show, text.Hide
+    local fontWrites, textWrites = 0, 0
+    text.SetFont = function(self, path)
+        self.font = path
+        fontWrites = fontWrites + 1
+    end
+    text.SetText = function(self, value)
+        assert(self.font, "item level written before its font was set")
+        self.text = value
+        textWrites = textWrites + 1
+    end
+    badgeFrame.CreateFontString = function() return text end
+    ns.Safety.CreateChildFrame = function() return badgeFrame end
+    ns.AdapterKit.FontPath = function() return "Fonts\\FRIZQT__.TTF" end
+
+    local row, info = {}, { itemLevel = 18 }
+    ns.PaperDollChrome.UpdateBadge(row, headSlot, info)
+    assert(badgeFrame.shown and text.text == "18", "first item level did not appear")
+    ns.PaperDollChrome.UpdateBadge(row, headSlot, info)
+    info.itemLevel = 21
+    ns.PaperDollChrome.UpdateBadge(row, headSlot, info)
+    assert(text.text == "21" and fontWrites == 1 and textWrites == 2,
+        "item level refresh rewrote an unchanged font or value")
+    ns.PaperDollChrome.UpdateBadge(row, headSlot, nil)
+    assert(not badgeFrame.shown, "empty equipment slot kept its item level")
+
+    ns.Safety.CreateChildFrame, ns.AdapterKit.FontPath = createChild, fontPath
+end
+print("Suite Forever character: panes, mode tabs, item level and restore passed (secret strata: " .. tostring(secretCase) .. ")")

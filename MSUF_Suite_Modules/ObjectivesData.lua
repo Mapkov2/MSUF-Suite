@@ -80,20 +80,24 @@ local function AddLine(entry, text, done, percent)
 end
 O.NextEntry, O.AddLine = NextEntry, AddLine
 
--- Retail/Forever QuestObjectiveTracker checks this flag from QuestLogInfo
--- and reads completion at click time before opening the native reward dialog.
-function O.CanCompleteQuest(questID)
-    if not Finite(questID) or questID <= 0 or Read(C_QuestLog.IsComplete, questID) ~= true then return false end
+local function QuestIndex(questID)
     local index = Read(C_QuestLog.GetLogIndexForQuestID, questID)
-    if not Finite(index) or index < 1 then return false end
+    return Finite(index) and index >= 1 and index or nil
+end
+
+local function IsAutoComplete(index)
     local info = Read(C_QuestLog.GetInfo, index)
     return type(info) == "table" and Public(info.isAutoComplete) and info.isAutoComplete == true
 end
 
-local function QuestItem(questID)
-    local index = Read(C_QuestLog.GetLogIndexForQuestID, questID)
-    if not Finite(index) or index < 1 then return end
-    local complete = Read(C_QuestLog.IsComplete, questID) == true
+-- Read current completion at click time before opening the native reward dialog.
+function O.CanCompleteQuest(questID)
+    if not Finite(questID) or questID <= 0 or Read(C_QuestLog.IsComplete, questID) ~= true then return false end
+    local index = QuestIndex(questID)
+    return index ~= nil and IsAutoComplete(index)
+end
+
+local function QuestItem(index, complete)
     if Read(QuestUtil.QuestShowsItemByIndex, index, complete) ~= true then return end
     local link, icon, _, showWhenComplete = GetQuestLogSpecialItemInfo(index)
     if not Public(link) or type(link) ~= "string" or link == ""
@@ -140,9 +144,9 @@ local function QuestTitle(questID)
     return type(info) == "table" and Text(info.title) or nil
 end
 
-local function Category(questID, focused)
+local function Category(questID, focused, complete)
     if questID == focused then return "focused" end
-    if Read(C_QuestLog.IsComplete, questID) == true then return "complete" end
+    if complete then return "complete" end
     local kind = Read(C_QuestInfoSystem.GetQuestClassification, questID)
     local kinds = Enum.QuestClassification
     if Finite(kind) then
@@ -152,7 +156,7 @@ local function Category(questID, focused)
     return "quests"
 end
 
-local function AddQuest(list, c, id, title, group, tracked, task)
+local function AddQuest(list, c, id, title, group, tracked, task, complete)
     local entry = NextEntry(list, id, title, group)
     entry.tracked = tracked
     if not P.NS.Client.isForever then
@@ -161,8 +165,16 @@ local function AddQuest(list, c, id, title, group, tracked, task)
     end
     entry.findGroup = not P.NS.Client.isForever and (group == "world" or entry.questGroupSearch)
     AddObjectiveLines(entry, id)
-    if not task and O.CanCompleteQuest(id) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true) end
-    if c.showQuestItems ~= false then entry.itemIcon, entry.itemLink = QuestItem(id) end
+    local showItem = c.showQuestItems ~= false
+    local showCompletion = not task and complete
+    local index = (showItem or showCompletion) and QuestIndex(id)
+    if index then
+        if showCompletion and IsAutoComplete(index) then AddLine(entry, QUEST_WATCH_CLICK_TO_COMPLETE, true) end
+        if showItem then
+            if task then complete = Read(C_QuestLog.IsComplete, id) == true end
+            entry.itemIcon, entry.itemLink = QuestItem(index, complete)
+        end
+    end
     if c.questIconStyle == 3 then
         local asset, atlas = QuestUtil.GetQuestIconActiveForQuestID(id)
         if Public(asset) and type(asset) == "string" and Public(atlas) and type(atlas) == "boolean" then
@@ -183,10 +195,31 @@ local function Tasks()
     return type(tasksTable) == "table" and tasksTable or nil
 end
 
+-- A dungeon or micro-map may be a child of the quest's zone. Compare
+-- zone IDs, never a continent, so adjacent zones do not count as local.
+local function ZoneMap(mapID)
+    for _ = 1, 8 do
+        if not Finite(mapID) or mapID <= 0 then return end
+        local info = Read(C_Map.GetMapInfo, mapID)
+        if type(info) ~= "table" or not Finite(info.mapType) then return end
+        if info.mapType == Enum.UIMapType.Zone then return mapID end
+        if info.mapType < Enum.UIMapType.Zone then return end
+        mapID = info.parentMapID
+    end
+end
+
+local function QuestGroup(questID, focused, zone, complete)
+    if not zone or questID == focused then return Category(questID, focused, complete) end
+    local questZone = ZoneMap(Read(GetQuestUiMapID, questID, true))
+    if not questZone then return Category(questID, focused, complete) end
+    return questZone == zone and "localQuests" or "otherQuests"
+end
+
 local seen = {}
 local function CollectQuests(list, c)
     for id in pairs(seen) do seen[id] = nil end
     local focused = Read(C_SuperTrack.GetSuperTrackedQuestID)
+    local zone = c.groupQuestsByZone and ZoneMap(Read(C_Map.GetBestMapForUnit, "player"))
     local count = Read(C_QuestLog.GetNumQuestWatches)
     if not Finite(count) then return end
     for i = 1, math.min(count, 40) do
@@ -194,7 +227,11 @@ local function CollectQuests(list, c)
         if Finite(id) and id > 0 and not seen[id] then
             seen[id] = true
             local title = QuestTitle(id)
-            if title then AddQuest(list, c, id, title, Category(id, focused), true, false) end
+            if title then
+                -- One snapshot for the category, completion hint and item in this refresh.
+                local complete = Read(C_QuestLog.IsComplete, id) == true
+                AddQuest(list, c, id, title, QuestGroup(id, focused, zone, complete), true, false, complete)
+            end
         end
     end
 end

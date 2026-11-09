@@ -570,10 +570,12 @@ do
             self.animations[#self.animations + 1] = anim
             return anim
         end
+        group.SetScript = Noop
         function group:Play() self.plays, self.playing = self.plays + 1, true end
         function group:Stop() self.playing = false end
         function child:CreateAnimationGroup() return group end
         function wheelBox:GetScrollTarget() return child end
+        function wheelBox:GetHeight() return 300 end
         function wheelBox:IsScrollAllowed() return not self.blocked end
         function wheelBox:HasScrollableExtent() return not self.short end
         function wheelBox:ScrollInDirection(amount, direction)
@@ -589,19 +591,39 @@ do
     end
 
     local addon, bounce = WheelBox()
-    local bindings, bindingsBounce = WheelBox()
+    local bindings, bindingsVisual = WheelBox()
+    local bindingsBar = Controller(false, true)
+    local categories, categoriesVisual = WheelBox()
+    local categoriesBar = Controller(false, true)
     local other = WheelBox()
-    local category, listening = 42, false
-    Settings = { KEYBINDINGS_CATEGORY_ID = 42 }
-    KeybindListener = { IsListening = function() return listening end }
-    SettingsPanel = {
-        Container = { SettingsList = { ScrollBox = bindings } },
-        GetCurrentCategory = function() return { GetID = function() return category end } end,
-    }
+    bindings.registeredScrollBar, bindingsBar.registeredScrollBox = bindingsBar, bindings
+    categories.registeredScrollBar, categoriesBar.registeredScrollBox = categoriesBar, categories
+    for _, controller in ipairs({ bindings, bindingsBar, categories, categoriesBar }) do
+        function controller:SetInterpolateScroll()
+            error("Settings native interpolation flag was written")
+        end
+        function controller:GetScrollInterpolator()
+            error("Settings native interpolator was adopted")
+        end
+    end
+    SettingsPanel = { Container = { SettingsList = { ScrollBox = bindings } }, CategoryList = { ScrollBox = categories } }
     AddonList = { ScrollBox = addon }
     EventRegistry = Frame()
-    Check(Motion.Track(addon, "adaptiveAddon") and Motion.Track(bindings, "adaptiveSettings")
-        and Motion.Track(other, "other"), "adaptive list fixture was not tracked")
+    Check(providers.bar[1](bindingsBar, "settingsBar"), "Settings bar could not register first")
+    Check(providers.generic[1](bindings, "settingsList"), "Settings list could not share its visual lease")
+    Check(providers.generic[1](categories, "settingsCategories") and providers.bar[1](categoriesBar, "settingsCategories"),
+        "Settings category selector could not register its visual lease")
+    categories:Trigger("scroll", 0.1, 0.5)
+    categories:Trigger("scroll", 0.2, 0.5)
+    Check(categoriesVisual.playing, "Settings category selector lost visual smoothing")
+    Motion.ReleaseOwner("settingsCategories")
+    Check(not categoriesVisual.playing and not next(categories.callbacks.scroll),
+        "Settings category selector retained visual work after release")
+    Check(Motion.Track(addon, "adaptiveAddon") and Motion.Track(other, "other"),
+        "adaptive list fixture was not tracked")
+    Check(next(EventRegistry.callbacks) == nil and bindings.hooks.OnMouseWheel == nil,
+        "Settings installed input hooks")
+    Check(not next(bindingsBar.thumb.callbacks), "Settings changed native thumb callbacks")
 
     local function Wheel(target, interval, delta)
         now = now + interval
@@ -643,22 +665,36 @@ do
 
     Wheel(other, 0.25)
     Check(Near(Wheel(other, 0.04), step), "an unrelated Blizzard list accelerated")
-    Wheel(bindings, 0.25)
-    Check(Wheel(bindings, 0.04) > step, "active Keybindings category did not accelerate")
-    category = 43
-    Check(Near(Wheel(bindings, 0.04), step), "another Settings category accelerated")
-    category = 42
-    Check(Near(Wheel(bindings, 0.04), step), "reopening the Keybindings category inherited gain")
-    listening = true
-    EventRegistry:Trigger("KeybindListener.StartedListening")
-    bindings.capture = function()
-        listening = false
-        EventRegistry:Trigger("KeybindListener.StoppedListening")
-    end
-    bindings.position = 1
-    bindings:ScrollInDirection(step, 1) -- a same-frame programmatic attempt before the binding
-    Check(Wheel(bindings, 0) == 0 and bindingsBounce.plays == 0, "assigning MOUSEWHEELDOWN scrolled or bounced")
+    local originalWheel = bindings.scripts.OnMouseWheel
+    local beforeSettingsScroll = positions
+    Check(Near(Wheel(bindings, 0.25), step) and Near(Wheel(bindings, 0.04), step),
+        "Settings wheel did not keep native distances")
+    Check(positions - beforeSettingsScroll == 4 and not bindings.interpolator and not bindingsBar.interpolator,
+        "Settings wrote extra positions or installed an interpolator")
+    bindings:Trigger("scroll", 0.1, 0.5)
+    bindings:Trigger("scroll", 0.2, 0.5)
+    Check(bindingsVisual.playing and bindingsVisual.animations[1].y == -8,
+        "Settings lost visual smoothing")
+    local capture = 0
+    bindings.capture = function() capture = capture + 1 end
+    Check(Wheel(bindings, 0) == 0 and capture == 1 and bindingsVisual.plays == 1,
+        "assigning MOUSEWHEELDOWN scrolled or animated")
+    Check(bindings.scripts.OnMouseWheel == originalWheel, "Settings native wheel script changed")
     bindings.capture = nil
+    Motion.ReleaseOwner("settingsBar")
+    Check(bindingsVisual.playing, "releasing Settings bar stopped the remaining list lease")
+    NS.DB.theme.smoothScrolling = false
+    for owner, callback in pairs(listeners) do callback(owner, "motion", "smoothScrolling") end
+    bindings:Trigger("scroll", 0.3, 0.5)
+    Check(not bindingsVisual.playing and bindingsVisual.plays == 1, "Standard Settings scrolling animated")
+    NS.DB.theme.smoothScrolling = nil
+    for owner, callback in pairs(listeners) do callback(owner, "motion", "smoothScrolling") end
+    bindings:Trigger("scroll", 0.4, 0.5)
+    bindings:Trigger("scroll", 0.5, 0.5)
+    Check(bindingsVisual.playing and bindingsVisual.plays == 2, "Settings visual smoothing did not resume")
+    Motion.ReleaseOwner("settingsList")
+    Check(not bindingsVisual.playing and not next(bindings.callbacks.scroll) and not next(bindings.callbacks.layout),
+        "released Settings list retained motion or callbacks")
 
     addon.position = 0.3
     now = now + 0.25

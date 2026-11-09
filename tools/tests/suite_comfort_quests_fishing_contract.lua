@@ -67,5 +67,47 @@ e:Combat(true); e:Emit(m, "SPELLS_CHANGED"); e:Emit(m, "PLAYER_REGEN_DISABLED")
 e:Combat(false); e:Emit(m, "PLAYER_REGEN_ENABLED")
 c.rod = "1000\n/cast Bad"; m:Refresh()
 assert(m.button.attrs.macrotext1 == "/stopmacro [combat]\n/cast Fishing", "typed item values cannot inject macro commands")
+local routed, handle, onCombat
+local enabledInteract = "0"
+Enum.SoftTargetEnableFlags = { Any = 3 }
+C_CVar = { GetCVar = function(key) assert(key == "softTargetInteract"); return enabledInteract end }
+GetBindingKey = function(binding) assert(binding == "CLICK MSUFSuiteFishing:LeftButton"); return "F", "SHIFT-F" end
+ClearOverrideBindings = function() routed = {} end
+handle = {
+    ClearBindings = ClearOverrideBindings,
+    SetBinding = function(_, priority, key, action)
+        assert(priority == false and action == "INTERACTTARGET", "must delegate only to native Interact")
+        routed[key] = action
+    end,
+}
+RegisterStateDriver = function(owner, state)
+    assert(state == "fishcombat")
+    function handle:GetAttribute(key) return owner.attrs[key] end
+    onCombat = setfenv(assert(loadstring(owner.attrs["_onstate-fishcombat"])), { self = handle, newstate = "blocked" })
+end
+UnregisterStateDriver = function(_, state)
+    assert(state == "fishcombat")
+    onCombat = nil
+end
+SecureHandlerExecute = function(_, snippet) setfenv(assert(loadstring(snippet)), { self = handle })() end
+c.audio, c.sameKeyInteract = false, true
+m:Refresh()
+e:Emit(m, "UNIT_SPELLCAST_CHANNEL_START", "player")
+assert(not m.routing and not m.bindingOwner, "disabled native Interact must leave the cast binding alone")
+e:Emit(m, "UNIT_SPELLCAST_CHANNEL_STOP", "player")
+enabledInteract = "3"
+channel = e.secret
+e:Emit(m, "UNIT_SPELLCAST_CHANNEL_START", "player")
+assert(not m.routing, "an unreadable cast must not take ownership of the binding")
+channel = 800
+e:Emit(m, "UNIT_SPELLCAST_CHANNEL_START", "player")
+assert(routed.F and routed["SHIFT-F"] and m.routing, "the selected Fishing bindings must reach Blizzard Interact")
+e:Emit(m, "UNIT_SPELLCAST_CHANNEL_STOP", "player")
+assert(not next(routed) and not m.routing and not onCombat, "channel stop must release keys and stop watching combat")
+e:Emit(m, "UNIT_SPELLCAST_CHANNEL_START", "player")
+e:Combat(true); onCombat()
+assert(not next(routed), "combat must release the override through the secure state driver")
+e:Emit(m, "PLAYER_REGEN_DISABLED")
+e:Combat(false); e:Emit(m, "PLAYER_REGEN_ENABLED")
 m.active = false; m:Disable(); assert(not m.button.attrs.type1 and not m.lure.attrs.type1, "disable clears both secure actions")
 print("comfort quests/fishing: contextual prices, unknown data, secrets, bounded requests, hardware actions and audio teardown passed")

@@ -74,6 +74,7 @@ local BAR_ACTIONS = {
 -- data entry, which opens that editor.
 local PLACE_ACTION_WORDS = { "Remove data", "Move earlier", "Move later", "Choose data source" }
 local QOL_ACTIONS = {
+    gatheringRoutes = { { "open", "Open resource routes" } },
     xpBar = { { "resetSession", "Reset session" } },
     innervateCue = { { "target", "Use current player target" } },
     loadoutReminder = { { "saveCurrent", "Save current build and loot spec" }, { "clearSaved", "Clear saved selection" } },

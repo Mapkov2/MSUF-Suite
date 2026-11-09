@@ -37,6 +37,8 @@ local function Frame()
     function f:SetWidth() end
     function f:SetColorTexture() end
     function f:SetJustifyH() end
+    function f:SetWordWrap() end
+    function f:SetMaxLines() end
     function f:SetText(value) assert(self.styled, "text written before font"); self.text = value end
     function f:SetTextColor() end
     function f:Show() self.shown = true; if self.onShow then self.onShow(self) end end

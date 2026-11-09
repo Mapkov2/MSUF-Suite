@@ -10,6 +10,7 @@ local HELP = {
         "Friendly player display chooses Blizzard's setting, names for all friendly players, names for party / raid only, or health bars. Names only hides Blizzard bars, casts and auras for friendly players; it does not change NPC or enemy plates. Group / outsider in the preview only changes the sample. Blizzard can forbid changes to friendly plates in instances; those frames stay under Blizzard's control."),
     castbar = P.Help("Text on Blizzard's enemy castbars.",
         "Blizzard supplies the castbar texture, colors, progress and interrupts. Customize its text and details here. Select and move each cast element in the preview; positions apply outside combat."),
+    enemyPower = P.Help("Show a separate power bar on enemy nameplates. Drag it in the preview to position it."),
     roleColors = P.Help("Color enemy health by type, threat and focus.",
         "Priority: focus, safe tank aggro, threat, tapped, quest, neutral, then NPC type. Turning focus off allows the next rule. Disabled threat overrides preserve Blizzard's active threat color. Tank mode uses your effective role; warnings also work for damage/healers. Secret values stay with Blizzard."),
     elements = P.Help("Blizzard's own icons and castbar details.",
@@ -76,6 +77,7 @@ local SECTIONS = {
             "enemyTargetAnchor", "enemyTargetDirection", "enemyTargetMarkerSize", "enemyTargetHideFriendly" } },
     } },
     { key = "castbar", area = "enemies", catalog = "castbar", positions = "castbar" },
+    { key = "enemyPower", area = "enemies", catalog = "enemyPower", positions = "enemyPower" },
     { key = "roleColors", area = "colors", title = "Enemy color rules", open = true, colors = ROLE_COLORS, tabs = {
         { id = "rules", label = "Rules", help = "roleColors", keys = { "enemyRoleColors", "enemyColorsInDungeons",
             "enemyColorsOutside", "enemyQuestColors", "enemyTankMode", "enemyPreviewRole" } },
@@ -168,34 +170,41 @@ local function PositionKeys(spec)
 end
 
 -- Section id of every placed key; More settings holds the rest.
-local placed, selectedTabs = {}, {}
+local placed
+local selectedTabs = {}
 local function Place(keys, sectionId)
     if not keys then return end
     for _, key in ipairs(keys) do placed[key] = sectionId end
 end
-Place(MODULE_KEYS, PAGE .. "_" .. ID .. "_module")
-for _, spec in ipairs(SECTIONS) do
-    local sectionId = PAGE .. "_" .. spec.key
-    Place(spec.keys, sectionId)
-    Place(spec.colors, sectionId)
-    if spec.tabs then
-        for _, tab in ipairs(spec.tabs) do Place(tab.keys, sectionId) end
-    end
-    if spec.catalog then
-        for _, rule in pairs(P.catalog[ID].rules) do
-            if rule.section == spec.catalog and rule.key ~= "enabled" and not rule.previewOnly then
-                placed[rule.key] = placed[rule.key] or sectionId
+-- Only a Nameplates page or search request needs the placement index.
+local function PlacedSections()
+    if placed then return placed end
+    placed = {}
+    Place(MODULE_KEYS, PAGE .. "_" .. ID .. "_module")
+    for _, spec in ipairs(SECTIONS) do
+        local sectionId = PAGE .. "_" .. spec.key
+        Place(spec.keys, sectionId)
+        Place(spec.colors, sectionId)
+        if spec.tabs then
+            for _, tab in ipairs(spec.tabs) do Place(tab.keys, sectionId) end
+        end
+        if spec.catalog then
+            for _, rule in pairs(P.catalog[ID].rules) do
+                if rule.section == spec.catalog and rule.key ~= "enabled" and not rule.previewOnly then
+                    placed[rule.key] = placed[rule.key] or sectionId
+                end
             end
         end
     end
+    return placed
 end
 
 -- Visible settings the placement does not name (a newer catalog rule). A
 -- setting this client lacks (spec.controlAvailable) has no control at all.
 local function Unplaced()
-    local rules = {}
+    local positions, rules = PlacedSections(), {}
     for _, rule in ipairs(P.catalog[ID].getControls()) do
-        if not placed[rule.key] and rule.key ~= "enabled" and not rule.hidden and not rule.previewOnly
+        if not positions[rule.key] and rule.key ~= "enabled" and not rule.hidden and not rule.previewOnly
             and not IsPositionRule(rule) and rule.section ~= "auraColors" then rules[#rules + 1] = rule end
     end
     return rules
@@ -204,7 +213,8 @@ end
 -- Search follows the same placement as the page and preview.
 function P.NameplateSearchTarget(rule)
     if IsPositionRule(rule) then return PAGE .. "_preview", nil, false end
-    if placed[rule.key] then return placed[rule.key] end
+    local section = PlacedSections()[rule.key]
+    if section then return section end
     if rule.section ~= "auraColors" and rule.key ~= "enabled" then return PAGE .. "_more" end
 end
 

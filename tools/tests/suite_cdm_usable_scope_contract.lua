@@ -75,11 +75,16 @@ end
 C.Index.usable = entries
 local capturedSpell, capturedItem
 local originalUsable = C.Effects.Usable
-C.Effects.Usable = function(entry, cache)
+local originalUsableShown, eligibilityCalls = C.Effects.UsableShown, 0
+C.Effects.UsableShown = function(entry)
+    eligibilityCalls = eligibilityCalls + 1
+    return originalUsableShown(entry)
+end
+C.Effects.Usable = function(entry, cache, shownOnly)
     if cache then
         if entry.src == "i" then capturedItem = cache else capturedSpell = cache end
     end
-    return originalUsable(entry, cache)
+    return originalUsable(entry, cache, shownOnly)
 end
 local function Empty(cache)
     return cache and next(cache.seen) == nil and next(cache.usable) == nil and next(cache.noPower) == nil
@@ -180,6 +185,30 @@ originalUsable(e)
 Check(calls.spell == before + 1 and e.resourcesAvailable == true, "range suppressed resource consumer")
 e.outOfRange, view.readyResources = nil, false
 
+-- An absent, hidden or unrendered icon cannot consume an ordinary broadcast.
+-- The visibility check must still live on the sweep after fusing the call.
+do
+    local all, unrendered = entries, Entry(101, "a")
+    local hiddenBar, hiddenEntry, missingBar = Entry(102, "b"), Entry(103, "a"), Entry(104, "c")
+    unrendered.icon, hiddenEntry.hidden, C.bars.b.hidden = nil, true, true
+    entries = { e, unrendered, hiddenBar, hiddenEntry, missingBar }
+    C.Index.usable = entries
+    local reads, probes = calls.spell, eligibilityCalls
+    Pass(false, true)
+    Check(calls.spell == reads + 1 and hiddenEntry.usablePending == true,
+        "broadcast must query only its visible rendered consumer")
+    if not measureOnly then Check(eligibilityCalls == probes, "broadcast called the event eligibility probe per entry") end
+    C.bars.b.hidden, entries, C.Index.usable = false, all, all
+end
+
+-- The same no-power answer drives both resource and tint state.
+answer, power = false, true
+originalUsable(e)
+local secretBefore = calls.secret
+originalUsable(e)
+if not measureOnly then Check(calls.secret == secretBefore + 2, "one answer repeated its no-power guard") end
+Check(e.usableCode == 4 and e.resourcesAvailable == nil, "no-power tint lost its resource state")
+
 -- The shared object contains raw native answers, never one bar's derived
 -- tint or resource policy. Ordered broadcast visits both possible readers.
 do
@@ -254,21 +283,21 @@ local function Measure(label, rebind, broadcast, invalidate)
     Check(itemReads == 0 and timerCalls == 200, "new native query domain or timer")
     Check(allocation <= .01, "batch allocated after warm-up")
     if not measureOnly then
-        Check(reads == (broadcast and 1200 or 0), "native query budget exceeded")
-        -- Rebind+broadcast retains 18 -> 6 native spell reads/pass.
-        -- Both sides now execute/count production Const.Pick, including
-        -- strict true and inheritance. Current-source rebind 1122400 ->
-        -- 1096000; broadcast 327200 -> 320000; warm-full 504000 -> 489600.
-        -- Non-full 120000 -> 122400 (+2%): one context argument per entry
-        -- avoids duplicate native reads when show and broadcast coincide.
-        local budget = label == "rebind+broadcast" and 1096000
-            or label == "broadcast" and 320000
+        local traceShape = label == "eight-distinct"
+        Check(reads == (traceShape and 1600 or broadcast and 1200 or 0), "native query budget exceeded")
+        -- Fusing the eligibility check removes 11200 VM instructions
+        -- across 200 eight-spell broadcasts (234000 -> 222800).
+        -- Mixed-bar broadcasts retain exact-spell sharing. Cold rebinds
+        -- and non-broadcast flushes keep their existing native budgets.
+        local budget = label == "rebind+broadcast" and 1081600
+            or label == "broadcast" and 303200
+            or traceShape and 222800
             or label == "non-full" and 122400 or 489600
         Check(vm <= budget, "VM work budget exceeded")
         -- Exact query identities need one extra secret guard per rebind.
         -- This replaces 2400 expensive usability queries with 2400 secret
         -- checks in the cold batch; total native count alone is insufficient.
-        Check(secretCalls == (label == "rebind+broadcast" and 16800 or label == "broadcast" and 7200 or 0),
+        Check(secretCalls == (label == "rebind+broadcast" and 16800 or label == "broadcast" and 7200 or traceShape and 4800 or 0),
             "secret-check budget changed")
         Check(overlayCalls == (invalidate and 2400 or 0) and paintCalls == 0,
             "extra native overlay queries or widget writes")
@@ -278,4 +307,8 @@ Measure("rebind+broadcast", true, true, true)
 Measure("broadcast", false, true)
 Measure("warm-full", true, false, false)
 Measure("non-full", true, false, false)
+entries = {}
+for id = 1, 8 do entries[id] = Entry(id, "a") end
+C.Index.usable = entries
+Measure("eight-distinct", false, true)
 print("CDM usable scope: " .. checks .. " checks passed")

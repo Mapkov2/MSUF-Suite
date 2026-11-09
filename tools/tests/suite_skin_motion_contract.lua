@@ -514,6 +514,31 @@ for _, contentFirst in ipairs({ false, true }) do
     Check(openingFade and openingFade.group:IsPlaying(), "native opening lost its complete-menu fade")
     Check(openingState.motion.channels[7].value == 1 and openingState.fill:GetAlpha() == 1,
         "native opening multiplied root and surface alpha fades")
+    local fromWrites, toWrites, playingReads = 0, 0, 0
+    local animation, group = openingFade.alpha, openingFade.group
+    local setFrom, setTo, isPlaying = animation.SetFromAlpha, animation.SetToAlpha, group.IsPlaying
+    function animation:SetFromAlpha(value)
+        fromWrites = fromWrites + 1
+        setFrom(self, value)
+    end
+    function animation:SetToAlpha(value)
+        toWrites = toWrites + 1
+        setTo(self, value)
+    end
+    function group:IsPlaying()
+        playingReads = playingReads + 1
+        return isPlaying(self)
+    end
+    opening:Hide()
+    opening:Show()
+    Check(fromWrites == 0 and toWrites == 0 and playingReads == 0,
+        "reopening with the same alpha reconfigured the animation")
+    Check(group.plays == 2 and isPlaying(group), "unchanged endpoints skipped the native opening fade")
+    opening:Hide()
+    opening.alpha = 0.75
+    opening:Show()
+    Check(fromWrites == 0 and toWrites == 1 and animation.ToAlpha == 0.75,
+        "native alpha change did not refresh exactly the changed endpoint")
     opening:Hide()
 end
 NS.ContentMotion.UnwatchOwner(openingOwner)
@@ -525,6 +550,10 @@ local rapidRecord = NS.ContentMotion.records[rapid]
 rapidRecord.group.progress = 0.5
 NS.ContentMotion.Play(rapid, openingOwner, 2)
 Check(math.abs(rapidRecord.alpha.FromAlpha - 0.2) < 0.000001, "content-ready retarget flashed back to transparent")
+rapid:Hide()
+rapid:Show()
+Check(NS.ContentMotion.Play(rapid, openingOwner, 3) and rapidRecord.alpha.FromAlpha == 0,
+    "fresh opening retained the interrupted start alpha")
 NS.ContentMotion.StopOwner(openingOwner)
 
 -- Only final search data and actual page switches pass the bridge.

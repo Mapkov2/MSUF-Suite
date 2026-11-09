@@ -298,14 +298,18 @@ function S.UnregisterEditElements(id)
 end
 
 -- Opens MSUF Edit Mode, preferably with the given element selected.
-function S.OpenEditMode(id, elementID, strict)
+function S.OpenEditMode(id, elementID, strict, showPopup)
     if NS.IsCombatLocked() then return false end
     local api = API()
     if api and id and owners[id] and api.EnterEditMode then
-        if elementID and owners[id][elementID] and api.EnterEditMode(OwnerName(id), elementID) then return true end
+        local owner = OwnerName(id)
+        if elementID and owners[id][elementID] and api.EnterEditMode(owner, elementID) then
+            if showPopup and api.OpenPopup then api.OpenPopup(owner, elementID) end
+            return true
+        end
         if strict then return false end
         for owned in pairs(owners[id]) do
-            if api.EnterEditMode(OwnerName(id), owned) then return true end
+            if api.EnterEditMode(owner, owned) then return true end
         end
     end
     if strict then return false end

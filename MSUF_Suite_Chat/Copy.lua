@@ -6,13 +6,15 @@ local C = P.Chat
 -- plain text into an edit box, ready for Ctrl+C; Copy all puts every public
 -- line of the window there. Nothing reads the chat until a button is clicked.
 local M = C.M
-local ROWS, WIDTH, INSET = 10, 440, 15
--- Copy all shows the lines in a scrolling multi-line box over the chooser
--- rows, which end 309 pixels below the top; the dialog's own edit box is
--- one line and cannot hold line breaks.
-local ALL_TOP, ALL_HEIGHT, ALL_BUTTON_WIDTH = -61, 248, 84
--- The shared copy dialog (MSUF_Suite_Modules/Dialogs.lua) with a chooser.
-local CHOOSER = { rows = ROWS, height = 345 }
+local ROWS, WIDTH, INSET = 10, 500, 16
+local ALL_BUTTON_WIDTH, ACTION_HEIGHT = 130, 27
+local CHOOSER = { rows = ROWS, height = 396 }
+-- InputScrollFrameTemplate keeps native scrolling and selection. Only the
+-- inherited background pieces are replaced, on our own scroll frame.
+local INPUT_ART = {
+    "TopLeftTex", "TopTex", "TopRightTex", "LeftTex", "MiddleTex", "RightTex",
+    "BottomLeftTex", "BottomTex", "BottomRightTex",
+}
 local TEXT = {
     copy = S.Text("Copy"),
     copyTooltip = S.Text("Copy a recent chat message"),
@@ -57,11 +59,16 @@ end
 -- Blizzard's multi-line input with its scroll bar (InputScrollFrameTemplate
 -- sizes its box from the frame's width when it loads, before this size).
 local function CreateAllView(panel)
-    local view = S.CreateFrame("ScrollFrame", nil, panel, "InputScrollFrameTemplate")
-    view:SetPoint("TOPLEFT", panel, "TOPLEFT", INSET, ALL_TOP)
-    view:SetSize(WIDTH - 2 * INSET, ALL_HEIGHT)
+    local view = S.CreateFrame("ScrollFrame", nil, panel, "InputScrollFrameTemplate,BackdropTemplate")
+    view:SetPoint("TOPLEFT", panel.rows[1], "TOPLEFT")
+    view:SetPoint("BOTTOMRIGHT", panel.edit, "BOTTOMRIGHT")
+    for _, key in ipairs(INPUT_ART) do view[key]:Hide() end
     view.CharCount:Hide()
+    S.QoLCopySurface(view, "card")
     view.EditBox:SetWidth(WIDTH - 2 * INSET - 18)
+    view.EditBox:SetTextInsets(10, 6, 6, 6)
+    S.SetFont(view.EditBox, nil, 12, "")
+    view.EditBox:SetTextColor(.92, .95, 1)
     view.EditBox:SetScript("OnEscapePressed", function() HideCopyDialog(panel) end)
     view:Hide()
     panel.allView = view
@@ -100,15 +107,24 @@ local function CopyAll(panel)
 end
 
 local function CreateCopyAllButton(panel)
-    local button = S.CreateFrame("Button", nil, panel)
-    button:SetSize(ALL_BUTTON_WIDTH, 19)
-    button:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -INSET, -33)
-    local fill = Fill(button, "BACKGROUND")
-    fill:SetAllPoints(button)
-    Tint(fill, "252a2d", 100)
-    local label = S.CreateFontString(button, nil, "ARTWORK", "GameFontNormalSmall")
-    label:SetPoint("CENTER", button, "CENTER")
-    label:SetText(TEXT.copyAll)
+    local bridge = NS.HostBridge
+    local button = bridge and bridge.MenuButton(panel, ALL_BUTTON_WIDTH, ACTION_HEIGHT)
+    if button then
+        button:SetText(TEXT.copyAll)
+    else
+        button = S.CreateFrame("Button", nil, panel, "BackdropTemplate")
+        button:SetSize(ALL_BUTTON_WIDTH, ACTION_HEIGHT)
+        S.QoLCopySurface(button, "card")
+        local hover = S.CreateTexture(button, nil, "HIGHLIGHT")
+        hover:SetAllPoints(button)
+        hover:SetColorTexture(.30, .58, .82, .25)
+        local label = S.CreateFontString(button, nil, "ARTWORK")
+        S.SetFont(label, nil, 12, "")
+        label:SetPoint("CENTER")
+        label:SetText(TEXT.copyAll)
+    end
+    button:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -INSET, -43)
+    panel.hint:SetPoint("TOPRIGHT", button, "TOPLEFT", -12, 0)
     button:SetScript("OnClick", function() CopyAll(panel) end)
     return button
 end

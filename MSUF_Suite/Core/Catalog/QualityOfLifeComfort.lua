@@ -55,6 +55,7 @@ Each action requires your key press; interacting with the bobber stays manual.]]
 B.Section("fishingComfort", "fishing_comfort", "Fishing comfort", {
     B.String("rod", "Fishing rod item ID (empty: equipped rod)", "", 12),
     B.String("lure", "Lure item ID (separate key binding)", "", 12),
+    B.Bool("sameKeyInteract", "Use the Fishing key to interact during a cast"),
     B.Bool("audio", "Use fishing sound profile during your cast"),
     B.Number("music", "Fishing music volume (percent)", 10, 0, 100, 5),
     B.Number("ambience", "Fishing ambience volume (percent)", 20, 0, 100, 5),

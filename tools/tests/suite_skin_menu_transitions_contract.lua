@@ -572,6 +572,94 @@ NS.GenericWindows.releaseContent("results")
 Check(not next(NS.ResultMotion.states[scroll].owners) and not NS.ResultMotion.states[scroll].registered,
     "result owner release retained native callbacks")
 NS.ContentMotion.Play = playContent
+
+-- The native visibility flag changes before its OnShow dispatch. Layouts in
+-- that interval all yield to the same window fade without a timer or flash.
+do
+    local Content, Results = NS.ContentMotion, NS.ResultMotion
+    local window, owner, lists = Frame(nil, true), {}, {}
+    window:Hide()
+    Content.Watch(window, owner)
+    for i = 1, 4 do
+        local child = Frame(window, true)
+        child.provider = {}
+        function child:GetDataProvider() return self.provider end
+        Results.Track(child, owner)
+        lists[i] = child
+    end
+    window:Show()
+    for _, child in ipairs(lists) do
+        child.provider = {}
+        child:TriggerEvent("layout")
+        Check(not Content.records[child], "opening started a result fade before its window")
+    end
+    window:Fire("OnShow")
+    local outer = Content.records[window]
+    Check(outer and outer.group.plays == 1 and outer.alpha.Duration == 0.12 and #timers == 0,
+        "window lost its immediate opening fade")
+    for _, child in ipairs(lists) do
+        Check(not Content.records[child], "window and result both played an opening fade")
+    end
+
+    -- Once the window has finished opening, provider replacement still fades.
+    outer.group:Finish()
+    for _, child in ipairs(lists) do
+        child.provider = {}
+        child:TriggerEvent("layout")
+        local inner = Content.records[child]
+        Check(inner and inner.group.plays == 1, "open window swallowed a real results change")
+        inner.group:Finish()
+    end
+
+    -- The measured opening used already-warm groups. Keep all four idle.
+    window:Hide()
+    for _, child in ipairs(lists) do child:Fire("OnHide") end
+    window:Show()
+    for _, child in ipairs(lists) do
+        child.provider = {}
+        child:TriggerEvent("layout")
+        Check(Content.records[child].group.plays == 1, "warm opening replayed a result fade")
+    end
+    window:Fire("OnShow")
+    Check(outer.group.plays == 2, "warm window lost its opening fade")
+    outer.group:Finish()
+    local first, second = lists[1], lists[2]
+    local inner = Content.records[first]
+
+    -- If protection changes during native OnShow, resolve still-eligible lists
+    -- immediately, using the newest provider. A hidden list has no pending fade.
+    window:Hide()
+    for _, child in ipairs(lists) do child:Fire("OnHide") end
+    window:Show()
+    for _ = 1, 2 do
+        first.provider = {}
+        first:TriggerEvent("layout")
+    end
+    second.provider = {}
+    second:TriggerEvent("layout")
+    second:Hide()
+    window.protected = true
+    window:Fire("OnShow")
+    Check(outer.group.plays == 2 and inner.group.plays == 2 and inner.token == first.provider,
+        "unavailable window fade lost or duplicated the current result fade")
+    Check(Content.records[second].group.plays == 1 and #timers == 0, "opening replayed a hidden result list")
+
+    -- The opening no longer covers a result that moved to an unrelated window.
+    local moved = lists[3]
+    window.protected = false
+    window:Hide()
+    moved:Fire("OnHide")
+    window:Show()
+    moved.provider = {}
+    moved:TriggerEvent("layout")
+    moved:SetParent(Frame(nil, true))
+    window:Fire("OnShow")
+    Check(outer.group.plays == 3 and Content.records[moved].group.plays == 2,
+        "old opening swallowed a reparented result's fade")
+    Results.ReleaseOwner(owner)
+    Content.Unwatch(owner, window)
+end
+
 print("Suite skin menu transitions (" .. (arg[2] or "Mainline") .. "): " .. checks .. " checks passed")
 if arg[3] == "coverage" then
     return { NS = NS, Frame = Frame, groups = groups, frames = frames, listeners = listeners,

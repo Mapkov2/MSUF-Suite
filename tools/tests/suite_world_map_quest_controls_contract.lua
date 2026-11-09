@@ -157,9 +157,9 @@ local function Run(flavor)
     local H = assert(loadfile(root .. "/tools/tests/suite_skin_menu_transitions_contract.lua"))()
     arg[3] = nil
     local NS, Frame, Load = H.NS, H.Frame, H.Load
-    local combat, delayed, cvar, objectiveReads = false, {}, "1", 0
+    local combat, lockdown, delayed, cvar, objectiveReads = false, false, {}, "1", 0
     NS.IsCombatLocked = function() return combat end
-    InCombatLockdown = function() return combat end
+    InCombatLockdown = function() return lockdown end
     NS.DB.questLog = { layout = "blizzard" }
     NS.DB.skins = {}
     local opacity, color = 1, 0.4
@@ -244,8 +244,11 @@ local function Run(flavor)
     local actions = Frame(map.BorderFrame)
     map.BorderFrame.MaximizeMinimizeFrame = actions
     actions.MaximizeButton, actions.MinimizeButton = Frame(actions), Frame(actions)
-    local active = {}
-    scroll.titleFramePool = { EnumerateActive = function() return pairs(active) end }
+    local active, enumerations = {}, 0
+    scroll.titleFramePool = { EnumerateActive = function()
+        enumerations = enumerations + 1
+        return pairs(active)
+    end }
     local tooltip, clicked, framesBefore = nil, 0, #created
     local function Acquire(id)
         local row = Frame(contents)
@@ -298,8 +301,11 @@ local function Run(flavor)
     end
     local row = Acquire(1)
     local nativeEnter, nativeLeave, nativeClick = row.scripts.OnEnter, row.scripts.OnLeave, row.scripts.OnClick
-    local nativeRebuilds = 0
-    QuestLogQuests_Update = function() nativeRebuilds = nativeRebuilds + 1 end
+    local nativeRebuilds, nativePoolUpdate = 0, nil
+    QuestLogQuests_Update = function()
+        nativeRebuilds = nativeRebuilds + 1
+        if nativePoolUpdate then nativePoolUpdate() end
+    end
     Check(NS.WorldMapSkin.Apply(map, "map-quests"), "map skin did not apply")
     Check(searchSkins[search] and searchSkins[search].pillHeight == 28, "dedicated quest search skin missing")
     Check(buttonSkins[actions.MaximizeButton] and buttonSkins[actions.MinimizeButton], "native map size buttons omitted")
@@ -368,11 +374,18 @@ local function Run(flavor)
     Check(clicked == 1 and row.scripts.OnEnter == nativeEnter and row.scripts.OnLeave == nativeLeave
         and row.scripts.OnClick == nativeClick, "compact presentation replaced native quest actions")
     local reads = objectiveReads
+    local visits = enumerations
     map.shown = false
-    QuestLogQuests_Update()
+    local hiddenRow = Acquire(3)
+    for _ = 1, 25 do QuestLogQuests_Update() end
     Check(objectiveReads == reads, "hidden map queried compact objective progress")
+    Check(enumerations == visits, "hidden map still enumerated native quest rows")
+    Check(not hiddenRow.plate, "closed map still skinned a freshly acquired quest row")
     map.shown = true
     NS.WorldMapSkin:OnWorldMapShown()
+    Check(enumerations == visits + 1, "reopened map did not catch up on quest-row styling")
+    Check(hiddenRow.plate ~= nil, "reopened map did not skin a row acquired while hidden")
+    active[hiddenRow] = nil
     Check(NS.WorldMapQuests.SetLayout("blizzard") and cvar == "1" and row.Text:IsShown()
         and not row.labels[1].shown, "Blizzard switch did not restore preference/text")
     asynchronous = true
@@ -423,11 +436,12 @@ local function Run(flavor)
     Check(setting.id == "questLog.layout" and setting.testSection == "suite_skin_quests"
         and #setting.values == 2 and setting.get() == "blizzard", "Skinning switch/search route missing")
     local radios, gearHistory = {}, 0
-    NS.SuiteCore = function() return { HostBridge = { WithMenuHistory = function(label, key, callback)
+    local menuCore = { HostBridge = { WithMenuHistory = function(label, key, callback)
         Check(label == "Quest list layout" and key == "suite:skin.questLog.layout", "gear used a different history setting")
         gearHistory = gearHistory + 1
         return callback()
-    end } } end
+    end } }
+    NS.SuiteCore = function() return menuCore end
     local rootMenu = { CreateDivider = Noop, CreateTitle = Noop,
         CreateRadio = function(_, label, selected, select, value)
             radios[value] = { label = label, selected = selected, select = select }
@@ -463,18 +477,71 @@ local function Run(flavor)
     Check(reported == 1 and cvar == "1" and row.Text:IsShown(), "paint error latched future layout restoration")
     NS.WorldMapQuests.SetLayout("compact")
     NS.Safety.Dispatch = dispatch
-    combat = true
-    Check(not NS.WorldMapQuests.SetLayout("blizzard"), "combat changed quest layout")
+    local showTitle = row.Text.Show
+    function row.Text:Show()
+        Check(not lockdown or not row.protected, "compact restored a protected title during lockdown")
+        showTitle(self)
+    end
     row.protected = true
     function row:IsProtected() return self.protected, false end
+    hiddenRow:Hide()
+    combat, lockdown = true, true
+    if cvarEvents.events.PLAYER_REGEN_DISABLED then cvarEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+    Check(not row.Text:IsShown() and row.labels[2]:IsShown(), "late edge changed a protected row during lockdown")
+    lockdown = false
+    visits = enumerations
+    if cvarEvents.events.PLAYER_REGEN_DISABLED then cvarEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED") end
+    Check(row.Text:IsShown() and not row.labels[2]:IsShown(), "combat edge left native quest title hidden")
+    Check(hiddenRow.Text:IsShown() and not hiddenRow.labels[2]:IsShown(), "combat edge left an inactive pool title hidden")
+    Check(enumerations == visits, "combat edge enumerated the native quest pool")
+
+    -- A Forever reload can prepare the skin before lockdown even when the player is in combat.
+    local core = NS.SuiteCore()
+    core.startingBeforeLockdown, combat = true, false
+    NS.WorldMapQuests.Refresh()
+    Check(row.Text:IsShown() and not row.labels[2]:IsShown(), "pre-lockdown startup hid the native quest title")
+    core.startingBeforeLockdown, combat, lockdown = nil, true, true
+    visits = enumerations
+    nativePoolUpdate = function()
+        row:Hide()
+        row.info, row.questLogIndex = { questID = 4, title = "Combat pool quest", level = 21 }, 4
+        row.Text:SetText("Combat pool quest")
+        row:Show()
+    end
+    QuestLogQuests_Update()
+    nativePoolUpdate = nil
+    Check(row.Text:IsShown() and row.Text:GetText() == "Combat pool quest" and not row.labels[2]:IsShown(),
+        "native combat recycle kept a stale or hidden title")
+    row.protected = false
+    NS.Registry.NotifyListeners("theme")
+    Check(row.Text:IsShown() and not row.labels[2]:IsShown(), "combat theme refresh hid the native quest title")
+
+    for _ = 1, 25 do QuestLogQuests_Update() end
+    Check(enumerations == visits, "combat quest log update walked native rows")
+    Check(not NS.WorldMapQuests.SetLayout("blizzard"), "combat changed quest layout")
+    row.protected = true
     row.mouseOver = false
     row:Fire("OnLeave")
     Check(next(delayed) ~= nil, "protected hover did not defer combat paint")
-    combat = false
+    combat, lockdown = false, false
+    if cvarEvents.events.PLAYER_REGEN_ENABLED then cvarEvents:Fire("OnEvent", "PLAYER_REGEN_ENABLED") end
+    Check(not row.Text:IsShown() and row.labels[2]:IsShown() and row.labels[2]:GetText() == "Combat pool quest",
+        "combat end did not reapply Compact to the current quest")
     for key, callback in pairs(delayed) do delayed[key] = nil callback() end
     Check(not row.plate.shown, "deferred hover did not clear after combat")
+    map.shown, combat = false, true
+    cvarEvents:Fire("OnEvent", "PLAYER_REGEN_DISABLED")
+    visits = enumerations
+    combat = false
+    cvarEvents:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
+    Check(enumerations == visits and row.Text:IsShown(), "combat end repainted a closed quest log")
+    map.shown = true
+    NS.WorldMapSkin:OnWorldMapShown()
+    Check(not row.Text:IsShown() and row.labels[2]:IsShown(), "reopened quest log did not restore Compact")
     local checkReleasedFolds = CheckZoneFolds(NS, Frame, map, scroll, contents, row, active)
     NS.WorldMapSkin.Disable(map, "map-quests")
+    Check(not cvarEvents.events.PLAYER_REGEN_DISABLED and not cvarEvents.events.PLAYER_REGEN_ENABLED,
+        "released quest log retained its combat events")
     checkReleasedFolds()
     Check(cvar == "1" and row.Text:IsShown() and row.HighlightTexture.alpha == 1,
         "disable did not restore native quest presentation")

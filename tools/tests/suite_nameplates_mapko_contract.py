@@ -65,6 +65,14 @@ for _, forever in ipairs({ false, true }) do
         plateMaxDistanceMode = 1, plateMaxDistance = 60, plateOccludedMode = 1, plateOccludedPercent = 40,
         plateFadeDistance = 1, plateShrinkDistance = 1, plateSpacingMode = 1, plateOverlapV = 110, plateOverlapH = 80,
         plateMotionSpeed = 1, plateInsetMode = 1, plateTopInset = 8, plateBottomInset = 10, plateClampTarget = 1 }
+    for key, default in pairs({ enemyPowerEnabled = false, enemyPowerSmooth = true, enemyPowerWidth = 0,
+        enemyPowerHeight = 4, enemyPowerOffsetX = 0, enemyPowerOffsetY = 0, enemyPowerColor = "337be6",
+        enemyPowerByType = true, enemyPowerBackgroundColor = "10151d", enemyPowerBackgroundAlpha = 80 }) do
+        newer[key] = default
+        for _, preset in pairs(spec.look.presets) do
+            assert(preset[key] == nil, "a look overrides saved enemy power: " .. key)
+        end
+    end
     newer.targetScaleEnabled, newer.targetScalePercent = false, 120
     newer.enemyTargetPrimaryOffsetX, newer.enemyTargetPrimaryOffsetY = 0, 0
     newer.enemyTargetMirrorOffsetX, newer.enemyTargetMirrorOffsetY = 0, 0

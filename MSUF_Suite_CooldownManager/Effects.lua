@@ -354,10 +354,16 @@ function Effects.UsableShown(entry)
     return not entry.outOfRange or NeedsResources(entry, C.views[entry.slot])
 end
 
-function Effects.Usable(entry, queries)
-    -- Range tint wins while the action is out of range. Defer the native
-    -- usability query until a range/target edge makes its result visible.
-    local view = C.views[entry.slot]
+function Effects.Usable(entry, queries, shownOnly)
+    -- Check broadcast visibility without repeating the event's eligibility probe.
+    local slot = entry.slot
+    if shownOnly then
+        if not entry.icon then return end
+        local bar = C.bars[slot]
+        if not bar or bar.hidden == true then return end
+    end
+    -- Range tint wins unless the ready glow needs a fresh resource answer.
+    local view = C.views[slot]
     local needResources = NeedsResources(entry, view)
     if entry.outOfRange and not needResources then return end
     local code = USABLE.USABLE
@@ -387,9 +393,10 @@ function Effects.Usable(entry, queries)
                 usable, noPower = reader(id)
             end
         end
-        entry.resourcesAvailable = not issecret(noPower) and noPower == false or nil
+        if issecret(noPower) then noPower = nil end
+        entry.resourcesAvailable = noPower == false or nil
         if view.usable and not issecret(usable) and usable == false then
-            code = (not issecret(noPower) and noPower) and USABLE.NO_POWER or USABLE.UNUSABLE
+            code = noPower and USABLE.NO_POWER or USABLE.UNUSABLE
         end
     end
     entry.usableCode = code

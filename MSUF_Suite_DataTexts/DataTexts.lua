@@ -491,6 +491,7 @@ function M:Refresh(resample)
     -- Every source can change while its secure overlay still holds the pointer.
     if not Extra.PrepareHearths() then Actions.Refresh() end
     PrimeCombatBars(self)
+    P.DataTextCombatMenu.Sync(self)
     NativeBagBar.Sync()
 end
 
@@ -512,6 +513,7 @@ end
 local function Pause(self)
     self.paused = true
     Actions.Release()
+    P.DataTextCombatMenu.Sync(self)
     if self.timer then
         self.timer:Cancel()
         self.timer = nil
@@ -550,6 +552,7 @@ local function Resume(self)
         self:UpdateVisibility(true)
         Extra.HearthsMayHaveChanged()
         PrimeCombatBars(self)
+        P.DataTextCombatMenu.Sync(self)
         if self.config.hideBlizzardBagBar then NativeBagBar.Sync() end
     end
     Actions.Resume()
@@ -564,6 +567,7 @@ function M:Enable()
             RefreshLayout(self)
             Visibility.Apply(self)
             PrimeCombatBars(self, true)
+            P.DataTextCombatMenu.Sync(self)
             NativeBagBar.Sync()
             self.clockSeconds = self.config.clockSeconds == true
         else
@@ -580,6 +584,7 @@ function M:Disable()
     Gold.WatchToday(self, nil)
     Visibility.Release()
     Actions.Disable()
+    P.DataTextCombatMenu.Disable()
     Extra.Disable()
     NativeBagBar.Sync()
     if self.timer then

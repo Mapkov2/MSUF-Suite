@@ -28,7 +28,8 @@ for i = 1, #CONSUMABLES do
 end
 local FAMILY = C.Const.FAMILY
 local COOLDOWN_FAMILY, AURA_FAMILY = FAMILY.COOLDOWN, FAMILY.AURA
-local SOURCE_FAMILY = { s = COOLDOWN_FAMILY, i = COOLDOWN_FAMILY, e = COOLDOWN_FAMILY, a = AURA_FAMILY, d = AURA_FAMILY }
+local SOURCE_FAMILY = { s = COOLDOWN_FAMILY, i = COOLDOWN_FAMILY, e = COOLDOWN_FAMILY,
+    a = AURA_FAMILY, d = AURA_FAMILY, g = AURA_FAMILY }
 
 -- Keys are parsed once per distinct string.
 local srcOf, idOf = {}, {}
@@ -273,8 +274,8 @@ local function FillAura(entry, src, id)
     entry.selfAura, entry.hasAura = src == "a", true
     entry.texture, entry.name = texture, name
     entry.auraIDs = AuraSet(entry.auraIDs, id)
-    entry.unit = src == "a" and "player" or "target"
-    entry.auraHelpful = src == "a"
+    entry.unit = src == "g" and "group" or src == "a" and "player" or "target"
+    entry.auraHelpful = src ~= "d"
     return true
 end
 local function Fill(entry, key)
@@ -288,7 +289,7 @@ local function Fill(entry, key)
         return FillItem(entry, id, key)
     elseif src == "e" then
         return FillEquip(entry, id, key)
-    elseif src == "a" or src == "d" then
+    elseif src == "a" or src == "d" or src == "g" then
         return FillAura(entry, src, id)
     end
     return false

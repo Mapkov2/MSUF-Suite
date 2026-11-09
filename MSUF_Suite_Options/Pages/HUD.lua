@@ -18,7 +18,7 @@ local function AppearanceRules(id)
     return rules
 end
 
-local function OpenColors(id)
+function P.HUDMenu.OpenColors(id)
     local M = P.M
     if type(M.SelectPage) ~= "function" or M.SelectPage("opt_colors") == false then return end
     if type(M.ColorsSetPainterCategory) == "function" then M.ColorsSetPainterCategory("suite") end
@@ -55,7 +55,7 @@ local function BuildObjectives(ctx, b)
     local actions = {
         { "Move in Edit Mode", function() P.MoveOnScreen("objectives", "tracker") end,
             key = "edit" },
-        { "Tracker colors", function() OpenColors("objectives") end, key = "colors" },
+        { "Tracker colors", function() P.HUDMenu.OpenColors("objectives") end, key = "colors" },
         P.PlannerAction("raid"),
     }
 
@@ -119,7 +119,7 @@ local function BuildSummary(ctx, b)
         { "Move in Edit Mode", function() P.MoveOnScreen("runSummary", "summary") end, key = "edit" },
         { "Preview raid result", function() SummaryAction("Preview", "raid") end, key = "preview_raid" },
         { "Show last result", function() SummaryAction("ShowLast") end, key = "last" },
-        { "Summary colors", function() OpenColors("runSummary") end, key = "colors" },
+        { "Summary colors", function() P.HUDMenu.OpenColors("runSummary") end, key = "colors" },
     }
     if S.catalog.runSummary.rules.showMythicPlus then
         table.insert(summaryActions, P.PlannerAction("runs"))
@@ -157,7 +157,7 @@ local function BuildAnnouncements(ctx, b)
     local actions = {
         { "Move in Edit Mode", function() P.MoveOnScreen("announcements", "banner") end,
             key = "edit" },
-        { "Announcement colors", function() OpenColors("announcements") end, key = "colors" },
+        { "Announcement colors", function() P.HUDMenu.OpenColors("announcements") end, key = "colors" },
     }
 
     AddSection(sections, "suite_hud_announcements_content",
@@ -187,10 +187,14 @@ local function Build(ctx)
     BuildObjectives(ctx, b)
     BuildSummary(ctx, b)
     BuildAnnouncements(ctx, b)
+    P.BuildHUDCharacterPanel(ctx, b)
     P.HUDMenu.BuildHelpers(ctx)
     P.HUDMenu.Finish(ctx)
 end
 
 P.RegisterPage({ key = PAGE, label = "HUD", title = "HUD", build = Build, icon = { 7, 1 },
-    nav = "combat", navOrder = 4,
-    aliases = { "objectives", "objective tracker", "run summary", "mythic plus", "raid kill", "announcements", "events", "afk", "hud" } })
+    nav = "interface", navOrder = 7,
+    aliases = {
+        "objectives", "objective tracker", "run summary", "mythic plus", "raid kill", "announcements", "events", "afk", "hud",
+        "suite_characterPanel", "character", "character panel", "inspect", "paperdoll", "reputation", "currency",
+    } })

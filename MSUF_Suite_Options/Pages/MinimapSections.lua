@@ -2,6 +2,8 @@ local _, P = ...
 local W, M, HM, Tr = P.W, P.M, P.HM, P.Tr
 local PAGE, ID = "suite_minimap", "minimap"
 local Menu, selections = {}, {}
+local PREVIEW_OFFSET_SECTION = PAGE .. "_preview_offset_"
+function Menu.PreviewOffsetSection(key) return PREVIEW_OFFSET_SECTION .. key end
 P.MinimapSections = Menu
 
 function Menu.IsMinimapSectionAvailable(source)
@@ -210,6 +212,10 @@ function Menu.BuildMinimapSections(ctx, builder, sections, help, skinStatus)
     sections.ResolveMinimapSection = function(source) return menu:ResolveMinimapSection(source) end
     if ctx.entry then
         HM.SetMissingSectionResolver(ctx.entry, function(sectionId)
+            if sectionId:sub(1, #PREVIEW_OFFSET_SECTION) == PREVIEW_OFFSET_SECTION then
+                local resolve = sections.ResolvePreviewOffset
+                return resolve and resolve(sectionId:sub(#PREVIEW_OFFSET_SECTION + 1))
+            end
             local source = sectionId:match("^suite_minimap_(.+)$")
             if source then return menu:ResolveMinimapSection(source) end
         end)

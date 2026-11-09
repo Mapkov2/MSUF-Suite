@@ -659,4 +659,25 @@ function AdapterKit.SkinSearchBox(context, searchBox)
     AdapterKit.SetTextColor(context.textColors, Field(searchBox, "Instructions"), "muted")
 end
 
+function AdapterKit.PositionSidecar(panel, root, rail, placement)
+    local read = Safety.Read
+    local right = read(root, "GetRight")
+    local railRight = read(rail, "GetRight")
+    local gap = right and railRight and math.max(0, railRight - right) or 0
+    local screenRight = read(UIParent, "GetRight")
+    local left = read(root, "GetLeft")
+    local scale, screenScale = read(root, "GetEffectiveScale"), read(UIParent, "GetEffectiveScale")
+    local width = read(panel, "GetWidth")
+    local placeLeft = right and screenRight and left and width and scale and screenScale and scale > 0
+        and (right + gap + width + 8) * scale > screenRight * screenScale and left > width + 8 or false
+    if placement.sidecarLeft == placeLeft and placement.sidecarGap == gap then return end
+    placement.sidecarLeft, placement.sidecarGap = placeLeft, gap
+    panel:ClearAllPoints()
+    if placeLeft then
+        panel:SetPoint("TOPRIGHT", root, "TOPLEFT", -8, 0)
+    else
+        panel:SetPoint("TOPLEFT", root, "TOPRIGHT", 8 + gap, 0)
+    end
+end
+
 return AdapterKit

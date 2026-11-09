@@ -373,17 +373,27 @@ do
 
     -- A multi-module destination stays active while any of its modules is on.
     local states = {}
-    for _, id in ipairs({ "objectives", "runSummary", "announcements", "afkScreen" }) do
+    for _, id in ipairs({ "objectives", "runSummary", "announcements", "afkScreen", "characterPanel" }) do
         states[id] = S.Config(id).enabled
         S.Config(id).enabled = false
     end
-    local wasRuntimeLoaded = loaded.MSUF_Suite_Modules
+    local wasRuntimeLoaded, wasCharacterLoaded = loaded.MSUF_Suite_Modules, loaded.MSUF_Suite_CharacterPanel
     loaded.MSUF_Suite_Modules = true
     assert(rows.suite_hud.availability() == false, "fully disabled HUD appears active")
     S.Config("afkScreen").enabled = true
     assert(rows.suite_hud.availability() == true, "one enabled HUD module must keep its destination active")
+    S.Config("afkScreen").enabled = false
+    S.Config("characterPanel").enabled, loaded.MSUF_Suite_CharacterPanel = true, true
+    assert(rows.suite_hud.availability() == true, "the Character Panel module must keep its HUD destination active")
+    local reset, refresh, resetOwners = S.Reset, P.Refresh, {}
+    S.Reset = function(id) resetOwners[id] = true return true end
+    P.Refresh = function() end
+    local resetHUD = M.ResetPageToDefaults("suite_hud")
+    S.Reset, P.Refresh = reset, refresh
+    assert(resetHUD and resetOwners.characterPanel and resetOwners.objectives,
+        "HUD reset must include the moved Character Panel module and its existing owners")
     for id, enabled in pairs(states) do S.Config(id).enabled = enabled end
-    loaded.MSUF_Suite_Modules = wasRuntimeLoaded
+    loaded.MSUF_Suite_Modules, loaded.MSUF_Suite_CharacterPanel = wasRuntimeLoaded, wasCharacterLoaded
     -- Catalog ownership includes every QoL feature, including those added
     -- after the older page-reset list was written.
     local qolStates, wasQolLoaded = {}, loaded.MSUF_Suite_QualityOfLife

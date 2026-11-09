@@ -616,6 +616,21 @@ local function BuildExpander(ui, ctx)
     end
 end
 
+-- Both axes use the existing editor for the matching preview element.
+local function ResolvePreviewOffset(ui, setting)
+    for _, handle in ipairs(ui.handles) do
+        local x, y = OffsetKeys(handle.previewKey)
+        if setting == x or setting == y then
+            if ui.body._selectedHandle ~= handle then
+                ui.state.selected = { key = handle.previewKey, section = handle.previewSection }
+                ui.kit:Select(handle)
+                if handle:IsShown() then ui.Paint() else SetLayer(ui, handle._previewLayerKey, true) end
+            end
+            return setting == x and ui.selection.axisX or ui.selection.axisY
+        end
+    end
+end
+
 -- The docked minimap preview: a static canvas with selectable, draggable
 -- elements whose offsets write the minimap settings.
 function P.BuildMinimapPreview(ctx, b, sections)
@@ -656,6 +671,7 @@ function P.BuildMinimapPreview(ctx, b, sections)
     BuildLayerChips(ui)
     ui.style:SetScript("OnClick", function() Focus(ui, "shape", "style") end)
     BuildExpander(ui, ctx)
+    sections.ResolvePreviewOffset = function(setting) return ResolvePreviewOffset(ui, setting) end
     M.TrackRefresh(ctx, ui.Paint)
     WatchRuntime(ui)
 end

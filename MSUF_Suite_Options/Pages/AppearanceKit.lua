@@ -275,3 +275,55 @@ end
 Kit.Engine, Kit.Change, Kit.Meta, Kit.Values = Engine, Change, Meta, Values
 Kit.Row, Kit.Section, Kit.ResetSkinSection = Row, Section, ResetSkinSection
 Kit.SkinColorRow, Kit.ConfigRow = SkinColorRow, ConfigRow
+
+local CHARACTER_TOGGLES = {
+    { "Character details", "characterDetails", "enabled", "CharacterDetails" },
+    { "Expanded details", "characterDetails", "expanded", "CharacterDetails" },
+    { "Character quality of life style", "characterDetails", "styleEQoL", "CharacterDetails" },
+    { "Inline gear", "characterDetails", "inlineGear", "CharacterDetails" },
+    { "Wide layout", "characterDetails", "wideLayout", "CharacterDetails" },
+    { "Character stats", "characterStats", "enabled", "CharacterStats" },
+    { "Diminishing returns", "characterStats", "diminishingReturns", "CharacterStats" },
+}
+
+local CHARACTER_HELP = "Choose the detailed character view and its extra information. Changing the view reloads the UI."
+local CHARACTER_FOREVER_NOTE = "The detailed character panel and stats are available only in Retail. WoW Forever keeps its own character layout."
+
+local function CharacterUnavailable()
+    return "The detailed character panel is available only in Retail."
+end
+
+local function RetailCharacterOption()
+    return "This feature is available only in Retail"
+end
+
+function Kit.BuildCharacter(ctx, b, skin)
+    local character = {
+        Row("dropdown", "Character view", "character.view", "character",
+            function() return skin.DB.characterDetails.view end,
+            function(value)
+                Change(skin, "Character view", "character.view", function() return skin.CharacterDetails.SetView(value) end)
+            end,
+            Values({ "modern", "list", "classic" })),
+    }
+    local retail = Suite.Client.modernEquipment == true
+    local details = skin.CharacterDetails
+    local supported = retail or details and details.IsAvailable and details.IsAvailable()
+    if not supported then character[1].unavailable = CharacterUnavailable end
+    for _, spec in ipairs(CHARACTER_TOGGLES) do
+        local label, group, key, api = spec[1], spec[2], spec[3], spec[4]
+        local row = Row("toggle", label, group .. "." .. key, "character",
+            function() return skin.DB[group][key] end,
+            function(value)
+                Change(skin, label, group .. "." .. key, function() return skin[api].SetOption(key, value) end)
+            end)
+        if not supported then
+            row.unavailable = CharacterUnavailable
+        elseif not retail and (key == "wideLayout" or api == "CharacterStats") then
+            row.unavailable = RetailCharacterOption
+        end
+        character[#character + 1] = row
+    end
+    Section(ctx, b, "character", "Character panel and stats",
+        supported and CHARACTER_HELP or CHARACTER_FOREVER_NOTE, character, false)
+end

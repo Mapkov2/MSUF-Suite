@@ -14,10 +14,12 @@ local SECRET = setmetatable({}, { __tostring = function() return "<secret>" end 
 local NO_OPS = { "SetSize", "SetPoint", "ClearAllPoints", "SetAllPoints", "SetFrameStrata", "SetFrameLevel",
     "EnableMouse", "SetClampedToScreen", "SetMovable", "StartMoving", "StopMovingOrSizing", "RegisterForDrag",
     "SetColorTexture", "SetHeight", "SetWidth", "SetFont", "SetTextColor", "SetJustifyH", "SetWordWrap",
-    "SetMaxLines", "SetAutoFocus", "SetVertexColor", "SetTexture", "SetAlpha", "SetMultiLine" }
+    "SetMaxLines", "SetAutoFocus", "SetVertexColor", "SetTexture", "SetAlpha", "SetMultiLine",
+    "SetBackdropColor", "SetBackdropBorderColor", "SetTextInsets" }
 local function Widget(parent)
     local widget = { parent = parent, shown = true, scripts = {}, text = "" }
     for _, name in ipairs(NO_OPS) do widget[name] = function() end end
+    function widget:SetBackdrop(value) self.backdrop = value end
     function widget:SetText(value) self.text = value end
     function widget:GetText() return self.text end
     function widget:Show() self.shown = true end
@@ -31,7 +33,11 @@ local function Widget(parent)
     function widget:SetFocus() self.focused = true end
     function widget:ClearFocus() self.focused = false end
     function widget:HighlightText() self.highlighted = true end
-    function widget:CreateTexture() return Widget(self) end
+    function widget:CreateTexture(_, layer)
+        local texture = Widget(self)
+        if layer == "HIGHLIGHT" then self.highlight = texture end
+        return texture
+    end
     function widget:CreateFontString() return Widget(self) end
     return widget
 end
@@ -39,7 +45,14 @@ UIParent = Widget()
 local function CreateFrame(_, _, parent, template)
     local frame = Widget(parent)
     -- Blizzard's InputScrollFrameTemplate (InputBoxTemplates.xml).
-    if template == "InputScrollFrameTemplate" then frame.CharCount, frame.EditBox = Widget(frame), Widget(frame) end
+    frame.template = template
+    if template and template:find("InputScrollFrameTemplate", 1, true) then
+        frame.CharCount, frame.EditBox = Widget(frame), Widget(frame)
+        for _, key in ipairs({ "TopLeftTex", "TopTex", "TopRightTex", "LeftTex", "MiddleTex", "RightTex",
+            "BottomLeftTex", "BottomTex", "BottomRightTex" }) do
+            frame[key] = Widget(frame)
+        end
+    end
     return frame
 end
 
@@ -146,7 +159,7 @@ local Suite = {
     SetFont = function() end,
     Dispatch = function(callback, ...) return callback(...) end,
     CreateFrame = CreateFrame,
-    CreateTexture = function(parent) return parent:CreateTexture() end,
+    CreateTexture = function(parent, ...) return parent:CreateTexture(...) end,
     CreateFontString = function(parent) return parent:CreateFontString() end,
 }
 Suite.Finite = function(value) return Suite.Number(value) and value > -math.huge and value < math.huge end
@@ -155,7 +168,30 @@ Suite.PublicText = function(value)
 end
 local NS = { Safety = { IsForbidden = function() return false end }, IsCombatLocked = function() return false end,
     ChatSoundChannels = catalogNS.ChatSoundChannels, ChatLineLimits = catalogNS.ChatLineLimits }
-assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = Suite })
+local themed
+NS.HostBridge = {
+    MenuMaterial = function(frame, material)
+        if not themed then return false end
+        frame.material = material
+        return true
+    end,
+    MenuInput = function(edit)
+        if not themed then return false end
+        edit.material = "input"
+        return true
+    end,
+    MenuCloseButton = function(parent)
+        if not themed then return end
+        parent.themedClose = Widget(parent)
+        return parent.themedClose
+    end,
+    MenuButton = function(parent)
+        if not themed then return end
+        parent.themedAction = Widget(parent)
+        return parent.themedAction
+    end,
+}
+assert(loadfile(root .. "/MSUF_Suite_Modules/Dialogs.lua"))("MSUF_Suite_Modules", { Suite = Suite, NS = NS })
 
 local events, combatEvents, owned = {}, {}, {}
 -- The context calls the chat code uses: events (also in combat) and owned
@@ -248,10 +284,16 @@ do
     local chooserReads = frame.infoCalls
     assert(chooserReads <= 100, "the chooser reads at most the newest 100 lines")
     assert(panel.copyAll and panel.copyAll:IsShown(), "the dialog has no Copy all action")
+    assert(panel.backdrop and panel.copyAll.backdrop, "copy shell and action must have the Suite fallback surface")
+    assert(panel.edit.backdrop and not panel.edit.template:find("InputBoxTemplate", 1, true),
+        "the single-line field still has the native gold surround")
+    assert(panel.rows[1].highlight, "chat lines have no hover feedback")
     assert(not panel.allView, "the Copy all view exists before it is asked for")
     panel.copyAll.scripts.OnClick(panel.copyAll)
     eq(frame.infoCalls, chooserReads + #frame.lines, "Copy all reads the buffer once, on the click")
     local view = panel.allView
+    assert(view.backdrop and not view.TopLeftTex:IsShown() and not view.MiddleTex:IsShown(),
+        "the multiline view retained its native background")
     eq(view.EditBox.text, "Alice: hello [Bob]\nsecond public\nBob: last",
         "Copy all keeps the public lines, oldest first, as plain text")
     assert(view:IsShown() and view.EditBox.focused and view.EditBox.highlighted, "the text is not selected for Ctrl+C")
@@ -282,6 +324,26 @@ do
     panel.copyAll.scripts.OnClick(panel.copyAll)
     assert(not view:IsShown(), "Copy all opened for a window without a public line")
     eq(panel.hint.text, "No recent messages to copy", "empty hint")
+end
+
+-- A host with its menu painters available supplies the same chrome.
+do
+    C.HideCopyDialog(M.copyDialog)
+    M.copyDialog = nil
+    themed = true
+    local frame = ChatFrame(1)
+    frame.lines = { "Themed chat line" }
+    C.OpenCopyDialog(M, frame)
+    local panel = M.copyDialog
+    eq(panel.material, "shell", "host shell")
+    eq(panel.edit.material, "input", "host input")
+    eq(panel.close, panel.themedClose, "host close button")
+    eq(panel.copyAll, panel.themedAction, "host action button")
+    eq(panel.copyAll.text, "Copy all", "host action label")
+    panel.copyAll.scripts.OnClick(panel.copyAll)
+    eq(panel.allView.material, "card", "host multiline surface")
+    panel.close.scripts.OnClick(panel.close)
+    themed = false
 end
 
 ------------------------------------------------------------------ scrollback limit

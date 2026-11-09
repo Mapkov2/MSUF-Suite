@@ -267,6 +267,9 @@ local function Event(self, event, ...)
         for i = 1, #SOURCES do Request(self, SOURCES[i]) end
         return
     end
+    if self.config.groupQuestsByZone and (event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS") then
+        Request(self, "quests")
+    end
     RequestEventSources(self, event, ...)
 end
 
@@ -380,6 +383,7 @@ local function ContentSignature(c)
         .. tostring(c.showQuestItems) .. ":" .. tostring(c.showTimers) .. ":" .. tostring(c.questIconStyle) .. ":"
         .. tostring(c.showCollectibles) .. ":" .. tostring(c.showZoneEvents) .. ":"
         .. tostring(c.showTravelersLog) .. ":" .. tostring(c.showEndeavors) .. ":" .. tostring(c.showRecipes)
+        .. ":" .. tostring(c.groupQuestsByZone)
 end
 
 local TRACKER_EVENTS = {

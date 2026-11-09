@@ -134,6 +134,11 @@ local function Frame(name)
     function frame:SetScale(value) self.scale = value end
     function frame:GetScale() return self.scale or 1 end
     function frame:GetEffectiveScale() return self:GetScale() end
+    function frame:SetBackdrop() end
+    function frame:SetBackdropColor() end
+    function frame:SetBackdropBorderColor() end
+    function frame:SetTextColor() end
+    function frame:SetTextInsets() end
     function frame:SetAutoFocus(value) self.autoFocus = value end
     function frame:SetFocus() self.focused = true end
     function frame:ClearFocus() self.focused = false end

@@ -299,7 +299,7 @@ local function ApplyWideLayout(v)
 end
 
 function Gear.ApplyLayout(v)
-    if not v or v.kind ~= "character" or not CanLayout(v.host) or not v.host:IsVisible()
+    if not v or v.forever or v.kind ~= "character" or not CanLayout(v.host) or not v.host:IsVisible()
         or not CanLayout(v.root) then return end
     local config = NS.DB.characterDetails
     local mode = config.view or "modern"
@@ -587,6 +587,8 @@ local function Create(v, row, slot)
 end
 
 function Gear.Paint(v, row)
+    local badge = row.levelBadge
+    if badge and CanLayout(badge.frame) then NS.PaperDollChrome.PaintBadge(badge, row.audit) end
     local a = row.annotation
     if not a or not CanLayout(a.host) then return end
     local path = FontPath()
@@ -733,7 +735,12 @@ function Gear.Update(v, row, slotName)
     local inline
     if v.kind == "inspect" then inline = config.inlineGear ~= false
     else inline = config.inlineGear ~= false and (config.view == "modern" or not config.view) end
-    if not inline or not slot or not NS.Safety.CanCreateRegions(slot, not NS.IsCombatLocked()) then
+    local canDraw = inline and NS.Safety.CanCreateRegions(slot, not NS.IsCombatLocked())
+    if v.forever then
+        NS.PaperDollChrome.UpdateBadge(row, slot, canDraw and row.audit or nil)
+        return
+    end
+    if not canDraw then
         HideAnnotation(row.annotation)
         return
     end
@@ -785,6 +792,8 @@ end
 function Gear.Hide(v)
     for _, row in ipairs(v.rows) do
         HideAnnotation(row.annotation)
+        local badge = row.levelBadge
+        if badge and CanLayout(badge.frame) then badge.frame:Hide() end
     end
 end
 

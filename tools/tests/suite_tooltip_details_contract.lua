@@ -1,5 +1,6 @@
 local root = assert(arg[1], "repository root required")
 local Support = dofile(root .. "/tools/tests/suite_test_support.lua")
+local Strict = dofile(root .. "/../MidnightSimpleUnitFrames/tools/tests/classpower_secrets.lua")
 local checks = 0
 local function Check(value, message) assert(value, message); checks = checks + 1 end
 
@@ -23,7 +24,7 @@ end
 
 local reported, movers = {}, {}
 local S = {
-    Public = function(value) return value ~= "secret" end,
+    Public = function(value) return not Strict.IsSecret(value) and value ~= "secret" end,
     Text = function(value) return value end,
     Dispatch = Support.Dispatcher(reported),
     SetFont = function(w, ...) w:SetFont(...) end,
@@ -37,6 +38,7 @@ S.Install = function(id, m) modules[id] = m end
 local combat = false
 local NS = { Safety = { IsForbidden = function(frame) return frame.forbidden == true end },
     IsCombatLocked = function() return combat end, Finish = function(callback, ...) return true, callback(...) end }
+NS.Public, NS.PublicText, NS.Finite = S.Public, S.PublicText, S.Finite
 
 -- hooksecurefunc as the client runs it: the global or table field becomes a
 -- wrapper; holders of the original keep the original.
@@ -156,6 +158,8 @@ C_Item = { GetItemInfo = function() return "item", "link", 4, 100, nil, nil, nil
 C_Spell = { GetSpellTexture = function() return 4321 end }
 
 local tooltips = Support.TooltipFixture(root, S, NS)
+local mountReaderPath = root .. "/MSUF_Suite/Core/UnitMount.lua"
+assert(loadfile(mountReaderPath))("test", NS)
 for _, file in ipairs({ "TooltipBorder.lua", "TooltipHiddenLines.lua", "TooltipDetails.lua" }) do
     assert(loadfile(root .. "/MSUF_Suite_QualityOfLife/" .. file))("test", { NS = NS, Suite = S })
 end
@@ -480,6 +484,39 @@ m:Refresh()
 Build("mouseover")
 Check(auraReads == before + 1, "a settings refresh kept the hover cache")
 Leave()
+
+-- Both reader entry points expose only a public aura instance to Inspect.
+do
+    local originalType, originalNumber, originalString, originalSecret = type, tonumber, tostring, issecretvalue
+    Strict.Install()
+    Strict.GUARD_NAMES.falsy.Public = true
+    local stopWatch = Strict.Watch(mountReaderPath, { strict = true })
+    auras = { { spellId = 321, auraInstanceID = 42 } }
+    local function CheckMountMetadata(name, collected, instanceID)
+        Check(name == "Hovered mount" and collected == false and instanceID == 42,
+            "shared mount reader did not return the public aura instance")
+    end
+    CheckMountMetadata(NS.UnitMount.Read("target"))
+    CheckMountMetadata(NS.UnitMount.FromAura(auras[1]))
+    auras[1].auraInstanceID = Strict.New("number")
+    local name, collected, instanceID = NS.UnitMount.FromAura(auras[1])
+    Check(name == "Hovered mount" and collected == false and instanceID == nil,
+        "a restricted aura instance escaped the shared reader")
+    local inaccessibleAura = setmetatable({ blocked = true }, {
+        __index = function() error("indexed an inaccessible aura table") end,
+    })
+    Check(NS.UnitMount.FromAura(inaccessibleAura) == nil and NS.UnitMount.FromAura(Strict.New("table")) == nil,
+        "incremental mount matching accessed restricted aura data")
+    secretAuras = Strict.New("boolean")
+    Check(NS.UnitMount.Read("target") == nil, "a secret restriction predicate allowed a full scan")
+    secretAuras = false
+    C_UnitAuras.GetAuraSlots = function() return Strict.New("number"), 1 end
+    Check(NS.UnitMount.Read("target") == nil, "a secret continuation token allowed a full scan")
+    C_UnitAuras.GetAuraSlots = slots
+    local violations = stopWatch()
+    Check(#violations == 0, "mount reader used secret operands: " .. table.concat(violations, ", "))
+    type, tonumber, tostring, issecretvalue = originalType, originalNumber, originalString, originalSecret
+end
 
 -- Item, spell and mount journal tooltips.
 tooltip.lines = {}

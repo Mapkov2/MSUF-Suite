@@ -75,7 +75,15 @@ function H.New(root, client, options)
     end
     W.Fire = Fire
     local function Cascade(frame, script)
-        Fire(frame, script)
+        if W.inSecureSnippet then
+            -- Addon show/hide scripts do not inherit a secure snippet's privilege.
+            local secure = W.secure
+            W.secure = false
+            Fire(frame, script)
+            W.secure = secure
+        else
+            Fire(frame, script)
+        end
         for _, child in ipairs(frame.children or {}) do
             if child.shown then Cascade(child, script) end
         end
@@ -144,6 +152,7 @@ function H.New(root, client, options)
     function R:SetAtlas(value) self.atlas = value end
     function R:SetDrawLayer(value) self.layer = value end
     function R:SetFont(path, size, flags) self.font = { path, size, flags }; return true end
+    function R:SetFontObject(object) self.font = { object:GetFont() }; self.fontObject = object end
     function R:SetShadowColor(...) self.shadowColor = { ... } end
     function R:SetShadowOffset(...) self.shadowOffset = { ... } end
     function R:GetFont() return "Native.ttf", 12, "" end
@@ -259,6 +268,9 @@ function H.New(root, client, options)
     -- for a frame it has not laid out.
     function F:GetTop() local r = self.rect; if r then return r[2] + r[4] end end
     function F:GetBottom() local r = self.rect; if r then return r[2] end end
+    function F:GetLeft() local r = self.rect; if r then return r[1] end end
+    function F:GetRight() local r = self.rect; if r then return r[1] + r[3] end end
+    function F:GetRect() if self.rect then return unpack(self.rect) end end
     function F:SetClampedToScreen(value) self.clamped = value end
     function F:IsClampedToScreen() return self.clamped == true end
     function F:SetClampRectInsets(...) Guard(self, "SetClampRectInsets"); self.clampInsets = { ... } end
@@ -445,7 +457,13 @@ function H.New(root, client, options)
             if value ~= nil then return value end
         end
     end
+    local hardwareFrame
+    local function CanInvokeSecureClick(frame)
+        return not W.combat or W.secure or frame == hardwareFrame
+    end
+
     local function SecureActionClick(frame, button, down)
+        if options.clientSecurity and not CanInvokeSecureClick(frame) then return end
         local keydown = frame:GetAttribute("useOnKeyDown")
         if keydown == nil then keydown = W.cvars.ActionButtonUseKeyDown ~= "0" end
         if (down and true or false) ~= (keydown and true or false) then return end
@@ -459,6 +477,64 @@ function H.New(root, client, options)
         local target = kind == "click" and record.clickbutton
         if target then W.Blizzard(function() target:Click(button) end) end
     end
+    -- Restricted handlers have a hardware click or secure driver entry point.
+    -- The fixture runs their snippets with a small explicit environment.
+    local function RunSnippet(body, frame, control, button, down, message)
+        local env = { self = frame, control = control, button = button, down = down, message = message,
+            tonumber = tonumber, tostring = tostring }
+        local run = setfenv(assert(loadstring(body, "secure snippet")), env)
+        local oldSnippet = W.inSecureSnippet
+        local first, second
+        W.inSecureSnippet = true
+        W.Blizzard(function() first, second = run() end)
+        W.inSecureSnippet = oldSnippet
+        return first, second
+    end
+
+    G.SecureHandlerSetFrameRef = function(frame, key, target)
+        assert(not W.combat and frame.protected, "invalid secure frame ref write")
+        frame.frameRefs = frame.frameRefs or {}
+        frame.frameRefs[key] = target
+    end
+    F.SetFrameRef = G.SecureHandlerSetFrameRef
+    function F:GetFrameRef(key)
+        assert(W.secure, "restricted frame ref read")
+        return self.frameRefs and self.frameRefs[key]
+    end
+    function F:RegisterAutoHide(delay)
+        assert(W.secure, "restricted auto-hide registration")
+        self.autoHide = { delay = delay, owners = {} }
+    end
+    function F:AddToAutoHide(frame)
+        assert(W.secure and self.autoHide, "missing secure auto-hide registration")
+        self.autoHide.owners[frame] = true
+    end
+    function F:UnregisterAutoHide()
+        assert(W.secure, "restricted auto-hide removal")
+        self.autoHide = nil
+    end
+
+    G.SecureHandlerWrapScript = function(frame, script, header, pre, post)
+        assert(not W.combat and header.protected, "invalid secure script wrap")
+        local handler = frame.scripts[script]
+        frame.scripts[script] = function(self, button, down)
+            if script == "OnClick" and not CanInvokeSecureClick(self) then return end
+            local replacement, message = RunSnippet(pre, self, header, button, down)
+            if replacement == false then return end
+            button = replacement or button
+            if handler then handler(self, button, down) end
+            if post and message ~= nil then RunSnippet(post, self, header, button, down, message) end
+        end
+    end
+    function F:WrapScript(frame, script, pre, post)
+        G.SecureHandlerWrapScript(frame, script, self, pre, post)
+    end
+
+    local function SecureHandlerClick(frame, button, down)
+        local body = frame:GetAttribute("_onclick")
+        if body and CanInvokeSecureClick(frame) then RunSnippet(body, frame, nil, button, down) end
+    end
+
     G.CreateFrame = function(kind, name, parent, template)
         local frame = New(kind, name, parent)
         frame.template = template
@@ -467,6 +543,9 @@ function H.New(root, client, options)
                 if word == "SecureActionButtonTemplate" then
                     frame.protected = true
                     frame.scripts.OnClick = SecureActionClick
+                elseif word == "SecureHandlerClickTemplate" then
+                    frame.protected = true
+                    frame.scripts.OnClick = SecureHandlerClick
                 elseif word == "InsecureActionButtonTemplate" then
                     -- Same action handler, without SecureFrameTemplate's
                     -- protection: Blizzard's movable quest rows use it too.
@@ -502,13 +581,16 @@ function H.New(root, client, options)
     end
     function W.HardwareClick(frame, button)
         button = button or "LeftButton"
-        if not frame.enabled then return end
+        if not frame.enabled or options.clientSecurity and not frame:IsVisible() then return end
         for _, down in ipairs({ true, false }) do
             local suffix = down and "Down" or "Up"
             for _, kind in ipairs(frame.clickKinds or {}) do
                 if kind == "Any" .. suffix or kind == button .. suffix then
                     Fire(frame, "PreClick", button, down)
+                    local previous = hardwareFrame
+                    hardwareFrame = frame
                     Fire(frame, "OnClick", button, down)
+                    hardwareFrame = previous
                     Fire(frame, "PostClick", button, down)
                     break
                 end

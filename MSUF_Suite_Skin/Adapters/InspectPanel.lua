@@ -16,13 +16,11 @@ local _, NS = ...
 local Chrome = NS.PaperDollChrome
 local Field = NS.Safety.Field
 local Call = NS.Safety.Call
-local Public = NS.Safety.Public
 local Kit = NS.AdapterKit
 local Fade, Attach = Chrome.Fade, Chrome.Attach
 local Read = NS.Safety.Read
 
 local DEFAULT_OWNER = "blizzardWindows"
-local ROOT_SPEC = Chrome.Spec("shell", 8, 0)
 local MODEL_SPEC = Chrome.Spec("card", 6, 0)
 
 local modelArtNames = {
@@ -64,23 +62,6 @@ local slotNames = {
     "InspectRangedSlot",
 }
 
--- ControlSkin copies these specs. Tab selection may be unknown (nil).
-local function ControlSpec(pillHeight, role, activeRole, active)
-    return {
-        role = role,
-        activeRole = activeRole,
-        active = active,
-        useControlShape = true,
-        pillHeight = pillHeight,
-        radius = 5,
-        inset = 1,
-        allowImplicitProtected = true,
-    }
-end
-local TAB_SPEC_ACTIVE = ControlSpec(24, "navigation", "navigationActive", true)
-local TAB_SPEC_INACTIVE = ControlSpec(24, "navigation", "navigationActive", false)
-local TAB_SPEC_UNKNOWN = ControlSpec(24, "navigation", "navigationActive", nil)
-local ACTION_SPEC = ControlSpec(24, "button", "buttonPrimary", nil)
 -- Forever's Inspect mode tabs (Camelot/Blizzard_InspectUI.xml:4-11, 54-75) use
 -- LargeSideTabButtonTemplate, a Frame: the ControlSkin button path refuses it
 -- (Surface.SkinOwnedButton needs the button state-texture setters). They get a
@@ -104,13 +85,6 @@ local function SkinModel(state)
         NS.Cosmetics.Fade(overlay, state.modelOverlayOwner)
     end
     return Attach(state, _G.InspectModelFrame, MODEL_SPEC)
-end
-
-local function SelectedTab()
-    if not _G.InspectFrame then return nil end
-    local selected = PanelTemplates_GetSelectedTab(_G.InspectFrame)
-    if not Public(selected) then return nil end
-    return tonumber(selected)
 end
 
 local SkinTabs
@@ -142,22 +116,8 @@ SkinTabs = function(state)
         end
         return applied
     end
-    local selected = SelectedTab()
-    local applied = false
-    for index = 1, 3 do
-        local spec = TAB_SPEC_UNKNOWN
-        if selected ~= nil then
-            spec = selected == index and TAB_SPEC_ACTIVE or TAB_SPEC_INACTIVE
-        end
-        if Kit.SkinControl(state, _G["InspectFrameTab" .. index], spec, "ApplyPanelTab") then
-            applied = true
-        end
-    end
-    return applied
-end
-
-local function SkinAction(state, button)
-    return Kit.SkinControl(state, button, ACTION_SPEC)
+    Chrome.PanelTabs(state, _G.InspectFrame, InspectFrameTab1, InspectFrameTab2, InspectFrameTab3)
+    return true
 end
 
 local panel
@@ -181,7 +141,7 @@ local function ApplyNow(state)
     if not root or not state.active then return false, "missing" end
     if NS.IsCombatLocked() then return false, "combat" end
 
-    Attach(state, root, ROOT_SPEC)
+    Chrome.Window(state, root)
     Chrome.FadeNineSlice(state, root)
     Fade(state, Field(root, "Bg"))
     Chrome.FadePortraits(state, root, _G.InspectFramePortrait)
@@ -190,8 +150,8 @@ local function ApplyNow(state)
     SkinModel(state)
     panel:SkinAllSlots(state)
     SkinTabs(state)
-    SkinAction(state, Field(_G.InspectPaperDollFrame, "ViewButton"))
-    SkinAction(state, Field(Field(_G, NS.Client.isForever and "InspectPaperDollFrame" or "InspectPaperDollItemsFrame"), "InspectTalents"))
+    Chrome.Action(state, Field(_G.InspectPaperDollFrame, "ViewButton"))
+    Chrome.Action(state, Field(_G.InspectPaperDollItemsFrame, "InspectTalents"))
     NS.CharacterDetails.Apply(root, "inspect", state.owner)
     -- Inspect skips the generic adapter, which normally attaches the shared
     -- window controls. Keep its scale grip available after load-on-demand.

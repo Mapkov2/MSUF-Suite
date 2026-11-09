@@ -295,7 +295,7 @@ W.Advance(2)
 assert(textureWrites == styledTextureWrites and fontWrites == styledFontWrites,
     "sampled data update repeated cold-path texture or font styling")
 local dataMover = assert(W.movers["MSUFSuite.dataTexts/bar1"], "DataTexts bar is missing in Edit Mode")
-assert(dataMover.centerPopup == true, "DataTexts Edit Mode popup did not request the screen center")
+assert(not dataMover.centerPopup, "DataTexts popup must leave the centered bar accessible for dragging")
 assert(#dataMover.extraControls == 4
     and dataMover.extraControls[1].id == "bar1X"
     and dataMover.extraControls[2].id == "bar1Y"

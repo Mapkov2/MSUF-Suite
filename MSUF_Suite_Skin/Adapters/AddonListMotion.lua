@@ -160,7 +160,7 @@ local function Collect(row)
     end
     state.count = state.count + 1
     state.rows[state.count] = record
-    Ghost.Capture(state, record)
+    if state.model ~= "quest" then Ghost.Capture(state, record) end
 end
 
 local function Snapshot(state)
@@ -419,9 +419,13 @@ function AddonListMotion.RebuildCollection(root)
     local state = AddonListMotion.scrollStates[root]
     if not state or not state.active then return end
     state.ghostGeneration = (state.ghostGeneration or 0) + 1
-    for index = 1, state.count do
-        local record = state.rows[index]
-        Ghost.Released(state, record, record.node)
+    -- A native quest refresh repools every row. Its old snapshots stay
+    -- available until the completed layout identifies a real collapse.
+    if state.model ~= "quest" then
+        for index = 1, state.count do
+            local record = state.rows[index]
+            Ghost.Released(state, record, record.node)
+        end
     end
     return OnLayout(state)
 end

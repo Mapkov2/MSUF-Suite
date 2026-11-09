@@ -251,6 +251,7 @@ for i = 1, BAR_COUNT do
         Choice(p .. "Visibility", "Show this bar", d[1],
             { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat", "Never" }),
         Bool(p .. "HideGamepad", "Hide with an active connected gamepad (Forever)"),
+        Bool(p .. "GroupOnly", "Show only while grouped"),
         Choice(p .. "ResumeVisibility", "Visibility when turned on", d[1] == VISIBILITY.NEVER and VISIBILITY.ALWAYS or d[1],
             { "Always", "In combat", "Out of combat", "Mouseover", "Mouseover or combat" }),
         Number(p .. "Alpha", "Bar opacity (percent)", 100, 0, 100, 5),

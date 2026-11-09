@@ -21,6 +21,90 @@ local function CancelHide(self)
 end
 
 local Current = S.LoadoutSnapshot
+local MAX_DUNGEONS, MAX_ABILITIES = 32, 6
+
+local function Dungeon()
+    local _, kind, _, _, _, _, _, id = GetInstanceInfo()
+    if S.PublicText(kind) == "party" and S.Finite(id) and id > 0 then return id end
+end
+
+local function AbilityData(self, guid)
+    local raw = self.config.dungeonAbilities or ""
+    if self.abilitySource ~= raw then
+        self.abilitySource = raw
+        self.abilityOwner, self.abilityRules = raw:match("^([%w%-]+);"), {}
+        local count = 0
+        for zone, list in raw:gmatch("(%d+):([%d,]+);") do
+            if count >= MAX_DUNGEONS then break end
+            local spells = {}
+            for id in list:gmatch("%d+") do
+                if #spells >= MAX_ABILITIES then break end
+                id = tonumber(id)
+                if id and id > 0 and id < 2147483648 then spells[#spells + 1] = id end
+            end
+            self.abilityRules[tonumber(zone)] = spells
+            count = count + 1
+        end
+    end
+    if guid and guid == self.abilityOwner then return self.abilityRules end
+end
+
+local function MissingAbilities(self, guid)
+    if not self.config.dungeonAbilities or self.config.dungeonAbilities == "" or NS.InCombat() then return end
+    local zone, rules = Dungeon(), AbilityData(self, guid)
+    local spells = zone and rules and rules[zone]
+    local known = C_SpellBook and C_SpellBook.IsSpellKnown
+    if not spells or not known then return end
+    local missing
+    for i = 1, #spells do
+        local id = spells[i]
+        local learned = known(id)
+        if S.Public(learned) and learned == false then
+            local name = S.PublicText(C_Spell.GetSpellName(id))
+            if name then missing = missing and (missing .. ", " .. name) or name end
+        end
+    end
+    return missing
+end
+
+function M:CanSetDungeonAbilities()
+    return self.active and not NS.InCombat() and Dungeon() ~= nil
+end
+
+function M:DungeonAbilityContext()
+    if not self.active or NS.InCombat() then return end
+    local zone, guid = Dungeon(), S.PublicText(UnitGUID("player"))
+    if zone and guid then return zone, guid, self.config end
+end
+
+function M:SetDungeonAbilities(text, expectedZone, expectedGuid, expectedConfig)
+    local zone, guid, config = self:DungeonAbilityContext()
+    if not zone or type(text) ~= "string" then return false end
+    if expectedZone and (zone ~= expectedZone or guid ~= expectedGuid or config ~= expectedConfig) then return false end
+    local spells, seen = {}, {}
+    if text:match("%S") and not text:match("^%s*0%s*$") then
+        for token in text:gmatch("[^,]+") do
+            token = token:match("^%s*(.-)%s*$")
+            local id = tonumber(token) or C_Spell.GetSpellIDForSpellIdentifier(token)
+            if not S.Finite(id) or id <= 0 or id >= 2147483648 or id % 1 ~= 0
+                or not S.PublicText(C_Spell.GetSpellName(id)) then return false end
+            if not seen[id] then spells[#spells + 1], seen[id] = id, true end
+            if #spells > MAX_ABILITIES then return false end
+        end
+        if #spells == 0 then return false end
+    end
+    local others = AbilityData(self, guid) or {}
+    local keys, parts = {}, { guid .. ";" }
+    for id in pairs(others) do if id ~= zone then keys[#keys + 1] = id end end
+    if #spells > 0 and #keys >= MAX_DUNGEONS then return false end
+    table.sort(keys)
+    for _, id in ipairs(keys) do parts[#parts + 1] = id .. ":" .. table.concat(others[id], ",") .. ";" end
+    if #spells > 0 then parts[#parts + 1] = zone .. ":" .. table.concat(spells, ",") .. ";" end
+    if #parts == 1 then parts[1] = "" end
+    local ok = S.SetMany("loadoutReminder", { dungeonAbilities = table.concat(parts) })
+    if ok then self:Test() end
+    return ok
+end
 
 local function Place(self)
     S.PlaceHost(self.host, self.config)
@@ -38,6 +122,8 @@ local function Create(self)
     detail:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -7)
     detail:SetPoint("TOPRIGHT", title, "BOTTOMRIGHT", 0, -7)
     detail:SetJustifyH("LEFT")
+    detail:SetWordWrap(true)
+    detail:SetMaxLines(2)
     S.SetFont(detail, nil, 11, "")
     host:Hide()
     self.host, self.background, self.border, self.title, self.detail =
@@ -78,7 +164,8 @@ local function Show(self, force)
         or (characterGUID and self.config.expectedCharacterGUID == characterGUID)
     local expectedConfig = sameCharacter and (self.config.expectedConfigID or 0) or 0
     local expectedLoot = sameCharacter and (self.config.expectedLootSpecID or 0) or 0
-    local mismatch = (expectedConfig > 0 and expectedConfig ~= configID)
+    local missing = MissingAbilities(self, characterGUID)
+    local mismatch = missing ~= nil or (expectedConfig > 0 and expectedConfig ~= configID)
         or (expectedLoot > 0 and expectedLoot ~= lootID)
     if self.config.onlyMismatch and not mismatch and not force then
         CancelHide(self)
@@ -89,7 +176,11 @@ local function Show(self, force)
     self.title:SetText(S.Text(mismatch and "Check your loadout" or "Current loadout"))
     self.lastMismatch = mismatch
     Paint(self, mismatch)
-    self.detail:SetText(S.Text("%s  |  Loot: %s"):format(buildName, lootName))
+    if missing then
+        self.detail:SetText(S.Text("Missing abilities: %s"):format(missing))
+    else
+        self.detail:SetText(S.Text("%s  |  Loot: %s"):format(buildName, lootName))
+    end
     self.host:Show()
     if self.config.sound then S.QoLWarningSound() end
     self.context:After(self.config.duration, HideReminder)
@@ -117,7 +208,10 @@ local function OnZone(self, event)
     if self.lastInstance == instanceID then
         if not BUILD_EVENTS[event] then return end
         local configID, _, lootID = Current()
-        if not configID or (self.lastConfigID == configID and self.lastLootID == lootID) then return end
+        if not configID then return end
+        local rules = self.config.dungeonAbilities and self.config.dungeonAbilities ~= ""
+            and AbilityData(self, S.PublicText(UnitGUID("player")))
+        if not (rules and rules[instanceID]) and self.lastConfigID == configID and self.lastLootID == lootID then return end
     end
     local shown, configID, lootID = Show(self)
     if shown then

@@ -94,6 +94,7 @@ NS.RegisterLocale("enUS", {
     DOSSIER_GEMS = "%d gems",
     DOSSIER_LEVEL = "Level %d",
     DOSSIER_SUMMARY = "%d items  /  %d enchants  /  %d gems",
+    DOSSIER_SIMPLE_SUMMARY = "%d items  /  %d enchants",
     DOSSIER_PENDING = "Waiting for cached item details...",
     DOSSIER_DURABILITY = "Lowest durability: %d%%  /  Hover for details",
     DOSSIER_INSPECT_NOTE = "Enchant / gem presence only, not an optimization verdict.",

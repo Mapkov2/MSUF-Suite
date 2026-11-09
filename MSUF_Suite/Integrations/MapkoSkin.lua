@@ -8,7 +8,7 @@ Suite.Skin = Skin
 local clients = {}
 local appearanceHooked = false
 -- The HUD modules read skin colors and fonts when they paint.
-local SKINNED_HUD = { "objectives", "runSummary", "announcements" }
+local SKINNED_HUD = { "objectives", "runSummary", "announcements", "characterPanel" }
 -- Addons that restyle Blizzard's windows as the skin does (folder names).
 local WINDOW_SKIN_ADDONS = { "ElvUI", "NDui", "Aurora", "DarkMode" }
 
@@ -19,7 +19,8 @@ local function HookOwnedHUD(api)
         local controller = Suite.Suite
         if not controller.started then return end
         for _, id in ipairs(SKINNED_HUD) do
-            if controller.states[id].active then controller.Apply(id) end
+            local state = controller.states[id]
+            if state and state.active then controller.Apply(id) end
         end
     end)
     appearanceHooked = true
@@ -79,6 +80,13 @@ function Skin.Acquire(moduleID)
     local client = api:RegisterAddon("MSUF_Suite_" .. moduleID)
     if client then clients[moduleID] = client end
     return client
+end
+
+-- The character window shares the embedded skin's item audit, even when its
+-- visual skin is disabled. Keep the engine's normal load/migration boundary.
+function Skin.GetEquipmentReader()
+    if not Skin.EquipmentReader and not Skin.EnsureEngine() then return nil end
+    return Skin.EquipmentReader
 end
 
 -- Explicitly authored menu roots can be registered before the optional

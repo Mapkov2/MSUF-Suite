@@ -2,6 +2,7 @@ local _, P = ...
 local NS, S = P.NS, P.Suite
 if not NS.Client.isForever then return end
 local Data, Pins, Labels, Locations = P.ForeverMapData, P.ForeverMapPins, P.ForeverMapLabels, P.ForeverMapLocations
+local Layer = P.ForeverMapLayer
 local M = { mapNames = {}, areaNames = {}, titles = {}, rects = {} }
 local hookedMap, refreshQueued
 local FLIGHT, FIRST_TRANSPORT, LAST_TRANSPORT, ROAD, APPROACH, ENTRANCE = 1, 2, 4, 6, 7, 8
@@ -160,6 +161,7 @@ local function MapShown(map)
     M.context:Event("TAXI_NODE_STATUS_CHANGED", MapEvent, IN_COMBAT)
     M.context:Event("PLAYER_LEVEL_UP", MapEvent, IN_COMBAT)
     M.context:Event("CVAR_UPDATE", MapEvent, IN_COMBAT)
+    Layer.Sync(M)
     QueueRefresh(map)
 end
 
@@ -168,6 +170,7 @@ local function MapHidden(map)
     M.context:RemoveEvent("TAXI_NODE_STATUS_CHANGED")
     M.context:RemoveEvent("PLAYER_LEVEL_UP")
     M.context:RemoveEvent("CVAR_UPDATE")
+    Layer.Stop(M)
     Pins.Release()
     if M.label then M.label:Hide() end
 end
@@ -219,6 +222,7 @@ end
 function M:Refresh()
     if not self.map then return Attach(self) end
     self.labelRaw = nil
+    Layer.Sync(self)
     QueueRefresh(self.map)
     if not self.config.zoneLevels and self.label then self.label:Hide() end
 end

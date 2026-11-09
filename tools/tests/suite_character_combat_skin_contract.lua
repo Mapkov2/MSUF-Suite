@@ -15,6 +15,12 @@ local NS = H.NS
 NS.Safety.Dispatch = function(callback, ...) return callback(...) end
 NS.Client.isForever = arg[2] == "Forever"
 NS.DB.theme.look = NS.Client.isForever and "foreverGlass" or "default"
+if not NS.Client.isForever then
+    local tabs = CharacterFrame.ModeTabs.Tabs
+    CharacterFrameTab1, CharacterFrameTab2, CharacterFrameTab3 = tabs[1], tabs[2], tabs[3]
+    NS.ControlSkin.ApplyPanelTab = NS.ControlSkin.ApplyButton
+    PanelTemplates_GetSelectedTab = function() return 2 end
+end
 InCombatLockdown = function() return false end -- event edge before native lockdown flips
 local writes, layout, queued, checks = 0, 0, 0, 0
 local continuation
@@ -51,6 +57,10 @@ NS.Cosmetics.RestoreOwner("combat-cold") -- the parent GenericWindows owner norm
 NS.CharacterDetails.Apply, NS.EQoLCharacter.Apply = detailsApply, eqolApply
 NS.CombatGate.RunOrDefer = function(_, callback) queued = queued + 1; continuation = callback end
 assert(NS.CharacterPanel.Apply("blizzardWindows"))
+if not NS.Client.isForever then
+    Check(CharacterFrameTab1.surface.active == false and CharacterFrameTab2.surface.active == true,
+        "the Retail tabs did not show the native selection")
+end
 local hook = assert(H.hooks.SetPaperDollBackground, "native background hook missing")
 local attach = NS.Surface.Ensure
 NS.Surface.Ensure = function(...) layout = layout + 1; return attach(...) end

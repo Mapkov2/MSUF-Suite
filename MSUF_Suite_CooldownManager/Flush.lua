@@ -190,8 +190,8 @@ local function UsableUnit()
         local entry = list[i]
         if entry.hidden and not C.state.preview then
             entry.usablePending = true
-        elseif fx.UsableShown(entry) then
-            fx.Usable(entry, entry.src == "i" and usableItems or usableSpells)
+        else
+            fx.Usable(entry, entry.src == "i" and usableItems or usableSpells, true)
         end
     end
 end

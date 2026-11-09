@@ -319,13 +319,13 @@ local function NativeBurst()
     end
 end
 w:Reset()
--- Accept +12 VM instructions per visible pair (10300 -> 11500/100 pairs)
--- for the dormant guards and shared catch-up; native calls stay at400.
+-- Steady-state checked repair still reads and writes the secure button.
+-- The owned texture needs no visibility write while its state stays hidden.
 local visibleVM = Instructions(NativeBurst)
-assert(w.stateReads == 100 and w.stateWrites == 100 and w.decorWrites == 100 and w.tints == 100,
+assert(w.stateReads == 100 and w.stateWrites == 100 and w.decorWrites == 0 and w.tints == 100,
     "visible native post-hook changed its native call budget")
 assert(visibleVM <= 12000, "visible native post-hook VM overhead exceeded budget")
-print("ActionBars visible state/usable x100: VM=" .. visibleVM .. "; native calls=400")
+print("ActionBars visible state/usable x100: VM=" .. visibleVM .. "; native calls=300")
 w:Fade(0, false)
 NativeBurst() -- Warm table capacities before the repeatable budget.
 local memoryMin, vm = math.huge
@@ -356,7 +356,7 @@ header.SetAlpha = function(self, alpha)
     setAlpha(self, alpha)
 end
 w:Reset(); w:Fade(0, true)
-assert(w.stateReads == 1 and w.stateWrites == 1 and w.decorWrites == 1 and w.tints == 1,
+assert(w.stateReads == 1 and w.stateWrites == 1 and w.decorWrites == 0 and w.tints == 1,
     "native reveal must catch state/range up exactly once")
 assert(not w.rec.nativeStateDirty, "successful native state catch-up remained dirty")
 w:Fade(0, false); w:Reset(); w:Fade(0, true)
@@ -374,7 +374,7 @@ assert(w.stateWrites == 1 and w.stateReads == 0 and w.button.checked == false an
     "inactive refresh lost baseline unchecked write")
 w.ab.M.active = true; w.rec.bar.paintDormant = false; w.ab.records[w.button] = nil
 w:Reset(); w.ab.RefreshNativeBar(w.rec.bar)
-assert(w.stateReads == 1 and w.decorWrites == 1 and not w.rec.nativeStateDirty,
+assert(w.stateReads == 1 and w.decorWrites == 0 and not w.rec.nativeStateDirty,
     "direct record catch-up depended on a second registry lookup")
 w.ab.records[w.button] = w.rec
 -- A genuinely visible one-percent fade stays live, including secret checked

@@ -229,7 +229,7 @@ local function Header(ctx, builder, bar, select)
     Page.Prepare({ { widget = preview.add, label = "Add data",
         meta = P.Meta(PAGE, ID, prefix .. ".addPlace", "action", section) } }, section, select)
     y = preview.bottomY - 8
-    Page.Button(ctx, body, "Move in Edit Mode", 16, y, width, function() P.OpenEditMode(ID, prefix) end,
+    Page.Button(ctx, body, "Move in Edit Mode", 16, y, width, function() P.MoveOnScreen(ID, prefix, true) end,
         prefix .. ".move", section, select, function()
             return P.EditModeReady() and P.S.Status(ID) == "Active" and P.Get(ID, prefix .. "Enabled")
         end)

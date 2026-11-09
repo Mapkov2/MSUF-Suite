@@ -25,9 +25,8 @@ local CREST = NS.DataTextCrestMode
 --     (Sources.gamepadPanelSources): no window opens from the Suite's own
 --     code there, and a place without its Blizzard button opens nothing.
 --   * Dungeon portals and the micro menu open a popup of secure rows.
--- PLAYER_REGEN_DISABLED runs before lockdown starts: DataTexts.lua releases
--- both there, so no protected frame depends on a bar during combat. A
--- "[combat] hide" state driver backs that up.
+-- PLAYER_REGEN_DISABLED releases the out-of-combat overlays and popup.
+-- CombatMenu.lua prepares a separate, detached micro menu for lockdown.
 local Actions = {}
 P.DataTextActions = Actions
 
@@ -39,6 +38,8 @@ local PANEL_KINDS = { currency = "currency", crests = "currency", friends = "fri
 local GAMEPAD_SOURCES, GAMEPAD_KINDS = Sources.gamepadPanelSources, Sources.gamepadPanelKinds
 local SPEC_BUTTON = NS.Client.isForever and "TalentMicroButton" or "PlayerSpellsMicroButton"
 local ROW_LIMIT = 100
+local POPUP_COLUMN_WIDTH = 236
+local POPUP_ROW_WIDTH = POPUP_COLUMN_WIDTH - 4
 local overlay, popup
 
 local function Locked()
@@ -189,7 +190,7 @@ end
 local function RowPostClick(row)
     local action = row.action
     ClosePopup()
-    if action then action() end
+    if action and not NS.InCombat() then action() end
 end
 
 -- The open list: fill(row, index) sets up entry index of popupEntries; the
@@ -205,19 +206,24 @@ local function PopupWheel(_, delta)
     for i = 1, popupSlots do fillPopup(popup.rows[i], offset + i) end
 end
 
+local function CreatePopup(template)
+    local frame = S.CreateFrame("Frame", nil, UIParent, template)
+    frame:SetFrameStrata("TOOLTIP")
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(true)
+    frame.rows = {}
+    frame.fill = S.CreateTexture(frame, nil, "BACKGROUND")
+    frame.fill:SetAllPoints(frame)
+    frame.fill:SetColorTexture(.04, .05, .07, .97)
+    frame:Hide()
+    return frame
+end
+
 local function Popup()
     if popup then return popup end
-    popup = S.CreateFrame("Frame", nil, UIParent)
-    popup:SetFrameStrata("TOOLTIP")
-    popup:SetClampedToScreen(true)
-    popup:EnableMouse(true)
-    popup.rows = {}
-    local fill = S.CreateTexture(popup, nil, "BACKGROUND")
-    fill:SetAllPoints(popup)
-    fill:SetColorTexture(.04, .05, .07, .97)
+    popup = CreatePopup()
     popup:SetScript("OnLeave", WatchLeave)
     popup:SetScript("OnMouseWheel", PopupWheel)
-    popup:Hide()
     RegisterStateDriver(popup, "visibility", "[combat] hide")
     Actions.popup = popup
     return popup
@@ -234,9 +240,13 @@ local PLAIN_HOVER = { color = { 1, 1, 1, .1 } }
 local EDGES = { { "TOPLEFT", "TOPRIGHT", true }, { "BOTTOMLEFT", "BOTTOMRIGHT", true },
     { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
 local skinHover = { color = {} }
-local function HoverLook()
+local function PopupSkin()
     local skin = P.DataTexts.context:Skin()
-    if not skin or not skin:IsEnabled() then return PLAIN_HOVER end
+    return skin and skin:IsEnabled() and skin or nil
+end
+
+local function HoverLook(skin)
+    if not skin then return PLAIN_HOVER end
     local style = skin:GetAppearance("hoverStyle")
     local intensity = skin:GetAppearance("hoverIntensity")
     local r, g, b, a = skin:GetColor("hover")
@@ -258,21 +268,28 @@ local function PaintHover(row, look)
     for _, edge in ipairs(row.hoverEdges) do edge:SetColorTexture(r, g, b, look.outline and a or 0) end
 end
 
-local function Row(index)
-    local row = popup.rows[index]
-    if row then return row end
-    row = S.CreateFrame("Button", nil, popup, "SecureActionButtonTemplate")
+local function Row(frame, index, width)
+    local row = frame.rows[index]
+    if row then
+        if row.popupWidth ~= width then
+            row.popupWidth = width
+            row:SetWidth(width)
+            if row.centered == false then row.label:SetWidth(math.max(1, width - 28)) end
+        end
+        return row
+    end
+    row = S.CreateFrame("Button", nil, frame, "SecureActionButtonTemplate")
+    row.popupWidth = width
     row:RegisterForClicks("AnyUp")
     row:SetAttribute("useOnKeyDown", false)
     row:SetScript("OnLeave", WatchLeave)
     row:SetScript("PostClick", RowPostClick)
-    row:SetSize(232, 24)
+    if width then row:SetWidth(width) end
+    row:SetHeight(24)
     row.icon = S.CreateTexture(row, nil, "ARTWORK")
     row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
     row.icon:SetSize(22, 22)
     row.label = S.CreateFontString(row, nil, "OVERLAY", "GameFontHighlightSmall")
-    row.label:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-    row.label:SetWidth(204)
     row.label:SetWordWrap(false)
     row.cooldown = S.CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
     row.cooldown:SetAllPoints(row.icon)
@@ -286,8 +303,24 @@ local function Row(index)
         if edge[3] then texture:SetHeight(1) else texture:SetWidth(1) end
         row.hoverEdges[i] = texture
     end
-    popup.rows[index] = row
+    frame.rows[index] = row
     return row
+end
+
+local function PlaceRowLabel(row, centered)
+    if row.centered == centered then return end
+    row.centered = centered
+    row.label:ClearAllPoints()
+    if centered then
+        row.label:SetWidth(0)
+        row.label:SetPoint("LEFT", row, "LEFT", 4, 0)
+        row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.label:SetJustifyH("CENTER")
+    else
+        row.label:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+        row.label:SetWidth(math.max(1, row.popupWidth - 28))
+        row.label:SetJustifyH("LEFT")
+    end
 end
 
 -- Whether the popup opens below the place (more room there than above it,
@@ -308,8 +341,9 @@ end
 -- A list those columns cannot hold there takes the screen's height (the
 -- clamp moves the popup over its place); entries beyond its rows scroll
 -- into them with the mouse wheel. fill(row, index) sets up each entry;
--- hover marks the row under the pointer (HoverLook).
-local function OpenPopup(button, count, fill, hover)
+-- hover marks the row under the pointer (HoverLook). A supplied panel uses
+-- a single column across its full width.
+local function OpenPopup(button, count, fill, hover, panel)
     if Locked() then return end
     count = math.min(count, ROW_LIMIT)
     if count == 0 then
@@ -318,9 +352,13 @@ local function OpenPopup(button, count, fill, hover)
     end
     local frame = Popup()
     frame.owner = button
-    local below, room = PopupSide(button)
+    frame.fill:SetColorTexture(.04, .05, .07, .97)
+    if frame.border then for _, edge in ipairs(frame.border) do edge:Hide() end end
+    local anchor = panel or button
+    local below, room = PopupSide(anchor)
     local perColumn = math.max(1, math.min(count, math.floor((room - 11) / 26)))
-    local columns = math.max(1, math.floor((UIParent:GetWidth() - 4) / 236))
+    local panelWidth = panel and panel:GetWidth() * panel:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    local columns = panel and 1 or math.max(1, math.floor((UIParent:GetWidth() - 4) / POPUP_COLUMN_WIDTH))
     local slots = count
     if count > columns * perColumn then
         local tallest = math.max(1, math.floor((UIParent:GetHeight() - 8) / 26))
@@ -330,16 +368,18 @@ local function OpenPopup(button, count, fill, hover)
     fillPopup, popupEntries, popupSlots, popupOffset = fill, count, slots, 0
     frame:ClearAllPoints()
     if below then
-        frame:SetPoint("TOPLEFT", button, "BOTTOMLEFT", 0, -3)
+        frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -3)
     else
-        frame:SetPoint("BOTTOMLEFT", button, "TOPLEFT", 0, 3)
+        frame:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 3)
     end
-    frame:SetSize(4 + math.ceil(slots / perColumn) * 236, perColumn * 26 + 8)
-    local look = hover and HoverLook() or NO_HOVER
+    local width = panelWidth or 4 + math.ceil(slots / perColumn) * POPUP_COLUMN_WIDTH
+    local rowWidth = panelWidth and math.max(1, panelWidth - 8) or POPUP_ROW_WIDTH
+    frame:SetSize(width, perColumn * 26 + 8)
+    local look = hover and HoverLook(PopupSkin()) or NO_HOVER
     for i = 1, slots do
-        local row = Row(i)
+        local row = Row(frame, i, rowWidth)
         local column, line = math.floor((i - 1) / perColumn), (i - 1) % perColumn
-        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + column * 236, -4 - line * 26)
+        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4 + column * POPUP_COLUMN_WIDTH, -4 - line * 26)
         fill(row, i)
         PaintHover(row, look)
         row:Show()
@@ -349,6 +389,7 @@ local function OpenPopup(button, count, fill, hover)
     -- stays with the camera.
     frame:EnableMouseWheel(slots < count)
     frame:Show()
+    return frame
 end
 
 local portals
@@ -363,6 +404,8 @@ local function FillPortal(row, index)
     -- A micro menu row may have shown a disabled micro button before.
     row:SetEnabled(true)
     row.icon:SetTexture(spell.icon)
+    PlaceRowLabel(row, false)
+    row.label:SetFontObject(GameFontHighlightSmall)
     row.label:SetText(spell.name)
     row.label:SetTextColor(1, 1, 1)
     local duration = C_Spell.GetSpellCooldownDuration(spell.id)
@@ -393,6 +436,8 @@ local function FillTravel(row, index)
     row.action = nil
     row:SetEnabled(true)
     local name, _, _, _, _, _, _, _, _, icon = C_Item.GetItemInfo(item.id)
+    PlaceRowLabel(row, false)
+    row.label:SetFontObject(GameFontHighlightSmall)
     row.label:SetText(S.PublicText(name) or S.Text("Hearthstone"))
     row.label:SetTextColor(1, 1, 1)
     row.icon:SetTexture(S.Finite(icon) and icon or 134414)
@@ -410,6 +455,15 @@ function Actions.TravelMenu(button)
     OpenPopup(button, #travelHearths + #portals, FillTravel, true)
 end
 
+local function MicroMenuPanel(button)
+    local bar = button.bar
+    if bar.vertical then return nil end
+    for _, slot in ipairs(bar.slots) do
+        if slot ~= button and slot.source then return nil end
+    end
+    return bar.frame
+end
+
 local micro = {}
 local function FillMicro(row, index)
     local entry = micro[index]
@@ -419,30 +473,125 @@ local function FillMicro(row, index)
     row:SetAttribute("item", nil)
     row:SetAttribute("toy", nil)
     row.action = entry.action
-    row:SetEnabled(entry.enabled)
+    row:SetEnabled(entry.enabled and not (row.combatMicro and entry.action))
     row.icon:SetTexture(nil)
     row.cooldown:Clear()
+    PlaceRowLabel(row, true)
     row.label:SetText(entry.label)
-    local shade = entry.enabled and 1 or .5
-    row.label:SetTextColor(shade, shade, shade)
+    row.entryEnabled = entry.enabled
 end
+
+local function MicroBorder(frame)
+    if frame.border then return frame.border end
+    local border = {}
+    for i, edge in ipairs(EDGES) do
+        local texture = S.CreateTexture(frame, nil, "BORDER")
+        texture:SetPoint(edge[1], frame, edge[1])
+        texture:SetPoint(edge[2], frame, edge[2])
+        if edge[3] then texture:SetHeight(1) else texture:SetWidth(1) end
+        border[i] = texture
+    end
+    frame.border = border
+    return border
+end
+
+local function PaintMicroRow(row, skin, look)
+    local enabled = row.entryEnabled and not (row.action and NS.InCombat())
+    if skin then
+        row.label:SetTextColor(skin:GetColor(enabled and "text" or "muted"))
+        S.SetStyledFont(row.label, skin:GetFont(), 11, "", 1, false)
+    else
+        local shade = enabled and 1 or .5
+        row.label:SetFontObject(GameFontHighlightSmall)
+        row.label:SetTextColor(shade, shade, shade)
+    end
+    PaintHover(row, look)
+end
+
+local function PaintMicro(frame, skin)
+    if skin and not skin:IsEnabled() then skin = nil end
+    local look = HoverLook(skin)
+    if skin then
+        local r, g, b, a = skin:GetColor("popup")
+        frame.fill:SetColorTexture(r, g, b, (a or 1) * (skin:GetAppearance("shellOpacity") or 1))
+        local br, bg, bb, ba = skin:GetColor("border")
+        local alpha = (ba or 1) * (skin:GetAppearance("borderOpacity") or 1)
+        for _, edge in ipairs(frame.border) do
+            edge:SetColorTexture(br, bg, bb, alpha)
+            edge:Show()
+        end
+    else
+        frame.fill:SetColorTexture(.04, .05, .07, .97)
+        for _, edge in ipairs(frame.border) do edge:Hide() end
+    end
+    frame.microSkin, frame.microHover = skin, look
+    for _, row in ipairs(frame.rows) do
+        if row:IsShown() then PaintMicroRow(row, skin, look) end
+    end
+end
+
+local function FillStyledMicro(row, index)
+    FillMicro(row, index)
+    local frame = row:GetParent()
+    PaintMicroRow(row, frame.microSkin, frame.microHover or PLAIN_HOVER)
+end
+
+Actions.MicroMenuPanel = MicroMenuPanel
 
 -- The Suite's micro menu (S.MicroMenuEntries, the same entries as the
 -- Minimap's middle-click flyout), clicked by the secure rows, plus the plain
 -- game menu row.
 function Actions.MicroMenu(button)
-    if Locked() then return end
-    OpenPopup(button, S.MicroMenuEntries(micro, true), FillMicro)
+    if NS.InCombat() then return end
+    if GameTooltip:IsOwned(button) then GameTooltip:Hide() end
+    local frame = OpenPopup(button, S.MicroMenuEntries(micro, true), FillStyledMicro, false, MicroMenuPanel(button))
+    if frame then
+        MicroBorder(frame)
+        PaintMicro(frame, PopupSkin())
+    end
+end
+
+local function PaintCombatMicro(frame)
+    PaintMicro(frame, frame.preparedSkin)
+end
+
+local CLOSE_MICRO = [[ control:UnregisterAutoHide(); control:Hide() ]]
+function Actions.PrepareCombatMicro()
+    local count = S.MicroMenuEntries(micro, true)
+    if count == 0 then return end
+    local frame = Actions.combatMicroPopup
+    if not frame then
+        frame = CreatePopup("SecureHandlerBaseTemplate")
+        Actions.combatMicroPopup = frame
+        MicroBorder(frame)
+        frame:SetScript("OnShow", PaintCombatMicro)
+    end
+    frame.preparedSkin = PopupSkin()
+    local height = math.min(26, math.max(1, math.floor((UIParent:GetHeight() - 8) / count)))
+    frame:Hide()
+    frame:SetHeight(count * height + 8)
+    for i = 1, count do
+        local row = Row(frame, i)
+        if not row.combatMicro then
+            row.combatMicro = true
+            row:SetScript("OnLeave", nil)
+            row:SetScript("PostClick", nil)
+            SecureHandlerWrapScript(row, "OnClick", frame, "return nil, true", CLOSE_MICRO)
+        end
+        row:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -4 - (i - 1) * height)
+        row:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -4 - (i - 1) * height)
+        row:SetHeight(math.max(1, height - 1))
+        FillMicro(row, i)
+        row:Show()
+    end
+    for i = count + 1, #frame.rows do frame.rows[i]:Hide() end
+    return frame
 end
 
 ------------------------------------------------------------------ combat
 -- PLAYER_REGEN_DISABLED, before lockdown starts: release every secure frame.
 function Actions.Release()
-    if overlay then
-        overlay.owner = nil
-        overlay:Hide()
-        overlay:ClearAllPoints()
-    end
+    Actions.Detach()
     ClosePopup()
 end
 
@@ -527,6 +676,7 @@ end
 function Actions.Tooltip(button, title)
     local binding = button.extra
     local kind = binding.kind
+    if kind == "microMenu" and popup and popup.owner == button and popup:IsShown() then return end
     if kind == "portals" or kind == "travel" then
         if kind == "travel" then Actions.TravelMenu(button) else Actions.PortalMenu(button) end
         return

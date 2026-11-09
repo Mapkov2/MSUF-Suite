@@ -159,6 +159,17 @@ local function Hex(r, g, b)
     return string.format("%02x%02x%02x", Byte(r), Byte(g), Byte(b))
 end
 
+local function RuleRGB(rule, value)
+    if value == "" and rule.inheritColor then return S.CharacterHeader.PickerColor(rule.inheritColor) end
+    return P.RGB(value)
+end
+
+local function RuleHex(rule, r, g, b)
+    local value = Hex(r, g, b)
+    if rule.inheritColor and value == Hex(S.CharacterHeader.PickerColor(rule.inheritColor)) then return "" end
+    return value
+end
+
 -- MSUF's own font list (keys or paths) plus the inherited choice; a saved font
 -- that is no longer installed stays selectable so it is not silently lost.
 function P.FontValues(selected, defaultLabel)
@@ -263,8 +274,8 @@ function P.RuleRow(pageKey, id, rule, keyFn, sectionId)
     row.summaryEnabled = function() return P.RuleEnabled(id, rule, keyFn) end
     if rule.color then
         row.kind = "color"
-        row.get = function() return P.RGB(P.Get(id, Key())) end
-        row.set = function(r, g, b) P.Set(id, Key(), Hex(r, g, b)) end
+        row.get = function() return RuleRGB(rule, P.Get(id, Key())) end
+        row.set = function(r, g, b) P.Set(id, Key(), RuleHex(rule, r, g, b)) end
     elseif rule.font or rule.texture then
         row.kind = "dropdown"
         local list = rule.font and P.FontValues or P.TextureValues
@@ -468,10 +479,10 @@ function P.AttachRuleColors(body, title, id, rules, keyFn, isRelevant)
                     settingKey = "msufsuite." .. id .. "." .. key,
                     isEnabled = isRelevant and function() return isRelevant(rule) end or nil,
                     get = function()
-                        if Current() then return P.RGB(P.Get(id, key)) end
-                        return P.RGB(config[key])
+                        if Current() then return RuleRGB(rule, P.Get(id, key)) end
+                        return RuleRGB(rule, config[key])
                     end,
-                    set = function(r, g, b) if Current() then P.Set(id, key, Hex(r, g, b)) end end,
+                    set = function(r, g, b) if Current() then P.Set(id, key, RuleHex(rule, r, g, b)) end end,
                 }
             end
             return targets

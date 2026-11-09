@@ -30,6 +30,7 @@ local RECEIVED_BUFFS = {
     47788,  -- Guardian Spirit
     102342, -- Ironbark
     116849, -- Life Cocoon
+    357170, -- Time Dilation
 }
 
 -- Retail item-effect aura IDs (all ranks share the same aura). Other clients
@@ -329,6 +330,48 @@ local function AddReceivedBuffs(n)
     return n
 end
 
+-- Discover learned external defensive auras only while opening the picker.
+-- Blizzard's own CDM entries still cover spells whose cast and aura IDs differ.
+local function AddDefensiveRow(n, id, key, header)
+    local name = Plain(C_Spell.GetSpellName(id))
+    if type(name) ~= "string" then return n, header end
+    if not header then
+        n = n + 1
+        Item(n, "header", Tr("Defensive auras cast by you"))
+        header = true
+    end
+    n = n + 1
+    Item(n, "entry", name, key, Plain(C_Spell.GetSpellTexture(id)), true, Page.WhereIs(key), FAMILY.AURA, id)
+    return n, header
+end
+
+local function AddExternalDefensives(n)
+    if Page.ForeignSpec() or not C_SpellBook or not C_SpellBook.IsSpellKnown then return n end
+    local seen, header = {}, false
+    if not P.Suite.Client.isForever and Plain(C_SpellBook.IsSpellKnown(190456)) == true then
+        n, header = AddDefensiveRow(n, 190456, "a190456", header) -- Ignore Pain
+    end
+    local classify = C_Spell.IsExternalDefensive
+    local lines = C_SpellBook.GetNumSpellBookSkillLines and Plain(C_SpellBook.GetNumSpellBookSkillLines())
+    if not classify or type(lines) ~= "number" then return n end
+    for line = 1, lines do
+        local info = Plain(C_SpellBook.GetSpellBookSkillLineInfo(line))
+        local offset = info and Plain(info.itemIndexOffset)
+        local count = info and Plain(info.numSpellBookItems)
+        if type(offset) == "number" and type(count) == "number" then
+            for index = offset + 1, offset + count do
+                local item = Plain(C_SpellBook.GetSpellBookItemInfo(index, Enum.SpellBookSpellBank.Player))
+                local id = item and RowSpell(item.spellID)
+                if id and not seen[id] and Plain(C_SpellBook.IsSpellKnown(id)) == true and Plain(classify(id)) == true then
+                    seen[id] = true
+                    n, header = AddDefensiveRow(n, id, "g" .. id, header)
+                end
+            end
+        end
+    end
+    return n
+end
+
 -- Potion choices are built only in the editor. The running client supplies
 -- bag-item use spells; no item IDs or Retail spell data are assumed on Forever.
 local function AddPotionSpell(n, spell, itemID, itemName)
@@ -473,7 +516,7 @@ function Page.RebuildPicker()
         if record.spell and not bySpell[record.spell] then bySpell[record.spell] = item end
         if record.override and not bySpell[record.override] then bySpell[record.override] = item end
     end
-    if family == FAMILY.AURA then n = AddPotions(AddReceivedBuffs(n)) end
+    if family == FAMILY.AURA then n = AddPotions(AddReceivedBuffs(AddExternalDefensives(n))) end
     if family == FAMILY.COOLDOWN then n = AddTrinkets(n, equip) end
     picker.count = n
     picker.family = family

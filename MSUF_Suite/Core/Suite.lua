@@ -17,7 +17,7 @@ for i = 1, #S.order do S.states[S.order[i]] = { active = false } end
 local function ValidText(rule, value)
     return #value <= rule.maxLength
         and not ((rule.spells or rule.items or rule.ids) and value:find("[^%d%s,]"))
-        and not (rule.color and (#value ~= 6 or value:find("[^%x]")))
+        and not (rule.color and not (rule.inheritColor and value == "") and (#value ~= 6 or value:find("[^%x]")))
 end
 
 local Finite = NS.Finite
@@ -96,6 +96,7 @@ local MIGRATIONS = {
     { run = Steps.RecordModuleLooks },
     { run = Steps.CooldownSpecLayouts },
     { run = Steps.ChatComfort },
+    { run = NS.MigrateCharacterPanelMode },
 }
 S.MigrationRevision = #MIGRATIONS
 local REPAIRS = {

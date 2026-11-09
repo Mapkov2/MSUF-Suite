@@ -104,7 +104,7 @@ local function Component(name, methods)
     return component
 end
 Component("Layout", "Bind Configure Apply Restore RestoreAll")
-Component("Power", "Enable Refresh Reapply Disable")
+Component("Power", "Enable ConfigureEnemy Refresh Reapply Disable")
 Component("Threat", "Enable Apply Restore Disable Refresh")
 Component("Level", "Bind PaintNative Paint Hide RestoreNative")
 Component("CastTime", "Bind Paint Restore Refresh")

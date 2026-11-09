@@ -21,6 +21,7 @@ local LAYER_COLORS = {
     cast = { 0.20, 0.90, 0.85 }, castText = { 0.20, 0.90, 0.85 }, castTime = { 0.20, 0.90, 0.85 },
     auras = { 0.90, 0.20, 0.22 }, buffs = { 0.20, 0.90, 0.35 }, controlAura = { 0.90, 0.42, 1.00 },
     classification = { 0.95, 0.72, 0.18 }, raidIcon = { 0.95, 0.72, 0.18 }, power = { 0.95, 0.72, 0.18 },
+    enemyPower = { 0.25, 0.64, 1.00 },
     castIcon = { 0.20, 0.90, 0.85 }, castShield = { 0.20, 0.90, 0.85 }, castTarget = { 0.20, 0.90, 0.85 },
     target = { 0.95, 0.72, 0.18 }, eliteMarker = { 0.95, 0.72, 0.18 }, questMarker = { 0.95, 0.72, 0.18 },
     threatFlash = { 0.90, 0.20, 0.22 }, threatHighlight = { 0.90, 0.20, 0.22 }, softTarget = { 0.25, 0.72, 1.00 },
@@ -45,7 +46,7 @@ local LAYERS = {
     { "targetScale", "Target size", "native" },
     { "name", "Name", "elements" }, { "level", "Level", "elements" },
     { "healthText", "HP text", "elements" },
-    { "cast", "Castbar", "castbar" },
+    { "cast", "Castbar", "castbar" }, { "enemyPower", "Enemy power bar", "enemyPower" },
     { "castText", "Spell name", "castbar" }, { "castTime", "Cast time", "castbar" },
     { "auras", "Debuffs", "auras" },
     { "buffs", "Buffs", "auras" }, { "controlAura", "Control", "auras" },
@@ -66,7 +67,7 @@ local LAYER_SETTING = {
     cast = "enemyCastEnabled", castText = "enemyCastSpellName", castTime = "enemyCastTimeEnabled",
     classification = "enemyRarityIcon", raidIcon = "enemyRaidIcon",
     castIcon = "enemyCastSpellIcon", castShield = "enemyCastEnabled",
-    castTarget = "enemyCastSpellTarget",
+    castTarget = "enemyCastSpellTarget", enemyPower = "enemyPowerEnabled",
 }
 local function NativeToggle(key, cvar)
     local mode = P.Get(ID, "look") ~= 2 and P.Get(ID, key) or 1
@@ -151,6 +152,7 @@ function Layers.Available(ui, key)
     if key == "backdrop" or key == "border" then return skinned end
     if key == "roleFill" then return skinned and ui.sampleKind == "enemy" end
     if key == "power" then return ui.personal == true end
+    if key == "enemyPower" then return skinned and ui.sampleKind == "enemy" and P.Get(ID, "enemy") == true end
     if key == "level" then return true end
     if key == "threatFlash" or key == "threatHighlight" then return ui.sampleKind == "enemy" end
     if (key == "buffs" or key == "controlAura") and ui.sampleKind == "friendly"
@@ -200,6 +202,7 @@ function Layers.Active(ui, key)
         return ui.softTargetSample and SoftOn(ui)
     end
     if key == "power" then return P.Get(ID, "look") ~= 2 and P.Get(ID, "personalPowerSkin") end
+    if key == "enemyPower" then return P.Get(ID, "enemyPowerEnabled") == true end
     if key == "level" then
         local classic = Style.ClassicNativePlate(P.Get(ID, "nativeStyle"))
         local namesOnly = ui.sampleKind == "friendly" and not ui.personal
@@ -324,7 +327,7 @@ local function ToggleSoftTarget(ui, key)
     ui.softTargetSample, ui.layers[key] = true, true
 end
 
--- The layers that change a live setting: auras, threat, soft target and personal power.
+-- The layers that change a live setting: auras, threat, soft target and power.
 local function ToggleLive(ui, key)
     if P.Get(ID, "look") == 2 then
         OpenSetting("look")
@@ -337,7 +340,8 @@ local function ToggleLive(ui, key)
     elseif key == "softTarget" then
         ToggleSoftTarget(ui, key)
     else
-        P.Set(ID, "personalPowerSkin", not P.Get(ID, "personalPowerSkin"))
+        local setting = key == "enemyPower" and "enemyPowerEnabled" or "personalPowerSkin"
+        P.Set(ID, setting, not P.Get(ID, setting))
         ui.layers[key] = true
     end
     ui:Paint()
@@ -368,7 +372,7 @@ end
 -- Click routing and its hint share the same live-setting classification.
 local LAYER_ACTION = {
     level = "level", target = "target", backdrop = "skin", border = "skin", roleFill = "skin",
-    threatFlash = "live", threatHighlight = "live", softTarget = "live", power = "live",
+    threatFlash = "live", threatHighlight = "live", softTarget = "live", power = "live", enemyPower = "live",
     eliteMarker = "marker", questMarker = "marker",
 }
 local function LayerAction(key)
